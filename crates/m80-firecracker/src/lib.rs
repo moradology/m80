@@ -24,11 +24,15 @@ use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
 use m80_net_outbound::NetError;
 use m80_preflight::PreflightError;
-use m80_proto::ProtoError;
 use m80_storage::{ChangeSet, StorageError};
 use m80_vsock::VsockError;
 
 pub use m80_net_mode::NetworkPolicy;
+// The wire-shaped exec types are owned by `m80-proto` (the only crate the
+// host and the in-VM `m80-guestd` daemon both depend on). Re-export them
+// here so consumers of the orchestrator don't need to also depend on
+// `m80-proto` for the request/response shape.
+pub use m80_proto::{ExecRequest, ExecResponse, ExecStatus, ExecTiming};
 
 // =====================================================================
 // Backend (long-lived, per-process)
@@ -238,72 +242,6 @@ impl StoppedSandbox {
 }
 
 // =====================================================================
-// Exec request / response — the user-facing shape
-// =====================================================================
-
-/// One exec request: argv + optional cwd/env/stdin/timeout. The host
-/// serializes this and sends it to the in-VM daemon.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecRequest {
-    /// argv to spawn. argv[0] must be an executable inside the guest.
-    pub argv: Vec<String>,
-    /// Working directory inside the guest. Defaults to `/`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    /// Environment, replacing (not augmenting) the child's env when set.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub env: Option<Vec<(String, String)>>,
-    /// Optional bytes piped to the child's stdin before close.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stdin: Option<Vec<u8>>,
-    /// Optional bound on the child's running time. None = no timeout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u64>,
-}
-
-/// Result of one exec request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecResponse {
-    /// Termination disposition.
-    pub status: ExecStatus,
-    /// Process exit code, if observed.
-    pub exit_code: Option<i32>,
-    /// Captured stdout (capped at the per-stream limit).
-    pub stdout: Vec<u8>,
-    /// Captured stderr (capped at the per-stream limit).
-    pub stderr: Vec<u8>,
-    /// Wall-clock timing.
-    pub timing: ExecTiming,
-}
-
-/// Wall-clock timing of one exec.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct ExecTiming {
-    /// Unix epoch milliseconds when the child was spawned.
-    pub spawned_at_unix_ms: u64,
-    /// Unix epoch milliseconds when the child exited (or was killed).
-    pub exited_at_unix_ms: u64,
-    /// Time from `spawn` syscall return to first byte of stdout/stderr.
-    pub spawn_ms: u64,
-    /// Total wall-clock runtime.
-    pub run_ms: u64,
-}
-
-/// Termination disposition of one exec.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecStatus {
-    /// Child exited normally; check `exit_code`.
-    Completed,
-    /// `timeout_ms` expired; child was SIGKILL'd.
-    TimedOut,
-    /// Host disconnected mid-exec; child was killed.
-    Cancelled,
-    /// Spawn failed or another guest-side error occurred.
-    Failed,
-}
-
-// =====================================================================
 // Error sum
 // =====================================================================
 
@@ -329,12 +267,12 @@ pub enum FcError {
     /// Firecracker REST API call failed.
     #[error("client: {0}")]
     Client(#[from] ClientError),
-    /// Vsock channel operation failed.
+    /// Vsock channel operation failed. Wire-protocol errors arrive here as
+    /// `VsockError::Proto(...)` since vsock is the only transport that
+    /// speaks `m80-proto` envelopes in this crate; there is no separate
+    /// `Proto` variant.
     #[error("vsock: {0}")]
     Vsock(#[from] VsockError),
-    /// Wire protocol error (host or guest).
-    #[error("proto: {0}")]
-    Proto(#[from] ProtoError),
     /// Admission was refused (semaphore at limit; no permit available).
     #[error("admission refused: {limit} concurrent VMs already running")]
     AdmissionRefused {

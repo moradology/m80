@@ -112,8 +112,8 @@ dir = "/opt/m80/artifacts"
 
 - `m80-image-manifest` — manifest schema + writer.
 - (no internal m80 privilege deps — the build process holds the required caps directly)
-- `serde`, `serde_json`, `sha2`, `hex`.
-- `thiserror`, `anyhow`, `tracing`.
+- `serde`, `serde_json`, `sha2`, `hex`, `toml`.
+- `thiserror`, `anyhow`, `tracing`, `tempfile`.
 
 ## Tests
 

@@ -21,21 +21,28 @@ manages the run-dir.
 
 ### Lifecycle state machine
 
-A VM goes through a fixed state graph:
+A VM moves through four typed states:
 
 ```
-Created → PreflightOK → Configured → Booted → Ready → Stopped → Deleted
-                                            ↘ ForceKilled (preserved for triage)
+Created → Running → Stopped → (Deleted | preserved-for-triage)
 ```
+
+Each state is a distinct Rust type (`Sandbox`, `RunningSandbox`,
+`StoppedSandbox`); transitions consume the prior handle so callers can't
+double-stop or exec on a stopped VM. Force-kill collapses Running →
+Stopped while preserving the run-dir for offline inspection.
 
 - `Sandbox::new(config: SandboxConfig) -> Result<Sandbox, FcError>`
-  produces a `Created` sandbox. No I/O happens yet.
+  produces a `Created` sandbox. No I/O happens yet — admission permit
+  acquired but no chroot/mount/REST work has run.
 - `Sandbox::launch() -> Result<RunningSandbox, FcError>` runs the strict
-  preboot pipeline (preflight → run-root prep → lease acquisition →
-  storage prep → jailer materialize → cgroup subtree → network realize
-  → guest config injection → vsock → REST PUTs → InstanceStart → ready
-  probe). Each step has its own typed error variant; failures surface
-  the typed cause without losing the phase context.
+  preboot pipeline internally (preflight → run-root prep → lease
+  acquisition → storage prep → jailer materialize → cgroup subtree →
+  network realize → guest config injection → vsock → REST PUTs →
+  InstanceStart → ready probe). The intermediate phases are not
+  separate states — they're sub-steps of the single Created → Running
+  transition. Each sub-step has its own typed error variant on
+  `FcError`; failures surface the typed cause with phase context.
 - `RunningSandbox::exec(req: ExecRequest) -> Result<ExecResponse, FcError>`
   opens an `m80-vsock::Channel` to the guest, sends the request,
   returns the response. One outstanding exec per sandbox in v0.1.

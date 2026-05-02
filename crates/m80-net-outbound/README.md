@@ -94,7 +94,7 @@ has a clear starting point.
 - `NetError`: `Ipv6Unsupported`, `GuestIpv4Collision { peer_vm_id }`,
   `HostRouteCollision { existing }`, `BridgeOwnershipMismatch`,
   `IptablesCommandFailed { stderr }`, `IpCommandFailed { stderr }`,
-  `ForeignChainRule { rule }`, `Privilege(m80_privileged::PrivilegeError)`,
+  `ForeignChainRule { rule }`,
   `Io(io::Error)`.
 
 ## Non-goals

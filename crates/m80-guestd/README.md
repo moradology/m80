@@ -113,6 +113,7 @@ Command-line:
 ## Dependencies
 
 - `m80-proto` — wire envelope.
+- `vsock` — Linux `AF_VSOCK` listener.
 - `serde`, `serde_json`.
 - `thiserror`, `anyhow`, `tracing`, `nix`.
 - (Cross-compiled to the guest target. Runs on the kernel + rootfs that
