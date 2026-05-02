@@ -37,7 +37,8 @@ Keeping the guest small has direct benefits:
      version mismatch).
   2. Spawn the child process per the request (argv + optional cwd +
      optional env).
-  3. Capture stdout/stderr to bounded buffers.
+  3. Capture stdout/stderr to per-stream 1 MiB buffers; if either cap
+     is hit, the response's `truncated` field is set to `Some(true)`.
   4. Apply the request's `timeout_ms` budget; on expiry, SIGKILL.
   5. Reap, build `ExecResponse`, write it back as a `m80-proto`
      envelope.
@@ -61,6 +62,9 @@ that wire type directly.)
   `program` itself).
 - `cwd: Option<String>` — optional. Defaults to `/`. Must exist in the
   guest filesystem.
+- `workspace_dir: Option<String>` — optional. Records where the host
+  workspace is mounted; v0.1 passes it through unchanged (the
+  systemd-installed mount unit is what actually attaches the device).
 - `env: Option<Vec<(String, String)>>` — optional. Replaces (does not
   augment) the child environment when set.
 - `stdin: Option<Vec<u8>>` — optional. Bytes piped to the child's stdin

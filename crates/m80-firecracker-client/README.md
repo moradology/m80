@@ -45,7 +45,7 @@ without inheriting m80's lifecycle assumptions.
 - `Client::new(uds_path: &Path) -> Result<Client, ClientError>`.
 - One method per Firecracker resource, taking the resource's config
   struct (re-exported from this crate) and returning `Result<(), ClientError>`.
-- `InstanceAction { InstanceStart, SendCtrlAltDel, FlushMetrics, ... }`.
+- `InstanceAction { InstanceStart, SendCtrlAltDel, FlushMetrics, Pause, Resume }`.
 - The full set of Firecracker config types: `BootSourceConfig`,
   `MachineConfig`, `DriveConfig`, `NetworkInterfaceConfig`, `VsockConfig`.
 - `ClientError` — typed per-resource failure.
@@ -69,11 +69,16 @@ without inheriting m80's lifecycle assumptions.
 
 ## Tests
 
-- Conformance: against a real `firecracker` binary (gated behind a
-  `--ignored` flag for CI without KVM), every method round-trips a config
-  and reads it back.
-- Error mapping: a fixtured server returning each Firecracker fault shape
-  produces the corresponding typed `ClientError` variant.
-- Concurrency probe: two `Client`s racing the same UDS produce a
-  documented failure mode (which we then can guard against in
-  `m80-firecracker`).
+- `tests/put_each_resource.rs` — for each Firecracker resource, a fixture
+  `UnixListener` records the request body and asserts the JSON shape; the
+  client returns `Ok(())` on a fixture 204.
+- `tests/error_mapping.rs` — fixture server returns a 400 with a
+  Firecracker fault body for each resource; asserts the matching typed
+  `ClientError::*WriteFailed` variant fires (and `Connect(io::Error)` on
+  a missing socket).
+- `tests/instance_action_serialization.rs` — every `InstanceAction`
+  variant serializes to the expected `{"action_type": "<PascalCase>"}`
+  body.
+
+Real-firecracker conformance + concurrency-probe tests are deferred
+until we have a CI-managed firecracker binary in fixtures.

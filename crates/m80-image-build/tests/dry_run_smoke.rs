@@ -55,7 +55,7 @@ fn dry_run_prints_steps_to_stderr_and_creates_no_output_files() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Expect all 12 step labels.
+    // Expect all 12 step labels (the README's Pipeline section enumerates them).
     for i in 1..=12 {
         assert!(
             stderr.contains(&format!("{}.", i)),

@@ -25,23 +25,28 @@ gives us:
 
 ### Pipeline
 
-`m80-image-build run --config <path>` performs:
+`m80-image-build run --config <path>` runs 12 numbered steps (labels
+emitted to stderr in `--dry-run`):
 
-1. Resolve kernel: download from
-   `https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/<version>/<arch>`,
-   or use a local override path.
-2. Resolve source rootfs: download the firecracker-ci squashfs, convert
-   to ext4, resize to the configured size (default 1 GiB) via `truncate`.
-3. Mount the ext4 via loop device (the m80 process must hold `CAP_SYS_ADMIN` or run as root; `m80-preflight` verifies this at startup).
-4. Chroot install: copy `m80-guestd` into `/usr/local/bin/`, install
-   the systemd units (`m80-guestd.service`, the workspace mount unit),
-   create the workspace mount point, enable units in
-   `multi-user.target.wants/`. **No package manager invocations.**
-5. Unmount.
-6. sha256 every artifact (kernel, source rootfs, output rootfs, daemon
-   binary, units) and emit `<rootfs>.manifest.json` via
-   `m80-image-manifest`.
-7. Print the resulting paths and pass-through hashes.
+1. Download kernel from `https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/<version>/<arch>` via `curl`.
+2. Download source rootfs squashfs from the same firecracker-ci bucket.
+3. Convert squashfs → ext4 (in a temp dir) via `unsquashfs` + `mkfs.ext4`.
+4. Resize the output ext4 to the configured size via `truncate`.
+5. Loop-mount the output rootfs RW. (The m80 process must hold
+   `CAP_SYS_ADMIN` or run as root; `m80-preflight` verifies this at
+   startup.)
+6. Copy `m80-guestd` into `<rootfs>/usr/local/bin/`.
+7. Write the embedded `m80-guestd.service` into `<rootfs>/etc/systemd/system/`.
+8. Write the embedded workspace mount unit alongside it.
+9. `mkdir <rootfs>/workspace` and enable both units by symlinking into
+   `multi-user.target.wants/`.
+10. Unmount the rootfs.
+11. sha256 every artifact (kernel, source rootfs, output rootfs, daemon
+    binary, service unit, workspace-mount unit).
+12. Emit `<rootfs>.manifest.json` via `m80-image-manifest::Manifest::write`.
+
+Final step: print resulting paths to stdout. **No package-manager
+invocations** — `apt`/`dnf`/`pacman` are never spawned.
 
 ### CLI surface
 
@@ -112,11 +117,13 @@ dir = "/opt/m80/artifacts"
 
 ## Tests
 
-- Dry-run determinism: the printed plan is byte-stable across runs for
-  the same config.
-- Manifest equivalence: a real build and a fresh build of the same
-  inputs produce equal manifests.
-- Verify-fail: tampering with one artifact byte and running `verify`
-  produces the right typed error.
-- No-package-manager guard: the chroot stage runs with `apt`/`dnf`/etc
-  removed from `PATH`; the build still succeeds.
+- `tests/dry_run_smoke.rs` — `run --dry-run` exits 0, prints labels for
+  all 13 numbered pipeline steps to stderr, creates no output dir, and
+  is deterministic across invocations.
+- `tests/verify_with_fixture_manifest.rs` — `verify --rootfs <path>`
+  passes for a manually-constructed fixture rootfs + manifest, and fails
+  with the right error when one artifact byte is tampered.
+
+Real-build smoke tests (network + root + loop device) are run manually
+with `sudo m80-image-build run --config <path>`; CI doesn't have the
+required privileges.

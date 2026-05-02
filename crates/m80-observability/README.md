@@ -40,9 +40,9 @@ adapter, not below.
 
 ### Per-VM probe
 
-- `Probe::scan(run_root: &Path) -> Vec<VmProbeRecord>` walks the
-  run-root, reads ownership markers + lease files + socket reachability,
-  and emits one record per VM.
+- `probe(run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError>`
+  (free function) walks the run-root, reads ownership markers + lease
+  files + socket reachability, and emits one record per VM.
 - Health classification (`Healthy`, `Degraded`, `Stuck`, `Exited`) is
   derived from **host-visible truth only** — the absence/presence of
   files and sockets — not from log lines or metric values.
@@ -50,8 +50,9 @@ adapter, not below.
 
 ### Health rollup
 
-- `HealthSnapshot::aggregate(records: &[VmProbeRecord]) -> HealthSnapshot`
-  produces ready/stuck flags suitable for rollout-readiness gating.
+- `aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError>`
+  (free function) produces ready/stuck flags suitable for
+  rollout-readiness gating.
 
 ### Prometheus rendering
 
@@ -63,10 +64,11 @@ adapter, not below.
 ## Public surface (v0.2)
 
 - `Diagnostics`, `Phase`, `VmEvent`.
-- `Probe::scan`, `VmProbeRecord`.
-- `HealthSnapshot::aggregate`, `OpsMetrics`.
+- `probe(...)`, `VmProbeRecord`, `VmHealth`.
+- `aggregate_health(...)`, `HealthSnapshot`, `OpsMetrics`.
 - `render_prometheus(...)`, `render_health_json(...)`.
-- `ObservabilityError`.
+- `ObservabilityError` (carries `Deferred` in v0.1 for everything
+  except `Diagnostics::record`, which is a no-op `Ok(())`).
 
 In **v0.1** the crate exposes only `Diagnostics::disabled()` so callers
 can write `Option<Diagnostics>` against a stable type without conditional
