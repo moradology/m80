@@ -37,41 +37,15 @@ impl Scratch {
     ///    return [`StorageError::AdmissibilityRefused`]).
     /// 5. Unmount.
     pub fn create(workspace: &Path, image: &Path, size: u64) -> Result<Self, StorageError> {
-        // 1. Truncate-create the image file.
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(image)
-            .map_err(|e| io_err(image, e))?;
-        file.set_len(size).map_err(|e| io_err(image, e))?;
-        drop(file);
-
-        // 2. mkfs.ext4 -F image
-        let mkfs_out = Command::new("mkfs.ext4")
-            .args(["-F", &image.display().to_string()])
-            .output()
-            .map_err(StorageError::Mkfs)?;
-        if !mkfs_out.status.success() {
-            let stderr = String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned();
-            let stdout = String::from_utf8_lossy(&mkfs_out.stdout).trim().to_owned();
-            return Err(StorageError::Mkfs(io::mkfs_error(
-                if stderr.is_empty() { stdout } else { stderr },
-            )));
+        match do_create(workspace, image, size) {
+            Ok(()) => Ok(Self { path: image.to_path_buf() }),
+            Err(e) => {
+                // Best-effort: remove the partially-formatted image so the
+                // caller doesn't have to clean it up.
+                let _ = fs::remove_file(image);
+                Err(e)
+            }
         }
-
-        // 3. Loop-mount to temp dir.
-        let mount_dir = TempDir::new().map_err(|e| io_err(image, e))?;
-        mount_loop(image, mount_dir.path())?;
-
-        // 4. Copy workspace contents; unmount on any failure.
-        let copy_result = copy_workspace_into(workspace, mount_dir.path());
-        umount(mount_dir.path())?;
-        copy_result?;
-
-        Ok(Self {
-            path: image.to_path_buf(),
-        })
     }
 
     /// Post-stop extraction: `e2fsck` → loop-mount (read-only) → admissibility
@@ -92,12 +66,13 @@ impl Scratch {
         // 3 + 4 + 5: walk, scan admissibility, stage into a sibling temp dir.
         let stage_result = build_stage(mount_dir.path());
 
-        // 7. Unmount before touching the filesystem further.
+        // 6. Unmount before the rename. The staging tree lives in a sibling
+        //    `TempDir`, so it's not on the now-unmounted filesystem.
         umount(mount_dir.path())?;
 
         let (stage_dir, change_set) = stage_result?;
 
-        // 6. Atomic rename into `into`; fail if it already exists.
+        // 7. Atomic rename into `into`; fail if it already exists.
         if into.exists() {
             return Err(StorageError::SwapFailed);
         }
@@ -112,6 +87,48 @@ impl Scratch {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// Inner pipeline for `Scratch::create`. Outer wrapper removes the image on
+/// any failure so callers don't have to clean up partial state.
+fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageError> {
+    // 1. Truncate-create the image file.
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(image)
+        .map_err(|e| io_err(image, e))?;
+    file.set_len(size).map_err(|e| io_err(image, e))?;
+    drop(file);
+
+    // 2. mkfs.ext4 -F image
+    let mkfs_out = Command::new("mkfs.ext4")
+        .args(["-F", &image.display().to_string()])
+        .output()
+        .map_err(StorageError::Mkfs)?;
+    if !mkfs_out.status.success() {
+        let stderr = String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned();
+        let stdout = String::from_utf8_lossy(&mkfs_out.stdout).trim().to_owned();
+        return Err(StorageError::Mkfs(io::mkfs_error(if stderr.is_empty() {
+            stdout
+        } else {
+            stderr
+        })));
+    }
+
+    // 3. Loop-mount to temp dir.
+    let mount_dir = TempDir::new().map_err(|e| io_err(image, e))?;
+    mount_loop(image, mount_dir.path())?;
+
+    // 4. Copy workspace contents; always umount before returning. The copy
+    //    error wins over the umount error if both fail (the user wants to
+    //    know what went wrong with their workspace, not that umount also
+    //    couldn't recover).
+    let copy_result = copy_workspace_into(workspace, mount_dir.path());
+    let umount_result = umount(mount_dir.path());
+    copy_result?;
+    umount_result
 }
 
 // ---------------------------------------------------------------------------

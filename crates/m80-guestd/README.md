@@ -53,7 +53,12 @@ Keeping the guest small has direct benefits:
 
 ### ExecRequest fields
 
-- `argv: Vec<String>` — required. argv[0] must be an executable path.
+(These are the fields on `m80_proto::ExecRequest`; the daemon deserializes
+that wire type directly.)
+
+- `program: String` — required. The executable path.
+- `args: Vec<String>` — arguments passed to `program` (not including
+  `program` itself).
 - `cwd: Option<String>` — optional. Defaults to `/`. Must exist in the
   guest filesystem.
 - `env: Option<Vec<(String, String)>>` — optional. Replaces (does not
@@ -112,8 +117,9 @@ Command-line:
 ## Tests
 
 - Loopback: against a fixture vsock implementation, an `ExecRequest`
-  with `argv=["true"]` returns `Completed { exit_code: 0 }`.
-- Timeout: an `argv=["sleep","60"]` with `timeout_ms=100` returns
+  with `program="true"` returns `Completed { exit_code: 0 }`.
+- Timeout: an `ExecRequest` with `program="sleep", args=["60"]` and
+  `timeout_ms=100` returns
   `TimedOut` and the child is reaped within bounded time.
 - Cancellation: closing the host connection mid-exec kills the child
   within bounded time and the partial output is observable in the

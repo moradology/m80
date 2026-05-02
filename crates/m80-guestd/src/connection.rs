@@ -6,7 +6,7 @@
 use std::io::{BufRead, Read, Write};
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
     Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming, read_frame, write_frame,
@@ -134,8 +134,8 @@ fn exec_request(req: &ExecRequest, spawn_start: u64) -> anyhow::Result<ExecRespo
     let exit_status = child.wait().ok();
     let exited_at = unix_ms_now();
 
-    let (stdout, _stdout_truncated) = stdout_thread.join().expect("stdout thread panicked");
-    let (stderr, _stderr_truncated) = stderr_thread.join().expect("stderr thread panicked");
+    let (stdout, stdout_truncated) = stdout_thread.join().expect("stdout thread panicked");
+    let (stderr, stderr_truncated) = stderr_thread.join().expect("stderr thread panicked");
 
     let spawn_ms = spawned_at.saturating_sub(spawn_start);
     let run_ms = exited_at.saturating_sub(spawned_at);
@@ -150,11 +150,22 @@ fn exec_request(req: &ExecRequest, spawn_start: u64) -> anyhow::Result<ExecRespo
     let (status, exit_code) = if timed_out {
         (ExecStatus::TimedOut, None)
     } else {
-        let code = exit_status.and_then(|s| s.code());
-        (ExecStatus::Completed, code)
+        match exit_status.and_then(|s| s.code()) {
+            Some(code) => (ExecStatus::Completed, Some(code)),
+            // No exit code means the child was killed by a signal (SIGSEGV,
+            // SIGKILL, etc.) or the wait itself failed. Either way, the run
+            // didn't complete normally — surface as Failed, not Completed.
+            None => (ExecStatus::Failed, None),
+        }
     };
 
-    Ok(ExecResponse { status, exit_code, stdout, stderr, truncated: None, timing })
+    let truncated = if stdout_truncated || stderr_truncated {
+        Some(true)
+    } else {
+        None
+    };
+
+    Ok(ExecResponse { status, exit_code, stdout, stderr, truncated, timing })
 }
 
 /// Read all bytes from `reader` into a buffer, capping at `CAPTURE_LIMIT`.
@@ -189,7 +200,9 @@ fn wait_with_timeout(child: &mut std::process::Child, timeout_ms: Option<u64>) -
         return false;
     };
 
-    let deadline = SystemTime::now() + Duration::from_millis(timeout_ms);
+    // Use Instant (monotonic) for the deadline, not SystemTime — a wall-clock
+    // step (NTP slew, leap second) must not retroactively expire the budget.
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let poll_interval = Duration::from_millis(10);
 
     loop {
@@ -199,7 +212,7 @@ fn wait_with_timeout(child: &mut std::process::Child, timeout_ms: Option<u64>) -
             Err(_) => return false,      // error polling — don't kill
         }
 
-        if SystemTime::now() >= deadline {
+        if Instant::now() >= deadline {
             return true; // timed out
         }
 

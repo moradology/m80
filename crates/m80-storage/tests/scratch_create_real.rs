@@ -7,10 +7,14 @@ use std::path::PathBuf;
 
 use m80_storage::Scratch;
 
-/// Require the test is running as root; skip otherwise.
-fn require_root() {
-    if !nix::unistd::Uid::effective().is_root() {
+/// Returns `true` iff the test is running as root. Tests should early-return
+/// when this returns `false` so non-root invocations don't fail mid-operation.
+fn require_root() -> bool {
+    if nix::unistd::Uid::effective().is_root() {
+        true
+    } else {
         eprintln!("[scratch_create_real] SKIP: not running as root");
+        false
     }
 }
 
@@ -21,7 +25,7 @@ fn require_root() {
 #[test]
 #[ignore = "requires root and a loop device"]
 fn scratch_create_hydrates_workspace() {
-    require_root();
+    if !require_root() { return; }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
@@ -44,7 +48,7 @@ fn scratch_create_hydrates_workspace() {
 fn scratch_create_rejects_symlink_in_workspace() {
     use std::os::unix::fs::symlink;
 
-    require_root();
+    if !require_root() { return; }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");

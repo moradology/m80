@@ -23,8 +23,9 @@ which is the right place for a security review to start.
 - The check list is fixed and ordered:
   1. **OS gate** — `Linux` from `uname -s`; macOS rejects.
   2. **KVM** — `/dev/kvm` exists and is writable (or sudo-writable).
-  3. **Kernel modules** — `bridge` and `tap` available (loaded or
-     loadable).
+  3. **Kernel modules** — `bridge` and `tap` loaded (read from
+     `/proc/modules`). v0.1 does not attempt to load missing modules; the
+     operator must `modprobe` them before running preflight.
   4. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,

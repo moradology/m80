@@ -383,7 +383,7 @@ fn check_storage_helpers(report: &mut Vec<CheckRow>) -> Result<(), PreflightErro
     report.push(CheckRow {
         label: "Storage helpers".to_string(),
         passed: true,
-        detail: "mkfs.ext4, e2fsck, debugfs".to_string(),
+        detail: REQUIRED_STORAGE_HELPERS.join(", "),
     });
     Ok(())
 }

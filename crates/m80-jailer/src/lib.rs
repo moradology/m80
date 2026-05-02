@@ -176,10 +176,17 @@ impl Plan {
         use nix::unistd::mkdir;
 
         let jail_root = self.config.run_dir.join("jail");
-        let mut created_dirs: Vec<PathBuf> = Vec::new();
-        let mut bind_mounts: Vec<PathBuf> = Vec::new();
 
-        // Execute plan steps.
+        // Construct the guard up-front so that on any `?`-propagated error the
+        // partially-applied state (created dirs + bind mounts so far) gets
+        // unwound by `Drop` instead of leaking into the host's mount table.
+        let mut materialized = MaterializedJail {
+            plan: self.clone(),
+            jail_path: jail_root,
+            bind_mounts: Vec::new(),
+            created_dirs: Vec::new(),
+        };
+
         for step in &self.steps {
             match step {
                 PlanStep::CreateDir { path, .. } => {
@@ -199,15 +206,12 @@ impl Plan {
                         path: path.clone(),
                         source: io::Error::from_raw_os_error(e as i32),
                     })?;
-                    created_dirs.push(path.clone());
+                    materialized.created_dirs.push(path.clone());
                 }
                 PlanStep::Bind { source, dest, mode } => {
-                    // Ensure a mount-point file exists if source is a file,
-                    // or a directory if source is a directory.
                     if dest.is_dir() || source.is_dir() {
                         // dest dir was already created or is the jail root
                     } else {
-                        // Create an empty file as mount point.
                         std::fs::write(dest, b"").map_err(|source| JailerError::Io {
                             path: dest.clone(),
                             source,
@@ -225,7 +229,7 @@ impl Plan {
                         src: source.clone(),
                         dest: dest.clone(),
                     })?;
-                    bind_mounts.push(dest.clone());
+                    materialized.bind_mounts.push(dest.clone());
 
                     if *mode == BindMode::Ro {
                         mount(
@@ -242,15 +246,11 @@ impl Plan {
                     }
                 }
                 PlanStep::Socket { .. } => {
-                    // Firecracker creates the UDS itself; we don't need to
-                    // pre-create a placeholder here. The socket path will be
-                    // inside a `CreateInsideJail` directory that was already
-                    // created by an earlier `CreateDir` step.
+                    // Firecracker creates the UDS itself; nothing to do here.
                 }
             }
         }
 
-        // Persist plan and initial state to run-dir.
         let plan_path = self.config.run_dir.join(JAILER_PLAN_FILE);
         let plan_json =
             serde_json::to_vec_pretty(self).map_err(|e| JailerError::Io {
@@ -277,15 +277,9 @@ impl Plan {
             source,
         })?;
 
-        // Suppress unused-import warning for MntFlags (used in Drop impl).
-        let _ = MntFlags::empty();
+        let _ = MntFlags::empty(); // keep import alive for Drop impl below
 
-        Ok(MaterializedJail {
-            plan: self.clone(),
-            jail_path: jail_root,
-            bind_mounts,
-            created_dirs,
-        })
+        Ok(materialized)
     }
 }
 
@@ -339,7 +333,7 @@ impl MaterializedJail {
                 jail_path: self.jail_path.clone(),
             })?;
 
-        let child = Command::new(&self.plan.config.jailer_bin)
+        let mut child = Command::new(&self.plan.config.jailer_bin)
             .args([
                 "--id",
                 &vm_id,
@@ -382,12 +376,19 @@ impl MaterializedJail {
                 break pid;
             }
             if Instant::now() >= deadline {
+                let _ = child.wait();
                 return Err(JailerError::ChrootFailed {
                     jail_path: self.jail_path.clone(),
                 });
             }
             thread::sleep(Duration::from_millis(25));
         };
+
+        // Reap the jailer parent process. Jailer fork-execs firecracker into a
+        // child and the parent exits quickly; without `wait()` it lingers as a
+        // zombie until our process exits. The firecracker_pid we tracked above
+        // is reparented to PID 1 and stays running.
+        let _ = child.wait();
 
         // Persist updated state.
         let state_path = self.plan.config.run_dir.join(JAILER_STATE_FILE);
