@@ -2,11 +2,6 @@
 //!
 //! See `README.md` for the black-box contract.
 //! Behavior captures: bead epic `m80-xbn` (`br show m80-xbn`).
-//!
-//! # Type-pinning pass
-//!
-//! Public surface is declared here; bodies are `todo!()`. Implementation lands
-//! in a later wave.
 
 #![deny(missing_docs)]
 
@@ -47,7 +42,7 @@ pub enum VmNetworkMode {
 
 /// Pre-validated payload for `m80-net-outbound::realize`. The resolver hands
 /// this off; the realizer does not re-validate fields the resolver already
-/// checked (Ipv6 rejection, syntactic CIDR parsing).
+/// checked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutboundIntent {
     /// Bounded private-IPv4 CIDRs the VM may reach in addition to the
@@ -58,18 +53,30 @@ pub struct OutboundIntent {
     pub gateway_override: Option<Ipv4Addr>,
 }
 
-/// Errors surfaced by [`resolve`].
-#[derive(Debug, thiserror::Error)]
-pub enum ResolveError {
-    /// An entry in `exceptions` was IPv6. v0.1 is IPv4-only.
-    #[error("IPv6 is not supported in v0.1")]
-    Ipv6Unsupported,
-    /// A CIDR string failed to parse.
-    #[error("malformed CIDR: {0}")]
-    MalformedCidr(String),
-}
-
 /// Resolve caller intent to a per-VM network mode. Pure: no I/O.
-pub fn resolve(_policy: &NetworkPolicy) -> Result<VmNetworkMode, ResolveError> {
-    todo!()
+///
+/// # Return value
+///
+/// - [`NetworkPolicy::NoEgress`] → [`VmNetworkMode::NoEgress`].
+/// - [`NetworkPolicy::AllowOutbound`] → [`VmNetworkMode::OutboundNat`] with
+///   `gateway_override: None`.
+///
+/// # Infallibility
+///
+/// This function is infallible in v0.1. The `exceptions` field is already
+/// typed `Ipv4Net`, so CIDR parsing and IPv6 rejection happen at the
+/// call-site (CLI, config layer, or proto decode) before this function is
+/// ever reached. A future string-input entrypoint (e.g.,
+/// `NetworkPolicy::parse_from_strings`) would be the appropriate place to
+/// surface CIDR parse errors or IPv6 rejection.
+pub fn resolve(policy: &NetworkPolicy) -> VmNetworkMode {
+    match policy {
+        NetworkPolicy::NoEgress => VmNetworkMode::NoEgress,
+        NetworkPolicy::AllowOutbound { exceptions } => VmNetworkMode::OutboundNat {
+            plan: OutboundIntent {
+                exceptions: exceptions.clone(),
+                gateway_override: None,
+            },
+        },
+    }
 }

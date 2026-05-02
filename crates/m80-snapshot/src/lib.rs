@@ -15,54 +15,78 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+/// Manifest schema version. m80 v0.1 ships `1`; future versions are new code,
+/// not migrations.
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// File name for the snapshot manifest in the snapshot directory.
+pub const SNAPSHOT_MANIFEST_FILE: &str = "snapshot-manifest.json";
+
+/// File name for the restore metadata in the snapshot directory.
+pub const RESTORE_METADATA_FILE: &str = "restore-metadata.json";
 
 /// Manifest persisted alongside a snapshot at
 /// `<store-root>/<workspace_id>/<run_id>/<unix_ms>-<sha>/snapshot-manifest.json`.
+///
+/// Field declaration order is alphabetical so JSON serialization is stable
+/// without a canonicalization pass.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SnapshotManifest {
-    /// Schema version. v0.1 = `1`.
-    pub schema_version: u32,
+    /// sha256 over the artifact set in declared order.
+    pub artifact_set_sha256: String,
+    /// The five-element artifact set in declared order. Optional artifacts
+    /// (diagnostics, metrics) may be appended after the required five.
+    pub artifacts: Vec<Artifact>,
+    /// Unix epoch milliseconds at capture time.
+    pub created_at_unix_ms: u64,
+    /// Optional diagnostics bundle artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics_bundle: Option<Artifact>,
     /// Firecracker version pin.
     pub expected_firecracker_version: String,
-    /// Source workspace identifier (caller-supplied opaque string).
-    pub source_workspace_id: String,
+    /// Optional metrics snapshot artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics_snapshot: Option<Artifact>,
+    /// Schema version. v0.1 = `1`.
+    pub schema_version: u32,
     /// Source run identifier (caller-supplied opaque string).
     pub source_run_id: String,
     /// Source VM identifier (caller-supplied opaque string).
     pub source_vm_id: String,
-    /// Unix epoch milliseconds at capture time.
-    pub created_at_unix_ms: u64,
-    /// The five-element artifact set in declared order.
-    pub artifacts: Vec<Artifact>,
-    /// Optional diagnostics bundle artifact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub diagnostics_bundle: Option<Artifact>,
-    /// Optional metrics snapshot artifact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metrics_snapshot: Option<Artifact>,
-    /// sha256 over the artifact set in declared order.
-    pub artifact_set_sha256: String,
+    /// Source workspace identifier (caller-supplied opaque string).
+    pub source_workspace_id: String,
 }
 
 /// Restore metadata persisted alongside the manifest.
+///
+/// Field declaration order is alphabetical so JSON serialization is stable
+/// without a canonicalization pass.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RestoreMetadata {
+    /// Firecracker version the snapshot is pinned to.
+    pub expected_firecracker_version: String,
     /// Schema version. v0.1 = `1`.
     pub schema_version: u32,
-    /// Source workspace identifier.
-    pub source_workspace_id: String,
+    /// Path to the snapshot directory.
+    pub snapshot_path: PathBuf,
     /// Source run identifier.
     pub source_run_id: String,
     /// Source VM identifier (the restored VM gets a different `vm_id`).
     pub source_vm_id: String,
-    /// Path to the snapshot directory.
-    pub snapshot_path: PathBuf,
-    /// Firecracker version the snapshot is pinned to.
-    pub expected_firecracker_version: String,
+    /// Source workspace identifier.
+    pub source_workspace_id: String,
 }
 
 /// One artifact in the snapshot set.
+///
+/// Field declaration order is alphabetical so JSON serialization is stable
+/// without a canonicalization pass.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Artifact {
     /// Kind of artifact.
     pub kind: ArtifactKind,
@@ -78,34 +102,162 @@ pub struct Artifact {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactKind {
-    /// VM state file produced by Firecracker's `CreateSnapshot`.
-    VmState,
+    /// Boot identity record.
+    BootIdentity,
     /// Memory image.
     Memory,
     /// Runtime rootfs clone.
     RuntimeRootfs,
+    /// VM state file produced by Firecracker's `CreateSnapshot`.
+    VmState,
     /// Workspace scratch image.
     WorkspaceScratch,
-    /// Boot identity record.
-    BootIdentity,
+}
+
+/// Partial-deserialize struct used to extract `schema_version` before
+/// committing to a full parse. Without this, a v0.2 file stamped
+/// `schema_version: 2` plus a new field surfaces as a
+/// `Json("unknown field …")` (because the structs carry
+/// `#[serde(deny_unknown_fields)]`) instead of `UnsupportedSchemaVersion(2)`.
+#[derive(Deserialize)]
+struct SchemaVersionProbe {
+    schema_version: u32,
+}
+
+impl SnapshotManifest {
+    /// Write this manifest to `path` as pretty-printed JSON with a trailing
+    /// newline and mode 0644 on Unix.
+    ///
+    /// The caller is responsible for the parent directory existing.
+    pub fn write(&self, path: &Path) -> Result<(), SnapshotError> {
+        let mut json = serde_json::to_string_pretty(self).map_err(SnapshotError::Json)?;
+        json.push('\n');
+        std::fs::write(path, json.as_bytes()).map_err(|source| SnapshotError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o644);
+            std::fs::set_permissions(path, perms).map_err(|source| SnapshotError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Read and validate a manifest at `path`.
+    ///
+    /// Order of checks:
+    /// 1. Read bytes.
+    /// 2. Probe `schema_version` only; mismatch → [`SnapshotError::UnsupportedSchemaVersion`].
+    ///    Fires before structural-shape errors so a v0.2 manifest produces a
+    ///    clear error instead of an unknown-field error.
+    /// 3. Full parse into `SnapshotManifest`.
+    pub fn read(path: &Path) -> Result<SnapshotManifest, SnapshotError> {
+        let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let probe: SchemaVersionProbe =
+            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
+        if probe.schema_version != SCHEMA_VERSION {
+            return Err(SnapshotError::UnsupportedSchemaVersion(probe.schema_version));
+        }
+        let manifest: SnapshotManifest =
+            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
+        Ok(manifest)
+    }
+}
+
+impl RestoreMetadata {
+    /// Write this metadata to `path` as pretty-printed JSON with a trailing
+    /// newline and mode 0644 on Unix.
+    ///
+    /// The caller is responsible for the parent directory existing.
+    pub fn write(&self, path: &Path) -> Result<(), SnapshotError> {
+        let mut json = serde_json::to_string_pretty(self).map_err(SnapshotError::Json)?;
+        json.push('\n');
+        std::fs::write(path, json.as_bytes()).map_err(|source| SnapshotError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o644);
+            std::fs::set_permissions(path, perms).map_err(|source| SnapshotError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Read and validate restore metadata at `path`.
+    ///
+    /// Same probe-then-full-parse pattern as [`SnapshotManifest::read`].
+    pub fn read(path: &Path) -> Result<RestoreMetadata, SnapshotError> {
+        let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let probe: SchemaVersionProbe =
+            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
+        if probe.schema_version != SCHEMA_VERSION {
+            return Err(SnapshotError::UnsupportedSchemaVersion(probe.schema_version));
+        }
+        let metadata: RestoreMetadata =
+            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
+        Ok(metadata)
+    }
 }
 
 /// Compute the canonical persistence path for a snapshot.
 ///
 /// Format: `<store_root>/<workspace_id>/<run_id>/<created_at_unix_ms>-<artifact_set_sha256>/`.
+///
+/// Pure path construction; no I/O. Collision detection is a capture-time
+/// concern (`SnapshotError::DestinationCollision`); v0.1 doesn't perform
+/// capture.
+///
+/// The `<store_root>` must be a host-local filesystem path. v0.1 ships no
+/// remote-store support; adding S3/GCS/generic stores is a v0.2+ epic.
 pub fn persistence_path(
-    _store_root: &Path,
-    _workspace_id: &str,
-    _run_id: &str,
-    _created_at_unix_ms: u64,
-    _artifact_set_sha256: &str,
+    store_root: &Path,
+    workspace_id: &str,
+    run_id: &str,
+    created_at_unix_ms: u64,
+    artifact_set_sha256: &str,
 ) -> PathBuf {
-    todo!()
+    store_root
+        .join(workspace_id)
+        .join(run_id)
+        .join(format!("{created_at_unix_ms}-{artifact_set_sha256}"))
 }
 
 /// Compute the canonical sha256 over an artifact set in declared order.
-pub fn artifact_set_sha256(_artifacts: &[Artifact]) -> [u8; 32] {
-    todo!()
+///
+/// The caller is responsible for putting artifacts in canonical order before
+/// calling this function. Same artifacts in a different order produce a
+/// different digest — this is intentional.
+///
+/// Each artifact is serialized to JSON (field order is alphabetical due to
+/// struct declaration order) and the bytes are fed into a single SHA-256
+/// accumulator in slice order.
+///
+/// Note: `path` fields use [`std::path::Path::to_string_lossy`] internally
+/// through serde's `PathBuf` serialization, which is platform-specific.
+/// Snapshots are not portable across host platforms.
+pub fn artifact_set_sha256(artifacts: &[Artifact]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for artifact in artifacts {
+        let bytes = serde_json::to_vec(artifact).expect("Artifact serialization is infallible");
+        hasher.update(&bytes);
+    }
+    hasher.finalize().into()
 }
 
 /// Capture a snapshot. **Returns [`SnapshotError::Deferred`] in v0.1.**
@@ -127,28 +279,21 @@ pub enum SnapshotError {
     /// The persistence destination already exists.
     #[error("snapshot destination already exists")]
     DestinationCollision,
-    /// Firecracker version mismatch on restore.
-    #[error("firecracker version mismatch on restore: expected {expected}, got {actual}")]
-    FirecrackerVersionMismatch {
-        /// Pinned version.
-        expected: String,
-        /// Reported version.
-        actual: String,
+    /// `schema_version` in the file did not match [`SCHEMA_VERSION`].
+    #[error("unsupported snapshot schema version: got {0}, expected {SCHEMA_VERSION}")]
+    UnsupportedSchemaVersion(u32),
+    /// Underlying I/O failure; carries the path so the caller doesn't have
+    /// to guess which file failed.
+    #[error("i/o on {}: {source}", path.display())]
+    Io {
+        /// File the I/O was attempted against.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
     },
-    /// A recomputed sha256 did not match the recorded value.
-    #[error("sha256 mismatch on {artifact}: expected {expected}, got {actual}")]
-    Sha256Mismatch {
-        /// Artifact whose hash failed.
-        artifact: String,
-        /// Recorded hex digest.
-        expected: String,
-        /// Recomputed hex digest.
-        actual: String,
-    },
-    /// Underlying I/O failure.
-    #[error("i/o: {0}")]
-    Io(#[from] io::Error),
-    /// JSON encode/decode failure.
+    /// JSON encode/decode failure (malformed JSON, missing required field,
+    /// or unknown field rejected by `deny_unknown_fields`).
     #[error("json: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(serde_json::Error),
 }

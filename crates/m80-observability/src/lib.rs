@@ -10,7 +10,8 @@
 //! `Option<Diagnostics>` against a stable type without conditional
 //! compilation. The full v0.2 surface (Probe, HealthSnapshot, OpsMetrics,
 //! `render_prometheus`) is declared here as opaque types so consumers can
-//! `use` them today.
+//! `use` them today. All v0.2 execution functions return
+//! [`ObservabilityError::Deferred`] rather than panicking.
 
 #![deny(missing_docs)]
 
@@ -21,15 +22,13 @@ use serde::{Deserialize, Serialize};
 
 /// A handle to per-VM diagnostics. Created by [`Diagnostics::disabled`] in
 /// v0.1; v0.2 adds an enabled constructor that opens the `diagnostics.jsonl`.
-#[derive(Debug)]
-pub struct Diagnostics {
-    _enabled: bool,
-}
+#[derive(Debug, Default)]
+pub struct Diagnostics;
 
 impl Diagnostics {
     /// The v0.1 entrypoint: returns a no-op [`Diagnostics`] handle.
     pub fn disabled() -> Self {
-        Self { _enabled: false }
+        Self
     }
 
     /// Append one [`VmEvent`] to the diagnostics log. v0.1 no-op.
@@ -41,10 +40,10 @@ impl Diagnostics {
 /// One structured event for the diagnostics log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VmEvent {
-    /// Lifecycle phase the event belongs to.
-    pub phase: Phase,
     /// Caller-supplied free-text detail.
     pub detail: String,
+    /// Lifecycle phase the event belongs to.
+    pub phase: Phase,
     /// Unix epoch milliseconds at the time of recording.
     pub timestamp_unix_ms: u64,
 }
@@ -53,63 +52,65 @@ pub struct VmEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
-    /// Run-root recovery loop reaped a stale run-dir.
-    StartupScavenge,
-    /// `m80-preflight` stage.
-    HostPreflight,
-    /// `m80-storage` rootfs clone + scratch hydration.
-    StoragePrepare,
     /// `m80-firecracker-client` PUTs + `InstanceStart`.
     Boot,
+    /// Run-dir teardown.
+    Delete,
+    /// `m80-preflight` stage.
+    HostPreflight,
     /// Vsock ready-marker observed.
     Ready,
     /// Graceful or forced stop.
     Stop,
-    /// Run-dir teardown.
-    Delete,
+    /// `m80-storage` rootfs clone + scratch hydration.
+    StoragePrepare,
+    /// Run-root recovery loop reaped a stale run-dir.
+    StartupScavenge,
 }
 
 /// One per-VM probe record. v0.2 surface; v0.1 stub.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VmProbeRecord {
-    /// VM identifier.
-    pub vm_id: String,
-    /// Path of the run-dir.
-    pub run_dir: PathBuf,
     /// Health classification.
     pub health: VmHealth,
+    /// Path of the run-dir.
+    pub run_dir: PathBuf,
+    /// VM identifier.
+    pub vm_id: String,
 }
 
 /// Health classification produced by the probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VmHealth {
-    /// Sockets responsive, ownership markers consistent.
-    Healthy,
     /// Live but with degraded indicators.
     Degraded,
-    /// Live but unresponsive.
-    Stuck,
     /// Process tree gone; residue remains.
     Exited,
+    /// Sockets responsive, ownership markers consistent.
+    Healthy,
+    /// Live but unresponsive.
+    Stuck,
 }
 
-/// Probe over a run-root and emit one record per VM. **v0.2 — todo!()**.
+/// Probe over a run-root and emit one record per VM.
+///
+/// **Returns [`ObservabilityError::Deferred`] in v0.1.**
 pub fn probe(_run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError> {
-    todo!("v0.2")
+    Err(ObservabilityError::Deferred)
 }
 
 /// Aggregated rollup of probe records. v0.2 surface; v0.1 stub.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HealthSnapshot {
-    /// Number of healthy VMs.
-    pub healthy: u32,
     /// Number of degraded VMs.
     pub degraded: u32,
-    /// Number of stuck VMs.
-    pub stuck: u32,
     /// Number of exited VMs awaiting cleanup.
     pub exited: u32,
+    /// Number of healthy VMs.
+    pub healthy: u32,
+    /// Number of stuck VMs.
+    pub stuck: u32,
 }
 
 /// Per-VM operational metrics rolled up across the run-root. v0.2 surface.
@@ -119,24 +120,38 @@ pub struct OpsMetrics {
     pub vm_count: u32,
 }
 
-/// Aggregate probe records into a [`HealthSnapshot`]. **v0.2 — todo!()**.
-pub fn aggregate_health(_records: &[VmProbeRecord]) -> HealthSnapshot {
-    todo!("v0.2")
+/// Aggregate probe records into a [`HealthSnapshot`].
+///
+/// **Returns [`ObservabilityError::Deferred`] in v0.1.**
+pub fn aggregate_health(
+    _records: &[VmProbeRecord],
+) -> Result<HealthSnapshot, ObservabilityError> {
+    Err(ObservabilityError::Deferred)
 }
 
-/// Render a Prometheus exposition-format text response. **v0.2 — todo!()**.
-pub fn render_prometheus(_health: &HealthSnapshot, _metrics: &OpsMetrics) -> String {
-    todo!("v0.2")
+/// Render a Prometheus exposition-format text response.
+///
+/// **Returns [`ObservabilityError::Deferred`] in v0.1.**
+pub fn render_prometheus(
+    _health: &HealthSnapshot,
+    _metrics: &OpsMetrics,
+) -> Result<String, ObservabilityError> {
+    Err(ObservabilityError::Deferred)
 }
 
-/// Render a JSON health snapshot. **v0.2 — todo!()**.
-pub fn render_health_json(_health: &HealthSnapshot) -> String {
-    todo!("v0.2")
+/// Render a JSON health snapshot.
+///
+/// **Returns [`ObservabilityError::Deferred`] in v0.1.**
+pub fn render_health_json(_health: &HealthSnapshot) -> Result<String, ObservabilityError> {
+    Err(ObservabilityError::Deferred)
 }
 
 /// Errors surfaced by observability operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ObservabilityError {
+    /// Observability execution lane is deferred to v0.2.
+    #[error("observability execution is deferred to v0.2")]
+    Deferred,
     /// Underlying I/O failure.
     #[error("i/o: {0}")]
     Io(#[from] io::Error),

@@ -32,46 +32,68 @@ in execution without breaking the on-disk contract.
   generic-store support. Adding remote stores is a v0.2+ epic.
 - A persistence collision (the destination directory already exists)
   fails closed with `SnapshotError::DestinationCollision`. There is no
-  silent overwrite.
+  silent overwrite. (The collision check is exercised by v0.2 capture;
+  the variant is present in v0.1 for callers to match on.)
 
 ### Manifest
 
-- `SnapshotManifest` carries five hash-bearing artifacts: VM state file,
-  memory image, runtime rootfs clone, workspace scratch image,
-  boot-identity record. Optional artifacts: diagnostics bundle, metrics
-  snapshot.
+- `SnapshotManifest` carries five required artifacts: boot identity record,
+  memory image, runtime rootfs clone, VM state file, workspace scratch
+  image (declared alphabetically by `ArtifactKind` variant). Optional
+  artifacts: diagnostics bundle, metrics snapshot.
 - `RestoreMetadata` carries the source identity (`source_workspace_id`,
   `source_run_id`, `source_vm_id`), the snapshot path, and the
   expected-Firecracker-version pin. A restore against a different
-  Firecracker version fails closed.
+  Firecracker version fails closed (enforcement is `m80-firecracker`'s
+  job at restore time; v0.1 records the value only).
 - Restore must materialize into a **fresh VM identity** — the restored
   `vm_id` is required to differ from the source. v0.1 documents this
   invariant; v0.2 enforces it in the execution lane.
+- Both files use `#[serde(deny_unknown_fields)]`. An unknown key in a
+  v0.2+ file surfaces as `SnapshotError::Json`; a `schema_version`
+  mismatch surfaces first as `SnapshotError::UnsupportedSchemaVersion`.
 
 ### v0.1 surface
 
 In v0.1 the crate exposes only the schemas + path helpers:
 
-- `SnapshotManifest::write(path: &Path) / read(path: &Path)`.
-- `RestoreMetadata::write / read`.
+- `SnapshotManifest::write(path: &Path) / read(path: &Path)` — pretty
+  JSON + trailing `\n`, mode 0644 on Unix. Parent directory must exist.
+- `RestoreMetadata::write / read` — same.
 - `persistence_path(store_root, workspace_id, run_id, created_at_ms,
-  artifact_set_sha256) -> PathBuf`.
-- `artifact_set_sha256(&[Artifact]) -> [u8; 32]` — canonical hash over
-  the artifact set in declared order.
+  artifact_set_sha256) -> PathBuf` — pure path construction, no I/O.
+- `artifact_set_sha256(&[Artifact]) -> [u8; 32]` — SHA-256 over
+  per-artifact JSON bytes concatenated in slice order. The caller
+  decides canonical order; this function hashes whatever it receives.
+- `SNAPSHOT_MANIFEST_FILE` / `RESTORE_METADATA_FILE` — file-name constants.
+- `SCHEMA_VERSION: u32 = 1`.
 
-Capture and restore are `unimplemented!()` in v0.1 with a `Deferred`
-error variant exposed for callers to detect.
+Capture and restore return `SnapshotError::Deferred` in v0.1.
 
 ## Public surface
 
-- `SnapshotManifest`, `RestoreMetadata`, `Artifact`, `ArtifactKind`.
+- `SnapshotManifest` — fields alphabetical: `artifact_set_sha256`,
+  `artifacts`, `created_at_unix_ms`, `diagnostics_bundle` (optional),
+  `expected_firecracker_version`, `metrics_snapshot` (optional),
+  `schema_version`, `source_run_id`, `source_vm_id`, `source_workspace_id`.
+- `RestoreMetadata` — fields alphabetical: `expected_firecracker_version`,
+  `schema_version`, `snapshot_path`, `source_run_id`, `source_vm_id`,
+  `source_workspace_id`.
+- `Artifact` — fields alphabetical: `kind`, `path`, `sha256`, `size`.
+- `ArtifactKind` — variants alphabetical: `BootIdentity`, `Memory`,
+  `RuntimeRootfs`, `VmState`, `WorkspaceScratch`.
 - `persistence_path(...)`.
 - `artifact_set_sha256(...)`.
 - `capture(...)` and `restore(...)` — present in v0.1 but return
   `SnapshotError::Deferred`.
+- `SNAPSHOT_MANIFEST_FILE`, `RESTORE_METADATA_FILE`, `SCHEMA_VERSION`.
 - `SnapshotError`: `Deferred`, `DestinationCollision`,
-  `FirecrackerVersionMismatch`, `Sha256Mismatch`, `Io(io::Error)`,
+  `UnsupportedSchemaVersion(u32)`, `Io { path: PathBuf, source: io::Error }`,
   `Json(serde_json::Error)`.
+
+Note: `FirecrackerVersionMismatch` and `Sha256Mismatch` from the initial
+type-pinning are **not** in v0.1 — version enforcement is `m80-firecracker`'s
+job at restore time; sha256 verification belongs to the v0.2 execution lane.
 
 ## Non-goals
 
@@ -90,9 +112,16 @@ error variant exposed for callers to detect.
 
 ## Tests
 
-- Path template: a fixed input set produces the exact documented output.
-- Schema round-trip: all manifest variants encode and decode unchanged.
-- Sha256 invariance: artifact-set order does not affect the hash beyond
-  declared canonical ordering.
-- Deferred surfacing: `capture()` and `restore()` return
-  `SnapshotError::Deferred` in v0.1.
+Integration tests in `crates/m80-snapshot/tests/`:
+
+- `persistence_path.rs` — exact-output test for `persistence_path()`.
+- `artifact_set_sha256.rs` — determinism, sensitivity to per-field and
+  order changes.
+- `manifest_roundtrip.rs` — `SnapshotManifest::write` then `read`
+  produces equal struct; byte-stable round-trip; mode 0644 on Unix;
+  alphabetical JSON keys; `deny_unknown_fields`; I/O errors carry path.
+- `manifest_schema_version.rs` — wrong `schema_version` returns
+  `UnsupportedSchemaVersion(N)`; probe fires before unknown-field check.
+- `restore_metadata_roundtrip.rs` — same for `RestoreMetadata`.
+- `deferred_capture_and_restore.rs` — `capture()` and `restore()` return
+  `SnapshotError::Deferred`.
