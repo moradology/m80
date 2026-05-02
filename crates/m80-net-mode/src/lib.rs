@@ -1,7 +1,16 @@
 //! Resolver from caller intent to `VmNetworkMode` (NoEgress | OutboundNat).
 //!
-//! See `README.md` for the black-box contract.
-//! Behavior captures: bead epic `m80-xbn` (`br show m80-xbn`).
+//! See `README.md` for the black-box contract. Behavior captures: bead
+//! epic `m80-xbn` (`br show m80-xbn`).
+//!
+//! ## Why this is a separate crate
+//!
+//! The decision is one bit ("does this VM get egress?") but it sits at the
+//! boundary between *caller intent* (`NetworkPolicy`) and the *implementation*
+//! that realizes it (`m80-net-outbound`, ~3,500 LOC). Sequestering the
+//! resolver here lets `m80-firecracker` decide which network crate to wire
+//! in based on the resolved mode without dragging the OutboundNat impl into
+//! `NoEgress`-only builds.
 
 #![deny(missing_docs)]
 

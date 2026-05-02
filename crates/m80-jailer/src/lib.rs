@@ -185,6 +185,7 @@ impl Plan {
             jail_path: jail_root,
             bind_mounts: Vec::new(),
             created_dirs: Vec::new(),
+            placeholder_files: Vec::new(),
         };
 
         for step in &self.steps {
@@ -216,6 +217,7 @@ impl Plan {
                             path: dest.clone(),
                             source,
                         })?;
+                        materialized.placeholder_files.push(dest.clone());
                     }
 
                     mount(
@@ -301,6 +303,10 @@ pub struct MaterializedJail {
     bind_mounts: Vec<PathBuf>,
     /// Directories created (in execution order; reversed on drop).
     created_dirs: Vec<PathBuf>,
+    /// Empty placeholder files we wrote to host file-bind targets. After
+    /// the bind mount over a placeholder is removed in `Drop`, the
+    /// placeholder itself becomes visible again and must be unlinked.
+    placeholder_files: Vec<PathBuf>,
 }
 
 impl MaterializedJail {
@@ -421,6 +427,14 @@ impl Drop for MaterializedJail {
         for path in self.bind_mounts.iter().rev() {
             if let Err(e) = umount2(path.as_path(), MntFlags::MNT_DETACH) {
                 warn!("drop: umount2({}) failed: {e}", path.display());
+            }
+        }
+
+        // Remove placeholder files we created for file-bind targets (now
+        // visible again after umount).
+        for path in self.placeholder_files.iter().rev() {
+            if let Err(e) = std::fs::remove_file(path) {
+                warn!("drop: unlink({}) failed: {e}", path.display());
             }
         }
 

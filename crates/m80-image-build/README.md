@@ -118,7 +118,7 @@ dir = "/opt/m80/artifacts"
 ## Tests
 
 - `tests/dry_run_smoke.rs` — `run --dry-run` exits 0, prints labels for
-  all 13 numbered pipeline steps to stderr, creates no output dir, and
+  all 12 numbered pipeline steps to stderr, creates no output dir, and
   is deterministic across invocations.
 - `tests/verify_with_fixture_manifest.rs` — `verify --rootfs <path>`
   passes for a manually-constructed fixture rootfs + manifest, and fails

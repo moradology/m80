@@ -32,6 +32,12 @@ pub const RESTORE_METADATA_FILE: &str = "restore-metadata.json";
 ///
 /// Field declaration order is alphabetical so JSON serialization is stable
 /// without a canonicalization pass.
+///
+/// **v0.1 status:** the schema is stable and serializes to the canonical
+/// JSON shape v0.2 will read. The execution lane (capture/restore) returns
+/// [`SnapshotError::Deferred`] in v0.1; only the schema + path helpers are
+/// active. A snapshot persisted today by a v0.2 build will be readable; the
+/// inverse is not guaranteed (v0.2 may add fields).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SnapshotManifest {
@@ -225,6 +231,19 @@ impl RestoreMetadata {
 ///
 /// The `<store_root>` must be a host-local filesystem path. v0.1 ships no
 /// remote-store support; adding S3/GCS/generic stores is a v0.2+ epic.
+///
+/// # Example
+///
+/// ```ignore
+/// let p = persistence_path(
+///     std::path::Path::new("/var/snapshots"),
+///     "ws-1",
+///     "run-42",
+///     1_700_000_000_000,
+///     "abc123",
+/// );
+/// assert_eq!(p.to_str(), Some("/var/snapshots/ws-1/run-42/1700000000000-abc123"));
+/// ```
 pub fn persistence_path(
     store_root: &Path,
     workspace_id: &str,
