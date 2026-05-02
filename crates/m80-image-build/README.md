@@ -110,6 +110,7 @@ dir = "/opt/m80/artifacts"
 
 ## Dependencies
 
+- `m80-proto` — canonical `GUEST_PORT_DEFAULT` and `READY_MARKER_DEFAULT` constants.
 - `m80-image-manifest` — manifest schema + writer.
 - (no internal m80 privilege deps — the build process holds the required caps directly)
 - `serde`, `serde_json`, `sha2`, `hex`, `toml`.

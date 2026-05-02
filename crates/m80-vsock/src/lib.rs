@@ -16,12 +16,9 @@ use sha2::Digest;
 
 use m80_proto::{Envelope, ProtoError};
 
-/// The conventional ready-marker the in-VM daemon writes to the serial console
-/// once it's listening on vsock.
-pub const READY_MARKER_DEFAULT: &str = "GUESTD_READY";
-
-/// The conventional vsock port the in-VM daemon listens on.
-pub const GUEST_PORT_DEFAULT: u32 = 9001;
+/// Re-export the canonical defaults from `m80-proto` so callers that already
+/// depend on `m80-vsock` don't need a separate import.
+pub use m80_proto::{GUEST_PORT_DEFAULT, READY_MARKER_DEFAULT};
 
 /// Read/write timeout applied to every vsock bridge stream.
 const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);

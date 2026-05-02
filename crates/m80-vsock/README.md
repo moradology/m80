@@ -26,7 +26,7 @@ some future) without touching the orchestrator.
   console: &Path, timeout: Duration) -> Result<Channel, VsockError>`
   performs:
   1. Watches the serial console file at `console` until it sees
-     `ready_marker` (default `GUESTD_READY`) on its own line, or times out.
+     `ready_marker` (default `m80_proto::READY_MARKER_DEFAULT`) on its own line, or times out.
   2. Connects to the host UDS, performs the Firecracker connect-line
      handshake to `guest_port`, and verifies the OK response.
   3. Returns a duplex channel that reads/writes `m80-proto::Envelope`
@@ -37,7 +37,7 @@ some future) without touching the orchestrator.
 - The host UDS is fixed at `<run_dir>/vsock.sock`. The crate constructs
   the path from a `run_dir` argument; it does not assume any layout above
   that.
-- The guest port is fixed at **9001** by default (`GUEST_PORT_DEFAULT`).
+- The guest port is fixed at **9001** by default (`m80_proto::GUEST_PORT_DEFAULT`).
   Callers pass the port directly to `Channel::open`; no separate
   `open_with_port` variant is needed.
 - One `Channel` is one connection. Concurrent connections to the same VM
@@ -54,8 +54,8 @@ some future) without touching the orchestrator.
 - `Channel::open(...)`, `Channel::send(&mut Envelope<T>)`,
   `Channel::recv() -> Envelope<U>`, `Channel::close()`.
 - `cid_for_vm_id(vm_id: &str) -> u32`.
-- `READY_MARKER_DEFAULT: &str = "GUESTD_READY"`.
-- `GUEST_PORT_DEFAULT: u32 = 9001`.
+- `READY_MARKER_DEFAULT` and `GUEST_PORT_DEFAULT` — re-exported from
+  `m80-proto`, where the canonical values live.
 - `watch_ready_marker(console: &Path, marker: &str, timeout: Duration) -> Result<(), VsockError>` —
   the ready-probe extracted as a standalone helper (also useful in tests).
 - `VsockError`: `NotReady`, `ConnectFailed { errno }`, `HandshakeFailed`,

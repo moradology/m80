@@ -279,6 +279,7 @@ dependencies = [
  "assert_cmd",
  "hex",
  "m80-image-manifest",
+ "m80-proto",
  "serde",
  "serde_json",
  "sha2",

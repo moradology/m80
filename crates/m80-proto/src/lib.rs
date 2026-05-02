@@ -25,3 +25,18 @@ pub use types::{
     PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE, Payload,
 };
 pub use version::{MAX_FRAME_BYTES, PROTOCOL_VERSION, negotiate_version};
+
+/// Default vsock port the in-VM `m80-guestd` daemon listens on.
+///
+/// Both the host (via `m80-vsock`/`m80-firecracker`) and the guest daemon
+/// must agree on this value; it is the single source of truth for the
+/// host↔guest port convention.
+pub const GUEST_PORT_DEFAULT: u32 = 9001;
+
+/// Default ready-marker that `m80-guestd` prints to the serial console once
+/// it is listening on vsock.
+///
+/// The host watches the console file for this exact string (matched as a full
+/// line). Both peers must agree on it; defined here so neither side
+/// independently hard-codes the string.
+pub const READY_MARKER_DEFAULT: &str = "GUESTD_READY";

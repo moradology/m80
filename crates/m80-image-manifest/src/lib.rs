@@ -255,13 +255,13 @@ mod tests {
             daemon_binary_path: root.join("guestd"),
             daemon_binary_sha256: hex::encode(Sha256::digest(b"guestd")),
             expected_firecracker_version: "v1.15.1".into(),
-            guest_port: 8080,
+            guest_port: 9001, // matches m80_proto::GUEST_PORT_DEFAULT
             kernel_image: root.join("vmlinux"),
             kernel_image_sha256: hex::encode(Sha256::digest(b"vmlinux")),
             no_egress_reason: None,
             output_rootfs_image: root.join("output.ext4"),
             output_rootfs_sha256: hex::encode(Sha256::digest(b"output.ext4")),
-            ready_marker: "READY".into(),
+            ready_marker: "GUESTD_READY".into(), // matches m80_proto::READY_MARKER_DEFAULT
             schema_version: SCHEMA_VERSION,
             service_unit_path: root.join("guestd.service"),
             service_unit_sha256: hex::encode(Sha256::digest(b"guestd.service")),

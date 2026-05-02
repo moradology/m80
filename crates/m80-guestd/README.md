@@ -29,9 +29,9 @@ Keeping the guest small has direct benefits:
 
 - Started by systemd at `multi-user.target` from the manifest-installed
   unit. `Type=simple Restart=on-failure`.
-- On startup: bind vsock port (default **9001**), print `GUESTD_READY`
-  to the serial console (the agreed ready marker), then loop on
-  `accept()`.
+- On startup: bind vsock port (default `m80_proto::GUEST_PORT_DEFAULT`),
+  print `m80_proto::READY_MARKER_DEFAULT` to the serial console (the
+  agreed ready marker), then loop on `accept()`.
 - On each accepted connection:
   1. Read one `m80-proto::Envelope<ExecRequest>` (fail closed on
      version mismatch).
