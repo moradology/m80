@@ -1,0 +1,18 @@
+[package]
+name = "m80-storage"
+description = "Per-VM rootfs cloning, scratch images, and post-stop change extraction"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true

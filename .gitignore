@@ -1,0 +1,8 @@
+# bv (beads viewer) local config and caches
+.bv/
+
+# Rust (workspace produces binaries — commit Cargo.lock)
+target/
+*.swp
+.idea/
+.vscode/

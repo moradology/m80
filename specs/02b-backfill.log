@@ -1,0 +1,248 @@
+OK m80-eb8.1.1 <- Install m80 guest daemon binary at /usr/local/bin in the roo
+OK m80-eb8.1.2 <- Install systemd unit Type=simple Restart=always at boot want
+OK m80-eb8.1.3 <- Install workspace mount unit binding /dev/vdb ext4 at fixed 
+OK m80-eb8.1.4 <- Install /etc/default env file consumed by guest daemon unit
+OK m80-eb8.2.1 <- Bind a vsock listener on a fixed port at startup
+OK m80-eb8.2.2 <- Accept one vsock connection per request and dispatch sequent
+OK m80-eb8.2.3 <- Sync filesystems before closing the response stream
+OK m80-eb8.3.1 <- Spawn child with caller-supplied argv plus optional cwd and 
+OK m80-eb8.3.2 <- Capture stdout and stderr into the response
+OK m80-eb8.3.3 <- Apply caller timeout and report TimedOut on overrun with SIG
+OK m80-eb8.4.1 <- Kill the child when the vsock connection drops mid-execution
+OK m80-eb8.4.2 <- Flush partial output buffers before the cancelled response c
+OK m80-g3x.1.1 <- Stamp every envelope with an explicit u32 protocol version f
+OK m80-g3x.1.2 <- Carry an opaque request payload (program/args/env/cwd/timeou
+OK m80-g3x.1.3 <- Carry response payload status, exit_code, stdout, stderr, ti
+OK m80-g3x.2.1 <- Frame envelopes as one NDJSON record per line
+OK m80-g3x.2.2 <- Reject any frame whose post-trim length exceeds 4 MiB
+OK m80-g3x.2.3 <- Treat malformed JSON as MalformedPayload and drop the connec
+OK m80-g3x.3.1 <- Exchange protocol version on every connection before any pay
+OK m80-g3x.3.2 <- Fail closed with IncompatibleVersion on any version mismatch
+OK m80-xjg.1.1 <- Derive guest CID deterministically from vm_id via FNV-1a has
+OK m80-xjg.1.2 <- Keep guest CID below reserved range to avoid VMADDR_CID_ANY 
+OK m80-xjg.1.3 <- Pin guest port 9001 and host UDS at <run_dir>/vsock.sock
+OK m80-xjg.2.1 <- Watch the serial console for the configured ready-marker tok
+OK m80-xjg.2.2 <- Read ready-marker token from the rootfs manifest
+OK m80-xjg.2.3 <- Bound ready-marker wait by ready_timeout (default 45s)
+OK m80-xjg.2.4 <- Run probe after InstanceStart and before any caller exec
+OK m80-xjg.3.1 <- Open one host-to-guest vsock connection per exec request
+OK m80-xjg.3.2 <- Validate the CONNECT acknowledgement starts with "OK <port>"
+OK m80-xjg.3.3 <- Apply 5s read/write timeouts on each vsock bridge stream
+OK m80-v7t.1.1 <- Discover firecracker and jailer binaries via M80_FIRECRACKER
+OK m80-v7t.1.2 <- Discover kernel and rootfs images via M80_FIRECRACKER_KERNEL
+OK m80-v7t.1.3 <- Discover run-root via M80_FIRECRACKER_RUN_ROOT with document
+OK m80-v7t.1.4 <- Read concurrency, jailer, and cgroup mode env keys
+OK m80-v7t.2.1 <- Apply config sources in defaults → file → env → flags preced
+OK m80-v7t.2.2 <- Layer system config under user config under env vars
+OK m80-v7t.2.3 <- Reveal effective config via "m80 config show"
+OK m80-v7t.3.1 <- Build backend once via from_discovery_with_modes(discovery, 
+OK m80-v7t.3.2 <- Reuse the constructed backend across all subsequent VM lifec
+OK m80-19i.1.1 <- Gate VM creation by a tokio Semaphore wrapping the inner bac
+OK m80-19i.1.2 <- Read max-concurrent-VMs from M80_FIRECRACKER_MAX_CONCURRENT_
+OK m80-19i.1.3 <- Surface SandboxError::Unavailable when permit pool is exhaus
+OK m80-19i.2.1 <- Spawn a background recovery task once at service startup
+OK m80-19i.2.2 <- Sleep 5 seconds between recovery passes
+OK m80-19i.2.3 <- Run recovery on a blocking task to avoid stalling the runtim
+OK m80-19i.2.4 <- Run a one-shot startup recovery before the periodic loop beg
+OK m80-19i.3.1 <- Identify ownership via run-dir ownership.json marker file
+OK m80-19i.3.2 <- Combine lease liveness, API socket, and vsock probe to class
+OK m80-19i.3.3 <- Preserve residue on ambiguity rather than deleting on uncert
+OK m80-19i.4.1 <- Per-VM state lives under <run_root>/<vm_id>/
+OK m80-19i.4.2 <- Avoid cross-process collisions via sha256-of-run-root naming
+OK m80-a7g.1.1 <- Capture: firecracker binary resolution from env or default
+OK m80-a7g.1.2 <- Capture: jailer binary resolution from env or default
+OK m80-a7g.1.3 <- Capture: managed artifact directory default
+OK m80-a7g.1.4 <- Capture: firecracker --version probe
+OK m80-a7g.1.5 <- Capture: expected firecracker version pin
+OK m80-a7g.1.6 <- Capture: missing firecracker binary fail-closed
+OK m80-a7g.2.1 <- Capture: Linux-only host platform check
+OK m80-a7g.2.2 <- Capture: /dev/kvm presence required
+OK m80-a7g.2.3 <- Capture: /dev/kvm writable for current credentials
+OK m80-a7g.2.4 <- Capture: effective root or passwordless sudo gate
+OK m80-a7g.2.5 <- Capture: one-time host preflight at startup
+OK m80-a7g.3.1 <- Capture: kernel artifact auto-discovery under managed dir
+OK m80-a7g.3.2 <- Capture: rootfs path must be absolute
+OK m80-a7g.3.3 <- Capture: manifest schema_version 1 required next to rootfs
+OK m80-a7g.3.4 <- Capture: manifest sha256 recomputation on load
+OK m80-a7g.3.5 <- Capture: run-root creatable and writable
+OK m80-a7g.3.6 <- Capture: storage helper binaries on PATH
+OK m80-a7g.3.7 <- Capture: insufficient run-root capacity rejection
+OK m80-a7g.4.1 <- Capture: privileged-command shim entry point
+OK m80-a7g.4.2 <- Capture: shim direct vs sudo -n routing
+OK m80-a7g.4.3 <- Capture: shim non-interactive contract
+OK m80-a7g.4.4 <- Capture: privileged-shim allowed program set
+OK m80-t01.1.1 <- Capture: per-VM run directory keyed by vm_id
+OK m80-t01.1.2 <- Capture: firecracker UDS api socket path
+OK m80-t01.1.3 <- Capture: vsock host-side socket path
+OK m80-t01.1.4 <- Capture: co-located rootfs clone and scratch image
+OK m80-t01.1.5 <- Capture: run directory reaped on delete
+OK m80-t01.2.1 <- Capture: machine config PUT before boot
+OK m80-t01.2.2 <- Capture: boot source PUT with kernel and cmdline
+OK m80-t01.2.3 <- Capture: root drive PUT for runtime rootfs
+OK m80-t01.2.4 <- Capture: scratch workspace drive PUT
+OK m80-t01.2.5 <- Capture: vsock device PUT with guest CID
+OK m80-t01.2.6 <- Capture: boot identity recorded on success
+OK m80-t01.3.1 <- Capture: synchronous HTTP-over-UDS client
+OK m80-t01.3.2 <- Capture: typed request configs
+OK m80-t01.3.3 <- Capture: InstanceAction InstanceStart
+OK m80-t01.3.4 <- Capture: InstanceAction SendCtrlAltDel on x86_64
+OK m80-t01.3.5 <- Capture: typed errors for API faults
+OK m80-t01.3.6 <- Capture: single-threaded blocking client
+OK m80-t01.4.1 <- Capture: serial console ready-marker probe
+OK m80-t01.4.2 <- Capture: bounded ready timeout fails closed
+OK m80-t01.4.3 <- Capture: post-marker vsock probe
+OK m80-t01.4.4 <- Capture: vsock guest port 9001
+OK m80-t01.4.5 <- Capture: full boot/stop per call
+OK m80-t01.5.1 <- Capture: x86_64 graceful via SendCtrlAltDel
+OK m80-t01.5.2 <- Capture: aarch64 forced stop
+OK m80-t01.5.3 <- Capture: SIGKILL escalation after graceful timeout
+OK m80-t01.5.4 <- Capture: idempotent re-invocation of stop
+OK m80-t01.6.1 <- Capture: delete tears down sockets, taps, state, run-dir
+OK m80-t01.6.2 <- Capture: stale run-root recovery on startup
+OK m80-4ef.1.1 <- Capture: FirecrackerBinaryNotFound preflight variant
+OK m80-4ef.1.2 <- Capture: KvmUnavailable preflight variant
+OK m80-4ef.1.3 <- Capture: UnsupportedHostPlatform preflight variant
+OK m80-4ef.1.4 <- Capture: UnsupportedFirstLineVmSizing preflight variant
+OK m80-4ef.1.5 <- Capture: PrivilegedJailerLaunchUnavailable variant
+OK m80-4ef.2.1 <- Capture: ApiSocketTimeout lifecycle variant
+OK m80-4ef.2.2 <- Capture: ConsoleMarkerTimeout lifecycle variant
+OK m80-4ef.2.3 <- Capture: typed lifecycle failure kinds
+OK m80-4ef.2.4 <- Capture: UnsupportedSnapshotLaunchMode for v0.1
+OK m80-4ef.3.1 <- Capture: error class to CLI exit-code map
+OK m80-4ef.3.2 <- Capture: machine-readable JSON error envelope
+OK m80-4ef.3.3 <- Capture: non-error stderr is informational
+OK m80-exy.1.1 <- Derive bridge name from sha256 of run_root path
+OK m80-exy.1.2 <- Derive bridge CIDR from sha256 bytes of run_root
+OK m80-exy.1.3 <- Cap bridge address space at 172.16.0.0/12
+OK m80-exy.1.4 <- Derive tap name from sha256 of (run_root, vm_id)
+OK m80-exy.1.5 <- Derive guest IPv4 host octet from vm_digest bytes 5-6
+OK m80-exy.1.6 <- Derive guest MAC from vm_digest bytes 0-4 with locally-admin
+OK m80-exy.2.1 <- Reject guest IPv4 collision with sibling VM network state
+OK m80-exy.2.2 <- Reject host route collision against /proc/net/route
+OK m80-exy.2.3 <- Treat collision as hard error with no random fallback
+OK m80-exy.3.1 <- Skip bridge realization when ownership state matches
+OK m80-exy.3.2 <- Persist outbound-bridge-state.json at run-root level
+OK m80-exy.3.3 <- Create tap device via ip tuntap then attach to bridge
+OK m80-exy.3.4 <- Persist per-VM network-state.json with atomic write
+OK m80-exy.3.5 <- Route every ip invocation through privileged-shim
+OK m80-exy.4.1 <- Discover DNS resolvers via resolvectl with /etc/resolv.conf 
+OK m80-exy.4.2 <- Admit only public IPv4 resolvers via is_admitted_dns_resolve
+OK m80-exy.4.3 <- Reject CGN, benchmark, and reserved-range resolver addresses
+OK m80-exy.4.4 <- Inject 10-m80-outbound.network into per-VM runtime rootfs cl
+OK m80-exy.4.5 <- Inject 10-m80-dns.conf resolved drop-in into runtime rootfs 
+OK m80-exy.4.6 <- Keep guest daemon out of host-driven networking configuratio
+OK m80-exy.5.1 <- Enable IPv4 forwarding via sysctl before installing rules
+OK m80-exy.5.2 <- Create per-VM filter chain tfw + 12 hex of run_dir digest
+OK m80-exy.5.3 <- Accept UDP and TCP DNS to admitted resolvers in filter chain
+OK m80-exy.5.4 <- Reject all other UDP and TCP traffic to port 53
+OK m80-exy.5.5 <- Accept bounded private IPv4 exceptions in filter chain
+OK m80-exy.5.6 <- Reject permanent-deny CIDR list in filter chain
+OK m80-exy.5.7 <- Append default ACCEPT after deny list
+OK m80-exy.5.8 <- Insert FORWARD entries that route guest traffic through filt
+OK m80-exy.5.9 <- Append NAT POSTROUTING masquerade for guest source IPv4
+OK m80-exy.6.1 <- Tag every owned iptables rule with M80_RULE_COMMENT_PREFIX
+OK m80-exy.6.2 <- Delete owned chain rules by exact comment match
+OK m80-exy.6.3 <- Delete per-VM filter chain only after it is empty
+OK m80-exy.6.4 <- Tolerate repeated tap deletion via if-present wrappers
+OK m80-exy.6.5 <- Reject foreign rules discovered in owned filter chain
+OK m80-exy.7.1 <- Remove bridge only when no peer VM state references it
+OK m80-exy.7.2 <- Scavenge orphan bridge at startup when no VM states remain
+OK m80-exy.7.3 <- Tolerate malformed or missing state files during recovery
+OK m80-exy.7.4 <- Crash mid-VM does not break new VM startups
+OK m80-urc.1.1 <- Clone managed rootfs into per-VM runtime image
+OK m80-urc.1.2 <- Create runtime rootfs parent directories before copy
+OK m80-urc.1.3 <- Verify managed rootfs boot identity before clone
+OK m80-urc.1.4 <- Surface CopyRootfs error with both paths on clone failure
+OK m80-urc.2.1 <- Build scratch ext4 image via mkfs.ext4 with workspace label
+OK m80-urc.2.2 <- Hydrate scratch image from host workspace tree at creation
+OK m80-urc.2.3 <- Size scratch image with padding and 4 MiB alignment
+OK m80-urc.2.4 <- Pre-allocate scratch image file via set_len before format
+OK m80-urc.2.5 <- Reject inadmissible inodes in host workspace before hydratio
+OK m80-urc.3.1 <- Run change extraction only when caller opts in
+OK m80-urc.3.2 <- Repair scratch image journal with e2fsck before reads
+OK m80-urc.3.3 <- Extract changed file set with debugfs rdump
+OK m80-urc.3.4 <- Build a writeback staging tree before swap
+OK m80-urc.3.5 <- Roll back to original workspace on extraction failure
+OK m80-urc.4.1 <- Admit only regular files and directories from scratch image
+OK m80-urc.4.2 <- Atomically swap staged tree into host workspace with backup
+OK m80-sz1.1.1 <- Resolve kernel from firecracker-ci artifacts directory
+OK m80-sz1.1.2 <- Resolve source rootfs from firecracker-ci squashfs/ext4 drop
+OK m80-sz1.1.3 <- Fail-closed when kernel or source rootfs is missing
+OK m80-sz1.1.4 <- Probe firecracker binary for version when not specified
+OK m80-sz1.1.5 <- Resize source rootfs ext4 image to target size
+OK m80-sz1.2.1 <- Mount output rootfs read-write via loop device
+OK m80-sz1.2.2 <- Install m80 guest daemon binary into rootfs at canonical pat
+OK m80-sz1.2.3 <- Install daemon systemd unit and workspace mount unit
+OK m80-sz1.3.1 <- Emit provenance manifest beside the output rootfs
+OK m80-sz1.3.2 <- Pin manifest with schema_version and expected_firecracker_ve
+OK m80-sz1.3.3 <- Record sha256 over kernel, source rootfs, output rootfs, dae
+OK m80-sz1.3.4 <- Record boot_target, guest_port, and ready_marker in manifest
+OK m80-sz1.4.1 <- Validate manifest schema before each boot
+OK m80-sz1.4.2 <- Recompute sha256 of artifacts and refuse on tampering
+OK m80-zmg.1.1 <- Materialize per-VM jail root under run-dir/jail-root
+OK m80-zmg.1.2 <- Anchor jailer chroot base under configurable system path
+OK m80-zmg.1.3 <- Persist prepared jailer plan as jailer-plan.json
+OK m80-zmg.1.4 <- Persist jailer runtime state as jailer-state.json
+OK m80-zmg.2.1 <- Bind kernel and firecracker binary read-only into jail
+OK m80-zmg.2.2 <- Bind runtime rootfs and workspace scratch read-write into ja
+OK m80-zmg.2.3 <- Allocate API and vsock sockets inside the jail
+OK m80-zmg.2.4 <- Keep ownership marker and lease as host-only artifacts
+OK m80-zmg.2.5 <- Compute asset binding plan before launch and replay determin
+OK m80-zmg.3.1 <- Make jailed UID and GID configurable (default 3000:3000)
+OK m80-zmg.3.2 <- Track jailer_pid and firecracker_pid in runtime state
+OK m80-zmg.3.3 <- Verify launch privilege at startup once
+OK m80-zmg.3.4 <- Surface PrivilegedJailerLaunchUnavailable as typed error
+OK m80-zmg.4.1 <- Recover jailer state from run-dir on restart
+OK m80-zmg.4.2 <- Identify orphan jailer processes via tracked pids
+OK m80-zmg.4.3 <- Preserve residue when scavenge is ambiguous
+OK m80-84x.1.1 <- Place per-VM cgroup under m80-firecracker root
+OK m80-84x.1.2 <- Enable cpu, memory, and pids in subtree_control before leaf
+OK m80-84x.1.3 <- Assign jailer and firecracker pids to leaf cgroup
+OK m80-84x.2.1 <- Set cpu.max to one full CPU equivalent
+OK m80-84x.2.2 <- Set memory.max to 1.5 GiB and pids.max to 128
+OK m80-84x.2.3 <- Gate enforcement on M80_CGROUP_MODE=unified-v2
+OK m80-84x.3.1 <- Refuse cgroup unified-v2 when jailer is not enabled
+OK m80-84x.3.2 <- Cleanup leaf and root cgroups idempotently on VM delete
+OK m80-xbn.1.1 <- Skip bridge, tap, and NIC wiring under NoEgress mode
+OK m80-xbn.1.2 <- Provide loopback only inside the guest under NoEgress
+OK m80-xbn.1.3 <- Touch no iptables rules when NoEgress is selected
+OK m80-xbn.1.4 <- Record no_egress_reason in image manifest for operator audit
+OK m80-xbn.2.1 <- Collapse mode resolution to a single boolean for m80
+OK m80-xbn.2.2 <- Concentrate mode resolution behind a single seam function
+OK m80-ynh.1.1 <- Drive teardown through admission_fence → bounded_stop → opti
+OK m80-ynh.1.2 <- Fence admission before destructive teardown begins
+OK m80-ynh.1.3 <- Block release when forced kill is ambiguous, cleanup failed,
+OK m80-ynh.1.4 <- Treat backend evidence as input, never as placement authorit
+OK m80-ynh.2.1 <- Use graceful-then-force stop on x86_64
+OK m80-ynh.2.2 <- Force-only stop on architectures without graceful support
+OK m80-ynh.2.3 <- Record stop disposition (Graceful, ForcedKillFallback, Force
+OK m80-ynh.3.1 <- Repeat teardown calls without error on already-cleaned VMs
+OK m80-ynh.3.2 <- Remove only owned runtime residue during cleanup
+OK m80-ynh.3.3 <- Run the same ownership-aware cleanup at startup scavenging a
+OK m80-ynh.4.1 <- Preserve run-dir for offline triage when force-stop-and-clea
+OK m80-ynh.4.2 <- Use force_stop_and_cleanup as the last-resort teardown path
+OK m80-0tf.1.1 <- Reserve snapshot-manifest.json and restore-metadata.json as 
+OK m80-0tf.1.2 <- Validate FirecrackerSnapshotManifest fields and 5-element re
+OK m80-0tf.1.3 <- Validate FirecrackerRestoreMetadata schema with planned/mate
+OK m80-0tf.2.1 <- Persist snapshots under <store-root>/<workspace_id>/<run_id>
+OK m80-0tf.2.2 <- Fail closed when the persistence destination already exists
+OK m80-0tf.2.3 <- Restrict the first-line persistence backend to host-local fi
+OK m80-0tf.3.1 <- Pause/quiesce the VM before snapshot artifact capture (v0.2)
+OK m80-0tf.3.2 <- Restore into a fresh vm_id and fresh run_dir, never in-place
+OK m80-0tf.4.1 <- Measure snapshot timing on 1 vCPU / 1024 MiB first-line VM s
+OK m80-0tf.4.2 <- Restrict the first execution slice to direct/no-jailer launc
+OK m80-rrp.1.1 <- Define BlankVmResetDecision::Reusable | Discard as the only 
+OK m80-rrp.1.2 <- Cover 8 reset evidence inputs (ownership, boot identity, no-
+OK m80-rrp.1.3 <- Enumerate BlankVmResetDiscardReason for every Discard outcom
+OK m80-rrp.2.1 <- Forbid inferring reuse from liveness, handles, sockets, metr
+OK m80-rrp.2.2 <- Reject any missing, stale, ambiguous, or inferred input by d
+OK m80-1f8.1.1 <- Write VM-lifecycle events to <run_dir>/diagnostics.jsonl wit
+OK m80-1f8.1.2 <- Cover the documented diagnostic phases (StartupScavenge thro
+OK m80-1f8.1.3 <- Wrap diagnostics in Option<VmDiagnostics> so removal does no
+OK m80-1f8.2.1 <- Walk run_root and emit FirecrackerVmProbeRecord for each own
+OK m80-1f8.2.2 <- Classify probe health from host-visible truth only (v0.2)
+OK m80-1f8.3.1 <- Aggregate probe records into FirecrackerHealthSnapshot with 
+OK m80-1f8.3.2 <- Render health snapshot as JSON via render_health_snapshot (v
+OK m80-1f8.4.1 <- Render Prometheus text via render_prometheus_metrics (render
+
+Total: 246, ok: 246, fail: 0, not_found: 0

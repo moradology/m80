@@ -1,0 +1,1734 @@
+
+== leaves-comms.md: 51 leaves ==
+ERR [$L2_04_1] Install m80 guest daemon binary at /usr/local/bin in the roo -> m80-eb8.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_1] Install systemd unit Type=simple Restart=always at boot want -> m80-eb8.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_1] Install workspace mount unit binding /dev/vdb ext4 at fixed  -> m80-eb8.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_1] Install /etc/default env file consumed by guest daemon unit -> m80-eb8.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_2] Bind a vsock listener on a fixed port at startup -> m80-eb8.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_2] Accept one vsock connection per request and dispatch sequent -> m80-eb8.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_2] Sync filesystems before closing the response stream -> m80-eb8.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_3] Spawn child with caller-supplied argv plus optional cwd and  -> m80-eb8.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_3] Capture stdout and stderr into the response -> m80-eb8.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_3] Apply caller timeout and report TimedOut on overrun with SIG -> m80-eb8.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_4] Kill the child when the vsock connection drops mid-execution -> m80-eb8.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_04_4] Flush partial output buffers before the cancelled response c -> m80-eb8.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_1] Stamp every envelope with an explicit u32 protocol version f -> m80-g3x.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_1] Carry an opaque request payload (program/args/env/cwd/timeou -> m80-g3x.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_1] Carry response payload status, exit_code, stdout, stderr, ti -> m80-g3x.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_2] Frame envelopes as one NDJSON record per line -> m80-g3x.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_2] Reject any frame whose post-trim length exceeds 4 MiB -> m80-g3x.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_2] Treat malformed JSON as MalformedPayload and drop the connec -> m80-g3x.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_3] Exchange protocol version on every connection before any pay -> m80-g3x.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_05_3] Fail closed with IncompatibleVersion on any version mismatch -> m80-g3x.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_1] Derive guest CID deterministically from vm_id via FNV-1a has -> m80-xjg.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_1] Keep guest CID below reserved range to avoid VMADDR_CID_ANY  -> m80-xjg.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_1] Pin guest port 9001 and host UDS at <run_dir>/vsock.sock -> m80-xjg.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_2] Watch the serial console for the configured ready-marker tok -> m80-xjg.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_2] Read ready-marker token from the rootfs manifest -> m80-xjg.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_2] Bound ready-marker wait by ready_timeout (default 45s) -> m80-xjg.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_2] Run probe after InstanceStart and before any caller exec -> m80-xjg.2.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_3] Open one host-to-guest vsock connection per exec request -> m80-xjg.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_3] Validate the CONNECT acknowledgement starts with "OK <port>" -> m80-xjg.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_06_3] Apply 5s read/write timeouts on each vsock bridge stream -> m80-xjg.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_1] Discover firecracker and jailer binaries via M80_FIRECRACKER -> m80-v7t.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_1] Discover kernel and rootfs images via M80_FIRECRACKER_KERNEL -> m80-v7t.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_1] Discover run-root via M80_FIRECRACKER_RUN_ROOT with document -> m80-v7t.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_1] Read concurrency, jailer, and cgroup mode env keys -> m80-v7t.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_2] Apply config sources in defaults → file → env → flags preced -> m80-v7t.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_2] Layer system config under user config under env vars -> m80-v7t.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_2] Reveal effective config via "m80 config show" -> m80-v7t.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_3] Build backend once via from_discovery_with_modes(discovery,  -> m80-v7t.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_12_3] Reuse the constructed backend across all subsequent VM lifec -> m80-v7t.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_1] Gate VM creation by a tokio Semaphore wrapping the inner bac -> m80-19i.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_1] Read max-concurrent-VMs from M80_FIRECRACKER_MAX_CONCURRENT_ -> m80-19i.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_1] Surface SandboxError::Unavailable when permit pool is exhaus -> m80-19i.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_2] Spawn a background recovery task once at service startup -> m80-19i.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_2] Sleep 5 seconds between recovery passes -> m80-19i.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_2] Run recovery on a blocking task to avoid stalling the runtim -> m80-19i.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_2] Run a one-shot startup recovery before the periodic loop beg -> m80-19i.2.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_3] Identify ownership via run-dir ownership.json marker file -> m80-19i.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_3] Combine lease liveness, API socket, and vsock probe to class -> m80-19i.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_3] Preserve residue on ambiguity rather than deleting on uncert -> m80-19i.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_4] Per-VM state lives under <run_root>/<vm_id>/ -> m80-19i.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_14_4] Avoid cross-process collisions via sha256-of-run-root naming -> m80-19i.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+
+== leaves-foundation.md: 62 leaves ==
+ERR [$L2_01_1] Capture: firecracker binary resolution from env or default -> m80-a7g.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_1] Capture: jailer binary resolution from env or default -> m80-a7g.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_1] Capture: managed artifact directory default -> m80-a7g.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_1] Capture: firecracker --version probe -> m80-a7g.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_1] Capture: expected firecracker version pin -> m80-a7g.1.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_1] Capture: missing firecracker binary fail-closed -> m80-a7g.1.6 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_2] Capture: Linux-only host platform check -> m80-a7g.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_2] Capture: /dev/kvm presence required -> m80-a7g.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_2] Capture: /dev/kvm writable for current credentials -> m80-a7g.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_2] Capture: effective root or passwordless sudo gate -> m80-a7g.2.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_2] Capture: one-time host preflight at startup -> m80-a7g.2.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_3] Capture: kernel artifact auto-discovery under managed dir -> m80-a7g.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_3] Capture: rootfs path must be absolute -> m80-a7g.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_3] Capture: manifest schema_version 1 required next to rootfs -> m80-a7g.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_3] Capture: manifest sha256 recomputation on load -> m80-a7g.3.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_3] Capture: run-root creatable and writable -> m80-a7g.3.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_3] Capture: storage helper binaries on PATH -> m80-a7g.3.6 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_3] Capture: insufficient run-root capacity rejection -> m80-a7g.3.7 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_4] Capture: privileged-command shim entry point -> m80-a7g.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_4] Capture: shim direct vs sudo -n routing -> m80-a7g.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_4] Capture: shim non-interactive contract -> m80-a7g.4.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_01_4] Capture: privileged-shim allowed program set -> m80-a7g.4.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_1] Capture: per-VM run directory keyed by vm_id -> m80-t01.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_1] Capture: firecracker UDS api socket path -> m80-t01.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_1] Capture: vsock host-side socket path -> m80-t01.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_1] Capture: co-located rootfs clone and scratch image -> m80-t01.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_1] Capture: run directory reaped on delete -> m80-t01.1.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_2] Capture: machine config PUT before boot -> m80-t01.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_2] Capture: boot source PUT with kernel and cmdline -> m80-t01.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_2] Capture: root drive PUT for runtime rootfs -> m80-t01.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_2] Capture: scratch workspace drive PUT -> m80-t01.2.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_2] Capture: vsock device PUT with guest CID -> m80-t01.2.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_2] Capture: boot identity recorded on success -> m80-t01.2.6 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_3] Capture: synchronous HTTP-over-UDS client -> m80-t01.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_3] Capture: typed request configs -> m80-t01.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_3] Capture: InstanceAction InstanceStart -> m80-t01.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_3] Capture: InstanceAction SendCtrlAltDel on x86_64 -> m80-t01.3.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_3] Capture: typed errors for API faults -> m80-t01.3.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_3] Capture: single-threaded blocking client -> m80-t01.3.6 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_4] Capture: serial console ready-marker probe -> m80-t01.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_4] Capture: bounded ready timeout fails closed -> m80-t01.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_4] Capture: post-marker vsock probe -> m80-t01.4.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_4] Capture: vsock guest port 9001 -> m80-t01.4.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_4] Capture: full boot/stop per call -> m80-t01.4.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_5] Capture: x86_64 graceful via SendCtrlAltDel -> m80-t01.5.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_5] Capture: aarch64 forced stop -> m80-t01.5.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_5] Capture: SIGKILL escalation after graceful timeout -> m80-t01.5.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_5] Capture: idempotent re-invocation of stop -> m80-t01.5.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_6] Capture: delete tears down sockets, taps, state, run-dir -> m80-t01.6.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_02_6] Capture: stale run-root recovery on startup -> m80-t01.6.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_1] Capture: FirecrackerBinaryNotFound preflight variant -> m80-4ef.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_1] Capture: KvmUnavailable preflight variant -> m80-4ef.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_1] Capture: UnsupportedHostPlatform preflight variant -> m80-4ef.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_1] Capture: UnsupportedFirstLineVmSizing preflight variant -> m80-4ef.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_1] Capture: PrivilegedJailerLaunchUnavailable variant -> m80-4ef.1.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_2] Capture: ApiSocketTimeout lifecycle variant -> m80-4ef.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_2] Capture: ConsoleMarkerTimeout lifecycle variant -> m80-4ef.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_2] Capture: typed lifecycle failure kinds -> m80-4ef.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_2] Capture: UnsupportedSnapshotLaunchMode for v0.1 -> m80-4ef.2.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_3] Capture: error class to CLI exit-code map -> m80-4ef.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_3] Capture: machine-readable JSON error envelope -> m80-4ef.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_13_3] Capture: non-error stderr is informational -> m80-4ef.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+
+== leaves-outbound-nat.md: 38 leaves ==
+ERR [$L2_11_1] Derive bridge name from sha256 of run_root path -> m80-exy.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_1] Derive bridge CIDR from sha256 bytes of run_root -> m80-exy.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_1] Cap bridge address space at 172.16.0.0/12 -> m80-exy.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_1] Derive tap name from sha256 of (run_root, vm_id) -> m80-exy.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_1] Derive guest IPv4 host octet from vm_digest bytes 5-6 -> m80-exy.1.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_1] Derive guest MAC from vm_digest bytes 0-4 with locally-admin -> m80-exy.1.6 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_2] Reject guest IPv4 collision with sibling VM network state -> m80-exy.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_2] Reject host route collision against /proc/net/route -> m80-exy.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_2] Treat collision as hard error with no random fallback -> m80-exy.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_3] Skip bridge realization when ownership state matches -> m80-exy.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_3] Persist outbound-bridge-state.json at run-root level -> m80-exy.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_3] Create tap device via ip tuntap then attach to bridge -> m80-exy.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_3] Persist per-VM network-state.json with atomic write -> m80-exy.3.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_3] Route every ip invocation through privileged-shim -> m80-exy.3.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_4] Discover DNS resolvers via resolvectl with /etc/resolv.conf  -> m80-exy.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_4] Admit only public IPv4 resolvers via is_admitted_dns_resolve -> m80-exy.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_4] Reject CGN, benchmark, and reserved-range resolver addresses -> m80-exy.4.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_4] Inject 10-m80-outbound.network into per-VM runtime rootfs cl -> m80-exy.4.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_4] Inject 10-m80-dns.conf resolved drop-in into runtime rootfs  -> m80-exy.4.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_4] Keep guest daemon out of host-driven networking configuratio -> m80-exy.4.6 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Enable IPv4 forwarding via sysctl before installing rules -> m80-exy.5.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Create per-VM filter chain tfw + 12 hex of run_dir digest -> m80-exy.5.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Accept UDP and TCP DNS to admitted resolvers in filter chain -> m80-exy.5.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Reject all other UDP and TCP traffic to port 53 -> m80-exy.5.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Accept bounded private IPv4 exceptions in filter chain -> m80-exy.5.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Reject permanent-deny CIDR list in filter chain -> m80-exy.5.6 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Append default ACCEPT after deny list -> m80-exy.5.7 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Insert FORWARD entries that route guest traffic through filt -> m80-exy.5.8 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_5] Append NAT POSTROUTING masquerade for guest source IPv4 -> m80-exy.5.9 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_6] Tag every owned iptables rule with M80_RULE_COMMENT_PREFIX -> m80-exy.6.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_6] Delete owned chain rules by exact comment match -> m80-exy.6.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_6] Delete per-VM filter chain only after it is empty -> m80-exy.6.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_6] Tolerate repeated tap deletion via if-present wrappers -> m80-exy.6.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_6] Reject foreign rules discovered in owned filter chain -> m80-exy.6.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_7] Remove bridge only when no peer VM state references it -> m80-exy.7.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_7] Scavenge orphan bridge at startup when no VM states remain -> m80-exy.7.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_7] Tolerate malformed or missing state files during recovery -> m80-exy.7.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_11_7] Crash mid-VM does not break new VM startups -> m80-exy.7.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+
+== leaves-platform.md: 60 leaves ==
+ERR [$L2_03_1] Clone managed rootfs into per-VM runtime image -> m80-urc.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_1] Create runtime rootfs parent directories before copy -> m80-urc.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_1] Verify managed rootfs boot identity before clone -> m80-urc.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_1] Surface CopyRootfs error with both paths on clone failure -> m80-urc.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_2] Build scratch ext4 image via mkfs.ext4 with workspace label -> m80-urc.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_2] Hydrate scratch image from host workspace tree at creation -> m80-urc.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_2] Size scratch image with padding and 4 MiB alignment -> m80-urc.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_2] Pre-allocate scratch image file via set_len before format -> m80-urc.2.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_2] Reject inadmissible inodes in host workspace before hydratio -> m80-urc.2.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_3] Run change extraction only when caller opts in -> m80-urc.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_3] Repair scratch image journal with e2fsck before reads -> m80-urc.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_3] Extract changed file set with debugfs rdump -> m80-urc.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_3] Build a writeback staging tree before swap -> m80-urc.3.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_3] Roll back to original workspace on extraction failure -> m80-urc.3.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_4] Admit only regular files and directories from scratch image -> m80-urc.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_03_4] Atomically swap staged tree into host workspace with backup -> m80-urc.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_1] Resolve kernel from firecracker-ci artifacts directory -> m80-sz1.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_1] Resolve source rootfs from firecracker-ci squashfs/ext4 drop -> m80-sz1.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_1] Fail-closed when kernel or source rootfs is missing -> m80-sz1.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_1] Probe firecracker binary for version when not specified -> m80-sz1.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_1] Resize source rootfs ext4 image to target size -> m80-sz1.1.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_2] Mount output rootfs read-write via loop device -> m80-sz1.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_2] Install m80 guest daemon binary into rootfs at canonical pat -> m80-sz1.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_2] Install daemon systemd unit and workspace mount unit -> m80-sz1.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_3] Emit provenance manifest beside the output rootfs -> m80-sz1.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_3] Pin manifest with schema_version and expected_firecracker_ve -> m80-sz1.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_3] Record sha256 over kernel, source rootfs, output rootfs, dae -> m80-sz1.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_3] Record boot_target, guest_port, and ready_marker in manifest -> m80-sz1.3.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_4] Validate manifest schema before each boot -> m80-sz1.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_07_4] Recompute sha256 of artifacts and refuse on tampering -> m80-sz1.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_1] Materialize per-VM jail root under run-dir/jail-root -> m80-zmg.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_1] Anchor jailer chroot base under configurable system path -> m80-zmg.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_1] Persist prepared jailer plan as jailer-plan.json -> m80-zmg.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_1] Persist jailer runtime state as jailer-state.json -> m80-zmg.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_2] Bind kernel and firecracker binary read-only into jail -> m80-zmg.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_2] Bind runtime rootfs and workspace scratch read-write into ja -> m80-zmg.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_2] Allocate API and vsock sockets inside the jail -> m80-zmg.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_2] Keep ownership marker and lease as host-only artifacts -> m80-zmg.2.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_2] Compute asset binding plan before launch and replay determin -> m80-zmg.2.5 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_3] Make jailed UID and GID configurable (default 3000:3000) -> m80-zmg.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_3] Track jailer_pid and firecracker_pid in runtime state -> m80-zmg.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_3] Verify launch privilege at startup once -> m80-zmg.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_3] Surface PrivilegedJailerLaunchUnavailable as typed error -> m80-zmg.3.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_4] Recover jailer state from run-dir on restart -> m80-zmg.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_4] Identify orphan jailer processes via tracked pids -> m80-zmg.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_08_4] Preserve residue when scavenge is ambiguous -> m80-zmg.4.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_1] Place per-VM cgroup under m80-firecracker root -> m80-84x.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_1] Enable cpu, memory, and pids in subtree_control before leaf -> m80-84x.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_1] Assign jailer and firecracker pids to leaf cgroup -> m80-84x.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_2] Set cpu.max to one full CPU equivalent -> m80-84x.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_2] Set memory.max to 1.5 GiB and pids.max to 128 -> m80-84x.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_2] Gate enforcement on M80_CGROUP_MODE=unified-v2 -> m80-84x.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_3] Refuse cgroup unified-v2 when jailer is not enabled -> m80-84x.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_09_3] Cleanup leaf and root cgroups idempotently on VM delete -> m80-84x.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_10_1] Skip bridge, tap, and NIC wiring under NoEgress mode -> m80-xbn.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_10_1] Provide loopback only inside the guest under NoEgress -> m80-xbn.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_10_1] Touch no iptables rules when NoEgress is selected -> m80-xbn.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_10_1] Record no_egress_reason in image manifest for operator audit -> m80-xbn.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_10_2] Collapse mode resolution to a single boolean for m80 -> m80-xbn.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_10_2] Concentrate mode resolution behind a single seam function -> m80-xbn.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+
+== leaves-tail.md: 35 leaves ==
+ERR [$L2_15_1] Drive teardown through admission_fence → bounded_stop → opti -> m80-ynh.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_1] Fence admission before destructive teardown begins -> m80-ynh.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_1] Block release when forced kill is ambiguous, cleanup failed, -> m80-ynh.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_1] Treat backend evidence as input, never as placement authorit -> m80-ynh.1.4 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_2] Use graceful-then-force stop on x86_64 -> m80-ynh.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_2] Force-only stop on architectures without graceful support -> m80-ynh.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_2] Record stop disposition (Graceful, ForcedKillFallback, Force -> m80-ynh.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_3] Repeat teardown calls without error on already-cleaned VMs -> m80-ynh.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_3] Remove only owned runtime residue during cleanup -> m80-ynh.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_3] Run the same ownership-aware cleanup at startup scavenging a -> m80-ynh.3.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_4] Preserve run-dir for offline triage when force-stop-and-clea -> m80-ynh.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_15_4] Use force_stop_and_cleanup as the last-resort teardown path -> m80-ynh.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_1] Reserve snapshot-manifest.json and restore-metadata.json as  -> m80-0tf.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_1] Validate FirecrackerSnapshotManifest fields and 5-element re -> m80-0tf.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_1] Validate FirecrackerRestoreMetadata schema with planned/mate -> m80-0tf.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_2] Persist snapshots under <store-root>/<workspace_id>/<run_id> -> m80-0tf.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_2] Fail closed when the persistence destination already exists -> m80-0tf.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_2] Restrict the first-line persistence backend to host-local fi -> m80-0tf.2.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_3] Pause/quiesce the VM before snapshot artifact capture (v0.2) -> m80-0tf.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_3] Restore into a fresh vm_id and fresh run_dir, never in-place -> m80-0tf.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_4] Measure snapshot timing on 1 vCPU / 1024 MiB first-line VM s -> m80-0tf.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_16_4] Restrict the first execution slice to direct/no-jailer launc -> m80-0tf.4.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_17_1] Define BlankVmResetDecision::Reusable | Discard as the only  -> m80-rrp.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_17_1] Cover 8 reset evidence inputs (ownership, boot identity, no- -> m80-rrp.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_17_1] Enumerate BlankVmResetDiscardReason for every Discard outcom -> m80-rrp.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_17_2] Forbid inferring reuse from liveness, handles, sockets, metr -> m80-rrp.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_17_2] Reject any missing, stale, ambiguous, or inferred input by d -> m80-rrp.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_1] Write VM-lifecycle events to <run_dir>/diagnostics.jsonl wit -> m80-1f8.1.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_1] Cover the documented diagnostic phases (StartupScavenge thro -> m80-1f8.1.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_1] Wrap diagnostics in Option<VmDiagnostics> so removal does no -> m80-1f8.1.3 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_2] Walk run_root and emit FirecrackerVmProbeRecord for each own -> m80-1f8.2.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_2] Classify probe health from host-visible truth only (v0.2) -> m80-1f8.2.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_3] Aggregate probe records into FirecrackerHealthSnapshot with  -> m80-1f8.3.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_3] Render health snapshot as JSON via render_health_snapshot (v -> m80-1f8.3.2 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+ERR [$L2_18_4] Render Prometheus text via render_prometheus_metrics (render -> m80-1f8.4.1 (created; acceptance exit=2: error: unexpected argument '- ' found
+
+  tip: to pass '- ' as a value, use '-- - '
+
+Usage: br update [OPTIONS] [IDS]...
+
+For more information, try '--help'.)
+
+Total: 246 leaves, 246 failures

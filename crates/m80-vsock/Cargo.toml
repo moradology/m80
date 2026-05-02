@@ -1,0 +1,17 @@
+[package]
+name = "m80-vsock"
+description = "Host-side bridge between Firecracker UDS and guest vsock CID/port"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+m80-proto.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

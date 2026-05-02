@@ -1,0 +1,29 @@
+[package]
+name = "m80-firecracker"
+description = "VM lifecycle state machine: composes preflight, jailer, cgroup, storage, vsock, network, into a launchable sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+m80-proto.workspace = true
+m80-image-manifest.workspace = true
+m80-firecracker-client.workspace = true
+m80-vsock.workspace = true
+m80-jailer.workspace = true
+m80-cgroup.workspace = true
+m80-storage.workspace = true
+m80-preflight.workspace = true
+m80-net-mode.workspace = true
+m80-net-outbound.workspace = true
+m80-snapshot.workspace = true
+m80-observability.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

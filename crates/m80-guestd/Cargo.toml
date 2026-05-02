@@ -1,0 +1,24 @@
+[package]
+name = "m80-guestd"
+description = "In-VM daemon: vsock listener that runs argv and returns stdout/stderr/exit/timing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "m80-guestd"
+path = "src/main.rs"
+
+[dependencies]
+m80-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+nix.workspace = true

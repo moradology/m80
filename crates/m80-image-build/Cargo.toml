@@ -1,0 +1,25 @@
+[package]
+name = "m80-image-build"
+description = "Build the m80 guest image: kernel + rootfs + provenance manifest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "m80-image-build"
+path = "src/main.rs"
+
+[dependencies]
+m80-image-manifest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

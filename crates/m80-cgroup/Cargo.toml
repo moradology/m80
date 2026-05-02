@@ -1,0 +1,17 @@
+[package]
+name = "m80-cgroup"
+description = "Per-VM cgroup v2 subtree for CPU/memory/pids enforcement"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+m80-jailer.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

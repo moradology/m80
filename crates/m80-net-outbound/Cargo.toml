@@ -1,0 +1,21 @@
+[package]
+name = "m80-net-outbound"
+description = "OutboundNat: per-host bridge, per-VM tap/IP/MAC, default-deny iptables, ownership-aware cleanup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+m80-net-mode.workspace = true
+sha2.workspace = true
+hex.workspace = true
+ipnet.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
