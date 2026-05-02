@@ -1,0 +1,11 @@
+[Unit]
+Description=m80 guest daemon
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/m80-guestd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

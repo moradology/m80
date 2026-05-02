@@ -3,18 +3,21 @@
 //! See `README.md` for the contract.
 //! Behavior captures: bead epic `m80-eb8` (`br show m80-eb8`).
 //!
-//! # Type-pinning pass
-//!
-//! Argv parse + the wire types (`ExecRequest`/`ExecResponse`) are declared
-//! here. **Note**: these mirror `m80_firecracker::Exec*` and must stay
-//! JSON-compatible. A future refactor extracts them to a shared crate
-//! (`m80-exec`); for now the implementing agent keeps them in sync.
+//! Listens on a vsock port, accepts one connection at a time, reads an
+//! `m80-proto::Envelope<ExecRequest>`, spawns the child process, captures
+//! stdout/stderr to bounded buffers, applies the timeout, and writes back
+//! an `Envelope<ExecResponse>`. Syncs filesystems before close.
 
-#![deny(missing_docs)]
+use std::io::{BufReader, BufWriter};
 
-use serde::{Deserialize, Serialize};
+use anyhow::Context as _;
+use vsock::{VMADDR_CID_ANY, VsockListener};
 
-/// Argv parse target.
+mod connection;
+
+const DEFAULT_PORT: u32 = 9001;
+
+/// Parsed command-line arguments.
 #[derive(Debug)]
 pub struct Args {
     /// Override the default vsock port (testing only).
@@ -23,75 +26,53 @@ pub struct Args {
     pub print_version: bool,
 }
 
-/// One exec request, mirroring `m80_firecracker::ExecRequest`. Must stay
-/// JSON-compatible — the host serializes its `ExecRequest` and we deserialize
-/// it into this struct.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecRequest {
-    /// argv to spawn.
-    pub argv: Vec<String>,
-    /// Working directory inside the guest.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    /// Environment override.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub env: Option<Vec<(String, String)>>,
-    /// Optional bytes piped to the child's stdin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stdin: Option<Vec<u8>>,
-    /// Optional bound on running time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u64>,
+/// Hand-rolled argv parser. Walks `std::env::args()` without pulling in clap.
+pub fn parse_args() -> anyhow::Result<Args> {
+    let mut args = Args { port: None, print_version: false };
+    let mut iter = std::env::args().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--port" => {
+                let val = iter.next().context("--port requires a value")?;
+                let n: u32 = val.parse().with_context(|| format!("invalid --port: {val}"))?;
+                args.port = Some(n);
+            }
+            "--version" => {
+                args.print_version = true;
+            }
+            other => anyhow::bail!("unknown arg: {}", other),
+        }
+    }
+    Ok(args)
 }
 
-/// One exec response, mirroring `m80_firecracker::ExecResponse`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecResponse {
-    /// Termination disposition.
-    pub status: ExecStatus,
-    /// Process exit code.
-    pub exit_code: Option<i32>,
-    /// Captured stdout.
-    pub stdout: Vec<u8>,
-    /// Captured stderr.
-    pub stderr: Vec<u8>,
-    /// Wall-clock timing.
-    pub timing: ExecTiming,
-}
+/// Main run loop. Prints version and returns, or binds vsock and serves.
+pub fn run(args: Args) -> anyhow::Result<()> {
+    if args.print_version {
+        println!(
+            "m80-guestd {} (proto v{})",
+            env!("CARGO_PKG_VERSION"),
+            m80_proto::PROTOCOL_VERSION
+        );
+        return Ok(());
+    }
 
-/// Wall-clock timing, mirroring `m80_firecracker::ExecTiming`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct ExecTiming {
-    /// Spawn time in unix epoch milliseconds.
-    pub spawned_at_unix_ms: u64,
-    /// Exit time in unix epoch milliseconds.
-    pub exited_at_unix_ms: u64,
-    /// Time from `spawn` syscall return to first byte of stdout/stderr.
-    pub spawn_ms: u64,
-    /// Total wall-clock runtime.
-    pub run_ms: u64,
-}
+    let port = args.port.unwrap_or(DEFAULT_PORT);
+    let listener = VsockListener::bind_with_cid_port(VMADDR_CID_ANY, port)
+        .with_context(|| format!("failed to bind vsock listener on port {port}"))?;
 
-/// Termination disposition, mirroring `m80_firecracker::ExecStatus`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecStatus {
-    /// Child exited normally.
-    Completed,
-    /// `timeout_ms` expired.
-    TimedOut,
-    /// Host disconnected mid-exec.
-    Cancelled,
-    /// Spawn failed or another guest-side error.
-    Failed,
-}
+    // Signal to systemd / the host that we are ready.
+    println!("GUESTD_READY");
 
-fn parse_args() -> anyhow::Result<Args> {
-    todo!()
-}
-
-fn run(_args: Args) -> anyhow::Result<()> {
-    todo!()
+    loop {
+        let (stream, _addr) = listener.accept().context("vsock accept failed")?;
+        // v0.1: sequential — process one connection fully before accepting next.
+        let reader = BufReader::new(&stream);
+        let writer = BufWriter::new(&stream);
+        if let Err(e) = connection::handle_connection(reader, writer) {
+            tracing::warn!(error = %e, "connection handler returned error");
+        }
+    }
 }
 
 fn main() -> anyhow::Result<()> {

@@ -1,0 +1,12 @@
+[Unit]
+Description=m80 workspace mount
+After=local-fs.target
+
+[Mount]
+What=/dev/vdb
+Where=/workspace
+Type=ext4
+Options=defaults
+
+[Install]
+WantedBy=multi-user.target

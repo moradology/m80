@@ -37,14 +37,15 @@ some future) without touching the orchestrator.
 - The host UDS is fixed at `<run_dir>/vsock.sock`. The crate constructs
   the path from a `run_dir` argument; it does not assume any layout above
   that.
-- The guest port is fixed at **9001** by default (the same port
-  `m80-guestd` listens on). Callers may override via `Channel::open_with_port`,
-  but doing so is unusual and only exists for testing.
+- The guest port is fixed at **9001** by default (`GUEST_PORT_DEFAULT`).
+  Callers pass the port directly to `Channel::open`; no separate
+  `open_with_port` variant is needed.
 - One `Channel` is one connection. Concurrent connections to the same VM
-  are not supported in v0.1; opening a second `Channel` against an
-  already-open VM returns `VsockError::ChannelInUse`.
-- `Channel` is `Drop`-safe: dropping it removes the host-side UDS and
-  flushes pending writes. Repeated drops are no-ops.
+  are not supported in v0.1. The caller is responsible for not opening a
+  second `Channel` against an already-open VM; this crate does not maintain
+  a global registry.
+- `Channel` is `Drop`-safe: dropping it flushes pending writes and removes
+  the host-side UDS. Repeated drops are no-ops.
 - Ready-marker timeout maps to `VsockError::NotReady` and is a hard
   failure — the caller's only recovery is to tear down the VM.
 
@@ -55,8 +56,12 @@ some future) without touching the orchestrator.
 - `cid_for_vm_id(vm_id: &str) -> u32`.
 - `READY_MARKER_DEFAULT: &str = "GUESTD_READY"`.
 - `GUEST_PORT_DEFAULT: u32 = 9001`.
+- `watch_ready_marker(console: &Path, marker: &str, timeout: Duration) -> Result<(), VsockError>` —
+  the ready-probe extracted as a standalone helper (also useful in tests).
 - `VsockError`: `NotReady`, `ConnectFailed { errno }`, `HandshakeFailed`,
-  `ChannelInUse`, `Io(io::Error)`, `Proto(m80_proto::ProtoError)`.
+  `Io(io::Error)`, `Proto(m80_proto::ProtoError)`.
+  (`ChannelInUse` removed — the caller is responsible for not double-opening;
+  no global registry is maintained.)
 
 ## Non-goals
 
@@ -71,15 +76,18 @@ some future) without touching the orchestrator.
 ## Dependencies
 
 - `m80-proto` — for the envelope and framing helpers.
-- `serde`, `thiserror`, `tracing`.
+- `serde`, `sha2`, `thiserror`, `tracing`.
 - (No `tokio` — synchronous, like the rest of the host stack.)
 
 ## Tests
 
-- Loopback: a fake serial-console file that emits the ready marker at a
-  controllable delay; `Channel::open` returns within the timeout.
-- Timeout: ready marker never appears; `Channel::open` returns
-  `VsockError::NotReady` after the configured timeout.
-- Frame round-trip: a fixture envelope is sent, echoed by a stub guest
-  process, and received unchanged.
-- Drop cleanup: dropping a `Channel` removes the UDS file from disk.
+- `tests/cid_for_vm_id.rs` — determinism, reserved-range avoidance, and
+  pinned SHA-256 CID values for stability across hash-function changes.
+- `tests/ready_marker_watch.rs` — marker present immediately, marker appears
+  after delay, timeout case, partial-line non-match, missing console file.
+- `tests/handshake.rs` — successful handshake, bad ack → `HandshakeFailed`,
+  missing UDS → `ConnectFailed`.
+- `tests/frame_round_trip.rs` — send `Envelope<ExecRequest>`, receive
+  `Envelope<ExecResponse>` via a stub server.
+- `tests/drop_cleanup.rs` — dropping a `Channel` and calling `close()`
+  both remove the UDS file.

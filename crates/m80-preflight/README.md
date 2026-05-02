@@ -38,7 +38,8 @@ which is the right place for a security review to start.
      under `<artifact_dir>`, or the env-overridden absolute path.
   8. **Rootfs + manifest** — manifest schema validates,
      `m80-image-manifest::verify` recomputes every sha256.
-  9. **Run-root** — absolute, creatable, writable.
+  9. **Run-root** — absolute, must already exist, >= 100 MiB free
+     (no silent creation; caller must ensure the directory is present).
   10. **Storage helpers** — `mkfs.ext4`, `debugfs`, `e2fsck` on PATH.
 - Each check produces a row in the `Discovery::report` field. The same
   data is rendered as a fixed-width table for human consumption via
@@ -64,9 +65,9 @@ which is the right place for a security review to start.
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
   `FirecrackerBinaryNotFound`, `FirecrackerVersionMismatch { expected, actual }`,
   `JailerBinaryNotFound`, `KernelNotFound`, `RootfsNotFound`,
-  `Manifest(m80_image_manifest::ManifestError)`, `InsufficientRunRootCapacity`,
-  `StorageHelperMissing(String)`, `Io(io::Error)`.
-  `Privilege(m80_privileged::PrivilegeError)`.
+  `Manifest(m80_image_manifest::ManifestError)`,
+  `RunRootUnavailable { reason: String }` (covers both missing-dir and
+  insufficient-space), `StorageHelperMissing(String)`, `Io(io::Error)`.
 
 ## Non-goals
 

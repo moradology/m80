@@ -59,8 +59,11 @@ the schema stable.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
 - `recover_from_run_dir`, `RecoveryDecision`.
 - `JailerError`: `LaunchPrivilegeUnavailable`, `BindFailed`,
-  `ChrootFailed`, `UidGidInvalid`, `Privilege(m80_privileged::PrivilegeError)`,
-  `Io(io::Error)`.
+  `ChrootFailed`, `UidGidInvalid`,
+  `Io { path: PathBuf, source: io::Error }`.
+  The `Privilege(m80_privileged::PrivilegeError)` variant was removed:
+  `m80-privileged` is not a workspace crate; privilege is acquired by the
+  m80 process at startup and verified by `m80-preflight`.
 
 ## Non-goals
 
@@ -79,15 +82,24 @@ the schema stable.
 
 ## Tests
 
-- Plan determinism: two `Plan::compute` calls with the same input
-  produce byte-equivalent JSON.
-- Plan replay: a serialized plan deserialized and re-`materialize`d
-  produces the same chroot tree (compared via `find` + sha256).
-- Recovery (live): with a jailed firecracker process running and its
-  pids in `jailer-state.json`, `recover_from_run_dir` returns `LiveJail`.
-- Recovery (orphan): with the same state file but no live processes,
-  `recover_from_run_dir` returns `OrphanJail` with the right reap steps.
-- Privilege failure: when materialize hits an `EPERM` from a privileged
-  syscall, the resulting `JailerError` carries the underlying `io::Error`
-  unmodified — preflight should have already detected the missing
-  capability before launch.
+`tests/plan_compute.rs` — pure plan tests (no I/O):
+- Determinism: two `Plan::compute` calls with the same config produce
+  byte-equivalent JSON.
+- Step ordering: `CreateInsideJail` dirs before `Bind`, sockets last.
+- UID 0 or GID 0 rejected → `JailerError::UidGidInvalid`.
+
+`tests/plan_serde.rs` — serde round-trips:
+- `Plan` round-trips through `serde_json` with equal struct contents.
+- Pretty-printed round-trip is byte-identical.
+- Step kinds tagged as `create_dir`, `bind`, `socket` in JSON.
+- `BindMode` serializes as `ro`, `rw`, `create_inside_jail`.
+
+`tests/recover.rs` — fixture run-dir tests:
+- No state file → `NoJail`.
+- Stale state with non-existent pids → `OrphanJail` with reap steps.
+- Self PID used as fixture pid (always alive) → `LiveJail`.
+- Mixed alive/dead pids → `OrphanJail`.
+- No plan file present → `OrphanJail` with empty reap steps.
+
+`tests/integration_root.rs` — marked `#[ignore]` (requires root):
+- `materialize` creates the jail root and writes plan/state JSON.
