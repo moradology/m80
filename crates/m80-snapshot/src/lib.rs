@@ -232,6 +232,13 @@ impl RestoreMetadata {
 /// The `<store_root>` must be a host-local filesystem path. v0.1 ships no
 /// remote-store support; adding S3/GCS/generic stores is a v0.2+ epic.
 ///
+/// **Caller responsibility — no path-component sanitization.** Both
+/// `workspace_id` and `run_id` are joined with `Path::join` directly, so a
+/// value containing `/` or `..` *will* produce out-of-tree paths
+/// (e.g., `workspace_id = "../../etc"`). Callers handling untrusted IDs
+/// must reject those characters at the API boundary before calling.
+/// (The unit test `workspace_id_is_not_sanitised` documents this contract.)
+///
 /// # Example
 ///
 /// ```ignore

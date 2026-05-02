@@ -111,7 +111,11 @@ pub enum ExecStatus {
     Completed,
     /// Guest killed the process because it exceeded `timeout_ms`.
     TimedOut,
-    /// Caller requested cancellation.
+    /// Host disconnected mid-exec or otherwise requested cancellation. The
+    /// in-VM `m80-guestd` daemon does not produce this status itself —
+    /// it's set host-side when the orchestrator decides a run was
+    /// cancelled (e.g., the host TCP-level connection dropped before the
+    /// response was received).
     Cancelled,
     /// Exec infrastructure failed before or during execution.
     Failed,

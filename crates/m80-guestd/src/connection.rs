@@ -15,6 +15,12 @@ use m80_proto::{
 /// Per-stream capture limit: 1 MiB.
 const CAPTURE_LIMIT: usize = 1 << 20;
 
+/// Hard ceiling on the per-exec timeout, even if the host sends `None` or
+/// a larger value. Without this a guest process that never exits would hold
+/// a guestd handler thread + its capture threads indefinitely. One hour is
+/// long enough for any realistic in-VM build/test workload.
+const MAX_TIMEOUT_MS: u64 = 60 * 60 * 1000;
+
 fn unix_ms_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -195,14 +201,16 @@ fn capture_stream<R: Read>(mut reader: R) -> (Vec<u8>, bool) {
 
 /// Poll for child exit with a bounded timeout.
 /// Returns `true` if the timeout was exceeded (child still running).
+///
+/// `timeout_ms == None` is treated as `MAX_TIMEOUT_MS`. A caller-supplied
+/// value is also clamped to that ceiling. Without this clamp a buggy or
+/// malicious host could hold guestd's handler + capture threads forever.
 fn wait_with_timeout(child: &mut std::process::Child, timeout_ms: Option<u64>) -> bool {
-    let Some(timeout_ms) = timeout_ms else {
-        return false;
-    };
+    let effective_ms = timeout_ms.unwrap_or(MAX_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
 
     // Use Instant (monotonic) for the deadline, not SystemTime — a wall-clock
     // step (NTP slew, leap second) must not retroactively expire the budget.
-    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    let deadline = Instant::now() + Duration::from_millis(effective_ms);
     let poll_interval = Duration::from_millis(10);
 
     loop {

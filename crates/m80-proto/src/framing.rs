@@ -81,7 +81,7 @@ where
     W: Write,
     T: Serialize,
 {
-    let buf = serde_json::to_vec(value).expect("m80-proto value serialization cannot fail");
+    let buf = serde_json::to_vec(value).map_err(ProtoError::EncodeFailed)?;
     if buf.len() > MAX_FRAME_BYTES {
         return Err(ProtoError::OversizedPayload {
             size: buf.len(),

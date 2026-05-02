@@ -182,11 +182,26 @@ impl Manifest {
 }
 
 fn check_sha256(field: &str, path: &Path, expected: &str) -> Result<(), ManifestError> {
-    let bytes = std::fs::read(path).map_err(|source| ManifestError::Io {
+    use std::io::Read;
+    // Stream the file through Sha256 in 64 KiB chunks so verifying a
+    // multi-GiB rootfs doesn't allocate the whole file on the heap.
+    let mut file = std::fs::File::open(path).map_err(|source| ManifestError::Io {
         path: path.to_path_buf(),
         source,
     })?;
-    let actual = hex::encode(Sha256::digest(&bytes));
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).map_err(|source| ManifestError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let actual = hex::encode(hasher.finalize());
     if expected != actual {
         return Err(ManifestError::Sha256Mismatch {
             field: field.to_owned(),

@@ -46,9 +46,8 @@ pub enum RejectionReason {
     Symlink,
     /// Path was a special file (device, fifo, socket).
     SpecialFile,
-    /// Path resolved outside the workspace root.
-    OutsideWorkspace,
-    /// Other reason; free text.
+    /// Other reason; free text. Used for unsupported file types not covered
+    /// by the more-specific variants above.
     Other(String),
 }
 

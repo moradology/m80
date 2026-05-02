@@ -44,6 +44,11 @@ pub fn cid_for_vm_id(vm_id: &str) -> u32 {
 /// Returns `Ok(())` as soon as the marker is found, or
 /// [`VsockError::NotReady`] if `timeout` elapses first.
 ///
+/// Reads the console file incrementally — keeps the file open and seeks to
+/// the last-read offset on each poll so a multi-MB serial-console log
+/// isn't re-read in full each cycle. Tolerates the file not yet existing
+/// at the start of the watch (Firecracker may not have created it).
+///
 /// Exposed as `pub` for integration testing; the primary entry point is
 /// [`Channel::open`], which calls this automatically.
 pub fn watch_ready_marker(
@@ -51,11 +56,34 @@ pub fn watch_ready_marker(
     marker: &str,
     timeout: Duration,
 ) -> Result<(), VsockError> {
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
+
     let deadline = Instant::now() + timeout;
+    let mut reader: Option<BufReader<std::fs::File>> = None;
+    let mut last_offset: u64 = 0;
+
     loop {
-        if let Ok(contents) = std::fs::read_to_string(console) {
-            if contents.lines().any(|line| line == marker) {
-                return Ok(());
+        if reader.is_none() {
+            if let Ok(f) = std::fs::File::open(console) {
+                reader = Some(BufReader::new(f));
+            }
+        }
+        if let Some(r) = reader.as_mut() {
+            // Re-seek in case the file was rewritten between polls.
+            let _ = r.seek(SeekFrom::Start(last_offset));
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match r.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        last_offset += line.len() as u64;
+                        if line.trim_end_matches(['\r', '\n']) == marker {
+                            return Ok(());
+                        }
+                    }
+                    Err(_) => break,
+                }
             }
         }
         if Instant::now() >= deadline {

@@ -122,6 +122,18 @@ impl Plan {
             });
         }
 
+        // Reject absolute `binding.dest`: Path::join silently drops the
+        // jail_root prefix when given an absolute path, which would let a
+        // caller bind-mount outside the jail (e.g., dest = "/etc").
+        for binding in &config.bindings {
+            if binding.dest.is_absolute() {
+                return Err(JailerError::BindFailed {
+                    src: binding.source.clone(),
+                    dest: binding.dest.clone(),
+                });
+            }
+        }
+
         let jail_root = config.run_dir.join("jail");
         let mut steps = Vec::new();
 
@@ -340,20 +352,18 @@ impl MaterializedJail {
             })?;
 
         let mut child = Command::new(&self.plan.config.jailer_bin)
-            .args([
-                "--id",
-                &vm_id,
-                "--exec-file",
-                &self.plan.config.firecracker_bin.to_string_lossy(),
-                "--uid",
-                &self.plan.config.uid.to_string(),
-                "--gid",
-                &self.plan.config.gid.to_string(),
-                "--chroot-base-dir",
-                &chroot_base.to_string_lossy(),
-                "--api-sock",
-                &api_socket_name.to_string_lossy(),
-            ])
+            .arg("--id")
+            .arg(&vm_id)
+            .arg("--exec-file")
+            .arg(&self.plan.config.firecracker_bin)
+            .arg("--uid")
+            .arg(self.plan.config.uid.to_string())
+            .arg("--gid")
+            .arg(self.plan.config.gid.to_string())
+            .arg("--chroot-base-dir")
+            .arg(chroot_base)
+            .arg("--api-sock")
+            .arg(api_socket_name)
             .spawn()
             .map_err(|source| JailerError::Io {
                 path: self.plan.config.jailer_bin.clone(),
@@ -500,20 +510,13 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
             source: io::Error::new(io::ErrorKind::InvalidData, e),
         })?;
 
-    let jailer_alive = state
-        .jailer_pid
-        .map(pid_is_alive)
-        .unwrap_or(false);
-    let fc_alive = state
-        .firecracker_pid
-        .map(pid_is_alive)
-        .unwrap_or(false);
-
-    if jailer_alive && fc_alive {
-        return Ok(RecoveryDecision::LiveJail {
-            jailer_pid: state.jailer_pid.unwrap(),
-            firecracker_pid: state.firecracker_pid.unwrap(),
-        });
+    if let (Some(jailer_pid), Some(fc_pid)) = (state.jailer_pid, state.firecracker_pid) {
+        if pid_is_alive(jailer_pid) && pid_is_alive(fc_pid) {
+            return Ok(RecoveryDecision::LiveJail {
+                jailer_pid,
+                firecracker_pid: fc_pid,
+            });
+        }
     }
 
     // Orphan or partial — load plan steps in reverse for reaping.
@@ -544,9 +547,6 @@ fn pid_is_alive(pid: u32) -> bool {
 /// Errors surfaced by jailer operations.
 #[derive(Debug, thiserror::Error)]
 pub enum JailerError {
-    /// Insufficient privilege to invoke the jailer.
-    #[error("insufficient privilege to launch jailer")]
-    LaunchPrivilegeUnavailable,
     /// A bind-mount failed.
     #[error("bind-mount failed: src={src} dest={dest}", src = src.display(), dest = dest.display())]
     BindFailed {

@@ -104,7 +104,8 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
 
     // 2. mkfs.ext4 -F image
     let mkfs_out = Command::new("mkfs.ext4")
-        .args(["-F", &image.display().to_string()])
+        .arg("-F")
+        .arg(image)
         .output()
         .map_err(StorageError::Mkfs)?;
     if !mkfs_out.status.success() {
@@ -145,7 +146,8 @@ fn e2fsck_exit_acceptable(code: Option<i32>) -> bool {
 
 fn run_e2fsck(image: &Path) -> Result<(), StorageError> {
     let out = Command::new("e2fsck")
-        .args(["-p", "-f", &image.display().to_string()])
+        .args(["-p", "-f"])
+        .arg(image)
         .output()
         .map_err(|e| io_err(image, e))?;
 
@@ -167,12 +169,9 @@ fn run_e2fsck(image: &Path) -> Result<(), StorageError> {
 
 fn mount_loop(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
     let out = Command::new("mount")
-        .args([
-            "-o",
-            "loop",
-            &image.display().to_string(),
-            &mount_point.display().to_string(),
-        ])
+        .args(["-o", "loop"])
+        .arg(image)
+        .arg(mount_point)
         .output()
         .map_err(|e| io_err(mount_point, e))?;
     if !out.status.success() {
@@ -189,12 +188,9 @@ fn mount_loop(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
 
 fn mount_loop_ro(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
     let out = Command::new("mount")
-        .args([
-            "-o",
-            "loop,ro",
-            &image.display().to_string(),
-            &mount_point.display().to_string(),
-        ])
+        .args(["-o", "loop,ro"])
+        .arg(image)
+        .arg(mount_point)
         .output()
         .map_err(|e| io_err(mount_point, e))?;
     if !out.status.success() {
@@ -211,7 +207,7 @@ fn mount_loop_ro(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
 
 fn umount(mount_point: &Path) -> Result<(), StorageError> {
     let out = Command::new("umount")
-        .arg(mount_point.display().to_string())
+        .arg(mount_point)
         .output()
         .map_err(|e| io_err(mount_point, e))?;
     if !out.status.success() {

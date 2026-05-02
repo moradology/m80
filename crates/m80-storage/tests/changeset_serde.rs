@@ -20,10 +20,6 @@ fn make_changeset() -> ChangeSet {
                 reason: RejectionReason::SpecialFile,
             },
             Rejection {
-                path: PathBuf::from("outside"),
-                reason: RejectionReason::OutsideWorkspace,
-            },
-            Rejection {
                 path: PathBuf::from("weird"),
                 reason: RejectionReason::Other("unsupported file type".into()),
             },

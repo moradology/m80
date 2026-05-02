@@ -59,8 +59,31 @@ impl BuildConfig {
             .map_err(|e| anyhow::anyhow!("reading config {}: {}", path.display(), e))?;
         let cfg: BuildConfig = toml::from_str(&raw)
             .map_err(|e| anyhow::anyhow!("parsing config {}: {}", path.display(), e))?;
+        validate_url_safe("kernel.version", &cfg.kernel.version)?;
+        validate_url_safe("kernel.arch", &cfg.kernel.arch)?;
         Ok(cfg)
     }
+}
+
+/// Reject config strings that would let `cfg.kernel.version` or
+/// `cfg.kernel.arch` (which we interpolate into S3 download URLs)
+/// manipulate the URL path. `Command::arg` already prevents shell
+/// injection, but a value like `"v1/../../../"` would silently fetch
+/// from an unintended bucket location.
+fn validate_url_safe(field: &str, value: &str) -> anyhow::Result<()> {
+    if value.is_empty() {
+        anyhow::bail!("config {field} is empty");
+    }
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+    {
+        anyhow::bail!(
+            "config {field} = {value:?} contains characters outside [A-Za-z0-9._-]; \
+             would corrupt the firecracker-ci download URL"
+        );
+    }
+    Ok(())
 }
 
 /// Parse a human-readable size string into bytes.
