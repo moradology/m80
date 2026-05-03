@@ -26,7 +26,7 @@ use m80_image_manifest::Manifest;
 use m80_jailer::{Binding, BindMode, JailerConfig, Plan, SocketSpec};
 use m80_net_mode::VmNetworkMode;
 use m80_storage::{Rootfs, Scratch};
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT, READY_MARKER_DEFAULT};
+use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::error::FcError;
 use crate::runroot::write_ownership_lock;
@@ -426,24 +426,14 @@ fn phase_11_rest_puts(
 /// the vsock handshake succeeds or the 30-second overall deadline elapses.
 fn phase_12b_ready_probe(vsock_uds: &Path, vm_id: &str) -> Result<Channel, FcError> {
     let deadline = Instant::now() + READY_TIMEOUT;
-    // Use a path that does not exist so the marker watch immediately polls
-    // and times out, falling through to the UDS connect attempt.
-    let console_path = vsock_uds.with_extension("console.log");
 
     loop {
         if vsock_uds.exists() {
-            match Channel::open(
-                vsock_uds,
-                GUEST_PORT_DEFAULT,
-                READY_MARKER_DEFAULT,
-                &console_path,
-                Duration::from_secs(1),
-            ) {
+            match Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT) {
                 Ok(channel) => {
                     tracing::info!(vm_id, "vsock channel open: guestd ready");
                     return Ok(channel);
                 }
-                Err(m80_vsock::VsockError::NotReady) => {}
                 Err(m80_vsock::VsockError::ConnectFailed { errno }) => {
                     tracing::debug!(vm_id, errno, "vsock connect failed, retrying");
                 }
