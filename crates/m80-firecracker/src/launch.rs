@@ -298,11 +298,11 @@ fn phase_5b_cgroup_create(
     match mode {
         CgroupMode::Disabled => Ok(None),
         CgroupMode::UnifiedV2 => {
-            let subtree = Subtree::create(vm_id, jail, jailed)
-                .map_err(|e| FcError::Config(format!("cgroup create: {e}")))?;
-            subtree
-                .apply_limits(&Limits::default())
-                .map_err(|e| FcError::Config(format!("cgroup apply_limits: {e}")))?;
+            // FcError::Cgroup wraps CgroupError via #[from]; `?` does the
+            // conversion so we keep the structured cause for the CLI's
+            // error → exit-code map.
+            let subtree = Subtree::create(vm_id, jail, jailed)?;
+            subtree.apply_limits(&Limits::default())?;
             Ok(Some(subtree))
         }
     }

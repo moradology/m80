@@ -15,8 +15,9 @@ struct OwnershipRecord {
     started_at_ms: u64,
 }
 
-/// File name of the per-VM ownership marker.
-pub(crate) const OWNERSHIP_LOCK: &str = "ownership.lock";
+/// File name of the per-VM ownership marker. Public because m80-cli walks
+/// run-dirs externally and needs the same constant for liveness checks.
+pub const OWNERSHIP_LOCK: &str = "ownership.lock";
 
 /// Current Unix time in milliseconds.
 pub(crate) fn unix_ms_now() -> u64 {

@@ -2,6 +2,7 @@
 
 use std::io;
 
+use m80_cgroup::CgroupError;
 use m80_firecracker_client::ClientError;
 use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
@@ -26,6 +27,11 @@ pub enum FcError {
     /// Jailer materialization or recovery failed.
     #[error("jailer: {0}")]
     Jailer(#[from] JailerError),
+    /// Cgroup subtree create / apply_limits / cleanup failed. Distinct
+    /// from `Config` so callers can branch on "kernel/cgroup setup
+    /// failed" vs "host config didn't parse".
+    #[error("cgroup: {0}")]
+    Cgroup(#[from] CgroupError),
     /// Network realization or cleanup failed.
     #[error("network: {0}")]
     Network(#[from] NetError),

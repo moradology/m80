@@ -46,6 +46,7 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         // went wrong at runtime" — generic.
         FcError::Storage(_)
         | FcError::Jailer(_)
+        | FcError::Cgroup(_)
         | FcError::Network(_)
         | FcError::Client(_)
         | FcError::Vsock(_)
@@ -89,6 +90,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Manifest(_) => "Manifest",
         FcError::Storage(_) => "Storage",
         FcError::Jailer(_) => "Jailer",
+        FcError::Cgroup(_) => "Cgroup",
         FcError::Network(_) => "Network",
         FcError::Client(_) => "Client",
         FcError::Vsock(_) => "Vsock",

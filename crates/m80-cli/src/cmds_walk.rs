@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-use m80_firecracker::Backend;
+use m80_firecracker::{Backend, OWNERSHIP_LOCK};
+use m80_jailer::{JAILER_PLAN_FILE, JAILER_STATE_FILE};
 
 use crate::cmds::build_backend;
 use crate::config;
@@ -59,7 +60,7 @@ pub fn cmd_stop(
 
     // Remove the ownership.lock so future recover_stale_run_root passes can
     // reclaim the run-dir even if recovery races with a re-spawned VM.
-    let lock = vm_dir.join("ownership.lock");
+    let lock = vm_dir.join(OWNERSHIP_LOCK);
     if lock.exists() {
         if let Err(e) = std::fs::remove_file(&lock) {
             eprintln!("warning: failed to remove {}: {e}", lock.display());
@@ -86,10 +87,15 @@ pub fn cmd_stop(
     Ok(0)
 }
 
-/// Attempt to SIGKILL all pids recorded in `<vm_dir>/jailer-state.json`.
-/// Returns the number of successfully-signalled pids.
+/// Attempt to SIGKILL the firecracker pid recorded in
+/// `<vm_dir>/jailer-state.json`. Returns the number of pids signalled.
+///
+/// Only `firecracker_pid` is killed — the `jailer_pid` is the parent that
+/// `m80-jailer::launch` already reaps via `child.wait()` before returning,
+/// so SIGKILLing it is either a no-op (already gone) or worse, a PID-reuse
+/// hit. The actual long-running VM process is the firecracker child.
 fn kill_jailer_pids(vm_dir: &Path) -> usize {
-    let jailer_state = vm_dir.join("jailer-state.json");
+    let jailer_state = vm_dir.join(JAILER_STATE_FILE);
     if !jailer_state.exists() {
         return 0;
     }
@@ -104,21 +110,17 @@ fn kill_jailer_pids(vm_dir: &Path) -> usize {
         Err(_) => return 0,
     };
 
-    let pids = match parsed.get("pids").and_then(|p| p.as_array()) {
-        Some(arr) => arr.clone(),
-        None => return 0,
+    // m80-jailer writes top-level scalar fields, not a `pids` array.
+    let Some(pid) = parsed.get("firecracker_pid").and_then(|v| v.as_i64()) else {
+        return 0;
     };
 
-    let mut killed = 0usize;
-    for pid_val in &pids {
-        if let Some(pid) = pid_val.as_i64() {
-            let raw = nix::unistd::Pid::from_raw(pid as i32);
-            if nix::sys::signal::kill(raw, nix::sys::signal::Signal::SIGKILL).is_ok() {
-                killed += 1;
-            }
-        }
+    let raw = nix::unistd::Pid::from_raw(pid as i32);
+    if nix::sys::signal::kill(raw, nix::sys::signal::Signal::SIGKILL).is_ok() {
+        1
+    } else {
+        0
     }
-    killed
 }
 
 // =====================================================================
@@ -135,9 +137,14 @@ pub fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
         return Ok(errors::EXIT_GENERIC);
     }
 
+    // Files the orchestrator + dependent crates write into <run_dir>/.
+    // boot-identity.json is reserved for the v0.2 snapshot manifest path
+    // (m80-snapshot writes it as part of the capture lane); not present
+    // in v0.1 — listed so consumers know to expect it once v0.2 lands.
     let known_files = &[
-        "ownership.lock",
-        "jailer-state.json",
+        OWNERSHIP_LOCK,
+        JAILER_STATE_FILE,
+        JAILER_PLAN_FILE,
         "cgroup-path.txt",
         "boot-identity.json",
     ];
@@ -273,7 +280,7 @@ fn backend_run_root(backend: &Backend) -> PathBuf {
 
 /// Return `true` iff `<vm_dir>/ownership.lock` records a still-running pid.
 fn vm_dir_is_live(vm_dir: &Path) -> bool {
-    let lock = vm_dir.join("ownership.lock");
+    let lock = vm_dir.join(OWNERSHIP_LOCK);
     let Ok(text) = std::fs::read_to_string(&lock) else {
         return false;
     };

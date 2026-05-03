@@ -65,3 +65,6 @@ pub use config::{backend_config_from_effective, load as load_config};
 
 // ChangeSet re-exported because StoppedSandbox::extract_changes returns it.
 pub use m80_storage::ChangeSet;
+
+// Run-dir conventions m80-cli walks externally.
+pub use runroot::OWNERSHIP_LOCK;

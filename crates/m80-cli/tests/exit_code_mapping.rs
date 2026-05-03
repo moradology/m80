@@ -22,6 +22,7 @@ fn code(err: FcError) -> i32 {
         FcError::Config(_) => 6,
         FcError::Storage(_)
         | FcError::Jailer(_)
+        | FcError::Cgroup(_)
         | FcError::Network(_)
         | FcError::Client(_)
         | FcError::Vsock(_)

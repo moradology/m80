@@ -21,8 +21,8 @@ m80-storage.workspace = true
 m80-preflight.workspace = true
 m80-net-mode.workspace = true
 m80-net-outbound.workspace = true
-m80-snapshot.workspace = true
-m80-observability.workspace = true
+# m80-snapshot, m80-observability are v0.2 dep targets — not used in v0.1
+# code paths. Re-add when their respective epics land.
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

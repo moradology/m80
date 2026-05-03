@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::Context;
 
 use m80_firecracker::{Backend, EffectiveConfig, NetworkPolicy, SandboxConfig};
-use m80_proto::ExecRequest;
+use m80_firecracker::ExecRequest;
 
 use crate::config;
 use crate::errors;
