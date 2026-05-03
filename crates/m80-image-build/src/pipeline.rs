@@ -52,18 +52,28 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
     let output_rootfs = cfg.output.dir.join("output.ext4");
     let service_unit_host = cfg.output.dir.join("m80-guestd.service");
     let workspace_mount_host = cfg.output.dir.join("workspace.mount");
+    // Host audit copy of the daemon binary so `Manifest::verify` (which
+    // runs at preflight time and does not loop-mount the rootfs) has a
+    // host-readable artifact to sha256. The in-VM destination is a build
+    // constant (`GUEST_DAEMON_PATH`) and not the manifest's concern.
+    let daemon_binary_host = cfg.output.dir.join("m80-guestd");
     let manifest_path = {
         let mut p = output_rootfs.clone().into_os_string();
         p.push(".manifest.json");
         PathBuf::from(p)
     };
 
+    // CI bucket layout uses minor-version directories (e.g. `v1.15`), not
+    // patch-level (`v1.15.1`). Filenames also drift per release: v1.15
+    // currently ships `vmlinux-5.10.245` and `ubuntu-24.04.squashfs`.
+    // TODO(v0.2): split URL track from expected_firecracker_version pin and
+    // probe the bucket index instead of hardcoding filenames.
     let kernel_url = format!(
-        "{}/{}/{}/vmlinux-5.10.225",
+        "{}/{}/{}/vmlinux-5.10.245",
         FC_CI_BASE, cfg.kernel.version, cfg.kernel.arch
     );
     let rootfs_url = format!(
-        "{}/{}/{}/ubuntu-22.04.squashfs",
+        "{}/{}/{}/ubuntu-24.04.squashfs",
         FC_CI_BASE, cfg.kernel.version, cfg.kernel.arch
     );
 
@@ -143,8 +153,10 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
     let squashfs = cfg.output.dir.join("source.squashfs");
     run_curl(&rootfs_url, &squashfs).context("step 2: download source rootfs")?;
 
-    // Step 3: convert squashfs → ext4.
-    squashfs_to_ext4(&squashfs, &source_rootfs, &cfg.output.dir)
+    // Step 3: convert squashfs → ext4. Pre-allocate the target to the
+    // configured rootfs size so mkfs.ext4 has somewhere to write — without
+    // a pre-sized file (or an explicit size argument) mkfs.ext4 errors out.
+    squashfs_to_ext4(&squashfs, &source_rootfs, &cfg.output.dir, size_bytes)
         .context("step 3: convert squashfs → ext4")?;
 
     // Step 4: copy to output + resize.
@@ -171,6 +183,10 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
         .context("writing m80-guestd.service to output dir")?;
     std::fs::write(&workspace_mount_host, WORKSPACE_MOUNT_UNIT)
         .context("writing workspace.mount to output dir")?;
+    // Host audit copy of the daemon binary that was installed inside the
+    // rootfs at GUEST_DAEMON_PATH.
+    std::fs::copy(&cfg.guestd.binary, &daemon_binary_host)
+        .context("copying m80-guestd to output dir")?;
 
     // Step 12: hash all six artifacts.
     let kernel_sha = sha256_file(&paths.kernel).context("sha256 kernel")?;
@@ -183,7 +199,7 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
     // Step 13: emit manifest.
     let manifest = m80_image_manifest::Manifest {
         boot_target: "multi-user.target".to_string(),
-        daemon_binary_path: PathBuf::from(GUEST_DAEMON_PATH),
+        daemon_binary_path: daemon_binary_host.clone(),
         daemon_binary_sha256: daemon_sha,
         expected_firecracker_version: cfg.kernel.version.clone(),
         guest_port: m80_proto::GUEST_PORT_DEFAULT,
@@ -230,7 +246,12 @@ fn run_curl(url: &str, dest: &Path) -> anyhow::Result<()> {
 ///
 /// Uses `unsquashfs` to extract into a temp subdir, then `mkfs.ext4` with
 /// `-d` to populate a new image file from that directory tree.
-fn squashfs_to_ext4(squashfs: &Path, ext4: &Path, work_dir: &Path) -> anyhow::Result<()> {
+fn squashfs_to_ext4(
+    squashfs: &Path,
+    ext4: &Path,
+    work_dir: &Path,
+    size_bytes: u64,
+) -> anyhow::Result<()> {
     let squash_out = work_dir.join("squashfs-root");
     // Remove any leftover extraction dir so unsquashfs -d works.
     if squash_out.exists() {
@@ -245,8 +266,10 @@ fn squashfs_to_ext4(squashfs: &Path, ext4: &Path, work_dir: &Path) -> anyhow::Re
     if !status.success() {
         anyhow::bail!("unsquashfs failed (exit {:?})", status.code());
     }
+    // Pre-allocate target so mkfs.ext4 -d has a sized file to populate.
+    truncate_file(ext4, size_bytes).context("pre-sizing source ext4 image")?;
     let status = Command::new("mkfs.ext4")
-        .args(["-d"])
+        .args(["-F", "-d"])
         .arg(&squash_out)
         .arg(ext4)
         .status()
