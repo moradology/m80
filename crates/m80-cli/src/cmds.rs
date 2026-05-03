@@ -200,12 +200,15 @@ pub fn cmd_exec(vm_id: &str, _argv: &[String], json: bool) -> anyhow::Result<i32
          vm_id={vm_id}"
     );
     if json {
-        let obj = serde_json::json!({ "error": msg, "exit_code": 5 });
+        let obj = serde_json::json!({
+            "error": msg,
+            "exit_code": errors::EXIT_NOT_IMPLEMENTED,
+        });
         eprintln!("{}", serde_json::to_string_pretty(&obj).unwrap());
     } else {
         eprintln!("error: {msg}");
     }
-    Ok(5)
+    Ok(errors::EXIT_NOT_IMPLEMENTED)
 }
 
 // =====================================================================
@@ -264,20 +267,42 @@ pub fn cmd_config_show(json: bool) -> anyhow::Result<i32> {
 // =====================================================================
 
 /// `m80 version` — print version strings.
+///
+/// Reports binary version, wire-protocol version, and (best-effort) the
+/// Firecracker version pin from the manifest beside `M80_ROOTFS_IMAGE`.
+/// If the manifest can't be read, the Firecracker pin renders as
+/// `"unknown"` rather than failing the subcommand.
 pub fn cmd_version(json: bool) -> anyhow::Result<i32> {
     let binary_version = env!("CARGO_PKG_VERSION");
     let protocol_version = m80_proto::PROTOCOL_VERSION;
+    let firecracker_pin = read_firecracker_pin();
 
     if json {
         let obj = serde_json::json!({
             "binary_version": binary_version,
             "protocol_version": protocol_version,
+            "firecracker_pin": firecracker_pin,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
     } else {
-        println!("m80         {binary_version}");
-        println!("protocol    {protocol_version}");
+        println!("m80           {binary_version}");
+        println!("protocol      {protocol_version}");
+        println!("firecracker   {firecracker_pin}");
     }
 
     Ok(0)
+}
+
+/// Best-effort read of the Firecracker version pin from the manifest beside
+/// `M80_ROOTFS_IMAGE`. Returns `"unknown"` when the env var is unset or the
+/// manifest can't be parsed (this subcommand must never fail).
+fn read_firecracker_pin() -> String {
+    let Ok(rootfs) = std::env::var("M80_ROOTFS_IMAGE") else {
+        return "unknown (set M80_ROOTFS_IMAGE)".to_string();
+    };
+    let manifest_path = format!("{rootfs}.manifest.json");
+    match m80_image_manifest::Manifest::read(std::path::Path::new(&manifest_path)) {
+        Ok(m) => m.expected_firecracker_version,
+        Err(_) => "unknown".to_string(),
+    }
 }

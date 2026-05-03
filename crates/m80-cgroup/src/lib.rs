@@ -53,48 +53,48 @@ impl Subtree {
     ) -> Result<Self, CgroupError> {
         let parent = PathBuf::from(CGROUP_ROOT);
 
-        // 1. Ensure parent dir exists.
-        if !parent.exists() {
-            fs::create_dir(&parent).map_err(|source| CgroupError::Io {
-                path: parent.clone(),
-                source,
-            })?;
-        }
+        // 1. Ensure parent dir exists. `create_dir_all` is race-safe: two
+        //    concurrent sandboxes can both call this without one losing.
+        fs::create_dir_all(&parent).map_err(|source| CgroupError::Io {
+            path: parent.clone(),
+            source,
+        })?;
 
-        // 2. Enable controllers in the parent.
+        // 2. Enable controllers in the parent. Use `write_cgroup_file` (no
+        //    O_TRUNC) — cgroup virtual files reject O_TRUNC on some kernels.
         let subtree_control = parent.join("cgroup.subtree_control");
-        fs::write(&subtree_control, "+cpu +memory +pids\n").map_err(|source| {
-            // If the write fails with a specific error about a controller not
-            // being available, surface the structured variant. Otherwise wrap
-            // as Io. In practice cgroup writes return EINVAL or ENOENT for
-            // unavailable controllers; we check cgroup.controllers first so
-            // we can name the missing one.
+        if let Err(cgroup_err) = write_cgroup_file(&subtree_control, "+cpu +memory +pids\n") {
+            // On failure, check cgroup.controllers and surface the structured
+            // ControllerNotEnabled variant when we can name the missing one;
+            // otherwise propagate the original CgroupError unchanged.
             let controllers_path = parent.join("cgroup.controllers");
             if let Ok(controllers) = fs::read_to_string(&controllers_path) {
                 for name in ["cpu", "memory", "pids"] {
                     if !controllers.split_whitespace().any(|c| c == name) {
-                        return CgroupError::ControllerNotEnabled(name.to_owned());
+                        return Err(CgroupError::ControllerNotEnabled(name.to_owned()));
                     }
                 }
             }
-            CgroupError::Io {
-                path: subtree_control.clone(),
-                source,
-            }
-        })?;
-
-        // 3. Create the per-VM leaf directory.
-        let leaf = parent.join(vm_id);
-        if !leaf.exists() {
-            fs::create_dir(&leaf).map_err(|source| CgroupError::Io {
-                path: leaf.clone(),
-                source,
-            })?;
+            return Err(cgroup_err);
         }
 
-        // 4. Assign both pids to the leaf (one write per pid).
+        // 3. Create the per-VM leaf directory. `create_dir_all` is race-safe
+        //    against a stale-from-prior-crash leaf — but if it pre-existed,
+        //    the prior controller state may persist; cleanup_orphan_subtree
+        //    is the orthogonal preflight step the orchestrator should call.
+        let leaf = parent.join(vm_id);
+        fs::create_dir_all(&leaf).map_err(|source| CgroupError::Io {
+            path: leaf.clone(),
+            source,
+        })?;
+
+        // 4. Assign the firecracker pid to the leaf. Note: jailer's
+        //    `JailedFirecracker::jailer_pid` is the pid of the jailer parent,
+        //    which `m80-jailer::launch()` reaps via `child.wait()` before
+        //    returning — so by the time we get here it's already exited and
+        //    writing it to cgroup.procs would return ESRCH. The firecracker
+        //    process is what we actually want to constrain anyway.
         let procs = leaf.join("cgroup.procs");
-        write_cgroup_file(&procs, &format!("{}\n", jailed.jailer_pid))?;
         write_cgroup_file(&procs, &format!("{}\n", jailed.firecracker_pid))?;
 
         // 5. Persist the subtree path to <run_dir>/cgroup-path.txt.

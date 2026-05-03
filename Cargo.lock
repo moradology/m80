@@ -322,6 +322,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "m80-firecracker",
+ "m80-image-manifest",
  "m80-preflight",
  "m80-proto",
  "nix 0.29.0",

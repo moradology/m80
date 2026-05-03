@@ -14,6 +14,7 @@ use anyhow::Context;
 use m80_firecracker::Backend;
 
 use crate::cmds::build_backend;
+use crate::config;
 use crate::errors;
 
 // =====================================================================
@@ -54,6 +55,15 @@ pub fn cmd_stop(
              (v0.2 feature); dest={} will not be populated",
             dest.display()
         );
+    }
+
+    // Remove the ownership.lock so future recover_stale_run_root passes can
+    // reclaim the run-dir even if recovery races with a re-spawned VM.
+    let lock = vm_dir.join("ownership.lock");
+    if lock.exists() {
+        if let Err(e) = std::fs::remove_file(&lock) {
+            eprintln!("warning: failed to remove {}: {e}", lock.display());
+        }
     }
 
     if let Err(e) = backend.recover_stale_run_root() {
@@ -117,7 +127,7 @@ fn kill_jailer_pids(vm_dir: &Path) -> usize {
 
 /// `m80 inspect` — print a VM's run-dir layout and recorded state.
 pub fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
-    let run_root = run_root_from_env();
+    let run_root = effective_run_root();
     let vm_dir = run_root.join(vm_id);
 
     if !vm_dir.exists() {
@@ -182,7 +192,7 @@ pub fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
 
 /// `m80 list` — enumerate VM run-dirs under the run-root.
 pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
-    let run_root = run_root_from_env();
+    let run_root = effective_run_root();
 
     if !run_root.exists() {
         if json {
@@ -209,11 +219,11 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
             .unwrap_or("?")
             .to_owned();
 
-        let state = if path.join("jailer-state.json").exists() {
-            "stale"
-        } else {
-            "live"
-        };
+        // "live" iff ownership.lock exists AND the recorded pid is alive.
+        // jailer-state.json presence/absence is a different signal — it's
+        // written during materialize and persists across stop. Don't use it
+        // as a liveness proxy.
+        let state = if vm_dir_is_live(&path) { "live" } else { "stale" };
 
         entries.push(serde_json::json!({ "vm_id": vm_id, "state": state, "run_dir": path }));
     }
@@ -242,8 +252,15 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
 // Helpers
 // =====================================================================
 
-/// Return the run-root from `M80_RUN_ROOT` env or the compiled default.
-fn run_root_from_env() -> PathBuf {
+/// Return the run-root resolved through the same config chain
+/// (`build_backend` uses internally): defaults → `/etc/m80/config.toml` →
+/// `~/.config/m80/config.toml` → `M80_*` env. We deliberately don't run
+/// preflight here (the read-only walk commands shouldn't pay for it); fall
+/// back to the env+default if the config probe fails.
+fn effective_run_root() -> PathBuf {
+    if let Ok(rr) = config::resolve_run_root() {
+        return rr;
+    }
     std::env::var("M80_RUN_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/var/run/m80"))
@@ -252,4 +269,20 @@ fn run_root_from_env() -> PathBuf {
 /// Extract the `run_root` from a constructed `Backend`.
 fn backend_run_root(backend: &Backend) -> PathBuf {
     backend.config.run_root.clone()
+}
+
+/// Return `true` iff `<vm_dir>/ownership.lock` records a still-running pid.
+fn vm_dir_is_live(vm_dir: &Path) -> bool {
+    let lock = vm_dir.join("ownership.lock");
+    let Ok(text) = std::fs::read_to_string(&lock) else {
+        return false;
+    };
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("pid=") {
+            if let Ok(pid) = rest.trim().parse::<u32>() {
+                return Path::new(&format!("/proc/{pid}")).exists();
+            }
+        }
+    }
+    false
 }

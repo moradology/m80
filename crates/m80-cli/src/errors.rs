@@ -26,6 +26,10 @@ pub const EXIT_MANIFEST: i32 = 4;
 pub const EXIT_INVALID_STATE: i32 = 5;
 /// Configuration loading or merging failure.
 pub const EXIT_CONFIG: i32 = 6;
+/// Feature explicitly not implemented in v0.1 (e.g., `m80 exec` CLI stub
+/// pending the v0.2 out-of-process IPC). Distinct from `EXIT_INVALID_STATE`
+/// so callers can branch on "feature gap" vs "lifecycle bug".
+pub const EXIT_NOT_IMPLEMENTED: i32 = 7;
 
 /// Map an [`FcError`] to its stable CLI exit code.
 ///

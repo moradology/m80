@@ -83,8 +83,11 @@ impl Sandbox {
         // Phase 1: run-root prep.
         let run_dir = phase_1_run_root_prep(run_root, &vm_id)?;
 
-        // Phase 2: lease acquisition.
-        let _lease = write_ownership_lock(&run_dir)?;
+        // Phase 2: lease acquisition. NB: name the binding `_lease_guard`
+        // (suffix after underscore) — a bare `_lease` would drop the guard
+        // immediately at the end of the let-statement, removing the
+        // ownership.lock before phase 3 runs.
+        let _lease_guard = write_ownership_lock(&run_dir)?;
 
         // Phase 3: manifest verify + storage prep.
         let storage = phase_3_storage_prep(
@@ -146,8 +149,10 @@ impl Sandbox {
         // Phase 12a: InstanceStart.
         client.instance_action(InstanceAction::InstanceStart)?;
 
-        // Phase 12b: poll vsock UDS until guestd is ready.
-        let vsock_uds = run_dir.join("vsock.sock");
+        // Phase 12b: poll vsock UDS until guestd is ready. The jailer
+        // materializes the socket inside the chroot, so the host-visible
+        // path is `<jail_path>/vsock.sock`, not `<run_dir>/vsock.sock`.
+        let vsock_uds = jail.jail_path.join("vsock.sock");
         let channel = phase_12b_ready_probe(&vsock_uds, &vm_id)?;
 
         Ok(RunningSandbox {

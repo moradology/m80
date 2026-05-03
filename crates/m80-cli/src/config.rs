@@ -274,6 +274,30 @@ pub fn load(
     Ok((backend_config, effective))
 }
 
+/// Resolve the effective `run_root` without running preflight or constructing
+/// a `Backend`. Used by the read-only walk commands (`m80 inspect`, `m80
+/// list`) so they pick up the same value `m80 launch`/`m80 stop` would.
+pub fn resolve_run_root() -> anyhow::Result<PathBuf> {
+    let system_cfg = load_toml_file(std::path::Path::new("/etc/m80/config.toml"))?
+        .unwrap_or_default();
+    let user_cfg = dirs_user_config()
+        .map(|p| load_toml_file(&p))
+        .transpose()?
+        .flatten()
+        .unwrap_or_default();
+
+    if let Ok(env_val) = std::env::var(ENV_RUN_ROOT) {
+        return Ok(PathBuf::from(env_val));
+    }
+    if let Some(s) = user_cfg.run_root.as_deref() {
+        return Ok(PathBuf::from(s));
+    }
+    if let Some(s) = system_cfg.run_root.as_deref() {
+        return Ok(PathBuf::from(s));
+    }
+    Ok(PathBuf::from(DEFAULT_RUN_ROOT))
+}
+
 /// Resolve `~/.config/m80/config.toml` without an external `dirs` crate.
 fn dirs_user_config() -> Option<PathBuf> {
     // Honor XDG_CONFIG_HOME if set; otherwise fall back to $HOME/.config.
