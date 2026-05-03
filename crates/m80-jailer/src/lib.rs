@@ -26,8 +26,10 @@ pub struct JailerConfig {
     pub jailer_bin: PathBuf,
     /// Absolute path to the `firecracker` binary.
     pub firecracker_bin: PathBuf,
-    /// Per-VM run directory. The jail is materialized under
-    /// `<run_dir>/jail/`.
+    /// Per-VM run directory. Used as jailer's `--chroot-base-dir`. The
+    /// directory's basename is used as `--id`, so the actual chroot ends
+    /// up at `<run_dir>/<firecracker_bin basename>/<run_dir basename>/root/`
+    /// (jailer's hardcoded layout — we cannot pick a different leaf).
     pub run_dir: PathBuf,
     /// UID inside the jail.
     pub uid: u32,
@@ -37,6 +39,19 @@ pub struct JailerConfig {
     pub bindings: Vec<Binding>,
     /// Sockets to create inside the jail (e.g., the API and vsock UDSes).
     pub sockets: Vec<SocketSpec>,
+}
+
+/// Compute the actual chroot path inside `run_dir`. Jailer hardcodes the
+/// nested layout `<chroot-base>/<exec-file basename>/<id>/root/`, where we
+/// pass `run_dir` for chroot-base and `run_dir`'s basename for id.
+fn chroot_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+    let exec_basename = firecracker_bin
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("firecracker"));
+    let id_basename = run_dir
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("vm"));
+    run_dir.join(exec_basename).join(id_basename).join("root")
 }
 
 /// One bind-mount (or in-jail directory) the jailer must materialize.
@@ -134,7 +149,7 @@ impl Plan {
             }
         }
 
-        let jail_root = config.run_dir.join("jail");
+        let jail_root = chroot_path(&config.run_dir, &config.firecracker_bin);
         let mut steps = Vec::new();
 
         // Step 1: create the jail root.
@@ -187,7 +202,20 @@ impl Plan {
         use nix::sys::stat::{Mode, fchmodat, FchmodatFlags};
         use nix::unistd::mkdir;
 
-        let jail_root = self.config.run_dir.join("jail");
+        let jail_root = chroot_path(&self.config.run_dir, &self.config.firecracker_bin);
+
+        // Pre-create the two intermediate dirs jailer expects to exist
+        // (`<run_dir>/<exec basename>/` and `<run_dir>/<exec basename>/<id>/`)
+        // so the per-step `mkdir` for jail_root itself can succeed. We don't
+        // track these for cleanup — Drop runs `remove_dir` on jail_root, which
+        // reclaims the leaf; the empty parent dirs are removed by run-dir
+        // teardown later.
+        if let Some(parent) = jail_root.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| JailerError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
 
         // Construct the guard up-front so that on any `?`-propagated error the
         // partially-applied state (created dirs + bind mounts so far) gets
@@ -252,6 +280,22 @@ impl Plan {
                             None::<&str>,
                             MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
                             None::<&str>,
+                        )
+                        .map_err(|_e| JailerError::BindFailed {
+                            src: source.clone(),
+                            dest: dest.clone(),
+                        })?;
+                    } else {
+                        // Rw bind: chown the source so the jailed firecracker
+                        // (running as `config.uid`) can open it for writing.
+                        // Bind mounts share the inode with the source, so a
+                        // chown of the source path is what the in-chroot
+                        // firecracker actually sees.
+                        use nix::unistd::{Uid, Gid, chown};
+                        chown(
+                            source.as_path(),
+                            Some(Uid::from_raw(self.config.uid)),
+                            Some(Gid::from_raw(self.config.gid)),
                         )
                         .map_err(|_e| JailerError::BindFailed {
                             src: source.clone(),
@@ -338,12 +382,10 @@ impl MaterializedJail {
             .to_string_lossy()
             .into_owned();
 
-        let chroot_base = self
-            .jail_path
-            .parent()
-            .ok_or_else(|| JailerError::ChrootFailed {
-                jail_path: self.jail_path.clone(),
-            })?;
+        // jailer's `--chroot-base-dir` must be the run_dir itself; jailer
+        // appends `<exec-file basename>/<id>/root/` to derive the real
+        // chroot path (matches `chroot_path()` above).
+        let chroot_base = self.plan.config.run_dir.as_path();
 
         let api_socket_name = api_socket
             .file_name()
@@ -351,6 +393,19 @@ impl MaterializedJail {
                 jail_path: self.jail_path.clone(),
             })?;
 
+        // Jailer args end at the bare `--`; everything after is forwarded
+        // to the jailed firecracker binary. `--api-sock` is firecracker's
+        // arg, not jailer's, so it goes on the right side of the separator.
+        //
+        // We do NOT pass `--daemonize`. Without it, jailer `exec()`s into
+        // firecracker, so this `Child` handle's pid IS the firecracker pid.
+        // We never `wait()` on it (that would block until the VM exits).
+        // Drop on `JailedFirecracker` is responsible for kill+reap.
+        //
+        // Stdout/stderr inherit from m80; firecracker prints VMM logs and
+        // (if `console=ttyS0` is in the boot args) serial console output
+        // there too — invaluable for boot debugging. With `--daemonize`,
+        // those would be redirected to /dev/null.
         let mut child = Command::new(&self.plan.config.jailer_bin)
             .arg("--id")
             .arg(&vm_id)
@@ -362,6 +417,7 @@ impl MaterializedJail {
             .arg(self.plan.config.gid.to_string())
             .arg("--chroot-base-dir")
             .arg(chroot_base)
+            .arg("--")
             .arg("--api-sock")
             .arg(api_socket_name)
             .spawn()
@@ -392,6 +448,10 @@ impl MaterializedJail {
                 break pid;
             }
             if Instant::now() >= deadline {
+                // Timeout: firecracker.pid never appeared. Kill the child
+                // (which may be jailer pre-exec or firecracker post-exec)
+                // and reap it before bailing.
+                let _ = child.kill();
                 let _ = child.wait();
                 return Err(JailerError::ChrootFailed {
                     jail_path: self.jail_path.clone(),
@@ -400,11 +460,11 @@ impl MaterializedJail {
             thread::sleep(Duration::from_millis(25));
         };
 
-        // Reap the jailer parent process. Jailer fork-execs firecracker into a
-        // child and the parent exits quickly; without `wait()` it lingers as a
-        // zombie until our process exits. The firecracker_pid we tracked above
-        // is reparented to PID 1 and stays running.
-        let _ = child.wait();
+        // Do NOT wait on `child`: jailer `exec()`s into firecracker, so this
+        // child handle's pid is the firecracker pid. Waiting blocks until
+        // the VM exits — which we explicitly do not want here. Drop on
+        // `JailedFirecracker` is responsible for kill+reap on teardown.
+        std::mem::forget(child);
 
         // Persist updated state.
         let state_path = self.plan.config.run_dir.join(JAILER_STATE_FILE);

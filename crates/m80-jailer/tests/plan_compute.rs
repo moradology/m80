@@ -81,8 +81,12 @@ fn step_ordering_jail_root_first() {
     let cfg = base_config();
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
     let first = plan.steps.first().expect("plan must have at least one step");
+    // Jailer's hardcoded chroot layout: <run_dir>/<exec basename>/<id>/root/.
+    // With `firecracker_bin = /usr/bin/firecracker` (basename `firecracker`)
+    // and `run_dir = /tmp/run/vm-1` (basename used as `--id`), the chroot
+    // is at /tmp/run/vm-1/firecracker/vm-1/root.
     assert!(
-        matches!(first, PlanStep::CreateDir { path, .. } if path == &PathBuf::from("/tmp/run/vm-1/jail")),
+        matches!(first, PlanStep::CreateDir { path, .. } if path == &PathBuf::from("/tmp/run/vm-1/firecracker/vm-1/root")),
         "first step must be CreateDir for jail root, got {first:?}"
     );
 }
