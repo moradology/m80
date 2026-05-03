@@ -19,18 +19,19 @@ pub use m80_net_mode::NetworkPolicy;
 // =====================================================================
 
 /// Inner state of the admission semaphore: `(available_permits, Condvar)`.
-pub type SemaphoreInner = (Mutex<u32>, Condvar);
+pub(crate) type SemaphoreInner = (Mutex<u32>, Condvar);
 
 /// Shared admission semaphore.
-pub type Semaphore = Arc<SemaphoreInner>;
+pub(crate) type Semaphore = Arc<SemaphoreInner>;
 
 /// An acquired admission permit. Releasing it (via Drop) returns one slot to
-/// the semaphore.
+/// the semaphore. Held inside `Sandbox` / `RunningSandbox` / `StoppedSandbox`
+/// — callers don't construct these directly.
 pub struct AdmissionPermit {
     /// Handle back to the semaphore so Drop can return the slot.
-    pub sem: Semaphore,
+    pub(crate) sem: Semaphore,
     /// The configured maximum (for error messages on exhaustion).
-    pub limit: u32,
+    pub(crate) limit: u32,
 }
 
 impl std::fmt::Debug for AdmissionPermit {
@@ -56,13 +57,25 @@ impl Drop for AdmissionPermit {
 
 /// Long-lived backend handle a service holds. Wraps the admission semaphore
 /// and the discovery info from preflight. One per process.
+///
+/// Field-level access is `pub(crate)` — public callers go through
+/// methods on `impl Backend`. (m80-cli reaches for `run_root` and the
+/// effective config; both have explicit accessors.)
 pub struct Backend {
     /// Merged + annotated configuration.
-    pub config: BackendConfig,
+    pub(crate) config: BackendConfig,
     /// Effective configuration snapshot (for `show_effective_config`).
-    pub effective: EffectiveConfig,
+    pub(crate) effective: EffectiveConfig,
     /// Admission semaphore: `(available_permits, Condvar)`.
-    pub semaphore: Semaphore,
+    pub(crate) semaphore: Semaphore,
+}
+
+impl Backend {
+    /// The merged backend configuration (preflight discovery + admission
+    /// limits + jail uid/gid + cgroup mode + run_root).
+    pub fn config(&self) -> &BackendConfig {
+        &self.config
+    }
 }
 
 impl std::fmt::Debug for Backend {
@@ -161,11 +174,11 @@ pub struct SandboxConfig {
 /// A sandbox in `Created` state — admission permit held, no I/O performed yet.
 pub struct Sandbox {
     /// Per-VM configuration.
-    pub config: SandboxConfig,
+    pub(crate) config: SandboxConfig,
     /// Admission permit; dropped if launch fails.
-    pub permit: AdmissionPermit,
+    pub(crate) permit: AdmissionPermit,
     /// Reference to the backend that created this sandbox.
-    pub backend: Arc<Backend>,
+    pub(crate) backend: Arc<Backend>,
 }
 
 impl std::fmt::Debug for Sandbox {
@@ -181,30 +194,31 @@ impl std::fmt::Debug for Sandbox {
 // =====================================================================
 
 /// A sandbox in `Running` state — VM booted, vsock ready, ready to accept
-/// exec requests.
+/// exec requests. All fields are `pub(crate)` — callers use the typed
+/// methods on `impl RunningSandbox` (`vm_id`, `exec`, `stop`, `force_kill`).
 pub struct RunningSandbox {
     /// VM identifier.
-    pub vm_id: String,
+    pub(crate) vm_id: String,
     /// Per-VM run directory.
-    pub run_dir: PathBuf,
+    pub(crate) run_dir: PathBuf,
     /// The materialized jailer chroot.
-    pub jail: MaterializedJail,
+    pub(crate) jail: MaterializedJail,
     /// Cgroup subtree (Some if UnifiedV2 mode).
-    pub cgroup: Option<m80_cgroup::Subtree>,
+    pub(crate) cgroup: Option<m80_cgroup::Subtree>,
     /// Open vsock channel to the in-VM guestd.
-    pub channel: Channel,
+    pub(crate) channel: Channel,
     /// Per-VM rootfs clone.
-    pub rootfs: Rootfs,
+    pub(crate) rootfs: Rootfs,
     /// Scratch image (Some if workspace is configured).
-    pub scratch: Option<Scratch>,
+    pub(crate) scratch: Option<Scratch>,
     /// REST client to the Firecracker process.
-    pub client: Client,
+    pub(crate) client: Client,
     /// Live firecracker + jailer pids.
-    pub firecracker: JailedFirecracker,
+    pub(crate) firecracker: JailedFirecracker,
     /// Admission permit; held for the lifetime of this sandbox.
-    pub permit: AdmissionPermit,
+    pub(crate) permit: AdmissionPermit,
     /// Reference to the backend.
-    pub backend: Arc<Backend>,
+    pub(crate) backend: Arc<Backend>,
 }
 
 impl std::fmt::Debug for RunningSandbox {
@@ -221,18 +235,23 @@ impl std::fmt::Debug for RunningSandbox {
 // =====================================================================
 
 /// A sandbox in `Stopped` state — VM exited, scratch image quiesced,
-/// run-dir intact.
+/// run-dir intact. All fields are `pub(crate)`; callers use the typed
+/// methods on `impl StoppedSandbox`.
 pub struct StoppedSandbox {
     /// VM identifier.
-    pub vm_id: String,
+    pub(crate) vm_id: String,
     /// Per-VM run directory.
-    pub run_dir: PathBuf,
+    pub(crate) run_dir: PathBuf,
     /// Scratch image (for `extract_changes`; consumed when extracted).
-    pub scratch: Option<Scratch>,
-    /// Admission permit; dropped on `delete()` or `preserve_for_triage()`.
-    pub permit: AdmissionPermit,
+    pub(crate) scratch: Option<Scratch>,
+    /// Admission permit. Held purely for its `Drop` side-effect — when
+    /// `StoppedSandbox` is consumed by `delete()` or
+    /// `preserve_for_triage()`, this field is dropped and the permit is
+    /// returned to the semaphore.
+    #[allow(dead_code)]
+    pub(crate) permit: AdmissionPermit,
     /// Run-root path (needed for `preserve_for_triage`).
-    pub run_root: PathBuf,
+    pub(crate) run_root: PathBuf,
 }
 
 impl std::fmt::Debug for StoppedSandbox {
@@ -249,11 +268,11 @@ impl std::fmt::Debug for StoppedSandbox {
 // =====================================================================
 
 /// Bundle of per-VM storage resources produced by the storage-prep phase.
-pub struct StoragePrep {
+pub(crate) struct StoragePrep {
     /// The per-VM rootfs clone.
-    pub rootfs: Rootfs,
+    pub(crate) rootfs: Rootfs,
     /// The scratch image (Some if a workspace was requested).
-    pub scratch: Option<Scratch>,
+    pub(crate) scratch: Option<Scratch>,
 }
 
 impl std::fmt::Debug for StoragePrep {
@@ -270,7 +289,7 @@ impl std::fmt::Debug for StoragePrep {
 
 /// Resolved network state after phase 6.
 #[derive(Debug)]
-pub enum RealizedNetwork {
+pub(crate) enum RealizedNetwork {
     /// No NIC configured; iptables untouched.
     NoEgress,
 }

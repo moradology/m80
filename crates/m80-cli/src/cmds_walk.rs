@@ -268,7 +268,7 @@ fn effective_run_root() -> PathBuf {
 
 /// Extract the `run_root` from a constructed `Backend`.
 fn backend_run_root(backend: &Backend) -> PathBuf {
-    backend.config.run_root.clone()
+    backend.config().run_root.clone()
 }
 
 /// Return `true` iff `<vm_dir>/ownership.lock` records a still-running pid.

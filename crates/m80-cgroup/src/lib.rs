@@ -270,9 +270,17 @@ pub(crate) fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
     Ok(())
 }
 
-/// Write `value` to `path`, opening in write-only mode (creates or truncates).
-/// cgroup files must be opened and written without O_TRUNC on some kernels,
-/// but for simple numeric writes a standard `fs::write` round-trip works.
+/// Write `value` to `path` using `OpenOptions::write(true).open(...)` —
+/// **deliberately without `.create(true)` and `.truncate(true)`**.
+///
+/// Cgroup v2 interface files are virtual: they exist only when the
+/// controller is enabled in the parent's `subtree_control`, and writing
+/// to them with `O_TRUNC` (which `fs::write` and the equivalent
+/// `OpenOptions::create(true).truncate(true)` invocation set) is rejected
+/// with EINVAL on several kernels. A bare write-only open behaves
+/// correctly across the kernel matrix m80 supports.
+///
+/// Use this helper instead of `fs::write` for every cgroup file.
 fn write_cgroup_file(path: &Path, value: &str) -> Result<(), CgroupError> {
     let mut f = fs::OpenOptions::new()
         .write(true)

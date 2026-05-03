@@ -59,9 +59,12 @@ Stopped while preserving the run-dir for offline inspection.
 ### Run-root layout invariants
 
 - All per-VM state lives under `<run_root>/<vm_id>/`.
-- A background `recover_stale_run_root()` task scans every 5 seconds
-  and reaps orphans. It only touches subdirectories whose ownership
-  markers are unambiguous; ambiguous residue is preserved.
+- `Backend::recover_stale_run_root()` is a one-shot scan the orchestrator
+  invokes (e.g., on startup, periodically from a caller-driven task, or
+  on demand from `m80 cleanup`). It only touches subdirectories whose
+  ownership markers are unambiguous; ambiguous residue is preserved.
+  v0.1 does NOT spawn a background recovery thread — the caller decides
+  the cadence.
 - Cross-process collision avoidance: two m80 processes on the same host
   use distinct `<run_root>` paths, distinguished by `sha256(path)` in
   derived names (bridge, tap, etc.).
@@ -69,9 +72,9 @@ Stopped while preserving the run-dir for offline inspection.
 ### Concurrency / admission
 
 - `Backend::new(config: BackendConfig) -> Result<Backend, FcError>` is
-  the long-lived handle a service holds. It wraps an `AdmissionLimited`
-  semaphore sized by `M80_FIRECRACKER_MAX_CONCURRENT_VMS` (default
-  derived from host capacity at preflight).
+  the long-lived handle a service holds. It wraps an admission semaphore
+  (a `Mutex<u32>` + `Condvar` pair, exposed internally as `Semaphore`)
+  sized by `M80_MAX_CONCURRENT_VMS` (default `4`, see `config.rs`).
 - All Sandbox creations go through `Backend::admit().launch()`; the
   admission permit is dropped on `delete()`.
 
@@ -97,10 +100,21 @@ Stopped while preserving the run-dir for offline inspection.
 
 ## Public surface
 
-- `SandboxConfig`, `Sandbox`, `RunningSandbox`, `StoppedSandbox`.
-- `Backend`, `BackendConfig`, `EffectiveConfig`.
-- `ExecRequest`, `ExecResponse`, `ExecStatus`.
+- `Backend`, `BackendConfig`, `EffectiveConfig`, `EffectiveField`,
+  `ConfigSource`, `CgroupMode`.
+- `SandboxConfig`, `Sandbox`, `RunningSandbox`, `StoppedSandbox`,
+  `AdmissionPermit`.
+- Re-exports from `m80-net-mode`: `NetworkPolicy`.
+- Re-exports from `m80-proto`: `ExecRequest`, `ExecResponse`,
+  `ExecStatus`, `ExecTiming`.
+- Re-exports from `m80-storage`: `ChangeSet` (returned by
+  `StoppedSandbox::extract_changes`).
 - `FcError` — top-level error sum.
+
+Internal-only (`pub(crate)`): `StoragePrep`, `RealizedNetwork`,
+`Semaphore`, `SemaphoreInner`, the `runroot::*` helpers, and the
+struct fields on `Sandbox` / `RunningSandbox` / `StoppedSandbox`
+(callers go through methods).
 
 ## Non-goals
 

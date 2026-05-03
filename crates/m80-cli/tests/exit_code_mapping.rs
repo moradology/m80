@@ -73,6 +73,7 @@ fn error_classes_distinct_exit_codes() {
         4,    // manifest
         5,    // invalid state
         6,    // config
+        7,    // not implemented (v0.1 feature gap, e.g., `m80 exec` stub)
     ];
     let mut seen = std::collections::HashSet::new();
     for c in &codes {

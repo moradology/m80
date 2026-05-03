@@ -5,6 +5,26 @@
 //! Behavior captures: bead epics `m80-t01` (lifecycle), `m80-19i`
 //! (concurrency/admission), `m80-ynh` (cleanup/drain), `m80-4ef` (errors),
 //! `m80-v7t` (configuration).
+//!
+//! # Module layout
+//!
+//! - [`backend`] — `Backend::new` / `admit` / `show_effective_config` /
+//!   `recover_stale_run_root`; the admission semaphore lives here.
+//! - [`launch`] — `Sandbox::launch` and the 12 numbered phase functions
+//!   that compose the preboot pipeline.
+//! - [`lifecycle`] — `RunningSandbox::{vm_id, exec, stop, force_kill}`
+//!   and `StoppedSandbox::{run_dir, extract_changes, delete,
+//!   preserve_for_triage}`.
+//! - [`runroot`] — per-VM directory layout, `ownership.lock`, the
+//!   `LeaseGuard` RAII helper, `recover_stale_run_root` walk.
+//! - [`config`] — five-layer merge (defaults → /etc/m80 → ~/.config/m80
+//!   → env M80_* → flags), produces an `EffectiveConfig` with each
+//!   field tagged by source.
+//! - [`error`] — `FcError` variant set.
+//! - [`types`] — public type definitions (`Backend`, `Sandbox`,
+//!   `RunningSandbox`, `StoppedSandbox`, `BackendConfig`, etc.) plus
+//!   crate-internal types (`StoragePrep`, `RealizedNetwork`, the
+//!   `Semaphore` aliases).
 
 #![deny(missing_docs)]
 

@@ -188,6 +188,7 @@ mod tests {
             EXIT_MANIFEST,
             EXIT_INVALID_STATE,
             EXIT_CONFIG,
+            EXIT_NOT_IMPLEMENTED,
         ];
         let mut seen = std::collections::HashSet::new();
         for code in &defined {

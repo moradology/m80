@@ -29,10 +29,15 @@ useful starting point.
 
 - `m80 preflight` — runs `m80-preflight::run()` and renders the table.
   Exit 0 on full pass, 2 on any check failed.
-- `m80 launch [--workspace <path>] [--network noegress|outbound] [--id <vm-id>]`
-  — boots a VM in the foreground, prints the VM id and run-dir, blocks
-  until interrupted or until the VM is delivered an exec request. Lifecycle
-  is `Sandbox::launch()`.
+- `m80 launch [--workspace <path>] [--network noegress|outbound] [--id <vm-id>] [-- <argv>...]`
+  — boots a VM in the foreground via `Sandbox::launch()`. Two modes:
+  - **Blocking mode** (no trailing argv): boots and blocks indefinitely
+    so the VM stays alive until SIGINT; the `Drop` chain on the
+    `RunningSandbox` performs the cleanup.
+  - **Single-shot mode** (`-- <argv>`): boots, sends one exec request,
+    prints stdout/stderr/exit, then stops + deletes. v0.1's path for
+    "spawn a sandbox to run one thing" — the separate `m80 exec`
+    subcommand needs out-of-process IPC and is deferred to v0.2.
 - `m80 exec <vm-id> -- <argv>... [--cwd <path>] [--env KEY=VAL ...]
   [--timeout-ms <n>]` — sends one exec request to a running VM. Renders
   stdout/stderr to the controlling terminal; exit code matches the
@@ -42,7 +47,9 @@ useful starting point.
 - `m80 inspect <vm-id>` — prints the run-dir layout, current lifecycle
   state, recorded boot identity, and (if available) recent diagnostics
   events.
-- `m80 list` — lists run-roots and per-VM ownership.
+- `m80 list` — enumerates VM run-dirs under the configured run-root,
+  labeling each `live` (ownership.lock present + recorded pid alive in
+  `/proc`) or `stale` (otherwise).
 - `m80 cleanup [--force]` — runs `recover_stale_run_root()` plus
   `cleanup_orphan_bridge()` (if `m80-net-outbound` says so).
 - `m80 config show` — prints the merged effective config in the
@@ -54,10 +61,12 @@ useful starting point.
 
 - Every subcommand has `--json` for machine-readable output. The shape
   is the corresponding `m80-firecracker` type, serialized via serde.
-- Without `--json`, output is human-friendly: tables, colored severity
-  prefixes, hint text on errors.
-- Errors render the typed `FcError` plus its hint. Exit codes are
-  stable per error variant (documented in `errors/cli-mapping.md`).
+- Without `--json`, output is human-friendly: plain text with table
+  rendering for `preflight` and `config show`. (No color in v0.1.)
+- Errors render the typed `FcError` on stderr. Exit codes are stable
+  per error variant (defined in `crates/m80-cli/src/errors.rs`):
+  `1`=generic, `2`=preflight, `3`=admission, `4`=manifest, `5`=invalid
+  state, `6`=config, `7`=v0.1 feature gap (e.g., the `m80 exec` stub).
 
 ### Configuration sources
 

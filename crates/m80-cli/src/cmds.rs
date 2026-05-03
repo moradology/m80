@@ -24,7 +24,7 @@ use crate::errors;
 ///
 /// Returns both the backend and the tagged `EffectiveConfig` produced by
 /// the merge so `config show` can display provenance without re-running.
-pub fn build_backend(
+pub(crate) fn build_backend(
     flag_overrides: &HashMap<&str, String>,
 ) -> anyhow::Result<(Arc<Backend>, EffectiveConfig)> {
     let discovery = m80_preflight::run().context("preflight failed")?;
@@ -119,7 +119,13 @@ pub fn cmd_launch(
     }
 
     if exec_argv.is_empty() {
-        // Block until Ctrl-C. The Drop chain cleans up on process exit.
+        // Blocking mode: hold the VM alive until SIGINT. We don't install a
+        // Ctrl-C handler — the default SIGINT terminates the process, which
+        // unwinds the stack and runs `RunningSandbox`'s Drop chain. That
+        // Drop chain releases the vsock channel, the cgroup subtree, the
+        // jailer mounts, and the admission permit. The 1-hour sleep is just
+        // a polite "we don't busy-wait while parked"; the wake-up itself
+        // never matters because the signal interrupts the syscall.
         eprintln!("VM launched. Press Ctrl-C to stop.");
         loop {
             std::thread::sleep(Duration::from_secs(3600));

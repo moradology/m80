@@ -280,7 +280,15 @@ fn phase_5_cgroup_probe(mode: CgroupMode) -> Result<(), FcError> {
     }
 }
 
-/// Phase 5b (post-launch): create the cgroup subtree now that we have live pids.
+/// Phase 5b (post-launch): create the cgroup subtree now that we have live
+/// pids.
+///
+/// Cgroup v2 only lets a pid be moved into a leaf cgroup after the pid
+/// exists; `Subtree::create` writes `firecracker_pid` to `cgroup.procs`,
+/// which means we have to wait for `MaterializedJail::launch` (phase 9)
+/// to return that pid before we can do this work. That's why "5b" is
+/// out-of-order with the bare numbering — the README pipeline is "in the
+/// order Firecracker requires it", not "in the source-line order".
 fn phase_5b_cgroup_create(
     mode: CgroupMode,
     vm_id: &str,

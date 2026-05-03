@@ -264,12 +264,13 @@ fn parse_unknown_subcommand_fails() {
 // ---- --json is global ----
 
 #[test]
-fn json_flag_after_subcommand_is_rejected() {
-    // --json must come before the subcommand (it's a top-level global flag).
-    // clap global flags can appear anywhere, but verify it parses.
-    let cli = Cli::try_parse_from(["m80", "version", "--json"]);
-    // clap global flags work on either side
-    assert!(cli.is_ok() || cli.is_err()); // compile-time check only
+fn json_flag_after_subcommand_parses_and_sets_json() {
+    // `--json` is a top-level global flag; clap accepts it both before
+    // and after the subcommand. Verify the after-subcommand position
+    // both parses successfully AND sets the flag (the prior assertion
+    // was a tautology — `is_ok() || is_err()` proves nothing).
+    let cli = Cli::try_parse_from(["m80", "version", "--json"]).unwrap();
+    assert!(cli.json, "--json after subcommand should still set the flag");
 }
 
 #[test]
