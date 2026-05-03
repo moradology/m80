@@ -130,7 +130,14 @@ impl Channel {
         timeout: Duration,
     ) -> Result<Self, VsockError> {
         watch_ready_marker(console, ready_marker, timeout)?;
+        Self::open_uds_only(host_uds, guest_port)
+    }
 
+    /// Connect to `host_uds` and hand-shake to `guest_port` without waiting
+    /// on a serial-console marker. Used by callers that have already
+    /// established readiness through another channel (e.g., a polling
+    /// retry loop on the UDS itself).
+    pub fn open_uds_only(host_uds: &Path, guest_port: u32) -> Result<Self, VsockError> {
         let stream = UnixStream::connect(host_uds).map_err(|e| VsockError::ConnectFailed {
             errno: e.raw_os_error().unwrap_or(0),
         })?;
