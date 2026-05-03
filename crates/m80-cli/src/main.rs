@@ -1,90 +1,71 @@
 //! `m80` — host-side CLI. Thin shell over `m80-firecracker`.
 //!
 //! See `README.md` for the contract.
-//! Behavior captures: dossier `09-cli-shape.md` plus all the L1 epics
-//! the CLI exposes as subcommands.
+//! Behavior captures: dossier `09-cli-shape.md`; beads `m80-4ef.3.*`
+//! (error → exit-code mapping) and `m80-v7t.*` (config loading order,
+//! env-var schema).
 //!
-//! # Type-pinning pass
+//! # Module layout
 //!
-//! Subcommand surface declared; bodies are `todo!()`.
+//! - `args`   — clap-derive structs (`Cli`, `Cmd`, `ConfigAction`)
+//! - `config` — precedence-chain config loading (bead m80-v7t.1/2)
+//! - `errors` — FcError → exit-code map + JSON envelope (bead m80-4ef.3)
+//! - `cmds`   — per-subcommand logic; returns `i32` exit code
+//!
+//! All modules are declared in `lib.rs`; this file is the entry point only.
 
-#![deny(missing_docs)]
+use clap::Parser;
 
-use std::path::PathBuf;
+use m80_cli::args::{Cli, Cmd, ConfigAction};
+use m80_cli::cmds;
+use m80_cli::cmds_walk;
 
-use m80_firecracker::NetworkPolicy;
+/// Dispatch subcommand and return the exit code.
+fn run(cli: Cli) -> anyhow::Result<i32> {
+    let json = cli.json;
+    match cli.subcommand {
+        Cmd::Preflight => cmds::cmd_preflight(json),
 
-/// Top-level argv parse target.
-#[derive(Debug)]
-pub struct Args {
-    /// Emit `--json` machine-readable output where applicable.
-    pub json: bool,
-    /// Selected subcommand.
-    pub subcommand: Subcommand,
+        Cmd::Launch {
+            workspace,
+            network,
+            id,
+            exec,
+        } => cmds::cmd_launch(workspace, network, id, exec, json),
+
+        Cmd::Exec {
+            ref vm_id,
+            ref argv,
+            ..
+        } => cmds::cmd_exec(vm_id, argv, json),
+
+        Cmd::Stop {
+            ref vm_id,
+            ref extract_changes,
+        } => cmds_walk::cmd_stop(vm_id, extract_changes.as_deref(), json),
+
+        Cmd::Inspect { ref vm_id } => cmds_walk::cmd_inspect(vm_id, json),
+
+        Cmd::List => cmds_walk::cmd_list(json),
+
+        Cmd::Cleanup { force } => cmds::cmd_cleanup(force, json),
+
+        Cmd::Config {
+            action: ConfigAction::Show,
+        } => cmds::cmd_config_show(json),
+
+        Cmd::Version => cmds::cmd_version(json),
+    }
 }
 
-/// One CLI subcommand.
-#[derive(Debug)]
-pub enum Subcommand {
-    /// Run the host capability checklist; render a table.
-    Preflight,
-    /// Boot a VM in the foreground.
-    Launch {
-        /// Optional host workspace to hydrate into a scratch ext4.
-        workspace: Option<PathBuf>,
-        /// Network policy.
-        network: NetworkPolicy,
-        /// Optional caller-supplied VM id.
-        id: Option<String>,
-    },
-    /// Send one exec request to a running VM.
-    Exec {
-        /// VM id.
-        vm_id: String,
-        /// argv to run inside the VM.
-        argv: Vec<String>,
-        /// Optional cwd inside the VM.
-        cwd: Option<String>,
-        /// Optional env overrides (`KEY=VAL`).
-        env: Vec<String>,
-        /// Optional timeout (milliseconds).
-        timeout_ms: Option<u64>,
-    },
-    /// Stop a running VM, optionally extracting changes.
-    Stop {
-        /// VM id.
-        vm_id: String,
-        /// Optional destination for change-extract.
-        extract_changes: Option<PathBuf>,
-    },
-    /// Inspect a VM's run-dir and recorded state.
-    Inspect {
-        /// VM id.
-        vm_id: String,
-    },
-    /// List run-roots and per-VM ownership.
-    List,
-    /// Run recovery scans (run-root + orphan bridge).
-    Cleanup {
-        /// Force cleanup even when state is ambiguous.
-        force: bool,
-    },
-    /// Print the merged effective config with each field's source.
-    ConfigShow,
-    /// Print the binary version + protocol version + Firecracker pin.
-    Version,
-}
-
-fn parse_args() -> anyhow::Result<Args> {
-    todo!()
-}
-
-fn run(_args: Args) -> anyhow::Result<i32> {
-    todo!()
-}
-
-fn main() -> anyhow::Result<()> {
-    let args = parse_args()?;
-    let exit_code = run(args)?;
+fn main() {
+    let cli = Cli::parse();
+    let exit_code = match run(cli) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            1
+        }
+    };
     std::process::exit(exit_code);
 }

@@ -19,13 +19,13 @@ without ifdef chains scattered through `m80-firecracker`.
 
 ## Black-box contract
 
-- `Subtree::create(vm_id: &str, jail: &MaterializedJail) -> Result<Subtree, CgroupError>`
+- `Subtree::create(vm_id: &str, jail: &MaterializedJail, jailed: &JailedFirecracker) -> Result<Subtree, CgroupError>`
   creates `<root>/m80-firecracker/<vm-id>/`, enables the cpu/memory/pids
-  controllers, and assigns both `jail.jailer_pid` and `jail.firecracker_pid`
-  to the subtree. The constructor takes a `MaterializedJail` because
-  cgroup v2 requires a live jailer; calling without one returns
-  `CgroupError::RequiresJailer` (the typed equivalent of predecessor's
-  `CgroupRequiresJailer`).
+  controllers, and assigns both `jailed.jailer_pid` and `jailed.firecracker_pid`
+  to the subtree. The constructor requires a live `JailedFirecracker` (the
+  result of `MaterializedJail::launch`) because cgroup v2 requires live pids
+  to assign. `RequiresJailer` is not returned — the type system enforces the
+  precondition.
 - `Subtree::apply_limits(&self, &Limits) -> Result<(), CgroupError>`
   writes the per-controller files. `Limits` is a struct with optional
   `cpu_max`, `memory_max`, `pids_max`; setting a field to `None` leaves
@@ -46,12 +46,22 @@ without ifdef chains scattered through `m80-firecracker`.
 ## Public surface
 
 - `Subtree::probe() -> Result<(), CgroupError>` — host capability check.
-- `Subtree::create(vm_id, &jail)`, `Subtree::apply_limits(&Limits)`,
-  `Subtree::path()`.
+- `Subtree::create(vm_id, &MaterializedJail, &JailedFirecracker) -> Result<Subtree, CgroupError>`.
+  Signature takes both the jail (for `plan.config.run_dir`) and the live jailed
+  process pair (for the pids to assign). The original single-argument form was
+  adjusted because `MaterializedJail` does not carry pids — those live on
+  `JailedFirecracker` after `launch()`.
+- `Subtree::apply_limits(&Limits)`, `Subtree::path()`.
 - `cleanup_orphan_subtree(vm_id: &str)`.
 - `Limits { cpu_max: Option<CpuMax>, memory_max: Option<u64>, pids_max: Option<u32> }`.
-- `CgroupError`: `RequiresJailer`, `UnsupportedHostMode`, `Io(io::Error)`,
+- `CgroupError`: `UnsupportedHostMode`, `Io { path, source }`,
   `ControllerNotEnabled(String)`.
+  **`RequiresJailer` was dropped**: the type signature enforces a live
+  `&JailedFirecracker`, so no code path inside this crate produces the variant.
+  Per the "no error variants nothing produces" rule, it is not declared.
+  The structured `Io { path, source }` form replaces the flat `Io(io::Error)`
+  form from the initial type-pinning pass, matching the pattern from
+  `m80-image-manifest` and `m80-jailer`.
 
 ## Non-goals
 
