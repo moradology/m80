@@ -33,7 +33,10 @@ pub const SCHEMA_VERSION: u32 = 1;
 pub struct Manifest {
     /// systemd boot target (typically `multi-user.target`).
     pub boot_target: String,
-    /// Absolute path of the in-VM daemon binary embedded in the image.
+    /// Host-side audit copy of the daemon binary that was installed into
+    /// the image. `Manifest::verify` recomputes the sha256 of this file at
+    /// preflight time without loop-mounting the rootfs. The in-VM
+    /// destination is a build constant, not stored here.
     pub daemon_binary_path: PathBuf,
     /// sha256 hex digest of the daemon binary.
     pub daemon_binary_sha256: String,
