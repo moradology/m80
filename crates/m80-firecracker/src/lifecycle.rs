@@ -13,25 +13,9 @@ use crate::runroot::unix_ms_now;
 use crate::timing::phase_event;
 use crate::types::{RunningSandbox, StoppedSandbox};
 
-/// How long to wait for Firecracker to exit after the graceful-stop ack.
-///
-/// `Exit` action (PID-1 m80-guestd, minimal image): the kernel panics on
-/// PID-1 exit, with `panic=1` it reboots and Firecracker exits in <100 ms
-/// in practice.
-///
-/// `Poweroff` action (m80-guestd as a systemd service, ubuntu image):
-/// `/sbin/poweroff -f` triggers an orderly systemd shutdown. Slower but
-/// still well under a second on healthy guests.
-///
-/// 2 s covers both cases and falls through to SIGKILL otherwise.
-const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(2);
-
 /// Per-attempt deadline for the shutdown vsock round-trip (open UDS,
 /// send request, read response).
 const SHUTDOWN_RPC_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Polling interval when waiting for a pid to exit.
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 impl RunningSandbox {
     /// Return the VM id for this sandbox.
@@ -175,30 +159,24 @@ impl StoppedSandbox {
     }
 }
 
-/// Graceful stop: send `ShutdownRequest` over vsock, wait briefly for the
-/// guest's chosen termination action to take effect, SIGKILL on timeout.
+/// Graceful stop: send `ShutdownRequest` over vsock, then immediately
+/// SIGKILL the Firecracker process.
 ///
-/// SendCtrlAltDel (the previous mechanism) was a no-op for both common
-/// guests: ubuntu's systemd often masks `ctrl-alt-del.target`, and minimal's
-/// PID-1 m80-guestd has no signal handler. The 30 s wait was pure dead air.
+/// The ack from the guest proves filesystems are synced and the guest is
+/// done. There's nothing useful left to wait for: a clean kernel exit
+/// produces the same observable post-state as a SIGKILL'd Firecracker
+/// from the host's perspective (cgroup teardown, run-dir cleanup all
+/// happen in `RunningSandbox::stop`'s post-bounded-stop release phase).
+/// Waiting for kernel reboot was burning ~1 s per launch on minimal kind
+/// (`panic=1` reboot delay) and ~half that on ubuntu.
+///
+/// If the vsock RPC fails (guest unreachable / already dead), SIGKILL
+/// directly — same outcome.
 fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<(), FcError> {
-    let action_hint = match send_shutdown_request(vsock_uds) {
-        Ok(action) => Some(action),
-        Err(e) => {
-            // The graceful path is best-effort. If the guest is already
-            // gone or unreachable, fall through to SIGKILL.
-            tracing::warn!(error = %e, "vsock graceful-stop failed; falling back to SIGKILL");
-            None
-        }
-    };
-    if action_hint.is_some() && wait_for_pid_exit(firecracker_pid, GRACEFUL_STOP_TIMEOUT) {
-        return Ok(());
-    }
-    if action_hint.is_some() {
+    if let Err(e) = send_shutdown_request(vsock_uds) {
         tracing::warn!(
-            firecracker_pid,
-            ?action_hint,
-            "graceful stop timed out; sending SIGKILL"
+            error = %e,
+            "vsock graceful-stop failed; SIGKILLing without ack"
         );
     }
     kill_pid(firecracker_pid)
@@ -218,21 +196,6 @@ fn send_shutdown_request(vsock_uds: &Path) -> Result<ShutdownAction, FcError> {
         return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
     }
     Ok(resp_env.payload.action)
-}
-
-/// Poll `/proc/<pid>` until it disappears or `timeout` elapses.
-/// Returns `true` if the pid exited before the deadline.
-fn wait_for_pid_exit(pid: u32, timeout: Duration) -> bool {
-    use std::time::Instant;
-    let deadline = Instant::now() + timeout;
-    let proc = PathBuf::from(format!("/proc/{pid}"));
-    while proc.exists() {
-        if Instant::now() >= deadline {
-            return false;
-        }
-        std::thread::sleep(POLL_INTERVAL);
-    }
-    true
 }
 
 /// Send `SIGKILL` to `pid`. Treats `ESRCH` (no such process) as success.

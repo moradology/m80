@@ -45,7 +45,12 @@ const DEFAULT_VCPU_COUNT: u32 = 1;
 const DEFAULT_MEM_SIZE_MIB: u32 = 1024;
 
 /// Common kernel command-line arguments shared by all image kinds.
-const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off";
+///
+/// `panic=-1` triggers immediate reboot on kernel panic (vs. `panic=1`'s
+/// 1 s wait). For minimal-kind images where m80-guestd is PID 1, the
+/// graceful-stop path exits PID 1 → kernel panics → Firecracker exits;
+/// the 1 s wait was pure dead time on every launch.
+const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=-1 pci=off";
 
 /// Build kernel boot args for the given image kind, honoring any caller
 /// override on `SandboxConfig::boot_args`.
