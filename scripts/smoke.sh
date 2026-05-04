@@ -102,27 +102,18 @@ echo "=== preflight ==="
 sudo env "${M80_ENV[@]}" ./target/release/m80 preflight
 
 # --- launch + echo + stop ---
-# Up to 3 attempts: phase_12b's vsock-ready probe sometimes times out
-# under host load (the in-VM guestd takes longer than 30s to bind on a
-# busy host). Reliability tightening is v0.2.
 out_file="$(mktemp)"
 trap 'rm -f "$out_file"' EXIT
-attempts=3
-for i in $(seq 1 $attempts); do
-    echo "=== launch attempt $i/$attempts ==="
-    sudo env "${M80_ENV[@]}" ./target/release/m80 cleanup >/dev/null 2>&1 || true
-    if timeout 60 sudo env "${M80_ENV[@]}" ./target/release/m80 launch \
-            --network noegress -- /bin/echo smoke-passes \
-            > "$out_file" 2>&1 \
-            && grep -q "^smoke-passes$" "$out_file"; then
-        echo "=== SMOKE PASSED on attempt $i ==="
-        grep -E "^smoke-passes$|exit_code=0|Firecracker exiting" "$out_file"
-        exit 0
-    fi
-    echo "  attempt $i failed; tail of output:"
-    tail -3 "$out_file"
-done
+echo "=== launch ==="
+if timeout 90 sudo env "${M80_ENV[@]}" ./target/release/m80 launch \
+        --network noegress -- /bin/echo smoke-passes \
+        > "$out_file" 2>&1 \
+        && grep -q "^smoke-passes$" "$out_file"; then
+    echo "=== SMOKE PASSED ==="
+    grep -E "^smoke-passes$|exit_code=0|Firecracker exiting" "$out_file"
+    exit 0
+fi
 
-echo "=== SMOKE FAILED after $attempts attempts ==="
+echo "=== SMOKE FAILED ==="
 tail -40 "$out_file"
 exit 1

@@ -3,6 +3,28 @@
 All notable changes to m80 are documented here. Format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Performance
+
+- **`phase_12b_ready_probe` cadence tightened** (m80-bgas.1) —
+  `READY_POLL_INTERVAL` 500 ms → 10 ms; `READY_TIMEOUT` 30 s → 60 s.
+  Smolvm proves a 10 ms cadence is safe under load (their
+  `FAST_POLL_INTERVAL`); each `Channel::open_uds_only` attempt returns
+  in microseconds when the guest isn't ready and ~10 ms when it is, so
+  10 ms polling adds at most one wasted RTT per probe. Cuts median
+  ready-probe latency above the guest-boot floor from ~250 ms to
+  ~5 ms.
+
+### Changed
+
+- **`scripts/smoke.sh` retry loop dropped** (m80-bgas.2) — the script
+  previously retried `m80 launch` up to 3× to mask a v0.1 vsock-probe
+  flake under host load. With the tightened cadence + extended timeout
+  above, one attempt is sufficient. Per-launch wallclock budget bumped
+  from 60 s to 90 s to leave headroom for the new 60 s ready-probe
+  ceiling.
+
 ## [v0.1.0-smoke-passing] — 2026-05-04
 
 End-to-end microVM launch works on KVM. `m80 launch -- /bin/echo hello`
