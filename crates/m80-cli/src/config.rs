@@ -23,12 +23,6 @@ use m80_firecracker::{
 };
 use m80_preflight::Discovery;
 
-/// Convert the CLI's borrowed-key flag map into the owned shape
-/// `load_config` wants.
-fn to_owned(flags: &HashMap<&str, String>) -> HashMap<String, String> {
-    flags.iter().map(|(k, v)| ((*k).to_string(), v.clone())).collect()
-}
-
 /// Load the merged effective config and assemble a `BackendConfig` for
 /// `Backend::new`. `discovery` must already be populated by the caller
 /// (from `m80-preflight::run()`).
@@ -36,8 +30,11 @@ pub fn load(
     discovery: Discovery,
     flag_overrides: &HashMap<&str, String>,
 ) -> anyhow::Result<(BackendConfig, EffectiveConfig)> {
-    let effective = load_config(to_owned(flag_overrides))
-        .context("loading merged effective config")?;
+    let owned: HashMap<String, String> = flag_overrides
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), v.clone()))
+        .collect();
+    let effective = load_config(owned).context("loading merged effective config")?;
     let backend_config = backend_config_from_effective(&effective, discovery)
         .context("converting effective config to BackendConfig")?;
     Ok((backend_config, effective))

@@ -10,33 +10,23 @@ use std::time::Duration;
 
 use anyhow::Context;
 
-use m80_firecracker::{Backend, EffectiveConfig, NetworkPolicy, SandboxConfig};
+use m80_firecracker::{Backend, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
 use m80_firecracker::ExecRequest;
 
 use crate::config;
 use crate::errors;
 
-// =====================================================================
-// Backend construction helper
-// =====================================================================
-
-/// Run preflight and build an `Arc<Backend>` from the merged config.
-///
-/// Returns both the backend and the tagged `EffectiveConfig` produced by
-/// the merge so `config show` can display provenance without re-running.
+/// Run preflight and build an `Arc<Backend>`. Returns `EffectiveConfig`
+/// alongside so `config show` can reuse the merge result without rerunning.
 pub(crate) fn build_backend(
     flag_overrides: &HashMap<&str, String>,
-) -> anyhow::Result<(Arc<Backend>, EffectiveConfig)> {
-    let discovery = m80_preflight::run().context("preflight failed")?;
-    let (backend_config, effective) = config::load(discovery, flag_overrides)?;
-    let backend =
-        Backend::new(backend_config).map_err(|e| anyhow::anyhow!("backend init: {e}"))?;
+) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
+    let discovery = m80_preflight::run()?;
+    let (backend_config, effective) = config::load(discovery, flag_overrides)
+        .map_err(|e| FcError::Config(format!("{e:#}")))?;
+    let backend = Backend::new(backend_config)?;
     Ok((Arc::new(backend), effective))
 }
-
-// =====================================================================
-// preflight
-// =====================================================================
 
 /// `m80 preflight` — run host capability checks and render a table.
 pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
@@ -59,17 +49,9 @@ pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
     }
 }
 
-// =====================================================================
-// launch
-// =====================================================================
-
-/// `m80 launch` — boot a VM, then either run single-shot exec or block.
-///
-/// When `exec_argv` is non-empty this is single-shot mode: launch the VM,
-/// run the argv, print output, stop the VM, and exit with the guest's
-/// exit code.
-///
-/// When `exec_argv` is empty, launch blocks until SIGINT (Ctrl-C).
+/// `m80 launch` — boot a VM. Empty `exec_argv` blocks until SIGINT;
+/// non-empty runs single-shot exec then stops the VM, returning the
+/// guest's exit code.
 pub fn cmd_launch(
     workspace: Option<PathBuf>,
     network: NetworkPolicy,
@@ -79,10 +61,7 @@ pub fn cmd_launch(
 ) -> anyhow::Result<i32> {
     let (backend, _effective) = match build_backend(&HashMap::new()) {
         Ok(pair) => pair,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return Ok(errors::EXIT_GENERIC);
-        }
+        Err(e) => return Ok(errors::render_error(&e, json)),
     };
 
     let sandbox_config = SandboxConfig {
@@ -119,13 +98,9 @@ pub fn cmd_launch(
     }
 
     if exec_argv.is_empty() {
-        // Blocking mode: hold the VM alive until SIGINT. We don't install a
-        // Ctrl-C handler — the default SIGINT terminates the process, which
-        // unwinds the stack and runs `RunningSandbox`'s Drop chain. That
-        // Drop chain releases the vsock channel, the cgroup subtree, the
-        // jailer mounts, and the admission permit. The 1-hour sleep is just
-        // a polite "we don't busy-wait while parked"; the wake-up itself
-        // never matters because the signal interrupts the syscall.
+        // SIGINT unwinds the stack, which runs RunningSandbox's Drop chain
+        // (vsock close, cgroup rm, jailer umount, permit release). The
+        // 1-hour sleep is just polite parking — the signal interrupts it.
         eprintln!("VM launched. Press Ctrl-C to stop.");
         loop {
             std::thread::sleep(Duration::from_secs(3600));
@@ -133,10 +108,11 @@ pub fn cmd_launch(
     }
 
     // Single-shot mode: split argv into program + args and exec.
-    let (program, args) = split_argv(exec_argv);
+    let mut argv = exec_argv;
+    let program = argv.remove(0);
     let req = ExecRequest {
         program,
-        args,
+        args: argv,
         env: None,
         cwd: None,
         stdin: None,
@@ -180,19 +156,6 @@ pub fn cmd_launch(
     Ok(guest_exit)
 }
 
-/// Split a full argv into `(program, args)`.
-fn split_argv(mut argv: Vec<String>) -> (String, Vec<String>) {
-    if argv.is_empty() {
-        return (String::new(), vec![]);
-    }
-    let program = argv.remove(0);
-    (program, argv)
-}
-
-// =====================================================================
-// exec (v0.1 stub)
-// =====================================================================
-
 /// `m80 exec` — v0.1 stub.
 ///
 /// Out-of-process exec requires a side-channel IPC mechanism (v0.2).
@@ -217,18 +180,11 @@ pub fn cmd_exec(vm_id: &str, _argv: &[String], json: bool) -> anyhow::Result<i32
     Ok(errors::EXIT_NOT_IMPLEMENTED)
 }
 
-// =====================================================================
-// cleanup
-// =====================================================================
-
 /// `m80 cleanup` — trigger `recover_stale_run_root()`.
 pub fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
     let (backend, _effective) = match build_backend(&HashMap::new()) {
         Ok(pair) => pair,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return Ok(errors::EXIT_GENERIC);
-        }
+        Err(e) => return Ok(errors::render_error(&e, json)),
     };
 
     if let Err(e) = backend.recover_stale_run_root() {
@@ -244,10 +200,6 @@ pub fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
 
     Ok(0)
 }
-
-// =====================================================================
-// config show
-// =====================================================================
 
 /// `m80 config show` — reveal the merged effective config with field sources.
 pub fn cmd_config_show(json: bool) -> anyhow::Result<i32> {
@@ -267,10 +219,6 @@ pub fn cmd_config_show(json: bool) -> anyhow::Result<i32> {
 
     Ok(0)
 }
-
-// =====================================================================
-// version
-// =====================================================================
 
 /// `m80 version` — print version strings.
 ///

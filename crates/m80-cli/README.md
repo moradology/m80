@@ -7,21 +7,10 @@ shell args and Rust types.
 
 ## Reason for being
 
-The dossier's three deliverables are:
-1. A reusable Rust library.
-2. A no-frills CLI for spawning, exec-ing into, and tearing down
-   sandboxes.
-3. The image-build pipeline.
-
-`m80-cli` is deliverable #2. Keeping it thin (parse args → call
-library → render result) means the CLI is automatically as
-correct as the library; bugs aren't duplicated, and CLI changes don't
-require library changes.
-
-A second motivation: a real CLI with `--help`, `--json`, and `m80 config
-show` is what makes m80 *self-evident*. A user who installs `m80`
-without reading docs should be able to type `m80 --help` and get a
-useful starting point.
+A thin parse-args → call-library → render-result layer. The contract
+that's worth its own crate: stable per-class exit codes (so scripts can
+`case $?` without parsing stderr) and a `--json` mode that emits the
+same envelope on stdout/stderr.
 
 ## Black-box contract
 

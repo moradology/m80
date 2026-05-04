@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-use m80_firecracker::{Backend, OWNERSHIP_LOCK};
+use m80_firecracker::OWNERSHIP_LOCK;
 use m80_jailer::{JAILER_PLAN_FILE, JAILER_STATE_FILE};
 
 use crate::cmds::build_backend;
@@ -40,7 +40,7 @@ pub fn cmd_stop(
         }
     };
 
-    let run_root = backend_run_root(&backend);
+    let run_root = backend.config().run_root.clone();
     let vm_dir = run_root.join(vm_id);
 
     if !vm_dir.exists() {
@@ -87,13 +87,10 @@ pub fn cmd_stop(
     Ok(0)
 }
 
-/// Attempt to SIGKILL the firecracker pid recorded in
-/// `<vm_dir>/jailer-state.json`. Returns the number of pids signalled.
-///
-/// Only `firecracker_pid` is killed — the `jailer_pid` is the parent that
-/// `m80-jailer::launch` already reaps via `child.wait()` before returning,
-/// so SIGKILLing it is either a no-op (already gone) or worse, a PID-reuse
-/// hit. The actual long-running VM process is the firecracker child.
+/// SIGKILL the firecracker pid recorded in `<vm_dir>/jailer-state.json`.
+/// Returns 1 on success, 0 if the file is absent / unparseable / kill
+/// failed. `jailer_pid` is not signalled separately — jailer execs into
+/// firecracker so the two pids are equal.
 fn kill_jailer_pids(vm_dir: &Path) -> usize {
     let jailer_state = vm_dir.join(JAILER_STATE_FILE);
     if !jailer_state.exists() {
@@ -210,7 +207,14 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
         return Ok(0);
     }
 
-    let mut entries: Vec<serde_json::Value> = Vec::new();
+    #[derive(serde::Serialize)]
+    struct Entry {
+        vm_id: String,
+        state: &'static str,
+        run_dir: PathBuf,
+    }
+
+    let mut entries: Vec<Entry> = Vec::new();
 
     let read_dir = std::fs::read_dir(&run_root)
         .with_context(|| format!("listing {}", run_root.display()))?;
@@ -220,19 +224,21 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
         if !path.is_dir() {
             continue;
         }
-        let vm_id = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("?")
-            .to_owned();
-
+        // Subdirs of the run-root are always vm-id named (we created them);
+        // a name that isn't valid UTF-8 means the run-root has been mutated
+        // by something outside m80, so skip rather than render `?`.
+        let Some(vm_id) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         // "live" iff ownership.lock exists AND the recorded pid is alive.
-        // jailer-state.json presence/absence is a different signal — it's
-        // written during materialize and persists across stop. Don't use it
-        // as a liveness proxy.
+        // jailer-state.json is written at materialize time and persists
+        // across stop, so don't use it as a liveness proxy.
         let state = if vm_dir_is_live(&path) { "live" } else { "stale" };
-
-        entries.push(serde_json::json!({ "vm_id": vm_id, "state": state, "run_dir": path }));
+        entries.push(Entry {
+            vm_id: vm_id.to_owned(),
+            state,
+            run_dir: path,
+        });
     }
 
     if json {
@@ -245,10 +251,7 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
             println!("(no VMs in {})", run_root.display());
         }
         for e in &entries {
-            let vm_id = e["vm_id"].as_str().unwrap_or("?");
-            let state = e["state"].as_str().unwrap_or("?");
-            let dir = e["run_dir"].as_str().unwrap_or("?");
-            println!("{vm_id}  [{state}]  {dir}");
+            println!("{}  [{}]  {}", e.vm_id, e.state, e.run_dir.display());
         }
     }
 
@@ -271,11 +274,6 @@ fn effective_run_root() -> PathBuf {
     std::env::var("M80_RUN_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/var/run/m80"))
-}
-
-/// Extract the `run_root` from a constructed `Backend`.
-fn backend_run_root(backend: &Backend) -> PathBuf {
-    backend.config().run_root.clone()
 }
 
 /// Return `true` iff `<vm_dir>/ownership.lock` records a still-running pid.
