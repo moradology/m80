@@ -345,10 +345,26 @@ fn check_run_root(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightError>
         });
     }
 
-    // Free-space check via statvfs.
+    // Free-space + mount-flags check via statvfs.
     let stat = statvfs(&run_root).map_err(|e| PreflightError::RunRootUnavailable {
         reason: format!("statvfs failed on {}: {e}", run_root.display()),
     })?;
+
+    // `nodev` mounts forbid opening device nodes regardless of file
+    // permissions. The jailer mknods /dev/kvm inside the per-VM chroot;
+    // if the chroot lives on a `nodev` filesystem (default for /tmp on
+    // many distros), firecracker fails InstanceStart with EACCES.
+    if stat.flags().contains(nix::sys::statvfs::FsFlags::ST_NODEV) {
+        return Err(PreflightError::RunRootUnavailable {
+            reason: format!(
+                "{} is on a `nodev` mount; device nodes (e.g. /dev/kvm) \
+                 in the per-VM chroot will be unopenable. \
+                 Pick a path on a filesystem that allows device nodes \
+                 (e.g. /var/lib/m80-run on root fs).",
+                run_root.display(),
+            ),
+        });
+    }
 
     let free_bytes = stat.blocks_available() as u64 * stat.fragment_size() as u64;
     if free_bytes < MIN_RUN_ROOT_FREE_BYTES {
