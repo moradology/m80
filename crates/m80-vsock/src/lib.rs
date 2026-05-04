@@ -39,18 +39,9 @@ pub fn cid_for_vm_id(vm_id: &str) -> u32 {
     3 + (raw % (u32::MAX - 2))
 }
 
-/// Watch `console` for `marker` on its own line, polling every 50 ms.
-///
-/// Returns `Ok(())` as soon as the marker is found, or
-/// [`VsockError::NotReady`] if `timeout` elapses first.
-///
-/// Reads the console file incrementally — keeps the file open and seeks to
-/// the last-read offset on each poll so a multi-MB serial-console log
-/// isn't re-read in full each cycle. Tolerates the file not yet existing
-/// at the start of the watch (Firecracker may not have created it).
-///
-/// Exposed as `pub` for integration testing; the primary entry point is
-/// [`Channel::open`], which calls this automatically.
+/// Watch `console` for `marker` on its own line. Reads incrementally so a
+/// multi-MB serial-console log isn't re-read on each poll; tolerates the
+/// file not yet existing (Firecracker may not have created it).
 pub fn watch_ready_marker(
     console: &Path,
     marker: &str,
@@ -116,12 +107,8 @@ impl std::fmt::Debug for Channel {
 }
 
 impl Channel {
-    /// Watch `console` for `ready_marker`, then connect to `host_uds` and
-    /// hand-shake to the guest's vsock `guest_port`. `timeout` bounds the
-    /// ready-watch step.
-    ///
-    /// The default port is [`GUEST_PORT_DEFAULT`] and the default marker is
-    /// [`READY_MARKER_DEFAULT`]; callers typically pass those directly.
+    /// Wait for `ready_marker` on `console`, then connect + handshake.
+    /// Use [`Self::open_uds_only`] when readiness is established elsewhere.
     pub fn open(
         host_uds: &Path,
         guest_port: u32,
@@ -185,35 +172,30 @@ impl Channel {
         Ok(envelope)
     }
 
+    /// Flush + remove the host-side UDS. NotFound is treated as success so
+    /// both `close` and `Drop` paths are idempotent.
+    fn teardown(&mut self) -> Result<(), VsockError> {
+        self.stream.flush().map_err(VsockError::Io)?;
+        match std::fs::remove_file(&self.host_uds) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(VsockError::Io(e)),
+        }
+    }
+
     /// Close the connection and remove the host-side UDS. Idempotent.
     pub fn close(mut self) -> Result<(), VsockError> {
         self.closed = true;
-        self.stream.flush().map_err(VsockError::Io)?;
-        std::fs::remove_file(&self.host_uds).or_else(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                Ok(())
-            } else {
-                Err(VsockError::Io(e))
-            }
-        })?;
-        Ok(())
-    }
-
-    /// Perform cleanup, swallowing errors (used by Drop).
-    fn cleanup(&mut self) {
-        let _ = self.stream.flush();
-        if let Err(e) = std::fs::remove_file(&self.host_uds) {
-            if e.kind() != io::ErrorKind::NotFound {
-                tracing::warn!(path = %self.host_uds.display(), err = %e, "vsock UDS removal failed during drop");
-            }
-        }
+        self.teardown()
     }
 }
 
 impl Drop for Channel {
     fn drop(&mut self) {
         if !self.closed {
-            self.cleanup();
+            if let Err(e) = self.teardown() {
+                tracing::warn!(path = %self.host_uds.display(), err = %e, "vsock teardown failed during drop");
+            }
         }
     }
 }

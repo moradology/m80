@@ -1,3 +1,5 @@
+mod common;
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::time::Duration;
@@ -6,13 +8,7 @@ use tempfile::tempdir;
 
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT, VsockError};
 
-/// Write a pre-populated console file with the ready marker so the watch
-/// passes immediately, then return the console path.
-fn console_with_marker(dir: &std::path::Path) -> std::path::PathBuf {
-    let console = dir.join("console.log");
-    std::fs::write(&console, "boot\nGUESTD_READY\n").unwrap();
-    console
-}
+use common::console_with_marker;
 
 #[test]
 fn successful_handshake_opens_channel() {

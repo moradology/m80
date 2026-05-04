@@ -1,5 +1,7 @@
 //! Verify that dropping a `Channel` removes the host-side UDS file.
 
+mod common;
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::time::Duration;
@@ -8,11 +10,7 @@ use tempfile::tempdir;
 
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-fn console_with_marker(dir: &std::path::Path) -> std::path::PathBuf {
-    let console = dir.join("console.log");
-    std::fs::write(&console, "GUESTD_READY\n").unwrap();
-    console
-}
+use common::console_with_marker;
 
 #[test]
 fn drop_removes_host_uds() {
