@@ -43,8 +43,27 @@ const DEFAULT_VCPU_COUNT: u32 = 1;
 /// Default memory in MiB.
 const DEFAULT_MEM_SIZE_MIB: u32 = 1024;
 
-/// Default boot args.
-const DEFAULT_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off";
+/// Common kernel command-line arguments shared by all image kinds.
+const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off";
+
+/// Build kernel boot args for the given image kind, honoring any caller
+/// override on `SandboxConfig::boot_args`.
+///
+/// - `Ubuntu`: defers to systemd as the kernel's `init=` (the kernel
+///   defaults to `/sbin/init`).
+/// - `Minimal`: appends `init=/m80-guestd` so the kernel calls our
+///   PID-1-aware daemon directly. The minimal rootfs also has
+///   `/init -> /m80-guestd` as a backstop, but explicit `init=` avoids
+///   relying on the kernel's symlink resolution.
+fn boot_args_for(kind: m80_image_manifest::ImageKind, config_override: Option<&str>) -> String {
+    if let Some(custom) = config_override {
+        return custom.to_owned();
+    }
+    match kind {
+        m80_image_manifest::ImageKind::Ubuntu => COMMON_BOOT_ARGS.to_owned(),
+        m80_image_manifest::ImageKind::Minimal => format!("{COMMON_BOOT_ARGS} init=/m80-guestd"),
+    }
+}
 
 /// Ready probe: poll interval.
 const READY_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -143,6 +162,7 @@ impl Sandbox {
             &backend_config.discovery.kernel,
             &run_dir,
             &vm_id,
+            backend_config.discovery.manifest.image_kind,
         )?;
 
         // Phase 12a: InstanceStart.
@@ -348,6 +368,7 @@ fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
 ///
 /// From Firecracker's perspective, resources must be PUT before `InstanceStart`:
 /// machine-config → boot-source → drives (root first) → vsock.
+#[allow(clippy::too_many_arguments)]
 fn phase_11_rest_puts(
     client: &Client,
     storage: &StoragePrep,
@@ -356,6 +377,7 @@ fn phase_11_rest_puts(
     _kernel: &Path,
     _run_dir: &Path,
     vm_id: &str,
+    image_kind: m80_image_manifest::ImageKind,
 ) -> Result<(), FcError> {
     // a. Machine config.
     client.put_machine_config(&MachineConfig {
@@ -366,11 +388,7 @@ fn phase_11_rest_puts(
 
     // b. Boot source. The kernel is bind-mounted at `/kernel` inside the
     // jailer chroot; Firecracker sees that path from within its chroot.
-    let boot_args = config
-        .boot_args
-        .as_deref()
-        .unwrap_or(DEFAULT_BOOT_ARGS)
-        .to_owned();
+    let boot_args = boot_args_for(image_kind, config.boot_args.as_deref());
     client.put_boot_source(&BootSourceConfig {
         kernel_image_path: PathBuf::from("/kernel"),
         boot_args: Some(boot_args),
@@ -443,5 +461,34 @@ fn phase_12b_ready_probe(vsock_uds: &Path, vm_id: &str) -> Result<Channel, FcErr
             return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
         }
         std::thread::sleep(READY_POLL_INTERVAL);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use m80_image_manifest::ImageKind;
+
+    #[test]
+    fn boot_args_ubuntu_uses_common_only() {
+        assert_eq!(boot_args_for(ImageKind::Ubuntu, None), COMMON_BOOT_ARGS);
+    }
+
+    #[test]
+    fn boot_args_minimal_appends_init_path() {
+        let args = boot_args_for(ImageKind::Minimal, None);
+        assert!(args.starts_with(COMMON_BOOT_ARGS));
+        assert!(args.contains("init=/m80-guestd"));
+    }
+
+    #[test]
+    fn boot_args_override_wins_over_kind_default() {
+        let custom = "console=ttyS0 my=custom args";
+        assert_eq!(
+            boot_args_for(ImageKind::Minimal, Some(custom)),
+            custom,
+            "explicit override must take precedence regardless of kind"
+        );
+        assert_eq!(boot_args_for(ImageKind::Ubuntu, Some(custom)), custom);
     }
 }
