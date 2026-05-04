@@ -33,29 +33,8 @@ fn round_trip_is_byte_stable() {
     assert_eq!(raw1, raw2, "re-serialized bytes must be identical");
 }
 
-/// Output ends with a trailing newline.
-#[test]
-fn trailing_newline_present() {
-    let dir = tempfile::tempdir().unwrap();
-    let m = common::sample_restore_metadata(dir.path());
-    let path = dir.path().join("m.json");
-    m.write(&path).unwrap();
-    let raw = std::fs::read(&path).unwrap();
-    assert_eq!(raw.last(), Some(&b'\n'), "output must end with a newline");
-}
-
-/// File permissions are 0644 on Unix.
-#[test]
-#[cfg(unix)]
-fn file_mode_is_0644() {
-    use std::os::unix::fs::MetadataExt;
-    let dir = tempfile::tempdir().unwrap();
-    let m = common::sample_restore_metadata(dir.path());
-    let path = dir.path().join("mode.json");
-    m.write(&path).unwrap();
-    let mode = std::fs::metadata(&path).unwrap().mode() & 0o777;
-    assert_eq!(mode, 0o644, "metadata file mode must be 0644, got {mode:o}");
-}
+// trailing-newline + file-mode tests are pinned by manifest_roundtrip.rs;
+// both types share `write_pretty_json_0644` so verifying once suffices.
 
 /// Wrong schema version returns `UnsupportedSchemaVersion`.
 #[test]

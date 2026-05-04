@@ -1,13 +1,6 @@
-//! Snapshot manifest schemas and persistence path layout.
-//! Schemas active in v0.1; capture/restore execution deferred to v0.2.
-//!
-//! See `README.md` for the black-box contract.
-//! Behavior captures: bead epic `m80-0tf` (`br show m80-0tf`).
-//!
-//! # Type-pinning pass
-//!
-//! Schemas + path helpers are pinned. `capture` and `restore` are present in
-//! v0.1 but return [`SnapshotError::Deferred`].
+//! Snapshot manifest schemas and persistence-path layout. Schemas active in
+//! v0.1; capture/restore return [`SnapshotError::Deferred`] until v0.2.
+//! See `README.md` for the contract. Behavior captures: bead epic `m80-0tf`.
 
 #![deny(missing_docs)]
 
@@ -130,94 +123,64 @@ struct SchemaVersionProbe {
     schema_version: u32,
 }
 
-impl SnapshotManifest {
-    /// Write this manifest to `path` as pretty-printed JSON with a trailing
-    /// newline and mode 0644 on Unix.
-    ///
-    /// The caller is responsible for the parent directory existing.
-    pub fn write(&self, path: &Path) -> Result<(), SnapshotError> {
-        let mut json = serde_json::to_string_pretty(self).map_err(SnapshotError::Json)?;
-        json.push('\n');
-        std::fs::write(path, json.as_bytes()).map_err(|source| SnapshotError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o644);
-            std::fs::set_permissions(path, perms).map_err(|source| SnapshotError::Io {
+/// Write `value` to `path` as pretty JSON + trailing newline + mode 0644.
+fn write_pretty_json_0644<T: Serialize>(value: &T, path: &Path) -> Result<(), SnapshotError> {
+    let mut json = serde_json::to_string_pretty(value).map_err(SnapshotError::Json)?;
+    json.push('\n');
+    std::fs::write(path, json.as_bytes()).map_err(|source| SnapshotError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).map_err(
+            |source| SnapshotError::Io {
                 path: path.to_path_buf(),
                 source,
-            })?;
-        }
-        Ok(())
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// Probe `schema_version` before full parse so a v0.2 file reports
+/// `UnsupportedSchemaVersion(2)` instead of leaking the unrelated
+/// `Json("unknown field …")` from `deny_unknown_fields`.
+fn read_with_schema_probe<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, SnapshotError> {
+    let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let probe: SchemaVersionProbe = serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
+    if probe.schema_version != SCHEMA_VERSION {
+        return Err(SnapshotError::UnsupportedSchemaVersion(probe.schema_version));
+    }
+    serde_json::from_slice(&raw).map_err(SnapshotError::Json)
+}
+
+impl SnapshotManifest {
+    /// Write to `path` as pretty JSON + trailing newline + mode 0644 (Unix).
+    pub fn write(&self, path: &Path) -> Result<(), SnapshotError> {
+        write_pretty_json_0644(self, path)
     }
 
-    /// Read and validate a manifest at `path`.
-    ///
-    /// Order of checks:
-    /// 1. Read bytes.
-    /// 2. Probe `schema_version` only; mismatch → [`SnapshotError::UnsupportedSchemaVersion`].
-    ///    Fires before structural-shape errors so a v0.2 manifest produces a
-    ///    clear error instead of an unknown-field error.
-    /// 3. Full parse into `SnapshotManifest`.
+    /// Read and structurally validate a manifest at `path`. Probes
+    /// `schema_version` before full parse; sha256s are NOT checked here.
     pub fn read(path: &Path) -> Result<SnapshotManifest, SnapshotError> {
-        let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        let probe: SchemaVersionProbe =
-            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
-        if probe.schema_version != SCHEMA_VERSION {
-            return Err(SnapshotError::UnsupportedSchemaVersion(probe.schema_version));
-        }
-        let manifest: SnapshotManifest =
-            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
-        Ok(manifest)
+        read_with_schema_probe(path)
     }
 }
 
 impl RestoreMetadata {
-    /// Write this metadata to `path` as pretty-printed JSON with a trailing
-    /// newline and mode 0644 on Unix.
-    ///
-    /// The caller is responsible for the parent directory existing.
+    /// Write to `path` as pretty JSON + trailing newline + mode 0644 (Unix).
     pub fn write(&self, path: &Path) -> Result<(), SnapshotError> {
-        let mut json = serde_json::to_string_pretty(self).map_err(SnapshotError::Json)?;
-        json.push('\n');
-        std::fs::write(path, json.as_bytes()).map_err(|source| SnapshotError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o644);
-            std::fs::set_permissions(path, perms).map_err(|source| SnapshotError::Io {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        }
-        Ok(())
+        write_pretty_json_0644(self, path)
     }
 
-    /// Read and validate restore metadata at `path`.
-    ///
-    /// Same probe-then-full-parse pattern as [`SnapshotManifest::read`].
+    /// Read and structurally validate restore metadata at `path`.
     pub fn read(path: &Path) -> Result<RestoreMetadata, SnapshotError> {
-        let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        let probe: SchemaVersionProbe =
-            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
-        if probe.schema_version != SCHEMA_VERSION {
-            return Err(SnapshotError::UnsupportedSchemaVersion(probe.schema_version));
-        }
-        let metadata: RestoreMetadata =
-            serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
-        Ok(metadata)
+        read_with_schema_probe(path)
     }
 }
 
