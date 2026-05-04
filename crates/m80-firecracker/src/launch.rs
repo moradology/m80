@@ -10,7 +10,7 @@
 //!
 //! - **Phase 12b (ready probe)**: instead of watching the Firecracker serial
 //!   console for `GUESTD_READY` via [`Channel::open`], v0.1 polls the host
-//!   vsock UDS by attempting `Channel::open` every 500 ms with a 30 s
+//!   vsock UDS by attempting `Channel::open` every 10 ms with a 60 s
 //!   deadline and a 1-second per-attempt timeout. A `PUT /logger` REST call
 //!   would be needed to make Firecracker write the serial console to a
 //!   host-visible file; that is deferred to v0.2.
@@ -47,10 +47,10 @@ const DEFAULT_MEM_SIZE_MIB: u32 = 1024;
 const DEFAULT_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=1 pci=off";
 
 /// Ready probe: poll interval.
-const READY_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const READY_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Ready probe: total timeout.
-const READY_TIMEOUT: Duration = Duration::from_secs(30);
+const READY_TIMEOUT: Duration = Duration::from_secs(60);
 
 impl Sandbox {
     /// Standalone constructor for callers without a `Backend`.
@@ -418,8 +418,8 @@ fn phase_11_rest_puts(
 /// is deferred to v0.2.
 ///
 /// Instead, v0.1 calls `Channel::open` with a 1-second per-attempt timeout
-/// (so the console watch times out quickly) and retries every 500 ms until
-/// the vsock handshake succeeds or the 30-second overall deadline elapses.
+/// (so the console watch times out quickly) and retries every 10 ms until
+/// the vsock handshake succeeds or the 60-second overall deadline elapses.
 fn phase_12b_ready_probe(vsock_uds: &Path, vm_id: &str) -> Result<Channel, FcError> {
     let deadline = Instant::now() + READY_TIMEOUT;
 
