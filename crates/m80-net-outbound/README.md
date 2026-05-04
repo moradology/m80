@@ -25,11 +25,6 @@ Sequestering it has three benefits:
    set, adjusting the CIDR cap, or fixing a teardown bug doesn't force
    a re-cert of the rest of the system.
 
-This is also the crate that v0.1 *specifies* fully but defers
-*implementing* — the dossier flags it as the largest extraction risk.
-Having the spec in beads + the README contract here means a v0.2 author
-has a clear starting point.
-
 ## Black-box contract
 
 ### Determinism

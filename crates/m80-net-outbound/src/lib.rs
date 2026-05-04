@@ -1,13 +1,6 @@
 //! OutboundNat: per-host bridge, per-VM tap/IP/MAC, default-deny iptables,
-//! ownership-aware cleanup.
-//!
-//! See `README.md` for the black-box contract.
-//! Behavior captures: bead epic `m80-exy` (`br show m80-exy`).
-//!
-//! # Type-pinning pass
-//!
-//! Public surface is declared here; bodies are `todo!()`. Implementation lands
-//! in a later wave.
+//! ownership-aware cleanup. See `README.md` for the contract.
+//! Behavior captures: bead epic `m80-exy`.
 
 #![deny(missing_docs)]
 
