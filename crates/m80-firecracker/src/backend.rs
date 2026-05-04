@@ -3,6 +3,8 @@
 
 use std::sync::{Arc, Condvar, Mutex};
 
+use std::time::{Duration, Instant};
+
 use tracing::warn;
 
 use m80_jailer::recover_from_run_dir;
@@ -83,12 +85,17 @@ impl Backend {
 
             match recover_from_run_dir(&subdir) {
                 Ok(m80_jailer::RecoveryDecision::LiveJail { jailer_pid, firecracker_pid }) => {
-                    tracing::debug!(
+                    // Owner m80 is dead (we passed `run_dir_is_live` above)
+                    // but firecracker is still running — orphaned VM.
+                    // SIGKILL it, wait for the kernel to reap, then reclaim.
+                    tracing::info!(
                         path = %subdir.display(),
                         jailer_pid,
                         firecracker_pid,
-                        "recover_stale_run_root: live jail found, skipping"
+                        "recover_stale_run_root: killing orphaned firecracker"
                     );
+                    kill_orphan_pids(jailer_pid, firecracker_pid);
+                    remove_run_dir(&subdir);
                 }
                 Ok(m80_jailer::RecoveryDecision::OrphanJail { reap_steps }) => {
                     reap_orphan_run_dir(&subdir, &reap_steps);
@@ -161,16 +168,61 @@ fn reap_orphan_run_dir(subdir: &std::path::Path, _reap_steps: &[m80_jailer::Plan
     remove_run_dir(subdir);
 }
 
-/// Unmount everything under `subdir` (using mountinfo as ground truth) then
-/// `remove_dir_all`. Without the umount pass, a SIGKILL'd m80 leaves
-/// bind-mounted kernel + rootfs.ext4 inside the chroot, and the rm fails
-/// with EBUSY.
+/// Unmount everything under `subdir` (using mountinfo as ground truth),
+/// remove the cgroup leaf, then `remove_dir_all`. Without the umount pass,
+/// a SIGKILL'd m80 leaves bind-mounted kernel + rootfs.ext4 inside the
+/// chroot and the rm fails with EBUSY; without the cgroup rm, the empty
+/// leaf in `/sys/fs/cgroup/m80-firecracker/<vm_id>/` stays around forever.
 fn remove_run_dir(subdir: &std::path::Path) {
     unmount_under(subdir);
+    if let Some(vm_id) = subdir.file_name().and_then(|s| s.to_str()) {
+        if let Err(e) = m80_cgroup::cleanup_orphan_subtree(vm_id) {
+            warn!(vm_id, err = %e, "recover_stale_run_root: cgroup cleanup failed");
+        }
+    }
     if let Err(e) = std::fs::remove_dir_all(subdir) {
         warn!(path = %subdir.display(), err = %e, "recover_stale_run_root: remove_dir_all failed");
     } else {
         tracing::info!(path = %subdir.display(), "recover_stale_run_root: reaped orphan run-dir");
+    }
+}
+
+/// SIGKILL any orphaned jailer / firecracker pid and poll until /proc/<pid>
+/// disappears (signaling that PID 1 has reaped it). Best-effort: a stuck
+/// or already-dead pid is logged and skipped. The 2-second poll deadline
+/// is enough for a normal SIGKILL teardown; longer waits suggest something
+/// is wrong and we'd rather move on with the cleanup than hang.
+fn kill_orphan_pids(jailer_pid: u32, firecracker_pid: u32) {
+    use nix::sys::signal::{kill, Signal};
+    use nix::unistd::Pid;
+
+    // Dedupe: with `--daemonize` jailer fork-execs and the two pids differ;
+    // without it (m80's path) jailer execs into firecracker so they're equal.
+    let mut pids = vec![firecracker_pid];
+    if jailer_pid != 0 && jailer_pid != firecracker_pid {
+        pids.push(jailer_pid);
+    }
+
+    for pid in &pids {
+        match kill(Pid::from_raw(*pid as i32), Some(Signal::SIGKILL)) {
+            Ok(()) => {}
+            Err(nix::errno::Errno::ESRCH) => {} // already gone
+            Err(e) => {
+                warn!(pid, err = %e, "recover_stale_run_root: SIGKILL failed");
+            }
+        }
+    }
+
+    // Poll until each /proc/<pid> is gone (init has reaped) or we hit 2s.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    for pid in &pids {
+        let proc_path = std::path::PathBuf::from(format!("/proc/{pid}"));
+        while proc_path.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if proc_path.exists() {
+            warn!(pid, "recover_stale_run_root: pid still present after 2s SIGKILL wait");
+        }
     }
 }
 
