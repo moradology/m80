@@ -1,17 +1,8 @@
-//! VM-lifecycle event log, per-VM probe, health rollup, Prometheus rendering.
-//! Deferred to v0.2.
-//!
-//! See `README.md` for the black-box contract.
-//! Behavior captures: bead epic `m80-1f8` (`br show m80-1f8`).
-//!
-//! # Type-pinning pass (v0.1)
-//!
-//! v0.1 exposes only [`Diagnostics::disabled`] so callers can write
-//! `Option<Diagnostics>` against a stable type without conditional
-//! compilation. The full v0.2 surface (Probe, HealthSnapshot, OpsMetrics,
-//! `render_prometheus`) is declared here as opaque types so consumers can
-//! `use` them today. All v0.2 execution functions return
-//! [`ObservabilityError::Deferred`] rather than panicking.
+//! VM-lifecycle event log, per-VM probe, health rollup, Prometheus
+//! rendering. Execution lane deferred to v0.2; v0.1 ships
+//! [`Diagnostics::disabled`] + types so callers compile against the
+//! stable surface today. See `README.md` for the contract.
+//! Behavior captures: bead epic `m80-1f8`.
 
 #![deny(missing_docs)]
 
@@ -38,7 +29,7 @@ impl Diagnostics {
 }
 
 /// One structured event for the diagnostics log.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VmEvent {
     /// Caller-supplied free-text detail.
     pub detail: String,

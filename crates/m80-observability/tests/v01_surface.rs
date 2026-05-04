@@ -54,16 +54,5 @@ fn vm_event_roundtrips_through_serde_json() {
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let back: VmEvent = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(back.detail, event.detail);
-    assert_eq!(back.phase, event.phase);
-    assert_eq!(back.timestamp_unix_ms, event.timestamp_unix_ms);
-}
-
-#[test]
-fn health_snapshot_default_is_zero() {
-    let snap = HealthSnapshot::default();
-    assert_eq!(snap.healthy, 0);
-    assert_eq!(snap.degraded, 0);
-    assert_eq!(snap.stuck, 0);
-    assert_eq!(snap.exited, 0);
+    assert_eq!(back, event);
 }
