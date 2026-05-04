@@ -1,19 +1,6 @@
-//! Tests for `probe()` / `probe_mounts()` — uses a fake `/proc/mounts`
-//! string so no real cgroup hierarchy is required.
+//! Tests for `probe_mounts` against a synthetic `/proc/mounts`.
 
-// Access the private helper via `pub(crate)` visibility exposed for tests.
-use m80_cgroup::CgroupError;
-
-/// Call the internal `probe_mounts` helper.
-fn probe_mounts(s: &str) -> Result<(), CgroupError> {
-    // probe_mounts is pub(crate); integration tests are in a separate crate
-    // so we call it through the re-export placed in the public surface for
-    // testability. (see the `#[cfg(test)]` re-export in lib.rs)
-    //
-    // Because the helper is `pub(crate)` it is not accessible here.
-    // Instead we use the `probe_mounts_test` wrapper below.
-    m80_cgroup::probe_mounts_test(s)
-}
+use m80_cgroup::{CgroupError, probe_mounts};
 
 /// A minimal unified-v2 `/proc/mounts` line.
 const UNIFIED_V2_MOUNTS: &str = "\

@@ -27,12 +27,8 @@ pub struct Subtree {
 }
 
 impl Subtree {
-    /// Probe whether this host supports unified cgroup v2 mode. Run this
-    /// before [`Subtree::create`] from preflight.
-    ///
-    /// Reads `/proc/mounts` and looks for a `cgroup2` mount at
-    /// `/sys/fs/cgroup`. Returns [`CgroupError::UnsupportedHostMode`] if
-    /// none is found.
+    /// Probe whether this host has unified cgroup v2 — call from preflight
+    /// before any [`Subtree::create`].
     pub fn probe() -> Result<(), CgroupError> {
         let mounts = fs::read_to_string("/proc/mounts").map_err(|source| CgroupError::Io {
             path: PathBuf::from("/proc/mounts"),
@@ -41,11 +37,11 @@ impl Subtree {
         probe_mounts(&mounts)
     }
 
-    /// Create the per-VM subtree, enable cpu/memory/pids controllers, assign
-    /// both `jailed.jailer_pid` and `jailed.firecracker_pid` to the subtree.
-    ///
-    /// The `jail` argument supplies `plan.config.run_dir` for the persisted
-    /// `cgroup-path.txt`. The `jailed` argument supplies the live pids.
+    /// Create the per-VM subtree under `m80-firecracker/<vm_id>/`, enable
+    /// cpu/memory/pids controllers in the parent, and enroll
+    /// `jailed.firecracker_pid`. `jailer_pid` is intentionally omitted —
+    /// after `m80-jailer` the two pids are equal (jailer execs into
+    /// firecracker), so writing it would be redundant.
     pub fn create(
         vm_id: &str,
         jail: &MaterializedJail,
@@ -53,20 +49,16 @@ impl Subtree {
     ) -> Result<Self, CgroupError> {
         let parent = PathBuf::from(CGROUP_ROOT);
 
-        // 1. Ensure parent dir exists. `create_dir_all` is race-safe: two
-        //    concurrent sandboxes can both call this without one losing.
+        // create_dir_all is race-safe against concurrent sandboxes.
         fs::create_dir_all(&parent).map_err(|source| CgroupError::Io {
             path: parent.clone(),
             source,
         })?;
 
-        // 2. Enable controllers in the parent. Use `write_cgroup_file` (no
-        //    O_TRUNC) — cgroup virtual files reject O_TRUNC on some kernels.
         let subtree_control = parent.join("cgroup.subtree_control");
         if let Err(cgroup_err) = write_cgroup_file(&subtree_control, "+cpu +memory +pids\n") {
-            // On failure, check cgroup.controllers and surface the structured
-            // ControllerNotEnabled variant when we can name the missing one;
-            // otherwise propagate the original CgroupError unchanged.
+            // Translate to ControllerNotEnabled when we can name the missing
+            // one; otherwise propagate the original error unchanged.
             let controllers_path = parent.join("cgroup.controllers");
             if let Ok(controllers) = fs::read_to_string(&controllers_path) {
                 for name in ["cpu", "memory", "pids"] {
@@ -78,26 +70,15 @@ impl Subtree {
             return Err(cgroup_err);
         }
 
-        // 3. Create the per-VM leaf directory. `create_dir_all` is race-safe
-        //    against a stale-from-prior-crash leaf — but if it pre-existed,
-        //    the prior controller state may persist; cleanup_orphan_subtree
-        //    is the orthogonal preflight step the orchestrator should call.
         let leaf = parent.join(vm_id);
         fs::create_dir_all(&leaf).map_err(|source| CgroupError::Io {
             path: leaf.clone(),
             source,
         })?;
 
-        // 4. Assign the firecracker pid to the leaf. Note: jailer's
-        //    `JailedFirecracker::jailer_pid` is the pid of the jailer parent,
-        //    which `m80-jailer::launch()` reaps via `child.wait()` before
-        //    returning — so by the time we get here it's already exited and
-        //    writing it to cgroup.procs would return ESRCH. The firecracker
-        //    process is what we actually want to constrain anyway.
         let procs = leaf.join("cgroup.procs");
         write_cgroup_file(&procs, &format!("{}\n", jailed.firecracker_pid))?;
 
-        // 5. Persist the subtree path to <run_dir>/cgroup-path.txt.
         let cgroup_path_txt = jail.plan.config.run_dir.join("cgroup-path.txt");
         let leaf_str = format!("{}\n", leaf.display());
         fs::write(&cgroup_path_txt, leaf_str.as_bytes()).map_err(|source| CgroupError::Io {
@@ -231,24 +212,11 @@ pub enum CgroupError {
     },
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/// Internal mount-string probe, exposed for integration tests.
-///
-/// Not part of the stable public surface — call [`Subtree::probe`] from
-/// production code. Tests use this to inject fake `/proc/mounts` content
-/// without touching the real filesystem.
+/// Probe a `/proc/mounts`-shaped string for the unified-v2 hierarchy.
+/// Separated from [`Subtree::probe`] so integration tests can pass a
+/// synthetic mounts string without touching the host filesystem.
 #[doc(hidden)]
-pub fn probe_mounts_test(mounts: &str) -> Result<(), CgroupError> {
-    probe_mounts(mounts)
-}
-
-/// Check mounts content for cgroup v2 unified hierarchy. Separated from
-/// `probe()` so tests can call it with a fake `/proc/mounts` string.
-pub(crate) fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
-    // A unified-v2 host has a `cgroup2` mount at `/sys/fs/cgroup`.
+pub fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
     let has_v2 = mounts.lines().any(|line| {
         let mut cols = line.split_whitespace();
         let _dev = cols.next();
@@ -270,17 +238,9 @@ pub(crate) fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
     Ok(())
 }
 
-/// Write `value` to `path` using `OpenOptions::write(true).open(...)` —
-/// **deliberately without `.create(true)` and `.truncate(true)`**.
-///
-/// Cgroup v2 interface files are virtual: they exist only when the
-/// controller is enabled in the parent's `subtree_control`, and writing
-/// to them with `O_TRUNC` (which `fs::write` and the equivalent
-/// `OpenOptions::create(true).truncate(true)` invocation set) is rejected
-/// with EINVAL on several kernels. A bare write-only open behaves
-/// correctly across the kernel matrix m80 supports.
-///
-/// Use this helper instead of `fs::write` for every cgroup file.
+/// Write `value` to a cgroup virtual file. Bare write-only open without
+/// `O_TRUNC` — cgroup interface files reject `O_TRUNC` (set by `fs::write`
+/// and `OpenOptions::create+truncate`) with EINVAL on several kernels.
 fn write_cgroup_file(path: &Path, value: &str) -> Result<(), CgroupError> {
     let mut f = fs::OpenOptions::new()
         .write(true)

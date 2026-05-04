@@ -6,40 +6,24 @@ use std::path::PathBuf;
 use m80_cgroup::CgroupError;
 
 #[test]
-fn unsupported_host_mode_has_nonempty_display() {
+fn unsupported_host_mode_mentions_cgroup() {
     let msg = CgroupError::UnsupportedHostMode.to_string();
-    assert!(!msg.is_empty(), "UnsupportedHostMode must have a display message");
-    assert!(
-        msg.contains("cgroup"),
-        "UnsupportedHostMode message should mention cgroup, got: {msg:?}"
-    );
+    assert!(msg.contains("cgroup"), "got: {msg:?}");
 }
 
 #[test]
 fn controller_not_enabled_includes_name() {
     let err = CgroupError::ControllerNotEnabled("memory".to_owned());
-    let msg = err.to_string();
-    assert!(!msg.is_empty());
-    assert!(
-        msg.contains("memory"),
-        "ControllerNotEnabled should include controller name, got: {msg:?}"
-    );
+    assert!(err.to_string().contains("memory"), "got: {err}");
 }
 
 #[test]
-fn io_variant_includes_path_and_source() {
-    let path = PathBuf::from("/sys/fs/cgroup/m80-firecracker/test-vm/cpu.max");
-    let source = io::Error::new(io::ErrorKind::PermissionDenied, "permission denied");
+fn io_variant_includes_path() {
     let err = CgroupError::Io {
-        path: path.clone(),
-        source,
+        path: PathBuf::from("/sys/fs/cgroup/m80-firecracker/test-vm/cpu.max"),
+        source: io::Error::new(io::ErrorKind::PermissionDenied, "permission denied"),
     };
-    let msg = err.to_string();
-    assert!(!msg.is_empty());
-    assert!(
-        msg.contains("cpu.max"),
-        "Io variant should mention the path, got: {msg:?}"
-    );
+    assert!(err.to_string().contains("cpu.max"), "got: {err}");
 }
 
 #[test]
