@@ -3,29 +3,15 @@
 //! All tests are `#[ignore]`; run with:
 //!   sudo cargo test -p m80-storage --test scratch_create_real -- --ignored
 
-use std::path::PathBuf;
+mod common;
 
 use m80_storage::Scratch;
 
-/// Returns `true` iff the test is running as root. Tests should early-return
-/// when this returns `false` so non-root invocations don't fail mid-operation.
-fn require_root() -> bool {
-    if nix::unistd::Uid::effective().is_root() {
-        true
-    } else {
-        eprintln!("[scratch_create_real] SKIP: not running as root");
-        false
-    }
-}
-
 /// Full create-and-verify round trip.
-///
-/// Creates a workspace with a couple of files, formats a scratch image, mounts
-/// it, and verifies the files are present.
 #[test]
 #[ignore = "requires root and a loop device"]
 fn scratch_create_hydrates_workspace() {
-    if !require_root() { return; }
+    if !common::require_root("scratch_create_real") { return; }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
@@ -37,8 +23,8 @@ fn scratch_create_hydrates_workspace() {
 
     let image = dir.path().join("scratch.ext4");
     // 64 MiB is the minimum viable size for mkfs.ext4.
-    let size = 64 * 1024 * 1024;
-    let scratch = Scratch::create(&workspace, &image, size).expect("create must succeed");
+    let scratch = Scratch::create(&workspace, &image, 64 * 1024 * 1024)
+        .expect("create must succeed");
     assert_eq!(scratch.path(), image.as_path());
     assert!(image.exists());
 }
@@ -48,7 +34,7 @@ fn scratch_create_hydrates_workspace() {
 fn scratch_create_rejects_symlink_in_workspace() {
     use std::os::unix::fs::symlink;
 
-    if !require_root() { return; }
+    if !common::require_root("scratch_create_real") { return; }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
@@ -62,8 +48,4 @@ fn scratch_create_rejects_symlink_in_workspace() {
         matches!(err, m80_storage::StorageError::AdmissibilityRefused),
         "expected AdmissibilityRefused, got {err:?}"
     );
-}
-
-fn _suppress_unused() {
-    let _: PathBuf = PathBuf::new();
 }

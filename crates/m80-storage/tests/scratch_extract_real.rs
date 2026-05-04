@@ -3,18 +3,9 @@
 //! All tests are `#[ignore]`; run with:
 //!   sudo cargo test -p m80-storage --test scratch_extract_real -- --ignored
 
-use m80_storage::Scratch;
+mod common;
 
-/// Returns `true` iff the test is running as root. Tests should early-return
-/// when this returns `false` so non-root invocations don't fail mid-operation.
-fn require_root() -> bool {
-    if nix::unistd::Uid::effective().is_root() {
-        true
-    } else {
-        eprintln!("[scratch_extract_real] SKIP: not running as root");
-        false
-    }
-}
+use m80_storage::Scratch;
 
 /// Full create → extract round trip.
 ///
@@ -23,7 +14,7 @@ fn require_root() -> bool {
 #[test]
 #[ignore = "requires root and a loop device"]
 fn scratch_extract_round_trips_workspace() {
-    if !require_root() { return; }
+    if !common::require_root("scratch_extract_real") { return; }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
@@ -53,7 +44,7 @@ fn scratch_extract_round_trips_workspace() {
 #[test]
 #[ignore = "requires root and a loop device"]
 fn scratch_extract_rejects_into_already_exists() {
-    if !require_root() { return; }
+    if !common::require_root("scratch_extract_real") { return; }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");

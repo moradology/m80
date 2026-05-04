@@ -1,12 +1,6 @@
 //! Scratch ext4 image creation, hydration, and post-stop change extraction.
-//!
-//! ## Extraction approach (v0.1 departure from predecessor)
-//!
-//! predecessor uses `debugfs rdump` to enumerate and extract files without a
-//! remount.  v0.1 uses a loop-mount instead: simpler, produces identical
-//! observable behaviour for the scratch image sizes we care about (~64 MiB–
-//! 512 MiB), and avoids the non-trivial `debugfs` output-parsing surface.
-//! A future revision can add the debugfs path for very large images.
+//! Loop-mounts the image to walk it; `debugfs rdump` would also work but
+//! the parser surface isn't worth it at the scratch sizes we target.
 
 use std::fs::{self, OpenOptions};
 use std::os::unix::fs::FileTypeExt;
@@ -76,7 +70,7 @@ impl Scratch {
         if into.exists() {
             return Err(StorageError::SwapFailed);
         }
-        fs::rename(stage_dir.path(), into).map_err(|_| StorageError::SwapFailed)?;
+        fs::rename(stage_dir.path(), into).map_err(|e| io_err(into, e))?;
         // Prevent TempDir from trying to remove the path we just renamed away.
         let _ = stage_dir.keep();
 
@@ -132,10 +126,6 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
     umount_result
 }
 
-// ---------------------------------------------------------------------------
-// e2fsck
-// ---------------------------------------------------------------------------
-
 /// e2fsck exit-code acceptability.
 ///
 /// Bits 0 and 1 mean "errors found/corrected"; bit 2+ are fatal.
@@ -163,68 +153,40 @@ fn run_e2fsck(image: &Path) -> Result<(), StorageError> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Mount / umount helpers
-// ---------------------------------------------------------------------------
-
 fn mount_loop(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
-    let out = Command::new("mount")
-        .args(["-o", "loop"])
-        .arg(image)
-        .arg(mount_point)
-        .output()
-        .map_err(|e| io_err(mount_point, e))?;
-    if !out.status.success() {
-        return Err(io_err(
-            mount_point,
-            std::io::Error::other(format!(
-                "mount failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            )),
-        ));
-    }
-    Ok(())
+    run_mount(mount_point, &["mount", "-o", "loop"], Some(image))
 }
 
 fn mount_loop_ro(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
-    let out = Command::new("mount")
-        .args(["-o", "loop,ro"])
-        .arg(image)
-        .arg(mount_point)
-        .output()
-        .map_err(|e| io_err(mount_point, e))?;
-    if !out.status.success() {
-        return Err(io_err(
-            mount_point,
-            std::io::Error::other(format!(
-                "mount (ro) failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            )),
-        ));
-    }
-    Ok(())
+    run_mount(mount_point, &["mount", "-o", "loop,ro"], Some(image))
 }
 
 fn umount(mount_point: &Path) -> Result<(), StorageError> {
-    let out = Command::new("umount")
-        .arg(mount_point)
-        .output()
-        .map_err(|e| io_err(mount_point, e))?;
+    run_mount(mount_point, &["umount"], None)
+}
+
+/// Spawn `argv[0]` with `argv[1..]` followed by an optional `image` path
+/// and `mount_point`; surface a non-zero exit's stderr in the error.
+fn run_mount(mount_point: &Path, argv: &[&str], image: Option<&Path>) -> Result<(), StorageError> {
+    let (program, args) = argv.split_first().expect("argv non-empty");
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    if let Some(img) = image {
+        cmd.arg(img);
+    }
+    cmd.arg(mount_point);
+    let out = cmd.output().map_err(|e| io_err(mount_point, e))?;
     if !out.status.success() {
         return Err(io_err(
             mount_point,
             std::io::Error::other(format!(
-                "umount failed: {}",
+                "{program} failed: {}",
                 String::from_utf8_lossy(&out.stderr).trim()
             )),
         ));
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Workspace copy (hydration)
-// ---------------------------------------------------------------------------
 
 /// Recursively copy `workspace` contents into `dest`.
 ///
@@ -261,10 +223,6 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Extraction: build staging tree
-// ---------------------------------------------------------------------------
 
 /// Walk `mount_root`, apply admissibility scan, copy survivors into a
 /// temporary staging directory.
@@ -353,10 +311,6 @@ fn walk_for_extract(
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Small helper to construct io::Error for mkfs failures
-// ---------------------------------------------------------------------------
 
 mod io {
     pub(crate) fn mkfs_error(msg: impl Into<String>) -> std::io::Error {

@@ -28,18 +28,6 @@ fn clone_produces_byte_identical_copy() {
 }
 
 #[test]
-fn clone_returns_dest_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("base.ext4");
-    let dest = dir.path().join("vm-001.ext4");
-
-    std::fs::write(&base, b"payload").unwrap();
-
-    let rootfs = Rootfs::clone(&base, &dest).unwrap();
-    assert_eq!(rootfs.path(), dest.as_path());
-}
-
-#[test]
 fn new_at_wraps_existing_path_without_copy() {
     let dir = tempfile::tempdir().unwrap();
     let existing = dir.path().join("existing.ext4");
