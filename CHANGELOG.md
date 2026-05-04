@@ -5,6 +5,40 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Reliability — ubuntu/idle 40 % flake eliminated
+
+The ubuntu/idle launch-failure rate was ~40-50 % under a tight loop;
+post-fix it is **20/20 = 100 %** at N=20. Two compounding causes were
+addressed in commit `ad00c02`:
+
+1. **Inverted-readiness vsock signal** (m80-7tpy). The previous
+   polled-CONNECT/OK probe (10 ms cadence into Firecracker's vsock
+   muxer) provoked a `vsock: error adding local-init connection
+   (WouldBlock)` race in the muxer's accept loop, surfaced as
+   `Broken pipe` on the host. Replaced with: m80-guestd connects out
+   to the host on `READY_PORT_DEFAULT = 52525` with a single
+   `PROTOCOL_VERSION` byte; the host pre-creates a `UnixListener`
+   at `<vsock_uds>_<READY_PORT>` and `accept()`s. Event-driven, no
+   polling, no muxer race.
+
+2. **Service-unit ordering cycle** (the actual majority cause).
+   `m80-guestd.service` was `WantedBy=multi-user.target` +
+   `After=multi-user.target`, which dragged in
+   `network-wait-online`'s bimodal timeout (~1.5 s on success vs
+   full 90 s on hang) — m80-guestd started at T=91 s on the bad
+   path, well past the host's `READY_TIMEOUT`. Fixed by
+   `DefaultDependencies=no`, no `After=` at all (initial attempt
+   added `After=workspace.mount` but that formed an ordering cycle
+   with `local-fs.target`; systemd's non-deterministic cycle-break
+   sometimes deleted the m80-guestd job entirely), `WantedBy=
+   basic.target`. Image-build symlinks `m80-guestd.service` under
+   `basic.target.wants/`; `workspace.mount` stays under
+   `multi-user.target.wants/`.
+
+Polling-related code in `m80-vsock` (`watch_ready_marker`, the
+five-argument `Channel::open`, `READY_POLL_INTERVAL`) is removed in
+the same commit — fully replaced by the inverted-readiness path.
+
 ### Performance — cold-launch headline
 
 After m80-bgas.1, m80-6a0q, and the vsock graceful-stop migration:
