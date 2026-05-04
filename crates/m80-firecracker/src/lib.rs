@@ -9,6 +9,7 @@ mod error;
 mod launch;
 mod lifecycle;
 mod runroot;
+mod timing;
 mod types;
 
 pub use config::{backend_config_from_effective, load as load_config};

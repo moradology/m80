@@ -30,6 +30,7 @@ use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::error::FcError;
 use crate::runroot::write_ownership_lock;
+use crate::timing::phase;
 use crate::types::{
     CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
 };
@@ -102,38 +103,48 @@ impl Sandbox {
         let run_root = &backend_config.run_root;
 
         // Phase 1: run-root prep.
-        let run_dir = phase_1_run_root_prep(run_root, &vm_id)?;
+        let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
+            phase_1_run_root_prep(run_root, &vm_id)
+        })?;
 
         // Phase 2: lease acquisition. NB: name the binding `_lease_guard`
         // (suffix after underscore) — a bare `_lease` would drop the guard
         // immediately at the end of the let-statement, removing the
         // ownership.lock before phase 3 runs.
-        let _lease_guard = write_ownership_lock(&run_dir)?;
+        let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
         // Phase 3: manifest verify + storage prep.
-        let storage = phase_3_storage_prep(
-            &backend_config.discovery.manifest,
-            &backend_config.discovery.rootfs,
-            &self.config,
-            &run_dir,
-        )?;
+        let storage = phase("phase_3_storage_prep", &vm_id, || {
+            phase_3_storage_prep(
+                &backend_config.discovery.manifest,
+                &backend_config.discovery.rootfs,
+                &self.config,
+                &run_dir,
+            )
+        })?;
 
         // Phase 4: jailer materialize.
-        let jail = phase_4_jailer_materialize(
-            &backend_config.discovery.jailer_bin,
-            &backend_config.discovery.firecracker_bin,
-            backend_config.jail_uid,
-            backend_config.jail_gid,
-            &run_dir,
-            &backend_config.discovery.kernel,
-            &storage,
-        )?;
+        let jail = phase("phase_4_jailer_materialize", &vm_id, || {
+            phase_4_jailer_materialize(
+                &backend_config.discovery.jailer_bin,
+                &backend_config.discovery.firecracker_bin,
+                backend_config.jail_uid,
+                backend_config.jail_gid,
+                &run_dir,
+                &backend_config.discovery.kernel,
+                &storage,
+            )
+        })?;
 
         // Phase 5: probe cgroup availability (creation happens after phase 9).
-        phase_5_cgroup_probe(backend_config.cgroup_mode)?;
+        phase("phase_5_cgroup_probe", &vm_id, || {
+            phase_5_cgroup_probe(backend_config.cgroup_mode)
+        })?;
 
         // Phase 6: resolve network mode.
-        let net = phase_6_network_realize(&self.config)?;
+        let net = phase("phase_6_network_realize", &vm_id, || {
+            phase_6_network_realize(&self.config)
+        })?;
 
         // Phase 7: guest config injection — no-op in v0.1 (only OutboundNat
         // needs in-VM config and that mode is deferred). The `net` value is
@@ -143,36 +154,47 @@ impl Sandbox {
         let api_socket = jail.jail_path.join("firecracker.sock");
 
         // Phase 9: jailer exec's firecracker. Returns live pids.
-        let firecracker = jail.launch(&api_socket).map_err(FcError::Jailer)?;
+        let firecracker = phase("phase_9_jailer_launch", &vm_id, || {
+            jail.launch(&api_socket).map_err(FcError::Jailer)
+        })?;
 
         // Phase 5b: create cgroup subtree now that we have live pids.
-        let cgroup =
-            phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)?;
+        let cgroup = phase("phase_5b_cgroup_create", &vm_id, || {
+            phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)
+        })?;
 
         // Phase 10: open UDS REST client (retries for up to 5 s).
         let host_api_socket = jail.jail_path.join("firecracker.sock");
-        let client = phase_10_open_uds(&host_api_socket)?;
+        let client = phase("phase_10_open_uds", &vm_id, || {
+            phase_10_open_uds(&host_api_socket)
+        })?;
 
         // Phase 11: REST PUTs in documented order.
-        phase_11_rest_puts(
-            &client,
-            &storage,
-            &net,
-            &self.config,
-            &backend_config.discovery.kernel,
-            &run_dir,
-            &vm_id,
-            backend_config.discovery.manifest.image_kind,
-        )?;
+        phase("phase_11_rest_puts", &vm_id, || {
+            phase_11_rest_puts(
+                &client,
+                &storage,
+                &net,
+                &self.config,
+                &backend_config.discovery.kernel,
+                &run_dir,
+                &vm_id,
+                backend_config.discovery.manifest.image_kind,
+            )
+        })?;
 
         // Phase 12a: InstanceStart.
-        client.instance_action(InstanceAction::InstanceStart)?;
+        phase("phase_12a_instance_start", &vm_id, || {
+            client.instance_action(InstanceAction::InstanceStart)
+        })?;
 
         // Phase 12b: poll vsock UDS until guestd is ready. The jailer
         // materializes the socket inside the chroot, so the host-visible
         // path is `<jail_path>/vsock.sock`, not `<run_dir>/vsock.sock`.
         let vsock_uds = jail.jail_path.join("vsock.sock");
-        let channel = phase_12b_ready_probe(&vsock_uds, &vm_id)?;
+        let channel = phase("phase_12b_ready_probe", &vm_id, || {
+            phase_12b_ready_probe(&vsock_uds, &vm_id)
+        })?;
 
         Ok(RunningSandbox {
             vm_id,

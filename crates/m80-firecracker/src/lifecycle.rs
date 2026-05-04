@@ -4,12 +4,15 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use std::time::Instant;
+
 use m80_firecracker_client::InstanceAction;
 use m80_proto::{Envelope, ExecRequest, ExecResponse};
 use m80_storage::ChangeSet;
 
 use crate::error::FcError;
 use crate::runroot::unix_ms_now;
+use crate::timing::phase_event;
 use crate::types::{RunningSandbox, StoppedSandbox};
 
 /// How long to wait for Firecracker to exit after `SendCtrlAltDel`.
@@ -31,8 +34,12 @@ impl RunningSandbox {
     /// not supported.
     pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
         let envelope = Envelope::new(req);
+        let t = Instant::now();
         self.channel.send(&envelope)?;
+        phase_event("exec_send", &self.vm_id, t.elapsed());
+        let t = Instant::now();
         let resp_env: Envelope<ExecResponse> = self.channel.recv()?;
+        phase_event("exec_recv", &self.vm_id, t.elapsed());
         Ok(resp_env.payload)
     }
 
@@ -46,12 +53,16 @@ impl RunningSandbox {
     ///    into the returned `StoppedSandbox`.
     pub fn stop(self) -> Result<StoppedSandbox, FcError> {
         let run_root = self.backend.config.run_root.clone();
+        let vm_id_for_event = self.vm_id.clone();
 
         // Phase 2: bounded_stop.
+        let t = Instant::now();
         bounded_stop(&self.client, self.firecracker.firecracker_pid)?;
+        phase_event("stop_bounded", &vm_id_for_event, t.elapsed());
 
         // Phase 4: release. Destructure to drop everything except what moves
         // into StoppedSandbox.
+        let t = Instant::now();
         let RunningSandbox {
             vm_id,
             run_dir,
@@ -65,6 +76,7 @@ impl RunningSandbox {
             permit,
             backend: _backend,
         } = self;
+        phase_event("stop_release", &vm_id_for_event, t.elapsed());
 
         Ok(StoppedSandbox {
             vm_id,
