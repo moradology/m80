@@ -16,11 +16,10 @@ use m80_image_manifest::{Manifest, ManifestError};
 mod checks;
 mod table;
 
-/// Linux capabilities m80 needs in its effective set when not running as
-/// `euid == 0`. A process holding all of these (e.g., a binary with
-/// `setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill+ep`,
-/// or a container with the same `securityContext.capabilities.add`) passes
-/// the privilege precondition without being root.
+/// Linux capabilities m80 needs when `euid != 0`; a process holding all of
+/// these passes the privilege precondition without being root. The
+/// `setcap` invocation that grants them is in [`PreflightError::PrivilegeUnavailable`]'s
+/// hint text.
 pub const REQUIRED_CAPABILITIES: &[Capability] = &[
     Capability::CAP_NET_ADMIN,
     Capability::CAP_SYS_ADMIN,
@@ -80,10 +79,7 @@ impl Discovery {
     }
 }
 
-/// Run the preflight checklist. Fail-closed on any single failure.
-pub fn run() -> Result<Discovery, PreflightError> {
-    checks::run_all()
-}
+pub use checks::run;
 
 /// Errors surfaced by preflight. Each variant carries actionable hint text
 /// when rendered.

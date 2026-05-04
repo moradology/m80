@@ -51,24 +51,10 @@ fn fixture_discovery() -> Discovery {
 }
 
 #[test]
-fn render_contains_pass_marker_for_os_gate() {
-    let d = fixture_discovery();
-    let table = d.render_table();
-    // Row 0 is OS gate — passed
-    assert!(
-        table.contains("PASS"),
-        "rendered table must contain PASS for passing rows; got:\n{table}"
-    );
-}
-
-#[test]
-fn render_contains_fail_marker_for_modules() {
-    let d = fixture_discovery();
-    let table = d.render_table();
-    assert!(
-        table.contains("FAIL"),
-        "rendered table must contain FAIL for failed rows; got:\n{table}"
-    );
+fn render_contains_pass_and_fail_markers() {
+    let table = fixture_discovery().render_table();
+    assert!(table.contains("PASS"), "missing PASS:\n{table}");
+    assert!(table.contains("FAIL"), "missing FAIL:\n{table}");
 }
 
 #[test]

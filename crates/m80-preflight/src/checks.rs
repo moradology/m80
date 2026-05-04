@@ -16,8 +16,6 @@ use crate::{
     CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES,
 };
 
-// ── Env-var knobs ────────────────────────────────────────────────────────────
-
 const ENV_FIRECRACKER_BIN: &str = "M80_FIRECRACKER_BIN";
 const ENV_FIRECRACKER_VERSION: &str = "M80_FIRECRACKER_VERSION";
 const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
@@ -36,15 +34,12 @@ const MIN_RUN_ROOT_FREE_BYTES: u64 = 100 * 1024 * 1024;
 
 const REQUIRED_STORAGE_HELPERS: &[&str] = &["mkfs.ext4", "debugfs", "e2fsck"];
 
-// ── Entry point ──────────────────────────────────────────────────────────────
-
 /// Run all 10 checks in order. First failure returns a typed error immediately.
-pub(crate) fn run_all() -> Result<Discovery, PreflightError> {
+pub fn run() -> Result<Discovery, PreflightError> {
     let mut report: Vec<CheckRow> = Vec::new();
 
     // 1. OS gate
-    let sysname = check_os(&mut report)?;
-    let _ = sysname; // consumed by the check; detail is in the row
+    check_os(&mut report)?;
 
     // 2. KVM
     check_kvm(&mut report)?;
@@ -85,9 +80,7 @@ pub(crate) fn run_all() -> Result<Discovery, PreflightError> {
     })
 }
 
-// ── Individual checks ────────────────────────────────────────────────────────
-
-fn check_os(report: &mut Vec<CheckRow>) -> Result<String, PreflightError> {
+fn check_os(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
     let uts = uname().map_err(|e| PreflightError::Io(e.into()))?;
     let sysname = uts.sysname().to_string_lossy().to_string();
     if sysname != "Linux" {
@@ -99,14 +92,13 @@ fn check_os(report: &mut Vec<CheckRow>) -> Result<String, PreflightError> {
         passed: true,
         detail: format!("Linux {release}"),
     });
-    Ok(sysname)
+    Ok(())
 }
 
 fn check_kvm(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
     let kvm = Path::new("/dev/kvm");
 
-    // Existence check.
-    if fs::metadata(kvm).is_err() {
+    if !kvm.exists() {
         return Err(PreflightError::KvmUnavailable);
     }
 
@@ -201,7 +193,7 @@ fn check_firecracker_bin(report: &mut Vec<CheckRow>) -> Result<PathBuf, Prefligh
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_FIRECRACKER_BIN));
 
-    if fs::metadata(&bin).is_err() {
+    if !bin.exists() {
         return Err(PreflightError::FirecrackerBinaryNotFound);
     }
 
@@ -242,7 +234,7 @@ fn check_jailer_bin(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightErro
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_JAILER_BIN));
 
-    if fs::metadata(&bin).is_err() {
+    if !bin.exists() {
         return Err(PreflightError::JailerBinaryNotFound);
     }
 
@@ -256,7 +248,7 @@ fn check_jailer_bin(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightErro
 
 fn check_kernel(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightError> {
     if let Some(path) = env::var_os(ENV_KERNEL_IMAGE).map(PathBuf::from) {
-        if fs::metadata(&path).is_err() {
+        if !path.exists() {
             return Err(PreflightError::KernelNotFound);
         }
         report.push(CheckRow {
@@ -271,7 +263,15 @@ fn check_kernel(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightError> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_ARTIFACT_DIR));
 
-    let kernel = discover_vmlinux(&artifact_dir)?;
+    // Lexicographically-largest `vmlinux-*` under `artifact_dir`.
+    let mut candidates: Vec<PathBuf> = fs::read_dir(&artifact_dir)
+        .map_err(PreflightError::Io)?
+        .filter_map(|entry| entry.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("vmlinux-"))
+        .map(|e| e.path())
+        .collect();
+    candidates.sort();
+    let kernel = candidates.pop().ok_or(PreflightError::KernelNotFound)?;
 
     report.push(CheckRow {
         label: "Kernel image".to_string(),
@@ -281,24 +281,6 @@ fn check_kernel(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightError> {
     Ok(kernel)
 }
 
-/// Return the lexicographically-largest `vmlinux-*` file under `dir`.
-fn discover_vmlinux(dir: &Path) -> Result<PathBuf, PreflightError> {
-    let entries = fs::read_dir(dir).map_err(PreflightError::Io)?;
-
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(PreflightError::Io)?;
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str.starts_with("vmlinux-") {
-            candidates.push(entry.path());
-        }
-    }
-
-    candidates.sort();
-    candidates.pop().ok_or(PreflightError::KernelNotFound)
-}
-
 fn check_rootfs_and_manifest(
     report: &mut Vec<CheckRow>,
 ) -> Result<(PathBuf, Manifest), PreflightError> {
@@ -306,7 +288,7 @@ fn check_rootfs_and_manifest(
         .map(PathBuf::from)
         .ok_or(PreflightError::RootfsNotFound)?;
 
-    if fs::metadata(&rootfs).is_err() {
+    if !rootfs.exists() {
         return Err(PreflightError::RootfsNotFound);
     }
 
@@ -339,7 +321,7 @@ fn check_run_root(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightError>
     }
 
     // Must already exist — no silent creation per CLAUDE.md.
-    if fs::metadata(&run_root).is_err() {
+    if !run_root.exists() {
         return Err(PreflightError::RunRootUnavailable {
             reason: format!("directory does not exist: {}", run_root.display()),
         });
