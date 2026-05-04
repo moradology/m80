@@ -15,7 +15,6 @@ fn serializes_program_args_env_cwd_timeout() {
             ("PATH".into(), "/usr/bin:/bin".into()),
         ]),
         stdin: Some(b"input data\n".to_vec()),
-        workspace_dir: Some("/mnt/workspace".into()),
         timeout_ms: Some(30_000),
     };
 
@@ -43,9 +42,5 @@ fn serializes_program_args_env_cwd_timeout() {
         ])
     );
     assert_eq!(back.payload.stdin.as_deref(), Some(b"input data\n".as_ref()));
-    assert_eq!(
-        back.payload.workspace_dir.as_deref(),
-        Some("/mnt/workspace")
-    );
     assert_eq!(back.payload.timeout_ms, Some(30_000));
 }

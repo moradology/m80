@@ -20,7 +20,6 @@ fn raw_line_of_len(target_len: usize) -> Vec<u8> {
         cwd: None,
         env: None,
         stdin: None,
-        workspace_dir: None,
         timeout_ms: None,
     });
     let base = serde_json::to_vec(&env).expect("serialization cannot fail");
@@ -38,7 +37,6 @@ fn raw_line_of_len(target_len: usize) -> Vec<u8> {
         cwd: None,
         env: None,
         stdin: None,
-        workspace_dir: None,
         timeout_ms: None,
     });
     let serialized = serde_json::to_vec(&padded_env).expect("serialization cannot fail");
@@ -52,7 +50,7 @@ fn raw_line_of_len(target_len: usize) -> Vec<u8> {
 
 #[test]
 fn rejects_frame_above_4mib_with_oversized_error() {
-    // ── Exactly MAX_FRAME_BYTES: must pass the size gate ─────────────────
+    // Exactly MAX_FRAME_BYTES — must pass the size gate.
     let exact = raw_line_of_len(MAX_FRAME_BYTES);
     assert_eq!(exact.len(), MAX_FRAME_BYTES);
 
@@ -68,7 +66,7 @@ fn rejects_frame_above_4mib_with_oversized_error() {
         "exactly-MAX_FRAME_BYTES frame must pass the size gate; got: {result:?}"
     );
 
-    // ── MAX_FRAME_BYTES + 1: must return OversizedPayload ─────────────────
+    // MAX_FRAME_BYTES + 1 — must return OversizedPayload.
     // Construct by directly appending one byte so read_frame sees it without
     // write_frame's own gate interfering.
     let mut over = raw_line_of_len(MAX_FRAME_BYTES);

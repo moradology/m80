@@ -14,7 +14,6 @@ fn make_request(program: &str, args: Vec<String>, stdin: Option<Vec<u8>>, timeou
         cwd: None,
         env: None,
         stdin,
-        workspace_dir: None,
         timeout_ms: Some(timeout_ms),
     }
 }

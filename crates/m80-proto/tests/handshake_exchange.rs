@@ -26,7 +26,6 @@ fn handshake_runs_before_first_request() {
         cwd: None,
         env: None,
         stdin: None,
-        workspace_dir: None,
         timeout_ms: None,
     });
     let mut app_channel: Vec<u8> = Vec::new();

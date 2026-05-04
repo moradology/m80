@@ -63,7 +63,6 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
             cwd: None,
             env: None,
             stdin: None,
-            workspace_dir: None,
             timeout_ms: Some(5_000),
         })
         .expect("exec");

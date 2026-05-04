@@ -62,9 +62,6 @@ that wire type directly.)
   `program` itself).
 - `cwd: Option<String>` — optional. Defaults to `/`. Must exist in the
   guest filesystem.
-- `workspace_dir: Option<String>` — optional. Records where the host
-  workspace is mounted; v0.1 passes it through unchanged (the
-  systemd-installed mount unit is what actually attaches the device).
 - `env: Option<Vec<(String, String)>>` — optional. Replaces (does not
   augment) the child environment when set.
 - `stdin: Option<Vec<u8>>` — optional. Bytes piped to the child's stdin

@@ -25,7 +25,6 @@ fn sample_request() -> ExecRequest {
         cwd: None,
         env: None,
         stdin: None,
-        workspace_dir: None,
         timeout_ms: Some(1_000),
     }
 }

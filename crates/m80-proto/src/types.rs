@@ -88,24 +88,17 @@ pub struct ExecRequest {
     /// On the wire: base64-encoded JSON string when present.
     #[serde(default, skip_serializing_if = "Option::is_none", with = "b64::opt")]
     pub stdin: Option<Vec<u8>>,
-    /// Path inside the guest where the caller's workspace has been mounted.
-    /// `None` → no workspace is attached.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workspace_dir: Option<String>,
     /// Wall-clock budget in milliseconds before the guest kills the process.
     /// `None` → the guest applies its own default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
 }
 
-/// Terminal status of an exec operation.
-///
-/// `#[non_exhaustive]` so adding variants in a future revision (e.g.,
-/// `KilledBySignal`) is a non-breaking change for downstream `match`
-/// expressions. Wire serialization is `snake_case` of the variant name.
+/// Terminal status of an exec operation. Wire serialization is the
+/// `snake_case` variant name. Adding a variant requires a
+/// `PROTOCOL_VERSION` bump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[non_exhaustive]
 pub enum ExecStatus {
     /// Process exited; see `exit_code` for the code.
     Completed,
@@ -216,7 +209,6 @@ mod tests {
             cwd: None,
             env: None,
             stdin: None,
-            workspace_dir: None,
             timeout_ms: Some(5_000),
         }
     }

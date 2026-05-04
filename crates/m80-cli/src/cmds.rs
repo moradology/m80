@@ -115,7 +115,6 @@ pub fn cmd_launch(
         env: None,
         cwd: None,
         stdin: None,
-        workspace_dir: None,
         timeout_ms: None,
     };
 

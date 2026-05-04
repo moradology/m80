@@ -115,7 +115,6 @@ mod tests {
             cwd: None,
             env: None,
             stdin: None,
-            workspace_dir: None,
             timeout_ms: Some(5_000),
         }
     }
@@ -226,7 +225,6 @@ mod tests {
             cwd: None,
             env: None,
             stdin: Some(all_bytes.clone()),
-            workspace_dir: None,
             timeout_ms: None,
         });
         let mut buf = Vec::new();
