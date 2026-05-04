@@ -1,12 +1,5 @@
-//! `m80-guestd` — in-VM daemon.
-//!
-//! See `README.md` for the contract.
-//! Behavior captures: bead epic `m80-eb8` (`br show m80-eb8`).
-//!
-//! Listens on a vsock port, accepts one connection at a time, reads an
-//! `m80-proto::Envelope<ExecRequest>`, spawns the child process, captures
-//! stdout/stderr to bounded buffers, applies the timeout, and writes back
-//! an `Envelope<ExecResponse>`. Syncs filesystems before close.
+//! `m80-guestd` — in-VM daemon. See `README.md` for the contract.
+//! Behavior captures: bead epic `m80-eb8`.
 
 use std::io::{BufReader, BufWriter};
 

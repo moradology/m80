@@ -1,7 +1,5 @@
-//! Transport-agnostic connection handler.
-//!
-//! `handle_connection` takes any `BufRead + Read` / `Write` pair so it can be
-//! driven by a vsock stream in production or a `Cursor` in unit tests.
+//! Transport-agnostic connection handler. The generic over `BufRead+Write`
+//! lets unit tests drive it with `Cursor` instead of a real vsock stream.
 
 use std::io::{BufRead, Read, Write};
 use std::process::{Command, Stdio};
@@ -46,7 +44,7 @@ where
         Err(e) => {
             // Malformed frame: try to send a Failed response, then close.
             let timing = failed_timing(received_at);
-            let resp = error_response(format!("{e:?}").into_bytes(), timing);
+            let resp = error_response(format!("{e:#}").into_bytes(), timing);
             let out_env = Envelope::new(resp);
             let _ = write_frame(&mut writer, &out_env);
             return Ok(());
@@ -62,7 +60,7 @@ where
         Ok(resp) => resp,
         Err(e) => {
             let timing = failed_timing(received_at);
-            error_response(format!("{e:?}").into_bytes(), timing)
+            error_response(format!("{e:#}").into_bytes(), timing)
         }
     };
 
@@ -199,17 +197,13 @@ fn capture_stream<R: Read>(mut reader: R) -> (Vec<u8>, bool) {
     (buf, false)
 }
 
-/// Poll for child exit with a bounded timeout.
-/// Returns `true` if the timeout was exceeded (child still running).
-///
-/// `timeout_ms == None` is treated as `MAX_TIMEOUT_MS`. A caller-supplied
-/// value is also clamped to that ceiling. Without this clamp a buggy or
-/// malicious host could hold guestd's handler + capture threads forever.
+/// Poll for child exit until `timeout_ms` (clamped to [`MAX_TIMEOUT_MS`])
+/// expires. Returns `true` on timeout. Uses `Instant` (monotonic) so a
+/// wall-clock step (NTP slew, leap second) can't retroactively expire the
+/// budget. The clamp prevents a buggy or malicious host from holding the
+/// handler + capture threads forever.
 fn wait_with_timeout(child: &mut std::process::Child, timeout_ms: Option<u64>) -> bool {
     let effective_ms = timeout_ms.unwrap_or(MAX_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
-
-    // Use Instant (monotonic) for the deadline, not SystemTime — a wall-clock
-    // step (NTP slew, leap second) must not retroactively expire the budget.
     let deadline = Instant::now() + Duration::from_millis(effective_ms);
     let poll_interval = Duration::from_millis(10);
 

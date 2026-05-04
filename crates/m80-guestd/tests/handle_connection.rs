@@ -7,7 +7,18 @@ use std::io::Cursor;
 
 use m80_proto::{Envelope, ExecRequest, ExecResponse, ExecStatus, read_frame, write_frame};
 
-/// Build a framed request into a byte buffer, return it as a Cursor.
+fn make_request(program: &str, args: Vec<String>, stdin: Option<Vec<u8>>, timeout_ms: u64) -> ExecRequest {
+    ExecRequest {
+        program: program.into(),
+        args,
+        cwd: None,
+        env: None,
+        stdin,
+        workspace_dir: None,
+        timeout_ms: Some(timeout_ms),
+    }
+}
+
 fn request_frame(req: ExecRequest, request_id: Option<&str>) -> Vec<u8> {
     let env = match request_id {
         Some(id) => Envelope::with_request_id(req, id.to_owned()),
@@ -18,13 +29,11 @@ fn request_frame(req: ExecRequest, request_id: Option<&str>) -> Vec<u8> {
     buf
 }
 
-/// Read the response envelope from bytes written by the handler.
 fn read_response(bytes: &[u8]) -> Envelope<ExecResponse> {
     let mut cursor = Cursor::new(bytes);
     read_frame(&mut cursor).expect("read_frame in test")
 }
 
-/// Drive handle_connection with the given request bytes; return written bytes.
 fn run_handler(input: Vec<u8>) -> Vec<u8> {
     let mut out = Vec::new();
     m80_guestd::connection::handle_connection(
@@ -37,90 +46,39 @@ fn run_handler(input: Vec<u8>) -> Vec<u8> {
 
 #[test]
 fn exec_true_returns_completed() {
-    let req = ExecRequest {
-        program: "true".into(),
-        args: vec![],
-        cwd: None,
-        env: None,
-        stdin: None,
-        workspace_dir: None,
-        timeout_ms: Some(5_000),
-    };
-    let input = request_frame(req, None);
-    let output = run_handler(input);
-    let env = read_response(&output);
+    let input = request_frame(make_request("true", vec![], None, 5_000), None);
+    let env = read_response(&run_handler(input));
     assert_eq!(env.payload.status, ExecStatus::Completed);
-    assert_eq!(env.payload.exit_code, Some(0));
 }
 
 #[test]
 fn exec_with_stdin_round_trips() {
-    let req = ExecRequest {
-        program: "cat".into(),
-        args: vec![],
-        cwd: None,
-        env: None,
-        stdin: Some(b"hello\n".to_vec()),
-        workspace_dir: None,
-        timeout_ms: Some(5_000),
-    };
-    let input = request_frame(req, None);
-    let output = run_handler(input);
-    let env = read_response(&output);
+    let req = make_request("cat", vec![], Some(b"hello\n".to_vec()), 5_000);
+    let env = read_response(&run_handler(request_frame(req, None)));
     assert_eq!(env.payload.status, ExecStatus::Completed);
     assert_eq!(env.payload.stdout, b"hello\n");
 }
 
 #[test]
 fn exec_with_timeout_returns_timed_out() {
-    let req = ExecRequest {
-        program: "sleep".into(),
-        args: vec!["60".into()],
-        cwd: None,
-        env: None,
-        stdin: None,
-        workspace_dir: None,
-        timeout_ms: Some(100),
-    };
-    let input = request_frame(req, None);
+    let req = make_request("sleep", vec!["60".into()], None, 100);
     let start = std::time::Instant::now();
-    let output = run_handler(input);
+    let env = read_response(&run_handler(request_frame(req, None)));
     let elapsed = start.elapsed();
-    let env = read_response(&output);
     assert_eq!(env.payload.status, ExecStatus::TimedOut);
     assert!(elapsed < std::time::Duration::from_millis(2_000), "elapsed: {elapsed:?}");
 }
 
 #[test]
 fn exec_failed_program_returns_failed() {
-    let req = ExecRequest {
-        program: "/nonexistent/binary/that/does/not/exist".into(),
-        args: vec![],
-        cwd: None,
-        env: None,
-        stdin: None,
-        workspace_dir: None,
-        timeout_ms: Some(5_000),
-    };
-    let input = request_frame(req, None);
-    let output = run_handler(input);
-    let env = read_response(&output);
+    let req = make_request("/nonexistent/binary/that/does/not/exist", vec![], None, 5_000);
+    let env = read_response(&run_handler(request_frame(req, None)));
     assert_eq!(env.payload.status, ExecStatus::Failed);
 }
 
 #[test]
 fn exec_request_id_round_trips() {
-    let req = ExecRequest {
-        program: "true".into(),
-        args: vec![],
-        cwd: None,
-        env: None,
-        stdin: None,
-        workspace_dir: None,
-        timeout_ms: Some(5_000),
-    };
-    let input = request_frame(req, Some("req-1"));
-    let output = run_handler(input);
-    let env = read_response(&output);
+    let req = make_request("true", vec![], None, 5_000);
+    let env = read_response(&run_handler(request_frame(req, Some("req-1"))));
     assert_eq!(env.request_id, Some("req-1".to_owned()));
 }

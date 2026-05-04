@@ -89,12 +89,7 @@ that wire type directly.)
 
 ## Public surface
 
-This crate ships only a binary; no library API.
-
-Command-line:
-- `m80-guestd` — run with defaults baked into the manifest.
-- `m80-guestd --port <u32>` — override the vsock port (testing only).
-- `m80-guestd --version` — print the embedded protocol version + commit.
+Binary-only; no library API. `m80-guestd --help` for flags.
 
 ## Non-goals
 
