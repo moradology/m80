@@ -150,45 +150,53 @@ fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
     EffectiveConfig { fields }
 }
 
-/// Reap bind-mounts and dirs from an orphan run-dir, then remove it.
-fn reap_orphan_run_dir(subdir: &std::path::Path, reap_steps: &[m80_jailer::PlanStep]) {
-    use nix::mount::{MntFlags, umount2};
-
-    // Walk reap steps in reverse (plan steps were in creation order).
-    for step in reap_steps.iter().rev() {
-        match step {
-            m80_jailer::PlanStep::Bind { dest, .. } => {
-                if let Err(e) = umount2(dest.as_path(), MntFlags::MNT_DETACH) {
-                    warn!(
-                        path = %dest.display(),
-                        err = %e,
-                        "recover_stale_run_root: umount2 failed"
-                    );
-                }
-            }
-            m80_jailer::PlanStep::CreateDir { path, .. } => {
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                    warn!(
-                        path = %path.display(),
-                        err = %e,
-                        "recover_stale_run_root: remove_dir_all failed"
-                    );
-                }
-            }
-            m80_jailer::PlanStep::Socket { .. } => {
-                // Socket files inside the jail are removed when the dir goes.
-            }
-        }
-    }
-
+/// Reap an orphan run-dir.
+///
+/// `_reap_steps` is unused: `remove_run_dir` now reads `/proc/self/mountinfo`
+/// to find any bind mounts under the dir and unmounts them via the kernel's
+/// authoritative view. The persisted plan can be partial (m80 SIGKILL'd
+/// mid-materialize, the plan file is from an older binary, etc.); trusting
+/// mountinfo means we recover from cases the plan file doesn't describe.
+fn reap_orphan_run_dir(subdir: &std::path::Path, _reap_steps: &[m80_jailer::PlanStep]) {
     remove_run_dir(subdir);
 }
 
-/// Remove a run-dir, logging on failure.
+/// Unmount everything under `subdir` (using mountinfo as ground truth) then
+/// `remove_dir_all`. Without the umount pass, a SIGKILL'd m80 leaves
+/// bind-mounted kernel + rootfs.ext4 inside the chroot, and the rm fails
+/// with EBUSY.
 fn remove_run_dir(subdir: &std::path::Path) {
+    unmount_under(subdir);
     if let Err(e) = std::fs::remove_dir_all(subdir) {
         warn!(path = %subdir.display(), err = %e, "recover_stale_run_root: remove_dir_all failed");
     } else {
         tracing::info!(path = %subdir.display(), "recover_stale_run_root: reaped orphan run-dir");
+    }
+}
+
+/// Read `/proc/self/mountinfo` and `umount2(MNT_DETACH)` every mountpoint
+/// that is `root` itself or lives under it. Deepest first so nested mounts
+/// unwind cleanly. Best-effort: failures are logged but don't abort.
+fn unmount_under(root: &std::path::Path) {
+    use nix::mount::{MntFlags, umount2};
+
+    let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") else {
+        return;
+    };
+
+    // Field 5 of each line is the mountpoint (per `proc(5)` mountinfo).
+    let mut targets: Vec<std::path::PathBuf> = mountinfo
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(4).map(std::path::PathBuf::from))
+        .filter(|mp| mp == root || mp.starts_with(root))
+        .collect();
+
+    // Deepest first.
+    targets.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+
+    for mp in targets {
+        if let Err(e) = umount2(&mp, MntFlags::MNT_DETACH) {
+            warn!(path = %mp.display(), err = %e, "recover_stale_run_root: umount2 failed");
+        }
     }
 }
