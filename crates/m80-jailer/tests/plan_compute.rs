@@ -1,18 +1,12 @@
 //! Pure plan computation tests — no filesystem required.
 
+mod common;
+
 use m80_jailer::{BindMode, Binding, JailerConfig, JailerError, PlanStep, SocketSpec};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn base_config() -> JailerConfig {
-    JailerConfig {
-        jailer_bin: PathBuf::from("/usr/bin/jailer"),
-        firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
-        run_dir: PathBuf::from("/tmp/run/vm-1"),
-        uid: 3000,
-        gid: 3000,
-        bindings: Vec::new(),
-        sockets: Vec::new(),
-    }
+    common::minimal_config(Path::new("/tmp/run/vm-1"))
 }
 
 #[test]

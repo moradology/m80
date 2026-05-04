@@ -95,7 +95,7 @@ pub struct Plan {
 }
 
 /// One step in a [`Plan`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlanStep {
     /// Create a directory at `path` with the given mode.
@@ -122,13 +122,9 @@ pub enum PlanStep {
 }
 
 impl Plan {
-    /// Compute a plan from a config without touching the filesystem.
-    ///
-    /// Steps are emitted in canonical order for deterministic replay:
-    /// 1. `CreateDir` for the jail root.
-    /// 2. `CreateDir` for each `CreateInsideJail` binding (in declared order).
-    /// 3. `Bind` for each `Ro` or `Rw` binding (in declared order).
-    /// 4. `Socket` for each socket spec (in declared order).
+    /// Compute a plan from a config without touching the filesystem. Steps
+    /// are emitted in a canonical order so the persisted plan replays
+    /// deterministically; see the `// Step N:` markers in the body.
     pub fn compute(config: &JailerConfig) -> Result<Plan, JailerError> {
         if config.uid == 0 || config.gid == 0 {
             return Err(JailerError::UidGidInvalid {
@@ -198,7 +194,7 @@ impl Plan {
     /// initial `jailer-state.json` in the run-dir on success. `Drop` on the
     /// returned [`MaterializedJail`] tears down the chroot.
     pub fn materialize(&self) -> Result<MaterializedJail, JailerError> {
-        use nix::mount::{MntFlags, MsFlags, mount};
+        use nix::mount::{MsFlags, mount};
         use nix::sys::stat::{Mode, fchmodat, FchmodatFlags};
         use nix::unistd::mkdir;
 
@@ -335,8 +331,6 @@ impl Plan {
             source,
         })?;
 
-        let _ = MntFlags::empty(); // keep import alive for Drop impl below
-
         Ok(materialized)
     }
 }
@@ -371,27 +365,19 @@ impl MaterializedJail {
     ///
     /// Polls up to 1 s for `<jail_path>/firecracker.pid` to appear.
     pub fn launch(&self, api_socket: &Path) -> Result<JailedFirecracker, JailerError> {
-        let vm_id = self
-            .plan
-            .config
-            .run_dir
-            .file_name()
-            .ok_or_else(|| JailerError::ChrootFailed {
-                jail_path: self.jail_path.clone(),
-            })?
-            .to_string_lossy()
-            .into_owned();
-
-        // jailer's `--chroot-base-dir` must be the run_dir itself; jailer
-        // appends `<exec-file basename>/<id>/root/` to derive the real
-        // chroot path (matches `chroot_path()` above).
-        let chroot_base = self.plan.config.run_dir.as_path();
-
+        // run_dir is `<run_root>/<vm_id>` and api_socket is `firecracker.sock`
+        // — both come from m80-firecracker's known shape, so a missing
+        // file_name here is a programmer bug, not a runtime fault.
+        let vm_id = self.plan.config.run_dir
+            .file_name().expect("run_dir has a basename")
+            .to_string_lossy().into_owned();
         let api_socket_name = api_socket
-            .file_name()
-            .ok_or_else(|| JailerError::ChrootFailed {
-                jail_path: self.jail_path.clone(),
-            })?;
+            .file_name().expect("api_socket has a basename");
+
+        // jailer's `--chroot-base-dir` is the run_dir; jailer appends
+        // `<exec basename>/<id>/root/` to derive the real chroot
+        // (matches `chroot_path()` above).
+        let chroot_base = self.plan.config.run_dir.as_path();
 
         // Jailer args end at the bare `--`; everything after is forwarded
         // to the jailed firecracker binary. `--api-sock` is firecracker's
@@ -439,12 +425,13 @@ impl MaterializedJail {
                         source,
                     }
                 })?;
-                let pid: u32 =
-                    raw.trim()
-                        .parse()
-                        .map_err(|_| JailerError::ChrootFailed {
-                            jail_path: self.jail_path.clone(),
-                        })?;
+                let pid: u32 = raw.trim().parse().map_err(|e| JailerError::Io {
+                    path: pid_file.clone(),
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("firecracker.pid not a u32: {e}"),
+                    ),
+                })?;
                 break pid;
             }
             if Instant::now() >= deadline {
@@ -545,14 +532,9 @@ pub enum RecoveryDecision {
     NoJail,
 }
 
-/// Inspect a run-dir for prior jail state and decide what to do with it.
-///
-/// Reads `jailer-state.json` from `run_dir`. For each recorded PID, checks
-/// whether `/proc/<pid>` exists. Returns:
-/// - [`RecoveryDecision::NoJail`] if no state file is present.
-/// - [`RecoveryDecision::LiveJail`] if both pids are alive.
-/// - [`RecoveryDecision::OrphanJail`] otherwise (either or both pids dead),
-///   with reap steps derived from `jailer-plan.json` in reverse order.
+/// Inspect a run-dir for prior jail state. The returned [`RecoveryDecision`]
+/// variant tells the caller whether to skip (LiveJail), reap (OrphanJail),
+/// or just `rm -rf` (NoJail).
 pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerError> {
     let state_path = run_dir.join(JAILER_STATE_FILE);
 
@@ -571,7 +553,8 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
         })?;
 
     if let (Some(jailer_pid), Some(fc_pid)) = (state.jailer_pid, state.firecracker_pid) {
-        if pid_is_alive(jailer_pid) && pid_is_alive(fc_pid) {
+        let alive = |pid: u32| Path::new(&format!("/proc/{pid}")).exists();
+        if alive(jailer_pid) && alive(fc_pid) {
             return Ok(RecoveryDecision::LiveJail {
                 jailer_pid,
                 firecracker_pid: fc_pid,
@@ -597,11 +580,6 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
     };
 
     Ok(RecoveryDecision::OrphanJail { reap_steps })
-}
-
-/// Returns `true` if `/proc/<pid>` exists (process is alive).
-fn pid_is_alive(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
 }
 
 /// Errors surfaced by jailer operations.
