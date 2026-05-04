@@ -173,11 +173,12 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
 
     // Step 13: emit manifest.
     let manifest = m80_image_manifest::Manifest {
-        boot_target: "multi-user.target".to_string(),
+        boot_target: Some("multi-user.target".to_string()),
         daemon_binary_path: daemon_binary_host.clone(),
         daemon_binary_sha256: daemon_sha,
         expected_firecracker_version: cfg.kernel.version.clone(),
         guest_port: m80_proto::GUEST_PORT_DEFAULT,
+        image_kind: m80_image_manifest::ImageKind::Ubuntu,
         kernel_image: paths.kernel.clone(),
         kernel_image_sha256: kernel_sha,
         no_egress_reason: None,
@@ -185,12 +186,12 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
         output_rootfs_sha256: output_sha,
         ready_marker: m80_proto::READY_MARKER_DEFAULT.to_string(),
         schema_version: m80_image_manifest::SCHEMA_VERSION,
-        service_unit_path: paths.service_unit.clone(),
-        service_unit_sha256: service_sha,
-        source_rootfs_image: paths.source_rootfs.clone(),
-        source_rootfs_sha256: source_sha,
-        workspace_mount_path: paths.workspace_mount.clone(),
-        workspace_mount_sha256: mount_sha,
+        service_unit_path: Some(paths.service_unit.clone()),
+        service_unit_sha256: Some(service_sha),
+        source_rootfs_image: Some(paths.source_rootfs.clone()),
+        source_rootfs_sha256: Some(source_sha),
+        workspace_mount_path: Some(paths.workspace_mount.clone()),
+        workspace_mount_sha256: Some(mount_sha),
     };
     manifest
         .write(&manifest_path)

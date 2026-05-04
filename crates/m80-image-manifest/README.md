@@ -12,20 +12,25 @@ logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Black-box contract
 
-- `schema_version` is the integer **1** for v0.1. A manifest with any other
-  value rejects with `ManifestError::UnsupportedSchemaVersion`. The
-  schema-version check fires **before** unknown-field detection, so an
-  unknown future version is reported as a version error, not a parse error.
+- `schema_version` is the integer **2**. A manifest with any other value
+  rejects with `ManifestError::UnsupportedSchemaVersion`. The schema-
+  version check fires **before** unknown-field detection, so an unknown
+  future version is reported as a version error, not a parse error.
   There is no migration path inside this crate; new schema versions are
   new code.
-- The manifest covers exactly six hash-bearing artifacts, each with its own
-  path + sha256 fields: kernel image, source rootfs, output rootfs, m80
-  daemon binary, systemd service unit, and systemd workspace mount unit.
-  Adding a seventh requires a `schema_version` bump.
+- `image_kind: ImageKind` declares which startup model the image was
+  built for: `Ubuntu` (systemd as PID 1; m80-guestd is a service) or
+  `Minimal` (m80-guestd is PID 1; busybox userland; no systemd).
+- The manifest covers up to six hash-bearing artifacts. `kernel_image`,
+  `output_rootfs_image`, and `daemon_binary_path` are always present;
+  `source_rootfs_image`, `service_unit_path`, and `workspace_mount_path`
+  are `Option<>` and present iff `image_kind == Ubuntu`. The
+  kind/field invariant is enforced on `read`, `write`, and `verify` and
+  surfaces as `ManifestError::InconsistentKind`.
 - `verify(&Manifest, root: &Path) -> Result<(), ManifestError>` recomputes
-  every sha256 from the on-disk artifact and compares to the recorded
-  value, covering all six artifacts in one call. Any mismatch is fatal;
-  there is no "warn and continue."
+  every populated sha256 from the on-disk artifact and compares to the
+  recorded value. Fields that are `None` for the manifest's kind are
+  skipped. Any mismatch is fatal; there is no "warn and continue."
 - `expected_firecracker_version` is recorded but **not** enforced inside
   this crate; the live-binary version comparison is the caller's job (e.g.,
   `m80-preflight`). This crate has no `FirecrackerVersionMismatch` variant.
@@ -34,20 +39,25 @@ logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Public surface
 
-- `Manifest` — struct mirroring the JSON. All fields public, including
-  paired `<artifact>_path` / `<artifact>_sha256` fields for each of the
-  six hash-bearing artifacts. Field declaration order is alphabetical.
+- `Manifest` — struct mirroring the JSON. All fields public; paired
+  `<artifact>_path` / `<artifact>_sha256` fields for each hash-bearing
+  artifact. The five Ubuntu-only fields (`boot_target`,
+  `service_unit_*`, `workspace_mount_*`, `source_rootfs_*`) are
+  `Option<>`. Field declaration order is alphabetical.
+- `ImageKind { Ubuntu, Minimal }` — discriminator on `Manifest`.
 - `Manifest::read(path: &Path) -> Result<Manifest, ManifestError>` — peek
-  `schema_version` first via a probe struct (so a future schema version
-  reports `UnsupportedSchemaVersion` rather than an unknown-field error),
-  then deserialize the full struct.
+  `schema_version` first via a probe struct, then deserialize the full
+  struct, then enforce the kind/field invariant.
 - `Manifest::write(&self, path: &Path) -> Result<(), ManifestError>` —
-  caller is responsible for the parent directory existing.
+  enforces the kind/field invariant before writing. Caller is responsible
+  for the parent directory existing.
 - `Manifest::verify(&self, root: &Path) -> Result<(), ManifestError>` —
-  recompute sha256 for all six artifacts and compare.
-- `SCHEMA_VERSION: u32 = 1`.
+  recompute sha256 for every populated artifact and compare; skip
+  `None`-valued fields.
+- `SCHEMA_VERSION: u32 = 2`.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
   `Sha256Mismatch { field, expected, actual }`,
+  `InconsistentKind { kind, field, expected }`,
   `Io { path, source }`, `Json(serde_json::Error)`. The `Io` variant
   carries the path the I/O failed on, so a missing artifact surfaces as
   `Io { path, source: NotFound }` without a separate variant.

@@ -11,9 +11,29 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-/// Manifest schema version. m80 v0.1 ships `1`; future versions are new code,
-/// not migrations.
-pub const SCHEMA_VERSION: u32 = 1;
+/// Manifest schema version.
+///
+/// `2` — added `image_kind` discriminator and made systemd-related fields
+/// `Option<>` so a `Minimal` image (PID-1 m80-guestd, no systemd) can
+/// emit a manifest without lying about which artifacts exist.
+///
+/// No 1↔2 conversion code: per CLAUDE.md, future versions are new code,
+/// not migrations. Existing v1 images must be rebuilt.
+pub const SCHEMA_VERSION: u32 = 2;
+
+/// Which startup model the image was built for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageKind {
+    /// Ubuntu rootfs with systemd as init. m80-guestd runs as a
+    /// systemd service; the manifest carries the unit + workspace-mount
+    /// unit paths.
+    Ubuntu,
+    /// Minimal rootfs with m80-guestd as PID 1 (`init=/m80-guestd`).
+    /// No systemd; the manifest's `service_unit_*` and
+    /// `workspace_mount_*` fields are `None`.
+    Minimal,
+}
 
 /// The provenance manifest for a built guest image. Single source of truth
 /// shared by `m80-image-build` (writer) and `m80-preflight` (reader/verifier)
@@ -22,8 +42,9 @@ pub const SCHEMA_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
-    /// systemd boot target (typically `multi-user.target`).
-    pub boot_target: String,
+    /// systemd boot target (typically `multi-user.target`). `None` for
+    /// `Minimal` images.
+    pub boot_target: Option<String>,
     /// Host-side audit copy of the daemon binary that was installed into
     /// the image. `Manifest::verify` recomputes the sha256 of this file at
     /// preflight time without loop-mounting the rootfs. The in-VM
@@ -35,6 +56,8 @@ pub struct Manifest {
     pub expected_firecracker_version: String,
     /// Vsock port the in-VM daemon listens on.
     pub guest_port: u32,
+    /// Which startup model this image was built for. Required.
+    pub image_kind: ImageKind,
     /// Absolute path of the kernel image at build time.
     pub kernel_image: PathBuf,
     /// sha256 hex digest of the kernel image bytes.
@@ -48,25 +71,31 @@ pub struct Manifest {
     pub output_rootfs_sha256: String,
     /// Serial-console marker the guest emits when the daemon is ready.
     pub ready_marker: String,
-    /// Always [`SCHEMA_VERSION`] for v0.1.
+    /// Always [`SCHEMA_VERSION`].
     pub schema_version: u32,
-    /// Absolute path of the systemd service unit file.
-    pub service_unit_path: PathBuf,
-    /// sha256 hex digest of the service unit file bytes.
-    pub service_unit_sha256: String,
+    /// Absolute path of the systemd service unit file. `None` for
+    /// `Minimal` images.
+    pub service_unit_path: Option<PathBuf>,
+    /// sha256 hex digest of the service unit file bytes. `None` for
+    /// `Minimal` images.
+    pub service_unit_sha256: Option<String>,
     /// Absolute path of the source rootfs (squashfs or upstream ext4).
-    pub source_rootfs_image: PathBuf,
-    /// sha256 hex digest of the source rootfs bytes.
-    pub source_rootfs_sha256: String,
-    /// Absolute path of the systemd workspace-mount unit file.
-    pub workspace_mount_path: PathBuf,
-    /// sha256 hex digest of the workspace-mount unit file bytes.
-    pub workspace_mount_sha256: String,
+    /// `None` for `Minimal` images (built from scratch with no upstream).
+    pub source_rootfs_image: Option<PathBuf>,
+    /// sha256 hex digest of the source rootfs bytes. `None` for
+    /// `Minimal` images.
+    pub source_rootfs_sha256: Option<String>,
+    /// Absolute path of the systemd workspace-mount unit file. `None`
+    /// for `Minimal` images.
+    pub workspace_mount_path: Option<PathBuf>,
+    /// sha256 hex digest of the workspace-mount unit file bytes. `None`
+    /// for `Minimal` images.
+    pub workspace_mount_sha256: Option<String>,
 }
 
-/// Probes only `schema_version` so a v0.2 manifest reports
-/// `UnsupportedSchemaVersion(2)` instead of leaking the unrelated
-/// `Json("unknown field …")` from `deny_unknown_fields` on the v0.1 struct.
+/// Probes only `schema_version` so a future-version manifest reports
+/// `UnsupportedSchemaVersion` instead of leaking the unrelated
+/// `Json("unknown field …")` from `deny_unknown_fields`.
 #[derive(Deserialize)]
 struct SchemaVersionProbe {
     schema_version: u32,
@@ -88,6 +117,7 @@ impl Manifest {
             ));
         }
         let manifest: Manifest = serde_json::from_slice(&raw)?;
+        manifest.check_kind_invariants()?;
         Ok(manifest)
     }
 
@@ -97,6 +127,7 @@ impl Manifest {
     /// Field order in the output is alphabetical (struct field order). The
     /// caller is responsible for the parent directory existing.
     pub fn write(&self, path: &Path) -> Result<(), ManifestError> {
+        self.check_kind_invariants()?;
         let mut json = serde_json::to_string_pretty(self)?;
         json.push('\n');
         std::fs::write(path, json.as_bytes()).map_err(|source| ManifestError::Io {
@@ -120,10 +151,11 @@ impl Manifest {
     /// continue."
     ///
     /// Paths recorded in the manifest are used as-is when absolute, or
-    /// resolved relative to `root` when relative. All six artifacts (kernel,
-    /// source rootfs, output rootfs, daemon binary, service unit, workspace
-    /// mount unit) are covered.
+    /// resolved relative to `root` when relative. Fields that are `None`
+    /// for the manifest's `image_kind` are skipped (e.g., `Minimal` has
+    /// no systemd unit to verify).
     pub fn verify(&self, root: &Path) -> Result<(), ManifestError> {
+        self.check_kind_invariants()?;
         let resolve = |p: &Path| -> PathBuf {
             if p.is_absolute() {
                 p.to_path_buf()
@@ -137,11 +169,11 @@ impl Manifest {
             &resolve(&self.kernel_image),
             &self.kernel_image_sha256,
         )?;
-        check_sha256(
-            "source_rootfs_image",
-            &resolve(&self.source_rootfs_image),
-            &self.source_rootfs_sha256,
-        )?;
+        if let (Some(src_path), Some(src_sha)) =
+            (&self.source_rootfs_image, &self.source_rootfs_sha256)
+        {
+            check_sha256("source_rootfs_image", &resolve(src_path), src_sha)?;
+        }
         check_sha256(
             "output_rootfs_image",
             &resolve(&self.output_rootfs_image),
@@ -152,16 +184,65 @@ impl Manifest {
             &resolve(&self.daemon_binary_path),
             &self.daemon_binary_sha256,
         )?;
-        check_sha256(
-            "service_unit_path",
-            &resolve(&self.service_unit_path),
-            &self.service_unit_sha256,
-        )?;
-        check_sha256(
-            "workspace_mount_path",
-            &resolve(&self.workspace_mount_path),
-            &self.workspace_mount_sha256,
-        )?;
+        if let (Some(unit_path), Some(unit_sha)) =
+            (&self.service_unit_path, &self.service_unit_sha256)
+        {
+            check_sha256("service_unit_path", &resolve(unit_path), unit_sha)?;
+        }
+        if let (Some(mnt_path), Some(mnt_sha)) =
+            (&self.workspace_mount_path, &self.workspace_mount_sha256)
+        {
+            check_sha256("workspace_mount_path", &resolve(mnt_path), mnt_sha)?;
+        }
+        Ok(())
+    }
+
+    /// Enforce `image_kind`'s invariants on Optional fields:
+    /// - `Ubuntu` requires all systemd-related and source-rootfs fields populated.
+    /// - `Minimal` requires all of those `None`.
+    fn check_kind_invariants(&self) -> Result<(), ManifestError> {
+        match self.image_kind {
+            ImageKind::Ubuntu => {
+                let pairs: &[(&str, bool)] = &[
+                    ("boot_target", self.boot_target.is_some()),
+                    ("service_unit_path", self.service_unit_path.is_some()),
+                    ("service_unit_sha256", self.service_unit_sha256.is_some()),
+                    ("source_rootfs_image", self.source_rootfs_image.is_some()),
+                    ("source_rootfs_sha256", self.source_rootfs_sha256.is_some()),
+                    ("workspace_mount_path", self.workspace_mount_path.is_some()),
+                    ("workspace_mount_sha256", self.workspace_mount_sha256.is_some()),
+                ];
+                for (name, present) in pairs {
+                    if !present {
+                        return Err(ManifestError::InconsistentKind {
+                            kind: ImageKind::Ubuntu,
+                            field: (*name).to_owned(),
+                            expected: "Some(_)",
+                        });
+                    }
+                }
+            }
+            ImageKind::Minimal => {
+                let pairs: &[(&str, bool)] = &[
+                    ("boot_target", self.boot_target.is_some()),
+                    ("service_unit_path", self.service_unit_path.is_some()),
+                    ("service_unit_sha256", self.service_unit_sha256.is_some()),
+                    ("source_rootfs_image", self.source_rootfs_image.is_some()),
+                    ("source_rootfs_sha256", self.source_rootfs_sha256.is_some()),
+                    ("workspace_mount_path", self.workspace_mount_path.is_some()),
+                    ("workspace_mount_sha256", self.workspace_mount_sha256.is_some()),
+                ];
+                for (name, present) in pairs {
+                    if *present {
+                        return Err(ManifestError::InconsistentKind {
+                            kind: ImageKind::Minimal,
+                            field: (*name).to_owned(),
+                            expected: "None",
+                        });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -214,6 +295,18 @@ pub enum ManifestError {
         expected: String,
         /// Recomputed hex digest.
         actual: String,
+    },
+    /// Optional field's presence does not match the manifest's `image_kind`.
+    /// `Ubuntu` requires all systemd/source-rootfs Options populated;
+    /// `Minimal` requires all of them `None`.
+    #[error("manifest field {field} is inconsistent with image_kind={kind:?} (expected {expected})")]
+    InconsistentKind {
+        /// The manifest's declared kind.
+        kind: ImageKind,
+        /// Which field tripped the invariant.
+        field: String,
+        /// Whether the field should be `Some(_)` or `None`.
+        expected: &'static str,
     },
     /// I/O failure on a manifest read or artifact read; carries the path so
     /// the caller doesn't have to guess which file failed.

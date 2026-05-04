@@ -20,7 +20,7 @@ fn records_boot_target_port_marker() {
     m.write(&path).unwrap();
     let m2 = Manifest::read(&path).unwrap();
 
-    assert_eq!(m2.boot_target, "multi-user.target");
+    assert_eq!(m2.boot_target.as_deref(), Some("multi-user.target"));
     assert_eq!(m2.guest_port, 52000);
     assert_eq!(m2.ready_marker, "AGENT_DAEMON_READY");
 }

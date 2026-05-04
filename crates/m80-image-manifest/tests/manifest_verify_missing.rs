@@ -31,7 +31,7 @@ where
 #[test]
 fn missing_source_rootfs_surfaces_io() {
     assert_missing_field("source_rootfs_image", |m, p| {
-        m.source_rootfs_image = p.clone()
+        m.source_rootfs_image = Some(p.clone())
     });
 }
 
@@ -51,12 +51,14 @@ fn missing_daemon_binary_surfaces_io() {
 
 #[test]
 fn missing_service_unit_surfaces_io() {
-    assert_missing_field("service_unit_path", |m, p| m.service_unit_path = p.clone());
+    assert_missing_field("service_unit_path", |m, p| {
+        m.service_unit_path = Some(p.clone())
+    });
 }
 
 #[test]
 fn missing_workspace_mount_surfaces_io() {
     assert_missing_field("workspace_mount_path", |m, p| {
-        m.workspace_mount_path = p.clone()
+        m.workspace_mount_path = Some(p.clone())
     });
 }

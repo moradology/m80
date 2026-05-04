@@ -1,17 +1,18 @@
 //! Verify the Discovery::render_table output contains expected labels and
 //! status markers for each fixture row.
 
-use m80_image_manifest::{Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, Manifest, SCHEMA_VERSION};
 use m80_preflight::{CheckRow, Discovery, PrivilegeStatus};
 use std::path::PathBuf;
 
 fn fixture_manifest() -> Manifest {
     Manifest {
-        boot_target: "multi-user.target".into(),
+        boot_target: Some("multi-user.target".into()),
         daemon_binary_path: PathBuf::from("/usr/local/bin/guestd"),
         daemon_binary_sha256: "a".repeat(64),
         expected_firecracker_version: "v1.15.1".into(),
         guest_port: 3000,
+        image_kind: ImageKind::Ubuntu,
         kernel_image: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),
         kernel_image_sha256: "b".repeat(64),
         no_egress_reason: None,
@@ -19,12 +20,12 @@ fn fixture_manifest() -> Manifest {
         output_rootfs_sha256: "c".repeat(64),
         ready_marker: "READY".into(),
         schema_version: SCHEMA_VERSION,
-        service_unit_path: PathBuf::from("/etc/systemd/system/guestd.service"),
-        service_unit_sha256: "d".repeat(64),
-        source_rootfs_image: PathBuf::from("/opt/m80/images/source.ext4"),
-        source_rootfs_sha256: "e".repeat(64),
-        workspace_mount_path: PathBuf::from("/etc/systemd/system/workspace.mount"),
-        workspace_mount_sha256: "f".repeat(64),
+        service_unit_path: Some(PathBuf::from("/etc/systemd/system/guestd.service")),
+        service_unit_sha256: Some("d".repeat(64)),
+        source_rootfs_image: Some(PathBuf::from("/opt/m80/images/source.ext4")),
+        source_rootfs_sha256: Some("e".repeat(64)),
+        workspace_mount_path: Some(PathBuf::from("/etc/systemd/system/workspace.mount")),
+        workspace_mount_sha256: Some("f".repeat(64)),
     }
 }
 

@@ -22,7 +22,7 @@ fn sha256_covers_all_inputs() {
             "kernel_image",
         ),
         (
-            (|m| m.source_rootfs_sha256 = "bb".repeat(32)),
+            (|m| m.source_rootfs_sha256 = Some("bb".repeat(32))),
             "source_rootfs_image",
         ),
         (
@@ -34,11 +34,11 @@ fn sha256_covers_all_inputs() {
             "daemon_binary_path",
         ),
         (
-            (|m| m.service_unit_sha256 = "ee".repeat(32)),
+            (|m| m.service_unit_sha256 = Some("ee".repeat(32))),
             "service_unit_path",
         ),
         (
-            (|m| m.workspace_mount_sha256 = "ff".repeat(32)),
+            (|m| m.workspace_mount_sha256 = Some("ff".repeat(32))),
             "workspace_mount_path",
         ),
     ] {

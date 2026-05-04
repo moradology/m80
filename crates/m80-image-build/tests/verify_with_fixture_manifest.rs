@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use assert_cmd::Command;
-use m80_image_manifest::{Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, Manifest, SCHEMA_VERSION};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
@@ -29,11 +29,12 @@ fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
     }
 
     Manifest {
-        boot_target: "multi-user.target".to_string(),
+        boot_target: Some("multi-user.target".to_string()),
         daemon_binary_path: dir.path().join("m80-guestd"),
         daemon_binary_sha256: sha256_of(b"daemon-bytes"),
         expected_firecracker_version: "v1.15.1".to_string(),
         guest_port: 9001,
+        image_kind: ImageKind::Ubuntu,
         kernel_image: dir.path().join("vmlinux"),
         kernel_image_sha256: sha256_of(b"kernel-bytes"),
         no_egress_reason: None,
@@ -41,12 +42,12 @@ fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
         output_rootfs_sha256: sha256_of(b"output-rootfs-bytes"),
         ready_marker: "GUESTD_READY".to_string(),
         schema_version: SCHEMA_VERSION,
-        service_unit_path: dir.path().join("m80-guestd.service"),
-        service_unit_sha256: sha256_of(b"service-unit-bytes"),
-        source_rootfs_image: dir.path().join("source.ext4"),
-        source_rootfs_sha256: sha256_of(b"source-rootfs-bytes"),
-        workspace_mount_path: dir.path().join("workspace.mount"),
-        workspace_mount_sha256: sha256_of(b"workspace-mount-bytes"),
+        service_unit_path: Some(dir.path().join("m80-guestd.service")),
+        service_unit_sha256: Some(sha256_of(b"service-unit-bytes")),
+        source_rootfs_image: Some(dir.path().join("source.ext4")),
+        source_rootfs_sha256: Some(sha256_of(b"source-rootfs-bytes")),
+        workspace_mount_path: Some(dir.path().join("workspace.mount")),
+        workspace_mount_sha256: Some(sha256_of(b"workspace-mount-bytes")),
     }
 }
 

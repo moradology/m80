@@ -59,7 +59,7 @@ fn zero_schema_version_rejected() {
 fn missing_required_field_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_with_mutation(dir.path(), "missing_field.json", |v| {
-        v.as_object_mut().unwrap().remove("boot_target");
+        v.as_object_mut().unwrap().remove("daemon_binary_path");
     });
     let err = Manifest::read(&path).unwrap_err();
     assert!(
@@ -89,15 +89,15 @@ fn unknown_field_rejected() {
 fn schema_version_check_fires_before_unknown_field_check() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_with_mutation(dir.path(), "future_with_unknown.json", |v| {
-        v["schema_version"] = serde_json::json!(2u32);
+        v["schema_version"] = serde_json::json!(99u32);
         v.as_object_mut()
             .unwrap()
-            .insert("future_field".into(), serde_json::json!("v0.2 stuff"));
+            .insert("future_field".into(), serde_json::json!("v0.99 stuff"));
     });
     let err = Manifest::read(&path).unwrap_err();
     assert!(
-        matches!(err, ManifestError::UnsupportedSchemaVersion(2)),
-        "expected UnsupportedSchemaVersion(2), got {err:?}"
+        matches!(err, ManifestError::UnsupportedSchemaVersion(99)),
+        "expected UnsupportedSchemaVersion(99), got {err:?}"
     );
 }
 
