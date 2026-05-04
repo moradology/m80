@@ -25,7 +25,11 @@ impl Backend {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new((Mutex::new(permits), Condvar::new()));
         let effective = build_effective_config(&config);
-        Ok(Backend { config, effective, semaphore })
+        Ok(Backend {
+            config,
+            effective,
+            semaphore,
+        })
     }
 
     /// Acquire one admission permit and return a [`Sandbox`] in Created state.
@@ -84,7 +88,10 @@ impl Backend {
             }
 
             match recover_from_run_dir(&subdir) {
-                Ok(m80_jailer::RecoveryDecision::LiveJail { jailer_pid, firecracker_pid }) => {
+                Ok(m80_jailer::RecoveryDecision::LiveJail {
+                    jailer_pid,
+                    firecracker_pid,
+                }) => {
                     // Owner m80 is dead (we passed `run_dir_is_live` above)
                     // but firecracker is still running — orphaned VM.
                     // SIGKILL it, wait for the kernel to reap, then reclaim.
@@ -215,7 +222,10 @@ fn kill_orphan_pids(jailer_pid: u32, firecracker_pid: u32) {
             std::thread::sleep(Duration::from_millis(20));
         }
         if proc_path.exists() {
-            warn!(pid, "recover_stale_run_root: pid still present after 2s SIGKILL wait");
+            warn!(
+                pid,
+                "recover_stale_run_root: pid still present after 2s SIGKILL wait"
+            );
         }
     }
 }
@@ -224,7 +234,7 @@ fn kill_orphan_pids(jailer_pid: u32, firecracker_pid: u32) {
 /// that is `root` itself or lives under it. Deepest first so nested mounts
 /// unwind cleanly. Best-effort: failures are logged but don't abort.
 fn unmount_under(root: &std::path::Path) {
-    use nix::mount::{MntFlags, umount2};
+    use nix::mount::{umount2, MntFlags};
 
     let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") else {
         return;

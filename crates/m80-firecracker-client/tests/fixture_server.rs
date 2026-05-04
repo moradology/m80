@@ -41,7 +41,11 @@ impl FixtureServer {
             conn.write_all(&response_bytes).expect("write response");
             FixtureResult { request }
         });
-        Ok(Self { socket_path, _dir: dir, handle })
+        Ok(Self {
+            socket_path,
+            _dir: dir,
+            handle,
+        })
     }
 
     /// Wait for the server thread and return what it captured.

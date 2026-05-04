@@ -75,28 +75,20 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
             rootfs_url,
             source_rootfs.display()
         ),
-        format!(
-            "3. Convert squashfs → ext4 in temp dir: unsquashfs + mkfs.ext4"
-        ),
+        format!("3. Convert squashfs → ext4 in temp dir: unsquashfs + mkfs.ext4"),
         format!(
             "4. Resize ext4 to {} bytes: truncate -s {} {}",
             size_bytes,
             size_bytes,
             output_rootfs.display()
         ),
-        format!(
-            "5. Loop-mount {} read-write",
-            output_rootfs.display()
-        ),
+        format!("5. Loop-mount {} read-write", output_rootfs.display()),
         format!(
             "6. Copy {} → <mount>{}",
             cfg.guestd.binary.display(),
             GUEST_DAEMON_PATH
         ),
-        format!(
-            "7. Write service unit → <mount>{}",
-            GUEST_SERVICE_PATH
-        ),
+        format!("7. Write service unit → <mount>{}", GUEST_SERVICE_PATH),
         format!(
             "8. Write workspace mount unit → <mount>{}",
             GUEST_MOUNT_PATH
@@ -107,10 +99,7 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
         ),
         "10. Unmount".to_string(),
         "11. Compute sha256 of 6 artifacts".to_string(),
-        format!(
-            "12. Write manifest → {}",
-            manifest_path.display()
-        ),
+        format!("12. Write manifest → {}", manifest_path.display()),
     ];
 
     if dry_run {
@@ -121,9 +110,8 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
     }
 
     // Only create the output dir when we're actually going to write.
-    std::fs::create_dir_all(&cfg.output.dir).with_context(|| {
-        format!("creating output dir {}", cfg.output.dir.display())
-    })?;
+    std::fs::create_dir_all(&cfg.output.dir)
+        .with_context(|| format!("creating output dir {}", cfg.output.dir.display()))?;
 
     let paths = BuildPaths {
         kernel: kernel.clone(),
@@ -328,8 +316,7 @@ fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()>
     let workspace = mount.join("workspace");
     std::fs::create_dir_all(&workspace).context("creating /workspace in rootfs")?;
     let wants = mount.join("etc/systemd/system/multi-user.target.wants");
-    std::fs::create_dir_all(&wants)
-        .context("creating multi-user.target.wants in rootfs")?;
+    std::fs::create_dir_all(&wants).context("creating multi-user.target.wants in rootfs")?;
     std::os::unix::fs::symlink(
         "/etc/systemd/system/m80-guestd.service",
         wants.join("m80-guestd.service"),

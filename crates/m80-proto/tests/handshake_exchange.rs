@@ -3,15 +3,17 @@
 use std::io::Cursor;
 
 use m80_proto::{
-    Envelope, ExecRequest, HandshakeMessage, PROTOCOL_VERSION, negotiate_version, read_frame,
-    write_frame,
+    negotiate_version, read_frame, write_frame, Envelope, ExecRequest, HandshakeMessage,
+    PROTOCOL_VERSION,
 };
 
 #[test]
 fn handshake_runs_before_first_request() {
     // 1. Host emits its handshake.
     let mut channel: Vec<u8> = Vec::new();
-    let host_shake = HandshakeMessage { version: PROTOCOL_VERSION };
+    let host_shake = HandshakeMessage {
+        version: PROTOCOL_VERSION,
+    };
     write_frame(&mut channel, &host_shake).unwrap();
 
     // 2. Guest reads and negotiates.

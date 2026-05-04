@@ -18,9 +18,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 
-use m80_firecracker::{
-    BackendConfig, EffectiveConfig, backend_config_from_effective, load_config,
-};
+use m80_firecracker::{backend_config_from_effective, load_config, BackendConfig, EffectiveConfig};
 use m80_preflight::Discovery;
 
 /// Load the merged effective config and assemble a `BackendConfig` for
@@ -46,8 +44,8 @@ pub fn load(
 /// they pick up the same value `m80 launch`/`m80 stop` would, but
 /// without paying for a full `m80-preflight::run()`.
 pub fn resolve_run_root() -> anyhow::Result<PathBuf> {
-    let effective = load_config(HashMap::new())
-        .context("loading effective config for run_root resolution")?;
+    let effective =
+        load_config(HashMap::new()).context("loading effective config for run_root resolution")?;
     let value = effective
         .fields
         .iter()

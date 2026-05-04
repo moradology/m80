@@ -154,7 +154,9 @@ fn read_with_schema_probe<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T
     })?;
     let probe: SchemaVersionProbe = serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
     if probe.schema_version != SCHEMA_VERSION {
-        return Err(SnapshotError::UnsupportedSchemaVersion(probe.schema_version));
+        return Err(SnapshotError::UnsupportedSchemaVersion(
+            probe.schema_version,
+        ));
     }
     serde_json::from_slice(&raw).map_err(SnapshotError::Json)
 }

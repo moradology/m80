@@ -24,18 +24,11 @@ use anyhow::Context;
 #[derive(Debug)]
 enum Subcommand {
     /// Run the full build pipeline using the config at the given path.
-    Run {
-        config: PathBuf,
-        dry_run: bool,
-    },
+    Run { config: PathBuf, dry_run: bool },
     /// Re-verify an already-built rootfs against its manifest.
-    Verify {
-        rootfs: PathBuf,
-    },
+    Verify { rootfs: PathBuf },
     /// Remove intermediate build artifacts (loop mount points, temp images).
-    Clean {
-        workdir: PathBuf,
-    },
+    Clean { workdir: PathBuf },
 }
 
 /// Top-level argv parse target.
@@ -68,8 +61,7 @@ fn parse_args(argv: Vec<String>) -> anyhow::Result<Args> {
                     other => anyhow::bail!("unknown flag for run: {}", other),
                 }
             }
-            let config =
-                config.ok_or_else(|| anyhow::anyhow!("run requires --config <path>"))?;
+            let config = config.ok_or_else(|| anyhow::anyhow!("run requires --config <path>"))?;
             Ok(Args {
                 subcommand: Subcommand::Run { config, dry_run },
             })
@@ -165,7 +157,9 @@ mod tests {
     #[test]
     fn parse_run_with_config() {
         let args = parse_args(argv(&["run", "--config", "/tmp/foo.toml"])).unwrap();
-        let Subcommand::Run { config, dry_run } = args.subcommand else { panic!("expected Run") };
+        let Subcommand::Run { config, dry_run } = args.subcommand else {
+            panic!("expected Run")
+        };
         assert_eq!(config, PathBuf::from("/tmp/foo.toml"));
         assert!(!dry_run);
     }
@@ -173,21 +167,27 @@ mod tests {
     #[test]
     fn parse_run_dry_run() {
         let args = parse_args(argv(&["run", "--config", "/tmp/foo.toml", "--dry-run"])).unwrap();
-        let Subcommand::Run { dry_run, .. } = args.subcommand else { panic!("expected Run") };
+        let Subcommand::Run { dry_run, .. } = args.subcommand else {
+            panic!("expected Run")
+        };
         assert!(dry_run);
     }
 
     #[test]
     fn parse_verify() {
         let args = parse_args(argv(&["verify", "--rootfs", "/tmp/r.ext4"])).unwrap();
-        let Subcommand::Verify { rootfs } = args.subcommand else { panic!("expected Verify") };
+        let Subcommand::Verify { rootfs } = args.subcommand else {
+            panic!("expected Verify")
+        };
         assert_eq!(rootfs, PathBuf::from("/tmp/r.ext4"));
     }
 
     #[test]
     fn parse_clean() {
         let args = parse_args(argv(&["clean", "--workdir", "/tmp/work"])).unwrap();
-        let Subcommand::Clean { workdir } = args.subcommand else { panic!("expected Clean") };
+        let Subcommand::Clean { workdir } = args.subcommand else {
+            panic!("expected Clean")
+        };
         assert_eq!(workdir, PathBuf::from("/tmp/work"));
     }
 

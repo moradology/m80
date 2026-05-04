@@ -66,12 +66,7 @@ fn top_level_json_keys_are_alphabetical() {
     m.write(&path).unwrap();
     let raw = std::fs::read(&path).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    let top_keys: Vec<String> = v
-        .as_object()
-        .unwrap()
-        .keys()
-        .cloned()
-        .collect();
+    let top_keys: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
     let mut sorted = top_keys.clone();
     sorted.sort_unstable();
     assert_eq!(top_keys, sorted, "top-level JSON keys must be alphabetical");
@@ -120,7 +115,10 @@ fn deny_unknown_fields_rejects_extra_key() {
 fn write_missing_parent_surfaces_io_error_with_path() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_manifest(dir.path());
-    let path = dir.path().join("nonexistent").join("snapshot-manifest.json");
+    let path = dir
+        .path()
+        .join("nonexistent")
+        .join("snapshot-manifest.json");
     let err = m.write(&path).unwrap_err();
     match err {
         m80_snapshot::SnapshotError::Io { path: p, .. } => {
@@ -150,7 +148,11 @@ fn read_missing_file_surfaces_io_error_with_path() {
 fn five_required_artifact_kinds_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_manifest(dir.path());
-    assert_eq!(m.artifacts.len(), 5, "sample must contain exactly 5 artifacts");
+    assert_eq!(
+        m.artifacts.len(),
+        5,
+        "sample must contain exactly 5 artifacts"
+    );
     let path = dir.path().join("snapshot-manifest.json");
     m.write(&path).unwrap();
     let m2 = SnapshotManifest::read(&path).unwrap();

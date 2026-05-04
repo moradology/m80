@@ -9,7 +9,7 @@
 
 use std::io::Cursor;
 
-use m80_proto::{Envelope, ExecRequest, ProtoError, read_frame};
+use m80_proto::{read_frame, Envelope, ExecRequest, ProtoError};
 
 #[test]
 fn malformed_json_returns_error_and_drops_connection() {
@@ -35,7 +35,8 @@ fn malformed_json_returns_error_and_drops_connection() {
     // A valid frame following a malformed one in the same buffer also
     // surfaces the parse error first; the handler is responsible for
     // closing rather than skipping ahead.
-    let malformed_then_valid: &[u8] = b"{bad json\n{\"version\":1,\"payload\":{\"program\":\"/bin/true\",\"args\":[]}}\n";
+    let malformed_then_valid: &[u8] =
+        b"{bad json\n{\"version\":1,\"payload\":{\"program\":\"/bin/true\",\"args\":[]}}\n";
     let mut cursor2 = Cursor::new(malformed_then_valid);
     let first: Result<Envelope<ExecRequest>, ProtoError> = read_frame(&mut cursor2);
     assert!(

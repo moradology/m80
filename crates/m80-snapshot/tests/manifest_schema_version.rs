@@ -3,7 +3,7 @@
 
 mod common;
 
-use m80_snapshot::{SnapshotManifest, SnapshotError};
+use m80_snapshot::{SnapshotError, SnapshotManifest};
 
 fn write_with_version(dir: &std::path::Path, version: u32) -> std::path::PathBuf {
     let m = common::sample_manifest(dir);

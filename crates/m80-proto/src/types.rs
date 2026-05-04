@@ -164,7 +164,7 @@ pub struct HandshakeMessage {
 
 mod b64 {
     pub mod single {
-        use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
         use serde::{Deserialize, Deserializer, Serializer};
 
         pub fn serialize<S: Serializer>(v: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
@@ -178,7 +178,7 @@ mod b64 {
     }
 
     pub mod opt {
-        use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
         use serde::{Deserialize, Deserializer, Serializer};
 
         pub fn serialize<S: Serializer>(v: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
@@ -265,7 +265,9 @@ mod tests {
 
     #[test]
     fn handshake_message_round_trip() {
-        let h = HandshakeMessage { version: PROTOCOL_VERSION };
+        let h = HandshakeMessage {
+            version: PROTOCOL_VERSION,
+        };
         let json = serde_json::to_string(&h).unwrap();
         let back: HandshakeMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(back, h);

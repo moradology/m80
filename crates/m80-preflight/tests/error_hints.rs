@@ -2,15 +2,12 @@
 //! includes a "hint:" line (per README "Errors carry 'what to try next' hints").
 
 use caps::Capability;
-use m80_preflight::PreflightError;
 use m80_image_manifest::ManifestError;
+use m80_preflight::PreflightError;
 
 fn assert_hint(err: &PreflightError) {
     let msg = err.to_string();
-    assert!(
-        !msg.is_empty(),
-        "Display for {err:?} must not be empty"
-    );
+    assert!(!msg.is_empty(), "Display for {err:?} must not be empty");
     assert!(
         msg.contains("hint:"),
         "Display for {err:?} must contain a 'hint:' line; got:\n{msg}"

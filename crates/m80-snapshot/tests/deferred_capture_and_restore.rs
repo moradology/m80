@@ -1,6 +1,6 @@
 //! Verify that capture() and restore() return SnapshotError::Deferred in v0.1.
 
-use m80_snapshot::{SnapshotError, capture, restore};
+use m80_snapshot::{capture, restore, SnapshotError};
 
 /// `capture()` returns `Deferred` in v0.1.
 #[test]

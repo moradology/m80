@@ -4,7 +4,10 @@ use m80_cgroup::CpuMax;
 
 fn render_cpu_max(v: &CpuMax) -> String {
     match v {
-        CpuMax::Quota { quota_us, period_us } => format!("{quota_us} {period_us}\n"),
+        CpuMax::Quota {
+            quota_us,
+            period_us,
+        } => format!("{quota_us} {period_us}\n"),
         CpuMax::Max => "max 100000\n".to_owned(),
     }
 }

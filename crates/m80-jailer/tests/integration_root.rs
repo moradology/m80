@@ -34,7 +34,9 @@ fn materialize_creates_jail_root_and_persists_plan() {
     };
 
     let plan = Plan::compute(&cfg).unwrap();
-    let jail = plan.materialize().expect("materialize must succeed as root");
+    let jail = plan
+        .materialize()
+        .expect("materialize must succeed as root");
 
     assert!(
         jail.jail_path.exists(),

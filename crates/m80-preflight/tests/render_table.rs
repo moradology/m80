@@ -1,8 +1,8 @@
 //! Verify the Discovery::render_table output contains expected labels and
 //! status markers for each fixture row.
 
-use m80_preflight::{CheckRow, Discovery, PrivilegeStatus};
 use m80_image_manifest::{Manifest, SCHEMA_VERSION};
+use m80_preflight::{CheckRow, Discovery, PrivilegeStatus};
 use std::path::PathBuf;
 
 fn fixture_manifest() -> Manifest {
@@ -30,8 +30,16 @@ fn fixture_manifest() -> Manifest {
 
 fn fixture_discovery() -> Discovery {
     let rows = vec![
-        CheckRow { label: "OS gate".into(), passed: true, detail: "Linux 6.1.0".into() },
-        CheckRow { label: "KVM".into(), passed: true, detail: "/dev/kvm present".into() },
+        CheckRow {
+            label: "OS gate".into(),
+            passed: true,
+            detail: "Linux 6.1.0".into(),
+        },
+        CheckRow {
+            label: "KVM".into(),
+            passed: true,
+            detail: "/dev/kvm present".into(),
+        },
         CheckRow {
             label: "Kernel modules".into(),
             passed: false,

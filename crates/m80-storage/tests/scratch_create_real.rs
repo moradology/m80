@@ -11,7 +11,9 @@ use m80_storage::Scratch;
 #[test]
 #[ignore = "requires root and a loop device"]
 fn scratch_create_hydrates_workspace() {
-    if !common::require_root("scratch_create_real") { return; }
+    if !common::require_root("scratch_create_real") {
+        return;
+    }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
@@ -23,8 +25,8 @@ fn scratch_create_hydrates_workspace() {
 
     let image = dir.path().join("scratch.ext4");
     // 64 MiB is the minimum viable size for mkfs.ext4.
-    let scratch = Scratch::create(&workspace, &image, 64 * 1024 * 1024)
-        .expect("create must succeed");
+    let scratch =
+        Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create must succeed");
     assert_eq!(scratch.path(), image.as_path());
     assert!(image.exists());
 }
@@ -34,7 +36,9 @@ fn scratch_create_hydrates_workspace() {
 fn scratch_create_rejects_symlink_in_workspace() {
     use std::os::unix::fs::symlink;
 
-    if !common::require_root("scratch_create_real") { return; }
+    if !common::require_root("scratch_create_real") {
+        return;
+    }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");

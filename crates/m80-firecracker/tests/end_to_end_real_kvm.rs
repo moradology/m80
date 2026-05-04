@@ -26,8 +26,8 @@
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn end_to_end_real_kvm_boot_exec_stop_delete() {
     // Full preflight discovers the binaries and validates the environment.
-    let discovery = m80_preflight::run()
-        .expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
 
     let run_root = discovery.run_root.clone();
 
@@ -40,9 +40,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
         cgroup_mode: m80_firecracker::CgroupMode::Disabled,
     };
 
-    let backend = std::sync::Arc::new(
-        m80_firecracker::Backend::new(config).expect("Backend::new"),
-    );
+    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
 
     let sandbox_config = m80_firecracker::SandboxConfig {
         vm_id: Some("e2e-test".into()),

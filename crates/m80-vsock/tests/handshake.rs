@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tempfile::tempdir;
 
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT, VsockError};
+use m80_vsock::{Channel, VsockError, GUEST_PORT_DEFAULT};
 
 use common::console_with_marker;
 

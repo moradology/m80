@@ -4,7 +4,7 @@
 use std::io::{BufReader, BufWriter};
 
 use anyhow::Context as _;
-use vsock::{VMADDR_CID_ANY, VsockListener};
+use vsock::{VsockListener, VMADDR_CID_ANY};
 
 mod connection;
 
@@ -19,13 +19,18 @@ pub struct Args {
 
 /// Hand-rolled argv parser. Walks `std::env::args()` without pulling in clap.
 pub fn parse_args() -> anyhow::Result<Args> {
-    let mut args = Args { port: None, print_version: false };
+    let mut args = Args {
+        port: None,
+        print_version: false,
+    };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--port" => {
                 let val = iter.next().context("--port requires a value")?;
-                let n: u32 = val.parse().with_context(|| format!("invalid --port: {val}"))?;
+                let n: u32 = val
+                    .parse()
+                    .with_context(|| format!("invalid --port: {val}"))?;
                 args.port = Some(n);
             }
             "--version" => {

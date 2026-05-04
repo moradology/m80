@@ -7,7 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
-    Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming, read_frame, write_frame,
+    read_frame, write_frame, Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming,
 };
 
 /// Per-stream capture limit: 1 MiB.
@@ -108,7 +108,9 @@ fn exec_request(req: &ExecRequest, spawn_start: u64) -> anyhow::Result<ExecRespo
         cmd.stdin(Stdio::null());
     }
 
-    let mut child = cmd.spawn().map_err(|e| anyhow::anyhow!("spawn failed: {e}"))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("spawn failed: {e}"))?;
 
     let spawned_at = unix_ms_now();
 
@@ -169,7 +171,14 @@ fn exec_request(req: &ExecRequest, spawn_start: u64) -> anyhow::Result<ExecRespo
         None
     };
 
-    Ok(ExecResponse { status, exit_code, stdout, stderr, truncated, timing })
+    Ok(ExecResponse {
+        status,
+        exit_code,
+        stdout,
+        stderr,
+        truncated,
+        timing,
+    })
 }
 
 /// Read all bytes from `reader` into a buffer, capping at `CAPTURE_LIMIT`.

@@ -28,18 +28,9 @@ fn exact_output_matches_documented_template() {
 /// unchanged (the caller is responsible for sane inputs).
 #[test]
 fn no_io_performed_on_nonexistent_root() {
-    let result = persistence_path(
-        Path::new("/does/not/exist"),
-        "ws",
-        "run",
-        42,
-        "deadbeef",
-    );
+    let result = persistence_path(Path::new("/does/not/exist"), "ws", "run", 42, "deadbeef");
     // If any I/O were performed this would panic or error on a missing dir.
-    assert_eq!(
-        result,
-        Path::new("/does/not/exist/ws/run/42-deadbeef"),
-    );
+    assert_eq!(result, Path::new("/does/not/exist/ws/run/42-deadbeef"),);
 }
 
 /// Workspace IDs with path-separator characters are NOT sanitised — that is
@@ -47,13 +38,7 @@ fn no_io_performed_on_nonexistent_root() {
 /// behavior to catch accidental changes.
 #[test]
 fn workspace_id_is_not_sanitised() {
-    let result = persistence_path(
-        Path::new("/s"),
-        "a/b",
-        "r",
-        1,
-        "ff",
-    );
+    let result = persistence_path(Path::new("/s"), "a/b", "r", 1, "ff");
     // "a/b" becomes an additional path component.
     assert_eq!(result, Path::new("/s/a/b/r/1-ff"));
 }

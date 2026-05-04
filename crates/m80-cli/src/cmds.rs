@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use anyhow::Context;
 
-use m80_firecracker::{Backend, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
 use m80_firecracker::ExecRequest;
+use m80_firecracker::{Backend, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
 
 use crate::config;
 use crate::errors;
@@ -22,8 +22,8 @@ pub(crate) fn build_backend(
     flag_overrides: &HashMap<&str, String>,
 ) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
     let discovery = m80_preflight::run()?;
-    let (backend_config, effective) = config::load(discovery, flag_overrides)
-        .map_err(|e| FcError::Config(format!("{e:#}")))?;
+    let (backend_config, effective) =
+        config::load(discovery, flag_overrides).map_err(|e| FcError::Config(format!("{e:#}")))?;
     let backend = Backend::new(backend_config)?;
     Ok((Arc::new(backend), effective))
 }
@@ -34,8 +34,7 @@ pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
         Ok(discovery) => {
             if json {
                 let rows = &discovery.report;
-                let j = serde_json::to_string_pretty(rows)
-                    .expect("preflight report serialization");
+                let j = serde_json::to_string_pretty(rows).expect("preflight report serialization");
                 println!("{j}");
             } else {
                 println!("{}", discovery.render_table());

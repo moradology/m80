@@ -194,8 +194,8 @@ impl Plan {
     /// initial `jailer-state.json` in the run-dir on success. `Drop` on the
     /// returned [`MaterializedJail`] tears down the chroot.
     pub fn materialize(&self) -> Result<MaterializedJail, JailerError> {
-        use nix::mount::{MsFlags, mount};
-        use nix::sys::stat::{Mode, fchmodat, FchmodatFlags};
+        use nix::mount::{mount, MsFlags};
+        use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
         use nix::unistd::mkdir;
 
         let jail_root = chroot_path(&self.config.run_dir, &self.config.firecracker_bin);
@@ -227,11 +227,9 @@ impl Plan {
         for step in &self.steps {
             match step {
                 PlanStep::CreateDir { path, .. } => {
-                    mkdir(path, Mode::from_bits_truncate(0o755)).map_err(|e| {
-                        JailerError::Io {
-                            path: path.clone(),
-                            source: io::Error::from_raw_os_error(e as i32),
-                        }
+                    mkdir(path, Mode::from_bits_truncate(0o755)).map_err(|e| JailerError::Io {
+                        path: path.clone(),
+                        source: io::Error::from_raw_os_error(e as i32),
                     })?;
                     fchmodat(
                         None,
@@ -287,7 +285,7 @@ impl Plan {
                         // Bind mounts share the inode with the source, so a
                         // chown of the source path is what the in-chroot
                         // firecracker actually sees.
-                        use nix::unistd::{Uid, Gid, chown};
+                        use nix::unistd::{chown, Gid, Uid};
                         chown(
                             source.as_path(),
                             Some(Uid::from_raw(self.config.uid)),
@@ -306,11 +304,10 @@ impl Plan {
         }
 
         let plan_path = self.config.run_dir.join(JAILER_PLAN_FILE);
-        let plan_json =
-            serde_json::to_vec_pretty(self).map_err(|e| JailerError::Io {
-                path: plan_path.clone(),
-                source: io::Error::new(io::ErrorKind::Other, e),
-            })?;
+        let plan_json = serde_json::to_vec_pretty(self).map_err(|e| JailerError::Io {
+            path: plan_path.clone(),
+            source: io::Error::new(io::ErrorKind::Other, e),
+        })?;
         std::fs::write(&plan_path, &plan_json).map_err(|source| JailerError::Io {
             path: plan_path.clone(),
             source,
@@ -321,11 +318,10 @@ impl Plan {
             jailer_pid: None,
             firecracker_pid: None,
         };
-        let state_json =
-            serde_json::to_vec_pretty(&state).map_err(|e| JailerError::Io {
-                path: state_path.clone(),
-                source: io::Error::new(io::ErrorKind::Other, e),
-            })?;
+        let state_json = serde_json::to_vec_pretty(&state).map_err(|e| JailerError::Io {
+            path: state_path.clone(),
+            source: io::Error::new(io::ErrorKind::Other, e),
+        })?;
         std::fs::write(&state_path, &state_json).map_err(|source| JailerError::Io {
             path: state_path.clone(),
             source,
@@ -368,11 +364,15 @@ impl MaterializedJail {
         // run_dir is `<run_root>/<vm_id>` and api_socket is `firecracker.sock`
         // — both come from m80-firecracker's known shape, so a missing
         // file_name here is a programmer bug, not a runtime fault.
-        let vm_id = self.plan.config.run_dir
-            .file_name().expect("run_dir has a basename")
-            .to_string_lossy().into_owned();
-        let api_socket_name = api_socket
-            .file_name().expect("api_socket has a basename");
+        let vm_id = self
+            .plan
+            .config
+            .run_dir
+            .file_name()
+            .expect("run_dir has a basename")
+            .to_string_lossy()
+            .into_owned();
+        let api_socket_name = api_socket.file_name().expect("api_socket has a basename");
 
         // jailer's `--chroot-base-dir` is the run_dir; jailer appends
         // `<exec basename>/<id>/root/` to derive the real chroot
@@ -419,11 +419,9 @@ impl MaterializedJail {
         let deadline = Instant::now() + Duration::from_secs(1);
         let firecracker_pid = loop {
             if pid_file.exists() {
-                let raw = std::fs::read_to_string(&pid_file).map_err(|source| {
-                    JailerError::Io {
-                        path: pid_file.clone(),
-                        source,
-                    }
+                let raw = std::fs::read_to_string(&pid_file).map_err(|source| JailerError::Io {
+                    path: pid_file.clone(),
+                    source,
                 })?;
                 let pid: u32 = raw.trim().parse().map_err(|e| JailerError::Io {
                     path: pid_file.clone(),
@@ -459,11 +457,10 @@ impl MaterializedJail {
             jailer_pid: Some(jailer_pid),
             firecracker_pid: Some(firecracker_pid),
         };
-        let state_json =
-            serde_json::to_vec_pretty(&state).map_err(|e| JailerError::Io {
-                path: state_path.clone(),
-                source: io::Error::new(io::ErrorKind::Other, e),
-            })?;
+        let state_json = serde_json::to_vec_pretty(&state).map_err(|e| JailerError::Io {
+            path: state_path.clone(),
+            source: io::Error::new(io::ErrorKind::Other, e),
+        })?;
         std::fs::write(&state_path, &state_json).map_err(|source| JailerError::Io {
             path: state_path.clone(),
             source,
@@ -478,7 +475,7 @@ impl MaterializedJail {
 
 impl Drop for MaterializedJail {
     fn drop(&mut self) {
-        use nix::mount::{MntFlags, umount2};
+        use nix::mount::{umount2, MntFlags};
 
         // Unmount bind mounts in reverse order.
         for path in self.bind_mounts.iter().rev() {
@@ -546,11 +543,10 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
         path: state_path.clone(),
         source,
     })?;
-    let state: JailerState =
-        serde_json::from_slice(&raw).map_err(|e| JailerError::Io {
-            path: state_path.clone(),
-            source: io::Error::new(io::ErrorKind::InvalidData, e),
-        })?;
+    let state: JailerState = serde_json::from_slice(&raw).map_err(|e| JailerError::Io {
+        path: state_path.clone(),
+        source: io::Error::new(io::ErrorKind::InvalidData, e),
+    })?;
 
     if let (Some(jailer_pid), Some(fc_pid)) = (state.jailer_pid, state.firecracker_pid) {
         let alive = |pid: u32| Path::new(&format!("/proc/{pid}")).exists();
@@ -569,11 +565,10 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
             path: plan_path.clone(),
             source,
         })?;
-        let plan: Plan =
-            serde_json::from_slice(&plan_raw).map_err(|e| JailerError::Io {
-                path: plan_path.clone(),
-                source: io::Error::new(io::ErrorKind::InvalidData, e),
-            })?;
+        let plan: Plan = serde_json::from_slice(&plan_raw).map_err(|e| JailerError::Io {
+            path: plan_path.clone(),
+            source: io::Error::new(io::ErrorKind::InvalidData, e),
+        })?;
         plan.steps.into_iter().rev().collect()
     } else {
         Vec::new()

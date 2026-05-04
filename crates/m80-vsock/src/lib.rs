@@ -10,8 +10,8 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use sha2::Digest;
 
 use m80_proto::{Envelope, ProtoError};

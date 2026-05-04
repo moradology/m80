@@ -4,7 +4,7 @@ mod common;
 
 use std::path::Path;
 
-use m80_jailer::{BindMode, Binding, Plan, RecoveryDecision, recover_from_run_dir};
+use m80_jailer::{recover_from_run_dir, BindMode, Binding, Plan, RecoveryDecision};
 
 fn config_with_one_binding(run_dir: &Path) -> m80_jailer::JailerConfig {
     let mut cfg = common::minimal_config(run_dir);
@@ -41,7 +41,10 @@ fn write_plan(run_dir: &Path) {
 fn no_state_file_returns_no_jail() {
     let dir = tempfile::tempdir().unwrap();
     let decision = recover_from_run_dir(dir.path()).unwrap();
-    assert!(matches!(decision, RecoveryDecision::NoJail), "got {decision:?}");
+    assert!(
+        matches!(decision, RecoveryDecision::NoJail),
+        "got {decision:?}"
+    );
 }
 
 #[test]
@@ -51,7 +54,10 @@ fn stale_state_with_nonexistent_pids_returns_orphan() {
     write_plan(dir.path());
 
     let decision = recover_from_run_dir(dir.path()).unwrap();
-    assert!(matches!(decision, RecoveryDecision::OrphanJail { .. }), "got {decision:?}");
+    assert!(
+        matches!(decision, RecoveryDecision::OrphanJail { .. }),
+        "got {decision:?}"
+    );
 }
 
 #[test]
@@ -66,7 +72,10 @@ fn orphan_reap_steps_are_plan_steps_reversed() {
     };
     let plan = Plan::compute(&config_with_one_binding(dir.path())).unwrap();
     let expected: Vec<_> = plan.steps.into_iter().rev().collect();
-    assert_eq!(reap_steps, expected, "reap_steps must be plan.steps reversed");
+    assert_eq!(
+        reap_steps, expected,
+        "reap_steps must be plan.steps reversed"
+    );
 }
 
 #[test]
@@ -93,7 +102,10 @@ fn mixed_live_and_dead_pid_returns_orphan() {
     write_plan(dir.path());
 
     let decision = recover_from_run_dir(dir.path()).unwrap();
-    assert!(matches!(decision, RecoveryDecision::OrphanJail { .. }), "got {decision:?}");
+    assert!(
+        matches!(decision, RecoveryDecision::OrphanJail { .. }),
+        "got {decision:?}"
+    );
 }
 
 #[test]

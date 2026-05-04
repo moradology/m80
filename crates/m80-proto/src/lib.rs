@@ -21,10 +21,10 @@ mod version;
 pub use error::ProtoError;
 pub use framing::{read_frame, write_frame};
 pub use types::{
-    Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming, HandshakeMessage,
-    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE, Payload,
+    Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming, HandshakeMessage, Payload,
+    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE,
 };
-pub use version::{MAX_FRAME_BYTES, PROTOCOL_VERSION, negotiate_version};
+pub use version::{negotiate_version, MAX_FRAME_BYTES, PROTOCOL_VERSION};
 
 /// Default vsock port the in-VM `m80-guestd` daemon listens on.
 ///

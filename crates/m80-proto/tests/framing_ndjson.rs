@@ -4,7 +4,7 @@ mod common;
 
 use std::io::Cursor;
 
-use m80_proto::{Envelope, ExecRequest, read_frame, write_frame};
+use m80_proto::{read_frame, write_frame, Envelope, ExecRequest};
 
 fn make_request(program: &str) -> Envelope<ExecRequest> {
     let mut req = common::sample_request();

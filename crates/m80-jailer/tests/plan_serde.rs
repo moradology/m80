@@ -49,7 +49,10 @@ fn plan_step_kinds_tagged_correctly_in_json() {
         .iter()
         .map(|step| step["kind"].as_str().expect("kind is a string"))
         .collect();
-    assert!(kinds.contains(&"create_dir"), "missing create_dir kind: {kinds:?}");
+    assert!(
+        kinds.contains(&"create_dir"),
+        "missing create_dir kind: {kinds:?}"
+    );
     assert!(kinds.contains(&"bind"), "missing bind kind: {kinds:?}");
     assert!(kinds.contains(&"socket"), "missing socket kind: {kinds:?}");
 }

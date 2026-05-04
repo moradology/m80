@@ -166,7 +166,13 @@ dir = "/opt/m80/artifacts"
         assert_eq!(cfg.kernel.version, "v1.15.1");
         assert_eq!(cfg.kernel.arch, "x86_64");
         assert_eq!(cfg.rootfs.size, "1GiB");
-        assert_eq!(cfg.guestd.binary, std::path::PathBuf::from("/tmp/m80-guestd"));
-        assert_eq!(cfg.output.dir, std::path::PathBuf::from("/opt/m80/artifacts"));
+        assert_eq!(
+            cfg.guestd.binary,
+            std::path::PathBuf::from("/tmp/m80-guestd")
+        );
+        assert_eq!(
+            cfg.output.dir,
+            std::path::PathBuf::from("/opt/m80/artifacts")
+        );
     }
 }

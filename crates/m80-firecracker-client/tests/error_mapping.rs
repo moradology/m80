@@ -2,11 +2,10 @@
 //! asserts the corresponding typed `ClientError::*WriteFailed` variant.
 
 mod fixture_server;
-use fixture_server::{FixtureServer, resp_400};
+use fixture_server::{resp_400, FixtureServer};
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, ClientError, DriveConfig, InstanceAction, MachineConfig,
-    VsockConfig,
+    BootSourceConfig, Client, ClientError, DriveConfig, InstanceAction, MachineConfig, VsockConfig,
 };
 use std::path::PathBuf;
 
@@ -49,7 +48,13 @@ fn boot_source_400_returns_boot_source_write_failed() {
 fn machine_config_400_returns_machine_config_write_failed() {
     assert_error(
         "invalid vcpu_count",
-        |c| c.put_machine_config(&MachineConfig { vcpu_count: 0, mem_size_mib: 0, smt: false }),
+        |c| {
+            c.put_machine_config(&MachineConfig {
+                vcpu_count: 0,
+                mem_size_mib: 0,
+                smt: false,
+            })
+        },
         |e| matches!(e, ClientError::MachineConfigWriteFailed { fault } if fault.contains("invalid vcpu_count")),
     );
 }
@@ -74,7 +79,12 @@ fn drive_400_returns_drive_write_failed() {
 fn vsock_400_returns_vsock_write_failed() {
     assert_error(
         "vsock path in use",
-        |c| c.put_vsock(&VsockConfig { guest_cid: 3, uds_path: PathBuf::from("/run/fc/v.sock") }),
+        |c| {
+            c.put_vsock(&VsockConfig {
+                guest_cid: 3,
+                uds_path: PathBuf::from("/run/fc/v.sock"),
+            })
+        },
         |e| matches!(e, ClientError::VsockWriteFailed { fault } if fault.contains("vsock path in use")),
     );
 }
@@ -84,13 +94,15 @@ fn instance_action_400_returns_instance_action_failed_with_action() {
     assert_error(
         "cannot start: already running",
         |c| c.instance_action(InstanceAction::InstanceStart),
-        |e| matches!(
-            e,
-            ClientError::InstanceActionFailed {
-                action: InstanceAction::InstanceStart,
-                fault,
-            } if fault.contains("already running")
-        ),
+        |e| {
+            matches!(
+                e,
+                ClientError::InstanceActionFailed {
+                    action: InstanceAction::InstanceStart,
+                    fault,
+                } if fault.contains("already running")
+            )
+        },
     );
 }
 
@@ -98,5 +110,8 @@ fn instance_action_400_returns_instance_action_failed_with_action() {
 fn connect_error_on_missing_socket() {
     let dir = tempfile::tempdir().unwrap();
     let err = Client::new(&dir.path().join("missing.sock")).unwrap_err();
-    assert!(matches!(err, ClientError::Connect(_)), "expected Connect, got {err:?}");
+    assert!(
+        matches!(err, ClientError::Connect(_)),
+        "expected Connect, got {err:?}"
+    );
 }

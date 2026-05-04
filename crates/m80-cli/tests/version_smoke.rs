@@ -26,8 +26,8 @@ fn version_prints_binary_version() {
 fn version_json_has_fields() {
     let output = m80().args(["--json", "version"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let v: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("version --json should produce valid JSON");
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("version --json should produce valid JSON");
     assert!(
         v.get("binary_version").is_some(),
         "missing binary_version field: {v}"

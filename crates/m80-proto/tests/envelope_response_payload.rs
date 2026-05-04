@@ -4,7 +4,7 @@ mod common;
 
 use std::io::Cursor;
 
-use m80_proto::{Envelope, ExecResponse, ExecStatus, PROTOCOL_VERSION, read_frame, write_frame};
+use m80_proto::{read_frame, write_frame, Envelope, ExecResponse, ExecStatus, PROTOCOL_VERSION};
 
 fn round_trip(resp: ExecResponse) -> Envelope<ExecResponse> {
     let env = Envelope::new(resp);

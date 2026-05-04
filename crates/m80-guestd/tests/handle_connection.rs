@@ -5,9 +5,14 @@
 
 use std::io::Cursor;
 
-use m80_proto::{Envelope, ExecRequest, ExecResponse, ExecStatus, read_frame, write_frame};
+use m80_proto::{read_frame, write_frame, Envelope, ExecRequest, ExecResponse, ExecStatus};
 
-fn make_request(program: &str, args: Vec<String>, stdin: Option<Vec<u8>>, timeout_ms: u64) -> ExecRequest {
+fn make_request(
+    program: &str,
+    args: Vec<String>,
+    stdin: Option<Vec<u8>>,
+    timeout_ms: u64,
+) -> ExecRequest {
     ExecRequest {
         program: program.into(),
         args,
@@ -65,12 +70,20 @@ fn exec_with_timeout_returns_timed_out() {
     let env = read_response(&run_handler(request_frame(req, None)));
     let elapsed = start.elapsed();
     assert_eq!(env.payload.status, ExecStatus::TimedOut);
-    assert!(elapsed < std::time::Duration::from_millis(2_000), "elapsed: {elapsed:?}");
+    assert!(
+        elapsed < std::time::Duration::from_millis(2_000),
+        "elapsed: {elapsed:?}"
+    );
 }
 
 #[test]
 fn exec_failed_program_returns_failed() {
-    let req = make_request("/nonexistent/binary/that/does/not/exist", vec![], None, 5_000);
+    let req = make_request(
+        "/nonexistent/binary/that/does/not/exist",
+        vec![],
+        None,
+        5_000,
+    );
     let env = read_response(&run_handler(request_frame(req, None)));
     assert_eq!(env.payload.status, ExecStatus::Failed);
 }

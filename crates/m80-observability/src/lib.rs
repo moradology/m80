@@ -114,9 +114,7 @@ pub struct OpsMetrics {
 /// Aggregate probe records into a [`HealthSnapshot`].
 ///
 /// **Returns [`ObservabilityError::Deferred`] in v0.1.**
-pub fn aggregate_health(
-    _records: &[VmProbeRecord],
-) -> Result<HealthSnapshot, ObservabilityError> {
+pub fn aggregate_health(_records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError> {
     Err(ObservabilityError::Deferred)
 }
 

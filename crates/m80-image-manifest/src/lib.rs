@@ -83,7 +83,9 @@ impl Manifest {
         })?;
         let probe: SchemaVersionProbe = serde_json::from_slice(&raw)?;
         if probe.schema_version != SCHEMA_VERSION {
-            return Err(ManifestError::UnsupportedSchemaVersion(probe.schema_version));
+            return Err(ManifestError::UnsupportedSchemaVersion(
+                probe.schema_version,
+            ));
         }
         let manifest: Manifest = serde_json::from_slice(&raw)?;
         Ok(manifest)
@@ -228,4 +230,3 @@ pub enum ManifestError {
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
 }
-

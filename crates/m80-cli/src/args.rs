@@ -142,9 +142,7 @@ pub enum ConfigAction {
 fn parse_network_policy(s: &str) -> Result<NetworkPolicy, String> {
     match s.to_ascii_lowercase().as_str() {
         "noegress" => Ok(NetworkPolicy::NoEgress),
-        "outbound" => Ok(NetworkPolicy::AllowOutbound {
-            exceptions: vec![],
-        }),
+        "outbound" => Ok(NetworkPolicy::AllowOutbound { exceptions: vec![] }),
         other => Err(format!(
             "unknown network policy '{other}'; expected: noegress | outbound"
         )),

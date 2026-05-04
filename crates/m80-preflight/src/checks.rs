@@ -12,9 +12,7 @@ use nix::unistd::geteuid;
 
 use m80_image_manifest::Manifest;
 
-use crate::{
-    CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES,
-};
+use crate::{CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES};
 
 const ENV_FIRECRACKER_BIN: &str = "M80_FIRECRACKER_BIN";
 const ENV_FIRECRACKER_VERSION: &str = "M80_FIRECRACKER_VERSION";

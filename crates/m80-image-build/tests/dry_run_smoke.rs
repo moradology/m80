@@ -45,7 +45,12 @@ fn dry_run_prints_steps_to_stderr_and_creates_no_output_files() {
     let out_dir = dir.path().join("out");
 
     let mut cmd = Command::cargo_bin("m80-image-build").unwrap();
-    cmd.args(["run", "--config", config_path.to_str().unwrap(), "--dry-run"]);
+    cmd.args([
+        "run",
+        "--config",
+        config_path.to_str().unwrap(),
+        "--dry-run",
+    ]);
     let output = cmd.output().unwrap();
 
     assert!(
@@ -85,7 +90,12 @@ fn dry_run_step_output_is_deterministic() {
 
     let run = || -> String {
         let mut cmd = Command::cargo_bin("m80-image-build").unwrap();
-        cmd.args(["run", "--config", config_path.to_str().unwrap(), "--dry-run"]);
+        cmd.args([
+            "run",
+            "--config",
+            config_path.to_str().unwrap(),
+            "--dry-run",
+        ]);
         let output = cmd.output().unwrap();
         String::from_utf8_lossy(&output.stderr).into_owned()
     };

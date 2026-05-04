@@ -79,8 +79,7 @@ fn parse_launch_with_id() {
 
 #[test]
 fn parse_launch_single_shot_exec() {
-    let cli =
-        Cli::try_parse_from(["m80", "launch", "--", "/bin/sh", "-c", "echo hi"]).unwrap();
+    let cli = Cli::try_parse_from(["m80", "launch", "--", "/bin/sh", "-c", "echo hi"]).unwrap();
     match cli.subcommand {
         Cmd::Launch { exec, .. } => {
             assert_eq!(exec, vec!["/bin/sh", "-c", "echo hi"]);
@@ -181,11 +180,10 @@ fn parse_stop_with_extract() {
     let cli =
         Cli::try_parse_from(["m80", "stop", "vm-abc", "--extract-changes", "/tmp/out"]).unwrap();
     match cli.subcommand {
-        Cmd::Stop { extract_changes, .. } => {
-            assert_eq!(
-                extract_changes,
-                Some(std::path::PathBuf::from("/tmp/out"))
-            );
+        Cmd::Stop {
+            extract_changes, ..
+        } => {
+            assert_eq!(extract_changes, Some(std::path::PathBuf::from("/tmp/out")));
         }
         _ => panic!("expected Stop"),
     }
@@ -258,7 +256,10 @@ fn parse_version() {
 #[test]
 fn parse_unknown_subcommand_fails() {
     let result = Cli::try_parse_from(["m80", "frobnicate"]);
-    assert!(result.is_err(), "expected parse failure for unknown subcommand");
+    assert!(
+        result.is_err(),
+        "expected parse failure for unknown subcommand"
+    );
 }
 
 // ---- --json is global ----
@@ -270,7 +271,10 @@ fn json_flag_after_subcommand_parses_and_sets_json() {
     // both parses successfully AND sets the flag (the prior assertion
     // was a tautology — `is_ok() || is_err()` proves nothing).
     let cli = Cli::try_parse_from(["m80", "version", "--json"]).unwrap();
-    assert!(cli.json, "--json after subcommand should still set the flag");
+    assert!(
+        cli.json,
+        "--json after subcommand should still set the flag"
+    );
 }
 
 #[test]

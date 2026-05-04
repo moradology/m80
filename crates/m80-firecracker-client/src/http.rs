@@ -97,7 +97,11 @@ fn response_end(buf: &[u8]) -> Option<usize> {
     }
     let content_length = content_length_from_header_text(header_text)?;
     let total = header_len + content_length;
-    if buf.len() >= total { Some(total) } else { None }
+    if buf.len() >= total {
+        Some(total)
+    } else {
+        None
+    }
 }
 
 /// Parse a complete HTTP response from `bytes`.
@@ -110,12 +114,14 @@ fn parse_response(bytes: &[u8]) -> io::Result<Response> {
         })?;
 
     let header_text = std::str::from_utf8(&bytes[..header_end]).map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "HTTP headers are not valid UTF-8")
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "HTTP headers are not valid UTF-8",
+        )
     })?;
 
-    let status = status_from_header_text(header_text).ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidData, "malformed HTTP status line")
-    })?;
+    let status = status_from_header_text(header_text)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "malformed HTTP status line"))?;
 
     let body = bytes[(header_end + 4)..].to_vec();
     Ok(Response { status, body })
@@ -232,11 +238,7 @@ mod tests {
             io::Read::read_exact(&mut reader, &mut body).unwrap();
             drop(reader);
             // Send fixture response.
-            io::Write::write_all(
-                &mut conn,
-                b"HTTP/1.1 204 No Content\r\n\r\n",
-            )
-            .unwrap();
+            io::Write::write_all(&mut conn, b"HTTP/1.1 204 No Content\r\n\r\n").unwrap();
             req
         });
 

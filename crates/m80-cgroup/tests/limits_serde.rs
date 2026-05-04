@@ -24,7 +24,10 @@ fn limits_with_all_fields_round_trips() {
     assert_eq!(back.memory_max, Some(1_610_612_736));
     assert_eq!(back.pids_max, Some(128));
     match back.cpu_max.expect("cpu_max present") {
-        CpuMax::Quota { quota_us, period_us } => {
+        CpuMax::Quota {
+            quota_us,
+            period_us,
+        } => {
             assert_eq!(quota_us, 100_000);
             assert_eq!(period_us, 200_000);
         }

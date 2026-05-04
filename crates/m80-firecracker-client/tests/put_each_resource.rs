@@ -2,11 +2,9 @@
 //! asserts (a) the request JSON shape and (b) `Ok(())` on a 204 response.
 
 mod fixture_server;
-use fixture_server::{FixtureServer, resp_204};
+use fixture_server::{resp_204, FixtureServer};
 
-use m80_firecracker_client::{
-    BootSourceConfig, Client, DriveConfig, MachineConfig, VsockConfig,
-};
+use m80_firecracker_client::{BootSourceConfig, Client, DriveConfig, MachineConfig, VsockConfig};
 use std::path::PathBuf;
 
 #[test]
@@ -28,7 +26,10 @@ fn put_boot_source_sends_correct_json() {
     assert!(result.request.contains("\"kernel_image_path\""));
     assert!(result.request.contains("/opt/kernel/vmlinux"));
     assert!(result.request.contains("\"boot_args\""));
-    assert!(!result.request.contains("\"initrd_path\""), "None fields must be omitted");
+    assert!(
+        !result.request.contains("\"initrd_path\""),
+        "None fields must be omitted"
+    );
 }
 
 #[test]
@@ -36,10 +37,16 @@ fn put_machine_config_sends_correct_json() {
     let server = FixtureServer::spawn(resp_204()).unwrap();
     let client = Client::new(&server.socket_path).unwrap();
     client
-        .put_machine_config(&MachineConfig { vcpu_count: 2, mem_size_mib: 512, smt: false })
+        .put_machine_config(&MachineConfig {
+            vcpu_count: 2,
+            mem_size_mib: 512,
+            smt: false,
+        })
         .unwrap();
     let result = server.join();
-    assert!(result.request.starts_with("PUT /machine-config HTTP/1.1\r\n"));
+    assert!(result
+        .request
+        .starts_with("PUT /machine-config HTTP/1.1\r\n"));
     assert!(result.request.contains("\"vcpu_count\":2"));
     assert!(result.request.contains("\"mem_size_mib\":512"));
 }
@@ -58,8 +65,11 @@ fn put_drive_sends_correct_json_and_url() {
         .unwrap();
     let result = server.join();
     assert!(
-        result.request.starts_with("PUT /drives/rootfs HTTP/1.1\r\n"),
-        "drive_id must appear in URL: {}", result.request.lines().next().unwrap()
+        result
+            .request
+            .starts_with("PUT /drives/rootfs HTTP/1.1\r\n"),
+        "drive_id must appear in URL: {}",
+        result.request.lines().next().unwrap()
     );
     assert!(result.request.contains("\"drive_id\":\"rootfs\""));
     assert!(result.request.contains("\"is_root_device\":true"));

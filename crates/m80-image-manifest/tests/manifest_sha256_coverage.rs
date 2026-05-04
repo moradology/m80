@@ -17,18 +17,30 @@ fn sha256_covers_all_inputs() {
     m.verify(dir.path()).unwrap();
 
     for (mutate, expected_field) in [
-        ((|m: &mut Manifest| m.kernel_image_sha256 = "aa".repeat(32))
-            as fn(&mut Manifest), "kernel_image"),
-        ((|m| m.source_rootfs_sha256 = "bb".repeat(32)),
-            "source_rootfs_image"),
-        ((|m| m.output_rootfs_sha256 = "cc".repeat(32)),
-            "output_rootfs_image"),
-        ((|m| m.daemon_binary_sha256 = "dd".repeat(32)),
-            "daemon_binary_path"),
-        ((|m| m.service_unit_sha256 = "ee".repeat(32)),
-            "service_unit_path"),
-        ((|m| m.workspace_mount_sha256 = "ff".repeat(32)),
-            "workspace_mount_path"),
+        (
+            (|m: &mut Manifest| m.kernel_image_sha256 = "aa".repeat(32)) as fn(&mut Manifest),
+            "kernel_image",
+        ),
+        (
+            (|m| m.source_rootfs_sha256 = "bb".repeat(32)),
+            "source_rootfs_image",
+        ),
+        (
+            (|m| m.output_rootfs_sha256 = "cc".repeat(32)),
+            "output_rootfs_image",
+        ),
+        (
+            (|m| m.daemon_binary_sha256 = "dd".repeat(32)),
+            "daemon_binary_path",
+        ),
+        (
+            (|m| m.service_unit_sha256 = "ee".repeat(32)),
+            "service_unit_path",
+        ),
+        (
+            (|m| m.workspace_mount_sha256 = "ff".repeat(32)),
+            "workspace_mount_path",
+        ),
     ] {
         let mut bad = m.clone();
         mutate(&mut bad);

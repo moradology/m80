@@ -4,9 +4,7 @@ mod common;
 
 use std::sync::Arc;
 
-use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig,
-};
+use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
 
 fn make_backend(max: u32) -> Arc<Backend> {
     let config = BackendConfig {
@@ -34,8 +32,12 @@ fn sandbox_config() -> SandboxConfig {
 #[test]
 fn admit_up_to_limit_succeeds() {
     let backend = make_backend(2);
-    let s1 = backend.admit(sandbox_config()).expect("first admit should succeed");
-    let s2 = backend.admit(sandbox_config()).expect("second admit should succeed");
+    let s1 = backend
+        .admit(sandbox_config())
+        .expect("first admit should succeed");
+    let s2 = backend
+        .admit(sandbox_config())
+        .expect("second admit should succeed");
     drop(s1);
     drop(s2);
 }
@@ -43,8 +45,12 @@ fn admit_up_to_limit_succeeds() {
 #[test]
 fn admit_beyond_limit_returns_refused() {
     let backend = make_backend(2);
-    let s1 = backend.admit(sandbox_config()).expect("first admit should succeed");
-    let s2 = backend.admit(sandbox_config()).expect("second admit should succeed");
+    let s1 = backend
+        .admit(sandbox_config())
+        .expect("first admit should succeed");
+    let s2 = backend
+        .admit(sandbox_config())
+        .expect("second admit should succeed");
 
     let err = backend
         .admit(sandbox_config())
@@ -62,7 +68,9 @@ fn admit_beyond_limit_returns_refused() {
 #[test]
 fn permit_drop_restores_slot() {
     let backend = make_backend(1);
-    let s1 = backend.admit(sandbox_config()).expect("first admit should succeed");
+    let s1 = backend
+        .admit(sandbox_config())
+        .expect("first admit should succeed");
 
     // At capacity — second admit fails.
     backend
@@ -72,6 +80,8 @@ fn permit_drop_restores_slot() {
     // Dropping s1 returns the permit; next admit should succeed.
     drop(s1);
 
-    let s2 = backend.admit(sandbox_config()).expect("admit after drop should succeed");
+    let s2 = backend
+        .admit(sandbox_config())
+        .expect("admit after drop should succeed");
     drop(s2);
 }

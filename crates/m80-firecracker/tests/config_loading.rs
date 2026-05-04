@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use m80_firecracker::{ConfigSource, load_config};
+use m80_firecracker::{load_config, ConfigSource};
 
 #[test]
 fn defaults_are_loaded() {
@@ -21,10 +21,7 @@ fn defaults_are_loaded() {
         .expect("max_concurrent_vms must be present");
 
     // Verify the field is present and parseable, regardless of the source.
-    let _n: u32 = max
-        .value
-        .parse()
-        .expect("max_concurrent_vms must be a u32");
+    let _n: u32 = max.value.parse().expect("max_concurrent_vms must be a u32");
 }
 
 #[test]

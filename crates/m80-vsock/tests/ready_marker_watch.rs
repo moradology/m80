@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use tempfile::tempdir;
 
-use m80_vsock::{VsockError, watch_ready_marker};
+use m80_vsock::{watch_ready_marker, VsockError};
 
 #[test]
 fn marker_already_present_returns_immediately() {
@@ -40,8 +40,7 @@ fn marker_never_appears_returns_not_ready() {
     let console = dir.path().join("console.log");
     std::fs::write(&console, "still booting...\n").unwrap();
 
-    let err = watch_ready_marker(&console, "GUESTD_READY", Duration::from_millis(150))
-        .unwrap_err();
+    let err = watch_ready_marker(&console, "GUESTD_READY", Duration::from_millis(150)).unwrap_err();
     assert!(
         matches!(err, VsockError::NotReady),
         "expected NotReady, got {err:?}"
@@ -55,8 +54,7 @@ fn partial_line_containing_marker_does_not_match() {
     // "GUESTD_READY_EXTRA" must not trigger a match; the marker must be exact.
     std::fs::write(&console, "GUESTD_READY_EXTRA\n").unwrap();
 
-    let err = watch_ready_marker(&console, "GUESTD_READY", Duration::from_millis(100))
-        .unwrap_err();
+    let err = watch_ready_marker(&console, "GUESTD_READY", Duration::from_millis(100)).unwrap_err();
     assert!(matches!(err, VsockError::NotReady));
 }
 
@@ -66,7 +64,6 @@ fn missing_console_file_does_not_panic_before_timeout() {
     let console = dir.path().join("nonexistent.log");
 
     // File doesn't exist; should wait and then time out, not panic.
-    let err = watch_ready_marker(&console, "GUESTD_READY", Duration::from_millis(100))
-        .unwrap_err();
+    let err = watch_ready_marker(&console, "GUESTD_READY", Duration::from_millis(100)).unwrap_err();
     assert!(matches!(err, VsockError::NotReady));
 }

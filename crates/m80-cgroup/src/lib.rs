@@ -94,7 +94,10 @@ impl Subtree {
     pub fn apply_limits(&self, limits: &Limits) -> Result<(), CgroupError> {
         if let Some(cpu_max) = &limits.cpu_max {
             let val = match cpu_max {
-                CpuMax::Quota { quota_us, period_us } => {
+                CpuMax::Quota {
+                    quota_us,
+                    period_us,
+                } => {
                     format!("{quota_us} {period_us}\n")
                 }
                 CpuMax::Max => "max 100000\n".to_owned(),
@@ -123,10 +126,7 @@ impl Subtree {
 impl Drop for Subtree {
     fn drop(&mut self) {
         if let Err(e) = fs::remove_dir(&self.path) {
-            warn!(
-                "drop: rmdir({}) failed: {e}",
-                self.path.display()
-            );
+            warn!("drop: rmdir({}) failed: {e}", self.path.display());
         }
     }
 }
@@ -249,9 +249,10 @@ fn write_cgroup_file(path: &Path, value: &str) -> Result<(), CgroupError> {
             path: path.to_path_buf(),
             source,
         })?;
-    f.write_all(value.as_bytes()).map_err(|source| CgroupError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    f.write_all(value.as_bytes())
+        .map_err(|source| CgroupError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
     Ok(())
 }

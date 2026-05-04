@@ -3,7 +3,7 @@
 //! Beads: m80-xbn.1.* (resolver semantics), m80-xbn.2.* (single-seam decision).
 
 use ipnet::Ipv4Net;
-use m80_net_mode::{NetworkPolicy, OutboundIntent, VmNetworkMode, resolve};
+use m80_net_mode::{resolve, NetworkPolicy, OutboundIntent, VmNetworkMode};
 
 #[test]
 fn noegress_resolves_to_noegress() {
@@ -16,7 +16,10 @@ fn allow_outbound_with_no_exceptions_resolves_to_outbound_nat() {
     assert_eq!(
         mode,
         VmNetworkMode::OutboundNat {
-            plan: OutboundIntent { exceptions: vec![], gateway_override: None },
+            plan: OutboundIntent {
+                exceptions: vec![],
+                gateway_override: None
+            },
         }
     );
 }
@@ -24,7 +27,9 @@ fn allow_outbound_with_no_exceptions_resolves_to_outbound_nat() {
 #[test]
 fn allow_outbound_with_one_cidr_round_trips_through_resolver() {
     let cidr: Ipv4Net = "10.0.0.0/8".parse().unwrap();
-    let mode = resolve(&NetworkPolicy::AllowOutbound { exceptions: vec![cidr] });
+    let mode = resolve(&NetworkPolicy::AllowOutbound {
+        exceptions: vec![cidr],
+    });
     assert_eq!(
         mode,
         VmNetworkMode::OutboundNat {

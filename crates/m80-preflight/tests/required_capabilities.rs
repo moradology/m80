@@ -13,5 +13,8 @@ fn matches_declared_set_in_order() {
         Capability::CAP_FOWNER,
         Capability::CAP_KILL,
     ];
-    assert_eq!(REQUIRED_CAPABILITIES, expected, "REQUIRED_CAPABILITIES drifted");
+    assert_eq!(
+        REQUIRED_CAPABILITIES, expected,
+        "REQUIRED_CAPABILITIES drifted"
+    );
 }

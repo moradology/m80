@@ -163,8 +163,8 @@ mod tests {
 
     #[test]
     fn all_variants_are_nonzero() {
-        use std::io;
         use m80_preflight::PreflightError;
+        use std::io;
         let cases: Vec<FcError> = vec![
             FcError::Preflight(PreflightError::KvmUnavailable),
             FcError::AdmissionRefused { limit: 1 },
@@ -176,7 +176,11 @@ mod tests {
             FcError::Io(io::Error::new(io::ErrorKind::Other, "test")),
         ];
         for err in &cases {
-            assert_ne!(exit_code_for(err), 0, "exit code must be non-zero for {err:?}");
+            assert_ne!(
+                exit_code_for(err),
+                0,
+                "exit code must be non-zero for {err:?}"
+            );
         }
     }
 
@@ -215,6 +219,9 @@ mod tests {
         // Fields variant, detail, exit_code must always be present.
         assert!(json.contains("\"variant\""), "missing 'variant': {json}");
         assert!(json.contains("\"detail\""), "missing 'detail': {json}");
-        assert!(json.contains("\"exit_code\""), "missing 'exit_code': {json}");
+        assert!(
+            json.contains("\"exit_code\""),
+            "missing 'exit_code': {json}"
+        );
     }
 }

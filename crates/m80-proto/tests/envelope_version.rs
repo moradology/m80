@@ -4,7 +4,7 @@ mod common;
 
 use std::io::Cursor;
 
-use m80_proto::{Envelope, ExecRequest, ExecResponse, PROTOCOL_VERSION, read_frame, write_frame};
+use m80_proto::{read_frame, write_frame, Envelope, ExecRequest, ExecResponse, PROTOCOL_VERSION};
 
 #[test]
 fn request_and_response_carry_protocol_version() {

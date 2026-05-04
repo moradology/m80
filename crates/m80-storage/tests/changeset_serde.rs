@@ -6,10 +6,7 @@ use m80_storage::{ChangeSet, Rejection, RejectionReason};
 
 fn make_changeset() -> ChangeSet {
     ChangeSet {
-        staged: vec![
-            PathBuf::from("dir/file.txt"),
-            PathBuf::from("another.bin"),
-        ],
+        staged: vec![PathBuf::from("dir/file.txt"), PathBuf::from("another.bin")],
         rejected: vec![
             Rejection {
                 path: PathBuf::from("link.txt"),

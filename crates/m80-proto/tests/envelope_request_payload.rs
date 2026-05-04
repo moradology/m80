@@ -2,7 +2,7 @@
 
 use std::io::Cursor;
 
-use m80_proto::{Envelope, ExecRequest, PROTOCOL_VERSION, read_frame, write_frame};
+use m80_proto::{read_frame, write_frame, Envelope, ExecRequest, PROTOCOL_VERSION};
 
 #[test]
 fn serializes_program_args_env_cwd_timeout() {
@@ -41,6 +41,9 @@ fn serializes_program_args_env_cwd_timeout() {
             ("PATH".into(), "/usr/bin:/bin".into()),
         ])
     );
-    assert_eq!(back.payload.stdin.as_deref(), Some(b"input data\n".as_ref()));
+    assert_eq!(
+        back.payload.stdin.as_deref(),
+        Some(b"input data\n".as_ref())
+    );
     assert_eq!(back.payload.timeout_ms, Some(30_000));
 }

@@ -9,7 +9,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
-use crate::{ChangeSet, Rejection, RejectionReason, StorageError, io_err};
+use crate::{io_err, ChangeSet, Rejection, RejectionReason, StorageError};
 
 /// A per-VM scratch ext4 image.
 ///
@@ -32,7 +32,9 @@ impl Scratch {
     /// 5. Unmount.
     pub fn create(workspace: &Path, image: &Path, size: u64) -> Result<Self, StorageError> {
         match do_create(workspace, image, size) {
-            Ok(()) => Ok(Self { path: image.to_path_buf() }),
+            Ok(()) => Ok(Self {
+                path: image.to_path_buf(),
+            }),
             Err(e) => {
                 // Best-effort: remove the partially-formatted image so the
                 // caller doesn't have to clean it up.
@@ -208,7 +210,12 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
             .expect("entry always under root");
         let dst_path = dst_root.join(rel);
 
-        if ft.is_symlink() || ft.is_fifo() || ft.is_socket() || ft.is_block_device() || ft.is_char_device() {
+        if ft.is_symlink()
+            || ft.is_fifo()
+            || ft.is_socket()
+            || ft.is_block_device()
+            || ft.is_char_device()
+        {
             return Err(StorageError::AdmissibilityRefused);
         }
 
@@ -297,7 +304,14 @@ fn walk_for_extract(
         if ft.is_dir() {
             fs::create_dir(&dst_path).map_err(|e| io_err(&dst_path, e))?;
             staged.push(rel.to_path_buf());
-            walk_for_extract(mount_root, &src_path, dst_root, staged, rejected, total_bytes)?;
+            walk_for_extract(
+                mount_root,
+                &src_path,
+                dst_root,
+                staged,
+                rejected,
+                total_bytes,
+            )?;
         } else if ft.is_file() {
             fs::copy(&src_path, &dst_path).map_err(|e| io_err(&src_path, e))?;
             *total_bytes = total_bytes.saturating_add(meta.len());
@@ -317,4 +331,3 @@ mod io {
         std::io::Error::other(msg.into())
     }
 }
-

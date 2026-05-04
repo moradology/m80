@@ -1,6 +1,6 @@
 //! Tests for `probe_mounts` against a synthetic `/proc/mounts`.
 
-use m80_cgroup::{CgroupError, probe_mounts};
+use m80_cgroup::{probe_mounts, CgroupError};
 
 /// A minimal unified-v2 `/proc/mounts` line.
 const UNIFIED_V2_MOUNTS: &str = "\

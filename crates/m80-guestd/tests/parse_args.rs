@@ -7,9 +7,12 @@ fn version_flag_prints_version_with_proto() {
         .arg("--version")
         .output()
         .expect("failed to run m80-guestd --version");
-    assert!(out.status.success(), "status: {:?}\nstderr: {}",
+    assert!(
+        out.status.success(),
+        "status: {:?}\nstderr: {}",
         out.status,
-        String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let proto = m80_proto::PROTOCOL_VERSION.to_string();
     assert!(
@@ -24,7 +27,13 @@ fn unknown_arg_returns_error() {
         .arg("--unknown-flag")
         .output()
         .expect("failed to run m80-guestd --unknown-flag");
-    assert!(!out.status.success(), "expected non-zero exit for unknown flag");
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit for unknown flag"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("unknown arg"), "expected 'unknown arg' in stderr: {stderr}");
+    assert!(
+        stderr.contains("unknown arg"),
+        "expected 'unknown arg' in stderr: {stderr}"
+    );
 }

@@ -23,7 +23,11 @@ fn clone_produces_byte_identical_copy() {
 
     let rootfs = Rootfs::clone(&base, &dest).expect("clone must succeed");
 
-    assert_eq!(sha256_file(&base), sha256_file(&dest), "dest must be byte-identical to base");
+    assert_eq!(
+        sha256_file(&base),
+        sha256_file(&dest),
+        "dest must be byte-identical to base"
+    );
     assert_eq!(rootfs.path(), dest.as_path(), "path() must return dest");
 }
 

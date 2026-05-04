@@ -2,7 +2,7 @@
 
 use std::io::Cursor;
 
-use m80_proto::{Envelope, ExecRequest, MAX_FRAME_BYTES, ProtoError, read_frame};
+use m80_proto::{read_frame, Envelope, ExecRequest, ProtoError, MAX_FRAME_BYTES};
 
 /// Build a raw NDJSON line of exactly `target_len` bytes (not counting `\n`)
 /// by embedding enough `'a'` bytes into the `program` field.
@@ -89,7 +89,10 @@ fn rejects_frame_above_4mib_with_oversized_error() {
                 MAX_FRAME_BYTES + 1,
                 "reported size must equal MAX_FRAME_BYTES + 1"
             );
-            assert_eq!(limit, MAX_FRAME_BYTES, "reported limit must equal MAX_FRAME_BYTES");
+            assert_eq!(
+                limit, MAX_FRAME_BYTES,
+                "reported limit must equal MAX_FRAME_BYTES"
+            );
         }
         other => panic!("expected OversizedPayload, got: {other:?}"),
     }

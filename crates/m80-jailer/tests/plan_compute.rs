@@ -74,7 +74,10 @@ fn determinism_byte_equal_json() {
 fn step_ordering_jail_root_first() {
     let cfg = base_config();
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
-    let first = plan.steps.first().expect("plan must have at least one step");
+    let first = plan
+        .steps
+        .first()
+        .expect("plan must have at least one step");
     // Jailer's hardcoded chroot layout: <run_dir>/<exec basename>/<id>/root/.
     // With `firecracker_bin = /usr/bin/firecracker` (basename `firecracker`)
     // and `run_dir = /tmp/run/vm-1` (basename used as `--id`), the chroot
@@ -108,10 +111,7 @@ fn step_ordering_create_inside_before_binds() {
     for step in &plan.steps {
         match step {
             PlanStep::CreateDir { .. } => {
-                assert!(
-                    !saw_bind,
-                    "CreateDir appeared after a Bind step: {plan:?}"
-                );
+                assert!(!saw_bind, "CreateDir appeared after a Bind step: {plan:?}");
             }
             PlanStep::Bind { .. } => {
                 saw_bind = true;

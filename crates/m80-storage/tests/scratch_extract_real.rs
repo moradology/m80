@@ -14,7 +14,9 @@ use m80_storage::Scratch;
 #[test]
 #[ignore = "requires root and a loop device"]
 fn scratch_extract_round_trips_workspace() {
-    if !common::require_root("scratch_extract_real") { return; }
+    if !common::require_root("scratch_extract_real") {
+        return;
+    }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
@@ -36,15 +38,23 @@ fn scratch_extract_round_trips_workspace() {
         .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect();
-    assert!(staged_names.contains(&"a.txt".to_owned()), "a.txt must be staged: {staged_names:?}");
-    assert!(staged_names.contains(&"b.txt".to_owned()), "b.txt must be staged: {staged_names:?}");
+    assert!(
+        staged_names.contains(&"a.txt".to_owned()),
+        "a.txt must be staged: {staged_names:?}"
+    );
+    assert!(
+        staged_names.contains(&"b.txt".to_owned()),
+        "b.txt must be staged: {staged_names:?}"
+    );
     assert!(cs.total_bytes > 0, "total_bytes must be non-zero");
 }
 
 #[test]
 #[ignore = "requires root and a loop device"]
 fn scratch_extract_rejects_into_already_exists() {
-    if !common::require_root("scratch_extract_real") { return; }
+    if !common::require_root("scratch_extract_real") {
+        return;
+    }
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");

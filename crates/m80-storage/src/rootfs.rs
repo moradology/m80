@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{StorageError, io_err};
+use crate::{io_err, StorageError};
 
 /// A per-VM rootfs ext4 clone.
 ///

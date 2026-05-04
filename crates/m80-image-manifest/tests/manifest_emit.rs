@@ -15,13 +15,13 @@ fn emits_manifest_beside_rootfs() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::make_artifacts(dir.path());
 
-    let manifest_path = PathBuf::from(format!(
-        "{}.manifest.json",
-        m.output_rootfs_image.display()
-    ));
+    let manifest_path = PathBuf::from(format!("{}.manifest.json", m.output_rootfs_image.display()));
     m.write(&manifest_path).unwrap();
 
-    assert!(manifest_path.exists(), "manifest file must exist beside rootfs");
+    assert!(
+        manifest_path.exists(),
+        "manifest file must exist beside rootfs"
+    );
 
     let m2 = Manifest::read(&manifest_path).unwrap();
     assert_eq!(m, m2, "round-tripped manifest must equal the original");

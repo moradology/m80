@@ -27,11 +27,7 @@ use crate::errors;
 /// v0.1: best-effort force-stop by reading `jailer-state.json` from the
 /// VM's run-dir and SIGKILLing the recorded pids. Clean stop via IPC is
 /// v0.2.
-pub fn cmd_stop(
-    vm_id: &str,
-    extract_changes: Option<&Path>,
-    json: bool,
-) -> anyhow::Result<i32> {
+pub fn cmd_stop(vm_id: &str, extract_changes: Option<&Path>, json: bool) -> anyhow::Result<i32> {
     let (backend, _effective) = match build_backend(&HashMap::new()) {
         Ok(pair) => pair,
         Err(e) => {
@@ -216,8 +212,8 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
 
     let mut entries: Vec<Entry> = Vec::new();
 
-    let read_dir = std::fs::read_dir(&run_root)
-        .with_context(|| format!("listing {}", run_root.display()))?;
+    let read_dir =
+        std::fs::read_dir(&run_root).with_context(|| format!("listing {}", run_root.display()))?;
 
     for entry in read_dir.flatten() {
         let path = entry.path();
@@ -233,7 +229,11 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
         // "live" iff ownership.lock exists AND the recorded pid is alive.
         // jailer-state.json is written at materialize time and persists
         // across stop, so don't use it as a liveness proxy.
-        let state = if vm_dir_is_live(&path) { "live" } else { "stale" };
+        let state = if vm_dir_is_live(&path) {
+            "live"
+        } else {
+            "stale"
+        };
         entries.push(Entry {
             vm_id: vm_id.to_owned(),
             state,

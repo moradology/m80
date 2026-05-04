@@ -23,14 +23,16 @@ use m80_firecracker_client::{
     BootSourceConfig, Client, DriveConfig, InstanceAction, MachineConfig, VsockConfig,
 };
 use m80_image_manifest::Manifest;
-use m80_jailer::{Binding, BindMode, JailerConfig, Plan, SocketSpec};
+use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
 use m80_net_mode::VmNetworkMode;
 use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::error::FcError;
 use crate::runroot::write_ownership_lock;
-use crate::types::{CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep};
+use crate::types::{
+    CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
+};
 
 /// Default scratch size: 64 MiB.
 const SCRATCH_DEFAULT_BYTES: u64 = 64 * 1024 * 1024;
@@ -125,12 +127,8 @@ impl Sandbox {
         let firecracker = jail.launch(&api_socket).map_err(FcError::Jailer)?;
 
         // Phase 5b: create cgroup subtree now that we have live pids.
-        let cgroup = phase_5b_cgroup_create(
-            backend_config.cgroup_mode,
-            &vm_id,
-            &jail,
-            &firecracker,
-        )?;
+        let cgroup =
+            phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)?;
 
         // Phase 10: open UDS REST client (retries for up to 5 s).
         let host_api_socket = jail.jail_path.join("firecracker.sock");
@@ -244,8 +242,12 @@ fn phase_4_jailer_materialize(
     }
 
     let sockets = vec![
-        SocketSpec { path: PathBuf::from("firecracker.sock") },
-        SocketSpec { path: PathBuf::from("vsock.sock") },
+        SocketSpec {
+            path: PathBuf::from("firecracker.sock"),
+        },
+        SocketSpec {
+            path: PathBuf::from("vsock.sock"),
+        },
     ];
 
     let jailer_config = JailerConfig {

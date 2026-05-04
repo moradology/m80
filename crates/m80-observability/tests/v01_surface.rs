@@ -1,6 +1,6 @@
 use m80_observability::{
-    Diagnostics, HealthSnapshot, OpsMetrics, ObservabilityError, Phase, VmEvent,
-    aggregate_health, probe, render_health_json, render_prometheus,
+    aggregate_health, probe, render_health_json, render_prometheus, Diagnostics, HealthSnapshot,
+    ObservabilityError, OpsMetrics, Phase, VmEvent,
 };
 
 fn sample_event() -> VmEvent {

@@ -3,7 +3,7 @@
 
 mod common;
 
-use m80_snapshot::{Artifact, ArtifactKind, artifact_set_sha256};
+use m80_snapshot::{artifact_set_sha256, Artifact, ArtifactKind};
 
 fn base_artifacts() -> Vec<Artifact> {
     common::five_artifacts(std::path::Path::new("/snap"))

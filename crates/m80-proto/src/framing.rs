@@ -60,8 +60,7 @@ where
         });
     }
 
-    let probe: VersionProbe =
-        serde_json::from_slice(&buf).map_err(ProtoError::MalformedPayload)?;
+    let probe: VersionProbe = serde_json::from_slice(&buf).map_err(ProtoError::MalformedPayload)?;
     if probe.version != PROTOCOL_VERSION {
         return Err(ProtoError::IncompatibleVersion {
             expected: PROTOCOL_VERSION,

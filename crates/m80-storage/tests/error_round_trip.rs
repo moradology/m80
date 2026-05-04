@@ -19,7 +19,10 @@ fn e2fsck_failed_displays_exit_and_stderr() {
     };
     let s = format!("{e}");
     assert!(s.contains("8"), "expected exit code in: {s}");
-    assert!(s.contains("filesystem corrupted"), "expected stderr in: {s}");
+    assert!(
+        s.contains("filesystem corrupted"),
+        "expected stderr in: {s}"
+    );
 }
 
 #[test]

@@ -81,12 +81,18 @@ pub fn load(args_overrides: HashMap<String, String>) -> Result<EffectiveConfig, 
     // Convert to EffectiveConfig.
     let mut effective_fields: Vec<EffectiveField> = fields
         .into_iter()
-        .map(|(name, (value, source))| EffectiveField { name, value, source })
+        .map(|(name, (value, source))| EffectiveField {
+            name,
+            value,
+            source,
+        })
         .collect();
     // Sort for deterministic output.
     effective_fields.sort_by(|a, b| a.name.cmp(&b.name));
 
-    Ok(EffectiveConfig { fields: effective_fields })
+    Ok(EffectiveConfig {
+        fields: effective_fields,
+    })
 }
 
 /// Parse recognized keys from `toml_text` and override `fields`.
@@ -153,9 +159,7 @@ pub fn backend_config_from_effective(
         .parse()
         .map_err(|e| FcError::Config(format!("max_concurrent_vms must be a u32: {e}")))?;
 
-    let run_root: PathBuf = get(field::RUN_ROOT)
-        .unwrap_or("/var/run/m80")
-        .into();
+    let run_root: PathBuf = get(field::RUN_ROOT).unwrap_or("/var/run/m80").into();
 
     let jail_uid: u32 = get(field::JAIL_UID)
         .unwrap_or("3000")

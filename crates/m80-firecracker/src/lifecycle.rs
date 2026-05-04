@@ -66,7 +66,13 @@ impl RunningSandbox {
             backend: _backend,
         } = self;
 
-        Ok(StoppedSandbox { vm_id, run_dir, scratch, permit, run_root })
+        Ok(StoppedSandbox {
+            vm_id,
+            run_dir,
+            scratch,
+            permit,
+            run_root,
+        })
     }
 
     /// Last-resort: SIGKILL the firecracker and jailer pids immediately.
@@ -94,7 +100,13 @@ impl RunningSandbox {
             backend: _backend,
         } = self;
 
-        Ok(StoppedSandbox { vm_id, run_dir, scratch, permit, run_root })
+        Ok(StoppedSandbox {
+            vm_id,
+            run_dir,
+            scratch,
+            permit,
+            run_root,
+        })
     }
 }
 
@@ -151,10 +163,7 @@ fn bounded_stop(
             return Ok(());
         }
         // Graceful stop timed out; fall through to SIGKILL.
-        tracing::warn!(
-            firecracker_pid,
-            "graceful stop timed out; sending SIGKILL"
-        );
+        tracing::warn!(firecracker_pid, "graceful stop timed out; sending SIGKILL");
     }
 
     #[cfg(not(target_arch = "x86_64"))]
@@ -181,7 +190,7 @@ fn wait_for_pid_exit(pid: u32, timeout: Duration) -> bool {
 /// Send `SIGKILL` to `pid`. Treats `ESRCH` (no such process) as success.
 fn kill_pid(pid: u32) -> Result<(), FcError> {
     use nix::errno::Errno;
-    use nix::sys::signal::{Signal, kill};
+    use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;
 
     match kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {

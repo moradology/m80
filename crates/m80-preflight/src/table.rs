@@ -81,7 +81,11 @@ mod tests {
     #[test]
     fn empty_rows_produces_two_separators() {
         let out = render(&[]);
-        assert_eq!(out.lines().count(), 2, "only separator lines for empty input");
+        assert_eq!(
+            out.lines().count(),
+            2,
+            "only separator lines for empty input"
+        );
     }
 
     #[test]
