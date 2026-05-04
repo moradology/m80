@@ -34,6 +34,24 @@ pub use version::{negotiate_version, MAX_FRAME_BYTES, PROTOCOL_VERSION};
 /// host↔guest port convention.
 pub const GUEST_PORT_DEFAULT: u32 = 9001;
 
+/// Default vsock port for the inverted-readiness signal: m80-guestd
+/// connects out to the host on this port immediately after binding its
+/// own [`GUEST_PORT_DEFAULT`] listener. The host pre-creates a
+/// `UnixListener` at `<vsock_uds>_<READY_PORT_DEFAULT>` (matching
+/// Firecracker's muxer convention; see
+/// `firecracker/src/vmm/src/devices/virtio/vsock/unix/muxer.rs:619-641`)
+/// and `accept()`s — event-driven readiness without polling, eliminating
+/// the EAGAIN race in the muxer's accept loop that polled CONNECT/OK
+/// provoked.
+///
+/// The number itself (52525) is chosen to be visually distinct from
+/// common dev-server TCP ports (3000, 5000, 8000, 8080, 9000, etc.) so
+/// stack traces, logs, and `lsof` output don't mislead a reader into
+/// thinking m80 collides with their dev environment. vsock ports are a
+/// separate addressing space from TCP/UDP, so there is no actual
+/// conflict — the convention is purely about reader ergonomics.
+pub const READY_PORT_DEFAULT: u32 = 52525;
+
 /// Default ready-marker that `m80-guestd` prints to the serial console once
 /// it is listening on vsock.
 ///

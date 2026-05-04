@@ -1,6 +1,4 @@
-mod common;
-
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixListener;
 use std::time::Duration;
 
@@ -8,13 +6,10 @@ use tempfile::tempdir;
 
 use m80_vsock::{Channel, VsockError, GUEST_PORT_DEFAULT};
 
-use common::console_with_marker;
-
 #[test]
 fn successful_handshake_opens_channel() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("vsock.sock");
-    let console = console_with_marker(dir.path());
 
     let listener = UnixListener::bind(&uds_path).unwrap();
 
@@ -31,14 +26,7 @@ fn successful_handshake_opens_channel() {
         drop(uds_clone);
     });
 
-    let channel = Channel::open(
-        &uds_path,
-        GUEST_PORT_DEFAULT,
-        "GUESTD_READY",
-        &console,
-        Duration::from_secs(1),
-    )
-    .unwrap();
+    let channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap();
     channel.close().unwrap();
 
     server.join().unwrap();
@@ -48,7 +36,6 @@ fn successful_handshake_opens_channel() {
 fn bad_handshake_reply_returns_handshake_failed() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("vsock.sock");
-    let console = console_with_marker(dir.path());
 
     let listener = UnixListener::bind(&uds_path).unwrap();
 
@@ -60,14 +47,7 @@ fn bad_handshake_reply_returns_handshake_failed() {
         stream.write_all(b"ERROR nope\n").unwrap();
     });
 
-    let err = Channel::open(
-        &uds_path,
-        GUEST_PORT_DEFAULT,
-        "GUESTD_READY",
-        &console,
-        Duration::from_secs(1),
-    )
-    .unwrap_err();
+    let err = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap_err();
 
     assert!(
         matches!(err, VsockError::HandshakeFailed),
@@ -79,22 +59,11 @@ fn bad_handshake_reply_returns_handshake_failed() {
 fn connect_to_nonexistent_uds_returns_connect_failed() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("does_not_exist.sock");
-    let console = console_with_marker(dir.path());
 
-    let err = Channel::open(
-        &uds_path,
-        GUEST_PORT_DEFAULT,
-        "GUESTD_READY",
-        &console,
-        Duration::from_secs(1),
-    )
-    .unwrap_err();
+    let err = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap_err();
 
     assert!(
         matches!(err, VsockError::ConnectFailed { .. }),
         "expected ConnectFailed, got {err:?}"
     );
 }
-
-// Bring std::io::Read into scope for `read` on raw stream in server thread.
-use std::io::Read;

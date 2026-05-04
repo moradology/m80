@@ -68,6 +68,17 @@ Bead authoring tooling lives under `specs/`: `01-skeleton.sh`, `02-author-leaves
 - Touch a non-trivial invariant → write a regression test that pins it.
 - Don't widen scope because a related cleanup looks tempting.
 
+## When debugging — diagnostics before hypotheses
+
+When a host-side operation fails and the host can't directly observe the guest (or vice versa across any opaque boundary), the very first move is to **make the other side's stderr visible**. Form hypotheses *after* you have logs from both sides, not before.
+
+Concretely:
+- A launch hangs or times out → before guessing at vsock races, kernel issues, or muxer state, ensure m80-guestd's stderr reaches a place you can read (`StandardError=journal+console` on the systemd unit, or direct console output for PID-1 mode). One timestamped log line from the guest typically pinpoints the issue in seconds; without it, every hypothesis is a guess.
+- A symptom that looks like it's at layer N may be at layer N±1 or N±2. Visibility cuts across layers; speculation doesn't.
+- Lessons from real incidents: the ubuntu/idle 40 % flake looked like a vsock-muxer race in the host's CONNECT/RST polling. After ~hour of investigation (replacing polling with inverted readiness, chasing benign virtio-mmio kernel warnings, fighting bash background ghosts), the actual cause was systemd boot ordering — `m80-guestd.service` had `WantedBy=multi-user.target`, `multi-user.target` was bimodal (~1 s on success vs full 90 s on `network-wait-online` timeout), and m80-guestd starting at T=91 s missed the host's READY_TIMEOUT. The fix was three lines in the service unit (`DefaultDependencies=no`, `After=local-fs.target workspace.mount`, `WantedBy=basic.target`). Visible guest stderr would have surfaced "started at T=91 s" immediately and saved the hour.
+
+Corollary: when debugging in a tight loop, **make the diagnostic visibility change first**, then iterate. The instinct to "try one more fix" before adding logging usually costs more than the logging would.
+
 ## What we don't want
 
 m80 is a v0.x internal crate set with a closed call graph (we own every consumer). Defensive, future-proofing, and "be tolerant" patterns aimed at unknown third-party callers waste tokens, hide real failures, and rot the moment the assumption shifts.

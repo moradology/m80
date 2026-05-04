@@ -1,11 +1,28 @@
 [Unit]
 Description=m80 guest daemon
-After=multi-user.target
+# Skip the default network/multi-user dependency tree. The default
+# chain pulls in network-wait-online whose timeout is bimodal (~1.5s on
+# success vs full 90s on hang); that gating delayed m80-guestd start by
+# ~90s on ~40% of launches, busting the host's READY_TIMEOUT.
+#
+# Do NOT depend on workspace.mount — workspace.mount has its own
+# After=local-fs.target which forms an ordering cycle with local-fs.target
+# (workspace.mount IS a member of local-fs.target). With m80-guestd in
+# the cycle, systemd's non-deterministic cycle-break sometimes deletes
+# the m80-guestd job entirely. m80-guestd doesn't need workspace.mount
+# anyway — the workspace mount happens in parallel; if /workspace is
+# missing inside the guest's exec child, the child fails on its own
+# terms and the host sees that failure cleanly.
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/m80-guestd
+StandardOutput=journal+console
+StandardError=journal+console
 Restart=on-failure
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=basic.target

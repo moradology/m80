@@ -3,18 +3,15 @@
 //! We send an `Envelope<ExecRequest>` from the server side after the
 //! handshake, and receive it via `Channel::recv`.
 
-mod common;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
-use std::time::Duration;
 
 use tempfile::tempdir;
 
 use m80_proto::{Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-use common::console_with_marker;
 
 fn sample_request() -> ExecRequest {
     ExecRequest {
@@ -49,7 +46,6 @@ fn sample_response() -> ExecResponse {
 fn send_recv_envelope_round_trips() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("vsock.sock");
-    let console = console_with_marker(dir.path());
 
     let listener = UnixListener::bind(&uds_path).unwrap();
 
@@ -72,13 +68,7 @@ fn send_recv_envelope_round_trips() {
         m80_proto::write_frame(reader.get_mut(), &response).unwrap();
     });
 
-    let mut channel = Channel::open(
-        &uds_path,
-        GUEST_PORT_DEFAULT,
-        "GUESTD_READY",
-        &console,
-        Duration::from_secs(1),
-    )
+    let mut channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT)
     .unwrap();
 
     // Send request.

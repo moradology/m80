@@ -8,7 +8,7 @@
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -16,15 +16,11 @@ use sha2::Digest;
 
 use m80_proto::{Envelope, ProtoError};
 
-/// Re-export the canonical defaults from `m80-proto` so callers that already
-/// depend on `m80-vsock` don't need a separate import.
-pub use m80_proto::{GUEST_PORT_DEFAULT, READY_MARKER_DEFAULT};
+/// Re-export the canonical default vsock port from `m80-proto`.
+pub use m80_proto::GUEST_PORT_DEFAULT;
 
 /// Read/write timeout applied to every vsock bridge stream.
 const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Poll interval used by [`watch_ready_marker`].
-const READY_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Derive the vsock CID a VM should be assigned from its `vm_id`.
 ///
@@ -37,51 +33,6 @@ pub fn cid_for_vm_id(vm_id: &str) -> u32 {
     let bytes = hasher.finalize();
     let raw = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
     3 + (raw % (u32::MAX - 2))
-}
-
-/// Watch `console` for `marker` on its own line. Reads incrementally so a
-/// multi-MB serial-console log isn't re-read on each poll; tolerates the
-/// file not yet existing (Firecracker may not have created it).
-pub fn watch_ready_marker(
-    console: &Path,
-    marker: &str,
-    timeout: Duration,
-) -> Result<(), VsockError> {
-    use std::io::{BufRead, BufReader, Seek, SeekFrom};
-
-    let deadline = Instant::now() + timeout;
-    let mut reader: Option<BufReader<std::fs::File>> = None;
-    let mut last_offset: u64 = 0;
-
-    loop {
-        if reader.is_none() {
-            if let Ok(f) = std::fs::File::open(console) {
-                reader = Some(BufReader::new(f));
-            }
-        }
-        if let Some(r) = reader.as_mut() {
-            // Re-seek in case the file was rewritten between polls.
-            let _ = r.seek(SeekFrom::Start(last_offset));
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match r.read_line(&mut line) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        last_offset += line.len() as u64;
-                        if line.trim_end_matches(['\r', '\n']) == marker {
-                            return Ok(());
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-        if Instant::now() >= deadline {
-            return Err(VsockError::NotReady);
-        }
-        std::thread::sleep(READY_POLL_INTERVAL);
-    }
 }
 
 /// One open connection to the in-VM daemon. Created by [`Channel::open`];
@@ -107,23 +58,10 @@ impl std::fmt::Debug for Channel {
 }
 
 impl Channel {
-    /// Wait for `ready_marker` on `console`, then connect + handshake.
-    /// Use [`Self::open_uds_only`] when readiness is established elsewhere.
-    pub fn open(
-        host_uds: &Path,
-        guest_port: u32,
-        ready_marker: &str,
-        console: &Path,
-        timeout: Duration,
-    ) -> Result<Self, VsockError> {
-        watch_ready_marker(console, ready_marker, timeout)?;
-        Self::open_uds_only(host_uds, guest_port)
-    }
-
-    /// Connect to `host_uds` and hand-shake to `guest_port` without waiting
-    /// on a serial-console marker. Used by callers that have already
-    /// established readiness through another channel (e.g., a polling
-    /// retry loop on the UDS itself).
+    /// Connect to `host_uds` and hand-shake to `guest_port`. Readiness is
+    /// established by the caller via [`m80_proto::READY_PORT_DEFAULT`]'s
+    /// inverted-readiness vsock signal before this is called; this just
+    /// opens the exec channel.
     pub fn open_uds_only(host_uds: &Path, guest_port: u32) -> Result<Self, VsockError> {
         let stream = UnixStream::connect(host_uds).map_err(|e| VsockError::ConnectFailed {
             errno: e.raw_os_error().unwrap_or(0),

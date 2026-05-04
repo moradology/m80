@@ -8,13 +8,14 @@
 //! - **Phase 7 (guest config injection)**: no-op in v0.1 because `OutboundNat`
 //!   is rejected in phase 6 before we reach this step.
 //!
-//! - **Phase 12b (ready probe)**: instead of watching the Firecracker serial
-//!   console for `GUESTD_READY` via [`Channel::open`], v0.1 polls the host
-//!   vsock UDS by attempting `Channel::open` every 10 ms with a 60 s
-//!   deadline and a 1-second per-attempt timeout. A `PUT /logger` REST call
-//!   would be needed to make Firecracker write the serial console to a
-//!   host-visible file; that is deferred to v0.2.
+//! - **Phase 12b (ready accept)**: m80-guestd connects out to the host on
+//!   `m80_proto::READY_PORT_DEFAULT` immediately after binding its
+//!   listener; the host pre-creates a `UnixListener` at
+//!   `<vsock_uds>_<READY_PORT>` (Phase 11b) and `accept()`s. Event-driven,
+//!   no polling, no muxer EAGAIN race.
 
+use std::io::Read;
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,7 @@ use m80_firecracker_client::{
 use m80_image_manifest::Manifest;
 use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
 use m80_net_mode::VmNetworkMode;
+use m80_proto::READY_PORT_DEFAULT;
 use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
@@ -71,11 +73,21 @@ fn boot_args_for(kind: m80_image_manifest::ImageKind, config_override: Option<&s
     }
 }
 
-/// Ready probe: poll interval.
-const READY_POLL_INTERVAL: Duration = Duration::from_millis(10);
-
 /// Ready probe: total timeout.
+///
+/// Bounds how long phase_12b_ready_accept will wait for m80-guestd's
+/// outbound connect to land. Has to cover guest kernel boot + (for
+/// ubuntu) systemd reaching multi-user.target, with comfortable margin
+/// for stress-loaded hosts.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Accept-loop sleep when the listener is non-blocking and no connection
+/// has arrived yet. This is host-local (m80 polling its own UnixListener),
+/// not interaction with Firecracker's muxer — no EAGAIN race possible.
+const READY_ACCEPT_POLL: Duration = Duration::from_millis(10);
+
+/// Read-deadline for the proto-version byte after `accept()`.
+const READY_VERSION_READ_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl Sandbox {
     /// Standalone constructor for callers without a `Backend`.
@@ -188,17 +200,29 @@ impl Sandbox {
             )
         })?;
 
+        // Phase 11b: pre-create the inverted-readiness UnixListener at
+        // `<jail>/vsock.sock_<READY_PORT_DEFAULT>`. Firecracker's muxer
+        // connects to this path when the guest does outbound to the
+        // ready port; if it doesn't exist when that happens, the muxer
+        // RSTs the guest. Must be created before InstanceStart.
+        let vsock_uds = jail.jail_path.join("vsock.sock");
+        let ready_uds = jail
+            .jail_path
+            .join(format!("vsock.sock_{READY_PORT_DEFAULT}"));
+        let ready_listener = phase("phase_11b_ready_listener_bind", &vm_id, || {
+            phase_11b_bind_ready_listener(&ready_uds, backend_config.jail_uid)
+        })?;
+
         // Phase 12a: InstanceStart.
         phase("phase_12a_instance_start", &vm_id, || {
             client.instance_action(InstanceAction::InstanceStart)
         })?;
 
-        // Phase 12b: poll vsock UDS until guestd is ready. The jailer
-        // materializes the socket inside the chroot, so the host-visible
-        // path is `<jail_path>/vsock.sock`, not `<run_dir>/vsock.sock`.
-        let vsock_uds = jail.jail_path.join("vsock.sock");
-        let channel = phase("phase_12b_ready_probe", &vm_id, || {
-            phase_12b_ready_probe(&vsock_uds, &vm_id)
+        // Phase 12b: accept the inverted-readiness signal from m80-guestd,
+        // then open the exec channel. accept() returns event-driven the
+        // moment guestd's outbound connect lands — no muxer-polling race.
+        let channel = phase("phase_12b_ready_accept", &vm_id, || {
+            phase_12b_ready_accept(&ready_listener, &vsock_uds, &vm_id)
         })?;
 
         Ok(RunningSandbox {
@@ -457,38 +481,80 @@ fn phase_11_rest_puts(
 ///
 /// # v0.1 simplification
 ///
-/// [`Channel::open`] normally watches the Firecracker serial-console file for
-/// the `GUESTD_READY` marker before connecting. Firecracker only writes to a
-/// file-backed console when configured via `PUT /logger`; wiring that logger
-/// is deferred to v0.2.
+/// Bind the inverted-readiness `UnixListener` at `<vsock_uds>_<READY_PORT>`.
 ///
-/// Instead, v0.1 calls `Channel::open` with a 1-second per-attempt timeout
-/// (so the console watch times out quickly) and retries every 10 ms until
-/// the vsock handshake succeeds or the 60-second overall deadline elapses.
-fn phase_12b_ready_probe(vsock_uds: &Path, vm_id: &str) -> Result<Channel, FcError> {
+/// Firecracker's muxer follows the `<host_sock_path>_<port>` convention
+/// when the guest does an outbound vsock connect — it `UnixStream::connect()`s
+/// to that path. We bind the listener BEFORE InstanceStart so the muxer
+/// finds it ready when guestd's outbound connect lands.
+///
+/// Permissions: the file is created with the m80 process's umask. Since
+/// Firecracker (running as `jail_uid` post-jailer-launch) needs to
+/// `connect(2)` to the socket — which requires write permission on the
+/// socket file — we explicitly chown to the jail uid.
+fn phase_11b_bind_ready_listener(path: &Path, jail_uid: u32) -> Result<UnixListener, FcError> {
+    if path.exists() {
+        // Stale from a previous launch with the same vm_id. Remove so
+        // bind() doesn't fail with EADDRINUSE.
+        let _ = std::fs::remove_file(path);
+    }
+    let listener = UnixListener::bind(path).map_err(FcError::Io)?;
+
+    // Make the socket connect()-able by the jail uid. Both the inode
+    // ownership (chown) and the directory's access bits matter; the
+    // jailer materialize step already produces a jail dir owned by
+    // `jail_uid`, so `chown` on the socket file alone is sufficient.
+    use nix::unistd::{chown, Uid};
+    chown(path, Some(Uid::from_raw(jail_uid)), None).map_err(|e| {
+        FcError::Io(std::io::Error::from_raw_os_error(e as i32))
+    })?;
+
+    Ok(listener)
+}
+
+/// `accept()` the inverted-readiness signal from m80-guestd, validate the
+/// protocol-version byte, then open the exec channel.
+///
+/// The host-local `accept()` poll-loop here is not the muxer-polling race
+/// the original `phase_12b_ready_probe` had. We're polling our own
+/// UnixListener; the muxer only fires once (when guestd does its outbound
+/// connect). No EAGAIN cascade.
+fn phase_12b_ready_accept(
+    ready_listener: &UnixListener,
+    vsock_uds: &Path,
+    vm_id: &str,
+) -> Result<Channel, FcError> {
+    ready_listener.set_nonblocking(true).map_err(FcError::Io)?;
     let deadline = Instant::now() + READY_TIMEOUT;
 
-    loop {
-        if vsock_uds.exists() {
-            match Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT) {
-                Ok(channel) => {
-                    tracing::info!(vm_id, "vsock channel open: guestd ready");
-                    return Ok(channel);
+    let mut stream = loop {
+        match ready_listener.accept() {
+            Ok((s, _)) => break s,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
                 }
-                Err(m80_vsock::VsockError::ConnectFailed { errno }) => {
-                    tracing::debug!(vm_id, errno, "vsock connect failed, retrying");
-                }
-                Err(m80_vsock::VsockError::HandshakeFailed) => {
-                    tracing::debug!(vm_id, "vsock handshake failed, retrying");
-                }
-                Err(e) => return Err(FcError::Vsock(e)),
+                std::thread::sleep(READY_ACCEPT_POLL);
             }
+            Err(e) => return Err(FcError::Io(e)),
         }
-        if Instant::now() >= deadline {
-            return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
-        }
-        std::thread::sleep(READY_POLL_INTERVAL);
+    };
+
+    stream
+        .set_read_timeout(Some(READY_VERSION_READ_TIMEOUT))
+        .map_err(FcError::Io)?;
+    let mut buf = [0u8; 1];
+    stream.read_exact(&mut buf).map_err(FcError::Io)?;
+    if buf[0] != m80_proto::PROTOCOL_VERSION as u8 {
+        return Err(FcError::Vsock(m80_vsock::VsockError::HandshakeFailed));
     }
+    drop(stream);
+
+    tracing::info!(vm_id, "ready signal received from guestd");
+
+    // Open the exec channel — same UDS, exec port. Synchronous; should
+    // succeed immediately since guestd is up.
+    Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT).map_err(FcError::Vsock)
 }
 
 #[cfg(test)]

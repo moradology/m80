@@ -328,15 +328,29 @@ fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()>
     std::fs::write(&mnt_dest, WORKSPACE_MOUNT_UNIT).context("writing workspace.mount")?;
 
     // Step 9: create workspace mountpoint + enable units.
+    //
+    // m80-guestd.service is enabled under basic.target.wants (not
+    // multi-user.target.wants) so it starts as soon as filesystems are up
+    // and is NOT gated on the network-wait-online machinery whose timeout
+    // delayed boot by ~90s on ~40% of launches in the firecracker-ci
+    // ubuntu image.
+    //
+    // workspace.mount is still wired into multi-user.target so existing
+    // user-facing systemd workflows continue to see /workspace mounted at
+    // the conventional point.
     let workspace = mount.join("workspace");
     std::fs::create_dir_all(&workspace).context("creating /workspace in rootfs")?;
-    let wants = mount.join("etc/systemd/system/multi-user.target.wants");
-    std::fs::create_dir_all(&wants).context("creating multi-user.target.wants in rootfs")?;
+
+    let basic_wants = mount.join("etc/systemd/system/basic.target.wants");
+    std::fs::create_dir_all(&basic_wants).context("creating basic.target.wants in rootfs")?;
     std::os::unix::fs::symlink(
         "/etc/systemd/system/m80-guestd.service",
-        wants.join("m80-guestd.service"),
+        basic_wants.join("m80-guestd.service"),
     )
-    .context("symlinking m80-guestd.service into multi-user.target.wants")?;
+    .context("symlinking m80-guestd.service into basic.target.wants")?;
+
+    let wants = mount.join("etc/systemd/system/multi-user.target.wants");
+    std::fs::create_dir_all(&wants).context("creating multi-user.target.wants in rootfs")?;
     std::os::unix::fs::symlink(
         "/etc/systemd/system/workspace.mount",
         wants.join("workspace.mount"),

@@ -1,10 +1,10 @@
 //! `m80-guestd` — in-VM daemon. See `README.md` for the contract.
 //! Behavior captures: bead epic `m80-eb8`.
 
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
 
 use anyhow::Context as _;
-use vsock::{VsockListener, VMADDR_CID_ANY};
+use vsock::{VsockListener, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST};
 
 mod connection;
 mod pid_one;
@@ -63,8 +63,26 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     let listener = VsockListener::bind_with_cid_port(VMADDR_CID_ANY, port)
         .with_context(|| format!("failed to bind vsock listener on port {port}"))?;
 
-    // Signal to systemd / the host that we are ready.
-    println!("{}", m80_proto::READY_MARKER_DEFAULT);
+    // Signal readiness to the host via inverted-readiness vsock connect.
+    // The host pre-created a UnixListener at <vsock_uds>_<READY_PORT_DEFAULT>;
+    // Firecracker's muxer routes our outbound connect there. The host's
+    // accept() returns event-driven; one byte (PROTOCOL_VERSION) acts as a
+    // version handshake and a "guestd is here" signal in one step.
+    let mut ready = VsockStream::connect_with_cid_port(
+        VMADDR_CID_HOST,
+        m80_proto::READY_PORT_DEFAULT,
+    )
+    .with_context(|| {
+        format!(
+            "failed to connect ready signal to host CID {VMADDR_CID_HOST} port {}",
+            m80_proto::READY_PORT_DEFAULT
+        )
+    })?;
+    ready
+        .write_all(&[m80_proto::PROTOCOL_VERSION as u8])
+        .context("failed to write proto version on ready signal")?;
+    ready.flush().context("failed to flush ready signal")?;
+    drop(ready);
 
     loop {
         let (stream, _addr) = listener.accept().context("vsock accept failed")?;
