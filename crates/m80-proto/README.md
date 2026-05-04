@@ -32,8 +32,8 @@ The load-bearing wire invariants — the things consumers cannot derive from
   via the `Payload` trait.
 - **`ExecResponse::truncated: Option<bool>`** — reserved for v0.2; always
   `None` in v0.1; `skip_serializing_if` so v0.1 wire bytes are unchanged.
-- **`ExecStatus` is `#[non_exhaustive]`** — adding variants in a future
-  release is a non-breaking change for downstream `match`es.
+- **Adding an `ExecStatus` variant requires a `PROTOCOL_VERSION` bump.**
+  No `#[non_exhaustive]` escape hatch — wire compat is the contract.
 - **`request_id` is opaque.** The protocol echoes it back unchanged and
   assigns no meaning; pairing is the consumer's job.
 

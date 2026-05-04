@@ -151,7 +151,7 @@ pub fn backend_config_from_effective(
     let max_concurrent_vms: u32 = get(field::MAX_CONCURRENT_VMS)
         .unwrap_or("8")
         .parse()
-        .map_err(|_| FcError::Config("max_concurrent_vms must be a u32".into()))?;
+        .map_err(|e| FcError::Config(format!("max_concurrent_vms must be a u32: {e}")))?;
 
     let run_root: PathBuf = get(field::RUN_ROOT)
         .unwrap_or("/var/run/m80")
@@ -160,12 +160,12 @@ pub fn backend_config_from_effective(
     let jail_uid: u32 = get(field::JAIL_UID)
         .unwrap_or("3000")
         .parse()
-        .map_err(|_| FcError::Config("jail_uid must be a u32".into()))?;
+        .map_err(|e| FcError::Config(format!("jail_uid must be a u32: {e}")))?;
 
     let jail_gid: u32 = get(field::JAIL_GID)
         .unwrap_or("3000")
         .parse()
-        .map_err(|_| FcError::Config("jail_gid must be a u32".into()))?;
+        .map_err(|e| FcError::Config(format!("jail_gid must be a u32: {e}")))?;
 
     let cgroup_mode = match get(field::CGROUP_MODE).unwrap_or("unified-v2") {
         "unified-v2" => CgroupMode::UnifiedV2,

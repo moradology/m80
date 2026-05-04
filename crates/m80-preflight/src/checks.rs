@@ -197,11 +197,14 @@ fn check_firecracker_bin(report: &mut Vec<CheckRow>) -> Result<PathBuf, Prefligh
         return Err(PreflightError::FirecrackerBinaryNotFound);
     }
 
-    // Run --version and parse first line.
+    // Run --version and parse first line. We just verified the file
+    // exists, so a spawn failure here is something else (ENOEXEC,
+    // permission denied, …) and the underlying io::Error is the useful
+    // signal — surface it instead of remapping to "binary not found".
     let out = Command::new(&bin)
         .arg("--version")
         .output()
-        .map_err(|_| PreflightError::FirecrackerBinaryNotFound)?;
+        .map_err(PreflightError::Io)?;
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let first_line = stdout.lines().next().unwrap_or("").trim();
