@@ -12,18 +12,12 @@ use m80_image_manifest::{Manifest, ManifestError, SCHEMA_VERSION};
 fn stamps_schema_and_firecracker_version() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::make_artifacts(dir.path());
-    assert_eq!(m.schema_version, SCHEMA_VERSION);
-    assert_eq!(m.expected_firecracker_version, "v1.15.1");
-
     let path = dir.path().join("rootfs.ext4.manifest.json");
     m.write(&path).unwrap();
 
     let m2 = Manifest::read(&path).unwrap();
-    assert_eq!(m2.schema_version, SCHEMA_VERSION, "schema_version must survive round-trip");
-    assert_eq!(
-        m2.expected_firecracker_version, "v1.15.1",
-        "expected_firecracker_version must survive round-trip"
-    );
+    assert_eq!(m2.schema_version, SCHEMA_VERSION);
+    assert_eq!(m2.expected_firecracker_version, "v1.15.1");
 }
 
 /// Reading a manifest with an unsupported schema_version returns the right error.

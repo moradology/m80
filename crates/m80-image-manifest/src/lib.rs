@@ -15,19 +15,10 @@ use sha2::{Digest, Sha256};
 /// not migrations.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// The provenance manifest for a built guest image.
-///
-/// One file, written beside the rootfs as `<rootfs-path>.manifest.json`.
-/// Both `m80-image-build` (writer) and `m80-preflight` (reader/verifier)
-/// depend on this struct so the schema cannot drift.
-///
-/// Six artifacts are recorded with separate path + sha256 fields each:
-/// kernel image, source rootfs, output rootfs, daemon binary, service unit
-/// file, workspace-mount unit file. [`Manifest::verify`] covers the full set
-/// from the manifest alone.
-///
-/// Field declaration order is alphabetical so the JSON serialization is
-/// stable without a canonicalization pass.
+/// The provenance manifest for a built guest image. Single source of truth
+/// shared by `m80-image-build` (writer) and `m80-preflight` (reader/verifier)
+/// so the schema cannot drift. Field declaration order is alphabetical so
+/// JSON serialization is byte-stable without a canonicalization pass.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -73,27 +64,18 @@ pub struct Manifest {
     pub workspace_mount_sha256: String,
 }
 
-/// Partial-deserialize struct used to extract `schema_version` BEFORE
-/// committing to a full `Manifest` parse. Without this, a v0.2 manifest
-/// stamped `schema_version: 2` plus a new field surfaces as a
-/// `Json("unknown field …")` (because `Manifest` carries
-/// `#[serde(deny_unknown_fields)]`) instead of `UnsupportedSchemaVersion(2)`.
+/// Probes only `schema_version` so a v0.2 manifest reports
+/// `UnsupportedSchemaVersion(2)` instead of leaking the unrelated
+/// `Json("unknown field …")` from `deny_unknown_fields` on the v0.1 struct.
 #[derive(Deserialize)]
 struct SchemaVersionProbe {
     schema_version: u32,
 }
 
 impl Manifest {
-    /// Read and validate a manifest at `path`.
-    ///
-    /// Order of checks:
-    /// 1. Read bytes.
-    /// 2. Probe `schema_version` only; mismatch → [`ManifestError::UnsupportedSchemaVersion`].
-    ///    Fires before structural-shape errors so a v0.2 manifest produces a
-    ///    clear error instead of an unknown-field error.
-    /// 3. Full parse into `Manifest`.
-    ///
-    /// sha256s are NOT verified here — call [`Manifest::verify`] for that.
+    /// Read and structurally validate a manifest. Probes `schema_version`
+    /// before the full parse so future-version files report cleanly.
+    /// Does NOT verify sha256s — call [`Manifest::verify`] for that.
     pub fn read(path: &Path) -> Result<Manifest, ManifestError> {
         let raw = std::fs::read(path).map_err(|source| ManifestError::Io {
             path: path.to_path_buf(),
@@ -101,9 +83,7 @@ impl Manifest {
         })?;
         let probe: SchemaVersionProbe = serde_json::from_slice(&raw)?;
         if probe.schema_version != SCHEMA_VERSION {
-            return Err(ManifestError::UnsupportedSchemaVersion(
-                probe.schema_version,
-            ));
+            return Err(ManifestError::UnsupportedSchemaVersion(probe.schema_version));
         }
         let manifest: Manifest = serde_json::from_slice(&raw)?;
         Ok(manifest)
@@ -249,234 +229,3 @@ pub enum ManifestError {
     Json(#[from] serde_json::Error),
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_tempdir() -> tempfile::TempDir {
-        tempfile::tempdir().expect("tempdir")
-    }
-
-    fn sample_manifest(root: &Path) -> Manifest {
-        for name in &[
-            "vmlinux",
-            "source.ext4",
-            "output.ext4",
-            "guestd",
-            "guestd.service",
-            "workspace.mount",
-        ] {
-            std::fs::write(root.join(name), name.as_bytes()).unwrap();
-        }
-        Manifest {
-            boot_target: "multi-user.target".into(),
-            daemon_binary_path: root.join("guestd"),
-            daemon_binary_sha256: hex::encode(Sha256::digest(b"guestd")),
-            expected_firecracker_version: "v1.15.1".into(),
-            guest_port: 9001, // matches m80_proto::GUEST_PORT_DEFAULT
-            kernel_image: root.join("vmlinux"),
-            kernel_image_sha256: hex::encode(Sha256::digest(b"vmlinux")),
-            no_egress_reason: None,
-            output_rootfs_image: root.join("output.ext4"),
-            output_rootfs_sha256: hex::encode(Sha256::digest(b"output.ext4")),
-            ready_marker: "GUESTD_READY".into(), // matches m80_proto::READY_MARKER_DEFAULT
-            schema_version: SCHEMA_VERSION,
-            service_unit_path: root.join("guestd.service"),
-            service_unit_sha256: hex::encode(Sha256::digest(b"guestd.service")),
-            source_rootfs_image: root.join("source.ext4"),
-            source_rootfs_sha256: hex::encode(Sha256::digest(b"source.ext4")),
-            workspace_mount_path: root.join("workspace.mount"),
-            workspace_mount_sha256: hex::encode(Sha256::digest(b"workspace.mount")),
-        }
-    }
-
-    #[test]
-    fn round_trip_byte_equal() {
-        let dir = make_tempdir();
-        let m = sample_manifest(dir.path());
-        let path = dir.path().join("rootfs.ext4.manifest.json");
-        m.write(&path).unwrap();
-        let raw1 = std::fs::read(&path).unwrap();
-        let m2 = Manifest::read(&path).unwrap();
-        let path2 = dir.path().join("rootfs2.ext4.manifest.json");
-        m2.write(&path2).unwrap();
-        let raw2 = std::fs::read(&path2).unwrap();
-        assert_eq!(raw1, raw2, "round-trip must be byte-identical");
-    }
-
-    #[test]
-    fn trailing_newline_present() {
-        let dir = make_tempdir();
-        let m = sample_manifest(dir.path());
-        let path = dir.path().join("m.json");
-        m.write(&path).unwrap();
-        let raw = std::fs::read(&path).unwrap();
-        assert_eq!(raw.last(), Some(&b'\n'), "output must end with newline");
-    }
-
-    fn write_mutated_and_read(
-        dir: &Path,
-        mutate: impl FnOnce(&mut serde_json::Value),
-    ) -> Result<Manifest, ManifestError> {
-        let m = sample_manifest(dir);
-        let mut v = serde_json::to_value(&m).unwrap();
-        mutate(&mut v);
-        let raw = format!("{}\n", serde_json::to_string_pretty(&v).unwrap());
-        let path = dir.join("mutated.json");
-        std::fs::write(&path, raw.as_bytes()).unwrap();
-        Manifest::read(&path)
-    }
-
-    #[test]
-    fn deny_unknown_fields_rejects_extra_key() {
-        let dir = make_tempdir();
-        let err = write_mutated_and_read(dir.path(), |v| {
-            v.as_object_mut()
-                .unwrap()
-                .insert("EXTRA_FIELD".into(), serde_json::json!("forbidden"));
-        })
-        .unwrap_err();
-        assert!(
-            matches!(err, ManifestError::Json(_)),
-            "unknown field must surface as Json error, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn schema_version_mismatch_returns_correct_error() {
-        let dir = make_tempdir();
-        let err = write_mutated_and_read(dir.path(), |v| {
-            v["schema_version"] = serde_json::json!(99u32);
-        })
-        .unwrap_err();
-        assert!(
-            matches!(err, ManifestError::UnsupportedSchemaVersion(99)),
-            "expected UnsupportedSchemaVersion(99), got {err:?}"
-        );
-    }
-
-    /// Regression: a future-version manifest with extra fields surfaces as
-    /// `UnsupportedSchemaVersion`, not `Json("unknown field …")`. The probe
-    /// fires before `deny_unknown_fields`.
-    #[test]
-    fn schema_version_check_fires_before_unknown_field_check() {
-        let dir = make_tempdir();
-        let err = write_mutated_and_read(dir.path(), |v| {
-            v["schema_version"] = serde_json::json!(2u32);
-            v.as_object_mut()
-                .unwrap()
-                .insert("future_field".into(), serde_json::json!("v0.2 stuff"));
-        })
-        .unwrap_err();
-        assert!(
-            matches!(err, ManifestError::UnsupportedSchemaVersion(2)),
-            "expected UnsupportedSchemaVersion(2) (probe fires first), got {err:?}"
-        );
-    }
-
-    #[test]
-    fn verify_passes_for_correct_artifacts() {
-        let dir = make_tempdir();
-        let m = sample_manifest(dir.path());
-        m.verify(dir.path()).unwrap();
-    }
-
-    #[test]
-    fn verify_detects_tampered_kernel() {
-        let dir = make_tempdir();
-        let mut m = sample_manifest(dir.path());
-        m.kernel_image_sha256 = "deadbeef".repeat(8);
-        let err = m.verify(dir.path()).unwrap_err();
-        assert!(
-            matches!(
-                &err,
-                ManifestError::Sha256Mismatch { field, .. } if field == "kernel_image"
-            ),
-            "expected Sha256Mismatch on kernel_image, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn verify_detects_tampered_service_unit() {
-        let dir = make_tempdir();
-        let mut m = sample_manifest(dir.path());
-        m.service_unit_sha256 = "deadbeef".repeat(8);
-        let err = m.verify(dir.path()).unwrap_err();
-        assert!(
-            matches!(
-                &err,
-                ManifestError::Sha256Mismatch { field, .. } if field == "service_unit_path"
-            ),
-            "expected Sha256Mismatch on service_unit_path, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn verify_detects_tampered_workspace_mount_unit() {
-        let dir = make_tempdir();
-        let mut m = sample_manifest(dir.path());
-        m.workspace_mount_sha256 = "deadbeef".repeat(8);
-        let err = m.verify(dir.path()).unwrap_err();
-        assert!(
-            matches!(
-                &err,
-                ManifestError::Sha256Mismatch { field, .. } if field == "workspace_mount_path"
-            ),
-            "expected Sha256Mismatch on workspace_mount_path, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn verify_missing_artifact_surfaces_io_error_with_path() {
-        let dir = make_tempdir();
-        let mut m = sample_manifest(dir.path());
-        let missing = dir.path().join("does_not_exist");
-        m.kernel_image = missing.clone();
-        let err = m.verify(dir.path()).unwrap_err();
-        match err {
-            ManifestError::Io { path, source } => {
-                assert_eq!(path, missing, "Io variant must carry the failed path");
-                assert_eq!(source.kind(), io::ErrorKind::NotFound);
-            }
-            other => panic!("expected Io error with path, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn file_mode_is_0644() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            let dir = make_tempdir();
-            let m = sample_manifest(dir.path());
-            let path = dir.path().join("mode_test.json");
-            m.write(&path).unwrap();
-            let meta = std::fs::metadata(&path).unwrap();
-            let mode = meta.mode() & 0o777;
-            assert_eq!(mode, 0o644, "manifest file mode must be 0644, got {mode:o}");
-        }
-    }
-
-    #[test]
-    fn keys_are_in_alphabetical_order() {
-        let dir = make_tempdir();
-        let m = sample_manifest(dir.path());
-        let path = dir.path().join("key_order.json");
-        m.write(&path).unwrap();
-        let raw = std::fs::read_to_string(&path).unwrap();
-        let keys: Vec<&str> = raw
-            .lines()
-            .filter_map(|l| {
-                let trimmed = l.trim();
-                if trimmed.starts_with('"') {
-                    trimmed.split('"').nth(1)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let mut sorted = keys.clone();
-        sorted.sort_unstable();
-        assert_eq!(keys, sorted, "JSON keys must be in alphabetical order");
-    }
-}

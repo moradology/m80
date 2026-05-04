@@ -82,6 +82,25 @@ fn unknown_field_rejected() {
     );
 }
 
+/// Regression: a future-version manifest with extra fields surfaces as
+/// `UnsupportedSchemaVersion`, not `Json("unknown field …")`. The probe
+/// fires before `deny_unknown_fields`.
+#[test]
+fn schema_version_check_fires_before_unknown_field_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_with_mutation(dir.path(), "future_with_unknown.json", |v| {
+        v["schema_version"] = serde_json::json!(2u32);
+        v.as_object_mut()
+            .unwrap()
+            .insert("future_field".into(), serde_json::json!("v0.2 stuff"));
+    });
+    let err = Manifest::read(&path).unwrap_err();
+    assert!(
+        matches!(err, ManifestError::UnsupportedSchemaVersion(2)),
+        "expected UnsupportedSchemaVersion(2), got {err:?}"
+    );
+}
+
 /// A valid manifest reads without error (sanity check that the helper isn't
 /// systematically broken).
 #[test]

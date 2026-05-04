@@ -6,18 +6,9 @@ beside every m80 guest image.
 
 ## Reason for being
 
-The manifest is written **at build time** by `m80-image-build` and read
-**at boot time** by `m80-preflight`. If the two ends drift on what fields
-exist, what `schema_version` means, or how the sha256 over multiple files
-is computed, boot silently accepts a tampered or stale image.
-
-`m80-image-manifest` is the one crate both ends depend on. There is no
-"writer's view" and "reader's view" — there's a struct, and it's the
-contract.
-
-A second reason: validation logic (sha256 recompute, schema-version check,
-expected-firecracker-version match) is non-trivial and worth testing once,
-not twice.
+Single source of truth shared by `m80-image-build` (writer) and
+`m80-preflight` (reader/verifier) so the schema cannot drift. Validation
+logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Black-box contract
 
@@ -40,10 +31,6 @@ not twice.
   `m80-preflight`). This crate has no `FirecrackerVersionMismatch` variant.
 - The manifest is **side-by-side** with the rootfs (`<rootfs>.manifest.json`).
   This crate does not look up a manifest by some registry or env var.
-- Output is pretty-printed JSON with a trailing `\n`. Field order is
-  alphabetical because the struct fields are declared alphabetically;
-  `read → write` is byte-identical so long as that order doesn't change.
-  No separate canonicalization pass.
 
 ## Public surface
 

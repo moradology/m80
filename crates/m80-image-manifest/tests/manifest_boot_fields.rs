@@ -16,15 +16,11 @@ fn records_boot_target_port_marker() {
     m.guest_port = 52000;
     m.ready_marker = "AGENT_DAEMON_READY".into();
 
-    assert_eq!(m.boot_target, "multi-user.target");
-    assert_eq!(m.guest_port, 52000);
-    assert_eq!(m.ready_marker, "AGENT_DAEMON_READY");
-
     let path = dir.path().join("rootfs.ext4.manifest.json");
     m.write(&path).unwrap();
     let m2 = Manifest::read(&path).unwrap();
 
-    assert_eq!(m2.boot_target, "multi-user.target", "boot_target must survive round-trip");
-    assert_eq!(m2.guest_port, 52000, "guest_port must survive round-trip");
-    assert_eq!(m2.ready_marker, "AGENT_DAEMON_READY", "ready_marker must survive round-trip");
+    assert_eq!(m2.boot_target, "multi-user.target");
+    assert_eq!(m2.guest_port, 52000);
+    assert_eq!(m2.ready_marker, "AGENT_DAEMON_READY");
 }
