@@ -7,6 +7,7 @@ use anyhow::Context as _;
 use vsock::{VsockListener, VMADDR_CID_ANY};
 
 mod connection;
+mod pid_one;
 
 /// Parsed command-line arguments.
 #[derive(Debug)]
@@ -53,6 +54,11 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let pid_one_mode = pid_one::is_pid_one();
+    if pid_one_mode {
+        pid_one::enter_pid_one_mode().context("PID-1 setup failed")?;
+    }
+
     let port = args.port.unwrap_or(m80_proto::GUEST_PORT_DEFAULT);
     let listener = VsockListener::bind_with_cid_port(VMADDR_CID_ANY, port)
         .with_context(|| format!("failed to bind vsock listener on port {port}"))?;
@@ -67,6 +73,9 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         let writer = BufWriter::new(&stream);
         if let Err(e) = connection::handle_connection(reader, writer) {
             tracing::warn!(error = %e, "connection handler returned error");
+        }
+        if pid_one_mode {
+            pid_one::reap_pending();
         }
     }
 }

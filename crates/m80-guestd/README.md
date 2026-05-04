@@ -27,8 +27,16 @@ Keeping the guest small has direct benefits:
 
 ### Lifecycle
 
-- Started by systemd at `multi-user.target` from the manifest-installed
-  unit. `Type=simple Restart=on-failure`.
+- Started either by systemd at `multi-user.target` (ubuntu image kind,
+  manifest-installed unit, `Type=simple Restart=on-failure`) or by the
+  kernel as PID 1 (minimal image kind, `init=/m80-guestd` boot arg).
+- **PID-1 mode** is detected at startup (`getpid() == 1`). When active:
+  install a panic hook that exits non-zero (kernel reboots via the
+  `panic=1` boot arg, surfacing the failure to the host); mount `/proc`,
+  `/sys`, and `/dev` (devtmpfs); poll-reap orphaned children between
+  vsock requests so re-parented orphans don't accumulate. No SIGCHLD or
+  SIGTERM handlers — the workspace forbids `unsafe` and the firecracker
+  host stops the VM with SIGKILL on the outside.
 - On startup: bind vsock port (default `m80_proto::GUEST_PORT_DEFAULT`),
   print `m80_proto::READY_MARKER_DEFAULT` to the serial console (the
   agreed ready marker), then loop on `accept()`.
