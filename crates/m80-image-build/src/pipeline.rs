@@ -10,6 +10,7 @@ use anyhow::Context;
 
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
+use crate::minimal;
 
 const SERVICE_UNIT: &str = include_str!("../assets/m80-guestd.service");
 const WORKSPACE_MOUNT_UNIT: &str = include_str!("../assets/workspace.mount");
@@ -28,9 +29,22 @@ struct BuildPaths {
     workspace_mount: PathBuf,
 }
 
-/// Run the full build pipeline or print a dry-run plan.
+/// Run the full build pipeline or print a dry-run plan. Dispatches on
+/// `cfg.rootfs.kind`: `"ubuntu"` (default) builds from the firecracker-ci
+/// squashfs; `"minimal"` builds an empty ext4 with busybox + static
+/// guestd as PID 1.
 pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
     let cfg = BuildConfig::from_file(&config_path)?;
+    match cfg.rootfs.kind.as_deref() {
+        Some("minimal") => minimal::run_build_minimal(cfg, dry_run),
+        Some("ubuntu") | None => run_build_ubuntu(cfg, dry_run),
+        Some(other) => anyhow::bail!(
+            "unknown rootfs.kind '{other}': expected \"ubuntu\" or \"minimal\""
+        ),
+    }
+}
+
+fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     let size_bytes = parse_size(&cfg.rootfs.size)
         .with_context(|| format!("parsing rootfs.size '{}'", cfg.rootfs.size))?;
 
@@ -205,7 +219,7 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
 }
 
 /// Run `curl -fsSL -o <dest> <url>`.
-fn run_curl(url: &str, dest: &Path) -> anyhow::Result<()> {
+pub(crate) fn run_curl(url: &str, dest: &Path) -> anyhow::Result<()> {
     let status = Command::new("curl")
         .args(["-fsSL", "-o"])
         .arg(dest)
@@ -256,7 +270,7 @@ fn squashfs_to_ext4(
 }
 
 /// Resize a file to exactly `size_bytes` using `truncate`.
-fn truncate_file(path: &Path, size_bytes: u64) -> anyhow::Result<()> {
+pub(crate) fn truncate_file(path: &Path, size_bytes: u64) -> anyhow::Result<()> {
     let status = Command::new("truncate")
         .args(["-s", &size_bytes.to_string()])
         .arg(path)
@@ -269,7 +283,7 @@ fn truncate_file(path: &Path, size_bytes: u64) -> anyhow::Result<()> {
 }
 
 /// Loop-mount `image` at `mount_dir` read-write.
-fn loop_mount(image: &Path, mount_dir: &Path) -> anyhow::Result<()> {
+pub(crate) fn loop_mount(image: &Path, mount_dir: &Path) -> anyhow::Result<()> {
     let status = Command::new("mount")
         .args(["-o", "loop,rw"])
         .arg(image)
@@ -283,7 +297,7 @@ fn loop_mount(image: &Path, mount_dir: &Path) -> anyhow::Result<()> {
 }
 
 /// Unmount `mount_dir`.
-fn loop_umount(mount_dir: &Path) -> anyhow::Result<()> {
+pub(crate) fn loop_umount(mount_dir: &Path) -> anyhow::Result<()> {
     let status = Command::new("umount")
         .arg(mount_dir)
         .status()
@@ -333,7 +347,7 @@ fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()>
 }
 
 #[cfg(unix)]
-fn set_executable(path: &Path) -> anyhow::Result<()> {
+pub(crate) fn set_executable(path: &Path) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut perms = std::fs::metadata(path)
         .context("stat for chmod")?
@@ -343,6 +357,6 @@ fn set_executable(path: &Path) -> anyhow::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn set_executable(_path: &Path) -> anyhow::Result<()> {
+pub(crate) fn set_executable(_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }

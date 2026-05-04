@@ -31,6 +31,12 @@ pub struct KernelConfig {
 pub struct RootfsConfig {
     /// Target ext4 size, e.g. `"1GiB"`, `"512MiB"`, `"100KiB"`.
     pub size: String,
+    /// Image kind. `"ubuntu"` (default) builds from the firecracker-ci
+    /// squashfs with systemd. `"minimal"` builds an empty ext4 with
+    /// busybox + statically-linked m80-guestd as PID 1, no systemd.
+    /// Required for `"minimal"`; defaults to `"ubuntu"` when absent.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 /// Guest daemon binary parameters.
@@ -143,6 +149,47 @@ mod tests {
         assert!(parse_size("1TB").is_err());
         assert!(parse_size("").is_err());
         assert!(parse_size("0GiB").is_err());
+    }
+
+    #[test]
+    fn rootfs_kind_minimal_parses() {
+        let raw = r#"
+[kernel]
+version = "v1.15.1"
+arch = "x86_64"
+
+[rootfs]
+size = "256MiB"
+kind = "minimal"
+
+[guestd]
+binary = "/tmp/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+"#;
+        let cfg: BuildConfig = toml::from_str(raw).expect("TOML parse failed");
+        assert_eq!(cfg.rootfs.kind.as_deref(), Some("minimal"));
+    }
+
+    #[test]
+    fn rootfs_kind_absent_defaults_to_none() {
+        let raw = r#"
+[kernel]
+version = "v1.15.1"
+arch = "x86_64"
+
+[rootfs]
+size = "1GiB"
+
+[guestd]
+binary = "/tmp/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+"#;
+        let cfg: BuildConfig = toml::from_str(raw).expect("TOML parse failed");
+        assert!(cfg.rootfs.kind.is_none());
     }
 
     #[test]

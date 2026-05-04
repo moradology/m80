@@ -25,8 +25,11 @@ gives us:
 
 ### Pipeline
 
-`m80-image-build run --config <path>` runs 12 numbered steps (labels
-emitted to stderr in `--dry-run`):
+`m80-image-build run --config <path>` dispatches on `[rootfs] kind`:
+
+#### Ubuntu (default)
+
+12 numbered steps:
 
 1. Download kernel from `https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/<version>/<arch>` via `curl`.
 2. Download source rootfs squashfs from the same firecracker-ci bucket.
@@ -43,7 +46,36 @@ emitted to stderr in `--dry-run`):
 10. Unmount the rootfs.
 11. sha256 every artifact (kernel, source rootfs, output rootfs, daemon
     binary, service unit, workspace-mount unit).
-12. Emit `<rootfs>.manifest.json` via `m80-image-manifest::Manifest::write`.
+12. Emit `<rootfs>.manifest.json` with `image_kind=Ubuntu` via
+    `m80-image-manifest::Manifest::write`.
+
+#### Minimal (`kind = "minimal"`)
+
+10 numbered steps. No upstream squashfs; the rootfs is built from
+scratch. Smaller, faster cold boot, no package manager.
+
+1. Download kernel (same as Ubuntu).
+2. Pre-allocate the output ext4 with `truncate`.
+3. `mkfs.ext4 -F` against the empty file.
+4. Loop-mount the output rootfs RW.
+5. Copy `/bin/busybox` from the host into `<rootfs>/bin/busybox` and
+   symlink common applets (`sh`, `echo`, `cat`, `ls`, `mkdir`, `mount`,
+   `umount`, `stat`, `ln`, `true`, `false`) → `busybox`. **The host
+   must have `busybox-static` installed**; `apt install busybox-static`
+   on Debian/Ubuntu.
+6. Copy the configured `m80-guestd` binary into `<rootfs>/m80-guestd`
+   and symlink `<rootfs>/init` → `/m80-guestd`. **The binary must be
+   statically linked** (e.g., `cargo build --target
+   x86_64-unknown-linux-musl`); a glibc-linked binary will fail at
+   runtime under the busybox-only rootfs.
+7. `mkdir` the four PID-1 mountpoint dirs (`/workspace`, `/proc`,
+   `/sys`, `/dev`) inside the rootfs.
+8. Unmount.
+9. sha256 the three artifacts that exist for Minimal kind (kernel,
+   output rootfs, daemon binary).
+10. Emit `<rootfs>.manifest.json` with `image_kind=Minimal` and the
+    five Ubuntu-only fields (`source_rootfs_*`, `service_unit_*`,
+    `workspace_mount_*`, `boot_target`) as `null`.
 
 Final step: print resulting paths to stdout. **No package-manager
 invocations** — `apt`/`dnf`/`pacman` are never spawned.
@@ -85,10 +117,12 @@ arch = "x86_64"
 
 [rootfs]
 size = "1GiB"
-source = "firecracker-ci"   # or "local" with a path
+# kind = "minimal"   # uncomment to build the busybox + static-guestd image
 
 [guestd]
 binary = "../../target/release/m80-guestd"
+# For [rootfs] kind = "minimal", point `binary` at a static build:
+# binary = "../../target/x86_64-unknown-linux-musl/release/m80-guestd"
 
 [output]
 dir = "/opt/m80/artifacts"

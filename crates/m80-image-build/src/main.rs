@@ -14,6 +14,7 @@
 
 mod config;
 mod hash;
+mod minimal;
 mod pipeline;
 
 use std::path::PathBuf;
