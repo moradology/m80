@@ -1,0 +1,144 @@
+# Changelog
+
+All notable changes to m80 are documented here. Format roughly follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [v0.1.0-smoke-passing] — 2026-05-04
+
+End-to-end microVM launch works on KVM. `m80 launch -- /bin/echo hello`
+boots a firecracker VM, runs the command, and exits cleanly.
+
+### Added
+
+- **`m80` CLI** — `preflight`, `launch`, `exec`, `cleanup`, `inspect`,
+  `list`, `stop`, `config show`, `version`. Stable per-class exit
+  codes (`EXIT_PREFLIGHT=2`, `EXIT_ADMISSION=3`, `EXIT_MANIFEST=4`,
+  `EXIT_INVALID_STATE=5`, `EXIT_CONFIG=6`, `EXIT_NOT_IMPLEMENTED=7`),
+  `--json` envelope mode for scripted callers.
+- **`m80-firecracker`** — 12-phase preboot pipeline composing every
+  foundation crate. Type-state lifecycle (Sandbox → RunningSandbox →
+  StoppedSandbox), admission semaphore with permit return on Drop,
+  `Backend::recover_stale_run_root()` that handles dead-jail / orphan-
+  firecracker / no-jail cases (kills orphans, unmounts via mountinfo,
+  removes cgroup leaf, rms run-dir).
+- **`m80-image-build`** — pulls kernel + rootfs from firecracker-ci S3,
+  loop-mounts and installs `m80-guestd` + systemd units, emits provenance
+  manifest. Subcommands: `run`, `verify`, `clean`.
+- **`m80-preflight`** — 10-check capability gate (KVM, kernel modules,
+  privilege caps, firecracker+jailer binaries, kernel image, rootfs +
+  manifest, run-root with `nodev` rejection, storage helpers, OS gate).
+- **`m80-jailer`** — bind-plan + materialize + jailer launch + stale
+  recovery. Source split: `types.rs`, `plan.rs`, `materialized.rs`,
+  `recover.rs`, `error.rs`.
+- **`m80-firecracker-client`** — sync HTTP-over-UDS REST client with
+  typed per-endpoint errors.
+- **`m80-cgroup`** — per-VM cgroup v2 subtree under `m80-firecracker/`.
+- **`m80-storage`** — rootfs clone + scratch ext4 create/hydrate +
+  post-stop change extraction.
+- **`m80-vsock`** — host-side bridge with `Channel::open_uds_only` for
+  callers that establish guest readiness without a console-log file.
+- **`m80-proto`** — wire schemas (`Envelope<T>`, `ExecRequest`,
+  `ExecResponse`, `ExecStatus`, `ExecTiming`, `HandshakeMessage`),
+  length-prefixed framing.
+- **`m80-image-manifest`** — guest-image provenance schema with
+  `Manifest::verify` (recomputes sha256 of every artifact).
+- **`m80-net-mode`** — `NetworkPolicy` (caller intent) → `VmNetworkMode`
+  (resolved) split. `OutboundNat` deferred to v0.2.
+- **`m80-guestd`** — in-VM daemon binary. Listens on vsock port 9001,
+  serves one `Envelope<ExecRequest>` per connection.
+- **`scripts/smoke.sh`** — runnable end-to-end smoke test capturing the
+  env-var dance.
+- **CI** — minimal GitHub Actions workflow: fmt-check, build, test,
+  clippy on push + PR to main.
+
+### Smoke-test fixes
+
+Discovered while running the first end-to-end launch on a real KVM host:
+
+- **Jailer chroot path** — `m80-jailer` was placing bind mounts in
+  `<run_dir>/jail/`, but the official jailer binary creates its chroot
+  at `<run_dir>/<exec basename>/<id>/root/`. New `chroot_path()` helper
+  derives jailer's actual layout.
+- **`--api-sock` placement** — was passed as a jailer arg; firecracker
+  rejected. Moved past the `--` separator so jailer forwards it.
+- **No `--daemonize`** — without it, jailer `exec()`s into firecracker
+  so the spawned `Child` handle's pid IS firecracker. The previous
+  `child.wait()` blocked forever waiting for the VM to exit. Switched
+  to `mem::forget(child)` + Drop-side kill+reap.
+- **RW bind chown** — bind-mounted `rootfs.ext4` was owned by host root;
+  jailed firecracker (uid 3000) couldn't open it for writing. RW binds
+  now `chown` the source to the jail uid:gid.
+- **`/tmp` is `nodev`** — the kernel forbids opening device nodes on a
+  `nodev` filesystem regardless of file permissions, so `/dev/kvm`
+  inside a chroot under `/tmp` failed with EACCES on `InstanceStart`.
+  `m80-preflight` now rejects `nodev` run-roots up-front. Default
+  switched to `/var/lib/m80-run`.
+- **Vsock `open_uds_only`** — `Channel::open` watches a console-log
+  file for the ready marker first; that watch was returning
+  `NotReady` and short-circuiting the UDS connect. Added
+  `Channel::open_uds_only` for callers that establish readiness via
+  another channel (the orchestrator's polling loop on the UDS itself).
+- **Image-build alignment** — the `firecracker-ci` S3 bucket layout
+  changed; updated kernel + rootfs paths to match what's actually
+  shipped today (`vmlinux-5.10.245`, `ubuntu-24.04.squashfs`).
+- **Mkfs target sizing** — `mkfs.ext4 -d srcdir target` requires the
+  target file pre-allocated; now `truncate`d before mkfs.
+- **Manifest daemon-binary path** — was the in-VM destination, but
+  `Manifest::verify` walks every path on the host filesystem.
+  `m80-image-build` now writes a host audit copy and references it.
+- **Stale-recovery teardown** — `recover_stale_run_root` previously
+  failed with EBUSY on bind mounts left by SIGKILL'd VMs. New helper
+  reads `/proc/self/mountinfo` and `umount2(MNT_DETACH)`s every
+  mountpoint at-or-below the stale run-dir before `rm -rf`. Also
+  cleans the cgroup leaf, kills any orphaned firecracker process.
+
+### Trimmed
+
+A 16-crate / one workspace-pass `/trim-the-fat` sweep removed ~2,150
+lines of cosmetic ceremony, dead surface, and stale documentation:
+
+- Forbidden `#[non_exhaustive]` on internal `ExecStatus` (CLAUDE.md).
+- Dead `ExecRequest::workspace_dir` wire field (no producer, no consumer).
+- Deferred-v0.2 `put_network_interface` / `NetworkInterfaceConfig` (will
+  return when `OutboundNat` lands).
+- Many narrative comments restating visible code; many README sections
+  duplicating rustdoc; many ASCII section dividers.
+- Stale comments left over from the smoke-test fixes (jailer reaping,
+  chroot path, `--daemonize` semantics).
+- Lossy `map_err(|_|)` sites in config parsing + preflight that hid
+  underlying error context.
+- DRY: `SnapshotManifest`/`RestoreMetadata` write/read into shared
+  helpers; `m80-storage` mount/umount triplicate into one helper;
+  `Channel::close`/`Drop` into one `teardown`.
+
+### Project state at this tag
+
+- 16 crates, ~7,000 LOC src.
+- All workspace tests pass (modulo `m80-guestd::exec_with_timeout_returns_timed_out`
+  timing flake under heavy parallel load — passes solo, mitigated in CI
+  with `--test-threads=2`).
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- `cargo fmt --all -- --check` clean.
+- End-to-end verified by `scripts/smoke.sh`.
+
+### Deferred to v0.2
+
+- `m80-net-outbound` — bridge/tap/iptables/DNS for `OutboundNat` mode.
+  v0.1 rejects `OutboundNat` in phase 6 with a clear error.
+- `m80-snapshot` capture/restore execution — schemas + persistence
+  paths active; `capture()`/`restore()` return `Deferred`.
+- `m80-observability` Probe + `render_prometheus` execution — types
+  pinned, execution returns `Deferred`. `Diagnostics::disabled()` works.
+- Warm pool / persistent-state lifecycle (epic m80-rrp).
+- `m80-adapter` agent-semantics layer on top of m80-firecracker (epic
+  m80-qokt.1).
+- `m80 exec` out-of-process IPC (the CLI subcommand returns
+  `EXIT_NOT_IMPLEMENTED` in v0.1; library callers use
+  `RunningSandbox::exec()` directly).
+
+## [pre-v0.1] — 2026-04-29 to 2026-05-03
+
+Bead-capture phase + initial implementation waves. See `git log` for
+detail; relevant commits: `c738ba7` (initial bootstrap), `8333052`
+(wave-1b: 7 foundation crates), `4403ea9` (wave-2-3: cgroup,
+firecracker orchestrator, cli).
