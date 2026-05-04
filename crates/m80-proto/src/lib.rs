@@ -22,7 +22,8 @@ pub use error::ProtoError;
 pub use framing::{read_frame, write_frame};
 pub use types::{
     Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming, HandshakeMessage, Payload,
-    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE,
+    ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_EXEC_REQUEST,
+    PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_SHUTDOWN_REQUEST, PAYLOAD_KIND_SHUTDOWN_RESPONSE,
 };
 pub use version::{negotiate_version, MAX_FRAME_BYTES, PROTOCOL_VERSION};
 

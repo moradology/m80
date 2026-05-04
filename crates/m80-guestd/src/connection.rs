@@ -8,7 +8,21 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
     read_frame, write_frame, Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming,
+    ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_EXEC_REQUEST,
+    PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
+
+/// Outcome of handling one connection. The main accept loop checks for
+/// [`ConnectionOutcome::Shutdown`] and exits the daemon (or invokes
+/// poweroff for non-PID-1 deployments).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionOutcome {
+    /// Normal exec request handled. Main loop continues to `accept()`.
+    Continue,
+    /// Shutdown request handled. Main loop terminates the daemon. The
+    /// carried action says how the post-ack termination should happen.
+    Shutdown(ShutdownAction),
+}
 
 /// Per-stream capture limit: 1 MiB.
 const CAPTURE_LIMIT: usize = 1 << 20;
@@ -28,18 +42,23 @@ fn unix_ms_now() -> u64 {
 
 /// Run one request/response cycle on the provided reader/writer.
 ///
+/// Reads the envelope as JSON Value first, peeks at `kind`, then dispatches:
+/// - `exec_request` (the v0.1 path): spawn, capture, respond, sync.
+/// - `shutdown_request`: sync, send ack, return [`ConnectionOutcome::Shutdown`].
+/// - any other kind: respond with a Failed envelope and `Continue`.
+///
 /// On any error (malformed frame, spawn failure, …) an `ExecResponse` with
 /// `status: Failed` is attempted. If even that write fails the error is logged
-/// and the function returns `Ok(())` so the caller can accept the next
+/// and the function returns `Ok(Continue)` so the caller can accept the next
 /// connection.
-pub fn handle_connection<R, W>(mut reader: R, mut writer: W) -> anyhow::Result<()>
+pub fn handle_connection<R, W>(mut reader: R, mut writer: W) -> anyhow::Result<ConnectionOutcome>
 where
     R: BufRead,
     W: Write,
 {
     let received_at = unix_ms_now();
 
-    let envelope: Envelope<ExecRequest> = match read_frame(&mut reader) {
+    let raw: Envelope<serde_json::Value> = match read_frame(&mut reader) {
         Ok(env) => env,
         Err(e) => {
             // Malformed frame: try to send a Failed response, then close.
@@ -47,12 +66,42 @@ where
             let resp = error_response(format!("{e:#}").into_bytes(), timing);
             let out_env = Envelope::new(resp);
             let _ = write_frame(&mut writer, &out_env);
-            return Ok(());
+            return Ok(ConnectionOutcome::Continue);
         }
     };
 
-    let request_id = envelope.request_id.clone();
-    let req = envelope.payload;
+    match raw.kind.as_str() {
+        PAYLOAD_KIND_EXEC_REQUEST => handle_exec(raw, &mut writer, received_at),
+        PAYLOAD_KIND_SHUTDOWN_REQUEST => handle_shutdown(raw, &mut writer, received_at),
+        other => {
+            let timing = failed_timing(received_at);
+            let resp = error_response(
+                format!("unknown envelope kind: {other:?}").into_bytes(),
+                timing,
+            );
+            let out_env = Envelope::new(resp);
+            let _ = write_frame(&mut writer, &out_env);
+            Ok(ConnectionOutcome::Continue)
+        }
+    }
+}
+
+fn handle_exec<W: Write>(
+    raw: Envelope<serde_json::Value>,
+    writer: &mut W,
+    received_at: u64,
+) -> anyhow::Result<ConnectionOutcome> {
+    let request_id = raw.request_id.clone();
+    let req: ExecRequest = match serde_json::from_value(raw.payload) {
+        Ok(r) => r,
+        Err(e) => {
+            let timing = failed_timing(received_at);
+            let resp = error_response(format!("{e:#}").into_bytes(), timing);
+            let out_env = Envelope::new(resp);
+            let _ = write_frame(writer, &out_env);
+            return Ok(ConnectionOutcome::Continue);
+        }
+    };
 
     let spawn_start = unix_ms_now();
     let result = exec_request(&req, spawn_start);
@@ -69,19 +118,55 @@ where
         None => Envelope::new(response),
     };
 
-    if let Err(e) = write_frame(&mut writer, &out_env) {
+    if let Err(e) = write_frame(writer, &out_env) {
         tracing::warn!(error = %e, "failed to write response frame");
     }
-
-    // Flush the response writer.
     if let Err(e) = writer.flush() {
         tracing::warn!(error = %e, "failed to flush response writer");
     }
 
-    // Sync all filesystems so the host sees the committed workspace state.
     nix::unistd::sync();
 
-    Ok(())
+    Ok(ConnectionOutcome::Continue)
+}
+
+fn handle_shutdown<W: Write>(
+    raw: Envelope<serde_json::Value>,
+    writer: &mut W,
+    _received_at: u64,
+) -> anyhow::Result<ConnectionOutcome> {
+    let request_id = raw.request_id.clone();
+    // Best-effort decode of the request body for logging — we proceed even
+    // if it fails to parse since the kind field already told us this is
+    // a shutdown.
+    if let Ok(req) = serde_json::from_value::<ShutdownRequest>(raw.payload) {
+        if let Some(reason) = req.reason {
+            tracing::info!(reason = %reason, "shutdown requested");
+        }
+    }
+
+    // Sync filesystems BEFORE sending ack so host knows the state on disk
+    // is settled when it sees the response.
+    nix::unistd::sync();
+
+    let action = if std::process::id() == 1 {
+        ShutdownAction::Exit
+    } else {
+        ShutdownAction::Poweroff
+    };
+    let response = ShutdownResponse { action };
+    let out_env = match request_id {
+        Some(id) => Envelope::with_request_id(response, id),
+        None => Envelope::new(response),
+    };
+    if let Err(e) = write_frame(writer, &out_env) {
+        tracing::warn!(error = %e, "failed to write shutdown ack");
+    }
+    if let Err(e) = writer.flush() {
+        tracing::warn!(error = %e, "failed to flush shutdown ack");
+    }
+
+    Ok(ConnectionOutcome::Shutdown(action))
 }
 
 /// Spawn the child, capture output, apply timeout.

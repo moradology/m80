@@ -71,11 +71,42 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         // v0.1: sequential — process one connection fully before accepting next.
         let reader = BufReader::new(&stream);
         let writer = BufWriter::new(&stream);
-        if let Err(e) = connection::handle_connection(reader, writer) {
-            tracing::warn!(error = %e, "connection handler returned error");
+        match connection::handle_connection(reader, writer) {
+            Ok(connection::ConnectionOutcome::Continue) => {}
+            Ok(connection::ConnectionOutcome::Shutdown(action)) => {
+                // The ack has already been flushed back to the host. Drop
+                // the stream so the host sees a clean close, then take the
+                // termination action that tells the kernel/init system to
+                // release Firecracker.
+                drop(stream);
+                shutdown_terminate(action);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "connection handler returned error");
+            }
         }
         if pid_one_mode {
             pid_one::reap_pending();
+        }
+    }
+}
+
+/// Take the termination action requested via [`ShutdownAction`].
+///
+/// `Exit`: just `process::exit(0)`. As PID 1 this triggers a kernel panic;
+/// with `panic=1` in boot args the kernel reboots and Firecracker exits.
+///
+/// `Poweroff`: best-effort `/sbin/poweroff -f`, falling back to `exit(0)` if
+/// the binary is missing or fails. Used when m80-guestd runs as a systemd
+/// service (ubuntu image kind) — exiting alone wouldn't shut the VM down.
+fn shutdown_terminate(action: m80_proto::ShutdownAction) -> ! {
+    match action {
+        m80_proto::ShutdownAction::Exit => std::process::exit(0),
+        m80_proto::ShutdownAction::Poweroff => {
+            let _ = std::process::Command::new("/sbin/poweroff")
+                .arg("-f")
+                .status();
+            std::process::exit(0);
         }
     }
 }

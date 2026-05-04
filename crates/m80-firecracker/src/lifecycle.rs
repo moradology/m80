@@ -2,24 +2,36 @@
 //! Transitions consume the prior handle (move semantics).
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use std::time::Instant;
-
-use m80_firecracker_client::InstanceAction;
-use m80_proto::{Envelope, ExecRequest, ExecResponse};
+use m80_proto::{Envelope, ExecRequest, ExecResponse, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_storage::ChangeSet;
+use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::error::FcError;
 use crate::runroot::unix_ms_now;
 use crate::timing::phase_event;
 use crate::types::{RunningSandbox, StoppedSandbox};
 
-/// How long to wait for Firecracker to exit after `SendCtrlAltDel`.
-const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long to wait for Firecracker to exit after the graceful-stop ack.
+///
+/// `Exit` action (PID-1 m80-guestd, minimal image): the kernel panics on
+/// PID-1 exit, with `panic=1` it reboots and Firecracker exits in <100 ms
+/// in practice.
+///
+/// `Poweroff` action (m80-guestd as a systemd service, ubuntu image):
+/// `/sbin/poweroff -f` triggers an orderly systemd shutdown. Slower but
+/// still well under a second on healthy guests.
+///
+/// 2 s covers both cases and falls through to SIGKILL otherwise.
+const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Per-attempt deadline for the shutdown vsock round-trip (open UDS,
+/// send request, read response).
+const SHUTDOWN_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Polling interval when waiting for a pid to exit.
-const POLL_INTERVAL: Duration = Duration::from_millis(100);
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 impl RunningSandbox {
     /// Return the VM id for this sandbox.
@@ -54,10 +66,11 @@ impl RunningSandbox {
     pub fn stop(self) -> Result<StoppedSandbox, FcError> {
         let run_root = self.backend.config.run_root.clone();
         let vm_id_for_event = self.vm_id.clone();
+        let vsock_uds = self.jail.jail_path.join("vsock.sock");
 
         // Phase 2: bounded_stop.
         let t = Instant::now();
-        bounded_stop(&self.client, self.firecracker.firecracker_pid)?;
+        bounded_stop(self.firecracker.firecracker_pid, &vsock_uds)?;
         phase_event("stop_bounded", &vm_id_for_event, t.elapsed());
 
         // Phase 4: release. Destructure to drop everything except what moves
@@ -162,26 +175,49 @@ impl StoppedSandbox {
     }
 }
 
-/// Graceful stop on x86_64 (SendCtrlAltDel + wait), SIGKILL fallback.
-fn bounded_stop(
-    client: &m80_firecracker_client::Client,
-    firecracker_pid: u32,
-) -> Result<(), FcError> {
-    #[cfg(target_arch = "x86_64")]
-    {
-        // Best-effort: ignore the error (Firecracker may already be exiting).
-        let _ = client.instance_action(InstanceAction::SendCtrlAltDel);
-        if wait_for_pid_exit(firecracker_pid, GRACEFUL_STOP_TIMEOUT) {
-            return Ok(());
+/// Graceful stop: send `ShutdownRequest` over vsock, wait briefly for the
+/// guest's chosen termination action to take effect, SIGKILL on timeout.
+///
+/// SendCtrlAltDel (the previous mechanism) was a no-op for both common
+/// guests: ubuntu's systemd often masks `ctrl-alt-del.target`, and minimal's
+/// PID-1 m80-guestd has no signal handler. The 30 s wait was pure dead air.
+fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<(), FcError> {
+    let action_hint = match send_shutdown_request(vsock_uds) {
+        Ok(action) => Some(action),
+        Err(e) => {
+            // The graceful path is best-effort. If the guest is already
+            // gone or unreachable, fall through to SIGKILL.
+            tracing::warn!(error = %e, "vsock graceful-stop failed; falling back to SIGKILL");
+            None
         }
-        // Graceful stop timed out; fall through to SIGKILL.
-        tracing::warn!(firecracker_pid, "graceful stop timed out; sending SIGKILL");
+    };
+    if action_hint.is_some() && wait_for_pid_exit(firecracker_pid, GRACEFUL_STOP_TIMEOUT) {
+        return Ok(());
     }
-
-    #[cfg(not(target_arch = "x86_64"))]
-    let _ = client;
-
+    if action_hint.is_some() {
+        tracing::warn!(
+            firecracker_pid,
+            ?action_hint,
+            "graceful stop timed out; sending SIGKILL"
+        );
+    }
     kill_pid(firecracker_pid)
+}
+
+/// Open a fresh vsock channel, send `ShutdownRequest`, read
+/// `ShutdownResponse`. Returns the guest's chosen action.
+fn send_shutdown_request(vsock_uds: &Path) -> Result<ShutdownAction, FcError> {
+    let deadline = Instant::now() + SHUTDOWN_RPC_TIMEOUT;
+    let mut channel = Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT)?;
+
+    let req = ShutdownRequest { reason: None };
+    channel.send(&Envelope::new(req))?;
+
+    let resp_env: Envelope<ShutdownResponse> = channel.recv()?;
+    if Instant::now() > deadline {
+        return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
+    }
+    Ok(resp_env.payload.action)
 }
 
 /// Poll `/proc/<pid>` until it disappears or `timeout` elapses.

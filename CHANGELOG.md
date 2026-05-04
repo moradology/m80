@@ -5,6 +5,60 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Performance — cold-launch headline
+
+After m80-bgas.1, m80-6a0q, and the vsock graceful-stop migration:
+
+| kind / load     | total wallclock (P50) | useful (P50, ex-stop) | success rate |
+|-----------------|----------------------:|----------------------:|-------------:|
+| ubuntu / idle   |              8 922 ms |              5 692 ms |       18/30  |
+| minimal / idle  |              3 018 ms |              1 696 ms |       30/30  |
+
+**Minimal/idle is 3.4× faster than ubuntu/idle** for `launch + exec`,
+dominated by a smaller rootfs clone (5.5×) and skipping systemd boot
+(1.7×). See `docs/perf/cold-launch.md` for per-phase attribution + the
+re-run procedure.
+
+`stress-ng --cpu $(nproc)` loaded cells fail 100% on both kinds today
+— captured as a known issue, not a release blocker.
+
+### Added — vsock graceful-stop (path c)
+
+Replaces `SendCtrlAltDel`-and-wait-30-s with a `ShutdownRequest` /
+`ShutdownResponse` envelope on the existing vsock channel.
+
+- **`m80-proto`** gains `ShutdownRequest`, `ShutdownResponse`,
+  `ShutdownAction { Exit | Poweroff }` payload types and the matching
+  `PAYLOAD_KIND_*` constants.
+- **`m80-guestd`** dispatches incoming envelopes by `kind`. On
+  `shutdown_request`: sync filesystems, ack with the chosen action,
+  flush, then exit (PID 1 → kernel panic → reboot, panic=1) or
+  `/sbin/poweroff -f` (systemd-managed under ubuntu).
+- **`m80-firecracker::lifecycle::bounded_stop`** opens a fresh vsock
+  channel, sends `ShutdownRequest`, reads `ShutdownResponse`, then
+  polls the firecracker pid for up to `GRACEFUL_STOP_TIMEOUT` (2 s,
+  was 30 s) before falling back to SIGKILL. Drops the
+  `m80_firecracker_client::Client` parameter from `bounded_stop` since
+  `SendCtrlAltDel` is gone.
+- `stop_bounded` phase: 30 022 ms → 2 006 ms ubuntu, 1 061 ms minimal.
+
+### Added — per-phase timing instrumentation
+
+`M80_PHASE_TRACE=1` causes `Sandbox::launch`, `RunningSandbox::exec`,
+and `RunningSandbox::stop` to emit one `M80_PHASE name=… vm_id=…
+elapsed_us=…` line on stderr per phase boundary. No-op when unset
+(production stderr stays quiet).
+
+`scripts/bench-cold-launch.sh`:
+- captures stderr per launch, parses `M80_PHASE` lines into
+  `cold-launch-phases.csv` (long format)
+- hard-fails if `stress-ng` is missing (was silently skipping the
+  loaded cells)
+- separates success vs failure counts; computes percentiles from
+  successes only
+- prints a `useful_ms` rollup that subtracts `stop_bounded` from the
+  per-launch wallclock
+
 ### Added
 
 - **Minimal image kind** (m80-6a0q) — alongside the existing

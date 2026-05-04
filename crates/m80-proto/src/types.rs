@@ -10,6 +10,12 @@ pub const PAYLOAD_KIND_EXEC_REQUEST: &str = "exec_request";
 /// Wire `kind` value for an envelope carrying [`ExecResponse`].
 pub const PAYLOAD_KIND_EXEC_RESPONSE: &str = "exec_response";
 
+/// Wire `kind` value for an envelope carrying [`ShutdownRequest`].
+pub const PAYLOAD_KIND_SHUTDOWN_REQUEST: &str = "shutdown_request";
+
+/// Wire `kind` value for an envelope carrying [`ShutdownResponse`].
+pub const PAYLOAD_KIND_SHUTDOWN_RESPONSE: &str = "shutdown_response";
+
 /// Marker trait for types that have a canonical wire `kind`.
 ///
 /// Implemented for [`ExecRequest`] and [`ExecResponse`] in v0.1; future
@@ -25,6 +31,14 @@ impl Payload for ExecRequest {
 
 impl Payload for ExecResponse {
     const KIND: &'static str = PAYLOAD_KIND_EXEC_RESPONSE;
+}
+
+impl Payload for ShutdownRequest {
+    const KIND: &'static str = PAYLOAD_KIND_SHUTDOWN_REQUEST;
+}
+
+impl Payload for ShutdownResponse {
+    const KIND: &'static str = PAYLOAD_KIND_SHUTDOWN_RESPONSE;
 }
 
 /// Wire envelope wrapping an opaque payload.
@@ -150,6 +164,42 @@ pub struct ExecResponse {
     pub truncated: Option<bool>,
     /// Timing for this execution.
     pub timing: ExecTiming,
+}
+
+/// Shutdown request payload — host → guest. Carries optional context.
+/// On receipt the guest should sync filesystems, send a [`ShutdownResponse`],
+/// flush, and then exit (or invoke a system poweroff if not running as PID 1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShutdownRequest {
+    /// Free-form reason logged on the guest. Optional.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Shutdown response payload — guest → host. Acknowledgement that the
+/// shutdown request was received and the guest is about to exit. Carries
+/// the action the guest will take so the host can choose its post-stop
+/// timeout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShutdownResponse {
+    /// Action the guest will take after sending this ack.
+    pub action: ShutdownAction,
+}
+
+/// What the guest will do after acknowledging a shutdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShutdownAction {
+    /// Guest will call `exit()`. When the guest is PID 1 (minimal image)
+    /// this triggers a kernel panic; with `panic=1` in boot args the kernel
+    /// reboots and Firecracker exits.
+    Exit,
+    /// Guest will exec `/sbin/poweroff -f` (ubuntu image; m80-guestd is a
+    /// systemd service, not PID 1, so just exiting wouldn't shut the VM
+    /// down).
+    Poweroff,
 }
 
 /// Version-exchange message sent on every fresh connection before any
