@@ -80,6 +80,29 @@ scratch. Smaller, faster cold boot, no package manager.
 Final step: print resulting paths to stdout. **No package-manager
 invocations** — `apt`/`dnf`/`pacman` are never spawned.
 
+### Choosing an image kind
+
+| Property                | Ubuntu                              | Minimal                             |
+|-------------------------|-------------------------------------|-------------------------------------|
+| Init                    | systemd                             | m80-guestd as PID 1                 |
+| Userland                | Ubuntu 24.04 (full)                 | busybox + a few applets             |
+| Rootfs default size     | 1 GiB                               | 256 MiB (fits in much less)         |
+| Source                  | firecracker-ci squashfs             | built from scratch                  |
+| Package manager         | apt available inside guest          | none                                |
+| Cold boot               | slower (systemd init dominates)     | faster (m80-guestd starts directly) |
+| Build network deps      | curl + S3 squashfs                  | curl only (kernel only)             |
+| Static guestd required? | no (glibc dynamic OK)               | yes (musl-static; see config example)|
+
+Pick **Ubuntu** when:
+- the workload needs a familiar userspace (apt-installable tools, shared
+  libraries assumed-present, `bash` features beyond busybox's `sh`)
+- cold-boot latency is not the bottleneck
+
+Pick **Minimal** when:
+- launch latency matters (warm pools, agentic loops, CI burst workloads)
+- you control the workload binary and can ship it self-contained
+- `busybox` applets cover the inside-VM scripting needs
+
 ### CLI surface
 
 - `m80-image-build run --config <toml>` — full pipeline.

@@ -5,6 +5,39 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added
+
+- **Minimal image kind** (m80-6a0q) — alongside the existing
+  Ubuntu-with-systemd image, m80 now builds a busybox + statically-
+  linked m80-guestd rootfs that runs as PID 1, no systemd. Smaller
+  rootfs (256 MiB default vs 1 GiB), faster cold boot. See
+  `crates/m80-image-build/README.md` for the kind-comparison table.
+  - **`m80-image-manifest::ImageKind { Ubuntu, Minimal }`** discriminator
+    on `Manifest`, with kind-conditional `Option<>` fields for
+    systemd-related and source-rootfs artifacts.
+  - **`m80-image-build`** gains a `[rootfs] kind = "minimal"` config
+    that branches the pipeline (mkfs from scratch, copy host
+    `/bin/busybox` + applets, install static guestd at `/m80-guestd`,
+    symlink `/init`).
+  - **`m80-guestd`** detects PID-1 mode at startup and mounts `/proc`,
+    `/sys`, `/dev`, plus `/dev/vdb → /workspace` if attached;
+    poll-reaps orphan children between requests.
+  - **`m80-firecracker`** dispatches kernel boot args on
+    `manifest.image_kind`: Minimal appends `init=/m80-guestd` so the
+    kernel calls our daemon directly.
+  - **`scripts/smoke.sh`** gains `M80_IMAGE_KIND=minimal` (auto-installs
+    musl rustup target, builds static guestd, requires
+    `/bin/busybox` from `busybox-static`).
+  - **`scripts/bench-cold-launch.sh`** + `docs/perf/cold-launch.md`
+    capture methodology for ubuntu-vs-minimal P50/P95 measurements.
+
+### Changed
+
+- **Manifest schema bumped 1 → 2** (m80-6a0q.4 prerequisite). No
+  conversion code; existing v1 images must be rebuilt. New required
+  field `image_kind`. Five fields become `Option<>` with a kind-
+  conditional invariant enforced on read/write/verify.
+
 ### Performance
 
 - **`phase_12b_ready_probe` cadence tightened** (m80-bgas.1) —
@@ -16,7 +49,7 @@ All notable changes to m80 are documented here. Format roughly follows
   ready-probe latency above the guest-boot floor from ~250 ms to
   ~5 ms.
 
-### Changed
+### Changed (smoke)
 
 - **`scripts/smoke.sh` retry loop dropped** (m80-bgas.2) — the script
   previously retried `m80 launch` up to 3× to mask a v0.1 vsock-probe
