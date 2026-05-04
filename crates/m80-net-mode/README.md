@@ -37,41 +37,10 @@ It's small. It earns its keep by being the API border between
   a future `NetworkPolicy::parse_from_strings(...)` entrypoint would be
   the place to surface those errors.
 
-## Public surface
-
-- `NetworkPolicy { NoEgress, AllowOutbound { exceptions: Vec<Ipv4Net> } }`.
-  Implements `Default` → `NoEgress`.
-- `VmNetworkMode { NoEgress, OutboundNat { plan: OutboundIntent } }`.
-- `OutboundIntent` — pre-validated payload for `m80-net-outbound`:
-  `exceptions: Vec<Ipv4Net>`, `gateway_override: Option<Ipv4Addr>`.
-- `resolve(&NetworkPolicy) -> VmNetworkMode` — the single seam for all
-  mode decisions. Callers never branch on mode themselves.
-
 ## Non-goals
 
 - **No iptables.** That's `m80-net-outbound`.
-- **No DNS.** That's also `m80-net-outbound`.
+- **No DNS.** Also `m80-net-outbound`.
 - **No "should I network" inference.** The caller decides.
 - **No string-input parser.** CIDR parsing and IPv6 rejection live at the
   caller boundary, not here.
-
-## Dependencies
-
-- `serde`.
-- `ipnet` (with `serde` feature).
-- (no other m80 crates).
-
-## Tests
-
-Integration tests in `tests/resolve.rs`:
-
-- `default_network_policy_is_noegress` — pins `NetworkPolicy::default()` is `NoEgress`.
-- `noegress_resolves_to_noegress` — `NoEgress` in, `NoEgress` out.
-- `allow_outbound_with_no_exceptions_resolves_to_outbound_nat` — empty
-  `exceptions` still yields `OutboundNat` with `gateway_override: None`.
-- `allow_outbound_with_one_cidr_round_trips_through_resolver` — a concrete
-  CIDR propagates unchanged.
-- `network_policy_roundtrips_through_serde_json_noegress` — serde round-trip.
-- `network_policy_roundtrips_through_serde_json_allow_outbound` — serde round-trip.
-- `vm_network_mode_roundtrips_through_serde_json_noegress` — serde round-trip.
-- `vm_network_mode_roundtrips_through_serde_json_outbound_nat` — serde round-trip.
