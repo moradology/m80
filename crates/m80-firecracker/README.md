@@ -38,6 +38,21 @@ hardcoded layout — see `m80-jailer`).
 scan; v0.1 has no background recovery thread. Cross-process collision
 avoidance: distinct `<run_root>` paths.
 
+### Drive layout
+
+Firecracker assigns block-device names in PUT order: first PUT becomes
+`/dev/vda`, second `/dev/vdb`, etc. m80 PUTs in this order:
+
+| Position | drive_id          | Host file                                | RO/RW   | Guest path | Purpose |
+|---------:|-------------------|------------------------------------------|---------|------------|---------|
+|        1 | `rootfs`          | `<image>/output.ext4` (shared base)      | **RO**  | `/dev/vda` | Read-only base ext4. Bind-mounted into the jail at `/rootfs.ext4`. Same host file for every VM that uses this image — host page cache deduplicates. |
+|        2 | `rootfs_overlay`  | `<run_dir>/rootfs.overlay.ext4`          | RW      | `/dev/vdb` | Per-VM sparse ext4. m80-guestd's PID-1 setup mounts `/dev/vda` as the lowerdir, this as the upperdir, overlayfs on `/`. |
+|        3 | `workspace`       | `<run_dir>/scratch.ext4` (if requested)  | RW      | `/dev/vdc` | Per-VM workspace ext4. Mounted at `/workspace`. Subject to opt-in `Scratch::extract` after stop. Only present when `SandboxConfig::workspace_dir.is_some()`. |
+
+The base + overlay split is what `m80-storage::Rootfs` produces;
+`m80-storage::Scratch` is the workspace. Per-VM sparse files cost ~10 ms
+each at most to allocate + format; there is no full-rootfs copy.
+
 ### Concurrency / admission
 
 `Backend::admit().launch()` acquires one slot from the admission
