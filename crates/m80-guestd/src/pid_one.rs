@@ -18,11 +18,12 @@ pub fn is_pid_one() -> bool {
     std::process::id() == 1
 }
 
-/// Configure the process for PID-1 duty: pseudo-fs mounts + panic hook.
-/// Call exactly once early in `main`.
+/// Configure the process for PID-1 duty: pseudo-fs mounts, workspace
+/// mount, and panic hook. Call exactly once early in `main`.
 pub fn enter_pid_one_mode() -> anyhow::Result<()> {
     install_panic_hook();
     mount_pseudo_filesystems().context("pseudo-fs mounts")?;
+    mount_workspace_if_present().context("workspace mount")?;
     Ok(())
 }
 
@@ -42,6 +43,28 @@ fn mount_one(source: &str, target: &str, fstype: &str, flags: MsFlags) -> anyhow
         Err(nix::errno::Errno::EBUSY) => Ok(()),
         Err(e) => Err(anyhow::anyhow!("mount {source} -> {target} ({fstype}): {e}")),
     }
+}
+
+/// Workspace device + mount point — must match the conventions used by
+/// `m80-firecracker` (drive_id="workspace" → `/dev/vdb`) and by
+/// `m80-image-build` (the rootfs pre-creates `/workspace`).
+const WORKSPACE_DEV: &str = "/dev/vdb";
+const WORKSPACE_TARGET: &str = "/workspace";
+
+/// Mount the workspace drive at `/workspace` if attached. The workspace
+/// is optional (a Sandbox without `workspace_dir` produces no
+/// scratch.ext4 and no `/dev/vdb`); skip the mount in that case rather
+/// than failing PID-1 setup. ENOENT on the device node is the documented
+/// optional-state response, not silent error recovery.
+fn mount_workspace_if_present() -> anyhow::Result<()> {
+    if !Path::new(WORKSPACE_DEV).exists() {
+        tracing::info!(
+            dev = WORKSPACE_DEV,
+            "no workspace drive attached, skipping workspace mount"
+        );
+        return Ok(());
+    }
+    mount_one(WORKSPACE_DEV, WORKSPACE_TARGET, "ext4", MsFlags::empty())
 }
 
 /// Reap any pending zombies. Call between requests so orphans (children

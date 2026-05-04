@@ -88,9 +88,14 @@ that wire type directly.)
 
 ### Workspace mount
 
-- The systemd-installed mount unit attaches the host-provided scratch
-  ext4 (`/dev/vdb`) at the manifest-declared in-guest path before the
-  daemon starts. The daemon does not mount anything itself.
+- **Ubuntu image**: the systemd-installed mount unit attaches the host-
+  provided scratch ext4 (`/dev/vdb`) at `/workspace` before the daemon
+  starts. The daemon does not mount anything itself.
+- **Minimal image (PID-1 mode)**: m80-guestd mounts `/dev/vdb` →
+  `/workspace` itself via `mount(2)` after the pseudo-fs mounts and
+  before binding the vsock listener. If `/dev/vdb` does not exist
+  (Sandbox launched without a workspace directory), the mount is
+  skipped — workspace is documented-optional, not an error.
 
 ## Public surface
 
