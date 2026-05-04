@@ -11,25 +11,12 @@ use anyhow::Context;
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
 
-/// Systemd service unit embedded at build time.
 const SERVICE_UNIT: &str = include_str!("../assets/m80-guestd.service");
-
-/// Systemd workspace mount unit embedded at build time.
 const WORKSPACE_MOUNT_UNIT: &str = include_str!("../assets/workspace.mount");
-
-/// Firecracker-CI S3 base URL.
 const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
-
-/// Canonical in-VM path for the guest daemon binary.
 const GUEST_DAEMON_PATH: &str = "/usr/local/bin/m80-guestd";
-
-/// In-VM path where the service unit is installed.
 const GUEST_SERVICE_PATH: &str = "/etc/systemd/system/m80-guestd.service";
-
-/// In-VM path where the workspace mount unit is installed.
 const GUEST_MOUNT_PATH: &str = "/etc/systemd/system/workspace.mount";
-
-/// In-VM workspace directory created as the mount point.
 const GUEST_WORKSPACE_DIR: &str = "/workspace";
 
 /// Resolved paths for a completed build.
@@ -242,10 +229,10 @@ fn run_curl(url: &str, dest: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Convert a squashfs image to a raw ext4 image.
-///
-/// Uses `unsquashfs` to extract into a temp subdir, then `mkfs.ext4` with
-/// `-d` to populate a new image file from that directory tree.
+/// Convert a squashfs image to a raw ext4 image. The target file must be
+/// pre-sized with `truncate` before `mkfs.ext4 -d` (and we pass `-F` to
+/// accept the existing file) — without that, mkfs errors with "file does
+/// not exist and no size was specified".
 fn squashfs_to_ext4(
     squashfs: &Path,
     ext4: &Path,
@@ -253,7 +240,6 @@ fn squashfs_to_ext4(
     size_bytes: u64,
 ) -> anyhow::Result<()> {
     let squash_out = work_dir.join("squashfs-root");
-    // Remove any leftover extraction dir so unsquashfs -d works.
     if squash_out.exists() {
         std::fs::remove_dir_all(&squash_out).context("removing stale squashfs-root")?;
     }
@@ -266,7 +252,6 @@ fn squashfs_to_ext4(
     if !status.success() {
         anyhow::bail!("unsquashfs failed (exit {:?})", status.code());
     }
-    // Pre-allocate target so mkfs.ext4 -d has a sized file to populate.
     truncate_file(ext4, size_bytes).context("pre-sizing source ext4 image")?;
     let status = Command::new("mkfs.ext4")
         .args(["-F", "-d"])
@@ -277,7 +262,6 @@ fn squashfs_to_ext4(
     if !status.success() {
         anyhow::bail!("mkfs.ext4 failed (exit {:?})", status.code());
     }
-    // Clean up the extracted tree.
     std::fs::remove_dir_all(&squash_out).context("removing squashfs-root after mkfs")?;
     Ok(())
 }
@@ -322,10 +306,6 @@ fn loop_umount(mount_dir: &Path) -> anyhow::Result<()> {
 }
 
 /// Install the daemon binary and systemd units into the mounted rootfs.
-///
-/// Writes unit files from the embedded strings; copies the daemon binary;
-/// creates the workspace directory; enables units in
-/// `multi-user.target.wants/`.
 fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
     // Step 6: copy daemon binary.
     let guest_bin = mount.join("usr/local/bin/m80-guestd");

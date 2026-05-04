@@ -55,14 +55,21 @@ fn dry_run_prints_steps_to_stderr_and_creates_no_output_files() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Expect all 12 step labels (the README's Pipeline section enumerates them).
-    for i in 1..=12 {
-        assert!(
-            stderr.contains(&format!("{}.", i)),
-            "step {} missing from stderr:\n{stderr}",
-            i
-        );
-    }
+    // Capture each "<n>." prefix at the start of a line; assert the sequence
+    // is exactly 1..=12 in order. Using `contains` would pass even if labels
+    // were duplicated or out of order.
+    let observed: Vec<u32> = stderr
+        .lines()
+        .filter_map(|line| {
+            let prefix = line.split('.').next()?.trim();
+            prefix.parse::<u32>().ok()
+        })
+        .collect();
+    assert_eq!(
+        observed,
+        (1..=12).collect::<Vec<_>>(),
+        "expected step numbers 1..=12 in order; got {observed:?}\nstderr:\n{stderr}"
+    );
 
     // The output directory must not have been created.
     assert!(

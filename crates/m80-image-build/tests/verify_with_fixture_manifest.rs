@@ -92,8 +92,12 @@ fn verify_fails_on_tampered_artifact() {
     cmd.args(["verify", "--rootfs", rootfs_path.to_str().unwrap()]);
     let output = cmd.output().unwrap();
 
+    assert!(!output.status.success(), "verify should exit non-zero for tampered artifact");
+    // Pin which artifact failed so a future bug that makes verify pass
+    // without checking the kernel sha would surface here.
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !output.status.success(),
-        "verify should exit non-zero for tampered artifact"
+        stderr.contains("kernel_image"),
+        "expected 'kernel_image' in stderr, got: {stderr}"
     );
 }

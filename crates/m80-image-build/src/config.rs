@@ -31,11 +31,6 @@ pub struct KernelConfig {
 pub struct RootfsConfig {
     /// Target ext4 size, e.g. `"1GiB"`, `"512MiB"`, `"100KiB"`.
     pub size: String,
-    /// Source type: `"firecracker-ci"` (download) or a local path string.
-    ///
-    /// v0.1 always downloads from firecracker-ci; local-path override is v0.2.
-    #[allow(dead_code)]
-    pub source: String,
 }
 
 /// Guest daemon binary parameters.
@@ -98,37 +93,27 @@ fn validate_url_safe(field: &str, value: &str) -> anyhow::Result<()> {
 /// assert_eq!(parse_size("100KiB").unwrap(), 100 << 10);
 /// ```
 pub fn parse_size(s: &str) -> anyhow::Result<u64> {
-    if let Some(n) = s.strip_suffix("GiB") {
-        let v: u64 = n
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid size '{}': numeric part not a u64", s))?;
-        if v == 0 {
-            anyhow::bail!("invalid size '{}': must be > 0", s);
-        }
-        return Ok(v * (1 << 30));
+    let (num, shift) = ["GiB", "MiB", "KiB"]
+        .iter()
+        .find_map(|suffix| {
+            s.strip_suffix(suffix).map(|n| {
+                let shift = match *suffix {
+                    "GiB" => 30,
+                    "MiB" => 20,
+                    "KiB" => 10,
+                    _ => unreachable!(),
+                };
+                (n, shift)
+            })
+        })
+        .ok_or_else(|| anyhow::anyhow!("invalid size '{s}': expected suffix GiB, MiB, or KiB"))?;
+    let v: u64 = num
+        .parse()
+        .map_err(|e| anyhow::anyhow!("invalid size '{s}': {e}"))?;
+    if v == 0 {
+        anyhow::bail!("invalid size '{s}': must be > 0");
     }
-    if let Some(n) = s.strip_suffix("MiB") {
-        let v: u64 = n
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid size '{}': numeric part not a u64", s))?;
-        if v == 0 {
-            anyhow::bail!("invalid size '{}': must be > 0", s);
-        }
-        return Ok(v * (1 << 20));
-    }
-    if let Some(n) = s.strip_suffix("KiB") {
-        let v: u64 = n
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid size '{}': numeric part not a u64", s))?;
-        if v == 0 {
-            anyhow::bail!("invalid size '{}': must be > 0", s);
-        }
-        return Ok(v * (1 << 10));
-    }
-    anyhow::bail!(
-        "invalid size '{}': expected suffix GiB, MiB, or KiB",
-        s
-    )
+    Ok(v << shift)
 }
 
 #[cfg(test)]
@@ -181,7 +166,6 @@ dir = "/opt/m80/artifacts"
         assert_eq!(cfg.kernel.version, "v1.15.1");
         assert_eq!(cfg.kernel.arch, "x86_64");
         assert_eq!(cfg.rootfs.size, "1GiB");
-        assert_eq!(cfg.rootfs.source, "firecracker-ci");
         assert_eq!(cfg.guestd.binary, std::path::PathBuf::from("/tmp/m80-guestd"));
         assert_eq!(cfg.output.dir, std::path::PathBuf::from("/opt/m80/artifacts"));
     }

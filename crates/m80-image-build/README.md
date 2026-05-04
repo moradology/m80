@@ -75,10 +75,7 @@ invocations** — `apt`/`dnf`/`pacman` are never spawned.
 
 ## Public surface
 
-This crate ships only a binary; no library API is exposed.
-
-CLI subcommands:
-- `run`, `verify`, `clean`.
+Binary-only; subcommands `run`, `verify`, `clean` (run with `--help`).
 
 Config file shape (`m80-image-build.toml`):
 ```toml

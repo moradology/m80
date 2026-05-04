@@ -44,13 +44,8 @@ struct Args {
     subcommand: Subcommand,
 }
 
-/// Parse command-line arguments from `std::env::args()`.
-fn parse_args() -> anyhow::Result<Args> {
-    parse_args_from(std::env::args().skip(1).collect())
-}
-
-/// Parse from an explicit argument list (factored out for unit tests).
-fn parse_args_from(argv: Vec<String>) -> anyhow::Result<Args> {
+/// Parse command-line arguments from a flat argv list.
+fn parse_args(argv: Vec<String>) -> anyhow::Result<Args> {
     let mut iter = argv.into_iter();
     let subcmd = iter
         .next()
@@ -126,14 +121,6 @@ fn parse_args_from(argv: Vec<String>) -> anyhow::Result<Args> {
     }
 }
 
-fn run(args: Args) -> anyhow::Result<()> {
-    match args.subcommand {
-        Subcommand::Run { config, dry_run } => pipeline::run_build(config, dry_run),
-        Subcommand::Verify { rootfs } => run_verify(rootfs),
-        Subcommand::Clean { workdir } => run_clean(workdir),
-    }
-}
-
 fn run_verify(rootfs: PathBuf) -> anyhow::Result<()> {
     let manifest_path = {
         let mut p = rootfs.clone().into_os_string();
@@ -142,9 +129,7 @@ fn run_verify(rootfs: PathBuf) -> anyhow::Result<()> {
     };
     let manifest = m80_image_manifest::Manifest::read(&manifest_path)
         .with_context(|| format!("reading manifest at {}", manifest_path.display()))?;
-    let root = rootfs
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
+    let root = rootfs.parent().unwrap_or_else(|| std::path::Path::new("."));
     manifest
         .verify(root)
         .with_context(|| format!("verifying manifest at {}", manifest_path.display()))?;
@@ -154,7 +139,6 @@ fn run_verify(rootfs: PathBuf) -> anyhow::Result<()> {
 
 fn run_clean(workdir: PathBuf) -> anyhow::Result<()> {
     if !workdir.exists() {
-        // Idempotent: nothing to clean.
         return Ok(());
     }
     std::fs::remove_dir_all(&workdir)
@@ -162,8 +146,12 @@ fn run_clean(workdir: PathBuf) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let args = parse_args()?;
-    run(args)
+    let args = parse_args(std::env::args().skip(1).collect())?;
+    match args.subcommand {
+        Subcommand::Run { config, dry_run } => pipeline::run_build(config, dry_run),
+        Subcommand::Verify { rootfs } => run_verify(rootfs),
+        Subcommand::Clean { workdir } => run_clean(workdir),
+    }
 }
 
 #[cfg(test)]
@@ -176,90 +164,60 @@ mod tests {
 
     #[test]
     fn parse_run_with_config() {
-        let args = parse_args_from(argv(&["run", "--config", "/tmp/foo.toml"])).unwrap();
-        match args.subcommand {
-            Subcommand::Run { config, dry_run } => {
-                assert_eq!(config, PathBuf::from("/tmp/foo.toml"));
-                assert!(!dry_run);
-            }
-            _ => panic!("expected Run"),
-        }
+        let args = parse_args(argv(&["run", "--config", "/tmp/foo.toml"])).unwrap();
+        let Subcommand::Run { config, dry_run } = args.subcommand else { panic!("expected Run") };
+        assert_eq!(config, PathBuf::from("/tmp/foo.toml"));
+        assert!(!dry_run);
     }
 
     #[test]
     fn parse_run_dry_run() {
-        let args =
-            parse_args_from(argv(&["run", "--config", "/tmp/foo.toml", "--dry-run"])).unwrap();
-        match args.subcommand {
-            Subcommand::Run { dry_run, .. } => assert!(dry_run),
-            _ => panic!("expected Run"),
-        }
+        let args = parse_args(argv(&["run", "--config", "/tmp/foo.toml", "--dry-run"])).unwrap();
+        let Subcommand::Run { dry_run, .. } = args.subcommand else { panic!("expected Run") };
+        assert!(dry_run);
     }
 
     #[test]
     fn parse_verify() {
-        let args = parse_args_from(argv(&["verify", "--rootfs", "/tmp/r.ext4"])).unwrap();
-        match args.subcommand {
-            Subcommand::Verify { rootfs } => {
-                assert_eq!(rootfs, PathBuf::from("/tmp/r.ext4"));
-            }
-            _ => panic!("expected Verify"),
-        }
+        let args = parse_args(argv(&["verify", "--rootfs", "/tmp/r.ext4"])).unwrap();
+        let Subcommand::Verify { rootfs } = args.subcommand else { panic!("expected Verify") };
+        assert_eq!(rootfs, PathBuf::from("/tmp/r.ext4"));
     }
 
     #[test]
     fn parse_clean() {
-        let args = parse_args_from(argv(&["clean", "--workdir", "/tmp/work"])).unwrap();
-        match args.subcommand {
-            Subcommand::Clean { workdir } => {
-                assert_eq!(workdir, PathBuf::from("/tmp/work"));
-            }
-            _ => panic!("expected Clean"),
-        }
+        let args = parse_args(argv(&["clean", "--workdir", "/tmp/work"])).unwrap();
+        let Subcommand::Clean { workdir } = args.subcommand else { panic!("expected Clean") };
+        assert_eq!(workdir, PathBuf::from("/tmp/work"));
     }
 
     #[test]
     fn parse_missing_subcommand_fails() {
-        let err = parse_args_from(vec![]).unwrap_err();
-        assert!(
-            err.to_string().contains("missing subcommand"),
-            "expected 'missing subcommand' in: {err}"
-        );
+        let err = parse_args(vec![]).unwrap_err();
+        assert!(err.to_string().contains("missing subcommand"), "got: {err}");
     }
 
     #[test]
     fn parse_unknown_subcommand_fails() {
-        let err = parse_args_from(argv(&["frobnicate"])).unwrap_err();
-        assert!(
-            err.to_string().contains("unknown subcommand"),
-            "expected 'unknown subcommand' in: {err}"
-        );
+        let err = parse_args(argv(&["frobnicate"])).unwrap_err();
+        assert!(err.to_string().contains("unknown subcommand"), "got: {err}");
     }
 
     #[test]
     fn parse_run_missing_config_fails() {
-        let err = parse_args_from(argv(&["run"])).unwrap_err();
-        assert!(
-            err.to_string().contains("--config"),
-            "expected '--config' in: {err}"
-        );
+        let err = parse_args(argv(&["run"])).unwrap_err();
+        assert!(err.to_string().contains("--config"), "got: {err}");
     }
 
     #[test]
     fn parse_verify_missing_rootfs_fails() {
-        let err = parse_args_from(argv(&["verify"])).unwrap_err();
-        assert!(
-            err.to_string().contains("--rootfs"),
-            "expected '--rootfs' in: {err}"
-        );
+        let err = parse_args(argv(&["verify"])).unwrap_err();
+        assert!(err.to_string().contains("--rootfs"), "got: {err}");
     }
 
     #[test]
     fn parse_clean_missing_workdir_fails() {
-        let err = parse_args_from(argv(&["clean"])).unwrap_err();
-        assert!(
-            err.to_string().contains("--workdir"),
-            "expected '--workdir' in: {err}"
-        );
+        let err = parse_args(argv(&["clean"])).unwrap_err();
+        assert!(err.to_string().contains("--workdir"), "got: {err}");
     }
 }
