@@ -1,8 +1,9 @@
 # `m80-firecracker-client`
 
 A pure REST speaker for the Firecracker UDS API — `BootSource`, `Drive`,
-`NetworkInterface`, `MachineConfig`, `Vsock`, `InstanceAction`. No state.
-No policy. No knowledge of m80's lifecycle.
+`MachineConfig`, `Vsock`, `InstanceAction`. No state. No policy. No
+knowledge of m80's lifecycle. (`NetworkInterface` lands in v0.2 with
+`OutboundNat`.)
 
 ## Reason for being
 
@@ -23,9 +24,9 @@ without inheriting m80's lifecycle assumptions.
   runtime/executor dependency; one call blocks until Firecracker responds.
   Concurrency is the caller's job.
 - Every API method maps 1:1 to a Firecracker REST resource:
-  `put_boot_source`, `put_machine_config`, `put_drive`,
-  `put_network_interface`, `put_vsock`, `instance_action`. The method
-  signature mirrors the Firecracker schema exactly.
+  `put_boot_source`, `put_machine_config`, `put_drive`, `put_vsock`,
+  `instance_action`. The method signature mirrors the Firecracker schema
+  exactly.
 - The client owns no global state. Constructing one is `Client::new(uds_path)`;
   dropping it closes the underlying socket. Multiple clients can target
   the same UDS, but the caller is responsible for serializing concurrent
@@ -33,9 +34,8 @@ without inheriting m80's lifecycle assumptions.
   cleanly).
 - HTTP errors translate to typed `ClientError` variants per resource:
   `BootSourceWriteFailed`, `MachineConfigWriteFailed`,
-  `DriveWriteFailed`, `NetworkInterfaceWriteFailed`, `VsockWriteFailed`,
-  `InstanceActionFailed`. The variants carry the Firecracker fault JSON
-  verbatim.
+  `DriveWriteFailed`, `VsockWriteFailed`, `InstanceActionFailed`. Each
+  carries the Firecracker fault JSON verbatim.
 - `instance_action(InstanceAction::SendCtrlAltDel)` is callable on any
   arch but only honored on `x86_64` by Firecracker itself; the client
   passes through the upstream behavior without arch-checking.
@@ -46,8 +46,8 @@ without inheriting m80's lifecycle assumptions.
 - One method per Firecracker resource, taking the resource's config
   struct (re-exported from this crate) and returning `Result<(), ClientError>`.
 - `InstanceAction { InstanceStart, SendCtrlAltDel, FlushMetrics, Pause, Resume }`.
-- The full set of Firecracker config types: `BootSourceConfig`,
-  `MachineConfig`, `DriveConfig`, `NetworkInterfaceConfig`, `VsockConfig`.
+- Firecracker config types: `BootSourceConfig`, `MachineConfig`,
+  `DriveConfig`, `VsockConfig`.
 - `ClientError` — typed per-resource failure.
 
 ## Non-goals

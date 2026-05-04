@@ -71,19 +71,6 @@ impl Client {
         })
     }
 
-    /// PUT `/network-interfaces/{iface_id}`.
-    pub fn put_network_interface(&self, config: &NetworkInterfaceConfig) -> Result<(), ClientError> {
-        let path = format!("/network-interfaces/{}", config.iface_id);
-        let body = serde_json::to_vec(config)?;
-        let resp = self.put(&path, &body)?;
-        if (200..300).contains(&resp.status) {
-            return Ok(());
-        }
-        Err(ClientError::NetworkInterfaceWriteFailed {
-            fault: body_to_string(&resp.body),
-        })
-    }
-
     /// PUT `/vsock`.
     pub fn put_vsock(&self, config: &VsockConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(config)?;
@@ -196,19 +183,6 @@ pub struct DriveConfig {
     pub is_read_only: bool,
 }
 
-/// One network interface. `m80-firecracker` configures this only when the
-/// resolved network mode is `OutboundNat`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkInterfaceConfig {
-    /// Stable interface identifier.
-    pub iface_id: String,
-    /// Host-side tap device name.
-    pub host_dev_name: String,
-    /// Optional pinned guest MAC.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guest_mac: Option<String>,
-}
-
 /// Vsock device config — guest CID + host UDS path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VsockConfig {
@@ -256,12 +230,6 @@ pub enum ClientError {
     /// `PUT /drives/{id}` failed.
     #[error("drive write failed: {fault}")]
     DriveWriteFailed {
-        /// Firecracker fault JSON (verbatim).
-        fault: String,
-    },
-    /// `PUT /network-interfaces/{id}` failed.
-    #[error("network-interface write failed: {fault}")]
-    NetworkInterfaceWriteFailed {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },

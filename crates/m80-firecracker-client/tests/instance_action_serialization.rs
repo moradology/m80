@@ -3,37 +3,18 @@
 
 use m80_firecracker_client::InstanceAction;
 
-/// Assert that `{"action_type": <expected>}` is produced for an action.
-fn assert_action_type(action: InstanceAction, expected_variant: &str) {
-    let json = serde_json::json!({ "action_type": action });
-    let text = serde_json::to_string(&json).unwrap();
-    let expected = format!("{{\"action_type\":\"{expected_variant}\"}}");
-    assert_eq!(text, expected, "action_type mismatch for {action:?}");
-}
-
 #[test]
-fn instance_start_serializes_to_pascal_case() {
-    assert_action_type(InstanceAction::InstanceStart, "InstanceStart");
-}
-
-#[test]
-fn send_ctrl_alt_del_serializes_to_pascal_case() {
-    assert_action_type(InstanceAction::SendCtrlAltDel, "SendCtrlAltDel");
-}
-
-#[test]
-fn flush_metrics_serializes_to_pascal_case() {
-    assert_action_type(InstanceAction::FlushMetrics, "FlushMetrics");
-}
-
-#[test]
-fn pause_serializes_to_pascal_case() {
-    assert_action_type(InstanceAction::Pause, "Pause");
-}
-
-#[test]
-fn resume_serializes_to_pascal_case() {
-    assert_action_type(InstanceAction::Resume, "Resume");
+fn instance_actions_serialize_to_pascal_case() {
+    for (action, expected) in [
+        (InstanceAction::InstanceStart, "InstanceStart"),
+        (InstanceAction::SendCtrlAltDel, "SendCtrlAltDel"),
+        (InstanceAction::FlushMetrics, "FlushMetrics"),
+        (InstanceAction::Pause, "Pause"),
+        (InstanceAction::Resume, "Resume"),
+    ] {
+        let text = serde_json::to_string(&serde_json::json!({ "action_type": action })).unwrap();
+        assert_eq!(text, format!("{{\"action_type\":\"{expected}\"}}"));
+    }
 }
 
 #[test]

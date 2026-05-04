@@ -5,7 +5,7 @@ mod fixture_server;
 use fixture_server::{FixtureServer, resp_204};
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, DriveConfig, MachineConfig, NetworkInterfaceConfig, VsockConfig,
+    BootSourceConfig, Client, DriveConfig, MachineConfig, VsockConfig,
 };
 use std::path::PathBuf;
 
@@ -63,41 +63,6 @@ fn put_drive_sends_correct_json_and_url() {
     );
     assert!(result.request.contains("\"drive_id\":\"rootfs\""));
     assert!(result.request.contains("\"is_root_device\":true"));
-}
-
-#[test]
-fn put_network_interface_sends_correct_json_and_url() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
-    client
-        .put_network_interface(&NetworkInterfaceConfig {
-            iface_id: "eth0".to_owned(),
-            host_dev_name: "tap0".to_owned(),
-            guest_mac: Some("AA:FC:00:00:00:01".to_owned()),
-        })
-        .unwrap();
-    let result = server.join();
-    assert!(
-        result.request.starts_with("PUT /network-interfaces/eth0 HTTP/1.1\r\n"),
-        "iface_id must appear in URL"
-    );
-    assert!(result.request.contains("\"host_dev_name\":\"tap0\""));
-    assert!(result.request.contains("\"guest_mac\":\"AA:FC:00:00:00:01\""));
-}
-
-#[test]
-fn put_network_interface_omits_optional_mac_when_none() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
-    client
-        .put_network_interface(&NetworkInterfaceConfig {
-            iface_id: "eth0".to_owned(),
-            host_dev_name: "tap0".to_owned(),
-            guest_mac: None,
-        })
-        .unwrap();
-    let result = server.join();
-    assert!(!result.request.contains("\"guest_mac\""), "None guest_mac must be omitted");
 }
 
 #[test]

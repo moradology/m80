@@ -84,21 +84,17 @@ fn read_response(stream: &mut UnixStream) -> io::Result<Response> {
 }
 
 /// Returns `Some(total_bytes)` when `buf` contains a complete HTTP response,
-/// `None` when more data is needed.
+/// `None` when more data is needed. `None` is also the answer for malformed
+/// headers (truncated UTF-8, no status line) — the caller will keep reading
+/// and `parse_response` surfaces the error once a full response arrives.
 fn response_end(buf: &[u8]) -> Option<usize> {
     let header_end = buf.windows(4).position(|w| w == b"\r\n\r\n")?;
     let header_len = header_end + 4;
     let header_text = std::str::from_utf8(&buf[..header_end]).ok()?;
-
-    // Determine status for no-body cases.
     let status = status_from_header_text(header_text)?;
-
-    // 1xx, 204, 304 carry no body.
     if matches!(status, 100..=199 | 204 | 304) {
         return Some(header_len);
     }
-
-    // Otherwise we need Content-Length.
     let content_length = content_length_from_header_text(header_text)?;
     let total = header_len + content_length;
     if buf.len() >= total { Some(total) } else { None }
