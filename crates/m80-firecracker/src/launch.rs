@@ -114,8 +114,9 @@ impl Sandbox {
         // Phase 6: resolve network mode.
         let net = phase_6_network_realize(&self.config)?;
 
-        // Phase 7: guest config injection (no-op in v0.1).
-        phase_7_guest_config_inject(&net)?;
+        // Phase 7: guest config injection — no-op in v0.1 (only OutboundNat
+        // needs in-VM config and that mode is deferred). The `net` value is
+        // still consumed by phase_11 below for the NIC PUT.
 
         // Phase 8: compute the API socket path (inside the jail root).
         let api_socket = jail.jail_path.join("firecracker.sock");
@@ -170,10 +171,6 @@ impl Sandbox {
         })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Phase functions
-// ---------------------------------------------------------------------------
 
 /// Phase 1: create `<run_root>/<vm_id>/`.
 ///
@@ -319,11 +316,6 @@ fn phase_6_network_realize(config: &SandboxConfig) -> Result<RealizedNetwork, Fc
     }
 }
 
-/// Phase 7: inject guest network config (no-op in v0.1 — OutboundNat deferred).
-fn phase_7_guest_config_inject(_net: &RealizedNetwork) -> Result<(), FcError> {
-    Ok(())
-}
-
 /// Phase 10: open the Firecracker UDS REST client.
 ///
 /// Retries for up to 5 s to allow Firecracker to create the socket after
@@ -334,7 +326,9 @@ fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
         if api_socket.exists() {
             match Client::new(api_socket) {
                 Ok(client) => return Ok(client),
-                Err(_) if Instant::now() < deadline => {}
+                Err(e) if Instant::now() < deadline => {
+                    tracing::debug!(err = %e, "phase_10_open_uds: Client::new failed, retrying");
+                }
                 Err(e) => return Err(FcError::Client(e)),
             }
         }

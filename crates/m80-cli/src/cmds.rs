@@ -71,7 +71,6 @@ pub fn cmd_launch(
         vcpu_count: None,
         mem_size_mib: None,
         boot_args: None,
-        default_exec_timeout: None,
     };
 
     let sandbox = match backend.admit(sandbox_config) {

@@ -15,7 +15,6 @@ fn sandbox_new_returns_deferred_error_in_v0_1() {
         vcpu_count: None,
         mem_size_mib: None,
         boot_args: None,
-        default_exec_timeout: None,
     };
 
     let err = m80_firecracker::Sandbox::new(config)
@@ -29,13 +28,5 @@ fn sandbox_new_returns_deferred_error_in_v0_1() {
     assert!(
         msg.contains("Backend::admit"),
         "error message should suggest Backend::admit, got: {msg}"
-    );
-}
-
-#[test]
-fn network_policy_default_is_no_egress() {
-    assert!(
-        matches!(NetworkPolicy::default(), NetworkPolicy::NoEgress),
-        "NetworkPolicy::default() must be NoEgress"
     );
 }

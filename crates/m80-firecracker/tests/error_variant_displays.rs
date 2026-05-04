@@ -21,7 +21,7 @@ fn invalid_state_displays() {
 fn io_error_displays() {
     let e = FcError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "no such file"));
     let s = e.to_string();
-    assert!(!s.is_empty(), "Display should not be empty");
+    assert!(s.contains("no such file"), "expected source message in display, got: {s}");
 }
 
 #[test]

@@ -3,7 +3,6 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,10 +12,6 @@ use m80_storage::{Rootfs, Scratch};
 use m80_vsock::Channel;
 
 pub use m80_net_mode::NetworkPolicy;
-
-// =====================================================================
-// Admission semaphore
-// =====================================================================
 
 /// Inner state of the admission semaphore: `(available_permits, Condvar)`.
 pub(crate) type SemaphoreInner = (Mutex<u32>, Condvar);
@@ -50,10 +45,6 @@ impl Drop for AdmissionPermit {
         cvar.notify_one();
     }
 }
-
-// =====================================================================
-// Backend
-// =====================================================================
 
 /// Long-lived backend handle a service holds. Wraps the admission semaphore
 /// and the discovery info from preflight. One per process.
@@ -148,10 +139,6 @@ pub enum ConfigSource {
     Flag,
 }
 
-// =====================================================================
-// Sandbox (Created state)
-// =====================================================================
-
 /// Per-VM configuration. Built once per [`Sandbox`].
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
@@ -167,8 +154,6 @@ pub struct SandboxConfig {
     pub mem_size_mib: Option<u32>,
     /// Boot args appended to the kernel command line.
     pub boot_args: Option<String>,
-    /// Optional default exec timeout.
-    pub default_exec_timeout: Option<Duration>,
 }
 
 /// A sandbox in `Created` state — admission permit held, no I/O performed yet.
@@ -188,10 +173,6 @@ impl std::fmt::Debug for Sandbox {
             .finish_non_exhaustive()
     }
 }
-
-// =====================================================================
-// RunningSandbox (Running state)
-// =====================================================================
 
 /// A sandbox in `Running` state — VM booted, vsock ready, ready to accept
 /// exec requests. All fields are `pub(crate)` — callers use the typed
@@ -230,10 +211,6 @@ impl std::fmt::Debug for RunningSandbox {
     }
 }
 
-// =====================================================================
-// StoppedSandbox (Stopped state)
-// =====================================================================
-
 /// A sandbox in `Stopped` state — VM exited, scratch image quiesced,
 /// run-dir intact. All fields are `pub(crate)`; callers use the typed
 /// methods on `impl StoppedSandbox`.
@@ -263,10 +240,6 @@ impl std::fmt::Debug for StoppedSandbox {
     }
 }
 
-// =====================================================================
-// StoragePrep (internal to launch)
-// =====================================================================
-
 /// Bundle of per-VM storage resources produced by the storage-prep phase.
 pub(crate) struct StoragePrep {
     /// The per-VM rootfs clone.
@@ -282,10 +255,6 @@ impl std::fmt::Debug for StoragePrep {
             .finish()
     }
 }
-
-// =====================================================================
-// RealizedNetwork (internal to launch)
-// =====================================================================
 
 /// Resolved network state after phase 6.
 #[derive(Debug)]

@@ -138,10 +138,6 @@ impl StoppedSandbox {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Teardown helpers
-// ---------------------------------------------------------------------------
-
 /// Graceful stop on x86_64 (SendCtrlAltDel + wait), SIGKILL fallback.
 fn bounded_stop(
     client: &m80_firecracker_client::Client,

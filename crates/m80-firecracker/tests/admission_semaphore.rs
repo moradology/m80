@@ -1,50 +1,16 @@
 //! Admission semaphore: permit counting, refusal, and permit return on drop.
 
+mod common;
+
 use std::sync::Arc;
 
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig,
 };
 
-fn fake_manifest() -> m80_image_manifest::Manifest {
-    m80_image_manifest::Manifest {
-        schema_version: 1,
-        expected_firecracker_version: "v1.0.0".into(),
-        kernel_image: std::path::PathBuf::from("/dev/null"),
-        kernel_image_sha256: "0".repeat(64),
-        output_rootfs_image: std::path::PathBuf::from("/dev/null"),
-        output_rootfs_sha256: "0".repeat(64),
-        source_rootfs_image: std::path::PathBuf::from("/dev/null"),
-        source_rootfs_sha256: "0".repeat(64),
-        daemon_binary_path: std::path::PathBuf::from("/dev/null"),
-        daemon_binary_sha256: "0".repeat(64),
-        service_unit_path: std::path::PathBuf::from("/dev/null"),
-        service_unit_sha256: "0".repeat(64),
-        workspace_mount_path: std::path::PathBuf::from("/dev/null"),
-        workspace_mount_sha256: "0".repeat(64),
-        boot_target: "multi-user.target".into(),
-        guest_port: 9001,
-        no_egress_reason: None,
-        ready_marker: "GUESTD_READY".into(),
-    }
-}
-
-fn fake_discovery() -> m80_preflight::Discovery {
-    m80_preflight::Discovery {
-        firecracker_bin: std::path::PathBuf::from("/dev/null"),
-        jailer_bin: std::path::PathBuf::from("/dev/null"),
-        kernel: std::path::PathBuf::from("/dev/null"),
-        rootfs: std::path::PathBuf::from("/dev/null"),
-        manifest: fake_manifest(),
-        run_root: std::path::PathBuf::from("/tmp"),
-        privilege: m80_preflight::PrivilegeStatus::Root,
-        report: vec![],
-    }
-}
-
 fn make_backend(max: u32) -> Arc<Backend> {
     let config = BackendConfig {
-        discovery: fake_discovery(),
+        discovery: common::fake_discovery(std::path::Path::new("/tmp")),
         max_concurrent_vms: max,
         run_root: std::path::PathBuf::from("/tmp/m80-test"),
         jail_uid: 3000,
@@ -62,7 +28,6 @@ fn sandbox_config() -> SandboxConfig {
         vcpu_count: None,
         mem_size_mib: None,
         boot_args: None,
-        default_exec_timeout: None,
     }
 }
 

@@ -97,8 +97,13 @@ impl Backend {
                     kill_orphan_pids(jailer_pid, firecracker_pid);
                     remove_run_dir(&subdir);
                 }
-                Ok(m80_jailer::RecoveryDecision::OrphanJail { reap_steps }) => {
-                    reap_orphan_run_dir(&subdir, &reap_steps);
+                Ok(m80_jailer::RecoveryDecision::OrphanJail { .. }) => {
+                    // `reap_steps` from the plan file is ignored —
+                    // `remove_run_dir` reads `/proc/self/mountinfo` for the
+                    // authoritative mount list, which covers cases the
+                    // persisted plan doesn't (partial materialize, older
+                    // binary, etc.).
+                    remove_run_dir(&subdir);
                 }
                 Ok(m80_jailer::RecoveryDecision::NoJail) => {
                     remove_run_dir(&subdir);
@@ -155,17 +160,6 @@ fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
         },
     ];
     EffectiveConfig { fields }
-}
-
-/// Reap an orphan run-dir.
-///
-/// `_reap_steps` is unused: `remove_run_dir` now reads `/proc/self/mountinfo`
-/// to find any bind mounts under the dir and unmounts them via the kernel's
-/// authoritative view. The persisted plan can be partial (m80 SIGKILL'd
-/// mid-materialize, the plan file is from an older binary, etc.); trusting
-/// mountinfo means we recover from cases the plan file doesn't describe.
-fn reap_orphan_run_dir(subdir: &std::path::Path, _reap_steps: &[m80_jailer::PlanStep]) {
-    remove_run_dir(subdir);
 }
 
 /// Unmount everything under `subdir` (using mountinfo as ground truth),
