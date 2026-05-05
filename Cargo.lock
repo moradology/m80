@@ -482,6 +482,7 @@ name = "m80-snapshot"
 version = "0.0.0"
 dependencies = [
  "hex",
+ "m80-firecracker-client",
  "serde",
  "serde_json",
  "sha2",

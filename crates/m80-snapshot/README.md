@@ -1,24 +1,25 @@
 # `m80-snapshot`
 
-Snapshot **manifest schemas** and **persistence path layout** for
-Firecracker VM snapshots. Active in v0.1; the actual capture / restore
-execution lane is deferred to v0.2.
+Snapshot **manifest schemas**, **persistence path layout**, and
+**capture/restore primitives** for Firecracker microVM snapshots.
+
+Schemas active from v0.1; capture/restore execution active from v0.2
+(implemented in m80-rrp.3.13).
 
 ## Reason for being
 
-The dossier suggested dropping `snapshot.rs` entirely as dead code. A
-read of predecessor's contracts (`stage-g-firecracker-snapshot-persistence-contract.md`,
-`stage-g-firecracker-snapshot-restore-contract.md`) refuted that: the
-manifest schemas and the persistence path template are *required
-surfaces* even before the execution lane is wired. A consumer that
-writes a snapshot today must use `<store>/<workspace_id>/<run_id>/
-<unix_ms>-<sha>/`; if v0.2 changes that, every persisted snapshot
-becomes unreadable.
+The crate serves two purposes:
 
-So `m80-snapshot` exists to lock in the schema and path conventions
-**now**, even though the capture/restore code itself comes later. The
-crate is small but reserves its name and its file format so v0.2 fills
-in execution without breaking the on-disk contract.
+1. **Lock the on-disk schema** — `SnapshotManifest`, `RestoreMetadata`, and
+   the persistence path template `<store>/<workspace_id>/<run_id>/<unix_ms>-<sha>/`
+   are the canonical contract. Tools that walk the store rely on this
+   template; changing it after any snapshot is persisted would render those
+   snapshots unreadable.
+
+2. **Provide capture/restore primitives** — `capture` and `restore` issue
+   the Firecracker REST calls required to pause/snapshot and load/resume a
+   microVM. These are thin wrappers over `m80-firecracker-client`; they own
+   no lifecycle state. The orchestrator (`m80-firecracker`) composes them.
 
 ## Black-box contract
 
@@ -28,12 +29,11 @@ in execution without breaking the on-disk contract.
   `<store-root>/<workspace_id>/<run_id>/<created_at_unix_ms>-<artifact_set_sha256>/`.
   This template is the canonical layout. Tools that walk the store rely
   on it.
-- `<store-root>` is host-local filesystem only. v0.1 ships no S3/GCS/
-  generic-store support. Adding remote stores is a v0.2+ epic.
+- `<store-root>` is host-local filesystem only. No S3/GCS/remote-store
+  support. Adding remote stores is a v0.2+ epic.
 - A persistence collision (the destination directory already exists)
   fails closed with `SnapshotError::DestinationCollision`. There is no
-  silent overwrite. (The collision check is exercised by v0.2 capture;
-  the variant is present in v0.1 for callers to match on.)
+  silent overwrite.
 
 ### Manifest
 
@@ -45,33 +45,41 @@ in execution without breaking the on-disk contract.
   `source_run_id`, `source_vm_id`), the snapshot path, and the
   expected-Firecracker-version pin. A restore against a different
   Firecracker version fails closed (enforcement is `m80-firecracker`'s
-  job at restore time; v0.1 records the value only).
-- Restore must materialize into a **fresh VM identity** — the restored
-  `vm_id` is required to differ from the source. v0.1 documents this
-  invariant; v0.2 enforces it in the execution lane.
+  job at restore time; the crate records the value only).
 - Both files use `#[serde(deny_unknown_fields)]`. An unknown key in a
   v0.2+ file surfaces as `SnapshotError::Json`; a `schema_version`
   mismatch surfaces first as `SnapshotError::UnsupportedSchemaVersion`.
 
-### v0.1 surface
+### Capture
 
-In v0.1 the crate exposes only the schemas + path helpers:
+`capture(CaptureRequest)`:
 
-- `SnapshotManifest::write(path: &Path) / read(path: &Path)` — pretty
-  JSON + trailing `\n`, mode 0644 on Unix. Parent directory must exist.
-- `RestoreMetadata::write / read` — same.
-- `persistence_path(store_root, workspace_id, run_id, created_at_ms,
-  artifact_set_sha256) -> PathBuf` — pure path construction, no I/O.
-- `artifact_set_sha256(&[Artifact]) -> [u8; 32]` — SHA-256 over
-  per-artifact JSON bytes concatenated in slice order. The caller
-  decides canonical order; this function hashes whatever it receives.
-- `SNAPSHOT_MANIFEST_FILE` / `RESTORE_METADATA_FILE` — file-name constants.
-- `SCHEMA_VERSION: u32 = 1`.
+1. PATCH `/vm` → `Paused` via `m80-firecracker-client`.
+2. PUT `/snapshot/create` with the configured paths and kind.
 
-Capture and restore return `SnapshotError::Deferred` in v0.1.
+The VM is left in the `Paused` state. The caller (orchestrator) decides
+whether to resume or kill the Firecracker process.
+
+### Restore
+
+`restore(RestoreRequest)`:
+
+1. `unlink(vsock_uds)` if present — required because Firecracker rebinds
+   the UDS at load time and fails with `EADDRINUSE` if the file exists.
+   `ENOENT` is silently ignored; any other error surfaces as
+   `SnapshotError::VsockUdsUnlink`.
+2. PUT `/snapshot/load` with `mem_backend = File`.
+3. If `resume: true`, PATCH `/vm` → `Resumed`.
 
 ## Public surface
 
+### Types
+
+- `SnapshotPaths { vm_state: PathBuf, mem: PathBuf }` — the two-file
+  artifact pair written at capture time.
+- `SnapshotKind` — `Full | Diff`.
+- `CaptureRequest<'a> { fc_socket: &'a Path, paths: SnapshotPaths, kind: SnapshotKind }`.
+- `RestoreRequest { fc_socket: PathBuf, paths: SnapshotPaths, vsock_uds: PathBuf, resume: bool }`.
 - `SnapshotManifest` — fields alphabetical: `artifact_set_sha256`,
   `artifacts`, `created_at_unix_ms`, `diagnostics_bundle` (optional),
   `expected_firecracker_version`, `metrics_snapshot` (optional),
@@ -82,33 +90,47 @@ Capture and restore return `SnapshotError::Deferred` in v0.1.
 - `Artifact` — fields alphabetical: `kind`, `path`, `sha256`, `size`.
 - `ArtifactKind` — variants alphabetical: `BootIdentity`, `Memory`,
   `RuntimeRootfs`, `VmState`, `WorkspaceScratch`.
-- `persistence_path(...)`.
-- `artifact_set_sha256(...)`.
-- `capture(...)` and `restore(...)` — present in v0.1 but return
-  `SnapshotError::Deferred`.
-- `SNAPSHOT_MANIFEST_FILE`, `RESTORE_METADATA_FILE`, `SCHEMA_VERSION`.
-- `SnapshotError`: `Deferred`, `DestinationCollision`,
-  `UnsupportedSchemaVersion(u32)`, `Io { path: PathBuf, source: io::Error }`,
-  `Json(serde_json::Error)`.
 
-Note: `FirecrackerVersionMismatch` and `Sha256Mismatch` from the initial
-type-pinning are **not** in v0.1 — version enforcement is `m80-firecracker`'s
-job at restore time; sha256 verification belongs to the v0.2 execution lane.
+### Functions
+
+- `capture(req: CaptureRequest) -> Result<(), SnapshotError>`.
+- `restore(req: RestoreRequest) -> Result<(), SnapshotError>`.
+- `persistence_path(store_root, workspace_id, run_id, created_at_ms, artifact_set_sha256) -> PathBuf` — pure path construction, no I/O.
+- `artifact_set_sha256(&[Artifact]) -> [u8; 32]` — SHA-256 over
+  per-artifact JSON bytes concatenated in slice order.
+
+### Constants
+
+- `SNAPSHOT_MANIFEST_FILE`, `RESTORE_METADATA_FILE`, `SCHEMA_VERSION`.
+
+### Errors
+
+`SnapshotError`:
+- `DestinationCollision` — persistence directory already exists.
+- `UnsupportedSchemaVersion(u32)` — schema version mismatch on read.
+- `Io { path: PathBuf, source: io::Error }` — filesystem I/O failure.
+- `Json(serde_json::Error)` — JSON encode/decode failure.
+- `Client(m80_firecracker_client::ClientError)` — Firecracker REST failure.
+- `VsockUdsUnlink { path: PathBuf, source: io::Error }` — vsock UDS
+  removal failed for a reason other than `NotFound`.
 
 ## Non-goals
 
+- **No spawning Firecracker processes.** This crate only issues REST calls
+  to an already-running Firecracker process via its API socket.
+- **No run-dir management.** Creating/destroying run directories is
+  `m80-firecracker`'s job.
+- **No lifecycle state machine.** The orchestrator (`m80-firecracker`)
+  composes `capture` and `restore` within its state machine.
+- **No vm-id → CID mapping.** That belongs to `m80-vsock`.
 - **No remote store.** Filesystem only.
-- **No incremental snapshots.** Full snapshots only.
-- **No live migration.** A snapshot is for restart, not for moving a
-  running VM.
-- **No restore-in-place.** Restore always produces a fresh VM identity.
+- **No incremental snapshots** beyond issuing `Diff` to Firecracker.
+- **No live migration.**
 
 ## Dependencies
 
-- `serde`, `serde_json`, `sha2`, `hex`.
-- `thiserror`.
-- (no other m80 crates in v0.1; v0.2 will likely depend on
-  `m80-firecracker` for capture/restore execution.)
+- `m80-firecracker-client` — REST client for Firecracker's API.
+- `serde`, `serde_json`, `sha2`, `hex`, `thiserror`.
 
 ## Tests
 
@@ -123,5 +145,10 @@ Integration tests in `crates/m80-snapshot/tests/`:
 - `manifest_schema_version.rs` — wrong `schema_version` returns
   `UnsupportedSchemaVersion(N)`; probe fires before unknown-field check.
 - `restore_metadata_roundtrip.rs` — same for `RestoreMetadata`.
-- `deferred_capture_and_restore.rs` — `capture()` and `restore()` return
-  `SnapshotError::Deferred`.
+- `fixture_server.rs` — shared fixture HTTP server (UnixListener) used by
+  capture/restore tests; no real Firecracker binary required.
+- `capture.rs` — wire-call ordering and body shape for `capture`; pause
+  failure and create failure error paths. Each scenario its own `#[test]`.
+- `restore.rs` — wire-call ordering, File-backed mem_backend body shape,
+  vsock UDS removal (absent / present / unremovable), load and resume
+  error paths. Each scenario its own `#[test]`.
