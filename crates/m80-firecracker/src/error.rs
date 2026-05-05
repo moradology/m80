@@ -8,6 +8,7 @@ use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
 use m80_net_outbound::NetError;
 use m80_preflight::PreflightError;
+use m80_snapshot::SnapshotError;
 use m80_storage::StorageError;
 use m80_vsock::VsockError;
 
@@ -44,6 +45,9 @@ pub enum FcError {
     /// `Proto` variant.
     #[error("vsock: {0}")]
     Vsock(#[from] VsockError),
+    /// Snapshot capture or restore failed.
+    #[error("snapshot: {0}")]
+    Snapshot(#[from] SnapshotError),
     /// Admission was refused (semaphore at limit; no permit available).
     #[error("admission refused: {limit} concurrent VMs already running")]
     AdmissionRefused {

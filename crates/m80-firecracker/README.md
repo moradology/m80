@@ -26,8 +26,28 @@ double-stop or exec on a stopped VM. `force_kill` collapses Running →
 Stopped while preserving the run-dir for offline inspection.
 
 The Created → Running transition runs the strict 12-phase preboot pipeline
-internally. Phases are sub-steps, not states — failures at any phase
-return a typed `FcError` and drop the admission permit.
+internally (via `Sandbox::launch`). Phases are sub-steps, not states —
+failures at any phase return a typed `FcError` and drop the admission permit.
+
+`Sandbox::launch_from_snapshot` is an alternative Created → Running
+transition for the warm-pool restore path. It skips the full cold-boot
+pipeline and instead loads a snapshot pair into a new Firecracker process.
+The VM is left Running after a successful restore; the exec channel readiness
+is confirmed by probing `CONNECT 9001` against the restored vsock UDS
+(retry loop, 50 ms sleep, 5 s cap).
+
+`RunningSandbox::capture` pauses the live VM and writes a Full snapshot pair
+to caller-supplied paths. The VM is left in the Paused state after a
+successful call; the caller must then `stop()` or resume the VM.
+
+### Snapshot methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
+| `RunningSandbox::capture` | `(&self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused. |
+
+`SnapshotPaths` is re-exported from `m80-snapshot` for caller convenience.
 
 ### Run-root layout
 

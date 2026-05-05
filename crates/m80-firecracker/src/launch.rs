@@ -26,7 +26,9 @@ use m80_firecracker_client::{
 use m80_image_manifest::Manifest;
 use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
 use m80_net_mode::VmNetworkMode;
+use m80_preflight::Discovery;
 use m80_proto::READY_PORT_DEFAULT;
+use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
 use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
@@ -269,6 +271,183 @@ impl Sandbox {
             permit: self.permit,
             backend: self.backend,
         })
+    }
+}
+
+/// Retry cap for `phase_restore_probe_exec_channel`.
+///
+/// 5 s is generous; empirically the vsock TRANSPORT_RESET settles in < 1 s.
+const RESTORE_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Sleep between probe attempts. Short so the common (fast) path is quick.
+const RESTORE_PROBE_SLEEP: Duration = Duration::from_millis(50);
+
+impl Sandbox {
+    /// Restore a previously-captured snapshot into a running sandbox.
+    ///
+    /// Alternative to [`Sandbox::launch`] for the warm-pool path: instead of
+    /// cold-booting, load from a snapshot pair and probe the exec channel to
+    /// confirm guestd is live.
+    ///
+    /// # Phases
+    ///
+    /// 1. Allocate run-dir (`<run_root>/<vm_id>/`).
+    /// 2. Jailer materialize — sets up the jail directory layout and bind
+    ///    mounts (drives, kernel are NOT needed for restore; they are present
+    ///    in the jail for layout compatibility, but Firecracker takes
+    ///    drive/vsock state from the snapshot).
+    /// 3. Spawn the Firecracker process via the jailer.
+    /// 4. Open the UDS REST client.
+    /// 5. Call `m80_snapshot::restore` with `resume: true` — this (a) removes
+    ///    any stale `vsock.sock`, (b) issues PUT `/snapshot/load`, (c) issues
+    ///    PATCH `/vm` Resumed.
+    /// 6. Probe `CONNECT 9001` against the restored vsock UDS to confirm
+    ///    guestd's exec listen socket is live (retry loop, 50 ms sleep, 5 s cap).
+    ///
+    /// The cold-boot inverted-readiness handshake (phases 11b / 12b) is
+    /// **not used** on the restore path — guestd does not re-dial after
+    /// TRANSPORT_RESET. The probe in step 6 is the only readiness signal.
+    pub fn launch_from_snapshot(
+        self,
+        snapshot: SnapshotPaths,
+        discovery: &Discovery,
+    ) -> Result<RunningSandbox, FcError> {
+        let vm_id = self.resolve_vm_id();
+        let backend_config = &self.backend.config;
+        let run_root = &backend_config.run_root;
+
+        // Phase 1: run-root prep.
+        let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
+            phase_1_run_root_prep(run_root, &vm_id)
+        })?;
+
+        // Phase 2: lease acquisition.
+        let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
+
+        // Phase 3: storage prep (overlay + optional scratch — still needed
+        // for the jailer bind-mount layout even on restore path).
+        let storage = phase("phase_3_storage_prep", &vm_id, || {
+            phase_3_storage_prep(
+                &backend_config.discovery.manifest,
+                &backend_config.discovery.rootfs,
+                &self.config,
+                &run_dir,
+            )
+        })?;
+
+        // Phase 4: jailer materialize.
+        let jail = phase("phase_4_jailer_materialize", &vm_id, || {
+            phase_4_jailer_materialize(
+                &backend_config.discovery.jailer_bin,
+                &backend_config.discovery.firecracker_bin,
+                backend_config.jail_uid,
+                backend_config.jail_gid,
+                &run_dir,
+                &backend_config.discovery.kernel,
+                &storage,
+            )
+        })?;
+
+        // Phase 5: cgroup probe (restore path honours cgroup mode too).
+        phase("phase_5_cgroup_probe", &vm_id, || {
+            phase_5_cgroup_probe(backend_config.cgroup_mode)
+        })?;
+
+        // Phase 8: compute the API socket path (inside the jail root).
+        let api_socket = jail.jail_path.join("firecracker.sock");
+
+        // Phase 9: spawn Firecracker via jailer.
+        let firecracker = phase("phase_9_jailer_launch", &vm_id, || {
+            jail.launch(&api_socket).map_err(FcError::Jailer)
+        })?;
+
+        // Phase 5b: create cgroup subtree.
+        let cgroup = phase("phase_5b_cgroup_create", &vm_id, || {
+            phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)
+        })?;
+
+        // Phase 10: open UDS REST client.
+        let host_api_socket = jail.jail_path.join("firecracker.sock");
+        let client = phase("phase_10_open_uds", &vm_id, || {
+            phase_10_open_uds(&host_api_socket)
+        })?;
+
+        // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +
+        // PATCH /vm Resumed (resume: true).
+        let vsock_uds = jail.jail_path.join("vsock.sock");
+        phase("phase_restore_load", &vm_id, || {
+            snapshot_restore(RestoreRequest {
+                fc_socket: host_api_socket.clone(),
+                paths: snapshot,
+                vsock_uds: vsock_uds.clone(),
+                resume: true,
+            })
+            .map_err(FcError::Snapshot)
+        })?;
+
+        // Phase restore-probe: CONNECT 9001 retry loop.
+        // Replaces the cold-boot phase_12b_ready_accept.
+        let channel = phase("phase_restore_probe_exec_channel", &vm_id, || {
+            phase_restore_probe_exec_channel(&vsock_uds, &vm_id)
+        })?;
+
+        let _ = discovery; // Discovery is passed for API symmetry; not needed beyond the phases above.
+
+        Ok(RunningSandbox {
+            vm_id,
+            run_dir,
+            jail,
+            cgroup,
+            channel,
+            rootfs: storage.rootfs,
+            scratch: storage.scratch,
+            client,
+            firecracker,
+            permit: self.permit,
+            backend: self.backend,
+        })
+    }
+}
+
+/// Probe `CONNECT <GUEST_PORT_DEFAULT>` against the restored vsock UDS.
+///
+/// After `PATCH /vm Resumed`, Firecracker delivers the queued
+/// `VIRTIO_VSOCK_EVENT_TRANSPORT_RESET` to the guest. The guest vsock
+/// driver processes it and tears down established connections; vsock LISTEN
+/// sockets (guestd's exec listener on port 9001) survive.
+///
+/// The probe races against TRANSPORT_RESET processing. On failure the muxer
+/// returns `RST` / `EOF`; we sleep 50 ms and retry. A 5 s cap is safe:
+/// empirically the settle time is < 1 s.
+fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<Channel, FcError> {
+    let deadline = Instant::now() + RESTORE_PROBE_TIMEOUT;
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        match Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT) {
+            Ok(channel) => {
+                tracing::info!(vm_id, attempt, "restore probe: exec channel live");
+                return Ok(channel);
+            }
+            Err(e) => {
+                if Instant::now() >= deadline {
+                    tracing::error!(
+                        vm_id,
+                        attempt,
+                        error = %e,
+                        "restore probe: exec channel not live after timeout"
+                    );
+                    return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
+                }
+                tracing::debug!(
+                    vm_id,
+                    attempt,
+                    error = %e,
+                    "restore probe: attempt failed, retrying"
+                );
+                std::thread::sleep(RESTORE_PROBE_SLEEP);
+            }
+        }
     }
 }
 

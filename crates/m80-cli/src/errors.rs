@@ -50,6 +50,7 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Network(_)
         | FcError::Client(_)
         | FcError::Vsock(_)
+        | FcError::Snapshot(_)
         | FcError::Io(_) => EXIT_GENERIC,
     }
 }
@@ -98,6 +99,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::InvalidState { .. } => "InvalidState",
         FcError::Io(_) => "Io",
         FcError::Config(_) => "Config",
+        FcError::Snapshot(_) => "Snapshot",
     }
 }
 

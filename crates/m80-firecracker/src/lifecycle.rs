@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use m80_proto::{Envelope, ExecRequest, ExecResponse, ShutdownAction, ShutdownRequest, ShutdownResponse};
+use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
 use m80_storage::ChangeSet;
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
@@ -39,6 +40,32 @@ impl RunningSandbox {
         let resp_env: Envelope<ExecResponse> = self.channel.recv()?;
         phase_event("exec_recv", &self.vm_id, t.elapsed());
         Ok(resp_env.payload)
+    }
+
+    /// Capture the live VM into a snapshot pair at `paths`.
+    ///
+    /// Steps:
+    /// 1. Pause the VM (`PATCH /vm {"state":"Paused"}`).
+    /// 2. Create a Full snapshot (`PUT /snapshot/create`).
+    ///
+    /// **The VM is left in the Paused state after a successful call.**
+    /// The caller decides the next step:
+    /// - `stop()` to tear down the VM (the snapshot is archived; the VM is gone).
+    /// - `resume()` (out of scope in v0.1) to continue running from the point of capture.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FcError::Snapshot` if either REST call fails. The caller
+    /// should treat any error as the VM being in an unknown state and call
+    /// `force_kill()`.
+    pub fn capture(&self, paths: SnapshotPaths) -> Result<(), FcError> {
+        let fc_socket = self.jail.jail_path.join("firecracker.sock");
+        snapshot_capture(CaptureRequest {
+            fc_socket: &fc_socket,
+            paths,
+            kind: SnapshotKind::Full,
+        })
+        .map_err(FcError::Snapshot)
     }
 
     /// Four-phase teardown:
