@@ -5,6 +5,10 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — test helper: `RunDirDumpGuard` (m80-83y9)
+
+`tests/common::RunDirDumpGuard` is a drop-guard for integration tests: on test failure (i.e. when the thread is panicking) it dumps the last 100 lines of `<run_dir>/console.log` and the full `diagnostics.jsonl` to stderr, including the run-dir path for offline re-inspection. Passing tests produce no output. Opt-in via a named local binding.
+
 ### Added — wire-level debug dump (`M80_DEBUG_WIRE`)
 
 Set `M80_DEBUG_WIRE=vsock`, `M80_DEBUG_WIRE=fcrest`, or `M80_DEBUG_WIRE=all` to get `tracing::trace!` output of every vsock frame and Firecracker REST call (hex+ASCII preview, capped at 1024 bytes). Zero overhead when unset.
