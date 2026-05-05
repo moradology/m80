@@ -5,6 +5,29 @@ use std::path::PathBuf;
 use m80_storage::StorageError;
 
 #[test]
+fn overlay_create_failed_displays_path() {
+    let e = StorageError::OverlayCreateFailed {
+        path: PathBuf::from("/run/m80/vm-1/overlay.ext4"),
+        err: std::io::Error::from(std::io::ErrorKind::NotFound),
+    };
+    let s = format!("{e}");
+    assert!(s.contains("overlay.ext4"), "path must appear: {s}");
+}
+
+#[test]
+fn mkfs_failed_displays_path_and_status() {
+    let e = StorageError::MkfsFailed {
+        path: PathBuf::from("/run/m80/vm-1/overlay.ext4"),
+        status: 1,
+        stderr: "bad magic number".into(),
+    };
+    let s = format!("{e}");
+    assert!(s.contains("overlay.ext4"), "path must appear: {s}");
+    assert!(s.contains('1'), "status must appear: {s}");
+    assert!(s.contains("bad magic"), "stderr must appear: {s}");
+}
+
+#[test]
 fn mkfs_error_displays() {
     let e = StorageError::Mkfs(std::io::Error::other("device busy"));
     let s = format!("{e}");

@@ -1,5 +1,5 @@
-//! Per-VM rootfs cloning, scratch image hydration, and opt-in post-stop
-//! change extraction.
+//! Per-VM rootfs overlay allocation, scratch image hydration, and opt-in
+//! post-stop change extraction.
 //!
 //! See `README.md` for the black-box contract.
 //! Behavior captures: bead epic `m80-urc` (`br show m80-urc`).
@@ -54,7 +54,28 @@ pub enum RejectionReason {
 /// Errors surfaced by storage operations.
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
-    /// `mkfs.ext4` failed.
+    /// Sparse overlay file could not be created or sized.
+    ///
+    /// Covers: `File::create` on a missing parent dir, `set_len` failures,
+    /// and failure to spawn `mkfs.ext4`.
+    #[error("overlay create failed at {}: {err}", path.display())]
+    OverlayCreateFailed {
+        /// Path of the overlay file that could not be created.
+        path: PathBuf,
+        /// Underlying I/O error.
+        err: io::Error,
+    },
+    /// `mkfs.ext4 -F` exited with a non-zero status.
+    #[error("mkfs.ext4 failed on {} (exit {status}): {stderr}", path.display())]
+    MkfsFailed {
+        /// Path of the overlay file being formatted.
+        path: PathBuf,
+        /// Exit code from `mkfs.ext4` (`-1` if the process was signalled).
+        status: i32,
+        /// Captured stderr (or stdout if stderr was empty).
+        stderr: String,
+    },
+    /// `mkfs.ext4` failed during scratch image creation.
     #[error("mkfs.ext4 failed: {0}")]
     Mkfs(io::Error),
     /// `e2fsck` exited with a fatal code.
