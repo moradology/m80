@@ -5,6 +5,10 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — wire-level debug dump (`M80_DEBUG_WIRE`)
+
+Set `M80_DEBUG_WIRE=vsock`, `M80_DEBUG_WIRE=fcrest`, or `M80_DEBUG_WIRE=all` to get `tracing::trace!` output of every vsock frame and Firecracker REST call (hex+ASCII preview, capped at 1024 bytes). Zero overhead when unset.
+
 ### Reliability — ubuntu/idle 40 % flake eliminated
 
 The ubuntu/idle launch-failure rate was ~40-50 % under a tight loop;

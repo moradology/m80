@@ -5,14 +5,15 @@
 
 #![deny(missing_docs)]
 
+mod debug_wire;
+mod http;
+
 use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-
-mod http;
 
 /// A synchronous HTTP-over-UDS client for one Firecracker process.
 ///
@@ -106,23 +107,41 @@ impl Client {
     /// The caller is responsible for not calling concurrently — Firecracker
     /// itself does not handle concurrent config writes cleanly.
     fn put(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
+        if debug_wire::is_enabled("fcrest") {
+            tracing::trace!(
+                direction = "out",
+                method = "PUT",
+                path,
+                preview = %debug_wire::format_wire_preview(body),
+                "fcrest request"
+            );
+        }
         let mut guard = self
             .stream
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         // If the previous call left the stream in a broken state (e.g., the
         // firecracker process restarted), reconnect transparently.
-        match http::put_json(&mut guard, path, body) {
-            Ok(resp) => Ok(resp),
+        let resp = match http::put_json(&mut guard, path, body) {
+            Ok(resp) => resp,
             Err(e) if is_broken_pipe(&e) => {
                 // Reconnect once and retry.
                 let new_stream =
                     UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
                 *guard = new_stream;
-                Ok(http::put_json(&mut guard, path, body)?)
+                http::put_json(&mut guard, path, body)?
             }
-            Err(e) => Err(ClientError::Io(e)),
+            Err(e) => return Err(ClientError::Io(e)),
+        };
+        if debug_wire::is_enabled("fcrest") {
+            tracing::trace!(
+                direction = "in",
+                status = resp.status,
+                preview = %debug_wire::format_wire_preview(&resp.body),
+                "fcrest response"
+            );
         }
+        Ok(resp)
     }
 }
 

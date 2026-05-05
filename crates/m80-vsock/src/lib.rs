@@ -5,7 +5,9 @@
 
 #![deny(missing_docs)]
 
-use std::io::{self, BufRead, BufReader, Write};
+mod debug_wire;
+
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -79,6 +81,10 @@ impl Channel {
             let mut w = &stream;
             writeln!(w, "CONNECT {guest_port}").map_err(VsockError::Io)?;
             w.flush().map_err(VsockError::Io)?;
+            if debug_wire::is_enabled("vsock") {
+                let line = format!("CONNECT {guest_port}\n");
+                tracing::trace!(direction = "out", msg = line.trim(), "vsock handshake");
+            }
         }
 
         // Read OK response.
@@ -86,6 +92,9 @@ impl Channel {
         let mut buf_reader = BufReader::new(reader_stream);
         let mut ack = String::new();
         buf_reader.read_line(&mut ack).map_err(VsockError::Io)?;
+        if debug_wire::is_enabled("vsock") {
+            tracing::trace!(direction = "in", msg = ack.trim(), "vsock handshake");
+        }
         if !ack.starts_with("OK ") {
             return Err(VsockError::HandshakeFailed);
         }
@@ -100,12 +109,46 @@ impl Channel {
 
     /// Send one [`Envelope`] over the channel.
     pub fn send<T: Serialize>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError> {
+        if debug_wire::is_enabled("vsock") {
+            // Serialize only when the gate fires to avoid allocation on the default path.
+            if let Ok(bytes) = serde_json::to_vec(envelope) {
+                tracing::trace!(
+                    direction = "out",
+                    preview = %debug_wire::format_wire_preview(&bytes),
+                    "vsock frame"
+                );
+            }
+        }
         m80_proto::write_frame(&mut self.stream, envelope)?;
         Ok(())
     }
 
     /// Receive one [`Envelope`] from the channel.
+    ///
+    /// When `M80_DEBUG_WIRE=vsock` (or `all`) is set, this takes a separate
+    /// read path that captures the raw NDJSON line into memory before parsing,
+    /// so the bytes can be logged. The default path uses `read_frame` directly
+    /// against the buffered reader. Keep both paths in sync if `read_frame`'s
+    /// framing assumptions change.
     pub fn recv<U: DeserializeOwned>(&mut self) -> Result<Envelope<U>, VsockError> {
+        if debug_wire::is_enabled("vsock") {
+            // Capture the raw NDJSON line for logging, then deserialize from the
+            // captured bytes. The limit mirrors the cap inside `read_frame`.
+            let limit = m80_proto::MAX_FRAME_BYTES as u64 + 2;
+            let mut raw_line: Vec<u8> = Vec::with_capacity(256);
+            self.buf_reader
+                .by_ref()
+                .take(limit)
+                .read_until(b'\n', &mut raw_line)
+                .map_err(VsockError::Io)?;
+            tracing::trace!(
+                direction = "in",
+                preview = %debug_wire::format_wire_preview(&raw_line),
+                "vsock frame"
+            );
+            let envelope = m80_proto::read_frame(&mut std::io::Cursor::new(raw_line))?;
+            return Ok(envelope);
+        }
         let envelope = m80_proto::read_frame(&mut self.buf_reader)?;
         Ok(envelope)
     }

@@ -79,6 +79,21 @@ some future) without touching the orchestrator.
 - `serde`, `sha2`, `thiserror`, `tracing`.
 - (No `tokio` — synchronous, like the rest of the host stack.)
 
+## Debug instrumentation
+
+Set `M80_DEBUG_WIRE=vsock` (or `M80_DEBUG_WIRE=all`) to enable wire-level
+logging via `tracing::trace!`. When enabled, every vsock handshake line and
+every frame sent or received is logged with a hex+ASCII preview of up to
+1024 bytes.
+
+- Matching is exact (`==`): `M80_DEBUG_WIRE= vsock` (leading space) does
+  **not** match; `M80_DEBUG_WIRE=vsock` does.
+- Multiple targets are comma-separated: `M80_DEBUG_WIRE=vsock,fcrest`.
+- `all` matches every target.
+- Unknown tokens are silently ignored.
+- The gate is a single atomic load on the hot path; no serialization occurs
+  unless the gate fires.
+
 ## Tests
 
 - `tests/cid_for_vm_id.rs` — determinism, reserved-range avoidance, and

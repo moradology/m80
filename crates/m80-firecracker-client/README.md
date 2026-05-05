@@ -67,6 +67,21 @@ without inheriting m80's lifecycle assumptions.
   dependency — m80 wants the smallest possible footprint here).
 - (no other m80 crates.)
 
+## Debug instrumentation
+
+Set `M80_DEBUG_WIRE=fcrest` (or `M80_DEBUG_WIRE=all`) to enable wire-level
+logging via `tracing::trace!`. When enabled, every Firecracker REST PUT
+request (method, path, and body) and response (status and body) is logged
+with a hex+ASCII preview of up to 1024 bytes.
+
+- Matching is exact (`==`): `M80_DEBUG_WIRE= fcrest` (leading space) does
+  **not** match; `M80_DEBUG_WIRE=fcrest` does.
+- Multiple targets are comma-separated: `M80_DEBUG_WIRE=vsock,fcrest`.
+- `all` matches every target.
+- Unknown tokens are silently ignored.
+- The gate is a single atomic load on the hot path; no serialization occurs
+  unless the gate fires.
+
 ## Tests
 
 - `tests/put_each_resource.rs` — for each Firecracker resource, a fixture

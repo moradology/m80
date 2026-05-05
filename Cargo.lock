@@ -359,6 +359,7 @@ dependencies = [
 name = "m80-firecracker-client"
 version = "0.0.0"
 dependencies = [
+ "hex",
  "serde",
  "serde_json",
  "tempfile",
@@ -506,8 +507,10 @@ dependencies = [
 name = "m80-vsock"
 version = "0.0.0"
 dependencies = [
+ "hex",
  "m80-proto",
  "serde",
+ "serde_json",
  "sha2",
  "tempfile",
  "thiserror",
