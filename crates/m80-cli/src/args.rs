@@ -39,6 +39,9 @@ pub enum Cmd {
     /// Prints the VM id and run-dir on launch. With --exec, runs the
     /// command inside the VM and exits when it completes (single-shot
     /// mode).
+    ///
+    /// With --from-snapshot, restores from a previously captured snapshot
+    /// directory instead of performing a cold boot.
     Launch {
         /// Optional host workspace directory to hydrate into a scratch
         /// ext4 inside the VM.
@@ -53,6 +56,15 @@ pub enum Cmd {
         /// Optional caller-supplied VM id (auto-derived when absent).
         #[arg(long, value_name = "VM_ID")]
         id: Option<String>,
+
+        /// Restore from a snapshot directory instead of cold-booting.
+        ///
+        /// The directory must contain vm.snap and mem.snap (written by
+        /// m80 snapshot capture). When set, cold-boot-only flags such as
+        /// boot-arg overrides are rejected with an error rather than
+        /// silently ignored.
+        #[arg(long, value_name = "DIR", conflicts_with = "id")]
+        from_snapshot: Option<PathBuf>,
 
         /// Single-shot exec: run argv inside the VM, then stop.
         /// Pass the full command after '--', e.g.: m80 launch -- /bin/sh -c "echo hi"
@@ -125,6 +137,18 @@ pub enum Cmd {
         action: ConfigAction,
     },
 
+    /// Snapshot operations (capture).
+    ///
+    /// v0.1 limitation: capture requires the VM to be launched in the same
+    /// process (out-of-process IPC is v0.2). For library use call
+    /// RunningSandbox::capture() directly.
+    #[command(name = "snapshot")]
+    Snapshot {
+        /// Snapshot sub-action.
+        #[command(subcommand)]
+        action: SnapshotAction,
+    },
+
     /// Print binary version, protocol version, and Firecracker pin.
     Version,
 }
@@ -134,6 +158,28 @@ pub enum Cmd {
 pub enum ConfigAction {
     /// Show the effective merged configuration.
     Show,
+}
+
+/// `m80 snapshot` sub-actions.
+#[derive(Debug, Subcommand)]
+pub enum SnapshotAction {
+    /// Capture a running VM's state into a snapshot directory.
+    ///
+    /// v0.1 limitation: capture requires the VM to be launched in the same
+    /// process (same binary invocation). Out-of-process capture — where
+    /// `m80 snapshot capture <vm-id>` contacts a separately-launched VM —
+    /// requires IPC and is deferred to v0.2 (same gap as `m80 exec`).
+    ///
+    /// Writes vm.snap and mem.snap to the destination directory.
+    Capture {
+        /// VM id of the running VM to capture.
+        vm_id: String,
+
+        /// Directory to write the snapshot files into (must not exist yet,
+        /// or must be empty).
+        #[arg(long, value_name = "DIR")]
+        store_root: PathBuf,
+    },
 }
 
 /// Parse `noegress` | `outbound` into [`NetworkPolicy`].

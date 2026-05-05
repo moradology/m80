@@ -16,7 +16,7 @@
 
 use clap::Parser;
 
-use m80_cli::args::{Cli, Cmd, ConfigAction};
+use m80_cli::args::{Cli, Cmd, ConfigAction, SnapshotAction};
 use m80_cli::cmds;
 use m80_cli::cmds_walk;
 
@@ -30,8 +30,9 @@ fn run(cli: Cli) -> anyhow::Result<i32> {
             workspace,
             network,
             id,
+            from_snapshot,
             exec,
-        } => cmds::cmd_launch(workspace, network, id, exec, json),
+        } => cmds::cmd_launch(workspace, network, id, from_snapshot, exec, json),
 
         Cmd::Exec {
             ref vm_id,
@@ -53,6 +54,10 @@ fn run(cli: Cli) -> anyhow::Result<i32> {
         Cmd::Config {
             action: ConfigAction::Show,
         } => cmds::cmd_config_show(json),
+
+        Cmd::Snapshot {
+            action: SnapshotAction::Capture { ref vm_id, ref store_root },
+        } => cmds::cmd_snapshot_capture(vm_id, store_root, json),
 
         Cmd::Version => cmds::cmd_version(json),
     }

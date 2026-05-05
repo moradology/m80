@@ -4,14 +4,14 @@
 //! Walk-based commands (stop, inspect, list) live in `cmds_walk`.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 
 use m80_firecracker::ExecRequest;
-use m80_firecracker::{Backend, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
+use m80_firecracker::{Backend, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig, SnapshotPaths};
 
 use crate::config;
 use crate::errors;
@@ -48,13 +48,19 @@ pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
     }
 }
 
-/// `m80 launch` — boot a VM. Empty `exec_argv` blocks until SIGINT;
-/// non-empty runs single-shot exec then stops the VM, returning the
-/// guest's exit code.
+/// `m80 launch` — boot a VM (cold or from snapshot).
+///
+/// Empty `exec_argv` blocks until SIGINT; non-empty runs single-shot exec
+/// then stops the VM, returning the guest's exit code.
+///
+/// When `from_snapshot` is `Some`, restores from a previously captured
+/// snapshot directory (must contain `vm.snap` and `mem.snap`) instead of
+/// performing a cold boot.
 pub fn cmd_launch(
     workspace: Option<PathBuf>,
     network: NetworkPolicy,
     id: Option<String>,
+    from_snapshot: Option<PathBuf>,
     exec_argv: Vec<String>,
     json: bool,
 ) -> anyhow::Result<i32> {
@@ -71,6 +77,7 @@ pub fn cmd_launch(
         mem_size_mib: None,
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
     };
 
     let sandbox = match backend.admit(sandbox_config) {
@@ -80,10 +87,41 @@ pub fn cmd_launch(
         }
     };
 
-    let mut running = match sandbox.launch() {
-        Ok(r) => r,
-        Err(e) => {
+    let mut running = if let Some(snap_dir) = from_snapshot {
+        // Restore path: verify snapshot files exist before calling into the
+        // orchestrator (fail early with a clear message rather than letting
+        // Firecracker emit a cryptic ENOENT from inside the jailer).
+        let vm_snap = snap_dir.join("vm.snap");
+        let mem_snap = snap_dir.join("mem.snap");
+        if !vm_snap.exists() {
+            let e = FcError::Config(format!(
+                "snapshot file not found: {}; expected vm.snap and mem.snap in --from-snapshot dir",
+                vm_snap.display()
+            ));
             return Ok(errors::render_error(&e, json));
+        }
+        if !mem_snap.exists() {
+            let e = FcError::Config(format!(
+                "snapshot file not found: {}; expected vm.snap and mem.snap in --from-snapshot dir",
+                mem_snap.display()
+            ));
+            return Ok(errors::render_error(&e, json));
+        }
+        let snapshot_paths = SnapshotPaths {
+            vm_state: vm_snap,
+            mem: mem_snap,
+        };
+        let discovery = m80_preflight::run()
+            .map_err(FcError::Preflight)?;
+        match sandbox.launch_from_snapshot(snapshot_paths, &discovery) {
+            Ok(r) => r,
+            Err(e) => return Ok(errors::render_error(&e, json)),
+        }
+    } else {
+        // Cold-boot path.
+        match sandbox.launch() {
+            Ok(r) => r,
+            Err(e) => return Ok(errors::render_error(&e, json)),
         }
     };
 
@@ -152,6 +190,37 @@ pub fn cmd_launch(
     }
 
     Ok(guest_exit)
+}
+
+/// `m80 snapshot capture` — v0.1 stub.
+///
+/// Capturing a running VM requires the caller to hold the `RunningSandbox`
+/// handle in-process (same gap as `m80 exec` — out-of-process IPC is v0.2).
+/// For library use, call `RunningSandbox::capture()` directly and pass in
+/// a [`m80_firecracker::SnapshotPaths`] pointing at your chosen directory.
+///
+/// Example (library path):
+/// ```text
+/// let paths = SnapshotPaths { vm_state: dir.join("vm.snap"), mem: dir.join("mem.snap") };
+/// running.capture(paths)?;
+/// ```
+pub fn cmd_snapshot_capture(vm_id: &str, _store_root: &Path, json: bool) -> anyhow::Result<i32> {
+    let msg = format!(
+        "v0.1 limitation: `m80 snapshot capture` requires out-of-process IPC (planned for v0.2). \
+         Capture is only available via RunningSandbox::capture() when the VM is launched \
+         in the same process. For single-shot capture, embed m80-firecracker and call \
+         capture() directly. vm_id={vm_id}"
+    );
+    if json {
+        let obj = serde_json::json!({
+            "error": msg,
+            "exit_code": errors::EXIT_NOT_IMPLEMENTED,
+        });
+        eprintln!("{}", serde_json::to_string_pretty(&obj).unwrap());
+    } else {
+        eprintln!("error: {msg}");
+    }
+    Ok(errors::EXIT_NOT_IMPLEMENTED)
 }
 
 /// `m80 exec` — v0.1 stub.

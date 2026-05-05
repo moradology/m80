@@ -13,4 +13,4 @@ pub mod cmds_walk;
 pub mod config;
 pub mod errors;
 
-pub use args::{Cli, Cmd, ConfigAction};
+pub use args::{Cli, Cmd, ConfigAction, SnapshotAction};

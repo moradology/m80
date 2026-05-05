@@ -154,3 +154,175 @@ this automatically).
   (READY_POLL_INTERVAL = 10 ms, READY_TIMEOUT = 60 s after m80-bgas.1).
 - Graceful-stop constants: `crates/m80-firecracker/src/lifecycle.rs`
   (GRACEFUL_STOP_TIMEOUT = 2 s, SHUTDOWN_RPC_TIMEOUT = 5 s).
+
+---
+
+## Smoke checkpoint — storage pivot (m80-f2zc.9)
+
+**Bead:** m80-f2zc.9 · **Status:** TBD — pending end-to-end KVM exercise.
+
+### Acceptance criteria (from `docs/planning/perf-roadmap-extended.md §1.3`)
+
+A single launch with `M80_PHASE_TRACE=1` must pass all four assertions:
+
+1. SHA256 of the base file (`output.ext4`) is unchanged before and after the
+   launch — verifies the RO base is never written (risk R7 in the perf
+   roadmap).
+2. The per-VM overlay file (`rootfs.overlay.ext4`) grew by < 100 KB during a
+   `/bin/echo` exec — confirms only the guestd-side overlay metadata was
+   written, not a full rootfs copy.
+3. Inside the guest, `mount` output shows overlayfs at `/` and the lower-dir
+   bind-mount is detached post-pivot — confirms `pivot_root` succeeded and
+   the old mount tree was detached.
+4. `phase_12b_ready_accept` in the `M80_PHASE_TRACE` output completes in
+   ≤ 250 ms. A value > 300 ms blocks the BENCH leaf (`m80-f2zc.7`) and
+   triggers a diagnostics-first triage per CLAUDE.md.
+
+### How to run
+
+```bash
+./scripts/smoke.sh                          # default (ubuntu), full pipeline
+M80_IMAGE_KIND=minimal ./scripts/smoke.sh   # minimal image
+```
+
+Both invoke the default smoke mode (cold launch → exec → stop). The
+`M80_PHASE_TRACE=1` timing assertions listed above are manual inspection
+steps, not automated in the script today.
+
+### Wire-level contract — verified by existing tests
+
+The Wave-2 and Wave-3 unit and integration tests verify the wire-level
+contract independently of a live KVM run:
+
+- `m80-storage` prepare: `crates/m80-storage/tests/overlay/prepare.rs`
+  — verifies `Rootfs::prepare` creates a sparse overlay ext4, base path
+  unchanged, overlay path is a separate file.
+- Drive PUT order (vda=base RO, vdb=overlay RW, vdc=workspace RW):
+  `crates/m80-firecracker/tests/phase11_drive_order.rs`
+  — verifies the `phase_11_rest_puts` sequence matches the contract in
+  `docs/design/storage-overlay.md §2`.
+- In-guest pivot: `crates/m80-guestd/tests/pivot/pivot_rootfs.rs`
+  — verifies the kata-derived `pivot_rootfs` sequence (mount, chdir,
+  pivot_root, umount2 recursive) against a tmpfs fixture without KVM.
+
+**Bench numbers:** TBD — pending end-to-end KVM exercise on the target host.
+Expected save vs. prior `Rootfs::clone` baseline: **700–770 ms** (high
+confidence; mechanism is the same shared-RO-base + sparse-overlay pattern
+used by runc, crun, kata-containers, and Firecracker-containerd).
+
+---
+
+## Smoke checkpoint — stripped kernel (m80-ci9i.6)
+
+**Bead:** m80-ci9i.6 · **Status:** TBD — pending Docker-built stripped kernel.
+
+### Acceptance criteria (from `docs/planning/perf-roadmap-extended.md §2.3`)
+
+A single launch with `M80_KERNEL_KIND=stripped` and `M80_PHASE_TRACE=1`
+must pass:
+
+1. Guest reaches userspace and `m80-guestd` binds the vsock listener
+   (phase_12b_ready_accept completes) — confirms the stripped kernel boots.
+2. `phase_12b_ready_accept` ≤ 400 ms. Values > 500 ms trigger
+   diagnostics-first triage before producing N=30 bench noise.
+3. Console output reaches the host on `ttyS0` (the `8250.nr_uarts=1`
+   cmdline pin is honored; one UART preserved for diagnostics).
+4. Exec round-trip succeeds — confirms overlayfs is present in the kernel
+   (`CONFIG_OVERLAY_FS=y` and `CONFIG_OVERLAY_FS_XINO_AUTO=y` in the
+   keep-list per `docs/design/stripped-kernel.md §2`).
+
+### How to run
+
+```bash
+# 1. Build the stripped kernel first (requires Docker):
+#    See crates/m80-image-build/kernel-builder/Dockerfile (m80-ci9i.2).
+
+# 2. Run the stripped-kernel smoke:
+M80_KERNEL_KIND=stripped ./scripts/smoke.sh
+
+# Or point directly at a pre-built artifact:
+M80_KERNEL_KIND=stripped \
+M80_STRIPPED_KERNEL_PATH=/path/to/vmlinux-m80-<sha>.bin \
+./scripts/smoke.sh
+```
+
+When `M80_KERNEL_KIND=stripped` is set and no built artifact is found
+under `crates/m80-image-build/kernels/vmlinux-m80-*.bin`, the script
+exits 0 with an explanatory message (the bench runner can then know the
+kernel needs building):
+
+```
+# stripped kernel not yet built; skipping (run m80-image-build kernel build first)
+```
+
+### Design references
+
+- Kernel config keep-list (overlayfs, vsock, virtio, devtmpfs, 8250):
+  `docs/design/stripped-kernel.md §2`.
+- Cmdline trim (`quiet loglevel=0 8250.nr_uarts=1`):
+  `docs/design/stripped-kernel.md §6`.
+- Risk register (R1–R7): `docs/design/stripped-kernel.md §7`.
+
+**Bench numbers:** TBD — pending Docker-built stripped kernel and KVM-exercised
+smoke run. Expected save on `phase_12b_ready_accept`: **500–700 ms** (high
+confidence per firecracker community reports of 150–300 ms userspace with
+stripped kernels).
+
+---
+
+## Smoke checkpoint — snapshot capture + restore (m80-rrp.3.14)
+
+**Bead:** m80-rrp.3.14 · **Status:** TBD — pending KVM-exercised snapshot
+round-trip. Smoke scripts are in place; full end-to-end blocked on
+out-of-process IPC (v0.2 gap, same as `m80 exec`).
+
+### Acceptance criteria (from `docs/planning/perf-roadmap-extended.md §3.3`)
+
+A single round-trip must pass:
+
+1. `m80 launch` (cold) + exec `/bin/echo hello` succeeds.
+2. `m80 snapshot capture <vm-id> --store-root <dir>` writes `vm.snap` and
+   `mem.snap` to the directory.
+3. `m80 launch --from-snapshot <dir> -- /bin/echo restored` exits 0 and
+   stdout contains `"restored"`.
+4. `restore useful_ms` < `cold useful_ms` − 500 ms (lower-bound floor; less
+   than this triggers diagnostics-first triage before BENCH).
+5. SHA256 of the base file unchanged after the round-trip.
+6. Overlay disk at restore stays small (fresh `mkfs.ext4`, not stale upper
+   dir from capture time).
+
+### How to run
+
+```bash
+M80_SMOKE_MODE=snapshot ./scripts/smoke.sh
+```
+
+### v0.1 status
+
+`m80 snapshot capture` is a v0.1 stub (exit 7 = `EXIT_NOT_IMPLEMENTED`).
+The same out-of-process IPC gap that blocks `m80 exec` blocks capture:
+both require a side-channel to a running VM. The CLI parse layer and error
+path are exercised by the smoke script (exit 7 is asserted; a panic or
+unknown-subcommand failure is a bug).
+
+`m80 launch --from-snapshot` is fully wired. The missing-file error path
+(exit 6 = `EXIT_CONFIG`) is exercised by the smoke script when no snapshot
+files are present.
+
+The full capture+restore end-to-end is covered by the in-process
+integration test at `crates/m80-firecracker/tests/snapshot_integration.rs`
+(requires KVM, `#[ignore]` by default; run with
+`cargo test -- --ignored snapshot`).
+
+### Design references
+
+- Snapshot file layout (`vm.snap`, `mem.snap`): `docs/design/snapshot-restore.md §2`.
+- Restore path (PUT /snapshot/load, PATCH /vm Resumed, exec-channel probe):
+  `docs/design/snapshot-restore.md §4`.
+- CLI surface (`--from-snapshot`, `snapshot capture`):
+  `crates/m80-cli/src/args.rs`, `crates/m80-cli/src/cmds.rs`.
+
+**Bench numbers:** TBD — pending KVM-exercised snapshot round-trip.
+Expected warm-restore latency: **125–200 ms** (medium confidence; AWS
+published numbers for Firecracker snapshot restore; our setup may differ).
+Smoke scripts in place at `scripts/smoke.sh` (`M80_SMOKE_MODE=snapshot`).

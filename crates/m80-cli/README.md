@@ -18,8 +18,9 @@ same envelope on stdout/stderr.
 
 - `m80 preflight` — runs `m80-preflight::run()` and renders the table.
   Exit 0 on full pass, 2 on any check failed.
-- `m80 launch [--workspace <path>] [--network noegress|outbound] [--id <vm-id>] [-- <argv>...]`
-  — boots a VM in the foreground via `Sandbox::launch()`. Two modes:
+- `m80 launch [--workspace <path>] [--network noegress|outbound] [--id <vm-id>] [--from-snapshot <dir>] [-- <argv>...]`
+  — boots a VM in the foreground via `Sandbox::launch()` (cold boot) or
+  `Sandbox::launch_from_snapshot()` (restore from snapshot). Two modes:
   - **Blocking mode** (no trailing argv): boots and blocks indefinitely
     so the VM stays alive until SIGINT; the `Drop` chain on the
     `RunningSandbox` performs the cleanup.
@@ -27,6 +28,12 @@ same envelope on stdout/stderr.
     prints stdout/stderr/exit, then stops + deletes. v0.1's path for
     "spawn a sandbox to run one thing" — the separate `m80 exec`
     subcommand needs out-of-process IPC and is deferred to v0.2.
+  - `--from-snapshot <dir>`: directory must contain `vm.snap` and
+    `mem.snap` (written by `m80 snapshot capture` or
+    `RunningSandbox::capture()`). Missing files produce a clear error
+    (exit 6) rather than a cryptic Firecracker ENOENT. `--id` is not
+    accepted together with `--from-snapshot` (the vm-id is implicit in
+    the snapshot).
 - `m80 exec <vm-id> -- <argv>... [--cwd <path>] [--env KEY=VAL ...]
   [--timeout-ms <n>]` — sends one exec request to a running VM. Renders
   stdout/stderr to the controlling terminal; exit code matches the
@@ -43,6 +50,13 @@ same envelope on stdout/stderr.
   `cleanup_orphan_bridge()` (if `m80-net-outbound` says so).
 - `m80 config show` — prints the merged effective config in the
   documented precedence order.
+- `m80 snapshot capture <vm-id> --store-root <dir>` — captures a running
+  VM's state into `<dir>/vm.snap` + `<dir>/mem.snap`. v0.1 limitation:
+  capture requires the VM to be launched in the same process (same binary
+  invocation); out-of-process capture is v0.2 (same IPC gap as `m80 exec`).
+  The subcommand exits 7 (`EXIT_NOT_IMPLEMENTED`) with an explanatory
+  message. For library use, call `RunningSandbox::capture()` directly and
+  pass `SnapshotPaths { vm_state, mem }`.
 - `m80 version` — prints binary version + protocol version + Firecracker
   pinned version.
 

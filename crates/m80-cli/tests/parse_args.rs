@@ -5,7 +5,7 @@
 //! Behavior capture: bead m80-4ef.3 (CLI argument parsing correctness).
 
 use clap::Parser;
-use m80_cli::{Cli, Cmd, ConfigAction};
+use m80_cli::{Cli, Cmd, ConfigAction, SnapshotAction};
 use m80_firecracker::NetworkPolicy;
 
 // ---- preflight ----
@@ -33,11 +33,13 @@ fn parse_launch_defaults() {
             workspace,
             network,
             id,
+            from_snapshot,
             exec,
         } => {
             assert!(workspace.is_none());
             assert_eq!(network, NetworkPolicy::NoEgress);
             assert!(id.is_none());
+            assert!(from_snapshot.is_none());
             assert!(exec.is_empty());
         }
         _ => panic!("expected Launch"),
@@ -260,6 +262,46 @@ fn parse_unknown_subcommand_fails() {
         result.is_err(),
         "expected parse failure for unknown subcommand"
     );
+}
+
+// ---- launch --from-snapshot ----
+
+#[test]
+fn parse_launch_from_snapshot() {
+    let cli = Cli::try_parse_from(["m80", "launch", "--from-snapshot", "/tmp/snap", "--", "/bin/echo", "hi"]).unwrap();
+    match cli.subcommand {
+        Cmd::Launch { from_snapshot, exec, .. } => {
+            assert_eq!(from_snapshot, Some(std::path::PathBuf::from("/tmp/snap")));
+            assert_eq!(exec, vec!["/bin/echo", "hi"]);
+        }
+        _ => panic!("expected Launch"),
+    }
+}
+
+#[test]
+fn parse_launch_from_snapshot_no_exec() {
+    let cli = Cli::try_parse_from(["m80", "launch", "--from-snapshot", "/tmp/snap"]).unwrap();
+    match cli.subcommand {
+        Cmd::Launch { from_snapshot, exec, .. } => {
+            assert_eq!(from_snapshot, Some(std::path::PathBuf::from("/tmp/snap")));
+            assert!(exec.is_empty());
+        }
+        _ => panic!("expected Launch"),
+    }
+}
+
+// ---- snapshot capture ----
+
+#[test]
+fn parse_snapshot_capture() {
+    let cli = Cli::try_parse_from(["m80", "snapshot", "capture", "vm-abc", "--store-root", "/tmp/snap"]).unwrap();
+    match cli.subcommand {
+        Cmd::Snapshot { action: SnapshotAction::Capture { vm_id, store_root } } => {
+            assert_eq!(vm_id, "vm-abc");
+            assert_eq!(store_root, std::path::PathBuf::from("/tmp/snap"));
+        }
+        _ => panic!("expected Snapshot Capture"),
+    }
 }
 
 // ---- --json is global ----
