@@ -50,6 +50,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
         mem_size_mib: Some(512),
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");

@@ -47,6 +47,7 @@ fn sandbox_config(vm_id: &str) -> m80_firecracker::SandboxConfig {
         mem_size_mib: Some(512),
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
+        idle_timeout: None,
     }
 }
 
@@ -62,6 +63,7 @@ fn sandbox_config_with_workspace(
         mem_size_mib: Some(512),
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
+        idle_timeout: None,
     }
 }
 

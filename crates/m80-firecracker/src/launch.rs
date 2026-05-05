@@ -17,6 +17,8 @@
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use m80_cgroup::{Limits, Subtree};
@@ -33,6 +35,7 @@ use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::error::FcError;
+use crate::lifecycle::{monotonic_ns, spawn_idle_watcher};
 use crate::runroot::write_ownership_lock;
 use crate::timing::phase;
 use crate::types::{
@@ -258,6 +261,20 @@ impl Sandbox {
             phase_12b_ready_accept(&ready_listener, &vsock_uds, &vm_id)
         })?;
 
+        let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
+        let idle_timed_out = Arc::new(AtomicBool::new(false));
+        let watcher_stop = Arc::new(AtomicBool::new(false));
+        let watcher_thread = self.config.idle_timeout.map(|timeout| {
+            spawn_idle_watcher(
+                timeout,
+                vsock_uds.clone(),
+                Arc::clone(&last_activity_ns),
+                Arc::clone(&idle_timed_out),
+                Arc::clone(&watcher_stop),
+                vm_id.clone(),
+            )
+        });
+
         Ok(RunningSandbox {
             vm_id,
             run_dir,
@@ -270,6 +287,10 @@ impl Sandbox {
             firecracker,
             permit: self.permit,
             backend: self.backend,
+            last_activity_ns,
+            idle_timed_out,
+            watcher_stop,
+            watcher_thread,
         })
     }
 }
@@ -393,6 +414,20 @@ impl Sandbox {
 
         let _ = discovery; // Discovery is passed for API symmetry; not needed beyond the phases above.
 
+        let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
+        let idle_timed_out = Arc::new(AtomicBool::new(false));
+        let watcher_stop = Arc::new(AtomicBool::new(false));
+        let watcher_thread = self.config.idle_timeout.map(|timeout| {
+            spawn_idle_watcher(
+                timeout,
+                vsock_uds.clone(),
+                Arc::clone(&last_activity_ns),
+                Arc::clone(&idle_timed_out),
+                Arc::clone(&watcher_stop),
+                vm_id.clone(),
+            )
+        });
+
         Ok(RunningSandbox {
             vm_id,
             run_dir,
@@ -405,6 +440,10 @@ impl Sandbox {
             firecracker,
             permit: self.permit,
             backend: self.backend,
+            last_activity_ns,
+            idle_timed_out,
+            watcher_stop,
+            watcher_thread,
         })
     }
 }

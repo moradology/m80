@@ -99,6 +99,9 @@ each at most to allocate + format; there is no full-rootfs copy.
 (default: 512 MiB). The overlay grows as the guest writes; the sparse
 allocation costs zero disk bytes at creation.
 
+`SandboxConfig::idle_timeout` controls the idle-shutdown timer (default:
+`Some(300s)`). See "Idle timeout" below.
+
 ### Concurrency / admission
 
 `Backend::admit().launch()` acquires one slot from the admission
@@ -111,11 +114,30 @@ Loading order: built-in defaults → `/etc/m80/config.toml` →
 `~/.config/m80/config.toml` → `M80_*` env → CLI flags. Reveal the merged
 result via `Backend::show_effective_config()`.
 
+### Idle timeout
+
+`SandboxConfig::idle_timeout: Option<Duration>` (default: `Some(300s)`) arms
+an automatic shutdown when the VM sits idle for longer than the configured
+duration. A background thread spawned on `launch` (and `launch_from_snapshot`)
+tracks the last `exec` activity. On expiry:
+
+1. The thread calls `send_shutdown_request` (best-effort; logs on failure).
+2. Sets an `AtomicBool` flag so the next `exec` returns `FcError::IdleTimedOut`.
+
+`exec` updates the activity timestamp at the **start and end** of every call,
+so long-running execs do not trip the watcher mid-flight. `stop()` and
+`force_kill()` signal the watcher thread to exit and join it before returning.
+
+`idle_timeout: None` disables the watcher entirely.
+
 ### Error model
 
 Typed `FcError` variants tell the caller which phase failed; inner
 causes carry detail. No silent degradation — anything that compromises
 an invariant fails closed.
+
+New variant: `FcError::IdleTimedOut` — returned by `exec` when the
+idle-timeout watcher has fired. The caller must drop or `stop()` the sandbox.
 
 ## Non-goals
 

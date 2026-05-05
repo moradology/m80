@@ -2,7 +2,9 @@
 //! Implementation blocks live in the module that owns the type's domain.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -160,6 +162,32 @@ pub struct SandboxConfig {
     /// with `mkfs.ext4 -F`. Cost at creation is ~0 bytes on disk; it grows
     /// as the guest writes. See `docs/design/storage-overlay.md §5`.
     pub overlay_size_bytes: u64,
+    /// How long the VM may sit idle (no exec in flight, none pending) before
+    /// the host issues a graceful shutdown. `None` opts out of idle shutdown.
+    ///
+    /// Default: `Some(Duration::from_secs(300))` (5 minutes).
+    ///
+    /// The watcher thread resets the deadline after each successful `exec`
+    /// call. If the deadline elapses with no exec activity, the next `exec`
+    /// call returns `FcError::IdleTimedOut`; the caller should then drop or
+    /// `stop()` the sandbox. `None` disables the watcher entirely — the VM
+    /// runs until the caller explicitly stops it.
+    pub idle_timeout: Option<Duration>,
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        SandboxConfig {
+            vm_id: None,
+            workspace: None,
+            network: NetworkPolicy::NoEgress,
+            vcpu_count: None,
+            mem_size_mib: None,
+            boot_args: None,
+            overlay_size_bytes: 512 * 1024 * 1024,
+            idle_timeout: Some(Duration::from_secs(300)),
+        }
+    }
 }
 
 /// A sandbox in `Created` state — admission permit held, no I/O performed yet.
@@ -206,6 +234,18 @@ pub struct RunningSandbox {
     pub(crate) permit: AdmissionPermit,
     /// Reference to the backend.
     pub(crate) backend: Arc<Backend>,
+    /// Monotonic timestamp (nanos since an arbitrary epoch) of the last
+    /// `exec` activity. Updated at the start and end of every `exec` call.
+    /// Written with `Relaxed` ordering — the watcher only needs a recent
+    /// value; happens-before precision is not required.
+    pub(crate) last_activity_ns: Arc<AtomicU64>,
+    /// Watcher sets this flag when the idle deadline expires.
+    /// `exec` checks it at entry and returns `FcError::IdleTimedOut`.
+    pub(crate) idle_timed_out: Arc<std::sync::atomic::AtomicBool>,
+    /// Signal from `stop` / `force_kill` to the watcher thread to exit.
+    pub(crate) watcher_stop: Arc<std::sync::atomic::AtomicBool>,
+    /// Watcher thread join handle (`None` when `idle_timeout` is `None`).
+    pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl RunningSandbox {

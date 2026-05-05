@@ -27,6 +27,7 @@ fn sandbox_config() -> SandboxConfig {
         mem_size_mib: None,
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
     }
 }
 

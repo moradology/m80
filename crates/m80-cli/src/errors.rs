@@ -51,7 +51,8 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Client(_)
         | FcError::Vsock(_)
         | FcError::Snapshot(_)
-        | FcError::Io(_) => EXIT_GENERIC,
+        | FcError::Io(_)
+        | FcError::IdleTimedOut => EXIT_GENERIC,
     }
 }
 
@@ -100,6 +101,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Io(_) => "Io",
         FcError::Config(_) => "Config",
         FcError::Snapshot(_) => "Snapshot",
+        FcError::IdleTimedOut => "IdleTimedOut",
     }
 }
 

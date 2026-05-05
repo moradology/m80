@@ -68,4 +68,11 @@ pub enum FcError {
     /// Configuration loading or merging failure.
     #[error("config: {0}")]
     Config(String),
+    /// The sandbox was idle for longer than `SandboxConfig::idle_timeout`.
+    ///
+    /// The background watcher has issued a graceful shutdown; the caller must
+    /// not send further exec requests. Drop or `stop()` the sandbox to release
+    /// resources.
+    #[error("sandbox idle timeout expired")]
+    IdleTimedOut,
 }

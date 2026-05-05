@@ -2,6 +2,8 @@
 //! Transitions consume the prior handle (move semantics).
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use m80_proto::{Envelope, ExecRequest, ExecResponse, ShutdownAction, ShutdownRequest, ShutdownResponse};
@@ -31,7 +33,18 @@ impl RunningSandbox {
     /// exec) is not supported — the borrow checker enforces one in-flight exec
     /// at a time via `&mut self`. Call `stop()` (or drop the sandbox) to tear
     /// down the VM.
+    ///
+    /// Returns `FcError::IdleTimedOut` if the idle-timeout watcher has already
+    /// fired. The VM has been gracefully shut down; the caller must drop or
+    /// `stop()` the sandbox.
     pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
+        if self.idle_timed_out.load(Ordering::Relaxed) {
+            return Err(FcError::IdleTimedOut);
+        }
+        // Touch last-activity at the start of every exec so a long-running
+        // exec doesn't trip the idle watcher mid-flight.
+        self.last_activity_ns
+            .store(monotonic_ns(), Ordering::Relaxed);
         let envelope = Envelope::new(req);
         let t = Instant::now();
         self.channel.send(&envelope)?;
@@ -39,6 +52,10 @@ impl RunningSandbox {
         let t = Instant::now();
         let resp_env: Envelope<ExecResponse> = self.channel.recv()?;
         phase_event("exec_recv", &self.vm_id, t.elapsed());
+        // Touch last-activity at completion too, so the watcher deadline is
+        // reset from the end of the call (not its start).
+        self.last_activity_ns
+            .store(monotonic_ns(), Ordering::Relaxed);
         Ok(resp_env.payload)
     }
 
@@ -81,6 +98,10 @@ impl RunningSandbox {
         let vm_id_for_event = self.vm_id.clone();
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
 
+        // Signal the idle-watcher thread to exit before teardown so it does
+        // not race with the shutdown we are about to send.
+        self.watcher_stop.store(true, Ordering::Relaxed);
+
         // Phase 2: bounded_stop.
         let t = Instant::now();
         bounded_stop(self.firecracker.firecracker_pid, &vsock_uds)?;
@@ -101,7 +122,17 @@ impl RunningSandbox {
             firecracker: _firecracker,
             permit,
             backend: _backend,
+            last_activity_ns: _last_activity_ns,
+            idle_timed_out: _idle_timed_out,
+            watcher_stop: _watcher_stop,
+            watcher_thread,
         } = self;
+
+        // Join the watcher thread after destructuring (the stop flag is already
+        // set above; the thread will exit on its next wake interval).
+        if let Some(handle) = watcher_thread {
+            let _ = handle.join();
+        }
         phase_event("stop_release", &vm_id_for_event, t.elapsed());
 
         Ok(StoppedSandbox {
@@ -121,6 +152,9 @@ impl RunningSandbox {
     pub fn force_kill(self) -> Result<StoppedSandbox, FcError> {
         let run_root = self.backend.config.run_root.clone();
 
+        // Signal the watcher to exit before killing the process.
+        self.watcher_stop.store(true, Ordering::Relaxed);
+
         kill_pid(self.firecracker.firecracker_pid)?;
         kill_pid(self.firecracker.jailer_pid)?;
 
@@ -136,7 +170,15 @@ impl RunningSandbox {
             firecracker: _firecracker,
             permit,
             backend: _backend,
+            last_activity_ns: _last_activity_ns,
+            idle_timed_out: _idle_timed_out,
+            watcher_stop: _watcher_stop,
+            watcher_thread,
         } = self;
+
+        if let Some(handle) = watcher_thread {
+            let _ = handle.join();
+        }
 
         Ok(StoppedSandbox {
             vm_id,
@@ -225,6 +267,91 @@ fn send_shutdown_request(vsock_uds: &Path) -> Result<ShutdownAction, FcError> {
         return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
     }
     Ok(resp_env.payload.action)
+}
+
+/// Return a monotonic timestamp in nanoseconds.
+///
+/// Uses `Instant` internally; the absolute value is arbitrary but consistent
+/// within a process lifetime. The watcher and exec share a common epoch
+/// because they both call this function.
+pub(crate) fn monotonic_ns() -> u64 {
+    // Instant cannot be stored in an AtomicU64 directly; we compute the
+    // duration from a fixed reference point instead.
+    use std::sync::OnceLock;
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    let epoch = EPOCH.get_or_init(Instant::now);
+    epoch.elapsed().as_nanos() as u64
+}
+
+/// Spawn the idle-timeout watcher thread.
+///
+/// The watcher sleeps in a loop, waking every `poll_interval` to compare
+/// the elapsed time since `last_activity_ns` against `timeout`. When the
+/// deadline expires, it sends a graceful shutdown request over `vsock_uds`
+/// (best-effort; logs on failure) and sets `idle_timed_out` so the next
+/// `exec` returns `FcError::IdleTimedOut`.
+///
+/// The thread exits when `stop_flag` is set (by `stop()` or `force_kill()`).
+pub(crate) fn spawn_idle_watcher(
+    timeout: Duration,
+    vsock_uds: std::path::PathBuf,
+    last_activity_ns: Arc<AtomicU64>,
+    idle_timed_out: Arc<AtomicBool>,
+    stop_flag: Arc<AtomicBool>,
+    vm_id: String,
+) -> std::thread::JoinHandle<()> {
+    // Poll at most at this interval. Chosen to be short enough to be
+    // responsive but not so short it wastes CPU.
+    let poll_interval = std::cmp::min(timeout / 4, Duration::from_secs(30));
+    std::thread::spawn(move || {
+        idle_watcher_loop(
+            timeout,
+            poll_interval,
+            &vsock_uds,
+            &last_activity_ns,
+            &idle_timed_out,
+            &stop_flag,
+            &vm_id,
+        );
+    })
+}
+
+/// Inner loop of the idle-timeout watcher. Extracted so it's testable
+/// without spawning a real thread.
+pub(crate) fn idle_watcher_loop(
+    timeout: Duration,
+    poll_interval: Duration,
+    vsock_uds: &std::path::Path,
+    last_activity_ns: &AtomicU64,
+    idle_timed_out: &AtomicBool,
+    stop_flag: &AtomicBool,
+    vm_id: &str,
+) {
+    loop {
+        std::thread::sleep(poll_interval);
+
+        if stop_flag.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let last_ns = last_activity_ns.load(Ordering::Relaxed);
+        let now_ns = monotonic_ns();
+        let idle_ns = now_ns.saturating_sub(last_ns);
+        let timeout_ns = timeout.as_nanos() as u64;
+
+        if idle_ns >= timeout_ns {
+            tracing::info!(vm_id, "idle timeout expired; issuing graceful shutdown");
+            idle_timed_out.store(true, Ordering::Relaxed);
+            if let Err(e) = send_shutdown_request(vsock_uds) {
+                tracing::warn!(
+                    vm_id,
+                    error = %e,
+                    "idle watcher: graceful shutdown failed (VM may already be stopped)"
+                );
+            }
+            return;
+        }
+    }
 }
 
 /// Send `SIGKILL` to `pid`. Treats `ESRCH` (no such process) as success.
