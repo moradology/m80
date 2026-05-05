@@ -92,6 +92,13 @@ names. Cross-reference:
 `docs/planning/wire-features-bead-plan.md` are the authoritative
 narrative for the storage pivot and the two wire epics respectively.
 
+**`docs/planning/perf-roadmap-extended.md`** (filed 2026-05-05) extends
+each of the four latency epics with explicit risk registers, post-IMPL
+smoke checkpoints, rollback notes, cross-epic dependency edges, effort
+ranges with upper bounds, and confidence-intervaled savings. That doc
+is the source of truth for the extended bead state; it includes an
+aspirational-ID → actual-ID map at the end.
+
 ---
 
 ## Recent reliability win (for context)
