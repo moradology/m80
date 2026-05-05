@@ -344,6 +344,7 @@ dependencies = [
  "m80-net-outbound",
  "m80-preflight",
  "m80-proto",
+ "m80-snapshot",
  "m80-storage",
  "m80-vsock",
  "nix 0.29.0",
@@ -374,6 +375,7 @@ dependencies = [
  "anyhow",
  "m80-proto",
  "nix 0.29.0",
+ "scopeguard",
  "serde",
  "serde_json",
  "thiserror",
@@ -645,6 +647,12 @@ dependencies = [
  "linux-raw-sys",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "serde"

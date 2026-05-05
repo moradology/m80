@@ -32,11 +32,12 @@ Keeping the guest small has direct benefits:
   kernel as PID 1 (minimal image kind, `init=/m80-guestd` boot arg).
 - **PID-1 mode** is detected at startup (`getpid() == 1`). When active:
   install a panic hook that exits non-zero (kernel reboots via the
-  `panic=1` boot arg, surfacing the failure to the host); mount `/proc`,
-  `/sys`, and `/dev` (devtmpfs); poll-reap orphaned children between
-  vsock requests so re-parented orphans don't accumulate. No SIGCHLD or
-  SIGTERM handlers — the workspace forbids `unsafe` and the firecracker
-  host stops the VM with SIGKILL on the outside.
+  `panic=1` boot arg, surfacing the failure to the host); then execute
+  the overlay+pivot startup sequence (see below); poll-reap orphaned
+  children between vsock requests so re-parented orphans don't
+  accumulate. No SIGCHLD or SIGTERM handlers — the workspace forbids
+  `unsafe` and the firecracker host stops the VM with SIGKILL on the
+  outside.
 - On startup: bind vsock port (default `m80_proto::GUEST_PORT_DEFAULT`),
   print `m80_proto::READY_MARKER_DEFAULT` to the serial console (the
   agreed ready marker), then loop on `accept()`.
@@ -86,16 +87,37 @@ that wire type directly.)
   stream limit (default 1 MiB; consider externalization in v0.2).
 - `timing: { spawned_at, exited_at, spawn_ms, run_ms }`.
 
+### PID-1 overlay+pivot startup sequence
+
+Implements `docs/design/storage-overlay.md §3.1` (11-step pseudocode).
+Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
+
+1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs). `EBUSY` (kernel pre-mounted) is accepted as success.
+2. Make mount namespace fully private (`MS_REC | MS_PRIVATE` on `/`) so `pivot_root(2)` does not propagate to the host.
+3. Mount `/dev/vda` (shared read-only base ext4) at `/lower` (`MS_RDONLY`).
+4. Mount `/dev/vdb` (per-VM writable overlay ext4) at `/upper`.
+5. `mkdir /upper/root` and `mkdir /upper/.work` (idempotent — first boot creates, later boots already have them from a prior VM that used the overlay).
+6. `mkdir /merged`.
+7. Mount overlayfs: `lowerdir=/lower,upperdir=/upper/root,workdir=/upper/.work` at `/merged`.
+8. Bind-mount `/proc` (`MS_BIND|MS_REC`), `/sys` (`MS_BIND`), `/dev` (`MS_BIND`) into `/merged/{proc,sys,dev}` so they survive pivot.
+9. Apply `MS_SLAVE|MS_REC` on `/` and `MS_BIND|MS_REC` of `/merged` onto itself (required by `pivot_root(".", ".")`).
+10. Call `pivot_rootfs("/merged")` — lifted verbatim from `kata-containers/src/agent/rustjail/src/mount.rs:523-559` (Apache-2.0, © 2019 Ant Financial). Uses `defer!` (scopeguard) for FD cleanup.
+11. Mount `/dev/vdc` (workspace scratch ext4) at `/workspace` **inside the pivoted root**. Skipped if `/dev/vdc` does not exist (workspace is optional).
+
+**Failure policy:** any step failure panics. PID-1 panic triggers kernel panic (kernel reboots with `panic=1` cmdline). No retry, no fallback — failure here is structural. Every step logs to stderr so the Firecracker serial console shows the exact failure point.
+
 ### Workspace mount
 
 - **Ubuntu image**: the systemd-installed mount unit attaches the host-
-  provided scratch ext4 (`/dev/vdb`) at `/workspace` before the daemon
-  starts. The daemon does not mount anything itself.
-- **Minimal image (PID-1 mode)**: m80-guestd mounts `/dev/vdb` →
-  `/workspace` itself via `mount(2)` after the pseudo-fs mounts and
-  before binding the vsock listener. If `/dev/vdb` does not exist
-  (Sandbox launched without a workspace directory), the mount is
-  skipped — workspace is documented-optional, not an error.
+  provided scratch ext4 at `/workspace` before the daemon starts. The
+  daemon does not mount anything itself.
+- **Minimal image (PID-1 mode)**: m80-guestd mounts `/dev/vdc` →
+  `/workspace` itself (step 11 above) after `pivot_root`, inside the
+  merged overlayfs root. If `/dev/vdc` does not exist (Sandbox launched
+  without a workspace directory), the mount is skipped — workspace is
+  documented-optional, not an error. **Note:** before the overlay pivot,
+  the workspace drive was `/dev/vdb`; after the overlay pivot (`m80-ovrl.4`),
+  it is `/dev/vdc` (drive position 3 per `docs/design/storage-overlay.md §2`).
 
 ## Public surface
 
@@ -121,6 +143,7 @@ Binary-only; no library API. `m80-guestd --help` for flags.
 - `vsock` — Linux `AF_VSOCK` listener.
 - `serde`, `serde_json`.
 - `thiserror`, `anyhow`, `tracing`, `nix`.
+- `scopeguard` — `defer!` macro used in `pivot_rootfs` for FD cleanup.
 - (Cross-compiled to the guest target. Runs on the kernel + rootfs that
   `m80-image-build` produced.)
 
