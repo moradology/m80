@@ -38,6 +38,28 @@ hardcoded layout — see `m80-jailer`).
 scan; v0.1 has no background recovery thread. Cross-process collision
 avoidance: distinct `<run_root>` paths.
 
+### Boot cmdline
+
+`boot_args_for(image_kind, kernel_kind)` selects the kernel command line based
+on the two-axis `(ImageKind, KernelKind)` matrix from the image manifest:
+
+| `ImageKind` | `KernelKind` | Cmdline |
+|---|---|---|
+| `Ubuntu` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off` |
+| `Ubuntu` | `Stripped` | `console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1` |
+| `Minimal` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd` |
+| `Minimal` | `Stripped` | `console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd` |
+
+Stripped-kernel differences from the Stock baseline:
+- `pci=off` removed — `CONFIG_PCI=n` in the stripped kernel makes it a no-op.
+- `quiet loglevel=0` added — suppresses per-device init messages while keeping
+  the console open; fatal panics still print (bypasses loglevel).
+- `8250.nr_uarts=1` added — single-UART cap; prevents probe of the four default
+  UARTs. Locked at `=1` (not `=0`): preserving console output for boot-stage
+  diagnostics is non-negotiable per CLAUDE.md "diagnostics before hypotheses".
+
+`SandboxConfig::boot_args` overrides the whole cmdline when set.
+
 ### Drive layout
 
 Firecracker assigns block-device names in PUT order: first PUT becomes

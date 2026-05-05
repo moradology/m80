@@ -46,7 +46,7 @@ const DEFAULT_VCPU_COUNT: u32 = 1;
 /// Default memory in MiB.
 const DEFAULT_MEM_SIZE_MIB: u32 = 1024;
 
-/// Common kernel command-line arguments shared by all image kinds.
+/// Common kernel command-line arguments for Stock kernels.
 ///
 /// `panic=-1` triggers immediate reboot on kernel panic (vs. `panic=1`'s
 /// 1 s wait). For minimal-kind images where m80-guestd is PID 1, the
@@ -54,22 +54,52 @@ const DEFAULT_MEM_SIZE_MIB: u32 = 1024;
 /// the 1 s wait was pure dead time on every launch.
 const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=-1 pci=off";
 
-/// Build kernel boot args for the given image kind, honoring any caller
-/// override on `SandboxConfig::boot_args`.
+/// Kernel command-line arguments for Stripped kernels.
 ///
-/// - `Ubuntu`: defers to systemd as the kernel's `init=` (the kernel
-///   defaults to `/sbin/init`).
-/// - `Minimal`: appends `init=/m80-guestd` so the kernel calls our
-///   PID-1-aware daemon directly. The minimal rootfs also has
-///   `/init -> /m80-guestd` as a backstop, but explicit `init=` avoids
-///   relying on the kernel's symlink resolution.
-fn boot_args_for(kind: m80_image_manifest::ImageKind, config_override: Option<&str>) -> String {
+/// Differences from `COMMON_BOOT_ARGS`:
+/// - `pci=off` removed — `CONFIG_PCI=n` in the stripped kernel makes this
+///   flag a no-op; removing it keeps the cmdline honest.
+/// - `quiet loglevel=0` added — suppresses per-device init messages on ttyS0
+///   while leaving the console open; fatal panics still print (the panic
+///   handler bypasses loglevel). Saves ~20-40 ms of serial flush time on boot.
+/// - `8250.nr_uarts=1` added — explicit single-UART cap; prevents probe of
+///   the four default UARTs on driver init. Locked at `=1` (not `=0`) per
+///   CLAUDE.md "diagnostics before hypotheses": preserving console output is
+///   worth more than the ~50 ms saving from suppressing it entirely.
+const STRIPPED_BOOT_ARGS: &str =
+    "console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1";
+
+/// Build kernel boot args for the given `(image_kind, kernel_kind)` pair,
+/// honoring any caller override on `SandboxConfig::boot_args`.
+///
+/// Matrix:
+/// - `(Ubuntu, Stock)`: `COMMON_BOOT_ARGS` — systemd is the kernel's `init=`
+///   (kernel defaults to `/sbin/init`).
+/// - `(Ubuntu, Stripped)`: `STRIPPED_BOOT_ARGS` — systemd is still the init;
+///   no `init=` override needed.
+/// - `(Minimal, Stock)`: `COMMON_BOOT_ARGS init=/m80-guestd` — explicit `init=`
+///   so the kernel calls our PID-1-aware daemon directly. The minimal rootfs
+///   also has `/init -> /m80-guestd` as a backstop.
+/// - `(Minimal, Stripped)`: `STRIPPED_BOOT_ARGS init=/m80-guestd` — same
+///   belt-and-suspenders `init=` retained; kernel symlink is the backstop.
+fn boot_args_for(
+    kind: m80_image_manifest::ImageKind,
+    kernel_kind: m80_image_manifest::KernelKind,
+    config_override: Option<&str>,
+) -> String {
     if let Some(custom) = config_override {
         return custom.to_owned();
     }
-    match kind {
-        m80_image_manifest::ImageKind::Ubuntu => COMMON_BOOT_ARGS.to_owned(),
-        m80_image_manifest::ImageKind::Minimal => format!("{COMMON_BOOT_ARGS} init=/m80-guestd"),
+    use m80_image_manifest::{ImageKind, KernelKind};
+    match (kind, kernel_kind) {
+        (ImageKind::Ubuntu, KernelKind::Stock) => COMMON_BOOT_ARGS.to_owned(),
+        (ImageKind::Ubuntu, KernelKind::Stripped) => STRIPPED_BOOT_ARGS.to_owned(),
+        (ImageKind::Minimal, KernelKind::Stock) => {
+            format!("{COMMON_BOOT_ARGS} init=/m80-guestd")
+        }
+        (ImageKind::Minimal, KernelKind::Stripped) => {
+            format!("{STRIPPED_BOOT_ARGS} init=/m80-guestd")
+        }
     }
 }
 
@@ -197,6 +227,7 @@ impl Sandbox {
                 &run_dir,
                 &vm_id,
                 backend_config.discovery.manifest.image_kind,
+                backend_config.discovery.manifest.kernel_kind,
             )
         })?;
 
@@ -437,6 +468,7 @@ fn phase_11_rest_puts(
     _run_dir: &Path,
     vm_id: &str,
     image_kind: m80_image_manifest::ImageKind,
+    kernel_kind: m80_image_manifest::KernelKind,
 ) -> Result<(), FcError> {
     // a. Machine config.
     client.put_machine_config(&MachineConfig {
@@ -447,7 +479,7 @@ fn phase_11_rest_puts(
 
     // b. Boot source. The kernel is bind-mounted at `/kernel` inside the
     // jailer chroot; Firecracker sees that path from within its chroot.
-    let boot_args = boot_args_for(image_kind, config.boot_args.as_deref());
+    let boot_args = boot_args_for(image_kind, kernel_kind, config.boot_args.as_deref());
     client.put_boot_source(&BootSourceConfig {
         kernel_image_path: PathBuf::from("/kernel"),
         boot_args: Some(boot_args),
@@ -578,28 +610,51 @@ fn phase_12b_ready_accept(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use m80_image_manifest::ImageKind;
+    use m80_image_manifest::{ImageKind, KernelKind};
 
     #[test]
-    fn boot_args_ubuntu_uses_common_only() {
-        assert_eq!(boot_args_for(ImageKind::Ubuntu, None), COMMON_BOOT_ARGS);
+    fn boot_args_ubuntu_stock() {
+        assert_eq!(
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None),
+            "console=ttyS0 reboot=k panic=-1 pci=off",
+        );
     }
 
     #[test]
-    fn boot_args_minimal_appends_init_path() {
-        let args = boot_args_for(ImageKind::Minimal, None);
-        assert!(args.starts_with(COMMON_BOOT_ARGS));
-        assert!(args.contains("init=/m80-guestd"));
+    fn boot_args_ubuntu_stripped() {
+        assert_eq!(
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None),
+            "console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1",
+        );
+    }
+
+    #[test]
+    fn boot_args_minimal_stock() {
+        assert_eq!(
+            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None),
+            "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd",
+        );
+    }
+
+    #[test]
+    fn boot_args_minimal_stripped() {
+        assert_eq!(
+            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None),
+            "console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd",
+        );
     }
 
     #[test]
     fn boot_args_override_wins_over_kind_default() {
         let custom = "console=ttyS0 my=custom args";
         assert_eq!(
-            boot_args_for(ImageKind::Minimal, Some(custom)),
+            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, Some(custom)),
             custom,
-            "explicit override must take precedence regardless of kind"
+            "explicit override must take precedence regardless of kind and kernel_kind"
         );
-        assert_eq!(boot_args_for(ImageKind::Ubuntu, Some(custom)), custom);
+        assert_eq!(
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, Some(custom)),
+            custom,
+        );
     }
 }
