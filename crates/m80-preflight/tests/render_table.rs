@@ -1,7 +1,7 @@
 //! Verify the Discovery::render_table output contains expected labels and
 //! status markers for each fixture row.
 
-use m80_image_manifest::{ImageKind, Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
 use m80_preflight::{CheckRow, Discovery, PrivilegeStatus};
 use std::path::PathBuf;
 
@@ -13,6 +13,7 @@ fn fixture_manifest() -> Manifest {
         expected_firecracker_version: "v1.15.1".into(),
         guest_port: 3000,
         image_kind: ImageKind::Ubuntu,
+        kernel_kind: KernelKind::Stock,
         kernel_image: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),
         kernel_image_sha256: "b".repeat(64),
         no_egress_reason: None,

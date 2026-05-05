@@ -5,6 +5,73 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — perf-roadmap structural landings (Waves 0-4)
+
+Four-step path to sub-200 ms warm-pool launch landed at the structural
+level (designs, APIs, tests compile, workspace green). Real-KVM bench
+numbers are pending end-to-end exercise (BENCH leaves remain open).
+
+**Storage pivot (m80-f2zc)** — RO base + per-VM sparse overlay + in-guest
+overlayfs + `pivot_root`:
+- `m80-storage`: `Rootfs::prepare(base, overlay_dest, overlay_size_bytes)`
+  replaces the old per-VM full-file `Rootfs::clone`. Sparse alloc + `mkfs.ext4 -F`.
+  Errors: `OverlayCreateFailed`, `MkfsFailed`.
+- `m80-firecracker`: `phase_11_rest_puts` now PUTs vda (RO base) → vdb
+  (RW overlay) → vdc (RW workspace, when present). `is_root_device: true`
+  on vda. `SandboxConfig::overlay_size_bytes` (default 512 MiB).
+- `m80-guestd` (PID-1, Minimal): mounts overlayfs (lower=/vda, upper=/vdb/upper,
+  work=/vdb/work) and `pivot_root`s onto it. `pivot_rootfs` lifted verbatim
+  from kata-containers `mount.rs:523-559` with SPDX-Apache-2.0 attribution.
+  Failure = panic (kernel panic via `panic=-1`); stderr instrumented per
+  CLAUDE.md "diagnostics before hypotheses".
+- Design: `docs/design/storage-overlay.md`.
+
+**Stripped kernel (m80-ci9i)** — purpose-built minimal kernel:
+- `m80-image-manifest`: schema bumped 2→3 with `KernelKind { Stock, Stripped }`
+  (`#[serde(default)]` so existing v2 manifests deserialize unchanged).
+- `m80-image-build`: `kernel-builder/{Dockerfile, m80-stripped.config, build.sh}`
+  produces `kernels/vmlinux-m80-<config-sha>.bin`. Linux 6.1.134 LTS pinned.
+  CONFIG keep-list mandates `CONFIG_OVERLAY_FS=y` + `CONFIG_OVERLAY_FS_XINO_AUTO=y`.
+  `--kernel stock|stripped` flag on the image-build CLI.
+- `m80-firecracker`: `boot_args_for(image_kind, kernel_kind)` two-axis
+  dispatch. Stripped baseline: `console=ttyS0 reboot=k panic=-1 quiet
+  loglevel=0 8250.nr_uarts=1` (uarts=1, not 0 — diagnostic visibility worth
+  ~50 ms).
+- Design: `docs/design/stripped-kernel.md`.
+
+**Snapshot/restore (m80-rrp.3)** — Firecracker snapshot REST + warm-pool plumbing:
+- `m80-firecracker-client`: `put_snapshot_create`, `put_snapshot_load`,
+  `patch_vm_state`. Wire verified against Firecracker `swagger/firecracker.yaml`.
+- `m80-snapshot`: `capture(req)` / `restore(req)` primitives. Restore mandates
+  `unlink(vsock.sock)` before `PUT /snapshot/load` (empirically: stale UDS
+  causes EADDRINUSE).
+- `m80-firecracker`: `Sandbox::launch_from_snapshot` and `RunningSandbox::capture`.
+  Restore-path readiness uses `phase_restore_probe_exec_channel` (probes
+  `CONNECT 9001` directly) — vsock connections do NOT survive snapshot
+  (TRANSPORT_RESET) but guest LISTEN sockets do. Cold-boot readiness
+  (m80-7tpy inverted readiness) unchanged.
+- `m80-cli`: `m80 launch --from-snapshot <DIR>` and `m80 snapshot capture
+  <vm-id> <DIR>` (capture is a v0.1 stub).
+- Empirical: `docs/exploration/firecracker-vsock-snapshot.md`. Design: `docs/design/snapshot-restore.md`.
+
+**Persistent-VM mode (m80-qokt.2)** — multi-exec on one VM:
+- `RunningSandbox::exec(&mut self, …)` formally supports sequential calls;
+  filesystem, `/tmp`, env-via-shell-history persist between calls.
+- `m80-proto::types`: `CancelRequest`, `CancelAck`, `CancelStatus` envelopes.
+  Guestd dispatches Cancel mid-exec (try_wait + poll loop, SIGKILL on match).
+  Shared with `m80-5vha` (streaming exec); first-to-land owned the type.
+- `SandboxConfig::idle_timeout: Option<Duration>` (default 5 min). Background
+  watcher resets on `exec`; on expiry, next `exec` returns `FcError::IdleTimedOut`.
+- Behavior docs: `docs/behaviors/lifecycle/{persistent-state,exec-cancellation,idle-timeout}.md`.
+  Design: `docs/design/persistent-vm.md`.
+
+**Process notes**: dispatched as 5 waves of parallel sonnets per
+`docs/planning/parallel-execution-strategy.md` and the extended risk
+register in `docs/planning/perf-roadmap-extended.md`; ~9 days wall-clock vs
+22-27 sequential person-days estimate. Workspace stayed green at every wave
+gate. BENCH leaves (`m80-f2zc.7`, `m80-rrp.3.6`, `m80-qokt.2.6`, `m80-ci9i.4`)
+remain open pending real-KVM exercise + Docker-built stripped kernel.
+
 ### Added — bench snapshot + diff tooling (m80-vf7o)
 
 `scripts/bench-summary.py` extracts the inline Python from `bench-cold-launch.sh` and adds `summarize`, `compute`, and `diff` subcommands; `bench-cold-launch.sh` auto-saves a per-run JSON snapshot to `crates/m80-firecracker/benches/snapshots/` (symlinked as `latest.json`) so perf iterations can be compared with `python3 scripts/bench-summary.py diff baseline.json latest.json [--fail-on-regress N]`.

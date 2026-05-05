@@ -144,3 +144,38 @@ unit.
 Re-run `./scripts/bench-cold-launch.sh` after each epic lands to keep
 the budget honest. The harness writes per-launch CSV + per-phase CSV
 that can be diffed against the pre-epic baseline.
+
+---
+
+## Post-roadmap state (2026-05-05)
+
+Waves 0-4 of the parallel implementation strategy landed at the
+**structural** level. All four epics' code is in place, workspace builds
+green, all unit/integration tests pass, designs locked. **What remains
+is real-KVM bench exercise** — currently TBD because:
+
+- The stripped kernel needs a Docker exercise (kernel-builder Dockerfile
+  is committed but the actual ~10 min kernel build hasn't been run).
+- Real-KVM smoke requires rebuilding the minimal image with the new
+  m80-guestd (overlay+pivot logic) — the image at `/tmp/m80-build/minimal/`
+  predates Wave 3 and would test the OLD guestd against the NEW host.
+
+Open BENCH beads tracking the remaining work:
+
+| Bead | What it captures |
+|---|---|
+| `m80-f2zc.7` | Storage-pivot cold-launch numbers (expect ~700 ms saved) |
+| `m80-ci9i.4` | Stripped-kernel cold-launch numbers (expect 500-700 ms saved) |
+| `m80-rrp.3.6` | Snapshot/restore wallclock (expect ~125-200 ms warm) |
+| `m80-qokt.2.6` | Persistent-VM turn-to-turn (expect ~10-50 ms) |
+
+Each BENCH leaf's expected mechanism is documented; only the empirical
+numbers remain.
+
+DOCS leaves (`m80-f2zc.8`, `m80-ci9i.5`, `m80-rrp.3.7`) closed during
+Wave 5 — READMEs were updated alongside each IMPL diff per the CLAUDE.md
+rule, and `CHANGELOG.md` has the consolidated [Unreleased] entry.
+
+See `docs/planning/perf-roadmap-extended.md` for risk registers and the
+ID map; `docs/planning/parallel-execution-strategy.md` for the lane/file-
+territory map that drove the parallel dispatch.
