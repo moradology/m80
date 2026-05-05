@@ -38,6 +38,29 @@
 #     precise InstanceStart-to-ready measurement. The per-phase CSV
 #     attributes the within-binary slice; spawn + teardown are external.
 #   - The first 2 launches per cell are discarded as warmup.
+#
+# Iterating on perf:
+#   Each run auto-saves a JSON snapshot to
+#   crates/m80-firecracker/benches/snapshots/ and symlinks it to
+#   latest.json. To compare two runs:
+#
+#     # Run once → saves snapshots/latest.json (your baseline).
+#     ./scripts/bench-cold-launch.sh
+#     cp crates/m80-firecracker/benches/snapshots/latest.json /tmp/baseline.json
+#
+#     # Make your change, run again → saves a new snapshot.
+#     ./scripts/bench-cold-launch.sh
+#
+#     # Diff the two:
+#     python3 scripts/bench-summary.py diff /tmp/baseline.json \
+#         crates/m80-firecracker/benches/snapshots/latest.json
+#
+#     # For CI regression gating:
+#     python3 scripts/bench-summary.py diff /tmp/baseline.json \
+#         crates/m80-firecracker/benches/snapshots/latest.json \
+#         --fail-on-regress 10
+#
+#   See scripts/bench-summary.py for full subcommand reference.
 
 set -euo pipefail
 
@@ -52,10 +75,22 @@ IMAGE_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-build/ubuntu}"
 IMAGE_MINIMAL="${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}"
 RESULT_CSV="crates/m80-firecracker/benches/cold-launch.csv"
 PHASE_CSV="crates/m80-firecracker/benches/cold-launch-phases.csv"
+SNAPSHOTS_DIR="crates/m80-firecracker/benches/snapshots"
 
 mkdir -p "$(dirname "$RESULT_CSV")"
 [[ -f "$RESULT_CSV" ]] || echo "timestamp,kind,load,attempt,launch_ms,exit" > "$RESULT_CSV"
 [[ -f "$PHASE_CSV" ]] || echo "timestamp,kind,load,attempt,phase,elapsed_us" > "$PHASE_CSV"
+
+# Per-run temp dir holds a clean CSV pair scoped to this run only.
+# The historical CSVs are append-only across runs; the per-run CSVs give
+# scripts/bench-summary.py compute a clean input without needing to filter
+# by timestamp.
+RUN_TEMP_DIR=$(mktemp -d)
+trap 'rm -rf "$RUN_TEMP_DIR"' EXIT
+RUN_RESULT_CSV="$RUN_TEMP_DIR/cold-launch.csv"
+RUN_PHASE_CSV="$RUN_TEMP_DIR/cold-launch-phases.csv"
+echo "timestamp,kind,load,attempt,launch_ms,exit" > "$RUN_RESULT_CSV"
+echo "timestamp,kind,load,attempt,phase,elapsed_us" > "$RUN_PHASE_CSV"
 
 # Hard-fail early on missing dependencies. The previous "background
 # stress-ng with stderr suppressed" pattern silently turned loaded cells
@@ -128,7 +163,7 @@ run_one() {
     end_ns=$(date +%s%N)
     elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
 
-    # Parse M80_PHASE lines on stderr -> phase CSV.
+    # Parse M80_PHASE lines on stderr -> phase CSVs (historical + per-run).
     local ts
     ts="$(date -Iseconds)"
     while IFS= read -r line; do
@@ -136,6 +171,7 @@ run_one() {
         name="${line#*name=}"; name="${name%% *}"
         us="${line##*elapsed_us=}"; us="${us%%[!0-9]*}"
         echo "$ts,$kind,$load,$attempt,$name,$us" >> "$PHASE_CSV"
+        echo "$ts,$kind,$load,$attempt,$name,$us" >> "$RUN_PHASE_CSV"
     done < <(grep '^M80_PHASE ' "$stderr_file" || true)
 
     rm -f "$stderr_file"
@@ -163,6 +199,7 @@ run_cell() {
 
         if (( i > WARMUP )); then
             echo "$(date -Iseconds),$kind,$load,$i,$launch_ms,$exit_code" >> "$RESULT_CSV"
+            echo "$(date -Iseconds),$kind,$load,$i,$launch_ms,$exit_code" >> "$RUN_RESULT_CSV"
             if [[ "$exit_code" == "0" ]]; then
                 ok_results+=("$launch_ms")
             else
@@ -204,67 +241,14 @@ summarize() {
         "$kind" "$load" "$p50" "$p95" "$max" "$count" "$fail_note"
 }
 
-# Per-phase summary + "useful_ms" rollup (total wallclock minus stop_bounded
-# since SendCtrlAltDel timeout dominates total today; replacing with a
-# vsock graceful-stop is a tracked v0.2 epic).
+# Per-phase summary + "useful_ms" rollup delegated to bench-summary.py.
+# Uses the per-run CSVs so the summary reflects only this run's data.
 phase_summary() {
     echo
     echo "=== per-phase P50 (us) ==="
-    python3 - <<'PY'
-import csv, statistics, collections, sys
-rows = collections.defaultdict(list)
-try:
-    with open("crates/m80-firecracker/benches/cold-launch-phases.csv") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            key = (row["kind"], row["load"], row["phase"])
-            try:
-                rows[key].append(int(row["elapsed_us"]))
-            except ValueError:
-                pass
-except FileNotFoundError:
-    sys.exit(0)
-phases_seen = sorted({k[2] for k in rows})
-header = ("ubuntu/idle","ubuntu/loaded","minimal/idle","minimal/loaded")
-print(f'  {"phase":<26} ' + "  ".join(f"{k:>14}" for k in header))
-for ph in phases_seen:
-    cells = []
-    for kind, load in [("ubuntu","idle"),("ubuntu","loaded"),("minimal","idle"),("minimal","loaded")]:
-        vals = rows.get((kind,load,ph), [])
-        cells.append(f"{int(statistics.median(vals)):>11} us" if vals else f"{'':>14}")
-    print(f"  {ph:<26} " + "  ".join(cells))
-
-# Rollup: useful_ms = sum of all phases EXCEPT stop_bounded. This is the
-# meaningful "launch+exec time" — what we'd see if SendCtrlAltDel weren't
-# wedging the host for 30 s on every run.
-print()
-print("=== useful_ms (total - stop_bounded, P50) ===")
-EXCLUDE = {"stop_bounded"}
-print(f'  {"":<26} ' + "  ".join(f"{k:>14}" for k in header))
-useful_per_attempt = collections.defaultdict(lambda: collections.defaultdict(int))
-for (kind, load, phase), vals in rows.items():
-    if phase in EXCLUDE:
-        continue
-    # Sum per-attempt: re-load CSV walking attempt.
-useful_per_attempt = collections.defaultdict(lambda: collections.defaultdict(int))
-with open("crates/m80-firecracker/benches/cold-launch-phases.csv") as f:
-    for row in csv.DictReader(f):
-        key = (row["kind"], row["load"])
-        if row["phase"] in EXCLUDE:
-            continue
-        try:
-            useful_per_attempt[key][row["attempt"]] += int(row["elapsed_us"])
-        except ValueError:
-            pass
-cells = []
-for kind, load in [("ubuntu","idle"),("ubuntu","loaded"),("minimal","idle"),("minimal","loaded")]:
-    vals = list(useful_per_attempt.get((kind, load), {}).values())
-    if vals:
-        cells.append(f"{int(statistics.median(vals)/1000):>11} ms")
-    else:
-        cells.append(f"{'':>14}")
-print(f'  {"useful_ms (P50)":<26} ' + "  ".join(cells))
-PY
+    python3 scripts/bench-summary.py summarize \
+        --csv-wallclock "$RUN_RESULT_CSV" \
+        --csv-phase "$RUN_PHASE_CSV"
 }
 
 echo "=== bench-cold-launch (N=$N per cell, warmup=$WARMUP) ==="
@@ -298,6 +282,17 @@ done
 
 phase_summary
 
+mkdir -p "$SNAPSHOTS_DIR"
+SNAPSHOT_OUT="$SNAPSHOTS_DIR/$(date -Iseconds).json"
+python3 scripts/bench-summary.py compute \
+    --csv-wallclock "$RUN_RESULT_CSV" \
+    --csv-phase "$RUN_PHASE_CSV" \
+    --output "$SNAPSHOT_OUT"
+ln -sf "$(basename "$SNAPSHOT_OUT")" "$SNAPSHOTS_DIR/latest.json"
+
 echo
 echo "wallclock CSV:  $RESULT_CSV"
 echo "per-phase CSV:  $PHASE_CSV"
+echo "snapshot saved: $SNAPSHOT_OUT"
+echo
+echo "# next-run diff: python3 scripts/bench-summary.py diff $SNAPSHOT_OUT <new-run.json>"

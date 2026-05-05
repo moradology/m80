@@ -5,6 +5,10 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — bench snapshot + diff tooling (m80-vf7o)
+
+`scripts/bench-summary.py` extracts the inline Python from `bench-cold-launch.sh` and adds `summarize`, `compute`, and `diff` subcommands; `bench-cold-launch.sh` auto-saves a per-run JSON snapshot to `crates/m80-firecracker/benches/snapshots/` (symlinked as `latest.json`) so perf iterations can be compared with `python3 scripts/bench-summary.py diff baseline.json latest.json [--fail-on-regress N]`.
+
 ### Added — test helper: `RunDirDumpGuard` (m80-83y9)
 
 `tests/common::RunDirDumpGuard` is a drop-guard for integration tests: on test failure (i.e. when the thread is panicking) it dumps the last 100 lines of `<run_dir>/console.log` and the full `diagnostics.jsonl` to stderr, including the run-dir path for offline re-inspection. Passing tests produce no output. Opt-in via a named local binding.
