@@ -84,6 +84,59 @@ impl Client {
         })
     }
 
+    /// PATCH `/vm` — set the VM running state (`Paused` or `Resumed`).
+    pub fn patch_vm_state(&self, state: VmState) -> Result<(), ClientError> {
+        let payload = serde_json::json!({ "state": state });
+        let body = serde_json::to_vec(&payload)?;
+        let resp = self.patch("/vm", &body)?;
+        if (200..300).contains(&resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::VmStateWriteFailed {
+            state,
+            fault: body_to_string(&resp.body),
+        })
+    }
+
+    /// PUT `/snapshot/create` — write a snapshot of the paused microVM to disk.
+    ///
+    /// The VM **must** be paused before calling this (via
+    /// `patch_vm_state(VmState::Paused)`). Firecracker will return an error if
+    /// the VM is still running.
+    pub fn put_snapshot_create(
+        &self,
+        cfg: &CreateSnapshotConfig,
+    ) -> Result<(), ClientError> {
+        let body = serde_json::to_vec(cfg)?;
+        let resp = self.put("/snapshot/create", &body)?;
+        if (200..300).contains(&resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::SnapshotCreateFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
+    /// PUT `/snapshot/load` — restore a microVM from a snapshot file pair.
+    ///
+    /// Must be called **before** the VM has been started (pre-boot). The
+    /// `vsock.sock` file from any previous VM using the same jail must be
+    /// removed before calling this — Firecracker rebinds the UDS at load time
+    /// and will fail with `EADDRINUSE` if the file already exists.
+    pub fn put_snapshot_load(
+        &self,
+        cfg: &LoadSnapshotConfig,
+    ) -> Result<(), ClientError> {
+        let body = serde_json::to_vec(cfg)?;
+        let resp = self.put("/snapshot/load", &body)?;
+        if (200..300).contains(&resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::SnapshotLoadFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
     /// PUT `/actions` with the requested action.
     pub fn instance_action(&self, action: InstanceAction) -> Result<(), ClientError> {
         // Serialize as `{"action_type": "PascalCaseVariant"}`.
@@ -99,6 +152,42 @@ impl Client {
             action,
             fault: body_to_string(&resp.body),
         })
+    }
+
+    /// Send a PATCH request over the stored `UnixStream`.
+    fn patch(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
+        if debug_wire::is_enabled("fcrest") {
+            tracing::trace!(
+                direction = "out",
+                method = "PATCH",
+                path,
+                preview = %debug_wire::format_wire_preview(body),
+                "fcrest request"
+            );
+        }
+        let mut guard = self
+            .stream
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let resp = match http::patch_json(&mut guard, path, body) {
+            Ok(resp) => resp,
+            Err(e) if is_broken_pipe(&e) => {
+                let new_stream =
+                    UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
+                *guard = new_stream;
+                http::patch_json(&mut guard, path, body)?
+            }
+            Err(e) => return Err(ClientError::Io(e)),
+        };
+        if debug_wire::is_enabled("fcrest") {
+            tracing::trace!(
+                direction = "in",
+                status = resp.status,
+                preview = %debug_wire::format_wire_preview(&resp.body),
+                "fcrest response"
+            );
+        }
+        Ok(resp)
     }
 
     /// Send a PUT request over the stored `UnixStream`.
@@ -211,6 +300,99 @@ pub struct VsockConfig {
     pub uds_path: PathBuf,
 }
 
+/// VM running state — used with PATCH `/vm`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VmState {
+    /// Pause vCPU execution (required before snapshot creation).
+    Paused,
+    /// Resume vCPU execution.
+    Resumed,
+}
+
+/// Snapshot type: full copy of all guest memory, or diff since the last snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SnapshotType {
+    /// Full snapshot — all guest memory pages are saved.
+    Full,
+    /// Diff snapshot — only pages dirtied since the previous snapshot are saved.
+    Diff,
+}
+
+/// Parameters for `PUT /snapshot/create`.
+///
+/// The VM must be paused before calling this endpoint. On success, Firecracker
+/// writes two files: the microVM state file (`snapshot_path`) and the guest
+/// memory file (`mem_file_path`). Both paths must be writable by the
+/// Firecracker process.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateSnapshotConfig {
+    /// Path to write the microVM state file (device + vCPU register state).
+    pub snapshot_path: PathBuf,
+    /// Path to write the guest memory file.
+    pub mem_file_path: PathBuf,
+    /// Snapshot type. Defaults to `Full` when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_type: Option<SnapshotType>,
+}
+
+/// Memory backend type for snapshot load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemBackendType {
+    /// Load memory from a regular file (`mmap(MAP_PRIVATE)`).
+    File,
+    /// Load memory via userfaultfd — caller provides page-fault handler.
+    Uffd,
+}
+
+/// Memory backend configuration for `PUT /snapshot/load`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemBackendConfig {
+    /// How guest memory is loaded on restore.
+    pub backend_type: MemBackendType,
+    /// Path to the memory file (for `File`) or UFFD socket (for `Uffd`).
+    pub backend_path: PathBuf,
+}
+
+/// Vsock override — redirect the vsock UDS path on restore.
+///
+/// Use this when restoring into a jail with a different path than the one
+/// embedded in the snapshot, or when restoring multiple VMs from the same
+/// snapshot (each needs its own UDS path).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VsockOverride {
+    /// New host UDS path for the vsock device.
+    pub uds_path: PathBuf,
+}
+
+/// Parameters for `PUT /snapshot/load`.
+///
+/// The vsock UDS file from any previous VM using the same jail path must be
+/// removed before calling this — Firecracker rebinds the socket at load time
+/// and fails with `EADDRINUSE` if the file already exists. Use
+/// `vsock_override` to redirect to a different path when needed.
+///
+/// Exactly one of `mem_backend` or `mem_file_path` must be present.
+#[derive(Debug, Clone, Serialize)]
+pub struct LoadSnapshotConfig {
+    /// Path to the microVM state file produced by `PUT /snapshot/create`.
+    pub snapshot_path: PathBuf,
+    /// Memory backend configuration (preferred; mutually exclusive with `mem_file_path`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mem_backend: Option<MemBackendConfig>,
+    /// Path to the guest memory file (deprecated; use `mem_backend` instead).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mem_file_path: Option<PathBuf>,
+    /// Enable dirty page tracking for future diff snapshots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_diff_snapshots: Option<bool>,
+    /// When `true`, resume the VM immediately after a successful load.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resume_vm: Option<bool>,
+    /// Override the vsock UDS path embedded in the snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vsock_override: Option<VsockOverride>,
+}
+
 /// Lifecycle action requested via PUT `/actions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -263,6 +445,26 @@ pub enum ClientError {
     InstanceActionFailed {
         /// The action that was attempted.
         action: InstanceAction,
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PATCH /vm` (pause/resume) failed.
+    #[error("vm state {state:?} write failed: {fault}")]
+    VmStateWriteFailed {
+        /// The state transition that was attempted.
+        state: VmState,
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PUT /snapshot/create` failed.
+    #[error("snapshot create failed: {fault}")]
+    SnapshotCreateFailed {
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PUT /snapshot/load` failed.
+    #[error("snapshot load failed: {fault}")]
+    SnapshotLoadFailed {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },

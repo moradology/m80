@@ -17,8 +17,26 @@ pub(crate) struct Response {
 
 /// Write a PUT request with a JSON body and read back the response.
 pub(crate) fn put_json(stream: &mut UnixStream, path: &str, body: &[u8]) -> io::Result<Response> {
+    send_json(stream, "PUT", path, body)
+}
+
+/// Write a PATCH request with a JSON body and read back the response.
+pub(crate) fn patch_json(
+    stream: &mut UnixStream,
+    path: &str,
+    body: &[u8],
+) -> io::Result<Response> {
+    send_json(stream, "PATCH", path, body)
+}
+
+fn send_json(
+    stream: &mut UnixStream,
+    method: &str,
+    path: &str,
+    body: &[u8],
+) -> io::Result<Response> {
     let header = format!(
-        "PUT {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAccept: application/json\r\nContent-Length: {}\r\n\r\n",
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAccept: application/json\r\nContent-Length: {}\r\n\r\n",
         body.len()
     );
     stream.write_all(header.as_bytes())?;

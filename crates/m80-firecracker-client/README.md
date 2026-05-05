@@ -25,7 +25,8 @@ without inheriting m80's lifecycle assumptions.
   Concurrency is the caller's job.
 - Every API method maps 1:1 to a Firecracker REST resource:
   `put_boot_source`, `put_machine_config`, `put_drive`, `put_vsock`,
-  `instance_action`. The method signature mirrors the Firecracker schema
+  `instance_action`, `patch_vm_state`, `put_snapshot_create`,
+  `put_snapshot_load`. The method signature mirrors the Firecracker schema
   exactly.
 - The client owns no global state. Constructing one is `Client::new(uds_path)`;
   dropping it closes the underlying socket. Multiple clients can target
@@ -34,8 +35,9 @@ without inheriting m80's lifecycle assumptions.
   cleanly).
 - HTTP errors translate to typed `ClientError` variants per resource:
   `BootSourceWriteFailed`, `MachineConfigWriteFailed`,
-  `DriveWriteFailed`, `VsockWriteFailed`, `InstanceActionFailed`. Each
-  carries the Firecracker fault JSON verbatim.
+  `DriveWriteFailed`, `VsockWriteFailed`, `InstanceActionFailed`,
+  `VmStateWriteFailed`, `SnapshotCreateFailed`, `SnapshotLoadFailed`.
+  Each carries the Firecracker fault JSON verbatim.
 - `instance_action(InstanceAction::SendCtrlAltDel)` is callable on any
   arch but only honored on `x86_64` by Firecracker itself; the client
   passes through the upstream behavior without arch-checking.
@@ -46,8 +48,12 @@ without inheriting m80's lifecycle assumptions.
 - One method per Firecracker resource, taking the resource's config
   struct (re-exported from this crate) and returning `Result<(), ClientError>`.
 - `InstanceAction { InstanceStart, SendCtrlAltDel, FlushMetrics, Pause, Resume }`.
+- `VmState { Paused, Resumed }` — for `patch_vm_state`.
+- `SnapshotType { Full, Diff }` — for `CreateSnapshotConfig`.
+- `MemBackendType { File, Uffd }` — for `MemBackendConfig`.
 - Firecracker config types: `BootSourceConfig`, `MachineConfig`,
-  `DriveConfig`, `VsockConfig`.
+  `DriveConfig`, `VsockConfig`, `CreateSnapshotConfig`,
+  `LoadSnapshotConfig`, `MemBackendConfig`, `VsockOverride`.
 - `ClientError` — typed per-resource failure.
 
 ## Non-goals
@@ -94,6 +100,10 @@ with a hex+ASCII preview of up to 1024 bytes.
 - `tests/instance_action_serialization.rs` — every `InstanceAction`
   variant serializes to the expected `{"action_type": "<PascalCase>"}`
   body.
+- `tests/snapshot.rs` — fixture-server tests for `patch_vm_state`,
+  `put_snapshot_create`, and `put_snapshot_load`: URL, required fields,
+  optional-field omission, `resume_vm`, `vsock_override`, and 400 error
+  mapping for each method.
 
 Real-firecracker conformance + concurrency-probe tests are deferred
 until we have a CI-managed firecracker binary in fixtures.
