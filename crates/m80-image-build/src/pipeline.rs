@@ -2,6 +2,10 @@
 //!
 //! Each step is executed in sequence; any failure surfaces with phase context.
 //! With `dry_run = true`, steps are printed to stderr and no I/O is performed.
+//!
+//! The `build_stripped_kernel` function handles the `kernel build --stripped`
+//! path: Docker-builds the kernel, runs the container, and copies the output
+//! vmlinux to `kernels/vmlinux-m80-<config-sha>.bin`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -195,6 +199,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         image_kind: m80_image_manifest::ImageKind::Ubuntu,
         kernel_image: paths.kernel.clone(),
         kernel_image_sha256: kernel_sha,
+        kernel_kind: m80_image_manifest::KernelKind::Stock,
         no_egress_reason: None,
         output_rootfs_image: paths.output_rootfs.clone(),
         output_rootfs_sha256: output_sha,
@@ -358,6 +363,110 @@ fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()>
     .context("symlinking workspace.mount into multi-user.target.wants")?;
 
     Ok(())
+}
+
+/// Build the stripped kernel via Docker and return the path of the output
+/// vmlinux artifact.
+///
+/// Steps:
+/// 1. `docker build` the `kernel-builder/` Dockerfile into image `m80-kernel-builder`.
+/// 2. `docker run` with a bind-mount on the `kernels/` output directory.
+/// 3. Parse the container's stdout for `output: /out/vmlinux-m80-<sha>.bin`
+///    and return the host-side path.
+///
+/// The config sha is computed from `kernel-builder/m80-stripped.config`
+/// (before `make olddefconfig`) but the container's `build.sh` runs
+/// `olddefconfig` first and prints the post-resolution sha — which is the
+/// sha embedded in the filename. Use `config_sha_from_file` to get the
+/// pre-resolution sha for unit tests and manifest production when the build
+/// output path is already known.
+///
+/// Requires Docker to be available on the host. If Docker is absent, the
+/// command fails with the underlying I/O error.
+pub fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<PathBuf> {
+    let builder_dir = workspace_root
+        .join("crates")
+        .join("m80-image-build")
+        .join("kernel-builder");
+    let kernels_dir = workspace_root
+        .join("crates")
+        .join("m80-image-build")
+        .join("kernels");
+
+    std::fs::create_dir_all(&kernels_dir)
+        .with_context(|| format!("creating kernels dir {}", kernels_dir.display()))?;
+
+    // Step 1: docker build.
+    let status = Command::new("docker")
+        .args(["build", "-t", "m80-kernel-builder"])
+        .arg(&builder_dir)
+        .status()
+        .context("spawning docker build")?;
+    if !status.success() {
+        anyhow::bail!("docker build failed (exit {:?})", status.code());
+    }
+
+    // Step 2: docker run with kernels/ bind-mounted at /out.
+    let mount_arg = format!("{}:/out", kernels_dir.display());
+    let output = Command::new("docker")
+        .args(["run", "--rm", "-v"])
+        .arg(&mount_arg)
+        .arg("m80-kernel-builder")
+        .output()
+        .context("spawning docker run")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "docker run failed (exit {:?}): {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // Step 3: parse container stdout for the output path.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let vmlinux_name = stdout
+        .lines()
+        .find_map(|line| {
+            let rest = line.strip_prefix("output: /out/")?;
+            Some(rest.trim().to_owned())
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "docker run did not print 'output: /out/<name>' line; stdout:\n{}",
+                stdout
+            )
+        })?;
+
+    let host_path = kernels_dir.join(&vmlinux_name);
+    if !host_path.exists() {
+        anyhow::bail!(
+            "kernel build reported output '{}' but file not found at {}",
+            vmlinux_name,
+            host_path.display()
+        );
+    }
+    Ok(host_path)
+}
+
+/// Compute the sha256 hex digest of a kernel config file.
+///
+/// This is the config-sha used in the output filename convention:
+/// `vmlinux-m80-<config-sha>.bin`. Per design §5, the sha is of the
+/// `.config` file (the build input), not the vmlinux (the output).
+///
+/// Note: `build.sh` runs `make olddefconfig` first and hashes the
+/// post-resolution `.config`. For pre-resolution config files (e.g., the
+/// committed `m80-stripped.config`), the sha will differ from what the
+/// container prints. Use this function only when you need to hash a
+/// known-complete config.
+///
+/// Currently used by integration tests that validate the committed config;
+/// the binary wires the logic through `build_stripped_kernel` instead.
+#[allow(dead_code)]
+pub fn config_sha_from_file(config_path: &Path) -> anyhow::Result<String> {
+    sha256_file(config_path).with_context(|| {
+        format!("computing config sha256 from {}", config_path.display())
+    })
 }
 
 #[cfg(unix)]

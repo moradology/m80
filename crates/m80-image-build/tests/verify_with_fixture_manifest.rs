@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use assert_cmd::Command;
-use m80_image_manifest::{ImageKind, Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
@@ -37,6 +37,7 @@ fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
         image_kind: ImageKind::Ubuntu,
         kernel_image: dir.path().join("vmlinux"),
         kernel_image_sha256: sha256_of(b"kernel-bytes"),
+        kernel_kind: KernelKind::Stock,
         no_egress_reason: None,
         output_rootfs_image: dir.path().join("output.ext4"),
         output_rootfs_sha256: sha256_of(b"output-rootfs-bytes"),

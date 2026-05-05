@@ -17,9 +17,23 @@ use sha2::{Digest, Sha256};
 /// `Option<>` so a `Minimal` image (PID-1 m80-guestd, no systemd) can
 /// emit a manifest without lying about which artifacts exist.
 ///
-/// No 1↔2 conversion code: per CLAUDE.md, future versions are new code,
-/// not migrations. Existing v1 images must be rebuilt.
-pub const SCHEMA_VERSION: u32 = 2;
+/// `3` — added `kernel_kind: KernelKind` (defaults to `Stock` via
+/// `#[serde(default)]` so existing v2 manifests must be rebuilt for v3).
+///
+/// No 1↔2↔3 conversion code: per CLAUDE.md, future versions are new code,
+/// not migrations. Existing v2 images must be rebuilt.
+pub const SCHEMA_VERSION: u32 = 3;
+
+/// Which kernel was used to boot this image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelKind {
+    /// Upstream Firecracker CI kernel (downloaded from the S3 bucket).
+    #[default]
+    Stock,
+    /// Purpose-built stripped kernel (built via m80-ci9i.2 pipeline).
+    Stripped,
+}
 
 /// Which startup model the image was built for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +76,9 @@ pub struct Manifest {
     pub kernel_image: PathBuf,
     /// sha256 hex digest of the kernel image bytes.
     pub kernel_image_sha256: String,
+    /// Which kernel was used to boot this image.
+    #[serde(default)]
+    pub kernel_kind: KernelKind,
     /// Free-text reason recorded when the image is built without egress
     /// configured.
     pub no_egress_reason: Option<String>,

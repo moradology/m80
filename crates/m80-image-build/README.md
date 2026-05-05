@@ -103,6 +103,28 @@ Pick **Minimal** when:
 - you control the workload binary and can ship it self-contained
 - `busybox` applets cover the inside-VM scripting needs
 
+### Stripped kernel build
+
+`m80-image-build kernel build [--workspace <path>]` builds the stripped
+Linux 6.1.x LTS kernel via Docker:
+
+1. `docker build -t m80-kernel-builder crates/m80-image-build/kernel-builder/`
+2. `docker run --rm -v <kernels-dir>:/out m80-kernel-builder`
+3. Outputs `crates/m80-image-build/kernels/vmlinux-m80-<config-sha>.bin`.
+
+`<config-sha>` is the sha256 of the `.config` after `make olddefconfig`
+(build inputs, not vmlinux output — same config always produces same name).
+
+Files:
+- `kernel-builder/Dockerfile` — ubuntu:22.04 base; build tools; determinism
+  pins (`KBUILD_BUILD_TIMESTAMP=0`, `SOURCE_DATE_EPOCH=0`).
+- `kernel-builder/m80-stripped.config` — canonical keep/drop config per
+  `docs/design/stripped-kernel.md`. Contains `CONFIG_OVERLAY_FS=y` and
+  `CONFIG_OVERLAY_FS_XINO_AUTO=y` (required by m80-f2zc.5).
+- `kernel-builder/build.sh` — copies config, runs `olddefconfig`, builds
+  vmlinux, prints config sha, copies output to `/out`.
+- `kernels/` — gitignored binary output directory.
+
 ### CLI surface
 
 - `m80-image-build run --config <toml>` — full pipeline.
@@ -112,6 +134,8 @@ Pick **Minimal** when:
   against the on-disk artifacts.
 - `m80-image-build clean --workdir <path>` — remove intermediate
   artifacts (loop mount points, temp images).
+- `m80-image-build kernel build [--workspace <path>]` — build the
+  stripped kernel via Docker. `--workspace` defaults to `.` (cwd).
 
 ### Failure modes
 
@@ -178,6 +202,9 @@ dir = "/opt/m80/artifacts"
 - `tests/verify_with_fixture_manifest.rs` — `verify --rootfs <path>`
   passes for a manually-constructed fixture rootfs + manifest, and fails
   with the right error when one artifact byte is tampered.
+- `tests/kernel_build_pipeline.rs` — config-sha computation unit tests
+  (unconditional). Docker build smoke test is `#[ignore]`d; run manually
+  with `cargo test -- --ignored`.
 
 Real-build smoke tests (network + root + loop device) are run manually
 with `sudo m80-image-build run --config <path>`; CI doesn't have the

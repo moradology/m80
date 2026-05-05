@@ -1,0 +1,4 @@
+# Binary kernel artifacts — large blobs, not committed.
+# Only the config source (kernel-builder/m80-stripped.config) and
+# Dockerfile (kernel-builder/Dockerfile) are committed.
+*.bin

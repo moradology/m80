@@ -30,6 +30,9 @@ enum Subcommand {
     Verify { rootfs: PathBuf },
     /// Remove intermediate build artifacts (loop mount points, temp images).
     Clean { workdir: PathBuf },
+    /// Build the stripped kernel via Docker.
+    /// Produces `kernels/vmlinux-m80-<config-sha>.bin` under the workspace root.
+    KernelBuild { workspace_root: PathBuf },
 }
 
 /// Top-level argv parse target.
@@ -43,7 +46,7 @@ fn parse_args(argv: Vec<String>) -> anyhow::Result<Args> {
     let mut iter = argv.into_iter();
     let subcmd = iter
         .next()
-        .ok_or_else(|| anyhow::anyhow!("missing subcommand: run | verify | clean"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing subcommand: run | verify | clean | kernel"))?;
 
     match subcmd.as_str() {
         "run" => {
@@ -107,8 +110,35 @@ fn parse_args(argv: Vec<String>) -> anyhow::Result<Args> {
                 subcommand: Subcommand::Clean { workdir },
             })
         }
+        "kernel" => {
+            // `kernel build [--workspace <path>]`
+            let sub2 = iter
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("kernel requires a sub-action: build"))?;
+            if sub2 != "build" {
+                anyhow::bail!("unknown kernel sub-action '{}': expected 'build'", sub2);
+            }
+            let mut workspace_root: Option<PathBuf> = None;
+            while let Some(flag) = iter.next() {
+                match flag.as_str() {
+                    "--workspace" => {
+                        workspace_root = Some(
+                            iter.next()
+                                .ok_or_else(|| anyhow::anyhow!("--workspace requires a value"))?
+                                .into(),
+                        );
+                    }
+                    other => anyhow::bail!("unknown flag for kernel build: {}", other),
+                }
+            }
+            // Default workspace root: current directory.
+            let workspace_root = workspace_root.unwrap_or_else(|| PathBuf::from("."));
+            Ok(Args {
+                subcommand: Subcommand::KernelBuild { workspace_root },
+            })
+        }
         other => anyhow::bail!(
-            "unknown subcommand '{}'; expected: run | verify | clean",
+            "unknown subcommand '{}'; expected: run | verify | clean | kernel",
             other
         ),
     }
@@ -144,6 +174,11 @@ fn main() -> anyhow::Result<()> {
         Subcommand::Run { config, dry_run } => pipeline::run_build(config, dry_run),
         Subcommand::Verify { rootfs } => run_verify(rootfs),
         Subcommand::Clean { workdir } => run_clean(workdir),
+        Subcommand::KernelBuild { workspace_root } => {
+            let vmlinux = pipeline::build_stripped_kernel(&workspace_root)?;
+            println!("vmlinux: {}", vmlinux.display());
+            Ok(())
+        }
     }
 }
 
@@ -220,5 +255,39 @@ mod tests {
     fn parse_clean_missing_workdir_fails() {
         let err = parse_args(argv(&["clean"])).unwrap_err();
         assert!(err.to_string().contains("--workdir"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_kernel_build_default_workspace() {
+        let args = parse_args(argv(&["kernel", "build"])).unwrap();
+        let Subcommand::KernelBuild { workspace_root } = args.subcommand else {
+            panic!("expected KernelBuild")
+        };
+        assert_eq!(workspace_root, PathBuf::from("."));
+    }
+
+    #[test]
+    fn parse_kernel_build_explicit_workspace() {
+        let args =
+            parse_args(argv(&["kernel", "build", "--workspace", "/tmp/ws"])).unwrap();
+        let Subcommand::KernelBuild { workspace_root } = args.subcommand else {
+            panic!("expected KernelBuild")
+        };
+        assert_eq!(workspace_root, PathBuf::from("/tmp/ws"));
+    }
+
+    #[test]
+    fn parse_kernel_missing_sub_action_fails() {
+        let err = parse_args(argv(&["kernel"])).unwrap_err();
+        assert!(err.to_string().contains("kernel requires"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_kernel_unknown_sub_action_fails() {
+        let err = parse_args(argv(&["kernel", "destroy"])).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown kernel sub-action"),
+            "got: {err}"
+        );
     }
 }

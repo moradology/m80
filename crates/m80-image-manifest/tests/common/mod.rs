@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use m80_image_manifest::{ImageKind, Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
 use sha2::{Digest, Sha256};
 
 /// Write six dummy artifact files into `dir` and return a `Manifest` whose
@@ -31,6 +31,7 @@ pub fn make_artifacts(dir: &Path) -> Manifest {
         image_kind: ImageKind::Ubuntu,
         kernel_image: dir.join("vmlinux"),
         kernel_image_sha256: hex::encode(Sha256::digest(b"vmlinux")),
+        kernel_kind: KernelKind::Stock,
         no_egress_reason: None,
         output_rootfs_image: dir.join("output.ext4"),
         output_rootfs_sha256: hex::encode(Sha256::digest(b"output.ext4")),
@@ -66,6 +67,7 @@ pub fn make_minimal_artifacts(dir: &Path) -> Manifest {
         image_kind: ImageKind::Minimal,
         kernel_image: dir.join("vmlinux"),
         kernel_image_sha256: hex::encode(Sha256::digest(b"vmlinux")),
+        kernel_kind: KernelKind::Stock,
         no_egress_reason: None,
         output_rootfs_image: dir.join("output.ext4"),
         output_rootfs_sha256: hex::encode(Sha256::digest(b"output.ext4")),

@@ -10,9 +10,24 @@ Single source of truth shared by `m80-image-build` (writer) and
 `m80-preflight` (reader/verifier) so the schema cannot drift. Validation
 logic (sha256 recompute, schema-version probe) lives here once.
 
+## Schema
+
+### v3 (current)
+
+`schema_version: 3`. Added `kernel_kind: KernelKind` field (§ Public
+surface). The field has `#[serde(default)]` so JSON without `kernel_kind`
+deserializes as `KernelKind::Stock`. Existing v2 manifests must be rebuilt
+(no migration code — per CLAUDE.md, new schema versions are new code).
+
+### v2
+
+Added `image_kind` discriminator and made systemd-related fields `Option<>`
+so a `Minimal` image can emit a manifest without lying about absent
+artifacts.
+
 ## Black-box contract
 
-- `schema_version` is the integer **2**. A manifest with any other value
+- `schema_version` is the integer **3**. A manifest with any other value
   rejects with `ManifestError::UnsupportedSchemaVersion`. The schema-
   version check fires **before** unknown-field detection, so an unknown
   future version is reported as a version error, not a parse error.
@@ -21,6 +36,9 @@ logic (sha256 recompute, schema-version probe) lives here once.
 - `image_kind: ImageKind` declares which startup model the image was
   built for: `Ubuntu` (systemd as PID 1; m80-guestd is a service) or
   `Minimal` (m80-guestd is PID 1; busybox userland; no systemd).
+- `kernel_kind: KernelKind` declares which kernel was used: `Stock`
+  (upstream Firecracker CI kernel from S3) or `Stripped` (purpose-built
+  via the m80-ci9i.2 pipeline). Defaults to `Stock` when absent in JSON.
 - The manifest covers up to six hash-bearing artifacts. `kernel_image`,
   `output_rootfs_image`, and `daemon_binary_path` are always present;
   `source_rootfs_image`, `service_unit_path`, and `workspace_mount_path`
@@ -45,6 +63,8 @@ logic (sha256 recompute, schema-version probe) lives here once.
   `service_unit_*`, `workspace_mount_*`, `source_rootfs_*`) are
   `Option<>`. Field declaration order is alphabetical.
 - `ImageKind { Ubuntu, Minimal }` — discriminator on `Manifest`.
+- `KernelKind { Stock, Stripped }` — kernel provenance discriminator.
+  `Default = Stock`. Serializes as `"stock"` / `"stripped"`.
 - `Manifest::read(path: &Path) -> Result<Manifest, ManifestError>` — peek
   `schema_version` first via a probe struct, then deserialize the full
   struct, then enforce the kind/field invariant.
@@ -54,7 +74,7 @@ logic (sha256 recompute, schema-version probe) lives here once.
 - `Manifest::verify(&self, root: &Path) -> Result<(), ManifestError>` —
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
-- `SCHEMA_VERSION: u32 = 2`.
+- `SCHEMA_VERSION: u32 = 3`.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
   `Sha256Mismatch { field, expected, actual }`,
   `InconsistentKind { kind, field, expected }`,
@@ -90,3 +110,6 @@ logic (sha256 recompute, schema-version probe) lives here once.
 - Pointing one of the six artifact paths at a nonexistent file and calling
   `verify` returns `Io { path, source: NotFound }` carrying the missing
   path.
+- Schema v3: `kernel_kind` absent from JSON deserializes as `KernelKind::Stock`.
+- Schema v3: `KernelKind::Stripped` roundtrips through write → read.
+- `KernelKind::default()` is `Stock` (Rust Default trait check).

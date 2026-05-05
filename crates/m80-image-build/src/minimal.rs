@@ -143,6 +143,7 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         image_kind: m80_image_manifest::ImageKind::Minimal,
         kernel_image: kernel.clone(),
         kernel_image_sha256: kernel_sha,
+        kernel_kind: m80_image_manifest::KernelKind::Stock,
         no_egress_reason: None,
         output_rootfs_image: output_rootfs.clone(),
         output_rootfs_sha256: output_sha,
