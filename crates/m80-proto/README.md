@@ -36,6 +36,12 @@ The load-bearing wire invariants — the things consumers cannot derive from
   No `#[non_exhaustive]` escape hatch — wire compat is the contract.
 - **`request_id` is opaque.** The protocol echoes it back unchanged and
   assigns no meaning; pairing is the consumer's job.
+- **Cancel envelope (`cancel_request` / `cancel_ack`).** `CancelRequest`
+  carries the `request_id` to kill; `CancelAck` replies with one of three
+  `CancelStatus` outcomes: `Cancelled`, `AlreadyExited`, or `Failed`.
+  Shared with the `m80-5vha` streaming-exec epic — these types are defined
+  here once; that epic imports without re-declaring.
+  See `docs/behaviors/lifecycle/exec-cancellation.md`.
 
 ## Non-goals
 

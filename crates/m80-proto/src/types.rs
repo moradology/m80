@@ -16,6 +16,12 @@ pub const PAYLOAD_KIND_SHUTDOWN_REQUEST: &str = "shutdown_request";
 /// Wire `kind` value for an envelope carrying [`ShutdownResponse`].
 pub const PAYLOAD_KIND_SHUTDOWN_RESPONSE: &str = "shutdown_response";
 
+/// Wire `kind` value for an envelope carrying [`CancelRequest`].
+pub const PAYLOAD_KIND_CANCEL_REQUEST: &str = "cancel_request";
+
+/// Wire `kind` value for an envelope carrying [`CancelAck`].
+pub const PAYLOAD_KIND_CANCEL_ACK: &str = "cancel_ack";
+
 /// Marker trait for types that have a canonical wire `kind`.
 ///
 /// Implemented for [`ExecRequest`] and [`ExecResponse`] in v0.1; future
@@ -39,6 +45,14 @@ impl Payload for ShutdownRequest {
 
 impl Payload for ShutdownResponse {
     const KIND: &'static str = PAYLOAD_KIND_SHUTDOWN_RESPONSE;
+}
+
+impl Payload for CancelRequest {
+    const KIND: &'static str = PAYLOAD_KIND_CANCEL_REQUEST;
+}
+
+impl Payload for CancelAck {
+    const KIND: &'static str = PAYLOAD_KIND_CANCEL_ACK;
 }
 
 /// Wire envelope wrapping an opaque payload.
@@ -202,6 +216,44 @@ pub enum ShutdownAction {
     Poweroff,
 }
 
+/// Cancel request payload — host → guest. Asks the guest to kill the
+/// in-flight exec identified by `request_id`.
+///
+/// Shared by the persistent-VM epic (`m80-qokt.2`) and the streaming-exec
+/// epic (`m80-5vha`). Whichever lands first owns the type; the second
+/// imports it without re-declaring.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CancelRequest {
+    /// Must match the `request_id` on the `Envelope<ExecRequest>` that is
+    /// being cancelled.
+    pub request_id: String,
+}
+
+/// Cancel acknowledgement — guest → host. Sent after the guest has
+/// processed a [`CancelRequest`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CancelAck {
+    /// Echoed back from [`CancelRequest::request_id`].
+    pub request_id: String,
+    /// Outcome of the cancellation attempt.
+    pub status: CancelStatus,
+}
+
+/// Outcome of a cancellation attempt. Wire serialization is `snake_case`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CancelStatus {
+    /// Guest killed the process on request (SIGKILL sent and reaped).
+    Cancelled,
+    /// Process had already exited before the cancel arrived (or the
+    /// `request_id` did not match any in-flight exec).
+    AlreadyExited,
+    /// Guest could not kill the process (`kill(2)` itself failed — rare).
+    Failed,
+}
+
 /// Version-exchange message sent on every fresh connection before any
 /// application payload. Only after a successful [`crate::negotiate_version`]
 /// should either side send an [`Envelope`].
@@ -321,5 +373,67 @@ mod tests {
         let json = serde_json::to_string(&h).unwrap();
         let back: HandshakeMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(back, h);
+    }
+
+    #[test]
+    fn cancel_request_round_trip() {
+        let req = CancelRequest {
+            request_id: "req-42".into(),
+        };
+        let env = Envelope::with_request_id(req.clone(), "req-42".into());
+        assert_eq!(env.kind, PAYLOAD_KIND_CANCEL_REQUEST);
+        let json = serde_json::to_string(&env).unwrap();
+        let back: Envelope<CancelRequest> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.payload.request_id, "req-42");
+        assert_eq!(back.kind, PAYLOAD_KIND_CANCEL_REQUEST);
+    }
+
+    #[test]
+    fn cancel_ack_cancelled_round_trip() {
+        let ack = CancelAck {
+            request_id: "req-42".into(),
+            status: CancelStatus::Cancelled,
+        };
+        let env = Envelope::new(ack);
+        assert_eq!(env.kind, PAYLOAD_KIND_CANCEL_ACK);
+        let json = serde_json::to_string(&env).unwrap();
+        let back: Envelope<CancelAck> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.payload.status, CancelStatus::Cancelled);
+    }
+
+    #[test]
+    fn cancel_ack_already_exited_round_trip() {
+        let ack = CancelAck {
+            request_id: "req-7".into(),
+            status: CancelStatus::AlreadyExited,
+        };
+        let json = serde_json::to_string(&ack).unwrap();
+        let back: CancelAck = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.status, CancelStatus::AlreadyExited);
+    }
+
+    #[test]
+    fn cancel_ack_failed_round_trip() {
+        let ack = CancelAck {
+            request_id: "req-9".into(),
+            status: CancelStatus::Failed,
+        };
+        let json = serde_json::to_string(&ack).unwrap();
+        let back: CancelAck = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.status, CancelStatus::Failed);
+    }
+
+    #[test]
+    fn cancel_status_wire_values() {
+        for (status, expected) in [
+            (CancelStatus::Cancelled, "\"cancelled\""),
+            (CancelStatus::AlreadyExited, "\"already_exited\""),
+            (CancelStatus::Failed, "\"failed\""),
+        ] {
+            let json = serde_json::to_string(&status).unwrap();
+            assert_eq!(json, expected);
+            let back: CancelStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, status);
+        }
     }
 }

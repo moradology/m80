@@ -5,7 +5,10 @@
 
 use std::io::Cursor;
 
-use m80_proto::{read_frame, write_frame, Envelope, ExecRequest, ExecResponse, ExecStatus};
+use m80_proto::{
+    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest,
+    ExecResponse, ExecStatus, PAYLOAD_KIND_CANCEL_ACK,
+};
 
 fn make_request(
     program: &str,
@@ -33,7 +36,22 @@ fn request_frame(req: ExecRequest, request_id: Option<&str>) -> Vec<u8> {
     buf
 }
 
+fn cancel_frame(request_id: &str) -> Vec<u8> {
+    let req = CancelRequest {
+        request_id: request_id.to_owned(),
+    };
+    let env = Envelope::new(req);
+    let mut buf = Vec::new();
+    write_frame(&mut buf, &env).expect("write_frame in test");
+    buf
+}
+
 fn read_response(bytes: &[u8]) -> Envelope<ExecResponse> {
+    let mut cursor = Cursor::new(bytes);
+    read_frame(&mut cursor).expect("read_frame in test")
+}
+
+fn read_cancel_ack(bytes: &[u8]) -> Envelope<CancelAck> {
     let mut cursor = Cursor::new(bytes);
     read_frame(&mut cursor).expect("read_frame in test")
 }
@@ -93,4 +111,91 @@ fn exec_request_id_round_trips() {
     let req = make_request("true", vec![], None, 5_000);
     let env = read_response(&run_handler(request_frame(req, Some("req-1"))));
     assert_eq!(env.request_id, Some("req-1".to_owned()));
+}
+
+// ── Cancel tests ──────────────────────────────────────────────────────────────
+
+/// Cancel while a long-running exec is in flight: the cancel frame is
+/// pre-buffered after the exec frame. The handler reads exec, spawns sleep,
+/// polls the buffer, sees the cancel, SIGKILLs, and replies with CancelAck.
+#[test]
+fn cancel_mid_exec_returns_cancelled_ack() {
+    let mut input = request_frame(
+        make_request("sleep", vec!["60".into()], None, 30_000),
+        Some("req-cancel-1"),
+    );
+    input.extend(cancel_frame("req-cancel-1"));
+
+    let out = run_handler(input);
+    let ack = read_cancel_ack(&out);
+
+    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_ACK);
+    assert_eq!(ack.payload.request_id, "req-cancel-1");
+    assert_eq!(ack.payload.status, CancelStatus::Cancelled);
+}
+
+/// Cancel while a long-running exec is in flight terminates in well under
+/// the exec's own timeout.
+#[test]
+fn cancel_mid_exec_terminates_quickly() {
+    let mut input = request_frame(
+        make_request("sleep", vec!["60".into()], None, 30_000),
+        Some("req-cancel-timing"),
+    );
+    input.extend(cancel_frame("req-cancel-timing"));
+
+    let start = std::time::Instant::now();
+    run_handler(input);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "cancel should terminate well before sleep timeout, elapsed={elapsed:?}"
+    );
+}
+
+/// A cancel_request with a mismatched request_id while an exec is in flight
+/// returns AlreadyExited (not Cancelled) and the exec continues normally.
+#[test]
+fn cancel_wrong_request_id_returns_already_exited() {
+    // sleep with a short timeout so the test doesn't hang if something is wrong.
+    let mut input = request_frame(
+        make_request("sleep", vec!["60".into()], None, 200),
+        Some("req-real"),
+    );
+    // Wrong ID — does not match the in-flight exec.
+    input.extend(cancel_frame("req-bogus"));
+
+    let out = run_handler(input);
+
+    // The wrong-ID cancel produces an AlreadyExited ack.
+    // After that the exec times out and produces its ExecResponse.
+    // Both are written to `out`; read ack first, then response.
+    let ack = read_cancel_ack(&out);
+    assert_eq!(ack.payload.status, CancelStatus::AlreadyExited);
+    assert_eq!(ack.payload.request_id, "req-bogus");
+
+    // The exec itself timed out.
+    let remaining = &out[{
+        // Advance past the ack frame length.
+        let mut cur = Cursor::new(&out);
+        let _: Envelope<CancelAck> = read_frame(&mut cur).unwrap();
+        cur.position() as usize
+    }..];
+    let exec_resp: Envelope<ExecResponse> = {
+        let mut cur = Cursor::new(remaining);
+        read_frame(&mut cur).expect("exec response after wrong-id cancel")
+    };
+    assert_eq!(exec_resp.payload.status, ExecStatus::TimedOut);
+}
+
+/// A cancel_request that arrives when no exec is in flight (standalone
+/// cancel_request envelope) returns AlreadyExited.
+#[test]
+fn cancel_no_exec_in_flight_returns_already_exited() {
+    let input = cancel_frame("req-orphan");
+    let out = run_handler(input);
+    let ack = read_cancel_ack(&out);
+    assert_eq!(ack.payload.request_id, "req-orphan");
+    assert_eq!(ack.payload.status, CancelStatus::AlreadyExited);
 }
