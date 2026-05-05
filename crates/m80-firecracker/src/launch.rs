@@ -252,8 +252,8 @@ fn phase_1_run_root_prep(run_root: &Path, vm_id: &str) -> Result<PathBuf, FcErro
     Ok(run_dir)
 }
 
-/// Phase 3: verify the manifest sha256s and clone the rootfs; optionally
-/// create a scratch image for the workspace.
+/// Phase 3: verify the manifest sha256s and prepare the rootfs overlay;
+/// optionally create a scratch image for the workspace.
 fn phase_3_storage_prep(
     manifest: &Manifest,
     base_rootfs: &Path,
@@ -265,8 +265,9 @@ fn phase_3_storage_prep(
     let manifest_dir = base_rootfs.parent().unwrap_or(std::path::Path::new("/"));
     manifest.verify(manifest_dir)?;
 
-    let rootfs_dest = run_dir.join("rootfs.ext4");
-    let rootfs = Rootfs::clone(base_rootfs, &rootfs_dest)?;
+    // Allocate a sparse per-VM overlay ext4; the base is NOT copied.
+    let overlay_dest = run_dir.join("rootfs.overlay.ext4");
+    let rootfs = Rootfs::prepare(base_rootfs, &overlay_dest, config.overlay_size_bytes)?;
 
     let scratch = if let Some(workspace) = &config.workspace {
         let scratch_dest = run_dir.join("scratch.ext4");
@@ -296,10 +297,17 @@ fn phase_4_jailer_materialize(
             dest: PathBuf::from("kernel"),
             mode: BindMode::Ro,
         },
-        // Per-VM rootfs clone — read-write (the guest writes into its own copy).
+        // Shared read-only base ext4 (vda). Same host file across all VMs;
+        // bind RO so the jail cannot mutate the shared image.
         Binding {
-            source: storage.rootfs.path().to_path_buf(),
+            source: storage.rootfs.base_path().to_path_buf(),
             dest: PathBuf::from("rootfs.ext4"),
+            mode: BindMode::Ro,
+        },
+        // Per-VM sparse overlay ext4 (vdb). Writable; holds all guest writes.
+        Binding {
+            source: storage.rootfs.overlay_path().to_path_buf(),
+            dest: PathBuf::from("rootfs.overlay.ext4"),
             mode: BindMode::Rw,
         },
     ];
@@ -446,15 +454,25 @@ fn phase_11_rest_puts(
         initrd_path: None,
     })?;
 
-    // c. Root drive. The rootfs clone is bind-mounted at `/rootfs.ext4`.
+    // c. vda: shared read-only base ext4. is_root_device=true; is_read_only
+    // must be set explicitly (Firecracker REST default is false per design doc).
     client.put_drive(&DriveConfig {
         drive_id: "rootfs".into(),
         path_on_host: PathBuf::from("/rootfs.ext4"),
         is_root_device: true,
+        is_read_only: true,
+    })?;
+
+    // d. vdb: per-VM sparse overlay ext4. Writable; guestd mounts this as
+    // the overlayfs upperdir after pivot_root.
+    client.put_drive(&DriveConfig {
+        drive_id: "rootfs_overlay".into(),
+        path_on_host: PathBuf::from("/rootfs.overlay.ext4"),
+        is_root_device: false,
         is_read_only: false,
     })?;
 
-    // d. Workspace drive (optional).
+    // e. vdc: workspace drive (optional). Only when workspace is configured.
     if storage.scratch.is_some() {
         client.put_drive(&DriveConfig {
             drive_id: "workspace".into(),

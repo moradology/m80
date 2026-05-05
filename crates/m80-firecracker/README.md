@@ -53,6 +53,10 @@ The base + overlay split is what `m80-storage::Rootfs` produces;
 `m80-storage::Scratch` is the workspace. Per-VM sparse files cost ~10 ms
 each at most to allocate + format; there is no full-rootfs copy.
 
+`SandboxConfig::overlay_size_bytes` controls the sparse overlay size
+(default: 512 MiB). The overlay grows as the guest writes; the sparse
+allocation costs zero disk bytes at creation.
+
 ### Concurrency / admission
 
 `Backend::admit().launch()` acquires one slot from the admission

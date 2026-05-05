@@ -9,10 +9,12 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 pub fn fake_manifest() -> m80_image_manifest::Manifest {
     m80_image_manifest::Manifest {
         schema_version: m80_image_manifest::SCHEMA_VERSION,
         image_kind: m80_image_manifest::ImageKind::Ubuntu,
+        kernel_kind: m80_image_manifest::KernelKind::Stock,
         expected_firecracker_version: "v1.0.0".into(),
         kernel_image: PathBuf::from("/dev/null"),
         kernel_image_sha256: "0".repeat(64),
@@ -33,6 +35,7 @@ pub fn fake_manifest() -> m80_image_manifest::Manifest {
     }
 }
 
+#[allow(dead_code)]
 pub fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
     m80_preflight::Discovery {
         firecracker_bin: PathBuf::from("/dev/null"),

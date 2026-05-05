@@ -1,7 +1,7 @@
 //! Public struct and enum definitions for `m80-firecracker`.
 //! Implementation blocks live in the module that owns the type's domain.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -154,6 +154,12 @@ pub struct SandboxConfig {
     pub mem_size_mib: Option<u32>,
     /// Boot args appended to the kernel command line.
     pub boot_args: Option<String>,
+    /// Sparse overlay size in bytes (default: 512 MiB).
+    ///
+    /// The overlay is allocated as a sparse file at launch time and formatted
+    /// with `mkfs.ext4 -F`. Cost at creation is ~0 bytes on disk; it grows
+    /// as the guest writes. See `docs/design/storage-overlay.md §5`.
+    pub overlay_size_bytes: u64,
 }
 
 /// A sandbox in `Created` state — admission permit held, no I/O performed yet.
@@ -200,6 +206,13 @@ pub struct RunningSandbox {
     pub(crate) permit: AdmissionPermit,
     /// Reference to the backend.
     pub(crate) backend: Arc<Backend>,
+}
+
+impl RunningSandbox {
+    /// Return the per-VM run directory.
+    pub fn run_dir(&self) -> &Path {
+        &self.run_dir
+    }
 }
 
 impl std::fmt::Debug for RunningSandbox {
