@@ -25,9 +25,11 @@ impl RunningSandbox {
 
     /// Send one exec request to the in-VM daemon and return the response.
     ///
-    /// Multiple sequential execs over the same channel are supported in v0.1;
-    /// the channel stays open between calls. Pipelining (concurrent exec) is
-    /// not supported.
+    /// The VM stays alive after the call returns; sequential execs on the same
+    /// `RunningSandbox` share the same filesystem state. Pipelining (concurrent
+    /// exec) is not supported — the borrow checker enforces one in-flight exec
+    /// at a time via `&mut self`. Call `stop()` (or drop the sandbox) to tear
+    /// down the VM.
     pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
         let envelope = Envelope::new(req);
         let t = Instant::now();

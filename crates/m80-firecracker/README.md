@@ -76,7 +76,8 @@ an invariant fails closed.
 - **No agent semantics.** No tool catalog, no `EffectClass`, no authority
   leases. m80's job is "boot a VM and run a command".
 - **No multi-host placement.** Single host only.
-- **No persistent VM pools.** Every `launch()` is a fresh boot in v0.1;
-  warm pools are a v0.2 epic.
+- **No persistent VM pools.** `RunningSandbox::exec` takes `&mut self` and
+  the VM stays alive between sequential exec calls; warm-pool snapshotting
+  (boot once, restore many) is a separate v0.2 epic (`m80-rrp`).
 - **No "execute and forget".** All sandboxes return through `stop()` or
   `force_kill()`.
