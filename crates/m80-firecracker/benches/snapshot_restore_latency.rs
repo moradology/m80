@@ -25,7 +25,7 @@ fn main() {
     let golden = golden_backend
         .admit(sandbox_config(format!("sbg-{}", std::process::id())))
         .expect("admit golden");
-    let running = golden.launch().expect("launch golden");
+    let mut running = golden.launch().expect("launch golden");
     running.capture(paths.clone()).expect("capture golden");
     running
         .force_kill()

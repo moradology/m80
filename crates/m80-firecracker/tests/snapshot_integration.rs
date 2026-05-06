@@ -166,7 +166,7 @@ fn restore_executes_after_idle() {
     let golden = backend
         .admit(sandbox_config("snap-idle-golden"))
         .expect("admit golden");
-    let running = golden.launch().expect("launch golden");
+    let mut running = golden.launch().expect("launch golden");
     let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
 
     let paths = snapshot_paths(&snap_dir);

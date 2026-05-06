@@ -57,7 +57,7 @@ fn run_foreground_inner(
     };
     let sandbox = warm_sandbox_config("warm-golden", egress);
     let golden = backend.admit(sandbox)?;
-    let running = golden.launch()?;
+    let mut running = golden.launch()?;
     running.capture(snapshot.clone())?;
     running.force_kill()?.delete()?;
 

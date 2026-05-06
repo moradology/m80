@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use m80_observability::Phase;
+use m80_observability::{ExitReason, Phase};
 use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
@@ -56,7 +56,7 @@ impl RunningSandbox {
     /// Returns `FcError::Snapshot` if either REST call fails. The caller
     /// should treat any error as the VM being in an unknown state and call
     /// `force_kill()`.
-    pub fn capture(&self, paths: SnapshotPaths) -> Result<(), FcError> {
+    pub fn capture(&mut self, paths: SnapshotPaths) -> Result<(), FcError> {
         let snapshot_bind = bind_snapshot_parent_into_jail(
             &self.jail.jail_path,
             &paths,
@@ -69,7 +69,15 @@ impl RunningSandbox {
             paths: snapshot_bind.paths.clone(),
             kind: SnapshotKind::Full,
         })
-        .map_err(FcError::Snapshot)
+        .map_err(FcError::Snapshot)?;
+        crate::diagnostics::record_stop_reason(
+            &mut self.diagnostics,
+            &self.vm_id,
+            self.request_id.as_deref(),
+            "snapshot captured",
+            ExitReason::SnapshotCapture,
+        );
+        Ok(())
     }
 
     /// Four-phase teardown:
@@ -99,7 +107,7 @@ impl RunningSandbox {
 
         // Phase 2: bounded_stop.
         let t = Instant::now();
-        bounded_stop(self.firecracker.firecracker_pid, &vsock_uds)?;
+        let exit_reason = bounded_stop(self.firecracker.firecracker_pid, &vsock_uds)?;
         phase_event("stop_bounded", &vm_id_for_event, t.elapsed());
 
         // Phase 4: release. Destructure to drop everything except what moves
@@ -133,12 +141,12 @@ impl RunningSandbox {
         }
         unmount_snapshot_bind(snapshot_mount.as_deref());
         phase_event("stop_release", &vm_id_for_event, t.elapsed());
-        crate::diagnostics::record_owned(
+        crate::diagnostics::record_stop_reason(
             &mut diagnostics,
-            Phase::Stop,
             &vm_id_for_event,
             request_id_for_event.as_deref(),
             "stop complete",
+            exit_reason,
         );
 
         Ok(StoppedSandbox {
@@ -207,12 +215,12 @@ impl RunningSandbox {
             let _ = handle.join();
         }
         unmount_snapshot_bind(snapshot_mount.as_deref());
-        crate::diagnostics::record_owned(
+        crate::diagnostics::record_stop_reason(
             &mut diagnostics,
-            Phase::Stop,
             &vm_id_for_event,
             request_id_for_event.as_deref(),
             "force kill complete",
+            ExitReason::ForceKill,
         );
 
         Ok(StoppedSandbox {
@@ -336,16 +344,20 @@ pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
 ///
 /// If the vsock RPC fails (guest unreachable / already dead), SIGKILL
 /// directly — same outcome.
-fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<(), FcError> {
+fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<ExitReason, FcError> {
     match normal_stop_disposition() {
         StopDisposition::GuestdShutdownThenFirecrackerKill => {
-            if let Err(e) = send_shutdown_request(vsock_uds) {
+            let exit_reason = if let Err(e) = send_shutdown_request(vsock_uds) {
                 tracing::warn!(
                     error = %e,
                     "vsock graceful-stop failed; SIGKILLing without ack"
                 );
-            }
-            kill_pid(firecracker_pid)
+                ExitReason::ForceKill
+            } else {
+                ExitReason::NormalStop
+            };
+            kill_pid(firecracker_pid)?;
+            Ok(exit_reason)
         }
         StopDisposition::HostForceKill => unreachable!("normal stop disposition"),
     }

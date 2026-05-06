@@ -147,7 +147,7 @@ fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
     let golden = golden_backend
         .admit(sandbox_config("warm-pool-golden"))
         .expect("admit golden");
-    let running = golden.launch().expect("launch golden");
+    let mut running = golden.launch().expect("launch golden");
     let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
     let paths = snapshot_paths(&snap_dir);
     running.capture(paths.clone()).expect("capture golden");

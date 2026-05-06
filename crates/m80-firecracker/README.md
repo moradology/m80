@@ -109,7 +109,7 @@ spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
 | `RunningSandbox::remove_file` | `(&mut self, path) -> Result<(), FcError>` | Remove one non-directory guest path. |
 | `RunningSandbox::upload_file_chunked` | `(&mut self, path, mode, reader, chunk_size) -> Result<u64, FcError>` | Upload via begin/chunk/commit on one vsock connection. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
-| `RunningSandbox::capture` | `(&self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused. |
+| `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
 
 `SnapshotPaths` is re-exported from `m80-snapshot` for caller convenience.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and

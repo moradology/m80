@@ -101,6 +101,18 @@ impl Sandbox {
         })?;
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
+        macro_rules! diag_phase {
+            ($phase:expr, $name:literal, $body:expr) => {
+                crate::diagnostics::phase_result(
+                    &mut diagnostics,
+                    $phase,
+                    $name,
+                    &vm_id,
+                    request_id.as_deref(),
+                    || $body,
+                )
+            };
+        }
 
         // Phase 2: lease acquisition. NB: name the binding `_lease_guard`
         // (suffix after underscore) — a bare `_lease` would drop the guard
@@ -110,7 +122,7 @@ impl Sandbox {
 
         // Phase 3: storage prep. Artifact sha256 verification is owned by
         // m80-preflight before Backend construction, not by each launch.
-        let storage = phase("phase_3_storage_prep", &vm_id, || {
+        let storage = diag_phase!(Phase::StoragePrepare, "phase_3_storage_prep", {
             phase_3_storage_prep(
                 &vm_id,
                 &backend_config.discovery.rootfs,
@@ -127,7 +139,7 @@ impl Sandbox {
         );
 
         // Phase 4: jailer materialize.
-        let jail = phase("phase_4_jailer_materialize", &vm_id, || {
+        let jail = diag_phase!(Phase::Boot, "phase_4_jailer_materialize", {
             phase_4_jailer_materialize(
                 &backend_config.discovery.jailer_bin,
                 &backend_config.discovery.firecracker_bin,
@@ -140,12 +152,12 @@ impl Sandbox {
         })?;
 
         // Phase 5: probe cgroup availability (creation happens after phase 9).
-        phase("phase_5_cgroup_probe", &vm_id, || {
+        diag_phase!(Phase::HostPreflight, "phase_5_cgroup_probe", {
             phase_5_cgroup_probe(backend_config.cgroup_mode)
         })?;
 
         // Phase 6: resolve network mode.
-        let _net = phase("phase_6_network_realize", &vm_id, || {
+        let _net = diag_phase!(Phase::NetworkPrepare, "phase_6_network_realize", {
             phase_6_network_realize(&self.config)
         })?;
         crate::diagnostics::record_owned(
@@ -164,24 +176,24 @@ impl Sandbox {
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
         // Phase 9: jailer exec's firecracker. Returns live pids.
-        let firecracker = phase("phase_9_jailer_launch", &vm_id, || {
+        let firecracker = diag_phase!(Phase::Boot, "phase_9_jailer_launch", {
             jail.launch(&api_socket).map_err(FcError::Jailer)
         })?;
 
         // Phase 5b: create cgroup subtree now that we have live pids.
-        let cgroup = phase("phase_5b_cgroup_create", &vm_id, || {
+        let cgroup = diag_phase!(Phase::HostPreflight, "phase_5b_cgroup_create", {
             phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)
         })?;
 
         // Phase 10: open UDS REST client (retries for up to 5 s).
         let host_api_socket =
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let client = phase("phase_10_open_uds", &vm_id, || {
+        let client = diag_phase!(Phase::Boot, "phase_10_open_uds", {
             phase_10_open_uds(&host_api_socket)
         })?;
 
         // Phase 11: REST PUTs in documented order.
-        phase("phase_11_rest_puts", &vm_id, || {
+        diag_phase!(Phase::Boot, "phase_11_rest_puts", {
             phase_11_rest_puts(
                 &client,
                 &storage,
@@ -199,16 +211,16 @@ impl Sandbox {
         // RSTs the guest. Must be created before InstanceStart.
         let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
         let ready_uds = ready_listener_path(&vsock_uds);
-        let ready_listener = phase("phase_11b_ready_listener_bind", &vm_id, || {
+        let ready_listener = diag_phase!(Phase::Ready, "phase_11b_ready_listener_bind", {
             phase_11b_bind_ready_listener(&ready_uds, backend_config.jail_uid)
         })?;
 
-        phase("phase_11c_boot_identity_record", &vm_id, || {
+        diag_phase!(Phase::Boot, "phase_11c_boot_identity_record", {
             crate::boot_identity::record(&run_dir, &backend_config.discovery)
         })?;
 
         // Phase 12a: InstanceStart.
-        phase("phase_12a_instance_start", &vm_id, || {
+        diag_phase!(Phase::Boot, "phase_12a_instance_start", {
             client.instance_action(InstanceAction::InstanceStart)
         })?;
         crate::diagnostics::record_owned(
@@ -222,7 +234,7 @@ impl Sandbox {
         // Phase 12b: accept the inverted-readiness signal from m80-guestd,
         // then probe the exec channel once. accept() returns event-driven the
         // moment guestd's outbound connect lands — no muxer-polling race.
-        phase("phase_12b_ready_accept", &vm_id, || {
+        diag_phase!(Phase::Ready, "phase_12b_ready_accept", {
             phase_12b_ready_accept(&ready_listener, &ready_uds, &vsock_uds, &vm_id)
         })?;
         crate::diagnostics::record_owned(
@@ -317,13 +329,25 @@ impl Sandbox {
         })?;
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
+        macro_rules! diag_phase {
+            ($phase:expr, $name:literal, $body:expr) => {
+                crate::diagnostics::phase_result(
+                    &mut diagnostics,
+                    $phase,
+                    $name,
+                    &vm_id,
+                    request_id.as_deref(),
+                    || $body,
+                )
+            };
+        }
 
         // Phase 2: lease acquisition.
         let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
         // Phase 3: storage prep (overlay + optional scratch — still needed
         // for the jailer bind-mount layout even on restore path).
-        let storage = phase("phase_3_storage_prep", &vm_id, || {
+        let storage = diag_phase!(Phase::StoragePrepare, "phase_3_storage_prep", {
             phase_3_storage_prep(
                 &vm_id,
                 &backend_config.discovery.rootfs,
@@ -340,7 +364,7 @@ impl Sandbox {
         );
 
         // Phase 4: jailer materialize.
-        let jail = phase("phase_4_jailer_materialize", &vm_id, || {
+        let jail = diag_phase!(Phase::Boot, "phase_4_jailer_materialize", {
             phase_4_jailer_materialize(
                 &backend_config.discovery.jailer_bin,
                 &backend_config.discovery.firecracker_bin,
@@ -353,7 +377,7 @@ impl Sandbox {
         })?;
 
         // Phase 5: cgroup probe (restore path honours cgroup mode too).
-        phase("phase_5_cgroup_probe", &vm_id, || {
+        diag_phase!(Phase::HostPreflight, "phase_5_cgroup_probe", {
             phase_5_cgroup_probe(backend_config.cgroup_mode)
         })?;
 
@@ -362,26 +386,26 @@ impl Sandbox {
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
         // Phase 9: spawn Firecracker via jailer.
-        let firecracker = phase("phase_9_jailer_launch", &vm_id, || {
+        let firecracker = diag_phase!(Phase::Boot, "phase_9_jailer_launch", {
             jail.launch(&api_socket).map_err(FcError::Jailer)
         })?;
 
         // Phase 5b: create cgroup subtree.
-        let cgroup = phase("phase_5b_cgroup_create", &vm_id, || {
+        let cgroup = diag_phase!(Phase::HostPreflight, "phase_5b_cgroup_create", {
             phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)
         })?;
 
         // Phase 10: open UDS REST client.
         let host_api_socket =
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let client = phase("phase_10_open_uds", &vm_id, || {
+        let client = diag_phase!(Phase::Boot, "phase_10_open_uds", {
             phase_10_open_uds(&host_api_socket)
         })?;
 
         // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +
         // PATCH /vm Resumed (resume: true).
         let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let snapshot_bind = phase("phase_restore_snapshot_bind", &vm_id, || {
+        let snapshot_bind = diag_phase!(Phase::Boot, "phase_restore_snapshot_bind", {
             bind_snapshot_parent_into_jail(
                 &jail.jail_path,
                 &snapshot,
@@ -389,7 +413,7 @@ impl Sandbox {
                 backend_config.jail_gid,
             )
         })?;
-        phase("phase_restore_load", &vm_id, || {
+        diag_phase!(Phase::Boot, "phase_restore_load", {
             snapshot_restore(RestoreRequest {
                 fc_socket: host_api_socket.clone(),
                 paths: snapshot_bind.paths.clone(),
@@ -408,7 +432,7 @@ impl Sandbox {
 
         // Phase restore-probe: CONNECT 9001 retry loop.
         // Replaces the cold-boot phase_12b_ready_accept.
-        phase("phase_restore_probe_exec_channel", &vm_id, || {
+        diag_phase!(Phase::Ready, "phase_restore_probe_exec_channel", {
             phase_restore_probe_exec_channel(&vsock_uds, &vm_id)
         })?;
         crate::diagnostics::record_owned(

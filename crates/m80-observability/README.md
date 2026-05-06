@@ -1,18 +1,19 @@
 # `m80-observability`
 
 VM-lifecycle event log, per-VM probe, health rollup, Prometheus rendering.
-The per-VM diagnostics writer is active; probe, health, and scrape remain
-reserved for v0.2.
+The per-VM diagnostics writer, run-root probe, health rollup, and Prometheus
+rendering are active generic VM-observability surfaces.
 
 ## Reason for being
 
-Two reasons to claim the name now even though the crate is empty:
+Two reasons to keep this as a separate crate:
 
 1. **Stable boundary.** `m80-firecracker` records VM-lifecycle events through
-   this crate instead of growing its own diagnostics subsystem. v0.2 will build
-   the rollup + scrape on top of the same JSONL primitive.
-2. **Explicit split.** Diagnostics JSONL is in scope now because WRA0 needs
-   request correlation. Probe, health, and Prometheus rendering stay deferred.
+   this crate instead of growing its own diagnostics subsystem. Probe, health,
+   and scrape build on the same host-visible run-root evidence.
+2. **Explicit split.** Diagnostics JSONL is in scope because WRA0 needs
+   request correlation. Probe, health, and Prometheus rendering stay
+   VM-generic and do not become product policy.
 
 The reframe relative to predecessor: agent-tier semantic events
 (`sandbox_exec_started/_succeeded/_failed/_timed_out`,
@@ -29,9 +30,15 @@ adapter, not below.
 - Every VM gets a `<run_dir>/diagnostics.jsonl` of structured events.
   Phases: `StartupScavenge`, `HostPreflight`, `StoragePrepare`, `Boot`,
   `NetworkPrepare`, `Ready`, `Request`, `Stop`, `Writeback`, and `Delete`.
-- Each line carries `schema_version: 2`, `timestamp_unix_ms`, `source_class`,
-  `phase`, `message`, optional opaque `request_id`, and bounded string
-  `context`.
+- Each line carries `schema_version: 2`, `timestamp_unix_ms`, `event_kind`,
+  `source_class`, `phase`, `message`, optional opaque `request_id`, bounded
+  string `context`, optional `duration_us`, optional `outcome`, and optional
+  typed `exit_reason`.
+- Phase timings are first-class events: every instrumented phase emits
+  `phase_started` and `phase_completed` records with a typed completion
+  outcome.
+- Stop evidence uses typed `ExitReason` values such as `NormalStop`,
+  `ForceKill`, and `SnapshotCapture`.
 - Lines are `serde_json`-encoded, one event per line, append-only,
   fsync-on-close. Crash-tolerant by construction.
 - Removing the diagnostics writer never breaks the boot path. The
@@ -40,8 +47,8 @@ adapter, not below.
 ### Per-VM probe
 
 - `probe(run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError>`
-  (free function) walks the run-root, reads ownership markers + lease
-  files + socket reachability, and emits one record per VM.
+  (free function) walks the run-root, reads ownership markers and socket
+  visibility, and emits one record per owned VM.
 - Health classification (`Healthy`, `Degraded`, `Stuck`, `Exited`) is
   derived from **host-visible truth only** — the absence/presence of
   files and sockets — not from log lines or metric values.
@@ -50,12 +57,12 @@ adapter, not below.
 ### Health rollup
 
 - `aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError>`
-  (free function) produces ready/stuck flags suitable for
-  rollout-readiness gating.
+  (free function) produces per-health counts and a structural
+  `rollout_ready` boolean.
 
 ### Prometheus rendering
 
-- `render_prometheus(snapshot: &HealthSnapshot, metrics: &OpsMetrics) -> String`
+- `render_prometheus(snapshot: &HealthSnapshot, metrics: &OpsMetrics) -> Result<String, ObservabilityError>`
   renders the standard exposition format. **Rendering only** — no
   embedded HTTP server. Hosting the `/metrics` endpoint is the
   deployer's job.
@@ -65,11 +72,12 @@ adapter, not below.
 - `Diagnostics::open(run_dir)`, `Diagnostics::disabled()`,
   `Diagnostics::record(&VmEvent)`, `Diagnostics::path()`.
 - `DIAGNOSTICS_SCHEMA_VERSION`, `DIAGNOSTICS_FILE_NAME`.
-- `Phase`, `SourceClass`, `VmEvent`.
+- `EventKind`, `Phase`, `PhaseOutcome`, `ExitReason`, `SourceClass`,
+  `VmEvent`.
 - `probe(...)`, `VmProbeRecord`, `VmHealth`.
 - `aggregate_health(...)`, `HealthSnapshot`, `OpsMetrics`.
 - `render_prometheus(...)`, `render_health_json(...)`.
-- `ObservabilityError` (`Deferred` remains for probe/health/scrape lanes).
+- `ObservabilityError`.
 
 ## Non-goals
 
@@ -94,7 +102,10 @@ adapter, not below.
 - Phase vocabulary: the documented lifecycle phase enum serializes to the
   expected names.
 - Disabled diagnostics: record remains a no-op.
+- Phase timing events: completed phases carry duration and typed outcome.
+- Stop evidence: normal stop, force kill, and snapshot capture serialize as
+  distinct typed reasons.
 - Probe classification: a fixture run-root with each {Healthy,
-  Degraded, Stuck, Exited} layout produces the expected record kind. (v0.2)
+  Degraded, Stuck, Exited} layout produces the expected record kind.
 - Rollup determinism: same probe input → same `HealthSnapshot`.
-- Prometheus exposition format: validator passes the rendered text. (v0.2)
+- Prometheus exposition format: rendered text contains gauge families only.
