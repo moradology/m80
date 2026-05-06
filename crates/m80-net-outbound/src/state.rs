@@ -21,7 +21,7 @@ pub const NETWORK_STATE_SCHEMA_VERSION: u32 = 1;
 
 /// Setup phase recorded in bridge and VM network state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum SetupPhase {
     /// State has been planned and written before host link mutation.
     Planned,
@@ -31,6 +31,7 @@ pub enum SetupPhase {
 
 /// Run-root-level ownership record for the outbound bridge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BridgeState {
     /// State schema version.
     pub schema_version: u32,
@@ -58,6 +59,7 @@ impl BridgeState {
 
 /// Per-VM network state written after bridge/TAP setup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VmNetworkStateRecord {
     /// State schema version.
     pub schema_version: u32,

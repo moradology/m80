@@ -31,7 +31,7 @@ pub const DEFAULT_NO_EGRESS_REASON: &str =
 
 /// Which kernel was used to boot this image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum KernelKind {
     /// Upstream Firecracker CI kernel (downloaded from the S3 bucket).
     #[default]
@@ -42,7 +42,7 @@ pub enum KernelKind {
 
 /// Which startup model the image was built for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ImageKind {
     /// Ubuntu rootfs with systemd as init. m80-guestd runs as a
     /// systemd service; the manifest carries the unit + workspace-mount

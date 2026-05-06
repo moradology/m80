@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// Caller intent: opt-in network egress with optional bounded private
 /// exceptions. Default for any new construction is [`NetworkPolicy::NoEgress`].
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum NetworkPolicy {
     /// No NIC, no iptables, no privilege required.
     #[default]
@@ -28,7 +28,7 @@ pub enum NetworkPolicy {
 /// Resolved per-VM network mode. `m80-firecracker` consumes only this; it
 /// never inspects the original `NetworkPolicy`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum VmNetworkMode {
     /// VM gets no NIC; iptables untouched.
     NoEgress,
@@ -43,6 +43,7 @@ pub enum VmNetworkMode {
 /// this off; the realizer does not re-validate fields the resolver already
 /// checked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutboundIntent {
     /// Bounded private-IPv4 CIDRs the VM may reach in addition to the
     /// admitted-DNS / public-IPv4 default-allow set.

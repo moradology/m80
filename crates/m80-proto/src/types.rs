@@ -159,7 +159,7 @@ pub struct ExecRequest {
 /// `snake_case` variant name. Adding a variant requires a
 /// `PROTOCOL_VERSION` bump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ExecStatus {
     /// Process exited; see `exit_code` for the code.
     Completed,
@@ -237,7 +237,7 @@ pub struct ShutdownResponse {
 
 /// What the guest will do after acknowledging a shutdown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ShutdownAction {
     /// Guest will call `exit()`. When the guest is PID 1 (minimal image)
     /// this triggers a kernel panic; with `panic=1` in boot args the kernel
@@ -276,7 +276,7 @@ pub struct CancelAck {
 
 /// Outcome of a cancellation attempt. Wire serialization is `snake_case`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum CancelStatus {
     /// Guest killed the process on request (SIGKILL sent and reaped).
     Cancelled,

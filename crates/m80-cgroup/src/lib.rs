@@ -180,6 +180,7 @@ pub fn cleanup_orphan_subtree(vm_id: &str) -> Result<(), CgroupError> {
 
 /// Per-controller limits for one subtree.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limits {
     /// `cpu.max`. None = leave existing.
     pub cpu_max: Option<CpuMax>,
@@ -208,7 +209,7 @@ impl Limits {
 
 /// `cpu.max` value: either a concrete `(quota, period)` pair or `Max`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum CpuMax {
     /// Concrete cpu quota and period in microseconds.
     Quota {

@@ -11,6 +11,7 @@ pub const JAILER_STATE_FILE: &str = "jailer-state.json";
 
 /// Caller-supplied configuration for one jailed VM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct JailerConfig {
     /// Absolute path to the `jailer` binary.
     pub jailer_bin: PathBuf,
@@ -51,6 +52,7 @@ pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
 
 /// One bind-mount (or in-jail directory) the jailer must materialize.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Binding {
     /// Source path on the host.
     pub source: PathBuf,
@@ -62,7 +64,7 @@ pub struct Binding {
 
 /// How a [`Binding`]'s destination is created.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum BindMode {
     /// Bind read-only.
     Ro,
@@ -74,6 +76,7 @@ pub enum BindMode {
 
 /// Path inside the jail where a UDS will be created at materialization time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SocketSpec {
     /// Path inside the jail (e.g., `firecracker.sock`).
     pub path: PathBuf,
@@ -82,6 +85,7 @@ pub struct SocketSpec {
 /// Pure description of every filesystem step a materialize would take.
 /// Replayable for offline triage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Plan {
     /// The config the plan was derived from.
     pub config: JailerConfig,
@@ -91,7 +95,7 @@ pub struct Plan {
 
 /// One step in a [`Plan`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum PlanStep {
     /// Create a directory at `path` with the given mode.
     CreateDir {
@@ -120,6 +124,7 @@ pub enum PlanStep {
 /// public surface uses [`JailedFirecracker`](super::JailedFirecracker)
 /// and [`RecoveryDecision`](super::RecoveryDecision).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct JailerState {
     pub(crate) jailer_pid: Option<u32>,
     pub(crate) firecracker_pid: Option<u32>,

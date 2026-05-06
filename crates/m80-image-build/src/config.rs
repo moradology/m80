@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 /// Top-level build configuration loaded from an `m80-image-build.toml`.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BuildConfig {
     /// Kernel image configuration.
     pub kernel: KernelConfig,
@@ -19,6 +20,7 @@ pub struct BuildConfig {
 
 /// Kernel download parameters.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct KernelConfig {
     /// Firecracker version pin, e.g. `"v1.15.1"`.
     pub version: String,
@@ -30,6 +32,7 @@ pub struct KernelConfig {
 
 /// Source rootfs parameters.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RootfsConfig {
     /// Target ext4 size, e.g. `"1GiB"`, `"512MiB"`, `"100KiB"`.
     pub size: String,
@@ -43,6 +46,7 @@ pub struct RootfsConfig {
 
 /// Guest daemon binary parameters.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GuestdConfig {
     /// Path to the pre-built `m80-guestd` ELF binary on the host.
     pub binary: PathBuf,
@@ -50,6 +54,7 @@ pub struct GuestdConfig {
 
 /// Build output parameters.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputConfig {
     /// Directory where artifacts (kernel, rootfs, manifest) are written.
     pub dir: PathBuf,
@@ -198,7 +203,7 @@ dir = "/opt/m80/artifacts"
     }
 
     #[test]
-    fn build_config_round_trips_from_toml() {
+    fn build_config_rejects_unknown_rootfs_field() {
         let raw = r#"
 [kernel]
 version = "v1.15.1"
@@ -208,6 +213,82 @@ arch = "x86_64"
 [rootfs]
 size = "1GiB"
 source = "firecracker-ci"
+
+[guestd]
+binary = "/tmp/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+"#;
+        let err = toml::from_str::<BuildConfig>(raw).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `source`"),
+            "expected unknown rootfs.source error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_config_rejects_unknown_top_level_field() {
+        let raw = r#"
+[kernel]
+version = "v1.15.1"
+artifact_track = "v1.15"
+arch = "x86_64"
+
+[rootfs]
+size = "1GiB"
+
+[guestd]
+binary = "/tmp/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+
+[surprise]
+enabled = true
+"#;
+        let err = toml::from_str::<BuildConfig>(raw).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `surprise`"),
+            "expected unknown top-level table error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_config_rejects_unknown_nested_field() {
+        let raw = r#"
+[kernel]
+version = "v1.15.1"
+artifact_track = "v1.15"
+arch = "x86_64"
+typo = "not allowed"
+
+[rootfs]
+size = "1GiB"
+
+[guestd]
+binary = "/tmp/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+"#;
+        let err = toml::from_str::<BuildConfig>(raw).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `typo`"),
+            "expected unknown kernel.typo error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_config_round_trips_from_toml() {
+        let raw = r#"
+[kernel]
+version = "v1.15.1"
+artifact_track = "v1.15"
+arch = "x86_64"
+
+[rootfs]
+size = "1GiB"
 
 [guestd]
 binary = "/tmp/m80-guestd"

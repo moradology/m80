@@ -14,6 +14,7 @@ use crate::error::FcError;
 const BOOT_IDENTITY_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct BootIdentity {
     schema_version: u32,
     kernel: PathBuf,

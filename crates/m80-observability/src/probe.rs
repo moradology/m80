@@ -8,6 +8,7 @@ const OWNERSHIP_LOCK: &str = "ownership.lock";
 
 /// One per-VM probe record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VmProbeRecord {
     /// Health classification.
     pub health: VmHealth,
@@ -29,7 +30,7 @@ pub struct VmProbeRecord {
 
 /// Health classification produced by the probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum VmHealth {
     /// Live but with degraded indicators.
     Degraded,

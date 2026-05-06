@@ -42,7 +42,7 @@ pub const PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE: &str = "file_write_commit_res
 
 /// Bounded file-operation failure vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum FileError {
     /// The target path does not exist.
     NotFound,
@@ -62,7 +62,7 @@ pub enum FileError {
 
 /// File kind reported by list/stat operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum FileKind {
     /// Regular file.
     File,

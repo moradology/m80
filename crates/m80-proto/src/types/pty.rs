@@ -129,7 +129,7 @@ pub struct PtyControl {
 
 /// Host-originated PTY control event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "type", rename_all = "snake_case")]
 pub enum PtyControlEvent {
     /// Host terminal input reached EOF.
     Eof,
@@ -142,7 +142,7 @@ pub enum PtyControlEvent {
 
 /// Signals that the host wrapper may ask guestd to send to a PTY session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum PtySignal {
     /// Interrupt signal.
     Interrupt,

@@ -58,6 +58,7 @@ pub const NETWORK_STATE_FILE: &str = "network-state.json";
 /// diagnostics and downstream config (e.g., the orchestrator's
 /// `NetworkInterfaceConfig` build).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RealizedNetwork {
     /// Bridge interface name (e.g., `brfc<11hex>`).
     pub bridge_name: String,
@@ -254,6 +255,7 @@ fn run_root_digest(run_root: &Path) -> [u8; 32] {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct VmNetworkState {
     vm_id: String,
     bridge: VmBridgeState,
@@ -261,6 +263,7 @@ struct VmNetworkState {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct VmBridgeState {
     cidr: Ipv4Net,
 }

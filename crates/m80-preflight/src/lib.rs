@@ -66,6 +66,7 @@ pub enum PrivilegeStatus {
 
 /// One row in the preflight report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CheckRow {
     /// Short label naming the check.
     pub label: String,

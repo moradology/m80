@@ -76,6 +76,7 @@ pub fn exit_code_for(err: &FcError) -> i32 {
 /// The `exit_code` field mirrors the process exit code so callers that
 /// capture stderr have both pieces in one object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ErrorEnvelope {
     /// Opaque request id for the current `m80 run` invocation, when present.
     #[serde(skip_serializing_if = "Option::is_none")]

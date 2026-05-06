@@ -9,7 +9,7 @@ use m80_firecracker::{ExecChunk, ExecExit, ExecRequest, ExecResponse, FcError};
 use super::status;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "type", rename_all = "snake_case")]
 pub(super) enum WarmControlRequest {
     Status {
         profile: Option<String>,
@@ -31,7 +31,7 @@ pub(super) enum WarmControlRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "type", rename_all = "snake_case")]
 pub(super) enum WarmControlResponse {
     Status(status::WarmStatus),
     Run(WarmRunResult),
@@ -39,6 +39,7 @@ pub(super) enum WarmControlResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmRunResult {
     pub request_id: String,
     pub response: ExecResponse,
@@ -48,7 +49,7 @@ pub(super) struct WarmRunResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "type", rename_all = "snake_case")]
 pub(super) enum WarmStreamFrame {
     Stdout {
         seq: u32,
@@ -69,6 +70,7 @@ pub(super) enum WarmStreamFrame {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmErrorResponse {
     pub variant: String,
     pub detail: String,

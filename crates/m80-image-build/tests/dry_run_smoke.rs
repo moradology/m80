@@ -39,11 +39,7 @@ dir = "{}"
 }
 
 fn write_ubuntu_fixture_config(dir: &TempDir) -> PathBuf {
-    write_fixture_config(
-        dir,
-        r#"size = "1GiB"
-source = "firecracker-ci""#,
-    )
+    write_fixture_config(dir, r#"size = "1GiB""#)
 }
 
 fn write_minimal_fixture_config(dir: &TempDir) -> PathBuf {

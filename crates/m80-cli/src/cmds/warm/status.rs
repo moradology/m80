@@ -12,6 +12,7 @@ pub(super) const WARM_SOCKET: &str = "owner.sock";
 pub(super) const WARM_IDENTITY: &str = "owner.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmStatus {
     pub owner: WarmOwner,
     pub profile: WarmProfile,
@@ -22,6 +23,7 @@ pub(super) struct WarmStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmOwner {
     pub state: String,
     pub mode: Option<String>,
@@ -29,6 +31,7 @@ pub(super) struct WarmOwner {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmProfile {
     pub requested: String,
     pub active: Option<String>,
@@ -36,6 +39,7 @@ pub(super) struct WarmProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmSlots {
     pub target_ready: usize,
     pub ready: usize,
@@ -45,18 +49,21 @@ pub(super) struct WarmSlots {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmLifecycle {
     pub accepting_leases: bool,
     pub draining: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmStatusError {
     pub kind: String,
     pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmPaths {
     pub run_root: String,
     pub socket: Option<String>,
@@ -64,6 +71,7 @@ pub(super) struct WarmPaths {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(super) struct WarmOwnerIdentity {
     pub binary_version: String,
     pub profile: String,

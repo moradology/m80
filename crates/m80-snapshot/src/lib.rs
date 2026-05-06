@@ -109,7 +109,7 @@ pub struct Artifact {
 
 /// The five required artifact kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ArtifactKind {
     /// Boot identity record.
     BootIdentity,

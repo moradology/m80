@@ -76,6 +76,7 @@ impl Drop for Diagnostics {
 
 /// One structured event for the diagnostics log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VmEvent {
     /// Diagnostics schema version.
     pub schema_version: u16,
@@ -169,7 +170,7 @@ impl VmEvent {
 
 /// Diagnostics event kind.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum EventKind {
     /// Human-readable lifecycle milestone.
     #[default]
@@ -182,7 +183,7 @@ pub enum EventKind {
 
 /// Completion outcome for typed phase and stop evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(deny_unknown_fields, rename_all = "snake_case", tag = "status")]
 pub enum PhaseOutcome {
     /// Phase completed successfully.
     Ok,
@@ -197,7 +198,7 @@ pub enum PhaseOutcome {
 
 /// Typed reason for stop-phase evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "reason")]
+#[serde(deny_unknown_fields, rename_all = "snake_case", tag = "reason")]
 pub enum ExitReason {
     /// Guestd acknowledged shutdown and the host then killed Firecracker.
     NormalStop,
@@ -218,7 +219,7 @@ pub enum ExitReason {
 
 /// Event source class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum SourceClass {
     /// Host-side m80 process.
     Host,
@@ -228,7 +229,7 @@ pub enum SourceClass {
 
 /// VM lifecycle phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(deny_unknown_fields, rename_all = "PascalCase")]
 pub enum Phase {
     /// `m80-firecracker-client` PUTs + `InstanceStart`.
     Boot,

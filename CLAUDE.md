@@ -84,6 +84,7 @@ Corollary: when debugging in a tight loop, **make the diagnostic visibility chan
 m80 is a v0.x internal crate set with a closed call graph (we own every consumer). Defensive, future-proofing, and "be tolerant" patterns aimed at unknown third-party callers waste tokens, hide real failures, and rot the moment the assumption shifts.
 
 - **No "be tolerant" wrappers on internal data.** No case-insensitive / whitespace-tolerant / leniency shims when both producer and consumer are m80 crates. If the comparison is `==`, write `==`.
+- **Serde inputs fail closed.** Internal config, manifest, persisted state, and wire DTOs that derive `Deserialize` use `#[serde(deny_unknown_fields)]`. The only exception is a documented partial probe such as `schema_version` / `version` pre-parse, where unknown fields must be ignored long enough to return the right version error.
 - **No `#[non_exhaustive]` on internal-only enums** in pre-1.0 crates. A compile error in our own `match`es when we add a variant is the signal we want.
 - **No hand-rolled canonicalization, normalization, or stable-ordering helpers** unless something *concretely* consumes the canonical form (archival hashing, signature verification, on-the-wire diff). "Just in case" is not a consumer.
 - **No catch-and-rewrap of I/O errors** that already say what failed. If you do reclassify (e.g., `NotFound` → a domain variant), do it uniformly across the surface — asymmetric reclassification hides which call site lost the file.

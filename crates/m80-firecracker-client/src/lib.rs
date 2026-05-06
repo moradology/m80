@@ -248,6 +248,7 @@ fn body_to_string(body: &[u8]) -> String {
 
 /// `BootSource` config — kernel image path + boot args + optional initrd.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BootSourceConfig {
     /// Absolute path to the kernel image inside the jail (or on the host
     /// when no jail is used).
@@ -262,6 +263,7 @@ pub struct BootSourceConfig {
 
 /// `MachineConfig` — vCPU count, memory size, SMT flag.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MachineConfig {
     /// Number of virtual CPUs.
     pub vcpu_count: u32,
@@ -274,6 +276,7 @@ pub struct MachineConfig {
 
 /// One drive slot. `drive_id == "rootfs"` is the conventional root drive id.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DriveConfig {
     /// Stable drive identifier (e.g., `"rootfs"`, `"workspace"`).
     pub drive_id: String,
@@ -287,6 +290,7 @@ pub struct DriveConfig {
 
 /// Vsock device config — guest CID + host UDS path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VsockConfig {
     /// Vsock context id assigned to the guest.
     pub guest_cid: u32,
@@ -296,6 +300,7 @@ pub struct VsockConfig {
 
 /// VM running state — used with PATCH `/vm`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum VmState {
     /// Pause vCPU execution (required before snapshot creation).
     Paused,
@@ -305,6 +310,7 @@ pub enum VmState {
 
 /// Snapshot type: full copy of all guest memory, or diff since the last snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum SnapshotType {
     /// Full snapshot — all guest memory pages are saved.
     Full,
@@ -331,6 +337,7 @@ pub struct CreateSnapshotConfig {
 
 /// Memory backend type for snapshot load.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum MemBackendType {
     /// Load memory from a regular file (`mmap(MAP_PRIVATE)`).
     File,
@@ -340,6 +347,7 @@ pub enum MemBackendType {
 
 /// Memory backend configuration for `PUT /snapshot/load`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MemBackendConfig {
     /// How guest memory is loaded on restore.
     pub backend_type: MemBackendType,
@@ -353,6 +361,7 @@ pub struct MemBackendConfig {
 /// embedded in the snapshot, or when restoring multiple VMs from the same
 /// snapshot (each needs its own UDS path).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VsockOverride {
     /// New host UDS path for the vsock device.
     pub uds_path: PathBuf,
@@ -389,7 +398,7 @@ pub struct LoadSnapshotConfig {
 
 /// Lifecycle action requested via PUT `/actions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(deny_unknown_fields, rename_all = "PascalCase")]
 pub enum InstanceAction {
     /// Boot the VM.
     InstanceStart,

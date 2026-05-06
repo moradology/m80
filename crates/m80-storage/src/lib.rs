@@ -19,6 +19,7 @@ pub use scratch::Scratch;
 
 /// Result of a successful [`Scratch::extract`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChangeSet {
     /// Files that survived the admissibility scan and were staged into the
     /// destination.
@@ -31,6 +32,7 @@ pub struct ChangeSet {
 
 /// One rejected entry from the admissibility scan.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Rejection {
     /// Path that was rejected (relative to the scratch root).
     pub path: PathBuf,
@@ -40,7 +42,12 @@ pub struct Rejection {
 
 /// Why an extracted entry was refused.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
+#[serde(
+    deny_unknown_fields,
+    tag = "kind",
+    content = "detail",
+    rename_all = "snake_case"
+)]
 pub enum RejectionReason {
     /// Path was a symlink.
     Symlink,

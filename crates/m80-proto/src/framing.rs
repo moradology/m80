@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::ProtoError;
 use crate::version::{MAX_FRAME_BYTES, PROTOCOL_VERSION};
 
+/// Partial version probe; intentionally allows unknown fields so wrong-version
+/// frames report `IncompatibleVersion` before full strict deserialization.
 #[derive(Deserialize)]
 struct VersionProbe {
     version: u32,

@@ -105,7 +105,7 @@ pub struct BackendConfig {
 
 /// Cgroup hardening mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum CgroupMode {
     /// Cgroup v2 unified hierarchy enforcement.
     UnifiedV2,
@@ -158,6 +158,7 @@ pub struct PtyOutputChunk {
 
 /// Snapshot of the merged configuration with each field tagged by source.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EffectiveConfig {
     /// One row per resolved field.
     pub fields: Vec<EffectiveField>,
@@ -165,6 +166,7 @@ pub struct EffectiveConfig {
 
 /// One row in [`EffectiveConfig`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EffectiveField {
     /// Field name (e.g., `"max_concurrent_vms"`).
     pub name: String,
@@ -176,7 +178,7 @@ pub struct EffectiveField {
 
 /// Where one [`EffectiveField`] value came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum ConfigSource {
     /// Built-in default.
     Default,

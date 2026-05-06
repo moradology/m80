@@ -4,6 +4,7 @@ use crate::{ObservabilityError, VmHealth, VmProbeRecord};
 
 /// Aggregated rollup of probe records.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HealthSnapshot {
     /// Number of degraded VMs.
     pub degraded: u32,
@@ -21,6 +22,7 @@ pub struct HealthSnapshot {
 
 /// Per-VM operational metrics rolled up across the run-root.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpsMetrics {
     /// Number of VMs the metrics span.
     pub vm_count: u32,
