@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "bench": "snapshot_restore_latency",
+  "load": "idle",
+  "started_at_unix": 1778098181,
+  "n": 10,
+  "unit": "us",
+  "p50_us": 47777,
+  "p95_us": 49355,
+  "max_us": 55150,
+  "mean_us": 47873,
+  "samples_us": [55150,46797,45603,44879,47905,47777,49355,48033,44856,48383]
+}

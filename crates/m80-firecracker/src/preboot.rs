@@ -6,13 +6,7 @@ use m80_firecracker_client::{BootSourceConfig, Client, DriveConfig, MachineConfi
 use m80_image_manifest::{ImageKind, KernelKind};
 
 use crate::error::FcError;
-use crate::types::SandboxConfig;
-
-/// Default vCPU count.
-const DEFAULT_VCPU_COUNT: u32 = 1;
-
-/// Default memory in MiB.
-const DEFAULT_MEM_SIZE_MIB: u32 = 1024;
+use crate::types::{SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT};
 
 /// `panic=-1` triggers immediate reboot on kernel panic (vs. `panic=1`'s
 /// 1 s wait). For minimal-kind images where m80-guestd is PID 1, the
@@ -111,8 +105,8 @@ pub(crate) fn apply_preboot_puts(client: &Client, puts: &[PrebootPut]) -> Result
 
 fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
     MachineConfig {
-        vcpu_count: config.vcpu_count.unwrap_or(DEFAULT_VCPU_COUNT),
-        mem_size_mib: config.mem_size_mib.unwrap_or(DEFAULT_MEM_SIZE_MIB),
+        vcpu_count: config.vcpu_count.unwrap_or(FIRST_LINE_VCPU_COUNT),
+        mem_size_mib: config.mem_size_mib.unwrap_or(FIRST_LINE_MEM_SIZE_MIB),
         smt: false,
     }
 }
@@ -318,8 +312,8 @@ mod tests {
 
         let machine = machine_config_for(&config);
 
-        assert_eq!(machine.vcpu_count, DEFAULT_VCPU_COUNT);
-        assert_eq!(machine.mem_size_mib, DEFAULT_MEM_SIZE_MIB);
+        assert_eq!(machine.vcpu_count, FIRST_LINE_VCPU_COUNT);
+        assert_eq!(machine.mem_size_mib, FIRST_LINE_MEM_SIZE_MIB);
         assert!(!machine.smt);
     }
 

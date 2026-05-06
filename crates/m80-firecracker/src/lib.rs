@@ -43,6 +43,7 @@ pub use runroot::OWNERSHIP_LOCK;
 pub use types::{
     Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig, EffectiveField, ExecChunk,
     PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig, StoppedSandbox,
+    FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 pub use warm_pool::{
     BlankVmResetDecision, BlankVmResetDiscardReason, BlankVmResetEvidence, WarmLease, WarmPool,

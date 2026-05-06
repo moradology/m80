@@ -14,6 +14,13 @@ use m80_storage::{Rootfs, Scratch};
 
 pub use m80_net_mode::NetworkPolicy;
 
+/// First-line Firecracker shape used by default and by snapshot timing proofs.
+pub const FIRST_LINE_VCPU_COUNT: u32 = 1;
+
+/// First-line Firecracker memory size, in MiB, used by default and by snapshot
+/// timing proofs.
+pub const FIRST_LINE_MEM_SIZE_MIB: u32 = 1024;
+
 /// Inner state of the admission semaphore: `(available_permits, Condvar)`.
 pub(crate) type SemaphoreInner = (Mutex<u32>, Condvar);
 

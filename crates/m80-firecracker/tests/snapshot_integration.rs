@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig, SnapshotPaths,
+    FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 
 /// Build a `BackendConfig` from `m80_preflight::run()`.
@@ -38,8 +39,8 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         vm_id: Some(vm_id.into()),
         workspace: None,
         network: NetworkPolicy::NoEgress,
-        vcpu_count: Some(1),
-        mem_size_mib: Some(512),
+        vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
+        mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,

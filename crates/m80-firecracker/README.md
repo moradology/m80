@@ -115,6 +115,15 @@ spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and
 wire-frame pairing only, not an agent semantic identifier.
 
+### First-line machine shape
+
+`FIRST_LINE_VCPU_COUNT` and `FIRST_LINE_MEM_SIZE_MIB` name the default
+Firecracker shape: 1 vCPU and 1024 MiB. Omitted `SandboxConfig::vcpu_count`
+and `SandboxConfig::mem_size_mib` resolve to those values during preboot.
+Callers may still supply explicit sizing for ordinary launches. Snapshot
+restore and warm-pool timing fixtures use the exported constants so latency
+proofs do not drift to a benchmark-only smaller VM.
+
 ### Cleanup contract vocabulary
 
 `m80-firecracker` exports small enums/constants that pin the cleanup contract
