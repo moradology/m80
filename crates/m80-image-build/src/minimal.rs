@@ -56,7 +56,7 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
 
     let kernel_url = format!(
         "{}/{}/{}/vmlinux-5.10.245",
-        FC_CI_BASE, cfg.kernel.version, cfg.kernel.arch
+        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch
     );
 
     let steps: Vec<String> = vec![

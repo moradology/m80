@@ -68,18 +68,16 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         PathBuf::from(p)
     };
 
-    // CI bucket layout uses minor-version directories (e.g. `v1.15`), not
-    // patch-level (`v1.15.1`). Filenames also drift per release: v1.15
-    // currently ships `vmlinux-5.10.245` and `ubuntu-24.04.squashfs`.
-    // TODO(v0.2): split URL track from expected_firecracker_version pin and
-    // probe the bucket index instead of hardcoding filenames.
+    // Filenames drift per Firecracker CI artifact track: v1.15 currently
+    // ships `vmlinux-5.10.245` and `ubuntu-24.04.squashfs`.
+    // TODO(v0.2): probe the bucket index instead of hardcoding filenames.
     let kernel_url = format!(
         "{}/{}/{}/vmlinux-5.10.245",
-        FC_CI_BASE, cfg.kernel.version, cfg.kernel.arch
+        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch
     );
     let rootfs_url = format!(
         "{}/{}/{}/ubuntu-24.04.squashfs",
-        FC_CI_BASE, cfg.kernel.version, cfg.kernel.arch
+        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch
     );
 
     let steps: Vec<String> = vec![

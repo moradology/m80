@@ -76,6 +76,7 @@ cargo build -p m80-guestd --release --target x86_64-unknown-linux-musl
 cat > /tmp/m80-image-build.toml <<'EOF'
 [kernel]
 version = "v1.15.1"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]

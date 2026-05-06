@@ -43,6 +43,7 @@ jobs:
           cat > /tmp/m80-release-image.toml <<'EOF'
           [kernel]
           version = "v1.15.1"
+          artifact_track = "v1.15"
           arch = "x86_64"
 
           [rootfs]

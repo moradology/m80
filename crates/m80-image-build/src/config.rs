@@ -20,8 +20,10 @@ pub struct BuildConfig {
 /// Kernel download parameters.
 #[derive(Debug, Deserialize)]
 pub struct KernelConfig {
-    /// Firecracker CI release tag, e.g. `"v1.15.1"`.
+    /// Firecracker version pin, e.g. `"v1.15.1"`.
     pub version: String,
+    /// Firecracker CI artifact directory track, e.g. `"v1.15"`.
+    pub artifact_track: String,
     /// CPU architecture string, e.g. `"x86_64"` or `"aarch64"`.
     pub arch: String,
 }
@@ -61,6 +63,7 @@ impl BuildConfig {
         let cfg: BuildConfig = toml::from_str(&raw)
             .map_err(|e| anyhow::anyhow!("parsing config {}: {}", path.display(), e))?;
         validate_url_safe("kernel.version", &cfg.kernel.version)?;
+        validate_url_safe("kernel.artifact_track", &cfg.kernel.artifact_track)?;
         validate_url_safe("kernel.arch", &cfg.kernel.arch)?;
         Ok(cfg)
     }
@@ -156,6 +159,7 @@ mod tests {
         let raw = r#"
 [kernel]
 version = "v1.15.1"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]
@@ -177,6 +181,7 @@ dir = "/opt/m80/artifacts"
         let raw = r#"
 [kernel]
 version = "v1.15.1"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]
@@ -197,6 +202,7 @@ dir = "/opt/m80/artifacts"
         let raw = r#"
 [kernel]
 version = "v1.15.1"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]
@@ -211,6 +217,7 @@ dir = "/opt/m80/artifacts"
 "#;
         let cfg: BuildConfig = toml::from_str(raw).expect("TOML parse failed");
         assert_eq!(cfg.kernel.version, "v1.15.1");
+        assert_eq!(cfg.kernel.artifact_track, "v1.15");
         assert_eq!(cfg.kernel.arch, "x86_64");
         assert_eq!(cfg.rootfs.size, "1GiB");
         assert_eq!(

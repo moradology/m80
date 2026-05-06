@@ -19,6 +19,7 @@ fn write_fixture_config(dir: &TempDir, rootfs: &str) -> PathBuf {
         r#"
 [kernel]
 version = "v1.15.1"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]
@@ -131,6 +132,10 @@ fn minimal_dry_run_prints_release_artifact_steps_and_creates_no_output_files() {
     assert!(
         stderr.contains("Compute sha256 of 3 artifacts"),
         "minimal release dry-run should describe the reduced artifact set; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("firecracker-ci/v1.15/x86_64/vmlinux-5.10.245"),
+        "minimal release dry-run must use the Firecracker CI artifact track, not the exact version pin; stderr:\n{stderr}"
     );
     assert!(
         !out_dir.exists(),

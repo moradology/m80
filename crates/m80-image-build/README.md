@@ -31,7 +31,7 @@ gives us:
 
 12 numbered steps:
 
-1. Download kernel from `https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/<version>/<arch>` via `curl`.
+1. Download kernel from `https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/<artifact_track>/<arch>` via `curl`.
 2. Download source rootfs squashfs from the same firecracker-ci bucket.
 3. Convert squashfs → ext4 (in a temp dir) via `unsquashfs` + `mkfs.ext4`.
 4. Resize the output ext4 to the configured size via `truncate`.
@@ -170,6 +170,7 @@ Config file shape (`m80-image-build.toml`):
 ```toml
 [kernel]
 version = "v1.15.1"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]
@@ -184,6 +185,11 @@ binary = "../../target/release/m80-guestd"
 [output]
 dir = "/opt/m80/artifacts"
 ```
+
+`version` is the exact Firecracker version pin recorded in the emitted
+manifest. `artifact_track` is the Firecracker CI bucket directory used for
+kernel/rootfs downloads; upstream tracks are minor-version directories such
+as `v1.15`.
 
 ## Non-goals
 
