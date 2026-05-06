@@ -25,6 +25,9 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
 
+      - name: Install musl Rust target for pinned toolchain
+        run: rustup target add x86_64-unknown-linux-musl
+
       - name: Install image-build host dependencies
         run: |
           sudo apt-get update
