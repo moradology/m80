@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use m80_firecracker::{ExecChunk, ExecExit, ExecRequest, ExecResponse, FcError};
 
+use crate::errors;
+
 use super::status;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,10 +74,82 @@ pub(super) enum WarmStreamFrame {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct WarmErrorResponse {
-    pub variant: String,
+    pub variant: WarmErrorKind,
     pub detail: String,
+    pub exit_code: i32,
     pub request_id: Option<String>,
     pub target_ready: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) enum WarmErrorKind {
+    Preflight,
+    Manifest,
+    Storage,
+    Jailer,
+    Cgroup,
+    Network,
+    Client,
+    Vsock,
+    Snapshot,
+    FileOp,
+    AdmissionRefused,
+    PoolEmpty,
+    InvalidState,
+    ApiSocketTimeout,
+    GuestdReadyTimeout,
+    Io,
+    Config,
+    IdleTimedOut,
+}
+
+impl WarmErrorKind {
+    fn from_error(err: &FcError) -> Self {
+        match err {
+            FcError::Preflight(_) => Self::Preflight,
+            FcError::Manifest(_) => Self::Manifest,
+            FcError::Storage(_) => Self::Storage,
+            FcError::Jailer(_) => Self::Jailer,
+            FcError::Cgroup(_) => Self::Cgroup,
+            FcError::Network(_) => Self::Network,
+            FcError::Client(_) => Self::Client,
+            FcError::Vsock(_) => Self::Vsock,
+            FcError::Snapshot(_) => Self::Snapshot,
+            FcError::FileOp(_) => Self::FileOp,
+            FcError::AdmissionRefused { .. } => Self::AdmissionRefused,
+            FcError::PoolEmpty { .. } => Self::PoolEmpty,
+            FcError::InvalidState { .. } => Self::InvalidState,
+            FcError::ApiSocketTimeout { .. } => Self::ApiSocketTimeout,
+            FcError::GuestdReadyTimeout { .. } => Self::GuestdReadyTimeout,
+            FcError::Io(_) => Self::Io,
+            FcError::Config(_) => Self::Config,
+            FcError::IdleTimedOut => Self::IdleTimedOut,
+        }
+    }
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Preflight => "Preflight",
+            Self::Manifest => "Manifest",
+            Self::Storage => "Storage",
+            Self::Jailer => "Jailer",
+            Self::Cgroup => "Cgroup",
+            Self::Network => "Network",
+            Self::Client => "Client",
+            Self::Vsock => "Vsock",
+            Self::Snapshot => "Snapshot",
+            Self::FileOp => "FileOp",
+            Self::AdmissionRefused => "AdmissionRefused",
+            Self::PoolEmpty => "PoolEmpty",
+            Self::InvalidState => "InvalidState",
+            Self::ApiSocketTimeout => "ApiSocketTimeout",
+            Self::GuestdReadyTimeout => "GuestdReadyTimeout",
+            Self::Io => "Io",
+            Self::Config => "Config",
+            Self::IdleTimedOut => "IdleTimedOut",
+        }
+    }
 }
 
 impl WarmErrorResponse {
@@ -84,35 +158,16 @@ impl WarmErrorResponse {
     }
 
     pub(super) fn from_error_with_request_id(err: &FcError, request_id: Option<String>) -> Self {
-        match err {
-            FcError::PoolEmpty { target_ready } => Self {
-                variant: "PoolEmpty".to_owned(),
-                detail: err.to_string(),
-                request_id,
-                target_ready: Some(*target_ready),
-            },
-            FcError::Config(_) => Self {
-                variant: "Config".to_owned(),
-                detail: err.to_string(),
-                request_id,
-                target_ready: None,
-            },
-            _ => Self {
-                variant: "Generic".to_owned(),
-                detail: err.to_string(),
-                request_id,
-                target_ready: None,
-            },
-        }
-    }
-
-    pub(super) fn into_fc_error(self) -> FcError {
-        match self.variant.as_str() {
-            "PoolEmpty" => FcError::PoolEmpty {
-                target_ready: self.target_ready.unwrap_or(1),
-            },
-            "Config" => FcError::Config(self.detail),
-            _ => FcError::Config(format!("warm owner error: {}", self.detail)),
+        let target_ready = match err {
+            FcError::PoolEmpty { target_ready } => Some(*target_ready),
+            _ => None,
+        };
+        Self {
+            variant: WarmErrorKind::from_error(err),
+            detail: err.to_string(),
+            exit_code: errors::exit_code_for(err),
+            request_id,
+            target_ready,
         }
     }
 }
@@ -210,25 +265,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pool_empty_error_round_trips_to_fc_error() {
+    fn pool_empty_error_preserves_variant_and_exit_code() {
         let err = WarmErrorResponse::from_error(&FcError::PoolEmpty { target_ready: 2 });
 
-        assert_eq!(err.variant, "PoolEmpty");
+        assert_eq!(err.variant, WarmErrorKind::PoolEmpty);
+        assert_eq!(err.exit_code, errors::EXIT_POOL_EMPTY);
         assert_eq!(err.request_id, None);
         assert_eq!(err.target_ready, Some(2));
-        assert!(matches!(
-            err.into_fc_error(),
-            FcError::PoolEmpty { target_ready: 2 }
-        ));
     }
 
     #[test]
-    fn config_error_round_trips_to_fc_error() {
+    fn config_error_preserves_variant_and_exit_code() {
         let err = WarmErrorResponse::from_error(&FcError::Config("bad".to_owned()));
 
-        assert_eq!(err.variant, "Config");
+        assert_eq!(err.variant, WarmErrorKind::Config);
+        assert_eq!(err.exit_code, errors::EXIT_CONFIG);
         assert_eq!(err.request_id, None);
-        assert!(matches!(err.into_fc_error(), FcError::Config(_)));
+        assert_eq!(err.target_ready, None);
+    }
+
+    #[test]
+    fn preflight_owner_error_does_not_collapse_to_generic() {
+        let err = WarmErrorResponse::from_error(&FcError::Preflight(
+            m80_preflight::PreflightError::KvmUnavailable {
+                path: "/dev/kvm".into(),
+            },
+        ));
+
+        assert_eq!(err.variant, WarmErrorKind::Preflight);
+        assert_eq!(err.variant.as_str(), "Preflight");
+        assert_eq!(err.exit_code, errors::EXIT_PREFLIGHT);
+        assert_eq!(err.target_ready, None);
     }
 
     #[test]
@@ -238,9 +305,8 @@ mod tests {
             Some("req-warm".to_owned()),
         );
 
-        assert_eq!(err.variant, "Config");
+        assert_eq!(err.variant, WarmErrorKind::Config);
         assert_eq!(err.request_id.as_deref(), Some("req-warm"));
-        assert!(matches!(err.into_fc_error(), FcError::Config(_)));
     }
 
     #[test]

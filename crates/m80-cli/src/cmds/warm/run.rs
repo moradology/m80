@@ -191,7 +191,7 @@ mod tests {
 
         match response {
             WarmControlResponse::Error(err) => {
-                assert_eq!(err.variant, "PoolEmpty");
+                assert_eq!(err.variant, super::control::WarmErrorKind::PoolEmpty);
                 assert_eq!(err.request_id.as_deref(), Some("req-empty-pool"));
                 assert_eq!(err.target_ready, Some(1));
             }

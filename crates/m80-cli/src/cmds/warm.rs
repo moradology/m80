@@ -214,6 +214,19 @@ fn render_warm_run(response: ExecResponse, json_mode: bool) -> i32 {
 }
 
 fn render_owner_error(err: control::WarmErrorResponse, json_mode: bool) -> i32 {
-    let fc_error = err.into_fc_error();
-    errors::render_error(&fc_error, json_mode)
+    let exit_code = err.exit_code;
+    if json_mode {
+        let env = errors::ErrorEnvelope {
+            request_id: err.request_id,
+            variant: err.variant.as_str(),
+            detail: err.detail,
+            exit_code,
+        };
+        eprintln!("{}", json::to_pretty(&env));
+    } else if let Some(request_id) = err.request_id {
+        eprintln!("error: [{request_id}] {}", err.detail);
+    } else {
+        eprintln!("error: {}", err.detail);
+    }
+    exit_code
 }

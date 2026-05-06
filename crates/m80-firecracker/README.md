@@ -334,6 +334,9 @@ Typed `FcError` variants tell the caller which phase failed; inner
 causes carry detail. No silent degradation — anything that compromises
 an invariant fails closed.
 
+- `FcError::Config(String)` is the only free-form string variant. It is not a
+  fallback bucket: it is reserved for caller configuration, CLI flag, and config
+  merge failures where no lower crate owns a more specific typed cause.
 - `FcError::ApiSocketTimeout { path, timeout }` — Firecracker did not create
   its REST API socket during launch.
 - `FcError::GuestdReadyTimeout { path, timeout }` — m80-guestd did not connect
