@@ -63,14 +63,18 @@ pub(super) fn handle_run(
 pub(super) fn handle_run_streaming(
     pool: &WarmPool,
     identity: &WarmOwnerIdentity,
-    profile: Option<String>,
-    egress: &str,
-    request_id: String,
-    request: ExecRequest,
-    accepting_leases: bool,
+    args: StreamingRun,
     stream: &mut UnixStream,
 ) {
-    if let Err(e) = validate_run_compatibility(identity, profile, egress, accepting_leases) {
+    let StreamingRun {
+        profile,
+        egress,
+        request_id,
+        request,
+        accepting_leases,
+    } = args;
+
+    if let Err(e) = validate_run_compatibility(identity, profile, &egress, accepting_leases) {
         write_error(stream, &e, Some(request_id));
         return;
     }
@@ -108,6 +112,14 @@ pub(super) fn handle_run_streaming(
         run_dir,
     };
     let _ = control::write_stream_frame(stream, &frame);
+}
+
+pub(super) struct StreamingRun {
+    pub(super) profile: Option<String>,
+    pub(super) egress: String,
+    pub(super) request_id: String,
+    pub(super) request: ExecRequest,
+    pub(super) accepting_leases: bool,
 }
 
 fn validate_run_compatibility(

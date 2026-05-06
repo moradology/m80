@@ -136,11 +136,13 @@ fn run_foreground_inner(
                 run::handle_run_streaming(
                     &pool,
                     &identity,
-                    profile,
-                    &egress,
-                    request_id,
-                    request,
-                    accepting_leases,
+                    run::StreamingRun {
+                        profile,
+                        egress,
+                        request_id,
+                        request,
+                        accepting_leases,
+                    },
                     &mut stream,
                 );
                 continue;

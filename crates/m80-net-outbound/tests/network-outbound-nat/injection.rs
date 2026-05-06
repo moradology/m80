@@ -37,11 +37,10 @@ fn networkd_unit_injected_with_static_ip_and_dns() {
         [Ipv4Addr::new(1, 1, 1, 1), Ipv4Addr::new(8, 8, 8, 8)]
     );
     assert!(state.runtime_rootfs_configured);
-    assert_eq!(
+    assert!(
         read_vm_network_state_record(&state.run_dir)
             .unwrap()
-            .runtime_rootfs_configured,
-        true
+            .runtime_rootfs_configured
     );
 }
 

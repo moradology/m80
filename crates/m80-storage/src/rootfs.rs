@@ -302,16 +302,6 @@ fn clone_template(template: &Path, dest: &Path) -> Result<(), StorageError> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::TEMPLATE_CLONE_ARGS;
-
-    #[test]
-    fn template_clone_command_requests_reflink_auto_and_sparse_fallback() {
-        assert_eq!(TEMPLATE_CLONE_ARGS, &["--reflink=auto", "--sparse=always"]);
-    }
-}
-
 struct TemplateLock {
     path: PathBuf,
 }
@@ -352,5 +342,15 @@ impl TemplateLock {
 impl Drop for TemplateLock {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TEMPLATE_CLONE_ARGS;
+
+    #[test]
+    fn template_clone_command_requests_reflink_auto_and_sparse_fallback() {
+        assert_eq!(TEMPLATE_CLONE_ARGS, &["--reflink=auto", "--sparse=always"]);
     }
 }

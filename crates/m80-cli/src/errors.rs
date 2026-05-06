@@ -131,12 +131,10 @@ pub fn render_error(err: &FcError, json: bool) -> i32 {
         let env = envelope(err);
         // Unwrap: serializing a struct of strings cannot fail.
         eprintln!("{}", json::to_pretty(&env));
+    } else if let Some(request_id) = request_id::current() {
+        eprintln!("error: [{request_id}] {err}");
     } else {
-        if let Some(request_id) = request_id::current() {
-            eprintln!("error: [{request_id}] {err}");
-        } else {
-            eprintln!("error: {err}");
-        }
+        eprintln!("error: {err}");
     }
     exit_code_for(err)
 }

@@ -412,7 +412,7 @@ where
     }
 
     match reader.fill_buf() {
-        Ok(buf) if buf.is_empty() => ControlFrame::Disconnect,
+        Ok([]) => ControlFrame::Disconnect,
         Ok(_) => {
             let next: Envelope<serde_json::Value> = match read_frame(reader) {
                 Ok(env) => env,
