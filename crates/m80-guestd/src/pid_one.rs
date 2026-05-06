@@ -12,7 +12,7 @@
 //! 2. Mount pseudo-filesystems (`/proc`, `/sys`, `/dev`).
 //! 3. Mount overlay layers and `pivot_root` into the merged rootfs
 //!    (see `mount_overlay_and_pivot` — implements design doc §3.1 steps 1-9).
-//! 4. Mount workspace drive `/dev/vdc` → `/workspace` if present (step 10).
+//! 4. Mount workspace drive `/dev/vdc` → `/workspace` if present (step 11).
 //! 5. Continue: vsock listener, ready signal, exec loop.
 
 use std::fs::OpenOptions;
@@ -383,14 +383,22 @@ const WORKSPACE_TARGET: &str = "/workspace";
 /// than failing PID-1 setup. ENOENT on the device node is the documented
 /// optional-state response, not silent error recovery.
 ///
-/// This is step 10 of the design doc §3.1 sequence. Must be called AFTER
+/// This is step 11 of the design doc §3.1 sequence. Must be called AFTER
 /// `pivot_rootfs` so the mount lands inside the new (merged) root.
 fn mount_workspace_if_present(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
-    if !Path::new(WORKSPACE_DEV).exists() {
+    mount_workspace_device_if_present(boot_timer, WORKSPACE_DEV, WORKSPACE_TARGET)
+}
+
+fn mount_workspace_device_if_present(
+    boot_timer: &mut BootTimer,
+    device: &str,
+    target: &str,
+) -> anyhow::Result<()> {
+    if !Path::new(device).exists() {
         guest_log::info(
             GuestLogPhase::Boot,
             None,
-            format!("no workspace drive ({WORKSPACE_DEV}), skipping workspace mount"),
+            format!("no workspace drive ({device}), skipping workspace mount"),
         );
         boot_timer.mark("workspace_absent");
         return Ok(());
@@ -398,9 +406,9 @@ fn mount_workspace_if_present(boot_timer: &mut BootTimer) -> anyhow::Result<()> 
     guest_log::info(
         GuestLogPhase::Boot,
         None,
-        format!("step 10: mounting {WORKSPACE_DEV} at {WORKSPACE_TARGET}"),
+        format!("step 11: mounting {device} at {target}"),
     );
-    mount_one(WORKSPACE_DEV, WORKSPACE_TARGET, "ext4", MsFlags::empty())?;
+    mount_one(device, target, "ext4", MsFlags::empty())?;
     boot_timer.mark("workspace_mounted");
     Ok(())
 }
@@ -465,6 +473,16 @@ mod tests {
     #[test]
     fn workspace_dev_is_vdc() {
         assert_eq!(WORKSPACE_DEV, "/dev/vdc");
+        assert_eq!(WORKSPACE_TARGET, "/workspace");
+    }
+
+    #[test]
+    fn missing_workspace_device_skips_without_error() {
+        let mut boot_timer = BootTimer::start();
+        let missing = "/tmp/m80-guestd-missing-workspace-device-for-test";
+
+        mount_workspace_device_if_present(&mut boot_timer, missing, WORKSPACE_TARGET)
+            .expect("missing workspace device is documented-optional");
     }
 
     /// Verify that pivot_rootfs (with the test stub for pivot_root) does not
