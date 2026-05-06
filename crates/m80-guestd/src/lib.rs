@@ -2,3 +2,4 @@
 //! integration tests. No public API beyond test support.
 
 pub mod connection;
+pub mod guest_log;

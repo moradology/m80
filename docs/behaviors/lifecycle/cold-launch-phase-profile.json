@@ -1,0 +1,673 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-05T16:09:44.049508+00:00",
+  "bead": "m80-w4vc.1",
+  "bench": "cold_launch_phase_profile",
+  "method": "Curated phase-profile view over existing bench-summary snapshots. Phase stats are p50/p95/count as recorded by scripts/bench-summary.py from M80_PHASE_TRACE lines; max_us was backfilled from the per-run rows in cold-launch-phases.csv using the source snapshot timestamp and phase count.",
+  "cells": [
+    {
+      "image_kind": "minimal",
+      "kernel_kind": "stock",
+      "load": "idle",
+      "source_snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-05T09:02:43+00:00.json",
+      "generated_at": "2026-05-05T09:02:43.836062+00:00",
+      "wallclock_ms": {
+        "p50": 1517,
+        "p95": 1518,
+        "max": 1518,
+        "count": 30,
+        "fail_count": 0
+      },
+      "useful_p50_ms": 1207,
+      "phases": {
+        "phase_1_run_root_prep": {
+          "p50_us": 68,
+          "p95_us": 76,
+          "count": 32,
+          "max_us": 84
+        },
+        "phase_2_lease": {
+          "p50_us": 37,
+          "p95_us": 43,
+          "count": 32,
+          "max_us": 48
+        },
+        "phase_3_storage_prep": {
+          "p50_us": 215877,
+          "p95_us": 221073,
+          "count": 32,
+          "max_us": 222673
+        },
+        "phase_4_jailer_materialize": {
+          "p50_us": 744,
+          "p95_us": 1279,
+          "count": 32,
+          "max_us": 4625
+        },
+        "phase_5_cgroup_probe": {
+          "p50_us": 1918,
+          "p95_us": 2906,
+          "count": 32,
+          "max_us": 3164
+        },
+        "phase_5b_cgroup_create": {
+          "p50_us": 19951,
+          "p95_us": 23438,
+          "count": 32,
+          "max_us": 24356
+        },
+        "phase_6_network_realize": {
+          "p50_us": 0,
+          "p95_us": 0,
+          "count": 32,
+          "max_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "p50_us": 25407,
+          "p95_us": 25497,
+          "count": 32,
+          "max_us": 25587
+        },
+        "phase_10_open_uds": {
+          "p50_us": 26,
+          "p95_us": 37,
+          "count": 32,
+          "max_us": 47
+        },
+        "phase_11_rest_puts": {
+          "p50_us": 718,
+          "p95_us": 889,
+          "count": 32,
+          "max_us": 910
+        },
+        "phase_11b_ready_listener_bind": {
+          "p50_us": 91,
+          "p95_us": 118,
+          "count": 32,
+          "max_us": 139
+        },
+        "phase_12a_instance_start": {
+          "p50_us": 19104,
+          "p95_us": 20726,
+          "count": 32,
+          "max_us": 20911
+        },
+        "phase_12b_ready_accept": {
+          "p50_us": 906154,
+          "p95_us": 906666,
+          "count": 32,
+          "max_us": 906738
+        },
+        "exec_send": {
+          "p50_us": 13,
+          "p95_us": 15,
+          "count": 32,
+          "max_us": 17
+        },
+        "exec_recv": {
+          "p50_us": 20446,
+          "p95_us": 20496,
+          "count": 32,
+          "max_us": 20590
+        }
+      }
+    },
+    {
+      "image_kind": "minimal",
+      "kernel_kind": "stock",
+      "load": "loaded",
+      "source_snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-05T09:03:20+00:00.json",
+      "generated_at": "2026-05-05T09:03:20.616720+00:00",
+      "wallclock_ms": {
+        "p50": 1644,
+        "p95": 1644,
+        "max": 1644,
+        "count": 1,
+        "fail_count": 4
+      },
+      "useful_p50_ms": 1318,
+      "phases": {
+        "phase_1_run_root_prep": {
+          "p50_us": 82,
+          "p95_us": 88,
+          "count": 7,
+          "max_us": 96
+        },
+        "phase_2_lease": {
+          "p50_us": 47,
+          "p95_us": 53,
+          "count": 7,
+          "max_us": 79
+        },
+        "phase_3_storage_prep": {
+          "p50_us": 254649,
+          "p95_us": 305616,
+          "count": 7,
+          "max_us": 322828
+        },
+        "phase_4_jailer_materialize": {
+          "p50_us": 778,
+          "p95_us": 27679,
+          "count": 7,
+          "max_us": 28004
+        },
+        "phase_5_cgroup_probe": {
+          "p50_us": 2519,
+          "p95_us": 2964,
+          "count": 7,
+          "max_us": 3125
+        },
+        "phase_5b_cgroup_create": {
+          "p50_us": 9891,
+          "p95_us": 15001,
+          "count": 7,
+          "max_us": 16921
+        },
+        "phase_6_network_realize": {
+          "p50_us": 0,
+          "p95_us": 0,
+          "count": 7,
+          "max_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "p50_us": 28384,
+          "p95_us": 53546,
+          "count": 7,
+          "max_us": 54511
+        },
+        "phase_10_open_uds": {
+          "p50_us": 38,
+          "p95_us": 39,
+          "count": 7,
+          "max_us": 40
+        },
+        "phase_11_rest_puts": {
+          "p50_us": 1078,
+          "p95_us": 1639,
+          "count": 7,
+          "max_us": 3358
+        },
+        "phase_11b_ready_listener_bind": {
+          "p50_us": 60,
+          "p95_us": 84,
+          "count": 7,
+          "max_us": 94
+        },
+        "phase_12a_instance_start": {
+          "p50_us": 20060,
+          "p95_us": 21888,
+          "count": 7,
+          "max_us": 24206
+        },
+        "phase_12b_ready_accept": {
+          "p50_us": 954958,
+          "p95_us": 958782,
+          "count": 7,
+          "max_us": 968224
+        },
+        "exec_send": {
+          "p50_us": 57,
+          "p95_us": 57,
+          "count": 2,
+          "max_us": 3287
+        },
+        "exec_recv": {
+          "p50_us": 20375,
+          "p95_us": 20375,
+          "count": 2,
+          "max_us": 20401
+        }
+      }
+    },
+    {
+      "image_kind": "minimal",
+      "kernel_kind": "stripped",
+      "load": "idle",
+      "source_snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-05T10:05:32+00:00.json",
+      "generated_at": "2026-05-05T10:05:32.205406+00:00",
+      "wallclock_ms": {
+        "p50": 1417,
+        "p95": 1418,
+        "max": 1516,
+        "count": 30,
+        "fail_count": 0
+      },
+      "useful_p50_ms": 1167,
+      "phases": {
+        "phase_1_run_root_prep": {
+          "p50_us": 71,
+          "p95_us": 79,
+          "count": 32,
+          "max_us": 83
+        },
+        "phase_2_lease": {
+          "p50_us": 38,
+          "p95_us": 47,
+          "count": 32,
+          "max_us": 53
+        },
+        "phase_3_storage_prep": {
+          "p50_us": 216326,
+          "p95_us": 220376,
+          "count": 32,
+          "max_us": 261313
+        },
+        "phase_4_jailer_materialize": {
+          "p50_us": 746,
+          "p95_us": 1814,
+          "count": 32,
+          "max_us": 4549
+        },
+        "phase_5_cgroup_probe": {
+          "p50_us": 1957,
+          "p95_us": 3008,
+          "count": 32,
+          "max_us": 3698
+        },
+        "phase_5b_cgroup_create": {
+          "p50_us": 17679,
+          "p95_us": 22378,
+          "count": 32,
+          "max_us": 27480
+        },
+        "phase_6_network_realize": {
+          "p50_us": 0,
+          "p95_us": 0,
+          "count": 32,
+          "max_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "p50_us": 25414,
+          "p95_us": 25489,
+          "count": 32,
+          "max_us": 25525
+        },
+        "phase_10_open_uds": {
+          "p50_us": 27,
+          "p95_us": 31,
+          "count": 32,
+          "max_us": 38
+        },
+        "phase_11_rest_puts": {
+          "p50_us": 671,
+          "p95_us": 870,
+          "count": 32,
+          "max_us": 905
+        },
+        "phase_11b_ready_listener_bind": {
+          "p50_us": 69,
+          "p95_us": 115,
+          "count": 32,
+          "max_us": 127
+        },
+        "phase_12a_instance_start": {
+          "p50_us": 11983,
+          "p95_us": 13053,
+          "count": 32,
+          "max_us": 13682
+        },
+        "phase_12b_ready_accept": {
+          "p50_us": 865995,
+          "p95_us": 866387,
+          "count": 32,
+          "max_us": 876444
+        },
+        "exec_send": {
+          "p50_us": 23,
+          "p95_us": 33,
+          "count": 32,
+          "max_us": 46
+        },
+        "exec_recv": {
+          "p50_us": 25190,
+          "p95_us": 26133,
+          "count": 32,
+          "max_us": 26262
+        }
+      }
+    },
+    {
+      "image_kind": "minimal",
+      "kernel_kind": "stripped",
+      "load": "loaded",
+      "source_snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-05T10:06:03+00:00.json",
+      "generated_at": "2026-05-05T10:06:04.035143+00:00",
+      "wallclock_ms": {
+        "p50": null,
+        "p95": null,
+        "max": null,
+        "count": 0,
+        "fail_count": 5
+      },
+      "useful_p50_ms": 1242,
+      "phases": {
+        "phase_1_run_root_prep": {
+          "p50_us": 90,
+          "p95_us": 96,
+          "count": 7,
+          "max_us": 97
+        },
+        "phase_2_lease": {
+          "p50_us": 47,
+          "p95_us": 50,
+          "count": 7,
+          "max_us": 51
+        },
+        "phase_3_storage_prep": {
+          "p50_us": 300161,
+          "p95_us": 436807,
+          "count": 7,
+          "max_us": 437294
+        },
+        "phase_4_jailer_materialize": {
+          "p50_us": 14120,
+          "p95_us": 17895,
+          "count": 7,
+          "max_us": 37183
+        },
+        "phase_5_cgroup_probe": {
+          "p50_us": 2658,
+          "p95_us": 12520,
+          "count": 7,
+          "max_us": 16339
+        },
+        "phase_5b_cgroup_create": {
+          "p50_us": 10724,
+          "p95_us": 15907,
+          "count": 7,
+          "max_us": 19835
+        },
+        "phase_6_network_realize": {
+          "p50_us": 0,
+          "p95_us": 0,
+          "count": 7,
+          "max_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "p50_us": 31078,
+          "p95_us": 51615,
+          "count": 7,
+          "max_us": 55385
+        },
+        "phase_10_open_uds": {
+          "p50_us": 35,
+          "p95_us": 40,
+          "count": 7,
+          "max_us": 41
+        },
+        "phase_11_rest_puts": {
+          "p50_us": 848,
+          "p95_us": 2424,
+          "count": 7,
+          "max_us": 2486
+        },
+        "phase_11b_ready_listener_bind": {
+          "p50_us": 46,
+          "p95_us": 94,
+          "count": 7,
+          "max_us": 102
+        },
+        "phase_12a_instance_start": {
+          "p50_us": 12412,
+          "p95_us": 14327,
+          "count": 7,
+          "max_us": 15809
+        },
+        "phase_12b_ready_accept": {
+          "p50_us": 866590,
+          "p95_us": 868270,
+          "count": 7,
+          "max_us": 868749
+        }
+      }
+    },
+    {
+      "image_kind": "ubuntu",
+      "kernel_kind": "stock",
+      "load": "idle",
+      "source_snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-05T10:12:04+00:00.json",
+      "generated_at": "2026-05-05T10:12:04.932117+00:00",
+      "wallclock_ms": {
+        "p50": 3919,
+        "p95": 3920,
+        "max": 3920,
+        "count": 30,
+        "fail_count": 0
+      },
+      "useful_p50_ms": 2534,
+      "phases": {
+        "phase_1_run_root_prep": {
+          "p50_us": 77,
+          "p95_us": 82,
+          "count": 32,
+          "max_us": 85
+        },
+        "phase_2_lease": {
+          "p50_us": 40,
+          "p95_us": 43,
+          "count": 32,
+          "max_us": 49
+        },
+        "phase_3_storage_prep": {
+          "p50_us": 1334981,
+          "p95_us": 1345719,
+          "count": 32,
+          "max_us": 1366043
+        },
+        "phase_4_jailer_materialize": {
+          "p50_us": 718,
+          "p95_us": 868,
+          "count": 32,
+          "max_us": 907
+        },
+        "phase_5_cgroup_probe": {
+          "p50_us": 1904,
+          "p95_us": 2756,
+          "count": 32,
+          "max_us": 3326
+        },
+        "phase_5b_cgroup_create": {
+          "p50_us": 19542,
+          "p95_us": 23611,
+          "count": 32,
+          "max_us": 29026
+        },
+        "phase_6_network_realize": {
+          "p50_us": 0,
+          "p95_us": 0,
+          "count": 32,
+          "max_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "p50_us": 25456,
+          "p95_us": 25516,
+          "count": 32,
+          "max_us": 25635
+        },
+        "phase_10_open_uds": {
+          "p50_us": 27,
+          "p95_us": 37,
+          "count": 32,
+          "max_us": 43
+        },
+        "phase_11_rest_puts": {
+          "p50_us": 700,
+          "p95_us": 865,
+          "count": 32,
+          "max_us": 999
+        },
+        "phase_11b_ready_listener_bind": {
+          "p50_us": 100,
+          "p95_us": 114,
+          "count": 32,
+          "max_us": 119
+        },
+        "phase_12a_instance_start": {
+          "p50_us": 19343,
+          "p95_us": 20732,
+          "count": 32,
+          "max_us": 21261
+        },
+        "phase_12b_ready_accept": {
+          "p50_us": 1108021,
+          "p95_us": 1128031,
+          "count": 32,
+          "max_us": 1137958
+        },
+        "exec_send": {
+          "p50_us": 21,
+          "p95_us": 23,
+          "count": 32,
+          "max_us": 27
+        },
+        "exec_recv": {
+          "p50_us": 20434,
+          "p95_us": 21241,
+          "count": 32,
+          "max_us": 21625
+        }
+      }
+    },
+    {
+      "image_kind": "ubuntu",
+      "kernel_kind": "stripped",
+      "load": "idle",
+      "source_snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-05T10:08:58+00:00.json",
+      "generated_at": "2026-05-05T10:08:58.501155+00:00",
+      "wallclock_ms": {
+        "p50": 3818,
+        "p95": 3820,
+        "max": 3820,
+        "count": 30,
+        "fail_count": 0
+      },
+      "useful_p50_ms": 2435,
+      "phases": {
+        "phase_1_run_root_prep": {
+          "p50_us": 78,
+          "p95_us": 84,
+          "count": 32,
+          "max_us": 92
+        },
+        "phase_2_lease": {
+          "p50_us": 39,
+          "p95_us": 46,
+          "count": 32,
+          "max_us": 58
+        },
+        "phase_3_storage_prep": {
+          "p50_us": 1336968,
+          "p95_us": 1345853,
+          "count": 32,
+          "max_us": 1369542
+        },
+        "phase_4_jailer_materialize": {
+          "p50_us": 765,
+          "p95_us": 1024,
+          "count": 32,
+          "max_us": 2008
+        },
+        "phase_5_cgroup_probe": {
+          "p50_us": 1887,
+          "p95_us": 2743,
+          "count": 32,
+          "max_us": 3423
+        },
+        "phase_5b_cgroup_create": {
+          "p50_us": 18446,
+          "p95_us": 26719,
+          "count": 32,
+          "max_us": 30473
+        },
+        "phase_6_network_realize": {
+          "p50_us": 0,
+          "p95_us": 0,
+          "count": 32,
+          "max_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "p50_us": 25450,
+          "p95_us": 25492,
+          "count": 32,
+          "max_us": 25515
+        },
+        "phase_10_open_uds": {
+          "p50_us": 26,
+          "p95_us": 31,
+          "count": 32,
+          "max_us": 37
+        },
+        "phase_11_rest_puts": {
+          "p50_us": 663,
+          "p95_us": 825,
+          "count": 32,
+          "max_us": 852
+        },
+        "phase_11b_ready_listener_bind": {
+          "p50_us": 94,
+          "p95_us": 113,
+          "count": 32,
+          "max_us": 114
+        },
+        "phase_12a_instance_start": {
+          "p50_us": 12404,
+          "p95_us": 13787,
+          "count": 32,
+          "max_us": 15491
+        },
+        "phase_12b_ready_accept": {
+          "p50_us": 1006772,
+          "p95_us": 1016685,
+          "count": 32,
+          "max_us": 1038432
+        },
+        "exec_send": {
+          "p50_us": 23,
+          "p95_us": 29,
+          "count": 32,
+          "max_us": 42
+        },
+        "exec_recv": {
+          "p50_us": 25818,
+          "p95_us": 37570,
+          "count": 32,
+          "max_us": 40931
+        }
+      }
+    }
+  ],
+  "interpretation": {
+    "dominant_idle_minimal_stripped_phases": [
+      {
+        "phase": "phase_12b_ready_accept",
+        "p50_ms": 865.995,
+        "classification": "guest kernel boot plus PID-1/guestd readiness"
+      },
+      {
+        "phase": "phase_3_storage_prep",
+        "p50_ms": 216.326,
+        "classification": "host rootfs overlay image preparation"
+      },
+      {
+        "phase": "phase_9_jailer_launch",
+        "p50_ms": 25.414,
+        "classification": "host Firecracker process launch via jailer"
+      },
+      {
+        "phase": "phase_5b_cgroup_create",
+        "p50_ms": 17.679,
+        "classification": "host cgroup attach"
+      },
+      {
+        "phase": "phase_12a_instance_start",
+        "p50_ms": 11.983,
+        "classification": "Firecracker InstanceStart REST action"
+      }
+    ],
+    "no_jailer_bounded_ceiling_ms": 45,
+    "notes": [
+      "The direct/no-jailer product ceiling is bounded by the small jailed host phases, not by the 866 ms guest-ready phase.",
+      "Loaded cells are stress-ng saturation probes; minimal stock had 1/5 successes and minimal stripped had 0/5 successes, but phase-bearing attempts still show the same dominant ready/storage phases."
+    ]
+  }
+}

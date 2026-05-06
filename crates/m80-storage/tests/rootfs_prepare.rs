@@ -2,15 +2,20 @@
 
 use m80_storage::{Rootfs, StorageError};
 
+fn paths() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join("vm-1");
+    std::fs::create_dir(&run_dir).unwrap();
+    let base = dir.path().join("base.ext4");
+    let overlay = run_dir.join("rootfs.overlay.ext4");
+    std::fs::write(&base, b"fake-base").unwrap();
+    (dir, base, overlay)
+}
+
 /// `prepare` creates the overlay file at the specified path.
 #[test]
 fn prepare_creates_overlay_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("base.ext4");
-    let overlay = dir.path().join("rootfs.overlay.ext4");
-
-    // Base must exist (prepare does not verify it, but it records the path).
-    std::fs::write(&base, b"fake-base").unwrap();
+    let (_dir, base, overlay) = paths();
 
     Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).expect("prepare must succeed");
 
@@ -20,10 +25,7 @@ fn prepare_creates_overlay_file() {
 /// `prepare` returns a `Rootfs` whose `base_path` is the caller-supplied base.
 #[test]
 fn prepare_base_path_matches_caller_supplied_base() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("base.ext4");
-    let overlay = dir.path().join("rootfs.overlay.ext4");
-    std::fs::write(&base, b"fake-base").unwrap();
+    let (_dir, base, overlay) = paths();
 
     let rootfs = Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).unwrap();
 
@@ -33,10 +35,7 @@ fn prepare_base_path_matches_caller_supplied_base() {
 /// `prepare` returns a `Rootfs` whose `overlay_path` is the new overlay.
 #[test]
 fn prepare_overlay_path_matches_dest() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("base.ext4");
-    let overlay = dir.path().join("rootfs.overlay.ext4");
-    std::fs::write(&base, b"fake-base").unwrap();
+    let (_dir, base, overlay) = paths();
 
     let rootfs = Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).unwrap();
 
@@ -46,10 +45,7 @@ fn prepare_overlay_path_matches_dest() {
 /// The sparse overlay file has exactly the requested size.
 #[test]
 fn prepare_overlay_file_has_correct_size() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("base.ext4");
-    let overlay = dir.path().join("rootfs.overlay.ext4");
-    std::fs::write(&base, b"fake-base").unwrap();
+    let (_dir, base, overlay) = paths();
 
     let size: u64 = 64 * 1024 * 1024; // 64 MiB
     Rootfs::prepare(&base, &overlay, size).unwrap();
@@ -62,9 +58,9 @@ fn prepare_overlay_file_has_correct_size() {
     );
 }
 
-/// Missing parent directory returns `OverlayCreateFailed`.
+/// Missing parent directory returns `OverlayTemplateCloneFailed`.
 #[test]
-fn prepare_missing_parent_returns_overlay_create_failed() {
+fn prepare_missing_parent_returns_overlay_template_clone_failed() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path().join("base.ext4");
     std::fs::write(&base, b"fake-base").unwrap();
@@ -74,26 +70,20 @@ fn prepare_missing_parent_returns_overlay_create_failed() {
 
     let err = Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).unwrap_err();
     match err {
-        StorageError::OverlayCreateFailed { path, .. } => {
-            assert_eq!(path, overlay, "error must carry the overlay path");
+        StorageError::OverlayTemplateCloneFailed { dest, .. } => {
+            assert_eq!(dest, overlay, "error must carry the overlay path");
         }
-        other => panic!("expected OverlayCreateFailed, got {other:?}"),
+        other => panic!("expected OverlayTemplateCloneFailed, got {other:?}"),
     }
 }
 
-/// `mkfs.ext4` on a zero-byte file exits non-zero; that surfaces as `MkfsFailed`.
+/// `mkfs.ext4` on a zero-byte template exits non-zero; that surfaces as `MkfsFailed`.
 #[test]
 fn prepare_mkfs_failure_returns_mkfs_failed() {
-    let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().join("base.ext4");
-    std::fs::write(&base, b"fake-base").unwrap();
-
-    // size=0 causes mkfs.ext4 to reject the image.
-    let overlay = dir.path().join("overlay.ext4");
+    let (_dir, base, overlay) = paths();
     let err = Rootfs::prepare(&base, &overlay, 0).unwrap_err();
     match err {
-        StorageError::MkfsFailed { path, status, .. } => {
-            assert_eq!(path, overlay);
+        StorageError::MkfsFailed { status, .. } => {
             assert_ne!(status, 0, "mkfs must have exited non-zero");
         }
         other => panic!("expected MkfsFailed, got {other:?}"),
@@ -112,4 +102,50 @@ fn new_at_wraps_paths_without_io() {
 
     assert_eq!(rootfs.base_path(), base.as_path());
     assert_eq!(rootfs.overlay_path(), overlay.as_path());
+}
+
+#[test]
+fn prepare_creates_template_metadata_once_and_reuses_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("base.ext4");
+    std::fs::write(&base, b"fake-base").unwrap();
+    let run1 = dir.path().join("vm-1");
+    let run2 = dir.path().join("vm-2");
+    std::fs::create_dir(&run1).unwrap();
+    std::fs::create_dir(&run2).unwrap();
+    let overlay1 = run1.join("rootfs.overlay.ext4");
+    let overlay2 = run2.join("rootfs.overlay.ext4");
+
+    Rootfs::prepare(&base, &overlay1, 64 * 1024 * 1024).unwrap();
+    Rootfs::prepare(&base, &overlay2, 64 * 1024 * 1024).unwrap();
+
+    let template = dir.path().join(".rootfs-overlay-template-v1-67108864.ext4");
+    let meta = dir.path().join(".rootfs-overlay-template-v1-67108864.meta");
+    assert!(template.exists());
+    assert!(meta.exists());
+    assert!(overlay1.exists());
+    assert!(overlay2.exists());
+}
+
+#[test]
+fn stale_template_metadata_is_a_hard_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("base.ext4");
+    std::fs::write(&base, b"fake-base").unwrap();
+    let run1 = dir.path().join("vm-1");
+    let run2 = dir.path().join("vm-2");
+    std::fs::create_dir(&run1).unwrap();
+    std::fs::create_dir(&run2).unwrap();
+    let overlay1 = run1.join("rootfs.overlay.ext4");
+    let overlay2 = run2.join("rootfs.overlay.ext4");
+
+    Rootfs::prepare(&base, &overlay1, 64 * 1024 * 1024).unwrap();
+    let meta = dir.path().join(".rootfs-overlay-template-v1-67108864.meta");
+    std::fs::write(&meta, "schema_version=1\nfs=ext4\nsize_bytes=123\n").unwrap();
+
+    let err = Rootfs::prepare(&base, &overlay2, 64 * 1024 * 1024).unwrap_err();
+    match err {
+        StorageError::OverlayTemplateMismatch { path, .. } => assert_eq!(path, meta),
+        other => panic!("expected OverlayTemplateMismatch, got {other:?}"),
+    }
 }

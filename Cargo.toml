@@ -24,19 +24,26 @@ clap = { version = "=4.5.57", features = ["derive"] }
 scopeguard = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+signal-hook = "0.3"
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 hex = "0.4"
 sha2 = "0.10"
 ipnet = "2"
-nix = { version = "0.29", default-features = false, features = ["user", "mount", "fs", "feature", "signal", "process"] }
+nix = { version = "0.29", default-features = false, features = ["user", "mount", "fs", "feature", "signal", "process", "poll", "term"] }
+portable-pty = "0.9"
+terminal_size = "0.4"
+ulid = "1"
 tempfile = "=3.20.0"
 toml = "0.5"
 assert_cmd = "=2.0.16"
 caps = "0.5"
 base64 = "0.22"
 tokio = { version = "1", default-features = false }
+futures-util = "0.3"
+rtnetlink = "0.21"
+tun = "=0.7.13"
 vsock = "0.5"
 
 # Internal m80 crates. Always reference these via `xxx.workspace = true` in

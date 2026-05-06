@@ -33,31 +33,30 @@ The system refuses to overwrite an existing persisted snapshot directory and
 returns an explicit collision error rather than replacing artifacts in place.
 
 **Present-tense statement.** `SnapshotError::DestinationCollision` is the
-designated error variant for this case.  In v0.1 `capture()` is not
-implemented (returns `SnapshotError::Deferred`), so the collision check is not
-exercised at runtime.  The variant is present in `SnapshotError` so callers can
-write match arms for it today; v0.2 execution will produce it.
+designated error variant for this case.  The pure path helper does not create
+the destination; store writers must check for this condition before writing a
+persisted snapshot set.
 
 **predecessor source.**
 - `docs/gates/stage-g-firecracker-snapshot-persistence-contract.md` §Contract rule 7.
 
-**m80 test.** `SnapshotError::DestinationCollision` variant present — verified by
-`crates/m80-snapshot/tests/deferred_capture_and_restore.rs` (capture returns
-`Deferred`, not `DestinationCollision`, in v0.1).
+**m80 test.** `SnapshotError::DestinationCollision` variant is part of the
+public error surface; future store-writer tests must pin the no-overwrite
+behavior when a writer is added.
 
 ---
 
 ## host-local-only {#host-local-only}
 
-The system supports only host-local filesystem persistence in v0.1 and
+The system supports only host-local filesystem persistence and
 explicitly does not introduce S3, GCS, Azure, `object_store`, or any generic
 storage trait.
 
 **Present-tense statement.** `persistence_path` takes a `&Path` for the store
 root and returns a `PathBuf`.  There is no storage-backend trait, no `object_store`
 dependency, no URL scheme handling.  Adding remote stores is a v0.2+ epic;
-v0.1 ships no seam for it.  The `m80-snapshot` dependency list contains only
-`serde`, `serde_json`, `sha2`, `hex`, and `thiserror`.
+m80 ships no seam for it.  The `m80-snapshot` dependency list contains only
+`m80-firecracker-client`, `serde`, `serde_json`, `sha2`, `hex`, and `thiserror`.
 
 **predecessor source.**
 - `docs/gates/stage-g-firecracker-snapshot-persistence-contract.md` §Contract rule 1.

@@ -16,12 +16,29 @@ fn assert_hint(err: &PreflightError) {
 
 #[test]
 fn unsupported_host_platform_has_hint() {
-    assert_hint(&PreflightError::UnsupportedHostPlatform("darwin".into()));
+    let err = PreflightError::UnsupportedHostPlatform {
+        actual: "darwin".into(),
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("darwin"));
 }
 
 #[test]
 fn kvm_unavailable_has_hint() {
-    assert_hint(&PreflightError::KvmUnavailable);
+    let err = PreflightError::KvmUnavailable {
+        path: "/dev/kvm".into(),
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("/dev/kvm"));
+}
+
+#[test]
+fn kvm_not_writable_has_hint() {
+    let err = PreflightError::KvmNotWritable {
+        path: "/dev/kvm".into(),
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("/dev/kvm"));
 }
 
 #[test]

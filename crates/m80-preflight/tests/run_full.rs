@@ -7,7 +7,7 @@
 //! - Firecracker and jailer binaries installed (or env overrides set).
 //! - A kernel image and rootfs available (env overrides or default paths).
 //! - `/var/run/m80` (or M80_RUN_ROOT) to exist with >= 100 MiB free.
-//! - `mkfs.ext4`, `e2fsck`, `debugfs` on PATH.
+//! - `mkfs.ext4`, `cp`, `fallocate`, `e2fsck`, `debugfs` on PATH.
 //!
 //! Run explicitly with:
 //! ```text

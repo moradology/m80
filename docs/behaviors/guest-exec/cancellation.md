@@ -2,15 +2,27 @@
 
 ## disconnect-kills-child
 
-If the host disconnects the vsock connection while a child is running, the daemon detects the broken stream (write_frame returns an I/O error) and the child is cleaned up. In m80-guestd v0.1 the daemon processes one connection sequentially: the child runs to completion (or timeout) before the response is written, so a disconnect mid-exec means the response write fails silently. The child is not orphaned — wait() is always called.
+If the host disconnects the vsock connection while a streaming child is
+running, the daemon kills and reaps the child and emits no `ExecExit`.
+Streaming mode has two detection paths: write-side failure while sending a
+chunk, and read-side EOF while the child is still running. The read-side path
+is required for silent commands such as `sleep 600`.
+
+Buffered mode still writes one response at process exit or timeout. If the
+host has gone away by then, the response write fails and the daemon returns to
+the accept loop after reaping the child.
 
 Source: dossier `03-guest-daemon.md` § Process orchestration; predecessor `services/guestd-rs/src/main.rs:318-329` (per-connection error path drops stream and reaps).
 
-Note: v0.1 does not explicitly watch for connection close during execution. Full mid-exec cancellation (SIGKILL on disconnect) is a v0.2 item. The current design ensures no zombie children by always calling `wait()` after the timeout path.
+Tests: `m80-guestd/tests/streaming_exec.rs::streaming_reader_eof_kills_silent_child_without_exit_frame`
+and `m80-guestd/tests/streaming_exec.rs::streaming_chunk_write_failure_kills_child_promptly`.
 
 ## partial-flush
 
-On cancellation (or any early failure), the daemon returns whatever stdout and stderr bytes were collected before the event. The response buffers are always populated from the capture threads before the response is written.
+On buffered timeout, the daemon returns whatever stdout and stderr bytes were
+collected before the event. In streaming mode, bytes already written as chunks
+stay written; explicit cancel returns `CancelAck`, and disconnect cancellation
+returns no terminal frame.
 
 Source: dossier `03-guest-daemon.md` § Process orchestration; predecessor `crates/sandbox/agent-sandbox-local/src/executor.rs`.
 

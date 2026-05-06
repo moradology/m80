@@ -27,39 +27,58 @@ Keeping the guest small has direct benefits:
 
 ### Lifecycle
 
-- Started either by systemd at `multi-user.target` (ubuntu image kind,
-  manifest-installed unit, `Type=simple Restart=on-failure`) or by the
+- Started either by systemd at `basic.target` (ubuntu image kind,
+  manifest-installed unit, `Type=simple Restart=on-failure`,
+  `StandardOutput=journal+console`, `StandardError=journal+console`) or by the
   kernel as PID 1 (minimal image kind, `init=/m80-guestd` boot arg).
 - **PID-1 mode** is detected at startup (`getpid() == 1`). When active:
-  install a panic hook that exits non-zero (kernel reboots via the
-  `panic=1` boot arg, surfacing the failure to the host); then execute
-  the overlay+pivot startup sequence (see below); poll-reap orphaned
-  children between vsock requests so re-parented orphans don't
-  accumulate. No SIGCHLD or SIGTERM handlers — the workspace forbids
-  `unsafe` and the firecracker host stops the VM with SIGKILL on the
-  outside.
+  duplicate stdout and stderr to `/dev/console`, install a panic hook
+  that exits non-zero, execute the overlay+pivot startup sequence (see
+  below), and poll-reap orphaned children between vsock requests so
+  re-parented orphans don't accumulate. No SIGCHLD or SIGTERM handlers
+  — the workspace forbids `unsafe` and the firecracker host stops the
+  VM with SIGKILL on the outside.
 - On startup: bind vsock port (default `m80_proto::GUEST_PORT_DEFAULT`),
-  print `m80_proto::READY_MARKER_DEFAULT` to the serial console (the
-  agreed ready marker), then loop on `accept()`.
+  emit a structured ready log containing `m80_proto::READY_MARKER_DEFAULT`,
+  connect back to the host ready port, then loop on `accept()`.
 - On each accepted connection:
-  1. Read one `m80-proto::Envelope<ExecRequest>` (fail closed on
-     version mismatch).
+  1. Read one `m80-proto::Envelope<ExecRequest | PtyRequest | ShutdownRequest>`
+     (fail closed on version mismatch).
   2. Spawn the child process per the request (argv + optional cwd +
      optional env).
-  3. Capture stdout/stderr to per-stream 1 MiB buffers; if either cap
-     is hit, the response's `truncated` field is set to `Some(true)`.
-  4. Apply the request's `timeout_ms` budget; on expiry, SIGKILL.
-  5. Reap, build `ExecResponse`, write it back as a `m80-proto`
-     envelope.
-  6. Sync filesystems (`sync(2)`) before close so post-stop change
+  3. If `ExecRequest::streaming == false`, capture stdout/stderr to
+     per-stream 1 MiB buffers; if either cap is hit, the response's
+     `truncated` field is set to `Some(true)`.
+  4. If `ExecRequest::streaming == true`, stream stdout/stderr as
+     bounded chunks (`ExecStdout` / `ExecStderr`) and finish with one
+     `ExecExit` terminal frame.
+  5. If the request is `PtyRequest`, allocate a pseudo-terminal, spawn the
+     requested command as the foreground terminal process, bridge
+     `PtyInput`/`PtyOutput`, apply `PtyResize`, honor `PtyControl`, and finish
+     with one `PtyExit` terminal frame.
+  6. Apply the request's `timeout_ms` budget; on expiry, terminate the child
+     process group.
+  7. Reap, build the terminal response, write it back as one or more
+     `m80-proto` envelopes.
+  8. Sync filesystems (`sync(2)`) before close so post-stop change
      extraction sees the final state.
-  7. Close.
+  9. Close.
 - Concurrent connections per VM are **not supported in v0.1**. The
   daemon serializes (`accept()` returns one at a time, processes,
   closes, accepts again).
-- On host disconnect mid-exec: kill the child immediately. Partial
-  output may or may not have been flushed; the response is whatever
+- On host disconnect mid-exec: terminate the child process group immediately.
+  Partial output may or may not have been flushed; the response is whatever
   state we observed.
+- On `cancel_request` for the in-flight request id: terminate the child process
+  group, reap the direct child, write `cancel_ack`, and do not write a terminal
+  `ExecExit` for that cancelled request. A mismatched or late cancel returns
+  `AlreadyExited` and the normal exec result continues.
+
+Exec children are started in a fresh process group. Cancel, timeout,
+disconnect/read EOF, and streaming write failure use SIGTERM, wait a bounded
+100 ms, then use SIGKILL against the same process group. This prevents
+shell-spawned descendants from keeping stdout/stderr open after the wrapper has
+cancelled the run.
 
 ### ExecRequest fields
 
@@ -75,8 +94,11 @@ that wire type directly.)
   augment) the child environment when set.
 - `stdin: Option<Vec<u8>>` — optional. Bytes piped to the child's stdin
   before close.
-- `timeout_ms: Option<u64>` — optional. No timeout when unset; the
-  daemon will run until the child exits.
+- `timeout_ms: Option<u64>` — optional. When unset or above the daemon
+  ceiling, the daemon applies its one-hour maximum.
+- `streaming: bool` — optional on the wire, defaults false. `false`
+  returns one buffered `ExecResponse`; `true` emits zero or more
+  `ExecStdout` / `ExecStderr` envelopes followed by one `ExecExit`.
 
 ### ExecResponse fields
 
@@ -87,6 +109,57 @@ that wire type directly.)
   stream limit (default 1 MiB; consider externalization in v0.2).
 - `timing: { spawned_at, exited_at, spawn_ms, run_ms }`.
 
+### Streaming exec fields
+
+When `ExecRequest::streaming == true`, stdout/stderr are emitted as
+`ExecStdout { seq, bytes }` and `ExecStderr { seq, bytes }`. Sequence
+numbers are monotonic per stream. The terminal frame is
+`ExecExit { status, exit_code, total_stdout_bytes, total_stderr_bytes,
+truncated, timing }`; it is written after both capture threads drain.
+
+The stream uses a one-frame bounded handoff from capture threads to the
+connection writer. A slow host therefore backpressures the child through
+the guest pipe instead of growing an unbounded guest buffer.
+
+Behavior details:
+
+- `docs/behaviors/exec/streaming-frame-order.md`
+- `docs/behaviors/exec/streaming-cancellation.md`
+- `docs/behaviors/exec/streaming-backpressure.md`
+
+### PTY exec fields
+
+PTY exec is a separate wire mode from pipe exec. The daemon receives
+`PtyRequest { program, args, cwd, env, timeout_ms, size }`, opens a
+pseudo-terminal through `portable-pty`, and spawns the requested program as the
+foreground terminal process. `env` and `cwd` follow pipe-mode semantics:
+`env: Some(_)` replaces the child environment; `env: None` inherits guestd's
+current environment; `cwd: None` inherits guestd's current working directory.
+
+While the child is running:
+
+- host `PtyInput { seq, bytes }` frames are written to the PTY master
+- guest PTY output is emitted as `PtyOutput { seq, bytes }`
+- host `PtyResize { seq, size }` frames update the kernel PTY size
+- host `PtyControl::Eof` drops the PTY writer
+- host `PtyControl::Signal { signal }` sends the requested signal to the
+  child process group
+
+The terminal result is exactly one
+`PtyExit { status, exit_code, exit_signal, total_input_bytes,
+total_output_bytes, truncated, timing }` frame after PTY output drains. PTY
+output is merged terminal output; it is not split into stdout and stderr.
+
+Timeout, `cancel_request`, host disconnect/read EOF, and output write failure
+terminate the PTY child process group with the same SIGTERM/100 ms/SIGKILL
+policy used by pipe streaming. Cancellation writes `cancel_ack` and does not
+write `PtyExit` for that request.
+
+Behavior details:
+
+- `docs/behaviors/wire-protocol/pty.md`
+- `docs/behaviors/cli/interactive-pty.md`
+
 ### PID-1 overlay+pivot startup sequence
 
 Implements `docs/design/storage-overlay.md §3.1` (11-step pseudocode).
@@ -94,17 +167,24 @@ Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 
 1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs). `EBUSY` (kernel pre-mounted) is accepted as success.
 2. Make mount namespace fully private (`MS_REC | MS_PRIVATE` on `/`) so `pivot_root(2)` does not propagate to the host.
-3. Mount `/dev/vda` (shared read-only base ext4) at `/lower` (`MS_RDONLY`).
-4. Mount `/dev/vdb` (per-VM writable overlay ext4) at `/upper`.
+3. Verify the image-built `/lower` mountpoint exists, then mount `/dev/vda` (shared read-only base ext4) there (`MS_RDONLY`).
+4. Verify the image-built `/upper` mountpoint exists, then mount `/dev/vdb` (per-VM writable overlay ext4) there.
 5. `mkdir /upper/root` and `mkdir /upper/.work` (idempotent — first boot creates, later boots already have them from a prior VM that used the overlay).
-6. `mkdir /merged`.
+6. Verify the image-built `/merged` mountpoint exists.
 7. Mount overlayfs: `lowerdir=/lower,upperdir=/upper/root,workdir=/upper/.work` at `/merged`.
 8. Bind-mount `/proc` (`MS_BIND|MS_REC`), `/sys` (`MS_BIND`), `/dev` (`MS_BIND`) into `/merged/{proc,sys,dev}` so they survive pivot.
 9. Apply `MS_SLAVE|MS_REC` on `/` and `MS_BIND|MS_REC` of `/merged` onto itself (required by `pivot_root(".", ".")`).
 10. Call `pivot_rootfs("/merged")` — lifted verbatim from `kata-containers/src/agent/rustjail/src/mount.rs:523-559` (Apache-2.0, © 2019 Ant Financial). Uses `defer!` (scopeguard) for FD cleanup.
 11. Mount `/dev/vdc` (workspace scratch ext4) at `/workspace` **inside the pivoted root**. Skipped if `/dev/vdc` does not exist (workspace is optional).
 
-**Failure policy:** any step failure panics. PID-1 panic triggers kernel panic (kernel reboots with `panic=1` cmdline). No retry, no fallback — failure here is structural. Every step logs to stderr so the Firecracker serial console shows the exact failure point.
+**Failure policy:** any step failure panics. No retry, no fallback —
+failure here is structural. Every step logs to stderr in the structured
+guest-log format below so the Firecracker serial console shows the exact
+failure point.
+
+The base root is already mounted read-only when PID 1 starts, so
+`/lower`, `/upper`, and `/merged` are part of the minimal image-build
+contract. `m80-guestd` checks them rather than creating them at boot.
 
 ### Workspace mount
 
@@ -119,6 +199,37 @@ Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
   the workspace drive was `/dev/vdb`; after the overlay pivot (`m80-ovrl.4`),
   it is `/dev/vdc` (drive position 3 per `docs/design/storage-overlay.md §2`).
 
+### Guest stderr format
+
+All internal guestd lifecycle logs go to stderr with this line shape:
+
+```text
+[<RFC3339-timestamp>] [<phase>] [<request_id-or-boot>] <level> <message>
+```
+
+`phase` is one of `Boot`, `Ready`, `Exec`, or `Shutdown`.
+`request_id` is the opaque request id from the host when one exists, and
+`boot` before a request is in scope. `level` is `ERROR`, `WARN`,
+`INFO`, or `DEBUG`. Log emission is best-effort and never changes
+control flow.
+
+In systemd images, the unit routes stdout and stderr to
+`journal+console`; in PID-1 images, guestd duplicates stdout/stderr to
+`/dev/console` before emitting startup logs. m80-firecracker captures
+the resulting Firecracker stdout/stderr stream into `<run_dir>/console.log`.
+
+PID-1 images also emit machine-readable boot milestone lines:
+
+```text
+M80_GUEST_BOOT name=<milestone> elapsed_us=<micros> delta_us=<micros>
+```
+
+`elapsed_us` is monotonic time since guestd process start. `delta_us` is
+time since the previous milestone. The CLI forwards these lines to stderr
+only when `M80_PHASE_TRACE=1`, so the cold-launch bench can place guest
+milestones next to host-side `phase_12b_ready_accept` without changing
+normal command output.
+
 ## Public surface
 
 Binary-only; no library API. `m80-guestd --help` for flags.
@@ -131,11 +242,9 @@ Binary-only; no library API. `m80-guestd --help` for flags.
 - **No workspace policy enforcement.** No `read_only` flag, no allowed-
   tools list. The host trusts the VM is running unprivileged code; the
   isolation boundary is the VM, not the daemon.
-- **No persistent connection.** One connection = one exec.
-- **No streaming output.** stdout/stderr are batched and returned at
-  exit. Streaming is a v0.2 epic.
-- **No cancellation envelope.** Cancellation is by host-side connection
-  close.
+- **No persistent connection.** One connection = one exec or PTY session.
+- **No request multiplexing.** One connection carries one exec request
+  and that request's response stream.
 
 ## Dependencies
 

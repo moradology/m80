@@ -29,6 +29,9 @@ pub struct JailerConfig {
     pub bindings: Vec<Binding>,
     /// Sockets to create inside the jail (e.g., the API and vsock UDSes).
     pub sockets: Vec<SocketSpec>,
+    /// Optional host-side file that receives firecracker/jailer stdout and
+    /// stderr. The orchestrator uses this for the per-VM serial console log.
+    pub stdio_log: Option<PathBuf>,
 }
 
 /// Compute the actual chroot path inside `run_dir`. Jailer hardcodes the

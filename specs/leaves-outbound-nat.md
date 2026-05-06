@@ -95,7 +95,7 @@ to `M80_RULE_COMMENT_PREFIX` and `10-m80-outbound.network` / `10-m80-dns.conf`.
 - parent_var: $L2_11_3
 - labels: $ACTIVE,network,outbound-nat,setup
 - status: open
-- behavior: The system treats `ensure_bridge_ready` as idempotent: when the bridge interface already exists and the on-disk `outbound-bridge-state.json` matches the planned identity (run_root_digest, bridge_name, cidr, gateway) and is in `Ready` phase, it verifies the IPv4 address and returns without re-issuing `ip link add`.
+- behavior: The system treats bridge realization as idempotent: when the bridge interface already exists and the on-disk `outbound-bridge-state.json` matches the planned identity (run_root_digest, bridge_name, cidr, gateway) and is in `Ready` phase, it verifies the IPv4 address and returns without re-issuing a bridge create operation.
 - source: dossier `06-network-internals.md` § Phase 3: bridge setup; predecessor `crates/sandbox/agent-sandbox-firecracker/src/network.rs` `ensure_bridge_ready` lines 291-347 and `validate_expected_bridge_state` lines 709-724.
 - captured-by: m80/docs/behaviors/network-outbound-nat/setup.md#bridge-idempotency + m80/crates/network/tests/network-outbound-nat/setup.rs::bridge_setup_is_idempotent_with_matching_state
 
@@ -103,33 +103,33 @@ to `M80_RULE_COMMENT_PREFIX` and `10-m80-outbound.network` / `10-m80-dns.conf`.
 - parent_var: $L2_11_3
 - labels: $ACTIVE,network,outbound-nat,setup
 - status: open
-- behavior: The system writes `outbound-bridge-state.json` at `<run_root>/outbound-bridge-state.json` via atomic write, recording `schema_version=1`, `setup_phase`, `run_root`, `run_root_digest`, `bridge_name`, `cidr`, and `gateway_ipv4`, with a Planned-then-Ready phase transition bracketing the `ip` invocations.
+- behavior: The system writes `outbound-bridge-state.json` at `<run_root>/outbound-bridge-state.json` via atomic write, recording `schema_version=1`, `setup_phase`, `run_root`, `run_root_digest`, `bridge_name`, `cidr`, and `gateway_ipv4`, with a Planned-then-Ready phase transition bracketing bridge/link realization.
 - source: dossier `06-network-internals.md` § State types and § Phase 3; predecessor `crates/sandbox/agent-sandbox-firecracker/src/network.rs` constants line 23 and types lines 101-109; `write_bridge_state` lines 612-622.
 - captured-by: m80/docs/behaviors/network-outbound-nat/setup.md#bridge-state-file + m80/crates/network/tests/network-outbound-nat/setup.rs::bridge_state_file_is_atomic_and_at_run_root
 
-### Leaf: Create tap device via ip tuntap then attach to bridge
+### Leaf: Create TAP without ip binary then attach via rtnetlink
 - parent_var: $L2_11_3
 - labels: $ACTIVE,network,outbound-nat,setup
 - status: open
-- behavior: The system creates the per-VM tap by issuing `ip tuntap add dev <tap> mode tap`, then `ip link set dev <tap> address <guest_mac>`, then `ip link set dev <tap> master <bridge>`, and finally `ip link set dev <tap> up`, in that exact order.
-- source: dossier `06-network-internals.md` § Phase 4: tap setup; predecessor `crates/sandbox/agent-sandbox-firecracker/src/network.rs` `ensure_tap_ready` lines 349-413.
-- captured-by: m80/docs/behaviors/network-outbound-nat/setup.md#tap-creation + m80/crates/network/tests/network-outbound-nat/setup.rs::tap_creation_via_ip_tuntap_in_order
+- behavior: The system creates the per-VM TAP without invoking `ip` or `/sbin/ip` by using the Linux TUN/TAP driver, then uses rtnetlink to set the guest MAC, attach the TAP to the bridge, and bring the TAP up.
+- source: dossier `06-network-internals.md` § Phase 4 captures the inherited predecessor behavior; m80-exy.8 records the kernel/API correction that TUN/TAP creation is not an rtnetlink create operation but the ip binary is no longer part of m80's bridge/tap setup path.
+- captured-by: m80/docs/behaviors/network-outbound-nat/setup.md#tap-creation + m80/crates/m80-net-outbound/tests/network-outbound-nat/setup.rs::tap_creation_without_ip_binary_then_rtnetlink_attach
 
 ### Leaf: Persist per-VM network-state.json with atomic write
 - parent_var: $L2_11_3
 - labels: $ACTIVE,network,outbound-nat,setup
 - status: open
-- behavior: The system writes `<run_dir>/network-state.json` via atomic temp-file rename, recording `schema_version=1`, `setup_phase`, `vm_id`, `run_dir`, embedded `bridge` state, `iface_id="eth0"`, `tap_name`, `guest_mac`, `guest_ipv4`, `private_ipv4_exceptions`, `dns_resolvers`, and `runtime_rootfs_configured`, with the Ready phase written only after `ip` operations succeed.
+- behavior: The system writes `<run_dir>/network-state.json` via atomic temp-file rename, recording `schema_version=1`, `setup_phase`, `vm_id`, `run_dir`, embedded `bridge` state, `iface_id="eth0"`, `tap_name`, `guest_mac`, `guest_ipv4`, `private_ipv4_exceptions`, `dns_resolvers`, and `runtime_rootfs_configured`, with the Ready phase written only after bridge/tap realization succeeds.
 - source: dossier `06-network-internals.md` § Phase 4 and § State types; predecessor `crates/sandbox/agent-sandbox-firecracker/src/network.rs` types lines 111-125 and `write_vm_network_state` lines 624-634.
 - captured-by: m80/docs/behaviors/network-outbound-nat/setup.md#vm-state-file + m80/crates/network/tests/network-outbound-nat/setup.rs::vm_network_state_is_atomic_with_phase_transition
 
-### Leaf: Route every ip invocation through privileged-shim
+### Leaf: Assert bridge/tap setup has no ip shellout path
 - parent_var: $L2_11_3
 - labels: $ACTIVE,network,outbound-nat,setup
 - status: open
-- behavior: The system routes all `ip link`, `ip addr`, `ip tuntap`, and `ip link delete` invocations through `run_privileged_host_command()`, which selects effective-root direct execution or `sudo -n` based on the host's privilege check at startup; no command bypasses the shim.
-- source: dossier `06-network-internals.md` § Privilege model; predecessor `crates/sandbox/agent-sandbox-firecracker/src/network.rs` host trait calls (e.g., lines 306-345, 365-411) routing through `foundation::run_privileged_host_command` lines 860-879.
-- captured-by: m80/docs/behaviors/network-outbound-nat/setup.md#privileged-shim + m80/crates/network/tests/network-outbound-nat/setup.rs::all_ip_invocations_go_through_privileged_shim
+- behavior: Bridge/tap setup has no `ip link`, `ip addr`, `ip tuntap`, or `ip link delete` command path. Privilege is held by the m80 process at startup and consumed through direct kernel APIs: rtnetlink for link mutation/deletion and the TUN/TAP driver for TAP creation.
+- source: m80-exy.8 replaces the older predecessor privileged-ip-shim capture for this crate.
+- captured-by: m80/docs/behaviors/network-outbound-nat/setup.md#no-ip-shellout + m80/crates/m80-net-outbound/tests/network-outbound-nat/setup.rs::bridge_tap_setup_has_no_ip_shellout_path
 
 ## L2-11.4 Guest network injection (parent_var: $L2_11_4)
 

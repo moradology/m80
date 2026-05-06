@@ -1,6 +1,3 @@
-//! Verify that dropping a `Channel` removes the host-side UDS file.
-
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::time::Duration;
@@ -9,9 +6,8 @@ use tempfile::tempdir;
 
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-
 #[test]
-fn drop_removes_host_uds() {
+fn drop_keeps_host_uds() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("vsock.sock");
 
@@ -27,25 +23,23 @@ fn drop_removes_host_uds() {
         std::thread::sleep(Duration::from_millis(200));
     });
 
-    let channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT)
-    .unwrap();
+    let channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap();
 
     // UDS must still exist while the channel is open.
     assert!(uds_path.exists(), "UDS should exist while channel is open");
 
     drop(channel);
 
-    // After drop the UDS must be removed.
     assert!(
-        !uds_path.exists(),
-        "UDS should be removed after Channel is dropped"
+        uds_path.exists(),
+        "UDS should remain after Channel is dropped"
     );
 
     server.join().unwrap();
 }
 
 #[test]
-fn close_removes_host_uds() {
+fn close_keeps_host_uds() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("vsock2.sock");
 
@@ -60,14 +54,13 @@ fn close_removes_host_uds() {
         std::thread::sleep(Duration::from_millis(200));
     });
 
-    let channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT)
-    .unwrap();
+    let channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap();
 
     channel.close().unwrap();
 
     assert!(
-        !uds_path.exists(),
-        "UDS should be removed after Channel::close()"
+        uds_path.exists(),
+        "UDS should remain after Channel::close()"
     );
 
     server.join().unwrap();

@@ -1,48 +1,124 @@
-# m80 — Firecracker sandbox extraction dossier
+# m80
 
-This directory captures a detailed feasibility study for extracting Firecracker
-VM sandboxing out of `predecessor` and into a focused, standalone repository
-(working name: **m80**) that ships:
+m80 runs a process inside a Firecracker microVM while making the VM feel like a
+thin host-process wrapper: stdout is stdout, stderr is stderr, the guest exit
+code is the `m80` exit code, and the process sees only the filesystem, network,
+environment, and runtime profile you selected.
 
-1. A reusable Rust library for boot/control/teardown of Firecracker microVMs
-2. A no-frills CLI for spawning, exec-ing into, and tearing down sandboxes
-3. The image-build pipeline (kernel discovery, rootfs preparation, provenance
-   manifests) needed to make the library *runnable* on a fresh Linux host
+```sh
+m80 run -- echo hello
+```
 
-The study is grounded in a top-to-bottom read of the relevant crates and infra
-in `/tank/projects/predecessor` as of 2026-05-02.
+Expected output:
 
-## Files
+```text
+hello
+```
 
-| File | What's in it |
-|---|---|
-| `00-verdict.md` | Bottom-line recommendation, cost estimate, risk register |
-| `01-coupling-audit.md` | What in `agent-sandbox-firecracker` is predecessor-specific vs. generic |
-| `02-sandbox-api-and-guest-proto.md` | The abstraction layer: `SandboxBackend` trait, `GuestRequest`/`GuestResponse`, tool catalog |
-| `03-guest-daemon.md` | What `guestd-rs` actually does inside the VM, and the cost of a generic-exec rewrite |
-| `04-infra-and-artifacts.md` | Kernel, rootfs, jailer, manifests, preflight, dev-env scripts, Lima |
-| `05-consumers-and-integration-seams.md` | Every predecessor consumer of the firecracker crate and what re-stubbing costs |
-| `06-network-internals.md` | The 3,669-line `network.rs` module mapped end-to-end |
-| `07-modules-essential-vs-hygiene.md` | Module-by-module classification (must-have / hygiene / drop) |
-| `08-extraction-plan.md` | Phased plan with concrete file moves and order of operations |
-| `09-cli-shape.md` | CLI surface design sketch with subcommand semantics |
-| `10-risks-and-open-questions.md` | Things that will bite, things that need decisions |
-| `11-loc-and-surface-budget.md` | Line counts, public surface, dependency closure |
+The command above uses the default runtime profile. The built-in `env` profile
+reads `M80_KERNEL_IMAGE` and `M80_ROOTFS_IMAGE`; named profiles live at
+`/etc/m80/profiles/<name>.toml` or `~/.config/m80/profiles/<name>.toml`.
+The requested program must exist inside the selected guest image/profile or in
+the visible workspace. m80 does not run host binaries, pull OCI images, or
+install packages implicitly.
 
-## Headline numbers
+## Quickstart Shape
 
-- Source crate (`crates/sandbox/agent-sandbox-firecracker`): **27,623 LOC** across
-  25 source files
-- "Crystalline core" worth keeping for v0: **~15,000 LOC**
-- Dead/reserved code safe to drop: **~2,400 LOC** (`snapshot.rs` 997,
-  `blank_pool.rs` 1,412)
-- Optional observability tail (feature-gate or split out): **~2,000 LOC**
-- Net library surface after extraction: **~12,000–15,000 LOC**
-- Estimated effort: **4–6 weeks** for one focused engineer to ship a
-  publishable v0.1 with CLI
+After a release artifact tarball exists, first contact is:
 
-## How to read this dossier
+```sh
+m80 quickstart \
+  --artifact-url https://github.com/<owner>/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
+```
 
-Start with `00-verdict.md`. If you want the *why* behind a specific claim,
-each subsequent file drills into one slice with file:line citations from the
-predecessor codebase.
+For a clean host that does not yet have the repo checkout, the same artifact
+flow is available as a shell script:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/<owner>/m80/main/scripts/quickstart.sh |
+  sudo sh -s -- \
+    --artifact-url https://github.com/<owner>/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
+```
+
+`m80 preflight` reports missing host setup before launch. Firecracker needs a
+Linux/KVM host, `/dev/kvm` access, the Firecracker and jailer binaries, m80
+artifacts, and startup privilege through root, file capabilities, or a
+privileged container.
+
+## Process Visibility
+
+Common policies are direct command-line flags:
+
+```sh
+m80 run --egress none -- echo isolated
+m80 run --workspace . --cwd /workspace -- ls
+m80 run --workspace . --writeback on-success -- sh -c 'echo done > result.txt'
+m80 run -it --workspace . --egress outbound --secret-env ANTHROPIC_API_KEY -- claude
+```
+
+- `--workspace <path>` makes one host directory visible at `/workspace`.
+- `--writeback never|on-success|always` controls whether workspace mutations
+  are extracted after the guest process stops.
+- `--egress none|outbound` selects no network or NAT-backed outbound network.
+- `--env KEY=VAL` and `--secret-env KEY` project explicit environment only.
+- `--tty -i` gives the process an interactive terminal for TUIs.
+- `--warm` leases from an explicit resident warm owner; it never silently falls
+  back to cold boot.
+
+See [examples](examples/) for copy-paste workloads.
+
+## Build The Artifacts
+
+For local development, build a minimal image:
+
+```sh
+cargo build -p m80-guestd --release --target x86_64-unknown-linux-musl
+cat > /tmp/m80-image-build.toml <<'EOF'
+[kernel]
+version = "v1.15.1"
+arch = "x86_64"
+
+[rootfs]
+kind = "minimal"
+size = "256MiB"
+
+[guestd]
+binary = "target/x86_64-unknown-linux-musl/release/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+EOF
+sudo target/release/m80-image-build run --config /tmp/m80-image-build.toml
+```
+
+Release artifacts are produced by
+[`.github/workflows/release-artifacts.yml`](.github/workflows/release-artifacts.yml)
+on tag pushes.
+
+## Workspace
+
+m80 is a Rust workspace split into small black-box crates:
+
+- `m80-proto`, `m80-vsock`, `m80-firecracker-client`, `m80-jailer`,
+  `m80-cgroup`, `m80-storage`, `m80-preflight`, `m80-net-mode`
+- `m80-net-outbound`
+- `m80-firecracker`
+- `m80-image-build`, `m80-guestd`, `m80-cli`
+- reserved `m80-snapshot` and `m80-observability` surfaces
+
+Crate READMEs are contracts. A public-surface change updates the owning crate
+README in the same diff.
+
+## What m80 Is Not
+
+- Not Docker-compatible lifecycle UX as the primary model.
+- Not an agent tool catalog or policy authority.
+- Not an OCI image puller or runtime package installer.
+- Not a hidden daemon. Warm execution uses an explicit resident owner.
+
+## Dossier
+
+The original extraction dossier is retained as historical context. Start with
+`00-verdict.md` when you need the reasoning behind the crate split, risk
+register, or LOC budget. The dossier is not normative; current crate READMEs
+and live beads are.

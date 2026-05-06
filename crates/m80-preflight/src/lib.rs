@@ -87,18 +87,36 @@ pub use checks::run;
 pub enum PreflightError {
     /// Host kernel is not Linux.
     #[error(
-        "unsupported host platform: {0}\n\
+        "unsupported host platform: {actual}\n\
          hint: m80 requires a Linux host; macOS and Windows are not supported"
     )]
-    UnsupportedHostPlatform(String),
+    UnsupportedHostPlatform {
+        /// Platform reported by `uname -s`.
+        actual: String,
+    },
 
-    /// `/dev/kvm` is missing or not writable.
+    /// `/dev/kvm` is missing.
     #[error(
-        "/dev/kvm unavailable\n\
-         hint: ensure KVM is enabled in the host kernel and add your user to \
-         the `kvm` group (`sudo usermod -aG kvm $USER`) or run m80 as root"
+        "KVM device unavailable at {}\n\
+         hint: ensure KVM is enabled in the host kernel and /dev/kvm exists",
+        path.display()
     )]
-    KvmUnavailable,
+    KvmUnavailable {
+        /// KVM device path that was missing.
+        path: PathBuf,
+    },
+
+    /// `/dev/kvm` exists but is not writable.
+    #[error(
+        "KVM device is not writable at {}\n\
+         hint: add your user to the `kvm` group (`sudo usermod -aG kvm $USER`) \
+         or run m80 as root",
+        path.display()
+    )]
+    KvmNotWritable {
+        /// KVM device path that rejected write access.
+        path: PathBuf,
+    },
 
     /// Required kernel modules are not loaded/loadable.
     #[error(
@@ -194,7 +212,8 @@ pub enum PreflightError {
         reason: String,
     },
 
-    /// One of the storage helpers (`mkfs.ext4`, `debugfs`, `e2fsck`) is missing.
+    /// One of the storage helpers (`mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+    /// `e2fsck`) is missing.
     #[error(
         "storage helper missing on PATH: {0}\n\
          hint: install e2fsprogs (`sudo apt-get install e2fsprogs` on Debian \

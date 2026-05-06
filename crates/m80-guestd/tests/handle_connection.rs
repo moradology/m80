@@ -23,6 +23,7 @@ fn make_request(
         env: None,
         stdin,
         timeout_ms: Some(timeout_ms),
+        streaming: false,
     }
 }
 
@@ -66,10 +67,28 @@ fn run_handler(input: Vec<u8>) -> Vec<u8> {
     out
 }
 
+fn run_handler_with_reader_never_ready(input: Vec<u8>) -> Vec<u8> {
+    let mut out = Vec::new();
+    m80_guestd::connection::handle_connection_with_reader_ready(
+        std::io::BufReader::new(Cursor::new(input)),
+        &mut out,
+        |_reader| false,
+    )
+    .expect("handle_connection failed");
+    out
+}
+
 #[test]
 fn exec_true_returns_completed() {
     let input = request_frame(make_request("true", vec![], None, 5_000), None);
     let env = read_response(&run_handler(input));
+    assert_eq!(env.payload.status, ExecStatus::Completed);
+}
+
+#[test]
+fn exec_response_does_not_wait_for_cancel_readability() {
+    let input = request_frame(make_request("true", vec![], None, 5_000), None);
+    let env = read_response(&run_handler_with_reader_never_ready(input));
     assert_eq!(env.payload.status, ExecStatus::Completed);
 }
 
@@ -88,8 +107,10 @@ fn exec_with_timeout_returns_timed_out() {
     let env = read_response(&run_handler(request_frame(req, None)));
     let elapsed = start.elapsed();
     assert_eq!(env.payload.status, ExecStatus::TimedOut);
+    // `handle_connection` syncs before returning; on a busy host that can add
+    // seconds. This still proves guestd did not wait for the full `sleep 60`.
     assert!(
-        elapsed < std::time::Duration::from_millis(2_000),
+        elapsed < std::time::Duration::from_secs(10),
         "elapsed: {elapsed:?}"
     );
 }
@@ -151,6 +172,51 @@ fn cancel_mid_exec_terminates_quickly() {
     assert!(
         elapsed < std::time::Duration::from_secs(5),
         "cancel should terminate well before sleep timeout, elapsed={elapsed:?}"
+    );
+}
+
+#[test]
+fn cancel_mid_exec_kills_shell_spawned_grandchild() {
+    let mut input = request_frame(
+        make_request(
+            "/bin/sh",
+            vec!["-c".into(), "sleep 60 & wait".into()],
+            None,
+            30_000,
+        ),
+        Some("req-cancel-grandchild"),
+    );
+    input.extend(cancel_frame("req-cancel-grandchild"));
+
+    let start = std::time::Instant::now();
+    let out = run_handler(input);
+    let elapsed = start.elapsed();
+    let ack = read_cancel_ack(&out);
+
+    assert_eq!(ack.payload.status, CancelStatus::Cancelled);
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "process-group cancel should not wait for grandchild sleep timeout, elapsed={elapsed:?}"
+    );
+}
+
+#[test]
+fn timeout_kills_shell_spawned_grandchild() {
+    let req = make_request(
+        "/bin/sh",
+        vec!["-c".into(), "sleep 60 & wait".into()],
+        None,
+        100,
+    );
+
+    let start = std::time::Instant::now();
+    let env = read_response(&run_handler(request_frame(req, None)));
+    let elapsed = start.elapsed();
+
+    assert_eq!(env.payload.status, ExecStatus::TimedOut);
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "process-group timeout should not wait for grandchild sleep timeout, elapsed={elapsed:?}"
     );
 }
 

@@ -45,6 +45,9 @@ artifacts.
   are `Option<>` and present iff `image_kind == Ubuntu`. The
   kind/field invariant is enforced on `read`, `write`, and `verify` and
   surfaces as `ManifestError::InconsistentKind`.
+- `no_egress_reason` is operator audit metadata. m80-built images use
+  `DEFAULT_NO_EGRESS_REASON` to state that the image is network-neutral and
+  outbound access requires an explicit runtime policy.
 - `verify(&Manifest, root: &Path) -> Result<(), ManifestError>` recomputes
   every populated sha256 from the on-disk artifact and compares to the
   recorded value. Fields that are `None` for the manifest's kind are
@@ -75,6 +78,8 @@ artifacts.
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
 - `SCHEMA_VERSION: u32 = 3`.
+- `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for
+  m80-built network-neutral images.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
   `Sha256Mismatch { field, expected, actual }`,
   `InconsistentKind { kind, field, expected }`,

@@ -16,6 +16,7 @@ fn serializes_program_args_env_cwd_timeout() {
         ]),
         stdin: Some(b"input data\n".to_vec()),
         timeout_ms: Some(30_000),
+        streaming: false,
     };
 
     let env = Envelope::with_request_id(req.clone(), "test-req-001".into());
@@ -46,4 +47,5 @@ fn serializes_program_args_env_cwd_timeout() {
         Some(b"input data\n".as_ref())
     );
     assert_eq!(back.payload.timeout_ms, Some(30_000));
+    assert!(!back.payload.streaming);
 }

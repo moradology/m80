@@ -29,6 +29,7 @@ fn handshake_runs_before_first_request() {
         env: None,
         stdin: None,
         timeout_ms: None,
+        streaming: false,
     });
     let mut app_channel: Vec<u8> = Vec::new();
     write_frame(&mut app_channel, &req_env).unwrap();

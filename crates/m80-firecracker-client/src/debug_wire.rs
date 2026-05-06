@@ -50,12 +50,16 @@ pub(crate) fn format_wire_preview(bytes: &[u8]) -> String {
     let head_hex = hex::encode(head);
     let head_ascii: String = head
         .iter()
-        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '.'
+            }
+        })
         .collect();
     if total > CAP {
-        format!(
-            "len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\" (truncated)"
-        )
+        format!("len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\" (truncated)")
     } else {
         format!("len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\"")
     }
@@ -106,7 +110,10 @@ mod tests {
     #[test]
     fn parse_malformed_with_spaces_not_trimmed() {
         let s = parse_targets(" fcrest");
-        assert!(!s.contains("fcrest"), "space-prefixed token must not match fcrest");
+        assert!(
+            !s.contains("fcrest"),
+            "space-prefixed token must not match fcrest"
+        );
         assert!(s.contains(" fcrest"));
     }
 

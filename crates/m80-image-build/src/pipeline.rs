@@ -42,9 +42,9 @@ pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
     match cfg.rootfs.kind.as_deref() {
         Some("minimal") => minimal::run_build_minimal(cfg, dry_run),
         Some("ubuntu") | None => run_build_ubuntu(cfg, dry_run),
-        Some(other) => anyhow::bail!(
-            "unknown rootfs.kind '{other}': expected \"ubuntu\" or \"minimal\""
-        ),
+        Some(other) => {
+            anyhow::bail!("unknown rootfs.kind '{other}': expected \"ubuntu\" or \"minimal\"")
+        }
     }
 }
 
@@ -200,7 +200,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         kernel_image: paths.kernel.clone(),
         kernel_image_sha256: kernel_sha,
         kernel_kind: m80_image_manifest::KernelKind::Stock,
-        no_egress_reason: None,
+        no_egress_reason: Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
         output_rootfs_image: paths.output_rootfs.clone(),
         output_rootfs_sha256: output_sha,
         ready_marker: m80_proto::READY_MARKER_DEFAULT.to_string(),
@@ -464,9 +464,8 @@ pub fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<PathBuf> {
 /// the binary wires the logic through `build_stripped_kernel` instead.
 #[allow(dead_code)]
 pub fn config_sha_from_file(config_path: &Path) -> anyhow::Result<String> {
-    sha256_file(config_path).with_context(|| {
-        format!("computing config sha256 from {}", config_path.display())
-    })
+    sha256_file(config_path)
+        .with_context(|| format!("computing config sha256 from {}", config_path.display()))
 }
 
 #[cfg(unix)]

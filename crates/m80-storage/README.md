@@ -32,8 +32,8 @@ Each VM gets a logical `Rootfs` composed of two host files:
 1. The **base ext4** (the artifact `m80-image-build` produces). Used
    read-only and shared across every VM that references it. There is
    **no per-VM copy of the base**.
-2. A **per-VM overlay ext4** — a sparse file created at launch, formatted
-   with `mkfs.ext4 -F`, attached to the VM as a writable second drive.
+2. A **per-VM overlay ext4** — cloned at launch from a run-root-local
+   empty ext4 template, attached to the VM as a writable second drive.
    In-VM, `m80-guestd` mounts the base at `/lower`, the overlay at
    `/upper`, and overlayfs at `/`. Writes from the guest land in the
    overlay; the base is never touched.
@@ -44,14 +44,18 @@ base from one set of pages.
 ### Public API
 
 - `Rootfs::prepare(base: &Path, overlay_dest: &Path, overlay_size_bytes: u64) -> Result<Rootfs, StorageError>`
-  Allocates the per-VM overlay sparse file at `overlay_dest`, formats it
-  with `mkfs.ext4 -F`, returns a `Rootfs` whose `base_path()` is the
-  caller-supplied shared base and whose `overlay_path()` is the new
-  overlay. **Caller is responsible for sha256 verification of `base`
-  via `m80_image_manifest::Manifest::verify()` before calling
-  `prepare`; this function does not re-verify.** Allocating a sparse
-  file + mkfs is sub-millisecond on tmpfs and small (~10 ms) on disk;
-  there is no full-file copy.
+  Ensures a run-root-local empty overlay template exists, then clones it
+  to `overlay_dest` with `cp --reflink=auto --sparse=always`, giving
+  reflink where available and sparse plain-copy fallback otherwise. The
+  returned `Rootfs` has `base_path()` set to the
+  caller-supplied shared base and `overlay_path()` set to the new
+  per-VM overlay. **Caller is responsible for sha256 verification of
+  `base` via `m80_image_manifest::Manifest::verify()` before calling
+  `prepare`; this function does not re-verify.** The template is
+  formatted once with `mkfs.ext4 -F`, trimmed with `fallocate -d`, and
+  guarded by metadata recording schema version, ext4 identity, size,
+  mkfs command, and postprocess command; a stale or wrong-size template
+  is a hard error.
 - `Rootfs::new_at(base: &Path, overlay: &Path) -> Rootfs` — wraps a pair
   of existing paths without allocating; for tests and recovery scenarios.
 - `Rootfs::base_path(&self) -> &Path` — the shared, read-only base ext4.
@@ -88,7 +92,7 @@ operates on the workspace, not the rootfs overlay.
 
 ### Operational notes
 
-- All shell-outs (`mkfs.ext4`, `e2fsck`, `mount`, `umount`) bubble up
+- All shell-outs (`mkfs.ext4`, `cp`, `fallocate`, `e2fsck`, `mount`, `umount`) bubble up
   exit codes as typed errors.
 - Concurrency: `Rootfs` and `Scratch` are NOT thread-safe. The
   orchestrator serializes per-VM storage operations.
@@ -111,7 +115,9 @@ images but adds non-trivial output-parsing surface.
 - `ChangeSet { staged: Vec<PathBuf>, rejected: Vec<Rejection>, total_bytes: u64 }`.
 - `Rejection { path: PathBuf, reason: RejectionReason }`.
 - `RejectionReason`: `Symlink`, `SpecialFile`, `Other(String)`.
-- `StorageError`: `Mkfs(io::Error)`, `E2fsckFailed { exit, stderr }`,
+- `StorageError`: `OverlayCreateFailed`, `MkfsFailed`,
+  `OverlayTemplateCreateFailed`, `OverlayTemplateMismatch`,
+  `OverlayTemplateCloneFailed`, `Mkfs(io::Error)`, `E2fsckFailed { exit, stderr }`,
   `AdmissibilityRefused`, `SwapFailed`,
   `Io { path: PathBuf, source: io::Error }`.
 
@@ -141,13 +147,15 @@ Runtime: `thiserror`, `tracing`, `serde`, `tempfile`.
 Dev: `sha2`, `hex`, `serde_json`, `nix` (root-check in integration tests).
 
 Shell-outs require `CAP_SYS_ADMIN` (for `mount`/`umount`) and
-`mkfs.ext4` / `e2fsck` on `PATH`; `m80-preflight` verifies at startup.
+`mkfs.ext4` / `cp` / `fallocate` / `e2fsck` on `PATH`; `m80-preflight`
+verifies at startup.
 
 ## Tests
 
 Non-root (always run):
 - `tests/rootfs_prepare.rs` — sparse-overlay creation, base path
-  preserved, overlay format, `new_at()`, missing-base error.
+  preserved, overlay template metadata/reuse, stale-template hard error,
+  `new_at()`, missing-parent error.
 - `tests/scratch_admissibility.rs` — admissibility logic via inline
   classify function.
 - `tests/changeset_serde.rs` — `ChangeSet`/`Rejection` JSON round-trips.
@@ -171,7 +179,9 @@ location, sized to match the base. That model is removed:
   `O(actual writes)`.
 - `Rootfs::clone` is gone. Replace with `Rootfs::prepare(base,
   overlay_dest, overlay_size)`. `m80-firecracker` is the only caller in
-  this workspace; the migration is mechanical.
+  this workspace; the migration is mechanical. `Rootfs::prepare` now
+  reuses a run-root-local empty ext4 template so the per-launch path does
+  not run `mkfs.ext4`.
 - `Rootfs::path()` is gone. The single-path model doesn't survive the
   split. Use `base_path()` or `overlay_path()` per intent.
 - The "ext4-clone-and-scratch model is intentional" Non-goals line is

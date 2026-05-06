@@ -22,7 +22,7 @@ which is the right place for a security review to start.
   capability returns a typed error; there's no partial-success mode.
 - The check list is fixed and ordered:
   1. **OS gate** — `Linux` from `uname -s`; macOS rejects.
-  2. **KVM** — `/dev/kvm` exists and is writable (or sudo-writable).
+  2. **KVM** — `/dev/kvm` exists and is writable by this process.
   3. **Kernel modules** — `bridge` and `tap` loaded (read from
      `/proc/modules`). v0.1 does not attempt to load missing modules; the
      operator must `modprobe` them before running preflight.
@@ -36,19 +36,30 @@ which is the right place for a security review to start.
      `--version` matched against the configured pin.
   6. **Jailer binary** — same protocol.
   7. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
-     under `<artifact_dir>`, or the env-overridden absolute path.
+     under `<artifact_dir>`, or the env-overridden absolute path. When
+     `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
+     `kernel_kind` is overridden to match the selected kernel artifact.
   8. **Rootfs + manifest** — manifest schema validates,
-     `m80-image-manifest::verify` recomputes every sha256.
+     `m80-image-manifest::verify` recomputes every sha256. This is the
+     boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
+     not rehash these artifacts again for every VM.
   9. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  10. **Storage helpers** — `mkfs.ext4`, `debugfs`, `e2fsck` on PATH.
+  10. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+      `e2fsck` on PATH.
+- Env keys are exact and case-sensitive. Preflight recognizes
+  `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
+  `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`, `M80_ROOTFS_IMAGE`,
+  `M80_KERNEL_KIND`, and `M80_RUN_ROOT`. The full schema is captured in
+  `docs/behaviors/configuration/env-schema.md`.
 - Each check produces a row in the `Discovery::report` field. The same
   data is rendered as a fixed-width table for human consumption via
   `Discovery::render_table()`.
 - Errors carry "what to try next" hints. For example,
-  `KvmUnavailable` includes the suggestion to add the user to the `kvm`
-  group; `FirecrackerVersionMismatch` includes both the expected and
-  actual versions plus the env var to override.
+  `KvmUnavailable { path }` names the missing device, `KvmNotWritable { path }`
+  includes the suggestion to add the user to the `kvm` group, and
+  `FirecrackerVersionMismatch` includes both the expected and actual versions
+  plus the env var to override.
 
 ## Public surface
 
@@ -61,7 +72,8 @@ which is the right place for a security review to start.
 - `REQUIRED_CAPABILITIES: &[caps::Capability]` — the per-call cap list
   (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
   `CAP_FOWNER`, `CAP_KILL`).
-- `PreflightError`: `UnsupportedHostPlatform`, `KvmUnavailable`,
+- `PreflightError`: `UnsupportedHostPlatform { actual }`,
+  `KvmUnavailable { path }`, `KvmNotWritable { path }`,
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
   `FirecrackerBinaryNotFound`, `FirecrackerVersionMismatch { expected, actual }`,

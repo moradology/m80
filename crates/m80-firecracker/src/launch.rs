@@ -25,9 +25,9 @@ use m80_cgroup::{Limits, Subtree};
 use m80_firecracker_client::{
     BootSourceConfig, Client, DriveConfig, InstanceAction, MachineConfig, VsockConfig,
 };
-use m80_image_manifest::Manifest;
 use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
 use m80_net_mode::VmNetworkMode;
+use m80_observability::Phase;
 use m80_preflight::Discovery;
 use m80_proto::READY_PORT_DEFAULT;
 use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
@@ -35,9 +35,9 @@ use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::error::FcError;
-use crate::lifecycle::{monotonic_ns, spawn_idle_watcher};
+use crate::lifecycle::{bind_snapshot_parent_into_jail, monotonic_ns, spawn_idle_watcher};
 use crate::runroot::write_ownership_lock;
-use crate::timing::phase;
+use crate::timing::{phase, phase_event};
 use crate::types::{
     CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
 };
@@ -62,8 +62,6 @@ const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=-1 pci=off";
 /// Kernel command-line arguments for Stripped kernels.
 ///
 /// Differences from `COMMON_BOOT_ARGS`:
-/// - `pci=off` removed — `CONFIG_PCI=n` in the stripped kernel makes this
-///   flag a no-op; removing it keeps the cmdline honest.
 /// - `quiet loglevel=0` added — suppresses per-device init messages on ttyS0
 ///   while leaving the console open; fatal panics still print (the panic
 ///   handler bypasses loglevel). Saves ~20-40 ms of serial flush time on boot.
@@ -72,7 +70,7 @@ const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=-1 pci=off";
 ///   CLAUDE.md "diagnostics before hypotheses": preserving console output is
 ///   worth more than the ~50 ms saving from suppressing it entirely.
 const STRIPPED_BOOT_ARGS: &str =
-    "console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1";
+    "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1";
 
 /// Build kernel boot args for the given `(image_kind, kernel_kind)` pair,
 /// honoring any caller override on `SandboxConfig::boot_args`.
@@ -123,6 +121,7 @@ const READY_ACCEPT_POLL: Duration = Duration::from_millis(10);
 
 /// Read-deadline for the proto-version byte after `accept()`.
 const READY_VERSION_READ_TIMEOUT: Duration = Duration::from_secs(2);
+const API_SOCKET_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl Sandbox {
     /// Standalone constructor for callers without a `Backend`.
@@ -158,6 +157,8 @@ impl Sandbox {
         let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
             phase_1_run_root_prep(run_root, &vm_id)
         })?;
+        let request_id = self.config.request_id.clone();
+        let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
 
         // Phase 2: lease acquisition. NB: name the binding `_lease_guard`
         // (suffix after underscore) — a bare `_lease` would drop the guard
@@ -165,15 +166,23 @@ impl Sandbox {
         // ownership.lock before phase 3 runs.
         let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
-        // Phase 3: manifest verify + storage prep.
+        // Phase 3: storage prep. Artifact sha256 verification is owned by
+        // m80-preflight before Backend construction, not by each launch.
         let storage = phase("phase_3_storage_prep", &vm_id, || {
             phase_3_storage_prep(
-                &backend_config.discovery.manifest,
+                &vm_id,
                 &backend_config.discovery.rootfs,
                 &self.config,
                 &run_dir,
             )
         })?;
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::StoragePrepare,
+            &vm_id,
+            request_id.as_deref(),
+            "storage prepared",
+        );
 
         // Phase 4: jailer materialize.
         let jail = phase("phase_4_jailer_materialize", &vm_id, || {
@@ -197,6 +206,13 @@ impl Sandbox {
         let net = phase("phase_6_network_realize", &vm_id, || {
             phase_6_network_realize(&self.config)
         })?;
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::NetworkPrepare,
+            &vm_id,
+            request_id.as_deref(),
+            "network prepared",
+        );
 
         // Phase 7: guest config injection — no-op in v0.1 (only OutboundNat
         // needs in-VM config and that mode is deferred). The `net` value is
@@ -253,13 +269,27 @@ impl Sandbox {
         phase("phase_12a_instance_start", &vm_id, || {
             client.instance_action(InstanceAction::InstanceStart)
         })?;
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::Boot,
+            &vm_id,
+            request_id.as_deref(),
+            "instance started",
+        );
 
         // Phase 12b: accept the inverted-readiness signal from m80-guestd,
-        // then open the exec channel. accept() returns event-driven the
+        // then probe the exec channel once. accept() returns event-driven the
         // moment guestd's outbound connect lands — no muxer-polling race.
-        let channel = phase("phase_12b_ready_accept", &vm_id, || {
-            phase_12b_ready_accept(&ready_listener, &vsock_uds, &vm_id)
+        phase("phase_12b_ready_accept", &vm_id, || {
+            phase_12b_ready_accept(&ready_listener, &ready_uds, &vsock_uds, &vm_id)
         })?;
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::Ready,
+            &vm_id,
+            request_id.as_deref(),
+            "guestd ready",
+        );
 
         let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
         let idle_timed_out = Arc::new(AtomicBool::new(false));
@@ -277,12 +307,13 @@ impl Sandbox {
 
         Ok(RunningSandbox {
             vm_id,
+            request_id,
             run_dir,
             jail,
             cgroup,
-            channel,
             rootfs: storage.rootfs,
             scratch: storage.scratch,
+            snapshot_mount: None,
             client,
             firecracker,
             permit: self.permit,
@@ -291,6 +322,7 @@ impl Sandbox {
             idle_timed_out,
             watcher_stop,
             watcher_thread,
+            diagnostics,
         })
     }
 }
@@ -341,6 +373,8 @@ impl Sandbox {
         let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
             phase_1_run_root_prep(run_root, &vm_id)
         })?;
+        let request_id = self.config.request_id.clone();
+        let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
 
         // Phase 2: lease acquisition.
         let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
@@ -349,12 +383,19 @@ impl Sandbox {
         // for the jailer bind-mount layout even on restore path).
         let storage = phase("phase_3_storage_prep", &vm_id, || {
             phase_3_storage_prep(
-                &backend_config.discovery.manifest,
+                &vm_id,
                 &backend_config.discovery.rootfs,
                 &self.config,
                 &run_dir,
             )
         })?;
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::StoragePrepare,
+            &vm_id,
+            request_id.as_deref(),
+            "storage prepared for restore",
+        );
 
         // Phase 4: jailer materialize.
         let jail = phase("phase_4_jailer_materialize", &vm_id, || {
@@ -396,21 +437,43 @@ impl Sandbox {
         // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +
         // PATCH /vm Resumed (resume: true).
         let vsock_uds = jail.jail_path.join("vsock.sock");
+        let snapshot_bind = phase("phase_restore_snapshot_bind", &vm_id, || {
+            bind_snapshot_parent_into_jail(
+                &jail.jail_path,
+                &snapshot,
+                backend_config.jail_uid,
+                backend_config.jail_gid,
+            )
+        })?;
         phase("phase_restore_load", &vm_id, || {
             snapshot_restore(RestoreRequest {
                 fc_socket: host_api_socket.clone(),
-                paths: snapshot,
+                paths: snapshot_bind.paths.clone(),
                 vsock_uds: vsock_uds.clone(),
                 resume: true,
             })
             .map_err(FcError::Snapshot)
         })?;
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::Boot,
+            &vm_id,
+            request_id.as_deref(),
+            "snapshot restored",
+        );
 
         // Phase restore-probe: CONNECT 9001 retry loop.
         // Replaces the cold-boot phase_12b_ready_accept.
-        let channel = phase("phase_restore_probe_exec_channel", &vm_id, || {
+        phase("phase_restore_probe_exec_channel", &vm_id, || {
             phase_restore_probe_exec_channel(&vsock_uds, &vm_id)
         })?;
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::Ready,
+            &vm_id,
+            request_id.as_deref(),
+            "restored guestd ready",
+        );
 
         let _ = discovery; // Discovery is passed for API symmetry; not needed beyond the phases above.
 
@@ -430,12 +493,13 @@ impl Sandbox {
 
         Ok(RunningSandbox {
             vm_id,
+            request_id,
             run_dir,
             jail,
             cgroup,
-            channel,
             rootfs: storage.rootfs,
             scratch: storage.scratch,
+            snapshot_mount: Some(snapshot_bind.into_mount_path()),
             client,
             firecracker,
             permit: self.permit,
@@ -444,6 +508,7 @@ impl Sandbox {
             idle_timed_out,
             watcher_stop,
             watcher_thread,
+            diagnostics,
         })
     }
 }
@@ -476,7 +541,10 @@ fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<Cha
                         error = %e,
                         "restore probe: exec channel not live after timeout"
                     );
-                    return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
+                    return Err(FcError::GuestdReadyTimeout {
+                        path: vsock_uds.to_path_buf(),
+                        timeout: RESTORE_PROBE_TIMEOUT,
+                    });
                 }
                 tracing::debug!(
                     vm_id,
@@ -501,26 +569,25 @@ fn phase_1_run_root_prep(run_root: &Path, vm_id: &str) -> Result<PathBuf, FcErro
     Ok(run_dir)
 }
 
-/// Phase 3: verify the manifest sha256s and prepare the rootfs overlay;
-/// optionally create a scratch image for the workspace.
+/// Phase 3: prepare the rootfs overlay; optionally create a scratch image for
+/// the workspace.
 fn phase_3_storage_prep(
-    manifest: &Manifest,
+    vm_id: &str,
     base_rootfs: &Path,
     config: &SandboxConfig,
     run_dir: &Path,
 ) -> Result<StoragePrep, FcError> {
-    // Verify all six artifact sha256s against on-disk files. Preflight already
-    // verified at startup; we re-verify here to guard against TOCTOU drift.
-    let manifest_dir = base_rootfs.parent().unwrap_or(std::path::Path::new("/"));
-    manifest.verify(manifest_dir)?;
-
     // Allocate a sparse per-VM overlay ext4; the base is NOT copied.
     let overlay_dest = run_dir.join("rootfs.overlay.ext4");
+    let t = Instant::now();
     let rootfs = Rootfs::prepare(base_rootfs, &overlay_dest, config.overlay_size_bytes)?;
+    phase_event("phase_3b_rootfs_prepare", vm_id, t.elapsed());
 
     let scratch = if let Some(workspace) = &config.workspace {
         let scratch_dest = run_dir.join("scratch.ext4");
+        let t = Instant::now();
         let scratch = Scratch::create(workspace, &scratch_dest, SCRATCH_DEFAULT_BYTES)?;
+        phase_event("phase_3c_scratch_create", vm_id, t.elapsed());
         Some(scratch)
     } else {
         None
@@ -586,6 +653,7 @@ fn phase_4_jailer_materialize(
         gid,
         bindings,
         sockets,
+        stdio_log: Some(run_dir.join("console.log")),
     };
 
     let plan = Plan::compute(&jailer_config)?;
@@ -651,7 +719,7 @@ fn phase_6_network_realize(config: &SandboxConfig) -> Result<RealizedNetwork, Fc
 /// Retries for up to 5 s to allow Firecracker to create the socket after
 /// jailer exec.
 fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + API_SOCKET_TIMEOUT;
     loop {
         if api_socket.exists() {
             match Client::new(api_socket) {
@@ -663,10 +731,10 @@ fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
             }
         }
         if Instant::now() >= deadline {
-            return Err(FcError::Config(format!(
-                "Firecracker API socket {} did not appear within 5 s",
-                api_socket.display()
-            )));
+            return Err(FcError::ApiSocketTimeout {
+                path: api_socket.to_path_buf(),
+                timeout: API_SOCKET_TIMEOUT,
+            });
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -689,11 +757,7 @@ fn phase_11_rest_puts(
     kernel_kind: m80_image_manifest::KernelKind,
 ) -> Result<(), FcError> {
     // a. Machine config.
-    client.put_machine_config(&MachineConfig {
-        vcpu_count: config.vcpu_count.unwrap_or(DEFAULT_VCPU_COUNT),
-        mem_size_mib: config.mem_size_mib.unwrap_or(DEFAULT_MEM_SIZE_MIB),
-        smt: false,
-    })?;
+    client.put_machine_config(&machine_config_for(config))?;
 
     // b. Boot source. The kernel is bind-mounted at `/kernel` inside the
     // jailer chroot; Firecracker sees that path from within its chroot.
@@ -745,6 +809,14 @@ fn phase_11_rest_puts(
     Ok(())
 }
 
+fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
+    MachineConfig {
+        vcpu_count: config.vcpu_count.unwrap_or(DEFAULT_VCPU_COUNT),
+        mem_size_mib: config.mem_size_mib.unwrap_or(DEFAULT_MEM_SIZE_MIB),
+        smt: false,
+    }
+}
+
 /// Phase 12b: poll the host vsock UDS until the in-VM guestd is ready.
 ///
 /// # v0.1 simplification
@@ -773,9 +845,8 @@ fn phase_11b_bind_ready_listener(path: &Path, jail_uid: u32) -> Result<UnixListe
     // jailer materialize step already produces a jail dir owned by
     // `jail_uid`, so `chown` on the socket file alone is sufficient.
     use nix::unistd::{chown, Uid};
-    chown(path, Some(Uid::from_raw(jail_uid)), None).map_err(|e| {
-        FcError::Io(std::io::Error::from_raw_os_error(e as i32))
-    })?;
+    chown(path, Some(Uid::from_raw(jail_uid)), None)
+        .map_err(|e| FcError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
 
     Ok(listener)
 }
@@ -789,6 +860,7 @@ fn phase_11b_bind_ready_listener(path: &Path, jail_uid: u32) -> Result<UnixListe
 /// connect). No EAGAIN cascade.
 fn phase_12b_ready_accept(
     ready_listener: &UnixListener,
+    ready_path: &Path,
     vsock_uds: &Path,
     vm_id: &str,
 ) -> Result<Channel, FcError> {
@@ -800,7 +872,10 @@ fn phase_12b_ready_accept(
             Ok((s, _)) => break s,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if Instant::now() >= deadline {
-                    return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
+                    return Err(FcError::GuestdReadyTimeout {
+                        path: ready_path.to_path_buf(),
+                        timeout: READY_TIMEOUT,
+                    });
                 }
                 std::thread::sleep(READY_ACCEPT_POLL);
             }
@@ -842,7 +917,7 @@ mod tests {
     fn boot_args_ubuntu_stripped() {
         assert_eq!(
             boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None),
-            "console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1",
+            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1",
         );
     }
 
@@ -858,7 +933,7 @@ mod tests {
     fn boot_args_minimal_stripped() {
         assert_eq!(
             boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None),
-            "console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd",
+            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd",
         );
     }
 
@@ -874,5 +949,35 @@ mod tests {
             boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, Some(custom)),
             custom,
         );
+    }
+
+    #[test]
+    fn machine_config_uses_default_sizing_when_omitted() {
+        let config = SandboxConfig {
+            vcpu_count: None,
+            mem_size_mib: None,
+            ..SandboxConfig::default()
+        };
+
+        let machine = machine_config_for(&config);
+
+        assert_eq!(machine.vcpu_count, DEFAULT_VCPU_COUNT);
+        assert_eq!(machine.mem_size_mib, DEFAULT_MEM_SIZE_MIB);
+        assert!(!machine.smt);
+    }
+
+    #[test]
+    fn machine_config_honors_caller_sizing() {
+        let config = SandboxConfig {
+            vcpu_count: Some(2),
+            mem_size_mib: Some(2048),
+            ..SandboxConfig::default()
+        };
+
+        let machine = machine_config_for(&config);
+
+        assert_eq!(machine.vcpu_count, 2);
+        assert_eq!(machine.mem_size_mib, 2048);
+        assert!(!machine.smt);
     }
 }

@@ -6,7 +6,7 @@
 #   - sudo NOPASSWD (or run via sudo)
 #   - Firecracker + jailer at /opt/firecracker/bin/{firecracker,jailer}
 #     (override with FIRECRACKER_BIN / JAILER_BIN env vars)
-#   - mkfs.ext4, e2fsck, debugfs (e2fsprogs) on PATH
+#   - mkfs.ext4, e2fsck, debugfs (e2fsprogs), cp, fallocate on PATH
 #   - unsquashfs + mount/umount + truncate + curl on PATH
 #   - For minimal kind: rustup target x86_64-unknown-linux-musl + /bin/busybox
 #     (apt install busybox-static)
@@ -73,9 +73,8 @@ if [[ "$KERNEL_KIND" == "stripped" ]]; then
     if [[ -n "${M80_STRIPPED_KERNEL_PATH:-}" ]]; then
         KERNEL_IMAGE="$M80_STRIPPED_KERNEL_PATH"
     else
-        # Glob for the first built stripped kernel artifact.
+        # Use the newest built stripped kernel artifact.
         STRIPPED_GLOB="crates/m80-image-build/kernels/vmlinux-m80-*.bin"
-        # Use a safe glob expansion.
         set +f
         # shellcheck disable=SC2086
         stripped_hits=( $STRIPPED_GLOB )
@@ -85,7 +84,7 @@ if [[ "$KERNEL_KIND" == "stripped" ]]; then
             echo "# to build: see crates/m80-image-build/kernel-builder/Dockerfile (m80-ci9i.2)"
             exit 0
         fi
-        KERNEL_IMAGE="${stripped_hits[0]}"
+        KERNEL_IMAGE="$(ls -t "${stripped_hits[@]}" | head -n 1)"
     fi
     echo "# using stripped kernel: $KERNEL_IMAGE"
 else
@@ -186,6 +185,7 @@ M80_ENV=(
     M80_JAILER_BIN="$JAILER_BIN"
     M80_KERNEL_IMAGE="$KERNEL_IMAGE"
     M80_ROOTFS_IMAGE="$ROOTFS_IMAGE"
+    M80_KERNEL_KIND="$KERNEL_KIND"
     M80_RUN_ROOT="$RUN_ROOT"
     M80_FIRECRACKER_VERSION="$FIRECRACKER_VERSION"
     M80_JAIL_UID="$JAIL_UID"

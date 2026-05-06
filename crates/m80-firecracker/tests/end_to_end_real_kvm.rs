@@ -51,6 +51,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        request_id: None,
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
@@ -64,6 +65,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         })
         .expect("exec");
 

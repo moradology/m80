@@ -14,6 +14,20 @@ state (overlay upper layer, workspace scratch image) persists between calls.
 `&mut self` on `exec` enforces the sequential constraint at compile time —
 no runtime lock is needed and concurrent exec is impossible to express.
 
+## Measured Turn-To-Turn Latency
+
+Real-KVM bench on 2026-05-05 with the rebuilt Minimal image:
+
+| path | N | P50 | P95 | max | source |
+|---|---:|---:|---:|---:|---|
+| persistent `RunningSandbox::exec` on one VM | 30 | 20.589 ms | 20.716 ms | 21.183 ms | `docs/behaviors/lifecycle/persistent-state-latency.json` |
+| stock post-pivot cold launch | 30 | 1517 ms | 1518 ms | 1518 ms | `crates/m80-firecracker/benches/snapshots/2026-05-05T09:02:43+00:00.json` |
+
+The measured turn-to-turn P50 saves about 1496 ms after the first turn
+relative to a fresh cold launch. That is a roughly 74x lower steady-state
+latency for stateful sessions that can keep a VM alive instead of allocating a
+new sandbox for every turn.
+
 ---
 
 ## Behaviors

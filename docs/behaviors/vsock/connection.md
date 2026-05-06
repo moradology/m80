@@ -7,7 +7,7 @@ socket (`<run_dir>/vsock.sock`), sends `CONNECT <port>\n`, completes the
 request/response exchange, then closes. Connections are not pooled or reused.
 Concurrent connections to the same VM are not supported in v0.1.
 
-**Implementation:** `Channel::open` in `crates/m80-vsock/src/lib.rs`.
+**Implementation:** `Channel::open_uds_only` in `crates/m80-vsock/src/lib.rs`.
 
 **Predecessor source:** `crates/sandbox/agent-sandbox-firecracker/src/vsock.rs:80-95`
 (`request_response` calls `connect_reader` + `send_connect` on every call).

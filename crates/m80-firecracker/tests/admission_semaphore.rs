@@ -7,10 +7,14 @@ use std::sync::Arc;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
 
 fn make_backend(max: u32) -> Arc<Backend> {
+    make_backend_at(max, std::path::Path::new("/tmp/m80-test"))
+}
+
+fn make_backend_at(max: u32, run_root: &std::path::Path) -> Arc<Backend> {
     let config = BackendConfig {
-        discovery: common::fake_discovery(std::path::Path::new("/tmp")),
+        discovery: common::fake_discovery(run_root),
         max_concurrent_vms: max,
-        run_root: std::path::PathBuf::from("/tmp/m80-test"),
+        run_root: run_root.to_path_buf(),
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: CgroupMode::Disabled,
@@ -28,6 +32,7 @@ fn sandbox_config() -> SandboxConfig {
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        request_id: None,
     }
 }
 
@@ -86,4 +91,32 @@ fn permit_drop_restores_slot() {
         .admit(sandbox_config())
         .expect("admit after drop should succeed");
     drop(s2);
+}
+
+#[test]
+fn failed_launch_returns_admission_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = make_backend_at(1, dir.path());
+    let sandbox = backend
+        .admit(SandboxConfig {
+            vm_id: Some("failed-launch-slot".to_string()),
+            overlay_size_bytes: 64 * 1024 * 1024,
+            ..SandboxConfig::default()
+        })
+        .expect("first admit must acquire the only slot");
+
+    let err = sandbox.launch().expect_err("fake backend launch must fail");
+    assert!(
+        !err.to_string().is_empty(),
+        "launch failure must be a typed displayable error"
+    );
+
+    let second = backend.admit(SandboxConfig {
+        vm_id: Some("second-after-failure".to_string()),
+        ..SandboxConfig::default()
+    });
+    assert!(
+        second.is_ok(),
+        "failed launch must drop the admission permit and free the slot"
+    );
 }

@@ -21,6 +21,7 @@ fn raw_line_of_len(target_len: usize) -> Vec<u8> {
         env: None,
         stdin: None,
         timeout_ms: None,
+        streaming: false,
     });
     let base = serde_json::to_vec(&env).expect("serialization cannot fail");
     // base has `"program":""` — the empty string is 2 chars ("").
@@ -38,6 +39,7 @@ fn raw_line_of_len(target_len: usize) -> Vec<u8> {
         env: None,
         stdin: None,
         timeout_ms: None,
+        streaming: false,
     });
     let serialized = serde_json::to_vec(&padded_env).expect("serialization cannot fail");
     assert_eq!(

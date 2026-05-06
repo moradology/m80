@@ -75,6 +75,32 @@ pub enum StorageError {
         /// Captured stderr (or stdout if stderr was empty).
         stderr: String,
     },
+    /// Overlay template creation or lock acquisition failed.
+    #[error("overlay template create failed at {}: {err}", path.display())]
+    OverlayTemplateCreateFailed {
+        /// Template or lock path that failed.
+        path: PathBuf,
+        /// Underlying I/O error.
+        err: io::Error,
+    },
+    /// Existing overlay template metadata did not match the requested shape.
+    #[error("overlay template metadata mismatch at {}: {reason}", path.display())]
+    OverlayTemplateMismatch {
+        /// Template metadata path.
+        path: PathBuf,
+        /// Human-readable mismatch reason.
+        reason: String,
+    },
+    /// Cloning the overlay template to the per-VM overlay failed.
+    #[error("overlay template clone failed from {} to {}: {err}", template.display(), dest.display())]
+    OverlayTemplateCloneFailed {
+        /// Source template path.
+        template: PathBuf,
+        /// Destination per-VM overlay path.
+        dest: PathBuf,
+        /// Underlying I/O error.
+        err: io::Error,
+    },
     /// `mkfs.ext4` failed during scratch image creation.
     #[error("mkfs.ext4 failed: {0}")]
     Mkfs(io::Error),

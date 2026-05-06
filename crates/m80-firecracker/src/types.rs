@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use m80_firecracker_client::Client;
 use m80_jailer::{JailedFirecracker, MaterializedJail};
 use m80_storage::{Rootfs, Scratch};
-use m80_vsock::Channel;
 
 pub use m80_net_mode::NetworkPolicy;
 
@@ -107,6 +106,49 @@ pub enum CgroupMode {
     Disabled,
 }
 
+/// One stdout/stderr chunk observed from [`RunningSandbox::exec_streaming`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecChunk {
+    /// Standard-output bytes with the per-stream sequence number assigned by
+    /// guestd.
+    Stdout {
+        /// Monotonic sequence number within stdout for one request.
+        seq: u32,
+        /// Raw stdout bytes.
+        bytes: Vec<u8>,
+    },
+    /// Standard-error bytes with the per-stream sequence number assigned by
+    /// guestd.
+    Stderr {
+        /// Monotonic sequence number within stderr for one request.
+        seq: u32,
+        /// Raw stderr bytes.
+        bytes: Vec<u8>,
+    },
+}
+
+/// Host-originated event sent to a running PTY session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PtyHostEvent {
+    /// Raw terminal input bytes.
+    Input(Vec<u8>),
+    /// Terminal size changed.
+    Resize(m80_proto::PtySize),
+    /// Terminal control event such as EOF or a wrapper signal.
+    Control(m80_proto::PtyControlEvent),
+    /// Cancel the in-flight PTY session.
+    Cancel,
+}
+
+/// One terminal-output chunk observed from [`RunningSandbox::exec_pty`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PtyOutputChunk {
+    /// Monotonic sequence number assigned by guestd.
+    pub seq: u32,
+    /// Raw merged terminal output bytes.
+    pub bytes: Vec<u8>,
+}
+
 /// Snapshot of the merged configuration with each field tagged by source.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EffectiveConfig {
@@ -133,8 +175,12 @@ pub enum ConfigSource {
     Default,
     /// `/etc/m80/config.toml`.
     SystemFile,
+    /// `/etc/m80/config.d/*.toml`.
+    SystemDropIn,
     /// `~/.config/m80/config.toml`.
     UserFile,
+    /// `~/.config/m80/config.d/*.toml`.
+    UserDropIn,
     /// `M80_*` environment variable.
     Env,
     /// Command-line flag.
@@ -173,6 +219,10 @@ pub struct SandboxConfig {
     /// `stop()` the sandbox. `None` disables the watcher entirely — the VM
     /// runs until the caller explicitly stops it.
     pub idle_timeout: Option<Duration>,
+    /// Opaque request id associated with the launch/lifecycle owner of this
+    /// sandbox. CLI callers set this once per invocation so diagnostics and
+    /// guest stderr can be grepped with the same token.
+    pub request_id: Option<String>,
 }
 
 impl Default for SandboxConfig {
@@ -186,6 +236,7 @@ impl Default for SandboxConfig {
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
             idle_timeout: Some(Duration::from_secs(300)),
+            request_id: None,
         }
     }
 }
@@ -214,18 +265,21 @@ impl std::fmt::Debug for Sandbox {
 pub struct RunningSandbox {
     /// VM identifier.
     pub(crate) vm_id: String,
+    /// Opaque request id for launch/stop diagnostics when one was supplied by
+    /// the caller.
+    pub(crate) request_id: Option<String>,
     /// Per-VM run directory.
     pub(crate) run_dir: PathBuf,
     /// The materialized jailer chroot.
     pub(crate) jail: MaterializedJail,
     /// Cgroup subtree (Some if UnifiedV2 mode).
     pub(crate) cgroup: Option<m80_cgroup::Subtree>,
-    /// Open vsock channel to the in-VM guestd.
-    pub(crate) channel: Channel,
     /// Per-VM rootfs clone.
     pub(crate) rootfs: Rootfs,
     /// Scratch image (Some if workspace is configured).
     pub(crate) scratch: Option<Scratch>,
+    /// Snapshot directory bind-mounted into the jail for restore, if any.
+    pub(crate) snapshot_mount: Option<PathBuf>,
     /// REST client to the Firecracker process.
     pub(crate) client: Client,
     /// Live firecracker + jailer pids.
@@ -246,6 +300,8 @@ pub struct RunningSandbox {
     pub(crate) watcher_stop: Arc<std::sync::atomic::AtomicBool>,
     /// Watcher thread join handle (`None` when `idle_timeout` is `None`).
     pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
+    /// Optional diagnostics writer for `<run_dir>/diagnostics.jsonl`.
+    pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
 }
 
 impl RunningSandbox {
@@ -270,6 +326,9 @@ impl std::fmt::Debug for RunningSandbox {
 pub struct StoppedSandbox {
     /// VM identifier.
     pub(crate) vm_id: String,
+    /// Opaque request id for stop/delete diagnostics when one was supplied by
+    /// the caller.
+    pub(crate) request_id: Option<String>,
     /// Per-VM run directory.
     pub(crate) run_dir: PathBuf,
     /// Scratch image (for `extract_changes`; consumed when extracted).
@@ -282,6 +341,8 @@ pub struct StoppedSandbox {
     pub(crate) permit: AdmissionPermit,
     /// Run-root path (needed for `preserve_for_triage`).
     pub(crate) run_root: PathBuf,
+    /// Optional diagnostics writer carried across Running -> Stopped.
+    pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
 }
 
 impl std::fmt::Debug for StoppedSandbox {

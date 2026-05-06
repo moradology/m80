@@ -20,6 +20,17 @@ Source: dossier `02-sandbox-api-and-guest-proto.md` § ExecutionResponse shape; 
 
 Test: `m80-guestd/tests/handle_connection.rs::exec_with_stdin_round_trips` — verifies stdout bytes are returned in the response.
 
+## streaming-capture
+
+When `ExecRequest::streaming` is true, the daemon emits stdout/stderr as
+`ExecStdout` / `ExecStderr` frames while the child is still running, then
+emits one terminal `ExecExit` frame after both capture threads drain. The
+capture-to-writer handoff is bounded to one queued frame, so host-side read
+slowness backpressures the child instead of growing memory.
+
+Test: `m80-guestd/tests/streaming_exec.rs::streaming_stdout_stderr_chunks_end_with_exit`
+and `m80-guestd/tests/streaming_exec.rs::streaming_no_output_still_sends_terminal_exit`.
+
 ## timeout
 
 When the caller-supplied `timeout_ms` elapses before the child exits, the daemon sends `SIGKILL` (`child.kill()`), marks the response status as `TimedOut`, and returns whatever stdout/stderr was buffered before the kill.

@@ -10,9 +10,10 @@
 //!    (`child_tx`). The main handler thread polls both the child channel and
 //!    the vsock reader in short alternating sleeps.
 //! 2. If a `cancel_request` frame arrives before the child exits, the handler
-//!    reads the child PID from `Arc<Mutex<Option<u32>>>`, sends `SIGKILL`,
-//!    waits for the child-wait thread to confirm reap, and replies with
-//!    `CancelAck { Cancelled }`. The child-wait thread's pending
+//!    reads the child process-group id from `Arc<Mutex<Option<u32>>>`, sends
+//!    SIGTERM followed by bounded SIGKILL to that process group, waits for the
+//!    child-wait thread to confirm reap, and replies with
+//!    `CancelAck`. The child-wait thread's pending
 //!    `ExecResponse` is then discarded — it is never written to the wire.
 //! 3. If the child exits before a cancel arrives the `ExecResponse` is written
 //!    normally and the cancel path is never exercised.
@@ -20,7 +21,11 @@
 //! The vsock channel is NOT multiplexed: only one exec is in flight at a time
 //! (enforced by `RunningSandbox`'s `&mut self` API on the host).
 
+mod pty;
+mod streaming;
+
 use std::io::{BufRead, Read, Write};
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -29,8 +34,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use m80_proto::{
     read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest,
     ExecResponse, ExecStatus, ExecTiming, ShutdownAction, ShutdownRequest, ShutdownResponse,
-    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
+    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_PTY_REQUEST,
+    PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
+
+use crate::guest_log::{self, GuestLogPhase};
 
 /// Outcome of handling one connection. The main accept loop checks for
 /// [`ConnectionOutcome::Shutdown`] and exits the daemon (or invokes
@@ -55,6 +63,7 @@ const MAX_TIMEOUT_MS: u64 = 60 * 60 * 1000;
 
 /// How long to sleep between poll iterations in the cancel-aware wait loop.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
 
 fn unix_ms_now() -> u64 {
     SystemTime::now()
@@ -75,10 +84,27 @@ fn unix_ms_now() -> u64 {
 /// `status: Failed` is attempted. If even that write fails the error is logged
 /// and the function returns `Ok(Continue)` so the caller can accept the next
 /// connection.
-pub fn handle_connection<R, W>(mut reader: R, mut writer: W) -> anyhow::Result<ConnectionOutcome>
+#[allow(dead_code)]
+pub fn handle_connection<R, W>(reader: R, writer: W) -> anyhow::Result<ConnectionOutcome>
 where
     R: BufRead,
     W: Write,
+{
+    handle_connection_with_reader_ready(reader, writer, |_reader| true)
+}
+
+/// Variant of [`handle_connection`] that lets the caller decide whether
+/// probing `reader.fill_buf()` can complete without blocking. Real vsock
+/// streams use `poll(2)` here; in-memory tests can always return `true`.
+pub fn handle_connection_with_reader_ready<R, W, F>(
+    mut reader: R,
+    mut writer: W,
+    mut reader_ready: F,
+) -> anyhow::Result<ConnectionOutcome>
+where
+    R: BufRead,
+    W: Write,
+    F: FnMut(&mut R) -> bool,
 {
     let received_at = unix_ms_now();
 
@@ -86,6 +112,7 @@ where
         Ok(env) => env,
         Err(e) => {
             // Malformed frame: try to send a Failed response, then close.
+            guest_log::warn(GuestLogPhase::Exec, None, format!("malformed frame: {e:#}"));
             let timing = failed_timing(received_at);
             let resp = error_response(format!("{e:#}").into_bytes(), timing);
             let out_env = Envelope::new(resp);
@@ -95,10 +122,20 @@ where
     };
 
     match raw.kind.as_str() {
-        PAYLOAD_KIND_EXEC_REQUEST => handle_exec(raw, reader, &mut writer, received_at),
+        PAYLOAD_KIND_EXEC_REQUEST => {
+            handle_exec(raw, reader, &mut writer, received_at, &mut reader_ready)
+        }
+        PAYLOAD_KIND_PTY_REQUEST => {
+            pty::handle_pty_exec(raw, reader, &mut writer, received_at, &mut reader_ready)
+        }
         PAYLOAD_KIND_CANCEL_REQUEST => handle_cancel_no_exec(raw, &mut writer),
         PAYLOAD_KIND_SHUTDOWN_REQUEST => handle_shutdown(raw, &mut writer, received_at),
         other => {
+            guest_log::warn(
+                GuestLogPhase::Exec,
+                raw.request_id.as_deref(),
+                format!("unknown envelope kind: {other:?}"),
+            );
             let timing = failed_timing(received_at);
             let resp = error_response(
                 format!("unknown envelope kind: {other:?}").into_bytes(),
@@ -122,6 +159,7 @@ fn handle_exec<R, W>(
     mut reader: R,
     writer: &mut W,
     received_at: u64,
+    reader_ready: &mut impl FnMut(&mut R) -> bool,
 ) -> anyhow::Result<ConnectionOutcome>
 where
     R: BufRead,
@@ -131,6 +169,11 @@ where
     let req: ExecRequest = match serde_json::from_value(raw.payload) {
         Ok(r) => r,
         Err(e) => {
+            guest_log::warn(
+                GuestLogPhase::Exec,
+                request_id.as_deref(),
+                format!("malformed exec_request payload: {e:#}"),
+            );
             let timing = failed_timing(received_at);
             let resp = error_response(format!("{e:#}").into_bytes(), timing);
             let out_env = Envelope::new(resp);
@@ -138,6 +181,22 @@ where
             return Ok(ConnectionOutcome::Continue);
         }
     };
+    guest_log::info(
+        GuestLogPhase::Exec,
+        request_id.as_deref(),
+        format!("exec request accepted: program={}", req.program),
+    );
+
+    if req.streaming {
+        return streaming::handle_streaming_exec(
+            req,
+            request_id,
+            reader,
+            writer,
+            received_at,
+            reader_ready,
+        );
+    }
 
     // `child_pid_slot` is shared between this thread (cancel path) and the
     // child-wait thread. The wait thread populates it once the child is
@@ -154,12 +213,8 @@ where
     let thread_req = req.clone();
 
     thread::spawn(move || {
-        let result = exec_request_with_cancel(
-            &thread_req,
-            spawn_start,
-            pid_slot_for_thread,
-            cancel_rx,
-        );
+        let result =
+            exec_request_with_cancel(&thread_req, spawn_start, pid_slot_for_thread, cancel_rx);
         let response = match result {
             Ok(resp) => resp,
             Err(e) => {
@@ -177,15 +232,31 @@ where
         // Check if child finished.
         match child_rx.try_recv() {
             Ok(ChildResult::Done(response)) => {
+                guest_log::info(
+                    GuestLogPhase::Exec,
+                    request_id.as_deref(),
+                    format!(
+                        "exec response ready: status={:?} exit_code={:?}",
+                        response.status, response.exit_code
+                    ),
+                );
                 let out_env = match &request_id {
                     Some(id) => Envelope::with_request_id(response, id.clone()),
                     None => Envelope::new(response),
                 };
                 if let Err(e) = write_frame(writer, &out_env) {
-                    tracing::warn!(error = %e, "failed to write response frame");
+                    guest_log::warn(
+                        GuestLogPhase::Exec,
+                        request_id.as_deref(),
+                        format!("failed to write response frame: {e}"),
+                    );
                 }
                 if let Err(e) = writer.flush() {
-                    tracing::warn!(error = %e, "failed to flush response writer");
+                    guest_log::warn(
+                        GuestLogPhase::Exec,
+                        request_id.as_deref(),
+                        format!("failed to flush response writer: {e}"),
+                    );
                 }
                 nix::unistd::sync();
                 return Ok(ConnectionOutcome::Continue);
@@ -193,6 +264,11 @@ where
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 // Thread panicked or dropped channel — surface as failed.
+                guest_log::error(
+                    GuestLogPhase::Exec,
+                    request_id.as_deref(),
+                    "exec thread disconnected",
+                );
                 let timing = failed_timing(received_at);
                 let resp = error_response(b"exec thread disconnected".to_vec(), timing);
                 let out_env = match &request_id {
@@ -211,9 +287,13 @@ where
         //
         // This is safe because `BufRead::fill_buf` may return an empty slice
         // when the underlying reader would block; we detect that and sleep.
-        let peeked_len = match reader.fill_buf() {
-            Ok(buf) => buf.len(),
-            Err(_) => 0,
+        let peeked_len = if reader_ready(&mut reader) {
+            match reader.fill_buf() {
+                Ok(buf) => buf.len(),
+                Err(_) => 0,
+            }
+        } else {
+            0
         };
 
         if peeked_len > 0 {
@@ -250,10 +330,18 @@ where
                         };
                         let ack_env = Envelope::new(ack);
                         if let Err(e) = write_frame(writer, &ack_env) {
-                            tracing::warn!(error = %e, "failed to write cancel ack");
+                            guest_log::warn(
+                                GuestLogPhase::Exec,
+                                request_id.as_deref(),
+                                format!("failed to write cancel ack: {e}"),
+                            );
                         }
                         if let Err(e) = writer.flush() {
-                            tracing::warn!(error = %e, "failed to flush cancel ack");
+                            guest_log::warn(
+                                GuestLogPhase::Exec,
+                                request_id.as_deref(),
+                                format!("failed to flush cancel ack: {e}"),
+                            );
                         }
                         nix::unistd::sync();
                         return Ok(ConnectionOutcome::Continue);
@@ -279,8 +367,8 @@ where
     }
 }
 
-/// Spin until the exec thread has written the child PID into `pid_slot`, then
-/// send SIGKILL. Returns [`CancelStatus`].
+/// Spin until the exec thread has written the child process-group id into
+/// `pid_slot`, then terminate that process group. Returns [`CancelStatus`].
 ///
 /// The exec thread populates `pid_slot` immediately after `Command::spawn`
 /// succeeds. This spin typically completes in a single iteration; it is
@@ -294,7 +382,7 @@ fn wait_for_pid_then_kill(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
             let guard = pid_slot.lock().expect("pid_slot poisoned");
             if guard.is_some() {
                 drop(guard);
-                return sigkill_child(pid_slot);
+                return terminate_child_group_by_slot(pid_slot);
             }
         }
         if Instant::now() >= deadline {
@@ -306,12 +394,9 @@ fn wait_for_pid_then_kill(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
     }
 }
 
-/// Send SIGKILL to the child PID stored in `pid_slot` (if any) and return
-/// the appropriate [`CancelStatus`].
-fn sigkill_child(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
-    use nix::sys::signal::{kill, Signal};
-    use nix::unistd::Pid;
-
+/// Send SIGTERM then bounded SIGKILL to the process group whose id is stored in
+/// `pid_slot` (if any) and return the appropriate [`CancelStatus`].
+fn terminate_child_group_by_slot(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
     let pid = {
         let guard = pid_slot.lock().expect("pid_slot poisoned");
         *guard
@@ -324,15 +409,11 @@ fn sigkill_child(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
             CancelStatus::AlreadyExited
         }
         Some(raw_pid) => {
-            let pid = Pid::from_raw(raw_pid as i32);
-            match kill(pid, Signal::SIGKILL) {
-                Ok(()) => CancelStatus::Cancelled,
-                Err(nix::errno::Errno::ESRCH) => {
-                    // No such process — already exited.
-                    CancelStatus::AlreadyExited
-                }
-                Err(_) => CancelStatus::Failed,
-            }
+            let pgid = nix::unistd::Pid::from_raw(raw_pid as i32);
+            let term = signal_process_group(pgid, nix::sys::signal::Signal::SIGTERM);
+            thread::sleep(PROCESS_GROUP_TERM_GRACE);
+            let kill = signal_process_group(pgid, nix::sys::signal::Signal::SIGKILL);
+            cancel_status_from_group_signals(term, kill)
         }
     }
 }
@@ -346,7 +427,11 @@ fn handle_cancel_no_exec<W: Write>(
     let cancel_req: CancelRequest = match serde_json::from_value(raw.payload) {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!(error = %e, "malformed cancel_request payload");
+            guest_log::warn(
+                GuestLogPhase::Exec,
+                None,
+                format!("malformed cancel_request payload: {e}"),
+            );
             return Ok(ConnectionOutcome::Continue);
         }
     };
@@ -356,10 +441,18 @@ fn handle_cancel_no_exec<W: Write>(
     };
     let ack_env = Envelope::new(ack);
     if let Err(e) = write_frame(writer, &ack_env) {
-        tracing::warn!(error = %e, "failed to write cancel ack");
+        guest_log::warn(
+            GuestLogPhase::Exec,
+            None,
+            format!("failed to write cancel ack: {e}"),
+        );
     }
     if let Err(e) = writer.flush() {
-        tracing::warn!(error = %e, "failed to flush cancel ack");
+        guest_log::warn(
+            GuestLogPhase::Exec,
+            None,
+            format!("failed to flush cancel ack: {e}"),
+        );
     }
     Ok(ConnectionOutcome::Continue)
 }
@@ -375,7 +468,11 @@ fn handle_shutdown<W: Write>(
     // a shutdown.
     if let Ok(req) = serde_json::from_value::<ShutdownRequest>(raw.payload) {
         if let Some(reason) = req.reason {
-            tracing::info!(reason = %reason, "shutdown requested");
+            guest_log::info(
+                GuestLogPhase::Shutdown,
+                request_id.as_deref(),
+                format!("shutdown requested: {reason}"),
+            );
         }
     }
 
@@ -394,10 +491,18 @@ fn handle_shutdown<W: Write>(
         None => Envelope::new(response),
     };
     if let Err(e) = write_frame(writer, &out_env) {
-        tracing::warn!(error = %e, "failed to write shutdown ack");
+        guest_log::warn(
+            GuestLogPhase::Shutdown,
+            None,
+            format!("failed to write shutdown ack: {e}"),
+        );
     }
     if let Err(e) = writer.flush() {
-        tracing::warn!(error = %e, "failed to flush shutdown ack");
+        guest_log::warn(
+            GuestLogPhase::Shutdown,
+            None,
+            format!("failed to flush shutdown ack: {e}"),
+        );
     }
 
     Ok(ConnectionOutcome::Shutdown(action))
@@ -419,6 +524,7 @@ fn exec_request_with_cancel(
     cmd.args(&req.args);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
+    cmd.process_group(0);
 
     if let Some(cwd) = &req.cwd {
         cmd.current_dir(cwd);
@@ -469,7 +575,7 @@ fn exec_request_with_cancel(
         wait_with_timeout_and_cancel(&mut child, req.timeout_ms, &cancel_rx);
 
     if timed_out {
-        let _ = child.kill();
+        let _ = terminate_child_group(child.id());
     }
     // If cancelled, the SIGKILL was already sent by the cancel handler — we
     // just need to reap.
@@ -572,8 +678,8 @@ fn wait_with_timeout_and_cancel(
     loop {
         match child.try_wait() {
             Ok(Some(_)) => return (false, false), // child exited naturally
-            Ok(None) => {}                         // still running
-            Err(_) => return (false, false),       // error polling — don't kill
+            Ok(None) => {}                        // still running
+            Err(_) => return (false, false),      // error polling — don't kill
         }
 
         // Check for cancel signal (non-blocking).
@@ -586,6 +692,35 @@ fn wait_with_timeout_and_cancel(
         }
 
         thread::sleep(POLL_INTERVAL);
+    }
+}
+
+fn terminate_child_group(raw_pid: u32) -> CancelStatus {
+    let pgid = nix::unistd::Pid::from_raw(raw_pid as i32);
+    let term = signal_process_group(pgid, nix::sys::signal::Signal::SIGTERM);
+    thread::sleep(PROCESS_GROUP_TERM_GRACE);
+    let kill = signal_process_group(pgid, nix::sys::signal::Signal::SIGKILL);
+    cancel_status_from_group_signals(term, kill)
+}
+
+fn signal_process_group(
+    pgid: nix::unistd::Pid,
+    signal: nix::sys::signal::Signal,
+) -> Result<(), nix::errno::Errno> {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pgid.as_raw()), signal)
+}
+
+fn cancel_status_from_group_signals(
+    term: Result<(), nix::errno::Errno>,
+    kill: Result<(), nix::errno::Errno>,
+) -> CancelStatus {
+    match (term, kill) {
+        (Err(nix::errno::Errno::ESRCH), Err(nix::errno::Errno::ESRCH)) => {
+            CancelStatus::AlreadyExited
+        }
+        (Err(e), _) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
+        (_, Err(e)) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
+        _ => CancelStatus::Cancelled,
     }
 }
 

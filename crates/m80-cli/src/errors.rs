@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use m80_firecracker::FcError;
 
+use crate::json;
+use crate::request_id;
+
 // =====================================================================
 // Exit-code constants (stable per variant — do not renumber)
 // =====================================================================
@@ -30,6 +33,8 @@ pub const EXIT_CONFIG: i32 = 6;
 /// pending the v0.2 out-of-process IPC). Distinct from `EXIT_INVALID_STATE`
 /// so callers can branch on "feature gap" vs "lifecycle bug".
 pub const EXIT_NOT_IMPLEMENTED: i32 = 7;
+/// Warm pool had no ready slot and does not cold-boot as fallback.
+pub const EXIT_POOL_EMPTY: i32 = 8;
 
 /// Map an [`FcError`] to its stable CLI exit code.
 ///
@@ -39,9 +44,11 @@ pub fn exit_code_for(err: &FcError) -> i32 {
     match err {
         FcError::Preflight(_) => EXIT_PREFLIGHT,
         FcError::AdmissionRefused { .. } => EXIT_ADMISSION,
+        FcError::PoolEmpty { .. } => EXIT_POOL_EMPTY,
         FcError::Manifest(_) => EXIT_MANIFEST,
         FcError::InvalidState { .. } => EXIT_INVALID_STATE,
         FcError::Config(_) => EXIT_CONFIG,
+        FcError::ApiSocketTimeout { .. } | FcError::GuestdReadyTimeout { .. } => EXIT_GENERIC,
         // Storage, Jailer, Network, Client, Vsock, Io are all "something
         // went wrong at runtime" — generic.
         FcError::Storage(_)
@@ -57,10 +64,11 @@ pub fn exit_code_for(err: &FcError) -> i32 {
 }
 
 // =====================================================================
-// JSON error envelope (m80-4ef.3.2)
+// JSON error payload (m80-4ef.3.2)
 // =====================================================================
 
-/// Machine-readable error envelope emitted on stderr when `--json` is set.
+/// Machine-readable error payload emitted on stderr inside the shared
+/// versioned JSON envelope when `--json` is set.
 ///
 /// The `variant` field is the stable Rust variant name callers may match.
 /// The `detail` field is the `Display` rendering of the full error chain.
@@ -68,6 +76,9 @@ pub fn exit_code_for(err: &FcError) -> i32 {
 /// capture stderr have both pieces in one object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorEnvelope {
+    /// Opaque request id for the current `m80 run` invocation, when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     /// Error class / variant name (e.g., `"Preflight"`, `"Config"`).
     pub variant: &'static str,
     /// Full human-readable description.
@@ -79,6 +90,7 @@ pub struct ErrorEnvelope {
 /// Build an [`ErrorEnvelope`] from an [`FcError`].
 pub fn envelope(err: &FcError) -> ErrorEnvelope {
     ErrorEnvelope {
+        request_id: request_id::current(),
         variant: variant_name(err),
         detail: err.to_string(),
         exit_code: exit_code_for(err),
@@ -97,7 +109,10 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Client(_) => "Client",
         FcError::Vsock(_) => "Vsock",
         FcError::AdmissionRefused { .. } => "AdmissionRefused",
+        FcError::PoolEmpty { .. } => "PoolEmpty",
         FcError::InvalidState { .. } => "InvalidState",
+        FcError::ApiSocketTimeout { .. } => "ApiSocketTimeout",
+        FcError::GuestdReadyTimeout { .. } => "GuestdReadyTimeout",
         FcError::Io(_) => "Io",
         FcError::Config(_) => "Config",
         FcError::Snapshot(_) => "Snapshot",
@@ -105,8 +120,8 @@ fn variant_name(err: &FcError) -> &'static str {
     }
 }
 
-/// Render the error to stderr (JSON envelope when `json` is true; plain
-/// `Display` otherwise) and return the exit code.
+/// Render the error to stderr (shared JSON envelope when `json` is true;
+/// plain `Display` otherwise) and return the exit code.
 ///
 /// Non-error progress / log lines may already be on stderr (that is fine;
 /// stderr is informational — bead m80-4ef.3.3). Only the error itself is
@@ -115,12 +130,13 @@ pub fn render_error(err: &FcError, json: bool) -> i32 {
     if json {
         let env = envelope(err);
         // Unwrap: serializing a struct of strings cannot fail.
-        eprintln!(
-            "{}",
-            serde_json::to_string_pretty(&env).expect("error envelope serialization")
-        );
+        eprintln!("{}", json::to_pretty(&env));
     } else {
-        eprintln!("error: {err}");
+        if let Some(request_id) = request_id::current() {
+            eprintln!("error: [{request_id}] {err}");
+        } else {
+            eprintln!("error: {err}");
+        }
     }
     exit_code_for(err)
 }
@@ -133,7 +149,9 @@ mod tests {
     #[test]
     fn preflight_is_2() {
         use m80_preflight::PreflightError;
-        let err = FcError::Preflight(PreflightError::KvmUnavailable);
+        let err = FcError::Preflight(PreflightError::KvmUnavailable {
+            path: "/dev/kvm".into(),
+        });
         assert_eq!(exit_code_for(&err), EXIT_PREFLIGHT);
     }
 
@@ -141,6 +159,13 @@ mod tests {
     fn admission_refused_is_3() {
         let err = FcError::AdmissionRefused { limit: 4 };
         assert_eq!(exit_code_for(&err), EXIT_ADMISSION);
+    }
+
+    #[test]
+    fn pool_empty_is_8() {
+        let err = FcError::PoolEmpty { target_ready: 1 };
+        assert_eq!(exit_code_for(&err), EXIT_POOL_EMPTY);
+        assert_eq!(variant_name(&err), "PoolEmpty");
     }
 
     #[test]
@@ -170,9 +195,20 @@ mod tests {
         use m80_preflight::PreflightError;
         use std::io;
         let cases: Vec<FcError> = vec![
-            FcError::Preflight(PreflightError::KvmUnavailable),
+            FcError::Preflight(PreflightError::KvmUnavailable {
+                path: "/dev/kvm".into(),
+            }),
             FcError::AdmissionRefused { limit: 1 },
+            FcError::PoolEmpty { target_ready: 1 },
             FcError::Config("x".into()),
+            FcError::ApiSocketTimeout {
+                path: "/run/m80/firecracker.sock".into(),
+                timeout: std::time::Duration::from_secs(5),
+            },
+            FcError::GuestdReadyTimeout {
+                path: "/run/m80/vsock.sock_9000".into(),
+                timeout: std::time::Duration::from_secs(60),
+            },
             FcError::InvalidState {
                 expected: "a",
                 actual: "b",
@@ -199,6 +235,7 @@ mod tests {
             EXIT_INVALID_STATE,
             EXIT_CONFIG,
             EXIT_NOT_IMPLEMENTED,
+            EXIT_POOL_EMPTY,
         ];
         let mut seen = std::collections::HashSet::new();
         for code in &defined {
@@ -227,5 +264,17 @@ mod tests {
             json.contains("\"exit_code\""),
             "missing 'exit_code': {json}"
         );
+    }
+
+    #[test]
+    fn rendered_error_json_is_versioned() {
+        let err = FcError::Config("bad".into());
+        let env = envelope(&err);
+        let rendered = json::to_pretty(&env);
+        let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+
+        assert_eq!(parsed["version"], 1);
+        assert_eq!(parsed["data"]["variant"], "Config");
+        assert_eq!(parsed["data"]["exit_code"], EXIT_CONFIG);
     }
 }

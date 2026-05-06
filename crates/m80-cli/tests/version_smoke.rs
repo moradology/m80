@@ -28,12 +28,13 @@ fn version_json_has_fields() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let v: serde_json::Value =
         serde_json::from_str(&stdout).expect("version --json should produce valid JSON");
+    assert_eq!(v["version"], 1, "missing JSON envelope version: {v}");
     assert!(
-        v.get("binary_version").is_some(),
+        v["data"].get("binary_version").is_some(),
         "missing binary_version field: {v}"
     );
     assert!(
-        v.get("protocol_version").is_some(),
+        v["data"].get("protocol_version").is_some(),
         "missing protocol_version field: {v}"
     );
 }

@@ -1,0 +1,85 @@
+name: Release artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  ARTIFACT_DIR: /tmp/m80-release-artifacts
+  ARTIFACT_NAME: m80-linux-x86_64-minimal-artifacts
+
+jobs:
+  build-release-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.82
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install image-build host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y busybox-static musl-tools e2fsprogs curl
+
+      - name: Build m80 binaries
+        run: |
+          cargo build -p m80-image-build --release
+          cargo build -p m80-guestd --release --target x86_64-unknown-linux-musl
+
+      - name: Write minimal image config
+        run: |
+          cat > /tmp/m80-release-image.toml <<'EOF'
+          [kernel]
+          version = "v1.15.1"
+          arch = "x86_64"
+
+          [rootfs]
+          kind = "minimal"
+          size = "256MiB"
+
+          [guestd]
+          binary = "target/x86_64-unknown-linux-musl/release/m80-guestd"
+
+          [output]
+          dir = "/tmp/m80-release-artifacts"
+          EOF
+
+      - name: Build minimal rootfs artifacts
+        run: |
+          sudo -E target/release/m80-image-build run --config /tmp/m80-release-image.toml
+          sudo chown -R "$USER:$USER" "$ARTIFACT_DIR"
+          target/release/m80-image-build verify --rootfs "$ARTIFACT_DIR/output.ext4"
+
+      - name: Package tarball and checksums
+        run: |
+          cd "$ARTIFACT_DIR"
+          sha256sum vmlinux output.ext4 output.ext4.manifest.json m80-guestd > SHA256SUMS
+          tar -czf "/tmp/${ARTIFACT_NAME}.tar.gz" \
+            vmlinux output.ext4 output.ext4.manifest.json m80-guestd SHA256SUMS
+          cd /tmp
+          sha256sum "${ARTIFACT_NAME}.tar.gz" > "${ARTIFACT_NAME}.tar.gz.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: |
+            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz
+            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz.sha256
+
+      - name: Attach artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz
+            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz.sha256

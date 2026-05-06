@@ -44,7 +44,11 @@ fn vsock_uds(run_dir: &std::path::Path, firecracker_bin: &std::path::Path, vm_id
     let fc_basename = firecracker_bin
         .file_name()
         .unwrap_or_else(|| std::ffi::OsStr::new("firecracker"));
-    run_dir.join(fc_basename).join(vm_id).join("root").join("vsock.sock")
+    run_dir
+        .join(fc_basename)
+        .join(vm_id)
+        .join("root")
+        .join("vsock.sock")
 }
 
 fn launch_vm(
@@ -70,6 +74,7 @@ fn launch_vm(
             boot_args: None,
             overlay_size_bytes: 256 * 1024 * 1024,
             idle_timeout: None,
+            request_id: None,
         })
         .expect("admit");
     let running = sandbox.launch().expect("launch");
@@ -113,6 +118,7 @@ fn cancel_kills_running_process() {
             env: None,
             stdin: None,
             timeout_ms: Some(30_000),
+            streaming: false,
         },
         "cancel-test-req-1".into(),
     );
@@ -129,7 +135,10 @@ fn cancel_kills_running_process() {
     let ack_env: Envelope<CancelAck> = channel.recv().expect("recv CancelAck");
     let elapsed = start.elapsed();
 
-    assert_eq!(ack_env.kind, PAYLOAD_KIND_CANCEL_ACK, "expected cancel_ack envelope");
+    assert_eq!(
+        ack_env.kind, PAYLOAD_KIND_CANCEL_ACK,
+        "expected cancel_ack envelope"
+    );
     assert_eq!(ack_env.payload.request_id, "cancel-test-req-1");
     assert_eq!(ack_env.payload.status, CancelStatus::Cancelled);
     assert!(
@@ -162,6 +171,7 @@ fn cancel_after_exit_returns_already_exited() {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         })
         .expect("exec /bin/true");
     assert_eq!(response.status, m80_proto::ExecStatus::Completed);
@@ -207,6 +217,7 @@ fn wrong_request_id_returns_already_exited() {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         },
         "real-req".into(),
     );

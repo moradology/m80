@@ -35,7 +35,7 @@ via a partial parse *before* deserializing the full payload, and returns
 The request envelope carries an opaque payload describing the exec call:
 `program: String`, `args: Vec<String>`, optional `cwd: Option<String>`,
 optional `env: Option<Vec<(String, String)>>`, optional `stdin: Option<Vec<u8>>`,
-optional `workspace_dir: Option<String>`, `timeout_ms: Option<u64>`.
+`timeout_ms: Option<u64>`, and `streaming: bool`.
 
 No tool name, no agent-tier identity field, no policy field is present on the
 request payload.
@@ -87,8 +87,9 @@ the v0.2 externalization story (always `None` in v0.1); the field has
 `ExecResponse` does not carry `tool_call_id`, `error_class` (agent semantics),
 `captured_artifacts` (agent-tier externalized output), or any identity field.
 
-**ExecStatus is `#[non_exhaustive]`.** Adding a variant in a future revision
-is a non-breaking change for downstream `match` expressions.
+**ExecStatus is exhaustive.** Adding a variant requires a `PROTOCOL_VERSION`
+bump and a hard cutover of every m80 peer; there is no `#[non_exhaustive]`
+escape hatch on this internal pre-1.0 wire enum.
 
 **ExecStatus variants:**
 - `Completed` — process exited; `exit_code` is set.

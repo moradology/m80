@@ -5,16 +5,18 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use m80_firecracker::NetworkPolicy;
-
-/// The `m80` command-line tool. Thin shell over `m80-firecracker`.
+/// The `m80` command-line tool.
 ///
-/// Boot Firecracker microVMs, run commands inside them, inspect state,
-/// and clean up residue. All operations are local-host; no daemon required.
+/// Run a process with a constrained view of the host: selected filesystem
+/// visibility, bounded egress, and explicit writeback behavior.
 #[derive(Debug, Parser)]
-#[command(name = "m80", about, long_about = None)]
+#[command(
+    name = "m80",
+    about = "Run a process with a constrained view of the host",
+    long_about = None
+)]
 #[command(version)]
 pub struct Cli {
     /// Emit machine-readable JSON instead of human-friendly text.
@@ -29,89 +31,93 @@ pub struct Cli {
 /// All `m80` subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Cmd {
+    /// Run one process inside an m80 sandbox.
+    ///
+    /// Pipe mode preserves stdout, stderr, and the guest exit code. The
+    /// requested program must exist in the selected guest profile or inside
+    /// the visible workspace; m80 does not execute host binaries, pull OCI
+    /// images, or install packages implicitly.
+    Run {
+        /// Runtime image/profile name.
+        #[arg(long, value_name = "NAME")]
+        profile: Option<String>,
+
+        /// Host workspace directory to mount into the guest.
+        #[arg(long, value_name = "PATH")]
+        workspace: Option<PathBuf>,
+
+        /// Working directory for the process inside the guest.
+        #[arg(long, value_name = "PATH")]
+        cwd: Option<String>,
+
+        /// Environment override in KEY=VAL form. May be repeated.
+        #[arg(long = "env", value_name = "KEY=VAL")]
+        env: Vec<String>,
+
+        /// Copy one named host environment variable into the guest. May be repeated.
+        #[arg(long = "secret-env", value_name = "KEY")]
+        secret_env: Vec<String>,
+
+        /// Read host stdin fully and send it to the guest process.
+        #[arg(long)]
+        stdin: bool,
+
+        /// Egress policy for this process.
+        #[arg(long, value_enum, default_value = "outbound")]
+        egress: EgressMode,
+
+        /// Hostname allowed by the outbound egress policy. Deferred to v0.2.
+        #[arg(long = "allow-host", value_name = "HOST")]
+        allow_host: Vec<String>,
+
+        /// CIDR allowed by the outbound egress policy. Deferred to v0.2.
+        #[arg(long = "allow-cidr", value_name = "CIDR")]
+        allow_cidr: Vec<String>,
+
+        /// Host config file mount. Deferred to v0.2.
+        #[arg(long = "mount-config", value_name = "HOST:GUEST[:ro]")]
+        mount_config: Vec<String>,
+
+        /// Scratch overlay size in bytes.
+        #[arg(long, value_name = "BYTES")]
+        scratch_size: Option<u64>,
+
+        /// Workspace writeback policy.
+        #[arg(long, value_enum, default_value = "never")]
+        writeback: WritebackMode,
+
+        /// Preserve sandbox state after failure. Deferred to v0.2.
+        #[arg(long)]
+        keep_on_failure: bool,
+
+        /// Allocate a terminal stream instead of separated stdout/stderr.
+        #[arg(short = 't', long = "tty")]
+        tty: bool,
+
+        /// Keep stdin interactive for terminal mode.
+        #[arg(short = 'i')]
+        interactive: bool,
+
+        /// Lease a ready slot from the explicit warm owner instead of cold booting.
+        #[arg(long)]
+        warm: bool,
+
+        /// Program and arguments to run inside the selected guest profile.
+        #[arg(last = true, required = true, value_name = "ARGV")]
+        argv: Vec<String>,
+    },
+
     /// Run the host capability checklist; render a table.
     ///
     /// Exits 0 on full pass, 2 on any check failed.
     Preflight,
 
-    /// Boot a VM in the foreground. Blocks until interrupted (Ctrl-C).
+    /// Install release artifacts and run the smallest process-wrapper probe.
     ///
-    /// Prints the VM id and run-dir on launch. With --exec, runs the
-    /// command inside the VM and exits when it completes (single-shot
-    /// mode).
-    ///
-    /// With --from-snapshot, restores from a previously captured snapshot
-    /// directory instead of performing a cold boot.
-    Launch {
-        /// Optional host workspace directory to hydrate into a scratch
-        /// ext4 inside the VM.
-        #[arg(long, value_name = "PATH")]
-        workspace: Option<PathBuf>,
-
-        /// Network policy: noegress (default) or outbound.
-        #[arg(long, value_name = "POLICY", default_value = "noegress",
-              value_parser = parse_network_policy)]
-        network: NetworkPolicy,
-
-        /// Optional caller-supplied VM id (auto-derived when absent).
-        #[arg(long, value_name = "VM_ID")]
-        id: Option<String>,
-
-        /// Restore from a snapshot directory instead of cold-booting.
-        ///
-        /// The directory must contain vm.snap and mem.snap (written by
-        /// m80 snapshot capture). When set, cold-boot-only flags such as
-        /// boot-arg overrides are rejected with an error rather than
-        /// silently ignored.
-        #[arg(long, value_name = "DIR", conflicts_with = "id")]
-        from_snapshot: Option<PathBuf>,
-
-        /// Single-shot exec: run argv inside the VM, then stop.
-        /// Pass the full command after '--', e.g.: m80 launch -- /bin/sh -c "echo hi"
-        /// When omitted, launch blocks until Ctrl-C.
-        #[arg(last = true, value_name = "ARGV")]
-        exec: Vec<String>,
-    },
-
-    /// Send one exec request to a running VM.
-    ///
-    /// v0.1 limitation: exec and launch must run in the same process when
-    /// using the library. The CLI "exec" subcommand is a v0.2 feature
-    /// that requires out-of-process IPC. Use `m80 launch -- <argv>` for
-    /// single-shot launch+exec in v0.1.
-    Exec {
-        /// VM id.
-        vm_id: String,
-
-        /// Command and arguments to run inside the VM (after '--').
-        #[arg(last = true, value_name = "ARGV")]
-        argv: Vec<String>,
-
-        /// Working directory inside the VM.
-        #[arg(long, value_name = "PATH")]
-        cwd: Option<String>,
-
-        /// Environment overrides in KEY=VAL form (may be repeated).
-        #[arg(long = "env", value_name = "KEY=VAL")]
-        env: Vec<String>,
-
-        /// Exec timeout in milliseconds.
-        #[arg(long, value_name = "MS")]
-        timeout_ms: Option<u64>,
-    },
-
-    /// Stop a running VM, optionally extracting changes first.
-    ///
-    /// v0.1 limitation: stop is implemented by walking the run-root and
-    /// SIGKILLing recorded pids. Clean stop via IPC is v0.2.
-    Stop {
-        /// VM id.
-        vm_id: String,
-
-        /// Optional destination directory for change extraction.
-        #[arg(long, value_name = "DEST")]
-        extract_changes: Option<PathBuf>,
-    },
+    /// Downloads the release tarball, verifies `SHA256SUMS`, installs the
+    /// kernel/rootfs/manifest/guestd artifacts, then runs `m80 run -- echo
+    /// hello` unless `--no-run` is set.
+    Quickstart(QuickstartArgs),
 
     /// Print a VM's run-dir layout and recorded state.
     Inspect {
@@ -137,20 +143,96 @@ pub enum Cmd {
         action: ConfigAction,
     },
 
-    /// Snapshot operations (capture).
-    ///
-    /// v0.1 limitation: capture requires the VM to be launched in the same
-    /// process (out-of-process IPC is v0.2). For library use call
-    /// RunningSandbox::capture() directly.
-    #[command(name = "snapshot")]
-    Snapshot {
-        /// Snapshot sub-action.
+    /// Explicit warm-sandbox owner control.
+    Warm {
+        /// Warm owner action.
         #[command(subcommand)]
-        action: SnapshotAction,
+        action: WarmAction,
     },
 
     /// Print binary version, protocol version, and Firecracker pin.
     Version,
+}
+
+/// CLI egress policy selected by `m80 run --egress`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum EgressMode {
+    /// No guest NIC and no outbound network.
+    None,
+    /// NAT-backed outbound network where host preflight can support it.
+    Outbound,
+}
+
+/// CLI writeback policy selected by `m80 run --writeback`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum WritebackMode {
+    /// Discard workspace changes.
+    Never,
+    /// Write workspace changes back only when the guest exits successfully.
+    OnSuccess,
+    /// Write workspace changes back even when the guest exits non-zero.
+    Always,
+}
+
+/// `m80 warm` sub-actions.
+#[derive(Debug, Subcommand)]
+pub enum WarmAction {
+    /// Start the explicit resident warm owner.
+    Enable(WarmEnableArgs),
+    /// Report the current owner state.
+    Status {
+        /// Runtime image/profile expected by this caller.
+        #[arg(long, value_name = "NAME")]
+        profile: Option<String>,
+    },
+    /// Stop accepting leases and tear down owner-owned slots.
+    Drain,
+    /// Stop the owner and remove owner-owned state.
+    Disable,
+}
+
+/// Arguments for `m80 warm enable`.
+#[derive(Debug, Args)]
+pub struct WarmEnableArgs {
+    /// Run the owner in the foreground process.
+    #[arg(long)]
+    pub foreground: bool,
+
+    /// Start/enable the packaged system service. Deferred to a packaging bead.
+    #[arg(long)]
+    pub system: bool,
+
+    /// Number of ready slots the owner should keep filled.
+    #[arg(long, value_name = "N")]
+    pub size: usize,
+
+    /// Egress policy baked into warm slots.
+    #[arg(long, value_enum, default_value = "outbound")]
+    pub egress: EgressMode,
+
+    /// Runtime image/profile name for warm slots.
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
+}
+
+/// Arguments for `m80 quickstart`.
+#[derive(Debug, Args)]
+pub struct QuickstartArgs {
+    /// Release artifact tarball URL.
+    #[arg(long = "artifact-url", value_name = "URL")]
+    pub artifact_url: String,
+
+    /// Artifact install directory. Defaults to M80_ARTIFACT_DIR or /opt/m80/artifacts.
+    #[arg(long = "artifact-dir", value_name = "PATH")]
+    pub artifact_dir: Option<PathBuf>,
+
+    /// Run-root directory. Defaults to M80_RUN_ROOT or /var/run/m80.
+    #[arg(long = "run-root", value_name = "PATH")]
+    pub run_root: Option<PathBuf>,
+
+    /// Install and verify artifacts but do not run echo.
+    #[arg(long = "no-run")]
+    pub no_run: bool,
 }
 
 /// `m80 config` sub-actions.
@@ -160,66 +242,25 @@ pub enum ConfigAction {
     Show,
 }
 
-/// `m80 snapshot` sub-actions.
-#[derive(Debug, Subcommand)]
-pub enum SnapshotAction {
-    /// Capture a running VM's state into a snapshot directory.
-    ///
-    /// v0.1 limitation: capture requires the VM to be launched in the same
-    /// process (same binary invocation). Out-of-process capture — where
-    /// `m80 snapshot capture <vm-id>` contacts a separately-launched VM —
-    /// requires IPC and is deferred to v0.2 (same gap as `m80 exec`).
-    ///
-    /// Writes vm.snap and mem.snap to the destination directory.
-    Capture {
-        /// VM id of the running VM to capture.
-        vm_id: String,
-
-        /// Directory to write the snapshot files into (must not exist yet,
-        /// or must be empty).
-        #[arg(long, value_name = "DIR")]
-        store_root: PathBuf,
-    },
-}
-
-/// Parse `noegress` | `outbound` into [`NetworkPolicy`].
-///
-/// Case-insensitive to be shell-friendly.
-fn parse_network_policy(s: &str) -> Result<NetworkPolicy, String> {
-    match s.to_ascii_lowercase().as_str() {
-        "noegress" => Ok(NetworkPolicy::NoEgress),
-        "outbound" => Ok(NetworkPolicy::AllowOutbound { exceptions: vec![] }),
-        other => Err(format!(
-            "unknown network policy '{other}'; expected: noegress | outbound"
-        )),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn parse_noegress() {
-        let p = parse_network_policy("noegress").unwrap();
-        assert_eq!(p, NetworkPolicy::NoEgress);
+    fn egress_mode_has_expected_values() {
+        let values: Vec<_> = EgressMode::value_variants()
+            .iter()
+            .map(|v| v.to_possible_value().unwrap().get_name().to_owned())
+            .collect();
+        assert_eq!(values, ["none", "outbound"]);
     }
 
     #[test]
-    fn parse_noegress_upper() {
-        let p = parse_network_policy("NoEgress").unwrap();
-        assert_eq!(p, NetworkPolicy::NoEgress);
-    }
-
-    #[test]
-    fn parse_outbound() {
-        let p = parse_network_policy("outbound").unwrap();
-        assert!(matches!(p, NetworkPolicy::AllowOutbound { .. }));
-    }
-
-    #[test]
-    fn parse_unknown_policy_fails() {
-        let err = parse_network_policy("wireguard").unwrap_err();
-        assert!(err.contains("unknown network policy"), "got: {err}");
+    fn writeback_mode_has_expected_values() {
+        let values: Vec<_> = WritebackMode::value_variants()
+            .iter()
+            .map(|v| v.to_possible_value().unwrap().get_name().to_owned())
+            .collect();
+        assert_eq!(values, ["never", "on-success", "always"]);
     }
 }

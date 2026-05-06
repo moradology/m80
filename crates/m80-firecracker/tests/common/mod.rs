@@ -210,17 +210,29 @@ mod tests {
     fn both_files_exist_output_contains_path_console_and_diag() {
         let tmp = make_run_dir();
         let dir = tmp.path();
-        let console_content = (1..=5).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let console_content = (1..=5)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         write(dir, "console.log", &console_content);
         write(dir, "diagnostics.jsonl", "{\"a\":1}\n{\"b\":2}\n");
 
         let out = captured(dir, 100);
 
-        assert!(out.contains(&dir.display().to_string()), "header should include run_dir path");
+        assert!(
+            out.contains(&dir.display().to_string()),
+            "header should include run_dir path"
+        );
         assert!(out.contains("line 1"), "should include console line 1");
         assert!(out.contains("line 5"), "should include console line 5");
-        assert!(out.contains(r#"{"a":1}"#), "should include diagnostics line 1");
-        assert!(out.contains(r#"{"b":2}"#), "should include diagnostics line 2");
+        assert!(
+            out.contains(r#"{"a":1}"#),
+            "should include diagnostics line 1"
+        );
+        assert!(
+            out.contains(r#"{"b":2}"#),
+            "should include diagnostics line 2"
+        );
     }
 
     #[test]
@@ -231,8 +243,14 @@ mod tests {
 
         let out = captured(dir, 100);
 
-        assert!(out.contains("console.log: (not found)"), "should note missing console.log");
-        assert!(out.contains(r#"{"event":"launch"}"#), "should include diagnostics");
+        assert!(
+            out.contains("console.log: (not found)"),
+            "should note missing console.log"
+        );
+        assert!(
+            out.contains(r#"{"event":"launch"}"#),
+            "should include diagnostics"
+        );
     }
 
     #[test]
@@ -251,7 +269,10 @@ mod tests {
         let tmp = make_run_dir();
         let dir = tmp.path();
         // 5 lines, tail cap = 100 → all included, no truncation marker.
-        let content = (1..=5).map(|i| format!("L{i}")).collect::<Vec<_>>().join("\n");
+        let content = (1..=5)
+            .map(|i| format!("L{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         write(dir, "console.log", &content);
 
         let out = captured(dir, 100);
@@ -270,12 +291,18 @@ mod tests {
         let tmp = make_run_dir();
         let dir = tmp.path();
         // 200 lines, cap = 10 → lines 191-200 appear; lines 1-190 do not.
-        let content = (1..=200u32).map(|i| format!("LINE{i}")).collect::<Vec<_>>().join("\n");
+        let content = (1..=200u32)
+            .map(|i| format!("LINE{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         write(dir, "console.log", &content);
 
         let out = captured(dir, 10);
 
-        assert!(out.contains("showing last 10 of 200 lines"), "truncation marker required");
+        assert!(
+            out.contains("showing last 10 of 200 lines"),
+            "truncation marker required"
+        );
         assert!(out.contains("LINE200"), "last line must appear");
         assert!(out.contains("LINE191"), "191st line must appear (200-10+1)");
         assert!(!out.contains("LINE190"), "190th line must NOT appear");
@@ -311,9 +338,16 @@ mod tests {
         let tmp = make_run_dir();
         let dir = tmp.path();
         // 200-line console.log + a few JSONL records.
-        let console = (1..=200u32).map(|i| format!("console line {i}")).collect::<Vec<_>>().join("\n");
+        let console = (1..=200u32)
+            .map(|i| format!("console line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         write(dir, "console.log", &console);
-        write(dir, "diagnostics.jsonl", "{\"phase\":\"boot\"}\n{\"phase\":\"ready\"}\n");
+        write(
+            dir,
+            "diagnostics.jsonl",
+            "{\"phase\":\"boot\"}\n{\"phase\":\"ready\"}\n",
+        );
 
         // Simulate what Drop does — capture to a Vec<u8> for assertion.
         let result = std::panic::catch_unwind(|| {

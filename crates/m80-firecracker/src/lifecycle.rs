@@ -1,12 +1,15 @@
 //! [`RunningSandbox`] and [`StoppedSandbox`] method implementations.
 //! Transitions consume the prior handle (move semantics).
 
+mod exec;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use m80_proto::{Envelope, ExecRequest, ExecResponse, ShutdownAction, ShutdownRequest, ShutdownResponse};
+use m80_observability::Phase;
+use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
 use m80_storage::ChangeSet;
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
@@ -20,43 +23,11 @@ use crate::types::{RunningSandbox, StoppedSandbox};
 /// send request, read response).
 const SHUTDOWN_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
+const SNAPSHOT_BIND_DEST: &str = "snapshot";
 impl RunningSandbox {
     /// Return the VM id for this sandbox.
     pub fn vm_id(&self) -> &str {
         &self.vm_id
-    }
-
-    /// Send one exec request to the in-VM daemon and return the response.
-    ///
-    /// The VM stays alive after the call returns; sequential execs on the same
-    /// `RunningSandbox` share the same filesystem state. Pipelining (concurrent
-    /// exec) is not supported — the borrow checker enforces one in-flight exec
-    /// at a time via `&mut self`. Call `stop()` (or drop the sandbox) to tear
-    /// down the VM.
-    ///
-    /// Returns `FcError::IdleTimedOut` if the idle-timeout watcher has already
-    /// fired. The VM has been gracefully shut down; the caller must drop or
-    /// `stop()` the sandbox.
-    pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
-        if self.idle_timed_out.load(Ordering::Relaxed) {
-            return Err(FcError::IdleTimedOut);
-        }
-        // Touch last-activity at the start of every exec so a long-running
-        // exec doesn't trip the idle watcher mid-flight.
-        self.last_activity_ns
-            .store(monotonic_ns(), Ordering::Relaxed);
-        let envelope = Envelope::new(req);
-        let t = Instant::now();
-        self.channel.send(&envelope)?;
-        phase_event("exec_send", &self.vm_id, t.elapsed());
-        let t = Instant::now();
-        let resp_env: Envelope<ExecResponse> = self.channel.recv()?;
-        phase_event("exec_recv", &self.vm_id, t.elapsed());
-        // Touch last-activity at completion too, so the watcher deadline is
-        // reset from the end of the call (not its start).
-        self.last_activity_ns
-            .store(monotonic_ns(), Ordering::Relaxed);
-        Ok(resp_env.payload)
     }
 
     /// Capture the live VM into a snapshot pair at `paths`.
@@ -76,10 +47,16 @@ impl RunningSandbox {
     /// should treat any error as the VM being in an unknown state and call
     /// `force_kill()`.
     pub fn capture(&self, paths: SnapshotPaths) -> Result<(), FcError> {
+        let snapshot_bind = bind_snapshot_parent_into_jail(
+            &self.jail.jail_path,
+            &paths,
+            self.backend.config.jail_uid,
+            self.backend.config.jail_gid,
+        )?;
         let fc_socket = self.jail.jail_path.join("firecracker.sock");
         snapshot_capture(CaptureRequest {
             fc_socket: &fc_socket,
-            paths,
+            paths: snapshot_bind.paths.clone(),
             kind: SnapshotKind::Full,
         })
         .map_err(FcError::Snapshot)
@@ -93,10 +70,18 @@ impl RunningSandbox {
     ///    [`StoppedSandbox::extract_changes`] after receiving the `StoppedSandbox`.
     /// 4. `release` — foundation resources dropped, permit and scratch moved
     ///    into the returned `StoppedSandbox`.
-    pub fn stop(self) -> Result<StoppedSandbox, FcError> {
+    pub fn stop(mut self) -> Result<StoppedSandbox, FcError> {
         let run_root = self.backend.config.run_root.clone();
         let vm_id_for_event = self.vm_id.clone();
+        let request_id_for_event = self.request_id.clone();
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        crate::diagnostics::record_owned(
+            &mut self.diagnostics,
+            Phase::Stop,
+            &vm_id_for_event,
+            request_id_for_event.as_deref(),
+            "stop started",
+        );
 
         // Signal the idle-watcher thread to exit before teardown so it does
         // not race with the shutdown we are about to send.
@@ -112,12 +97,13 @@ impl RunningSandbox {
         let t = Instant::now();
         let RunningSandbox {
             vm_id,
+            request_id,
             run_dir,
-            jail: _jail,       // Drop → unmounts bind mounts + removes jail dir.
-            cgroup: _cgroup,   // Drop → removes cgroup subtree.
-            channel: _channel, // Drop → removes host vsock UDS.
+            jail: _jail,     // Drop → unmounts bind mounts + removes jail dir.
+            cgroup: _cgroup, // Drop → removes cgroup subtree.
             rootfs: _rootfs,
             scratch,
+            snapshot_mount,
             client: _client,
             firecracker: _firecracker,
             permit,
@@ -126,21 +112,33 @@ impl RunningSandbox {
             idle_timed_out: _idle_timed_out,
             watcher_stop: _watcher_stop,
             watcher_thread,
+            diagnostics,
         } = self;
+        let mut diagnostics = diagnostics;
 
         // Join the watcher thread after destructuring (the stop flag is already
         // set above; the thread will exit on its next wake interval).
         if let Some(handle) = watcher_thread {
             let _ = handle.join();
         }
+        unmount_snapshot_bind(snapshot_mount.as_deref());
         phase_event("stop_release", &vm_id_for_event, t.elapsed());
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::Stop,
+            &vm_id_for_event,
+            request_id_for_event.as_deref(),
+            "stop complete",
+        );
 
         Ok(StoppedSandbox {
             vm_id,
+            request_id,
             run_dir,
             scratch,
             permit,
             run_root,
+            diagnostics,
         })
     }
 
@@ -149,8 +147,17 @@ impl RunningSandbox {
     /// The run-dir is preserved for offline inspection. The caller decides
     /// whether to delete it via [`StoppedSandbox::delete`] or preserve it
     /// further via [`StoppedSandbox::preserve_for_triage`].
-    pub fn force_kill(self) -> Result<StoppedSandbox, FcError> {
+    pub fn force_kill(mut self) -> Result<StoppedSandbox, FcError> {
         let run_root = self.backend.config.run_root.clone();
+        let vm_id_for_event = self.vm_id.clone();
+        let request_id_for_event = self.request_id.clone();
+        crate::diagnostics::record_owned(
+            &mut self.diagnostics,
+            Phase::Stop,
+            &vm_id_for_event,
+            request_id_for_event.as_deref(),
+            "force kill started",
+        );
 
         // Signal the watcher to exit before killing the process.
         self.watcher_stop.store(true, Ordering::Relaxed);
@@ -160,12 +167,13 @@ impl RunningSandbox {
 
         let RunningSandbox {
             vm_id,
+            request_id,
             run_dir,
             jail: _jail,
             cgroup: _cgroup,
-            channel: _channel,
             rootfs: _rootfs,
             scratch,
+            snapshot_mount,
             client: _client,
             firecracker: _firecracker,
             permit,
@@ -174,19 +182,127 @@ impl RunningSandbox {
             idle_timed_out: _idle_timed_out,
             watcher_stop: _watcher_stop,
             watcher_thread,
+            diagnostics,
         } = self;
+        let mut diagnostics = diagnostics;
 
         if let Some(handle) = watcher_thread {
             let _ = handle.join();
         }
+        unmount_snapshot_bind(snapshot_mount.as_deref());
+        crate::diagnostics::record_owned(
+            &mut diagnostics,
+            Phase::Stop,
+            &vm_id_for_event,
+            request_id_for_event.as_deref(),
+            "force kill complete",
+        );
 
         Ok(StoppedSandbox {
             vm_id,
+            request_id,
             run_dir,
             scratch,
             permit,
             run_root,
+            diagnostics,
         })
+    }
+}
+
+pub(crate) struct SnapshotBind {
+    pub(crate) paths: SnapshotPaths,
+    mount_path: PathBuf,
+    active: bool,
+}
+
+impl SnapshotBind {
+    pub(crate) fn into_mount_path(mut self) -> PathBuf {
+        self.active = false;
+        self.mount_path.clone()
+    }
+}
+
+impl Drop for SnapshotBind {
+    fn drop(&mut self) {
+        if self.active {
+            unmount_snapshot_bind(Some(&self.mount_path));
+        }
+    }
+}
+
+pub(crate) fn bind_snapshot_parent_into_jail(
+    jail_path: &Path,
+    paths: &SnapshotPaths,
+    jail_uid: u32,
+    jail_gid: u32,
+) -> Result<SnapshotBind, FcError> {
+    let host_parent = paths
+        .vm_state
+        .parent()
+        .ok_or_else(|| FcError::Config("snapshot vm_state must have a parent directory".into()))?;
+    let mem_parent = paths
+        .mem
+        .parent()
+        .ok_or_else(|| FcError::Config("snapshot mem must have a parent directory".into()))?;
+    if host_parent != mem_parent {
+        return Err(FcError::Config(
+            "snapshot vm_state and mem paths must live in the same directory".into(),
+        ));
+    }
+    let vm_name = paths
+        .vm_state
+        .file_name()
+        .ok_or_else(|| FcError::Config("snapshot vm_state must have a file name".into()))?;
+    let mem_name = paths
+        .mem
+        .file_name()
+        .ok_or_else(|| FcError::Config("snapshot mem must have a file name".into()))?;
+
+    std::fs::create_dir_all(host_parent)?;
+    let mount_path = jail_path.join(SNAPSHOT_BIND_DEST);
+    std::fs::create_dir_all(&mount_path)?;
+
+    use nix::mount::{mount, MsFlags};
+    use nix::unistd::{chown, Gid, Uid};
+
+    chown(
+        host_parent,
+        Some(Uid::from_raw(jail_uid)),
+        Some(Gid::from_raw(jail_gid)),
+    )
+    .map_err(|e| FcError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
+
+    mount(
+        Some(host_parent),
+        mount_path.as_path(),
+        None::<&str>,
+        MsFlags::MS_BIND,
+        None::<&str>,
+    )
+    .map_err(|e| FcError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
+
+    let in_jail_parent = PathBuf::from("/").join(SNAPSHOT_BIND_DEST);
+    Ok(SnapshotBind {
+        paths: SnapshotPaths {
+            vm_state: in_jail_parent.join(vm_name),
+            mem: in_jail_parent.join(mem_name),
+        },
+        mount_path,
+        active: true,
+    })
+}
+
+pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
+    let Some(mount_path) = mount_path else {
+        return;
+    };
+    use nix::mount::{umount2, MntFlags};
+    if let Err(e) = umount2(mount_path, MntFlags::MNT_DETACH) {
+        tracing::warn!(path = %mount_path.display(), err = %e, "snapshot bind unmount failed");
+    }
+    if let Err(e) = std::fs::remove_dir(mount_path) {
+        tracing::warn!(path = %mount_path.display(), err = %e, "snapshot bind mount dir cleanup failed");
     }
 }
 
@@ -209,7 +325,14 @@ impl StoppedSandbox {
     }
 
     /// Remove the per-VM run-dir and release the admission permit.
-    pub fn delete(self) -> Result<(), FcError> {
+    pub fn delete(mut self) -> Result<(), FcError> {
+        crate::diagnostics::record_owned(
+            &mut self.diagnostics,
+            Phase::Delete,
+            &self.vm_id,
+            self.request_id.as_deref(),
+            "delete started",
+        );
         std::fs::remove_dir_all(&self.run_dir)?;
         // `self` drops here; AdmissionPermit::drop returns the slot.
         Ok(())
@@ -217,12 +340,19 @@ impl StoppedSandbox {
 
     /// Move the per-VM run-dir to `.preserved/<unix_ms>-<vm_id>/` for
     /// offline triage. The admission permit is released. Returns the new path.
-    pub fn preserve_for_triage(self) -> Result<PathBuf, FcError> {
+    pub fn preserve_for_triage(mut self) -> Result<PathBuf, FcError> {
         let preserved_parent = self.run_root.join(".preserved");
         std::fs::create_dir_all(&preserved_parent)?;
 
         let ts = unix_ms_now();
         let dest = preserved_parent.join(format!("{ts}-{}", self.vm_id));
+        crate::diagnostics::record_owned(
+            &mut self.diagnostics,
+            Phase::Delete,
+            &self.vm_id,
+            self.request_id.as_deref(),
+            "preserve for triage",
+        );
         std::fs::rename(&self.run_dir, &dest)?;
 
         // `self` drops here; permit returned.

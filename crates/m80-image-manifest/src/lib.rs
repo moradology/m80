@@ -24,6 +24,11 @@ use sha2::{Digest, Sha256};
 /// not migrations. Existing v2 images must be rebuilt.
 pub const SCHEMA_VERSION: u32 = 3;
 
+/// Human-readable audit reason recorded in m80-built images that do not bake
+/// an outbound network posture into the image itself.
+pub const DEFAULT_NO_EGRESS_REASON: &str =
+    "no-egress: image is network-neutral; outbound access requires runtime policy";
+
 /// Which kernel was used to boot this image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -227,7 +232,10 @@ impl Manifest {
                     ("source_rootfs_image", self.source_rootfs_image.is_some()),
                     ("source_rootfs_sha256", self.source_rootfs_sha256.is_some()),
                     ("workspace_mount_path", self.workspace_mount_path.is_some()),
-                    ("workspace_mount_sha256", self.workspace_mount_sha256.is_some()),
+                    (
+                        "workspace_mount_sha256",
+                        self.workspace_mount_sha256.is_some(),
+                    ),
                 ];
                 for (name, present) in pairs {
                     if !present {
@@ -247,7 +255,10 @@ impl Manifest {
                     ("source_rootfs_image", self.source_rootfs_image.is_some()),
                     ("source_rootfs_sha256", self.source_rootfs_sha256.is_some()),
                     ("workspace_mount_path", self.workspace_mount_path.is_some()),
-                    ("workspace_mount_sha256", self.workspace_mount_sha256.is_some()),
+                    (
+                        "workspace_mount_sha256",
+                        self.workspace_mount_sha256.is_some(),
+                    ),
                 ];
                 for (name, present) in pairs {
                     if *present {
@@ -316,7 +327,9 @@ pub enum ManifestError {
     /// Optional field's presence does not match the manifest's `image_kind`.
     /// `Ubuntu` requires all systemd/source-rootfs Options populated;
     /// `Minimal` requires all of them `None`.
-    #[error("manifest field {field} is inconsistent with image_kind={kind:?} (expected {expected})")]
+    #[error(
+        "manifest field {field} is inconsistent with image_kind={kind:?} (expected {expected})"
+    )]
     InconsistentKind {
         /// The manifest's declared kind.
         kind: ImageKind,

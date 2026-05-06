@@ -1,119 +1,33 @@
-//! Run-root walk commands: stop, inspect, list.
+//! Run-root walk commands: inspect and list.
 //!
 //! These commands don't go through a full `Backend` admission path —
 //! they walk `<run_root>/` on disk to discover VM state.
-//!
-//! `stop` additionally SIGKILLs pids from `jailer-state.json` and
-//! calls `Backend::recover_stale_run_root()` to clean up residue.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-use m80_firecracker::OWNERSHIP_LOCK;
+use m80_firecracker::{FcError, OWNERSHIP_LOCK};
 use m80_jailer::{JAILER_PLAN_FILE, JAILER_STATE_FILE};
 
-use crate::cmds::build_backend;
 use crate::config;
 use crate::errors;
+use crate::json;
 
-// =====================================================================
-// stop
-// =====================================================================
-
-/// `m80 stop` — walk the run-root, kill recorded pids, recover residue.
-///
-/// v0.1: best-effort force-stop by reading `jailer-state.json` from the
-/// VM's run-dir and SIGKILLing the recorded pids. Clean stop via IPC is
-/// v0.2.
-pub fn cmd_stop(vm_id: &str, extract_changes: Option<&Path>, json: bool) -> anyhow::Result<i32> {
-    let (backend, _effective) = match build_backend(&HashMap::new()) {
-        Ok(pair) => pair,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return Ok(errors::EXIT_GENERIC);
-        }
-    };
-
-    let run_root = backend.config().run_root.clone();
-    let vm_dir = run_root.join(vm_id);
-
-    if !vm_dir.exists() {
-        eprintln!("error: no run-dir found for vm_id={vm_id}");
-        return Ok(errors::EXIT_GENERIC);
-    }
-
-    let killed = kill_jailer_pids(&vm_dir);
-
-    if let Some(dest) = extract_changes {
-        eprintln!(
-            "note: change extraction (--extract-changes) requires a RunningSandbox handle \
-             (v0.2 feature); dest={} will not be populated",
-            dest.display()
-        );
-    }
-
-    // Remove the ownership.lock so future recover_stale_run_root passes can
-    // reclaim the run-dir even if recovery races with a re-spawned VM.
-    let lock = vm_dir.join(OWNERSHIP_LOCK);
-    if lock.exists() {
-        if let Err(e) = std::fs::remove_file(&lock) {
-            eprintln!("warning: failed to remove {}: {e}", lock.display());
-        }
-    }
-
-    if let Err(e) = backend.recover_stale_run_root() {
-        eprintln!("warning: recover_stale_run_root failed: {e}");
-    }
-
-    if json {
-        let obj = serde_json::json!({
-            "vm_id": vm_id,
-            "pids_killed": killed,
-        });
-        println!("{}", serde_json::to_string_pretty(&obj).unwrap());
-    } else {
-        println!(
-            "stopped vm_id={vm_id} (killed {} pids, recovery scan triggered)",
-            killed
-        );
-    }
-
-    Ok(0)
+#[derive(serde::Serialize)]
+struct InspectOutput {
+    vm_id: String,
+    run_dir: PathBuf,
+    files: Vec<String>,
+    contents: HashMap<String, serde_json::Value>,
 }
 
-/// SIGKILL the firecracker pid recorded in `<vm_dir>/jailer-state.json`.
-/// Returns 1 on success, 0 if the file is absent / unparseable / kill
-/// failed. `jailer_pid` is not signalled separately — jailer execs into
-/// firecracker so the two pids are equal.
-fn kill_jailer_pids(vm_dir: &Path) -> usize {
-    let jailer_state = vm_dir.join(JAILER_STATE_FILE);
-    if !jailer_state.exists() {
-        return 0;
-    }
-
-    let text = match std::fs::read_to_string(&jailer_state) {
-        Ok(t) => t,
-        Err(_) => return 0,
-    };
-
-    let parsed: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(v) => v,
-        Err(_) => return 0,
-    };
-
-    // m80-jailer writes top-level scalar fields, not a `pids` array.
-    let Some(pid) = parsed.get("firecracker_pid").and_then(|v| v.as_i64()) else {
-        return 0;
-    };
-
-    let raw = nix::unistd::Pid::from_raw(pid as i32);
-    if nix::sys::signal::kill(raw, nix::sys::signal::Signal::SIGKILL).is_ok() {
-        1
-    } else {
-        0
-    }
+#[derive(serde::Serialize)]
+struct ListEntry {
+    vm_id: String,
+    state: &'static str,
+    run_dir: PathBuf,
 }
 
 // =====================================================================
@@ -122,18 +36,35 @@ fn kill_jailer_pids(vm_dir: &Path) -> usize {
 
 /// `m80 inspect` — print a VM's run-dir layout and recorded state.
 pub fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
-    let run_root = effective_run_root();
+    let run_root = match effective_run_root() {
+        Ok(run_root) => run_root,
+        Err(e) => return Ok(errors::render_error(&e, json)),
+    };
+    let output = match inspect_output(&run_root, vm_id) {
+        Ok(output) => output,
+        Err(e) => return Ok(errors::render_error(&e, json)),
+    };
+
+    if json {
+        println!("{}", render_inspect_json(&output));
+    } else {
+        print!("{}", render_inspect_human(&output));
+    }
+
+    Ok(0)
+}
+
+fn inspect_output(run_root: &Path, vm_id: &str) -> Result<InspectOutput, FcError> {
     let vm_dir = run_root.join(vm_id);
 
     if !vm_dir.exists() {
-        eprintln!("error: no run-dir found for vm_id={vm_id}");
-        return Ok(errors::EXIT_GENERIC);
+        return Err(FcError::Config(format!(
+            "no run-dir found for vm_id={vm_id}"
+        )));
     }
 
     // Files the orchestrator + dependent crates write into <run_dir>/.
-    // boot-identity.json is reserved for the v0.2 snapshot manifest path
-    // (m80-snapshot writes it as part of the capture lane); not present
-    // in v0.1 — listed so consumers know to expect it once v0.2 lands.
+    // boot-identity.json is reserved for the v0.2 snapshot manifest path.
     let known_files = &[
         OWNERSHIP_LOCK,
         JAILER_STATE_FILE,
@@ -142,48 +73,52 @@ pub fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
         "boot-identity.json",
     ];
 
-    let mut present: Vec<String> = Vec::new();
-    let mut contents: HashMap<&str, serde_json::Value> = HashMap::new();
+    let mut files = Vec::new();
+    let mut contents = HashMap::new();
 
     for name in known_files {
         let path = vm_dir.join(name);
         if path.exists() {
-            present.push(name.to_string());
+            files.push(name.to_string());
             if name.ends_with(".json") {
                 if let Ok(text) = std::fs::read_to_string(&path) {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                        contents.insert(name, v);
+                        contents.insert(name.to_string(), v);
                     }
                 }
             }
         }
     }
 
-    if json {
-        let obj = serde_json::json!({
-            "vm_id": vm_id,
-            "run_dir": vm_dir,
-            "files": present,
-            "contents": contents,
-        });
-        println!("{}", serde_json::to_string_pretty(&obj).unwrap());
-    } else {
-        println!("vm_id:    {vm_id}");
-        println!("run_dir:  {}", vm_dir.display());
-        println!("files:");
-        for name in &present {
-            let detail = contents
-                .get(name.as_str())
-                .map(|v| format!("  {v}"))
-                .unwrap_or_default();
-            println!("  {name}{detail}");
-        }
-        if present.is_empty() {
-            println!("  (empty)");
-        }
-    }
+    Ok(InspectOutput {
+        vm_id: vm_id.to_owned(),
+        run_dir: vm_dir,
+        files,
+        contents,
+    })
+}
 
-    Ok(0)
+fn render_inspect_json(output: &InspectOutput) -> String {
+    json::to_pretty(output)
+}
+
+fn render_inspect_human(output: &InspectOutput) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("vm_id:    {}\n", output.vm_id));
+    out.push_str(&format!("run_dir:  {}\n", output.run_dir.display()));
+    out.push_str("files:\n");
+    for name in &output.files {
+        let detail = output
+            .contents
+            .get(name)
+            .map(|v| format!("  {v}"))
+            .unwrap_or_default();
+        out.push_str(&format!("  {name}{detail}\n"));
+    }
+    if output.files.is_empty() {
+        out.push_str("  (empty)\n");
+    }
+    out
 }
 
 // =====================================================================
@@ -192,29 +127,40 @@ pub fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
 
 /// `m80 list` — enumerate VM run-dirs under the run-root.
 pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
-    let run_root = effective_run_root();
+    let run_root = match effective_run_root() {
+        Ok(run_root) => run_root,
+        Err(e) => return Ok(errors::render_error(&e, json)),
+    };
 
     if !run_root.exists() {
         if json {
-            println!("[]");
+            println!("{}", json::to_pretty(&Vec::<ListEntry>::new()));
         } else {
             println!("(no run-root at {})", run_root.display());
         }
         return Ok(0);
     }
 
-    #[derive(serde::Serialize)]
-    struct Entry {
-        vm_id: String,
-        state: &'static str,
-        run_dir: PathBuf,
+    let entries = match list_entries(&run_root) {
+        Ok(entries) => entries,
+        Err(e) => return Ok(errors::render_error(&e, json)),
+    };
+
+    if json {
+        println!("{}", render_list_json(&entries));
+    } else {
+        print!("{}", render_list_human(&run_root, &entries));
     }
 
-    let mut entries: Vec<Entry> = Vec::new();
+    Ok(0)
+}
 
-    let read_dir =
-        std::fs::read_dir(&run_root).with_context(|| format!("listing {}", run_root.display()))?;
+fn list_entries(run_root: &Path) -> Result<Vec<ListEntry>, FcError> {
+    let read_dir = std::fs::read_dir(run_root)
+        .with_context(|| format!("listing {}", run_root.display()))
+        .map_err(|e| FcError::Config(format!("{e:#}")))?;
 
+    let mut entries = Vec::new();
     for entry in read_dir.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -234,46 +180,43 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
         } else {
             "stale"
         };
-        entries.push(Entry {
+        entries.push(ListEntry {
             vm_id: vm_id.to_owned(),
             state,
             run_dir: path,
         });
     }
+    Ok(entries)
+}
 
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&entries).expect("list serialization")
-        );
-    } else {
-        if entries.is_empty() {
-            println!("(no VMs in {})", run_root.display());
-        }
-        for e in &entries {
-            println!("{}  [{}]  {}", e.vm_id, e.state, e.run_dir.display());
-        }
+fn render_list_json(entries: &[ListEntry]) -> String {
+    json::to_pretty(entries)
+}
+
+fn render_list_human(run_root: &Path, entries: &[ListEntry]) -> String {
+    let mut out = String::new();
+    if entries.is_empty() {
+        out.push_str(&format!("(no VMs in {})\n", run_root.display()));
     }
-
-    Ok(0)
+    for e in entries {
+        out.push_str(&format!(
+            "{}  [{}]  {}\n",
+            e.vm_id,
+            e.state,
+            e.run_dir.display()
+        ));
+    }
+    out
 }
 
 // =====================================================================
 // Helpers
 // =====================================================================
 
-/// Return the run-root resolved through the same config chain
-/// (`build_backend` uses internally): defaults → `/etc/m80/config.toml` →
-/// `~/.config/m80/config.toml` → `M80_*` env. We deliberately don't run
-/// preflight here (the read-only walk commands shouldn't pay for it); fall
-/// back to the env+default if the config probe fails.
-fn effective_run_root() -> PathBuf {
-    if let Ok(rr) = config::resolve_run_root() {
-        return rr;
-    }
-    std::env::var("M80_RUN_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/var/run/m80"))
+/// Return the run-root resolved through the same config chain as the backend,
+/// without running preflight.
+fn effective_run_root() -> Result<PathBuf, FcError> {
+    config::resolve_run_root().map_err(|e| FcError::Config(format!("{e:#}")))
 }
 
 /// Return `true` iff `<vm_dir>/ownership.lock` records a still-running pid.
@@ -290,4 +233,91 @@ fn vm_dir_is_live(vm_dir: &Path) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_vm(run_root: &Path, vm_id: &str, lock_pid: Option<u32>) -> PathBuf {
+        let vm_dir = run_root.join(vm_id);
+        std::fs::create_dir_all(&vm_dir).unwrap();
+        if let Some(pid) = lock_pid {
+            std::fs::write(vm_dir.join(OWNERSHIP_LOCK), format!("pid={pid}\n")).unwrap();
+        }
+        std::fs::write(
+            vm_dir.join(JAILER_STATE_FILE),
+            r#"{"firecracker_pid":1234}"#,
+        )
+        .unwrap();
+        std::fs::write(vm_dir.join(JAILER_PLAN_FILE), r#"{"jailer":"fixture"}"#).unwrap();
+        std::fs::write(
+            vm_dir.join("cgroup-path.txt"),
+            "/sys/fs/cgroup/m80/fixture\n",
+        )
+        .unwrap();
+        vm_dir
+    }
+
+    #[test]
+    fn list_entries_classifies_live_only_from_ownership_pid() {
+        let temp = tempfile::tempdir().unwrap();
+        write_vm(temp.path(), "live-vm", Some(std::process::id()));
+        write_vm(temp.path(), "stale-vm", None);
+
+        let entries = list_entries(temp.path()).unwrap();
+        let live = entries
+            .iter()
+            .find(|entry| entry.vm_id == "live-vm")
+            .unwrap();
+        let stale = entries
+            .iter()
+            .find(|entry| entry.vm_id == "stale-vm")
+            .unwrap();
+
+        assert_eq!(live.state, "live");
+        assert_eq!(stale.state, "stale");
+    }
+
+    #[test]
+    fn list_json_and_human_render_fixture_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        write_vm(temp.path(), "live-vm", Some(std::process::id()));
+        write_vm(temp.path(), "stale-vm", None);
+
+        let entries = list_entries(temp.path()).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&render_list_json(&entries)).unwrap();
+        assert_eq!(json["version"], 1);
+        assert_eq!(json["data"].as_array().unwrap().len(), 2);
+
+        let human = render_list_human(temp.path(), &entries);
+        assert!(human.contains("live-vm  [live]"));
+        assert!(human.contains("stale-vm  [stale]"));
+    }
+
+    #[test]
+    fn inspect_json_and_human_render_known_run_root_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let vm_dir = write_vm(temp.path(), "inspect-vm", Some(std::process::id()));
+
+        let output = inspect_output(temp.path(), "inspect-vm").unwrap();
+        assert_eq!(output.run_dir, vm_dir);
+        assert!(output.files.contains(&OWNERSHIP_LOCK.to_owned()));
+        assert!(output.files.contains(&JAILER_STATE_FILE.to_owned()));
+        assert!(output.files.contains(&JAILER_PLAN_FILE.to_owned()));
+        assert!(output.files.contains(&"cgroup-path.txt".to_owned()));
+
+        let json: serde_json::Value = serde_json::from_str(&render_inspect_json(&output)).unwrap();
+        assert_eq!(json["version"], 1);
+        assert_eq!(json["data"]["vm_id"], "inspect-vm");
+        assert_eq!(
+            json["data"]["contents"][JAILER_STATE_FILE]["firecracker_pid"],
+            1234
+        );
+
+        let human = render_inspect_human(&output);
+        assert!(human.contains("vm_id:    inspect-vm"));
+        assert!(human.contains(JAILER_STATE_FILE));
+        assert!(human.contains("firecracker_pid"));
+    }
 }

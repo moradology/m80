@@ -48,12 +48,16 @@ pub(crate) fn format_wire_preview(bytes: &[u8]) -> String {
     let head_hex = hex::encode(head);
     let head_ascii: String = head
         .iter()
-        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '.'
+            }
+        })
         .collect();
     if total > CAP {
-        format!(
-            "len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\" (truncated)"
-        )
+        format!("len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\" (truncated)")
     } else {
         format!("len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\"")
     }
@@ -106,7 +110,10 @@ mod tests {
     fn parse_malformed_with_spaces_not_trimmed() {
         // Spaces are NOT trimmed — " vsock" is a distinct token from "vsock".
         let s = parse_targets(" vsock");
-        assert!(!s.contains("vsock"), "space-prefixed token must not match vsock");
+        assert!(
+            !s.contains("vsock"),
+            "space-prefixed token must not match vsock"
+        );
         assert!(s.contains(" vsock"));
     }
 

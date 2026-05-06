@@ -48,6 +48,7 @@ fn sandbox_config(vm_id: &str) -> m80_firecracker::SandboxConfig {
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
         idle_timeout: None,
+        request_id: None,
     }
 }
 
@@ -64,6 +65,7 @@ fn sandbox_config_with_workspace(
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
         idle_timeout: None,
+        request_id: None,
     }
 }
 
@@ -76,6 +78,7 @@ fn exec_sh(running: &mut m80_firecracker::RunningSandbox, cmd: &str) -> m80_prot
             env: None,
             stdin: None,
             timeout_ms: Some(10_000),
+            streaming: false,
         })
         .expect("exec")
 }
@@ -219,18 +222,20 @@ fn exec_after_failed_exec_still_works() {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         })
         .expect("exec must not return Err for nonzero exit");
     assert_ne!(r1.exit_code, Some(0), "exec1 must exit nonzero");
 
     // exec2: channel must still be intact.
     let r2 = exec_sh(&mut running, "echo ok-after-fail");
-    assert_eq!(r2.exit_code, Some(0), "exec2 must succeed after failed exec1");
-    let out2 = String::from_utf8_lossy(&r2.stdout);
-    assert!(
-        out2.contains("ok-after-fail"),
-        "exec2 stdout: {out2:?}"
+    assert_eq!(
+        r2.exit_code,
+        Some(0),
+        "exec2 must succeed after failed exec1"
     );
+    let out2 = String::from_utf8_lossy(&r2.stdout);
+    assert!(out2.contains("ok-after-fail"), "exec2 stdout: {out2:?}");
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");

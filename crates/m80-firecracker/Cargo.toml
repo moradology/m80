@@ -22,7 +22,7 @@ m80-preflight.workspace = true
 m80-net-mode.workspace = true
 m80-net-outbound.workspace = true
 m80-snapshot.workspace = true
-# m80-observability is a v0.2 dep target — not used in v0.1 code paths.
+m80-observability.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -32,3 +32,15 @@ toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[[bench]]
+name = "persistent_turn_latency"
+harness = false
+
+[[bench]]
+name = "snapshot_restore_latency"
+harness = false
+
+[[bench]]
+name = "warm_pool_allocation_latency"
+harness = false

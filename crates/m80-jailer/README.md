@@ -24,6 +24,10 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `MaterializedJail::launch(...)` exec's `firecracker` inside the jail
   via the jailer binary (no `--daemonize`, so jailer execs into
   firecracker — `jailer_pid == firecracker_pid`).
+- If `JailerConfig::stdio_log` is `Some(path)`, `launch` appends the
+  jailed process stdout and stderr to that host file. m80-firecracker
+  sets this to `<run_dir>/console.log` so Firecracker VMM output and the
+  guest serial console survive launch failures and stopped-VM triage.
 - `recover_from_run_dir` reads any prior plan + state and returns
   `LiveJail | OrphanJail { reap_steps } | NoJail`. The crate does not
   act on the decision; the caller does.
@@ -36,12 +40,13 @@ hands a config in and gets back a launchable chroot — or a typed error.
 
 ## Public surface
 
-- `JailerConfig`, `Binding { source, dest, mode }`,
+- `JailerConfig`, including optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `SocketSpec`.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
 - `recover_from_run_dir`, `RecoveryDecision`.
-- `JailerError`: `LaunchPrivilegeUnavailable`, `BindFailed`,
-  `ChrootFailed`, `UidGidInvalid`, `Io { path, source }`.
+- `JailerError`: `BindFailed`, `ChrootFailed`, `UidGidInvalid`,
+  `Io { path, source }`. Privilege is verified once by `m80-preflight`;
+  this crate does not run a per-launch sudo probe.
 
 ## Non-goals
 

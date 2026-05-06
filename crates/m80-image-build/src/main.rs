@@ -268,8 +268,7 @@ mod tests {
 
     #[test]
     fn parse_kernel_build_explicit_workspace() {
-        let args =
-            parse_args(argv(&["kernel", "build", "--workspace", "/tmp/ws"])).unwrap();
+        let args = parse_args(argv(&["kernel", "build", "--workspace", "/tmp/ws"])).unwrap();
         let Subcommand::KernelBuild { workspace_root } = args.subcommand else {
             panic!("expected KernelBuild")
         };

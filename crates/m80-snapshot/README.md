@@ -3,8 +3,9 @@
 Snapshot **manifest schemas**, **persistence path layout**, and
 **capture/restore primitives** for Firecracker microVM snapshots.
 
-Schemas active from v0.1; capture/restore execution active from v0.2
-(implemented in m80-rrp.3.13).
+Schemas, capture, and restore primitives are active. `m80-snapshot`
+owns Firecracker REST calls and schema/path helpers; `m80-firecracker`
+owns lifecycle state and jail path translation.
 
 ## Reason for being
 
@@ -59,6 +60,11 @@ The crate serves two purposes:
 
 The VM is left in the `Paused` state. The caller (orchestrator) decides
 whether to resume or kill the Firecracker process.
+
+`SnapshotPaths` passed to Firecracker must be visible from the Firecracker
+process namespace. For jailed Firecracker, `m80-firecracker` owns that
+translation by bind-mounting the host snapshot directory into the jail and
+passing in-jail `/snapshot/...` paths to this crate.
 
 ### Restore
 

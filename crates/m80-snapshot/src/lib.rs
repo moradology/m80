@@ -29,7 +29,7 @@ pub const SNAPSHOT_MANIFEST_FILE: &str = "snapshot-manifest.json";
 pub const RESTORE_METADATA_FILE: &str = "restore-metadata.json";
 
 // ---------------------------------------------------------------------------
-// Schema types (unchanged from v0.1)
+// Schema types
 // ---------------------------------------------------------------------------
 
 /// Manifest persisted alongside a snapshot at
@@ -38,11 +38,9 @@ pub const RESTORE_METADATA_FILE: &str = "restore-metadata.json";
 /// Field declaration order is alphabetical so JSON serialization is stable
 /// without a canonicalization pass.
 ///
-/// **v0.1 status:** the schema is stable and serializes to the canonical
-/// JSON shape v0.2 will read. The execution lane (capture/restore) returns
-/// [`SnapshotError::Deferred`] in v0.1; only the schema + path helpers are
-/// active. A snapshot persisted today by a v0.2 build will be readable; the
-/// inverse is not guaranteed (v0.2 may add fields).
+/// The schema is stable and serializes to the canonical JSON shape read by
+/// the active capture/restore path. Future schema versions are new code, not
+/// tolerant migrations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SnapshotManifest {
@@ -193,8 +191,7 @@ pub struct RestoreRequest {
 ///
 /// Returns [`SnapshotError::Client`] if either REST call fails.
 pub fn capture(req: CaptureRequest<'_>) -> Result<(), SnapshotError> {
-    let client =
-        FirecrackerClient::new(req.fc_socket).map_err(SnapshotError::Client)?;
+    let client = FirecrackerClient::new(req.fc_socket).map_err(SnapshotError::Client)?;
 
     client
         .patch_vm_state(VmState::Paused)
@@ -243,8 +240,7 @@ pub fn restore(req: RestoreRequest) -> Result<(), SnapshotError> {
     }
 
     // Step 2: Load the snapshot.
-    let client =
-        FirecrackerClient::new(&req.fc_socket).map_err(SnapshotError::Client)?;
+    let client = FirecrackerClient::new(&req.fc_socket).map_err(SnapshotError::Client)?;
 
     client
         .put_snapshot_load(&LoadSnapshotConfig {
@@ -313,7 +309,7 @@ pub enum SnapshotError {
 }
 
 // ---------------------------------------------------------------------------
-// Schema helpers (unchanged from v0.1)
+// Schema helpers
 // ---------------------------------------------------------------------------
 
 /// Partial-deserialize struct used to extract `schema_version` before
@@ -400,7 +396,7 @@ impl RestoreMetadata {
 /// Pure path construction; no I/O. Collision detection is a capture-time
 /// concern (`SnapshotError::DestinationCollision`).
 ///
-/// The `<store_root>` must be a host-local filesystem path. v0.1 ships no
+/// The `<store_root>` must be a host-local filesystem path. m80 ships no
 /// remote-store support; adding S3/GCS/generic stores is a v0.2+ epic.
 ///
 /// **Caller responsibility — no path-component sanitization.** Both

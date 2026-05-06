@@ -115,6 +115,7 @@ mod tests {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         }
     }
 
@@ -225,6 +226,7 @@ mod tests {
             env: None,
             stdin: Some(all_bytes.clone()),
             timeout_ms: None,
+            streaming: false,
         });
         let mut buf = Vec::new();
         write_frame(&mut buf, &env).unwrap();

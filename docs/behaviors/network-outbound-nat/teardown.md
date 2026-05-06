@@ -1,0 +1,68 @@
+# Outbound NAT Teardown
+
+## Rule Comment Prefix
+
+Every iptables rule owned by m80 carries
+`--comment "m80:<first 12 hex chars of sha256(run_root)>:<tap_name>"`.
+This applies to per-VM filter-chain entries, FORWARD entries, and NAT
+POSTROUTING masquerade. Cleanup identifies owned rules by this exact comment,
+not by list position.
+
+Source: predecessor `LEGACY_RULE_COMMENT_PREFIX` line 30, renamed for m80, and
+`outbound_nat_rule_comment` lines 1503-1511.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::every_owned_rule_carries_per_vm_comment`.
+
+## Cleanup By Comment
+
+During policy teardown, m80 lists the owned filter chain with
+`iptables -w -t filter -S <chain>`. Rules in that chain must contain the
+per-VM comment before they are deleted. A rule in the owned chain without the
+comment aborts cleanup with `ForeignChainRule`; unrelated rules outside the
+owned chain are left alone.
+
+Source: predecessor `cleanup_outbound_nat_policy` lines 1202-1212 and
+`delete_owned_iptables_chain_rules` lines 1819-1840.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::cleanup_deletes_only_rules_with_owned_comment`
+and `::cleanup_foreign_rule_in_owned_chain_aborts`.
+
+## Chain Delete
+
+After deleting all comment-owned rules, m80 lists the per-VM filter chain
+again. It deletes the chain with `iptables -w -t filter -X <chain>` only when
+the chain is empty. Any residue produces a typed conflict instead of deleting
+through ambiguity.
+
+Source: predecessor `delete_iptables_chain_if_empty` lines 1842-1880.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::chain_deleted_only_when_empty`.
+
+## Tap Delete Tolerant
+
+VM cleanup deletes the TAP through the link-operation seam's
+`delete_link_if_exists`. The operation is idempotent: repeated cleanup calls
+after the VM network state file is removed do not surface a missing-device
+error and do not attempt a second TAP deletion.
+
+Source: predecessor `delete_interface_if_present` lines 1301-1318 and
+`cleanup_vm_network_with_host` lines 1101-1121. m80 uses rtnetlink through
+`LinkOps` instead of shelling out to `ip`.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::repeated_cleanup_calls_are_safe`.
+
+## Foreign Rule Rejection
+
+Before installing into a pre-existing per-VM filter chain, m80 lists the
+chain and fails closed when any rule beyond the chain header lacks the
+expected per-VM comment. This prevents accidental coexistence with foreign
+host firewall policy in a chain name m80 would otherwise own.
+
+Source: predecessor `reject_foreign_iptables_chain_rules` lines 1782-1817.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::foreign_rule_in_owned_chain_aborts`.

@@ -15,12 +15,16 @@
 //! 4. Mount workspace drive `/dev/vdc` → `/workspace` if present (step 10).
 //! 5. Continue: vsock listener, ready signal, exec loop.
 
+use std::fs::OpenOptions;
+use std::os::fd::AsRawFd;
 use std::path::Path;
 
 use anyhow::Context as _;
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::Pid;
+use nix::unistd::{dup2, Pid};
+
+use crate::guest_log::{self, BootTimer, GuestLogPhase};
 
 /// True when this process was launched by the kernel as init (PID 1).
 pub fn is_pid_one() -> bool {
@@ -30,11 +34,17 @@ pub fn is_pid_one() -> bool {
 /// Configure the process for PID-1 duty: pseudo-fs mounts, overlay mount,
 /// pivot_root, workspace mount, and panic hook. Call exactly once early in
 /// `main`.
-pub fn enter_pid_one_mode() -> anyhow::Result<()> {
+pub fn enter_pid_one_mode(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
+    redirect_stdio_to_console().context("redirect stdio to /dev/console")?;
+    boot_timer.mark("stdio_redirected");
     install_panic_hook();
+    boot_timer.mark("panic_hook_installed");
     mount_pseudo_filesystems().context("pseudo-fs mounts")?;
-    mount_overlay_and_pivot().context("overlay mount and pivot_root")?;
-    mount_workspace_if_present().context("workspace mount")?;
+    boot_timer.mark("pseudo_fs_mounted");
+    mount_overlay_and_pivot(boot_timer).context("overlay mount and pivot_root")?;
+    boot_timer.mark("overlay_pivot_complete");
+    mount_workspace_if_present(boot_timer).context("workspace mount")?;
+    boot_timer.mark("pid1_setup_complete");
     Ok(())
 }
 
@@ -42,27 +52,59 @@ pub fn enter_pid_one_mode() -> anyhow::Result<()> {
 /// `CONFIG_DEVTMPFS_MOUNT=y` so `/dev` is normally pre-populated by the
 /// kernel — `EBUSY` (already mounted) is treated as success.
 fn mount_pseudo_filesystems() -> anyhow::Result<()> {
-    eprintln!("[guestd] mounting pseudo-filesystems");
-    mount_one("proc",     "/proc", "proc",     MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC)?;
-    mount_one("sysfs",    "/sys",  "sysfs",    MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC)?;
-    mount_one("devtmpfs", "/dev",  "devtmpfs", MsFlags::MS_NOSUID)?;
-    eprintln!("[guestd] pseudo-filesystems mounted");
+    guest_log::info(GuestLogPhase::Boot, None, "mounting pseudo-filesystems");
+    mount_one(
+        "proc",
+        "/proc",
+        "proc",
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+    )?;
+    mount_one(
+        "sysfs",
+        "/sys",
+        "sysfs",
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+    )?;
+    mount_one("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID)?;
+    guest_log::info(GuestLogPhase::Boot, None, "pseudo-filesystems mounted");
+    Ok(())
+}
+
+/// In PID-1 mode systemd is not present, so `StandardError=journal+console`
+/// cannot help us. Duplicate both stdout and stderr onto `/dev/console`
+/// before any startup logs are emitted.
+fn redirect_stdio_to_console() -> anyhow::Result<()> {
+    let console = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/console")
+        .context("open /dev/console")?;
+    dup2(console.as_raw_fd(), 1).context("dup2 stdout -> /dev/console")?;
+    dup2(console.as_raw_fd(), 2).context("dup2 stderr -> /dev/console")?;
     Ok(())
 }
 
 fn mount_one(source: &str, target: &str, fstype: &str, flags: MsFlags) -> anyhow::Result<()> {
-    match mount(Some(source), Path::new(target), Some(fstype), flags, None::<&str>) {
+    match mount(
+        Some(source),
+        Path::new(target),
+        Some(fstype),
+        flags,
+        None::<&str>,
+    ) {
         Ok(()) => Ok(()),
         Err(nix::errno::Errno::EBUSY) => Ok(()),
-        Err(e) => Err(anyhow::anyhow!("mount {source} -> {target} ({fstype}): {e}")),
+        Err(e) => Err(anyhow::anyhow!(
+            "mount {source} -> {target} ({fstype}): {e}"
+        )),
     }
 }
 
 /// Implement design doc §3.1 steps 1–9:
 ///
 /// 1. Make mount namespace fully private (MS_REC | MS_PRIVATE on /).
-/// 2. Mount /dev/vda (RO base ext4) at /lower.
-/// 3. Mount /dev/vdb (RW overlay ext4) at /upper.
+/// 2. Verify image-built mountpoints exist, then mount /dev/vda (RO base ext4) at /lower.
+/// 3. Verify image-built mountpoints exist, then mount /dev/vdb (RW overlay ext4) at /upper.
 /// 4. mkdir /upper/root and /upper/.work (idempotent).
 /// 5. mkdir /merged.
 /// 6. Mount overlayfs with lowerdir=/lower, upperdir=/upper/root, workdir=/upper/.work at /merged.
@@ -72,11 +114,15 @@ fn mount_one(source: &str, target: &str, fstype: &str, flags: MsFlags) -> anyhow
 ///
 /// On any failure, cleanup already-mounted layers (MNT_DETACH) and panic.
 /// No retry, no fallback — failure here is structural.
-fn mount_overlay_and_pivot() -> anyhow::Result<()> {
+fn mount_overlay_and_pivot(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
     // ── Phase 1: namespace isolation ──────────────────────────────────────
     // Step 1. Make the current mount namespace fully private so pivot_root(2)
     //         does not propagate to the host.  Must come before any pivot_root.
-    eprintln!("[guestd] step 1: making mount namespace private");
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "step 1: making mount namespace private",
+    );
     mount(
         None::<&str>,
         "/",
@@ -85,11 +131,18 @@ fn mount_overlay_and_pivot() -> anyhow::Result<()> {
         None::<&str>,
     )
     .context("step 1: mount / MS_REC|MS_PRIVATE failed")?;
+    boot_timer.mark("mount_namespace_private");
 
     // ── Phase 2: mount layer disks ────────────────────────────────────────
     // Step 2. Mount the shared read-only base ext4 (vda) at /lower.
-    eprintln!("[guestd] step 2: mounting /dev/vda at /lower");
-    std::fs::create_dir_all("/lower").context("step 2: mkdir /lower")?;
+    // / is already read-only, so these mountpoints are an image-build
+    // contract, not something PID 1 can create at runtime.
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "step 2: mounting /dev/vda at /lower",
+    );
+    ensure_precreated_mountpoint("/lower").context("step 2: /lower mountpoint")?;
     mount(
         Some("/dev/vda"),
         "/lower",
@@ -98,10 +151,15 @@ fn mount_overlay_and_pivot() -> anyhow::Result<()> {
         None::<&str>,
     )
     .context("step 2: mount /dev/vda -> /lower (ext4, rdonly)")?;
+    boot_timer.mark("base_mounted");
 
     // Step 3. Mount the per-VM writable ext4 (vdb) at /upper.
-    eprintln!("[guestd] step 3: mounting /dev/vdb at /upper");
-    std::fs::create_dir_all("/upper").context("step 3: mkdir /upper")?;
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "step 3: mounting /dev/vdb at /upper",
+    );
+    ensure_precreated_mountpoint("/upper").context("step 3: /upper mountpoint")?;
     let upper_mounted = mount(
         Some("/dev/vdb"),
         "/upper",
@@ -110,24 +168,39 @@ fn mount_overlay_and_pivot() -> anyhow::Result<()> {
         None::<&str>,
     );
     if let Err(ref e) = upper_mounted {
-        eprintln!("[guestd] step 3 FAILED: /dev/vdb -> /upper: {e}; detaching /lower");
+        guest_log::error(
+            GuestLogPhase::Boot,
+            None,
+            format!("step 3 FAILED: /dev/vdb -> /upper: {e}; detaching /lower"),
+        );
         let _ = umount2("/lower", MntFlags::MNT_DETACH);
     }
     upper_mounted.context("step 3: mount /dev/vdb -> /upper (ext4)")?;
+    boot_timer.mark("overlay_disk_mounted");
 
     // ── Phase 3: prepare overlay dirs ─────────────────────────────────────
     // Step 4. Create upperdir and workdir on /dev/vdb's superblock.
-    eprintln!("[guestd] step 4: creating /upper/root and /upper/.work");
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "step 4: creating /upper/root and /upper/.work",
+    );
     std::fs::create_dir_all("/upper/root").context("step 4: mkdir /upper/root")?;
     std::fs::create_dir_all("/upper/.work").context("step 4: mkdir /upper/.work")?;
+    boot_timer.mark("overlay_dirs_ready");
 
     // Step 5. Create the overlay merge target.
-    eprintln!("[guestd] step 5: creating /merged");
-    std::fs::create_dir_all("/merged").context("step 5: mkdir /merged")?;
+    guest_log::info(GuestLogPhase::Boot, None, "step 5: creating /merged");
+    ensure_precreated_mountpoint("/merged").context("step 5: /merged mountpoint")?;
+    boot_timer.mark("merged_mountpoint_ready");
 
     // ── Phase 4: overlayfs ────────────────────────────────────────────────
     // Step 6. Mount overlayfs.
-    eprintln!("[guestd] step 6: mounting overlayfs at /merged");
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "step 6: mounting overlayfs at /merged",
+    );
     let opts = "lowerdir=/lower,upperdir=/upper/root,workdir=/upper/.work";
     let overlay_mounted = mount(
         Some("overlay"),
@@ -137,17 +210,26 @@ fn mount_overlay_and_pivot() -> anyhow::Result<()> {
         Some(opts),
     );
     if let Err(ref e) = overlay_mounted {
-        eprintln!("[guestd] step 6 FAILED: overlayfs: {e}; detaching /upper and /lower");
+        guest_log::error(
+            GuestLogPhase::Boot,
+            None,
+            format!("step 6 FAILED: overlayfs: {e}; detaching /upper and /lower"),
+        );
         let _ = umount2("/upper", MntFlags::MNT_DETACH);
         let _ = umount2("/lower", MntFlags::MNT_DETACH);
     }
     overlay_mounted.context("step 6: mount overlayfs -> /merged")?;
+    boot_timer.mark("overlayfs_mounted");
 
     // ── Phase 5: virtual filesystems into merged (before pivot) ───────────
     // Step 7. Bind /proc, /sys, /dev into /merged/... so they survive pivot.
     //         Flags per docs/exploration/runc-crun-overlayfs-init.md §4:
     //         MS_BIND | MS_REC for /proc; MS_BIND for /sys and /dev.
-    eprintln!("[guestd] step 7: bind-mounting /proc /sys /dev into /merged");
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "step 7: bind-mounting /proc /sys /dev into /merged",
+    );
     mount(
         Some("/proc"),
         "/merged/proc",
@@ -172,12 +254,17 @@ fn mount_overlay_and_pivot() -> anyhow::Result<()> {
         None::<&str>,
     )
     .context("step 7: bind /dev -> /merged/dev")?;
+    boot_timer.mark("pseudo_fs_bound_into_merged");
 
     // ── Phase 6: pivot ────────────────────────────────────────────────────
     // Step 8. Make current root MS_SLAVE so unmounts don't propagate to host.
     //         Then bind /merged onto itself (required by pivot_root when the
     //         new root shares the overlay mount).
-    eprintln!("[guestd] step 8: MS_SLAVE on / and self-bind /merged");
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "step 8: MS_SLAVE on / and self-bind /merged",
+    );
     mount(
         None::<&str>,
         "/",
@@ -194,12 +281,26 @@ fn mount_overlay_and_pivot() -> anyhow::Result<()> {
         None::<&str>,
     )
     .context("step 8: bind /merged onto itself")?;
+    boot_timer.mark("merged_self_bound");
 
     // Step 9. pivot_rootfs("/merged") — lifted verbatim from kata-containers.
-    eprintln!("[guestd] step 9: pivot_rootfs(/merged)");
+    guest_log::info(GuestLogPhase::Boot, None, "step 9: pivot_rootfs(/merged)");
     pivot_rootfs("/merged").context("step 9: pivot_rootfs(/merged)")?;
-    eprintln!("[guestd] pivot complete — now running in merged rootfs");
+    boot_timer.mark("pivot_rootfs_done");
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "pivot complete; now running in merged rootfs",
+    );
 
+    Ok(())
+}
+
+fn ensure_precreated_mountpoint(path: &str) -> anyhow::Result<()> {
+    let metadata = std::fs::metadata(path).with_context(|| format!("{path} must exist"))?;
+    if !metadata.is_dir() {
+        anyhow::bail!("{path} must be a directory");
+    }
     Ok(())
 }
 
@@ -284,17 +385,24 @@ const WORKSPACE_TARGET: &str = "/workspace";
 ///
 /// This is step 10 of the design doc §3.1 sequence. Must be called AFTER
 /// `pivot_rootfs` so the mount lands inside the new (merged) root.
-fn mount_workspace_if_present() -> anyhow::Result<()> {
+fn mount_workspace_if_present(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
     if !Path::new(WORKSPACE_DEV).exists() {
-        eprintln!("[guestd] no workspace drive ({WORKSPACE_DEV}), skipping workspace mount");
-        tracing::info!(
-            dev = WORKSPACE_DEV,
-            "no workspace drive attached, skipping workspace mount"
+        guest_log::info(
+            GuestLogPhase::Boot,
+            None,
+            format!("no workspace drive ({WORKSPACE_DEV}), skipping workspace mount"),
         );
+        boot_timer.mark("workspace_absent");
         return Ok(());
     }
-    eprintln!("[guestd] step 10: mounting {WORKSPACE_DEV} at {WORKSPACE_TARGET}");
-    mount_one(WORKSPACE_DEV, WORKSPACE_TARGET, "ext4", MsFlags::empty())
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        format!("step 10: mounting {WORKSPACE_DEV} at {WORKSPACE_TARGET}"),
+    );
+    mount_one(WORKSPACE_DEV, WORKSPACE_TARGET, "ext4", MsFlags::empty())?;
+    boot_timer.mark("workspace_mounted");
+    Ok(())
 }
 
 /// Reap any pending zombies. Call between requests so orphans (children
@@ -316,7 +424,11 @@ pub fn reap_pending() {
 /// undefined state.
 fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
-        eprintln!("m80-guestd PID-1 panic: {info}");
+        guest_log::error(
+            GuestLogPhase::Boot,
+            None,
+            format!("m80-guestd PID-1 panic: {info}"),
+        );
         std::process::exit(1);
     }));
 }

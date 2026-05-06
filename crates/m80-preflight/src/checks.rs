@@ -10,7 +10,7 @@ use nix::sys::statvfs::statvfs;
 use nix::sys::utsname::uname;
 use nix::unistd::geteuid;
 
-use m80_image_manifest::Manifest;
+use m80_image_manifest::{KernelKind, Manifest};
 
 use crate::{CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES};
 
@@ -18,10 +18,12 @@ const ENV_FIRECRACKER_BIN: &str = "M80_FIRECRACKER_BIN";
 const ENV_FIRECRACKER_VERSION: &str = "M80_FIRECRACKER_VERSION";
 const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
 const ENV_KERNEL_IMAGE: &str = "M80_KERNEL_IMAGE";
+const ENV_KERNEL_KIND: &str = "M80_KERNEL_KIND";
 const ENV_ROOTFS_IMAGE: &str = "M80_ROOTFS_IMAGE";
 const ENV_ARTIFACT_DIR: &str = "M80_ARTIFACT_DIR";
 const ENV_RUN_ROOT: &str = "M80_RUN_ROOT";
 
+const KVM_PATH: &str = "/dev/kvm";
 const DEFAULT_FIRECRACKER_BIN: &str = "/opt/firecracker/bin/firecracker";
 const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
 const DEFAULT_ARTIFACT_DIR: &str = "/opt/m80/artifacts";
@@ -30,7 +32,7 @@ const DEFAULT_RUN_ROOT: &str = "/var/run/m80";
 /// 100 MiB minimum free space for the run-root.
 const MIN_RUN_ROOT_FREE_BYTES: u64 = 100 * 1024 * 1024;
 
-const REQUIRED_STORAGE_HELPERS: &[&str] = &["mkfs.ext4", "debugfs", "e2fsck"];
+const REQUIRED_STORAGE_HELPERS: &[&str] = &["mkfs.ext4", "cp", "fallocate", "debugfs", "e2fsck"];
 
 /// Run all 10 checks in order. First failure returns a typed error immediately.
 pub fn run() -> Result<Discovery, PreflightError> {
@@ -82,7 +84,7 @@ fn check_os(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
     let uts = uname().map_err(|e| PreflightError::Io(e.into()))?;
     let sysname = uts.sysname().to_string_lossy().to_string();
     if sysname != "Linux" {
-        return Err(PreflightError::UnsupportedHostPlatform(sysname));
+        return Err(PreflightError::UnsupportedHostPlatform { actual: sysname });
     }
     let release = uts.release().to_string_lossy().to_string();
     report.push(CheckRow {
@@ -94,21 +96,21 @@ fn check_os(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
 }
 
 fn check_kvm(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
-    let kvm = Path::new("/dev/kvm");
+    let kvm = PathBuf::from(KVM_PATH);
 
     if !kvm.exists() {
-        return Err(PreflightError::KvmUnavailable);
+        return Err(PreflightError::KvmUnavailable { path: kvm });
     }
 
     // Write-access check: open O_WRONLY; close immediately.
     // EACCES → permission denied → fail; other errors (EBUSY etc.) are not
     // access-denial and we don't block on them.
-    let result = fs::OpenOptions::new().write(true).open(kvm);
+    let result = fs::OpenOptions::new().write(true).open(&kvm);
 
     match result {
         Ok(f) => drop(f),
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            return Err(PreflightError::KvmUnavailable);
+            return Err(PreflightError::KvmNotWritable { path: kvm });
         }
         Err(_) => {}
     }
@@ -116,7 +118,7 @@ fn check_kvm(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
     report.push(CheckRow {
         label: "KVM".to_string(),
         passed: true,
-        detail: "/dev/kvm present and writable".to_string(),
+        detail: format!("{} present and writable", kvm.display()),
     });
     Ok(())
 }
@@ -294,7 +296,10 @@ fn check_rootfs_and_manifest(
     }
 
     let manifest_path = PathBuf::from(format!("{}.manifest.json", rootfs.display()));
-    let manifest = Manifest::read(&manifest_path)?;
+    let mut manifest = Manifest::read(&manifest_path)?;
+    if let Ok(kind) = env::var(ENV_KERNEL_KIND) {
+        manifest.kernel_kind = parse_kernel_kind(&kind)?;
+    }
 
     let parent = rootfs
         .parent()
@@ -308,6 +313,17 @@ fn check_rootfs_and_manifest(
         detail: format!("{} (sha256 ok)", rootfs.display()),
     });
     Ok((rootfs, manifest))
+}
+
+fn parse_kernel_kind(raw: &str) -> Result<KernelKind, PreflightError> {
+    match raw {
+        "stock" => Ok(KernelKind::Stock),
+        "stripped" => Ok(KernelKind::Stripped),
+        other => Err(PreflightError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("M80_KERNEL_KIND must be stock|stripped, got {other}"),
+        ))),
+    }
 }
 
 fn check_run_root(report: &mut Vec<CheckRow>) -> Result<PathBuf, PreflightError> {
@@ -393,4 +409,188 @@ fn find_in_path(binary: &str, search_path: Option<&std::ffi::OsString>) -> Optio
     env::split_paths(search_path)
         .map(|dir| dir.join(binary))
         .find(|candidate| candidate.exists())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use m80_image_manifest::{ImageKind, KernelKind, Manifest, ManifestError, SCHEMA_VERSION};
+
+    use super::*;
+
+    const SHA256_EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        old: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &Path) -> Self {
+            let old = env::var_os(key);
+            env::set_var(key, value);
+            Self { key, old }
+        }
+
+        fn set_str(key: &'static str, value: &str) -> Self {
+            let old = env::var_os(key);
+            env::set_var(key, value);
+            Self { key, old }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let old = env::var_os(key);
+            env::remove_var(key);
+            Self { key, old }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(old) = &self.old {
+                env::set_var(self.key, old);
+            } else {
+                env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn fixture_dir(name: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = env::temp_dir().join(format!("m80-preflight-{name}-{unique}"));
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    fn write_empty(path: &Path) {
+        std::fs::write(path, b"").unwrap();
+    }
+
+    fn minimal_manifest(dir: &Path) -> (PathBuf, Manifest) {
+        let kernel = dir.join("vmlinux");
+        let rootfs = dir.join("output.ext4");
+        let daemon = dir.join("m80-guestd");
+        write_empty(&kernel);
+        write_empty(&rootfs);
+        write_empty(&daemon);
+
+        let manifest = Manifest {
+            boot_target: None,
+            daemon_binary_path: daemon,
+            daemon_binary_sha256: SHA256_EMPTY.to_string(),
+            expected_firecracker_version: "v1.15.1".to_string(),
+            guest_port: 9001,
+            image_kind: ImageKind::Minimal,
+            kernel_image: kernel,
+            kernel_image_sha256: SHA256_EMPTY.to_string(),
+            kernel_kind: KernelKind::Stock,
+            no_egress_reason: None,
+            output_rootfs_image: rootfs.clone(),
+            output_rootfs_sha256: SHA256_EMPTY.to_string(),
+            ready_marker: "M80_READY".to_string(),
+            schema_version: SCHEMA_VERSION,
+            service_unit_path: None,
+            service_unit_sha256: None,
+            source_rootfs_image: None,
+            source_rootfs_sha256: None,
+            workspace_mount_path: None,
+            workspace_mount_sha256: None,
+        };
+        let manifest_path = PathBuf::from(format!("{}.manifest.json", rootfs.display()));
+        manifest.write(&manifest_path).unwrap();
+        (rootfs, manifest)
+    }
+
+    #[test]
+    fn rootfs_and_manifest_check_accepts_verified_artifacts() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = fixture_dir("manifest-ok");
+        let (rootfs, expected) = minimal_manifest(&dir);
+        let _env = EnvGuard::set(ENV_ROOTFS_IMAGE, &rootfs);
+        let _kernel_kind = EnvGuard::remove(ENV_KERNEL_KIND);
+        let mut report = Vec::new();
+
+        let (actual_rootfs, actual_manifest) =
+            check_rootfs_and_manifest(&mut report).expect("manifest must verify");
+
+        assert_eq!(actual_rootfs, rootfs);
+        assert_eq!(actual_manifest, expected);
+        assert_eq!(report[0].label, "Rootfs + manifest");
+        assert!(
+            report[0].detail.contains("sha256 ok"),
+            "report must mark sha verification: {:?}",
+            report[0]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rootfs_and_manifest_check_rejects_tampered_artifacts() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = fixture_dir("manifest-tampered");
+        let (rootfs, manifest) = minimal_manifest(&dir);
+        std::fs::write(&manifest.kernel_image, b"tampered").unwrap();
+        let _env = EnvGuard::set(ENV_ROOTFS_IMAGE, &rootfs);
+        let _kernel_kind = EnvGuard::remove(ENV_KERNEL_KIND);
+        let mut report = Vec::new();
+
+        let err = check_rootfs_and_manifest(&mut report).unwrap_err();
+
+        match err {
+            PreflightError::Manifest(ManifestError::Sha256Mismatch { field, .. }) => {
+                assert_eq!(field, "kernel_image");
+            }
+            other => panic!("expected manifest sha mismatch, got {other:?}"),
+        }
+        assert!(
+            report.is_empty(),
+            "failed verification must not append a success row"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rootfs_and_manifest_check_honors_kernel_kind_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = fixture_dir("manifest-kernel-kind");
+        let (rootfs, _) = minimal_manifest(&dir);
+        let _rootfs = EnvGuard::set(ENV_ROOTFS_IMAGE, &rootfs);
+        let _kernel_kind = EnvGuard::set_str(ENV_KERNEL_KIND, "stripped");
+        let mut report = Vec::new();
+
+        let (_, actual_manifest) =
+            check_rootfs_and_manifest(&mut report).expect("manifest must verify");
+
+        assert_eq!(actual_manifest.kernel_kind, KernelKind::Stripped);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn invalid_kernel_kind_env_fails_closed() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = fixture_dir("manifest-bad-kernel-kind");
+        let (rootfs, _) = minimal_manifest(&dir);
+        let _rootfs = EnvGuard::set(ENV_ROOTFS_IMAGE, &rootfs);
+        let _kernel_kind = EnvGuard::set_str(ENV_KERNEL_KIND, "tiny");
+        let mut report = Vec::new();
+
+        let err = check_rootfs_and_manifest(&mut report).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("M80_KERNEL_KIND must be stock|stripped"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            report.is_empty(),
+            "failed kernel kind parsing must not append a success row"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

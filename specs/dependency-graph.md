@@ -251,11 +251,11 @@ graph TD
     class m80-exy31 open
     m80-exy32["m80-exy.3.2<br/>Persist outbound-bridge-state.json at..."]
     class m80-exy32 open
-    m80-exy33["m80-exy.3.3<br/>Create tap device via ip tuntap then ..."]
+    m80-exy33["m80-exy.3.3<br/>Create TAP without ip binary then..."]
     class m80-exy33 open
     m80-exy34["m80-exy.3.4<br/>Persist per-VM network-state.json wit..."]
     class m80-exy34 open
-    m80-exy35["m80-exy.3.5<br/>Route every ip invocation through pri..."]
+    m80-exy35["m80-exy.3.5<br/>Assert bridge/tap setup has no..."]
     class m80-exy35 open
     m80-exy4["m80-exy.4<br/>Guest network injection"]
     class m80-exy4 open
@@ -973,4 +973,3 @@ graph TD
     m80-zmg41 -.-> m80-zmg4
     m80-zmg42 -.-> m80-zmg4
     m80-zmg43 -.-> m80-zmg4
-

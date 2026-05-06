@@ -7,9 +7,9 @@
 # P50/P95/max per cell, appends rows to two CSVs:
 #
 #   - crates/m80-firecracker/benches/cold-launch.csv
-#       per-launch wallclock: timestamp,kind,load,attempt,launch_ms,exit
+#       per-launch wallclock: timestamp,kind,kernel_kind,load,attempt,launch_ms,exit
 #   - crates/m80-firecracker/benches/cold-launch-phases.csv
-#       long format: timestamp,kind,load,attempt,phase,elapsed_us
+#       long format: timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us
 #
 # Requirements (same as scripts/smoke.sh):
 #   - KVM host, sudo NOPASSWD, /opt/firecracker/bin/{firecracker,jailer},
@@ -32,11 +32,15 @@
 #   KIND                             ubuntu|minimal|both (default both)
 #   SKIP_LOADED                      Skip the stress-ng cell when set
 #   STRESS_PROCS                     Default $(nproc). stress-ng --cpu N
+#   KERNEL_KIND                      stock|stripped (default stock)
 #
 # Caveats:
 #   - "launch_ms" is wallclock from `m80 launch` invocation to exit, not a
 #     precise InstanceStart-to-ready measurement. The per-phase CSV
 #     attributes the within-binary slice; spawn + teardown are external.
+#   - Guest boot milestone lines (`M80_GUEST_BOOT`) are forwarded by the CLI
+#     only when M80_PHASE_TRACE=1 and are recorded as guest_elapsed_* and
+#     guest_delta_* phase rows.
 #   - The first 2 launches per cell are discarded as warmup.
 #
 # Iterating on perf:
@@ -71,6 +75,7 @@ WARMUP=2
 KIND="${KIND:-both}"
 SKIP_LOADED="${SKIP_LOADED:-0}"
 STRESS_PROCS="${STRESS_PROCS:-$(nproc)}"
+KERNEL_KIND="${KERNEL_KIND:-${M80_KERNEL_KIND:-stock}}"
 IMAGE_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-build/ubuntu}"
 IMAGE_MINIMAL="${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}"
 RESULT_CSV="crates/m80-firecracker/benches/cold-launch.csv"
@@ -78,8 +83,43 @@ PHASE_CSV="crates/m80-firecracker/benches/cold-launch-phases.csv"
 SNAPSHOTS_DIR="crates/m80-firecracker/benches/snapshots"
 
 mkdir -p "$(dirname "$RESULT_CSV")"
-[[ -f "$RESULT_CSV" ]] || echo "timestamp,kind,load,attempt,launch_ms,exit" > "$RESULT_CSV"
-[[ -f "$PHASE_CSV" ]] || echo "timestamp,kind,load,attempt,phase,elapsed_us" > "$PHASE_CSV"
+
+ensure_wallclock_csv() {
+    if [[ ! -f "$RESULT_CSV" ]]; then
+        echo "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit" > "$RESULT_CSV"
+        return
+    fi
+    if [[ "$(head -n 1 "$RESULT_CSV")" == "timestamp,kind,load,attempt,launch_ms,exit" ]]; then
+        local tmp
+        tmp="$(mktemp)"
+        awk -F, 'BEGIN { OFS="," }
+            NR == 1 { print "timestamp","kind","kernel_kind","load","attempt","launch_ms","exit"; next }
+            NF == 6 { print $1,$2,"stock",$3,$4,$5,$6; next }
+            { print }
+        ' "$RESULT_CSV" > "$tmp"
+        mv "$tmp" "$RESULT_CSV"
+    fi
+}
+
+ensure_phase_csv() {
+    if [[ ! -f "$PHASE_CSV" ]]; then
+        echo "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us" > "$PHASE_CSV"
+        return
+    fi
+    if [[ "$(head -n 1 "$PHASE_CSV")" == "timestamp,kind,load,attempt,phase,elapsed_us" ]]; then
+        local tmp
+        tmp="$(mktemp)"
+        awk -F, 'BEGIN { OFS="," }
+            NR == 1 { print "timestamp","kind","kernel_kind","load","attempt","phase","elapsed_us"; next }
+            NF == 6 { print $1,$2,"stock",$3,$4,$5,$6; next }
+            { print }
+        ' "$PHASE_CSV" > "$tmp"
+        mv "$tmp" "$PHASE_CSV"
+    fi
+}
+
+ensure_wallclock_csv
+ensure_phase_csv
 
 # Per-run temp dir holds a clean CSV pair scoped to this run only.
 # The historical CSVs are append-only across runs; the per-run CSVs give
@@ -89,8 +129,8 @@ RUN_TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$RUN_TEMP_DIR"' EXIT
 RUN_RESULT_CSV="$RUN_TEMP_DIR/cold-launch.csv"
 RUN_PHASE_CSV="$RUN_TEMP_DIR/cold-launch-phases.csv"
-echo "timestamp,kind,load,attempt,launch_ms,exit" > "$RUN_RESULT_CSV"
-echo "timestamp,kind,load,attempt,phase,elapsed_us" > "$RUN_PHASE_CSV"
+echo "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit" > "$RUN_RESULT_CSV"
+echo "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us" > "$RUN_PHASE_CSV"
 
 # Hard-fail early on missing dependencies. The previous "background
 # stress-ng with stderr suppressed" pattern silently turned loaded cells
@@ -134,6 +174,7 @@ run_one() {
          M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
          M80_JAILER_BIN=/opt/firecracker/bin/jailer \
          M80_KERNEL_IMAGE="$image_dir/vmlinux" \
+         M80_KERNEL_KIND="$KERNEL_KIND" \
          M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
          M80_RUN_ROOT=/var/lib/m80-run \
          M80_FIRECRACKER_VERSION=v1.15.1 \
@@ -148,6 +189,7 @@ run_one() {
             M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
             M80_JAILER_BIN=/opt/firecracker/bin/jailer \
             M80_KERNEL_IMAGE="$image_dir/vmlinux" \
+            M80_KERNEL_KIND="$KERNEL_KIND" \
             M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
             M80_RUN_ROOT=/var/lib/m80-run \
             M80_FIRECRACKER_VERSION=v1.15.1 \
@@ -170,9 +212,19 @@ run_one() {
         local name us
         name="${line#*name=}"; name="${name%% *}"
         us="${line##*elapsed_us=}"; us="${us%%[!0-9]*}"
-        echo "$ts,$kind,$load,$attempt,$name,$us" >> "$PHASE_CSV"
-        echo "$ts,$kind,$load,$attempt,$name,$us" >> "$RUN_PHASE_CSV"
+        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$PHASE_CSV"
+        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$RUN_PHASE_CSV"
     done < <(grep '^M80_PHASE ' "$stderr_file" || true)
+    while IFS= read -r line; do
+        local name elapsed_us delta_us
+        name="${line#*name=}"; name="${name%% *}"
+        elapsed_us="${line#*elapsed_us=}"; elapsed_us="${elapsed_us%% *}"
+        delta_us="${line#*delta_us=}"; delta_us="${delta_us%%[!0-9]*}"
+        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$PHASE_CSV"
+        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$RUN_PHASE_CSV"
+        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$PHASE_CSV"
+        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$RUN_PHASE_CSV"
+    done < <(grep '^M80_GUEST_BOOT ' "$stderr_file" || true)
 
     rm -f "$stderr_file"
     echo "$elapsed_ms,$exit_code"
@@ -198,8 +250,8 @@ run_cell() {
         exit_code="${row#*,}"
 
         if (( i > WARMUP )); then
-            echo "$(date -Iseconds),$kind,$load,$i,$launch_ms,$exit_code" >> "$RESULT_CSV"
-            echo "$(date -Iseconds),$kind,$load,$i,$launch_ms,$exit_code" >> "$RUN_RESULT_CSV"
+            echo "$(date -Iseconds),$kind,$KERNEL_KIND,$load,$i,$launch_ms,$exit_code" >> "$RESULT_CSV"
+            echo "$(date -Iseconds),$kind,$KERNEL_KIND,$load,$i,$launch_ms,$exit_code" >> "$RUN_RESULT_CSV"
             if [[ "$exit_code" == "0" ]]; then
                 ok_results+=("$launch_ms")
             else

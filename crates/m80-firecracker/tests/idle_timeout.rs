@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use m80_firecracker::SandboxConfig;
 use m80_firecracker::FcError;
+use m80_firecracker::SandboxConfig;
 
 // Re-export the internal helpers we need for unit-testing the watcher loop.
 // The functions are pub(crate) in lifecycle.rs; we access them through the
@@ -47,9 +47,13 @@ fn idle_timeout_default_is_five_minutes() {
 fn idle_timeout_none_disables_watcher() {
     let cfg = SandboxConfig {
         idle_timeout: None,
+        request_id: None,
         ..SandboxConfig::default()
     };
-    assert!(cfg.idle_timeout.is_none(), "idle_timeout must be None when explicitly opted out");
+    assert!(
+        cfg.idle_timeout.is_none(),
+        "idle_timeout must be None when explicitly opted out"
+    );
 }
 
 // ── Unit: watcher-loop mechanic (no KVM) ─────────────────────────────────────
@@ -101,7 +105,9 @@ fn watcher_fires_after_inactivity() {
     let epoch = EPOCH.get_or_init(std::time::Instant::now);
     // Set last_activity to "now - (timeout + a little extra)" so the first
     // poll sees elapsed >= timeout.
-    let stale_ns = epoch.elapsed().saturating_sub(timeout + Duration::from_millis(50));
+    let stale_ns = epoch
+        .elapsed()
+        .saturating_sub(timeout + Duration::from_millis(50));
     let last_activity = Arc::new(AtomicU64::new(stale_ns.as_nanos() as u64));
     let idle_timed_out = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -171,7 +177,10 @@ fn watcher_does_not_fire_when_activity_reset() {
 fn idle_timed_out_error_displays() {
     let err = FcError::IdleTimedOut;
     let s = err.to_string();
-    assert!(!s.is_empty(), "FcError::IdleTimedOut must have a non-empty Display");
+    assert!(
+        !s.is_empty(),
+        "FcError::IdleTimedOut must have a non-empty Display"
+    );
 }
 
 // ── KVM-gated: exec resets the idle deadline ─────────────────────────────────
@@ -203,13 +212,10 @@ fn idle_timeout_resets_on_exec() {
     let backend = std::sync::Arc::new(Backend::new(backend_config).expect("backend"));
     let cfg = SandboxConfig {
         idle_timeout: Some(Duration::from_secs(2)),
+        request_id: None,
         ..SandboxConfig::default()
     };
-    let mut sandbox = backend
-        .admit(cfg)
-        .expect("admit")
-        .launch()
-        .expect("launch");
+    let mut sandbox = backend.admit(cfg).expect("admit").launch().expect("launch");
 
     // First exec — resets the deadline.
     sandbox
@@ -220,6 +226,7 @@ fn idle_timeout_resets_on_exec() {
             env: None,
             stdin: None,
             timeout_ms: Some(5000),
+            streaming: false,
         })
         .expect("first exec must succeed");
 
@@ -235,6 +242,7 @@ fn idle_timeout_resets_on_exec() {
             env: None,
             stdin: None,
             timeout_ms: Some(5000),
+            streaming: false,
         })
         .expect("second exec after reset must succeed");
 
@@ -250,6 +258,7 @@ fn idle_timeout_resets_on_exec() {
             env: None,
             stdin: None,
             timeout_ms: Some(5000),
+            streaming: false,
         })
         .expect_err("exec after idle timeout must fail");
     assert!(
@@ -286,13 +295,10 @@ fn idle_timeout_fires_after_inactivity() {
     let backend = std::sync::Arc::new(Backend::new(backend_config).expect("backend"));
     let cfg = SandboxConfig {
         idle_timeout: Some(Duration::from_secs(2)),
+        request_id: None,
         ..SandboxConfig::default()
     };
-    let mut sandbox = backend
-        .admit(cfg)
-        .expect("admit")
-        .launch()
-        .expect("launch");
+    let mut sandbox = backend.admit(cfg).expect("admit").launch().expect("launch");
 
     // Do not exec; just sleep past the timeout.
     std::thread::sleep(Duration::from_millis(3000));
@@ -305,6 +311,7 @@ fn idle_timeout_fires_after_inactivity() {
             env: None,
             stdin: None,
             timeout_ms: Some(5000),
+            streaming: false,
         })
         .expect_err("exec after idle timeout must fail");
     assert!(

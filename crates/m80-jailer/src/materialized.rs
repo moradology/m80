@@ -4,7 +4,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -63,11 +63,8 @@ impl MaterializedJail {
         // We never `wait()` on it (that would block until the VM exits).
         // Drop on `JailedFirecracker` is responsible for kill+reap.
         //
-        // Stdout/stderr inherit from m80; firecracker prints VMM logs and
-        // (if `console=ttyS0` is in the boot args) serial console output
-        // there too — invaluable for boot debugging. With `--daemonize`,
-        // those would be redirected to /dev/null.
-        let mut child = Command::new(&self.plan.config.jailer_bin)
+        let mut command = Command::new(&self.plan.config.jailer_bin);
+        command
             .arg("--id")
             .arg(&vm_id)
             .arg("--exec-file")
@@ -80,12 +77,30 @@ impl MaterializedJail {
             .arg(chroot_base)
             .arg("--")
             .arg("--api-sock")
-            .arg(api_socket_name)
-            .spawn()
-            .map_err(|source| JailerError::Io {
-                path: self.plan.config.jailer_bin.clone(),
+            .arg(api_socket_name);
+
+        if let Some(stdio_log) = &self.plan.config.stdio_log {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(stdio_log)
+                .map_err(|source| JailerError::Io {
+                    path: stdio_log.clone(),
+                    source,
+                })?;
+            let stderr = file.try_clone().map_err(|source| JailerError::Io {
+                path: stdio_log.clone(),
                 source,
             })?;
+            command
+                .stdout(Stdio::from(file))
+                .stderr(Stdio::from(stderr));
+        }
+
+        let mut child = command.spawn().map_err(|source| JailerError::Io {
+            path: self.plan.config.jailer_bin.clone(),
+            source,
+        })?;
 
         let jailer_pid = child.id();
 
@@ -183,4 +198,79 @@ pub struct JailedFirecracker {
     pub jailer_pid: u32,
     /// PID of the `firecracker` child the jailer exec'd.
     pub firecracker_pid: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{JailerConfig, Plan};
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn launch_redirects_stdio_to_configured_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("vm-stdio");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let jailer_bin = dir.path().join("fake-jailer.sh");
+        std::fs::write(
+            &jailer_bin,
+            r#"#!/bin/sh
+id=
+chroot_base=
+exec_file=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --chroot-base-dir) chroot_base="$2"; shift 2 ;;
+    --exec-file) exec_file="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec_base=$(basename "$exec_file")
+jail_root="$chroot_base/$exec_base/$id/root"
+mkdir -p "$jail_root"
+echo $$ > "$jail_root/firecracker.pid"
+echo fake-firecracker-stdout
+echo fake-firecracker-stderr >&2
+sleep 30
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&jailer_bin, perms).unwrap();
+
+        let stdio_log = run_dir.join("console.log");
+        let cfg = JailerConfig {
+            jailer_bin,
+            firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+            run_dir: run_dir.clone(),
+            uid: 3000,
+            gid: 3000,
+            bindings: Vec::new(),
+            sockets: Vec::new(),
+            stdio_log: Some(stdio_log.clone()),
+        };
+        let plan = Plan::compute(&cfg).unwrap();
+        let jail_path = run_dir.join("firecracker").join("vm-stdio").join("root");
+        let jail = MaterializedJail {
+            plan,
+            jail_path,
+            bind_mounts: Vec::new(),
+            created_dirs: Vec::new(),
+            placeholder_files: Vec::new(),
+        };
+
+        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(jailed.jailer_pid as i32),
+            nix::sys::signal::Signal::SIGKILL,
+        )
+        .unwrap();
+
+        let log = std::fs::read_to_string(stdio_log).unwrap();
+        assert!(log.contains("fake-firecracker-stdout"), "{log}");
+        assert!(log.contains("fake-firecracker-stderr"), "{log}");
+    }
 }

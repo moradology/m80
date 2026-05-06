@@ -53,8 +53,8 @@ When an `exec_request` arrives, guestd spawns the child process in a background 
 
 If a `cancel_request` frame arrives **before the child exits**:
 - The handler signals the exec thread via an `mpsc::channel`.
-- It spins until the child PID is published in `Arc<Mutex<Option<u32>>>` (populated by the exec thread immediately after `Command::spawn`).
-- Sends `SIGKILL` via `nix::sys::signal::kill`.
+- It spins until the child process-group id is published in `Arc<Mutex<Option<u32>>>` (populated by the exec thread immediately after `Command::spawn`; the child is started with `process_group(0)`).
+- Sends SIGTERM to the process group, waits a bounded 100 ms, then sends SIGKILL to the same process group.
 - Waits for the exec thread to confirm the reap.
 - Writes `CancelAck { status: Cancelled }` to the wire.
 - Returns `ConnectionOutcome::Continue`.
@@ -81,7 +81,7 @@ The Drop-guard (`ExecGuard::drop`) calls `send_cancel` and waits up to 2 seconds
 
 | `CancelStatus` | Condition |
 |---|---|
-| `Cancelled` | Process was in-flight; `SIGKILL` sent; child reaped |
+| `Cancelled` | Process was in-flight; process-group termination was requested; child reaped |
 | `AlreadyExited` | Process exited before cancel arrived, OR `request_id` mismatch, OR no exec in flight |
 | `Failed` | `kill(2)` returned an unexpected error (not `ESRCH`) |
 

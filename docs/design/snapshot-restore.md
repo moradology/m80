@@ -47,7 +47,10 @@ The snapshot pair is written to a caller-chosen directory. m80 uses:
 ```
 
 The snapshot directory must be accessible (and writable at capture time) by
-the Firecracker process inside the jail.
+the Firecracker process inside the jail. `m80-firecracker` implements this by
+bind-mounting the caller's host snapshot directory into the jail at
+`/snapshot` and translating the API payload to `/snapshot/vm.snap` and
+`/snapshot/mem.snap`.
 
 ---
 

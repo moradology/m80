@@ -463,8 +463,8 @@ emit L2_11_2 "$L2_11_2"
 
 L2_11_3=$(br create "Bridge and tap setup" --type epic --priority 1 --parent "$L1_11" \
   --labels "$ACTIVE,network,outbound-nat,setup" \
-  --description "Contract: bridge setup idempotent (skip if exists with matching ownership); bridge owner recorded in run-root-level outbound-bridge-state.json; tap created with ip tuntap add ... mode tap and attached to bridge; per-VM network-state.json written atomically; all ip invocations via privileged-command shim.
-Surface: network.rs Phase 3 bridge/tap setup.
+  --description "Contract: bridge setup idempotent (skip if exists with matching ownership); bridge owner recorded in run-root-level outbound-bridge-state.json; TAP created without the ip binary through the Linux TUN/TAP driver, then MAC/address/up/attach/delete handled through rtnetlink; per-VM network-state.json written atomically.
+Surface: m80-net-outbound bridge/tap setup.
 Evidence: m80/docs/behaviors/network-outbound-nat/setup.md + m80/<crate>/tests/network-outbound-nat/setup.rs." \
   --silent)
 emit L2_11_3 "$L2_11_3"
@@ -559,7 +559,7 @@ emit L2_13_1 "$L2_13_1"
 
 L2_13_2=$(br create "Lifecycle error variants" --type epic --priority 1 --parent "$L1_13" \
   --labels "$ACTIVE,errors,lifecycle" \
-  --description "Contract: typed variants BootSourceWriteFailed, MachineConfigWriteFailed for client-side API errors; VsockNotReady when ready-marker probe times out; IpCommandFailed, IptablesCommandFailed for privileged shell-out failures; UnsupportedSnapshotLaunchMode until v0.2.
+  --description "Contract: typed variants BootSourceWriteFailed, MachineConfigWriteFailed for client-side API errors; VsockNotReady when ready-marker probe times out; NetlinkOperationFailed, TapOperationFailed, IptablesCommandFailed for host network failures; UnsupportedSnapshotLaunchMode until v0.2.
 Surface: errors.rs Portable lifecycle variants.
 Evidence: m80/docs/behaviors/errors/lifecycle.md + m80/<crate>/tests/errors/lifecycle.rs." \
   --silent)

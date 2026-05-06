@@ -37,24 +37,33 @@ pub fn cid_for_vm_id(vm_id: &str) -> u32 {
     3 + (raw % (u32::MAX - 2))
 }
 
-/// One open connection to the in-VM daemon. Created by [`Channel::open`];
+/// One open connection to the in-VM daemon. Created by [`Channel::open_uds_only`];
 /// dropped when the request/response cycle is done.
 pub struct Channel {
-    /// The host-side UDS path, removed on close/drop.
+    /// The host-side Firecracker UDS path. This is a listener owned by the VM,
+    /// so channel teardown must not unlink it.
     host_uds: PathBuf,
     /// Raw stream used for writing (kept separate from `buf_reader`).
     stream: UnixStream,
     /// Buffered reader wrapping a clone of `stream` for `read_frame`.
     buf_reader: BufReader<UnixStream>,
-    /// Whether `close` has already been called (guard for Drop).
-    closed: bool,
+}
+
+/// Write-only clone of an open [`Channel`].
+///
+/// This is used for same-connection control frames while the owning
+/// [`Channel`] is blocked waiting for response frames.
+pub struct ChannelSender {
+    /// The host-side Firecracker UDS path. Used only for diagnostics.
+    host_uds: PathBuf,
+    /// Raw cloned stream for writing frames.
+    stream: UnixStream,
 }
 
 impl std::fmt::Debug for Channel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Channel")
             .field("host_uds", &self.host_uds)
-            .field("closed", &self.closed)
             .finish_non_exhaustive()
     }
 }
@@ -103,7 +112,6 @@ impl Channel {
             host_uds: host_uds.to_owned(),
             stream,
             buf_reader,
-            closed: false,
         })
     }
 
@@ -121,6 +129,17 @@ impl Channel {
         }
         m80_proto::write_frame(&mut self.stream, envelope)?;
         Ok(())
+    }
+
+    /// Clone a write-only sender for the same underlying connection.
+    ///
+    /// Guestd cancellation is same-connection: a second UDS connection would
+    /// sit behind the in-flight exec and could not interrupt it.
+    pub fn try_clone_sender(&self) -> Result<ChannelSender, VsockError> {
+        Ok(ChannelSender {
+            host_uds: self.host_uds.clone(),
+            stream: self.stream.try_clone().map_err(VsockError::Io)?,
+        })
     }
 
     /// Receive one [`Envelope`] from the channel.
@@ -153,30 +172,53 @@ impl Channel {
         Ok(envelope)
     }
 
-    /// Flush + remove the host-side UDS. NotFound is treated as success so
-    /// both `close` and `Drop` paths are idempotent.
+    /// Flush the connection stream. The host-side UDS is owned by Firecracker
+    /// and remains in place for subsequent connections.
     fn teardown(&mut self) -> Result<(), VsockError> {
-        self.stream.flush().map_err(VsockError::Io)?;
-        match std::fs::remove_file(&self.host_uds) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(VsockError::Io(e)),
-        }
+        self.stream.flush().map_err(VsockError::Io)
     }
 
-    /// Close the connection and remove the host-side UDS. Idempotent.
+    /// Close the connection. The VM's host-side UDS remains available for the
+    /// next channel.
     pub fn close(mut self) -> Result<(), VsockError> {
-        self.closed = true;
         self.teardown()
     }
 }
 
 impl Drop for Channel {
     fn drop(&mut self) {
-        if !self.closed {
-            if let Err(e) = self.teardown() {
-                tracing::warn!(path = %self.host_uds.display(), err = %e, "vsock teardown failed during drop");
+        if let Err(e) = self.teardown() {
+            tracing::warn!(path = %self.host_uds.display(), err = %e, "vsock connection teardown failed during drop");
+        }
+    }
+}
+
+impl ChannelSender {
+    /// Send one [`Envelope`] over the cloned write half.
+    pub fn send<T: Serialize>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError> {
+        if debug_wire::is_enabled("vsock") {
+            if let Ok(bytes) = serde_json::to_vec(envelope) {
+                tracing::trace!(
+                    direction = "out",
+                    preview = %debug_wire::format_wire_preview(&bytes),
+                    "vsock frame"
+                );
             }
+        }
+        m80_proto::write_frame(&mut self.stream, envelope)?;
+        Ok(())
+    }
+
+    /// Flush the cloned sender.
+    pub fn close(mut self) -> Result<(), VsockError> {
+        self.stream.flush().map_err(VsockError::Io)
+    }
+}
+
+impl Drop for ChannelSender {
+    fn drop(&mut self) {
+        if let Err(e) = self.stream.flush() {
+            tracing::warn!(path = %self.host_uds.display(), err = %e, "vsock sender teardown failed during drop");
         }
     }
 }

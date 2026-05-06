@@ -124,6 +124,207 @@ This isn't a release blocker but is on the "wallpaper over before
 GA" list. Realistic CI environments don't run with 100 %-saturated
 CPU; the loaded cell here is a worst case.
 
+## Storage pivot impact (m80-f2zc.7)
+
+Run date: 2026-05-05. Image: freshly rebuilt minimal rootfs at
+`/tmp/m80-build/minimal-perf-20260505c`, with the current PID-1
+overlay+pivot guestd. Host: Linux 6.17.0-22-generic, Firecracker 1.15.1.
+
+The first real-KVM smoke found two structural blockers before benching:
+missing `/lower`/`/upper`/`/merged` mountpoints on the read-only base root,
+and a guestd cancel-poll bug where a blocking vsock `fill_buf()` could hold
+the exec response until the host timed out. Both were fixed before the
+measurements below.
+
+### Minimal idle, N=30
+
+Snapshot: `crates/m80-firecracker/benches/snapshots/2026-05-05T09:02:43+00:00.json`.
+
+| metric | pre-pivot baseline | post-pivot | delta |
+|---|---:|---:|---:|
+| wallclock P50 | 3018 ms | 1517 ms | -1501 ms |
+| useful P50 | 1696 ms | 1207 ms | -489 ms |
+| `phase_3_storage_prep` P50 | 727.6 ms | 215.9 ms | -511.7 ms |
+| `phase_12b_ready_accept` P50 | 893.4 ms | 906.2 ms | +12.8 ms |
+| success rate | 30/30 | 30/30 | unchanged |
+
+Interpretation: the pivot removes the full rootfs copy, but sparse overlay
+creation plus `mkfs.ext4` is still about 216 ms p50. Ready latency is
+unchanged within noise; the storage pivot did not move kernel boot/guestd
+startup.
+
+### Minimal loaded, N=5
+
+Snapshot: `crates/m80-firecracker/benches/snapshots/2026-05-05T09:03:20+00:00.json`.
+
+| metric | post-pivot loaded |
+|---|---:|
+| success rate | 1/5 |
+| successful wallclock P50 | 1644 ms |
+| successful useful P50 | 1318 ms |
+| `phase_3_storage_prep` P50 across attempts | 254.6 ms |
+| `phase_12b_ready_accept` P50 across attempts | 955.0 ms |
+
+The loaded cell is still mostly failing under `stress-ng --cpu 48`. That
+supports the original hypothesis that the saturation failure is orthogonal to
+storage; the failures are downstream of storage prep.
+
+### 16-VM concurrent probe
+
+One-off command launched 16 minimal VMs concurrently with unique IDs against
+the same rebuilt image. Logs are under `/tmp/m80-concurrent-1777971851`.
+
+| metric | result |
+|---|---:|
+| success rate | 16/16 |
+| batch wallclock | 1620 ms |
+| concurrent `phase_3_storage_prep` P50 | 271.0 ms |
+| concurrent `phase_12b_ready_accept` P50 | 917.1 ms |
+| `/proc/meminfo Cached` delta | +4448 KiB |
+
+The small Cached delta is consistent with a shared read-only base image: the
+16 launches are not copying or dirtying 16 independent 256 MiB rootfs images.
+
+## Stripped kernel impact (m80-ci9i.4)
+
+Run date: 2026-05-05. Image: same rebuilt minimal rootfs as the storage-pivot
+run, with `vmlinux` pointed at
+`crates/m80-image-build/kernels/vmlinux-m80-74dfa25b4022ed4ef3e82d316f259f4fbe822640407217ac1d3b894d1f9903e9.bin`.
+
+The first Docker-built stripped kernels did not discover `/dev/vda` and
+panicked with `VFS: Cannot open root device "vda" or unknown-block(0,0)`.
+Firecracker's own kernel policy clarified the mismatch: x86_64 ACPI boot
+requires `CONFIG_ACPI=y` plus `CONFIG_PCI=y`, while the non-PCI legacy-MMIO
+path requires `CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y`. The stripped kernel now
+uses the explicit legacy-MMIO path (`CONFIG_ACPI=n`, `CONFIG_PCI=n`,
+`CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y`, `pci=off` retained).
+The next Ubuntu smoke found systemd could not mount API filesystems until the
+keep-list also included cgroups, file-handle syscalls, tmpfs ACL/xattr support,
+and systemd's event primitives.
+
+### Minimal idle, N=30
+
+Snapshot: `crates/m80-firecracker/benches/snapshots/2026-05-05T10:05:32+00:00.json`.
+
+| metric | stock post-pivot | stripped | delta |
+|---|---:|---:|---:|
+| wallclock P50 | 1517 ms | 1417 ms | -100 ms |
+| useful P50 | 1207 ms | 1167 ms | -40 ms |
+| `phase_3_storage_prep` P50 | 215.9 ms | 216.3 ms | +0.4 ms |
+| `phase_12b_ready_accept` P50 | 906.2 ms | 866.0 ms | -40.2 ms |
+| success rate | 30/30 | 30/30 | unchanged |
+
+Interpretation: this stripped config is boot-correct for the minimal image and
+buys about 100 ms wallclock, but it does not deliver the expected 500-700 ms
+cold-boot improvement. The dominant ready phase remains near 0.9 s, so further
+kernel work should start from boot diagnostics and config profiling rather than
+assuming the current strip list is sufficient.
+
+### Minimal loaded, N=5
+
+Snapshot: `crates/m80-firecracker/benches/snapshots/2026-05-05T10:06:03+00:00.json`.
+
+| metric | stripped loaded |
+|---|---:|
+| success rate | 0/5 |
+| successful wallclock P50 | none |
+| useful P50 across phase-bearing attempts | 1242 ms |
+| `phase_3_storage_prep` P50 across attempts | 300.2 ms |
+| `phase_12b_ready_accept` P50 across attempts | 866.6 ms |
+
+The loaded-cell failure shape matches the stock post-pivot run: one success
+out of five for stock and zero out of five for stripped under full CPU
+saturation. The stripped kernel did not materially change the orthogonal
+stress-ng/vsock timing issue.
+
+### Ubuntu idle, N=30
+
+Stock snapshot: `crates/m80-firecracker/benches/snapshots/2026-05-05T10:12:04+00:00.json`.
+Stripped snapshot: `crates/m80-firecracker/benches/snapshots/2026-05-05T10:08:58+00:00.json`.
+
+| metric | stock schema-3 | stripped | delta |
+|---|---:|---:|---:|
+| wallclock P50 | 3919 ms | 3818 ms | -101 ms |
+| useful P50 | 2534 ms | 2435 ms | -99 ms |
+| `phase_3_storage_prep` P50 | 1335.0 ms | 1337.0 ms | +2.0 ms |
+| `phase_12b_ready_accept` P50 | 1108.0 ms | 1006.8 ms | -101.2 ms |
+| success rate | 30/30 | 30/30 | unchanged |
+
+Interpretation: the stripped kernel is now boot-correct for both minimal and
+Ubuntu images. It buys about 100 ms on both cells, not the expected 500-700 ms.
+
+## Residual cold fresh launch profile (m80-w4vc)
+
+The cold-launch exploration summary is captured in
+`docs/behaviors/lifecycle/cold-launch-phase-profile.md`, with raw machine
+data in `docs/behaviors/lifecycle/cold-launch-phase-profile.json`.
+
+On the best current minimal cell, stripped kernel plus post-pivot storage, the
+remaining cold-start stack is dominated by:
+
+| phase | P50 | recommendation |
+|---|---:|---|
+| `phase_12b_ready_accept` | 866.0 ms | instrument guest PID-1 boot milestones before choosing a fix |
+| `phase_3_storage_prep` | 216.3 ms | proceed with `m80-f2zc.10` overlay template/reflink work |
+| jailed host setup plus `InstanceStart` | about 56 ms | no immediate host/API follow-up |
+
+The no-jailer measurement ceiling is bounded by the small jailed-host phases,
+not by the guest-ready or storage costs. It is not a product direction unless
+future evidence changes the phase stack.
+
+## Guest PID-1 and overlay-template follow-up (m80-1f8.6, m80-f2zc.10)
+
+Follow-up artifacts:
+
+- Guest milestone summary: `docs/behaviors/lifecycle/guest-boot-milestones.md`.
+- Raw guest milestone data: `docs/behaviors/lifecycle/guest-boot-milestones.json`.
+
+After guest PID-1 milestone instrumentation and the overlay-template storage
+path, the current minimal cold-launch shape is:
+
+| cell | wallclock P50 | `phase_12b_ready_accept` P50 | guest ready from process start P50 | `phase_3_storage_prep` P50 | `phase_3a_manifest_verify` P50 | `phase_3b_rootfs_prepare` P50 |
+|---|---:|---:|---:|---:|---:|---:|
+| minimal stock idle, N=30 | 1517 ms | 996.8 ms | 49.2 ms | 180.6 ms | 166.6 ms | 13.7 ms |
+| minimal stripped idle, N=30 | 1317 ms | 785.2 ms | 54.6 ms | 180.5 ms | 166.8 ms | 13.8 ms |
+| minimal stripped loaded, N=5 | no successful launches | 775.7 ms across failed attempts | not meaningful | 206.5 ms | 187.9 ms | 16.1 ms |
+
+This changes the cold-launch recommendation:
+
+- Guestd PID-1 userspace is not a 100 ms target. Individual guest deltas are
+  single-digit milliseconds, and the ready signal is emitted about 49-55 ms
+  after guestd process start.
+- Kernel/early guest boot remains a plausible target because most
+  `phase_12b_ready_accept` time occurs before guestd's first milestone.
+- The overlay-template work removed per-launch `mkfs.ext4` as a material
+  storage cost. `Rootfs::prepare` is now about 14 ms P50, but total
+  `phase_3_storage_prep` remains about 180 ms because manifest sha256
+  verification costs about 167 ms P50 on every launch. Follow-up:
+  `m80-f2zc.11`.
+
+`m80-f2zc.11` moves that manifest sha256 check back to its existing
+trust boundary: `m80-preflight`'s `Rootfs + manifest` check. After this change,
+phase 3 no longer emits `phase_3a_manifest_verify`; `phase_3_storage_prep`
+is storage work only.
+
+Follow-up run date: 2026-05-05. Source snapshots:
+
+- Before: `crates/m80-firecracker/benches/snapshots/2026-05-05T16:44:54+00:00.json`
+- After idle: `crates/m80-firecracker/benches/snapshots/2026-05-05T18:41:55+00:00.json`
+- After loaded probe: `crates/m80-firecracker/benches/snapshots/2026-05-05T18:42:30+00:00.json`
+
+| metric | before, minimal stripped idle N=30 | after, minimal stripped idle N=30 | delta |
+|---|---:|---:|---:|
+| wallclock P50 | 1317 ms | 1117 ms | -200 ms |
+| `phase_3_storage_prep` P50 | 180.5 ms | 13.4 ms | -167.1 ms |
+| `phase_3a_manifest_verify` P50 | 166.8 ms | removed | -166.8 ms |
+| `phase_3b_rootfs_prepare` P50 | 13.8 ms | 13.4 ms | -0.4 ms |
+| `phase_12b_ready_accept` P50 | 785.2 ms | 785.3 ms | +0.1 ms |
+
+Loaded N=5 after the change still had 0/5 successful launches under
+`stress-ng --cpu 48`, so the saturation failure remains orthogonal. The
+phase-bearing failed attempts did show the expected storage shape:
+`phase_3_storage_prep` 15.6 ms P50, with no `phase_3a_manifest_verify` row.
+
 ## How to re-run
 
 ```bash
@@ -159,7 +360,8 @@ this automatically).
 
 ## Smoke checkpoint — storage pivot (m80-f2zc.9)
 
-**Bead:** m80-f2zc.9 · **Status:** TBD — pending end-to-end KVM exercise.
+**Bead:** m80-f2zc.9 · **Status:** passed on 2026-05-05 against
+`/tmp/m80-build/minimal-perf-20260505c`.
 
 ### Acceptance criteria (from `docs/planning/perf-roadmap-extended.md §1.3`)
 
@@ -205,16 +407,17 @@ contract independently of a live KVM run:
   — verifies the kata-derived `pivot_rootfs` sequence (mount, chdir,
   pivot_root, umount2 recursive) against a tmpfs fixture without KVM.
 
-**Bench numbers:** TBD — pending end-to-end KVM exercise on the target host.
-Expected save vs. prior `Rootfs::clone` baseline: **700–770 ms** (high
-confidence; mechanism is the same shared-RO-base + sparse-overlay pattern
-used by runc, crun, kata-containers, and Firecracker-containerd).
+**Bench numbers:** captured in "Storage pivot impact (m80-f2zc.7)" above.
+Measured `phase_3_storage_prep` save is **511.7 ms** p50. The result is below
+the original 700-770 ms expectation because sparse overlay creation still pays
+`mkfs.ext4` (~216 ms p50), but the full rootfs copy is gone.
 
 ---
 
 ## Smoke checkpoint — stripped kernel (m80-ci9i.6)
 
-**Bead:** m80-ci9i.6 · **Status:** TBD — pending Docker-built stripped kernel.
+**Bead:** m80-ci9i.6 · **Status:** KVM smoke passed on 2026-05-05 with
+`vmlinux-m80-74dfa25b4022ed4ef3e82d316f259f4fbe822640407217ac1d3b894d1f9903e9.bin`.
 
 ### Acceptance criteria (from `docs/planning/perf-roadmap-extended.md §2.3`)
 
@@ -263,18 +466,18 @@ kernel needs building):
   `docs/design/stripped-kernel.md §6`.
 - Risk register (R1–R7): `docs/design/stripped-kernel.md §7`.
 
-**Bench numbers:** TBD — pending Docker-built stripped kernel and KVM-exercised
-smoke run. Expected save on `phase_12b_ready_accept`: **500–700 ms** (high
-confidence per firecracker community reports of 150–300 ms userspace with
-stripped kernels).
+**Bench numbers:** captured in "Stripped kernel impact (m80-ci9i.4)" above.
+The stripped kernel is boot-correct for both minimal and Ubuntu images. It
+improves minimal/idle `phase_12b_ready_accept` from 906.2 ms to 866.0 ms p50
+and Ubuntu/idle from 1108.0 ms to 1006.8 ms p50.
 
 ---
 
 ## Smoke checkpoint — snapshot capture + restore (m80-rrp.3.14)
 
-**Bead:** m80-rrp.3.14 · **Status:** TBD — pending KVM-exercised snapshot
-round-trip. Smoke scripts are in place; full end-to-end blocked on
-out-of-process IPC (v0.2 gap, same as `m80 exec`).
+**Bead:** m80-rrp.3.14 · **Status:** KVM in-process capture + restore
+round-trip passed on 2026-05-05 via
+`crates/m80-firecracker/tests/snapshot_integration.rs`.
 
 ### Acceptance criteria (from `docs/planning/perf-roadmap-extended.md §3.3`)
 
@@ -312,7 +515,8 @@ files are present.
 The full capture+restore end-to-end is covered by the in-process
 integration test at `crates/m80-firecracker/tests/snapshot_integration.rs`
 (requires KVM, `#[ignore]` by default; run with
-`cargo test -- --ignored snapshot`).
+`cargo test -p m80-firecracker --test snapshot_integration -- --ignored
+--nocapture --test-threads=1`).
 
 ### Design references
 
@@ -322,7 +526,6 @@ integration test at `crates/m80-firecracker/tests/snapshot_integration.rs`
 - CLI surface (`--from-snapshot`, `snapshot capture`):
   `crates/m80-cli/src/args.rs`, `crates/m80-cli/src/cmds.rs`.
 
-**Bench numbers:** TBD — pending KVM-exercised snapshot round-trip.
-Expected warm-restore latency: **125–200 ms** (medium confidence; AWS
-published numbers for Firecracker snapshot restore; our setup may differ).
-Smoke scripts in place at `scripts/smoke.sh` (`M80_SMOKE_MODE=snapshot`).
+**Bench numbers:** captured in `docs/behaviors/snapshot/restore-latency.md`.
+Idle restore-ready N=50 is 274.204 ms p50 / 280.132 ms p95. Loaded restore
+N=50 is 444.972 ms p50 / 588.221 ms p95.

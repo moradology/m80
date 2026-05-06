@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "data": {
+    "wallclock": {
+      "minimal": {
+        "idle": {
+          "p50": 1416,
+          "p95": 1419,
+          "max": 1419,
+          "count": 5,
+          "fail_count": 0
+        },
+        "loaded": {
+          "p50": null,
+          "p95": null,
+          "max": null,
+          "count": 0,
+          "fail_count": 5
+        }
+      }
+    },
+    "phases": {
+      "minimal": {
+        "idle": {
+          "phase_1_run_root_prep": {
+            "p50_us": 70,
+            "p95_us": 76,
+            "count": 7
+          },
+          "phase_2_lease": {
+            "p50_us": 39,
+            "p95_us": 42,
+            "count": 7
+          },
+          "phase_3_storage_prep": {
+            "p50_us": 216256,
+            "p95_us": 219909,
+            "count": 7
+          },
+          "phase_4_jailer_materialize": {
+            "p50_us": 655,
+            "p95_us": 939,
+            "count": 7
+          },
+          "phase_5_cgroup_probe": {
+            "p50_us": 1949,
+            "p95_us": 2409,
+            "count": 7
+          },
+          "phase_6_network_realize": {
+            "p50_us": 0,
+            "p95_us": 0,
+            "count": 7
+          },
+          "phase_9_jailer_launch": {
+            "p50_us": 25375,
+            "p95_us": 25476,
+            "count": 7
+          },
+          "phase_5b_cgroup_create": {
+            "p50_us": 13928,
+            "p95_us": 20604,
+            "count": 7
+          },
+          "phase_10_open_uds": {
+            "p50_us": 24,
+            "p95_us": 28,
+            "count": 7
+          },
+          "phase_11_rest_puts": {
+            "p50_us": 654,
+            "p95_us": 723,
+            "count": 7
+          },
+          "phase_11b_ready_listener_bind": {
+            "p50_us": 54,
+            "p95_us": 106,
+            "count": 7
+          },
+          "phase_12a_instance_start": {
+            "p50_us": 11480,
+            "p95_us": 12924,
+            "count": 7
+          },
+          "phase_12b_ready_accept": {
+            "p50_us": 865996,
+            "p95_us": 866172,
+            "count": 7
+          },
+          "exec_send": {
+            "p50_us": 23,
+            "p95_us": 27,
+            "count": 7
+          },
+          "exec_recv": {
+            "p50_us": 25220,
+            "p95_us": 25808,
+            "count": 7
+          },
+          "stop_bounded": {
+            "p50_us": 25833,
+            "p95_us": 27941,
+            "count": 7
+          },
+          "stop_release": {
+            "p50_us": 0,
+            "p95_us": 0,
+            "count": 7
+          }
+        },
+        "loaded": {
+          "phase_1_run_root_prep": {
+            "p50_us": 90,
+            "p95_us": 96,
+            "count": 7
+          },
+          "phase_2_lease": {
+            "p50_us": 47,
+            "p95_us": 50,
+            "count": 7
+          },
+          "phase_3_storage_prep": {
+            "p50_us": 300161,
+            "p95_us": 436807,
+            "count": 7
+          },
+          "phase_4_jailer_materialize": {
+            "p50_us": 14120,
+            "p95_us": 17895,
+            "count": 7
+          },
+          "phase_5_cgroup_probe": {
+            "p50_us": 2658,
+            "p95_us": 12520,
+            "count": 7
+          },
+          "phase_6_network_realize": {
+            "p50_us": 0,
+            "p95_us": 0,
+            "count": 7
+          },
+          "phase_9_jailer_launch": {
+            "p50_us": 31078,
+            "p95_us": 51615,
+            "count": 7
+          },
+          "phase_5b_cgroup_create": {
+            "p50_us": 10724,
+            "p95_us": 15907,
+            "count": 7
+          },
+          "phase_10_open_uds": {
+            "p50_us": 35,
+            "p95_us": 40,
+            "count": 7
+          },
+          "phase_11_rest_puts": {
+            "p50_us": 848,
+            "p95_us": 2424,
+            "count": 7
+          },
+          "phase_11b_ready_listener_bind": {
+            "p50_us": 46,
+            "p95_us": 94,
+            "count": 7
+          },
+          "phase_12a_instance_start": {
+            "p50_us": 12412,
+            "p95_us": 14327,
+            "count": 7
+          },
+          "phase_12b_ready_accept": {
+            "p50_us": 866590,
+            "p95_us": 868270,
+            "count": 7
+          }
+        }
+      }
+    },
+    "useful_ms": {
+      "minimal": {
+        "idle": 1162,
+        "loaded": 1242
+      }
+    },
+    "meta": {
+      "generated_at": "2026-05-05T10:06:04.035143+00:00"
+    }
+  }
+}

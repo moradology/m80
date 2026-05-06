@@ -1,0 +1,57 @@
+{
+  "bead": "m80-1f8.6",
+  "date": "2026-05-05",
+  "method": "M80_PHASE_TRACE=1 cold-launch runs parse host M80_PHASE rows plus guest M80_GUEST_BOOT milestone rows forwarded from console.log by m80-cli.",
+  "source_snapshots": {
+    "minimal_stock_idle_n30": "crates/m80-firecracker/benches/snapshots/2026-05-05T16:43:32+00:00.json",
+    "minimal_stripped_idle_n30": "crates/m80-firecracker/benches/snapshots/2026-05-05T16:44:54+00:00.json",
+    "minimal_stripped_loaded_n5": "crates/m80-firecracker/benches/snapshots/2026-05-05T16:45:29+00:00.json"
+  },
+  "cells": {
+    "minimal_stock_idle": {
+      "success": "30/30",
+      "wallclock_ms": { "p50": 1517, "p95": 1518, "max": 1519 },
+      "phase_12b_ready_accept_us": { "p50": 996798, "p95": 1006866, "max": 1017014 },
+      "phase_3_storage_prep_us": { "p50": 180572, "p95": 183189, "max": 191269 },
+      "phase_3a_manifest_verify_us": { "p50": 166644, "p95": 169275, "max": 181948 },
+      "phase_3b_rootfs_prepare_us": { "p50": 13709, "p95": 14908, "max": 16034 },
+      "guest_elapsed_ready_signal_sent_us": { "p50": 49153, "p95": 52769, "max": 54045 },
+      "guest_elapsed_pid1_setup_complete_us": { "p50": 44382, "p95": 48085, "max": 49285 },
+      "largest_guest_delta_us": {
+        "name": "overlay_disk_mounted",
+        "p50": 6553,
+        "p95": 7676,
+        "max": 11879
+      }
+    },
+    "minimal_stripped_idle": {
+      "success": "30/30",
+      "wallclock_ms": { "p50": 1317, "p95": 1318, "max": 1319 },
+      "phase_12b_ready_accept_us": { "p50": 785234, "p95": 785636, "max": 785909 },
+      "phase_3_storage_prep_us": { "p50": 180469, "p95": 185670, "max": 192816 },
+      "phase_3a_manifest_verify_us": { "p50": 166778, "p95": 169210, "max": 178718 },
+      "phase_3b_rootfs_prepare_us": { "p50": 13754, "p95": 14692, "max": 18152 },
+      "guest_elapsed_ready_signal_sent_us": { "p50": 54645, "p95": 56518, "max": 58525 },
+      "guest_elapsed_pid1_setup_complete_us": { "p50": 49300, "p95": 51084, "max": 52719 },
+      "largest_guest_delta_us": {
+        "name": "pseudo_fs_mounted",
+        "p50": 5661,
+        "p95": 7234,
+        "max": 7687
+      }
+    },
+    "minimal_stripped_loaded": {
+      "success": "0/5",
+      "note": "No successful loaded wallclock cell; phase-bearing failed attempts still show the same storage/ready shape, but guest milestone rows are not meaningful as a loaded latency distribution.",
+      "phase_12b_ready_accept_us": { "p50": 775723, "p95": 777417, "max": 784340 },
+      "phase_3_storage_prep_us": { "p50": 206546, "p95": 227160, "max": 256881 },
+      "phase_3a_manifest_verify_us": { "p50": 187927, "p95": 211011, "max": 243097 },
+      "phase_3b_rootfs_prepare_us": { "p50": 16112, "p95": 21052, "max": 24418 }
+    }
+  },
+  "recommendation": {
+    "guestd_pid1_userspace": "No >=100ms P50 optimization candidate; readiness is emitted about 49-55ms after guestd process start and individual PID-1 deltas are single-digit milliseconds.",
+    "kernel_or_early_boot": "Still plausible: the remaining phase_12b_ready_accept time is before guestd process_start, so future work must instrument kernel/early userspace boot rather than guestd PID-1 setup.",
+    "storage": "Overlay template clone makes Rootfs::prepare about 14ms P50; total storage prep remains about 180ms because per-launch manifest sha256 verification is about 167ms P50."
+  }
+}

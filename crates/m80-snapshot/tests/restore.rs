@@ -48,7 +48,11 @@ fn restore_no_resume_sends_load_only() {
     restore(req).expect("restore must succeed");
 
     let requests = server.join();
-    assert_eq!(requests.len(), 1, "exactly one HTTP exchange expected (no resume)");
+    assert_eq!(
+        requests.len(),
+        1,
+        "exactly one HTTP exchange expected (no resume)"
+    );
     assert!(
         requests[0].starts_with("PUT /snapshot/load HTTP/1.1\r\n"),
         "sole request must be PUT /snapshot/load, got: {:?}",
@@ -78,7 +82,11 @@ fn restore_with_resume_sends_load_then_resumed() {
     restore(req).expect("restore must succeed");
 
     let requests = server.join();
-    assert_eq!(requests.len(), 2, "exactly two HTTP exchanges expected (load + resume)");
+    assert_eq!(
+        requests.len(),
+        2,
+        "exactly two HTTP exchanges expected (load + resume)"
+    );
 
     assert!(
         requests[0].starts_with("PUT /snapshot/load HTTP/1.1\r\n"),
@@ -123,11 +131,26 @@ fn restore_load_body_uses_file_backed_mem_backend() {
 
     let requests = server.join();
     let body = &requests[0];
-    assert!(body.contains("\"snapshot_path\""), "must include snapshot_path: {body}");
-    assert!(body.contains("vm.snap"), "snapshot_path value must appear: {body}");
-    assert!(body.contains("\"mem_backend\""), "must include mem_backend: {body}");
-    assert!(body.contains("\"backend_type\":\"File\""), "backend_type must be File: {body}");
-    assert!(body.contains("mem.snap"), "backend_path value must appear: {body}");
+    assert!(
+        body.contains("\"snapshot_path\""),
+        "must include snapshot_path: {body}"
+    );
+    assert!(
+        body.contains("vm.snap"),
+        "snapshot_path value must appear: {body}"
+    );
+    assert!(
+        body.contains("\"mem_backend\""),
+        "must include mem_backend: {body}"
+    );
+    assert!(
+        body.contains("\"backend_type\":\"File\""),
+        "backend_type must be File: {body}"
+    );
+    assert!(
+        body.contains("mem.snap"),
+        "backend_path value must appear: {body}"
+    );
     assert!(
         !body.contains("\"mem_file_path\""),
         "deprecated mem_file_path must not appear: {body}"

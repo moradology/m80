@@ -15,5 +15,6 @@ pub fn minimal_config(run_dir: &Path) -> JailerConfig {
         gid: 3000,
         bindings: Vec::new(),
         sockets: Vec::new(),
+        stdio_log: None,
     }
 }

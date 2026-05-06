@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "data": {
+    "wallclock": {
+      "minimal": {
+        "idle": {
+          "p50": 1417,
+          "p95": 1418,
+          "max": 1516,
+          "count": 30,
+          "fail_count": 0
+        }
+      }
+    },
+    "phases": {
+      "minimal": {
+        "idle": {
+          "phase_1_run_root_prep": {
+            "p50_us": 71,
+            "p95_us": 79,
+            "count": 32
+          },
+          "phase_2_lease": {
+            "p50_us": 38,
+            "p95_us": 47,
+            "count": 32
+          },
+          "phase_3_storage_prep": {
+            "p50_us": 216326,
+            "p95_us": 220376,
+            "count": 32
+          },
+          "phase_4_jailer_materialize": {
+            "p50_us": 746,
+            "p95_us": 1814,
+            "count": 32
+          },
+          "phase_5_cgroup_probe": {
+            "p50_us": 1957,
+            "p95_us": 3008,
+            "count": 32
+          },
+          "phase_6_network_realize": {
+            "p50_us": 0,
+            "p95_us": 0,
+            "count": 32
+          },
+          "phase_9_jailer_launch": {
+            "p50_us": 25414,
+            "p95_us": 25489,
+            "count": 32
+          },
+          "phase_5b_cgroup_create": {
+            "p50_us": 17679,
+            "p95_us": 22378,
+            "count": 32
+          },
+          "phase_10_open_uds": {
+            "p50_us": 27,
+            "p95_us": 31,
+            "count": 32
+          },
+          "phase_11_rest_puts": {
+            "p50_us": 671,
+            "p95_us": 870,
+            "count": 32
+          },
+          "phase_11b_ready_listener_bind": {
+            "p50_us": 69,
+            "p95_us": 115,
+            "count": 32
+          },
+          "phase_12a_instance_start": {
+            "p50_us": 11983,
+            "p95_us": 13053,
+            "count": 32
+          },
+          "phase_12b_ready_accept": {
+            "p50_us": 865995,
+            "p95_us": 866387,
+            "count": 32
+          },
+          "exec_send": {
+            "p50_us": 23,
+            "p95_us": 33,
+            "count": 32
+          },
+          "exec_recv": {
+            "p50_us": 25190,
+            "p95_us": 26133,
+            "count": 32
+          },
+          "stop_bounded": {
+            "p50_us": 28748,
+            "p95_us": 35334,
+            "count": 32
+          },
+          "stop_release": {
+            "p50_us": 0,
+            "p95_us": 0,
+            "count": 32
+          }
+        }
+      }
+    },
+    "useful_ms": {
+      "minimal": {
+        "idle": 1167
+      }
+    },
+    "meta": {
+      "generated_at": "2026-05-05T10:05:32.205406+00:00"
+    }
+  }
+}

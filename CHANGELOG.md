@@ -5,11 +5,145 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — CLI signal cancellation (m80-lt15.22)
+
+- `m80 run` now maps SIGINT, SIGTERM, and SIGHUP received during an in-flight
+  guest exec to same-connection `cancel_request` frames and exits with the
+  conventional `128 + signal` code when guestd confirms cancellation.
+- `m80-vsock::Channel::try_clone_sender` supports same-connection control
+  frames while the main channel is blocked reading exec output.
+- `RunningSandbox::exec_with_cancel` and
+  `RunningSandbox::exec_streaming_with_cancel` expose cancellable buffered and
+  streaming exec to host callers.
+- Guestd starts execs in a fresh process group and uses bounded TERM→KILL group
+  termination for cancel, timeout, disconnect, and stream write failure, so
+  shell-spawned descendants do not hold stdout/stderr open after cancellation.
+
+### Added — real streaming exec (m80-5vha)
+
+- `ExecRequest::streaming` opts into real chunk-by-chunk stdout/stderr over
+  the existing envelope wire. `ExecStdout` / `ExecStderr` frames are followed
+  by one terminal `ExecExit`.
+- `RunningSandbox::exec_streaming` exposes those chunks to library callers.
+  Buffered `RunningSandbox::exec` is now built on top of the streaming path
+  while preserving the existing 1 MiB per-stream cap.
+- `m80 run` pipe mode consumes `exec_streaming`, so stdout/stderr reach the
+  host before process exit and are not capped by the buffered response limit.
+- Guestd cancellation covers both explicit `CancelRequest` and host
+  disconnect. The read-side EOF path is required for silent commands, so a
+  dropped streaming caller does not leave `sleep 600` running in the guest.
+
+### Fixed — real-KVM perf-roadmap smoke blockers
+
+- Minimal images now pre-create `/lower`, `/upper`, and `/merged` for the
+  PID-1 overlay pivot. The base root is mounted read-only by the kernel, so
+  guestd verifies these mountpoints instead of trying to create them at boot.
+- `m80-guestd` no longer blocks an exec response while waiting for a possible
+  cancel frame. The real vsock path polls for cancel readability before
+  calling `fill_buf()`; in-memory tests pin that completed execs return even
+  when no cancel bytes are readable.
+
+### Performance — storage pivot measured (m80-f2zc.7)
+
+Real-KVM bench on 2026-05-05 with a freshly rebuilt minimal image:
+
+| cell | wallclock P50 | useful P50 | `phase_3_storage_prep` P50 | success |
+|---|---:|---:|---:|---:|
+| minimal / idle, N=30 | 1517 ms | 1207 ms | 215.9 ms | 30/30 |
+| minimal / loaded, N=5 | 1644 ms | 1318 ms | 254.6 ms | 1/5 |
+
+Compared with the pre-pivot minimal/idle baseline, `phase_3_storage_prep`
+drops from 727.6 ms to 215.9 ms (-511.7 ms). A separate 16-VM concurrent
+probe passed 16/16 in 1620 ms wallclock with only +4.4 MiB `/proc/meminfo`
+Cached delta, consistent with a shared read-only base layer.
+
+### Performance — stripped kernel measured (m80-ci9i.4)
+
+The stripped kernel now boots through the non-PCI legacy-MMIO Firecracker path:
+`CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y`, `CONFIG_ACPI=n`, `CONFIG_PCI=n`, and
+`pci=off` retained in the stripped cmdline. Earlier ACPI-only attempts panicked
+before userspace because `/dev/vda` was never discovered. Ubuntu/systemd also
+required the stripped keep-list to include cgroups, tmpfs ACL/xattr support,
+file-handle syscalls, and the basic event primitives used during API
+filesystem setup.
+
+Real-KVM bench on 2026-05-05 showed the current stripped config is
+boot-correct for the minimal image and modestly faster, but far short of the
+expected 500-700 ms win:
+
+| cell | wallclock P50 | useful P50 | `phase_12b_ready_accept` P50 | success |
+|---|---:|---:|---:|---:|
+| minimal / idle, N=30 | 1417 ms | 1167 ms | 866.0 ms | 30/30 |
+| minimal / loaded, N=5 | none | 1242 ms from phases | 866.6 ms | 0/5 |
+| ubuntu / idle, N=30 | 3818 ms | 2435 ms | 1006.8 ms | 30/30 |
+
+Compared with the stock post-pivot minimal/idle run, wallclock P50 improved
+by 100 ms and ready latency improved by about 40 ms. Compared with the matching
+schema-3 stock Ubuntu run, wallclock P50 improved by 101 ms and ready latency
+improved by about 101 ms. The expected 500-700 ms stripped-kernel win is not
+validated by this config.
+
+### Performance — persistent VM turn-to-turn measured (m80-qokt.2.6)
+
+Real-KVM bench on 2026-05-05 with a single live Minimal VM:
+
+| path | N | P50 | P95 | max |
+|---|---:|---:|---:|---:|
+| persistent `RunningSandbox::exec` | 30 | 20.589 ms | 20.716 ms | 21.183 ms |
+| stock post-pivot cold launch | 30 | 1517 ms | 1518 ms | 1518 ms |
+
+Sequential persistent exec saves about 1496 ms P50 after the first turn
+relative to a fresh cold launch. The benchmark harness lives at
+`crates/m80-firecracker/benches/persistent_turn_latency.rs`; raw samples are
+recorded in `docs/behaviors/lifecycle/persistent-state-latency.json`.
+
+### Performance — snapshot restore measured (m80-rrp.3.6)
+
+`RunningSandbox::capture` and `Sandbox::launch_from_snapshot` now bind-mount
+the caller's snapshot directory into the Firecracker jail at `/snapshot` before
+issuing snapshot REST calls. This makes caller-managed host snapshot paths
+visible to the jailed Firecracker process; without it, capture failed with
+`Cannot perform open on the snapshot backing file`.
+
+Real-KVM restore-ready bench on 2026-05-05:
+
+| host load | N | restore P50 | restore P95 | max |
+|---|---:|---:|---:|---:|
+| idle | 50 | 274.204 ms | 280.132 ms | 289.409 ms |
+| loaded (`stress-ng --cpu $(nproc)`) | 50 | 444.972 ms | 588.221 ms | 1834.719 ms |
+
+Against the stock post-pivot cold-launch checkpoint (`minimal/idle` P50
+1517 ms), idle snapshot restore is about 5.5x faster and saves about 1243 ms
+per allocation. Harness:
+`crates/m80-firecracker/benches/snapshot_restore_latency.rs`; raw samples:
+`docs/behaviors/snapshot/restore-latency.json`.
+
+### Performance — warm-pool allocation measured (m80-rrp.6)
+
+`WarmPool` now pre-restores guestd-ready slots from a captured snapshot and
+hands out `WarmLease` values without a cold boot or synchronous restore on the
+allocation path. Empty pools return `FcError::PoolEmpty`; allocation never
+hides a cold-boot fallback. Leases default to discard-and-refill unless complete
+blank-VM reset evidence is supplied.
+
+Real-KVM allocation bench on 2026-05-05 with N=50 and one ready slot:
+
+| host load | allocation P50 | allocation P95 | max | refill P95 |
+|---|---:|---:|---:|---:|
+| idle | 20.957 ms | 21.053 ms | 21.070 ms | 1261.443 ms |
+| loaded (`stress-ng --cpu $(nproc)`) | 21.005 ms | 623.409 ms | 1334.006 ms | 1535.415 ms |
+
+The loaded host still exposes a Firecracker restored-vsock local-init tail.
+`RunningSandbox::exec` now retries only the open+send phase for a fixed 2.5 s
+budget; receive-side failures still surface immediately because the guest may
+already have run the request. Raw samples:
+`docs/behaviors/lifecycle/warm-pool-allocation-latency-{idle,loaded}.json`.
+
 ### Added — perf-roadmap structural landings (Waves 0-4)
 
 Four-step path to sub-200 ms warm-pool launch landed at the structural
 level (designs, APIs, tests compile, workspace green). Real-KVM bench
-numbers are pending end-to-end exercise (BENCH leaves remain open).
+numbers for the original BENCH leaves are captured in the sections above.
 
 **Storage pivot (m80-f2zc)** — RO base + per-VM sparse overlay + in-guest
 overlayfs + `pivot_root`:
@@ -34,9 +168,9 @@ overlayfs + `pivot_root`:
   CONFIG keep-list mandates `CONFIG_OVERLAY_FS=y` + `CONFIG_OVERLAY_FS_XINO_AUTO=y`.
   `--kernel stock|stripped` flag on the image-build CLI.
 - `m80-firecracker`: `boot_args_for(image_kind, kernel_kind)` two-axis
-  dispatch. Stripped baseline: `console=ttyS0 reboot=k panic=-1 quiet
-  loglevel=0 8250.nr_uarts=1` (uarts=1, not 0 — diagnostic visibility worth
-  ~50 ms).
+  dispatch. Stripped baseline: `console=ttyS0 reboot=k panic=-1 pci=off
+  quiet loglevel=0 8250.nr_uarts=1` (uarts=1, not 0 — diagnostic visibility
+  worth ~50 ms).
 - Design: `docs/design/stripped-kernel.md`.
 
 **Snapshot/restore (m80-rrp.3)** — Firecracker snapshot REST + warm-pool plumbing:
@@ -69,8 +203,8 @@ overlayfs + `pivot_root`:
 `docs/planning/parallel-execution-strategy.md` and the extended risk
 register in `docs/planning/perf-roadmap-extended.md`; ~9 days wall-clock vs
 22-27 sequential person-days estimate. Workspace stayed green at every wave
-gate. BENCH leaves (`m80-f2zc.7`, `m80-rrp.3.6`, `m80-qokt.2.6`, `m80-ci9i.4`)
-remain open pending real-KVM exercise + Docker-built stripped kernel.
+gate. BENCH leaves `m80-f2zc.7`, `m80-rrp.3.6`, `m80-qokt.2.6`, and
+`m80-ci9i.4` now have real-KVM measurements.
 
 ### Added — bench snapshot + diff tooling (m80-vf7o)
 

@@ -1,5 +1,18 @@
 //! Wire types: envelope, exec request/response, status, timing, handshake.
 
+mod pty;
+mod streaming;
+
+pub use pty::{
+    PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,
+    PtySize, PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_INPUT,
+    PAYLOAD_KIND_PTY_OUTPUT, PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE,
+};
+pub use streaming::{
+    ExecExit, ExecStderr, ExecStdout, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR,
+    PAYLOAD_KIND_EXEC_STDOUT,
+};
+
 use serde::{Deserialize, Serialize};
 
 use crate::version::PROTOCOL_VERSION;
@@ -120,6 +133,10 @@ pub struct ExecRequest {
     /// `None` → the guest applies its own default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
+    /// Opt into multi-frame stdout/stderr streaming. `false` preserves the
+    /// buffered v0.1 response shape and is skipped on the wire.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub streaming: bool,
 }
 
 /// Terminal status of an exec operation. Wire serialization is the
@@ -300,6 +317,10 @@ mod b64 {
     }
 }
 
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,6 +333,7 @@ mod tests {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         }
     }
 

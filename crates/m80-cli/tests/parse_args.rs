@@ -2,11 +2,233 @@
 //!
 //! Uses `Cli::try_parse_from` so no subprocess is spawned.
 //!
-//! Behavior capture: bead m80-4ef.3 (CLI argument parsing correctness).
+//! Behavior capture: bead m80-lt15.1 (CLI command contract).
 
 use clap::Parser;
-use m80_cli::{Cli, Cmd, ConfigAction, SnapshotAction};
-use m80_firecracker::NetworkPolicy;
+use m80_cli::{Cli, Cmd, ConfigAction, EgressMode, QuickstartArgs, WarmAction, WritebackMode};
+
+// ---- run ----
+
+#[test]
+fn parse_run_defaults_to_process_wrapper_contract() {
+    let cli = Cli::try_parse_from(["m80", "run", "--", "/bin/echo", "hi"]).unwrap();
+    match cli.subcommand {
+        Cmd::Run {
+            profile,
+            workspace,
+            cwd,
+            env,
+            secret_env,
+            stdin,
+            egress,
+            allow_host,
+            allow_cidr,
+            mount_config,
+            scratch_size,
+            writeback,
+            keep_on_failure,
+            tty,
+            interactive,
+            warm,
+            argv,
+        } => {
+            assert!(profile.is_none());
+            assert!(workspace.is_none());
+            assert!(cwd.is_none());
+            assert!(env.is_empty());
+            assert!(secret_env.is_empty());
+            assert!(!stdin);
+            assert_eq!(egress, EgressMode::Outbound);
+            assert!(allow_host.is_empty());
+            assert!(allow_cidr.is_empty());
+            assert!(mount_config.is_empty());
+            assert!(scratch_size.is_none());
+            assert_eq!(writeback, WritebackMode::Never);
+            assert!(!keep_on_failure);
+            assert!(!tty);
+            assert!(!interactive);
+            assert!(!warm);
+            assert_eq!(argv, vec!["/bin/echo", "hi"]);
+        }
+        _ => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn parse_run_visibility_and_exec_options() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "run",
+        "--workspace",
+        "/tmp/ws",
+        "--cwd",
+        "/work",
+        "--env",
+        "FOO=bar",
+        "--env",
+        "EMPTY=",
+        "--secret-env",
+        "ANTHROPIC_API_KEY",
+        "--stdin",
+        "--egress",
+        "none",
+        "--scratch-size",
+        "1048576",
+        "--",
+        "/usr/bin/env",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Run {
+            workspace,
+            cwd,
+            env,
+            secret_env,
+            stdin,
+            egress,
+            scratch_size,
+            argv,
+            ..
+        } => {
+            assert_eq!(workspace, Some(std::path::PathBuf::from("/tmp/ws")));
+            assert_eq!(cwd.as_deref(), Some("/work"));
+            assert_eq!(env, vec!["FOO=bar", "EMPTY="]);
+            assert_eq!(secret_env, vec!["ANTHROPIC_API_KEY"]);
+            assert!(stdin);
+            assert_eq!(egress, EgressMode::None);
+            assert_eq!(scratch_size, Some(1_048_576));
+            assert_eq!(argv, vec!["/usr/bin/env"]);
+        }
+        _ => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn parse_run_runtime_profile_shape() {
+    let cli = Cli::try_parse_from(["m80", "run", "--profile", "ubuntu-dev", "--", "bash"]).unwrap();
+    match cli.subcommand {
+        Cmd::Run { profile, argv, .. } => {
+            assert_eq!(profile.as_deref(), Some("ubuntu-dev"));
+            assert_eq!(argv, vec!["bash"]);
+        }
+        _ => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn parse_run_egress_allowlist_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "run",
+        "--allow-host",
+        "api.openai.com",
+        "--allow-cidr",
+        "10.0.0.0/24",
+        "--mount-config",
+        "/home/me/.config/tool:/config/tool:ro",
+        "--",
+        "curl",
+        "https://api.openai.com",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Run {
+            allow_host,
+            allow_cidr,
+            mount_config,
+            argv,
+            ..
+        } => {
+            assert_eq!(allow_host, vec!["api.openai.com"]);
+            assert_eq!(allow_cidr, vec!["10.0.0.0/24"]);
+            assert_eq!(mount_config, vec!["/home/me/.config/tool:/config/tool:ro"]);
+            assert_eq!(argv, vec!["curl", "https://api.openai.com"]);
+        }
+        _ => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn parse_run_pty_flag_shape() {
+    let cli = Cli::try_parse_from(["m80", "run", "-t", "-i", "--", "bash"]).unwrap();
+    match cli.subcommand {
+        Cmd::Run {
+            tty,
+            interactive,
+            argv,
+            ..
+        } => {
+            assert!(tty);
+            assert!(interactive);
+            assert_eq!(argv, vec!["bash"]);
+        }
+        _ => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn parse_run_warm_flag_shape() {
+    let cli = Cli::try_parse_from(["m80", "run", "--warm", "--", "bash"]).unwrap();
+    match cli.subcommand {
+        Cmd::Run { warm, argv, .. } => {
+            assert!(warm);
+            assert_eq!(argv, vec!["bash"]);
+        }
+        _ => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn parse_run_writeback_and_retention_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "run",
+        "--writeback",
+        "on-success",
+        "--keep-on-failure",
+        "--",
+        "make",
+        "test",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Run {
+            writeback,
+            keep_on_failure,
+            argv,
+            ..
+        } => {
+            assert_eq!(writeback, WritebackMode::OnSuccess);
+            assert!(keep_on_failure);
+            assert_eq!(argv, vec!["make", "test"]);
+        }
+        _ => panic!("expected Run"),
+    }
+}
+
+#[test]
+fn parse_run_requires_command_after_separator() {
+    let result = Cli::try_parse_from(["m80", "run"]);
+    assert!(result.is_err(), "expected m80 run without argv to fail");
+}
+
+#[test]
+fn parse_run_requires_explicit_separator_before_command() {
+    let result = Cli::try_parse_from(["m80", "run", "/bin/echo"]);
+    assert!(
+        result.is_err(),
+        "expected m80 run command argv to require `--`"
+    );
+}
+
+#[test]
+fn parse_run_rejects_removed_noegress_spelling() {
+    let result = Cli::try_parse_from(["m80", "run", "--egress", "noegress", "--", "true"]);
+    assert!(
+        result.is_err(),
+        "egress values are exactly `none` or `outbound`"
+    );
+}
 
 // ---- preflight ----
 
@@ -23,172 +245,65 @@ fn parse_preflight_json() {
     assert!(cli.json);
 }
 
-// ---- launch ----
+// ---- quickstart ----
 
 #[test]
-fn parse_launch_defaults() {
-    let cli = Cli::try_parse_from(["m80", "launch"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch {
-            workspace,
-            network,
-            id,
-            from_snapshot,
-            exec,
-        } => {
-            assert!(workspace.is_none());
-            assert_eq!(network, NetworkPolicy::NoEgress);
-            assert!(id.is_none());
-            assert!(from_snapshot.is_none());
-            assert!(exec.is_empty());
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-#[test]
-fn parse_launch_with_workspace() {
-    let cli = Cli::try_parse_from(["m80", "launch", "--workspace", "/tmp/ws"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch { workspace, .. } => {
-            assert_eq!(workspace, Some(std::path::PathBuf::from("/tmp/ws")));
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-#[test]
-fn parse_launch_with_network_outbound() {
-    let cli = Cli::try_parse_from(["m80", "launch", "--network", "outbound"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch { network, .. } => {
-            assert!(matches!(network, NetworkPolicy::AllowOutbound { .. }));
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-#[test]
-fn parse_launch_with_id() {
-    let cli = Cli::try_parse_from(["m80", "launch", "--id", "my-vm-1"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch { id, .. } => {
-            assert_eq!(id, Some("my-vm-1".to_owned()));
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-#[test]
-fn parse_launch_single_shot_exec() {
-    let cli = Cli::try_parse_from(["m80", "launch", "--", "/bin/sh", "-c", "echo hi"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch { exec, .. } => {
-            assert_eq!(exec, vec!["/bin/sh", "-c", "echo hi"]);
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-#[test]
-fn parse_launch_network_case_insensitive() {
-    let cli = Cli::try_parse_from(["m80", "launch", "--network", "NoEgress"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch { network, .. } => {
-            assert_eq!(network, NetworkPolicy::NoEgress);
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-// ---- exec ----
-
-#[test]
-fn parse_exec_basic() {
-    let cli = Cli::try_parse_from(["m80", "exec", "vm-abc", "--", "ls", "-la"]).unwrap();
-    match cli.subcommand {
-        Cmd::Exec {
-            vm_id,
-            argv,
-            cwd,
-            env,
-            timeout_ms,
-        } => {
-            assert_eq!(vm_id, "vm-abc");
-            assert_eq!(argv, vec!["ls", "-la"]);
-            assert!(cwd.is_none());
-            assert!(env.is_empty());
-            assert!(timeout_ms.is_none());
-        }
-        _ => panic!("expected Exec"),
-    }
-}
-
-#[test]
-fn parse_exec_with_cwd_env_timeout() {
+fn parse_quickstart_required_artifact_url() {
     let cli = Cli::try_parse_from([
         "m80",
-        "exec",
-        "vm-xyz",
-        "--cwd",
-        "/app",
-        "--env",
-        "FOO=bar",
-        "--env",
-        "BAZ=qux",
-        "--timeout-ms",
-        "5000",
-        "--",
-        "/usr/bin/env",
+        "quickstart",
+        "--artifact-url",
+        "file:///tmp/m80-artifacts.tar.gz",
     ])
     .unwrap();
     match cli.subcommand {
-        Cmd::Exec {
-            vm_id,
-            argv,
-            cwd,
-            env,
-            timeout_ms,
-        } => {
-            assert_eq!(vm_id, "vm-xyz");
-            assert_eq!(argv, vec!["/usr/bin/env"]);
-            assert_eq!(cwd.as_deref(), Some("/app"));
-            assert_eq!(env, vec!["FOO=bar", "BAZ=qux"]);
-            assert_eq!(timeout_ms, Some(5000));
+        Cmd::Quickstart(QuickstartArgs {
+            artifact_url,
+            artifact_dir,
+            run_root,
+            no_run,
+        }) => {
+            assert_eq!(artifact_url, "file:///tmp/m80-artifacts.tar.gz");
+            assert!(artifact_dir.is_none());
+            assert!(run_root.is_none());
+            assert!(!no_run);
         }
-        _ => panic!("expected Exec"),
-    }
-}
-
-// ---- stop ----
-
-#[test]
-fn parse_stop_basic() {
-    let cli = Cli::try_parse_from(["m80", "stop", "vm-abc"]).unwrap();
-    match cli.subcommand {
-        Cmd::Stop {
-            vm_id,
-            extract_changes,
-        } => {
-            assert_eq!(vm_id, "vm-abc");
-            assert!(extract_changes.is_none());
-        }
-        _ => panic!("expected Stop"),
+        _ => panic!("expected Quickstart"),
     }
 }
 
 #[test]
-fn parse_stop_with_extract() {
-    let cli =
-        Cli::try_parse_from(["m80", "stop", "vm-abc", "--extract-changes", "/tmp/out"]).unwrap();
+fn parse_quickstart_install_only_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "quickstart",
+        "--artifact-url",
+        "https://example.invalid/m80.tar.gz",
+        "--artifact-dir",
+        "/tmp/artifacts",
+        "--run-root",
+        "/tmp/run",
+        "--no-run",
+    ])
+    .unwrap();
     match cli.subcommand {
-        Cmd::Stop {
-            extract_changes, ..
-        } => {
-            assert_eq!(extract_changes, Some(std::path::PathBuf::from("/tmp/out")));
+        Cmd::Quickstart(args) => {
+            assert_eq!(args.artifact_url, "https://example.invalid/m80.tar.gz");
+            assert_eq!(
+                args.artifact_dir,
+                Some(std::path::PathBuf::from("/tmp/artifacts"))
+            );
+            assert_eq!(args.run_root, Some(std::path::PathBuf::from("/tmp/run")));
+            assert!(args.no_run);
         }
-        _ => panic!("expected Stop"),
+        _ => panic!("expected Quickstart"),
     }
+}
+
+#[test]
+fn parse_quickstart_requires_artifact_url() {
+    let result = Cli::try_parse_from(["m80", "quickstart", "--no-run"]);
+    assert!(result.is_err(), "quickstart requires --artifact-url");
 }
 
 // ---- inspect ----
@@ -245,12 +360,102 @@ fn parse_config_show() {
     }
 }
 
+// ---- warm ----
+
+#[test]
+fn parse_warm_requires_action() {
+    let result = Cli::try_parse_from(["m80", "warm"]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn parse_warm_enable_foreground_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "warm",
+        "enable",
+        "--foreground",
+        "--size",
+        "2",
+        "--egress",
+        "none",
+        "--profile",
+        "minimal",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Warm {
+            action: WarmAction::Enable(args),
+        } => {
+            assert!(args.foreground);
+            assert!(!args.system);
+            assert_eq!(args.size, 2);
+            assert_eq!(args.egress, EgressMode::None);
+            assert_eq!(args.profile.as_deref(), Some("minimal"));
+        }
+        _ => panic!("expected Warm Enable"),
+    }
+}
+
+#[test]
+fn parse_warm_status_drain_disable_shapes() {
+    let status = Cli::try_parse_from(["m80", "warm", "status", "--profile", "minimal"]).unwrap();
+    assert!(matches!(
+        status.subcommand,
+        Cmd::Warm {
+            action: WarmAction::Status { .. }
+        }
+    ));
+
+    let drain = Cli::try_parse_from(["m80", "warm", "drain"]).unwrap();
+    assert!(matches!(
+        drain.subcommand,
+        Cmd::Warm {
+            action: WarmAction::Drain
+        }
+    ));
+
+    let disable = Cli::try_parse_from(["m80", "warm", "disable"]).unwrap();
+    assert!(matches!(
+        disable.subcommand,
+        Cmd::Warm {
+            action: WarmAction::Disable
+        }
+    ));
+}
+
 // ---- version ----
 
 #[test]
 fn parse_version() {
     let cli = Cli::try_parse_from(["m80", "version"]).unwrap();
     assert!(matches!(cli.subcommand, Cmd::Version));
+}
+
+// ---- removed VM-front-door commands fail ----
+
+#[test]
+fn parse_removed_launch_subcommand_fails() {
+    let result = Cli::try_parse_from(["m80", "launch", "--", "true"]);
+    assert!(result.is_err(), "launch is not a compatibility alias");
+}
+
+#[test]
+fn parse_removed_exec_subcommand_fails() {
+    let result = Cli::try_parse_from(["m80", "exec", "vm-abc", "--", "true"]);
+    assert!(result.is_err(), "exec is not a compatibility alias");
+}
+
+#[test]
+fn parse_removed_stop_subcommand_fails() {
+    let result = Cli::try_parse_from(["m80", "stop", "vm-abc"]);
+    assert!(result.is_err(), "stop is not part of the process facade");
+}
+
+#[test]
+fn parse_removed_snapshot_subcommand_fails() {
+    let result = Cli::try_parse_from(["m80", "snapshot", "capture", "vm-abc"]);
+    assert!(result.is_err(), "snapshot is not a process facade command");
 }
 
 // ---- unknown subcommand fails ----
@@ -264,54 +469,10 @@ fn parse_unknown_subcommand_fails() {
     );
 }
 
-// ---- launch --from-snapshot ----
-
-#[test]
-fn parse_launch_from_snapshot() {
-    let cli = Cli::try_parse_from(["m80", "launch", "--from-snapshot", "/tmp/snap", "--", "/bin/echo", "hi"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch { from_snapshot, exec, .. } => {
-            assert_eq!(from_snapshot, Some(std::path::PathBuf::from("/tmp/snap")));
-            assert_eq!(exec, vec!["/bin/echo", "hi"]);
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-#[test]
-fn parse_launch_from_snapshot_no_exec() {
-    let cli = Cli::try_parse_from(["m80", "launch", "--from-snapshot", "/tmp/snap"]).unwrap();
-    match cli.subcommand {
-        Cmd::Launch { from_snapshot, exec, .. } => {
-            assert_eq!(from_snapshot, Some(std::path::PathBuf::from("/tmp/snap")));
-            assert!(exec.is_empty());
-        }
-        _ => panic!("expected Launch"),
-    }
-}
-
-// ---- snapshot capture ----
-
-#[test]
-fn parse_snapshot_capture() {
-    let cli = Cli::try_parse_from(["m80", "snapshot", "capture", "vm-abc", "--store-root", "/tmp/snap"]).unwrap();
-    match cli.subcommand {
-        Cmd::Snapshot { action: SnapshotAction::Capture { vm_id, store_root } } => {
-            assert_eq!(vm_id, "vm-abc");
-            assert_eq!(store_root, std::path::PathBuf::from("/tmp/snap"));
-        }
-        _ => panic!("expected Snapshot Capture"),
-    }
-}
-
 // ---- --json is global ----
 
 #[test]
 fn json_flag_after_subcommand_parses_and_sets_json() {
-    // `--json` is a top-level global flag; clap accepts it both before
-    // and after the subcommand. Verify the after-subcommand position
-    // both parses successfully AND sets the flag (the prior assertion
-    // was a tautology — `is_ok() || is_err()` proves nothing).
     let cli = Cli::try_parse_from(["m80", "version", "--json"]).unwrap();
     assert!(
         cli.json,

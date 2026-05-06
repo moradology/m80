@@ -54,9 +54,18 @@ the guest rootfs.
 |---|---|
 | `CONFIG_VIRTIO` | virtio core |
 | `CONFIG_VIRTIO_MMIO` | MMIO transport (replaces PCI; see drop list) |
+| `CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES` | Firecracker's non-PCI x86_64 path appends `virtio_mmio.device=...`; the stripped kernel must consume those parameters |
 | `CONFIG_VIRTIO_BLK` | virtio block (rootfs, overlay, scratch drives) |
 | `CONFIG_VIRTIO_NET` | virtio network (OutboundNat mode; v0.2) |
 | `CONFIG_BLK_MQ_VIRTIO` | multi-queue block layer integration |
+
+### Virtualization platform
+
+| Symbol | Purpose |
+|---|---|
+| `CONFIG_HYPERVISOR_GUEST` | enables Linux's hypervisor guest support menu |
+| `CONFIG_PARAVIRT` | prerequisite for KVM guest support and kvmclock |
+| `CONFIG_KVM_GUEST` | KVM guest clock/paravirtual support; Firecracker lists it as a minimal x86_64 boot requirement |
 
 ### Filesystems
 
@@ -94,8 +103,22 @@ the guest rootfs.
 |---|---|
 | `CONFIG_BINFMT_ELF` | ELF binary loader (guestd is an ELF) |
 | `CONFIG_TMPFS` | used by devtmpfs and PID-1 /proc setup |
+| `CONFIG_TMPFS_POSIX_ACL` | Ubuntu/systemd expects ACL support on tmpfs-backed API/runtime mounts |
+| `CONFIG_TMPFS_XATTR` | Ubuntu/systemd expects xattrs on tmpfs-backed API/runtime mounts |
 | `CONFIG_PROC_FS` | /proc; guestd reads /proc/mounts |
 | `CONFIG_SYSFS` | /sys |
+| `CONFIG_CGROUPS` | systemd mounts `/sys/fs/cgroup` during API filesystem setup |
+| `CONFIG_CGROUP_SCHED` | baseline cgroup scheduling support for systemd-managed units |
+| `CONFIG_CGROUP_PIDS` | pids controller used by systemd unit accounting/limits |
+| `CONFIG_CGROUP_FREEZER` | freezer controller used by systemd unit state transitions |
+| `CONFIG_CGROUP_DEVICE` | device controller used by systemd device policy plumbing |
+| `CONFIG_CGROUP_CPUACCT` | CPU accounting controller used by systemd accounting paths |
+| `CONFIG_FHANDLE` | file-handle syscalls used by systemd's filesystem and mount logic |
+| `CONFIG_EPOLL` | event primitive used by systemd |
+| `CONFIG_SIGNALFD` | event primitive used by systemd |
+| `CONFIG_TIMERFD` | event primitive used by systemd |
+| `CONFIG_EVENTFD` | event primitive used by systemd |
+| `CONFIG_INOTIFY_USER` | filesystem watch primitive used by systemd |
 | `CONFIG_NET` | networking subsystem (required even for vsock-only) |
 | `CONFIG_INET` | IPv4 (required for loopback; OutboundNat v0.2) |
 | `CONFIG_UNIX` | AF_UNIX (not used inside guest but linked by vsock init path) |
@@ -114,9 +137,9 @@ that add latency to `phase_12b_ready_accept`.
 |---|---|
 | `CONFIG_PCI` | disabled; all devices use virtio-mmio |
 | `CONFIG_PCI_MSI` | follows PCI=n |
+| `CONFIG_ACPI` | disabled; Firecracker's ACPI boot path requires `CONFIG_PCI`, so the stripped kernel uses the legacy-MMIO path instead |
 | `CONFIG_PCCARD` | PC Card / PCMCIA — irrelevant |
 | `CONFIG_AGP` | AGP bus — irrelevant |
-| `CONFIG_ACPI` | Firecracker does not present ACPI; disabling cuts init time |
 | `CONFIG_DMI` | Desktop Management Interface — unused in VMs |
 | `CONFIG_EFI` | Firecracker boots via legacy BIOS mode only |
 
@@ -299,13 +322,11 @@ without it.
 ### Final cmdline for `KernelKind::Stripped`
 
 ```
-console=ttyS0 reboot=k panic=-1 quiet loglevel=0 8250.nr_uarts=1
+console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1
 ```
 
 Diff from the current `COMMON_BOOT_ARGS` (`console=ttyS0 reboot=k panic=-1 pci=off`):
 
-- `pci=off` → **removed**. With `CONFIG_PCI=n` in the kernel, this flag is
-  a no-op and adds nothing; removing it keeps the cmdline honest.
 - `quiet loglevel=0` → **added**. Suppresses per-device init messages on
   ttyS0 while leaving the console open. Fatal panics still print (the panic
   handler bypasses loglevel). Saves ~20-40 ms of serial flush time on boot.

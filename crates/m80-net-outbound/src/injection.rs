@@ -1,0 +1,220 @@
+use std::io::Write;
+use std::net::Ipv4Addr;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use crate::{
+    discover_dns_resolvers_with_ops, write_vm_network_state_record, DnsCommandOutput,
+    DnsDiscoveryOps, NetError, SetupPhase, VmNetworkStateRecord,
+};
+
+/// systemd-networkd directory inside the runtime rootfs image.
+pub const SYSTEMD_NETWORK_DIR: &str = "/etc/systemd/network";
+
+/// systemd-resolved drop-in directory inside the runtime rootfs image.
+pub const SYSTEMD_RESOLVED_CONF_DIR: &str = "/etc/systemd/resolved.conf.d";
+
+/// m80 networkd unit path inside the runtime rootfs image.
+pub const M80_NETWORKD_FILE: &str = "/etc/systemd/network/10-m80-outbound.network";
+
+/// m80 resolved drop-in path inside the runtime rootfs image.
+pub const M80_RESOLVED_FILE: &str = "/etc/systemd/resolved.conf.d/10-m80-dns.conf";
+
+/// Rendered guest networking configuration files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuestNetworkConfig {
+    /// Contents of `10-m80-outbound.network`.
+    pub networkd: String,
+    /// Contents of `10-m80-dns.conf`.
+    pub resolved: String,
+}
+
+/// Host seam for writing guest network configuration into an ext4 image.
+pub trait GuestNetworkConfigOps: DnsDiscoveryOps {
+    /// Run a host command whose non-zero exit aborts injection.
+    fn run_command(&mut self, program: &str, args: &[String]) -> Result<(), NetError>;
+}
+
+struct CommandGuestNetworkConfigOps;
+
+impl DnsDiscoveryOps for CommandGuestNetworkConfigOps {
+    fn command_output(
+        &mut self,
+        program: &str,
+        args: &[String],
+    ) -> Result<DnsCommandOutput, NetError> {
+        let output = Command::new(program).args(args).output()?;
+        Ok(DnsCommandOutput {
+            status_success: output.status.success(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    }
+
+    fn read_to_string(&mut self, path: &Path) -> Result<String, NetError> {
+        Ok(std::fs::read_to_string(path)?)
+    }
+}
+
+impl GuestNetworkConfigOps for CommandGuestNetworkConfigOps {
+    fn run_command(&mut self, program: &str, args: &[String]) -> Result<(), NetError> {
+        let output = self.command_output(program, args)?;
+        if output.status_success {
+            return Ok(());
+        }
+        Err(NetError::NetworkCommandFailed {
+            program: program.to_owned(),
+            stderr: output.stderr,
+        })
+    }
+}
+
+/// Discover DNS and inject guest network config into a runtime rootfs image.
+pub fn inject_guest_network_config(
+    state: &mut VmNetworkStateRecord,
+    runtime_rootfs: &Path,
+) -> Result<(), NetError> {
+    let mut ops = CommandGuestNetworkConfigOps;
+    inject_guest_network_config_with_ops(&mut ops, state, runtime_rootfs)
+}
+
+/// Discover DNS and inject guest network config through a supplied host seam.
+pub fn inject_guest_network_config_with_ops(
+    ops: &mut impl GuestNetworkConfigOps,
+    state: &mut VmNetworkStateRecord,
+    runtime_rootfs: &Path,
+) -> Result<(), NetError> {
+    validate_ready_state(state)?;
+    let resolvers = discover_dns_resolvers_with_ops(ops)?;
+    let config = build_guest_network_config(state, &resolvers)?;
+    write_guest_network_config(ops, runtime_rootfs, &config)?;
+
+    state.dns_resolvers = resolvers;
+    state.runtime_rootfs_configured = true;
+    write_vm_network_state_record(&state.run_dir, state)
+}
+
+/// Build the systemd-networkd and systemd-resolved file contents.
+pub fn build_guest_network_config(
+    state: &VmNetworkStateRecord,
+    resolvers: &[Ipv4Addr],
+) -> Result<GuestNetworkConfig, NetError> {
+    if resolvers.is_empty() {
+        return Err(NetError::NoUsableDnsResolvers);
+    }
+    let dns_lines = resolvers
+        .iter()
+        .map(|resolver| format!("DNS={resolver}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let resolver_list = resolvers
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    Ok(GuestNetworkConfig {
+        networkd: format!(
+            "[Match]\nMACAddress={}\n\n[Network]\nAddress={}/{}\nGateway={}\n{}\nIPv6AcceptRA=no\nLinkLocalAddressing=no\n",
+            state.guest_mac,
+            state.guest_ipv4,
+            state.bridge.cidr.prefix_len(),
+            state.bridge.gateway_ipv4,
+            dns_lines,
+        ),
+        resolved: format!("[Resolve]\nDNS={resolver_list}\nFallbackDNS=\nDomains=~.\n"),
+    })
+}
+
+fn validate_ready_state(state: &VmNetworkStateRecord) -> Result<(), NetError> {
+    if state.setup_phase != SetupPhase::Ready {
+        return Err(invalid_state(
+            &state.run_dir,
+            "VM network state must be ready before guest network injection",
+        ));
+    }
+    if state.bridge.setup_phase != SetupPhase::Ready {
+        return Err(invalid_state(
+            &state.run_dir,
+            "bridge state must be ready before guest network injection",
+        ));
+    }
+    Ok(())
+}
+
+fn write_guest_network_config(
+    ops: &mut impl GuestNetworkConfigOps,
+    runtime_rootfs: &Path,
+    config: &GuestNetworkConfig,
+) -> Result<(), NetError> {
+    ensure_ext4_dir(ops, runtime_rootfs, SYSTEMD_NETWORK_DIR)?;
+    ensure_ext4_dir(ops, runtime_rootfs, SYSTEMD_RESOLVED_CONF_DIR)?;
+    write_ext4_file(ops, runtime_rootfs, M80_NETWORKD_FILE, &config.networkd)?;
+    write_ext4_file(ops, runtime_rootfs, M80_RESOLVED_FILE, &config.resolved)
+}
+
+fn ensure_ext4_dir(
+    ops: &mut impl GuestNetworkConfigOps,
+    image: &Path,
+    image_dir: &str,
+) -> Result<(), NetError> {
+    let stat = ops.command_output(
+        "debugfs",
+        &[
+            "-R".to_owned(),
+            format!("stat {image_dir}"),
+            image.display().to_string(),
+        ],
+    )?;
+    if stat.status_success {
+        return Ok(());
+    }
+    ops.run_command(
+        "debugfs",
+        &[
+            "-w".to_owned(),
+            "-R".to_owned(),
+            format!("mkdir {image_dir}"),
+            image.display().to_string(),
+        ],
+    )
+}
+
+fn write_ext4_file(
+    ops: &mut impl GuestNetworkConfigOps,
+    image: &Path,
+    image_path: &str,
+    content: &str,
+) -> Result<(), NetError> {
+    let mut temp = tempfile::NamedTempFile::new()?;
+    temp.write_all(content.as_bytes())?;
+    temp.flush()?;
+
+    let temp_path_str = temp
+        .path()
+        .to_str()
+        .ok_or_else(|| invalid_state(temp.path(), "temp file path is not valid UTF-8"))?;
+    if temp_path_str.chars().any(char::is_whitespace) {
+        return Err(invalid_state(
+            temp.path(),
+            "temp file path contains whitespace; debugfs -R write splits on whitespace",
+        ));
+    }
+
+    ops.run_command(
+        "debugfs",
+        &[
+            "-w".to_owned(),
+            "-R".to_owned(),
+            format!("write {temp_path_str} {image_path}"),
+            image.display().to_string(),
+        ],
+    )
+}
+
+fn invalid_state(path: impl Into<PathBuf>, detail: impl Into<String>) -> NetError {
+    NetError::InvalidNetworkState {
+        path: path.into(),
+        detail: detail.into(),
+    }
+}

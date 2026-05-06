@@ -22,9 +22,22 @@ impl Backend {
     /// `config.discovery` must already be populated by the caller from
     /// `m80-preflight::run()`. No preflight is re-run here.
     pub fn new(config: BackendConfig) -> Result<Self, FcError> {
+        let effective = build_effective_config(&config);
+        Self::new_with_effective_config(config, effective)
+    }
+
+    /// Construct a backend handle while preserving the caller's annotated
+    /// effective configuration snapshot.
+    ///
+    /// Use this when the caller built `config` from `load_config` and wants
+    /// `show_effective_config()` to retain source labels instead of rebuilding
+    /// a default-tagged snapshot from typed backend fields.
+    pub fn new_with_effective_config(
+        config: BackendConfig,
+        effective: EffectiveConfig,
+    ) -> Result<Self, FcError> {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new((Mutex::new(permits), Condvar::new()));
-        let effective = build_effective_config(&config);
         Ok(Backend {
             config,
             effective,
@@ -137,6 +150,11 @@ impl Backend {
 /// `EffectiveConfig` and can pass it alongside the `BackendConfig`.
 fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
     let fields = vec![
+        EffectiveField {
+            name: "default_profile".into(),
+            value: "env".into(),
+            source: ConfigSource::Default,
+        },
         EffectiveField {
             name: "max_concurrent_vms".into(),
             value: cfg.max_concurrent_vms.to_string(),

@@ -44,7 +44,7 @@ Subcommands:
                     "phases": {
                       "<kind>": {
                         "<load>": {
-                          "<phase>": {"p50_us": <int>, "p95_us": <int>, "count": <int>}
+                          "<phase>": {"p50_us": <int>, "p95_us": <int>, "max_us": <int>, "count": <int>}
                         }
                       }
                     },
@@ -164,6 +164,7 @@ def compute_snapshot(wallclock_file, phase_file):
         phases.setdefault(kind, {}).setdefault(load, {})[phase] = {
             "p50_us": _percentile(vals_sorted, 50),
             "p95_us": _percentile(vals_sorted, 95),
+            "max_us": vals_sorted[-1],
             "count": len(vals_sorted),
         }
 
@@ -436,6 +437,10 @@ class TestComputeSnapshot(unittest.TestCase):
         # boot values: 900000, 800000, 1000000 → sorted: 800000, 900000, 1000000
         # _percentile(3, 50): idx = max(0, int(1.5)-1) = 0 → 800000
         self.assertEqual(data["phases"]["ubuntu"]["idle"]["boot"]["p50_us"], 800000)
+
+    def test_phases_boot_ubuntu_idle_max(self):
+        data = self._run()
+        self.assertEqual(data["phases"]["ubuntu"]["idle"]["boot"]["max_us"], 1000000)
 
     def test_phases_exec_ubuntu_idle(self):
         data = self._run()

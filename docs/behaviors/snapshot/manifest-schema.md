@@ -7,14 +7,13 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/snapshot.rs`; 
 ## reserved-names {#reserved-names}
 
 The system reserves the names `snapshot-manifest.json` and
-`restore-metadata.json` in the snapshot directory regardless of whether
-snapshot execution is wired in this version.
+`restore-metadata.json` in every persisted snapshot directory.
 
 **Present-tense statement.** `m80-snapshot` exposes the constants
 `SNAPSHOT_MANIFEST_FILE = "snapshot-manifest.json"` and
 `RESTORE_METADATA_FILE = "restore-metadata.json"`.  Both names are
-locked in v0.1 so that any tool writing a snapshot today uses the same
-paths that v0.2 execution will read.  The constants pin the on-disk
+locked so that any tool writing a snapshot today uses the same
+paths that active restore code will read.  The constants pin the on-disk
 contract; callers must not derive these strings independently.
 
 **predecessor source.**
@@ -49,8 +48,8 @@ detected first via `SchemaVersionProbe` and surfaces as
 can fire.
 
 The five required artifact kinds are `BootIdentity`, `Memory`, `RuntimeRootfs`,
-`VmState`, and `WorkspaceScratch`.  The correct artifact count is the caller's
-responsibility in v0.1; v0.2 execution will enforce it at capture time.
+`VmState`, and `WorkspaceScratch`.  The correct artifact count is the store
+writer's responsibility.
 
 **predecessor source.**
 - `snapshot.rs` lines 55–63: `FirecrackerSnapshotManifest` struct definition.
@@ -75,14 +74,14 @@ snapshot path, and Firecracker version pin.
 - `snapshot_path` — path to the snapshot directory.
 - `source_run_id`, `source_vm_id`, `source_workspace_id` — source identity.
 
-A restore against a different Firecracker version fails closed; the version
-enforcement against a live binary is v0.2's responsibility (`m80-firecracker`).
-`m80-snapshot` records and returns the value.
+A restore against a different Firecracker version fails closed at the
+orchestrator layer. `m80-snapshot` records and returns the expected version.
 
 The predecessor schema additionally carried `restored_vm_id`, `restored_run_dir`,
 `artifact_set_sha256`, `phase` (`Planned|Materialized|Failed`),
-`restored_at_unix_ms`, and `last_error`.  Those fields belong to the execution
-lane and are deferred to v0.2; they are not present in `m80-snapshot` v0.1.
+`restored_at_unix_ms`, and `last_error`.  Those fields belong to the
+orchestrator execution lane; they are not part of `m80-snapshot`'s schema
+contract.
 
 **predecessor source.**
 - `snapshot.rs` lines 65–70: `FirecrackerRestorePhase` enum.

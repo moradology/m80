@@ -12,6 +12,7 @@
 //! 2. The host distro must have `/bin/busybox` available — install
 //!    `busybox-static` on Debian/Ubuntu.
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -23,12 +24,21 @@ use crate::pipeline::{loop_mount, loop_umount, run_curl, set_executable, truncat
 
 const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
 const HOST_BUSYBOX: &str = "/bin/busybox";
+const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
+    "workspace",
+    "proc",
+    "sys",
+    "dev",
+    "lower",
+    "upper",
+    "merged",
+];
 
 /// Busybox applet symlinks installed at `/bin/<applet>`. Picked so the
 /// smoke test (`/bin/echo smoke-passes`) and any common m80-guestd
 /// child invocations work.
 const BUSYBOX_APPLETS: &[&str] = &[
-    "sh", "echo", "cat", "ls", "mkdir", "mount", "umount", "stat", "ln", "true", "false",
+    "sh", "echo", "cat", "ls", "mkdir", "mount", "umount", "stat", "ln", "touch", "true", "false",
 ];
 
 pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
@@ -71,7 +81,14 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
             "6. Copy {} → <mount>/m80-guestd + symlink /init → /m80-guestd",
             cfg.guestd.binary.display()
         ),
-        "7. mkdir /workspace /proc /sys /dev (PID-1 mount targets)".to_string(),
+        format!(
+            "7. mkdir {} (PID-1 mount targets)",
+            PID_ONE_MOUNTPOINT_DIRS
+                .iter()
+                .map(|d| format!("/{d}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
         "8. Unmount".to_string(),
         "9. Compute sha256 of 3 artifacts (kernel, output_rootfs, daemon_binary)".to_string(),
         format!("10. Write manifest → {}", manifest_path.display()),
@@ -144,7 +161,7 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         kernel_image: kernel.clone(),
         kernel_image_sha256: kernel_sha,
         kernel_kind: m80_image_manifest::KernelKind::Stock,
-        no_egress_reason: None,
+        no_egress_reason: Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
         output_rootfs_image: output_rootfs.clone(),
         output_rootfs_sha256: output_sha,
         ready_marker: m80_proto::READY_MARKER_DEFAULT.to_string(),
@@ -191,9 +208,40 @@ fn install_minimal(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
         .context("symlinking /init → /m80-guestd")?;
 
     // Mountpoint dirs for the PID-1 setup in m80-guestd::pid_one.
-    for d in ["workspace", "proc", "sys", "dev"] {
+    for d in PID_ONE_MOUNTPOINT_DIRS {
         std::fs::create_dir_all(mount.join(d))
             .with_context(|| format!("creating /{d} in rootfs"))?;
     }
+    std::fs::create_dir_all(mount.join("tmp")).context("creating /tmp in rootfs")?;
+    std::fs::set_permissions(mount.join("tmp"), std::fs::Permissions::from_mode(0o1777))
+        .context("chmod 1777 /tmp")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BUSYBOX_APPLETS, PID_ONE_MOUNTPOINT_DIRS};
+
+    #[test]
+    fn pid_one_mountpoints_include_overlay_pivot_targets() {
+        assert_eq!(
+            PID_ONE_MOUNTPOINT_DIRS,
+            &[
+                "workspace",
+                "proc",
+                "sys",
+                "dev",
+                "lower",
+                "upper",
+                "merged"
+            ]
+        );
+    }
+
+    #[test]
+    fn busybox_applets_include_persistent_exec_test_tools() {
+        assert!(BUSYBOX_APPLETS.contains(&"sh"));
+        assert!(BUSYBOX_APPLETS.contains(&"touch"));
+        assert!(BUSYBOX_APPLETS.contains(&"cat"));
+    }
 }

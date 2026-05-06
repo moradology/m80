@@ -21,15 +21,16 @@ The following is the normative API. IMPL leaf `m80-ovrl.2` produces code that ma
 /// Produce the per-VM overlay ext4 and return a `Rootfs` pointing at the
 /// shared base and the new overlay.
 ///
-/// Allocates a sparse file at `overlay_dest` using `File::set_len(overlay_size_bytes)`,
-/// then formats it with `mkfs.ext4 -F <overlay_dest>`.  The base is NOT copied.
+/// Ensures a run-root-local empty ext4 overlay template exists, then clones it
+/// to `overlay_dest` with `cp --reflink=auto --sparse=always`, giving reflink
+/// where available and sparse plain-copy fallback otherwise. The base is NOT copied.
 ///
 /// Caller is responsible for sha256 verification of `base` via
 /// `m80_image_manifest::Manifest::verify()` before calling `prepare`.
 /// This function does not re-verify.
 ///
 /// `overlay_dest`'s parent directory must already exist.  `prepare` does NOT
-/// create parent directories — a missing parent returns `StorageError::Io`.
+/// create parent directories — a missing parent returns a typed storage error.
 /// (CLAUDE.md: "no silent recovery")
 pub fn Rootfs::prepare(
     base: &Path,
@@ -57,18 +58,21 @@ pub fn Rootfs::overlay_path(&self) -> &Path;
 - `StorageError::BaseSha256Mismatch` — base verification is the caller's responsibility.
 - `StorageError::CopyRootfs` — there is no copy operation.
 
-**New error variant:**
-- `StorageError::Mkfs(io::Error)` — `mkfs.ext4` non-zero exit.
+**New error variants:**
+- `StorageError::MkfsFailed` — `mkfs.ext4` non-zero exit for rootfs overlay templates.
+- `StorageError::OverlayTemplateCreateFailed` — template or lock file creation failed.
+- `StorageError::OverlayTemplateMismatch` — existing template metadata/size does not match the requested shape.
+- `StorageError::OverlayTemplateCloneFailed` — reflink/plain-copy clone to the per-VM overlay failed.
 
 **Retained unchanged:** `Scratch::create`, `Scratch::extract`, `Scratch::path`, `ChangeSet`, `Rejection`, `RejectionReason`, remaining `StorageError` variants.
 
-**Sparse overlay sizing:** Default 512 MiB. Configurable via `SandboxConfig::overlay_size_bytes`. The sparse allocation costs zero disk bytes at creation; the file grows as the guest writes. A freshly-formatted empty ext4 on a 512 MiB sparse file takes ~10 ms on disk, sub-millisecond on tmpfs.
+**Sparse overlay sizing:** Default 512 MiB. Configurable via `SandboxConfig::overlay_size_bytes`. The empty ext4 template is keyed by schema version and size under the run root, formatted once with `mkfs.ext4 -F`, then trimmed with `fallocate -d` so sparse fallback copies only live ext4 metadata. A stale/wrong-size template is a hard error, not silently reused. The per-VM overlay is cloned from that template and grows as the guest writes.
 
 ---
 
 ## 2. Drive layout and PUT order
 
-Firecracker assigns `/dev/vdN` names in drive-PUT order, with the root device (`is_root_device: true`) unconditionally placed first regardless of PUT sequence (see `firecracker-shared-rootfs.md §2` — `BlockBuilder::insert` enforces front-of-VecDeque for root; `attach_block_devices` iterates in VecDeque order for MMIO slot assignment). This ordering is the ACPI DSDT contract; it is designed-in, not incidental.
+Firecracker assigns `/dev/vdN` names in drive-PUT order, with the root device (`is_root_device: true`) unconditionally placed first regardless of PUT sequence (see `firecracker-shared-rootfs.md §2` — `BlockBuilder::insert` enforces front-of-VecDeque for root; `attach_block_devices` iterates in VecDeque order for MMIO slot assignment). The same order feeds Firecracker's virtio-mmio discovery data, whether the guest consumes the generated ACPI DSDT or the legacy `virtio_mmio.device=...` cmdline entries. This is designed-in, not incidental.
 
 | Position | `drive_id`         | Host file                                    | `is_read_only` | `is_root_device` | Guest path   | Purpose |
 |---------:|--------------------|----------------------------------------------|:--------------:|:----------------:|:------------:|---------|
@@ -99,12 +103,15 @@ The following block is the authoritative pseudocode for `m80-ovrl.4`. IMPL leave
 mount(None, "/", None, MS_REC | MS_PRIVATE, None)?;
 
 // ── Phase 2: mount layer disks ────────────────────────────────────────────
-// Step 2. Mount the shared read-only base ext4 (vda) at /lower.
-fs::create_dir_all("/lower")?;
+// Step 2. Verify the image-built /lower mountpoint exists, then mount the
+//         shared read-only base ext4 (vda) there. The initial root is already
+//         read-only, so PID 1 must not create this at runtime.
+ensure_precreated_mountpoint("/lower")?;
 mount("/dev/vda", "/lower", "ext4", MS_RDONLY, None)?;
 
-// Step 3. Mount the per-VM writable ext4 (vdb) at /upper.
-fs::create_dir_all("/upper")?;
+// Step 3. Verify the image-built /upper mountpoint exists, then mount the
+//         per-VM writable ext4 (vdb) there.
+ensure_precreated_mountpoint("/upper")?;
 mount("/dev/vdb", "/upper", "ext4", MsFlags::empty(), None)?;
 
 // ── Phase 3: prepare overlay dirs ─────────────────────────────────────────
@@ -114,8 +121,9 @@ mount("/dev/vdb", "/upper", "ext4", MsFlags::empty(), None)?;
 fs::create_dir_all("/upper/root")?;
 fs::create_dir_all("/upper/.work")?;     // must be empty (freshly mkfs'd)
 
-// Step 5. Create the overlay merge target.
-fs::create_dir_all("/merged")?;
+// Step 5. Verify the image-built /merged mountpoint exists. This is only a
+//         mount target; it disappears after pivot.
+ensure_precreated_mountpoint("/merged")?;
 
 // ── Phase 4: overlayfs ────────────────────────────────────────────────────
 // Step 6. Mount overlayfs.  On failure: umount2 /upper and /lower with
@@ -155,6 +163,7 @@ if Path::new("/dev/vdc").exists() {
 
 **Key invariants:**
 - Steps 1 through 8 must execute before `pivot_rootfs` (step 9).
+- `/lower`, `/upper`, and `/merged` must exist in the minimal base image. The initial root is mounted read-only, so PID 1 verifies these mountpoints rather than creating them at runtime.
 - `/upper/root` and `/upper/.work` must be on the same superblock as each other (both on `/dev/vdb`). They must NOT be on `/dev/vda`.
 - `workdir` must be empty at overlay mount time. A freshly formatted sparse ext4 guarantees this.
 - The workspace mount (step 10) occurs INSIDE the pivoted root — after step 9, not before.
@@ -307,7 +316,7 @@ Copied and distilled from `docs/planning/perf-roadmap-extended.md §1.1`. All se
 | R2 | `pivot_root(".", ".")` fails as PID 1 (e.g., mount propagation not set to `MS_PRIVATE` before the call). | Guest panics; `phase_12b_ready_accept` times out at 60 s; run-dir preserved. | Step 1 of the in-guest sequence (`MS_REC \| MS_PRIVATE` on `/`) must execute before step 9. `m80-ovrl.4` integration test boots end-to-end on CI's kernel. |
 | R3 | kata `pivot_rootfs` lift has a subtle ordering bug (e.g., `scopeguard` `defer!` drop order differs). | `pid_one_pivot` unit test stubs the syscall; real failure only in integration. | Smoke checkpoint `m80-f2zc.5b`: single end-to-end launch with `M80_PHASE_TRACE=1`, asserts probe-after-pivot byte lands on overlay disk. |
 | R4 | RO base page cache is NOT shared across VMs (e.g., host filesystem opens a fresh inode). | 16-VM concurrent bench shows `/proc/meminfo` Cached delta > 256 MiB × 16 ÷ 4. | `m80-preflight` rejects non-native run-root filesystems (deferred follow-up). `m80-ovrl.7` bench records Cached delta as R4 data point. |
-| R5 | `mkfs.ext4 -F` on the sparse overlay is slow (>80 ms). | `phase_3_storage_prep` per-call exceeds 80 ms in bench. | Acceptable up to ~80 ms (pivot still saves ~650 ms net). Above 100 ms: file a `cp --reflink=auto` template follow-up. |
+| R5 | Template clone remains slow (>80 ms) or falls back to full copy on the target filesystem. | `phase_3b_rootfs_prepare` exceeds 80 ms in bench after `m80-f2zc.10`. | Current data shows template clone at about 13.8 ms P50; do not introduce a broader overlay artifact pool from total storage-prep time unless rootfs-prepare itself regresses. |
 | R6 | Sparse `File::set_len` pre-allocates on a FUSE or non-sparse host filesystem, stalling launch. | Storage prep time regresses to O(overlay size). | Run-dir on Linux native filesystem is the documented requirement. `statfs`-based preflight check deferred. |
 | R7 | Base file mutated post-launch by concurrent `m80-image-build` re-run. | sha256 mismatch on next launch. | `m80-image-manifest` verifies before mount. Smoke checkpoint `m80-f2zc.5b` hashes base pre/post launch and asserts equality. |
 
@@ -325,18 +334,46 @@ The dependency tracks: `m80-ovrl.5` (kernel config verification for the current 
 
 ---
 
-## 8. Measured impact (placeholder)
+## 8. Measured impact
 
-This section is populated by `m80-ovrl.7` BENCH after IMPL lands. Expected values:
+Measured on 2026-05-05 against a freshly rebuilt minimal image at
+`/tmp/m80-build/minimal-perf-20260505c` (Firecracker 1.15.1, Linux
+6.17.0-22-generic host).
 
 | Metric | Baseline (clone) | Post-pivot | Delta |
 |---|---|---|---|
-| `storage_prep` p50 | ~727 ms | TBD | TBD |
-| `ready_probe` p50 e2e | TBD | TBD | TBD |
-| 16-VM concurrent `/proc/meminfo` Cached delta | TBD | TBD | TBD |
-| stress-ng 100% CPU vsock failure rate | TBD | TBD | TBD (hypothesis: orthogonal to storage) |
+| `storage_prep` p50 | 727.6 ms | 215.9 ms | -511.7 ms |
+| `ready_accept` p50 | 893.4 ms | 906.2 ms | +12.8 ms |
+| minimal/idle useful p50 | 1696 ms | 1207 ms | -489 ms |
+| 16-VM concurrent `/proc/meminfo` Cached delta | not measured | +4.4 MiB | shared-base cache behavior looks healthy |
+| stress-ng 100% CPU success rate | 0/30 | 1/5 | still mostly failing; orthogonal to storage |
 
-Working hypothesis on stress-ng interaction (R5 in `storage-pivot-bead-plan.md §3` Q5): the vsock readiness handshake failure under CPU saturation is orthogonal to storage. `storage_prep` completes before the kernel boots; CPU saturation does not affect `mkfs.ext4` on a sparse file. `m80-ovrl.7` documents whether the failure rate changes post-pivot.
+The storage pivot removed the full 256 MiB rootfs copy from the launch path,
+but sparse overlay creation plus `mkfs.ext4` still costs about 216 ms p50. The
+loaded-cell failures persist after the pivot, so the saturation issue remains
+vsock/scheduling work rather than storage-copy work.
+
+Follow-up `m80-f2zc.10` replaced per-launch `mkfs.ext4` with a run-root-local
+empty overlay template cloned via `cp --reflink=auto --sparse=always`.
+Measured on 2026-05-05:
+
+| Metric | Minimal stock idle | Minimal stripped idle |
+|---|---:|---:|
+| `phase_3_storage_prep` P50 | 180.6 ms | 180.5 ms |
+| `phase_3a_manifest_verify` P50 | 166.6 ms | 166.8 ms |
+| `phase_3b_rootfs_prepare` P50 | 13.7 ms | 13.8 ms |
+
+The overlay template removed the material rootfs-prepare cost. The remaining
+storage-prep residual is manifest sha256 verification, not overlay image
+creation; any further 100 ms storage win must preserve that fail-closed boot
+artifact invariant explicitly. Follow-up: `m80-f2zc.11`.
+
+`m80-f2zc.11` resolves that residual by using the existing preflight
+`Rootfs + manifest` check as the boot-artifact trust boundary. Phase 3 no
+longer rehashes kernel/rootfs/guestd artifacts for each VM; it prepares the
+overlay and optional scratch only. Minimal stripped idle moved from
+`phase_3_storage_prep` 180.5 ms P50 to 13.4 ms P50, and wallclock moved from
+1317 ms P50 to 1117 ms P50 on the same 2026-05-05 bench host.
 
 ---
 

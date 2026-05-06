@@ -27,6 +27,47 @@ fn invalid_state_displays() {
 }
 
 #[test]
+fn api_socket_timeout_is_typed() {
+    let e = FcError::ApiSocketTimeout {
+        path: "/run/m80/vm/firecracker.sock".into(),
+        timeout: std::time::Duration::from_secs(5),
+    };
+    let s = e.to_string();
+    assert!(s.contains("firecracker.sock"), "got: {s}");
+    assert!(s.contains("5s"), "got: {s}");
+}
+
+#[test]
+fn guestd_ready_timeout_is_typed() {
+    let e = FcError::GuestdReadyTimeout {
+        path: "/run/m80/vm/vsock.sock_9000".into(),
+        timeout: std::time::Duration::from_secs(60),
+    };
+    let s = e.to_string();
+    assert!(s.contains("vsock.sock_9000"), "got: {s}");
+    assert!(s.contains("60s"), "got: {s}");
+}
+
+#[test]
+fn lifecycle_failure_kinds_are_bounded() {
+    use m80_firecracker::LifecycleFailureKind;
+
+    assert_eq!(LifecycleFailureKind::ALL.len(), 7);
+    assert_eq!(
+        LifecycleFailureKind::ALL,
+        [
+            LifecycleFailureKind::GuestdNotReady,
+            LifecycleFailureKind::BrokenVsock,
+            LifecycleFailureKind::StuckVm,
+            LifecycleFailureKind::GracefulStopTimeout,
+            LifecycleFailureKind::ForcedKillFallback,
+            LifecycleFailureKind::CleanupFailure,
+            LifecycleFailureKind::WritebackSkippedAfterUncleanStop,
+        ]
+    );
+}
+
+#[test]
 fn io_error_displays() {
     let e = FcError::Io(std::io::Error::new(
         std::io::ErrorKind::NotFound,

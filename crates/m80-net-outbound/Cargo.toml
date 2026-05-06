@@ -19,3 +19,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+futures-util.workspace = true
+rtnetlink.workspace = true
+tokio = { workspace = true, features = ["net", "rt"] }
+tun.workspace = true
+tempfile.workspace = true

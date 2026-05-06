@@ -35,6 +35,47 @@ fn mkfs_error_displays() {
 }
 
 #[test]
+fn overlay_template_create_failed_displays_path() {
+    let e = StorageError::OverlayTemplateCreateFailed {
+        path: PathBuf::from("/run/m80/.rootfs-overlay-template.lock"),
+        err: std::io::Error::from(std::io::ErrorKind::TimedOut),
+    };
+    let s = format!("{e}");
+    assert!(
+        s.contains("rootfs-overlay-template"),
+        "path must appear: {s}"
+    );
+}
+
+#[test]
+fn overlay_template_mismatch_displays_reason() {
+    let e = StorageError::OverlayTemplateMismatch {
+        path: PathBuf::from("/run/m80/.rootfs-overlay-template.meta"),
+        reason: "wrong size".into(),
+    };
+    let s = format!("{e}");
+    assert!(s.contains("wrong size"), "reason must appear: {s}");
+}
+
+#[test]
+fn overlay_template_clone_failed_displays_paths() {
+    let e = StorageError::OverlayTemplateCloneFailed {
+        template: PathBuf::from("/run/m80/template.ext4"),
+        dest: PathBuf::from("/run/m80/vm-1/rootfs.overlay.ext4"),
+        err: std::io::Error::from(std::io::ErrorKind::AlreadyExists),
+    };
+    let s = format!("{e}");
+    assert!(
+        s.contains("template.ext4"),
+        "template path must appear: {s}"
+    );
+    assert!(
+        s.contains("rootfs.overlay.ext4"),
+        "dest path must appear: {s}"
+    );
+}
+
+#[test]
 fn e2fsck_failed_displays_exit_and_stderr() {
     let e = StorageError::E2fsckFailed {
         exit: 8,

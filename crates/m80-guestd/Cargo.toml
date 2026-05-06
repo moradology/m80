@@ -26,5 +26,6 @@ thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 nix.workspace = true
+portable-pty.workspace = true
 scopeguard.workspace = true
 vsock.workspace = true

@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "data": {
+    "wallclock": {
+      "ubuntu": {
+        "idle": {
+          "p50": 3919,
+          "p95": 3920,
+          "max": 3920,
+          "count": 30,
+          "fail_count": 0
+        }
+      }
+    },
+    "phases": {
+      "ubuntu": {
+        "idle": {
+          "phase_1_run_root_prep": {
+            "p50_us": 77,
+            "p95_us": 82,
+            "count": 32
+          },
+          "phase_2_lease": {
+            "p50_us": 40,
+            "p95_us": 43,
+            "count": 32
+          },
+          "phase_3_storage_prep": {
+            "p50_us": 1334981,
+            "p95_us": 1345719,
+            "count": 32
+          },
+          "phase_4_jailer_materialize": {
+            "p50_us": 718,
+            "p95_us": 868,
+            "count": 32
+          },
+          "phase_5_cgroup_probe": {
+            "p50_us": 1904,
+            "p95_us": 2756,
+            "count": 32
+          },
+          "phase_6_network_realize": {
+            "p50_us": 0,
+            "p95_us": 0,
+            "count": 32
+          },
+          "phase_9_jailer_launch": {
+            "p50_us": 25456,
+            "p95_us": 25516,
+            "count": 32
+          },
+          "phase_5b_cgroup_create": {
+            "p50_us": 19542,
+            "p95_us": 23611,
+            "count": 32
+          },
+          "phase_10_open_uds": {
+            "p50_us": 27,
+            "p95_us": 37,
+            "count": 32
+          },
+          "phase_11_rest_puts": {
+            "p50_us": 700,
+            "p95_us": 865,
+            "count": 32
+          },
+          "phase_11b_ready_listener_bind": {
+            "p50_us": 100,
+            "p95_us": 114,
+            "count": 32
+          },
+          "phase_12a_instance_start": {
+            "p50_us": 19343,
+            "p95_us": 20732,
+            "count": 32
+          },
+          "phase_12b_ready_accept": {
+            "p50_us": 1108021,
+            "p95_us": 1128031,
+            "count": 32
+          },
+          "exec_send": {
+            "p50_us": 21,
+            "p95_us": 23,
+            "count": 32
+          },
+          "exec_recv": {
+            "p50_us": 20434,
+            "p95_us": 21241,
+            "count": 32
+          },
+          "stop_bounded": {
+            "p50_us": 375,
+            "p95_us": 1924,
+            "count": 32
+          },
+          "stop_release": {
+            "p50_us": 0,
+            "p95_us": 0,
+            "count": 32
+          }
+        }
+      }
+    },
+    "useful_ms": {
+      "ubuntu": {
+        "idle": 2534
+      }
+    },
+    "meta": {
+      "generated_at": "2026-05-05T10:12:04.932117+00:00"
+    }
+  }
+}

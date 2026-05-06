@@ -42,6 +42,20 @@ The load-bearing wire invariants — the things consumers cannot derive from
   Shared with the `m80-5vha` streaming-exec epic — these types are defined
   here once; that epic imports without re-declaring.
   See `docs/behaviors/lifecycle/exec-cancellation.md`.
+- **Streaming exec is opt-in.** v0.2 adds
+  `ExecRequest::streaming: bool` with `default` +
+  `skip_serializing_if = is_false`, so `streaming == false` remains
+  byte-identical to the v0.1 request wire. When `streaming == true`, the
+  response is zero or more `exec_stdout` / `exec_stderr` envelopes followed
+  by exactly one `exec_exit` terminal envelope. All frames carry the original
+  `Envelope::request_id`. See `docs/design/wire-streaming-exec.md`.
+- **PTY exec is a separate terminal protocol.** Interactive sessions use
+  `pty_request` followed by host-to-guest `pty_input`, `pty_resize`, and
+  `pty_control` frames, guest-to-host `pty_output` frames, and exactly one
+  `pty_exit` terminal frame. PTY output is the merged terminal byte stream;
+  it is not modeled as separate stdout and stderr. All frames carry the same
+  opaque `Envelope::request_id`. See
+  `docs/behaviors/wire-protocol/pty.md`.
 
 ## Non-goals
 
@@ -54,6 +68,9 @@ The load-bearing wire invariants — the things consumers cannot derive from
 - **No tool catalog.** The payload is opaque from `m80-proto`'s
   perspective; it does not validate that a request names a known operation.
 - **No externalized output.** v0.1 ships inline stdout/stderr only.
+- **No agent/TUI opinions.** PTY payloads carry terminal bytes, resize
+  events, host-originated control events, and process status only. They do
+  not name shells, Claude, editors, tool catalogs, or agent policy.
 
 ## Dependencies
 

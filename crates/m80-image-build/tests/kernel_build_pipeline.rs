@@ -33,6 +33,10 @@ fn kernel_builder_config() -> PathBuf {
         .join("m80-stripped.config")
 }
 
+fn committed_config_text() -> String {
+    std::fs::read_to_string(kernel_builder_config()).expect("m80-stripped.config must be readable")
+}
+
 /// The committed m80-stripped.config must exist and produce a 64-hex-char sha256.
 /// This pins the config-sha computation logic that gates the vmlinux filename.
 #[test]
@@ -75,6 +79,34 @@ fn config_sha_changes_when_content_changes() {
         sha256_of_file(&p1),
         sha256_of_file(&p2),
         "different configs must produce different shas"
+    );
+}
+
+#[test]
+fn stripped_config_keeps_overlayfs_built_in() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_OVERLAY_FS=y"),
+        "storage pivot requires built-in overlayfs, not a module or omitted symbol"
+    );
+    assert!(
+        !cfg.lines().any(|line| line == "CONFIG_OVERLAY_FS=m"),
+        "overlayfs must be built in because PID 1 mounts overlayfs before modules are available"
+    );
+}
+
+#[test]
+fn stripped_config_keeps_overlay_xino_auto_built_in() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines()
+            .any(|line| line == "CONFIG_OVERLAY_FS_XINO_AUTO=y"),
+        "storage pivot requires xino auto for stable cross-layer inode behavior"
+    );
+    assert!(
+        !cfg.lines()
+            .any(|line| line == "CONFIG_OVERLAY_FS_XINO_AUTO=m"),
+        "xino auto must be built in with overlayfs"
     );
 }
 

@@ -21,10 +21,15 @@ mod version;
 pub use error::ProtoError;
 pub use framing::{read_frame, write_frame};
 pub use types::{
-    CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest, ExecResponse, ExecStatus,
-    ExecTiming, HandshakeMessage, Payload, ShutdownAction, ShutdownRequest, ShutdownResponse,
-    PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST,
-    PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_SHUTDOWN_REQUEST, PAYLOAD_KIND_SHUTDOWN_RESPONSE,
+    CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
+    ExecStatus, ExecStderr, ExecStdout, ExecTiming, HandshakeMessage, Payload, PtyControl,
+    PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal, PtySize,
+    ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_ACK,
+    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_REQUEST,
+    PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
+    PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_INPUT,
+    PAYLOAD_KIND_PTY_OUTPUT, PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE,
+    PAYLOAD_KIND_SHUTDOWN_REQUEST, PAYLOAD_KIND_SHUTDOWN_RESPONSE,
 };
 pub use version::{negotiate_version, MAX_FRAME_BYTES, PROTOCOL_VERSION};
 

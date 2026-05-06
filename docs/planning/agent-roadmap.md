@@ -150,27 +150,22 @@ that can be diffed against the pre-epic baseline.
 ## Post-roadmap state (2026-05-05)
 
 Waves 0-4 of the parallel implementation strategy landed at the
-**structural** level. All four epics' code is in place, workspace builds
-green, all unit/integration tests pass, designs locked. **What remains
-is real-KVM bench exercise** — currently TBD because:
-
-- The stripped kernel needs a Docker exercise (kernel-builder Dockerfile
-  is committed but the actual ~10 min kernel build hasn't been run).
-- Real-KVM smoke requires rebuilding the minimal image with the new
-  m80-guestd (overlay+pivot logic) — the image at `/tmp/m80-build/minimal/`
-  predates Wave 3 and would test the OLD guestd against the NEW host.
-
-Open BENCH beads tracking the remaining work:
+**structural** level, and the follow-up real-KVM bench pass has now measured
+the four originally open BENCH leaves. The stripped kernel needed one
+diagnostics-first correction for Ubuntu/systemd: add cgroups, tmpfs ACL/xattr
+support, file-handle syscalls, and systemd event primitives to the keep-list so
+systemd can mount its API filesystems.
 
 | Bead | What it captures |
 |---|---|
-| `m80-f2zc.7` | Storage-pivot cold-launch numbers (expect ~700 ms saved) |
-| `m80-ci9i.4` | Stripped-kernel cold-launch numbers (expect 500-700 ms saved) |
-| `m80-rrp.3.6` | Snapshot/restore wallclock (expect ~125-200 ms warm) |
-| `m80-qokt.2.6` | Persistent-VM turn-to-turn (expect ~10-50 ms) |
+| `m80-f2zc.7` | Storage-pivot cold-launch numbers: closed; storage prep P50 727.6 ms → 215.9 ms |
+| `m80-ci9i.4` | Stripped-kernel cold-launch numbers: closed; minimal idle P50 1517 ms → 1417 ms, Ubuntu idle P50 3919 ms → 3818 ms |
+| `m80-rrp.3.6` | Snapshot/restore wallclock: closed; idle restore P50 274.204 ms, loaded restore P50 444.972 ms |
+| `m80-qokt.2.6` | Persistent-VM turn-to-turn: closed; sequential exec P50 20.589 ms |
 
-Each BENCH leaf's expected mechanism is documented; only the empirical
-numbers remain.
+The empirical numbers are in `docs/perf/cold-launch.md`,
+`docs/behaviors/snapshot/restore-latency.md`, and
+`docs/behaviors/lifecycle/persistent-state.md`.
 
 DOCS leaves (`m80-f2zc.8`, `m80-ci9i.5`, `m80-rrp.3.7`) closed during
 Wave 5 — READMEs were updated alongside each IMPL diff per the CLAUDE.md

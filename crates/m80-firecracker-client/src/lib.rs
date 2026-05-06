@@ -103,10 +103,7 @@ impl Client {
     /// The VM **must** be paused before calling this (via
     /// `patch_vm_state(VmState::Paused)`). Firecracker will return an error if
     /// the VM is still running.
-    pub fn put_snapshot_create(
-        &self,
-        cfg: &CreateSnapshotConfig,
-    ) -> Result<(), ClientError> {
+    pub fn put_snapshot_create(&self, cfg: &CreateSnapshotConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(cfg)?;
         let resp = self.put("/snapshot/create", &body)?;
         if (200..300).contains(&resp.status) {
@@ -123,10 +120,7 @@ impl Client {
     /// `vsock.sock` file from any previous VM using the same jail must be
     /// removed before calling this — Firecracker rebinds the UDS at load time
     /// and will fail with `EADDRINUSE` if the file already exists.
-    pub fn put_snapshot_load(
-        &self,
-        cfg: &LoadSnapshotConfig,
-    ) -> Result<(), ClientError> {
+    pub fn put_snapshot_load(&self, cfg: &LoadSnapshotConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(cfg)?;
         let resp = self.put("/snapshot/load", &body)?;
         if (200..300).contains(&resp.status) {

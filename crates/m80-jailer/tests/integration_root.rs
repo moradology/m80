@@ -31,6 +31,7 @@ fn materialize_creates_jail_root_and_persists_plan() {
             mode: BindMode::Ro,
         }],
         sockets: Vec::new(),
+        stdio_log: None,
     };
 
     let plan = Plan::compute(&cfg).unwrap();

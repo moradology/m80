@@ -21,11 +21,7 @@ pub(crate) fn put_json(stream: &mut UnixStream, path: &str, body: &[u8]) -> io::
 }
 
 /// Write a PATCH request with a JSON body and read back the response.
-pub(crate) fn patch_json(
-    stream: &mut UnixStream,
-    path: &str,
-    body: &[u8],
-) -> io::Result<Response> {
+pub(crate) fn patch_json(stream: &mut UnixStream, path: &str, body: &[u8]) -> io::Result<Response> {
     send_json(stream, "PATCH", path, body)
 }
 

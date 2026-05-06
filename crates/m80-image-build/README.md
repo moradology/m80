@@ -47,7 +47,9 @@ gives us:
 11. sha256 every artifact (kernel, source rootfs, output rootfs, daemon
     binary, service unit, workspace-mount unit).
 12. Emit `<rootfs>.manifest.json` with `image_kind=Ubuntu` via
-    `m80-image-manifest::Manifest::write`.
+    `m80-image-manifest::Manifest::write`. The manifest records
+    `no_egress_reason` with the shared m80 audit string because the image is
+    network-neutral; runtime egress is selected at launch.
 
 #### Minimal (`kind = "minimal"`)
 
@@ -60,7 +62,7 @@ scratch. Smaller, faster cold boot, no package manager.
 4. Loop-mount the output rootfs RW.
 5. Copy `/bin/busybox` from the host into `<rootfs>/bin/busybox` and
    symlink common applets (`sh`, `echo`, `cat`, `ls`, `mkdir`, `mount`,
-   `umount`, `stat`, `ln`, `true`, `false`) → `busybox`. **The host
+   `umount`, `stat`, `ln`, `touch`, `true`, `false`) → `busybox`. **The host
    must have `busybox-static` installed**; `apt install busybox-static`
    on Debian/Ubuntu.
 6. Copy the configured `m80-guestd` binary into `<rootfs>/m80-guestd`
@@ -68,14 +70,19 @@ scratch. Smaller, faster cold boot, no package manager.
    statically linked** (e.g., `cargo build --target
    x86_64-unknown-linux-musl`); a glibc-linked binary will fail at
    runtime under the busybox-only rootfs.
-7. `mkdir` the four PID-1 mountpoint dirs (`/workspace`, `/proc`,
-   `/sys`, `/dev`) inside the rootfs.
+7. `mkdir` the PID-1 mountpoint dirs (`/workspace`, `/proc`, `/sys`,
+   `/dev`, `/lower`, `/upper`, `/merged`) inside the rootfs. `/lower`,
+   `/upper`, and `/merged` must exist before boot because the initial
+   root is mounted read-only. Also create `/tmp` with mode `1777` for
+   normal exec scratch.
 8. Unmount.
 9. sha256 the three artifacts that exist for Minimal kind (kernel,
    output rootfs, daemon binary).
 10. Emit `<rootfs>.manifest.json` with `image_kind=Minimal` and the
     five Ubuntu-only fields (`source_rootfs_*`, `service_unit_*`,
-    `workspace_mount_*`, `boot_target`) as `null`.
+    `workspace_mount_*`, `boot_target`) as `null`. The manifest records
+    `no_egress_reason` with the shared m80 audit string because the image is
+    network-neutral; runtime egress is selected at launch.
 
 Final step: print resulting paths to stdout. **No package-manager
 invocations** — `apt`/`dnf`/`pacman` are never spawned.
@@ -120,7 +127,9 @@ Files:
   pins (`KBUILD_BUILD_TIMESTAMP=0`, `SOURCE_DATE_EPOCH=0`).
 - `kernel-builder/m80-stripped.config` — canonical keep/drop config per
   `docs/design/stripped-kernel.md`. Contains `CONFIG_OVERLAY_FS=y` and
-  `CONFIG_OVERLAY_FS_XINO_AUTO=y` (required by m80-f2zc.5).
+  `CONFIG_OVERLAY_FS_XINO_AUTO=y` (required by m80-f2zc.5), plus the
+  cgroup/tmpfs/event primitives required for Ubuntu systemd to mount its API
+  filesystems.
 - `kernel-builder/build.sh` — copies config, runs `olddefconfig`, builds
   vmlinux, prints config sha, copies output to `/out`.
 - `kernels/` — gitignored binary output directory.
@@ -154,7 +163,8 @@ Files:
 
 ## Public surface
 
-Binary-only; subcommands `run`, `verify`, `clean` (run with `--help`).
+Binary-only; subcommands `run`, `verify`, `clean`, and `kernel build` (run
+with `--help`).
 
 Config file shape (`m80-image-build.toml`):
 ```toml

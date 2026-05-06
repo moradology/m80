@@ -40,19 +40,26 @@ some future) without touching the orchestrator.
 - The guest port is fixed at **9001** by default (`m80_proto::GUEST_PORT_DEFAULT`).
   Callers pass the port directly to `Channel::open`; no separate
   `open_with_port` variant is needed.
-- One `Channel` is one connection. Concurrent connections to the same VM
-  are not supported in v0.1. The caller is responsible for not opening a
-  second `Channel` against an already-open VM; this crate does not maintain
-  a global registry.
-- `Channel` is `Drop`-safe: dropping it flushes pending writes and removes
-  the host-side UDS. Repeated drops are no-ops.
+- One `Channel` is one connection. The Firecracker UDS is the VM's listener;
+  callers may open a fresh sequential `Channel` for each request. Concurrent
+  connections to the same VM are not supported in v0.1.
+- `Channel::try_clone_sender()` returns a write-only clone for same-connection
+  control frames. It is not a second request lane; it exists so the host can
+  send `cancel_request` while the owning channel is blocked waiting for exec
+  output.
+- `Channel` is `Drop`-safe: dropping it flushes pending writes and closes the
+  connection. It does **not** remove the host-side UDS; the orchestrator owns
+  socket cleanup during VM teardown/restore.
 - Ready-marker timeout maps to `VsockError::NotReady` and is a hard
   failure — the caller's only recovery is to tear down the VM.
 
 ## Public surface
 
-- `Channel::open(...)`, `Channel::send(&mut Envelope<T>)`,
-  `Channel::recv() -> Envelope<U>`, `Channel::close()`.
+- `Channel::open_uds_only(...)`, `Channel::send(&mut Envelope<T>)`,
+  `Channel::recv() -> Envelope<U>`, `Channel::try_clone_sender()`, and
+  `Channel::close()`.
+- `ChannelSender::send(&mut Envelope<T>)` and `ChannelSender::close()` for
+  same-connection control frames.
 - `cid_for_vm_id(vm_id: &str) -> u32`.
 - `READY_MARKER_DEFAULT` and `GUEST_PORT_DEFAULT` — re-exported from
   `m80-proto`, where the canonical values live.
@@ -104,5 +111,7 @@ every frame sent or received is logged with a hex+ASCII preview of up to
   missing UDS → `ConnectFailed`.
 - `tests/frame_round_trip.rs` — send `Envelope<ExecRequest>`, receive
   `Envelope<ExecResponse>` via a stub server.
+- `tests/frame_round_trip.rs` — cloned sender emits a same-connection
+  `cancel_request` while the primary channel remains open for reads.
 - `tests/drop_cleanup.rs` — dropping a `Channel` and calling `close()`
-  both remove the UDS file.
+  both leave the Firecracker UDS listener in place for future connections.

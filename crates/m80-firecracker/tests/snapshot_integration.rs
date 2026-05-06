@@ -43,6 +43,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        request_id: None,
     }
 }
 
@@ -91,6 +92,7 @@ fn capture_then_restore_round_trip() {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         })
         .expect("exec: write marker");
     assert_eq!(write_resp.exit_code, Some(0), "marker write must succeed");
@@ -104,8 +106,9 @@ fn capture_then_restore_round_trip() {
     stopped.delete().expect("delete golden run-dir");
 
     // --- Restore VM ---
-    let restore_backend =
-        std::sync::Arc::new(Backend::new(make_backend_config(discovery.clone())).expect("Backend::new restore"));
+    let restore_backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new restore"),
+    );
     let restore_sandbox = restore_backend
         .admit(sandbox_config("snap-restored"))
         .expect("admit restore");
@@ -124,6 +127,7 @@ fn capture_then_restore_round_trip() {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         })
         .expect("exec: read marker");
     assert_eq!(read_resp.exit_code, Some(0), "marker read must succeed");
@@ -172,8 +176,9 @@ fn restore_executes_after_idle() {
     stopped.delete().expect("delete idle golden run-dir");
 
     // Restore.
-    let restore_backend =
-        std::sync::Arc::new(Backend::new(make_backend_config(discovery.clone())).expect("Backend::new restore"));
+    let restore_backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new restore"),
+    );
     let restore_sandbox = restore_backend
         .admit(sandbox_config("snap-idle-restored"))
         .expect("admit restore");
@@ -192,11 +197,15 @@ fn restore_executes_after_idle() {
             env: None,
             stdin: None,
             timeout_ms: Some(5_000),
+            streaming: false,
         })
         .expect("exec after idle restore");
     assert_eq!(resp.exit_code, Some(0));
     let stdout = String::from_utf8_lossy(&resp.stdout);
-    assert!(stdout.trim() == "restored", "expected 'restored', got {stdout:?}");
+    assert!(
+        stdout.trim() == "restored",
+        "expected 'restored', got {stdout:?}"
+    );
 
     let stopped2 = restored.stop().expect("stop idle restored");
     stopped2.delete().expect("delete idle restored run-dir");
@@ -286,10 +295,7 @@ fn missing_snapshot_error_is_classified_without_kvm() {
     let err = result.unwrap_err();
     // The error must not be opaque — it must carry context about what failed.
     let display = err.to_string();
-    assert!(
-        !display.is_empty(),
-        "error display must not be empty"
-    );
+    assert!(!display.is_empty(), "error display must not be empty");
     // Must NOT be the SnapshotError::DestinationCollision or schema variant
     // (those only apply to manifest read paths). Must be Client or VsockUdsUnlink.
     assert!(

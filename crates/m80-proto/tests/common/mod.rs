@@ -22,6 +22,7 @@ pub fn sample_request() -> ExecRequest {
         env: None,
         stdin: None,
         timeout_ms: Some(5_000),
+        streaming: false,
     }
 }
 
