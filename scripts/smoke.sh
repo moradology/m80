@@ -129,7 +129,8 @@ if [[ "$mode" == "full" ]]; then
             guestd_bin="$(pwd)/target/release/m80-guestd"
             cat > /tmp/m80-image-build.toml <<EOF
 [kernel]
-version = "v1.15"
+version = "$FIRECRACKER_VERSION"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]
@@ -154,7 +155,8 @@ EOF
             fi
             cat > /tmp/m80-image-build.toml <<EOF
 [kernel]
-version = "v1.15"
+version = "$FIRECRACKER_VERSION"
+artifact_track = "v1.15"
 arch = "x86_64"
 
 [rootfs]

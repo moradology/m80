@@ -142,10 +142,16 @@ pub fn load_from_paths(
 
     // Layer 7: caller-supplied flag overrides.
     for (k, v) in args_overrides {
-        if fields.contains_key(&k) {
-            fields.insert(k, (v, ConfigSource::Flag));
-        } else {
-            return Err(FcError::Config(format!("unknown config override {k:?}")));
+        match fields.entry(k) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert((v, ConfigSource::Flag));
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                return Err(FcError::Config(format!(
+                    "unknown config override {:?}",
+                    entry.key()
+                )));
+            }
         }
     }
 
