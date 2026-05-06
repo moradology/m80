@@ -19,8 +19,8 @@ the version before treating `data` as a stable schema.
 `m80 run` invocation. Other subcommands omit it.
 
 The contract applies to stdout payloads (`version`, `preflight`, `config show`,
-`list`, `inspect`, `cleanup`, and `run --json`) and to structured stderr errors
-rendered when `--json` is set.
+`list`, `inspect`, `logs`, `env`, `cleanup`, and `run --json`) and to
+structured stderr errors rendered when `--json` is set.
 
 ## Boundaries
 
@@ -39,6 +39,8 @@ lands before external consumers exist.
   on JSON stderr envelopes.
 - `crates/m80-cli/src/cmds.rs` tests the config JSON renderer.
 - `crates/m80-cli/src/cmds_walk.rs` tests list and inspect JSON renderers.
+- `crates/m80-cli/src/cmds_walk/logs.rs` and
+  `crates/m80-cli/src/cmds/env.rs` test diagnostics/DX JSON payloads.
 - `crates/m80-cli/src/errors.rs` tests structured error JSON under the shared
   envelope.
 - `crates/m80-cli/tests/version_smoke.rs` and

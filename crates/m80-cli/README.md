@@ -51,6 +51,13 @@ binaries, pull OCI images, or install packages implicitly.
   each `live` or `stale`.
 - `m80 inspect <vm-id>` - prints run-dir layout, recorded lifecycle state, boot
   identity, and available diagnostics for an existing run-dir.
+- `m80 logs <vm-id> [--follow] [--request-id <id>] [--since <ts>]` - reads
+  persisted out-of-band VM diagnostics from `<run_dir>/console.log` and
+  `<run_dir>/diagnostics.jsonl`, interleaving guest and host records without
+  replaying wrapped-process stdout/stderr.
+- `m80 env` - prints the diagnostic dump for bug reports: host capabilities,
+  effective config, runtime profile/artifact paths, Firecracker version, and
+  run-root state. `m80 --json env` emits the same data in a versioned envelope.
 - `m80 cleanup [--force]` - recovers stale run-root state and removes orphaned
   host resources where the lower crates expose cleanup.
 - `m80 warm` - explicit warm-sandbox owner control. Foreground owner mode is
@@ -94,6 +101,10 @@ Interactive PTY behavior is captured in
 `docs/behaviors/cli/interactive-pty.md`.
 Request-id correlation is captured in
 `docs/behaviors/cli/request-id-correlation.md`.
+Out-of-band diagnostics tailing is captured in
+`docs/behaviors/cli/diagnostic-logs.md`.
+The diagnostic environment dump is captured in
+`docs/behaviors/cli/env-dump.md`.
 
 ### `m80 run` options
 
@@ -162,6 +173,9 @@ is deferred.
   stderr is streamed to host stderr, and the process exit code is the guest
   exit code. The CLI does not print VM IDs or lifecycle prose on stdout in this
   mode.
+- `m80 logs` is a separate out-of-band diagnostics reader. It writes diagnostic
+  records to its own stdout, but `m80 run` never uses that path to pollute the
+  wrapped process stdout or stderr.
 - `m80 run --warm` preserves the same pipe-mode stdout/stderr/exit behavior
   while leasing from the resident owner; no warm metadata is printed to stdout.
 - During a running guest exec, SIGINT, SIGTERM, and SIGHUP cancel the guest
@@ -247,6 +261,9 @@ Stable surfaces:
 - Removed aliases: `launch`, `exec`, `stop`, and `snapshot` fail to parse.
 - Help text: `--help` for the top level and every supported subcommand renders
   without error.
+- Logs/env: parse/help tests cover the new CLI surfaces; module tests cover
+  JSON envelope shape, request-id filtering, timestamp filtering, and bug-report
+  dump sections without KVM.
 - Quickstart: `m80 quickstart --no-run` is covered with a local
   release-shaped tarball, checksum verification, artifact install, and run-root
   creation.

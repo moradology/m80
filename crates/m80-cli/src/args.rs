@@ -125,8 +125,33 @@ pub enum Cmd {
         vm_id: String,
     },
 
+    /// Dump or follow out-of-band VM diagnostics for one run directory.
+    ///
+    /// Reads persisted host diagnostics and guest console capture from the
+    /// run-root. This never reads or replays the wrapped process stdout/stderr
+    /// streams from `m80 run`.
+    Logs {
+        /// VM id.
+        vm_id: String,
+
+        /// Continue polling for new diagnostics records.
+        #[arg(long)]
+        follow: bool,
+
+        /// Return only records with this opaque request id.
+        #[arg(long = "request-id", value_name = "ID")]
+        request_id: Option<String>,
+
+        /// Return only records at or after this timestamp.
+        #[arg(long, value_name = "RFC3339|UNIX_MS")]
+        since: Option<String>,
+    },
+
     /// List all VM run-dirs under the run-root.
     List,
+
+    /// Print host capabilities, effective config, versions, and runtime paths.
+    Env,
 
     /// Recover stale run-roots and clean up orphan bridges.
     Cleanup {

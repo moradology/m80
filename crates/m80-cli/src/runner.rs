@@ -56,7 +56,16 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
 
         Cmd::Inspect { ref vm_id } => cmds_walk::cmd_inspect(vm_id, json),
 
+        Cmd::Logs {
+            ref vm_id,
+            follow,
+            ref request_id,
+            ref since,
+        } => cmds_walk::cmd_logs(vm_id, follow, request_id.as_deref(), since.as_deref(), json),
+
         Cmd::List => cmds_walk::cmd_list(json),
+
+        Cmd::Env => cmds::cmd_env(json),
 
         Cmd::Cleanup { force } => cmds::cmd_cleanup(force, json),
 

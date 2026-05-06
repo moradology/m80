@@ -54,6 +54,17 @@ pub fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
     Ok(0)
 }
 
+/// `m80 logs` — print out-of-band VM diagnostics from one run directory.
+pub fn cmd_logs(
+    vm_id: &str,
+    follow: bool,
+    request_id: Option<&str>,
+    since: Option<&str>,
+    json: bool,
+) -> anyhow::Result<i32> {
+    logs::cmd_logs(vm_id, follow, request_id, since, json)
+}
+
 fn inspect_output(run_root: &Path, vm_id: &str) -> Result<InspectOutput, FcError> {
     let vm_dir = run_root.join(vm_id);
 
@@ -321,3 +332,5 @@ mod tests {
         assert!(human.contains("firecracker_pid"));
     }
 }
+
+mod logs;

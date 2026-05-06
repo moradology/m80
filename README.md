@@ -45,6 +45,27 @@ Linux/KVM host, `/dev/kvm` access, the Firecracker and jailer binaries, m80
 artifacts, and startup privilege through root, file capabilities, or a
 privileged container.
 
+## Diagnostics
+
+`m80 run` keeps stdout/stderr transparent for the wrapped process. VM mechanics
+diagnostics are captured out-of-band under the run directory and read
+separately:
+
+```sh
+m80 logs <vm-id>
+m80 --json logs <vm-id> --request-id req_...
+```
+
+For bug reports, include a diagnostic environment dump:
+
+```sh
+m80 --json env > m80-env.json
+```
+
+That dump includes host capability checks, effective config, runtime artifact
+paths, Firecracker version evidence, and run-root state. For a specific failed
+VM, also attach `m80 --json logs <vm-id>`.
+
 ## Process Visibility
 
 Common policies are direct command-line flags:

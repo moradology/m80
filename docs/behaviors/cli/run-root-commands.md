@@ -4,8 +4,9 @@ Behavior capture for bead `m80-lt15.6`.
 
 ## Contract
 
-`m80 list` and `m80 inspect <vm-id>` are read-only views over persisted run-root
-state. They do not contact a resident VM manager and do not require KVM.
+`m80 list`, `m80 inspect <vm-id>`, and `m80 logs <vm-id>` are read-only views
+over persisted run-root state. They do not contact a resident VM manager and do
+not require KVM.
 
 The supported process-wrapper CLI deliberately has no `stop`, `exec`,
 `launch`, or `snapshot` lifecycle command. Those old VM-manager surfaces are not
@@ -37,6 +38,17 @@ JSON contents for known `.json` files when they are present:
 `boot-identity.json` is written after preboot wiring succeeds. It may be absent
 for older run directories or launches that failed before phase 11c.
 
+## `m80 logs <vm-id>`
+
+`m80 logs` reads persisted diagnostics only:
+
+- `console.log` for guest console and guestd stderr capture
+- `diagnostics.jsonl` for host lifecycle events
+
+It is not part of `m80 run` pipe mode. Wrapped process stdout/stderr stay
+transparent during the run, and diagnostic replay happens only when the caller
+asks for this separate command.
+
 ## Cleanup Boundary
 
 `m80 cleanup` remains a supported admin command, but it is backend/preflight
@@ -46,6 +58,7 @@ views.
 
 ## Tests
 
-- unit tests in `crates/m80-cli/src/cmds_walk.rs`
+- unit tests in `crates/m80-cli/src/cmds_walk.rs` and
+  `crates/m80-cli/src/cmds_walk/logs.rs`
 - `crates/m80-cli/tests/parse_args.rs`
 - `crates/m80-cli/tests/help_smoke.rs`

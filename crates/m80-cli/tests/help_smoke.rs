@@ -55,8 +55,30 @@ fn help_inspect() {
 }
 
 #[test]
+fn help_logs() {
+    let output = m80().args(["logs", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("out-of-band VM diagnostics") && stdout.contains("--request-id"),
+        "logs help should frame persisted diagnostics, got: {stdout}"
+    );
+}
+
+#[test]
 fn help_list() {
     m80().args(["list", "--help"]).assert().success();
+}
+
+#[test]
+fn help_env() {
+    let output = m80().args(["env", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("host capabilities") && stdout.contains("runtime paths"),
+        "env help should expose the diagnostic dump scope, got: {stdout}"
+    );
 }
 
 #[test]

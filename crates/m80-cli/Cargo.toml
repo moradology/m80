@@ -22,6 +22,7 @@ path = "src/main.rs"
 m80-firecracker.workspace = true
 m80-image-manifest.workspace = true
 m80-jailer.workspace = true
+m80-observability.workspace = true
 m80-preflight.workspace = true
 m80-proto.workspace = true
 clap.workspace = true

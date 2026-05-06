@@ -337,12 +337,51 @@ fn parse_inspect() {
     }
 }
 
+// ---- logs ----
+
+#[test]
+fn parse_logs_filter_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "logs",
+        "vm-abc",
+        "--follow",
+        "--request-id",
+        "req-1",
+        "--since",
+        "1970-01-01T00:00:01Z",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Logs {
+            vm_id,
+            follow,
+            request_id,
+            since,
+        } => {
+            assert_eq!(vm_id, "vm-abc");
+            assert!(follow);
+            assert_eq!(request_id.as_deref(), Some("req-1"));
+            assert_eq!(since.as_deref(), Some("1970-01-01T00:00:01Z"));
+        }
+        _ => panic!("expected Logs"),
+    }
+}
+
 // ---- list ----
 
 #[test]
 fn parse_list() {
     let cli = Cli::try_parse_from(["m80", "list"]).unwrap();
     assert!(matches!(cli.subcommand, Cmd::List));
+}
+
+// ---- env ----
+
+#[test]
+fn parse_env() {
+    let cli = Cli::try_parse_from(["m80", "env"]).unwrap();
+    assert!(matches!(cli.subcommand, Cmd::Env));
 }
 
 // ---- cleanup ----
