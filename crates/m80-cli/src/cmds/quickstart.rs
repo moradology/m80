@@ -128,6 +128,7 @@ fn run_quickstart(
     for file in REQUIRED_ARTIFACTS {
         copy_artifact(&extract_dir.join(file), &artifact_dir.join(file))?;
     }
+    relocate_manifest(artifact_dir)?;
 
     if !no_run {
         run_echo_probe(artifact_dir, run_root)?;
@@ -148,6 +149,31 @@ fn copy_artifact(src: &Path, dst: &Path) -> Result<(), FcError> {
             dst.display()
         ))
     })?;
+    Ok(())
+}
+
+fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
+    let manifest_path = artifact_dir.join("output.ext4.manifest.json");
+    let mut manifest = m80_image_manifest::Manifest::read(&manifest_path)
+        .map_err(|e| FcError::Config(format!("reading installed manifest: {e}")))?;
+    manifest.kernel_image = artifact_dir.join("vmlinux");
+    manifest.output_rootfs_image = artifact_dir.join("output.ext4");
+    manifest.daemon_binary_path = artifact_dir.join("m80-guestd");
+    if manifest.source_rootfs_image.is_some() {
+        manifest.source_rootfs_image = Some(artifact_dir.join("source.ext4"));
+    }
+    if manifest.service_unit_path.is_some() {
+        manifest.service_unit_path = Some(artifact_dir.join("m80-guestd.service"));
+    }
+    if manifest.workspace_mount_path.is_some() {
+        manifest.workspace_mount_path = Some(artifact_dir.join("workspace.mount"));
+    }
+    manifest
+        .write(&manifest_path)
+        .map_err(|e| FcError::Config(format!("writing relocated manifest: {e}")))?;
+    manifest
+        .verify(artifact_dir)
+        .map_err(|e| FcError::Config(format!("verifying relocated manifest: {e}")))?;
     Ok(())
 }
 
