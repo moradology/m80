@@ -10,7 +10,7 @@ use tracing::warn;
 use m80_jailer::recover_from_run_dir;
 
 use crate::error::FcError;
-use crate::runroot::run_dir_is_live;
+use crate::runroot::{run_dir_liveness, RunDirLiveness};
 use crate::types::{
     AdmissionPermit, Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig,
     EffectiveField, Sandbox, SandboxConfig,
@@ -94,10 +94,22 @@ impl Backend {
             if !subdir.is_dir() {
                 continue;
             }
-
-            // Skip run-dirs that are actively owned by a live process.
-            if run_dir_is_live(&subdir) {
+            if entry.file_name() == ".preserved" {
                 continue;
+            }
+
+            // Skip run-dirs that are actively owned or ambiguous. Recovery is
+            // destructive, so malformed ownership evidence preserves residue.
+            match run_dir_liveness(&subdir) {
+                RunDirLiveness::Live => continue,
+                RunDirLiveness::Ambiguous => {
+                    warn!(
+                        path = %subdir.display(),
+                        "recover_stale_run_root: ambiguous ownership lock; preserving run-dir"
+                    );
+                    continue;
+                }
+                RunDirLiveness::Dead => {}
             }
 
             match recover_from_run_dir(&subdir) {
@@ -105,7 +117,7 @@ impl Backend {
                     jailer_pid,
                     firecracker_pid,
                 }) => {
-                    // Owner m80 is dead (we passed `run_dir_is_live` above)
+                    // Owner m80 is dead (we passed `run_dir_liveness` above)
                     // but firecracker is still running — orphaned VM.
                     // SIGKILL it, wait for the kernel to reap, then reclaim.
                     tracing::info!(

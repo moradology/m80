@@ -20,6 +20,12 @@ const CGROUP_ROOT: &str = "/sys/fs/cgroup/m80-firecracker";
 /// Cgroup v2 global root.
 const CGROUP_V2_ROOT: &str = "/sys/fs/cgroup";
 
+const REQUIRED_SUBTREE_CONTROL: &str = "+cpu +memory +pids\n";
+const DEFAULT_CPU_QUOTA_US: u64 = 100_000;
+const DEFAULT_CPU_PERIOD_US: u64 = 100_000;
+const DEFAULT_MEMORY_MAX_BYTES: u64 = 1_610_612_736;
+const DEFAULT_PIDS_MAX: u32 = 128;
+
 /// One per-VM cgroup v2 subtree under `/sys/fs/cgroup/m80-firecracker/<vm-id>`.
 #[derive(Debug)]
 pub struct Subtree {
@@ -56,7 +62,7 @@ impl Subtree {
         })?;
 
         let subtree_control = parent.join("cgroup.subtree_control");
-        if let Err(cgroup_err) = write_cgroup_file(&subtree_control, "+cpu +memory +pids\n") {
+        if let Err(cgroup_err) = write_cgroup_file(&subtree_control, REQUIRED_SUBTREE_CONTROL) {
             // Translate to ControllerNotEnabled when we can name the missing
             // one; otherwise propagate the original error unchanged.
             let controllers_path = parent.join("cgroup.controllers");
@@ -70,14 +76,16 @@ impl Subtree {
             return Err(cgroup_err);
         }
 
-        let leaf = parent.join(vm_id);
+        let leaf = Self::leaf_path(vm_id);
         fs::create_dir_all(&leaf).map_err(|source| CgroupError::Io {
             path: leaf.clone(),
             source,
         })?;
 
         let procs = leaf.join("cgroup.procs");
-        write_cgroup_file(&procs, &format!("{}\n", jailed.firecracker_pid))?;
+        for pid in pid_assignment_list(jailed) {
+            write_cgroup_file(&procs, &format!("{pid}\n"))?;
+        }
 
         let cgroup_path_txt = jail.plan.config.run_dir.join("cgroup-path.txt");
         let leaf_str = format!("{}\n", leaf.display());
@@ -121,6 +129,11 @@ impl Subtree {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Compute the absolute cgroup v2 leaf path for `vm_id`.
+    pub fn leaf_path(vm_id: &str) -> PathBuf {
+        PathBuf::from(CGROUP_ROOT).join(vm_id)
+    }
 }
 
 impl Drop for Subtree {
@@ -137,7 +150,7 @@ impl Drop for Subtree {
 /// `cgroup.procs` is non-empty, logs a warning and returns `Ok(())`.
 /// If it exists and is empty, removes it.
 pub fn cleanup_orphan_subtree(vm_id: &str) -> Result<(), CgroupError> {
-    let leaf = PathBuf::from(CGROUP_ROOT).join(vm_id);
+    let leaf = Subtree::leaf_path(vm_id);
     if !leaf.exists() {
         return Ok(());
     }
@@ -174,6 +187,23 @@ pub struct Limits {
     pub memory_max: Option<u64>,
     /// `pids.max`. None = leave existing.
     pub pids_max: Option<u32>,
+}
+
+impl Limits {
+    /// m80's default VM resource limit profile.
+    ///
+    /// CPU is one full 100 ms CPU period, memory is 1.5 GiB, and pids are
+    /// capped at 128.
+    pub fn m80_default() -> Self {
+        Self {
+            cpu_max: Some(CpuMax::Quota {
+                quota_us: DEFAULT_CPU_QUOTA_US,
+                period_us: DEFAULT_CPU_PERIOD_US,
+            }),
+            memory_max: Some(DEFAULT_MEMORY_MAX_BYTES),
+            pids_max: Some(DEFAULT_PIDS_MAX),
+        }
+    }
 }
 
 /// `cpu.max` value: either a concrete `(quota, period)` pair or `Max`.
@@ -255,4 +285,41 @@ fn write_cgroup_file(path: &Path, value: &str) -> Result<(), CgroupError> {
             source,
         })?;
     Ok(())
+}
+
+fn pid_assignment_list(jailed: &JailedFirecracker) -> Vec<u32> {
+    let mut pids = vec![jailed.jailer_pid, jailed.firecracker_pid];
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn required_subtree_control_enables_three_controllers() {
+        assert_eq!(REQUIRED_SUBTREE_CONTROL, "+cpu +memory +pids\n");
+    }
+
+    #[test]
+    fn pid_assignment_sorts_and_deduplicates() {
+        let jailed = JailedFirecracker {
+            jailer_pid: 20,
+            firecracker_pid: 10,
+        };
+
+        assert_eq!(pid_assignment_list(&jailed), vec![10, 20]);
+    }
+
+    #[test]
+    fn pid_assignment_collapses_exec_equal_pids() {
+        let jailed = JailedFirecracker {
+            jailer_pid: 10,
+            firecracker_pid: 10,
+        };
+
+        assert_eq!(pid_assignment_list(&jailed), vec![10]);
+    }
 }

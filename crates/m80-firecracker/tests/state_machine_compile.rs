@@ -4,7 +4,7 @@
 //! - `Sandbox::new` returns the deferred error in v0.1.
 //! - The public type signatures match what m80-cli expects.
 
-use m80_firecracker::{FcError, NetworkPolicy, SandboxConfig};
+use m80_firecracker::{FcError, NetworkPolicy, RunningSandbox, SandboxConfig, StoppedSandbox};
 
 #[test]
 fn sandbox_new_returns_deferred_error_in_v0_1() {
@@ -32,4 +32,10 @@ fn sandbox_new_returns_deferred_error_in_v0_1() {
         msg.contains("Backend::admit"),
         "error message should suggest Backend::admit, got: {msg}"
     );
+}
+
+#[test]
+fn stop_and_force_kill_consume_running_sandbox() {
+    let _: fn(RunningSandbox) -> Result<StoppedSandbox, FcError> = RunningSandbox::stop;
+    let _: fn(RunningSandbox) -> Result<StoppedSandbox, FcError> = RunningSandbox::force_kill;
 }

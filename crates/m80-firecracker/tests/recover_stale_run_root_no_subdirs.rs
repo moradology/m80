@@ -35,3 +35,36 @@ fn nonexistent_run_root_returns_ok() {
         .recover_stale_run_root()
         .expect("nonexistent run-root should return Ok");
 }
+
+#[test]
+fn orphan_subdir_without_jail_state_is_reaped() {
+    let dir = TempDir::new().expect("tempdir");
+    let orphan = dir.path().join("vm-orphan");
+    std::fs::create_dir_all(orphan.join("nested")).unwrap();
+    std::fs::write(orphan.join("nested/state.txt"), b"state").unwrap();
+
+    make_backend(dir.path())
+        .recover_stale_run_root()
+        .expect("orphan run-dir recovery should succeed");
+
+    assert!(!orphan.exists());
+}
+
+#[test]
+fn live_ownership_lock_preserves_run_dir() {
+    let dir = TempDir::new().expect("tempdir");
+    let live = dir.path().join("vm-live");
+    std::fs::create_dir_all(&live).unwrap();
+    let pid = std::process::id();
+    std::fs::write(
+        live.join("ownership.lock"),
+        format!("pid={pid}\nstarted_at=1\n"),
+    )
+    .unwrap();
+
+    make_backend(dir.path())
+        .recover_stale_run_root()
+        .expect("live run-dir recovery should succeed");
+
+    assert!(live.exists());
+}

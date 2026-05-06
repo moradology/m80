@@ -21,15 +21,27 @@ mod version;
 pub use error::ProtoError;
 pub use framing::{read_frame, write_frame};
 pub use types::{
-    CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
-    ExecStatus, ExecStderr, ExecStdout, ExecTiming, HandshakeMessage, Payload, PtyControl,
-    PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal, PtySize,
-    ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_ACK,
-    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_REQUEST,
-    PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
-    PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_INPUT,
-    PAYLOAD_KIND_PTY_OUTPUT, PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE,
-    PAYLOAD_KIND_SHUTDOWN_REQUEST, PAYLOAD_KIND_SHUTDOWN_RESPONSE,
+    CancelAck, CancelRequest, CancelStatus, DirEntry, Envelope, ExecExit, ExecRequest,
+    ExecResponse, ExecStatus, ExecStderr, ExecStdout, ExecTiming, FileError, FileKind,
+    FileListRequest, FileListResponse, FileReadRequest, FileReadResponse, FileRemoveRequest,
+    FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
+    FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
+    FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, HandshakeMessage, Payload,
+    PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,
+    PtySize, ShutdownAction, ShutdownRequest, ShutdownResponse, FILE_READ_LIMIT_DEFAULT,
+    PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_EXIT,
+    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_EXEC_STDERR,
+    PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_FILE_LIST_REQUEST, PAYLOAD_KIND_FILE_LIST_RESPONSE,
+    PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_READ_RESPONSE,
+    PAYLOAD_KIND_FILE_REMOVE_REQUEST, PAYLOAD_KIND_FILE_REMOVE_RESPONSE,
+    PAYLOAD_KIND_FILE_STAT_REQUEST, PAYLOAD_KIND_FILE_STAT_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST, PAYLOAD_KIND_FILE_WRITE_BEGIN_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST, PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST, PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_REQUEST, PAYLOAD_KIND_FILE_WRITE_RESPONSE, PAYLOAD_KIND_PTY_CONTROL,
+    PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_INPUT, PAYLOAD_KIND_PTY_OUTPUT,
+    PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE, PAYLOAD_KIND_SHUTDOWN_REQUEST,
+    PAYLOAD_KIND_SHUTDOWN_RESPONSE,
 };
 pub use version::{negotiate_version, MAX_FRAME_BYTES, PROTOCOL_VERSION};
 
@@ -58,10 +70,11 @@ pub const GUEST_PORT_DEFAULT: u32 = 9001;
 /// conflict — the convention is purely about reader ergonomics.
 pub const READY_PORT_DEFAULT: u32 = 52525;
 
-/// Default ready-marker that `m80-guestd` prints to the serial console once
-/// it is listening on vsock.
+/// Default legacy ready-marker that `m80-guestd` may print to the serial
+/// console once it is listening on vsock.
 ///
-/// The host watches the console file for this exact string (matched as a full
-/// line). Both peers must agree on it; defined here so neither side
-/// independently hard-codes the string.
+/// m80 launch readiness does not watch this marker. The host's load-bearing
+/// readiness contract is the inverted-ready connection on
+/// [`READY_PORT_DEFAULT`]. This value remains centralized for images and logs
+/// that still want the familiar guest-side marker string.
 pub const READY_MARKER_DEFAULT: &str = "GUESTD_READY";

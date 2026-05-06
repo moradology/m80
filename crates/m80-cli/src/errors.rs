@@ -58,6 +58,7 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Client(_)
         | FcError::Vsock(_)
         | FcError::Snapshot(_)
+        | FcError::FileOp(_)
         | FcError::Io(_)
         | FcError::IdleTimedOut => EXIT_GENERIC,
     }
@@ -116,6 +117,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Io(_) => "Io",
         FcError::Config(_) => "Config",
         FcError::Snapshot(_) => "Snapshot",
+        FcError::FileOp(_) => "FileOp",
         FcError::IdleTimedOut => "IdleTimedOut",
     }
 }
@@ -212,6 +214,7 @@ mod tests {
                 actual: "b",
             },
             FcError::Io(io::Error::new(io::ErrorKind::Other, "test")),
+            FcError::FileOp(m80_firecracker::FileError::NotFound),
         ];
         for err in &cases {
             assert_ne!(

@@ -5,6 +5,18 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — wire file operations (m80-6zim)
+
+- Added first-class wire verbs for `file_read`, `file_write`, `file_list`,
+  `file_stat`, `file_remove`, and chunked write
+  (`file_write_begin` / `file_write_chunk` / `file_write_commit`).
+- `m80-guestd` handles file ops directly in the guest, avoiding `bash -c`,
+  shell quoting, process spawn, and base64-through-stdout round trips for
+  common agent file movement.
+- `RunningSandbox` exposes `read_file`, `write_file`, `list_dir`,
+  `stat_file`, `remove_file`, and `upload_file_chunked` wrappers that map
+  guest `FileError` responses to `FcError::FileOp`.
+
 ### Added — CLI signal cancellation (m80-lt15.22)
 
 - `m80 run` now maps SIGINT, SIGTERM, and SIGHUP received during an in-flight

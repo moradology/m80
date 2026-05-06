@@ -11,6 +11,13 @@ use tempfile::TempDir;
 
 use crate::{io_err, ChangeSet, Rejection, RejectionReason, StorageError};
 
+/// Minimum scratch image size: 64 MiB.
+pub const MIN_SCRATCH_BYTES: u64 = 64 * 1024 * 1024;
+/// Extra headroom added above the host workspace's current file bytes.
+pub const SCRATCH_PADDING_BYTES: u64 = 32 * 1024 * 1024;
+/// Scratch image sizes are rounded up to a 4 MiB boundary.
+pub const SCRATCH_ALIGNMENT_BYTES: u64 = 4 * 1024 * 1024;
+
 /// A per-VM scratch ext4 image.
 ///
 /// Created via [`Scratch::create`], extracted via [`Scratch::extract`].
@@ -20,6 +27,26 @@ pub struct Scratch {
 }
 
 impl Scratch {
+    /// Recommended scratch image size for a workspace with `used_bytes`
+    /// bytes of regular-file content.
+    ///
+    /// The rule is `max(64 MiB, used_bytes + 32 MiB)`, rounded up to a
+    /// 4 MiB boundary.
+    pub fn recommended_size_for_used_bytes(used_bytes: u64) -> u64 {
+        let padded = used_bytes.saturating_add(SCRATCH_PADDING_BYTES);
+        align_scratch_size(padded.max(MIN_SCRATCH_BYTES))
+    }
+
+    /// Recommended scratch image size for `workspace`.
+    ///
+    /// Directory entries are walked recursively. Regular file lengths are
+    /// counted; symlinks and special files return
+    /// [`StorageError::AdmissibilityRefused`], matching hydration.
+    pub fn recommended_size_for_workspace(workspace: &Path) -> Result<u64, StorageError> {
+        let used = workspace_used_bytes(workspace)?;
+        Ok(Self::recommended_size_for_used_bytes(used))
+    }
+
     /// Format a scratch ext4 image at `image` of `size` bytes and hydrate it
     /// from the host workspace tree at `workspace`.
     ///
@@ -52,6 +79,10 @@ impl Scratch {
     /// Returns a [`ChangeSet`] describing what was staged and what was
     /// rejected.
     pub fn extract(image: &Path, into: &Path) -> Result<ChangeSet, StorageError> {
+        if into.exists() {
+            return Err(StorageError::SwapFailed);
+        }
+
         // 1. e2fsck -p -f (preen + force-check even if clean).
         run_e2fsck(image)?;
 
@@ -60,7 +91,7 @@ impl Scratch {
         mount_loop_ro(image, mount_dir.path())?;
 
         // 3 + 4 + 5: walk, scan admissibility, stage into a sibling temp dir.
-        let stage_result = build_stage(mount_dir.path());
+        let stage_result = build_stage(mount_dir.path(), into);
 
         // 6. Unmount before the rename. The staging tree lives in a sibling
         //    `TempDir`, so it's not on the now-unmounted filesystem.
@@ -68,11 +99,9 @@ impl Scratch {
 
         let (stage_dir, change_set) = stage_result?;
 
-        // 7. Atomic rename into `into`; fail if it already exists.
-        if into.exists() {
-            return Err(StorageError::SwapFailed);
-        }
-        fs::rename(stage_dir.path(), into).map_err(|e| io_err(into, e))?;
+        // 7. Atomic rename into `into`; fail if it already exists or if the
+        // sibling-stage invariant was broken.
+        fs::rename(stage_dir.path(), into).map_err(|_| StorageError::SwapFailed)?;
         // Prevent TempDir from trying to remove the path we just renamed away.
         let _ = stage_dir.keep();
 
@@ -83,6 +112,43 @@ impl Scratch {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+fn align_scratch_size(size: u64) -> u64 {
+    let remainder = size % SCRATCH_ALIGNMENT_BYTES;
+    if remainder == 0 {
+        size
+    } else {
+        size.saturating_add(SCRATCH_ALIGNMENT_BYTES - remainder)
+    }
+}
+
+fn workspace_used_bytes(src: &Path) -> Result<u64, StorageError> {
+    let mut used = 0_u64;
+    for entry in fs::read_dir(src).map_err(|e| io_err(src, e))? {
+        let entry = entry.map_err(|e| io_err(src, e))?;
+        let src_path = entry.path();
+        let meta = fs::symlink_metadata(&src_path).map_err(|e| io_err(&src_path, e))?;
+        let ft = meta.file_type();
+
+        if ft.is_symlink()
+            || ft.is_fifo()
+            || ft.is_socket()
+            || ft.is_block_device()
+            || ft.is_char_device()
+        {
+            return Err(StorageError::AdmissibilityRefused);
+        }
+
+        if ft.is_dir() {
+            used = used.saturating_add(workspace_used_bytes(&src_path)?);
+        } else if ft.is_file() {
+            used = used.saturating_add(meta.len());
+        } else {
+            return Err(StorageError::AdmissibilityRefused);
+        }
+    }
+    Ok(used)
 }
 
 /// Inner pipeline for `Scratch::create`. Outer wrapper removes the image on
@@ -235,8 +301,12 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
 /// temporary staging directory.
 ///
 /// Returns `(stage_dir, ChangeSet)`.
-fn build_stage(mount_root: &Path) -> Result<(TempDir, ChangeSet), StorageError> {
-    let stage = TempDir::new().map_err(|e| io_err(mount_root, e))?;
+fn build_stage(mount_root: &Path, into: &Path) -> Result<(TempDir, ChangeSet), StorageError> {
+    let stage_parent = stage_parent(into);
+    let stage = tempfile::Builder::new()
+        .prefix(&stage_prefix(into))
+        .tempdir_in(&stage_parent)
+        .map_err(|e| io_err(&stage_parent, e))?;
     let mut staged: Vec<PathBuf> = Vec::new();
     let mut rejected: Vec<Rejection> = Vec::new();
     let mut total_bytes: u64 = 0;
@@ -258,6 +328,21 @@ fn build_stage(mount_root: &Path) -> Result<(TempDir, ChangeSet), StorageError> 
             total_bytes,
         },
     ))
+}
+
+fn stage_parent(into: &Path) -> PathBuf {
+    into.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf()
+}
+
+fn stage_prefix(into: &Path) -> String {
+    let file_name = into
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace");
+    format!(".{file_name}.m80-writeback-stage-{}-", std::process::id())
 }
 
 fn walk_for_extract(
@@ -329,5 +414,28 @@ fn walk_for_extract(
 mod io {
     pub(crate) fn mkfs_error(msg: impl Into<String>) -> std::io::Error {
         std::io::Error::other(msg.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stage_prefix_names_sibling_writeback_stage() {
+        let into = Path::new("/tmp/workspace");
+        let prefix = stage_prefix(into);
+        assert!(prefix.starts_with(".workspace.m80-writeback-stage-"));
+    }
+
+    #[test]
+    fn stage_parent_is_destination_parent() {
+        let into = Path::new("/tmp/m80/ws");
+        assert_eq!(stage_parent(into), PathBuf::from("/tmp/m80"));
+    }
+
+    #[test]
+    fn relative_stage_parent_defaults_to_current_directory() {
+        assert_eq!(stage_parent(Path::new("ws")), PathBuf::from("."));
     }
 }

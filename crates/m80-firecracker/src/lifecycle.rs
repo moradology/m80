@@ -2,6 +2,8 @@
 //! Transitions consume the prior handle (move semantics).
 
 mod exec;
+mod fileops;
+mod stopped;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -11,11 +13,10 @@ use std::time::{Duration, Instant};
 use m80_observability::Phase;
 use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
-use m80_storage::ChangeSet;
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
+use crate::cleanup::StopDisposition;
 use crate::error::FcError;
-use crate::runroot::unix_ms_now;
 use crate::timing::phase_event;
 use crate::types::{RunningSandbox, StoppedSandbox};
 
@@ -24,6 +25,15 @@ use crate::types::{RunningSandbox, StoppedSandbox};
 const SHUTDOWN_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 const SNAPSHOT_BIND_DEST: &str = "snapshot";
+
+fn normal_stop_disposition() -> StopDisposition {
+    StopDisposition::GuestdShutdownThenFirecrackerKill
+}
+
+fn force_kill_disposition() -> StopDisposition {
+    StopDisposition::HostForceKill
+}
+
 impl RunningSandbox {
     /// Return the VM id for this sandbox.
     pub fn vm_id(&self) -> &str {
@@ -64,8 +74,8 @@ impl RunningSandbox {
 
     /// Four-phase teardown:
     /// 1. `admission_fence` — no new exec accepted (no-op in v0.1).
-    /// 2. `bounded_stop` — graceful on x86_64 (`SendCtrlAltDel` + wait 30 s),
-    ///    forced (`SIGKILL`) on aarch64 or after timeout.
+    /// 2. `bounded_stop` — ask guestd to shut down over vsock, then SIGKILL
+    ///    the Firecracker process after the RPC returns or fails.
     /// 3. Optional `extract_changes` — NOT done here; caller calls
     ///    [`StoppedSandbox::extract_changes`] after receiving the `StoppedSandbox`.
     /// 4. `release` — foundation resources dropped, permit and scratch moved
@@ -162,8 +172,15 @@ impl RunningSandbox {
         // Signal the watcher to exit before killing the process.
         self.watcher_stop.store(true, Ordering::Relaxed);
 
-        kill_pid(self.firecracker.firecracker_pid)?;
-        kill_pid(self.firecracker.jailer_pid)?;
+        match force_kill_disposition() {
+            StopDisposition::HostForceKill => {
+                kill_pid(self.firecracker.firecracker_pid)?;
+                kill_pid(self.firecracker.jailer_pid)?;
+            }
+            StopDisposition::GuestdShutdownThenFirecrackerKill => {
+                unreachable!("force kill disposition")
+            }
+        }
 
         let RunningSandbox {
             vm_id,
@@ -306,60 +323,6 @@ pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
     }
 }
 
-impl StoppedSandbox {
-    /// Return the per-VM run directory.
-    pub fn run_dir(&self) -> &Path {
-        &self.run_dir
-    }
-
-    /// Opt-in change extraction from the workspace scratch image.
-    ///
-    /// Returns `FcError::Config` if no workspace (scratch image) was
-    /// configured for this sandbox.
-    pub fn extract_changes(&self, into: &Path) -> Result<ChangeSet, FcError> {
-        let scratch = self.scratch.as_ref().ok_or_else(|| {
-            FcError::Config("no scratch image: workspace was not configured".into())
-        })?;
-        let cs = m80_storage::Scratch::extract(scratch.path(), into)?;
-        Ok(cs)
-    }
-
-    /// Remove the per-VM run-dir and release the admission permit.
-    pub fn delete(mut self) -> Result<(), FcError> {
-        crate::diagnostics::record_owned(
-            &mut self.diagnostics,
-            Phase::Delete,
-            &self.vm_id,
-            self.request_id.as_deref(),
-            "delete started",
-        );
-        std::fs::remove_dir_all(&self.run_dir)?;
-        // `self` drops here; AdmissionPermit::drop returns the slot.
-        Ok(())
-    }
-
-    /// Move the per-VM run-dir to `.preserved/<unix_ms>-<vm_id>/` for
-    /// offline triage. The admission permit is released. Returns the new path.
-    pub fn preserve_for_triage(mut self) -> Result<PathBuf, FcError> {
-        let preserved_parent = self.run_root.join(".preserved");
-        std::fs::create_dir_all(&preserved_parent)?;
-
-        let ts = unix_ms_now();
-        let dest = preserved_parent.join(format!("{ts}-{}", self.vm_id));
-        crate::diagnostics::record_owned(
-            &mut self.diagnostics,
-            Phase::Delete,
-            &self.vm_id,
-            self.request_id.as_deref(),
-            "preserve for triage",
-        );
-        std::fs::rename(&self.run_dir, &dest)?;
-
-        // `self` drops here; permit returned.
-        Ok(dest)
-    }
-}
-
 /// Graceful stop: send `ShutdownRequest` over vsock, then immediately
 /// SIGKILL the Firecracker process.
 ///
@@ -374,13 +337,18 @@ impl StoppedSandbox {
 /// If the vsock RPC fails (guest unreachable / already dead), SIGKILL
 /// directly — same outcome.
 fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<(), FcError> {
-    if let Err(e) = send_shutdown_request(vsock_uds) {
-        tracing::warn!(
-            error = %e,
-            "vsock graceful-stop failed; SIGKILLing without ack"
-        );
+    match normal_stop_disposition() {
+        StopDisposition::GuestdShutdownThenFirecrackerKill => {
+            if let Err(e) = send_shutdown_request(vsock_uds) {
+                tracing::warn!(
+                    error = %e,
+                    "vsock graceful-stop failed; SIGKILLing without ack"
+                );
+            }
+            kill_pid(firecracker_pid)
+        }
+        StopDisposition::HostForceKill => unreachable!("normal stop disposition"),
     }
-    kill_pid(firecracker_pid)
 }
 
 /// Open a fresh vsock channel, send `ShutdownRequest`, read
@@ -494,5 +462,23 @@ fn kill_pid(pid: u32) -> Result<(), FcError> {
         Ok(()) => Ok(()),
         Err(Errno::ESRCH) => Ok(()), // Process already gone.
         Err(e) => Err(FcError::Io(std::io::Error::from_raw_os_error(e as i32))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_stop_is_arch_independent_guestd_shutdown_then_firecracker_kill() {
+        assert_eq!(
+            normal_stop_disposition(),
+            StopDisposition::GuestdShutdownThenFirecrackerKill
+        );
+    }
+
+    #[test]
+    fn force_kill_targets_firecracker_and_jailer_without_guest_rpc() {
+        assert_eq!(force_kill_disposition(), StopDisposition::HostForceKill);
     }
 }

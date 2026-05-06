@@ -230,6 +230,24 @@ fn parse_run_rejects_removed_noegress_spelling() {
     );
 }
 
+#[test]
+fn parse_rejects_in_core_agent_subcommand() {
+    let result = Cli::try_parse_from(["m80", "agent", "run", "--tool", "bash"]);
+    assert!(
+        result.is_err(),
+        "agent tool facades belong in an external adapter, not m80-cli"
+    );
+}
+
+#[test]
+fn parse_run_rejects_tool_catalog_flag() {
+    let result = Cli::try_parse_from(["m80", "run", "--tool", "bash", "--", "true"]);
+    assert!(
+        result.is_err(),
+        "m80 run accepts process-wrapper flags, not adapter tool catalog flags"
+    );
+}
+
 // ---- preflight ----
 
 #[test]

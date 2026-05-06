@@ -22,9 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use m80_cgroup::{Limits, Subtree};
-use m80_firecracker_client::{
-    BootSourceConfig, Client, DriveConfig, InstanceAction, MachineConfig, VsockConfig,
-};
+use m80_firecracker_client::{Client, InstanceAction};
 use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
 use m80_net_mode::VmNetworkMode;
 use m80_observability::Phase;
@@ -35,7 +33,12 @@ use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::error::FcError;
+use crate::layout::{
+    console_log_path, firecracker_api_socket_path, rootfs_overlay_path, run_dir_path,
+    scratch_image_path, vsock_socket_path,
+};
 use crate::lifecycle::{bind_snapshot_parent_into_jail, monotonic_ns, spawn_idle_watcher};
+use crate::preboot::{apply_preboot_puts, build_preboot_puts};
 use crate::runroot::write_ownership_lock;
 use crate::timing::{phase, phase_event};
 use crate::types::{
@@ -44,67 +47,6 @@ use crate::types::{
 
 /// Default scratch size: 64 MiB.
 const SCRATCH_DEFAULT_BYTES: u64 = 64 * 1024 * 1024;
-
-/// Default vCPU count.
-const DEFAULT_VCPU_COUNT: u32 = 1;
-
-/// Default memory in MiB.
-const DEFAULT_MEM_SIZE_MIB: u32 = 1024;
-
-/// Common kernel command-line arguments for Stock kernels.
-///
-/// `panic=-1` triggers immediate reboot on kernel panic (vs. `panic=1`'s
-/// 1 s wait). For minimal-kind images where m80-guestd is PID 1, the
-/// graceful-stop path exits PID 1 → kernel panics → Firecracker exits;
-/// the 1 s wait was pure dead time on every launch.
-const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=-1 pci=off";
-
-/// Kernel command-line arguments for Stripped kernels.
-///
-/// Differences from `COMMON_BOOT_ARGS`:
-/// - `quiet loglevel=0` added — suppresses per-device init messages on ttyS0
-///   while leaving the console open; fatal panics still print (the panic
-///   handler bypasses loglevel). Saves ~20-40 ms of serial flush time on boot.
-/// - `8250.nr_uarts=1` added — explicit single-UART cap; prevents probe of
-///   the four default UARTs on driver init. Locked at `=1` (not `=0`) per
-///   CLAUDE.md "diagnostics before hypotheses": preserving console output is
-///   worth more than the ~50 ms saving from suppressing it entirely.
-const STRIPPED_BOOT_ARGS: &str =
-    "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1";
-
-/// Build kernel boot args for the given `(image_kind, kernel_kind)` pair,
-/// honoring any caller override on `SandboxConfig::boot_args`.
-///
-/// Matrix:
-/// - `(Ubuntu, Stock)`: `COMMON_BOOT_ARGS` — systemd is the kernel's `init=`
-///   (kernel defaults to `/sbin/init`).
-/// - `(Ubuntu, Stripped)`: `STRIPPED_BOOT_ARGS` — systemd is still the init;
-///   no `init=` override needed.
-/// - `(Minimal, Stock)`: `COMMON_BOOT_ARGS init=/m80-guestd` — explicit `init=`
-///   so the kernel calls our PID-1-aware daemon directly. The minimal rootfs
-///   also has `/init -> /m80-guestd` as a backstop.
-/// - `(Minimal, Stripped)`: `STRIPPED_BOOT_ARGS init=/m80-guestd` — same
-///   belt-and-suspenders `init=` retained; kernel symlink is the backstop.
-fn boot_args_for(
-    kind: m80_image_manifest::ImageKind,
-    kernel_kind: m80_image_manifest::KernelKind,
-    config_override: Option<&str>,
-) -> String {
-    if let Some(custom) = config_override {
-        return custom.to_owned();
-    }
-    use m80_image_manifest::{ImageKind, KernelKind};
-    match (kind, kernel_kind) {
-        (ImageKind::Ubuntu, KernelKind::Stock) => COMMON_BOOT_ARGS.to_owned(),
-        (ImageKind::Ubuntu, KernelKind::Stripped) => STRIPPED_BOOT_ARGS.to_owned(),
-        (ImageKind::Minimal, KernelKind::Stock) => {
-            format!("{COMMON_BOOT_ARGS} init=/m80-guestd")
-        }
-        (ImageKind::Minimal, KernelKind::Stripped) => {
-            format!("{STRIPPED_BOOT_ARGS} init=/m80-guestd")
-        }
-    }
-}
 
 /// Ready probe: total timeout.
 ///
@@ -203,7 +145,7 @@ impl Sandbox {
         })?;
 
         // Phase 6: resolve network mode.
-        let net = phase("phase_6_network_realize", &vm_id, || {
+        let _net = phase("phase_6_network_realize", &vm_id, || {
             phase_6_network_realize(&self.config)
         })?;
         crate::diagnostics::record_owned(
@@ -214,12 +156,12 @@ impl Sandbox {
             "network prepared",
         );
 
-        // Phase 7: guest config injection — no-op in v0.1 (only OutboundNat
-        // needs in-VM config and that mode is deferred). The `net` value is
-        // still consumed by phase_11 below for the NIC PUT.
+        // Phase 7: guest config injection — no-op in v0.1. OutboundNat is
+        // rejected in phase 6 before preboot REST PUTs are built.
 
         // Phase 8: compute the API socket path (inside the jail root).
-        let api_socket = jail.jail_path.join("firecracker.sock");
+        let api_socket =
+            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
         // Phase 9: jailer exec's firecracker. Returns live pids.
         let firecracker = phase("phase_9_jailer_launch", &vm_id, || {
@@ -232,7 +174,8 @@ impl Sandbox {
         })?;
 
         // Phase 10: open UDS REST client (retries for up to 5 s).
-        let host_api_socket = jail.jail_path.join("firecracker.sock");
+        let host_api_socket =
+            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
         let client = phase("phase_10_open_uds", &vm_id, || {
             phase_10_open_uds(&host_api_socket)
         })?;
@@ -242,10 +185,7 @@ impl Sandbox {
             phase_11_rest_puts(
                 &client,
                 &storage,
-                &net,
                 &self.config,
-                &backend_config.discovery.kernel,
-                &run_dir,
                 &vm_id,
                 backend_config.discovery.manifest.image_kind,
                 backend_config.discovery.manifest.kernel_kind,
@@ -257,12 +197,14 @@ impl Sandbox {
         // connects to this path when the guest does outbound to the
         // ready port; if it doesn't exist when that happens, the muxer
         // RSTs the guest. Must be created before InstanceStart.
-        let vsock_uds = jail.jail_path.join("vsock.sock");
-        let ready_uds = jail
-            .jail_path
-            .join(format!("vsock.sock_{READY_PORT_DEFAULT}"));
+        let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+        let ready_uds = ready_listener_path(&vsock_uds);
         let ready_listener = phase("phase_11b_ready_listener_bind", &vm_id, || {
             phase_11b_bind_ready_listener(&ready_uds, backend_config.jail_uid)
+        })?;
+
+        phase("phase_11c_boot_identity_record", &vm_id, || {
+            crate::boot_identity::record(&run_dir, &backend_config.discovery)
         })?;
 
         // Phase 12a: InstanceStart.
@@ -416,7 +358,8 @@ impl Sandbox {
         })?;
 
         // Phase 8: compute the API socket path (inside the jail root).
-        let api_socket = jail.jail_path.join("firecracker.sock");
+        let api_socket =
+            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
         // Phase 9: spawn Firecracker via jailer.
         let firecracker = phase("phase_9_jailer_launch", &vm_id, || {
@@ -429,14 +372,15 @@ impl Sandbox {
         })?;
 
         // Phase 10: open UDS REST client.
-        let host_api_socket = jail.jail_path.join("firecracker.sock");
+        let host_api_socket =
+            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
         let client = phase("phase_10_open_uds", &vm_id, || {
             phase_10_open_uds(&host_api_socket)
         })?;
 
         // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +
         // PATCH /vm Resumed (resume: true).
-        let vsock_uds = jail.jail_path.join("vsock.sock");
+        let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
         let snapshot_bind = phase("phase_restore_snapshot_bind", &vm_id, || {
             bind_snapshot_parent_into_jail(
                 &jail.jail_path,
@@ -564,7 +508,7 @@ fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<Cha
 /// (verified by preflight), and the per-VM dir is a fresh creation, not a
 /// silent recovery of existing state.
 fn phase_1_run_root_prep(run_root: &Path, vm_id: &str) -> Result<PathBuf, FcError> {
-    let run_dir = run_root.join(vm_id);
+    let run_dir = run_dir_path(run_root, vm_id);
     std::fs::create_dir_all(&run_dir)?;
     Ok(run_dir)
 }
@@ -578,13 +522,13 @@ fn phase_3_storage_prep(
     run_dir: &Path,
 ) -> Result<StoragePrep, FcError> {
     // Allocate a sparse per-VM overlay ext4; the base is NOT copied.
-    let overlay_dest = run_dir.join("rootfs.overlay.ext4");
+    let overlay_dest = rootfs_overlay_path(run_dir);
     let t = Instant::now();
     let rootfs = Rootfs::prepare(base_rootfs, &overlay_dest, config.overlay_size_bytes)?;
     phase_event("phase_3b_rootfs_prepare", vm_id, t.elapsed());
 
     let scratch = if let Some(workspace) = &config.workspace {
-        let scratch_dest = run_dir.join("scratch.ext4");
+        let scratch_dest = scratch_image_path(run_dir);
         let t = Instant::now();
         let scratch = Scratch::create(workspace, &scratch_dest, SCRATCH_DEFAULT_BYTES)?;
         phase_event("phase_3c_scratch_create", vm_id, t.elapsed());
@@ -653,7 +597,7 @@ fn phase_4_jailer_materialize(
         gid,
         bindings,
         sockets,
-        stdio_log: Some(run_dir.join("console.log")),
+        stdio_log: Some(console_log_path(run_dir)),
     };
 
     let plan = Plan::compute(&jailer_config)?;
@@ -697,7 +641,7 @@ fn phase_5b_cgroup_create(
             // conversion so we keep the structured cause for the CLI's
             // error → exit-code map.
             let subtree = Subtree::create(vm_id, jail, jailed)?;
-            subtree.apply_limits(&Limits::default())?;
+            subtree.apply_limits(&Limits::m80_default())?;
             Ok(Some(subtree))
         }
     }
@@ -748,73 +692,19 @@ fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
 fn phase_11_rest_puts(
     client: &Client,
     storage: &StoragePrep,
-    _net: &RealizedNetwork,
     config: &SandboxConfig,
-    _kernel: &Path,
-    _run_dir: &Path,
     vm_id: &str,
     image_kind: m80_image_manifest::ImageKind,
     kernel_kind: m80_image_manifest::KernelKind,
 ) -> Result<(), FcError> {
-    // a. Machine config.
-    client.put_machine_config(&machine_config_for(config))?;
-
-    // b. Boot source. The kernel is bind-mounted at `/kernel` inside the
-    // jailer chroot; Firecracker sees that path from within its chroot.
-    let boot_args = boot_args_for(image_kind, kernel_kind, config.boot_args.as_deref());
-    client.put_boot_source(&BootSourceConfig {
-        kernel_image_path: PathBuf::from("/kernel"),
-        boot_args: Some(boot_args),
-        initrd_path: None,
-    })?;
-
-    // c. vda: shared read-only base ext4. is_root_device=true; is_read_only
-    // must be set explicitly (Firecracker REST default is false per design doc).
-    client.put_drive(&DriveConfig {
-        drive_id: "rootfs".into(),
-        path_on_host: PathBuf::from("/rootfs.ext4"),
-        is_root_device: true,
-        is_read_only: true,
-    })?;
-
-    // d. vdb: per-VM sparse overlay ext4. Writable; guestd mounts this as
-    // the overlayfs upperdir after pivot_root.
-    client.put_drive(&DriveConfig {
-        drive_id: "rootfs_overlay".into(),
-        path_on_host: PathBuf::from("/rootfs.overlay.ext4"),
-        is_root_device: false,
-        is_read_only: false,
-    })?;
-
-    // e. vdc: workspace drive (optional). Only when workspace is configured.
-    if storage.scratch.is_some() {
-        client.put_drive(&DriveConfig {
-            drive_id: "workspace".into(),
-            path_on_host: PathBuf::from("/scratch.ext4"),
-            is_root_device: false,
-            is_read_only: false,
-        })?;
-    }
-
-    // e. Vsock device.
-    let guest_cid = m80_vsock::cid_for_vm_id(vm_id);
-    // The vsock UDS is at `/vsock.sock` inside the chroot.
-    client.put_vsock(&VsockConfig {
-        guest_cid,
-        uds_path: PathBuf::from("/vsock.sock"),
-    })?;
-
-    // f. NIC PUT only for OutboundNat — not applicable in v0.1.
-
-    Ok(())
-}
-
-fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
-    MachineConfig {
-        vcpu_count: config.vcpu_count.unwrap_or(DEFAULT_VCPU_COUNT),
-        mem_size_mib: config.mem_size_mib.unwrap_or(DEFAULT_MEM_SIZE_MIB),
-        smt: false,
-    }
+    let puts = build_preboot_puts(
+        config,
+        vm_id,
+        image_kind,
+        kernel_kind,
+        storage.scratch.is_some(),
+    );
+    apply_preboot_puts(client, &puts)
 }
 
 /// Phase 12b: poll the host vsock UDS until the in-VM guestd is ready.
@@ -851,6 +741,12 @@ fn phase_11b_bind_ready_listener(path: &Path, jail_uid: u32) -> Result<UnixListe
     Ok(listener)
 }
 
+fn ready_listener_path(vsock_uds: &Path) -> PathBuf {
+    let mut path = vsock_uds.as_os_str().to_os_string();
+    path.push(format!("_{READY_PORT_DEFAULT}"));
+    PathBuf::from(path)
+}
+
 /// `accept()` the inverted-readiness signal from m80-guestd, validate the
 /// protocol-version byte, then open the exec channel.
 ///
@@ -864,8 +760,21 @@ fn phase_12b_ready_accept(
     vsock_uds: &Path,
     vm_id: &str,
 ) -> Result<Channel, FcError> {
+    accept_ready_signal(ready_listener, ready_path, READY_TIMEOUT)?;
+    tracing::info!(vm_id, "ready signal received from guestd");
+
+    // Open the exec channel — same UDS, exec port. Synchronous; should
+    // succeed immediately since guestd is up.
+    Channel::open_uds_only(vsock_uds, guest_ready_probe_port()).map_err(FcError::Vsock)
+}
+
+fn accept_ready_signal(
+    ready_listener: &UnixListener,
+    ready_path: &Path,
+    timeout: Duration,
+) -> Result<(), FcError> {
     ready_listener.set_nonblocking(true).map_err(FcError::Io)?;
-    let deadline = Instant::now() + READY_TIMEOUT;
+    let deadline = Instant::now() + timeout;
 
     let mut stream = loop {
         match ready_listener.accept() {
@@ -874,7 +783,7 @@ fn phase_12b_ready_accept(
                 if Instant::now() >= deadline {
                     return Err(FcError::GuestdReadyTimeout {
                         path: ready_path.to_path_buf(),
-                        timeout: READY_TIMEOUT,
+                        timeout,
                     });
                 }
                 std::thread::sleep(READY_ACCEPT_POLL);
@@ -892,92 +801,90 @@ fn phase_12b_ready_accept(
         return Err(FcError::Vsock(m80_vsock::VsockError::HandshakeFailed));
     }
     drop(stream);
+    Ok(())
+}
 
-    tracing::info!(vm_id, "ready signal received from guestd");
-
-    // Open the exec channel — same UDS, exec port. Synchronous; should
-    // succeed immediately since guestd is up.
-    Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT).map_err(FcError::Vsock)
+fn guest_ready_probe_port() -> u32 {
+    GUEST_PORT_DEFAULT
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
     use super::*;
-    use m80_image_manifest::{ImageKind, KernelKind};
 
     #[test]
-    fn boot_args_ubuntu_stock() {
+    fn ready_listener_path_uses_muxer_port_suffix() {
+        let vsock = Path::new("/run/m80/vm/firecracker/vm/root/vsock.sock");
+
         assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off",
+            ready_listener_path(vsock),
+            PathBuf::from(format!(
+                "/run/m80/vm/firecracker/vm/root/vsock.sock_{}",
+                READY_PORT_DEFAULT
+            ))
         );
     }
 
     #[test]
-    fn boot_args_ubuntu_stripped() {
-        assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1",
+    fn ready_signal_accepts_protocol_version_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let ready_path = dir.path().join("ready.sock");
+        let listener = UnixListener::bind(&ready_path).unwrap();
+        let client_path = ready_path.clone();
+        let client = std::thread::spawn(move || {
+            let mut stream = UnixStream::connect(client_path).unwrap();
+            stream
+                .write_all(&[m80_proto::PROTOCOL_VERSION as u8])
+                .unwrap();
+        });
+
+        accept_ready_signal(&listener, &ready_path, Duration::from_secs(1)).unwrap();
+
+        client.join().unwrap();
+    }
+
+    #[test]
+    fn ready_timeout_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let ready_path = dir.path().join("ready.sock");
+        let listener = UnixListener::bind(&ready_path).unwrap();
+
+        let err =
+            accept_ready_signal(&listener, &ready_path, Duration::from_millis(1)).unwrap_err();
+
+        assert!(
+            matches!(err, FcError::GuestdReadyTimeout { ref path, timeout }
+                if *path == ready_path && timeout == Duration::from_millis(1)),
+            "unexpected error: {err:?}"
         );
     }
 
     #[test]
-    fn boot_args_minimal_stock() {
-        assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd",
+    fn ready_signal_rejects_wrong_protocol_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let ready_path = dir.path().join("ready.sock");
+        let listener = UnixListener::bind(&ready_path).unwrap();
+        let client_path = ready_path.clone();
+        let client = std::thread::spawn(move || {
+            let mut stream = UnixStream::connect(client_path).unwrap();
+            stream.write_all(&[0]).unwrap();
+        });
+
+        let err = accept_ready_signal(&listener, &ready_path, Duration::from_secs(1)).unwrap_err();
+
+        assert!(
+            matches!(err, FcError::Vsock(m80_vsock::VsockError::HandshakeFailed)),
+            "unexpected error: {err:?}"
         );
+        client.join().unwrap();
     }
 
     #[test]
-    fn boot_args_minimal_stripped() {
-        assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd",
-        );
-    }
-
-    #[test]
-    fn boot_args_override_wins_over_kind_default() {
-        let custom = "console=ttyS0 my=custom args";
-        assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, Some(custom)),
-            custom,
-            "explicit override must take precedence regardless of kind and kernel_kind"
-        );
-        assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, Some(custom)),
-            custom,
-        );
-    }
-
-    #[test]
-    fn machine_config_uses_default_sizing_when_omitted() {
-        let config = SandboxConfig {
-            vcpu_count: None,
-            mem_size_mib: None,
-            ..SandboxConfig::default()
-        };
-
-        let machine = machine_config_for(&config);
-
-        assert_eq!(machine.vcpu_count, DEFAULT_VCPU_COUNT);
-        assert_eq!(machine.mem_size_mib, DEFAULT_MEM_SIZE_MIB);
-        assert!(!machine.smt);
-    }
-
-    #[test]
-    fn machine_config_honors_caller_sizing() {
-        let config = SandboxConfig {
-            vcpu_count: Some(2),
-            mem_size_mib: Some(2048),
-            ..SandboxConfig::default()
-        };
-
-        let machine = machine_config_for(&config);
-
-        assert_eq!(machine.vcpu_count, 2);
-        assert_eq!(machine.mem_size_mib, 2048);
-        assert!(!machine.smt);
+    fn guest_vsock_port_is_9001() {
+        assert_eq!(guest_ready_probe_port(), 9001);
     }
 }

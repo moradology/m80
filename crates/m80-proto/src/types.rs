@@ -1,8 +1,24 @@
 //! Wire types: envelope, exec request/response, status, timing, handshake.
 
+mod fileops;
 mod pty;
 mod streaming;
 
+pub use fileops::{
+    DirEntry, FileError, FileKind, FileListRequest, FileListResponse, FileReadRequest,
+    FileReadResponse, FileRemoveRequest, FileRemoveResponse, FileStat, FileStatRequest,
+    FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest,
+    FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse, FileWriteRequest,
+    FileWriteResponse, FILE_READ_LIMIT_DEFAULT, PAYLOAD_KIND_FILE_LIST_REQUEST,
+    PAYLOAD_KIND_FILE_LIST_RESPONSE, PAYLOAD_KIND_FILE_READ_REQUEST,
+    PAYLOAD_KIND_FILE_READ_RESPONSE, PAYLOAD_KIND_FILE_REMOVE_REQUEST,
+    PAYLOAD_KIND_FILE_REMOVE_RESPONSE, PAYLOAD_KIND_FILE_STAT_REQUEST,
+    PAYLOAD_KIND_FILE_STAT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST,
+    PAYLOAD_KIND_FILE_WRITE_BEGIN_RESPONSE, PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST,
+    PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE, PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST,
+    PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_REQUEST,
+    PAYLOAD_KIND_FILE_WRITE_RESPONSE,
+};
 pub use pty::{
     PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,
     PtySize, PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_INPUT,
@@ -281,7 +297,7 @@ pub struct HandshakeMessage {
     pub version: u32,
 }
 
-mod b64 {
+pub(crate) mod b64 {
     pub mod single {
         use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
         use serde::{Deserialize, Deserializer, Serializer};

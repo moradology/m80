@@ -51,7 +51,7 @@ impl MaterializedJail {
 
         // jailer's `--chroot-base-dir` is the run_dir; jailer appends
         // `<exec basename>/<id>/root/` to derive the real chroot
-        // (matches `chroot_path()` in `types.rs`).
+        // (matches `jail_root_path()` in `types.rs`).
         let chroot_base = self.plan.config.run_dir.as_path();
 
         // Jailer args end at the bare `--`; everything after is forwarded

@@ -64,6 +64,22 @@ which is the right place for a security review to start.
 ## Public surface
 
 - `run() -> Result<Discovery, PreflightError>`.
+- `BinaryDiscoveryConfig { firecracker_bin, jailer_bin,
+  expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
+  the standalone binary-resolution step.
+- `discover_binaries(&BinaryDiscoveryConfig) -> Result<BinaryDiscovery,
+  PreflightError>`.
+- `BinaryDiscovery { firecracker_bin, firecracker_version, jailer_bin }`.
+- `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
+  kernel_kind, run_root, helper_search_path }` and
+  `ArtifactPreflightConfig::from_env()` for standalone artifact, run-root, and
+  helper validation.
+- `verify_artifacts(&ArtifactPreflightConfig) -> Result<ArtifactPreflight,
+  PreflightError>`.
+- `ArtifactPreflight { kernel, rootfs, manifest, run_root, storage_helpers }`.
+- `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
+  PreflightError>` — pure classifier used by the live privilege probe and
+  focused tests.
 - `Discovery { firecracker_bin, jailer_bin, kernel: PathBuf, rootfs: PathBuf,
   manifest: m80_image_manifest::Manifest, run_root: PathBuf, privilege: PrivilegeStatus,
   report: Vec<CheckRow> }`.
@@ -77,8 +93,8 @@ which is the right place for a security review to start.
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
   `FirecrackerBinaryNotFound`, `FirecrackerVersionMismatch { expected, actual }`,
-  `JailerBinaryNotFound`, `KernelNotFound`, `RootfsNotFound`,
-  `Manifest(m80_image_manifest::ManifestError)`,
+  `JailerBinaryNotFound`, `NonAbsolutePath { kind, path }`,
+  `KernelNotFound`, `RootfsNotFound`, `Manifest(m80_image_manifest::ManifestError)`,
   `RunRootUnavailable { reason: String }` (covers both missing-dir and
   insufficient-space), `StorageHelperMissing(String)`, `Io(io::Error)`.
 

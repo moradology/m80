@@ -1,0 +1,40 @@
+# Graceful Stop
+
+## X86 Graceful
+
+m80 v0.1 does not use Firecracker's `SendCtrlAltDel` action on x86_64. Normal
+stop is architecture-independent: the host sends `ShutdownRequest` to m80-guestd
+over the guest exec vsock channel, waits for the shutdown RPC to return or fail,
+and then SIGKILLs the Firecracker process. This deliberately differs from the
+older predecessor behavior recorded at
+`crates/sandbox/agent-sandbox-firecracker/src/lifecycle.rs:970-981,1286,1297-1305`.
+
+The guestd acknowledgement proves guest userspace has flushed and accepted the
+shutdown request. m80 does not wait for a kernel poweroff/reboot event after
+that acknowledgement because the observable host cleanup path is the same:
+drop the jail/cgroup guards, keep the stopped run directory for optional
+extraction, and let `StoppedSandbox::delete` remove it when the caller chooses.
+
+## Non-X86 Forced
+
+m80 v0.1 has no architecture-specific normal-stop split. Non-x86 hosts use the
+same guestd shutdown RPC plus Firecracker SIGKILL path as x86 hosts. The
+explicit force path is `RunningSandbox::force_kill`, which skips the guest RPC
+and SIGKILLs both the Firecracker and jailer pids immediately.
+
+## Sigkill Escalation
+
+Normal stop always ends by sending SIGKILL to the Firecracker process. If the
+guestd shutdown RPC fails because guestd is unreachable or already gone, m80
+logs the RPC failure and still sends SIGKILL. The only bounded wait in this path
+is the shutdown RPC attempt (`SHUTDOWN_RPC_TIMEOUT`); there is no additional
+30-second graceful-poweroff wait in current m80.
+
+## Idempotent Stop
+
+Stop is type-state guarded rather than runtime-idempotent. `RunningSandbox::stop`
+and `RunningSandbox::force_kill` consume `RunningSandbox` and return
+`StoppedSandbox`, so safe Rust callers cannot call stop twice on the same
+running handle. Repeated cleanup of the stopped run directory is represented by
+the separate `StoppedSandbox::delete` / `preserve_for_triage` phase and stale
+run-root recovery.

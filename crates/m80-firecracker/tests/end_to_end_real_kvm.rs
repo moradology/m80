@@ -77,3 +77,77 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
 }
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn end_to_end_real_kvm_file_ops() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+
+    let run_root = discovery.run_root.clone();
+    let config = m80_firecracker::BackendConfig {
+        discovery,
+        max_concurrent_vms: 1,
+        run_root: run_root.clone(),
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
+    };
+    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
+    let sandbox_config = m80_firecracker::SandboxConfig {
+        vm_id: Some("e2e-fileops-test".into()),
+        workspace: None,
+        network: m80_firecracker::NetworkPolicy::NoEgress,
+        vcpu_count: Some(1),
+        mem_size_mib: Some(512),
+        boot_args: None,
+        overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
+        request_id: None,
+    };
+
+    let sandbox = backend.admit(sandbox_config).expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+
+    let bytes = b"hello fileops".to_vec();
+    let written = running
+        .write_file("/tmp/m80-fileops.txt", bytes.clone(), Some(0o600))
+        .expect("write_file");
+    assert_eq!(written, bytes.len() as u64);
+
+    let (read_back, truncated) = running
+        .read_file("/tmp/m80-fileops.txt", Some(1024))
+        .expect("read_file");
+    assert_eq!(read_back, bytes);
+    assert!(!truncated);
+
+    let entries = running.list_dir("/tmp").expect("list_dir");
+    assert!(entries.iter().any(|entry| entry.name == "m80-fileops.txt"));
+
+    let stat = running
+        .stat_file("/tmp/m80-fileops.txt")
+        .expect("stat_file");
+    assert_eq!(stat.size, written);
+
+    let blob = vec![b'x'; 5 * 1024 * 1024];
+    let uploaded = running
+        .upload_file_chunked(
+            "/tmp/m80-fileops-big.bin",
+            Some(0o600),
+            std::io::Cursor::new(blob.clone()),
+            1024 * 1024,
+        )
+        .expect("upload_file_chunked");
+    assert_eq!(uploaded, blob.len() as u64);
+    let (read_blob, truncated) = running
+        .read_file("/tmp/m80-fileops-big.bin", Some(blob.len() as u64))
+        .expect("read uploaded blob");
+    assert_eq!(read_blob, blob);
+    assert!(!truncated);
+
+    running
+        .remove_file("/tmp/m80-fileops.txt")
+        .expect("remove_file");
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}

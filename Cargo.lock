@@ -608,6 +608,7 @@ dependencies = [
 name = "m80-firecracker"
 version = "0.0.0"
 dependencies = [
+ "hex",
  "m80-cgroup",
  "m80-firecracker-client",
  "m80-image-manifest",
@@ -623,6 +624,7 @@ dependencies = [
  "nix 0.29.0",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.18",
  "toml",
@@ -652,6 +654,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
  "vsock",
@@ -745,6 +748,7 @@ dependencies = [
  "m80-image-manifest",
  "nix 0.29.0",
  "serde",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
 ]

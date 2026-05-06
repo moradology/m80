@@ -10,6 +10,7 @@ use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
 use m80_net_outbound::NetError;
 use m80_preflight::PreflightError;
+use m80_proto::FileError;
 use m80_snapshot::SnapshotError;
 use m80_storage::StorageError;
 use m80_vsock::VsockError;
@@ -87,6 +88,9 @@ pub enum FcError {
     /// Snapshot capture or restore failed.
     #[error("snapshot: {0}")]
     Snapshot(#[from] SnapshotError),
+    /// Guest-side file operation failed with a typed wire error.
+    #[error("file operation: {0:?}")]
+    FileOp(FileError),
     /// Admission was refused (semaphore at limit; no permit available).
     #[error("admission refused: {limit} concurrent VMs already running")]
     AdmissionRefused {

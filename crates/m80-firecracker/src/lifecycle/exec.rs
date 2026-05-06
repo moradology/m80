@@ -378,7 +378,7 @@ fn append_capped(dst: &mut Vec<u8>, bytes: &[u8]) -> bool {
     to_copy < bytes.len()
 }
 
-fn decode_payload<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, FcError> {
+pub(super) fn decode_payload<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, FcError> {
     serde_json::from_value(value).map_err(|e| {
         FcError::Vsock(m80_vsock::VsockError::Proto(ProtoError::MalformedPayload(
             e,
@@ -466,7 +466,7 @@ fn spawn_pty_event_forwarder(
     })
 }
 
-fn request_id_for(vm_id: &str, configured: Option<&str>, kind: &str) -> String {
+pub(super) fn request_id_for(vm_id: &str, configured: Option<&str>, kind: &str) -> String {
     configured
         .map(str::to_owned)
         .unwrap_or_else(|| format!("{vm_id}-{kind}-{}", monotonic_ns()))
@@ -507,7 +507,7 @@ fn cancelled_pty_exit(started_at_unix_ms: u64, output_total: u64) -> PtyExit {
     }
 }
 
-fn send_envelope_with_open_retry<T>(
+pub(super) fn send_envelope_with_open_retry<T>(
     vsock_uds: &Path,
     vm_id: &str,
     envelope: &Envelope<T>,

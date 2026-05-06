@@ -34,10 +34,12 @@ pub struct JailerConfig {
     pub stdio_log: Option<PathBuf>,
 }
 
-/// Compute the actual chroot path inside `run_dir`. Jailer hardcodes the
-/// nested layout `<chroot-base>/<exec-file basename>/<id>/root/`, where we
-/// pass `run_dir` for chroot-base and `run_dir`'s basename for id.
-pub(crate) fn chroot_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+/// Compute the actual jail root path inside `run_dir`.
+///
+/// Firecracker's jailer hardcodes the nested layout
+/// `<chroot-base>/<exec-file basename>/<id>/root/`; m80 passes `run_dir` for
+/// `--chroot-base-dir` and `run_dir`'s basename for `--id`.
+pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
     let exec_basename = firecracker_bin
         .file_name()
         .unwrap_or_else(|| std::ffi::OsStr::new("firecracker"));

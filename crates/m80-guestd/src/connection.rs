@@ -21,6 +21,7 @@
 //! The vsock channel is NOT multiplexed: only one exec is in flight at a time
 //! (enforced by `RunningSandbox`'s `&mut self` API on the host).
 
+mod fileops;
 mod pty;
 mod streaming;
 
@@ -130,6 +131,7 @@ where
         }
         PAYLOAD_KIND_CANCEL_REQUEST => handle_cancel_no_exec(raw, &mut writer),
         PAYLOAD_KIND_SHUTDOWN_REQUEST => handle_shutdown(raw, &mut writer, received_at),
+        kind if fileops::is_fileop_kind(kind) => fileops::handle_fileop(raw, reader, &mut writer),
         other => {
             guest_log::warn(
                 GuestLogPhase::Exec,

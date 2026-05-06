@@ -74,6 +74,14 @@ fn jailer_binary_not_found_has_hint() {
 }
 
 #[test]
+fn non_absolute_path_has_hint() {
+    assert_hint(&PreflightError::NonAbsolutePath {
+        kind: "rootfs".into(),
+        path: "rootfs.ext4".into(),
+    });
+}
+
+#[test]
 fn kernel_not_found_has_hint() {
     assert_hint(&PreflightError::KernelNotFound);
 }

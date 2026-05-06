@@ -32,7 +32,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `LiveJail | OrphanJail { reap_steps } | NoJail`. The crate does not
   act on the decision; the caller does.
 - The actual chroot path is `<run_dir>/<firecracker basename>/<run_dir basename>/root/`
-  — jailer's hardcoded layout, derived in `chroot_path()`. We pre-create
+  — jailer's hardcoded layout, derived in `jail_root_path()`. We pre-create
   the parent dirs and bind RW sources are chowned to `uid:gid` so the
   jailed firecracker can open them.
 - This crate does **not** decide where the run_dir is — that's the
@@ -43,6 +43,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `JailerConfig`, including optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `SocketSpec`.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
+- `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `recover_from_run_dir`, `RecoveryDecision`.
 - `JailerError`: `BindFailed`, `ChrootFailed`, `UidGidInvalid`,
   `Io { path, source }`. Privilege is verified once by `m80-preflight`;

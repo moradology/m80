@@ -15,9 +15,7 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `DEFAULT_FIRECRACKER_CGROUP_ROOT` (line 13) and `unified_v2_leaf_path`
 (lines 155–157).
 
-Test: `crates/m80-cgroup/tests/integration_root.rs::subtree_creation_places_leaf_under_m80_firecracker`
-(#[ignore] — requires root + real cgroup v2 host). The path constant is verified
-structurally in `crates/m80-cgroup/src/lib.rs` (`CGROUP_ROOT`).
+Test: `crates/m80-cgroup/tests/cgroup/subtree.rs::leaf_under_renamed_root`.
 
 ## subtree-control
 
@@ -34,27 +32,21 @@ hasn't enabled them first.
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `materialize_jailed_cgroup` lines 84–93; `REQUIRED_CONTROLLERS` line 16.
 
-Test: `crates/m80-cgroup/tests/integration_root.rs::subtree_creation_places_leaf_under_m80_firecracker`
-(#[ignore]).
+Test: `crates/m80-cgroup/src/lib.rs::tests::required_subtree_control_enables_three_controllers`.
 
 ## pid-assign
 
-After the leaf directory is created, the system writes each pid individually to
-`<leaf>/cgroup.procs`:
-
-1. `jailed.jailer_pid` — the `jailer` parent process.
-2. `jailed.firecracker_pid` — the `firecracker` child exec'd by the jailer.
-
-Both writes are necessary because the jailer fork-execs firecracker; each
-process starts in its own cgroup and must be explicitly moved. Writing a pid
-to `cgroup.procs` atomically migrates that process and all its threads into
-the cgroup.
+After the leaf directory is created, the system writes the deduped, sorted
+`jailer_pid` and `firecracker_pid` set to `<leaf>/cgroup.procs`. On m80's
+non-daemonized jailer launch path those pids are normally equal because the
+jailer execs into Firecracker; the dedupe keeps that common case to one write
+while preserving the contract if a future launch path reports distinct pids.
 
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `materialize_jailed_cgroup` lines 101–110.
 
-Test: `crates/m80-cgroup/tests/integration_root.rs::subtree_creation_places_leaf_under_m80_firecracker`
-(#[ignore]).
+Test: `crates/m80-cgroup/tests/cgroup/subtree.rs::pids_assigned_to_leaf`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::pid_assignment_sorts_and_deduplicates`.
 
 ## cgroup-path-txt
 

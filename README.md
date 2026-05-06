@@ -110,6 +110,28 @@ m80 is a Rust workspace split into small black-box crates:
 Crate READMEs are contracts. A public-surface change updates the owning crate
 README in the same diff.
 
+## Positioning
+
+m80 is the Firecracker foundation layer, not the agent product layer. It owns
+the reusable VM mechanics: artifact admission, jailer setup, read-only rootfs
+plus per-VM writable layers, vsock exec, PTY forwarding, direct guest file
+operations, outbound networking policy, warm pools, and cleanup evidence.
+
+Higher-level adapters can build on that surface for their own product model:
+
+- a predecessor adapter can translate tool calls, workspace authority, and semantic
+  events into m80 exec/file/network requests
+- a CI runner can expose untrusted pull requests as constrained processes
+- a SaaS host can isolate tenant plugins with explicit filesystem and egress
+  visibility
+- language bindings can wrap m80's generic process and file-operation APIs
+
+That split is deliberate. Projects like SmolVM optimize for an SDK-shaped AI
+sandbox experience. m80's edge is the audit-small Rust/Firecracker substrate:
+typed Rust APIs, process-transparent CLI behavior, direct VM-mechanics tests,
+and no hidden agent policy in the core. See [docs/positioning.md](docs/positioning.md)
+for the fuller comparison and adapter pattern.
+
 ## What m80 Is Not
 
 - Not Docker-compatible lifecycle UX as the primary model.

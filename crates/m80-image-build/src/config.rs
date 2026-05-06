@@ -229,4 +229,43 @@ dir = "/opt/m80/artifacts"
             std::path::PathBuf::from("/opt/m80/artifacts")
         );
     }
+
+    #[test]
+    fn build_config_requires_explicit_firecracker_version() {
+        let raw = r#"
+[kernel]
+artifact_track = "v1.15"
+arch = "x86_64"
+
+[rootfs]
+size = "1GiB"
+
+[guestd]
+binary = "/tmp/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+"#;
+        let err = toml::from_str::<BuildConfig>(raw).unwrap_err();
+        assert!(
+            err.to_string().contains("missing field `version`"),
+            "expected missing kernel.version error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_config_rejects_url_path_components() {
+        for (field, value) in [
+            ("kernel.version", ""),
+            ("kernel.version", "../v1.15"),
+            ("kernel.artifact_track", "v1.15/other"),
+            ("kernel.arch", "x86_64?bad"),
+        ] {
+            let err = validate_url_safe(field, value).unwrap_err();
+            assert!(
+                err.to_string().contains(field),
+                "expected {field} in error for {value:?}, got: {err}"
+            );
+        }
+    }
 }

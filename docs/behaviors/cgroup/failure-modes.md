@@ -19,8 +19,8 @@ not `unified-v2`) lives in `m80-firecracker`.
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `verify_cgroup_host_preflight` (lines 49–72).
 
-Test: The precondition is type-checked at compile time. No runtime test is
-needed for the `requires-jailer` path itself; the probe path is tested in
+Test: `crates/m80-cgroup/tests/cgroup/failure_modes.rs::requires_jailer`.
+The runtime probe path is also tested in
 `crates/m80-cgroup/tests/probe_no_v2.rs`.
 
 ## cleanup-idempotent
@@ -43,5 +43,4 @@ automatically; the parent persists across VM lifetimes and is shared.
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `cleanup_materialized_cgroup` (lines 127–149).
 
-Test: `crates/m80-cgroup/tests/integration_root.rs::orphan_cleanup_removes_empty_stale_subtree`
-(#[ignore] — requires root + real cgroup v2 host).
+Test: `crates/m80-cgroup/tests/cgroup/failure_modes.rs::cleanup_idempotent`.

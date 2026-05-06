@@ -28,13 +28,14 @@ const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
 ///
 /// Pure: no I/O, no allocation table. Two VMs with the same `vm_id` get the
 /// same CID; different `vm_id`s get distinct CIDs (modulo the 32-bit space).
-/// CID is always in the range `3..=u32::MAX`; Firecracker reserves 0, 1, and 2.
+/// CID is always in the range `3..=u32::MAX - 1`; Firecracker reserves
+/// 0, 1, 2, and `u32::MAX`.
 pub fn cid_for_vm_id(vm_id: &str) -> u32 {
     let mut hasher = sha2::Sha256::new();
     hasher.update(vm_id.as_bytes());
     let bytes = hasher.finalize();
     let raw = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    3 + (raw % (u32::MAX - 2))
+    3 + (raw % (u32::MAX - 3))
 }
 
 /// One open connection to the in-VM daemon. Created by [`Channel::open_uds_only`];
@@ -226,8 +227,8 @@ impl Drop for ChannelSender {
 /// Errors surfaced by [`Channel`] operations.
 #[derive(Debug, thiserror::Error)]
 pub enum VsockError {
-    /// Ready marker was not seen on the serial console within the timeout.
-    #[error("guestd ready marker not observed before timeout")]
+    /// Guest daemon readiness signal did not arrive before the timeout.
+    #[error("guestd readiness signal not observed before timeout")]
     NotReady,
     /// Connect to the Firecracker UDS failed.
     #[error("vsock connect failed (errno={errno})")]

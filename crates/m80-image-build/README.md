@@ -41,7 +41,8 @@ gives us:
 6. Copy `m80-guestd` into `<rootfs>/usr/local/bin/`.
 7. Write the embedded `m80-guestd.service` into `<rootfs>/etc/systemd/system/`.
 8. Write the embedded workspace mount unit alongside it.
-9. `mkdir <rootfs>/workspace` and enable both units by symlinking into
+9. `mkdir <rootfs>/workspace`, enable `m80-guestd.service` under
+   `basic.target.wants/`, and enable `workspace.mount` under
    `multi-user.target.wants/`.
 10. Unmount the rootfs.
 11. sha256 every artifact (kernel, source rootfs, output rootfs, daemon

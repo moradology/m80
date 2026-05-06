@@ -68,16 +68,23 @@ base from one set of pages.
   `mkfs.ext4`, loop-mounts it, copies the host workspace tree, and
   unmounts. The host source is opaque to the guest — only the mounted
   device shows up in-VM.
+- `Scratch::recommended_size_for_used_bytes(used_bytes: u64) -> u64`
+  computes `max(64 MiB, used_bytes + 32 MiB)` rounded up to a 4 MiB
+  boundary.
+- `Scratch::recommended_size_for_workspace(workspace: &Path) ->
+  Result<u64, StorageError>` walks the host workspace, counts regular-file
+  bytes, rejects symlinks/special files, and applies the same sizing rule.
 - `Scratch::extract(image: &Path, into: &Path) -> Result<ChangeSet, StorageError>`
   is the post-stop extraction:
+  0. Fail with `SwapFailed` if `into` already exists.
   1. Run `e2fsck -p -f` on the image to repair the journal.
   2. Loop-mount the image read-only.
   3. Walk and apply the admissibility scan: regular files and
      directories pass; symlinks → `RejectionReason::Symlink`; devices /
      fifos / sockets → `RejectionReason::SpecialFile`.
-  4. Stage the surviving set in a temp directory.
-  5. Atomic `fs::rename` into `into`. Fails with `SwapFailed` if `into`
-     already exists.
+  4. Stage the surviving set in a sibling temp directory under the
+     destination parent, named `.<workspace>.m80-writeback-stage-<pid>-<n>`.
+  5. Atomic `fs::rename` into `into`; rename failure is `SwapFailed`.
   6. Unmount.
   Only triggered when the caller asks.
 - `ChangeSet` reports the staged file count, total bytes, and any
@@ -110,8 +117,10 @@ images but adds non-trivial output-parsing surface.
 - `Rootfs::prepare(base, overlay_dest, overlay_size_bytes)`,
   `Rootfs::new_at(base, overlay)`,
   `Rootfs::base_path()`, `Rootfs::overlay_path()`.
-- `Scratch::create(workspace, image, size)`, `Scratch::extract(image, into)`,
-  `Scratch::path()`.
+- `Scratch::create(workspace, image, size)`,
+  `Scratch::recommended_size_for_used_bytes(used_bytes)`,
+  `Scratch::recommended_size_for_workspace(workspace)`,
+  `Scratch::extract(image, into)`, `Scratch::path()`.
 - `ChangeSet { staged: Vec<PathBuf>, rejected: Vec<Rejection>, total_bytes: u64 }`.
 - `Rejection { path: PathBuf, reason: RejectionReason }`.
 - `RejectionReason`: `Symlink`, `SpecialFile`, `Other(String)`.
@@ -166,6 +175,10 @@ Root/loop-mount (`#[ignore]`, run with `sudo cargo test -- --ignored`):
 - `tests/scratch_create_real.rs` — hydration and symlink rejection.
 - `tests/scratch_extract_real.rs` — full create→extract round trip;
   SwapFailed on existing `into`.
+- `tests/storage/scratch_image.rs` — behavior-capture fixtures for hydration
+  and scratch size calculation.
+- `tests/storage/change_extraction.rs` — behavior-capture fixtures for opt-in
+  extraction and rollback on destination failure.
 
 ## Migration note (v0.1 → v0.1.x; landing in same release line)
 

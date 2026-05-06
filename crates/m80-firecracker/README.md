@@ -87,6 +87,12 @@ cloned sender for that same connection, invokes `on_output` for each merged
 terminal `PtyOutput` frame, and returns the single terminal `PtyExit`. PTY
 mode does not expose separated stdout/stderr streams.
 
+`RunningSandbox` also exposes direct file-operation wrappers:
+`read_file`, `write_file`, `list_dir`, `stat_file`, `remove_file`, and
+`upload_file_chunked`. These construct m80-proto file-op envelopes and map
+guest `FileError` responses to `FcError::FileOp`; callers do not need to
+spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
+
 ### Public lifecycle methods
 
 | Method | Signature | Description |
@@ -96,12 +102,33 @@ mode does not expose separated stdout/stderr streams.
 | `RunningSandbox::exec_streaming` | `(&mut self, ExecRequest, impl FnMut(ExecChunk) -> Result<(), FcError>) -> Result<ExecExit, FcError>` | Run one command and deliver stdout/stderr chunks before terminal exit. |
 | `RunningSandbox::exec_streaming_with_cancel` | `(&mut self, ExecRequest, std::sync::mpsc::Receiver<()>, impl FnMut(ExecChunk) -> Result<(), FcError>) -> Result<ExecExit, FcError>` | Streaming exec plus same-connection guest cancellation. |
 | `RunningSandbox::exec_pty` | `(&mut self, PtyRequest, std::sync::mpsc::Receiver<PtyHostEvent>, impl FnMut(PtyOutputChunk) -> Result<(), FcError>) -> Result<PtyExit, FcError>` | Run one terminal command and deliver merged PTY output before terminal exit. |
+| `RunningSandbox::read_file` | `(&mut self, path, max_bytes) -> Result<(Vec<u8>, bool), FcError>` | Read bytes directly from the guest and report truncation. |
+| `RunningSandbox::write_file` | `(&mut self, path, bytes, mode) -> Result<u64, FcError>` | Write one guest file directly. |
+| `RunningSandbox::list_dir` | `(&mut self, path) -> Result<Vec<DirEntry>, FcError>` | List one guest directory level. |
+| `RunningSandbox::stat_file` | `(&mut self, path) -> Result<FileStat, FcError>` | Stat one guest path without following final symlink. |
+| `RunningSandbox::remove_file` | `(&mut self, path) -> Result<(), FcError>` | Remove one non-directory guest path. |
+| `RunningSandbox::upload_file_chunked` | `(&mut self, path, mode, reader, chunk_size) -> Result<u64, FcError>` | Upload via begin/chunk/commit on one vsock connection. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
 | `RunningSandbox::capture` | `(&self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused. |
 
 `SnapshotPaths` is re-exported from `m80-snapshot` for caller convenience.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and
 wire-frame pairing only, not an agent semantic identifier.
+
+### Cleanup contract vocabulary
+
+`m80-firecracker` exports small enums/constants that pin the cleanup contract
+for docs and regression tests:
+
+| Item | Description |
+|---|---|
+| `CleanupPhase` / `CLEANUP_PHASE_ORDER` | `AdmissionFence -> BoundedStop -> OptionalChangeExtract -> ResidueCleanup -> Release`. |
+| `StopDisposition` / `STOP_DISPOSITIONS` | Normal `GuestdShutdownThenFirecrackerKill` and explicit `HostForceKill`. |
+| `CleanupReleaseBlocker` / `CLEANUP_RELEASE_BLOCKERS` | Generic VM-mechanics blockers: ambiguous force kill, cleanup failure, and possibly-live owned residue. |
+| `CleanupAuthority` / `CLEANUP_AUTHORITY` | Documents that m80 emits evidence only and does not advance placement state. |
+
+These names do not add agent semantics. They are behavior vocabulary for the
+generic VM cleanup surface.
 
 ### Warm pool
 
@@ -136,6 +163,12 @@ for the state machine and sizing model.
 All per-VM state lives under `<run_root>/<vm_id>/`. The actual jailer
 chroot is at `<run_root>/<vm_id>/<exec basename>/<vm_id>/root/` (jailer's
 hardcoded layout — see `m80-jailer`).
+The public pure helpers `run_dir_path`, `firecracker_api_socket_path`,
+`vsock_socket_path`, `rootfs_overlay_path`, `scratch_image_path`,
+`console_log_path`, and `boot_identity_path` expose this layout for callers
+and regression tests.
+The Firecracker API socket and vsock muxer socket are inside the jailer
+chroot, not directly in `<run_root>/<vm_id>/`.
 Firecracker/jailer stdout and stderr are appended to
 `<run_root>/<vm_id>/console.log`; with `console=ttyS0` this is also the
 guest serial console, including m80-guestd's structured stderr lines.
@@ -197,11 +230,54 @@ allocation costs zero disk bytes at creation.
 `SandboxConfig::request_id` controls diagnostics and wire-frame correlation
 for callers that already minted an opaque request id.
 
+### Preboot REST wiring
+
+`m80-firecracker` builds a pure ordered preboot PUT plan and applies it before
+`InstanceStart`: machine config, boot source, shared read-only rootfs drive,
+per-VM rootfs overlay drive, optional workspace scratch drive, then vsock.
+Outbound NAT is rejected in v0.1 before this plan is built, so there is no NIC
+PUT in v0.1. After the plan succeeds and before `InstanceStart`, the launch
+path writes `<run_dir>/boot-identity.json` from the identity admitted by
+`m80-preflight`. See `docs/behaviors/lifecycle/preboot-wiring.md`.
+
+### Start and readiness
+
+Cold launch starts Firecracker with `InstanceAction::InstanceStart` and waits
+for guestd readiness through an inverted host listener at
+`<vsock.sock>_<READY_PORT_DEFAULT>`, not by tailing the serial console. Guestd
+connects to that listener and writes the m80 protocol-version byte; the host
+then opens the normal exec channel on guest port 9001 before returning
+`RunningSandbox`. Timeout maps to `FcError::GuestdReadyTimeout`. See
+`docs/behaviors/lifecycle/start-and-ready.md`.
+
+### Stop
+
+`RunningSandbox::stop` is architecture-independent in v0.1: it sends
+`ShutdownRequest` to guestd over vsock, then SIGKILLs the Firecracker process
+after the RPC returns or fails. `RunningSandbox::force_kill` skips the guest RPC
+and SIGKILLs both Firecracker and jailer pids. Both methods consume the running
+handle, so repeated stop is prevented by the type-state API rather than handled
+as a runtime retry. See `docs/behaviors/lifecycle/graceful-stop.md`.
+
+### Delete and recovery
+
+`StoppedSandbox::delete` removes the entire per-VM run directory and treats an
+already-missing run-dir as clean. Recovery is the explicit
+`Backend::recover_stale_run_root()` pass: live `ownership.lock` directories are
+skipped, `.preserved/` triage archives are skipped, clear orphan directories
+are reaped, orphaned live jail pids are killed before removal, and ambiguous
+jailer or ownership-lock state is preserved. See
+`docs/behaviors/lifecycle/delete-and-recovery.md`,
+`docs/behaviors/cleanup/idempotent-teardown.md`, and
+`docs/behaviors/concurrency/stale-detection.md`.
+
 ### Concurrency / admission
 
 `Backend::admit().launch()` acquires one slot from the admission
 semaphore (sized by `M80_MAX_CONCURRENT_VMS`, default 8). The permit is
-held for the lifetime of the sandbox and dropped on `delete()`.
+held for the lifetime of the sandbox and dropped on `delete()` or
+`preserve_for_triage()`. Admission is single-host scope; m80 does not do
+multi-host placement. See `docs/behaviors/concurrency/admission.md`.
 
 ### Configuration
 

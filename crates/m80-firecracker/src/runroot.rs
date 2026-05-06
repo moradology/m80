@@ -15,6 +15,17 @@ struct OwnershipRecord {
     started_at_ms: u64,
 }
 
+/// Liveness classification for one run directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RunDirLiveness {
+    /// The ownership marker points at a live host process.
+    Live,
+    /// No ownership marker exists, or it points at a dead process.
+    Dead,
+    /// An ownership marker exists but cannot be parsed.
+    Ambiguous,
+}
+
 /// File name of the per-VM ownership marker. Public because m80-cli walks
 /// run-dirs externally and needs the same constant for liveness checks.
 pub const OWNERSHIP_LOCK: &str = "ownership.lock";
@@ -33,14 +44,18 @@ pub(crate) fn write_ownership_lock(run_dir: &Path) -> Result<LeaseGuard, FcError
 
     // Check for a pre-existing lock from another live process.
     if lock_path.exists() {
-        if let Ok(existing) = read_ownership_lock(&lock_path) {
-            if pid_is_alive(existing.pid) {
-                return Err(FcError::Config(format!(
-                    "run-dir {} already owned by pid {}",
-                    run_dir.display(),
-                    existing.pid
-                )));
-            }
+        let existing = read_ownership_lock(&lock_path).map_err(|()| {
+            FcError::Config(format!(
+                "run-dir {} has an ambiguous ownership lock",
+                run_dir.display()
+            ))
+        })?;
+        if pid_is_alive(existing.pid) {
+            return Err(FcError::Config(format!(
+                "run-dir {} already owned by pid {}",
+                run_dir.display(),
+                existing.pid
+            )));
         }
     }
 
@@ -102,15 +117,15 @@ impl std::fmt::Debug for LeaseGuard {
     }
 }
 
-/// Inspect a run-dir's ownership lock and return `true` if the recorded PID
-/// is still alive (the run-dir is actively owned).
-pub(crate) fn run_dir_is_live(run_dir: &Path) -> bool {
+/// Inspect a run-dir's ownership lock.
+pub(crate) fn run_dir_liveness(run_dir: &Path) -> RunDirLiveness {
     let lock_path = run_dir.join(OWNERSHIP_LOCK);
     if !lock_path.exists() {
-        return false;
+        return RunDirLiveness::Dead;
     }
     match read_ownership_lock(&lock_path) {
-        Ok(record) => pid_is_alive(record.pid),
-        Err(()) => false,
+        Ok(record) if pid_is_alive(record.pid) => RunDirLiveness::Live,
+        Ok(_) => RunDirLiveness::Dead,
+        Err(()) => RunDirLiveness::Ambiguous,
     }
 }

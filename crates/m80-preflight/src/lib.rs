@@ -9,10 +9,13 @@ use std::io;
 use std::path::PathBuf;
 
 use caps::Capability;
+use caps::CapsHashSet;
 use serde::{Deserialize, Serialize};
 
 use m80_image_manifest::{Manifest, ManifestError};
 
+mod artifacts;
+mod binary;
 mod checks;
 mod table;
 
@@ -28,6 +31,28 @@ pub const REQUIRED_CAPABILITIES: &[Capability] = &[
     Capability::CAP_FOWNER,
     Capability::CAP_KILL,
 ];
+
+/// Classify process privilege from euid and effective Linux capabilities.
+pub fn classify_privilege(
+    euid: u32,
+    effective: &CapsHashSet,
+) -> Result<PrivilegeStatus, PreflightError> {
+    if euid == 0 {
+        return Ok(PrivilegeStatus::Root);
+    }
+
+    let missing_caps: Vec<_> = REQUIRED_CAPABILITIES
+        .iter()
+        .filter(|cap| !effective.contains(cap))
+        .copied()
+        .collect();
+
+    if !missing_caps.is_empty() {
+        return Err(PreflightError::PrivilegeUnavailable { missing_caps });
+    }
+
+    Ok(PrivilegeStatus::CapabilityBearing)
+}
 
 /// How m80 has its required privilege on this host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +104,15 @@ impl Discovery {
     }
 }
 
+pub use artifacts::{
+    verify_artifacts, ArtifactPreflight, ArtifactPreflightConfig, DEFAULT_ARTIFACT_DIR,
+    DEFAULT_RUN_ROOT, ENV_ARTIFACT_DIR, ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE,
+    ENV_RUN_ROOT, MIN_RUN_ROOT_FREE_BYTES, REQUIRED_STORAGE_HELPERS,
+};
+pub use binary::{
+    discover_binaries, BinaryDiscovery, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN,
+    DEFAULT_JAILER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN,
+};
 pub use checks::run;
 
 /// Errors surfaced by preflight. Each variant carries actionable hint text
@@ -172,6 +206,19 @@ pub enum PreflightError {
          alongside firecracker) or set M80_JAILER_BIN to the binary path"
     )]
     JailerBinaryNotFound,
+
+    /// A host artifact path was present but was not absolute.
+    #[error(
+        "{kind} path is not absolute: {}\n\
+         hint: set the corresponding M80_* path env var to an absolute host path",
+        path.display()
+    )]
+    NonAbsolutePath {
+        /// Artifact class, e.g. `kernel` or `rootfs`.
+        kind: String,
+        /// Offending path.
+        path: PathBuf,
+    },
 
     /// No `vmlinux-*` discovered.
     #[error(

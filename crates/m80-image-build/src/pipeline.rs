@@ -110,7 +110,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
             GUEST_MOUNT_PATH
         ),
         format!(
-            "9. mkdir <mount>{} + enable units in multi-user.target.wants/",
+            "9. mkdir <mount>{} + enable guestd in basic.target.wants/ and workspace.mount in multi-user.target.wants/",
             GUEST_WORKSPACE_DIR
         ),
         "10. Unmount".to_string(),
@@ -480,3 +480,6 @@ pub(crate) fn set_executable(path: &Path) -> anyhow::Result<()> {
 pub(crate) fn set_executable(_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

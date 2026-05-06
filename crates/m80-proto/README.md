@@ -56,6 +56,15 @@ The load-bearing wire invariants — the things consumers cannot derive from
   it is not modeled as separate stdout and stderr. All frames carry the same
   opaque `Envelope::request_id`. See
   `docs/behaviors/wire-protocol/pty.md`.
+- **File operations are direct guest verbs.** `file_read`, `file_write`,
+  `file_list`, `file_stat`, `file_remove`, and the chunked write
+  `file_write_begin` / `file_write_chunk` / `file_write_commit` sequence
+  move bytes without spawning a shell. Responses carry `Option<FileError>`
+  with `NotFound`, `PermissionDenied`, `IsADirectory`, `NotADirectory`,
+  `SymlinkRejected`, `TooLarge`, or `Io`. `FileRead` defaults to
+  `FILE_READ_LIMIT_DEFAULT` (16 MiB) and reports `truncated`; chunked write
+  returns an upload id and acks each chunk. See
+  `docs/design/wire-fops.md`.
 
 ## Non-goals
 
@@ -75,3 +84,12 @@ The load-bearing wire invariants — the things consumers cannot derive from
 ## Dependencies
 
 `serde`, `serde_json`, `base64`, `thiserror`. None of the other m80 crates.
+
+## Public Surface
+
+File-op exports: `FileReadRequest/Response`, `FileWriteRequest/Response`,
+`FileListRequest/Response`, `FileStatRequest/Response`,
+`FileRemoveRequest/Response`, `FileWriteBeginRequest/Response`,
+`FileWriteChunkRequest/Response`, `FileWriteCommitRequest/Response`,
+`FileError`, `FileKind`, `DirEntry`, `FileStat`, `FILE_READ_LIMIT_DEFAULT`,
+and their `PAYLOAD_KIND_*` constants.

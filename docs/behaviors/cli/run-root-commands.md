@@ -34,8 +34,8 @@ JSON contents for known `.json` files when they are present:
 - `cgroup-path.txt`
 - `boot-identity.json`
 
-`boot-identity.json` is reserved for snapshot/restore identity and may be absent
-in v0.1.
+`boot-identity.json` is written after preboot wiring succeeds. It may be absent
+for older run directories or launches that failed before phase 11c.
 
 ## Cleanup Boundary
 

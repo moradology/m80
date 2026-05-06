@@ -5,7 +5,7 @@ use std::io;
 use crate::error::JailerError;
 use crate::materialized::MaterializedJail;
 use crate::types::{
-    chroot_path, BindMode, JailerConfig, JailerState, Plan, PlanStep, JAILER_PLAN_FILE,
+    jail_root_path, BindMode, JailerConfig, JailerState, Plan, PlanStep, JAILER_PLAN_FILE,
     JAILER_STATE_FILE,
 };
 
@@ -33,7 +33,7 @@ impl Plan {
             }
         }
 
-        let jail_root = chroot_path(&config.run_dir, &config.firecracker_bin);
+        let jail_root = jail_root_path(&config.run_dir, &config.firecracker_bin);
         let mut steps = Vec::new();
 
         // Step 1: create the jail root.
@@ -86,7 +86,7 @@ impl Plan {
         use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
         use nix::unistd::mkdir;
 
-        let jail_root = chroot_path(&self.config.run_dir, &self.config.firecracker_bin);
+        let jail_root = jail_root_path(&self.config.run_dir, &self.config.firecracker_bin);
 
         // Pre-create the two intermediate dirs jailer expects to exist
         // (`<run_dir>/<exec basename>/` and `<run_dir>/<exec basename>/<id>/`)

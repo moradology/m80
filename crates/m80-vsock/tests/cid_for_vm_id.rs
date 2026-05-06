@@ -13,12 +13,16 @@ fn different_vm_ids_yield_different_cids() {
 }
 
 #[test]
-fn cid_never_below_reserved_range() {
+fn cid_never_uses_reserved_range() {
     for id in &["vm-alpha", "vm-beta", "vm-gamma", "a", "z", "", "0000"] {
         let cid = cid_for_vm_id(id);
         assert!(
             cid >= 3,
             "cid_for_vm_id({id:?}) = {cid} is below the minimum safe value of 3"
+        );
+        assert!(
+            cid < u32::MAX,
+            "cid_for_vm_id({id:?}) = {cid} collides with VMADDR_CID_ANY"
         );
     }
 }
