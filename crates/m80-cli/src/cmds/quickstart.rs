@@ -182,6 +182,8 @@ fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {
         .map_err(|e| FcError::Config(format!("resolving current m80 binary: {e}")))?;
     let status = Command::new(current)
         .arg("run")
+        .arg("--egress")
+        .arg("none")
         .arg("--")
         .arg("echo")
         .arg("hello")
