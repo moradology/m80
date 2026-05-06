@@ -735,6 +735,7 @@ dependencies = [
 name = "m80-observability"
 version = "0.0.0"
 dependencies = [
+ "m80-proto",
  "serde",
  "serde_json",
  "tempfile",

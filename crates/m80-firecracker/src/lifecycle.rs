@@ -3,6 +3,7 @@
 
 mod exec;
 mod fileops;
+mod metrics;
 mod stopped;
 
 use std::path::{Path, PathBuf};

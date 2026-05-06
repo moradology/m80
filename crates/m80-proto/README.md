@@ -65,6 +65,11 @@ The load-bearing wire invariants — the things consumers cannot derive from
   `FILE_READ_LIMIT_DEFAULT` (16 MiB) and reports `truncated`; chunked write
   returns an upload id and acks each chunk. See
   `docs/design/wire-fops.md`.
+- **Guest metrics are fixed-shape.** `metrics_request` has an empty payload;
+  `metrics_response` carries typed CPU tick counters from `/proc/stat`, memory
+  gauges from `/proc/meminfo`, and guestd request/error counters. There is no
+  free-form key/value map. See
+  `docs/behaviors/observability/guest-metrics-vsock.md`.
 
 ## Non-goals
 
@@ -93,3 +98,7 @@ File-op exports: `FileReadRequest/Response`, `FileWriteRequest/Response`,
 `FileWriteChunkRequest/Response`, `FileWriteCommitRequest/Response`,
 `FileError`, `FileKind`, `DirEntry`, `FileStat`, `FILE_READ_LIMIT_DEFAULT`,
 and their `PAYLOAD_KIND_*` constants.
+
+Guest metrics exports: `MetricsRequest`, `MetricsResponse`,
+`GuestCpuMetrics`, `GuestMemMetrics`, and
+`PAYLOAD_KIND_METRICS_REQUEST` / `PAYLOAD_KIND_METRICS_RESPONSE`.

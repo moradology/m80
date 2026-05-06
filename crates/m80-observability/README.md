@@ -66,6 +66,10 @@ adapter, not below.
   renders the standard exposition format. **Rendering only** — no
   embedded HTTP server. Hosting the `/metrics` endpoint is the
   deployer's job.
+- `OpsMetrics::guest` optionally carries one `m80_proto::MetricsResponse`
+  sampled from a running VM. When present, `render_prometheus` emits
+  `m80_guest_cpu_*`, `m80_guest_mem_*`, `m80_guest_requests_total`, and
+  `m80_guest_errors_total`.
 
 ## Public surface
 
@@ -91,6 +95,7 @@ adapter, not below.
 
 ## Dependencies
 
+- `m80-proto`.
 - `serde`, `serde_json`.
 - `thiserror`.
 - `tempfile` in tests.
@@ -108,4 +113,6 @@ adapter, not below.
 - Probe classification: a fixture run-root with each {Healthy,
   Degraded, Stuck, Exited} layout produces the expected record kind.
 - Rollup determinism: same probe input → same `HealthSnapshot`.
-- Prometheus exposition format: rendered text contains gauge families only.
+- Prometheus exposition format: rendered text contains VM health gauges,
+  operational gauges, and guest-side counter/gauge families when a guest sample
+  is present.

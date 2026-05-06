@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use m80_proto::MetricsResponse;
+
 use crate::{ObservabilityError, VmHealth, VmProbeRecord};
 
 /// Aggregated rollup of probe records.
@@ -26,6 +28,9 @@ pub struct HealthSnapshot {
 pub struct OpsMetrics {
     /// Number of VMs the metrics span.
     pub vm_count: u32,
+    /// Guest metrics sampled from one running VM at scrape time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest: Option<MetricsResponse>,
 }
 
 /// Aggregate probe records into a [`HealthSnapshot`].

@@ -1,6 +1,7 @@
 //! Wire types: envelope, exec request/response, status, timing, handshake.
 
 mod fileops;
+mod metrics;
 mod pty;
 mod streaming;
 
@@ -18,6 +19,10 @@ pub use fileops::{
     PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE, PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST,
     PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_REQUEST,
     PAYLOAD_KIND_FILE_WRITE_RESPONSE,
+};
+pub use metrics::{
+    GuestCpuMetrics, GuestMemMetrics, MetricsRequest, MetricsResponse,
+    PAYLOAD_KIND_METRICS_REQUEST, PAYLOAD_KIND_METRICS_RESPONSE,
 };
 pub use pty::{
     PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,

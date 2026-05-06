@@ -42,10 +42,11 @@ Keeping the guest small has direct benefits:
   emit a structured ready log containing `m80_proto::READY_MARKER_DEFAULT`,
   connect back to the host ready port, then loop on `accept()`.
 - On each accepted connection:
-  1. Read one `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | ShutdownRequest>`
+  1. Read one
+     `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | ShutdownRequest>`
      (fail closed on version mismatch).
-  2. Spawn the child process per the request (argv + optional cwd +
-     optional env).
+  2. For `ExecRequest` / `PtyRequest`, spawn the child process per the request
+     (argv + optional cwd + optional env).
   3. If `ExecRequest::streaming == false`, capture stdout/stderr to
      per-stream 1 MiB buffers; if either cap is hit, the response's
      `truncated` field is set to `Some(true)`.
@@ -59,13 +60,18 @@ Keeping the guest small has direct benefits:
   6. If the request is a file-op verb, run it directly in guestd:
      read/write/list/stat/remove a path, or run the chunked upload
      begin/chunk/commit sequence on the same connection.
-  7. Apply the request's `timeout_ms` budget; on expiry, terminate the child
-     process group.
-  8. Reap, build the terminal response, write it back as one or more
-     `m80-proto` envelopes.
-  9. Sync filesystems (`sync(2)`) before close so post-stop change
-     extraction sees the final state.
-  10. Close.
+  7. If the request is `MetricsRequest`, read `/proc/stat` and
+     `/proc/meminfo`, attach guestd-local request/error counters, and return
+     `MetricsResponse`.
+  8. For exec / PTY, apply the request's `timeout_ms` budget; on expiry,
+     terminate the child process group.
+  9. For exec / PTY, reap, build the terminal response, and write it back as
+     one or more `m80-proto` envelopes. Direct file-op and metrics requests
+     write their direct response without spawning a child.
+  10. Exec, PTY, file-op, and shutdown paths sync filesystems before close so
+     post-stop change extraction sees the final state. Metrics is read-only and
+     does not force a filesystem sync.
+  11. Close.
 - Concurrent connections per VM are **not supported in v0.1**. The
   daemon serializes (`accept()` returns one at a time, processes,
   closes, accepts again).
@@ -162,6 +168,14 @@ Behavior details:
 
 - `docs/behaviors/wire-protocol/pty.md`
 - `docs/behaviors/cli/interactive-pty.md`
+
+### Metrics fields
+
+Metrics are direct guestd handlers, not shell commands. `MetricsRequest {}` is
+served on demand from procfs and guestd-local counters. `MetricsResponse`
+contains fixed-shape CPU tick counters, memory byte gauges, and
+`requests_total` / `errors_total`. See
+`docs/behaviors/observability/guest-metrics-vsock.md`.
 
 ### File-op fields
 

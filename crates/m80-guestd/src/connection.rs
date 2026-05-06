@@ -22,6 +22,7 @@
 //! (enforced by `RunningSandbox`'s `&mut self` API on the host).
 
 mod fileops;
+mod metrics;
 mod pty;
 mod streaming;
 
@@ -79,6 +80,7 @@ fn unix_ms_now() -> u64 {
 /// - `exec_request` (the v0.1 path): spawn, capture, respond, sync.
 /// - `cancel_request`: look up in-flight exec by `request_id`, SIGKILL, ack.
 /// - `shutdown_request`: sync, send ack, return [`ConnectionOutcome::Shutdown`].
+/// - `metrics_request`: sample guest procfs and guestd-local counters.
 /// - any other kind: respond with a Failed envelope and `Continue`.
 ///
 /// On any error (malformed frame, spawn failure, …) an `ExecResponse` with
@@ -112,6 +114,7 @@ where
     let raw: Envelope<serde_json::Value> = match read_frame(&mut reader) {
         Ok(env) => env,
         Err(e) => {
+            metrics::record_error();
             // Malformed frame: try to send a Failed response, then close.
             guest_log::warn(GuestLogPhase::Exec, None, format!("malformed frame: {e:#}"));
             let timing = failed_timing(received_at);
@@ -121,6 +124,7 @@ where
             return Ok(ConnectionOutcome::Continue);
         }
     };
+    metrics::record_request();
 
     match raw.kind.as_str() {
         PAYLOAD_KIND_EXEC_REQUEST => {
@@ -132,7 +136,9 @@ where
         PAYLOAD_KIND_CANCEL_REQUEST => handle_cancel_no_exec(raw, &mut writer),
         PAYLOAD_KIND_SHUTDOWN_REQUEST => handle_shutdown(raw, &mut writer, received_at),
         kind if fileops::is_fileop_kind(kind) => fileops::handle_fileop(raw, reader, &mut writer),
+        kind if metrics::is_metrics_kind(kind) => metrics::handle_metrics(raw, reader, &mut writer),
         other => {
+            metrics::record_error();
             guest_log::warn(
                 GuestLogPhase::Exec,
                 raw.request_id.as_deref(),
@@ -171,6 +177,7 @@ where
     let req: ExecRequest = match serde_json::from_value(raw.payload) {
         Ok(r) => r,
         Err(e) => {
+            metrics::record_error();
             guest_log::warn(
                 GuestLogPhase::Exec,
                 request_id.as_deref(),

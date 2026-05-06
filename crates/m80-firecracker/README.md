@@ -93,6 +93,10 @@ mode does not expose separated stdout/stderr streams.
 guest `FileError` responses to `FcError::FileOp`; callers do not need to
 spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
 
+`RunningSandbox::guest_metrics()` sends a direct `MetricsRequest` to
+m80-guestd and returns the fixed-shape guest CPU, memory, and daemon counter
+snapshot without spawning a guest process.
+
 ### Public lifecycle methods
 
 | Method | Signature | Description |
@@ -108,6 +112,7 @@ spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
 | `RunningSandbox::stat_file` | `(&mut self, path) -> Result<FileStat, FcError>` | Stat one guest path without following final symlink. |
 | `RunningSandbox::remove_file` | `(&mut self, path) -> Result<(), FcError>` | Remove one non-directory guest path. |
 | `RunningSandbox::upload_file_chunked` | `(&mut self, path, mode, reader, chunk_size) -> Result<u64, FcError>` | Upload via begin/chunk/commit on one vsock connection. |
+| `RunningSandbox::guest_metrics` | `(&mut self) -> Result<MetricsResponse, FcError>` | Read guest CPU, memory, and guestd counter metrics over vsock. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
 | `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
 
