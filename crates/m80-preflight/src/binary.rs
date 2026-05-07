@@ -44,16 +44,6 @@ impl BinaryDiscoveryConfig {
     }
 }
 
-impl Default for BinaryDiscoveryConfig {
-    fn default() -> Self {
-        Self {
-            firecracker_bin: PathBuf::from(DEFAULT_FIRECRACKER_BIN),
-            jailer_bin: PathBuf::from(DEFAULT_JAILER_BIN),
-            expected_firecracker_version: None,
-        }
-    }
-}
-
 /// Resolved binary paths and the probed Firecracker version.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinaryDiscovery {
@@ -66,9 +56,7 @@ pub struct BinaryDiscovery {
 }
 
 /// Resolve Firecracker and jailer binaries and fail closed on version mismatch.
-pub fn discover_binaries(
-    config: &BinaryDiscoveryConfig,
-) -> Result<BinaryDiscovery, PreflightError> {
+pub fn discover_binaries(config: BinaryDiscoveryConfig) -> Result<BinaryDiscovery, PreflightError> {
     if !config.firecracker_bin.exists() {
         return Err(PreflightError::FirecrackerBinaryNotFound);
     }
@@ -88,9 +76,9 @@ pub fn discover_binaries(
     }
 
     Ok(BinaryDiscovery {
-        firecracker_bin: config.firecracker_bin.clone(),
+        firecracker_bin: config.firecracker_bin,
         firecracker_version: actual_version,
-        jailer_bin: config.jailer_bin.clone(),
+        jailer_bin: config.jailer_bin,
     })
 }
 
@@ -110,9 +98,9 @@ fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> 
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let first_line = stdout.lines().next().unwrap_or("").trim();
-    Ok(first_line
-        .split_whitespace()
-        .last()
-        .unwrap_or(first_line)
-        .to_string())
+    let version = first_line.split_whitespace().last().unwrap_or("").trim();
+    if version.is_empty() {
+        return Err(PreflightError::InvalidVersionOutput(stdout.into_owned()));
+    }
+    Ok(version.to_string())
 }

@@ -67,7 +67,7 @@ which is the right place for a security review to start.
 - `BinaryDiscoveryConfig { firecracker_bin, jailer_bin,
   expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
   the standalone binary-resolution step.
-- `discover_binaries(&BinaryDiscoveryConfig) -> Result<BinaryDiscovery,
+- `discover_binaries(BinaryDiscoveryConfig) -> Result<BinaryDiscovery,
   PreflightError>`.
 - `BinaryDiscovery { firecracker_bin, firecracker_version, jailer_bin }`.
 - `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
@@ -96,7 +96,8 @@ which is the right place for a security review to start.
   `JailerBinaryNotFound`, `NonAbsolutePath { kind, path }`,
   `KernelNotFound`, `RootfsNotFound`, `Manifest(m80_image_manifest::ManifestError)`,
   `RunRootUnavailable { reason: String }` (covers both missing-dir and
-  insufficient-space), `StorageHelperMissing(String)`, `Io(io::Error)`.
+  insufficient-space), `StorageHelperMissing(String)`,
+  `InvalidVersionOutput(String)`, `Io(io::Error)`.
 
 ## Non-goals
 
@@ -112,7 +113,7 @@ which is the right place for a security review to start.
 
 - `m80-image-manifest` — for manifest validation.
 - `caps` — for reading the process's effective Linux capability set.
-- `serde`, `thiserror`, `tracing`, `nix`.
+- `thiserror`, `nix`.
 
 ## Tests
 

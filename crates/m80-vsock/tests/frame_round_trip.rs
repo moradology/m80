@@ -3,10 +3,12 @@
 //! We send an `Envelope<ExecRequest>` from the server side after the
 //! handshake, and receive it via `Channel::recv`.
 
+mod common;
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 
-use tempfile::tempdir;
+use tempfile::TempDir;
 
 use m80_proto::{
     CancelRequest, Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming,
@@ -26,41 +28,6 @@ fn sample_request() -> ExecRequest {
     }
 }
 
-#[test]
-fn cloned_sender_writes_control_frame_on_same_connection() {
-    let dir = tempdir().unwrap();
-    let uds_path = dir.path().join("vsock.sock");
-
-    let listener = UnixListener::bind(&uds_path).unwrap();
-
-    let server = std::thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
-        let mut reader = BufReader::new(stream);
-
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        assert!(line.starts_with("CONNECT "));
-        reader.get_mut().write_all(b"OK 22222\n").unwrap();
-
-        let received: Envelope<serde_json::Value> = m80_proto::read_frame(&mut reader).unwrap();
-        assert_eq!(received.kind, PAYLOAD_KIND_CANCEL_REQUEST);
-        let cancel: CancelRequest = serde_json::from_value(received.payload).unwrap();
-        assert_eq!(cancel.request_id, "req-1");
-    });
-
-    let channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap();
-    let mut sender = channel.try_clone_sender().unwrap();
-    sender
-        .send(&Envelope::new(CancelRequest {
-            request_id: "req-1".to_owned(),
-        }))
-        .unwrap();
-    sender.close().unwrap();
-    drop(channel);
-
-    server.join().unwrap();
-}
-
 fn sample_response() -> ExecResponse {
     ExecResponse {
         status: ExecStatus::Completed,
@@ -77,24 +44,60 @@ fn sample_response() -> ExecResponse {
     }
 }
 
+/// Complete the Firecracker UDS handshake on the server side and return
+/// the buffered reader for further frame exchange.
+fn accept_and_handshake(
+    listener: &UnixListener,
+    ok_port: u32,
+) -> BufReader<std::os::unix::net::UnixStream> {
+    let (stream, _) = listener.accept().unwrap();
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    assert!(line.starts_with("CONNECT "));
+    let reply = format!("OK {ok_port}\n");
+    reader.get_mut().write_all(reply.as_bytes()).unwrap();
+    reader
+}
+
+#[test]
+fn cloned_sender_writes_control_frame_on_same_connection() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vsock.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+
+    let server = std::thread::spawn(move || {
+        let mut reader = accept_and_handshake(&listener, 22222);
+
+        let received: Envelope<serde_json::Value> = m80_proto::read_frame(&mut reader).unwrap();
+        assert_eq!(received.kind, PAYLOAD_KIND_CANCEL_REQUEST);
+        let cancel: CancelRequest = serde_json::from_value(received.payload).unwrap();
+        assert_eq!(cancel.request_id, "req-1");
+    });
+
+    let channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
+    let mut sender = channel.try_clone_sender().unwrap();
+    sender
+        .send(&Envelope::new(CancelRequest {
+            request_id: "req-1".to_owned(),
+        }))
+        .unwrap();
+    sender.close().unwrap();
+    drop(channel);
+
+    server.join().unwrap();
+}
+
 /// Client sends a request; server echoes it back as a response envelope;
 /// client receives and verifies the response.
 #[test]
 fn send_recv_envelope_round_trips() {
-    let dir = tempdir().unwrap();
-    let uds_path = dir.path().join("vsock.sock");
-
-    let listener = UnixListener::bind(&uds_path).unwrap();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vsock.sock");
+    let listener = UnixListener::bind(&path).unwrap();
 
     let server = std::thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
-        let mut reader = BufReader::new(stream);
-
-        // Complete the Firecracker handshake.
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        assert!(line.starts_with("CONNECT "));
-        reader.get_mut().write_all(b"OK 22222\n").unwrap();
+        let mut reader = accept_and_handshake(&listener, 22222);
 
         // Receive a frame from the client.
         let received: Envelope<ExecRequest> = m80_proto::read_frame(&mut reader).unwrap();
@@ -105,7 +108,7 @@ fn send_recv_envelope_round_trips() {
         m80_proto::write_frame(reader.get_mut(), &response).unwrap();
     });
 
-    let mut channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap();
+    let mut channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
 
     // Send request.
     let request = Envelope::new(sample_request());

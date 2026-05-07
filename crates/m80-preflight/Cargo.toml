@@ -12,9 +12,7 @@ workspace = true
 
 [dependencies]
 m80-image-manifest.workspace = true
-serde.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 nix.workspace = true
 caps.workspace = true
 

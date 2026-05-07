@@ -1,32 +1,15 @@
-use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::net::UnixListener;
-use std::time::Duration;
+mod common;
 
-use tempfile::tempdir;
-
+use common::{HandshakeBehavior, spawn_fake_firecracker_uds};
 use m80_vsock::{Channel, VsockError, GUEST_PORT_DEFAULT};
+use tempfile::tempdir;
 
 #[test]
 fn successful_handshake_opens_channel() {
-    let dir = tempdir().unwrap();
-    let uds_path = dir.path().join("vsock.sock");
+    let (_dir, path, server) =
+        spawn_fake_firecracker_uds(HandshakeBehavior::OkThenHold { port: 12345, hold_ms: 50 });
 
-    let listener = UnixListener::bind(&uds_path).unwrap();
-
-    let uds_clone = uds_path.clone();
-    let server = std::thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        assert_eq!(line, format!("CONNECT {GUEST_PORT_DEFAULT}\n"));
-        reader.get_mut().write_all(b"OK 12345\n").unwrap();
-        // Keep server end open briefly so the client can succeed.
-        std::thread::sleep(Duration::from_millis(50));
-        drop(uds_clone);
-    });
-
-    let channel = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap();
+    let channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
     channel.close().unwrap();
 
     server.join().unwrap();
@@ -34,25 +17,16 @@ fn successful_handshake_opens_channel() {
 
 #[test]
 fn bad_handshake_reply_returns_handshake_failed() {
-    let dir = tempdir().unwrap();
-    let uds_path = dir.path().join("vsock.sock");
+    let (_dir, path, server) = spawn_fake_firecracker_uds(HandshakeBehavior::BadReply);
 
-    let listener = UnixListener::bind(&uds_path).unwrap();
-
-    std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        // Read and discard the CONNECT line.
-        let mut buf = [0u8; 64];
-        let _ = stream.read(&mut buf);
-        stream.write_all(b"ERROR nope\n").unwrap();
-    });
-
-    let err = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap_err();
+    let err = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap_err();
 
     assert!(
         matches!(err, VsockError::HandshakeFailed),
         "expected HandshakeFailed, got {err:?}"
     );
+
+    server.join().unwrap();
 }
 
 #[test]

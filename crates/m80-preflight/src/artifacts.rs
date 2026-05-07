@@ -68,19 +68,6 @@ impl ArtifactPreflightConfig {
     }
 }
 
-impl Default for ArtifactPreflightConfig {
-    fn default() -> Self {
-        Self {
-            kernel_image: None,
-            artifact_dir: PathBuf::from(DEFAULT_ARTIFACT_DIR),
-            rootfs_image: None,
-            kernel_kind: None,
-            run_root: PathBuf::from(DEFAULT_RUN_ROOT),
-            helper_search_path: env::var_os("PATH"),
-        }
-    }
-}
-
 /// Validated boot artifacts and host paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactPreflight {

@@ -32,7 +32,7 @@ pub fn run() -> Result<Discovery, PreflightError> {
     let privilege = check_privilege(&mut report)?;
 
     // 5-6. Firecracker and jailer binaries
-    let binaries = discover_binaries(&BinaryDiscoveryConfig::from_env())?;
+    let binaries = discover_binaries(BinaryDiscoveryConfig::from_env())?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
         passed: true,
@@ -110,22 +110,25 @@ fn check_kvm(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
     }
 
     // Write-access check: open O_WRONLY; close immediately.
-    // EACCES → permission denied → fail; other errors (EBUSY etc.) are not
-    // access-denial and we don't block on them.
+    // EACCES -> permission denied -> fail; other errors (EBUSY, ENXIO, etc.) are not
+    // access-denial and we don't block on them, but we record them in the detail.
     let result = fs::OpenOptions::new().write(true).open(&kvm);
 
-    match result {
-        Ok(f) => drop(f),
+    let kvm_detail = match result {
+        Ok(f) => {
+            drop(f);
+            format!("{} present and writable", kvm.display())
+        }
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
             return Err(PreflightError::KvmNotWritable { path: kvm });
         }
-        Err(_) => {}
-    }
+        Err(e) => format!("{} present (open warning: {e})", kvm.display()),
+    };
 
     report.push(CheckRow {
         label: "KVM".to_string(),
         passed: true,
-        detail: format!("{} present and writable", kvm.display()),
+        detail: kvm_detail,
     });
     Ok(())
 }

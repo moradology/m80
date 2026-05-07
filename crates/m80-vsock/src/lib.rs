@@ -69,6 +69,45 @@ impl std::fmt::Debug for Channel {
     }
 }
 
+impl std::fmt::Debug for ChannelSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelSender")
+            .field("host_uds", &self.host_uds)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Write `envelope` to `stream`, emitting a debug-wire trace if enabled.
+///
+/// Used by both [`Channel::send`] and [`ChannelSender::send`].
+fn send_envelope<W: Write, T: Serialize>(
+    stream: &mut W,
+    envelope: &Envelope<T>,
+) -> Result<(), VsockError> {
+    if debug_wire::is_enabled("vsock") {
+        // Serialize only when the gate fires to avoid allocation on the default path.
+        if let Ok(bytes) = serde_json::to_vec(envelope) {
+            tracing::trace!(
+                direction = "out",
+                preview = %debug_wire::format_wire_preview(&bytes),
+                "vsock frame"
+            );
+        }
+    }
+    m80_proto::write_frame(stream, envelope)?;
+    Ok(())
+}
+
+/// Emit a drop-teardown warning. Called from both [`Channel`] and
+/// [`ChannelSender`] Drop impls; must not panic.
+fn warn_teardown(host_uds: &Path, context: &str, err: impl std::fmt::Display) {
+    tracing::warn!(
+        path = %host_uds.display(),
+        err = %err,
+        "{context} teardown failed during drop",
+    );
+}
+
 impl Channel {
     /// Connect to `host_uds` and hand-shake to `guest_port`. Readiness is
     /// established by the caller via [`m80_proto::READY_PORT_DEFAULT`]'s
@@ -76,7 +115,7 @@ impl Channel {
     /// opens the exec channel.
     pub fn open_uds_only(host_uds: &Path, guest_port: u32) -> Result<Self, VsockError> {
         let stream = UnixStream::connect(host_uds).map_err(|e| VsockError::ConnectFailed {
-            errno: e.raw_os_error().unwrap_or(0),
+            errno: e.raw_os_error(),
         })?;
 
         stream
@@ -118,18 +157,7 @@ impl Channel {
 
     /// Send one [`Envelope`] over the channel.
     pub fn send<T: Serialize>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError> {
-        if debug_wire::is_enabled("vsock") {
-            // Serialize only when the gate fires to avoid allocation on the default path.
-            if let Ok(bytes) = serde_json::to_vec(envelope) {
-                tracing::trace!(
-                    direction = "out",
-                    preview = %debug_wire::format_wire_preview(&bytes),
-                    "vsock frame"
-                );
-            }
-        }
-        m80_proto::write_frame(&mut self.stream, envelope)?;
-        Ok(())
+        send_envelope(&mut self.stream, envelope)
     }
 
     /// Clone a write-only sender for the same underlying connection.
@@ -189,7 +217,7 @@ impl Channel {
 impl Drop for Channel {
     fn drop(&mut self) {
         if let Err(e) = self.teardown() {
-            tracing::warn!(path = %self.host_uds.display(), err = %e, "vsock connection teardown failed during drop");
+            warn_teardown(&self.host_uds, "vsock connection", e);
         }
     }
 }
@@ -197,17 +225,7 @@ impl Drop for Channel {
 impl ChannelSender {
     /// Send one [`Envelope`] over the cloned write half.
     pub fn send<T: Serialize>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError> {
-        if debug_wire::is_enabled("vsock") {
-            if let Ok(bytes) = serde_json::to_vec(envelope) {
-                tracing::trace!(
-                    direction = "out",
-                    preview = %debug_wire::format_wire_preview(&bytes),
-                    "vsock frame"
-                );
-            }
-        }
-        m80_proto::write_frame(&mut self.stream, envelope)?;
-        Ok(())
+        send_envelope(&mut self.stream, envelope)
     }
 
     /// Flush the cloned sender.
@@ -219,7 +237,7 @@ impl ChannelSender {
 impl Drop for ChannelSender {
     fn drop(&mut self) {
         if let Err(e) = self.stream.flush() {
-            tracing::warn!(path = %self.host_uds.display(), err = %e, "vsock sender teardown failed during drop");
+            warn_teardown(&self.host_uds, "vsock sender", e);
         }
     }
 }
@@ -231,10 +249,11 @@ pub enum VsockError {
     #[error("guestd readiness signal not observed before timeout")]
     NotReady,
     /// Connect to the Firecracker UDS failed.
-    #[error("vsock connect failed (errno={errno})")]
+    #[error("vsock connect failed (errno={errno:?})")]
     ConnectFailed {
-        /// libc errno reported by the connect call.
-        errno: i32,
+        /// libc errno reported by the connect call, or `None` if the OS did
+        /// not surface one.
+        errno: Option<i32>,
     },
     /// The Firecracker UDS-to-vsock handshake was malformed.
     #[error("vsock handshake failed")]
