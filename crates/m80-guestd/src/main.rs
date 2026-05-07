@@ -2,14 +2,13 @@
 //! Behavior captures: bead epic `m80-eb8`.
 
 use std::io::{BufReader, BufWriter, Write};
-use std::os::fd::AsFd;
 
 use anyhow::Context as _;
-use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 use vsock::{VsockListener, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST};
 
 mod connection;
 mod guest_log;
+mod liveness;
 mod pid_one;
 mod uevent;
 
@@ -112,7 +111,11 @@ pub(crate) fn run(args: Args) -> anyhow::Result<()> {
         // v0.1: sequential — process one connection fully before accepting next.
         let reader = BufReader::new(&stream);
         let writer = BufWriter::new(&stream);
-        match connection::handle_connection_with_reader_ready(reader, writer, reader_has_data) {
+        match connection::handle_connection_with_reader_ready(
+            reader,
+            writer,
+            liveness::borrowed_reader_has_data,
+        ) {
             Ok(connection::ConnectionOutcome::Continue) => {}
             Ok(connection::ConnectionOutcome::Shutdown(action)) => {
                 // The ack has already been flushed back to the host. Drop
@@ -132,24 +135,6 @@ pub(crate) fn run(args: Args) -> anyhow::Result<()> {
         }
         if pid_one_mode {
             pid_one::reap_pending();
-        }
-    }
-}
-
-fn reader_has_data(reader: &mut BufReader<&VsockStream>) -> bool {
-    if !reader.buffer().is_empty() {
-        return true;
-    }
-    let mut fds = [PollFd::new(reader.get_ref().as_fd(), PollFlags::POLLIN)];
-    match poll(&mut fds, PollTimeout::ZERO) {
-        Ok(ready) => ready > 0 && fds[0].any().unwrap_or(false),
-        Err(e) => {
-            guest_log::warn(
-                GuestLogPhase::Exec,
-                None,
-                format!("poll failed while checking cancel readability: {e}"),
-            );
-            false
         }
     }
 }

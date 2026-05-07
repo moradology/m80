@@ -91,6 +91,11 @@ Keeping the guest small has direct benefits:
   `AlreadyExited` and the normal exec result continues. The in-flight PID slot
   is recovered through mutex poisoning because it stores only an optional child
   pid; poisoning must not crash guestd.
+- While an exec or PTY request is in flight, guestd checks host-control
+  liveness with `MSG_PEEK | MSG_DONTWAIT`, not `poll(POLLIN)` alone. Buffered
+  bytes, readable socket bytes, and peer FIN all wake the control path; an open
+  socket with no bytes does not. This lets disconnect cleanup run promptly for
+  half-closed vsock connections without consuming a cancel/control frame.
 
 Exec children are started in a fresh process group. Cancel, timeout,
 disconnect/read EOF, and streaming write failure use SIGTERM, wait a bounded
