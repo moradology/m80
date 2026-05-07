@@ -420,14 +420,6 @@ pub struct LoadSnapshotConfig {
 pub enum InstanceAction {
     /// Boot the VM.
     InstanceStart,
-    /// Send Ctrl-Alt-Del — graceful stop on x86_64; unsupported elsewhere.
-    SendCtrlAltDel,
-    /// Flush metrics buffers to the configured fifo.
-    FlushMetrics,
-    /// Pause vCPU execution.
-    Pause,
-    /// Resume vCPU execution.
-    Resume,
 }
 
 /// Errors surfaced by the client. Each variant names the resource that failed
