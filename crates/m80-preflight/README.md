@@ -64,6 +64,7 @@ which is the right place for a security review to start.
 ## Public surface
 
 - `run() -> Result<Discovery, PreflightError>`.
+- `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
 - `BinaryDiscoveryConfig { firecracker_bin, jailer_bin,
   expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
   the standalone binary-resolution step.
@@ -92,6 +93,8 @@ which is the right place for a security review to start.
   `KvmUnavailable { path }`, `KvmNotWritable { path }`,
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
+  `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
+  effective capability set),
   `FirecrackerBinaryNotFound`, `FirecrackerVersionMismatch { expected, actual }`,
   `JailerBinaryNotFound`, `NonAbsolutePath { kind, path }`,
   `KernelNotFound`, `RootfsNotFound`, `Manifest(m80_image_manifest::ManifestError)`,

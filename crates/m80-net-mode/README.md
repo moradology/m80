@@ -22,8 +22,9 @@ It's small. It earns its keep by being the API border between
 
 ## Black-box contract
 
-- The default for any `NetworkPolicy` constructor is `NoEgress`. Egress
-  must be opted into explicitly.
+- Callers must pick a `NetworkPolicy` variant explicitly. There is no
+  `Default` implementation; `NoEgress` is the conservative choice when in
+  doubt. Egress must be opted into explicitly.
 - `resolve(policy: &NetworkPolicy) -> VmNetworkMode` is a **pure,
   infallible** function with no I/O. It does not consult the host, the
   network, or any external state.
@@ -58,7 +59,6 @@ It's small. It earns its keep by being the API border between
 
 ## Tests
 
-- `NetworkPolicy` default is `NoEgress`.
 - `resolve(NoEgress)` returns `VmNetworkMode::NoEgress`.
 - `resolve(OutboundNat { exceptions: [] })` returns `VmNetworkMode::OutboundNat`.
 - `resolve(OutboundNat { exceptions: [...] })` carries exceptions through unchanged.

@@ -52,6 +52,21 @@ impl RunningSandbox {
     /// - `stop()` to tear down the VM (the snapshot is archived; the VM is gone).
     /// - `resume()` (out of scope in v0.1) to continue running from the point of capture.
     ///
+    /// # Note — no compile-time guard against calling `exec` after `capture`
+    ///
+    /// There is no type-system enforcement preventing the caller from calling
+    /// `exec()` on the same `RunningSandbox` after `capture()` returns. The VM
+    /// remains a `RunningSandbox` value, so the borrow checker allows it. In
+    /// practice the call will fail at the Firecracker REST layer because the VM
+    /// is Paused and guestd is suspended — the vsock handshake will time out or
+    /// be refused. The error surface is a `FcError::Vsock` rather than a
+    /// compile-time diagnostic.
+    ///
+    /// A future `PausedSandbox` newtype that wraps the paused VM and exposes
+    /// only `stop()` (and eventually `resume()`) would close this gap at compile
+    /// time. That refactor is deferred; for now, callers must treat `capture()`
+    /// as terminal — either call `stop()` or `force_kill()` immediately after.
+    ///
     /// # Errors
     ///
     /// Returns `FcError::Snapshot` if either REST call fails. The caller
@@ -81,13 +96,14 @@ impl RunningSandbox {
         Ok(())
     }
 
-    /// Four-phase teardown:
+    /// Five-phase teardown (`CLEANUP_PHASE_ORDER`):
     /// 1. `admission_fence` — no new exec accepted (no-op in v0.1).
     /// 2. `bounded_stop` — ask guestd to shut down over vsock, then SIGKILL
     ///    the Firecracker process after the RPC returns or fails.
-    /// 3. Optional `extract_changes` — NOT done here; caller calls
+    /// 3. `extract_changes` (optional) — NOT done here; caller calls
     ///    [`StoppedSandbox::extract_changes`] after receiving the `StoppedSandbox`.
-    /// 4. `release` — foundation resources dropped, permit and scratch moved
+    /// 4. `residue_cleanup` — remove run-root directories and scratch state.
+    /// 5. `release` — foundation resources dropped, permit and scratch moved
     ///    into the returned `StoppedSandbox`.
     pub fn stop(mut self) -> Result<StoppedSandbox, FcError> {
         self.kill_guard.disarm();

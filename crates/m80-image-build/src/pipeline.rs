@@ -3,7 +3,7 @@
 //! Each step is executed in sequence; any failure surfaces with phase context.
 //! With `dry_run = true`, steps are printed to stderr and no I/O is performed.
 //!
-//! The `build_stripped_kernel` function handles the `kernel build --stripped`
+//! The `build_stripped_kernel` function handles the `kernel build`
 //! path: Docker-builds the kernel, runs the container, and copies the output
 //! vmlinux to `kernels/vmlinux-m80-<config-sha>.bin`.
 

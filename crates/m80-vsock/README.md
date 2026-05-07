@@ -53,8 +53,8 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
   same-connection control frames.
 - `cid_for_vm_id(vm_id: &str) -> u32`.
 - `GUEST_PORT_DEFAULT`, re-exported from `m80-proto`.
-- `VsockError`: `NotReady`, `ConnectFailed { errno }`, `HandshakeFailed`,
-  `Io(io::Error)`, `Proto(m80_proto::ProtoError)`.
+- `VsockError`: `NotReady`, `HandshakeFailed`,
+  `Io { path: PathBuf, source: io::Error }`, `Proto(m80_proto::ProtoError)`.
 
 ## Non-goals
 
@@ -96,7 +96,7 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
 - `tests/cid_for_vm_id.rs` checks determinism, reserved-CID avoidance, and
   pinned SHA-256 CID values for stability across hash-function changes.
 - `tests/handshake.rs` checks successful handshake, bad ack to
-  `HandshakeFailed`, and missing UDS to `ConnectFailed`.
+  `HandshakeFailed`, and missing UDS to `Io`.
 - `tests/frame_round_trip.rs` checks envelope round trips and cloned-sender
   same-connection control frames.
 - `tests/drop_cleanup.rs` checks that dropping a `Channel` and calling

@@ -32,7 +32,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   jailed process stdout and stderr to that host file. m80-firecracker
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
   guest serial console survive launch failures and stopped-VM triage.
-- `recover_from_run_dir` reads any prior plan + state and returns
+- `inspect_run_dir` reads any prior plan + state and returns
   `LiveJail | OrphanJail { reap_steps } | NoJail`. The crate does not
   act on the decision; the caller does.
 - The actual chroot path is `<run_dir>/<firecracker basename>/<run_dir basename>/root/`
@@ -45,10 +45,10 @@ hands a config in and gets back a launchable chroot — or a typed error.
 ## Public surface
 
 - `JailerConfig`, including optional `stdio_log`, `Binding { source, dest, mode }`,
-  `BindMode { Ro, Rw, CreateInsideJail }`, `SocketSpec`.
+  `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
-- `recover_from_run_dir`, `RecoveryDecision`.
+- `inspect_run_dir`, `InspectionDecision`.
 - `JailerError`: `BindFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
   `UidGidInvalid`, `Io { path, source }`. Privilege is verified once by
   `m80-preflight`; this crate does not run a per-launch sudo probe.

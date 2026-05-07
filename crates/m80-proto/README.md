@@ -44,8 +44,8 @@ The load-bearing wire invariants — the things consumers cannot derive from
   No `#[non_exhaustive]` escape hatch — wire compat is the contract.
 - **`request_id` is opaque.** The protocol echoes it back unchanged and
   assigns no meaning; pairing is the consumer's job.
-- **Cancel envelope (`cancel_request` / `cancel_ack`).** `CancelRequest`
-  carries the `request_id` to kill; `CancelAck` replies with one of three
+- **Cancel envelope (`cancel_request` / `cancel_response`).** `CancelRequest`
+  carries the `request_id` to kill; `CancelResponse` replies with one of three
   `CancelStatus` outcomes: `Cancelled`, `AlreadyExited`, or `Failed`.
   Shared with the `m80-5vha` streaming-exec epic — these types are defined
   here once; that epic imports without re-declaring.
@@ -89,11 +89,11 @@ Frame sizing: `MAX_FRAME_BYTES`, `PROTOCOL_VERSION`.
 Envelope and traits: `Envelope<T>`, `Payload` (implemented by all payload
 types), `RawEnvelope`.
 
-Core exec types: `ExecRequest`, `ExecResponse`, `ExecExit`, `ExecChunk`,
-`ExecStatus`, `CancelRequest`, `CancelAck`, `CancelStatus`.
+Core exec types: `ExecRequest`, `ExecResponse`, `ExecStdout`, `ExecStderr`,
+`ExecExit`, `ExecStatus`, `CancelRequest`, `CancelResponse`, `CancelStatus`.
 
-PTY types: `PtyRequest`, `PtyExit`, `PtyOutputChunk`, `PtyHostEvent`,
-`PtyInput`, `PtyResize`, `PtyControl`.
+PTY types: `PtyRequest`, `PtyOutput`, `PtyInput`, `PtyResize`, `PtyControl`,
+`PtyExit`.
 
 File-op exports: `FileReadRequest`, `FileReadChunk`,
 `FileReadResponse`, `FileWriteRequest`, `FileWriteResponse`,

@@ -121,9 +121,10 @@ images but adds non-trivial output-parsing surface.
 - `ChangeSet { staged: Vec<PathBuf>, rejected: Vec<Rejection>, total_bytes: u64 }`.
 - `Rejection { path: PathBuf, reason: RejectionReason }`.
 - `RejectionReason`: `Symlink`, `SpecialFile`, `Other(String)`.
-- `StorageError`: `OverlayCreateFailed`, `MkfsFailed`,
+- `StorageError`: `OverlayCreateFailed`,
   `OverlayTemplateCreateFailed`, `OverlayTemplateMismatch`,
-  `OverlayTemplateCloneFailed`, `Mkfs(io::Error)`, `E2fsckFailed { exit, stderr }`,
+  `OverlayTemplateCloneFailed`,
+  `SubprocessFailed { program: String, path: PathBuf, status: std::process::ExitStatus, stderr: String }`,
   `AdmissibilityRefused`, `SwapFailed`,
   `Io { path: PathBuf, source: io::Error }`.
 

@@ -47,15 +47,6 @@ Sequestering it has three benefits:
 
 ### Realization
 
-- `realize(intent: &OutboundIntent, vm_id: &str, run_root: &Path) ->
-  Result<RealizedNetwork, NetError>` performs the full Phase 1–5 pipeline:
-  (1) address allocation, (2) collision detection
-  (`reject_guest_ipv4_collision`, `reject_host_route_collision`),
-  (3) bridge + tap setup, (4) guest network config injection into the VM's
-  rootfs clone, (5) iptables policy installation. Each phase is
-  independently testable; the top-level call composes them. **v0.1 status:**
-  the pipeline is not yet wired in `realize`; callers invoke the phase
-  functions directly.
 - `realize_bridge_and_tap(intent, vm_id, run_root, run_dir)` performs only
   the bridge/TAP setup phase. It writes bridge and per-VM network state
   atomically and uses the real link backend. Callers own parent directory
@@ -120,7 +111,6 @@ Sequestering it has three benefits:
 
 ## Public surface
 
-- `realize(&OutboundIntent, vm_id, run_root) -> Result<RealizedNetwork, NetError>`.
 - `realize_bridge_and_tap(...)` and
   `realize_bridge_and_tap_with_ops(...)` — bridge/TAP setup phase; the
   `_with_ops` variant is the deterministic test seam.
@@ -162,6 +152,12 @@ Sequestering it has three benefits:
   by tests and the real `sysctl`/`iptables` backend.
 - `DnsDiscoveryOps`, `DnsCommandOutput`, and `GuestNetworkConfigOps` —
   host seams for DNS discovery and debugfs-backed guest config writes.
+- `CommandDnsDiscoveryOps` — the real `resolvectl`/`/etc/resolv.conf`
+  backend that implements `DnsDiscoveryOps`.
+- `CommandGuestNetworkConfigOps` — the real `debugfs`-backed backend that
+  implements `GuestNetworkConfigOps`.
+- `NetlinkLinkOps` — the real rtnetlink/TUN backend that implements
+  `LinkOps`.
 - `reject_guest_ipv4_collision(...)` and
   `reject_host_route_collision(...)` — fail-closed collision checks for the
   pure planning phase.

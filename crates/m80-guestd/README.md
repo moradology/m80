@@ -79,7 +79,7 @@ Keeping the guest small has direct benefits:
   Partial output may or may not have been flushed; the response is whatever
   state we observed.
 - On `cancel_request` for the in-flight request id: terminate the child process
-  group, reap the direct child, write `cancel_ack`, and do not write a terminal
+  group, reap the direct child, write `CancelResponse`, and do not write a terminal
   `ExecExit` for that cancelled request. A mismatched or late cancel returns
   `AlreadyExited` and the normal exec result continues.
 
@@ -161,7 +161,7 @@ output is merged terminal output; it is not split into stdout and stderr.
 
 Timeout, `cancel_request`, host disconnect/read EOF, and output write failure
 terminate the PTY child process group with the same SIGTERM/100 ms/SIGKILL
-policy used by pipe streaming. Cancellation writes `cancel_ack` and does not
+policy used by pipe streaming. Cancellation writes `CancelResponse` and does not
 write `PtyExit` for that request.
 
 Behavior details:

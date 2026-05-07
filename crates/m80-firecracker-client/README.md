@@ -38,16 +38,12 @@ without inheriting m80's lifecycle assumptions.
   `DriveWriteFailed`, `VsockWriteFailed`, `InstanceActionFailed`,
   `VmStateWriteFailed`, `SnapshotCreateFailed`, `SnapshotLoadFailed`.
   Each carries the Firecracker fault JSON verbatim.
-- `instance_action(InstanceAction::SendCtrlAltDel)` is callable on any
-  arch but only honored on `x86_64` by Firecracker itself; the client
-  passes through the upstream behavior without arch-checking.
-
 ## Public surface
 
 - `Client::new(uds_path: &Path) -> Result<Client, ClientError>`.
 - One method per Firecracker resource, taking the resource's config
   struct (re-exported from this crate) and returning `Result<(), ClientError>`.
-- `InstanceAction { InstanceStart, SendCtrlAltDel, FlushMetrics, Pause, Resume }`.
+- `InstanceAction { InstanceStart }`.
 - `VmState { Paused, Resumed }` — for `patch_vm_state`.
 - `SnapshotType { Full, Diff }` — for `CreateSnapshotConfig`.
 - `MemBackendType { File, Uffd }` — for `MemBackendConfig`.
@@ -100,9 +96,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
   Firecracker fault body for each resource; asserts the matching typed
   `ClientError::*WriteFailed` variant fires (and `Connect(io::Error)` on
   a missing socket).
-- `tests/instance_action_serialization.rs` — every `InstanceAction`
-  variant serializes to the expected `{"action_type": "<PascalCase>"}`
-  body.
+- `tests/instance_action_serialization.rs` — `InstanceAction::InstanceStart`
+  serializes to the expected `{"action_type": "InstanceStart"}` body.
 - `tests/snapshot.rs` — fixture-server tests for `patch_vm_state`,
   `put_snapshot_create`, and `put_snapshot_load`: URL, required fields,
   optional-field omission, `resume_vm`, `vsock_override`, and 400 error

@@ -784,10 +784,9 @@ fn ready_listener_path(vsock_uds: &Path) -> PathBuf {
 /// `accept()` the inverted-readiness signal from m80-guestd, validate the
 /// protocol-version byte, then open the exec channel.
 ///
-/// The host-local `accept()` poll-loop here is not the muxer-polling race
-/// the original `phase_12b_ready_probe` had. We're polling our own
-/// UnixListener; the muxer only fires once (when guestd does its outbound
-/// connect). No EAGAIN cascade.
+/// The host-local `accept()` poll-loop here is not a muxer-polling race.
+/// We're polling our own UnixListener; the muxer only fires once (when guestd
+/// does its outbound connect). No EAGAIN cascade.
 fn phase_12b_ready_accept(
     ready_listener: &UnixListener,
     ready_path: &Path,

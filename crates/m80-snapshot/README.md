@@ -84,7 +84,7 @@ passing in-jail `/snapshot/...` paths to this crate.
 - `SnapshotPaths { vm_state: PathBuf, mem: PathBuf }` — the two-file
   artifact pair written at capture time.
 - `SnapshotKind` — `Full | Diff`.
-- `CaptureRequest<'a> { fc_socket: &'a Path, paths: SnapshotPaths, kind: SnapshotKind }`.
+- `CaptureRequest { fc_socket: PathBuf, paths: SnapshotPaths, kind: SnapshotKind }`.
 - `RestoreRequest { fc_socket: PathBuf, paths: SnapshotPaths, vsock_uds: PathBuf, resume: bool }`.
 - `SnapshotManifest` — fields alphabetical: `artifact_set_sha256`,
   `artifacts`, `created_at_unix_ms`, `diagnostics_bundle` (optional),
@@ -136,7 +136,7 @@ passing in-jail `/snapshot/...` paths to this crate.
 ## Dependencies
 
 - `m80-firecracker-client` — REST client for Firecracker's API.
-- `serde`, `serde_json`, `sha2`, `hex`, `thiserror`.
+- `serde`, `serde_json`, `sha2`, `thiserror`.
 
 ## Tests
 

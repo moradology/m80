@@ -42,10 +42,11 @@ impl Subtree {
     }
 
     /// Create the per-VM subtree under `m80-firecracker/<vm_id>/`, enable
-    /// cpu/memory/pids controllers in the parent, and enroll
-    /// `jailed.firecracker_pid`. `jailer_pid` is intentionally omitted —
-    /// after `m80-jailer` the two pids are equal (jailer execs into
-    /// firecracker), so writing it would be redundant.
+    /// cpu/memory/pids controllers in the parent, and enroll both
+    /// `jailed.jailer_pid` and `jailed.firecracker_pid`. Both PIDs are
+    /// collected, sorted, and deduped before writing — after `m80-jailer`
+    /// the jailer execs into firecracker so the two values are equal, and
+    /// dedup handles that case correctly without omission.
     pub fn create(
         vm_id: &str,
         jail: &MaterializedJail,

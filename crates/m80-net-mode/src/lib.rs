@@ -10,7 +10,8 @@ use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
 
 /// Caller intent: opt-in network egress with optional bounded private
-/// exceptions. Default for any new construction is [`NetworkPolicy::NoEgress`].
+/// exceptions. Callers must pick a variant explicitly; `NoEgress` is the
+/// conservative choice when in doubt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum NetworkPolicy {

@@ -171,12 +171,11 @@ Public surface:
 | `WarmLease::exec_streaming` | Delegates one streaming exec to the leased `RunningSandbox`, preserving stdout/stderr chunks before terminal exit. |
 | `WarmLease::exec_streaming_with_request_id` | Streaming exec plus temporary caller request-id stamping. |
 | `WarmLease::discard` | Kills and deletes the slot, then starts background refill. `Drop` performs the same discard best-effort. |
-| `BlankVmResetEvidence` | Eight explicit evidence inputs required before a blank VM can ever re-enter `Ready`. |
 
 The first implementation never infers reuse from liveness, process
 handles, socket existence, metrics, or clean-looking directories.
-Without complete `BlankVmResetEvidence`, leases are discarded and
-replaced. A restored slot does not enter `Ready` until its configured
+Leases are discarded and replaced. A restored slot does not enter
+`Ready` until its configured
 ready-probe exec completes successfully. See `docs/design/warm-pool.md`
 for the state machine and sizing model.
 
@@ -347,9 +346,11 @@ Typed `FcError` variants tell the caller which phase failed; inner
 causes carry detail. No silent degradation — anything that compromises
 an invariant fails closed.
 
-- `FcError::Config(String)` is the only free-form string variant. It is not a
-  fallback bucket: it is reserved for caller configuration, CLI flag, and config
-  merge failures where no lower crate owns a more specific typed cause.
+- `FcError::Config(ConfigError)` carries structured configuration failures via
+  the `ConfigError` enum (`TomlSyntax`, `MissingField`, `InvalidValue`, `Other`
+  variants). It is not a fallback bucket: it is reserved for caller
+  configuration, CLI flag, and config merge failures where no lower crate owns
+  a more specific typed cause.
 - `FcError::ApiSocketTimeout { path, timeout }` — Firecracker did not create
   its REST API socket during launch.
 - `FcError::GuestdReadyTimeout { path, timeout }` — m80-guestd did not connect
@@ -409,7 +410,7 @@ Cleanup vocabulary (behavior docs + regression tests):
 
 Warm pool:
 
-- `WarmPoolConfig`, `BlankVmResetEvidence`.
+- `WarmPoolConfig`.
 
 ## Non-goals
 
