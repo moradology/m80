@@ -42,25 +42,29 @@ pub(crate) fn is_enabled(target: &'static str) -> bool {
 /// Output: `len=N head_hex=… head_ascii="…"`, with `(truncated)` appended
 /// when the payload exceeds 1024 bytes.
 pub(crate) fn format_wire_preview(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
     const CAP: usize = 1024;
     let total = bytes.len();
     let head = &bytes[..total.min(CAP)];
-    let head_hex = hex::encode(head);
-    let head_ascii: String = head
-        .iter()
-        .map(|&b| {
-            if b.is_ascii_graphic() || b == b' ' {
-                b as char
-            } else {
-                '.'
-            }
-        })
-        .collect();
-    if total > CAP {
-        format!("len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\" (truncated)")
-    } else {
-        format!("len={total} head_hex={head_hex} head_ascii=\"{head_ascii}\"")
+    // Capacity: "len=" prefix + digits + " head_hex=" + 2*head + " head_ascii=\"" + head + "\"" + optional " (truncated)"
+    let mut out = String::with_capacity(32 + head.len() * 3 + 16);
+    write!(out, "len={total} head_hex=").unwrap();
+    for b in head {
+        write!(out, "{b:02x}").unwrap();
     }
+    out.push_str(" head_ascii=\"");
+    for &b in head {
+        out.push(if b.is_ascii_graphic() || b == b' ' {
+            b as char
+        } else {
+            '.'
+        });
+    }
+    out.push('"');
+    if total > CAP {
+        out.push_str(" (truncated)");
+    }
+    out
 }
 
 #[cfg(test)]

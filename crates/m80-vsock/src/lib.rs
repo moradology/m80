@@ -9,7 +9,8 @@ mod debug_wire;
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use sha2::Digest;
@@ -41,7 +42,7 @@ pub fn cid_for_vm_id(vm_id: &str) -> u32 {
 pub struct Channel {
     /// The host-side Firecracker UDS path. This is a listener owned by the VM,
     /// so channel teardown must not unlink it.
-    host_uds: PathBuf,
+    host_uds: Arc<Path>,
     /// Raw stream used for writing (kept separate from `buf_reader`).
     stream: UnixStream,
     /// Buffered reader wrapping a clone of `stream` for `read_frame`.
@@ -54,7 +55,7 @@ pub struct Channel {
 /// [`Channel`] is blocked waiting for response frames.
 pub struct ChannelSender {
     /// The host-side Firecracker UDS path. Used only for diagnostics.
-    host_uds: PathBuf,
+    host_uds: Arc<Path>,
     /// Raw cloned stream for writing frames.
     stream: UnixStream,
 }
@@ -126,10 +127,10 @@ impl Channel {
         // Write CONNECT line.
         {
             let mut w = &stream;
-            writeln!(w, "CONNECT {guest_port}").map_err(VsockError::Io)?;
+            let line = format!("CONNECT {guest_port}\n");
+            w.write_all(line.as_bytes()).map_err(VsockError::Io)?;
             w.flush().map_err(VsockError::Io)?;
             if debug_wire::is_enabled("vsock") {
-                let line = format!("CONNECT {guest_port}\n");
                 tracing::trace!(direction = "out", msg = line.trim(), "vsock handshake");
             }
         }
@@ -147,7 +148,7 @@ impl Channel {
         }
 
         Ok(Channel {
-            host_uds: host_uds.to_owned(),
+            host_uds: Arc::from(host_uds),
             stream,
             buf_reader,
         })
@@ -167,13 +168,11 @@ impl Channel {
     /// sit behind the in-flight exec and could not interrupt it.
     pub fn try_clone_sender(&self) -> Result<ChannelSender, VsockError> {
         Ok(ChannelSender {
-            host_uds: self.host_uds.clone(),
+            host_uds: Arc::clone(&self.host_uds),
             stream: self.stream.try_clone().map_err(VsockError::Io)?,
         })
     }
 
-    /// Receive one [`Envelope`] from the channel.
-    ///
     /// Receive one protobuf-framed [`Envelope`] from the channel.
     pub fn recv<U>(&mut self) -> Result<Envelope<U>, VsockError>
     where
