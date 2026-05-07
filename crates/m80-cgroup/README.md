@@ -20,13 +20,12 @@ See rustdoc for full signatures.
 - `Subtree::probe()` — preflight gate; returns `UnsupportedHostMode` on hybrid/v1 hosts.
 - `Subtree::create(vm_id, &MaterializedJail, &JailedFirecracker)` — materialize the leaf and enrol the deduped jailer/firecracker pid set.
 - `Subtree::apply_limits(&Limits)` — write per-controller files; `None` fields leave existing values alone.
-- `Subtree::path()` — also persisted to `<run_dir>/cgroup-path.txt`.
 - `Subtree::leaf_path(vm_id)` — pure path helper for the public cgroup layout.
 - `Subtree::Drop` — `rmdir` the leaf if empty; logs on failure, never panics.
 - `cleanup_orphan_subtree(vm_id)` — startup helper for stale leaves from prior crashed runs.
 - `Limits { cpu_max: Option<CpuMax>, memory_max: Option<u64>, pids_max: Option<u32> }`.
 - `Limits::m80_default()` — one full CPU, 1.5 GiB memory, 128 pids.
-- `CgroupError`: `UnsupportedHostMode`, `ControllerNotEnabled(String)`, `Io { path, source }`.
+- `CgroupError`: `UnsupportedHostMode`, `ControllerNotEnabled(&'static str)`, `Io { path, source }`.
 
 ## Non-goals
 

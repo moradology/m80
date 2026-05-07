@@ -11,7 +11,7 @@ fn all_variants_display_distinct_messages() {
         ("UnsupportedHostMode", CgroupError::UnsupportedHostMode),
         (
             "ControllerNotEnabled",
-            CgroupError::ControllerNotEnabled("cpu".to_owned()),
+            CgroupError::ControllerNotEnabled("cpu"),
         ),
         (
             "Io",

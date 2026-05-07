@@ -28,9 +28,7 @@ const DEFAULT_PIDS_MAX: u32 = 128;
 
 /// One per-VM cgroup v2 subtree under `/sys/fs/cgroup/m80-firecracker/<vm-id>`.
 #[derive(Debug)]
-pub struct Subtree {
-    path: PathBuf,
-}
+pub struct Subtree(PathBuf);
 
 impl Subtree {
     /// Probe whether this host has unified cgroup v2 — call from preflight
@@ -70,7 +68,7 @@ impl Subtree {
                     .map(|s| s.trim_start_matches('+'))
                 {
                     if !controllers.split_whitespace().any(|c| c == name) {
-                        return Err(CgroupError::ControllerNotEnabled(name.to_owned()));
+                        return Err(CgroupError::ControllerNotEnabled(name));
                     }
                 }
             }
@@ -90,31 +88,29 @@ impl Subtree {
         fs::write(&cgroup_path_txt, leaf_str.as_bytes())
             .map_err(io_err(cgroup_path_txt.clone()))?;
 
-        Ok(Subtree { path: leaf })
+        Ok(Subtree(leaf))
     }
 
     /// Apply per-controller limits. Fields set to `None` leave the existing
     /// value alone.
     pub fn apply_limits(&self, limits: &Limits) -> Result<(), CgroupError> {
         if let Some(cpu_max) = &limits.cpu_max {
-            let val = match cpu_max {
+            let path = self.0.join("cpu.max");
+            match cpu_max {
                 CpuMax::Quota {
                     quota_us,
                     period_us,
-                } => {
-                    format!("{quota_us} {period_us}\n")
-                }
-                CpuMax::Max => "max\n".to_owned(),
-            };
-            write_cgroup_file(&self.path.join("cpu.max"), &val)?;
+                } => write_cgroup_file(&path, &format!("{quota_us} {period_us}\n"))?,
+                CpuMax::Max => write_cgroup_file(&path, "max\n")?,
+            }
         }
 
         if let Some(mem) = limits.memory_max {
-            write_cgroup_file(&self.path.join("memory.max"), &format!("{mem}\n"))?;
+            write_cgroup_file(&self.0.join("memory.max"), &format!("{mem}\n"))?;
         }
 
         if let Some(pids) = limits.pids_max {
-            write_cgroup_file(&self.path.join("pids.max"), &format!("{pids}\n"))?;
+            write_cgroup_file(&self.0.join("pids.max"), &format!("{pids}\n"))?;
         }
 
         Ok(())
@@ -128,8 +124,8 @@ impl Subtree {
 
 impl Drop for Subtree {
     fn drop(&mut self) {
-        if let Err(e) = fs::remove_dir(&self.path) {
-            warn!("drop: rmdir({}) failed: {e}", self.path.display());
+        if let Err(e) = fs::remove_dir(&self.0) {
+            warn!("drop: rmdir({}) failed: {e}", self.0.display());
         }
     }
 }
@@ -220,7 +216,7 @@ pub enum CgroupError {
     UnsupportedHostMode,
     /// A required cgroup v2 controller is not enabled in the parent.
     #[error("controller not enabled: {0}")]
-    ControllerNotEnabled(String),
+    ControllerNotEnabled(&'static str),
     /// Underlying I/O failure; carries the path so the caller doesn't have
     /// to guess which file failed.
     #[error("i/o on {}: {source}", path.display())]
