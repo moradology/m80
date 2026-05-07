@@ -6,8 +6,74 @@
 //! when the test thread is panicking — making failures self-explaining
 //! without any extra effort from the caller.
 
+use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+
+pub fn sandbox_config() -> m80_firecracker::SandboxConfig {
+    m80_firecracker::SandboxConfig {
+        vm_id: None,
+        workspace: None,
+        network: m80_firecracker::NetworkPolicy::NoEgress,
+        vcpu_count: None,
+        mem_size_mib: None,
+        boot_args: None,
+        overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
+        request_id: None,
+    }
+}
+
+#[allow(dead_code)]
+pub fn sandbox_config_with_id(vm_id: impl Into<String>) -> m80_firecracker::SandboxConfig {
+    m80_firecracker::SandboxConfig {
+        vm_id: Some(vm_id.into()),
+        ..sandbox_config()
+    }
+}
+
+#[allow(dead_code)]
+pub const CONFIG_ENV_KEYS: &[&str] = &[
+    "HOME",
+    "M80_DEFAULT_PROFILE",
+    "M80_MAX_CONCURRENT_VMS",
+    "M80_RUN_ROOT",
+    "M80_JAIL_UID",
+    "M80_JAIL_GID",
+    "M80_CGROUP_MODE",
+];
+
+#[allow(dead_code)]
+pub fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+pub struct EnvRestore {
+    values: Vec<(&'static str, Option<OsString>)>,
+}
+
+impl EnvRestore {
+    #[allow(dead_code)]
+    pub fn capture(keys: &[&'static str]) -> Self {
+        Self {
+            values: keys.iter().map(|key| (*key, std::env::var_os(key))).collect(),
+        }
+    }
+}
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        for (key, value) in &self.values {
+            if let Some(value) = value {
+                std::env::set_var(key, value);
+            } else {
+                std::env::remove_var(key);
+            }
+        }
+    }
+}
 
 #[allow(dead_code)]
 pub fn fake_manifest() -> m80_image_manifest::Manifest {

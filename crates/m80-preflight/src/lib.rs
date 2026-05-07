@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 use caps::Capability;
 use caps::CapsHashSet;
+use serde::{Deserialize, Serialize};
+
 use m80_image_manifest::{Manifest, ManifestError};
 
 mod artifacts;
@@ -63,7 +65,8 @@ pub enum PrivilegeStatus {
 }
 
 /// One row in the preflight report.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CheckRow {
     /// Short label naming the check.
     pub label: String,
@@ -197,15 +200,7 @@ pub enum PreflightError {
         actual: String,
     },
 
-    /// `firecracker --version` output contained no version-looking token.
-    #[error(
-        "firecracker --version produced no recognisable version token\n\
-         hint: output was: {0:?}\n\
-         hint: ensure the binary at M80_FIRECRACKER_BIN is a real Firecracker release build"
-    )]
-    InvalidVersionOutput(String),
-
-        /// `jailer` binary not found.
+    /// `jailer` binary not found.
     #[error(
         "jailer binary not found\n\
          hint: install jailer to /opt/firecracker/bin/jailer (it ships \

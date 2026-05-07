@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, ExecChunk, ExecRequest, ExecStatus, NetworkPolicy,
+    Backend, BackendConfig, CgroupMode, ExecChunk, ExecRequest, ExecStatus,
     SandboxConfig,
 };
 
@@ -32,15 +32,9 @@ fn backend() -> (Arc<Backend>, std::path::PathBuf) {
 
 fn sandbox_config(vm_id: &str) -> SandboxConfig {
     SandboxConfig {
-        vm_id: Some(vm_id.into()),
-        workspace: None,
-        network: NetworkPolicy::NoEgress,
         vcpu_count: Some(1),
         mem_size_mib: Some(512),
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
-        request_id: None,
+        ..common::sandbox_config_with_id(vm_id)
     }
 }
 

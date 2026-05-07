@@ -68,12 +68,10 @@ base from one set of pages.
   `mkfs.ext4`, loop-mounts it, copies the host workspace tree, and
   unmounts. The host source is opaque to the guest — only the mounted
   device shows up in-VM.
-- `Scratch::recommended_size_for_used_bytes(used_bytes: u64) -> u64`
-  computes `max(64 MiB, used_bytes + 32 MiB)` rounded up to a 4 MiB
-  boundary.
 - `Scratch::recommended_size_for_workspace(workspace: &Path) ->
   Result<u64, StorageError>` walks the host workspace, counts regular-file
-  bytes, rejects symlinks/special files, and applies the same sizing rule.
+  bytes, rejects symlinks/special files, and applies the sizing rule:
+  `max(64 MiB, used_bytes + 32 MiB)` rounded up to a 4 MiB boundary.
 - `Scratch::extract(image: &Path, into: &Path) -> Result<ChangeSet, StorageError>`
   is the post-stop extraction:
   0. Fail with `SwapFailed` if `into` already exists.
@@ -118,7 +116,6 @@ images but adds non-trivial output-parsing surface.
   `Rootfs::new_at(base, overlay)`,
   `Rootfs::base_path()`, `Rootfs::overlay_path()`.
 - `Scratch::create(workspace, image, size)`,
-  `Scratch::recommended_size_for_used_bytes(used_bytes)`,
   `Scratch::recommended_size_for_workspace(workspace)`,
   `Scratch::extract(image, into)`, `Scratch::path()`.
 - `ChangeSet { staged: Vec<PathBuf>, rejected: Vec<Rejection>, total_bytes: u64 }`.

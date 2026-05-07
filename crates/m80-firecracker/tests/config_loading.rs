@@ -3,59 +3,17 @@
 //! These tests exercise the canonical loader through explicit config paths so
 //! they do not read a developer machine's `/etc/m80/config.toml` or user config.
 
+mod common;
+
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::sync::{Mutex, OnceLock};
 
 use m80_firecracker::{load_config_from_paths, ConfigFilePaths, ConfigSource, EffectiveConfig};
 use tempfile::TempDir;
 
-const ENV_KEYS: &[&str] = &[
-    "HOME",
-    "M80_DEFAULT_PROFILE",
-    "M80_MAX_CONCURRENT_VMS",
-    "M80_RUN_ROOT",
-    "M80_JAIL_UID",
-    "M80_JAIL_GID",
-    "M80_CGROUP_MODE",
-];
-
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-struct EnvRestore {
-    values: Vec<(&'static str, Option<OsString>)>,
-}
-
-impl EnvRestore {
-    fn capture() -> Self {
-        Self {
-            values: ENV_KEYS
-                .iter()
-                .map(|key| (*key, std::env::var_os(key)))
-                .collect(),
-        }
-    }
-}
-
-impl Drop for EnvRestore {
-    fn drop(&mut self) {
-        for (key, value) in &self.values {
-            if let Some(value) = value {
-                std::env::set_var(key, value);
-            } else {
-                std::env::remove_var(key);
-            }
-        }
-    }
-}
-
 fn with_isolated_env(test: impl FnOnce(&TempDir, &TempDir)) {
-    let _lock = env_lock().lock().unwrap();
-    let _restore = EnvRestore::capture();
-    for key in ENV_KEYS {
+    let _lock = common::env_lock().lock().unwrap();
+    let _restore = common::EnvRestore::capture(common::CONFIG_ENV_KEYS);
+    for key in common::CONFIG_ENV_KEYS {
         std::env::remove_var(key);
     }
 

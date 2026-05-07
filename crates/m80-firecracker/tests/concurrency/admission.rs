@@ -1,49 +1,14 @@
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use m80_firecracker::{
     load_config_from_paths, Backend, BackendConfig, CgroupMode, ConfigFilePaths, ConfigSource,
-    FcError, NetworkPolicy, SandboxConfig,
+    FcError,
 };
 use tempfile::TempDir;
 
 use crate::common;
-
-const ENV_KEYS: &[&str] = &["HOME", "M80_MAX_CONCURRENT_VMS"];
-
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-struct EnvRestore {
-    values: Vec<(&'static str, Option<OsString>)>,
-}
-
-impl EnvRestore {
-    fn capture() -> Self {
-        Self {
-            values: ENV_KEYS
-                .iter()
-                .map(|key| (*key, std::env::var_os(key)))
-                .collect(),
-        }
-    }
-}
-
-impl Drop for EnvRestore {
-    fn drop(&mut self) {
-        for (key, value) in &self.values {
-            if let Some(value) = value {
-                std::env::set_var(key, value);
-            } else {
-                std::env::remove_var(key);
-            }
-        }
-    }
-}
 
 fn make_backend(max: u32, run_root: &Path) -> Arc<Backend> {
     let config = BackendConfig {
@@ -57,41 +22,29 @@ fn make_backend(max: u32, run_root: &Path) -> Arc<Backend> {
     Arc::new(Backend::new(config).expect("Backend::new"))
 }
 
-fn sandbox_config(vm_id: &str) -> SandboxConfig {
-    SandboxConfig {
-        vm_id: Some(vm_id.to_owned()),
-        workspace: None,
-        network: NetworkPolicy::NoEgress,
-        vcpu_count: None,
-        mem_size_mib: None,
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
-        request_id: None,
-    }
-}
+
 
 #[test]
 fn permit_acquired_per_vm() {
     let dir = TempDir::new().unwrap();
     let backend = make_backend(1, dir.path());
-    let first = backend.admit(sandbox_config("vm-a")).unwrap();
+    let first = backend.admit(common::sandbox_config_with_id("vm-a")).unwrap();
 
-    let second = backend.admit(sandbox_config("vm-b"));
+    let second = backend.admit(common::sandbox_config_with_id("vm-b"));
 
     assert!(matches!(
         second,
         Err(FcError::AdmissionRefused { limit: 1 })
     ));
     drop(first);
-    backend.admit(sandbox_config("vm-c")).unwrap();
+    backend.admit(common::sandbox_config_with_id("vm-c")).unwrap();
 }
 
 #[test]
 fn reads_max_from_env() {
-    let _lock = env_lock().lock().unwrap();
-    let _restore = EnvRestore::capture();
-    for key in ENV_KEYS {
+    let _lock = common::env_lock().lock().unwrap();
+    let _restore = common::EnvRestore::capture(common::CONFIG_ENV_KEYS);
+    for key in common::CONFIG_ENV_KEYS {
         std::env::remove_var(key);
     }
     let home = TempDir::new().unwrap();
@@ -122,10 +75,10 @@ fn reads_max_from_env() {
 fn reports_unavailable_when_pool_full() {
     let dir = TempDir::new().unwrap();
     let backend = make_backend(2, dir.path());
-    let first = backend.admit(sandbox_config("vm-a")).unwrap();
-    let second = backend.admit(sandbox_config("vm-b")).unwrap();
+    let first = backend.admit(common::sandbox_config_with_id("vm-a")).unwrap();
+    let second = backend.admit(common::sandbox_config_with_id("vm-b")).unwrap();
 
-    let err = backend.admit(sandbox_config("vm-c")).unwrap_err();
+    let err = backend.admit(common::sandbox_config_with_id("vm-c")).unwrap_err();
 
     assert_eq!(
         err.to_string(),

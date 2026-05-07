@@ -40,15 +40,10 @@ fn make_backend() -> (std::sync::Arc<m80_firecracker::Backend>, std::path::PathB
 
 fn sandbox_config(vm_id: &str) -> m80_firecracker::SandboxConfig {
     m80_firecracker::SandboxConfig {
-        vm_id: Some(vm_id.into()),
-        workspace: None,
-        network: m80_firecracker::NetworkPolicy::NoEgress,
         vcpu_count: Some(1),
         mem_size_mib: Some(512),
-        boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
-        idle_timeout: None,
-        request_id: None,
+        ..common::sandbox_config_with_id(vm_id)
     }
 }
 
@@ -57,15 +52,8 @@ fn sandbox_config_with_workspace(
     workspace: std::path::PathBuf,
 ) -> m80_firecracker::SandboxConfig {
     m80_firecracker::SandboxConfig {
-        vm_id: Some(vm_id.into()),
         workspace: Some(workspace),
-        network: m80_firecracker::NetworkPolicy::NoEgress,
-        vcpu_count: Some(1),
-        mem_size_mib: Some(512),
-        boot_args: None,
-        overlay_size_bytes: 128 * 1024 * 1024,
-        idle_timeout: None,
-        request_id: None,
+        ..sandbox_config(vm_id)
     }
 }
 

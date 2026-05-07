@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use m80_firecracker::{
     Backend, BackendConfig, BlankVmResetDecision, BlankVmResetDiscardReason, BlankVmResetEvidence,
-    CgroupMode, FcError, NetworkPolicy, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig,
+    CgroupMode, FcError, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig,
     FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 
@@ -61,15 +61,10 @@ fn make_backend_config(
 
 fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
     SandboxConfig {
-        vm_id: Some(vm_id.into()),
-        workspace: None,
-        network: NetworkPolicy::NoEgress,
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
-        boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
-        idle_timeout: None,
-        request_id: None,
+        ..common::sandbox_config_with_id(vm_id)
     }
 }
 

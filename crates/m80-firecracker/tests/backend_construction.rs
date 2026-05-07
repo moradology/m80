@@ -4,21 +4,9 @@ mod common;
 
 use std::sync::Arc;
 
-use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
+use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError};
 
-fn sandbox_config() -> SandboxConfig {
-    SandboxConfig {
-        vm_id: None,
-        workspace: None,
-        network: NetworkPolicy::NoEgress,
-        vcpu_count: None,
-        mem_size_mib: None,
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
-        request_id: None,
-    }
-}
+
 
 #[test]
 fn backend_reused_across_admissions_shares_admission_state() {
@@ -40,11 +28,11 @@ fn backend_reused_across_admissions_shares_admission_state() {
     assert_eq!(backend.config().discovery.run_root, dir.path());
 
     let first = backend
-        .admit(sandbox_config())
+        .admit(common::sandbox_config())
         .expect("first admit acquires the singleton backend permit");
 
     let err = backend
-        .admit(sandbox_config())
+        .admit(common::sandbox_config())
         .expect_err("same backend must share admission state across requests");
     assert!(
         matches!(err, FcError::AdmissionRefused { limit: 1 }),
@@ -54,7 +42,7 @@ fn backend_reused_across_admissions_shares_admission_state() {
     drop(first);
 
     let second = backend
-        .admit(sandbox_config())
+        .admit(common::sandbox_config())
         .expect("dropping the first sandbox returns the shared permit");
     drop(second);
 }

@@ -36,7 +36,7 @@ impl Rootfs {
     ///
     /// `overlay_dest`'s parent directory must already exist.  `prepare` does
     /// NOT create parent directories — a missing parent returns
-    /// [`StorageError::OverlayCreateFailed`].  (CLAUDE.md: "no silent recovery")
+    /// [`StorageError::OverlayCreateFailed`].
     pub fn prepare(
         base: &Path,
         overlay_dest: &Path,

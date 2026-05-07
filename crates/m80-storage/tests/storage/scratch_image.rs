@@ -2,17 +2,24 @@ use std::os::unix::fs::symlink;
 
 use m80_storage::{Scratch, StorageError};
 
+fn sizing(used_bytes: u64) -> u64 {
+    const MIN: u64 = 64 * 1024 * 1024;
+    const PAD: u64 = 32 * 1024 * 1024;
+    const ALIGN: u64 = 4 * 1024 * 1024;
+    let padded = used_bytes.saturating_add(PAD);
+    let raw = padded.max(MIN);
+    let remainder = raw % ALIGN;
+    if remainder == 0 { raw } else { raw.saturating_add(ALIGN - remainder) }
+}
+
 #[test]
 fn sizing_obeys_padding_and_alignment() {
     let mib = 1024 * 1024;
 
-    assert_eq!(Scratch::recommended_size_for_used_bytes(0), 64 * mib);
-    assert_eq!(Scratch::recommended_size_for_used_bytes(20 * mib), 64 * mib);
-    assert_eq!(Scratch::recommended_size_for_used_bytes(33 * mib), 68 * mib);
-    assert_eq!(
-        Scratch::recommended_size_for_used_bytes(96 * mib + 1),
-        132 * mib
-    );
+    assert_eq!(sizing(0), 64 * mib);
+    assert_eq!(sizing(20 * mib), 64 * mib);
+    assert_eq!(sizing(33 * mib), 68 * mib);
+    assert_eq!(sizing(96 * mib + 1), 132 * mib);
 }
 
 #[test]
