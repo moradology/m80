@@ -8,6 +8,7 @@
 //! ```text
 //! sudo M80_FIRECRACKER_BIN=/path/to/firecracker \
 //!      M80_JAILER_BIN=/path/to/jailer \
+//!      M80_JAILER_HARDEN_BIN=/path/to/m80-jailer-harden \
 //!      M80_KERNEL_IMAGE=/path/to/vmlinux \
 //!      M80_ROOTFS_IMAGE=/path/to/rootfs.ext4 \
 //!      cargo test -p m80-cli --test e2e_tty -- --ignored

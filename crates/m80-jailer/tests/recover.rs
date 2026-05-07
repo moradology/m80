@@ -4,7 +4,7 @@ mod common;
 
 use std::path::Path;
 
-use m80_jailer::{inspect_run_dir, BindMode, Binding, Plan, InspectionDecision};
+use m80_jailer::{inspect_run_dir, BindMode, Binding, InspectionDecision, Plan};
 
 fn config_with_one_binding(run_dir: &Path) -> m80_jailer::JailerConfig {
     let mut cfg = common::minimal_config(run_dir);
@@ -66,8 +66,7 @@ fn orphan_reap_steps_are_plan_steps_reversed() {
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));
     write_plan(dir.path());
 
-    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap()
-    else {
+    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
         panic!("expected OrphanJail");
     };
     let plan = Plan::compute(&config_with_one_binding(dir.path())).unwrap();
@@ -96,6 +95,23 @@ fn live_state_with_own_pid_returns_live_jail() {
 }
 
 #[test]
+fn new_pid_ns_state_with_no_live_jailer_returns_live_jail() {
+    let dir = tempfile::tempdir().unwrap();
+    let self_pid = std::process::id();
+    write_state(dir.path(), Some(0), Some(self_pid));
+
+    let decision = inspect_run_dir(dir.path()).unwrap();
+    assert!(
+        matches!(
+            decision,
+            InspectionDecision::LiveJail { jailer_pid, firecracker_pid }
+                if jailer_pid == 0 && firecracker_pid == self_pid
+        ),
+        "got {decision:?}"
+    );
+}
+
+#[test]
 fn mixed_live_and_dead_pid_returns_orphan() {
     let dir = tempfile::tempdir().unwrap();
     write_state(dir.path(), Some(std::process::id()), Some(u32::MAX));
@@ -113,8 +129,7 @@ fn orphan_without_plan_file_has_empty_reap_steps() {
     let dir = tempfile::tempdir().unwrap();
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));
 
-    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap()
-    else {
+    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
         panic!("expected OrphanJail");
     };
     assert!(reap_steps.is_empty(), "got {reap_steps:?}");

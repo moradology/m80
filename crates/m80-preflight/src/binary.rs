@@ -12,11 +12,15 @@ pub const ENV_FIRECRACKER_BIN: &str = "M80_FIRECRACKER_BIN";
 pub const ENV_FIRECRACKER_VERSION: &str = "M80_FIRECRACKER_VERSION";
 /// Environment key for overriding the jailer binary path.
 pub const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
+/// Environment key for overriding the m80 jailer hardening wrapper path.
+pub const ENV_JAILER_HARDEN_BIN: &str = "M80_JAILER_HARDEN_BIN";
 
 /// Default Firecracker binary location when no env override is present.
 pub const DEFAULT_FIRECRACKER_BIN: &str = "/opt/firecracker/bin/firecracker";
 /// Default jailer binary location when no env override is present.
 pub const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
+/// Default m80 jailer hardening wrapper location when no env override is present.
+pub const DEFAULT_JAILER_HARDEN_BIN: &str = "/opt/m80/bin/m80-jailer-harden";
 
 /// Inputs for the binary discovery preflight step.
 #[derive(Debug, Clone)]
@@ -25,6 +29,8 @@ pub struct BinaryDiscoveryConfig {
     pub firecracker_bin: PathBuf,
     /// Jailer binary path to require on disk.
     pub jailer_bin: PathBuf,
+    /// m80 jailer hardening wrapper path to require on disk.
+    pub jailer_harden_bin: PathBuf,
     /// Optional exact Firecracker version pin.
     pub expected_firecracker_version: Option<String>,
 }
@@ -39,6 +45,9 @@ impl BinaryDiscoveryConfig {
             jailer_bin: env::var_os(ENV_JAILER_BIN)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_JAILER_BIN)),
+            jailer_harden_bin: env::var_os(ENV_JAILER_HARDEN_BIN)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_JAILER_HARDEN_BIN)),
             expected_firecracker_version: env::var(ENV_FIRECRACKER_VERSION).ok(),
         }
     }
@@ -49,6 +58,7 @@ impl Default for BinaryDiscoveryConfig {
         Self {
             firecracker_bin: PathBuf::from(DEFAULT_FIRECRACKER_BIN),
             jailer_bin: PathBuf::from(DEFAULT_JAILER_BIN),
+            jailer_harden_bin: PathBuf::from(DEFAULT_JAILER_HARDEN_BIN),
             expected_firecracker_version: None,
         }
     }
@@ -63,6 +73,8 @@ pub struct BinaryDiscovery {
     pub firecracker_version: String,
     /// Resolved jailer binary path.
     pub jailer_bin: PathBuf,
+    /// Resolved m80 jailer hardening wrapper path.
+    pub jailer_harden_bin: PathBuf,
 }
 
 /// Resolve Firecracker and jailer binaries and fail closed on version mismatch.
@@ -86,11 +98,15 @@ pub fn discover_binaries(
     if !config.jailer_bin.exists() {
         return Err(PreflightError::JailerBinaryNotFound);
     }
+    if !config.jailer_harden_bin.exists() {
+        return Err(PreflightError::JailerHardenBinaryNotFound);
+    }
 
     Ok(BinaryDiscovery {
         firecracker_bin: config.firecracker_bin.clone(),
         firecracker_version: actual_version,
         jailer_bin: config.jailer_bin.clone(),
+        jailer_harden_bin: config.jailer_harden_bin.clone(),
     })
 }
 

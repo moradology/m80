@@ -1,0 +1,20 @@
+[package]
+name = "m80-jailer-harden"
+description = "Apply inherited process hardening before execing Firecracker's jailer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+caps.workspace = true
+nix.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

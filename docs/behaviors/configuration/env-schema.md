@@ -21,6 +21,7 @@ All keys are exact and case-sensitive. Legacy predecessor-style names such as
 | `M80_FIRECRACKER_BIN` | Host path to the `firecracker` binary. | `/opt/firecracker/bin/firecracker` |
 | `M80_FIRECRACKER_VERSION` | Optional exact version pin compared to `firecracker --version`. | no version comparison |
 | `M80_JAILER_BIN` | Host path to the `jailer` binary. | `/opt/firecracker/bin/jailer` |
+| `M80_JAILER_HARDEN_BIN` | Host path to the m80 hardening wrapper that execs the official jailer. | `/opt/m80/bin/m80-jailer-harden` |
 | `M80_KERNEL_IMAGE` | Host path to the guest kernel image. | latest `vmlinux-*` under `M80_ARTIFACT_DIR` |
 | `M80_ARTIFACT_DIR` | Directory searched for `vmlinux-*` when `M80_KERNEL_IMAGE` is unset. | `/opt/m80/artifacts` |
 | `M80_ROOTFS_IMAGE` | Host path to the built ext4 rootfs image. | none; missing rootfs fails preflight |

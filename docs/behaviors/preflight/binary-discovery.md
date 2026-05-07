@@ -12,12 +12,14 @@ keys:
 
 - `M80_FIRECRACKER_BIN`
 - `M80_JAILER_BIN`
+- `M80_JAILER_HARDEN_BIN`
 - `M80_FIRECRACKER_VERSION`
 
 When no path override is present, Firecracker defaults to
-`/opt/firecracker/bin/firecracker` and jailer defaults to
-`/opt/firecracker/bin/jailer`. There are no legacy aliases without the `M80_`
-prefix.
+`/opt/firecracker/bin/firecracker`, jailer defaults to
+`/opt/firecracker/bin/jailer`, and the m80 hardening wrapper defaults to
+`/opt/m80/bin/m80-jailer-harden`. There are no legacy aliases without the
+`M80_` prefix.
 
 ## Version Probe
 

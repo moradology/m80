@@ -80,10 +80,7 @@ impl Subtree {
         fs::create_dir_all(&leaf).map_err(io_err(leaf.clone()))?;
 
         let procs = leaf.join("cgroup.procs");
-        let mut pids = vec![jailed.jailer_pid, jailed.firecracker_pid];
-        pids.sort_unstable();
-        pids.dedup();
-        for pid in pids {
+        for pid in enrolled_pids(jailed.jailer_pid, jailed.firecracker_pid) {
             write_cgroup_file(&procs, &format!("{pid}\n"))?;
         }
 
@@ -124,6 +121,14 @@ impl Subtree {
     pub fn leaf_path(vm_id: &str) -> PathBuf {
         PathBuf::from(CGROUP_ROOT).join(vm_id)
     }
+}
+
+fn enrolled_pids(jailer_pid: u32, firecracker_pid: u32) -> Vec<u32> {
+    let mut pids = vec![jailer_pid, firecracker_pid];
+    pids.retain(|pid| *pid != 0);
+    pids.sort_unstable();
+    pids.dedup();
+    pids
 }
 
 impl Drop for Subtree {
@@ -286,17 +291,16 @@ mod tests {
 
     #[test]
     fn pid_assignment_sorts_and_deduplicates() {
-        let mut pids = vec![20u32, 10u32];
-        pids.sort_unstable();
-        pids.dedup();
-        assert_eq!(pids, vec![10, 20]);
+        assert_eq!(enrolled_pids(20, 10), vec![10, 20]);
     }
 
     #[test]
     fn pid_assignment_collapses_exec_equal_pids() {
-        let mut pids = vec![10u32, 10u32];
-        pids.sort_unstable();
-        pids.dedup();
-        assert_eq!(pids, vec![10]);
+        assert_eq!(enrolled_pids(10, 10), vec![10]);
+    }
+
+    #[test]
+    fn pid_assignment_skips_new_pid_namespace_sentinel() {
+        assert_eq!(enrolled_pids(0, 10), vec![10]);
     }
 }

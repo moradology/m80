@@ -3,6 +3,7 @@
 //! and `JailedFirecracker` (live pids).
 
 use std::io;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -63,8 +64,27 @@ impl MaterializedJail {
         // We never `wait()` on it (that would block until the VM exits).
         // Drop on `JailedFirecracker` is responsible for kill+reap.
         //
-        let mut command = Command::new(&self.plan.config.jailer_bin);
+        let (command_path, mut command) =
+            if let Some(harden_bin) = &self.plan.config.jailer_harden_bin {
+                let mut command = Command::new(harden_bin);
+                command
+                    .arg("--jailer-bin")
+                    .arg(&self.plan.config.jailer_bin)
+                    .arg("--uid")
+                    .arg(self.plan.config.uid.to_string())
+                    .arg("--gid")
+                    .arg(self.plan.config.gid.to_string())
+                    .arg("--");
+                (harden_bin, command)
+            } else {
+                (
+                    &self.plan.config.jailer_bin,
+                    Command::new(&self.plan.config.jailer_bin),
+                )
+            };
+
         command
+            .env_clear()
             .arg("--id")
             .arg(&vm_id)
             .arg("--exec-file")
@@ -75,9 +95,25 @@ impl MaterializedJail {
             .arg(self.plan.config.gid.to_string())
             .arg("--chroot-base-dir")
             .arg(chroot_base)
-            .arg("--")
-            .arg("--api-sock")
-            .arg(api_socket_name);
+            .arg("--resource-limit")
+            .arg(format!(
+                "no-file={}",
+                self.plan.config.resource_limits.no_file
+            ));
+
+        if let Some(fsize) = self.plan.config.resource_limits.fsize {
+            command
+                .arg("--resource-limit")
+                .arg(format!("fsize={fsize}"));
+        }
+
+        if self.plan.config.new_pid_ns {
+            command.arg("--new-pid-ns");
+        }
+
+        command.arg("--").arg("--api-sock").arg(api_socket_name);
+
+        command.stdin(Stdio::null());
 
         if let Some(stdio_log) = &self.plan.config.stdio_log {
             let file = std::fs::OpenOptions::new()
@@ -95,10 +131,12 @@ impl MaterializedJail {
             command
                 .stdout(Stdio::from(file))
                 .stderr(Stdio::from(stderr));
+        } else {
+            command.stdout(Stdio::null()).stderr(Stdio::null());
         }
 
         let mut child = command.spawn().map_err(|source| JailerError::Io {
-            path: self.plan.config.jailer_bin.clone(),
+            path: command_path.to_path_buf(),
             source,
         })?;
 
@@ -135,32 +173,79 @@ impl MaterializedJail {
             thread::sleep(Duration::from_millis(25));
         };
 
-        // Do NOT wait on `child`: jailer `exec()`s into firecracker, so this
-        // child handle's pid is the firecracker pid. Waiting blocks until
-        // the VM exits — which we explicitly do not want here. Drop on
-        // `JailedFirecracker` is responsible for kill+reap on teardown.
-        std::mem::forget(child);
+        let recorded_jailer_pid = if self.plan.config.new_pid_ns {
+            wait_for_namespace_parent(&mut child)?
+        } else {
+            // Do NOT wait on `child`: jailer `exec()`s into firecracker, so this
+            // child handle's pid is the firecracker pid. Waiting blocks until
+            // the VM exits — which we explicitly do not want here. Drop on
+            // `JailedFirecracker` is responsible for kill+reap on teardown.
+            std::mem::forget(child);
+            jailer_pid
+        };
 
         // Persist updated state.
         let state_path = self.plan.config.run_dir.join(JAILER_STATE_FILE);
         let state = JailerState {
-            jailer_pid: Some(jailer_pid),
+            jailer_pid: Some(recorded_jailer_pid),
             firecracker_pid: Some(firecracker_pid),
         };
         let state_json = serde_json::to_vec_pretty(&state).map_err(|e| JailerError::Io {
             path: state_path.clone(),
             source: io::Error::new(io::ErrorKind::Other, e),
         })?;
-        std::fs::write(&state_path, &state_json).map_err(|source| JailerError::Io {
-            path: state_path.clone(),
-            source,
-        })?;
+        write_file_no_follow(&state_path, &state_json)?;
 
         Ok(JailedFirecracker {
-            jailer_pid,
+            jailer_pid: recorded_jailer_pid,
             firecracker_pid,
         })
     }
+}
+
+fn wait_for_namespace_parent(child: &mut std::process::Child) -> Result<u32, JailerError> {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        if child
+            .try_wait()
+            .map_err(|source| JailerError::Io {
+                path: PathBuf::from("jailer process"),
+                source,
+            })?
+            .is_some()
+        {
+            return Ok(0);
+        }
+
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(JailerError::FirecrackerPidTimeout {
+                jail_path: PathBuf::from("new-pid-ns parent did not exit"),
+            });
+        }
+
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .custom_flags(nix::libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|source| JailerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.write_all(bytes).map_err(|source| JailerError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 impl Drop for MaterializedJail {
@@ -206,15 +291,224 @@ mod tests {
     use crate::types::{JailerConfig, Plan};
     use std::os::unix::fs::PermissionsExt;
 
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     #[test]
-    fn launch_redirects_stdio_to_configured_log() {
+    fn launch_redirects_stdio_and_passes_hardening_args() {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("vm-stdio");
         std::fs::create_dir_all(&run_dir).unwrap();
         let jailer_bin = dir.path().join("fake-jailer.sh");
+        let harden_bin = dir.path().join("fake-harden.sh");
+        let harden_args_path = run_dir.join("harden-args.txt");
+        std::fs::write(
+            &harden_bin,
+            format!(
+                r#"#!/bin/sh
+printf '%s\n' "$*" > "{harden_args}"
+jailer=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --jailer-bin) jailer="$2"; shift 2 ;;
+    --uid) shift 2 ;;
+    --gid) shift 2 ;;
+    --) shift; break ;;
+    *) exit 64 ;;
+  esac
+done
+exec "$jailer" "$@"
+"#,
+                harden_args = harden_args_path.display()
+            ),
+        )
+        .unwrap();
         std::fs::write(
             &jailer_bin,
             r#"#!/bin/sh
+if [ -n "$M80_JAILER_ENV_LEAK" ]; then
+  echo env-leaked >&2
+  exit 44
+fi
+id=
+chroot_base=
+exec_file=
+all_args="$*"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --chroot-base-dir) chroot_base="$2"; shift 2 ;;
+    --exec-file) exec_file="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec_base="${exec_file##*/}"
+jail_root="$chroot_base/$exec_base/$id/root"
+/bin/mkdir -p "$jail_root"
+printf '%s\n' "$all_args" > "$chroot_base/args.txt"
+echo $$ > "$jail_root/firecracker.pid"
+echo fake-firecracker-stdout
+echo fake-firecracker-stderr >&2
+/bin/sleep 30
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&jailer_bin, perms).unwrap();
+        let mut perms = std::fs::metadata(&harden_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&harden_bin, perms).unwrap();
+
+        let stdio_log = run_dir.join("console.log");
+        let cfg = JailerConfig {
+            jailer_bin,
+            jailer_harden_bin: Some(harden_bin),
+            firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+            run_dir: run_dir.clone(),
+            uid: 3000,
+            gid: 3000,
+            bindings: Vec::new(),
+            sockets: Vec::new(),
+            resource_limits: crate::types::ResourceLimits {
+                no_file: 1024,
+                fsize: Some(4096),
+            },
+            new_pid_ns: false,
+            stdio_log: Some(stdio_log.clone()),
+        };
+        let plan = Plan::compute(&cfg).unwrap();
+        let jail_path = run_dir.join("firecracker").join("vm-stdio").join("root");
+        let jail = MaterializedJail {
+            plan,
+            jail_path,
+            bind_mounts: Vec::new(),
+            created_dirs: Vec::new(),
+            placeholder_files: Vec::new(),
+        };
+
+        let _env_guard = EnvGuard::set("M80_JAILER_ENV_LEAK", "secret");
+        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(jailed.jailer_pid as i32),
+            nix::sys::signal::Signal::SIGKILL,
+        )
+        .unwrap();
+
+        let log = std::fs::read_to_string(stdio_log).unwrap();
+        assert!(log.contains("fake-firecracker-stdout"), "{log}");
+        assert!(log.contains("fake-firecracker-stderr"), "{log}");
+
+        let args = std::fs::read_to_string(run_dir.join("args.txt")).unwrap();
+        assert!(args.contains("--resource-limit no-file=1024"), "{args}");
+        assert!(args.contains("--resource-limit fsize=4096"), "{args}");
+        let harden_args = std::fs::read_to_string(harden_args_path).unwrap();
+        assert!(harden_args.contains("--jailer-bin"), "{harden_args}");
+        assert!(harden_args.contains("--uid 3000"), "{harden_args}");
+        assert!(harden_args.contains("--gid 3000"), "{harden_args}");
+    }
+
+    #[test]
+    fn launch_with_new_pid_ns_reaps_jailer_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("vm-newpid");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let jailer_bin = dir.path().join("fake-jailer-newpid.sh");
+        std::fs::write(
+            &jailer_bin,
+            r#"#!/bin/sh
+id=
+chroot_base=
+exec_file=
+new_pid_ns=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --chroot-base-dir) chroot_base="$2"; shift 2 ;;
+    --exec-file) exec_file="$2"; shift 2 ;;
+    --new-pid-ns) new_pid_ns=1; shift ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec_base="${exec_file##*/}"
+jail_root="$chroot_base/$exec_base/$id/root"
+/bin/mkdir -p "$jail_root"
+echo $$ > "$jail_root/firecracker.pid"
+if [ "$new_pid_ns" -eq 1 ]; then
+  exit 0
+fi
+/bin/sleep 30
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&jailer_bin, perms).unwrap();
+
+        let cfg = JailerConfig {
+            jailer_bin,
+            jailer_harden_bin: None,
+            firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+            run_dir: run_dir.clone(),
+            uid: 3000,
+            gid: 3000,
+            bindings: Vec::new(),
+            sockets: Vec::new(),
+            resource_limits: crate::types::ResourceLimits::default(),
+            new_pid_ns: true,
+            stdio_log: None,
+        };
+        let plan = Plan::compute(&cfg).unwrap();
+        let jail_path = run_dir.join("firecracker").join("vm-newpid").join("root");
+        let jail = MaterializedJail {
+            plan,
+            jail_path,
+            bind_mounts: Vec::new(),
+            created_dirs: Vec::new(),
+            placeholder_files: Vec::new(),
+        };
+
+        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        assert_eq!(jailed.jailer_pid, 0);
+
+        let state = std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&state).unwrap();
+        assert_eq!(parsed["jailer_pid"], 0);
+    }
+
+    #[test]
+    fn launch_without_stdio_log_uses_dev_null_stdio() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("vm-null-stdio");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let jailer_bin = dir.path().join("fake-jailer-null-stdio.sh");
+        let marker = run_dir.join("stdio.txt");
+        std::fs::write(
+            &jailer_bin,
+            format!(
+                r#"#!/bin/sh
 id=
 chroot_base=
 exec_file=
@@ -227,33 +521,40 @@ while [ "$#" -gt 0 ]; do
     *) shift ;;
   esac
 done
-exec_base=$(basename "$exec_file")
+exec_base="${{exec_file##*/}}"
 jail_root="$chroot_base/$exec_base/$id/root"
-mkdir -p "$jail_root"
+/bin/mkdir -p "$jail_root"
+stdio="$(readlink /proc/$$/fd/0) $(readlink /proc/$$/fd/1) $(readlink /proc/$$/fd/2)"
+printf '%s\n' "$stdio" > "{marker}"
 echo $$ > "$jail_root/firecracker.pid"
-echo fake-firecracker-stdout
-echo fake-firecracker-stderr >&2
-sleep 30
+/bin/sleep 30
 "#,
+                marker = marker.display()
+            ),
         )
         .unwrap();
         let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&jailer_bin, perms).unwrap();
 
-        let stdio_log = run_dir.join("console.log");
         let cfg = JailerConfig {
             jailer_bin,
+            jailer_harden_bin: None,
             firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
             run_dir: run_dir.clone(),
             uid: 3000,
             gid: 3000,
             bindings: Vec::new(),
             sockets: Vec::new(),
-            stdio_log: Some(stdio_log.clone()),
+            resource_limits: crate::types::ResourceLimits::default(),
+            new_pid_ns: false,
+            stdio_log: None,
         };
         let plan = Plan::compute(&cfg).unwrap();
-        let jail_path = run_dir.join("firecracker").join("vm-stdio").join("root");
+        let jail_path = run_dir
+            .join("firecracker")
+            .join("vm-null-stdio")
+            .join("root");
         let jail = MaterializedJail {
             plan,
             jail_path,
@@ -269,8 +570,10 @@ sleep 30
         )
         .unwrap();
 
-        let log = std::fs::read_to_string(stdio_log).unwrap();
-        assert!(log.contains("fake-firecracker-stdout"), "{log}");
-        assert!(log.contains("fake-firecracker-stderr"), "{log}");
+        let stdio = std::fs::read_to_string(marker).unwrap();
+        assert_eq!(
+            stdio.split_whitespace().collect::<Vec<_>>(),
+            vec!["/dev/null", "/dev/null", "/dev/null"]
+        );
     }
 }

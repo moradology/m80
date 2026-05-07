@@ -51,9 +51,9 @@ pub fn inspect_run_dir(run_dir: &Path) -> Result<InspectionDecision, JailerError
         .map_err(io_err(state_path.clone()))?;
 
     if let (Some(jailer_pid), Some(fc_pid)) = (state.jailer_pid, state.firecracker_pid) {
-        if Path::new(&format!("/proc/{jailer_pid}")).exists()
-            && Path::new(&format!("/proc/{fc_pid}")).exists()
-        {
+        let jailer_live = jailer_pid == 0 || Path::new(&format!("/proc/{jailer_pid}")).exists();
+        let firecracker_live = Path::new(&format!("/proc/{fc_pid}")).exists();
+        if jailer_live && firecracker_live {
             return Ok(InspectionDecision::LiveJail {
                 jailer_pid,
                 firecracker_pid: fc_pid,

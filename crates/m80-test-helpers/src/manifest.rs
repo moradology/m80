@@ -38,6 +38,7 @@ pub fn fake_discovery_at(run_root: &Path) -> m80_preflight::Discovery {
     m80_preflight::Discovery {
         firecracker_bin: PathBuf::from("/tmp/firecracker"),
         jailer_bin: PathBuf::from("/tmp/jailer"),
+        jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
         kernel: PathBuf::from("/tmp/vmlinux"),
         rootfs: PathBuf::from("/tmp/rootfs.ext4"),
         manifest: fake_manifest(),

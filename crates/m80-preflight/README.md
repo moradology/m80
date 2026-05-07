@@ -35,22 +35,24 @@ which is the right place for a security review to start.
   5. **Firecracker binary** — discovered via env override or default,
      `--version` matched against the configured pin.
   6. **Jailer binary** — same protocol.
-  7. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
+  7. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
+     `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
+  8. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  8. **Rootfs + manifest** — manifest schema validates,
+  9. **Rootfs + manifest** — manifest schema validates,
      `m80-image-manifest::verify` recomputes every sha256. This is the
      boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
      not rehash these artifacts again for every VM.
-  9. **Run-root** — absolute, must already exist, >= 100 MiB free
+  10. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  10. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  11. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - Env keys are exact and case-sensitive. Preflight recognizes
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
-  `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`, `M80_ROOTFS_IMAGE`,
-  `M80_KERNEL_KIND`, and `M80_RUN_ROOT`. The full schema is captured in
+  `M80_JAILER_HARDEN_BIN`, `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`,
+  `M80_ROOTFS_IMAGE`, `M80_KERNEL_KIND`, and `M80_RUN_ROOT`. The full schema is captured in
   `docs/behaviors/configuration/env-schema.md`.
 - Each check produces a row in the `Discovery::report` field. The same
   data is rendered as a fixed-width table for human consumption via
@@ -65,12 +67,13 @@ which is the right place for a security review to start.
 
 - `run() -> Result<Discovery, PreflightError>`.
 - `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
-- `BinaryDiscoveryConfig { firecracker_bin, jailer_bin,
+- `BinaryDiscoveryConfig { firecracker_bin, jailer_bin, jailer_harden_bin,
   expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
   the standalone binary-resolution step.
 - `discover_binaries(&BinaryDiscoveryConfig) -> Result<BinaryDiscovery,
   PreflightError>`.
-- `BinaryDiscovery { firecracker_bin, firecracker_version, jailer_bin }`.
+- `BinaryDiscovery { firecracker_bin, firecracker_version, jailer_bin,
+  jailer_harden_bin }`.
 - `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
   kernel_kind, run_root, helper_search_path }` and
   `ArtifactPreflightConfig::from_env()` for standalone artifact, run-root, and
@@ -81,9 +84,9 @@ which is the right place for a security review to start.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
-- `Discovery { firecracker_bin, jailer_bin, kernel: PathBuf, rootfs: PathBuf,
-  manifest: m80_image_manifest::Manifest, run_root: PathBuf, privilege: PrivilegeStatus,
-  report: Vec<CheckRow> }`.
+- `Discovery { firecracker_bin, jailer_bin, jailer_harden_bin, kernel: PathBuf,
+  rootfs: PathBuf, manifest: m80_image_manifest::Manifest, run_root: PathBuf,
+  privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
 - `Discovery::render_table()` → `String`.
 - `PrivilegeStatus { Root, CapabilityBearing }`.
 - `REQUIRED_CAPABILITIES: &[caps::Capability]` — the per-call cap list
@@ -96,7 +99,7 @@ which is the right place for a security review to start.
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
   effective capability set),
   `FirecrackerBinaryNotFound`, `FirecrackerVersionMismatch { expected, actual }`,
-  `JailerBinaryNotFound`, `NonAbsolutePath { kind, path }`,
+  `JailerBinaryNotFound`, `JailerHardenBinaryNotFound`, `NonAbsolutePath { kind, path }`,
   `KernelNotFound`, `RootfsNotFound`, `Manifest(m80_image_manifest::ManifestError)`,
   `RunRootUnavailable { reason: String }` (covers both missing-dir and
   insufficient-space), `StorageHelperMissing(String)`, `Io(io::Error)`.

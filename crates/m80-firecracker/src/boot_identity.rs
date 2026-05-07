@@ -34,8 +34,9 @@ struct BootIdentity {
 pub(crate) fn record(run_dir: &Path, discovery: &Discovery) -> Result<(), FcError> {
     let identity = BootIdentity::from_discovery(discovery)?;
     let path = crate::layout::boot_identity_path(run_dir);
-    let bytes = serde_json::to_vec_pretty(&identity)
-        .map_err(|e| FcError::Config(ConfigError::Other(format!("serialize boot identity: {e}"))))?;
+    let bytes = serde_json::to_vec_pretty(&identity).map_err(|e| {
+        FcError::Config(ConfigError::Other(format!("serialize boot identity: {e}")))
+    })?;
     std::fs::write(path, bytes).map_err(FcError::Io)
 }
 
@@ -76,6 +77,7 @@ mod tests {
         Discovery {
             firecracker_bin: PathBuf::from("/bin/firecracker"),
             jailer_bin: PathBuf::from("/bin/jailer"),
+            jailer_harden_bin: PathBuf::from("/bin/m80-jailer-harden"),
             kernel: PathBuf::from("/artifacts/vmlinux"),
             rootfs: PathBuf::from("/artifacts/output.ext4"),
             manifest: Manifest {

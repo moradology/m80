@@ -18,16 +18,35 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `Plan::materialize(&self) -> Result<MaterializedJail, JailerError>`
   performs the filesystem mutations directly via syscalls + `Command::new`,
   relying on the m80 process's already-verified privilege. Steps are
-  recorded to `jailer-state.json`; `Drop` tears the chroot down.
+  recorded to `jailer-state.json`; `Drop` tears the chroot down. Jail-root
+  and in-jail directories are created `0700` and chowned to the configured
+  jail uid/gid. Bind sources are canonicalized before use; file creation
+  uses `O_NOFOLLOW`; bind mounts use `MS_BIND|MS_REC` and are remounted with
+  `MS_NODEV|MS_NOEXEC|MS_NOSUID` (`MS_RDONLY` for read-only binds).
+  Bind destinations under `dev`, `proc`, or `sys` are rejected: device nodes
+  and virtual kernel filesystems are the official jailer's responsibility,
+  not caller-provided host binds.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
 - `MaterializedJail::launch(...)` exec's `firecracker` inside the jail
-  via the jailer binary (no `--daemonize`). Two PIDs are tracked: the
-  `jailer_pid` comes from the spawned `Child` handle; `firecracker_pid`
-  is read from `<jail_root>/firecracker.pid` after the jailer writes it.
-  Because jailer `exec()`s into firecracker, `jailer_pid` and
-  `firecracker_pid` end up referring to the same OS process — but both
-  are captured separately for state persistence and recovery.
+  via `m80-jailer-harden` and Firecracker's official jailer binary (no
+  `--daemonize`). The hardening wrapper first drops supplementary groups,
+  clears inheritable/ambient capabilities, sets `no_new_privs`, sets
+  `PDEATHSIG=SIGKILL`, resets the signal mask, and sets umask `0077`, then
+  execs the official jailer. m80 passes `--resource-limit no-file=<n>` on every launch, optionally passes
+  `--resource-limit fsize=<bytes>`, clears the jailer process environment,
+  gives stdin `/dev/null`, gives stdout/stderr either the configured log file
+  or `/dev/null`, and can pass `--new-pid-ns`. Without `new_pid_ns`, jailer
+  `exec()`s into firecracker, so `jailer_pid` and `firecracker_pid` refer to
+  the same OS process. With `new_pid_ns`, the official jailer writes the
+  Firecracker PID file and exits; m80 reaps that parent and records
+  `jailer_pid = 0` as the no-live-jailer sentinel.
+- Mount namespace and `pivot_root` isolation, `/dev/{kvm,net/tun,urandom}`
+  `mknod`, `/proc`/`/sys` omission, startup environment clearing, and
+  close-range hygiene are delegated to Firecracker's official jailer. m80
+  does not run `pivot_root` in `Plan::materialize()` because that code runs
+  in the host orchestrator process; doing so would isolate the orchestrator
+  instead of the Firecracker process.
 - If `JailerConfig::stdio_log` is `Some(path)`, `launch` appends the
   jailed process stdout and stderr to that host file. m80-firecracker
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
@@ -44,8 +63,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
 
 ## Public surface
 
-- `JailerConfig`, including optional `stdio_log`, `Binding { source, dest, mode }`,
+- `JailerConfig`, including `resource_limits`, `new_pid_ns`, optional
+  `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
+- `ResourceLimits { no_file, fsize }`; default is `no_file = 2048`,
+  `fsize = None`, matching Firecracker's official jailer default.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `inspect_run_dir`, `InspectionDecision`.
@@ -64,7 +86,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
 
 ## Dependencies
 
-- `serde`, `serde_json`, `thiserror`, `tracing`.
+- `serde`, `serde_json`, `thiserror`, `tracing`, `nix`.
 - No other m80 crates.
 - Requires the `jailer` binary on `PATH` (or a configured path) and
   privilege (`CAP_SYS_CHROOT` / root) at materialize time; `m80-preflight`
@@ -73,10 +95,18 @@ hands a config in and gets back a launchable chroot — or a typed error.
 ## Tests
 
 - `tests/plan_compute.rs` — pure `Plan::compute` produces expected
-  bind-source paths and jail-root layout given fixed inputs; no filesystem
-  access.
+  bind-source paths, private jail-internal directory modes, rejected
+  `/proc`/`/sys`/escaping destinations, and jail-root layout given fixed
+  inputs; no filesystem access.
 - `tests/recovery.rs` — `recover_from_run_dir` returns `NoJail` for a
   missing run-dir, `OrphanJail` for a plan-only (no live pid) dir, and
-  `LiveJail` when the state JSON records a running pid.
+  `LiveJail` when the state JSON records a running pid, including the
+  `new_pid_ns` `jailer_pid = 0` sentinel.
 - `tests/jail_root_path.rs` — `jail_root_path` output matches the
   expected jailer-hardcoded layout for several input combinations.
+- Unit tests in `src/materialized.rs` — launch argument plumbing for
+  the hardening wrapper, resource limits, environment clearing, stdio capture,
+  and `new_pid_ns` parent reaping.
+- `tests/integration_root.rs` — ignored root-only smoke for real
+  materialization and real Firecracker-jailer `--new-pid-ns` launch state
+  (`jailer_pid = 0`, Firecracker `NSpid` ends in `1`, resource limit live).

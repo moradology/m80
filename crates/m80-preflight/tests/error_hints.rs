@@ -77,6 +77,11 @@ fn jailer_binary_not_found_has_hint() {
 }
 
 #[test]
+fn jailer_harden_binary_not_found_has_hint() {
+    assert_hint(&PreflightError::JailerHardenBinaryNotFound);
+}
+
+#[test]
 fn non_absolute_path_has_hint() {
     assert_hint(&PreflightError::NonAbsolutePath {
         kind: "rootfs".into(),

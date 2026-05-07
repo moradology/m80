@@ -125,7 +125,7 @@ m80 is a Rust workspace split into small black-box crates:
   `m80-cgroup`, `m80-storage`, `m80-preflight`, `m80-net-mode`
 - `m80-net-outbound`
 - `m80-firecracker`
-- `m80-image-build`, `m80-guestd`, `m80-cli`
+- `m80-image-build`, `m80-guestd`, `m80-cli`, `m80-jailer-harden`
 - reserved `m80-snapshot` and `m80-observability` surfaces
 
 Crate READMEs are contracts. A public-surface change updates the owning crate

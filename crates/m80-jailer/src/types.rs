@@ -15,6 +15,9 @@ pub const JAILER_STATE_FILE: &str = "jailer-state.json";
 pub struct JailerConfig {
     /// Absolute path to the `jailer` binary.
     pub jailer_bin: PathBuf,
+    /// Absolute path to the m80 process-hardening wrapper that execs the
+    /// official jailer after applying inherited one-way hardening.
+    pub jailer_harden_bin: Option<PathBuf>,
     /// Absolute path to the `firecracker` binary.
     pub firecracker_bin: PathBuf,
     /// Per-VM run directory. Used as jailer's `--chroot-base-dir`. The
@@ -30,9 +33,35 @@ pub struct JailerConfig {
     pub bindings: Vec<Binding>,
     /// Sockets to reserve inside the jail (API socket and vsock UDS).
     pub sockets: Vec<JailerSocket>,
+    /// Resource limits the official jailer applies before exec'ing
+    /// firecracker.
+    pub resource_limits: ResourceLimits,
+    /// Ask the official jailer to launch firecracker as PID 1 in a new PID
+    /// namespace.
+    pub new_pid_ns: bool,
     /// Optional host-side file that receives firecracker/jailer stdout and
     /// stderr. The orchestrator uses this for the per-VM serial console log.
     pub stdio_log: Option<PathBuf>,
+}
+
+/// Per-VM process resource limits passed through to Firecracker's official
+/// jailer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceLimits {
+    /// Maximum number of open file descriptors.
+    pub no_file: u64,
+    /// Optional maximum size, in bytes, of files created by the process.
+    pub fsize: Option<u64>,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            no_file: 2048,
+            fsize: None,
+        }
+    }
 }
 
 /// Compute the actual jail root path inside `run_dir`.

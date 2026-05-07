@@ -4,7 +4,8 @@ use std::path::Path;
 
 use m80_preflight::{
     discover_binaries, BinaryDiscoveryConfig, PreflightError, DEFAULT_FIRECRACKER_BIN,
-    DEFAULT_JAILER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN,
+    DEFAULT_JAILER_BIN, DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
+    ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN,
 };
 
 fn write_executable(path: &Path, body: &str) {
@@ -18,16 +19,19 @@ fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
     let dir = tempfile::tempdir().unwrap();
     let firecracker = dir.path().join("firecracker");
     let jailer = dir.path().join("jailer");
+    let jailer_harden = dir.path().join("m80-jailer-harden");
 
     write_executable(
         &firecracker,
         &format!("#!/bin/sh\nprintf 'Firecracker {version}\\n'\n"),
     );
     write_executable(&jailer, "#!/bin/sh\nexit 0\n");
+    write_executable(&jailer_harden, "#!/bin/sh\nexit 0\n");
 
     let config = BinaryDiscoveryConfig {
         firecracker_bin: firecracker,
         jailer_bin: jailer,
+        jailer_harden_bin: jailer_harden,
         expected_firecracker_version: Some(version.to_owned()),
     };
     (dir, config)
@@ -39,14 +43,17 @@ fn env_config_uses_exact_m80_keys_and_defaults() {
     let dir = tempfile::tempdir().unwrap();
     let firecracker = dir.path().join("firecracker");
     let jailer = dir.path().join("jailer");
+    let jailer_harden = dir.path().join("m80-jailer-harden");
     let _firecracker = EnvGuard::set(ENV_FIRECRACKER_BIN, &firecracker);
     let _jailer = EnvGuard::set(ENV_JAILER_BIN, &jailer);
+    let _jailer_harden = EnvGuard::set(ENV_JAILER_HARDEN_BIN, &jailer_harden);
     let _version = EnvGuard::set_str(ENV_FIRECRACKER_VERSION, "v1.15.1");
 
     let config = BinaryDiscoveryConfig::from_env();
 
     assert_eq!(config.firecracker_bin, firecracker);
     assert_eq!(config.jailer_bin, jailer);
+    assert_eq!(config.jailer_harden_bin, jailer_harden);
     assert_eq!(
         config.expected_firecracker_version,
         Some("v1.15.1".to_owned())
@@ -58,12 +65,17 @@ fn env_config_defaults_to_opt_firecracker_paths_without_version_pin() {
     let _lock = ENV_LOCK.lock().unwrap();
     let _firecracker = EnvGuard::remove(ENV_FIRECRACKER_BIN);
     let _jailer = EnvGuard::remove(ENV_JAILER_BIN);
+    let _jailer_harden = EnvGuard::remove(ENV_JAILER_HARDEN_BIN);
     let _version = EnvGuard::remove(ENV_FIRECRACKER_VERSION);
 
     let config = BinaryDiscoveryConfig::from_env();
 
     assert_eq!(config.firecracker_bin, Path::new(DEFAULT_FIRECRACKER_BIN));
     assert_eq!(config.jailer_bin, Path::new(DEFAULT_JAILER_BIN));
+    assert_eq!(
+        config.jailer_harden_bin,
+        Path::new(DEFAULT_JAILER_HARDEN_BIN)
+    );
     assert_eq!(config.expected_firecracker_version, None);
 }
 
@@ -76,6 +88,7 @@ fn discovery_returns_resolved_paths_and_probed_firecracker_version() {
     assert_eq!(discovery.firecracker_bin, config.firecracker_bin);
     assert_eq!(discovery.firecracker_version, "v1.15.1");
     assert_eq!(discovery.jailer_bin, config.jailer_bin);
+    assert_eq!(discovery.jailer_harden_bin, config.jailer_harden_bin);
 }
 
 #[test]
@@ -84,6 +97,7 @@ fn missing_firecracker_binary_fails_closed() {
     let config = BinaryDiscoveryConfig {
         firecracker_bin: dir.path().join("missing-firecracker"),
         jailer_bin: dir.path().join("jailer"),
+        jailer_harden_bin: dir.path().join("m80-jailer-harden"),
         expected_firecracker_version: Some("v1.15.1".to_owned()),
     };
 
@@ -100,6 +114,16 @@ fn missing_jailer_binary_fails_closed() {
     let err = discover_binaries(&config).unwrap_err();
 
     assert!(matches!(err, PreflightError::JailerBinaryNotFound));
+}
+
+#[test]
+fn missing_jailer_hardening_wrapper_fails_closed() {
+    let (dir, mut config) = fixture_config("v1.15.1");
+    config.jailer_harden_bin = dir.path().join("missing-m80-jailer-harden");
+
+    let err = discover_binaries(&config).unwrap_err();
+
+    assert!(matches!(err, PreflightError::JailerHardenBinaryNotFound));
 }
 
 #[test]

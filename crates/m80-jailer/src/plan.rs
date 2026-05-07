@@ -1,6 +1,9 @@
 //! `Plan::compute` (pure) and `Plan::materialize` (mounts + persists state).
 
+use std::collections::BTreeSet;
 use std::io;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Component, Path, PathBuf};
 
 use crate::error::JailerError;
 use crate::materialized::MaterializedJail;
@@ -21,11 +24,10 @@ impl Plan {
             });
         }
 
-        // Reject absolute `binding.dest`: Path::join silently drops the
-        // jail_root prefix when given an absolute path, which would let a
-        // caller bind-mount outside the jail (e.g., dest = "/etc").
+        // Reject any destination that can escape the jail root or expose
+        // host-kernel virtual filesystems inside the jail.
         for binding in &config.bindings {
-            if binding.dest.is_absolute() {
+            if invalid_dest(&binding.dest) || is_hidden_kernel_dest(&binding.dest) {
                 return Err(JailerError::BindFailed {
                     src: binding.source.clone(),
                     dest: binding.dest.clone(),
@@ -35,20 +37,20 @@ impl Plan {
 
         let jail_root = jail_root_path(&config.run_dir, &config.firecracker_bin);
         let mut steps = Vec::new();
+        let mut created_dirs = BTreeSet::new();
 
         // Step 1: create the jail root.
-        steps.push(PlanStep::CreateDir {
-            path: jail_root.clone(),
-            mode: 0o755,
-        });
+        push_create_dir(&mut steps, &mut created_dirs, jail_root.clone());
 
-        // Step 2: CreateInsideJail entries (create dir, no source).
+        // Step 2: CreateInsideJail entries and bind parent directories.
         for binding in &config.bindings {
+            push_parent_dirs(&mut steps, &mut created_dirs, &jail_root, &binding.dest);
             if binding.mode == BindMode::CreateInsideJail {
-                steps.push(PlanStep::CreateDir {
-                    path: jail_root.join(&binding.dest),
-                    mode: 0o755,
-                });
+                push_create_dir(
+                    &mut steps,
+                    &mut created_dirs,
+                    jail_root.join(&binding.dest),
+                );
             }
         }
 
@@ -84,7 +86,7 @@ impl Plan {
     pub fn materialize(self) -> Result<MaterializedJail, JailerError> {
         use nix::mount::{mount, MsFlags};
         use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
-        use nix::unistd::mkdir;
+        use nix::unistd::{chown, mkdir, Gid, Uid};
 
         let jail_root = jail_root_path(&self.config.run_dir, &self.config.firecracker_bin);
 
@@ -114,16 +116,25 @@ impl Plan {
 
         for step in &materialized.plan.steps {
             match step {
-                PlanStep::CreateDir { path, .. } => {
-                    mkdir(path, Mode::from_bits_truncate(0o755)).map_err(|e| JailerError::Io {
+                PlanStep::CreateDir { path, mode } => {
+                    mkdir(path, Mode::from_bits_truncate(*mode)).map_err(|e| JailerError::Io {
                         path: path.clone(),
                         source: io::Error::from_raw_os_error(e as i32),
                     })?;
                     fchmodat(
                         None,
                         path,
-                        Mode::from_bits_truncate(0o755),
-                        FchmodatFlags::FollowSymlink,
+                        Mode::from_bits_truncate(*mode),
+                        FchmodatFlags::NoFollowSymlink,
+                    )
+                    .map_err(|e| JailerError::Io {
+                        path: path.clone(),
+                        source: io::Error::from_raw_os_error(e as i32),
+                    })?;
+                    chown(
+                        path,
+                        Some(Uid::from_raw(materialized.plan.config.uid)),
+                        Some(Gid::from_raw(materialized.plan.config.gid)),
                     )
                     .map_err(|e| JailerError::Io {
                         path: path.clone(),
@@ -132,20 +143,23 @@ impl Plan {
                     materialized.created_dirs.push(path.clone());
                 }
                 PlanStep::Bind { source, dest, mode } => {
-                    if !dest.is_dir() && !source.is_dir() {
-                        // dest dir was already created or is the jail root
-                        std::fs::write(dest, b"").map_err(|source| JailerError::Io {
-                            path: dest.clone(),
-                            source,
+                    let canonical_source =
+                        std::fs::canonicalize(source).map_err(|io_source| JailerError::Io {
+                            path: source.clone(),
+                            source: io_source,
                         })?;
+
+                    if !dest.is_dir() && !canonical_source.is_dir() {
+                        // dest dir was already created or is the jail root
+                        write_file_no_follow(dest, b"")?;
                         materialized.placeholder_files.push(dest.clone());
                     }
 
                     mount(
-                        Some(source.as_path()),
+                        Some(canonical_source.as_path()),
                         dest.as_path(),
                         None::<&str>,
-                        MsFlags::MS_BIND,
+                        MsFlags::MS_BIND | MsFlags::MS_REC,
                         None::<&str>,
                     )
                     .map_err(|_e| JailerError::BindFailed {
@@ -159,7 +173,7 @@ impl Plan {
                             None::<&str>,
                             dest.as_path(),
                             None::<&str>,
-                            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
+                            bind_remount_flags() | MsFlags::MS_RDONLY,
                             None::<&str>,
                         )
                         .map_err(|_e| JailerError::BindFailed {
@@ -172,11 +186,21 @@ impl Plan {
                         // Bind mounts share the inode with the source, so a
                         // chown of the source path is what the in-chroot
                         // firecracker actually sees.
-                        use nix::unistd::{chown, Gid, Uid};
                         chown(
-                            source.as_path(),
+                            canonical_source.as_path(),
                             Some(Uid::from_raw(materialized.plan.config.uid)),
                             Some(Gid::from_raw(materialized.plan.config.gid)),
+                        )
+                        .map_err(|_e| JailerError::BindFailed {
+                            src: source.clone(),
+                            dest: dest.clone(),
+                        })?;
+                        mount(
+                            None::<&str>,
+                            dest.as_path(),
+                            None::<&str>,
+                            bind_remount_flags(),
+                            None::<&str>,
                         )
                         .map_err(|_e| JailerError::BindFailed {
                             src: source.clone(),
@@ -191,14 +215,12 @@ impl Plan {
         }
 
         let plan_path = materialized.plan.config.run_dir.join(JAILER_PLAN_FILE);
-        let plan_json = serde_json::to_vec_pretty(&materialized.plan).map_err(|e| JailerError::Io {
-            path: plan_path.clone(),
-            source: io::Error::new(io::ErrorKind::Other, e),
-        })?;
-        std::fs::write(&plan_path, &plan_json).map_err(|source| JailerError::Io {
-            path: plan_path.clone(),
-            source,
-        })?;
+        let plan_json =
+            serde_json::to_vec_pretty(&materialized.plan).map_err(|e| JailerError::Io {
+                path: plan_path.clone(),
+                source: io::Error::new(io::ErrorKind::Other, e),
+            })?;
+        write_file_no_follow(&plan_path, &plan_json)?;
 
         let state_path = materialized.plan.config.run_dir.join(JAILER_STATE_FILE);
         let state = JailerState {
@@ -209,11 +231,78 @@ impl Plan {
             path: state_path.clone(),
             source: io::Error::new(io::ErrorKind::Other, e),
         })?;
-        std::fs::write(&state_path, &state_json).map_err(|source| JailerError::Io {
-            path: state_path.clone(),
-            source,
-        })?;
+        write_file_no_follow(&state_path, &state_json)?;
 
         Ok(materialized)
     }
+}
+
+fn invalid_dest(path: &Path) -> bool {
+    let mut saw_component = false;
+    for component in path.components() {
+        saw_component = true;
+        if !matches!(component, Component::Normal(_)) {
+            return true;
+        }
+    }
+    !saw_component
+}
+
+fn push_parent_dirs(
+    steps: &mut Vec<PlanStep>,
+    created_dirs: &mut BTreeSet<PathBuf>,
+    jail_root: &Path,
+    dest: &Path,
+) {
+    if let Some(parent) = dest.parent() {
+        let mut path = jail_root.to_path_buf();
+        for component in parent.components() {
+            path.push(component.as_os_str());
+            push_create_dir(steps, created_dirs, path.clone());
+        }
+    }
+}
+
+fn push_create_dir(
+    steps: &mut Vec<PlanStep>,
+    created_dirs: &mut BTreeSet<PathBuf>,
+    path: PathBuf,
+) {
+    if created_dirs.insert(path.clone()) {
+        steps.push(PlanStep::CreateDir { path, mode: 0o700 });
+    }
+}
+
+fn is_hidden_kernel_dest(path: &Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(Component::Normal(name)) if name == "dev" || name == "proc" || name == "sys"
+    )
+}
+
+fn bind_remount_flags() -> nix::mount::MsFlags {
+    nix::mount::MsFlags::MS_BIND
+        | nix::mount::MsFlags::MS_REMOUNT
+        | nix::mount::MsFlags::MS_NODEV
+        | nix::mount::MsFlags::MS_NOEXEC
+        | nix::mount::MsFlags::MS_NOSUID
+}
+
+fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .custom_flags(nix::libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|source| JailerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.write_all(bytes).map_err(|source| JailerError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
 }

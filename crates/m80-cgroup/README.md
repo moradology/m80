@@ -23,8 +23,10 @@ A separate crate gives that surface one test boundary and lets
   materializes the leaf directory under
   `/sys/fs/cgroup/m80-firecracker/<vm_id>/`, enables the `cpu`, `memory`,
   and `pids` controllers in `cgroup.subtree_control`, and enrols the
-  deduped jailer + firecracker pid set. All three steps happen atomically
-  from the OS's perspective; partial state is cleaned up on error.
+  deduped jailer + firecracker pid set. `jailer_pid = 0` is the m80-jailer
+  sentinel for "official jailer parent already exited" in `new_pid_ns` mode
+  and is skipped. All three steps happen atomically from the OS's perspective;
+  partial state is cleaned up on error.
 - `Subtree::leaf_path(vm_id)` is a pure, no-I/O path helper that returns
   the expected leaf directory for a given VM id. Callers may use it for
   triage or inspection without holding a `Subtree` handle.

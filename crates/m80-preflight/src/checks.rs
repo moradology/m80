@@ -1,4 +1,4 @@
-//! The 10 ordered preflight checks that populate a [`Discovery`].
+//! The ordered preflight checks that populate a [`Discovery`].
 
 use std::fs;
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ const KVM_PATH: &str = "/dev/kvm";
 
 const REQUIRED_KERNEL_MODULES: &[&str] = &["tap", "bridge"];
 
-/// Run all 10 checks in order, deriving binary and artifact config from env.
+/// Run all checks in order, deriving binary and artifact config from env.
 ///
 /// This is the zero-argument convenience entry point. Callers that have
 /// already resolved an effective config (e.g. from a TOML file) should use
@@ -29,7 +29,7 @@ pub fn run() -> Result<Discovery, PreflightError> {
     )
 }
 
-/// Run all 10 checks in order with explicit binary and artifact configs.
+/// Run all checks in order with explicit binary and artifact configs.
 ///
 /// Use this when the caller has already resolved the effective configuration
 /// (e.g. from `/etc/m80/config.toml` or `~/.config/m80/config.toml`) and
@@ -72,6 +72,11 @@ pub fn run_with_configs(
         passed: true,
         detail: binaries.jailer_bin.display().to_string(),
     });
+    report.push(CheckRow {
+        label: "Jailer hardening wrapper".to_string(),
+        passed: true,
+        detail: binaries.jailer_harden_bin.display().to_string(),
+    });
 
     // 7-10. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config)?;
@@ -102,6 +107,7 @@ pub fn run_with_configs(
     Ok(Discovery {
         firecracker_bin: binaries.firecracker_bin,
         jailer_bin: binaries.jailer_bin,
+        jailer_harden_bin: binaries.jailer_harden_bin,
         kernel: artifacts.kernel,
         rootfs: artifacts.rootfs,
         manifest: artifacts.manifest,
@@ -161,10 +167,7 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
         .filter_map(|line| line.split_whitespace().next())
         .collect();
 
-    if REQUIRED_KERNEL_MODULES
-        .iter()
-        .any(|m| !loaded.contains(m))
-    {
+    if REQUIRED_KERNEL_MODULES.iter().any(|m| !loaded.contains(m)) {
         let missing = REQUIRED_KERNEL_MODULES
             .iter()
             .filter(|m| !loaded.contains(*m))
@@ -183,8 +186,7 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
 
 fn check_privilege(report: &mut Vec<CheckRow>) -> Result<PrivilegeStatus, PreflightError> {
     let euid = geteuid().as_raw();
-    let effective = caps::read(None, CapSet::Effective)
-        .map_err(PreflightError::CapabilityRead)?;
+    let effective = caps::read(None, CapSet::Effective).map_err(PreflightError::CapabilityRead)?;
     let status = classify_privilege(euid, &effective)?;
 
     report.push(CheckRow {

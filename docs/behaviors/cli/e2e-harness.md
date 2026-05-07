@@ -22,6 +22,7 @@ Run the full facade smoke on a KVM-capable host with built m80 artifacts:
 sudo M80_RUN_KVM_E2E=1 \
   M80_FIRECRACKER_BIN=/path/to/firecracker \
   M80_JAILER_BIN=/path/to/jailer \
+  M80_JAILER_HARDEN_BIN=/path/to/m80-jailer-harden \
   M80_KERNEL_IMAGE=/path/to/vmlinux \
   M80_ROOTFS_IMAGE=/path/to/rootfs.ext4 \
   ./scripts/smoke-cli.sh

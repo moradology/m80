@@ -23,6 +23,7 @@ real Firecracker/KVM backend. It is ignored by default because it needs:
 
 - `M80_FIRECRACKER_BIN`
 - `M80_JAILER_BIN`
+- `M80_JAILER_HARDEN_BIN`
 - `M80_KERNEL_IMAGE`
 - `M80_ROOTFS_IMAGE`
 - a Linux host with writable `/dev/kvm`

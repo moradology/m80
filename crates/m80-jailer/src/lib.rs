@@ -15,6 +15,6 @@ pub use error::JailerError;
 pub use materialized::{JailedFirecracker, MaterializedJail};
 pub use recover::{inspect_run_dir, InspectionDecision};
 pub use types::{
-    jail_root_path, BindMode, Binding, JailerConfig, JailerSocket, Plan, PlanStep, JAILER_PLAN_FILE,
-    JAILER_STATE_FILE,
+    jail_root_path, BindMode, Binding, JailerConfig, JailerSocket, Plan, PlanStep, ResourceLimits,
+    JAILER_PLAN_FILE, JAILER_STATE_FILE,
 };

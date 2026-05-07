@@ -51,6 +51,7 @@ fn fixture_discovery() -> Discovery {
     Discovery {
         firecracker_bin: PathBuf::from("/opt/firecracker/bin/firecracker"),
         jailer_bin: PathBuf::from("/opt/firecracker/bin/jailer"),
+        jailer_harden_bin: PathBuf::from("/opt/m80/bin/m80-jailer-harden"),
         kernel: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),
         rootfs: PathBuf::from("/opt/m80/images/rootfs.ext4"),
         manifest: fixture_manifest(),

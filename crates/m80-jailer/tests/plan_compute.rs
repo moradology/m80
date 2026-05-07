@@ -87,6 +87,76 @@ fn step_ordering_jail_root_first() {
 }
 
 #[test]
+fn jail_internal_dirs_are_private() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from(""),
+        dest: PathBuf::from("run"),
+        mode: BindMode::CreateInsideJail,
+    }];
+
+    let plan = m80_jailer::Plan::compute(&cfg).unwrap();
+
+    for step in plan.steps {
+        if let PlanStep::CreateDir { mode, .. } = step {
+            assert_eq!(mode, 0o700);
+        }
+    }
+}
+
+#[test]
+fn dest_with_parent_component_is_rejected() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/host/rootfs.ext4"),
+        dest: PathBuf::from("../rootfs.ext4"),
+        mode: BindMode::Ro,
+    }];
+
+    let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+    assert!(matches!(err, JailerError::BindFailed { .. }), "{err:?}");
+}
+
+#[test]
+fn proc_dest_is_rejected() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/proc"),
+        dest: PathBuf::from("proc"),
+        mode: BindMode::Ro,
+    }];
+
+    let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+    assert!(matches!(err, JailerError::BindFailed { .. }), "{err:?}");
+}
+
+#[test]
+fn sys_dest_is_rejected() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/sys"),
+        dest: PathBuf::from("sys/devices"),
+        mode: BindMode::Ro,
+    }];
+
+    let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+    assert!(matches!(err, JailerError::BindFailed { .. }), "{err:?}");
+}
+
+#[test]
+fn dev_dest_is_rejected() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/dev/kvm"),
+        dest: PathBuf::from("dev/kvm"),
+        mode: BindMode::Ro,
+    }];
+
+    let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+    assert!(matches!(err, JailerError::BindFailed { .. }), "{err:?}");
+}
+
+#[test]
 fn step_ordering_create_inside_before_binds() {
     let mut cfg = base_config();
     cfg.bindings = vec![
@@ -117,6 +187,31 @@ fn step_ordering_create_inside_before_binds() {
             PlanStep::Socket { .. } => {}
         }
     }
+}
+
+#[test]
+fn bind_parent_directories_are_created_before_binds() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/host/kernel"),
+        dest: PathBuf::from("kernel/vmlinux"),
+        mode: BindMode::Ro,
+    }];
+
+    let plan = m80_jailer::Plan::compute(&cfg).unwrap();
+    let parent = PathBuf::from("/tmp/run/vm-1/firecracker/vm-1/root/kernel");
+    let bind_index = plan
+        .steps
+        .iter()
+        .position(|step| matches!(step, PlanStep::Bind { .. }))
+        .expect("bind step");
+    let parent_index = plan
+        .steps
+        .iter()
+        .position(|step| matches!(step, PlanStep::CreateDir { path, .. } if path == &parent))
+        .expect("parent dir step");
+
+    assert!(parent_index < bind_index, "{plan:?}");
 }
 
 #[test]

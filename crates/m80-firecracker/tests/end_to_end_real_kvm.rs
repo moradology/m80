@@ -11,6 +11,7 @@
 //! Set the following environment variables to configure the test:
 //! - `M80_FIRECRACKER_BIN` — path to the `firecracker` binary.
 //! - `M80_JAILER_BIN` — path to the `jailer` binary.
+//! - `M80_JAILER_HARDEN_BIN` — path to `m80-jailer-harden`.
 //! - `M80_KERNEL_IMAGE` — path to the guest kernel.
 //! - `M80_ROOTFS_IMAGE` — path to the built m80 rootfs.
 //! - `M80_RUN_ROOT` — directory where the VM state is written.
@@ -23,6 +24,7 @@
 //! 5. `StoppedSandbox::delete` removes the run-dir.
 
 use std::io::Write as _;
+use std::os::unix::fs::FileTypeExt as _;
 use std::process::{Command, Stdio};
 
 #[test]
@@ -201,6 +203,85 @@ fn end_to_end_real_kvm_file_ops() {
     stopped.delete().expect("delete");
 }
 
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn end_to_end_real_kvm_jailer_security_parity() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+
+    let run_root = discovery.run_root.clone();
+    let config = m80_firecracker::BackendConfig {
+        discovery,
+        max_concurrent_vms: 1,
+        run_root: run_root.clone(),
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
+    };
+    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
+    let sandbox_config = m80_firecracker::SandboxConfig {
+        vm_id: Some("e2e-jailer-security".into()),
+        workspace: None,
+        network: m80_firecracker::NetworkPolicy::NoEgress,
+        vcpu_count: Some(1),
+        mem_size_mib: Some(512),
+        boot_args: None,
+        overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
+        request_id: None,
+    };
+
+    let sandbox = backend.admit(sandbox_config).expect("admit");
+    let running = sandbox.launch().expect("launch");
+    let run_dir = running.run_dir().to_path_buf();
+    let state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap())
+            .unwrap();
+    let pid = state["firecracker_pid"].as_u64().expect("firecracker_pid") as u32;
+
+    assert_limit_contains(pid, "Max open files", "2048", "2048");
+    assert_status_line(pid, "Uid:", "3000\t3000\t3000\t3000");
+    assert_status_line(pid, "Gid:", "3000\t3000\t3000\t3000");
+    assert_status_line(pid, "NoNewPrivs:", "1");
+    assert_status_line(pid, "CapPrm:", "0000000000000000");
+    assert_status_line(pid, "CapEff:", "0000000000000000");
+    assert_status_line(pid, "CapInh:", "0000000000000000");
+    assert_status_line(pid, "CapAmb:", "0000000000000000");
+    assert_status_line(pid, "SigBlk:", "0000000000000000");
+    assert_supplementary_groups_empty(pid);
+    assert_ne!(
+        std::fs::read_link(format!("/proc/{pid}/ns/mnt")).expect("firecracker mount ns"),
+        std::fs::read_link("/proc/self/ns/mnt").expect("host mount ns")
+    );
+    std::fs::metadata(format!("/proc/{pid}/root/kernel"))
+        .expect("firecracker root must expose the jailed kernel binding");
+
+    for mount_point in ["/kernel", "/rootfs.ext4", "/rootfs.overlay.ext4"] {
+        let options = mount_options(pid, mount_point);
+        assert!(
+            options.contains("nosuid") && options.contains("nodev") && options.contains("noexec"),
+            "{mount_point} options missing hardening flags: {options}"
+        );
+    }
+    let rootfs_options = mount_options(pid, "/rootfs.ext4");
+    assert!(
+        rootfs_options.contains("ro"),
+        "rootfs bind must be read-only: {rootfs_options}"
+    );
+
+    for path in ["dev/kvm", "dev/net/tun", "dev/urandom"] {
+        let meta = std::fs::metadata(format!("/proc/{pid}/root/{path}"))
+            .unwrap_or_else(|e| panic!("{path} must exist in jail root: {e}"));
+        assert!(
+            meta.file_type().is_char_device(),
+            "{path} must be a character device"
+        );
+    }
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
 fn deterministic_payload(len: usize) -> Vec<u8> {
     let mut state = 0x4d80_cafe_u64;
     let mut out = Vec::with_capacity(len);
@@ -209,6 +290,53 @@ fn deterministic_payload(len: usize) -> Vec<u8> {
         out.push((state >> 32) as u8);
     }
     out
+}
+
+fn assert_limit_contains(pid: u32, label: &str, soft: &str, hard: &str) {
+    let limits = std::fs::read_to_string(format!("/proc/{pid}/limits")).expect("limits");
+    let line = limits
+        .lines()
+        .find(|line| line.starts_with(label))
+        .unwrap_or_else(|| panic!("missing {label} in limits:\n{limits}"));
+    assert!(
+        line.contains(soft) && line.contains(hard),
+        "{label} line does not contain expected soft/hard limits {soft}/{hard}: {line}"
+    );
+}
+
+fn assert_status_line(pid: u32, label: &str, expected: &str) {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).expect("status");
+    let line = status
+        .lines()
+        .find(|line| line.starts_with(label))
+        .unwrap_or_else(|| panic!("missing {label} in status:\n{status}"));
+    assert!(
+        line.contains(expected),
+        "{label} line does not contain {expected:?}: {line}"
+    );
+}
+
+fn assert_supplementary_groups_empty(pid: u32) {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).expect("status");
+    let line = status
+        .lines()
+        .find(|line| line.starts_with("Groups:"))
+        .unwrap_or_else(|| panic!("missing Groups in status:\n{status}"));
+    assert_eq!(line.trim(), "Groups:", "supplementary groups must be empty");
+}
+
+fn mount_options(pid: u32, mount_point: &str) -> String {
+    let mountinfo = std::fs::read_to_string(format!("/proc/{pid}/mountinfo")).expect("mountinfo");
+    for line in mountinfo.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.get(4) == Some(&mount_point) {
+            return fields
+                .get(5)
+                .unwrap_or_else(|| panic!("missing options for {mount_point}: {line}"))
+                .to_string();
+        }
+    }
+    panic!("missing {mount_point} in mountinfo:\n{mountinfo}");
 }
 
 fn sha256_hex_bytes(bytes: &[u8]) -> String {

@@ -10,12 +10,15 @@ use m80_jailer::{BindMode, Plan, PlanStep};
 pub fn minimal_config(run_dir: &Path) -> JailerConfig {
     JailerConfig {
         jailer_bin: PathBuf::from("/usr/bin/jailer"),
+        jailer_harden_bin: Some(PathBuf::from("/usr/bin/m80-jailer-harden")),
         firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
         run_dir: run_dir.to_path_buf(),
         uid: 3000,
         gid: 3000,
         bindings: Vec::new(),
         sockets: Vec::new(),
+        resource_limits: m80_jailer::ResourceLimits::default(),
+        new_pid_ns: false,
         stdio_log: None,
     }
 }

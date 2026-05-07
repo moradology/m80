@@ -84,6 +84,8 @@ pub struct Discovery {
     pub firecracker_bin: PathBuf,
     /// Resolved jailer binary path.
     pub jailer_bin: PathBuf,
+    /// Resolved m80 jailer hardening wrapper path.
+    pub jailer_harden_bin: PathBuf,
     /// Resolved kernel image path.
     pub kernel: PathBuf,
     /// Resolved rootfs image path.
@@ -112,7 +114,8 @@ pub use artifacts::{
 };
 pub use binary::{
     discover_binaries, BinaryDiscovery, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN,
-    DEFAULT_JAILER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN,
+    DEFAULT_JAILER_BIN, DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
+    ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN,
 };
 pub use checks::{run, run_with_configs};
 
@@ -174,6 +177,10 @@ pub enum PreflightError {
     /// `jailer` binary not found.
     #[error("jailer binary not found")]
     JailerBinaryNotFound,
+
+    /// `m80-jailer-harden` binary not found.
+    #[error("jailer hardening wrapper not found")]
+    JailerHardenBinaryNotFound,
 
     /// A host artifact path was present but was not absolute.
     #[error("{kind} path is not absolute: {}", path.display())]
@@ -251,6 +258,9 @@ impl PreflightError {
             }
             Self::JailerBinaryNotFound => {
                 "install jailer to /opt/firecracker/bin/jailer (it ships alongside firecracker) or set M80_JAILER_BIN to the binary path"
+            }
+            Self::JailerHardenBinaryNotFound => {
+                "install m80-jailer-harden to /opt/m80/bin/m80-jailer-harden or set M80_JAILER_HARDEN_BIN to the binary path"
             }
             Self::NonAbsolutePath { .. } => {
                 "set the corresponding M80_* path env var to an absolute host path"
