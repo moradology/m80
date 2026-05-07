@@ -7,6 +7,7 @@ use m80_proto::{ExecExit, ExecRequest, ExecResponse};
 
 use super::{discard_sandbox, WarmPoolInner};
 use crate::error::FcError;
+use crate::hotplug_types::HotplugDriveAttach;
 use crate::types::{ExecChunk, RunningSandbox};
 
 /// A leased warm-pool slot.
@@ -83,6 +84,26 @@ impl WarmLease {
         with_sandbox_request_id(sandbox, request_id.into(), |sandbox| {
             sandbox.exec_streaming(req, on_chunk)
         })
+    }
+
+    /// Attach and identity-verify a tenant drive before running the lease's
+    /// workload. On failure the underlying sandbox has already been discarded
+    /// by `RunningSandbox::attach_drive_verified`; the lease is released and
+    /// the pool starts refilling a replacement.
+    pub fn attach_drive_verified(&mut self, request: HotplugDriveAttach) -> Result<(), FcError> {
+        let Some(sandbox) = self.sandbox.take() else {
+            return Err(FcError::OneShotConsumed);
+        };
+        match sandbox.attach_drive_verified(request) {
+            Ok(sandbox) => {
+                self.sandbox = Some(sandbox);
+                Ok(())
+            }
+            Err(err) => {
+                self.release_and_refill();
+                Err(err)
+            }
+        }
     }
 
     /// VM id for the leased slot.

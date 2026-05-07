@@ -57,7 +57,9 @@ probes are internal health checks and do not consume the one-shot token. When a
 `WarmLease` holds a one-shot sandbox, its exec methods run the workload, then
 force-kill/delete the VM and trigger pool refill before returning success. This
 lets conveyor-belt callers hand off one workload without external cleanup
-state.
+state. `WarmLease::attach_drive_verified` can run before that first workload so
+the slot receives and verifies its tenant drive while the one-shot token remains
+unconsumed.
 
 `RunningSandbox::exec_streaming(&mut self, ..., on_chunk)` is the real-time
 stdout/stderr form. It forces `ExecRequest::streaming = true`, invokes
@@ -216,6 +218,7 @@ Public surface:
 | `WarmLease::exec_with_request_id` | Delegates one exec while temporarily stamping the leased slot with the caller request id. |
 | `WarmLease::exec_streaming` | Delegates one streaming exec to the leased `RunningSandbox`, preserving stdout/stderr chunks before terminal exit. |
 | `WarmLease::exec_streaming_with_request_id` | Streaming exec plus temporary caller request-id stamping. |
+| `WarmLease::attach_drive_verified` | Attaches and identity-verifies a tenant drive before the lease workload; failures release the lease and refill a replacement. |
 | `WarmLease::discard` | Kills and deletes the slot, then starts background refill. `Drop` performs the same discard best-effort. One-shot leases perform this after the first exec. |
 
 The first implementation never infers reuse from liveness, process
@@ -525,4 +528,4 @@ Usage rules (identical in both crates):
 - `tests/cleanup_vocabulary.rs` — `CleanupPhase`, `StopDisposition`, `CleanupReleaseBlocker`, `CleanupAuthority`, and `LifecycleFailureKind::ALL` are exhaustive and match behavior docs.
 - `tests/layout.rs` — pure path helpers produce expected strings given fixed run-root + vm-id inputs.
 - `tests/warm_pool.rs` — `WarmPool::new` rejects `target_ready == 0` and workspace-backed configs; `BlankVmResetEvidence` fields are exhaustively named.
-- KVM integration tests (`#[ignore]`) live in `tests/e2e_*.rs`; they require a real Firecracker binary and KVM device.
+- KVM integration tests (`#[ignore]`) live in `tests/end_to_end_real_kvm.rs`, `tests/warm_pool.rs`, and related lifecycle files; they require a real Firecracker binary and KVM device. The Bestiary stand-in proof is `tests/bestiary_stand_in_real_kvm.rs`.
