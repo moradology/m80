@@ -21,6 +21,9 @@ pub const FIRST_LINE_VCPU_COUNT: u32 = 1;
 /// timing proofs.
 pub const FIRST_LINE_MEM_SIZE_MIB: u32 = 1024;
 
+/// Default count of preallocated hotplug drive slots.
+pub const DEFAULT_PREALLOCATED_DRIVE_SLOTS: u8 = 0;
+
 /// Inner state of the admission semaphore: `(available_permits, Condvar)`.
 pub(crate) type SemaphoreInner = (Mutex<u32>, Condvar);
 
@@ -236,6 +239,9 @@ pub struct SandboxConfig {
     /// sandbox. CLI callers set this once per invocation so diagnostics and
     /// guest stderr can be grepped with the same token.
     pub request_id: Option<String>,
+    /// Number of writable placeholder drive slots created before
+    /// `InstanceStart` so later attachment can use `PATCH /drives/{id}`.
+    pub preallocated_drive_slots: u8,
 }
 
 impl Default for SandboxConfig {
@@ -251,6 +257,7 @@ impl Default for SandboxConfig {
             idle_timeout: Some(Duration::from_secs(300)),
             daemonize: false,
             request_id: None,
+            preallocated_drive_slots: DEFAULT_PREALLOCATED_DRIVE_SLOTS,
         }
     }
 }
@@ -441,12 +448,19 @@ pub(crate) struct StoragePrep {
     pub(crate) rootfs: Rootfs,
     /// The scratch image (Some if a workspace was requested).
     pub(crate) scratch: Option<Scratch>,
+    /// Writable placeholder drive images bound into the jail for preallocated
+    /// hotplug slots.
+    pub(crate) preallocated_drive_slots: Vec<PathBuf>,
 }
 
 impl std::fmt::Debug for StoragePrep {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StoragePrep")
             .field("has_scratch", &self.scratch.is_some())
+            .field(
+                "preallocated_drive_slots",
+                &self.preallocated_drive_slots.len(),
+            )
             .finish()
     }
 }

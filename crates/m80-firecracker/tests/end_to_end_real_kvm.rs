@@ -59,6 +59,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        preallocated_drive_slots: 0,
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
@@ -115,6 +116,7 @@ fn end_to_end_real_kvm_daemonized_boot_exec_stop_delete() {
         idle_timeout: None,
         daemonize: true,
         request_id: None,
+        preallocated_drive_slots: 0,
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
@@ -181,6 +183,7 @@ fn end_to_end_real_kvm_file_ops() {
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        preallocated_drive_slots: 0,
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
@@ -303,6 +306,7 @@ fn end_to_end_real_kvm_jailer_security_parity() {
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        preallocated_drive_slots: 0,
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
@@ -387,6 +391,7 @@ fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        preallocated_drive_slots: 0,
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");

@@ -313,6 +313,7 @@ fn sandbox_config_for_run(
         idle_timeout: None,
         daemonize: false,
         request_id: Some(request_id),
+        preallocated_drive_slots: 0,
     }
 }
 

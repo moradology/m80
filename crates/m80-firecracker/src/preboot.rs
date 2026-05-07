@@ -6,6 +6,7 @@ use m80_firecracker_client::{BootSourceConfig, Client, DriveConfig, MachineConfi
 use m80_image_manifest::{ImageKind, KernelKind};
 
 use crate::error::FcError;
+use crate::layout::preallocated_drive_slot_jail_path;
 use crate::types::{SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT};
 
 /// `panic=-1` triggers immediate reboot on kernel panic (vs. `panic=1`'s
@@ -81,6 +82,15 @@ pub(crate) fn plan_preboot_puts(
         }));
     }
 
+    for slot in 0..config.preallocated_drive_slots {
+        puts.push(PrebootPut::Drive(DriveConfig {
+            drive_id: preallocated_drive_slot_id(slot),
+            path_on_host: preallocated_drive_slot_jail_path(slot),
+            is_root_device: false,
+            is_read_only: false,
+        }));
+    }
+
     puts.push(PrebootPut::Vsock(VsockConfig {
         guest_cid: m80_vsock::cid_for_vm_id(vm_id),
         uds_path: PathBuf::from("/vsock.sock"),
@@ -101,6 +111,10 @@ pub(crate) fn apply_preboot_puts(client: &Client, puts: &[PrebootPut]) -> Result
     }
 
     Ok(())
+}
+
+pub(crate) fn preallocated_drive_slot_id(slot: u8) -> String {
+    format!("hotplug_slot_{slot}")
 }
 
 fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
@@ -243,6 +257,39 @@ mod tests {
         });
 
         assert!(!workspace_drive);
+    }
+
+    #[test]
+    fn preallocated_drive_slots_are_after_rootfs_overlay_and_before_vsock() {
+        let config = SandboxConfig {
+            preallocated_drive_slots: 2,
+            ..SandboxConfig::default()
+        };
+
+        let puts = plan_preboot_puts(
+            &config,
+            "vm-alpha",
+            ImageKind::Ubuntu,
+            KernelKind::Stock,
+            false,
+        );
+
+        let PrebootPut::Drive(slot0) = &puts[4] else {
+            panic!("first hotplug slot must follow rootfs overlay");
+        };
+        let PrebootPut::Drive(slot1) = &puts[5] else {
+            panic!("second hotplug slot must follow first hotplug slot");
+        };
+        assert_eq!(slot0.drive_id, "hotplug_slot_0");
+        assert_eq!(slot0.path_on_host, PathBuf::from("/hotplug-slot-0.raw"));
+        assert!(!slot0.is_root_device);
+        assert!(!slot0.is_read_only);
+        assert_eq!(slot1.drive_id, "hotplug_slot_1");
+        assert_eq!(slot1.path_on_host, PathBuf::from("/hotplug-slot-1.raw"));
+
+        let PrebootPut::Vsock(_) = &puts[6] else {
+            panic!("vsock must remain after all preboot drive slots");
+        };
     }
 
     #[test]

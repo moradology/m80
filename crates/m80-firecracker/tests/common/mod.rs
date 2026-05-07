@@ -55,6 +55,7 @@ pub fn sandbox_config() -> m80_firecracker::SandboxConfig {
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        preallocated_drive_slots: 0,
     }
 }
 

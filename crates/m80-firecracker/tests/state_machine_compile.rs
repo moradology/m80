@@ -19,6 +19,7 @@ fn sandbox_new_returns_deferred_error_in_v0_1() {
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        preallocated_drive_slots: 0,
     };
 
     let err = m80_firecracker::Sandbox::new(config)

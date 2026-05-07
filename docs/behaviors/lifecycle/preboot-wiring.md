@@ -50,6 +50,24 @@ the predecessor workspace drive behavior recorded at
 current m80 filename `/scratch.ext4` rather than predecessor's older
 `workspace.ext4` wording.
 
+## Preallocated Drive Slots
+
+When `SandboxConfig::preallocated_drive_slots` is greater than zero, m80
+creates writable placeholder files in the run root and bind-mounts them into
+the jail. The preboot plan PUTs one non-root read-write drive per slot before
+the vsock device:
+
+- `hotplug_slot_0`: `/hotplug-slot-0.raw`
+- `hotplug_slot_1`: `/hotplug-slot-1.raw`
+- and so on through the configured count.
+
+These slots are deliberately opt-in; `DEFAULT_PREALLOCATED_DRIVE_SLOTS` is
+zero for ordinary launches. The slot files exist so a later attach path can
+retarget an already-created Firecracker drive with `PATCH /drives/{drive_id}`
+instead of trying to create a drive after `InstanceStart`. Firecracker versions
+without drive `PATCH` support surface that failure through the existing typed
+drive-write error path.
+
 ## Vsock Device
 
 m80 PUTs `/vsock` after the drive PUTs and before `InstanceStart`. The guest

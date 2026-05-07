@@ -77,6 +77,7 @@ fn launch_vm(
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            preallocated_drive_slots: 0,
         })
         .expect("admit");
     let running = sandbox.launch().expect("launch");

@@ -257,6 +257,7 @@ mod tests {
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            preallocated_drive_slots: 0,
         }
     }
 

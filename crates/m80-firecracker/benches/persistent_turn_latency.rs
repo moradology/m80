@@ -74,6 +74,7 @@ fn sandbox_config(vm_id: String) -> SandboxConfig {
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        preallocated_drive_slots: 0,
     }
 }
 

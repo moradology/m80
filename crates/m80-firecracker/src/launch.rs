@@ -29,18 +29,18 @@ use m80_observability::Phase;
 use m80_preflight::Discovery;
 use m80_proto::READY_PORT_DEFAULT;
 use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
-use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-use crate::diagnostics::{phase, phase_event};
+use crate::diagnostics::phase;
 use crate::error::{ConfigError, FcError};
 use crate::layout::{
-    console_log_path, firecracker_api_socket_path, rootfs_overlay_path, run_dir_path,
-    scratch_image_path, vsock_socket_path,
+    console_log_path, firecracker_api_socket_path, preallocated_drive_slot_filename, run_dir_path,
+    vsock_socket_path,
 };
 use crate::lifecycle::{bind_snapshot_parent_into_jail, monotonic_ns, spawn_idle_watcher};
 use crate::preboot::{apply_preboot_puts, plan_preboot_puts};
 use crate::runroot::write_ownership_lock;
+use crate::storage_prep::phase_3_storage_prep;
 use crate::types::{
     CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
 };
@@ -56,9 +56,6 @@ macro_rules! diag_phase {
         crate::diagnostics::phase_result($diag, $phase, $name, $vid, $rid, || $body)
     };
 }
-
-/// Default scratch size: 64 MiB.
-const SCRATCH_DEFAULT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Ready probe: total timeout.
 ///
@@ -673,33 +670,6 @@ fn phase_1_run_root_prep(run_root: &Path, vm_id: &str) -> Result<PathBuf, FcErro
     Ok(run_dir)
 }
 
-/// Phase 3: prepare the rootfs overlay; optionally create a scratch image for
-/// the workspace.
-fn phase_3_storage_prep(
-    vm_id: &str,
-    base_rootfs: &Path,
-    config: &SandboxConfig,
-    run_dir: &Path,
-) -> Result<StoragePrep, FcError> {
-    // Allocate a sparse per-VM overlay ext4; the base is NOT copied.
-    let overlay_dest = rootfs_overlay_path(run_dir);
-    let t = Instant::now();
-    let rootfs = Rootfs::prepare(base_rootfs, &overlay_dest, config.overlay_size_bytes)?;
-    phase_event("phase_3b_rootfs_prepare", vm_id, t.elapsed());
-
-    let scratch = if let Some(workspace) = &config.workspace {
-        let scratch_dest = scratch_image_path(run_dir);
-        let t = Instant::now();
-        let scratch = Scratch::create(workspace, &scratch_dest, SCRATCH_DEFAULT_BYTES)?;
-        phase_event("phase_3c_scratch_create", vm_id, t.elapsed());
-        Some(scratch)
-    } else {
-        None
-    };
-
-    Ok(StoragePrep { rootfs, scratch })
-}
-
 /// Phase 4: compute a `JailerConfig`, run `Plan::compute`, and materialize.
 struct JailerMaterializeInput<'a> {
     jailer_bin: &'a Path,
@@ -743,6 +713,14 @@ fn phase_4_jailer_materialize(
         bindings.push(Binding {
             source: scratch.path().to_path_buf(),
             dest: PathBuf::from("scratch.ext4"),
+            mode: BindMode::Rw,
+        });
+    }
+
+    for (slot, path) in input.storage.preallocated_drive_slots.iter().enumerate() {
+        bindings.push(Binding {
+            source: path.clone(),
+            dest: PathBuf::from(preallocated_drive_slot_filename(slot as u8)),
             mode: BindMode::Rw,
         });
     }
@@ -988,82 +966,4 @@ fn guest_ready_probe_port() -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::io::Write;
-    use std::os::unix::net::UnixStream;
-    use std::time::Duration;
-
-    use super::*;
-
-    #[test]
-    fn ready_listener_path_uses_muxer_port_suffix() {
-        let vsock = Path::new("/run/m80/vm/firecracker/vm/root/vsock.sock");
-
-        assert_eq!(
-            ready_listener_path(vsock),
-            PathBuf::from(format!(
-                "/run/m80/vm/firecracker/vm/root/vsock.sock_{}",
-                READY_PORT_DEFAULT
-            ))
-        );
-    }
-
-    #[test]
-    fn ready_signal_accepts_protocol_version_byte() {
-        let dir = tempfile::tempdir().unwrap();
-        let ready_path = dir.path().join("ready.sock");
-        let listener = UnixListener::bind(&ready_path).unwrap();
-        let client_path = ready_path.clone();
-        let client = std::thread::spawn(move || {
-            let mut stream = UnixStream::connect(client_path).unwrap();
-            stream
-                .write_all(&[m80_proto::PROTOCOL_VERSION as u8])
-                .unwrap();
-        });
-
-        accept_ready_signal(&listener, &ready_path, Duration::from_secs(1)).unwrap();
-
-        client.join().unwrap();
-    }
-
-    #[test]
-    fn ready_timeout_fails_closed() {
-        let dir = tempfile::tempdir().unwrap();
-        let ready_path = dir.path().join("ready.sock");
-        let listener = UnixListener::bind(&ready_path).unwrap();
-
-        let err =
-            accept_ready_signal(&listener, &ready_path, Duration::from_millis(1)).unwrap_err();
-
-        assert!(
-            matches!(err, FcError::GuestdReadyTimeout { ref path, timeout }
-                if *path == ready_path && timeout == Duration::from_millis(1)),
-            "unexpected error: {err:?}"
-        );
-    }
-
-    #[test]
-    fn ready_signal_rejects_wrong_protocol_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let ready_path = dir.path().join("ready.sock");
-        let listener = UnixListener::bind(&ready_path).unwrap();
-        let client_path = ready_path.clone();
-        let client = std::thread::spawn(move || {
-            let mut stream = UnixStream::connect(client_path).unwrap();
-            stream.write_all(&[0]).unwrap();
-        });
-
-        let err = accept_ready_signal(&listener, &ready_path, Duration::from_secs(1)).unwrap_err();
-
-        assert!(
-            matches!(err, FcError::Vsock(m80_vsock::VsockError::HandshakeFailed)),
-            "unexpected error: {err:?}"
-        );
-        client.join().unwrap();
-    }
-
-    #[test]
-    fn guest_vsock_port_is_9001() {
-        assert_eq!(guest_ready_probe_port(), 9001);
-    }
-}
+mod tests;

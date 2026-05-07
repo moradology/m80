@@ -247,7 +247,8 @@ Firecracker assigns block-device names in PUT order: first PUT becomes
 |---------:|-------------------|------------------------------------------|---------|------------|---------|
 |        1 | `rootfs`          | `<image>/output.ext4` (shared base)      | **RO**  | `/dev/vda` | Read-only base ext4. Bind-mounted into the jail at `/rootfs.ext4`. Same host file for every VM that uses this image — host page cache deduplicates. |
 |        2 | `rootfs_overlay`  | `<run_dir>/rootfs.overlay.ext4`          | RW      | `/dev/vdb` | Per-VM sparse ext4. m80-guestd's PID-1 setup mounts `/dev/vda` as the lowerdir, this as the upperdir, overlayfs on `/`. |
-|        3 | `workspace`       | `<run_dir>/scratch.ext4` (if requested)  | RW      | `/dev/vdc` | Per-VM workspace ext4. Mounted at `/workspace`. Subject to opt-in `Scratch::extract` after stop. Only present when `SandboxConfig::workspace_dir.is_some()`. |
+|        3 | `workspace`       | `<run_dir>/scratch.ext4` (if requested)  | RW      | `/dev/vdc` | Per-VM workspace ext4. Mounted at `/workspace`. Subject to opt-in `Scratch::extract` after stop. Only present when `SandboxConfig::workspace.is_some()`. |
+|     3+N | `hotplug_slot_N`  | `<run_dir>/hotplug-slot-N.raw`           | RW      | next block device | Optional placeholder drive slots. Created when `SandboxConfig::preallocated_drive_slots > 0`; later callers retarget an existing slot with Firecracker `PATCH /drives/{id}`. |
 
 The base + overlay split is what `m80-storage::Rootfs` produces;
 `m80-storage::Scratch` is the workspace. Per-VM sparse files cost ~10 ms
@@ -271,11 +272,19 @@ for callers that already minted an opaque request id.
 
 `m80-firecracker` builds a pure ordered preboot PUT plan and applies it before
 `InstanceStart`: machine config, boot source, shared read-only rootfs drive,
-per-VM rootfs overlay drive, optional workspace scratch drive, then vsock.
+per-VM rootfs overlay drive, optional workspace scratch drive, optional
+preallocated hotplug drive slots, then vsock.
 Outbound NAT is rejected in v0.1 before this plan is built, so there is no NIC
 PUT in v0.1. After the plan succeeds and before `InstanceStart`, the launch
 path writes `<run_dir>/boot-identity.json` from the identity admitted by
 `m80-preflight`. See `docs/behaviors/lifecycle/preboot-wiring.md`.
+
+Preallocated slots are opt-in (`DEFAULT_PREALLOCATED_DRIVE_SLOTS = 0`) because
+ordinary one-shot launches do not need extra block devices. The slot exists
+only so request-path attach is a `PATCH /drives/{id}` against a previously
+PUT drive, not a create-then-attach operation. Firecracker versions that do
+not support drive `PATCH` fail through the `m80-firecracker-client`
+`DriveWriteFailed` path.
 
 ### Start and readiness
 
@@ -386,7 +395,7 @@ Core types:
 - `Backend` — orchestration root: `new(BackendConfig)`, `admit()`, `recover_stale_run_root()`.
 - `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
 - `WarmLease` — single exec slot checked out from `WarmPool`.
-- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, etc.).
+- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, etc.).
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
 - `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.
 - `FcError` — exhaustive typed error for all phases.
