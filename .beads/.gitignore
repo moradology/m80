@@ -10,6 +10,7 @@
 # Temporary
 last-touched
 *.tmp
+execute/
 
 # Local history backups
 .br_history/
