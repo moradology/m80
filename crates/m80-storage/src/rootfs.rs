@@ -172,12 +172,15 @@ fn mkfs_ext4(path: &Path) -> Result<(), StorageError> {
         })?;
 
     if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        let detail = if out.stderr.is_empty() {
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        } else {
+            String::from_utf8_lossy(&out.stderr).trim().to_owned()
+        };
         return Err(StorageError::MkfsFailed {
             path: path.to_path_buf(),
             status: out.status.code().unwrap_or(-1),
-            stderr: if stderr.is_empty() { stdout } else { stderr },
+            stderr: detail,
         });
     }
     Ok(())

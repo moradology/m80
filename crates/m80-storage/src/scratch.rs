@@ -160,11 +160,12 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
         .output()
         .map_err(StorageError::Mkfs)?;
     if !mkfs_out.status.success() {
-        let stderr = String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned();
-        let stdout = String::from_utf8_lossy(&mkfs_out.stdout).trim().to_owned();
-        return Err(StorageError::Mkfs(std::io::Error::other(
-            if stderr.is_empty() { stdout } else { stderr },
-        )));
+        let detail = if mkfs_out.stderr.is_empty() {
+            String::from_utf8_lossy(&mkfs_out.stdout).trim().to_owned()
+        } else {
+            String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned()
+        };
+        return Err(StorageError::Mkfs(std::io::Error::other(detail)));
     }
 
     let mount_dir = TempDir::new().map_err(|e| io_err(image, e))?;
@@ -199,11 +200,14 @@ fn run_e2fsck(image: &Path) -> Result<(), StorageError> {
         return Ok(());
     }
 
-    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let detail = if out.stderr.is_empty() {
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    } else {
+        String::from_utf8_lossy(&out.stderr).trim().to_owned()
+    };
     Err(StorageError::E2fsckFailed {
         exit: out.status.code().unwrap_or(-1),
-        stderr: if stderr.is_empty() { stdout } else { stderr },
+        stderr: detail,
     })
 }
 
