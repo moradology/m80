@@ -39,7 +39,7 @@ fn prometheus_render_includes_guest_metrics() {
         }),
     };
 
-    let rendered = render_prometheus(&health, &metrics).unwrap();
+    let rendered = render_prometheus(&health, &metrics);
 
     assert!(rendered.contains("# TYPE m80_guest_cpu_total_ticks counter"));
     assert!(rendered.contains("m80_guest_cpu_total_ticks 117\n"));

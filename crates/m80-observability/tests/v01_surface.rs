@@ -31,14 +31,14 @@ fn aggregate_health_empty_records_is_rollout_ready() {
 fn render_prometheus_returns_exposition_text() {
     let snapshot = HealthSnapshot::default();
     let metrics = OpsMetrics::default();
-    let result = render_prometheus(&snapshot, &metrics).unwrap();
+    let result = render_prometheus(&snapshot, &metrics);
     assert!(result.contains("m80_vm_health_total"));
 }
 
 #[test]
 fn render_health_json_returns_json() {
     let snapshot = HealthSnapshot::default();
-    let result = render_health_json(&snapshot).unwrap();
+    let result = render_health_json(&snapshot);
     let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
     assert_eq!(parsed["total"], 0);
 }

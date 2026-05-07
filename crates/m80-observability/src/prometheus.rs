@@ -1,22 +1,15 @@
-use crate::{HealthSnapshot, ObservabilityError, OpsMetrics};
+use crate::{HealthSnapshot, OpsMetrics};
 
 /// Render a Prometheus exposition-format text response.
-pub fn render_prometheus(
-    health: &HealthSnapshot,
-    metrics: &OpsMetrics,
-) -> Result<String, ObservabilityError> {
+pub fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> String {
     let mut out = String::new();
-    metric(&mut out, "m80_vm_health_healthy", health.healthy);
-    metric(&mut out, "m80_vm_health_degraded", health.degraded);
-    metric(&mut out, "m80_vm_health_stuck", health.stuck);
-    metric(&mut out, "m80_vm_health_exited", health.exited);
-    metric(&mut out, "m80_vm_health_total", health.total);
-    metric(
-        &mut out,
-        "m80_vm_rollout_ready",
-        u32::from(health.rollout_ready),
-    );
-    metric(&mut out, "m80_ops_vm_count", metrics.vm_count);
+    metric_u64(&mut out, "m80_vm_health_healthy", u64::from(health.healthy));
+    metric_u64(&mut out, "m80_vm_health_degraded", u64::from(health.degraded));
+    metric_u64(&mut out, "m80_vm_health_stuck", u64::from(health.stuck));
+    metric_u64(&mut out, "m80_vm_health_exited", u64::from(health.exited));
+    metric_u64(&mut out, "m80_vm_health_total", u64::from(health.total));
+    metric_u64(&mut out, "m80_vm_rollout_ready", u64::from(health.rollout_ready));
+    metric_u64(&mut out, "m80_ops_vm_count", u64::from(metrics.vm_count));
     if let Some(guest) = &metrics.guest {
         counter(&mut out, "m80_guest_cpu_total_ticks", guest.cpu.total_ticks);
         counter(&mut out, "m80_guest_cpu_user_ticks", guest.cpu.user_ticks);
@@ -83,11 +76,7 @@ pub fn render_prometheus(
         counter(&mut out, "m80_guest_requests_total", guest.requests_total);
         counter(&mut out, "m80_guest_errors_total", guest.errors_total);
     }
-    Ok(out)
-}
-
-fn metric(out: &mut String, name: &str, value: u32) {
-    metric_u64(out, name, u64::from(value));
+    out
 }
 
 fn metric_u64(out: &mut String, name: &str, value: u64) {
@@ -126,7 +115,7 @@ mod tests {
             vm_count: 1,
             ..OpsMetrics::default()
         };
-        let rendered = render_prometheus(&health, &metrics).unwrap();
+        let rendered = render_prometheus(&health, &metrics);
         assert!(rendered.contains("# TYPE m80_vm_health_healthy gauge"));
         assert!(rendered.contains("m80_vm_health_healthy 1\n"));
         assert!(rendered.contains("m80_vm_rollout_ready 1\n"));

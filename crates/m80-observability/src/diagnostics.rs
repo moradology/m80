@@ -59,12 +59,6 @@ impl Diagnostics {
     }
 }
 
-impl Default for Diagnostics {
-    fn default() -> Self {
-        Self::disabled()
-    }
-}
-
 impl Drop for Diagnostics {
     fn drop(&mut self) {
         if let Some(file) = self.file.as_mut() {

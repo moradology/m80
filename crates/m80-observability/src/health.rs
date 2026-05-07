@@ -53,8 +53,8 @@ pub fn aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, Obs
 }
 
 /// Render a JSON health snapshot.
-pub fn render_health_json(health: &HealthSnapshot) -> Result<String, ObservabilityError> {
-    serde_json::to_string_pretty(health).map_err(ObservabilityError::from)
+pub fn render_health_json(health: &HealthSnapshot) -> String {
+    serde_json::to_string_pretty(health).unwrap()
 }
 
 #[cfg(test)]
@@ -102,7 +102,7 @@ mod tests {
             ..HealthSnapshot::default()
         };
         let value: serde_json::Value =
-            serde_json::from_str(&render_health_json(&snapshot).unwrap()).unwrap();
+            serde_json::from_str(&render_health_json(&snapshot)).unwrap();
         assert_eq!(value["healthy"], 2);
         assert_eq!(value["rollout_ready"], true);
     }
