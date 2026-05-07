@@ -8,7 +8,7 @@ use m80_cli::errors::{
     envelope, exit_code_for, EXIT_ADMISSION, EXIT_CONFIG, EXIT_GENERIC, EXIT_INVALID_STATE,
     EXIT_MANIFEST, EXIT_NOT_IMPLEMENTED, EXIT_POOL_EMPTY, EXIT_PREFLIGHT,
 };
-use m80_firecracker::FcError;
+use m80_firecracker::{ConfigError, FcError};
 use m80_image_manifest::ManifestError;
 use m80_preflight::PreflightError;
 
@@ -88,72 +88,75 @@ fn feature_gap_failure_uses_distinct_exit_code() {
     assert!(stderr.contains("reserved for egress allowlists"));
 }
 
-#[test]
-fn documented_fc_error_classes_have_cli_exit_codes_and_payloads() {
-    let cases = [
-        (
-            FcError::Io(std::io::Error::new(std::io::ErrorKind::Other, "io")),
-            EXIT_GENERIC,
-            "Io",
-        ),
-        (
-            FcError::Preflight(PreflightError::KvmUnavailable {
-                path: "/dev/kvm".into(),
-            }),
-            EXIT_PREFLIGHT,
-            "Preflight",
-        ),
-        (
-            FcError::AdmissionRefused { limit: 8 },
-            EXIT_ADMISSION,
-            "AdmissionRefused",
-        ),
-        (
-            FcError::Manifest(ManifestError::UnsupportedSchemaVersion(0)),
-            EXIT_MANIFEST,
-            "Manifest",
-        ),
-        (
-            FcError::InvalidState {
-                expected: "Running",
-                actual: "Stopped",
-            },
-            EXIT_INVALID_STATE,
-            "InvalidState",
-        ),
-        (
-            FcError::Config("bad config".to_owned()),
-            EXIT_CONFIG,
-            "Config",
-        ),
-        (
-            FcError::PoolEmpty { target_ready: 1 },
-            EXIT_POOL_EMPTY,
-            "PoolEmpty",
-        ),
-        (
-            FcError::ApiSocketTimeout {
-                path: "/run/m80/firecracker.sock".into(),
-                timeout: std::time::Duration::from_secs(5),
-            },
-            EXIT_GENERIC,
-            "ApiSocketTimeout",
-        ),
-        (
-            FcError::GuestdReadyTimeout {
-                path: "/run/m80/vsock.sock_9000".into(),
-                timeout: std::time::Duration::from_secs(60),
-            },
-            EXIT_GENERIC,
-            "GuestdReadyTimeout",
-        ),
-    ];
+fn assert_exit_code_and_payload(err: &FcError, expected_code: i32, expected_variant: &str) {
+    assert_eq!(exit_code_for(err), expected_code, "{err:?}");
+    let payload = envelope(err);
+    assert_eq!(payload.variant, expected_variant, "{err:?}");
+    assert_eq!(payload.exit_code, expected_code, "{err:?}");
+    assert!(!payload.detail.is_empty(), "{err:?}");
+}
 
-    for (err, expected_code, expected_variant) in cases {
-        assert_eq!(exit_code_for(&err), expected_code, "{err:?}");
-        let payload = envelope(&err);
-        assert_eq!(payload.variant, expected_variant, "{err:?}");
-        assert_eq!(payload.exit_code, expected_code, "{err:?}");
-        assert!(!payload.detail.is_empty(), "{err:?}");
-    }
+#[test]
+fn io_error_has_exit_code() {
+    let err = FcError::Io(std::io::Error::new(std::io::ErrorKind::Other, "io"));
+    assert_exit_code_and_payload(&err, EXIT_GENERIC, "Io");
+}
+
+#[test]
+fn preflight_error_has_exit_code() {
+    let err = FcError::Preflight(PreflightError::KvmUnavailable {
+        path: "/dev/kvm".into(),
+    });
+    assert_exit_code_and_payload(&err, EXIT_PREFLIGHT, "Preflight");
+}
+
+#[test]
+fn admission_refused_has_exit_code() {
+    let err = FcError::AdmissionRefused { limit: 8 };
+    assert_exit_code_and_payload(&err, EXIT_ADMISSION, "AdmissionRefused");
+}
+
+#[test]
+fn manifest_error_has_exit_code() {
+    let err = FcError::Manifest(ManifestError::UnsupportedSchemaVersion(0));
+    assert_exit_code_and_payload(&err, EXIT_MANIFEST, "Manifest");
+}
+
+#[test]
+fn invalid_state_has_exit_code() {
+    let err = FcError::InvalidState {
+        expected: "Running",
+        actual: "Stopped",
+    };
+    assert_exit_code_and_payload(&err, EXIT_INVALID_STATE, "InvalidState");
+}
+
+#[test]
+fn config_error_has_exit_code() {
+    let err = FcError::Config(ConfigError::Other("bad config".to_owned()));
+    assert_exit_code_and_payload(&err, EXIT_CONFIG, "Config");
+}
+
+#[test]
+fn pool_empty_has_exit_code() {
+    let err = FcError::PoolEmpty { target_ready: 1 };
+    assert_exit_code_and_payload(&err, EXIT_POOL_EMPTY, "PoolEmpty");
+}
+
+#[test]
+fn api_socket_timeout_has_exit_code() {
+    let err = FcError::ApiSocketTimeout {
+        path: "/run/m80/firecracker.sock".into(),
+        timeout: std::time::Duration::from_secs(5),
+    };
+    assert_exit_code_and_payload(&err, EXIT_GENERIC, "ApiSocketTimeout");
+}
+
+#[test]
+fn guestd_ready_timeout_has_exit_code() {
+    let err = FcError::GuestdReadyTimeout {
+        path: "/run/m80/vsock.sock_9000".into(),
+        timeout: std::time::Duration::from_secs(60),
+    };
+    assert_exit_code_and_payload(&err, EXIT_GENERIC, "GuestdReadyTimeout");
 }

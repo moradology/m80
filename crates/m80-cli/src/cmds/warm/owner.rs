@@ -37,7 +37,7 @@ fn run_foreground_inner(
     let socket_path = status::socket_path()?;
     let warm_root = status::warm_root()?;
     if socket_path.exists() {
-        return Err(FcError::Config(format!(
+        return Err(FcError::config_other(format!(
             "warm owner socket already exists at {}; run `m80 warm disable` first",
             socket_path.display()
         )));
@@ -199,7 +199,7 @@ fn wait_for_filling_to_settle(pool: &WarmPool, timeout: Duration) -> Result<(), 
     let deadline = Instant::now() + timeout;
     while pool.snapshot().filling > 0 {
         if Instant::now() >= deadline {
-            return Err(FcError::Config(
+            return Err(FcError::config_other(
                 "warm owner drain timed out waiting for filling slots".to_owned(),
             ));
         }

@@ -71,7 +71,7 @@ pub(super) fn cmd_logs(
     };
     let run_dir = run_root.join(vm_id);
     if !run_dir.exists() {
-        let e = FcError::Config(format!("no run-dir found for vm_id={vm_id}"));
+        let e = FcError::config_other(format!("no run-dir found for vm_id={vm_id}"));
         return Ok(errors::render_error(&e, json_mode));
     }
 
@@ -278,7 +278,7 @@ fn parse_since(value: &str) -> Result<u64, FcError> {
         return Ok(ms);
     }
     rfc3339_seconds_to_unix_ms(value).ok_or_else(|| {
-        FcError::Config(format!(
+        FcError::config_other(format!(
             "m80 logs --since must be UNIX milliseconds or YYYY-MM-DDTHH:MM:SSZ, got `{value}`"
         ))
     })

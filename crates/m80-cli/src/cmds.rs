@@ -4,7 +4,7 @@ use std::io::{BufRead as _, BufReader, Read as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use m80_firecracker::{Backend, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
+use m80_firecracker::{Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
 use m80_preflight::{Discovery, PreflightError};
 
 use crate::args::{EgressMode, QuickstartArgs, WarmAction, WritebackMode};
@@ -18,8 +18,8 @@ use crate::profile::{self, ProfileFilePaths};
 pub(crate) fn build_backend(
     flag_overrides: &HashMap<&str, String>,
 ) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
-    let effective =
-        config::load_effective(flag_overrides).map_err(|e| FcError::Config(format!("{e:#}")))?;
+    let effective = config::load_effective(flag_overrides)
+        .map_err(|e| FcError::Config(ConfigError::Other(format!("{e:#}"))))?;
     backend_from_effective(effective)
 }
 
@@ -28,8 +28,8 @@ fn build_run_backend(profile: Option<String>) -> Result<(Arc<Backend>, Effective
     if let Some(profile) = profile {
         flag_overrides.insert("default_profile", profile);
     }
-    let effective =
-        config::load_effective(&flag_overrides).map_err(|e| FcError::Config(format!("{e:#}")))?;
+    let effective = config::load_effective(&flag_overrides)
+        .map_err(|e| FcError::Config(ConfigError::Other(format!("{e:#}"))))?;
     let runtime_profile = profile::resolve_from_effective(&effective, ProfileFilePaths::host())?;
     let _profile_env = runtime_profile.apply_env();
     backend_from_effective(effective)
@@ -55,7 +55,7 @@ fn backend_from_effective(
         artifact_config,
     )?;
     let backend_config = config::backend_config(discovery, &effective)
-        .map_err(|e| FcError::Config(format!("{e:#}")))?;
+        .map_err(|e| FcError::Config(ConfigError::Other(format!("{e:#}"))))?;
     let backend = Backend::new_with_effective_config(backend_config, effective.clone())?;
     Ok((Arc::new(backend), effective))
 }
@@ -108,15 +108,21 @@ pub fn cmd_run(
     }
 
     let Some((program, args)) = argv.split_first() else {
-        let e = FcError::Config("m80 run requires a command after `--`".to_owned());
+        let e = FcError::Config(ConfigError::MissingField { field: "argv" });
         return Ok(errors::render_error(&e, json));
     };
     if scratch_size == Some(0) {
-        let e = FcError::Config("m80 run --scratch-size must be greater than zero".to_owned());
+        let e = FcError::Config(ConfigError::InvalidValue {
+            field: "scratch_size",
+            reason: "must be greater than zero".into(),
+        });
         return Ok(errors::render_error(&e, json));
     }
     if writeback != WritebackMode::Never && workspace.is_none() {
-        let e = FcError::Config("m80 run --writeback requires --workspace".to_owned());
+        let e = FcError::Config(ConfigError::InvalidValue {
+            field: "writeback",
+            reason: "--writeback requires --workspace".into(),
+        });
         return Ok(errors::render_error(&e, json));
     }
     let workspace_for_writeback = workspace.clone();
@@ -243,28 +249,34 @@ fn validate_run_flags(
     json: bool,
 ) -> Result<(), FcError> {
     if interactive && !tty {
-        return Err(FcError::Config("m80 run -i requires --tty / -t".to_owned()));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "interactive",
+            reason: "-i requires --tty / -t".into(),
+        }));
     }
     if tty && json {
-        return Err(FcError::Config(
-            "m80 run --tty is incompatible with --json".to_owned(),
-        ));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "tty",
+            reason: "--tty is incompatible with --json".into(),
+        }));
     }
     if tty && stdin {
-        return Err(FcError::Config(
-            "m80 run --stdin is incompatible with --tty".to_owned(),
-        ));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "stdin",
+            reason: "--stdin is incompatible with --tty".into(),
+        }));
     }
     if warm && has_workspace {
-        return Err(FcError::Config(
-            "m80 run --warm --workspace is unsupported until attach-late workspace lands"
-                .to_owned(),
-        ));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "workspace",
+            reason: "--warm --workspace is unsupported until attach-late workspace lands".into(),
+        }));
     }
     if warm && tty {
-        return Err(FcError::Config(
-            "m80 run --warm is incompatible with --tty until warm terminal leases land".to_owned(),
-        ));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "tty",
+            reason: "--warm is incompatible with --tty until warm terminal leases land".into(),
+        }));
     }
     Ok(())
 }
@@ -307,14 +319,16 @@ fn parse_env(values: Vec<String>) -> Result<Option<Vec<(String, String)>>, FcErr
     let mut pairs = Vec::with_capacity(values.len());
     for value in values {
         let Some((key, val)) = value.split_once('=') else {
-            return Err(FcError::Config(format!(
-                "environment override must be KEY=VAL, got `{value}`"
-            )));
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "env",
+                reason: format!("must be KEY=VAL, got `{value}`"),
+            }));
         };
         if key.is_empty() {
-            return Err(FcError::Config(
-                "environment override key must not be empty".to_owned(),
-            ));
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "env",
+                reason: "key must not be empty".into(),
+            }));
         }
         pairs.push((key.to_owned(), val.to_owned()));
     }
@@ -328,8 +342,9 @@ fn build_process_env(
     let mut pairs = parse_env(values)?.unwrap_or_default();
     for key in secret_keys {
         validate_secret_env_key(&key)?;
-        let value = std::env::var(&key)
-            .map_err(|_| FcError::Config(format!("secret env `{key}` is not set")))?;
+        let value = std::env::var(&key).map_err(|_| {
+            FcError::Config(ConfigError::MissingField { field: "secret_env" })
+        })?;
         pairs.push((key, value));
     }
     Ok((!pairs.is_empty()).then_some(pairs))
@@ -337,14 +352,16 @@ fn build_process_env(
 
 fn validate_secret_env_key(key: &str) -> Result<(), FcError> {
     if key.is_empty() {
-        return Err(FcError::Config(
-            "secret env key must not be empty".to_owned(),
-        ));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "secret_env",
+            reason: "key must not be empty".into(),
+        }));
     }
     if key.contains('=') {
-        return Err(FcError::Config(format!(
-            "secret env key must be a variable name, got `{key}`"
-        )));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "secret_env",
+            reason: format!("key must be a variable name, got `{key}`"),
+        }));
     }
     Ok(())
 }
@@ -482,7 +499,7 @@ pub fn cmd_config_show(json: bool) -> anyhow::Result<i32> {
         Ok(result) => result,
         Err(e) => {
             return Ok(errors::render_error(
-                &FcError::Config(format!("{e:#}")),
+                &FcError::Config(ConfigError::Other(format!("{e:#}"))),
                 json,
             ))
         }

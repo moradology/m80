@@ -34,8 +34,9 @@ pub(super) fn handle_run(
         }
     };
     let run_dir = lease.run_dir().display().to_string();
-    let reset_decision = format!("{:?}", lease.reset_decision());
-    let discard_reason = format!("{:?}", lease.discard_reason());
+    // BlankVmReset evidence is not wired in v0.1; leases always discard.
+    let reset_decision = "Discard".to_owned();
+    let discard_reason = "ResetEvidenceUnavailable".to_owned();
     let response = match lease.exec_with_request_id(request.into(), request_id.clone()) {
         Ok(response) => response,
         Err(e) => {
@@ -88,8 +89,9 @@ pub(super) fn handle_run_streaming(
         }
     };
     let run_dir = lease.run_dir().display().to_string();
-    let reset_decision = format!("{:?}", lease.reset_decision());
-    let discard_reason = format!("{:?}", lease.discard_reason());
+    // BlankVmReset evidence is not wired in v0.1; leases always discard.
+    let reset_decision = "Discard".to_owned();
+    let discard_reason = "ResetEvidenceUnavailable".to_owned();
     let exit = lease.exec_streaming_with_request_id(request.into(), request_id.clone(), |chunk| {
         control::write_stream_frame(stream, &control::stream_frame_for_chunk(chunk))
     });
@@ -131,19 +133,19 @@ fn validate_run_compatibility(
 ) -> Result<(), FcError> {
     let requested = status::requested_profile(profile);
     if requested != identity.profile {
-        return Err(FcError::Config(format!(
+        return Err(FcError::config_other(format!(
             "warm profile mismatch: requested {}, owner active {}",
             requested, identity.profile
         )));
     }
     if egress != identity.egress {
-        return Err(FcError::Config(format!(
+        return Err(FcError::config_other(format!(
             "warm egress mismatch: requested {}, owner active {}",
             egress, identity.egress
         )));
     }
     if !accepting_leases {
-        return Err(FcError::Config(
+        return Err(FcError::config_other(
             "warm owner is draining and not accepting leases".to_owned(),
         ));
     }

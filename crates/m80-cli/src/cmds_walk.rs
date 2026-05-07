@@ -73,7 +73,7 @@ fn inspect_output(run_root: &Path, vm_id: &str) -> Result<InspectOutput, FcError
     let vm_dir = run_root.join(vm_id);
 
     if !vm_dir.exists() {
-        return Err(FcError::Config(format!(
+        return Err(FcError::config_other(format!(
             "no run-dir found for vm_id={vm_id}"
         )));
     }
@@ -229,7 +229,7 @@ fn render_list_human(run_root: &Path, entries: &[ListEntry]) -> String {
 /// Return the run-root resolved through the same config chain as the backend,
 /// without running preflight.
 fn effective_run_root() -> Result<PathBuf, FcError> {
-    config::resolve_run_root().map_err(|e| FcError::Config(format!("{e:#}")))
+    config::resolve_run_root().map_err(|e| FcError::config_other(format!("{e:#}")))
 }
 
 /// Return `true` iff `<vm_dir>/ownership.lock` records a still-running pid.

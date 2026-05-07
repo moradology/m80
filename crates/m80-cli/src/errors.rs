@@ -152,6 +152,8 @@ pub fn render_error(err: &FcError, json: bool) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use m80_firecracker::ConfigError;
+
     use super::*;
 
     // Each variant must produce a distinct exit code that is non-zero.
@@ -179,7 +181,7 @@ mod tests {
 
     #[test]
     fn config_is_6() {
-        let err = FcError::Config("bad toml".into());
+        let err = FcError::Config(ConfigError::Other("bad toml".into()));
         assert_eq!(exit_code_for(&err), EXIT_CONFIG);
     }
 
@@ -200,38 +202,70 @@ mod tests {
     }
 
     #[test]
-    fn all_variants_are_nonzero() {
+    fn preflight_exit_code_is_nonzero() {
         use m80_preflight::PreflightError;
+        let err = FcError::Preflight(PreflightError::KvmUnavailable {
+            path: "/dev/kvm".into(),
+        });
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn admission_refused_exit_code_is_nonzero() {
+        let err = FcError::AdmissionRefused { limit: 1 };
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn pool_empty_exit_code_is_nonzero() {
+        let err = FcError::PoolEmpty { target_ready: 1 };
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn config_exit_code_is_nonzero() {
+        let err = FcError::Config(ConfigError::Other("x".into()));
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn api_socket_timeout_exit_code_is_nonzero() {
+        let err = FcError::ApiSocketTimeout {
+            path: "/run/m80/firecracker.sock".into(),
+            timeout: std::time::Duration::from_secs(5),
+        };
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn guestd_ready_timeout_exit_code_is_nonzero() {
+        let err = FcError::GuestdReadyTimeout {
+            path: "/run/m80/vsock.sock_9000".into(),
+            timeout: std::time::Duration::from_secs(60),
+        };
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn invalid_state_exit_code_is_nonzero() {
+        let err = FcError::InvalidState {
+            expected: "a",
+            actual: "b",
+        };
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn io_exit_code_is_nonzero() {
         use std::io;
-        let cases: Vec<FcError> = vec![
-            FcError::Preflight(PreflightError::KvmUnavailable {
-                path: "/dev/kvm".into(),
-            }),
-            FcError::AdmissionRefused { limit: 1 },
-            FcError::PoolEmpty { target_ready: 1 },
-            FcError::Config("x".into()),
-            FcError::ApiSocketTimeout {
-                path: "/run/m80/firecracker.sock".into(),
-                timeout: std::time::Duration::from_secs(5),
-            },
-            FcError::GuestdReadyTimeout {
-                path: "/run/m80/vsock.sock_9000".into(),
-                timeout: std::time::Duration::from_secs(60),
-            },
-            FcError::InvalidState {
-                expected: "a",
-                actual: "b",
-            },
-            FcError::Io(io::Error::new(io::ErrorKind::Other, "test")),
-            FcError::FileOp(m80_firecracker::FileError::NotFound),
-        ];
-        for err in &cases {
-            assert_ne!(
-                exit_code_for(err),
-                0,
-                "exit code must be non-zero for {err:?}"
-            );
-        }
+        let err = FcError::Io(io::Error::new(io::ErrorKind::Other, "test"));
+        assert_ne!(exit_code_for(&err), 0);
+    }
+
+    #[test]
+    fn file_op_exit_code_is_nonzero() {
+        let err = FcError::FileOp(m80_firecracker::FileError::NotFound);
+        assert_ne!(exit_code_for(&err), 0);
     }
 
     #[test]
@@ -255,7 +289,7 @@ mod tests {
 
     #[test]
     fn json_envelope_fields() {
-        let err = FcError::Config("bad".into());
+        let err = FcError::Config(ConfigError::Other("bad".into()));
         let env = envelope(&err);
         assert_eq!(env.variant, "Config");
         assert_eq!(env.exit_code, EXIT_CONFIG);
@@ -264,7 +298,7 @@ mod tests {
 
     #[test]
     fn json_envelope_is_stable() {
-        let err = FcError::Config("bad".into());
+        let err = FcError::Config(ConfigError::Other("bad".into()));
         let env = envelope(&err);
         let json = serde_json::to_string(&env).unwrap();
         // Fields variant, detail, exit_code must always be present.
@@ -278,7 +312,7 @@ mod tests {
 
     #[test]
     fn rendered_error_json_is_versioned() {
-        let err = FcError::Config("bad".into());
+        let err = FcError::Config(ConfigError::Other("bad".into()));
         let env = envelope(&err);
         let rendered = json::to_pretty(&env);
         let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap();

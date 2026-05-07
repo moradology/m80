@@ -86,7 +86,7 @@ pub(super) struct WarmOwnerIdentity {
 pub(super) fn warm_root() -> Result<PathBuf, FcError> {
     config::resolve_run_root()
         .map(|root| root.join("warm"))
-        .map_err(|e| FcError::Config(format!("{e:#}")))
+        .map_err(|e| FcError::config_other(format!("{e:#}")))
 }
 
 pub(super) fn socket_path() -> Result<PathBuf, FcError> {
@@ -236,7 +236,7 @@ pub(super) fn write_identity(identity: &WarmOwnerIdentity) -> Result<(), FcError
     fs::write(
         identity_path()?,
         serde_json::to_vec_pretty(identity)
-            .map_err(|e| FcError::Config(format!("serialize warm owner identity: {e}")))?,
+            .map_err(|e| FcError::config_other(format!("serialize warm owner identity: {e}")))?,
     )
     .map_err(FcError::Io)
 }
