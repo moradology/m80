@@ -181,6 +181,9 @@ Sequestering it has three benefits:
 - **No port forwarding.** Inbound is out of scope.
 - **No DHCP.** Static IPv4 is injected via systemd-networkd in the
   guest rootfs clone; the host runs no DHCP server.
+- **No DNS name allowlist yet.** The current policy admits DNS resolvers and
+  enforces CIDR/IP rules. Domain allowlisting requires an explicit DNS proxy
+  design; see `docs/behaviors/network-outbound-nat/dns-name-allowlist.md`.
 
 ## Dependencies
 

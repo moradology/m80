@@ -151,6 +151,11 @@ bounded frames until EOF, disconnect, cancellation, timeout, or write failure.
 `ExecExit::truncated` is therefore `false` unless a future explicit streaming
 cap is added.
 
+`ExecRequest` does not carry capability, `no_new_privs`, or seccomp policy in
+the current protocol. Per-workload privilege policy is deferred until m80 has a
+dedicated safe syscall/seccomp boundary. See
+`docs/behaviors/guest-exec/exec-privilege-policy.md`.
+
 Behavior details:
 
 - `docs/behaviors/exec/streaming-frame-order.md`
@@ -204,6 +209,11 @@ served on demand from procfs and guestd-local counters. `MetricsResponse`
 contains fixed-shape CPU tick counters, memory byte gauges, and
 `requests_total` / `errors_total`. See
 `docs/behaviors/observability/guest-metrics-vsock.md`.
+
+m80-guestd does not emit unsolicited OOM event frames on the request/response
+application channel. Whole-VM OOM evidence belongs to the host cgroup surface
+unless a future explicit event-stream contract is added. See
+`docs/behaviors/observability/oom-event-surface.md`.
 
 ### Health fields
 

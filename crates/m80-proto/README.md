@@ -84,6 +84,9 @@ The load-bearing wire invariants — the things consumers cannot derive from
   payload; `pong_response` carries `guest_unix_ms`, the guestd wall-clock
   timestamp in Unix milliseconds at handling time. The verb does not spawn a
   guest process.
+- **No implicit event stream.** The protocol does not carry unsolicited OOM
+  events or DNS proxy frames on the request/response channel. Those require
+  explicit future payloads and a `PROTOCOL_VERSION` bump.
 
 ## Public surface
 
