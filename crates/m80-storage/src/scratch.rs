@@ -12,11 +12,11 @@ use tempfile::TempDir;
 use crate::{format_exit, io_err, ChangeSet, Rejection, RejectionReason, StorageError};
 
 /// Minimum scratch image size: 64 MiB.
-pub const MIN_SCRATCH_BYTES: u64 = 64 * 1024 * 1024;
+pub(crate) const MIN_SCRATCH_BYTES: u64 = 64 * 1024 * 1024;
 /// Extra headroom added above the host workspace's current file bytes.
-pub const SCRATCH_PADDING_BYTES: u64 = 32 * 1024 * 1024;
+pub(crate) const SCRATCH_PADDING_BYTES: u64 = 32 * 1024 * 1024;
 /// Scratch image sizes are rounded up to a 4 MiB boundary.
-pub const SCRATCH_ALIGNMENT_BYTES: u64 = 4 * 1024 * 1024;
+pub(crate) const SCRATCH_ALIGNMENT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// A per-VM scratch ext4 image.
 ///
