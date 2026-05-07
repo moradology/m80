@@ -44,6 +44,8 @@ Each frame still uses the global protobuf frame size cap. A large terminal strea
 represented as many bounded `pty_output` frames, not as one aggregate output
 frame. Backpressure is inherited from the transport: a slow reader should fill
 the socket and block the writer rather than queueing unbounded terminal bytes.
+PTY does not apply the buffered-exec 1 MiB capture cap, so `PtyExit::truncated`
+is `false` unless a future explicit PTY cap is added.
 
 ## Resize And Control
 

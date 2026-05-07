@@ -67,7 +67,9 @@ allocation above that limit. Streaming producers emit bounded chunks instead of
 collecting whole stdout, stderr, PTY output, or file contents in memory. The
 host buffered `exec` wrapper is intentionally separate: it reconstructs an
 `ExecResponse` from streaming chunks and caps each collected stdout/stderr
-buffer at 1 MiB.
+buffer at 1 MiB. Direct streaming exec and PTY callers are not capped at that
+buffered wrapper limit; their terminal `truncated` fields remain `false` unless
+a future explicit streaming/PTY cap is added.
 
 Chunk sizes are implementation choices below the frame cap. Guest file reads
 write each chunk directly to the response stream. Exec and PTY producer threads

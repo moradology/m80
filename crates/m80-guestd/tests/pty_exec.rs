@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Cursor};
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, read_raw_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope,
+    read_frame, read_raw_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope,
     ExecStatus, PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize,
     PtySize, PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_OUTPUT,
 };
@@ -162,6 +162,29 @@ fn pty_echo_probe_round_trips_terminal_output() {
 }
 
 #[test]
+fn pty_output_is_not_capped_at_buffered_exec_limit() {
+    let input = request_frame(
+        pty_request(
+            "/bin/sh",
+            vec![
+                "-c".into(),
+                "dd if=/dev/zero bs=1024 count=1025 2>/dev/null".into(),
+            ],
+            5_000,
+            pty_size(24, 80),
+        ),
+        "pty-large-output",
+    );
+
+    let (output, exit) = output_and_exit(&run_pty_with_open_reader(input));
+
+    assert_eq!(exit.status, ExecStatus::Completed);
+    assert!(output.len() >= 1025 * 1024);
+    assert_eq!(exit.total_output_bytes, output.len() as u64);
+    assert!(!exit.truncated);
+}
+
+#[test]
 fn pty_initial_size_is_visible_to_child() {
     let input = request_frame(
         pty_request(
@@ -277,7 +300,8 @@ fn pty_cancel_request_kills_child_and_returns_ack() {
     input.extend(cancel_frame("pty-cancel"));
 
     let out = run_pty_with_disconnect(input);
-    let ack: Envelope<CancelResponse> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
+    let ack: Envelope<CancelResponse> =
+        read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
 
     assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack.payload.request_id, "pty-cancel");

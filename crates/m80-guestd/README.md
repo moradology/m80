@@ -131,7 +131,11 @@ truncated, timing }`; it is written after both capture threads drain.
 
 The stream uses a one-frame bounded handoff from capture threads to the
 connection writer. A slow host therefore backpressures the child through
-the guest pipe instead of growing an unbounded guest buffer.
+the guest pipe instead of growing an unbounded guest buffer. Unlike buffered
+`exec`, streaming exec does not apply the 1 MiB capture cap; bytes continue as
+bounded frames until EOF, disconnect, cancellation, timeout, or write failure.
+`ExecExit::truncated` is therefore `false` unless a future explicit streaming
+cap is added.
 
 Behavior details:
 
@@ -161,6 +165,8 @@ The terminal result is exactly one
 `PtyExit { status, exit_code, exit_signal, total_input_bytes,
 total_output_bytes, truncated, timing }` frame after PTY output drains. PTY
 output is merged terminal output; it is not split into stdout and stderr.
+PTY output is not capped by the buffered-exec capture limit; `PtyExit::truncated`
+is `false` unless a future explicit PTY cap is added.
 
 Timeout, `cancel_request`, host disconnect/read EOF, and output write failure
 terminate the PTY child process group with the same SIGTERM/100 ms/SIGKILL

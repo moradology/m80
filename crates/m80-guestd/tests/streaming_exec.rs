@@ -152,6 +152,42 @@ fn streaming_exec_rejects_oversized_stdin_before_spawn() {
 }
 
 #[test]
+fn streaming_exec_output_is_not_capped_at_buffered_exec_limit() {
+    let req = streaming_request(
+        "/bin/sh",
+        vec![
+            "-c".into(),
+            "dd if=/dev/zero bs=1024 count=1025 2>/dev/null".into(),
+        ],
+        5_000,
+    );
+    let frames = read_raw_frames(&run_streaming_with_open_reader(request_frame(
+        req,
+        "stream-large-output",
+    )));
+
+    let mut stdout_total = 0u64;
+    for frame in &frames[..frames.len() - 1] {
+        if frame.kind == PAYLOAD_KIND_EXEC_STDOUT {
+            let chunk = frame.clone().decode::<ExecStdout>().unwrap().payload;
+            stdout_total += chunk.bytes.len() as u64;
+        }
+    }
+    let exit = frames
+        .last()
+        .unwrap()
+        .clone()
+        .decode::<ExecExit>()
+        .unwrap()
+        .payload;
+
+    assert_eq!(exit.status, ExecStatus::Completed);
+    assert_eq!(stdout_total, (1025 * 1024) as u64);
+    assert_eq!(exit.total_stdout_bytes, stdout_total);
+    assert!(!exit.truncated);
+}
+
+#[test]
 fn streaming_no_output_still_sends_terminal_exit() {
     let req = streaming_request("/bin/true", vec![], 5_000);
     let frames = read_raw_frames(&run_streaming_with_open_reader(request_frame(

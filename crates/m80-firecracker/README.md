@@ -56,9 +56,11 @@ stdout/stderr form. It forces `ExecRequest::streaming = true`, invokes
 returns the terminal `ExecExit`. The callback is fallible; returning `Err`
 closes the streaming connection, which guestd treats as cancellation for the
 in-flight child. The buffered `exec` method is built on top of this path and
-preserves the existing 1 MiB per-stream cap. If the streaming caller unwinds or
-otherwise drops the channel mid-request, guestd treats the disconnect as
-cancellation and reaps the child before accepting the next exec.
+preserves the existing 1 MiB per-stream cap; direct streaming callers receive
+all chunks until guest EOF or cancellation and observe `ExecExit::truncated =
+false` unless a future explicit streaming cap is added. If the streaming caller
+unwinds or otherwise drops the channel mid-request, guestd treats the disconnect
+as cancellation and reaps the child before accepting the next exec.
 
 If Firecracker's restored-vsock local-init path transiently fails during
 `CONNECT`, or accepts `CONNECT` but the request-frame write fails with
