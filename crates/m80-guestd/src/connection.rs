@@ -87,10 +87,11 @@ fn unix_ms_now() -> u64 {
 /// - `metrics_request`: sample guest procfs and guestd-local counters.
 /// - any other kind: respond with a Failed envelope and `Continue`.
 ///
-/// On any error (malformed frame, spawn failure, …) an `ExecResponse` with
-/// `status: Failed` is attempted. If even that write fails the error is logged
-/// and the function returns `Ok(Continue)` so the caller can accept the next
-/// connection.
+/// On recoverable request errors (malformed payload, spawn failure, …) an
+/// `ExecResponse` with `status: Failed` is attempted. Oversized frame prefixes
+/// poison the current stream, so guestd logs the protocol error and returns
+/// without writing a response; the caller then drops this connection and accepts
+/// the next one.
 pub fn handle_connection_with_reader_ready<R, W, F>(
     mut reader: R,
     mut writer: W,
@@ -107,8 +108,12 @@ where
         Ok(env) => env,
         Err(e) => {
             metrics::record_error();
-            // Malformed frame: try to send a Failed response, then close.
             protocol_log::warn_proto_error(GuestLogPhase::Exec, None, None, &e);
+            if matches!(e, m80_proto::ProtoError::OversizedPayload { .. }) {
+                return Ok(ConnectionOutcome::Continue);
+            }
+            // Malformed decodable-size frame: try to send a Failed response,
+            // then close this connection.
             let timing = failed_timing(received_at);
             let resp = error_response(format!("{e:#}").into_bytes(), timing);
             let out_env = Envelope::new(resp);
@@ -250,7 +255,8 @@ where
     W: Write,
 {
     let request_id = raw.request_id.clone();
-    let req: ExecRequest = match raw.decode::<ExecRequest>() {
+    let max_duration_ms = raw.max_duration_ms;
+    let mut req: ExecRequest = match raw.decode::<ExecRequest>() {
         Ok(env) => env.payload,
         Err(e) => {
             metrics::record_error();
@@ -267,6 +273,7 @@ where
             return Ok(ConnectionOutcome::Continue);
         }
     };
+    req.timeout_ms = effective_call_timeout_ms(req.timeout_ms, max_duration_ms);
     guest_log::info(
         GuestLogPhase::Exec,
         request_id.as_deref(),
@@ -839,6 +846,18 @@ pub(crate) fn cancel_status_from_group_signals(
 pub(crate) fn timeout_deadline(timeout_ms: Option<u64>) -> std::time::Instant {
     let effective_ms = timeout_ms.unwrap_or(MAX_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
     std::time::Instant::now() + Duration::from_millis(effective_ms)
+}
+
+pub(crate) fn effective_call_timeout_ms(
+    request_timeout_ms: Option<u64>,
+    max_duration_ms: Option<u64>,
+) -> Option<u64> {
+    match (request_timeout_ms, max_duration_ms) {
+        (Some(request), Some(max_duration)) => Some(request.min(max_duration)),
+        (Some(request), None) => Some(request),
+        (None, Some(max_duration)) => Some(max_duration),
+        (None, None) => None,
+    }
 }
 
 /// Write a `CancelResponse` frame and flush the writer.

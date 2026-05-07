@@ -1,3 +1,4 @@
+mod metadata;
 mod read;
 #[cfg(test)]
 mod tests;
@@ -5,16 +6,16 @@ mod tests;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, Write};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use m80_proto::{
-    read_raw_frame, write_frame, DirEntry, Envelope, FileError, FileKind, FileListRequest,
-    FileListResponse, FileReadRequest, FileRemoveRequest, FileRemoveResponse, FileStat,
-    FileStatRequest, FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse,
-    FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse,
-    FileWriteRequest, FileWriteResponse, Payload, RawEnvelope, PAYLOAD_KIND_FILE_LIST_REQUEST,
+    read_raw_frame, write_frame, Envelope, FileError, FileListRequest, FileMkdirRequest,
+    FileReadRequest, FileRemoveRequest, FileStatRequest, FileWriteBeginRequest,
+    FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
+    FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, Payload, RawEnvelope,
+    PAYLOAD_KIND_FILE_LIST_REQUEST, PAYLOAD_KIND_FILE_MKDIR_REQUEST,
     PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_REMOVE_REQUEST,
     PAYLOAD_KIND_FILE_STAT_REQUEST, PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST,
     PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST, PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST,
@@ -23,6 +24,7 @@ use m80_proto::{
 
 use super::{protocol_log, ConnectionOutcome};
 use crate::guest_log::GuestLogPhase;
+use metadata::{list_dir, mkdir, remove_file, stat_file};
 use read::stream_file_read;
 
 #[derive(Default)]
@@ -56,6 +58,7 @@ pub(crate) fn is_fileop_kind(kind: &str) -> bool {
             | PAYLOAD_KIND_FILE_LIST_REQUEST
             | PAYLOAD_KIND_FILE_STAT_REQUEST
             | PAYLOAD_KIND_FILE_REMOVE_REQUEST
+            | PAYLOAD_KIND_FILE_MKDIR_REQUEST
             | PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST
             | PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST
             | PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST
@@ -128,6 +131,11 @@ fn handle_one<W: Write>(
         PAYLOAD_KIND_FILE_REMOVE_REQUEST => {
             let (request_id, req) = decode::<FileRemoveRequest>(raw)?;
             respond(writer, request_id, remove_file(req))?;
+            Ok(false)
+        }
+        PAYLOAD_KIND_FILE_MKDIR_REQUEST => {
+            let (request_id, req) = decode::<FileMkdirRequest>(raw)?;
+            respond(writer, request_id, mkdir(req))?;
             Ok(false)
         }
         PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST => {
@@ -210,86 +218,6 @@ fn write_file(req: FileWriteRequest) -> FileWriteResponse {
         Err(error) => FileWriteResponse {
             bytes_written: 0,
             error: Some(error),
-        },
-    }
-}
-
-fn list_dir(req: FileListRequest) -> FileListResponse {
-    let dir = Path::new(&req.path);
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(e) => {
-            return FileListResponse {
-                entries: Vec::new(),
-                error: Some(map_io_error(&e)),
-            };
-        }
-    };
-    let mut out = Vec::new();
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(e) => {
-                return FileListResponse {
-                    entries: Vec::new(),
-                    error: Some(map_io_error(&e)),
-                };
-            }
-        };
-        let meta = match std::fs::symlink_metadata(entry.path()) {
-            Ok(meta) => meta,
-            Err(e) => {
-                return FileListResponse {
-                    entries: Vec::new(),
-                    error: Some(map_io_error(&e)),
-                };
-            }
-        };
-        out.push(DirEntry {
-            name: entry.file_name().to_string_lossy().into_owned(),
-            kind: kind_from_metadata(&meta),
-            size: meta.len(),
-        });
-    }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    FileListResponse {
-        entries: out,
-        error: None,
-    }
-}
-
-fn stat_file(req: FileStatRequest) -> FileStatResponse {
-    match std::fs::symlink_metadata(&req.path) {
-        Ok(meta) => FileStatResponse {
-            stat: Some(stat_from_metadata(&meta)),
-            error: None,
-        },
-        Err(e) => FileStatResponse {
-            stat: None,
-            error: Some(map_io_error(&e)),
-        },
-    }
-}
-
-fn remove_file(req: FileRemoveRequest) -> FileRemoveResponse {
-    match std::fs::symlink_metadata(&req.path) {
-        Ok(meta) if meta.is_dir() => FileRemoveResponse {
-            removed: false,
-            error: Some(FileError::IsADirectory),
-        },
-        Ok(_) => match std::fs::remove_file(&req.path) {
-            Ok(()) => FileRemoveResponse {
-                removed: true,
-                error: None,
-            },
-            Err(e) => FileRemoveResponse {
-                removed: false,
-                error: Some(map_io_error(&e)),
-            },
-        },
-        Err(e) => FileRemoveResponse {
-            removed: false,
-            error: Some(map_io_error(&e)),
         },
     }
 }
@@ -475,28 +403,6 @@ fn open_nofollow_write(path: &Path, create_new: bool) -> Result<File, FileError>
         options.create(true).truncate(true);
     }
     options.open(path).map_err(|e| map_io_error(&e))
-}
-
-fn stat_from_metadata(meta: &std::fs::Metadata) -> FileStat {
-    FileStat {
-        kind: kind_from_metadata(meta),
-        size: meta.len(),
-        mtime_unix_ms: meta.mtime().saturating_mul(1000) + meta.mtime_nsec() / 1_000_000,
-        mode: meta.mode(),
-    }
-}
-
-fn kind_from_metadata(meta: &std::fs::Metadata) -> FileKind {
-    let ft = meta.file_type();
-    if ft.is_symlink() {
-        FileKind::Symlink
-    } else if ft.is_file() {
-        FileKind::File
-    } else if ft.is_dir() {
-        FileKind::Directory
-    } else {
-        FileKind::Other
-    }
 }
 
 fn map_io_error(e: &std::io::Error) -> FileError {

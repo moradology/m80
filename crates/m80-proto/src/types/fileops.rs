@@ -25,6 +25,10 @@ pub const PAYLOAD_KIND_FILE_STAT_RESPONSE: &str = "file_stat_response";
 pub const PAYLOAD_KIND_FILE_REMOVE_REQUEST: &str = "file_remove_request";
 /// Wire `kind` for [`FileRemoveResponse`].
 pub const PAYLOAD_KIND_FILE_REMOVE_RESPONSE: &str = "file_remove_response";
+/// Wire `kind` for [`FileMkdirRequest`].
+pub const PAYLOAD_KIND_FILE_MKDIR_REQUEST: &str = "file_mkdir_request";
+/// Wire `kind` for [`FileMkdirResponse`].
+pub const PAYLOAD_KIND_FILE_MKDIR_RESPONSE: &str = "file_mkdir_response";
 /// Wire `kind` for [`FileWriteBeginRequest`].
 pub const PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST: &str = "file_write_begin_request";
 /// Wire `kind` for [`FileWriteBeginResponse`].
@@ -180,6 +184,26 @@ pub struct FileRemoveRequest {
 pub struct FileRemoveResponse {
     /// True when a path was removed.
     pub removed: bool,
+    /// Error discriminant; `None` on success.
+    pub error: Option<FileError>,
+}
+
+/// Create a guest directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMkdirRequest {
+    /// Guest directory path to create.
+    pub path: String,
+    /// Optional Unix mode applied after creation.
+    pub mode: Option<u32>,
+    /// Create missing parents when true.
+    pub recursive: bool,
+}
+
+/// Response to [`FileMkdirRequest`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMkdirResponse {
+    /// True when this request created at least the final directory.
+    pub created: bool,
     /// Error discriminant; `None` on success.
     pub error: Option<FileError>,
 }

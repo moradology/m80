@@ -8,19 +8,20 @@ mod pty;
 mod streaming;
 
 pub use fileops::{
-    DirEntry, FileError, FileKind, FileListRequest, FileListResponse, FileReadChunk,
-    FileReadRequest, FileReadResponse, FileRemoveRequest, FileRemoveResponse, FileStat,
-    FileStatRequest, FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse,
-    FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse,
-    FileWriteRequest, FileWriteResponse, FILE_READ_LIMIT_DEFAULT, PAYLOAD_KIND_FILE_LIST_REQUEST,
-    PAYLOAD_KIND_FILE_LIST_RESPONSE, PAYLOAD_KIND_FILE_READ_CHUNK, PAYLOAD_KIND_FILE_READ_REQUEST,
-    PAYLOAD_KIND_FILE_READ_RESPONSE, PAYLOAD_KIND_FILE_REMOVE_REQUEST,
-    PAYLOAD_KIND_FILE_REMOVE_RESPONSE, PAYLOAD_KIND_FILE_STAT_REQUEST,
-    PAYLOAD_KIND_FILE_STAT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_BEGIN_RESPONSE, PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE, PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_RESPONSE,
+    DirEntry, FileError, FileKind, FileListRequest, FileListResponse, FileMkdirRequest,
+    FileMkdirResponse, FileReadChunk, FileReadRequest, FileReadResponse, FileRemoveRequest,
+    FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
+    FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
+    FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, FILE_READ_LIMIT_DEFAULT,
+    PAYLOAD_KIND_FILE_LIST_REQUEST, PAYLOAD_KIND_FILE_LIST_RESPONSE,
+    PAYLOAD_KIND_FILE_MKDIR_REQUEST, PAYLOAD_KIND_FILE_MKDIR_RESPONSE,
+    PAYLOAD_KIND_FILE_READ_CHUNK, PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_READ_RESPONSE,
+    PAYLOAD_KIND_FILE_REMOVE_REQUEST, PAYLOAD_KIND_FILE_REMOVE_RESPONSE,
+    PAYLOAD_KIND_FILE_STAT_REQUEST, PAYLOAD_KIND_FILE_STAT_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST, PAYLOAD_KIND_FILE_WRITE_BEGIN_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST, PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST, PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_REQUEST, PAYLOAD_KIND_FILE_WRITE_RESPONSE,
 };
 pub use health::{
     PingRequest, PongResponse, PAYLOAD_KIND_PING_REQUEST, PAYLOAD_KIND_PONG_RESPONSE,
@@ -81,6 +82,7 @@ pub trait Payload: Sized {
 /// `version` fails closed at the framing layer. `kind` is a dispatch and
 /// diagnostics label that must match the protobuf payload variant.
 /// `request_id` is opaque to the protocol; consumers attach meaning.
+/// `max_duration_ms` is an optional wall-clock budget for the whole call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Envelope<T> {
     /// Protocol version. Must equal `PROTOCOL_VERSION` on every frame.
@@ -90,6 +92,8 @@ pub struct Envelope<T> {
     pub kind: String,
     /// Optional caller-supplied identifier echoed back in the response.
     pub request_id: Option<String>,
+    /// Optional wall-clock budget in milliseconds for this call.
+    pub max_duration_ms: Option<u64>,
     /// Payload; opaque from the protocol's perspective.
     pub payload: T,
 }
@@ -101,6 +105,7 @@ impl<T: Payload> Envelope<T> {
             version: PROTOCOL_VERSION,
             kind: T::KIND.to_owned(),
             request_id: None,
+            max_duration_ms: None,
             payload,
         }
     }
@@ -111,8 +116,15 @@ impl<T: Payload> Envelope<T> {
             version: PROTOCOL_VERSION,
             kind: T::KIND.to_owned(),
             request_id: Some(request_id),
+            max_duration_ms: None,
             payload,
         }
+    }
+
+    /// Return this envelope with a call-wide wall-clock budget.
+    pub fn with_max_duration_ms(mut self, max_duration_ms: u64) -> Self {
+        self.max_duration_ms = Some(max_duration_ms);
+        self
     }
 }
 

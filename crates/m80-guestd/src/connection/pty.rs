@@ -22,7 +22,7 @@ use wire::{poll_host_frame, write_pty_failed, HostFrame};
 
 use crate::guest_log::{self, GuestLogPhase};
 
-use super::{unix_ms_now, ConnectionOutcome, POLL_INTERVAL};
+use super::{effective_call_timeout_ms, unix_ms_now, ConnectionOutcome, POLL_INTERVAL};
 
 /// Drop the PTY writer, receiver, and output thread, then return Continue.
 /// Used at every early-exit point inside `handle_pty_exec`.
@@ -47,7 +47,8 @@ where
     W: Write,
 {
     let request_id = raw.request_id.clone();
-    let req: PtyRequest = match raw.decode::<PtyRequest>() {
+    let max_duration_ms = raw.max_duration_ms;
+    let mut req: PtyRequest = match raw.decode::<PtyRequest>() {
         Ok(env) => env.payload,
         Err(e) => {
             guest_log::warn(
@@ -59,6 +60,7 @@ where
             return Ok(ConnectionOutcome::Continue);
         }
     };
+    req.timeout_ms = effective_call_timeout_ms(req.timeout_ms, max_duration_ms);
     guest_log::info(
         GuestLogPhase::Exec,
         request_id.as_deref(),

@@ -50,7 +50,7 @@ pub fn enter_pid_one_mode(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Mount `/proc`, `/sys`, and `/dev`. The firecracker-ci kernel ships
+/// Mount `/proc`, `/sys`, `/dev`, `/dev/shm`, and `/dev/pts`. The firecracker-ci kernel ships
 /// `CONFIG_DEVTMPFS_MOUNT=y` so `/dev` is normally pre-populated by the
 /// kernel — `EBUSY` (already mounted) is treated as success.
 fn mount_pseudo_filesystems() -> anyhow::Result<()> {
@@ -68,6 +68,23 @@ fn mount_pseudo_filesystems() -> anyhow::Result<()> {
         MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
     )?;
     mount_one("devtmpfs", "/dev", "devtmpfs", MsFlags::MS_NOSUID)?;
+    std::fs::create_dir_all(DEV_SHM_TARGET).context("mkdir /dev/shm")?;
+    mount_one_with_data(
+        "tmpfs",
+        DEV_SHM_TARGET,
+        "tmpfs",
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        Some(DEV_SHM_MOUNT_DATA),
+    )?;
+    std::fs::create_dir_all(DEV_PTS_TARGET).context("mkdir /dev/pts")?;
+    mount_one_with_data(
+        "devpts",
+        DEV_PTS_TARGET,
+        "devpts",
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        Some(DEV_PTS_MOUNT_DATA),
+    )?;
+    ensure_ptmx_symlink().context("ensure /dev/ptmx -> /dev/pts/ptmx")?;
     guest_log::info(GuestLogPhase::Boot, None, "pseudo-filesystems mounted");
     Ok(())
 }
@@ -87,19 +104,38 @@ fn redirect_stdio_to_console() -> anyhow::Result<()> {
 }
 
 fn mount_one(source: &str, target: &str, fstype: &str, flags: MsFlags) -> anyhow::Result<()> {
-    match mount(
-        Some(source),
-        Path::new(target),
-        Some(fstype),
-        flags,
-        None::<&str>,
-    ) {
+    mount_one_with_data(source, target, fstype, flags, None)
+}
+
+fn mount_one_with_data(
+    source: &str,
+    target: &str,
+    fstype: &str,
+    flags: MsFlags,
+    data: Option<&str>,
+) -> anyhow::Result<()> {
+    match mount(Some(source), Path::new(target), Some(fstype), flags, data) {
         Ok(()) => Ok(()),
         Err(nix::errno::Errno::EBUSY) => Ok(()),
         Err(e) => Err(anyhow::anyhow!(
             "mount {source} -> {target} ({fstype}): {e}"
         )),
     }
+}
+
+fn ensure_ptmx_symlink() -> anyhow::Result<()> {
+    let ptmx = Path::new("/dev/ptmx");
+    if let Ok(target) = std::fs::read_link(ptmx) {
+        if target == Path::new("pts/ptmx") || target == Path::new("/dev/pts/ptmx") {
+            return Ok(());
+        }
+    }
+    match std::fs::remove_file(ptmx) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e).context("remove existing /dev/ptmx"),
+    }
+    std::os::unix::fs::symlink("pts/ptmx", ptmx).context("symlink /dev/ptmx")
 }
 
 /// Implement design doc §3.1 steps 1–9:
@@ -378,6 +414,10 @@ pub fn pivot_rootfs<P: ?Sized + NixPath + std::fmt::Debug>(path: &P) -> anyhow::
 /// in the drive-PUT order per docs/design/storage-overlay.md §2).
 const WORKSPACE_DEV: &str = "/dev/vdc";
 const WORKSPACE_TARGET: &str = "/workspace";
+const DEV_SHM_TARGET: &str = "/dev/shm";
+const DEV_PTS_TARGET: &str = "/dev/pts";
+const DEV_SHM_MOUNT_DATA: &str = "mode=1777";
+const DEV_PTS_MOUNT_DATA: &str = "gid=5,mode=620,ptmxmode=666";
 const WORKSPACE_CMDLINE_FLAG: &str = "m80.workspace=1";
 const WORKSPACE_MKFS_CMDLINE_FLAG: &str = "m80.workspace.mkfs=1";
 

@@ -84,6 +84,14 @@ fn workspace_dev_is_vdc() {
 }
 
 #[test]
+fn pid_one_mounts_linux_runtime_dev_filesystems() {
+    assert_eq!(DEV_SHM_TARGET, "/dev/shm");
+    assert_eq!(DEV_SHM_MOUNT_DATA, "mode=1777");
+    assert_eq!(DEV_PTS_TARGET, "/dev/pts");
+    assert_eq!(DEV_PTS_MOUNT_DATA, "gid=5,mode=620,ptmxmode=666");
+}
+
+#[test]
 fn workspace_cmdline_flag_controls_pid1_workspace_mount() {
     assert!(
         workspace_requested_from_cmdline("console=ttyS0 init=/m80-guestd m80.workspace=1").unwrap()

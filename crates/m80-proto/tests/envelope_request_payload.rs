@@ -19,7 +19,8 @@ fn serializes_program_args_env_cwd_timeout() {
         streaming: false,
     };
 
-    let env = Envelope::with_request_id(req.clone(), "test-req-001".into());
+    let env =
+        Envelope::with_request_id(req.clone(), "test-req-001".into()).with_max_duration_ms(90_000);
 
     // Encode via write_frame.
     let mut buf = Vec::new();
@@ -32,6 +33,7 @@ fn serializes_program_args_env_cwd_timeout() {
     // All fields survive the round-trip.
     assert_eq!(back.version, PROTOCOL_VERSION);
     assert_eq!(back.request_id.as_deref(), Some("test-req-001"));
+    assert_eq!(back.max_duration_ms, Some(90_000));
     assert_eq!(back.payload.program, "/usr/bin/python3");
     assert_eq!(back.payload.args, vec!["-c", "print('hi')"]);
     assert_eq!(back.payload.cwd.as_deref(), Some("/workspace/project"));

@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 use m80_proto::{
     read_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope, ExecRequest,
-    ExecResponse, ExecStatus, PAYLOAD_KIND_CANCEL_RESPONSE,
+    ExecResponse, ExecStatus, MAX_FRAME_BYTES, PAYLOAD_KIND_CANCEL_RESPONSE,
 };
 
 fn make_request(
@@ -28,10 +28,21 @@ fn make_request(
 }
 
 fn request_frame(req: ExecRequest, request_id: Option<&str>) -> Vec<u8> {
-    let env = match request_id {
+    request_frame_with_max_duration(req, request_id, None)
+}
+
+fn request_frame_with_max_duration(
+    req: ExecRequest,
+    request_id: Option<&str>,
+    max_duration_ms: Option<u64>,
+) -> Vec<u8> {
+    let mut env = match request_id {
         Some(id) => Envelope::with_request_id(req, id.to_owned()),
         None => Envelope::new(req),
     };
+    if let Some(max_duration_ms) = max_duration_ms {
+        env = env.with_max_duration_ms(max_duration_ms);
+    }
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write_frame in test");
     buf
@@ -77,6 +88,22 @@ fn run_handler_with_reader_never_ready(input: Vec<u8>) -> Vec<u8> {
     )
     .expect("handle_connection failed");
     out
+}
+
+#[test]
+fn oversized_initial_frame_drops_connection_without_response() {
+    let mut input = ((MAX_FRAME_BYTES as u32) + 1).to_be_bytes().to_vec();
+    input.extend(request_frame(
+        make_request("false", vec![], None, 5_000),
+        None,
+    ));
+
+    let out = run_handler(input);
+
+    assert!(
+        out.is_empty(),
+        "oversized frame must not produce a response on a poisoned stream"
+    );
 }
 
 #[test]
@@ -127,6 +154,26 @@ fn exec_with_timeout_returns_timed_out() {
     assert!(
         elapsed < std::time::Duration::from_secs(10),
         "elapsed: {elapsed:?}"
+    );
+}
+
+#[test]
+fn envelope_max_duration_times_out_exec_without_payload_timeout() {
+    let mut req = make_request("sleep", vec!["60".into()], None, 5_000);
+    req.timeout_ms = None;
+
+    let env = read_response(&run_handler(request_frame_with_max_duration(
+        req,
+        Some("req-deadline"),
+        Some(100),
+    )));
+
+    assert_eq!(env.request_id.as_deref(), Some("req-deadline"));
+    assert_eq!(env.payload.status, ExecStatus::TimedOut);
+    let timing = env.payload.timing;
+    assert!(
+        timing.run_ms < 2_000,
+        "deadline should bound child runtime, timing={timing:?}"
     );
 }
 

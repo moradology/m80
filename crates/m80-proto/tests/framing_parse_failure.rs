@@ -30,8 +30,8 @@ fn short_frame_body_returns_unexpected_eof() {
     short.extend_from_slice(&[0, 1, 2]);
     let mut cursor = Cursor::new(short);
 
-    let err = read_frame::<_, ExecRequest>(&mut cursor)
-        .expect_err("short protobuf body must return EOF");
+    let err =
+        read_frame::<_, ExecRequest>(&mut cursor).expect_err("short protobuf body must return EOF");
 
     assert!(matches!(err, ProtoError::Io(err) if err.kind() == io::ErrorKind::UnexpectedEof));
 }
@@ -42,6 +42,7 @@ fn unsupported_version_returns_incompatible_version() {
         version: PROTOCOL_VERSION + 1,
         kind: "exec_request".to_owned(),
         request_id: None,
+        max_duration_ms: None,
         payload: Some(
             m80_proto::wire::generated::wire_envelope::Payload::ExecRequest(
                 m80_proto::wire::generated::WireExecRequest {

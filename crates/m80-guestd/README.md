@@ -33,7 +33,7 @@ Keeping the guest small has direct benefits:
   kernel as PID 1 (minimal image kind, `init=/m80-guestd` boot arg).
 - **PID-1 mode** is detected at startup (`getpid() == 1`). When active:
   duplicate stdout and stderr to `/dev/console`, install a panic hook
-  that exits non-zero, execute the overlay+pivot startup sequence (see
+  that exits non-zero, mount `/dev/shm` and `/dev/pts`, execute the overlay+pivot startup sequence (see
   below), and poll-reap orphaned children between vsock requests so
   re-parented orphans don't accumulate. No SIGCHLD or SIGTERM handlers
   — the workspace forbids `unsafe` and the firecracker host stops the
@@ -58,7 +58,7 @@ Keeping the guest small has direct benefits:
      `PtyInput`/`PtyOutput`, apply `PtyResize`, honor `PtyControl`, and finish
      with one `PtyExit` terminal frame.
   6. If the request is a file-op verb, run it directly in guestd:
-     read/write/list/stat/remove a path, or run the chunked upload
+     read/write/list/stat/remove/mkdir a path, or run the chunked upload
      begin/chunk/commit sequence on the same connection.
   7. If the request is `MetricsRequest`, read `/proc/stat` and
      `/proc/meminfo`, attach guestd-local request/error counters, and return
@@ -232,6 +232,7 @@ File operations are direct guestd handlers, not shell commands. Dispatch table:
 | `file_list_request` | `file_list_response` | List one directory level with `DirEntry { name, kind, size }`; no recursion. |
 | `file_stat_request` | `file_stat_response` | `symlink_metadata` one path and return kind, size, mtime, mode. |
 | `file_remove_request` | `file_remove_response` | Remove one non-directory path; directories return `IsADirectory`. |
+| `file_mkdir_request` | `file_mkdir_response` | Create one directory; `recursive=true` creates parents, optional mode is applied, and existing directories return `created=false`. |
 | `file_write_begin/chunk/commit` | matching responses | Per-connection upload table writes `<path>.m80-upload.<upload_id>`, requires zero-based monotonic chunk sequences, acks chunks, fsyncs, then renames on commit. Disconnect drops the table and removes temp files. |
 
 Errors are returned as `FileError` variants on the response, including
@@ -267,7 +268,7 @@ Behavior details:
 Implements `docs/design/storage-overlay.md §3.1` (11-step pseudocode).
 Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 
-1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs). `EBUSY` (kernel pre-mounted) is accepted as success.
+1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs), `/dev/shm` (tmpfs `mode=1777`), and `/dev/pts` (devpts `gid=5,mode=620,ptmxmode=666`). `EBUSY` (kernel pre-mounted) is accepted as success, and `/dev/ptmx` is normalized to `pts/ptmx`.
 2. Make mount namespace fully private (`MS_REC | MS_PRIVATE` on `/`) so `pivot_root(2)` does not propagate to the host.
 3. Verify the image-built `/lower` mountpoint exists, then mount `/dev/vda` (shared read-only base ext4) there (`MS_RDONLY`).
 4. Verify the image-built `/upper` mountpoint exists, then mount `/dev/vdb` (per-VM writable overlay ext4) there.
@@ -362,8 +363,10 @@ control flow.
 
 In systemd images, the unit routes stdout and stderr to
 `journal+console`; in PID-1 images, guestd duplicates stdout/stderr to
-`/dev/console` before emitting startup logs. m80-firecracker captures
-the resulting Firecracker stdout/stderr stream into `<run_dir>/console.log`.
+`/dev/console` before emitting startup logs. Guest structured logs are also
+written best-effort to `/dev/kmsg` with 1024-byte bounded records so `dmesg`
+captures early boot diagnostics. m80-firecracker captures the resulting
+Firecracker stdout/stderr stream into `<run_dir>/console.log`.
 
 PID-1 images also emit machine-readable boot milestone lines:
 

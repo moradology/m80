@@ -1,9 +1,10 @@
 use m80_proto::{
     read_frame, write_frame, DirEntry, Envelope, FileError, FileKind, FileListRequest,
-    FileListResponse, FileReadChunk, FileReadRequest, FileReadResponse, FileRemoveRequest,
-    FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
-    FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
-    FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, PAYLOAD_KIND_FILE_READ_REQUEST,
+    FileListResponse, FileMkdirRequest, FileMkdirResponse, FileReadChunk, FileReadRequest,
+    FileReadResponse, FileRemoveRequest, FileRemoveResponse, FileStat, FileStatRequest,
+    FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest,
+    FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse, FileWriteRequest,
+    FileWriteResponse, PAYLOAD_KIND_FILE_MKDIR_REQUEST, PAYLOAD_KIND_FILE_READ_REQUEST,
 };
 
 fn round_trip<T>(payload: T) -> Envelope<T>
@@ -103,6 +104,26 @@ fn file_remove_response_round_trips_not_found() {
     });
 
     assert_eq!(back.payload.error, Some(FileError::NotFound));
+}
+
+#[test]
+fn file_mkdir_request_response_round_trip() {
+    let req = round_trip(FileMkdirRequest {
+        path: "/workspace/output".into(),
+        mode: Some(0o755),
+        recursive: true,
+    });
+    assert_eq!(req.kind, PAYLOAD_KIND_FILE_MKDIR_REQUEST);
+    assert_eq!(req.payload.path, "/workspace/output");
+    assert_eq!(req.payload.mode, Some(0o755));
+    assert!(req.payload.recursive);
+
+    let resp = round_trip(FileMkdirResponse {
+        created: true,
+        error: None,
+    });
+    assert!(resp.payload.created);
+    assert_eq!(resp.payload.error, None);
 }
 
 #[test]

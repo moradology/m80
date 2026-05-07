@@ -6,6 +6,7 @@ message WireEnvelope {
   uint32 version = 1;
   string kind = 2;
   optional string request_id = 3;
+  optional uint64 max_duration_ms = 4;
 
   oneof payload {
     WireHandshakeMessage handshake = 10;
@@ -28,27 +29,29 @@ message WireEnvelope {
     WireFileStatResponse file_stat_response = 27;
     WireFileRemoveRequest file_remove_request = 28;
     WireFileRemoveResponse file_remove_response = 29;
-    WireFileWriteBeginRequest file_write_begin_request = 30;
-    WireFileWriteBeginResponse file_write_begin_response = 31;
-    WireFileWriteChunkRequest file_write_chunk_request = 32;
-    WireFileWriteChunkResponse file_write_chunk_response = 33;
-    WireFileWriteCommitRequest file_write_commit_request = 34;
-    WireFileWriteCommitResponse file_write_commit_response = 35;
-    WireExecStreamChunk exec_stdout = 36;
-    WireExecStreamChunk exec_stderr = 37;
-    WireExecExit exec_exit = 38;
-    WirePtyRequest pty_request = 39;
-    WirePtyBytes pty_input = 40;
-    WirePtyBytes pty_output = 41;
-    WirePtyResize pty_resize = 42;
-    WirePtyControl pty_control = 43;
-    WirePtyExit pty_exit = 44;
-    WireDriveMountRequest drive_mount_request = 45;
-    WireDriveMountResponse drive_mount_response = 46;
-    WireDriveDetachRequest drive_detach_request = 47;
-    WireDriveDetachResponse drive_detach_response = 48;
-    WirePingRequest ping_request = 49;
-    WirePongResponse pong_response = 50;
+    WireFileMkdirRequest file_mkdir_request = 30;
+    WireFileMkdirResponse file_mkdir_response = 31;
+    WireFileWriteBeginRequest file_write_begin_request = 32;
+    WireFileWriteBeginResponse file_write_begin_response = 33;
+    WireFileWriteChunkRequest file_write_chunk_request = 34;
+    WireFileWriteChunkResponse file_write_chunk_response = 35;
+    WireFileWriteCommitRequest file_write_commit_request = 36;
+    WireFileWriteCommitResponse file_write_commit_response = 37;
+    WireExecStreamChunk exec_stdout = 38;
+    WireExecStreamChunk exec_stderr = 39;
+    WireExecExit exec_exit = 40;
+    WirePtyRequest pty_request = 41;
+    WirePtyBytes pty_input = 42;
+    WirePtyBytes pty_output = 43;
+    WirePtyResize pty_resize = 44;
+    WirePtyControl pty_control = 45;
+    WirePtyExit pty_exit = 46;
+    WireDriveMountRequest drive_mount_request = 47;
+    WireDriveMountResponse drive_mount_response = 48;
+    WireDriveDetachRequest drive_detach_request = 49;
+    WireDriveDetachResponse drive_detach_response = 50;
+    WirePingRequest ping_request = 51;
+    WirePongResponse pong_response = 52;
   }
 }
 
@@ -204,6 +207,17 @@ message WireFileRemoveRequest {
 
 message WireFileRemoveResponse {
   bool removed = 1;
+  optional int32 error = 2;
+}
+
+message WireFileMkdirRequest {
+  string path = 1;
+  optional uint32 mode = 2;
+  bool recursive = 3;
+}
+
+message WireFileMkdirResponse {
+  bool created = 1;
   optional int32 error = 2;
 }
 

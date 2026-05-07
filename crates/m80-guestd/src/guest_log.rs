@@ -1,7 +1,15 @@
 //! Structured stderr logging for guest-visible diagnostics.
 
+use std::fs::{File, OpenOptions};
+use std::io;
 use std::io::Write as _;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+const KMSG_PATH: &str = "/dev/kmsg";
+const KMSG_MAX_LINE_BYTES: usize = 1024;
+const KMSG_TRUNCATED_MARKER: &[u8] = b" ... [m80-truncated]";
+static KMSG: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 
 /// Guest-side lifecycle phase for structured stderr lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +90,40 @@ pub fn log(
     let timestamp = rfc3339_utc_now();
     let line = format_line(&timestamp, phase, request_id, level, message.as_ref());
     let _ = writeln!(std::io::stderr().lock(), "{line}");
+    write_kmsg_line(&line);
+}
+
+fn write_kmsg_line(line: &str) {
+    let Ok(mut guard) = kmsg_file().lock() else {
+        return;
+    };
+    let Some(file) = guard.as_mut() else {
+        return;
+    };
+    let _ = write_kmsg_line_to(file, line);
+}
+
+fn kmsg_file() -> &'static Mutex<Option<File>> {
+    KMSG.get_or_init(|| Mutex::new(OpenOptions::new().write(true).open(KMSG_PATH).ok()))
+}
+
+fn write_kmsg_line_to(writer: &mut impl io::Write, line: &str) -> io::Result<()> {
+    let mut bytes = kmsg_line_bytes(line);
+    bytes.push(b'\n');
+    writer.write_all(&bytes)
+}
+
+fn kmsg_line_bytes(line: &str) -> Vec<u8> {
+    let bytes = line.as_bytes();
+    if bytes.len() < KMSG_MAX_LINE_BYTES {
+        return bytes.to_vec();
+    }
+    let keep = KMSG_MAX_LINE_BYTES
+        .saturating_sub(KMSG_TRUNCATED_MARKER.len())
+        .saturating_sub(1);
+    let mut truncated = bytes[..keep].to_vec();
+    truncated.extend_from_slice(KMSG_TRUNCATED_MARKER);
+    truncated
 }
 
 fn rfc3339_utc_now() -> String {
@@ -193,5 +235,25 @@ mod tests {
             format_boot_milestone_line("overlayfs_mounted", 1234, 56),
             "M80_GUEST_BOOT name=overlayfs_mounted elapsed_us=1234 delta_us=56"
         );
+    }
+
+    #[test]
+    fn kmsg_writer_preserves_short_line() {
+        let mut buf = Vec::new();
+
+        write_kmsg_line_to(&mut buf, "[ts] [Boot] [boot] INFO hello").unwrap();
+
+        assert_eq!(buf, b"[ts] [Boot] [boot] INFO hello\n");
+    }
+
+    #[test]
+    fn kmsg_writer_truncates_oversized_line_with_marker() {
+        let mut buf = Vec::new();
+        let line = "x".repeat(KMSG_MAX_LINE_BYTES + 100);
+
+        write_kmsg_line_to(&mut buf, &line).unwrap();
+
+        assert_eq!(buf.len(), KMSG_MAX_LINE_BYTES);
+        assert!(buf.ends_with(b" ... [m80-truncated]\n"));
     }
 }

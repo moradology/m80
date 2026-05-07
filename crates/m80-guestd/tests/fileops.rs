@@ -3,10 +3,10 @@ use std::os::unix::fs::PermissionsExt;
 
 use m80_proto::{
     read_frame, write_frame, DirEntry, Envelope, FileError, FileKind, FileListResponse,
-    FileReadChunk, FileReadRequest, FileRemoveRequest, FileRemoveResponse, FileStatRequest,
-    FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest,
-    FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse, FileWriteRequest,
-    FileWriteResponse,
+    FileMkdirRequest, FileMkdirResponse, FileReadChunk, FileReadRequest, FileRemoveRequest,
+    FileRemoveResponse, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
+    FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
+    FileWriteCommitResponse, FileWriteRequest, FileWriteResponse,
 };
 
 fn frame<T: m80_proto::Payload + Clone>(payload: T) -> Vec<u8> {
@@ -215,6 +215,55 @@ fn file_remove_rejects_directory() {
 
     assert!(!response.removed);
     assert_eq!(response.error, Some(FileError::IsADirectory));
+}
+
+#[test]
+fn file_mkdir_creates_recursive_directory_with_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a/b/c");
+
+    let response: FileMkdirResponse = read_one(handle(frame(FileMkdirRequest {
+        path: path.display().to_string(),
+        mode: Some(0o750),
+        recursive: true,
+    })));
+
+    assert!(response.created);
+    assert_eq!(response.error, None);
+    let stat: FileStatResponse = read_one(handle(frame(FileStatRequest {
+        path: path.display().to_string(),
+    })));
+    let mode = stat.stat.expect("mkdir stat").mode & 0o777;
+    assert_eq!(mode, 0o750);
+}
+
+#[test]
+fn file_mkdir_non_recursive_reports_missing_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("missing/leaf");
+
+    let response: FileMkdirResponse = read_one(handle(frame(FileMkdirRequest {
+        path: path.display().to_string(),
+        mode: None,
+        recursive: false,
+    })));
+
+    assert!(!response.created);
+    assert_eq!(response.error, Some(FileError::NotFound));
+}
+
+#[test]
+fn file_mkdir_existing_directory_is_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let response: FileMkdirResponse = read_one(handle(frame(FileMkdirRequest {
+        path: dir.path().display().to_string(),
+        mode: None,
+        recursive: false,
+    })));
+
+    assert!(!response.created);
+    assert_eq!(response.error, None);
 }
 
 #[test]

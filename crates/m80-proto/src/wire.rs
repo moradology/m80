@@ -31,6 +31,8 @@ pub struct RawEnvelope {
     pub kind: String,
     /// Opaque request identifier.
     pub request_id: Option<String>,
+    /// Optional call-wide wall-clock budget in milliseconds.
+    pub max_duration_ms: Option<u64>,
     /// Protobuf payload variant.
     pub payload: WirePayload,
 }
@@ -42,6 +44,7 @@ impl RawEnvelope {
             version: envelope.version,
             kind: envelope.kind,
             request_id: envelope.request_id,
+            max_duration_ms: envelope.max_duration_ms,
             payload: envelope.payload.into_wire(),
         }
     }
@@ -60,6 +63,7 @@ impl RawEnvelope {
             version: self.version,
             kind: self.kind,
             request_id: self.request_id,
+            max_duration_ms: self.max_duration_ms,
             payload,
         })
     }
@@ -71,6 +75,7 @@ impl WireEnvelope {
             version: raw.version,
             kind: raw.kind,
             request_id: raw.request_id,
+            max_duration_ms: raw.max_duration_ms,
             payload: Some(raw.payload),
         }
     }
@@ -80,6 +85,7 @@ impl WireEnvelope {
             version: self.version,
             kind: self.kind,
             request_id: self.request_id,
+            max_duration_ms: self.max_duration_ms,
             payload: self
                 .payload
                 .ok_or_else(|| ProtoError::MalformedPayload("missing envelope payload".into()))?,

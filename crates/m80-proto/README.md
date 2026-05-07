@@ -44,6 +44,10 @@ The load-bearing wire invariants — the things consumers cannot derive from
   No `#[non_exhaustive]` escape hatch — wire compat is the contract.
 - **`request_id` is opaque.** The protocol echoes it back unchanged and
   assigns no meaning; pairing is the consumer's job.
+- **`max_duration_ms` is an optional envelope deadline.** It bounds the whole
+  request/response call in wall-clock milliseconds. Guestd currently applies it
+  to exec and PTY requests by taking the minimum of the payload timeout and the
+  envelope deadline.
 - **Cancel envelope (`cancel_request` / `cancel_response`).** `CancelRequest`
   carries the `request_id` to kill; `CancelResponse` replies with one of three
   `CancelStatus` outcomes: `Cancelled`, `AlreadyExited`, or `Failed`.
@@ -63,7 +67,7 @@ The load-bearing wire invariants — the things consumers cannot derive from
   opaque `Envelope::request_id`. See
   `docs/behaviors/wire-protocol/pty.md`.
 - **File operations are direct guest verbs.** `file_read`, `file_write`,
-  `file_list`, `file_stat`, `file_remove`, and the chunked write
+  `file_list`, `file_stat`, `file_remove`, `file_mkdir`, and the chunked write
   `file_write_begin` / `file_write_chunk` / `file_write_commit` sequence
   move bytes without spawning a shell. Responses carry `Option<FileError>`
   with `NotFound`, `PermissionDenied`, `IsADirectory`, `NotADirectory`,
@@ -114,7 +118,8 @@ identity bytes.
 File-op exports: `FileReadRequest`, `FileReadChunk`,
 `FileReadResponse`, `FileWriteRequest`, `FileWriteResponse`,
 `FileListRequest`, `FileListResponse`, `FileStatRequest`, `FileStatResponse`,
-`FileRemoveRequest`, `FileRemoveResponse`, `FileWriteBeginRequest`,
+`FileRemoveRequest`, `FileRemoveResponse`, `FileMkdirRequest`,
+`FileMkdirResponse`, `FileWriteBeginRequest`,
 `FileWriteBeginResponse`, `FileWriteChunkRequest`, `FileWriteChunkResponse`,
 `FileWriteCommitRequest`, `FileWriteCommitResponse`,
 `FileError`, `FileKind`, `DirEntry`, `FileStat`, `FILE_READ_LIMIT_DEFAULT`,

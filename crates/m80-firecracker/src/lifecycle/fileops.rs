@@ -4,11 +4,11 @@ use std::io::Read;
 use std::sync::atomic::Ordering;
 
 use m80_proto::{
-    DirEntry, Envelope, FileListRequest, FileListResponse, FileReadChunk, FileReadRequest,
-    FileRemoveRequest, FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse,
-    FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse,
-    FileWriteCommitRequest, FileWriteCommitResponse, FileWriteRequest, FileWriteResponse,
-    PAYLOAD_KIND_FILE_READ_CHUNK,
+    DirEntry, Envelope, FileListRequest, FileListResponse, FileMkdirRequest, FileMkdirResponse,
+    FileReadChunk, FileReadRequest, FileRemoveRequest, FileRemoveResponse, FileStat,
+    FileStatRequest, FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse,
+    FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse,
+    FileWriteRequest, FileWriteResponse, PAYLOAD_KIND_FILE_READ_CHUNK,
 };
 
 use crate::error::{ConfigError, FcError};
@@ -91,13 +91,11 @@ impl RunningSandbox {
             if chunk.done {
                 return Ok((bytes, chunk.truncated));
             }
-            expected_seq = expected_seq
-                .checked_add(1)
-                .ok_or_else(|| {
-                    FcError::Config(ConfigError::Other(
-                        "file_read chunk sequence overflow".into(),
-                    ))
-                })?;
+            expected_seq = expected_seq.checked_add(1).ok_or_else(|| {
+                FcError::Config(ConfigError::Other(
+                    "file_read chunk sequence overflow".into(),
+                ))
+            })?;
         }
     }
 
@@ -134,9 +132,7 @@ impl RunningSandbox {
             self.fileop_round_trip(FileStatRequest { path: path.into() }, "file_stat")?;
         fileop_result(response.error)?;
         response.stat.ok_or_else(|| {
-            FcError::Config(ConfigError::Other(
-                "file_stat response missing stat".into(),
-            ))
+            FcError::Config(ConfigError::Other("file_stat response missing stat".into()))
         })
     }
 
@@ -152,6 +148,25 @@ impl RunningSandbox {
                 "file_remove response reported no removal and no error".into(),
             )))
         }
+    }
+
+    /// Create a guest directory directly through m80-guestd.
+    pub fn create_dir(
+        &mut self,
+        path: impl Into<String>,
+        mode: Option<u32>,
+        recursive: bool,
+    ) -> Result<bool, FcError> {
+        let response: FileMkdirResponse = self.fileop_round_trip(
+            FileMkdirRequest {
+                path: path.into(),
+                mode,
+                recursive,
+            },
+            "file_mkdir",
+        )?;
+        fileop_result(response.error)?;
+        Ok(response.created)
     }
 
     /// Upload a guest file through the chunked file-write protocol.

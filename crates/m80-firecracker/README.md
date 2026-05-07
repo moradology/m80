@@ -145,8 +145,10 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 | Method | Signature | Description |
 |---|---|---|
 | `RunningSandbox::exec` | `(&mut self, ExecRequest) -> Result<ExecResponse, FcError>` | Run one command and return buffered stdout/stderr/exit. |
+| `RunningSandbox::exec_with_max_duration` | `(&mut self, ExecRequest, u64) -> Result<ExecResponse, FcError>` | Run one buffered command with an envelope call deadline. |
 | `RunningSandbox::exec_with_cancel` | `(&mut self, ExecRequest, std::sync::mpsc::Receiver<()>) -> Result<ExecResponse, FcError>` | Run one buffered command and send guest cancellation when the receiver fires. |
 | `RunningSandbox::exec_streaming` | `(&mut self, ExecRequest, impl FnMut(ExecChunk) -> Result<(), FcError>) -> Result<ExecExit, FcError>` | Run one command and deliver stdout/stderr chunks before terminal exit. |
+| `RunningSandbox::exec_streaming_with_max_duration` | `(&mut self, ExecRequest, u64, impl FnMut(ExecChunk) -> Result<(), FcError>) -> Result<ExecExit, FcError>` | Run one streaming command with an envelope call deadline. |
 | `RunningSandbox::exec_streaming_with_cancel` | `(&mut self, ExecRequest, std::sync::mpsc::Receiver<()>, impl FnMut(ExecChunk) -> Result<(), FcError>) -> Result<ExecExit, FcError>` | Streaming exec plus same-connection guest cancellation. |
 | `RunningSandbox::exec_pty` | `(&mut self, PtyRequest, std::sync::mpsc::Receiver<PtyHostEvent>, impl FnMut(PtyOutputChunk) -> Result<(), FcError>) -> Result<PtyExit, FcError>` | Run one terminal command and deliver merged PTY output before terminal exit. |
 | `RunningSandbox::read_file` | `(&mut self, path, max_bytes) -> Result<(Vec<u8>, bool), FcError>` | Read bytes directly from the guest and report truncation. |
@@ -154,6 +156,7 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 | `RunningSandbox::list_dir` | `(&mut self, path) -> Result<Vec<DirEntry>, FcError>` | List one guest directory level. |
 | `RunningSandbox::stat_file` | `(&mut self, path) -> Result<FileStat, FcError>` | Stat one guest path without following final symlink. |
 | `RunningSandbox::remove_file` | `(&mut self, path) -> Result<(), FcError>` | Remove one non-directory guest path. |
+| `RunningSandbox::create_dir` | `(&mut self, path, mode, recursive) -> Result<bool, FcError>` | Create one guest directory and report whether it was newly created. |
 | `RunningSandbox::upload_file_chunked` | `(&mut self, path, mode, reader, chunk_size) -> Result<u64, FcError>` | Upload via begin/chunk/commit on one vsock connection. |
 | `RunningSandbox::attach_drive_verified` | `(self, HotplugDriveAttach) -> Result<RunningSandbox, FcError>` | Retarget one preallocated drive slot, wait for guest mount ACK, verify opaque identity bytes, and discard the VM on failure. |
 | `RunningSandbox::detach_drive` | `(self, HotplugDriveDetach) -> Result<RunningSandbox, FcError>` | Ask guestd to unmount a preallocated slot, then retarget the slot to its placeholder backing file. |
@@ -451,7 +454,7 @@ Re-exports for callers:
 - `WireProtocolError` (from `m80-proto`).
 - `ExecRequest`, `ExecResponse`, `ExecExit`, `ExecChunk`, `ExecStatus` (from `m80-proto`).
 - `PtyRequest`, `PtyExit`, `PtyOutputChunk`, `PtyHostEvent` (from `m80-proto`).
-- `DirEntry`, `FileStat` (from `m80-proto`).
+- `DirEntry`, `FileMkdirRequest`, `FileMkdirResponse`, `FileStat` (from `m80-proto`).
 - `MetricsResponse` (from `m80-proto`).
 
 Config helpers:

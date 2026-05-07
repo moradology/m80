@@ -42,7 +42,16 @@ impl RunningSandbox {
     /// Internally this uses [`RunningSandbox::exec_streaming`] and buffers
     /// stdout/stderr up to the existing 1 MiB per-stream cap.
     pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
-        self.exec_inner(req, None, true)
+        self.exec_inner(req, None, true, None)
+    }
+
+    /// Send one exec request with a call-wide wall-clock budget.
+    pub fn exec_with_max_duration(
+        &mut self,
+        req: ExecRequest,
+        max_duration_ms: u64,
+    ) -> Result<ExecResponse, FcError> {
+        self.exec_inner(req, None, true, Some(max_duration_ms))
     }
 
     /// Send one exec request and return a buffered response, cancelling the
@@ -55,11 +64,11 @@ impl RunningSandbox {
         req: ExecRequest,
         cancel_rx: mpsc::Receiver<()>,
     ) -> Result<ExecResponse, FcError> {
-        self.exec_inner(req, Some(cancel_rx), true)
+        self.exec_inner(req, Some(cancel_rx), true, None)
     }
 
     pub(crate) fn exec_ready_probe(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
-        self.exec_inner(req, None, false)
+        self.exec_inner(req, None, false, None)
     }
 
     fn exec_inner(
@@ -67,6 +76,7 @@ impl RunningSandbox {
         req: ExecRequest,
         cancel_rx: Option<mpsc::Receiver<()>>,
         consume_one_shot: bool,
+        max_duration_ms: Option<u64>,
     ) -> Result<ExecResponse, FcError> {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -84,8 +94,13 @@ impl RunningSandbox {
             Ok(())
         };
 
-        let exit =
-            self.exec_streaming_inner(req, cancel_rx, &mut buffer_chunk, consume_one_shot)?;
+        let exit = self.exec_streaming_inner(
+            req,
+            cancel_rx,
+            &mut buffer_chunk,
+            consume_one_shot,
+            max_duration_ms,
+        )?;
 
         Ok(ExecResponse {
             status: exit.status,
@@ -111,7 +126,17 @@ impl RunningSandbox {
         req: ExecRequest,
         on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
     ) -> Result<ExecExit, FcError> {
-        self.exec_streaming_inner(req, None, on_chunk, true)
+        self.exec_streaming_inner(req, None, on_chunk, true, None)
+    }
+
+    /// Send one streaming exec request with a call-wide wall-clock budget.
+    pub fn exec_streaming_with_max_duration(
+        &mut self,
+        req: ExecRequest,
+        max_duration_ms: u64,
+        on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
+    ) -> Result<ExecExit, FcError> {
+        self.exec_streaming_inner(req, None, on_chunk, true, Some(max_duration_ms))
     }
 
     /// Send one streaming exec request, cancelling the in-flight guest child
@@ -126,7 +151,7 @@ impl RunningSandbox {
         cancel_rx: mpsc::Receiver<()>,
         on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
     ) -> Result<ExecExit, FcError> {
-        self.exec_streaming_inner(req, Some(cancel_rx), on_chunk, true)
+        self.exec_streaming_inner(req, Some(cancel_rx), on_chunk, true, None)
     }
 
     /// Send one PTY exec request and call `on_output` as merged terminal
@@ -260,6 +285,7 @@ impl RunningSandbox {
         cancel_rx: Option<mpsc::Receiver<()>>,
         mut on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
         consume_one_shot: bool,
+        max_duration_ms: Option<u64>,
     ) -> Result<ExecExit, FcError> {
         if consume_one_shot {
             self.claim_one_shot_exec()?;
@@ -280,7 +306,10 @@ impl RunningSandbox {
             Some(request_id.as_str()),
             "exec request started",
         );
-        let envelope = Envelope::with_request_id(req, request_id.clone());
+        let mut envelope = Envelope::with_request_id(req, request_id.clone());
+        if let Some(max_duration_ms) = max_duration_ms {
+            envelope = envelope.with_max_duration_ms(max_duration_ms);
+        }
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
         let started_at_unix_ms = unix_ms_now();
         // NOTE — BufReader + cloned-stream concurrency model
