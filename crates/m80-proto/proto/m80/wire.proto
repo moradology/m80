@@ -43,6 +43,10 @@ message WireEnvelope {
     WirePtyResize pty_resize = 42;
     WirePtyControl pty_control = 43;
     WirePtyExit pty_exit = 44;
+    WireDriveMountRequest drive_mount_request = 45;
+    WireDriveMountResponse drive_mount_response = 46;
+    WireDriveDetachRequest drive_detach_request = 47;
+    WireDriveDetachResponse drive_detach_response = 48;
   }
 }
 
@@ -289,4 +293,52 @@ message WirePtyExit {
   uint64 total_output_bytes = 5;
   bool truncated = 6;
   optional WireExecTiming timing = 7;
+}
+
+message WireDriveMountSpec {
+  string drive_id = 1;
+  string mount_path = 2;
+  optional string identity_path = 3;
+}
+
+message WireDriveMountRequest {
+  repeated WireDriveMountSpec devices = 1;
+}
+
+message WireTenantIdentityReport {
+  string drive_id = 1;
+  string path = 2;
+  bytes bytes = 3;
+}
+
+message WireDriveMountStatus {
+  string drive_id = 1;
+  string mount_path = 2;
+  int32 status = 3;
+  optional int32 error = 4;
+}
+
+message WireDriveMountResponse {
+  repeated WireDriveMountStatus statuses = 1;
+  repeated WireTenantIdentityReport identities = 2;
+}
+
+message WireDriveDetachSpec {
+  string drive_id = 1;
+  string mount_path = 2;
+}
+
+message WireDriveDetachRequest {
+  repeated WireDriveDetachSpec devices = 1;
+}
+
+message WireDriveDetachStatus {
+  string drive_id = 1;
+  string mount_path = 2;
+  int32 status = 3;
+  optional int32 error = 4;
+}
+
+message WireDriveDetachResponse {
+  repeated WireDriveDetachStatus statuses = 1;
 }

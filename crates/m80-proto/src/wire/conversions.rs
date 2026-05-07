@@ -2,7 +2,7 @@
 
 use crate::error::ProtoError;
 use crate::types::{
-    CancelResponse, CancelRequest, CancelStatus, DirEntry, ExecExit, ExecRequest, ExecResponse,
+    CancelRequest, CancelResponse, CancelStatus, DirEntry, ExecExit, ExecRequest, ExecResponse,
     ExecStatus, ExecStderr, ExecStdout, ExecTiming, FileError, FileKind, FileListRequest,
     FileListResponse, FileReadChunk, FileReadRequest, FileReadResponse, FileRemoveRequest,
     FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
@@ -10,7 +10,7 @@ use crate::types::{
     FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, GuestCpuMetrics, GuestMemMetrics,
     HandshakeMessage, MetricsRequest, MetricsResponse, Payload, PtyControl, PtyControlEvent,
     PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal, PtySize, ShutdownAction,
-    ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_CANCEL_REQUEST,
+    ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_CANCEL_RESPONSE,
     PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE,
     PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_FILE_LIST_REQUEST,
     PAYLOAD_KIND_FILE_LIST_RESPONSE, PAYLOAD_KIND_FILE_READ_CHUNK, PAYLOAD_KIND_FILE_READ_REQUEST,
@@ -296,6 +296,10 @@ fn payload_name(payload: &WirePayload) -> &'static str {
         WirePayload::PtyResize(_) => "pty_resize",
         WirePayload::PtyControl(_) => "pty_control",
         WirePayload::PtyExit(_) => "pty_exit",
+        WirePayload::DriveMountRequest(_) => "drive_mount_request",
+        WirePayload::DriveMountResponse(_) => "drive_mount_response",
+        WirePayload::DriveDetachRequest(_) => "drive_detach_request",
+        WirePayload::DriveDetachResponse(_) => "drive_detach_response",
     }
 }
 

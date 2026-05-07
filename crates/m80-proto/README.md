@@ -95,6 +95,14 @@ Core exec types: `ExecRequest`, `ExecResponse`, `ExecStdout`, `ExecStderr`,
 PTY types: `PtyRequest`, `PtyOutput`, `PtyInput`, `PtyResize`, `PtyControl`,
 `PtyExit`.
 
+Drive hotplug types: `DriveMountRequest`, `DriveMountResponse`,
+`DriveMountSpec`, `DriveMountStatus`, `DriveMountStatusKind`,
+`DriveDetachRequest`, `DriveDetachResponse`, `DriveDetachSpec`,
+`DriveDetachStatus`, `DriveDetachStatusKind`, `DriveHotplugError`,
+`TenantIdentityReport`, and their `PAYLOAD_KIND_*` constants. These carry
+VM-mechanics data only: Firecracker drive ids, guest mount paths, per-device
+status/error values, and opaque tenant identity bytes.
+
 File-op exports: `FileReadRequest`, `FileReadChunk`,
 `FileReadResponse`, `FileWriteRequest`, `FileWriteResponse`,
 `FileListRequest`, `FileListResponse`, `FileStatRequest`, `FileStatResponse`,
@@ -142,6 +150,8 @@ Rust toolchain. None of the other m80 crates.
 
 - `tests/fileops_round_trip.rs` — each file-op request/response pair
   round-trips through `write_frame` + `read_frame` byte-equivalent.
+- `tests/hotplug_round_trip.rs` — drive mount/detach payloads round-trip,
+  preserve partial-success statuses, and carry tenant identity as opaque bytes.
 - Unit tests in-crate: `Envelope` kind/payload mismatch fails closed,
   `OversizedPayload` fires at `MAX_FRAME_BYTES + 1`, EOF before prefix vs.
   EOF mid-frame both map to `Io(UnexpectedEof)`, `negotiate_version`
