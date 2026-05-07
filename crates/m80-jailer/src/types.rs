@@ -122,7 +122,7 @@ pub enum PlanStep {
 
 /// Serialized state for `jailer-state.json`. Crate-internal — the
 /// public surface uses [`JailedFirecracker`](super::JailedFirecracker)
-/// and [`RecoveryDecision`](super::RecoveryDecision).
+/// and [`InspectionDecision`](super::InspectionDecision).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JailerState {

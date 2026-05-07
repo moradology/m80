@@ -16,9 +16,9 @@ fn io_err(path: std::path::PathBuf) -> impl Fn(io::Error) -> JailerError {
     }
 }
 
-/// Outcome of [`recover_from_run_dir`].
+/// Outcome of [`inspect_run_dir`].
 #[derive(Debug, Clone)]
-pub enum RecoveryDecision {
+pub enum InspectionDecision {
     /// A live jailer + firecracker pair was found.
     LiveJail {
         /// PID of the live jailer.
@@ -35,14 +35,14 @@ pub enum RecoveryDecision {
     NoJail,
 }
 
-/// Inspect a run-dir for prior jail state. The returned [`RecoveryDecision`]
+/// Inspect a run-dir for prior jail state. The returned [`InspectionDecision`]
 /// variant tells the caller whether to skip (LiveJail), reap (OrphanJail),
 /// or just `rm -rf` (NoJail).
-pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerError> {
+pub fn inspect_run_dir(run_dir: &Path) -> Result<InspectionDecision, JailerError> {
     let state_path = run_dir.join(JAILER_STATE_FILE);
 
     if !state_path.exists() {
-        return Ok(RecoveryDecision::NoJail);
+        return Ok(InspectionDecision::NoJail);
     }
 
     let raw = std::fs::read(&state_path).map_err(io_err(state_path.clone()))?;
@@ -54,7 +54,7 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
         if Path::new(&format!("/proc/{jailer_pid}")).exists()
             && Path::new(&format!("/proc/{fc_pid}")).exists()
         {
-            return Ok(RecoveryDecision::LiveJail {
+            return Ok(InspectionDecision::LiveJail {
                 jailer_pid,
                 firecracker_pid: fc_pid,
             });
@@ -73,5 +73,5 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
         Vec::new()
     };
 
-    Ok(RecoveryDecision::OrphanJail { reap_steps })
+    Ok(InspectionDecision::OrphanJail { reap_steps })
 }

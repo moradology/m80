@@ -81,7 +81,7 @@ impl Plan {
     /// Requires `CAP_SYS_ADMIN` (or root). Persists `jailer-plan.json` and an
     /// initial `jailer-state.json` in the run-dir on success. `Drop` on the
     /// returned [`MaterializedJail`] tears down the chroot.
-    pub fn materialize(&self) -> Result<MaterializedJail, JailerError> {
+    pub fn materialize(self) -> Result<MaterializedJail, JailerError> {
         use nix::mount::{mount, MsFlags};
         use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
         use nix::unistd::mkdir;
@@ -105,14 +105,14 @@ impl Plan {
         // partially-applied state (created dirs + bind mounts so far) gets
         // unwound by `Drop` instead of leaking into the host's mount table.
         let mut materialized = MaterializedJail {
-            plan: self.clone(),
             jail_path: jail_root,
             bind_mounts: Vec::new(),
             created_dirs: Vec::new(),
             placeholder_files: Vec::new(),
+            plan: self,
         };
 
-        for step in &self.steps {
+        for step in &materialized.plan.steps {
             match step {
                 PlanStep::CreateDir { path, .. } => {
                     mkdir(path, Mode::from_bits_truncate(0o755)).map_err(|e| JailerError::Io {
@@ -132,9 +132,8 @@ impl Plan {
                     materialized.created_dirs.push(path.clone());
                 }
                 PlanStep::Bind { source, dest, mode } => {
-                    if dest.is_dir() || source.is_dir() {
+                    if !dest.is_dir() && !source.is_dir() {
                         // dest dir was already created or is the jail root
-                    } else {
                         std::fs::write(dest, b"").map_err(|source| JailerError::Io {
                             path: dest.clone(),
                             source,
@@ -176,8 +175,8 @@ impl Plan {
                         use nix::unistd::{chown, Gid, Uid};
                         chown(
                             source.as_path(),
-                            Some(Uid::from_raw(self.config.uid)),
-                            Some(Gid::from_raw(self.config.gid)),
+                            Some(Uid::from_raw(materialized.plan.config.uid)),
+                            Some(Gid::from_raw(materialized.plan.config.gid)),
                         )
                         .map_err(|_e| JailerError::BindFailed {
                             src: source.clone(),
@@ -191,8 +190,8 @@ impl Plan {
             }
         }
 
-        let plan_path = self.config.run_dir.join(JAILER_PLAN_FILE);
-        let plan_json = serde_json::to_vec_pretty(self).map_err(|e| JailerError::Io {
+        let plan_path = materialized.plan.config.run_dir.join(JAILER_PLAN_FILE);
+        let plan_json = serde_json::to_vec_pretty(&materialized.plan).map_err(|e| JailerError::Io {
             path: plan_path.clone(),
             source: io::Error::new(io::ErrorKind::Other, e),
         })?;
@@ -201,7 +200,7 @@ impl Plan {
             source,
         })?;
 
-        let state_path = self.config.run_dir.join(JAILER_STATE_FILE);
+        let state_path = materialized.plan.config.run_dir.join(JAILER_STATE_FILE);
         let state = JailerState {
             jailer_pid: None,
             firecracker_pid: None,

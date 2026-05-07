@@ -4,7 +4,7 @@ mod common;
 
 use std::path::Path;
 
-use m80_jailer::{recover_from_run_dir, BindMode, Binding, Plan, RecoveryDecision};
+use m80_jailer::{inspect_run_dir, BindMode, Binding, Plan, InspectionDecision};
 
 fn config_with_one_binding(run_dir: &Path) -> m80_jailer::JailerConfig {
     let mut cfg = common::minimal_config(run_dir);
@@ -40,9 +40,9 @@ fn write_plan(run_dir: &Path) {
 #[test]
 fn no_state_file_returns_no_jail() {
     let dir = tempfile::tempdir().unwrap();
-    let decision = recover_from_run_dir(dir.path()).unwrap();
+    let decision = inspect_run_dir(dir.path()).unwrap();
     assert!(
-        matches!(decision, RecoveryDecision::NoJail),
+        matches!(decision, InspectionDecision::NoJail),
         "got {decision:?}"
     );
 }
@@ -53,9 +53,9 @@ fn stale_state_with_nonexistent_pids_returns_orphan() {
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));
     write_plan(dir.path());
 
-    let decision = recover_from_run_dir(dir.path()).unwrap();
+    let decision = inspect_run_dir(dir.path()).unwrap();
     assert!(
-        matches!(decision, RecoveryDecision::OrphanJail { .. }),
+        matches!(decision, InspectionDecision::OrphanJail { .. }),
         "got {decision:?}"
     );
 }
@@ -66,7 +66,7 @@ fn orphan_reap_steps_are_plan_steps_reversed() {
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));
     write_plan(dir.path());
 
-    let RecoveryDecision::OrphanJail { reap_steps } = recover_from_run_dir(dir.path()).unwrap()
+    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap()
     else {
         panic!("expected OrphanJail");
     };
@@ -84,11 +84,11 @@ fn live_state_with_own_pid_returns_live_jail() {
     let self_pid = std::process::id();
     write_state(dir.path(), Some(self_pid), Some(self_pid));
 
-    let decision = recover_from_run_dir(dir.path()).unwrap();
+    let decision = inspect_run_dir(dir.path()).unwrap();
     assert!(
         matches!(
             decision,
-            RecoveryDecision::LiveJail { jailer_pid, firecracker_pid }
+            InspectionDecision::LiveJail { jailer_pid, firecracker_pid }
                 if jailer_pid == self_pid && firecracker_pid == self_pid
         ),
         "got {decision:?}"
@@ -101,9 +101,9 @@ fn mixed_live_and_dead_pid_returns_orphan() {
     write_state(dir.path(), Some(std::process::id()), Some(u32::MAX));
     write_plan(dir.path());
 
-    let decision = recover_from_run_dir(dir.path()).unwrap();
+    let decision = inspect_run_dir(dir.path()).unwrap();
     assert!(
-        matches!(decision, RecoveryDecision::OrphanJail { .. }),
+        matches!(decision, InspectionDecision::OrphanJail { .. }),
         "got {decision:?}"
     );
 }
@@ -113,7 +113,7 @@ fn orphan_without_plan_file_has_empty_reap_steps() {
     let dir = tempfile::tempdir().unwrap();
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));
 
-    let RecoveryDecision::OrphanJail { reap_steps } = recover_from_run_dir(dir.path()).unwrap()
+    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap()
     else {
         panic!("expected OrphanJail");
     };
