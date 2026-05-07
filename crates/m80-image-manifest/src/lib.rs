@@ -5,7 +5,6 @@
 
 #![deny(missing_docs)]
 
-use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -285,15 +284,16 @@ fn check_sha256(field: &str, path: &Path, expected: &str) -> Result<(), Manifest
     })?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = file.read(&mut buf).map_err(|source| ManifestError::Io {
+    let mut n = file.read(&mut buf).map_err(|source| ManifestError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    while n != 0 {
+        hasher.update(&buf[..n]);
+        n = file.read(&mut buf).map_err(|source| ManifestError::Io {
             path: path.to_path_buf(),
             source,
         })?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
     }
     let actual = hex::encode(hasher.finalize());
     if expected != actual {
@@ -346,7 +346,7 @@ pub enum ManifestError {
         path: PathBuf,
         /// Underlying I/O error.
         #[source]
-        source: io::Error,
+        source: std::io::Error,
     },
     /// JSON encode/decode failure (malformed JSON, missing required field,
     /// or unknown field rejected by `deny_unknown_fields`).
