@@ -699,8 +699,6 @@ dependencies = [
  "portable-pty",
  "scopeguard",
  "tempfile",
- "thiserror 2.0.18",
- "tracing",
  "vsock",
 ]
 
@@ -710,6 +708,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "clap",
  "hex",
  "m80-image-manifest",
  "m80-proto",
