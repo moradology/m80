@@ -87,14 +87,6 @@ impl WireEnvelope {
     }
 }
 
-/// Encode a typed envelope into a protobuf frame body.
-pub fn encode_typed_envelope<T: Payload>(
-    envelope: crate::types::Envelope<T>,
-) -> Result<Vec<u8>, ProtoError> {
-    let raw = RawEnvelope::from_typed(envelope);
-    encode_raw_envelope(raw)
-}
-
 /// Encode a raw envelope into a protobuf frame body.
 pub fn encode_raw_envelope(raw: RawEnvelope) -> Result<Vec<u8>, ProtoError> {
     let wire = WireEnvelope::from_raw(raw);

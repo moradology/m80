@@ -3,8 +3,7 @@
 use std::io::Cursor;
 
 use m80_proto::{
-    negotiate_version, read_frame, write_frame, Envelope, ExecRequest, HandshakeMessage,
-    PROTOCOL_VERSION,
+    read_frame, write_frame, Envelope, ExecRequest, HandshakeMessage, PROTOCOL_VERSION,
 };
 
 #[test]
@@ -17,7 +16,11 @@ fn reserved_handshake_payload_round_trips_exact_version() {
 
     let mut reader = Cursor::new(&channel);
     let remote: Envelope<HandshakeMessage> = read_frame(&mut reader).unwrap();
-    negotiate_version(remote.payload.version).expect("same-version negotiation must succeed");
+    assert_eq!(
+        remote.payload.version,
+        PROTOCOL_VERSION,
+        "same-version negotiation must succeed"
+    );
 }
 
 #[test]

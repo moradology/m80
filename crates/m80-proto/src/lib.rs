@@ -6,8 +6,7 @@
 //!
 //! Every application frame carries a protocol `version`; the active host and
 //! guest fail closed when that value differs from [`PROTOCOL_VERSION`].
-//! [`negotiate_version`] is the exact-match policy helper used by tests and
-//! reserved control payloads. The launch ready signal is a separate one-byte
+//! The launch ready signal is a separate one-byte
 //! boot-readiness check, not an application-channel prelude. `Vec<u8>` fields
 //! encode as protobuf `bytes` without base64 inflation; large transfers use
 //! bounded chunk frames rather than one unbounded envelope.
@@ -47,7 +46,7 @@ pub use types::{
     PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE, PAYLOAD_KIND_SHUTDOWN_REQUEST,
     PAYLOAD_KIND_SHUTDOWN_RESPONSE,
 };
-pub use version::{negotiate_version, MAX_FRAME_BYTES, PROTOCOL_VERSION};
+pub use version::{MAX_FRAME_BYTES, PROTOCOL_VERSION};
 pub use wire::{encode_raw_envelope, RawEnvelope};
 
 /// Default vsock port the in-VM `m80-guestd` daemon listens on.
