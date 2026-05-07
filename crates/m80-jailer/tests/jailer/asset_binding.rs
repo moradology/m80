@@ -1,22 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use m80_jailer::{BindMode, Binding, JailerConfig, Plan, PlanStep, SocketSpec};
+use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
 
 fn config() -> JailerConfig {
     crate::common::minimal_config(Path::new("/tmp/run/vm-asset"))
-}
-
-fn bind_steps(plan: &Plan) -> Vec<(&Path, &Path, BindMode)> {
-    plan.steps
-        .iter()
-        .filter_map(|step| {
-            if let PlanStep::Bind { source, dest, mode } = step {
-                Some((source.as_path(), dest.as_path(), *mode))
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 #[test]
@@ -36,7 +23,7 @@ fn binds_kernel_and_rootfs_ro() {
     ];
 
     let plan = Plan::compute(&cfg).unwrap();
-    let binds = bind_steps(&plan);
+    let binds = crate::common::bind_steps(&plan);
 
     assert!(binds.iter().any(|(source, dest, mode)| {
         *source == Path::new("/host/vmlinux")
@@ -67,7 +54,7 @@ fn binds_drives_rw() {
     ];
 
     let plan = Plan::compute(&cfg).unwrap();
-    let binds = bind_steps(&plan);
+    let binds = crate::common::bind_steps(&plan);
 
     assert!(binds.iter().any(|(source, dest, mode)| {
         *source == Path::new("/run/vm/rootfs.overlay.ext4")
@@ -94,17 +81,7 @@ fn sockets_created_inside_jail() {
     ];
 
     let plan = Plan::compute(&cfg).unwrap();
-    let sockets: Vec<_> = plan
-        .steps
-        .iter()
-        .filter_map(|step| {
-            if let PlanStep::Socket { path } = step {
-                Some(path.as_path())
-            } else {
-                None
-            }
-        })
-        .collect();
+    let sockets = crate::common::socket_steps(&plan);
 
     assert_eq!(sockets.len(), 2);
     assert!(sockets

@@ -7,6 +7,15 @@ use std::path::Path;
 use crate::error::JailerError;
 use crate::types::{JailerState, Plan, PlanStep, JAILER_PLAN_FILE, JAILER_STATE_FILE};
 
+/// Map an [`std::io::Error`] (or a serde error wrapped in one) to
+/// [`JailerError::Io`] for the given `path`. Used as `.map_err(io_err(path))`.
+fn io_err(path: std::path::PathBuf) -> impl Fn(io::Error) -> JailerError {
+    move |source| JailerError::Io {
+        path: path.clone(),
+        source,
+    }
+}
+
 /// Outcome of [`recover_from_run_dir`].
 #[derive(Debug, Clone)]
 pub enum RecoveryDecision {
@@ -36,18 +45,15 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
         return Ok(RecoveryDecision::NoJail);
     }
 
-    let raw = std::fs::read(&state_path).map_err(|source| JailerError::Io {
-        path: state_path.clone(),
-        source,
-    })?;
-    let state: JailerState = serde_json::from_slice(&raw).map_err(|e| JailerError::Io {
-        path: state_path.clone(),
-        source: io::Error::new(io::ErrorKind::InvalidData, e),
-    })?;
+    let raw = std::fs::read(&state_path).map_err(io_err(state_path.clone()))?;
+    let state: JailerState = serde_json::from_slice(&raw)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        .map_err(io_err(state_path.clone()))?;
 
     if let (Some(jailer_pid), Some(fc_pid)) = (state.jailer_pid, state.firecracker_pid) {
-        let alive = |pid: u32| Path::new(&format!("/proc/{pid}")).exists();
-        if alive(jailer_pid) && alive(fc_pid) {
+        if Path::new(&format!("/proc/{jailer_pid}")).exists()
+            && Path::new(&format!("/proc/{fc_pid}")).exists()
+        {
             return Ok(RecoveryDecision::LiveJail {
                 jailer_pid,
                 firecracker_pid: fc_pid,
@@ -58,14 +64,10 @@ pub fn recover_from_run_dir(run_dir: &Path) -> Result<RecoveryDecision, JailerEr
     // Orphan or partial — load plan steps in reverse for reaping.
     let plan_path = run_dir.join(JAILER_PLAN_FILE);
     let reap_steps = if plan_path.exists() {
-        let plan_raw = std::fs::read(&plan_path).map_err(|source| JailerError::Io {
-            path: plan_path.clone(),
-            source,
-        })?;
-        let plan: Plan = serde_json::from_slice(&plan_raw).map_err(|e| JailerError::Io {
-            path: plan_path.clone(),
-            source: io::Error::new(io::ErrorKind::InvalidData, e),
-        })?;
+        let plan_raw = std::fs::read(&plan_path).map_err(io_err(plan_path.clone()))?;
+        let plan: Plan = serde_json::from_slice(&plan_raw)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+            .map_err(io_err(plan_path.clone()))?;
         plan.steps.into_iter().rev().collect()
     } else {
         Vec::new()

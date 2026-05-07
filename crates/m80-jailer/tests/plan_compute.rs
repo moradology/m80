@@ -159,16 +159,9 @@ fn declared_order_preserved_for_binds() {
     ];
 
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
-    let bind_steps: Vec<_> = plan
-        .steps
-        .iter()
-        .filter_map(|s| {
-            if let PlanStep::Bind { source, .. } = s {
-                Some(source.clone())
-            } else {
-                None
-            }
-        })
+    let bind_steps: Vec<_> = common::bind_steps(&plan)
+        .into_iter()
+        .map(|(src, _, _)| src.to_path_buf())
         .collect();
 
     assert_eq!(

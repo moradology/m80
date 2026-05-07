@@ -128,7 +128,7 @@ impl MaterializedJail {
                 // and reap it before bailing.
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(JailerError::ChrootFailed {
+                return Err(JailerError::FirecrackerPidTimeout {
                     jail_path: self.jail_path.clone(),
                 });
             }

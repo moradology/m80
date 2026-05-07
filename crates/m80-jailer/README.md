@@ -22,8 +22,12 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
 - `MaterializedJail::launch(...)` exec's `firecracker` inside the jail
-  via the jailer binary (no `--daemonize`, so jailer execs into
-  firecracker — `jailer_pid == firecracker_pid`).
+  via the jailer binary (no `--daemonize`). Two PIDs are tracked: the
+  `jailer_pid` comes from the spawned `Child` handle; `firecracker_pid`
+  is read from `<jail_root>/firecracker.pid` after the jailer writes it.
+  Because jailer `exec()`s into firecracker, `jailer_pid` and
+  `firecracker_pid` end up referring to the same OS process — but both
+  are captured separately for state persistence and recovery.
 - If `JailerConfig::stdio_log` is `Some(path)`, `launch` appends the
   jailed process stdout and stderr to that host file. m80-firecracker
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
@@ -45,9 +49,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `recover_from_run_dir`, `RecoveryDecision`.
-- `JailerError`: `BindFailed`, `ChrootFailed`, `UidGidInvalid`,
-  `Io { path, source }`. Privilege is verified once by `m80-preflight`;
-  this crate does not run a per-launch sudo probe.
+- `JailerError`: `BindFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
+  `UidGidInvalid`, `Io { path, source }`. Privilege is verified once by
+  `m80-preflight`; this crate does not run a per-launch sudo probe.
 
 ## Non-goals
 

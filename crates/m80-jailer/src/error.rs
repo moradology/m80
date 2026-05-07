@@ -20,6 +20,12 @@ pub enum JailerError {
         /// Jail path that failed to chroot.
         jail_path: PathBuf,
     },
+    /// `firecracker.pid` did not appear within the poll deadline after launch.
+    #[error("timed out waiting for firecracker.pid in {jail_path}", jail_path = jail_path.display())]
+    FirecrackerPidTimeout {
+        /// Jail path where `firecracker.pid` was expected.
+        jail_path: PathBuf,
+    },
     /// UID/GID was rejected (out of range or unknown).
     #[error("invalid uid/gid: uid={uid} gid={gid}")]
     UidGidInvalid {

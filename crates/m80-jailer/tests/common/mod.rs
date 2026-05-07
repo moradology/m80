@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use m80_jailer::{BindMode, Plan, PlanStep};
 use m80_jailer::JailerConfig;
 
 /// Minimal `JailerConfig` (uid/gid 3000, no bindings, no sockets). Tests
@@ -17,4 +18,34 @@ pub fn minimal_config(run_dir: &Path) -> JailerConfig {
         sockets: Vec::new(),
         stdio_log: None,
     }
+}
+
+/// Extract all `Bind` steps from a plan as `(source, dest, mode)` tuples.
+#[allow(dead_code)]
+pub fn bind_steps(plan: &Plan) -> Vec<(&Path, &Path, BindMode)> {
+    plan.steps
+        .iter()
+        .filter_map(|step| {
+            if let PlanStep::Bind { source, dest, mode } = step {
+                Some((source.as_path(), dest.as_path(), *mode))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Extract all `Socket` paths from a plan.
+#[allow(dead_code)]
+pub fn socket_steps(plan: &Plan) -> Vec<&Path> {
+    plan.steps
+        .iter()
+        .filter_map(|step| {
+            if let PlanStep::Socket { path } = step {
+                Some(path.as_path())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
