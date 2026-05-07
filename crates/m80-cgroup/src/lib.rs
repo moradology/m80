@@ -1,4 +1,4 @@
-//! Per-VM cgroup v2 subtree: create, enforce CPU/memory/pids, clean up.
+//! Per-VM cgroup v2 subtree: create, enforce CPU/memory/pids/I/O, clean up.
 //!
 //! See `README.md` for the black-box contract.
 //! Behavior captures: bead epic `m80-84x` (`br show m80-84x`).
@@ -20,11 +20,14 @@ const CGROUP_ROOT: &str = "/sys/fs/cgroup/m80-firecracker";
 /// Cgroup v2 global root.
 const CGROUP_V2_ROOT: &str = "/sys/fs/cgroup";
 
-const REQUIRED_SUBTREE_CONTROL: &str = "+cpu +memory +pids\n";
+const BASE_CONTROLLERS: &[&str] = &["cpu", "memory", "pids"];
+const IO_CONTROLLER: &str = "io";
 const DEFAULT_CPU_QUOTA_US: u64 = 100_000;
 const DEFAULT_CPU_PERIOD_US: u64 = 100_000;
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 1_610_612_736;
 const DEFAULT_PIDS_MAX: u32 = 128;
+const DEFAULT_IO_WEIGHT: u16 = 100;
+const DEFAULT_OOM_SCORE_ADJ: i16 = 500;
 
 /// One per-VM cgroup v2 subtree under `/sys/fs/cgroup/m80-firecracker/<vm-id>`.
 #[derive(Debug)]
@@ -42,54 +45,66 @@ impl Subtree {
     }
 
     /// Create the per-VM subtree under `m80-firecracker/<vm_id>/`, enable
-    /// cpu/memory/pids controllers in the parent, and enroll both
-    /// `jailed.jailer_pid` and `jailed.firecracker_pid`. Both PIDs are
-    /// collected, sorted, and deduped before writing — after `m80-jailer`
-    /// the jailer execs into firecracker so the two values are equal, and
-    /// dedup handles that case correctly without omission.
+    /// needed controllers on every ancestor, apply limits, tune OOM preference,
+    /// and then enroll both `jailed.jailer_pid` and `jailed.firecracker_pid`.
+    /// Both PIDs are collected, sorted, and deduped before writing — after
+    /// `m80-jailer` the jailer execs into firecracker so the two values are
+    /// equal, and dedup handles that case correctly without omission.
     pub fn create(
         vm_id: &str,
         jail: &MaterializedJail,
         jailed: &JailedFirecracker,
+        limits: &Limits,
     ) -> Result<Self, CgroupError> {
-        let parent = PathBuf::from(CGROUP_ROOT);
+        let subtree = Self::create_at(
+            Path::new(CGROUP_V2_ROOT),
+            Path::new(CGROUP_ROOT),
+            vm_id,
+            jail.plan.config.run_dir.as_path(),
+            jailed,
+            limits,
+        )?;
+        Ok(subtree)
+    }
+
+    fn create_at(
+        base: &Path,
+        parent: &Path,
+        vm_id: &str,
+        run_dir: &Path,
+        jailed: &JailedFirecracker,
+        limits: &Limits,
+    ) -> Result<Self, CgroupError> {
         let io_err = |path: PathBuf| move |source| CgroupError::Io { path, source };
 
         // create_dir_all is race-safe against concurrent sandboxes.
-        fs::create_dir_all(&parent).map_err(io_err(parent.clone()))?;
+        fs::create_dir_all(parent).map_err(io_err(parent.to_path_buf()))?;
+        enable_subtree_control_chain(base, parent, &limits.required_controllers())?;
 
-        let subtree_control = parent.join("cgroup.subtree_control");
-        if let Err(cgroup_err) = write_cgroup_file(&subtree_control, REQUIRED_SUBTREE_CONTROL) {
-            // Translate to ControllerNotEnabled when we can name the missing
-            // one; otherwise propagate the original error unchanged.
-            let controllers_path = parent.join("cgroup.controllers");
-            if let Ok(controllers) = fs::read_to_string(&controllers_path) {
-                for name in REQUIRED_SUBTREE_CONTROL
-                    .split_whitespace()
-                    .map(|s| s.trim_start_matches('+'))
-                {
-                    if !controllers.split_whitespace().any(|c| c == name) {
-                        return Err(CgroupError::ControllerNotEnabled(name));
-                    }
-                }
-            }
-            return Err(cgroup_err);
-        }
-
-        let leaf = Self::leaf_path(vm_id);
+        let leaf = parent.join(vm_id);
         fs::create_dir_all(&leaf).map_err(io_err(leaf.clone()))?;
+        inherit_sparse_cpuset_file(parent, &leaf, "cpuset.cpus")?;
+        inherit_sparse_cpuset_file(parent, &leaf, "cpuset.mems")?;
+
+        let subtree = Subtree(leaf.clone());
+        subtree.apply_limits(limits)?;
+        if let Some(oom_score_adj) = limits.oom_score_adj {
+            for pid in enrolled_pids(jailed.jailer_pid, jailed.firecracker_pid) {
+                set_oom_score_adj(pid, oom_score_adj)?;
+            }
+        }
 
         let procs = leaf.join("cgroup.procs");
         for pid in enrolled_pids(jailed.jailer_pid, jailed.firecracker_pid) {
             write_cgroup_file(&procs, &format!("{pid}\n"))?;
         }
 
-        let cgroup_path_txt = jail.plan.config.run_dir.join("cgroup-path.txt");
+        let cgroup_path_txt = run_dir.join("cgroup-path.txt");
         let leaf_str = format!("{}\n", leaf.display());
         fs::write(&cgroup_path_txt, leaf_str.as_bytes())
             .map_err(io_err(cgroup_path_txt.clone()))?;
 
-        Ok(Subtree(leaf))
+        Ok(subtree)
     }
 
     /// Apply per-controller limits. Fields set to `None` leave the existing
@@ -112,6 +127,15 @@ impl Subtree {
 
         if let Some(pids) = limits.pids_max {
             write_cgroup_file(&self.0.join("pids.max"), &format!("{pids}\n"))?;
+        }
+
+        if let Some(io_weight) = limits.io_weight {
+            validate_io_weight(io_weight)?;
+            write_cgroup_file(&self.0.join("io.weight"), &format!("default {io_weight}\n"))?;
+        }
+
+        for io_max in &limits.io_max {
+            write_cgroup_file(&self.0.join("io.max"), &format!("{io_max}\n"))?;
         }
 
         Ok(())
@@ -183,6 +207,13 @@ pub struct Limits {
     pub memory_max: Option<u64>,
     /// `pids.max`. None = leave existing.
     pub pids_max: Option<u32>,
+    /// `io.max` device throttle lines. Empty = leave existing.
+    #[serde(default)]
+    pub io_max: Vec<IoMax>,
+    /// cgroup v2 `io.weight` default. None = leave existing.
+    pub io_weight: Option<u16>,
+    /// `/proc/<pid>/oom_score_adj` for enrolled jailed processes.
+    pub oom_score_adj: Option<i16>,
 }
 
 impl Limits {
@@ -198,7 +229,18 @@ impl Limits {
             }),
             memory_max: Some(DEFAULT_MEMORY_MAX_BYTES),
             pids_max: Some(DEFAULT_PIDS_MAX),
+            io_max: Vec::new(),
+            io_weight: Some(DEFAULT_IO_WEIGHT),
+            oom_score_adj: Some(DEFAULT_OOM_SCORE_ADJ),
         }
+    }
+
+    fn required_controllers(&self) -> Vec<&'static str> {
+        let mut controllers = BASE_CONTROLLERS.to_vec();
+        if self.io_weight.is_some() || !self.io_max.is_empty() {
+            controllers.push(IO_CONTROLLER);
+        }
+        controllers
     }
 }
 
@@ -217,6 +259,43 @@ pub enum CpuMax {
     Max,
 }
 
+/// One cgroup v2 `io.max` throttle row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IoMax {
+    /// Block-device major number.
+    pub major: u32,
+    /// Block-device minor number.
+    pub minor: u32,
+    /// Optional read bytes-per-second throttle.
+    pub rbps: Option<u64>,
+    /// Optional write bytes-per-second throttle.
+    pub wbps: Option<u64>,
+    /// Optional read IOPS throttle.
+    pub riops: Option<u64>,
+    /// Optional write IOPS throttle.
+    pub wiops: Option<u64>,
+}
+
+impl std::fmt::Display for IoMax {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.major, self.minor)?;
+        if let Some(value) = self.rbps {
+            write!(f, " rbps={value}")?;
+        }
+        if let Some(value) = self.wbps {
+            write!(f, " wbps={value}")?;
+        }
+        if let Some(value) = self.riops {
+            write!(f, " riops={value}")?;
+        }
+        if let Some(value) = self.wiops {
+            write!(f, " wiops={value}")?;
+        }
+        Ok(())
+    }
+}
+
 /// Errors surfaced by cgroup operations.
 #[derive(Debug, thiserror::Error)]
 pub enum CgroupError {
@@ -226,6 +305,17 @@ pub enum CgroupError {
     /// A required cgroup v2 controller is not enabled in the parent.
     #[error("controller not enabled: {0}")]
     ControllerNotEnabled(&'static str),
+    /// A cgroup file that must inherit from an ancestor had no non-empty value.
+    #[error("sparse cgroup file has no non-empty ancestor: {0}")]
+    SparseInheritedFile(&'static str),
+    /// A limit value is outside the kernel-accepted range.
+    #[error("invalid cgroup limit {field}: {value}")]
+    InvalidLimit {
+        /// Field name.
+        field: &'static str,
+        /// Invalid value.
+        value: String,
+    },
     /// Underlying I/O failure; carries the path so the caller doesn't have
     /// to guess which file failed.
     #[error("i/o on {}: {source}", path.display())]
@@ -280,27 +370,100 @@ fn write_cgroup_file(path: &Path, value: &str) -> Result<(), CgroupError> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn enable_subtree_control_chain(
+    base: &Path,
+    parent: &Path,
+    controllers: &[&'static str],
+) -> Result<(), CgroupError> {
+    let mut path = base.to_path_buf();
+    write_subtree_control(&path, controllers)?;
 
-    #[test]
-    fn required_subtree_control_enables_three_controllers() {
-        assert_eq!(REQUIRED_SUBTREE_CONTROL, "+cpu +memory +pids\n");
+    let relative = parent.strip_prefix(base).unwrap_or(parent);
+    for component in relative.components() {
+        path.push(component.as_os_str());
+        write_subtree_control(&path, controllers)?;
+    }
+    Ok(())
+}
+
+fn write_subtree_control(path: &Path, controllers: &[&'static str]) -> Result<(), CgroupError> {
+    let controllers_path = path.join("cgroup.controllers");
+    let available = fs::read_to_string(&controllers_path).map_err(|source| CgroupError::Io {
+        path: controllers_path.clone(),
+        source,
+    })?;
+    for controller in controllers {
+        if !available.split_whitespace().any(|c| c == *controller) {
+            return Err(CgroupError::ControllerNotEnabled(controller));
+        }
     }
 
-    #[test]
-    fn pid_assignment_sorts_and_deduplicates() {
-        assert_eq!(enrolled_pids(20, 10), vec![10, 20]);
+    let value = controllers
+        .iter()
+        .map(|controller| format!("+{controller}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    write_cgroup_file(&path.join("cgroup.subtree_control"), &(value + "\n"))
+}
+
+fn inherit_sparse_cpuset_file(
+    parent: &Path,
+    leaf: &Path,
+    filename: &'static str,
+) -> Result<(), CgroupError> {
+    let leaf_file = leaf.join(filename);
+    if !leaf_file.exists() {
+        return Ok(());
+    }
+    let current = fs::read_to_string(&leaf_file).map_err(|source| CgroupError::Io {
+        path: leaf_file.clone(),
+        source,
+    })?;
+    if !current.trim().is_empty() {
+        return Ok(());
     }
 
-    #[test]
-    fn pid_assignment_collapses_exec_equal_pids() {
-        assert_eq!(enrolled_pids(10, 10), vec![10]);
+    let mut cursor = Some(parent);
+    while let Some(path) = cursor {
+        let candidate = path.join(filename);
+        if candidate.exists() {
+            let inherited = fs::read_to_string(&candidate).map_err(|source| CgroupError::Io {
+                path: candidate.clone(),
+                source,
+            })?;
+            if !inherited.trim().is_empty() {
+                return write_cgroup_file(&leaf_file, &inherited);
+            }
+        }
+        cursor = path.parent();
     }
 
-    #[test]
-    fn pid_assignment_skips_new_pid_namespace_sentinel() {
-        assert_eq!(enrolled_pids(0, 10), vec![10]);
+    Err(CgroupError::SparseInheritedFile(filename))
+}
+
+fn validate_io_weight(value: u16) -> Result<(), CgroupError> {
+    if (1..=10_000).contains(&value) {
+        Ok(())
+    } else {
+        Err(CgroupError::InvalidLimit {
+            field: "io_weight",
+            value: value.to_string(),
+        })
     }
 }
+
+fn set_oom_score_adj(pid: u32, value: i16) -> Result<(), CgroupError> {
+    if !(-1000..=1000).contains(&value) {
+        return Err(CgroupError::InvalidLimit {
+            field: "oom_score_adj",
+            value: value.to_string(),
+        });
+    }
+    let path = PathBuf::from("/proc")
+        .join(pid.to_string())
+        .join("oom_score_adj");
+    fs::write(&path, format!("{value}\n")).map_err(|source| CgroupError::Io { path, source })
+}
+
+#[cfg(test)]
+mod tests;

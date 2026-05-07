@@ -761,6 +761,7 @@ fn phase_4_jailer_materialize(
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: false,
         daemonize: input.daemonize,
+        new_cgroup_ns: false,
         netns_path: input.netns_path.map(Path::to_path_buf),
         stdio_log: Some(console_log_path(input.run_dir)),
     };
@@ -817,8 +818,7 @@ fn phase_5b_cgroup_create(
             // FcError::Cgroup wraps CgroupError via #[from]; `?` does the
             // conversion so we keep the structured cause for the CLI's
             // error → exit-code map.
-            let subtree = Subtree::create(vm_id, jail, jailed)?;
-            subtree.apply_limits(&Limits::m80_default())?;
+            let subtree = Subtree::create(vm_id, jail, jailed, &Limits::m80_default())?;
             Ok(Some(subtree))
         }
     }

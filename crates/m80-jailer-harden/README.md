@@ -13,26 +13,30 @@ real process boundary to test without putting raw FFI into `m80-jailer`.
 
 ## Black-Box Contract
 
-`m80-jailer-harden --jailer-bin <path> --uid <uid> --gid <gid> -- <jailer-args...>`
+`m80-jailer-harden --jailer-bin <path> --uid <uid> --gid <gid> [--rlimit <name=value> ...] [--new-cgroup-ns] -- <jailer-args...>`
 does this, in order:
 
-1. Drop supplementary groups with `setgroups([])`.
-2. Clear inheritable and ambient Linux capabilities.
-3. Set `PR_SET_NO_NEW_PRIVS`.
-4. Set `PR_SET_PDEATHSIG` to `SIGKILL`.
-5. Set umask to `0077`.
-6. Reset the thread signal mask to empty.
-7. Close inherited file descriptors above stdio.
-8. Clear its environment and `exec` the official jailer with the remaining args.
+1. Optionally enter a private cgroup namespace with `unshare(CLONE_NEWCGROUP)`.
+2. Apply requested inherited resource limits (`no-file`, `fsize`, `nproc`,
+   `memlock`, `as`, `core`, `stack`) with equal soft/hard values.
+3. Drop supplementary groups with `setgroups([])`.
+4. Clear inheritable and ambient Linux capabilities.
+5. Set `PR_SET_NO_NEW_PRIVS`.
+6. Set `PR_SET_PDEATHSIG` to `SIGKILL`.
+7. Set umask to `0077`.
+8. Reset the thread signal mask to empty.
+9. Close inherited file descriptors above stdio.
+10. Clear its environment and `exec` the official jailer with the remaining args.
 
-The wrapper does not perform chroot, pivot_root, mknod, cgroup setup, setuid, or
-setgid. Those stay owned by Firecracker's official jailer.
+The wrapper does not perform chroot, pivot_root, mknod, cgroup placement, setuid,
+or setgid. Those stay owned by Firecracker's official jailer and `m80-cgroup`.
 
 ## Public Surface
 
 - Binary: `m80-jailer-harden`.
 - Library helpers used by tests: `parse_args`, `apply_process_hardening`,
-  `exec_jailer`, `run`.
+  `exec_jailer`, `run`, plus the parsed `ResourceLimit` / `ResourceLimitKind`
+  values used for argument tests.
 
 ## Non-Goals
 

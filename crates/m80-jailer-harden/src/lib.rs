@@ -7,7 +7,9 @@ use std::process::Command;
 
 use caps::CapSet;
 use nix::errno::Errno;
+use nix::sched::{unshare, CloneFlags};
 use nix::sys::prctl;
+use nix::sys::resource::{setrlimit, Resource};
 use nix::sys::signal::{SigSet, SigmaskHow, Signal};
 use nix::sys::stat::{umask, Mode};
 use nix::unistd::{close, setgroups};
@@ -23,6 +25,38 @@ pub struct HardenArgs {
     pub gid: u32,
     /// Arguments forwarded to the official jailer.
     pub jailer_args: Vec<OsString>,
+    /// Resource limits to apply before execing the official jailer.
+    pub resource_limits: Vec<ResourceLimit>,
+    /// Enter a private cgroup namespace before execing the official jailer.
+    pub new_cgroup_ns: bool,
+}
+
+/// One process resource limit applied by `m80-jailer-harden`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResourceLimit {
+    /// Limit kind.
+    pub kind: ResourceLimitKind,
+    /// Soft and hard limit value.
+    pub value: u64,
+}
+
+/// Supported process resource limit kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceLimitKind {
+    /// `RLIMIT_NOFILE`.
+    NoFile,
+    /// `RLIMIT_FSIZE`.
+    FSize,
+    /// `RLIMIT_NPROC`.
+    NProc,
+    /// `RLIMIT_MEMLOCK`.
+    MemLock,
+    /// `RLIMIT_AS`.
+    AddressSpace,
+    /// `RLIMIT_CORE`.
+    Core,
+    /// `RLIMIT_STACK`.
+    Stack,
 }
 
 /// Errors returned by the wrapper before it successfully replaces itself.
@@ -62,6 +96,17 @@ pub enum HardenError {
     /// `PR_SET_PDEATHSIG` failed.
     #[error("set pdeathsig: {0}")]
     ParentDeathSignal(#[source] nix::Error),
+    /// `unshare(CLONE_NEWCGROUP)` failed.
+    #[error("unshare cgroup namespace: {0}")]
+    CgroupNamespace(#[source] nix::Error),
+    /// `setrlimit` failed.
+    #[error("setrlimit {kind}: {source}")]
+    SetResourceLimit {
+        /// Limit kind.
+        kind: &'static str,
+        /// Source error.
+        source: nix::Error,
+    },
     /// Signal mask reset failed.
     #[error("reset signal mask: {0}")]
     SignalMask(#[source] nix::Error),
@@ -97,6 +142,8 @@ where
     let mut jailer_bin = None;
     let mut uid = None;
     let mut gid = None;
+    let mut resource_limits = Vec::new();
+    let mut new_cgroup_ns = false;
 
     while let Some(arg) = iter.next() {
         if arg == OsStr::new("--") {
@@ -109,6 +156,8 @@ where
                 uid: uid.ok_or(HardenError::MissingArgument("--uid"))?,
                 gid: gid.ok_or(HardenError::MissingArgument("--gid"))?,
                 jailer_args,
+                resource_limits,
+                new_cgroup_ns,
             });
         }
 
@@ -131,6 +180,15 @@ where
                     iter.next().ok_or(HardenError::MissingArgument("--gid"))?,
                 )?);
             }
+            "--rlimit" => {
+                let value = iter
+                    .next()
+                    .ok_or(HardenError::MissingArgument("--rlimit"))?;
+                resource_limits.push(parse_resource_limit(value)?);
+            }
+            "--new-cgroup-ns" => {
+                new_cgroup_ns = true;
+            }
             other => {
                 return Err(HardenError::InvalidValue {
                     field: "argument",
@@ -150,8 +208,45 @@ fn parse_u32(field: &'static str, value: OsString) -> Result<u32, HardenError> {
         .map_err(|_| HardenError::InvalidValue { field, value })
 }
 
+fn parse_resource_limit(value: OsString) -> Result<ResourceLimit, HardenError> {
+    let value = value.to_string_lossy().into_owned();
+    let (name, raw) = value
+        .split_once('=')
+        .ok_or_else(|| HardenError::InvalidValue {
+            field: "--rlimit",
+            value: value.clone(),
+        })?;
+    let limit = raw.parse().map_err(|_| HardenError::InvalidValue {
+        field: "--rlimit",
+        value: value.clone(),
+    })?;
+    let kind = match name {
+        "no-file" => ResourceLimitKind::NoFile,
+        "fsize" => ResourceLimitKind::FSize,
+        "nproc" => ResourceLimitKind::NProc,
+        "memlock" => ResourceLimitKind::MemLock,
+        "as" => ResourceLimitKind::AddressSpace,
+        "core" => ResourceLimitKind::Core,
+        "stack" => ResourceLimitKind::Stack,
+        _ => {
+            return Err(HardenError::InvalidValue {
+                field: "--rlimit",
+                value,
+            })
+        }
+    };
+    Ok(ResourceLimit { kind, value: limit })
+}
+
 /// Apply inherited one-way process hardening before execing the official jailer.
-pub fn apply_process_hardening() -> Result<(), HardenError> {
+pub fn apply_process_hardening(
+    resource_limits: &[ResourceLimit],
+    new_cgroup_ns: bool,
+) -> Result<(), HardenError> {
+    if new_cgroup_ns {
+        unshare(CloneFlags::CLONE_NEWCGROUP).map_err(HardenError::CgroupNamespace)?;
+    }
+    apply_resource_limits(resource_limits)?;
     setgroups(&[]).map_err(HardenError::SetGroups)?;
     caps::clear(None, CapSet::Inheritable).map_err(|source| HardenError::ClearCaps {
         set: "inheritable",
@@ -169,6 +264,41 @@ pub fn apply_process_hardening() -> Result<(), HardenError> {
         .map_err(HardenError::SignalMask)?;
     close_inherited_fds()?;
     Ok(())
+}
+
+fn apply_resource_limits(resource_limits: &[ResourceLimit]) -> Result<(), HardenError> {
+    for limit in resource_limits {
+        let resource = match limit.kind {
+            ResourceLimitKind::NoFile => Resource::RLIMIT_NOFILE,
+            ResourceLimitKind::FSize => Resource::RLIMIT_FSIZE,
+            ResourceLimitKind::NProc => Resource::RLIMIT_NPROC,
+            ResourceLimitKind::MemLock => Resource::RLIMIT_MEMLOCK,
+            ResourceLimitKind::AddressSpace => Resource::RLIMIT_AS,
+            ResourceLimitKind::Core => Resource::RLIMIT_CORE,
+            ResourceLimitKind::Stack => Resource::RLIMIT_STACK,
+        };
+        setrlimit(resource, limit.value, limit.value).map_err(|source| {
+            HardenError::SetResourceLimit {
+                kind: limit.kind.name(),
+                source,
+            }
+        })?;
+    }
+    Ok(())
+}
+
+impl ResourceLimitKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::NoFile => "no-file",
+            Self::FSize => "fsize",
+            Self::NProc => "nproc",
+            Self::MemLock => "memlock",
+            Self::AddressSpace => "as",
+            Self::Core => "core",
+            Self::Stack => "stack",
+        }
+    }
 }
 
 fn close_inherited_fds() -> Result<(), HardenError> {
@@ -216,7 +346,7 @@ where
     S: Into<OsString>,
 {
     let args = parse_args(args)?;
-    apply_process_hardening()?;
+    apply_process_hardening(&args.resource_limits, args.new_cgroup_ns)?;
     exec_jailer(args)
 }
 
@@ -262,6 +392,11 @@ mod tests {
             "3000",
             "--gid",
             "3001",
+            "--rlimit",
+            "nproc=64",
+            "--rlimit",
+            "memlock=0",
+            "--new-cgroup-ns",
             "--",
             "--id",
             "vm-1",
@@ -275,6 +410,20 @@ mod tests {
         assert_eq!(parsed.uid, 3000);
         assert_eq!(parsed.gid, 3001);
         assert_eq!(parsed.jailer_args, vec!["--id", "vm-1"]);
+        assert_eq!(
+            parsed.resource_limits,
+            vec![
+                ResourceLimit {
+                    kind: ResourceLimitKind::NProc,
+                    value: 64,
+                },
+                ResourceLimit {
+                    kind: ResourceLimitKind::MemLock,
+                    value: 0,
+                },
+            ]
+        );
+        assert!(parsed.new_cgroup_ns);
     }
 
     #[test]
@@ -295,6 +444,32 @@ mod tests {
         assert!(matches!(
             err,
             HardenError::InvalidValue { field: "--uid", .. }
+        ));
+    }
+
+    #[test]
+    fn parse_rejects_unknown_resource_limit() {
+        let err = parse_args([
+            "--jailer-bin",
+            "/bin/echo",
+            "--uid",
+            "3000",
+            "--gid",
+            "3000",
+            "--rlimit",
+            "unknown=7",
+            "--",
+            "--id",
+            "vm-1",
+        ])
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            HardenError::InvalidValue {
+                field: "--rlimit",
+                ..
+            }
         ));
     }
 }

@@ -20,6 +20,7 @@ pub fn minimal_config(run_dir: &Path) -> JailerConfig {
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: false,
         daemonize: false,
+        new_cgroup_ns: false,
         netns_path: None,
         stdio_log: None,
     }

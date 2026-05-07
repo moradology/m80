@@ -4,7 +4,7 @@
 
 The system writes `cpu.max` as `"<quota_us> <period_us>\n"` when the caller
 supplies `CpuMax::Quota { quota_us, period_us }`. When `CpuMax::Max` is
-supplied, the system writes `"max 100000\n"` (no quota, 100 ms period).
+supplied, the system writes `"max\n"` (no quota).
 
 The predecessor default was `100000 100000` (one full CPU). m80 captures that in
 `Limits::m80_default()`, and `m80-firecracker` applies that profile when
@@ -29,6 +29,30 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `materialize_jailed_cgroup` (lines 95–99).
 
 Test: `crates/m80-cgroup/tests/cgroup/limits.rs::memory_and_pids_max`.
+
+## io-and-oom-defaults
+
+The default unified-v2 profile enables the `io` controller and writes
+`io.weight` as `default 100`. `io.max` rows are caller-provided `IoMax`
+entries because the block-device major/minor pair is host-specific.
+
+The same default profile writes `/proc/<pid>/oom_score_adj = 500` for the
+deduped jailer/firecracker pids before enrolment so the jailed VM is preferred
+over host control processes under memory pressure. Setting `oom_score_adj =
+None` leaves the process default untouched.
+
+Test: `crates/m80-cgroup/tests/cgroup/limits.rs::memory_and_pids_max`.
+Test: `crates/m80-cgroup/tests/cgroup/limits.rs::io_max_json_round_trip`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::io_max_formats_v2_row`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::io_weight_range_is_kernel_bounded`.
+
+## device-controller-boundary
+
+m80 is cgroup-v2-only. Literal `devices.allow` / `devices.deny` files are a
+cgroup v1 device-controller interface, so they are not part of this crate's v2
+surface. Device exposure remains enforced by the jailer mount/device-node
+contract unless a future BPF cgroup-device controller is added deliberately.
+The v2 I/O noisy-neighbor controls are `io.max` and `io.weight`.
 
 ## mode-gate
 

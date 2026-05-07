@@ -23,6 +23,17 @@ Test: `crates/m80-cgroup/tests/cgroup/failure_modes.rs::requires_jailer`.
 The runtime probe path is also tested in
 `crates/m80-cgroup/tests/probe_no_v2.rs`.
 
+## sparse-inheritance-and-invalid-limits
+
+If a kernel exposes a sparse inherited cgroup file such as `cpuset.cpus` or
+`cpuset.mems` on the leaf and no ancestor has a non-empty value, creation
+fails with `CgroupError::SparseInheritedFile`. If a requested limit is outside
+the kernel-accepted range, such as `io.weight = 0` or an `oom_score_adj`
+outside `-1000..=1000`, m80 returns `CgroupError::InvalidLimit`.
+
+Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::io_weight_range_is_kernel_bounded`.
+
 ## cleanup-idempotent
 
 The system removes the per-VM leaf cgroup with `fs::remove_dir`. Drop on

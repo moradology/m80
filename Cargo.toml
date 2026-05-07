@@ -31,7 +31,7 @@ tracing = "0.1"
 hex = "0.4"
 sha2 = "0.10"
 ipnet = "2"
-nix = { version = "0.29", default-features = false, features = ["user", "mount", "fs", "feature", "signal", "process", "poll", "term"] }
+nix = { version = "0.29", default-features = false, features = ["user", "mount", "fs", "feature", "signal", "process", "poll", "term", "resource", "sched"] }
 portable-pty = "0.9"
 terminal_size = "0.4"
 ulid = "1"

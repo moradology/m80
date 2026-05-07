@@ -5,7 +5,7 @@
 use std::io;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -77,8 +77,12 @@ impl MaterializedJail {
                     .arg("--uid")
                     .arg(self.plan.config.uid.to_string())
                     .arg("--gid")
-                    .arg(self.plan.config.gid.to_string())
-                    .arg("--");
+                    .arg(self.plan.config.gid.to_string());
+                push_extended_resource_limits(&mut command, &self.plan.config.resource_limits);
+                if self.plan.config.new_cgroup_ns {
+                    command.arg("--new-cgroup-ns");
+                }
+                command.arg("--");
                 (harden_bin, command)
             } else {
                 (
@@ -148,10 +152,7 @@ impl MaterializedJail {
             command.stdout(Stdio::null()).stderr(Stdio::null());
         }
 
-        let mut child = command.spawn().map_err(|source| JailerError::Io {
-            path: command_path.to_path_buf(),
-            source,
-        })?;
+        let mut child = spawn_jailer_command(command_path, &mut command)?;
 
         let jailer_pid = child.id();
 
@@ -220,6 +221,22 @@ impl MaterializedJail {
     }
 }
 
+fn push_extended_resource_limits(command: &mut Command, limits: &crate::types::ResourceLimits) {
+    for (name, value) in [
+        ("no-file", Some(limits.no_file)),
+        ("fsize", limits.fsize),
+        ("nproc", limits.nproc),
+        ("memlock", limits.memlock),
+        ("as", limits.address_space),
+        ("core", limits.core),
+        ("stack", limits.stack),
+    ] {
+        if let Some(value) = value {
+            command.arg("--rlimit").arg(format!("{name}={value}"));
+        }
+    }
+}
+
 fn validate_netns_path(path: &Path) -> Result<(), JailerError> {
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -275,6 +292,30 @@ fn wait_for_detached_parent(
 
         thread::sleep(Duration::from_millis(25));
     }
+}
+
+fn spawn_jailer_command(command_path: &Path, command: &mut Command) -> Result<Child, JailerError> {
+    let mut last_error = None;
+    for attempt in 0..5 {
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(source) if source.raw_os_error() == Some(nix::libc::ETXTBSY) && attempt < 4 => {
+                last_error = Some(source);
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(source) => {
+                return Err(JailerError::Io {
+                    path: command_path.to_path_buf(),
+                    source,
+                });
+            }
+        }
+    }
+
+    Err(JailerError::Io {
+        path: command_path.to_path_buf(),
+        source: last_error.expect("ETXTBSY retry loop records the last error"),
+    })
 }
 
 fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
@@ -381,6 +422,8 @@ while [ "$#" -gt 0 ]; do
     --jailer-bin) jailer="$2"; shift 2 ;;
     --uid) shift 2 ;;
     --gid) shift 2 ;;
+    --rlimit) shift 2 ;;
+    --new-cgroup-ns) shift ;;
     --) shift; break ;;
     *) exit 64 ;;
   esac
@@ -442,9 +485,15 @@ echo fake-firecracker-stderr >&2
             resource_limits: crate::types::ResourceLimits {
                 no_file: 1024,
                 fsize: Some(4096),
+                nproc: Some(64),
+                memlock: Some(0),
+                address_space: Some(1_073_741_824),
+                core: Some(0),
+                stack: Some(8 * 1024 * 1024),
             },
             new_pid_ns: false,
             daemonize: false,
+            new_cgroup_ns: true,
             netns_path: None,
             stdio_log: Some(stdio_log.clone()),
         };
@@ -477,6 +526,23 @@ echo fake-firecracker-stderr >&2
         assert!(harden_args.contains("--jailer-bin"), "{harden_args}");
         assert!(harden_args.contains("--uid 3000"), "{harden_args}");
         assert!(harden_args.contains("--gid 3000"), "{harden_args}");
+        assert!(
+            harden_args.contains("--rlimit no-file=1024"),
+            "{harden_args}"
+        );
+        assert!(harden_args.contains("--rlimit fsize=4096"), "{harden_args}");
+        assert!(harden_args.contains("--rlimit nproc=64"), "{harden_args}");
+        assert!(harden_args.contains("--rlimit memlock=0"), "{harden_args}");
+        assert!(
+            harden_args.contains("--rlimit as=1073741824"),
+            "{harden_args}"
+        );
+        assert!(harden_args.contains("--rlimit core=0"), "{harden_args}");
+        assert!(
+            harden_args.contains("--rlimit stack=8388608"),
+            "{harden_args}"
+        );
+        assert!(harden_args.contains("--new-cgroup-ns"), "{harden_args}");
     }
 
     #[test]
@@ -529,6 +595,7 @@ fi
             resource_limits: crate::types::ResourceLimits::default(),
             new_pid_ns: true,
             daemonize: false,
+            new_cgroup_ns: false,
             netns_path: None,
             stdio_log: None,
         };
@@ -602,6 +669,7 @@ echo $$ > "$jail_root/firecracker.pid"
             resource_limits: crate::types::ResourceLimits::default(),
             new_pid_ns: false,
             daemonize: true,
+            new_cgroup_ns: false,
             netns_path: None,
             stdio_log: None,
         };
@@ -685,6 +753,7 @@ echo $$ > "$jail_root/firecracker.pid"
             resource_limits: crate::types::ResourceLimits::default(),
             new_pid_ns: false,
             daemonize: false,
+            new_cgroup_ns: false,
             netns_path: None,
             stdio_log: None,
         };

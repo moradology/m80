@@ -43,6 +43,9 @@ pub struct JailerConfig {
     /// When set, `jailer_pid` is recorded as `0` because no live jailer parent
     /// remains for m80 to signal.
     pub daemonize: bool,
+    /// Ask `m80-jailer-harden` to enter a private cgroup namespace before
+    /// execing the official jailer.
+    pub new_cgroup_ns: bool,
     /// Optional caller-provided network namespace path passed to the official
     /// jailer as `--netns`.
     pub netns_path: Option<PathBuf>,
@@ -60,6 +63,16 @@ pub struct ResourceLimits {
     pub no_file: u64,
     /// Optional maximum size, in bytes, of files created by the process.
     pub fsize: Option<u64>,
+    /// Optional maximum number of processes for the jailed uid.
+    pub nproc: Option<u64>,
+    /// Optional maximum bytes that may be locked into memory.
+    pub memlock: Option<u64>,
+    /// Optional maximum process address space in bytes.
+    pub address_space: Option<u64>,
+    /// Optional maximum core file size in bytes.
+    pub core: Option<u64>,
+    /// Optional maximum stack size in bytes.
+    pub stack: Option<u64>,
 }
 
 impl Default for ResourceLimits {
@@ -67,6 +80,11 @@ impl Default for ResourceLimits {
         Self {
             no_file: 2048,
             fsize: None,
+            nproc: Some(256),
+            memlock: Some(0),
+            address_space: None,
+            core: Some(0),
+            stack: Some(8 * 1024 * 1024),
         }
     }
 }

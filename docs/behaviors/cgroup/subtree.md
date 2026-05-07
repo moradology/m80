@@ -19,24 +19,37 @@ Test: `crates/m80-cgroup/tests/cgroup/subtree.rs::leaf_under_renamed_root`.
 
 ## subtree-control
 
-Before creating the per-VM leaf, the system writes `+cpu +memory +pids` to
-`/sys/fs/cgroup/m80-firecracker/cgroup.subtree_control`. This enables the
-three controllers on the parent so the leaf inherits them. If a controller is
-not listed in the parent's `cgroup.controllers`, the write fails and
+Before enrolling any process, the system recursively writes the needed
+controllers to `cgroup.subtree_control` from `/sys/fs/cgroup` through
+`/sys/fs/cgroup/m80-firecracker`. The default profile needs `cpu`, `memory`,
+`pids`, and `io`; a custom profile without any `io.*` setting only needs
+`cpu`, `memory`, and `pids`. If a controller is not listed in an ancestor's
+`cgroup.controllers`, the write fails and
 `CgroupError::ControllerNotEnabled("<name>")` is returned.
 
-The write must happen before `mkdir` of the leaf because cgroup v2 does not
-propagate controllers retroactively; the kernel rejects the mkdir if the parent
-hasn't enabled them first.
+The controller writes and cgroup limit writes happen before PID enrolment.
+This keeps controller properties visible and configured before
+`cgroup.procs` is mutated.
 
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `materialize_jailed_cgroup` lines 84–93; `REQUIRED_CONTROLLERS` line 16.
 
 Test: `crates/m80-cgroup/src/lib.rs::tests::required_subtree_control_enables_three_controllers`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
+
+## sparse-cpuset-inheritance
+
+If the leaf exposes `cpuset.cpus` or `cpuset.mems` and either file is empty,
+m80 copies the nearest non-empty ancestor value before PID enrolment. If the
+file exists but no ancestor supplies a value, creation fails with
+`CgroupError::SparseInheritedFile` rather than enrolling the VM into an
+ambiguous cpuset.
+
+Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
 
 ## pid-assign
 
-After the leaf directory is created, the system writes the deduped, sorted
+After the leaf directory is created and limits are applied, the system writes the deduped, sorted
 `jailer_pid` and `firecracker_pid` set to `<leaf>/cgroup.procs`. On m80's
 non-daemonized jailer launch path those pids are normally equal because the
 jailer execs into Firecracker; the dedupe keeps that common case to one write

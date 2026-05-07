@@ -24,6 +24,27 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/jailer.rs`
 
 Test: `crates/m80-jailer/tests/recover.rs::live_state_with_own_pid_returns_live_jail`.
 
+## inherited-resource-limits
+
+`ResourceLimits` carries `no_file`, optional `fsize`, and the extended
+inherited limits `nproc`, `memlock`, `address_space`, `core`, and `stack`.
+`m80-jailer` forwards `no_file` and `fsize` to Firecracker's official jailer
+because those are the only upstream `--resource-limit` names it supports.
+`m80-jailer-harden` applies the full set before exec, so the official jailer
+and Firecracker inherit the additional fork, locked-memory, address-space,
+core-dump, and stack limits.
+
+Test: `crates/m80-jailer/tests/plan_serde.rs::resource_limits_pid_namespace_daemonize_and_netns_persist_in_plan_json`.
+Test: `crates/m80-jailer/src/materialized.rs::tests::launch_redirects_stdio_and_passes_hardening_args`.
+Test: `crates/m80-jailer-harden/src/lib.rs::tests::parse_captures_official_jailer_and_forwarded_args`.
+
+## cgroup-namespace
+
+`JailerConfig::new_cgroup_ns` asks `m80-jailer-harden` to call
+`unshare(CLONE_NEWCGROUP)` before execing Firecracker's official jailer. This
+hides the host cgroup hierarchy from the jailed process; `m80-cgroup` still
+owns cgroup creation, limit writes, OOM scoring, and PID enrolment.
+
 ## startup-check
 
 m80 verifies jailer launch privilege once during process preflight, before

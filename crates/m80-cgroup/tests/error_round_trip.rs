@@ -12,7 +12,26 @@ fn unsupported_host_mode_display_non_empty() {
 
 #[test]
 fn controller_not_enabled_display_non_empty() {
-    assert!(!CgroupError::ControllerNotEnabled("cpu").to_string().is_empty());
+    assert!(!CgroupError::ControllerNotEnabled("cpu")
+        .to_string()
+        .is_empty());
+}
+
+#[test]
+fn sparse_inherited_file_display_non_empty() {
+    assert!(!CgroupError::SparseInheritedFile("cpuset.cpus")
+        .to_string()
+        .is_empty());
+}
+
+#[test]
+fn invalid_limit_display_non_empty() {
+    assert!(!CgroupError::InvalidLimit {
+        field: "io_weight",
+        value: "0".into(),
+    }
+    .to_string()
+    .is_empty());
 }
 
 #[test]
@@ -29,6 +48,12 @@ fn all_variants_display_distinct_messages() {
     let messages = [
         CgroupError::UnsupportedHostMode.to_string(),
         CgroupError::ControllerNotEnabled("cpu").to_string(),
+        CgroupError::SparseInheritedFile("cpuset.cpus").to_string(),
+        CgroupError::InvalidLimit {
+            field: "io_weight",
+            value: "0".into(),
+        }
+        .to_string(),
         CgroupError::Io {
             path: PathBuf::from("/tmp/test"),
             source: io::Error::from(io::ErrorKind::NotFound),

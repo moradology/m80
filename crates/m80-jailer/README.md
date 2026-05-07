@@ -29,14 +29,18 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
 - `MaterializedJail::launch(...)` exec's `firecracker` inside the jail
-  via `m80-jailer-harden` and Firecracker's official jailer binary. The hardening wrapper first drops supplementary groups,
-  clears inheritable/ambient capabilities, sets `no_new_privs`, sets
+  via `m80-jailer-harden` and Firecracker's official jailer binary. The
+  hardening wrapper first applies m80's extended inherited resource limits
+  (`nproc`, `memlock`, address-space, core, stack, plus mirrored `no-file` and
+  `fsize`), optionally enters a private cgroup namespace, drops supplementary
+  groups, clears inheritable/ambient capabilities, sets `no_new_privs`, sets
   `PDEATHSIG=SIGKILL`, resets the signal mask, and sets umask `0077`, then
-  execs the official jailer. m80 passes `--resource-limit no-file=<n>` on every launch, optionally passes
-  `--resource-limit fsize=<bytes>`, clears the jailer process environment,
-  gives stdin `/dev/null`, gives stdout/stderr either the configured log file
-  or `/dev/null`, can pass `--new-pid-ns`, can pass `--daemonize`, and can pass
-  `--netns <path>` after validating the path with `O_NOFOLLOW` and `NSFS_MAGIC`.
+  execs the official jailer. m80 still passes `--resource-limit no-file=<n>` on every launch, optionally passes
+  `--resource-limit fsize=<bytes>` to Firecracker's official jailer, clears the
+  jailer process environment, gives stdin `/dev/null`, gives stdout/stderr
+  either the configured log file or `/dev/null`, can pass `--new-pid-ns`, can
+  pass `--daemonize`, and can pass `--netns <path>` after validating the path
+  with `O_NOFOLLOW` and `NSFS_MAGIC`.
   Without `new_pid_ns` or `daemonize`, jailer `exec()`s into firecracker, so
   `jailer_pid` and `firecracker_pid` refer to the same OS process. With
   `new_pid_ns` or `daemonize`, the official jailer writes the Firecracker PID
@@ -65,12 +69,15 @@ hands a config in and gets back a launchable chroot — or a typed error.
 
 ## Public surface
 
-- `JailerConfig`, including `resource_limits`, `new_pid_ns`, `daemonize`, optional
-  `netns_path`,
+- `JailerConfig`, including `resource_limits`, `new_pid_ns`, `daemonize`,
+  `new_cgroup_ns`, optional `netns_path`,
   `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
-- `ResourceLimits { no_file, fsize }`; default is `no_file = 2048`,
-  `fsize = None`, matching Firecracker's official jailer default.
+- `ResourceLimits { no_file, fsize, nproc, memlock, address_space, core, stack }`;
+  defaults are `no_file = 2048`, `fsize = None`, `nproc = 256`,
+  `memlock = 0`, `address_space = None`, `core = 0`, and `stack = 8 MiB`.
+  Only `no_file` and `fsize` are forwarded to Firecracker's official jailer;
+  the rest are applied by `m80-jailer-harden` before exec.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `inspect_run_dir`, `InspectionDecision`.
@@ -81,6 +88,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
 ## Non-goals
 
 - **No cgroup configuration.** `m80-cgroup` owns that.
+- **No cgroup placement.** `new_cgroup_ns` hides the host hierarchy from the
+  jailed process, but `m80-cgroup` still owns cgroup creation, controller
+  limits, OOM scoring, and PID enrolment.
 - **No network namespace creation.** JoinNetns callers provision namespaces;
   this crate only validates and passes the namespace fd to Firecracker's jailer.
 - **No process supervision after launch.** The orchestrator owns the

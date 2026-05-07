@@ -38,6 +38,7 @@ fn materialize_creates_jail_root_and_persists_plan() {
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: false,
         daemonize: false,
+        new_cgroup_ns: false,
         netns_path: None,
         stdio_log: None,
     };
@@ -93,9 +94,15 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
         resource_limits: m80_jailer::ResourceLimits {
             no_file: 77,
             fsize: None,
+            nproc: Some(128),
+            memlock: Some(0),
+            address_space: None,
+            core: Some(0),
+            stack: Some(8 * 1024 * 1024),
         },
         new_pid_ns: true,
         daemonize: false,
+        new_cgroup_ns: false,
         netns_path: None,
         stdio_log: Some(run_dir.path().join("console.log")),
     };

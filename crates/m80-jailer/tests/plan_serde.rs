@@ -71,9 +71,15 @@ fn resource_limits_pid_namespace_daemonize_and_netns_persist_in_plan_json() {
     cfg.resource_limits = m80_jailer::ResourceLimits {
         no_file: 1024,
         fsize: Some(4096),
+        nproc: Some(64),
+        memlock: Some(0),
+        address_space: Some(1_073_741_824),
+        core: Some(0),
+        stack: Some(8 * 1024 * 1024),
     };
     cfg.new_pid_ns = true;
     cfg.daemonize = true;
+    cfg.new_cgroup_ns = true;
     cfg.netns_path = Some(PathBuf::from("/var/run/netns/m80-test"));
 
     let plan = Plan::compute(&cfg).unwrap();
@@ -81,7 +87,16 @@ fn resource_limits_pid_namespace_daemonize_and_netns_persist_in_plan_json() {
 
     assert_eq!(v["config"]["resource_limits"]["no_file"], 1024);
     assert_eq!(v["config"]["resource_limits"]["fsize"], 4096);
+    assert_eq!(v["config"]["resource_limits"]["nproc"], 64);
+    assert_eq!(v["config"]["resource_limits"]["memlock"], 0);
+    assert_eq!(
+        v["config"]["resource_limits"]["address_space"],
+        1_073_741_824
+    );
+    assert_eq!(v["config"]["resource_limits"]["core"], 0);
+    assert_eq!(v["config"]["resource_limits"]["stack"], 8 * 1024 * 1024);
     assert_eq!(v["config"]["new_pid_ns"], true);
     assert_eq!(v["config"]["daemonize"], true);
+    assert_eq!(v["config"]["new_cgroup_ns"], true);
     assert_eq!(v["config"]["netns_path"], "/var/run/netns/m80-test");
 }

@@ -6,6 +6,7 @@ fn requires_jailer() {
         &str,
         &m80_jailer::MaterializedJail,
         &m80_jailer::JailedFirecracker,
+        &m80_cgroup::Limits,
     ) -> Result<Subtree, m80_cgroup::CgroupError> = Subtree::create;
 
     // If Subtree::create ever stops requiring jailed launch evidence, the
