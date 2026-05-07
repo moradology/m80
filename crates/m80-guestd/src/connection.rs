@@ -19,7 +19,7 @@
 //!    normally and the cancel path is never exercised.
 //!
 //! The vsock channel is NOT multiplexed: only one exec is in flight at a time
-//! (enforced by `RunningSandbox`'s `&mut self` API on the host).
+//! (single-flight invariant enforced by guestd's sequential accept loop).
 
 mod fileops;
 mod metrics;
@@ -35,10 +35,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
     read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest,
-    ExecResponse, ExecStatus, ExecTiming, ShutdownAction, ShutdownRequest, ShutdownResponse,
-    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_PTY_REQUEST,
-    PAYLOAD_KIND_SHUTDOWN_REQUEST,
+    ExecResponse, ExecStatus, ExecTiming, Payload, ShutdownAction, ShutdownRequest,
+    ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST,
+    PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
+use serde::Serialize;
 
 use crate::guest_log::{self, GuestLogPhase};
 
@@ -87,18 +88,6 @@ fn unix_ms_now() -> u64 {
 /// `status: Failed` is attempted. If even that write fails the error is logged
 /// and the function returns `Ok(Continue)` so the caller can accept the next
 /// connection.
-#[allow(dead_code)]
-pub fn handle_connection<R, W>(reader: R, writer: W) -> anyhow::Result<ConnectionOutcome>
-where
-    R: BufRead,
-    W: Write,
-{
-    handle_connection_with_reader_ready(reader, writer, |_reader| true)
-}
-
-/// Variant of [`handle_connection`] that lets the caller decide whether
-/// probing `reader.fill_buf()` can complete without blocking. Real vsock
-/// streams use `poll(2)` here; in-memory tests can always return `true`.
 pub fn handle_connection_with_reader_ready<R, W, F>(
     mut reader: R,
     mut writer: W,
@@ -154,6 +143,51 @@ where
             Ok(ConnectionOutcome::Continue)
         }
     }
+}
+
+/// Build a `Command` for `req` with stdout/stderr/stdin piped and process
+/// group set to 0. Shared by the buffered and streaming exec paths.
+pub(crate) fn build_child_command(req: &ExecRequest) -> Command {
+    let mut cmd = Command::new(&req.program);
+    cmd.args(&req.args);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    cmd.process_group(0);
+    if let Some(cwd) = &req.cwd {
+        cmd.current_dir(cwd);
+    }
+    if let Some(env_pairs) = &req.env {
+        cmd.env_clear();
+        for (k, v) in env_pairs {
+            cmd.env(k, v);
+        }
+    }
+    if req.stdin.is_some() {
+        cmd.stdin(Stdio::piped());
+    } else {
+        cmd.stdin(Stdio::null());
+    }
+    cmd
+}
+
+/// Write one payload frame with an optional `request_id` correlation header.
+/// Shared by the buffered-exec, streaming-exec, and PTY exec paths.
+pub(crate) fn write_payload_frame<W, T>(
+    writer: &mut W,
+    request_id: &Option<String>,
+    payload: T,
+) -> Result<(), m80_proto::ProtoError>
+where
+    W: Write,
+    T: Payload + Serialize,
+{
+    let env = match request_id {
+        Some(id) => Envelope::with_request_id(payload, id.clone()),
+        None => Envelope::new(payload),
+    };
+    write_frame(writer, &env)?;
+    writer.flush()?;
+    Ok(())
 }
 
 /// Messages the child-wait thread sends back to the exec handler.
@@ -529,30 +563,7 @@ fn exec_request_with_cancel(
     pid_slot: Arc<Mutex<Option<u32>>>,
     cancel_rx: mpsc::Receiver<()>,
 ) -> anyhow::Result<ExecResponse> {
-    let mut cmd = Command::new(&req.program);
-    cmd.args(&req.args);
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-    cmd.process_group(0);
-
-    if let Some(cwd) = &req.cwd {
-        cmd.current_dir(cwd);
-    }
-
-    if let Some(env_pairs) = &req.env {
-        cmd.env_clear();
-        for (k, v) in env_pairs {
-            cmd.env(k, v);
-        }
-    }
-
-    if req.stdin.is_some() {
-        cmd.stdin(Stdio::piped());
-    } else {
-        cmd.stdin(Stdio::null());
-    }
-
-    let mut child = cmd
+    let mut child = build_child_command(req)
         .spawn()
         .map_err(|e| anyhow::anyhow!("spawn failed: {e}"))?;
 
@@ -733,7 +744,7 @@ fn cancel_status_from_group_signals(
     }
 }
 
-fn failed_timing(received_at: u64) -> ExecTiming {
+pub(crate) fn failed_timing(received_at: u64) -> ExecTiming {
     let now = unix_ms_now();
     ExecTiming {
         spawned_at_unix_ms: received_at,

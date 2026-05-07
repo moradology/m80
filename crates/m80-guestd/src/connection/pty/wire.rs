@@ -3,13 +3,12 @@
 use std::io::{BufRead, Write};
 
 use m80_proto::{
-    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecStatus, Payload,
+    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecStatus,
     PtyControl, PtyExit, PtyInput, PtyOutput, PtyResize, PAYLOAD_KIND_CANCEL_REQUEST,
     PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_INPUT, PAYLOAD_KIND_PTY_RESIZE,
 };
-use serde::Serialize;
 
-use super::super::failed_timing;
+use super::super::{failed_timing, write_payload_frame};
 
 pub(super) enum HostFrame {
     None,
@@ -67,24 +66,6 @@ where
         }
         Err(_) => HostFrame::Disconnect,
     }
-}
-
-pub(super) fn write_payload_frame<W, T>(
-    writer: &mut W,
-    request_id: &Option<String>,
-    payload: T,
-) -> Result<(), m80_proto::ProtoError>
-where
-    W: Write,
-    T: Payload + Serialize,
-{
-    let env = match request_id {
-        Some(id) => Envelope::with_request_id(payload, id.clone()),
-        None => Envelope::new(payload),
-    };
-    write_frame(writer, &env)?;
-    writer.flush()?;
-    Ok(())
 }
 
 pub(super) fn write_cancel_ack<W: Write>(

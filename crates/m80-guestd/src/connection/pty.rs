@@ -17,7 +17,8 @@ use process::{
     command_builder, join_output_thread, signal_pty_child, spawn_output_thread, terminal_status,
     terminate_pty_child, timeout_deadline, to_portable_size, PtyFrame,
 };
-use wire::{poll_host_frame, write_cancel_ack, write_payload_frame, write_pty_failed, HostFrame};
+use wire::{poll_host_frame, write_cancel_ack, write_pty_failed, HostFrame};
+use super::write_payload_frame;
 
 use crate::guest_log::{self, GuestLogPhase};
 

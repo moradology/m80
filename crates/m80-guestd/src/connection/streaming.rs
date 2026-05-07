@@ -1,22 +1,22 @@
 //! Streaming exec implementation for the connection handler.
 
 use std::io::{BufRead, Read, Write};
-use std::os::unix::process::CommandExt;
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Child, ExitStatus};
 use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit,
-    ExecRequest, ExecStatus, ExecStderr, ExecStdout, ExecTiming, Payload,
-    PAYLOAD_KIND_CANCEL_REQUEST,
+    read_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest,
+    ExecStatus, ExecStderr, ExecStdout, ExecTiming, PAYLOAD_KIND_CANCEL_REQUEST,
 };
-use serde::Serialize;
 
 use crate::guest_log::{self, GuestLogPhase};
 
-use super::{failed_timing, unix_ms_now, ConnectionOutcome, MAX_TIMEOUT_MS, POLL_INTERVAL};
+use super::{
+    build_child_command, failed_timing, unix_ms_now, write_payload_frame, ConnectionOutcome,
+    MAX_TIMEOUT_MS, POLL_INTERVAL,
+};
 
 const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
 
@@ -72,10 +72,10 @@ where
     W: Write,
 {
     let spawn_start = unix_ms_now();
-    let mut child = match spawn_child(&req) {
+    let mut child = match build_child_command(&req).spawn() {
         Ok(child) => child,
         Err(e) => {
-            write_spawn_failed(writer, &request_id, received_at, e.to_string());
+            write_spawn_failed(writer, &request_id, received_at, format!("spawn failed: {e}"));
             return Ok(ConnectionOutcome::Continue);
         }
     };
@@ -263,34 +263,6 @@ where
     }
 }
 
-fn spawn_child(req: &ExecRequest) -> anyhow::Result<Child> {
-    let mut cmd = Command::new(&req.program);
-    cmd.args(&req.args);
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-    cmd.process_group(0);
-
-    if let Some(cwd) = &req.cwd {
-        cmd.current_dir(cwd);
-    }
-
-    if let Some(env_pairs) = &req.env {
-        cmd.env_clear();
-        for (k, v) in env_pairs {
-            cmd.env(k, v);
-        }
-    }
-
-    if req.stdin.is_some() {
-        cmd.stdin(Stdio::piped());
-    } else {
-        cmd.stdin(Stdio::null());
-    }
-
-    cmd.spawn()
-        .map_err(|e| anyhow::anyhow!("spawn failed: {e}"))
-}
-
 fn spawn_stream_thread<R>(
     reader: R,
     kind: StreamKind,
@@ -342,24 +314,6 @@ fn write_stream_frame<W: Write>(
     }
 }
 
-fn write_payload_frame<W, T>(
-    writer: &mut W,
-    request_id: &Option<String>,
-    payload: T,
-) -> Result<(), m80_proto::ProtoError>
-where
-    W: Write,
-    T: Payload + Serialize,
-{
-    let env = match request_id {
-        Some(id) => Envelope::with_request_id(payload, id.clone()),
-        None => Envelope::new(payload),
-    };
-    write_frame(writer, &env)?;
-    writer.flush()?;
-    Ok(())
-}
-
 fn write_cancel_ack<W: Write>(
     writer: &mut W,
     request_id: String,
@@ -367,6 +321,7 @@ fn write_cancel_ack<W: Write>(
 ) -> Result<(), m80_proto::ProtoError> {
     let ack = CancelAck { request_id, status };
     let env = Envelope::new(ack);
+    use m80_proto::write_frame;
     write_frame(writer, &env)?;
     writer.flush()?;
     Ok(())

@@ -17,7 +17,7 @@ fn frame<T: m80_proto::Payload + serde::Serialize>(payload: T) -> Vec<u8> {
 
 fn handle(input: Vec<u8>) -> Vec<u8> {
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection(BufReader::new(Cursor::new(input)), &mut out)
+    m80_guestd::connection::handle_connection_with_reader_ready(BufReader::new(Cursor::new(input)), &mut out, |_| true)
         .unwrap();
     out
 }

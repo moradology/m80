@@ -160,9 +160,10 @@ fn streaming_cancel_request_kills_child_and_returns_ack() {
     input.extend(cancel_frame("stream-cancel"));
 
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection(
+    m80_guestd::connection::handle_connection_with_reader_ready(
         std::io::BufReader::new(Cursor::new(input)),
         &mut out,
+        |_| true,
     )
     .expect("handle streaming cancel");
 
@@ -186,9 +187,10 @@ fn streaming_cancel_request_kills_shell_spawned_grandchild() {
 
     let start = Instant::now();
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection(
+    m80_guestd::connection::handle_connection_with_reader_ready(
         std::io::BufReader::new(Cursor::new(input)),
         &mut out,
+        |_| true,
     )
     .expect("handle streaming cancel");
     let elapsed = start.elapsed();
@@ -212,9 +214,10 @@ fn streaming_reader_eof_kills_silent_child_without_exit_frame() {
 
     let start = Instant::now();
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection(
+    m80_guestd::connection::handle_connection_with_reader_ready(
         std::io::BufReader::new(Cursor::new(input)),
         &mut out,
+        |_| true,
     )
     .expect("handle streaming eof");
     let elapsed = start.elapsed();
@@ -242,9 +245,10 @@ fn streaming_reader_eof_kills_shell_spawned_grandchild_promptly() {
 
     let start = Instant::now();
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection(
+    m80_guestd::connection::handle_connection_with_reader_ready(
         std::io::BufReader::new(Cursor::new(input)),
         &mut out,
+        |_| true,
     )
     .expect("handle streaming eof");
     let elapsed = start.elapsed();

@@ -91,7 +91,7 @@ fn run_pty_with_open_reader(input: Vec<u8>) -> Vec<u8> {
 
 fn run_pty_with_disconnect(input: Vec<u8>) -> Vec<u8> {
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection(BufReader::new(Cursor::new(input)), &mut out)
+    m80_guestd::connection::handle_connection_with_reader_ready(BufReader::new(Cursor::new(input)), &mut out, |_| true)
         .expect("handle pty connection");
     out
 }

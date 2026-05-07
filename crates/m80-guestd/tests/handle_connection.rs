@@ -59,9 +59,10 @@ fn read_cancel_ack(bytes: &[u8]) -> Envelope<CancelAck> {
 
 fn run_handler(input: Vec<u8>) -> Vec<u8> {
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection(
+    m80_guestd::connection::handle_connection_with_reader_ready(
         std::io::BufReader::new(Cursor::new(input)),
         &mut out,
+        |_| true,
     )
     .expect("handle_connection failed");
     out
