@@ -103,8 +103,8 @@ impl Client {
     /// The VM **must** be paused before calling this (via
     /// `patch_vm_state(VmState::Paused)`). Firecracker will return an error if
     /// the VM is still running.
-    pub fn put_snapshot_create(&self, cfg: &CreateSnapshotConfig) -> Result<(), ClientError> {
-        let body = serde_json::to_vec(cfg)?;
+    pub fn put_snapshot_create(&self, config: &CreateSnapshotConfig) -> Result<(), ClientError> {
+        let body = serde_json::to_vec(config)?;
         let resp = self.put("/snapshot/create", &body)?;
         if ok(resp.status) {
             return Ok(());
@@ -120,8 +120,8 @@ impl Client {
     /// `vsock.sock` file from any previous VM using the same jail must be
     /// removed before calling this — Firecracker rebinds the UDS at load time
     /// and will fail with `EADDRINUSE` if the file already exists.
-    pub fn put_snapshot_load(&self, cfg: &LoadSnapshotConfig) -> Result<(), ClientError> {
-        let body = serde_json::to_vec(cfg)?;
+    pub fn put_snapshot_load(&self, config: &LoadSnapshotConfig) -> Result<(), ClientError> {
+        let body = serde_json::to_vec(config)?;
         let resp = self.put("/snapshot/load", &body)?;
         if ok(resp.status) {
             return Ok(());
@@ -150,15 +150,7 @@ impl Client {
 
     /// Send a PATCH request over the stored `UnixStream`.
     fn patch(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
-        if debug_wire::is_enabled("fcrest") {
-            tracing::trace!(
-                direction = "out",
-                method = "PATCH",
-                path,
-                preview = %debug_wire::format_wire_preview(body),
-                "fcrest request"
-            );
-        }
+        trace_request("PATCH", path, body);
         let mut guard = self
             .stream
             .lock()
@@ -173,14 +165,7 @@ impl Client {
             }
             Err(e) => return Err(ClientError::Io(e)),
         };
-        if debug_wire::is_enabled("fcrest") {
-            tracing::trace!(
-                direction = "in",
-                status = resp.status,
-                preview = %debug_wire::format_wire_preview(&resp.body),
-                "fcrest response"
-            );
-        }
+        trace_response(&resp);
         Ok(resp)
     }
 
@@ -190,15 +175,7 @@ impl Client {
     /// The caller is responsible for not calling concurrently — Firecracker
     /// itself does not handle concurrent config writes cleanly.
     fn put(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
-        if debug_wire::is_enabled("fcrest") {
-            tracing::trace!(
-                direction = "out",
-                method = "PUT",
-                path,
-                preview = %debug_wire::format_wire_preview(body),
-                "fcrest request"
-            );
-        }
+        trace_request("PUT", path, body);
         let mut guard = self
             .stream
             .lock()
@@ -216,15 +193,33 @@ impl Client {
             }
             Err(e) => return Err(ClientError::Io(e)),
         };
-        if debug_wire::is_enabled("fcrest") {
-            tracing::trace!(
-                direction = "in",
-                status = resp.status,
-                preview = %debug_wire::format_wire_preview(&resp.body),
-                "fcrest response"
-            );
-        }
+        trace_response(&resp);
         Ok(resp)
+    }
+}
+
+/// Emit a `tracing::trace!` for an outgoing request when `fcrest` wire logging is enabled.
+fn trace_request(method: &str, path: &str, body: &[u8]) {
+    if debug_wire::is_enabled("fcrest") {
+        tracing::trace!(
+            direction = "out",
+            method,
+            path,
+            preview = %debug_wire::format_wire_preview(body),
+            "fcrest request"
+        );
+    }
+}
+
+/// Emit a `tracing::trace!` for an incoming response when `fcrest` wire logging is enabled.
+fn trace_response(resp: &http::Response) {
+    if debug_wire::is_enabled("fcrest") {
+        tracing::trace!(
+            direction = "in",
+            status = resp.status,
+            preview = %debug_wire::format_wire_preview(&resp.body),
+            "fcrest response"
+        );
     }
 }
 
@@ -243,8 +238,10 @@ fn is_broken_pipe(e: &io::Error) -> bool {
 }
 
 /// Convert a response body to a `String`, falling back to lossy UTF-8.
+///
+/// `String::from_utf8` avoids the extra allocation on the (typical) valid-UTF-8 path.
 fn body_to_string(body: &[u8]) -> String {
-    String::from_utf8_lossy(body).into_owned()
+    String::from_utf8(body.to_vec()).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 // ---------------------------------------------------------------------------
