@@ -11,12 +11,11 @@
 //!      cargo test -p m80-cli --test e2e_warm -- --ignored
 //! ```
 
-
 use common::{append_file, run_root_entries};
 mod common;
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -268,7 +267,6 @@ fn assert_no_run_dirs_with_prefix(run_root: &Path, prefix: &str) {
     );
 }
 
-
 fn failure_report(output: &std::process::Output, run_root: &Path) -> String {
     format!(
         "status={:?}\nstdout={:?}\nstderr={:?}\n{}",
@@ -314,5 +312,3 @@ fn dump_run_root(run_root: &Path) -> String {
     }
     out
 }
-
-

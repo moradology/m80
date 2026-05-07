@@ -11,13 +11,12 @@ use crate::error::ProtoError;
 /// are explicitly forbidden — fix the deploy pipeline, not the protocol.
 pub const PROTOCOL_VERSION: u32 = 1;
 
-/// Maximum size of a single NDJSON frame in bytes.
+/// Maximum size of a single protobuf frame body in bytes.
 ///
-/// The check is strict `>`: a frame whose post-trim length equals exactly
+/// The check is strict `>`: a frame whose body length equals exactly
 /// `MAX_FRAME_BYTES` still passes; `MAX_FRAME_BYTES + 1` is rejected with
-/// [`ProtoError::OversizedPayload`]. The cap is on encoded JSON, not raw
-/// `Vec<u8>` payload bytes — with base64 (~33% inflation), the practical
-/// raw-stdout budget is around 2.9 MiB.
+/// [`ProtoError::OversizedPayload`]. The cap is a per-frame allocation guard,
+/// not an application-level transfer cap; bulk data must use chunk payloads.
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
 /// Validate that `remote` is the single live protocol version.

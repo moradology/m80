@@ -22,13 +22,13 @@ fn make_backend(max: u32, run_root: &Path) -> Arc<Backend> {
     Arc::new(Backend::new(config).expect("Backend::new"))
 }
 
-
-
 #[test]
 fn permit_acquired_per_vm() {
     let dir = TempDir::new().unwrap();
     let backend = make_backend(1, dir.path());
-    let first = backend.admit(common::sandbox_config_with_id("vm-a")).unwrap();
+    let first = backend
+        .admit(common::sandbox_config_with_id("vm-a"))
+        .unwrap();
 
     let second = backend.admit(common::sandbox_config_with_id("vm-b"));
 
@@ -37,7 +37,9 @@ fn permit_acquired_per_vm() {
         Err(FcError::AdmissionRefused { limit: 1 })
     ));
     drop(first);
-    backend.admit(common::sandbox_config_with_id("vm-c")).unwrap();
+    backend
+        .admit(common::sandbox_config_with_id("vm-c"))
+        .unwrap();
 }
 
 #[test]
@@ -75,10 +77,16 @@ fn reads_max_from_env() {
 fn reports_unavailable_when_pool_full() {
     let dir = TempDir::new().unwrap();
     let backend = make_backend(2, dir.path());
-    let first = backend.admit(common::sandbox_config_with_id("vm-a")).unwrap();
-    let second = backend.admit(common::sandbox_config_with_id("vm-b")).unwrap();
+    let first = backend
+        .admit(common::sandbox_config_with_id("vm-a"))
+        .unwrap();
+    let second = backend
+        .admit(common::sandbox_config_with_id("vm-b"))
+        .unwrap();
 
-    let err = backend.admit(common::sandbox_config_with_id("vm-c")).unwrap_err();
+    let err = backend
+        .admit(common::sandbox_config_with_id("vm-c"))
+        .unwrap_err();
 
     assert_eq!(
         err.to_string(),

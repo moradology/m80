@@ -16,8 +16,8 @@ use common::RunDirDumpGuard;
 use std::path::PathBuf;
 
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, SandboxConfig, SnapshotPaths,
-    FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+    Backend, BackendConfig, CgroupMode, SandboxConfig, SnapshotPaths, FIRST_LINE_MEM_SIZE_MIB,
+    FIRST_LINE_VCPU_COUNT,
 };
 
 /// Build a `BackendConfig` from `m80_preflight::run()`.

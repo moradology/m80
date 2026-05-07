@@ -187,7 +187,10 @@ pub fn cmd_run(
         let response = outcome.payload;
         let exit_code =
             run_stream::process_exit_code(response.status, response.exit_code, outcome.signal);
-        println!("{}", json::to_pretty(&response));
+        println!(
+            "{}",
+            json::to_pretty(&proto_json::ExecResponseJson::from(response))
+        );
         exit_code
     } else {
         let req = run_request::exec_request_for_run(program, args, env, cwd, stdin_bytes);
@@ -411,7 +414,10 @@ pub fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
     }
 
     if json {
-        println!("{}", json::to_pretty(&serde_json::json!({ "status": "ok" })));
+        println!(
+            "{}",
+            json::to_pretty(&serde_json::json!({ "status": "ok" }))
+        );
     } else {
         println!("cleanup complete");
     }
@@ -462,6 +468,7 @@ pub fn cmd_version(json: bool) -> anyhow::Result<i32> {
 }
 
 mod env;
+mod proto_json;
 mod pty;
 mod quickstart;
 mod run_request;

@@ -1,6 +1,5 @@
 //! Smoke test: `m80 version` exits 0 and prints something meaningful.
 
-
 mod common;
 
 use common::m80;

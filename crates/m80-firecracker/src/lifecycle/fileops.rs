@@ -4,14 +4,15 @@ use std::io::Read;
 use std::sync::atomic::Ordering;
 
 use m80_proto::{
-    DirEntry, Envelope, FileListRequest, FileListResponse, FileReadRequest, FileReadResponse,
+    DirEntry, Envelope, FileListRequest, FileListResponse, FileReadChunk, FileReadRequest,
     FileRemoveRequest, FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse,
     FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse,
     FileWriteCommitRequest, FileWriteCommitResponse, FileWriteRequest, FileWriteResponse,
+    PAYLOAD_KIND_FILE_READ_CHUNK,
 };
 
 use crate::error::FcError;
-use crate::lifecycle::exec::{decode_payload, request_id_for, send_envelope_with_open_retry};
+use crate::lifecycle::exec::{request_id_for, send_envelope_with_open_retry};
 use crate::lifecycle::monotonic_ns;
 use crate::types::RunningSandbox;
 
@@ -22,15 +23,78 @@ impl RunningSandbox {
         path: impl Into<String>,
         max_bytes: Option<u64>,
     ) -> Result<(Vec<u8>, bool), FcError> {
-        let response: FileReadResponse = self.fileop_round_trip(
+        self.prepare_fileop_activity()?;
+        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "file_read");
+        let envelope = Envelope::with_request_id(
             FileReadRequest {
                 path: path.into(),
                 max_bytes,
             },
-            "file_read",
-        )?;
-        fileop_result(response.error)?;
-        Ok((response.bytes, response.truncated))
+            request_id.clone(),
+        );
+        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
+        let mut bytes = Vec::new();
+        let mut expected_seq = 0u64;
+
+        loop {
+            let frame = match channel.recv_raw() {
+                Ok(frame) => frame,
+                Err(e) => {
+                    let err = super::protocol::recv_error(e, "file read");
+                    crate::diagnostics::record_protocol_error(
+                        &mut self.diagnostics,
+                        &self.vm_id,
+                        &request_id,
+                        "file_read_chunk",
+                        &err,
+                    );
+                    return Err(err);
+                }
+            };
+            if frame.kind != PAYLOAD_KIND_FILE_READ_CHUNK {
+                let err = super::protocol::unexpected_frame(
+                    "file read",
+                    PAYLOAD_KIND_FILE_READ_CHUNK,
+                    frame.kind,
+                );
+                crate::diagnostics::record_protocol_error(
+                    &mut self.diagnostics,
+                    &self.vm_id,
+                    &request_id,
+                    "file_read_chunk",
+                    &err,
+                );
+                return Err(err);
+            }
+            let chunk = frame
+                .decode::<FileReadChunk>()
+                .map_err(super::protocol::proto_error)?
+                .payload;
+            if chunk.seq != expected_seq {
+                let err = super::protocol::sequence_mismatch("file_read", expected_seq, chunk.seq);
+                crate::diagnostics::record_protocol_error(
+                    &mut self.diagnostics,
+                    &self.vm_id,
+                    &request_id,
+                    "file_read_chunk",
+                    &err,
+                );
+                return Err(err);
+            }
+            self.last_activity_ns
+                .store(monotonic_ns(), Ordering::Relaxed);
+            if let Some(error) = chunk.error {
+                return Err(FcError::FileOp(error));
+            }
+            bytes.extend_from_slice(&chunk.bytes);
+            if chunk.done {
+                return Ok((bytes, chunk.truncated));
+            }
+            expected_seq = expected_seq
+                .checked_add(1)
+                .ok_or_else(|| FcError::Config("file_read chunk sequence overflow".into()))?;
+        }
     }
 
     /// Write a guest file directly through m80-guestd. Parent directory must exist.
@@ -106,8 +170,9 @@ impl RunningSandbox {
             request_id.clone(),
         );
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &begin)?;
-        let begin_response: Envelope<serde_json::Value> = channel.recv()?;
-        let begin_response: FileWriteBeginResponse = decode_payload(begin_response.payload)?;
+        let begin_response: Envelope<FileWriteBeginResponse> =
+            recv_fileop(&mut channel, "file upload begin")?;
+        let begin_response = begin_response.payload;
         fileop_result(begin_response.error)?;
         let upload_id = begin_response.upload_id.ok_or_else(|| {
             FcError::Config("file upload begin response missing upload_id".into())
@@ -126,18 +191,23 @@ impl RunningSandbox {
                 bytes: buf[..n].to_vec(),
             };
             channel.send(&Envelope::with_request_id(chunk, request_id.clone()))?;
-            let response: Envelope<serde_json::Value> = channel.recv()?;
-            let response: FileWriteChunkResponse = decode_payload(response.payload)?;
+            let response: Envelope<FileWriteChunkResponse> =
+                recv_fileop(&mut channel, "file upload chunk")?;
+            let response = response.payload;
             fileop_result(response.error)?;
-            seq = seq.wrapping_add(1);
+            validate_chunk_ack(&upload_id, seq, &response)?;
+            seq = seq
+                .checked_add(1)
+                .ok_or_else(|| FcError::Config("file upload chunk sequence overflow".into()))?;
         }
 
         channel.send(&Envelope::with_request_id(
             FileWriteCommitRequest { upload_id },
             request_id,
         ))?;
-        let response: Envelope<serde_json::Value> = channel.recv()?;
-        let response: FileWriteCommitResponse = decode_payload(response.payload)?;
+        let response: Envelope<FileWriteCommitResponse> =
+            recv_fileop(&mut channel, "file upload commit")?;
+        let response = response.payload;
         fileop_result(response.error)?;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
@@ -146,16 +216,16 @@ impl RunningSandbox {
 
     fn fileop_round_trip<T, U>(&mut self, payload: T, kind: &str) -> Result<U, FcError>
     where
-        T: m80_proto::Payload + serde::Serialize,
-        U: serde::de::DeserializeOwned,
+        T: m80_proto::Payload + Clone,
+        U: m80_proto::Payload + Clone,
     {
         self.prepare_fileop_activity()?;
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), kind);
         let envelope = Envelope::with_request_id(payload, request_id);
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
-        let frame: Envelope<serde_json::Value> = channel.recv()?;
-        let response = decode_payload(frame.payload)?;
+        let frame: Envelope<U> = recv_fileop(&mut channel, "file operation")?;
+        let response = frame.payload;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
         Ok(response)
@@ -175,5 +245,98 @@ fn fileop_result(error: Option<m80_proto::FileError>) -> Result<(), FcError> {
     match error {
         None => Ok(()),
         Some(error) => Err(FcError::FileOp(error)),
+    }
+}
+
+fn validate_chunk_ack(
+    upload_id: &str,
+    expected_seq: u64,
+    response: &FileWriteChunkResponse,
+) -> Result<(), FcError> {
+    if response.upload_id != upload_id {
+        return Err(super::protocol::unexpected_frame(
+            "file upload chunk",
+            "matching upload_id",
+            response.upload_id.clone(),
+        ));
+    }
+    if response.seq != expected_seq {
+        return Err(super::protocol::sequence_mismatch(
+            "file_upload",
+            expected_seq,
+            response.seq,
+        ));
+    }
+    Ok(())
+}
+
+fn recv_fileop<T>(
+    channel: &mut m80_vsock::Channel,
+    context: &'static str,
+) -> Result<Envelope<T>, FcError>
+where
+    Envelope<T>: m80_proto::Frame,
+{
+    channel
+        .recv()
+        .map_err(|e| super::protocol::recv_error(e, context))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunk_ack_accepts_matching_upload_id_and_sequence() {
+        let ack = FileWriteChunkResponse {
+            upload_id: "u1".into(),
+            seq: 7,
+            bytes_written: 3,
+            error: None,
+        };
+
+        validate_chunk_ack("u1", 7, &ack).unwrap();
+    }
+
+    #[test]
+    fn chunk_ack_rejects_wrong_upload_id() {
+        let ack = FileWriteChunkResponse {
+            upload_id: "u2".into(),
+            seq: 0,
+            bytes_written: 3,
+            error: None,
+        };
+
+        let err = validate_chunk_ack("u1", 0, &ack).unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(crate::error::WireProtocolError::UnexpectedFrame {
+                context: "file upload chunk",
+                expected: "matching upload_id",
+                got
+            }) if got == "u2"
+        ));
+    }
+
+    #[test]
+    fn chunk_ack_rejects_wrong_sequence() {
+        let ack = FileWriteChunkResponse {
+            upload_id: "u1".into(),
+            seq: 9,
+            bytes_written: 3,
+            error: None,
+        };
+
+        let err = validate_chunk_ack("u1", 8, &ack).unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(crate::error::WireProtocolError::SequenceMismatch {
+                stream: "file_upload",
+                expected: 8,
+                got: 9
+            })
+        ));
     }
 }

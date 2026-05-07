@@ -71,7 +71,7 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
 ## Dependencies
 
 - `m80-proto` for the envelope and framing helpers.
-- `serde`, `sha2`, `thiserror`, `tracing`.
+- `sha2`, `thiserror`, `tracing`.
 - No `tokio`: this crate is synchronous like the rest of the host foundation.
 
 ## Debug instrumentation

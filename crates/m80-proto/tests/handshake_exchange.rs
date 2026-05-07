@@ -1,4 +1,4 @@
-//! Bead m80-g3x.3.1 — version handshake runs before the first request.
+//! Reserved handshake payload keeps exact version negotiation semantics.
 
 use std::io::Cursor;
 
@@ -8,20 +8,20 @@ use m80_proto::{
 };
 
 #[test]
-fn handshake_runs_before_first_request() {
-    // 1. Host emits its handshake.
+fn reserved_handshake_payload_round_trips_exact_version() {
     let mut channel: Vec<u8> = Vec::new();
     let host_shake = HandshakeMessage {
         version: PROTOCOL_VERSION,
     };
     write_frame(&mut channel, &host_shake).unwrap();
 
-    // 2. Guest reads and negotiates.
     let mut reader = Cursor::new(&channel);
     let remote: HandshakeMessage = read_frame(&mut reader).unwrap();
     negotiate_version(remote.version).expect("same-version negotiation must succeed");
+}
 
-    // 3. Only after a successful handshake does the host send a request.
+#[test]
+fn application_envelope_carries_version_without_handshake_prelude() {
     let req_env = Envelope::new(ExecRequest {
         program: "/bin/true".into(),
         args: Vec::new(),

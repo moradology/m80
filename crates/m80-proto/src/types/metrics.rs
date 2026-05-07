@@ -1,22 +1,16 @@
 //! Guest metrics payloads carried over the host↔guest wire.
 
-use serde::{Deserialize, Serialize};
-
-use crate::types::Payload;
-
 /// Wire `kind` for [`MetricsRequest`].
 pub const PAYLOAD_KIND_METRICS_REQUEST: &str = "metrics_request";
 /// Wire `kind` for [`MetricsResponse`].
 pub const PAYLOAD_KIND_METRICS_RESPONSE: &str = "metrics_response";
 
 /// Request guest-side metrics from `m80-guestd`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetricsRequest {}
 
 /// Fixed-shape guest metrics response.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetricsResponse {
     /// CPU counters read from `/proc/stat`.
     pub cpu: GuestCpuMetrics,
@@ -29,8 +23,7 @@ pub struct MetricsResponse {
 }
 
 /// Guest CPU counters in Linux clock ticks.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestCpuMetrics {
     /// User-mode ticks.
     pub user_ticks: u64,
@@ -57,8 +50,7 @@ pub struct GuestCpuMetrics {
 }
 
 /// Guest memory gauges in bytes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestMemMetrics {
     /// Total guest memory.
     pub mem_total_bytes: u64,
@@ -74,12 +66,4 @@ pub struct GuestMemMetrics {
     pub swap_total_bytes: u64,
     /// Free swap bytes.
     pub swap_free_bytes: u64,
-}
-
-impl Payload for MetricsRequest {
-    const KIND: &'static str = PAYLOAD_KIND_METRICS_REQUEST;
-}
-
-impl Payload for MetricsResponse {
-    const KIND: &'static str = PAYLOAD_KIND_METRICS_RESPONSE;
 }

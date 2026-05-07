@@ -58,7 +58,10 @@ impl EnvRestore {
     #[allow(dead_code)]
     pub fn capture(keys: &[&'static str]) -> Self {
         Self {
-            values: keys.iter().map(|key| (*key, std::env::var_os(key))).collect(),
+            values: keys
+                .iter()
+                .map(|key| (*key, std::env::var_os(key)))
+                .collect(),
         }
     }
 }

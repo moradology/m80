@@ -43,7 +43,10 @@ pub fn spawn_fake_firecracker_uds(
         match behavior {
             HandshakeBehavior::OkThenHold { port, hold_ms } => {
                 let reply = format!("OK {port}\n");
-                reader.get_mut().write_all(reply.as_bytes()).expect("write OK");
+                reader
+                    .get_mut()
+                    .write_all(reply.as_bytes())
+                    .expect("write OK");
                 std::thread::sleep(Duration::from_millis(hold_ms));
             }
             HandshakeBehavior::BadReply => {

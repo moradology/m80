@@ -1,262 +1,115 @@
-//! SENTINEL
-//! NDJSON framing: `read_frame`, `write_frame`, version-probe.
+//! Length-prefixed protobuf framing.
 
-use std::io::{self, BufRead, Read, Write};
-
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use std::io::{self, Read, Write};
 
 use crate::error::ProtoError;
+use crate::types::{Envelope, HandshakeMessage, Payload};
 use crate::version::{MAX_FRAME_BYTES, PROTOCOL_VERSION};
+use crate::wire::{decode_raw_envelope, encode_raw_envelope, RawEnvelope};
 
-/// Partial version probe; intentionally allows unknown fields so wrong-version
-/// frames report `IncompatibleVersion` before full strict deserialization.
-#[derive(Deserialize)]
-struct VersionProbe {
-    version: u32,
+const LENGTH_PREFIX_BYTES: usize = 4;
+
+/// A value that can be encoded as one m80 protobuf frame.
+pub trait Frame: Sized {
+    /// Convert this value into a raw envelope for writing.
+    fn to_raw_frame(&self) -> Result<RawEnvelope, ProtoError>;
+    /// Decode this value from a raw envelope after reading.
+    fn from_raw_frame(raw: RawEnvelope) -> Result<Self, ProtoError>;
 }
 
-/// Read one NDJSON-framed value from `reader`.
-///
-/// `T` must have a top-level `version: u32` field — both `Envelope<T>` and
-/// `HandshakeMessage` qualify. The version is extracted via a partial parse
-/// before the full deserialize, so a wrong-version frame fails as
-/// [`ProtoError::IncompatibleVersion`] rather than as a structural-shape
-/// error against `T`.
+impl<T> Frame for Envelope<T>
+where
+    T: Payload + Clone,
+{
+    fn to_raw_frame(&self) -> Result<RawEnvelope, ProtoError> {
+        Ok(RawEnvelope::from_typed(self.clone()))
+    }
+
+    fn from_raw_frame(raw: RawEnvelope) -> Result<Self, ProtoError> {
+        raw.decode()
+    }
+}
+
+impl Frame for HandshakeMessage {
+    fn to_raw_frame(&self) -> Result<RawEnvelope, ProtoError> {
+        Ok(RawEnvelope::from_typed(Envelope::new(self.clone())))
+    }
+
+    fn from_raw_frame(raw: RawEnvelope) -> Result<Self, ProtoError> {
+        Ok(raw.decode::<HandshakeMessage>()?.payload)
+    }
+}
+
+/// Read one typed protobuf frame from `reader`.
 pub fn read_frame<R, T>(reader: &mut R) -> Result<T, ProtoError>
 where
-    R: BufRead,
-    T: DeserializeOwned,
+    R: Read,
+    T: Frame,
 {
-    let mut buf: Vec<u8> = Vec::with_capacity(256);
-    let n_read = reader
-        .by_ref()
-        .take(MAX_FRAME_BYTES as u64 + 2)
-        .read_until(b'\n', &mut buf)?;
+    T::from_raw_frame(read_raw_frame(reader)?)
+}
 
-    if n_read == 0 {
-        return Err(ProtoError::Io(io::Error::from(
-            io::ErrorKind::UnexpectedEof,
-        )));
-    }
-
-    let found_newline = buf.last().copied() == Some(b'\n');
-    if !found_newline {
-        return if n_read == MAX_FRAME_BYTES + 2 {
-            Err(ProtoError::OversizedPayload {
-                size: n_read,
-                limit: MAX_FRAME_BYTES,
-            })
-        } else {
-            Err(ProtoError::Io(io::Error::from(
-                io::ErrorKind::UnexpectedEof,
-            )))
-        };
-    }
-
-    buf.pop(); // strip trailing `\n`
-
-    if buf.len() > MAX_FRAME_BYTES {
+/// Read one protobuf frame from `reader` without choosing a payload type.
+pub fn read_raw_frame<R>(reader: &mut R) -> Result<RawEnvelope, ProtoError>
+where
+    R: Read,
+{
+    let mut prefix = [0u8; LENGTH_PREFIX_BYTES];
+    reader
+        .read_exact(&mut prefix)
+        .map_err(map_read_exact_error)?;
+    let size = u32::from_be_bytes(prefix) as usize;
+    if size > MAX_FRAME_BYTES {
         return Err(ProtoError::OversizedPayload {
-            size: buf.len(),
+            size,
             limit: MAX_FRAME_BYTES,
         });
     }
 
-    let probe: VersionProbe = serde_json::from_slice(&buf).map_err(ProtoError::MalformedPayload)?;
-    if probe.version != PROTOCOL_VERSION {
+    let mut body = vec![0u8; size];
+    reader.read_exact(&mut body).map_err(map_read_exact_error)?;
+    let raw = decode_raw_envelope(&body)?;
+    if raw.version != PROTOCOL_VERSION {
         return Err(ProtoError::IncompatibleVersion {
             expected: PROTOCOL_VERSION,
-            got: probe.version,
+            got: raw.version,
         });
     }
-
-    serde_json::from_slice(&buf).map_err(ProtoError::MalformedPayload)
+    Ok(raw)
 }
 
-/// Write one NDJSON-framed value to `writer`, including the trailing `\n`.
-///
-/// Returns [`ProtoError::OversizedPayload`] if the serialized frame exceeds
-/// [`MAX_FRAME_BYTES`].
+/// Write one typed protobuf frame to `writer`.
 pub fn write_frame<W, T>(writer: &mut W, value: &T) -> Result<(), ProtoError>
 where
     W: Write,
-    T: Serialize,
+    T: Frame,
 {
-    let buf = serde_json::to_vec(value).map_err(ProtoError::EncodeFailed)?;
-    if buf.len() > MAX_FRAME_BYTES {
+    write_raw_frame(writer, value.to_raw_frame()?)
+}
+
+/// Write one protobuf frame to `writer` without choosing a payload type.
+pub fn write_raw_frame<W>(writer: &mut W, envelope: RawEnvelope) -> Result<(), ProtoError>
+where
+    W: Write,
+{
+    let body = encode_raw_envelope(envelope)?;
+    if body.len() > MAX_FRAME_BYTES {
         return Err(ProtoError::OversizedPayload {
-            size: buf.len(),
+            size: body.len(),
             limit: MAX_FRAME_BYTES,
         });
     }
-    writer.write_all(&buf)?;
-    writer.write_all(b"\n")?;
+    let size = u32::try_from(body.len())
+        .map_err(|_| ProtoError::EncodeFailed("frame length does not fit in u32".into()))?;
+    writer.write_all(&size.to_be_bytes())?;
+    writer.write_all(&body)?;
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_helpers::{sample_request, sample_response, sample_timing};
-    use crate::types::{Envelope, ExecRequest, ExecResponse, ExecStatus};
-    use std::io::Cursor;
-
-    #[test]
-    fn request_round_trip() {
-        let env = Envelope::new(sample_request());
-        let mut buf = Vec::new();
-        write_frame(&mut buf, &env).unwrap();
-        assert_eq!(*buf.last().unwrap(), b'\n');
-
-        let mut cursor = Cursor::new(&buf);
-        let back: Envelope<ExecRequest> = read_frame(&mut cursor).unwrap();
-        assert_eq!(back, env);
-    }
-
-    #[test]
-    fn response_round_trip() {
-        let env = Envelope::new(sample_response());
-        let mut buf = Vec::new();
-        write_frame(&mut buf, &env).unwrap();
-        let mut cursor = Cursor::new(&buf);
-        let back: Envelope<ExecResponse> = read_frame(&mut cursor).unwrap();
-        assert_eq!(back, env);
-    }
-
-    #[test]
-    fn read_frame_empty_stream_returns_unexpected_eof() {
-        let mut cursor = Cursor::new(Vec::<u8>::new());
-        let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor).unwrap_err();
-        assert!(matches!(err, ProtoError::Io(e) if e.kind() == io::ErrorKind::UnexpectedEof));
-    }
-
-    #[test]
-    fn read_frame_unbounded_input_caps_at_limit() {
-        let oversized = vec![b'a'; MAX_FRAME_BYTES + 100];
-        let mut cursor = Cursor::new(oversized);
-        let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor).unwrap_err();
-        assert!(matches!(err, ProtoError::OversizedPayload { .. }));
-    }
-
-    /// Peer closed mid-frame (read bytes < cap, no `\n`) must surface as
-    /// `Io(UnexpectedEof)`, NOT `OversizedPayload`.
-    #[test]
-    fn read_frame_truncated_input_returns_unexpected_eof() {
-        let truncated = b"{\"version\":1,\"payload\":".to_vec();
-        let mut cursor = Cursor::new(truncated);
-        let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor).unwrap_err();
-        assert!(
-            matches!(&err, ProtoError::Io(e) if e.kind() == io::ErrorKind::UnexpectedEof),
-            "truncated frame must surface as UnexpectedEof; got {err:?}"
-        );
-    }
-
-    #[test]
-    fn write_frame_rejects_oversize_envelope() {
-        let big = ExecResponse {
-            status: ExecStatus::Completed,
-            exit_code: Some(0),
-            stdout: vec![b'x'; (MAX_FRAME_BYTES * 7) / 8],
-            stderr: Vec::new(),
-            truncated: None,
-            timing: sample_timing(),
-        };
-        let env = Envelope::new(big);
-        let mut buf = Vec::new();
-        let err = write_frame(&mut buf, &env).unwrap_err();
-        assert!(matches!(err, ProtoError::OversizedPayload { size, limit }
-            if size > MAX_FRAME_BYTES && limit == MAX_FRAME_BYTES));
-    }
-
-    #[test]
-    fn all_byte_values_round_trip_in_stdout_and_stderr() {
-        let all_bytes: Vec<u8> = (0u16..=255).map(|b| b as u8).collect();
-        let env = Envelope::new(ExecResponse {
-            status: ExecStatus::Completed,
-            exit_code: Some(0),
-            stdout: all_bytes.clone(),
-            stderr: all_bytes.clone(),
-            truncated: None,
-            timing: sample_timing(),
-        });
-        let mut buf = Vec::new();
-        write_frame(&mut buf, &env).unwrap();
-        let mut cursor = Cursor::new(&buf);
-        let back: Envelope<ExecResponse> = read_frame(&mut cursor).unwrap();
-        assert_eq!(back.payload.stdout, all_bytes);
-        assert_eq!(back.payload.stderr, all_bytes);
-    }
-
-    #[test]
-    fn all_byte_values_round_trip_in_stdin_option() {
-        let all_bytes: Vec<u8> = (0u16..=255).map(|b| b as u8).collect();
-        let env = Envelope::new(ExecRequest {
-            program: "/bin/cat".into(),
-            args: vec![],
-            cwd: None,
-            env: None,
-            stdin: Some(all_bytes.clone()),
-            timeout_ms: None,
-            streaming: false,
-        });
-        let mut buf = Vec::new();
-        write_frame(&mut buf, &env).unwrap();
-        let mut cursor = Cursor::new(&buf);
-        let back: Envelope<ExecRequest> = read_frame(&mut cursor).unwrap();
-        assert_eq!(back.payload.stdin, Some(all_bytes));
-    }
-
-    #[test]
-    fn read_frame_rejects_extra_envelope_field() {
-        let raw = format!(
-            "{{\"version\":{ver},\"kind\":\"exec_request\",\"payload\":{{\"program\":\"/x\",\"args\":[]}},\"extra\":\"junk\"}}\n",
-            ver = PROTOCOL_VERSION,
-        );
-        let mut cursor = Cursor::new(raw.into_bytes());
-        let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor).unwrap_err();
-        assert!(
-            matches!(err, ProtoError::MalformedPayload(_)),
-            "extra envelope field must surface as MalformedPayload; got {err:?}"
-        );
-    }
-
-    #[test]
-    fn read_frame_rejects_extra_payload_field() {
-        let raw = format!(
-            "{{\"version\":{ver},\"kind\":\"exec_request\",\"payload\":{{\"program\":\"/x\",\"args\":[],\"bogus\":42}}}}\n",
-            ver = PROTOCOL_VERSION,
-        );
-        let mut cursor = Cursor::new(raw.into_bytes());
-        let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor).unwrap_err();
-        assert!(
-            matches!(err, ProtoError::MalformedPayload(_)),
-            "extra payload field must surface as MalformedPayload; got {err:?}"
-        );
-    }
-
-    #[test]
-    fn read_frame_rejects_missing_version_field() {
-        let raw =
-            b"{\"kind\":\"exec_request\",\"payload\":{\"program\":\"/x\",\"args\":[]}}\n".to_vec();
-        let mut cursor = Cursor::new(raw);
-        let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor).unwrap_err();
-        assert!(
-            matches!(err, ProtoError::MalformedPayload(_)),
-            "missing version must surface as MalformedPayload; got {err:?}"
-        );
-    }
-
-    #[test]
-    fn read_frame_rejects_wrong_type_version_field() {
-        let raw =
-            b"{\"version\":\"1\",\"kind\":\"exec_request\",\"payload\":{\"program\":\"/x\",\"args\":[]}}\n"
-                .to_vec();
-        let mut cursor = Cursor::new(raw);
-        let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor).unwrap_err();
-        assert!(
-            matches!(err, ProtoError::MalformedPayload(_)),
-            "wrong-type version must surface as MalformedPayload; got {err:?}"
-        );
+fn map_read_exact_error(err: io::Error) -> ProtoError {
+    if err.kind() == io::ErrorKind::UnexpectedEof {
+        ProtoError::Io(io::Error::from(io::ErrorKind::UnexpectedEof))
+    } else {
+        ProtoError::Io(err)
     }
 }

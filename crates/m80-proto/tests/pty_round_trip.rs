@@ -4,7 +4,7 @@ use m80_proto::{
     read_frame, write_frame, Envelope, ExecStatus, ProtoError, PtyControl, PtyControlEvent,
     PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal, PtySize, MAX_FRAME_BYTES,
     PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_INPUT,
-    PAYLOAD_KIND_PTY_OUTPUT, PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE, PROTOCOL_VERSION,
+    PAYLOAD_KIND_PTY_OUTPUT, PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE,
 };
 
 mod common;
@@ -54,7 +54,10 @@ fn pty_request_round_trips_with_initial_size() {
 #[test]
 fn pty_input_round_trips() {
     let env = Envelope::with_request_id(
-        PtyInput { seq: 0, bytes: b"hello\r".to_vec() },
+        PtyInput {
+            seq: 0,
+            bytes: b"hello\r".to_vec(),
+        },
         "req-pty-stream".into(),
     );
     let mut buf = Vec::new();
@@ -68,7 +71,10 @@ fn pty_input_round_trips() {
 #[test]
 fn pty_output_round_trips() {
     let env = Envelope::with_request_id(
-        PtyOutput { seq: 0, bytes: b"hello\r\n".to_vec() },
+        PtyOutput {
+            seq: 0,
+            bytes: b"hello\r\n".to_vec(),
+        },
         "req-pty-stream".into(),
     );
     let mut buf = Vec::new();
@@ -83,7 +89,12 @@ fn pty_resize_round_trips() {
     let env = Envelope::with_request_id(
         PtyResize {
             seq: 1,
-            size: PtySize { rows: 50, cols: 132, pixel_width: None, pixel_height: None },
+            size: PtySize {
+                rows: 50,
+                cols: 132,
+                pixel_width: None,
+                pixel_height: None,
+            },
         },
         "req-pty-stream".into(),
     );
@@ -99,18 +110,21 @@ fn pty_control_round_trips() {
     let env = Envelope::with_request_id(
         PtyControl {
             seq: 2,
-            event: PtyControlEvent::Signal { signal: PtySignal::Interrupt },
+            event: PtyControlEvent::Signal {
+                signal: PtySignal::Interrupt,
+            },
         },
         "req-pty-stream".into(),
     );
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write control");
-    let decoded: Envelope<PtyControl> =
-        read_frame(&mut Cursor::new(&buf)).expect("read control");
+    let decoded: Envelope<PtyControl> = read_frame(&mut Cursor::new(&buf)).expect("read control");
     assert_eq!(decoded.kind, PAYLOAD_KIND_PTY_CONTROL);
     assert_eq!(
         decoded.payload.event,
-        PtyControlEvent::Signal { signal: PtySignal::Interrupt }
+        PtyControlEvent::Signal {
+            signal: PtySignal::Interrupt
+        }
     );
 }
 
@@ -214,14 +228,12 @@ fn oversized_pty_output_frame_is_rejected() {
 
 #[test]
 fn malformed_pty_frame_is_rejected() {
-    let raw = format!(
-        "{{\"version\":{ver},\"kind\":\"pty_output\",\"request_id\":\"req-pty-bad\",\"payload\":{{\"seq\":0,\"bytes\":\"aGk=\",\"extra\":\"nope\"}}}}\n",
-        ver = PROTOCOL_VERSION,
-    );
-    let mut cursor = Cursor::new(raw.into_bytes());
+    let mut raw = 4u32.to_be_bytes().to_vec();
+    raw.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+    let mut cursor = Cursor::new(raw);
 
     let err = read_frame::<_, Envelope<PtyOutput>>(&mut cursor)
-        .expect_err("unknown pty output payload field must fail");
+        .expect_err("malformed protobuf payload must fail");
     assert!(
         matches!(err, ProtoError::MalformedPayload(_)),
         "expected MalformedPayload, got: {err:?}"

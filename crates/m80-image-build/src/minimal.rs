@@ -20,7 +20,10 @@ use anyhow::Context;
 
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
-use crate::pipeline::{loop_mount, loop_umount, manifest_path, run_curl, set_executable, truncate_file, KERNEL_FILENAME};
+use crate::pipeline::{
+    loop_mount, loop_umount, manifest_path, run_curl, set_executable, truncate_file,
+    KERNEL_FILENAME,
+};
 
 const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
 const HOST_BUSYBOX: &str = "/bin/busybox";

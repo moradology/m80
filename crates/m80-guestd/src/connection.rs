@@ -23,6 +23,7 @@
 
 mod fileops;
 mod metrics;
+mod protocol_log;
 mod pty;
 mod streaming;
 
@@ -34,12 +35,11 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
-    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest,
-    ExecResponse, ExecStatus, ExecTiming, Payload, ShutdownAction, ShutdownRequest,
+    read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest,
+    ExecResponse, ExecStatus, ExecTiming, Payload, RawEnvelope, ShutdownAction, ShutdownRequest,
     ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST,
     PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
-use serde::Serialize;
 
 use crate::guest_log::{self, GuestLogPhase};
 
@@ -77,7 +77,7 @@ fn unix_ms_now() -> u64 {
 
 /// Run one request/response cycle on the provided reader/writer.
 ///
-/// Reads the envelope as JSON Value first, peeks at `kind`, then dispatches:
+/// Reads the raw protobuf envelope first, peeks at `kind`, then dispatches:
 /// - `exec_request` (the v0.1 path): spawn, capture, respond, sync.
 /// - `cancel_request`: look up in-flight exec by `request_id`, SIGKILL, ack.
 /// - `shutdown_request`: sync, send ack, return [`ConnectionOutcome::Shutdown`].
@@ -100,12 +100,12 @@ where
 {
     let received_at = unix_ms_now();
 
-    let raw: Envelope<serde_json::Value> = match read_frame(&mut reader) {
+    let raw = match read_raw_frame(&mut reader) {
         Ok(env) => env,
         Err(e) => {
             metrics::record_error();
             // Malformed frame: try to send a Failed response, then close.
-            guest_log::warn(GuestLogPhase::Exec, None, format!("malformed frame: {e:#}"));
+            protocol_log::warn_proto_error(GuestLogPhase::Exec, None, None, &e);
             let timing = failed_timing(received_at);
             let resp = error_response(format!("{e:#}").into_bytes(), timing);
             let out_env = Envelope::new(resp);
@@ -128,10 +128,11 @@ where
         kind if metrics::is_metrics_kind(kind) => metrics::handle_metrics(raw, reader, &mut writer),
         other => {
             metrics::record_error();
-            guest_log::warn(
+            protocol_log::warn_unexpected_frame(
                 GuestLogPhase::Exec,
                 raw.request_id.as_deref(),
-                format!("unknown envelope kind: {other:?}"),
+                None,
+                other,
             );
             let timing = failed_timing(received_at);
             let resp = error_response(
@@ -179,7 +180,7 @@ pub(crate) fn write_payload_frame<W, T>(
 ) -> Result<(), m80_proto::ProtoError>
 where
     W: Write,
-    T: Payload + Serialize,
+    T: Payload + Clone,
 {
     let env = match request_id {
         Some(id) => Envelope::with_request_id(payload, id.clone()),
@@ -197,7 +198,7 @@ enum ChildResult {
 }
 
 fn handle_exec<R, W>(
-    raw: Envelope<serde_json::Value>,
+    raw: RawEnvelope,
     mut reader: R,
     writer: &mut W,
     received_at: u64,
@@ -208,14 +209,15 @@ where
     W: Write,
 {
     let request_id = raw.request_id.clone();
-    let req: ExecRequest = match serde_json::from_value(raw.payload) {
-        Ok(r) => r,
+    let req: ExecRequest = match raw.decode::<ExecRequest>() {
+        Ok(env) => env.payload,
         Err(e) => {
             metrics::record_error();
-            guest_log::warn(
+            protocol_log::warn_proto_error(
                 GuestLogPhase::Exec,
                 request_id.as_deref(),
-                format!("malformed exec_request payload: {e:#}"),
+                Some(PAYLOAD_KIND_EXEC_REQUEST),
+                &e,
             );
             let timing = failed_timing(received_at);
             let resp = error_response(format!("{e:#}").into_bytes(), timing);
@@ -341,66 +343,89 @@ where
 
         if peeked_len > 0 {
             // Data is available — read the next frame.
-            let next: Envelope<serde_json::Value> = match read_frame(&mut reader) {
+            let next = match read_raw_frame(&mut reader) {
                 Ok(env) => env,
-                Err(_) => {
-                    thread::sleep(POLL_INTERVAL);
-                    continue;
+                Err(e) => {
+                    protocol_log::warn_proto_error(
+                        GuestLogPhase::Exec,
+                        request_id.as_deref(),
+                        Some("control"),
+                        &e,
+                    );
+                    abort_inflight_exec(&cancel_tx, &child_rx, &child_pid_slot);
+                    return Ok(ConnectionOutcome::Continue);
                 }
             };
 
             if next.kind == PAYLOAD_KIND_CANCEL_REQUEST {
-                if let Ok(cancel_req) =
-                    serde_json::from_value::<CancelRequest>(next.payload.clone())
-                {
-                    let matches = request_id.as_deref() == Some(cancel_req.request_id.as_str());
-                    if matches {
-                        // Signal the child thread to stop, then SIGKILL.
-                        let _ = cancel_tx.send(());
+                match next.decode::<CancelRequest>().map(|env| env.payload) {
+                    Ok(cancel_req) => {
+                        let matches = request_id.as_deref() == Some(cancel_req.request_id.as_str());
+                        if matches {
+                            // Signal the child thread to stop, then SIGKILL.
+                            let _ = cancel_tx.send(());
 
-                        // Wait until the exec thread has populated the PID
-                        // slot (it does so immediately after spawn). In
-                        // normal operation this is a very short spin — the
-                        // exec thread runs concurrently and will fill the
-                        // slot before any meaningful work is done.
-                        let status = wait_for_pid_then_kill(&child_pid_slot);
-                        // Wait for the child thread to finish reaping.
-                        let _ = child_rx.recv();
+                            // Wait until the exec thread has populated the PID
+                            // slot (it does so immediately after spawn). In
+                            // normal operation this is a very short spin — the
+                            // exec thread runs concurrently and will fill the
+                            // slot before any meaningful work is done.
+                            let status = wait_for_pid_then_kill(&child_pid_slot);
+                            // Wait for the child thread to finish reaping.
+                            let _ = child_rx.recv();
 
-                        let ack = CancelAck {
-                            request_id: cancel_req.request_id,
-                            status,
-                        };
-                        let ack_env = Envelope::new(ack);
-                        if let Err(e) = write_frame(writer, &ack_env) {
-                            guest_log::warn(
-                                GuestLogPhase::Exec,
-                                request_id.as_deref(),
-                                format!("failed to write cancel ack: {e}"),
-                            );
+                            let ack = CancelAck {
+                                request_id: cancel_req.request_id,
+                                status,
+                            };
+                            let ack_env = Envelope::new(ack);
+                            if let Err(e) = write_frame(writer, &ack_env) {
+                                guest_log::warn(
+                                    GuestLogPhase::Exec,
+                                    request_id.as_deref(),
+                                    format!("failed to write cancel ack: {e}"),
+                                );
+                            }
+                            if let Err(e) = writer.flush() {
+                                guest_log::warn(
+                                    GuestLogPhase::Exec,
+                                    request_id.as_deref(),
+                                    format!("failed to flush cancel ack: {e}"),
+                                );
+                            }
+                            nix::unistd::sync();
+                            return Ok(ConnectionOutcome::Continue);
+                        } else {
+                            // Wrong request_id — process either already exited or
+                            // this is a stale cancel from the host.
+                            let ack = CancelAck {
+                                request_id: cancel_req.request_id,
+                                status: CancelStatus::AlreadyExited,
+                            };
+                            let ack_env = Envelope::new(ack);
+                            let _ = write_frame(writer, &ack_env);
+                            let _ = writer.flush();
+                            // Continue waiting for the child.
                         }
-                        if let Err(e) = writer.flush() {
-                            guest_log::warn(
-                                GuestLogPhase::Exec,
-                                request_id.as_deref(),
-                                format!("failed to flush cancel ack: {e}"),
-                            );
-                        }
-                        nix::unistd::sync();
+                    }
+                    Err(e) => {
+                        protocol_log::warn_proto_error(
+                            GuestLogPhase::Exec,
+                            request_id.as_deref(),
+                            Some(PAYLOAD_KIND_CANCEL_REQUEST),
+                            &e,
+                        );
+                        abort_inflight_exec(&cancel_tx, &child_rx, &child_pid_slot);
                         return Ok(ConnectionOutcome::Continue);
-                    } else {
-                        // Wrong request_id — process either already exited or
-                        // this is a stale cancel from the host.
-                        let ack = CancelAck {
-                            request_id: cancel_req.request_id,
-                            status: CancelStatus::AlreadyExited,
-                        };
-                        let ack_env = Envelope::new(ack);
-                        let _ = write_frame(writer, &ack_env);
-                        let _ = writer.flush();
-                        // Continue waiting for the child.
                     }
                 }
+            } else {
+                protocol_log::warn_unexpected_frame(
+                    GuestLogPhase::Exec,
+                    request_id.as_deref(),
+                    Some("control"),
+                    next.kind.as_str(),
+                );
             }
             // Any other frame mid-exec is ignored; the exec continues.
             continue;
@@ -408,6 +433,17 @@ where
 
         thread::sleep(POLL_INTERVAL);
     }
+}
+
+fn abort_inflight_exec(
+    cancel_tx: &mpsc::Sender<()>,
+    child_rx: &mpsc::Receiver<ChildResult>,
+    child_pid_slot: &Arc<Mutex<Option<u32>>>,
+) {
+    let _ = cancel_tx.send(());
+    let _ = wait_for_pid_then_kill(child_pid_slot);
+    let _ = child_rx.recv();
+    nix::unistd::sync();
 }
 
 /// Spin until the exec thread has written the child process-group id into
@@ -464,16 +500,18 @@ fn terminate_child_group_by_slot(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelSt
 /// Handle a `cancel_request` that arrived when no exec is in flight.
 /// Always replies `AlreadyExited`.
 fn handle_cancel_no_exec<W: Write>(
-    raw: Envelope<serde_json::Value>,
+    raw: RawEnvelope,
     writer: &mut W,
 ) -> anyhow::Result<ConnectionOutcome> {
-    let cancel_req: CancelRequest = match serde_json::from_value(raw.payload) {
-        Ok(r) => r,
+    let request_id = raw.request_id.clone();
+    let cancel_req: CancelRequest = match raw.decode::<CancelRequest>() {
+        Ok(env) => env.payload,
         Err(e) => {
-            guest_log::warn(
+            protocol_log::warn_proto_error(
                 GuestLogPhase::Exec,
-                None,
-                format!("malformed cancel_request payload: {e}"),
+                request_id.as_deref(),
+                Some(PAYLOAD_KIND_CANCEL_REQUEST),
+                &e,
             );
             return Ok(ConnectionOutcome::Continue);
         }
@@ -501,7 +539,7 @@ fn handle_cancel_no_exec<W: Write>(
 }
 
 fn handle_shutdown<W: Write>(
-    raw: Envelope<serde_json::Value>,
+    raw: RawEnvelope,
     writer: &mut W,
     _received_at: u64,
 ) -> anyhow::Result<ConnectionOutcome> {
@@ -509,7 +547,7 @@ fn handle_shutdown<W: Write>(
     // Best-effort decode of the request body for logging — we proceed even
     // if it fails to parse since the kind field already told us this is
     // a shutdown.
-    if let Ok(req) = serde_json::from_value::<ShutdownRequest>(raw.payload) {
+    if let Ok(req) = raw.decode::<ShutdownRequest>().map(|env| env.payload) {
         if let Some(reason) = req.reason {
             guest_log::info(
                 GuestLogPhase::Shutdown,

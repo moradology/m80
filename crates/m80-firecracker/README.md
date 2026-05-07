@@ -93,6 +93,12 @@ mode does not expose separated stdout/stderr streams.
 guest `FileError` responses to `FcError::FileOp`; callers do not need to
 spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
 
+After a vsock channel is established, malformed protobuf, oversized frames,
+unsupported protocol versions, unexpected frame kinds, stream sequence gaps, and
+disconnects before a required terminal frame map to
+`FcError::Protocol(WireProtocolError::...)`. Transport setup failures remain
+`FcError::Vsock`.
+
 `RunningSandbox::guest_metrics()` sends a direct `MetricsRequest` to
 m80-guestd and returns the fixed-shape guest CPU, memory, and daemon counter
 snapshot without spawning a guest process.
@@ -119,6 +125,8 @@ snapshot without spawning a guest process.
 `SnapshotPaths` is re-exported from `m80-snapshot` for caller convenience.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and
 wire-frame pairing only, not an agent semantic identifier.
+`WireProtocolError` is re-exported for callers that need to distinguish broken
+peer bytes from transport failures.
 
 ### First-line machine shape
 

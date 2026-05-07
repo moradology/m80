@@ -3,9 +3,9 @@ use super::{
     parse_env, render_preflight_result, run_request, run_stream, sandbox_config_for_run,
     should_writeback,
 };
-use crate::json;
 use crate::args::{EgressMode, WritebackMode};
 use crate::errors::EXIT_PREFLIGHT;
+use crate::json;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, ExecStatus, NetworkPolicy};
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
 use m80_preflight::{CheckRow, Discovery, PreflightError, PrivilegeStatus};

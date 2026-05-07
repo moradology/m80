@@ -4,11 +4,19 @@ use crate::{HealthSnapshot, OpsMetrics};
 pub fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> String {
     let mut out = String::new();
     metric_u64(&mut out, "m80_vm_health_healthy", u64::from(health.healthy));
-    metric_u64(&mut out, "m80_vm_health_degraded", u64::from(health.degraded));
+    metric_u64(
+        &mut out,
+        "m80_vm_health_degraded",
+        u64::from(health.degraded),
+    );
     metric_u64(&mut out, "m80_vm_health_stuck", u64::from(health.stuck));
     metric_u64(&mut out, "m80_vm_health_exited", u64::from(health.exited));
     metric_u64(&mut out, "m80_vm_health_total", u64::from(health.total));
-    metric_u64(&mut out, "m80_vm_rollout_ready", u64::from(health.rollout_ready));
+    metric_u64(
+        &mut out,
+        "m80_vm_rollout_ready",
+        u64::from(health.rollout_ready),
+    );
     metric_u64(&mut out, "m80_ops_vm_count", u64::from(metrics.vm_count));
     if let Some(guest) = &metrics.guest {
         counter(&mut out, "m80_guest_cpu_total_ticks", guest.cpu.total_ticks);

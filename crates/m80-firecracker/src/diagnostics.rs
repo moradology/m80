@@ -1,6 +1,7 @@
 //! Per-run diagnostics helpers.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::Path;
 use std::time::Instant;
 
@@ -54,6 +55,32 @@ pub(crate) fn record_owned(
     );
     if let Err(e) = handle.record(&event) {
         tracing::warn!(vm_id, err = %e, "diagnostics record failed");
+    }
+}
+
+/// Record one request-scoped host-side wire protocol failure.
+pub(crate) fn record_protocol_error(
+    diagnostics: &mut Option<Diagnostics>,
+    vm_id: &str,
+    request_id: &str,
+    stream_id: &str,
+    error: &impl fmt::Display,
+) {
+    let Some(handle) = diagnostics.as_mut() else {
+        return;
+    };
+    let mut context = BTreeMap::new();
+    context.insert("vm_id".to_owned(), vm_id.to_owned());
+    context.insert("stream_id".to_owned(), stream_id.to_owned());
+    context.insert("error".to_owned(), error.to_string());
+    let event = VmEvent::host(
+        Phase::Request,
+        format!("protocol error stream_id={stream_id}: {error}"),
+        Some(request_id.to_owned()),
+        context,
+    );
+    if let Err(e) = handle.record(&event) {
+        tracing::warn!(vm_id, err = %e, "diagnostics protocol-error record failed");
     }
 }
 
@@ -240,5 +267,35 @@ mod tests {
             })
             .collect();
         assert_eq!(reasons, ["normal_stop", "force_kill", "snapshot_capture"]);
+    }
+
+    #[test]
+    fn protocol_error_records_request_and_stream_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut diagnostics = Some(Diagnostics::open(dir.path()).unwrap());
+        record_protocol_error(
+            &mut diagnostics,
+            "vm-test",
+            "req-test",
+            "exec_exit",
+            &"disconnect before terminal frame in streaming exec",
+        );
+
+        drop(diagnostics);
+        let text =
+            std::fs::read_to_string(dir.path().join(m80_observability::DIAGNOSTICS_FILE_NAME))
+                .unwrap();
+        let event: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+        assert_eq!(event["request_id"], "req-test");
+        assert_eq!(event["context"]["vm_id"], "vm-test");
+        assert_eq!(event["context"]["stream_id"], "exec_exit");
+        assert_eq!(
+            event["context"]["error"],
+            "disconnect before terminal frame in streaming exec"
+        );
+        assert!(event["message"]
+            .as_str()
+            .unwrap()
+            .contains("protocol error stream_id=exec_exit"));
     }
 }

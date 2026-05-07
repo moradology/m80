@@ -57,6 +57,7 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Network(_)
         | FcError::Client(_)
         | FcError::Vsock(_)
+        | FcError::Protocol(_)
         | FcError::Snapshot(_)
         | FcError::FileOp(_)
         | FcError::Io(_)
@@ -110,6 +111,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Network(_) => "Network",
         FcError::Client(_) => "Client",
         FcError::Vsock(_) => "Vsock",
+        FcError::Protocol(_) => "Protocol",
         FcError::AdmissionRefused { .. } => "AdmissionRefused",
         FcError::PoolEmpty { .. } => "PoolEmpty",
         FcError::InvalidState { .. } => "InvalidState",

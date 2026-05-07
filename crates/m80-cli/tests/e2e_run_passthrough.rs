@@ -14,9 +14,9 @@
 //! `M80_RUN_ROOT`, `HOME`, `M80_CGROUP_MODE`, and
 //! `M80_MAX_CONCURRENT_VMS` are set by the fixture.
 
-
 use common::{append_file, run_root_entries};
 mod common;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{BufRead as _, Read as _};
 use std::path::{Path, PathBuf};
@@ -38,7 +38,10 @@ impl KvmFixture {
     fn new() -> Self {
         Self {
             home: tempfile::tempdir().expect("home tempdir"),
-            run_root: tempfile::tempdir().expect("run-root tempdir"),
+            run_root: tempfile::Builder::new()
+                .prefix("m")
+                .tempdir_in(run_root_parent())
+                .expect("run-root tempdir"),
         }
     }
 
@@ -61,7 +64,14 @@ impl KvmFixture {
     }
 
     fn assert_run_root_empty(&self) {
-        let entries = run_root_entries(self.run_root.path());
+        let entries = run_root_entries(self.run_root.path())
+            .into_iter()
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_none_or(|name| !name.starts_with(".rootfs-overlay-template-v1-"))
+            })
+            .collect::<Vec<_>>();
         assert!(
             entries.is_empty(),
             "m80 run must stop/delete sandbox state; leftover entries: {entries:?}\n{}",
@@ -72,6 +82,12 @@ impl KvmFixture {
     fn run_root(&self) -> &Path {
         self.run_root.path()
     }
+}
+
+fn run_root_parent() -> PathBuf {
+    std::env::var_os("M80_E2E_RUN_ROOT_PARENT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/var/lib"))
 }
 
 #[test]
@@ -256,7 +272,7 @@ fn pipe_streaming_stdout_is_not_capped_at_one_mib() {
             "--",
             "/bin/sh",
             "-c",
-            "dd if=/dev/zero bs=1048576 count=2 2>/dev/null | tr '\\000' x",
+            "dd if=/dev/zero bs=1048576 count=5 2>/dev/null | tr '\\000' x",
         ])
         .output()
         .expect("m80 run");
@@ -268,16 +284,87 @@ fn pipe_streaming_stdout_is_not_capped_at_one_mib() {
         failure_report(&output, fixture.run_root())
     );
     assert!(
-        output.stdout.len() > 1_048_576,
-        "pipe-mode streaming must not be capped at the buffered exec limit; len={}\n{}",
+        output.stdout.len() > 4 * 1024 * 1024,
+        "pipe-mode streaming must exceed the old JSON frame budget; len={}\n{}",
         output.stdout.len(),
         failure_report(&output, fixture.run_root())
     );
+    assert_all_bytes(&output.stdout, b'x');
     assert!(
         output.stderr.is_empty(),
         "large-output probe should keep wrapper diagnostics off stderr: {:?}",
         output.stderr
     );
+    fixture.assert_run_root_empty();
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+fn pipe_streaming_large_stderr_preserves_identity_and_exit_code() {
+    let fixture = KvmFixture::new();
+
+    let output = fixture
+        .m80()
+        .args([
+            "run",
+            "--egress",
+            "none",
+            "--",
+            "/bin/sh",
+            "-c",
+            "dd if=/dev/zero bs=1048576 count=5 2>/dev/null | tr '\\000' y >&2; \
+             printf host-out; exit 7",
+        ])
+        .output()
+        .expect("m80 run");
+
+    assert_eq!(
+        output.status.code(),
+        Some(7),
+        "large-stderr probe should preserve guest exit status\n{}",
+        failure_report(&output, fixture.run_root())
+    );
+    assert_eq!(output.stdout, b"host-out");
+    assert!(
+        output.stderr.len() > 4 * 1024 * 1024,
+        "stderr stream must exceed the old JSON frame budget; len={}\n{}",
+        output.stderr.len(),
+        failure_report(&output, fixture.run_root())
+    );
+    assert_all_bytes(&output.stderr, b'y');
+    fixture.assert_run_root_empty();
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+fn pipe_interleaved_stdout_stderr_preserves_per_stream_order() {
+    let fixture = KvmFixture::new();
+
+    let output = fixture
+        .m80()
+        .args([
+            "run",
+            "--egress",
+            "none",
+            "--",
+            "/bin/sh",
+            "-c",
+            "i=0; while [ $i -lt 128 ]; do printf 'out-%03d\\n' \"$i\"; \
+             printf 'err-%03d\\n' \"$i\" >&2; i=$((i + 1)); done",
+        ])
+        .output()
+        .expect("m80 run");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "interleaved stream probe should exit 0\n{}",
+        failure_report(&output, fixture.run_root())
+    );
+    let expected_stdout = numbered_lines("out");
+    let expected_stderr = numbered_lines("err");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected_stdout);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), expected_stderr);
     fixture.assert_run_root_empty();
 }
 
@@ -386,7 +473,6 @@ fn sigterm_cancels_guest_child_and_deletes_sandbox() {
     fixture.assert_run_root_empty();
 }
 
-
 fn failure_report(output: &std::process::Output, run_root: &Path) -> String {
     format!(
         "status={:?}\nstdout={:?}\nstderr={:?}\n{}",
@@ -395,6 +481,22 @@ fn failure_report(output: &std::process::Output, run_root: &Path) -> String {
         output.stderr,
         dump_run_root(run_root)
     )
+}
+
+fn assert_all_bytes(bytes: &[u8], expected: u8) {
+    assert!(
+        bytes.iter().all(|byte| *byte == expected),
+        "stream contained a byte other than {:?}",
+        expected as char
+    );
+}
+
+fn numbered_lines(prefix: &str) -> String {
+    let mut out = String::new();
+    for i in 0..128 {
+        writeln!(&mut out, "{prefix}-{i:03}").expect("write numbered line");
+    }
+    out
 }
 
 fn dump_run_root(run_root: &Path) -> String {
@@ -431,5 +533,3 @@ fn dump_run_root(run_root: &Path) -> String {
     }
     out
 }
-
-

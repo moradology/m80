@@ -192,9 +192,7 @@ fn put_snapshot_create_400_returns_snapshot_create_failed() {
 #[test]
 fn put_snapshot_load_with_mem_backend_sends_correct_url_and_fields() {
     let (server, client) = setup_with_204();
-    client
-        .put_snapshot_load(&default_load_config())
-        .unwrap();
+    client.put_snapshot_load(&default_load_config()).unwrap();
     let result = server.join();
     assert!(
         result
@@ -213,9 +211,7 @@ fn put_snapshot_load_with_mem_backend_sends_correct_url_and_fields() {
 #[test]
 fn put_snapshot_load_omits_optional_fields_when_none() {
     let (server, client) = setup_with_204();
-    client
-        .put_snapshot_load(&default_load_config())
-        .unwrap();
+    client.put_snapshot_load(&default_load_config()).unwrap();
     let result = server.join();
     assert!(
         !result.request.contains("\"mem_file_path\""),

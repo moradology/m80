@@ -7,16 +7,14 @@
 
 mod debug_wire;
 
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use sha2::Digest;
 
-use m80_proto::{Envelope, ProtoError};
+use m80_proto::{encode_raw_envelope, Envelope, Frame, ProtoError, RawEnvelope};
 
 /// Re-export the canonical default vsock port from `m80-proto`.
 pub use m80_proto::GUEST_PORT_DEFAULT;
@@ -80,21 +78,21 @@ impl std::fmt::Debug for ChannelSender {
 /// Write `envelope` to `stream`, emitting a debug-wire trace if enabled.
 ///
 /// Used by both [`Channel::send`] and [`ChannelSender::send`].
-fn send_envelope<W: Write, T: Serialize>(
-    stream: &mut W,
-    envelope: &Envelope<T>,
-) -> Result<(), VsockError> {
+fn send_envelope<W, T>(stream: &mut W, envelope: &Envelope<T>) -> Result<(), VsockError>
+where
+    W: Write,
+    Envelope<T>: Frame,
+{
+    let raw = envelope.to_raw_frame()?;
     if debug_wire::is_enabled("vsock") {
-        // Serialize only when the gate fires to avoid allocation on the default path.
-        if let Ok(bytes) = serde_json::to_vec(envelope) {
-            tracing::trace!(
-                direction = "out",
-                preview = %debug_wire::format_wire_preview(&bytes),
-                "vsock frame"
-            );
-        }
+        let bytes = encode_raw_envelope(raw.clone())?;
+        tracing::trace!(
+            direction = "out",
+            preview = %debug_wire::format_wire_preview(&bytes),
+            "vsock frame"
+        );
     }
-    m80_proto::write_frame(stream, envelope)?;
+    m80_proto::write_raw_frame(stream, raw)?;
     Ok(())
 }
 
@@ -156,7 +154,10 @@ impl Channel {
     }
 
     /// Send one [`Envelope`] over the channel.
-    pub fn send<T: Serialize>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError> {
+    pub fn send<T>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError>
+    where
+        Envelope<T>: Frame,
+    {
         send_envelope(&mut self.stream, envelope)
     }
 
@@ -173,31 +174,24 @@ impl Channel {
 
     /// Receive one [`Envelope`] from the channel.
     ///
-    /// When `M80_DEBUG_WIRE=vsock` (or `all`) is set, this takes a separate
-    /// read path that captures the raw NDJSON line into memory before parsing,
-    /// so the bytes can be logged. The default path uses `read_frame` directly
-    /// against the buffered reader. Keep both paths in sync if `read_frame`'s
-    /// framing assumptions change.
-    pub fn recv<U: DeserializeOwned>(&mut self) -> Result<Envelope<U>, VsockError> {
+    /// Receive one protobuf-framed [`Envelope`] from the channel.
+    pub fn recv<U>(&mut self) -> Result<Envelope<U>, VsockError>
+    where
+        Envelope<U>: Frame,
+    {
+        let envelope: Envelope<U> = m80_proto::read_frame(&mut self.buf_reader)?;
         if debug_wire::is_enabled("vsock") {
-            // Capture the raw NDJSON line for logging, then deserialize from the
-            // captured bytes. The limit mirrors the cap inside `read_frame`.
-            let limit = m80_proto::MAX_FRAME_BYTES as u64 + 2;
-            let mut raw_line: Vec<u8> = Vec::with_capacity(256);
-            self.buf_reader
-                .by_ref()
-                .take(limit)
-                .read_until(b'\n', &mut raw_line)
-                .map_err(VsockError::Io)?;
-            tracing::trace!(
-                direction = "in",
-                preview = %debug_wire::format_wire_preview(&raw_line),
-                "vsock frame"
-            );
-            let envelope = m80_proto::read_frame(&mut std::io::Cursor::new(raw_line))?;
-            return Ok(envelope);
+            tracing::trace!(direction = "in", kind = %envelope.kind, "vsock frame");
         }
-        let envelope = m80_proto::read_frame(&mut self.buf_reader)?;
+        Ok(envelope)
+    }
+
+    /// Receive one protobuf frame without choosing the payload type first.
+    pub fn recv_raw(&mut self) -> Result<RawEnvelope, VsockError> {
+        let envelope = m80_proto::read_raw_frame(&mut self.buf_reader)?;
+        if debug_wire::is_enabled("vsock") {
+            tracing::trace!(direction = "in", kind = %envelope.kind, "vsock frame");
+        }
         Ok(envelope)
     }
 
@@ -224,7 +218,10 @@ impl Drop for Channel {
 
 impl ChannelSender {
     /// Send one [`Envelope`] over the cloned write half.
-    pub fn send<T: Serialize>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError> {
+    pub fn send<T>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError>
+    where
+        Envelope<T>: Frame,
+    {
         send_envelope(&mut self.stream, envelope)
     }
 

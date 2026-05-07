@@ -1,8 +1,8 @@
-//! Bead m80-g3x.2.1 — each envelope serializes as exactly one NDJSON record.
+//! Each envelope serializes as one length-prefixed protobuf frame.
 
 mod common;
 
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 use m80_proto::{read_frame, write_frame, Envelope, ExecRequest};
 
@@ -14,8 +14,14 @@ fn make_request(program: &str) -> Envelope<ExecRequest> {
     Envelope::new(req)
 }
 
+fn read_len(cursor: &mut Cursor<&Vec<u8>>) -> usize {
+    let mut prefix = [0u8; 4];
+    cursor.read_exact(&mut prefix).unwrap();
+    u32::from_be_bytes(prefix) as usize
+}
+
 #[test]
-fn serializes_one_record_per_line() {
+fn serializes_one_length_prefixed_frame_per_envelope() {
     let e1 = make_request("/bin/true");
     let e2 = make_request("/bin/false");
     let e3 = make_request("/bin/echo");
@@ -25,17 +31,13 @@ fn serializes_one_record_per_line() {
     write_frame(&mut buf, &e2).unwrap();
     write_frame(&mut buf, &e3).unwrap();
 
-    let newline_count = buf.iter().filter(|&&b| b == b'\n').count();
-    assert_eq!(newline_count, 3, "expected exactly 3 newlines for 3 frames");
-    assert_eq!(*buf.last().unwrap(), b'\n');
-
-    let content = std::str::from_utf8(&buf).unwrap();
-    let lines: Vec<&str> = content.split('\n').collect();
-    assert_eq!(lines.len(), 4);
-    assert_eq!(lines[3], "");
-    for line in &lines[..3] {
-        let _: serde_json::Value = serde_json::from_str(line).unwrap();
+    let mut prefix_cursor = Cursor::new(&buf);
+    for _ in 0..3 {
+        let len = read_len(&mut prefix_cursor);
+        assert!(len > 0, "protobuf frame body must not be empty");
+        prefix_cursor.set_position(prefix_cursor.position() + len as u64);
     }
+    assert_eq!(prefix_cursor.position() as usize, buf.len());
 
     let mut cursor = Cursor::new(&buf);
     let r1: Envelope<ExecRequest> = read_frame(&mut cursor).unwrap();

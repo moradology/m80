@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use m80_jailer::{BindMode, Plan, PlanStep};
 use m80_jailer::JailerConfig;
+use m80_jailer::{BindMode, Plan, PlanStep};
 
 /// Minimal `JailerConfig` (uid/gid 3000, no bindings, no sockets). Tests
 /// extend this with their own bindings/sockets as needed.

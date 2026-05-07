@@ -1,7 +1,8 @@
 # `m80-proto`
 
-The wire format that m80's host and guest speak. Pure types + serde; no I/O,
-no policy, no transport.
+The wire format that m80's host and guest speak. Pure types plus a checked-in
+protobuf schema, generated wire structs, and framing helpers; no policy and no
+transport ownership.
 
 ## Reason for being
 
@@ -19,19 +20,26 @@ The load-bearing wire invariants — the things consumers cannot derive from
   and `negotiate_version` is exact-match. There is no rolling-upgrade window
   and no host-side translation shim. Bumping `PROTOCOL_VERSION` is an atomic
   redeploy of both peers.
-- **NDJSON, one record per line, 4 MiB cap.** The size check is strict `>`:
-  exactly `MAX_FRAME_BYTES` passes; `MAX_FRAME_BYTES + 1` is rejected. The
-  cap is on encoded JSON, not raw `Vec<u8>` bytes (~33% base64 inflation).
-- **Bounded read.** `read_frame` reads at most `MAX_FRAME_BYTES + 2` bytes
-  through `Read::take`; an unbounded peer cannot grow the host's heap.
+- **Checked-in schema.** `proto/m80/wire.proto` owns the protobuf field tags.
+  `build.rs` compiles it with `prost-build` and a vendored `protoc`, then the
+  crate exposes a narrow typed facade over the generated wire structs.
+- **Length-prefixed protobuf, 4 MiB cap.** Every frame is a four-byte
+  big-endian body length followed by one protobuf envelope body. The size
+  check is strict `>`: exactly `MAX_FRAME_BYTES` passes;
+  `MAX_FRAME_BYTES + 1` is rejected. The cap is on the encoded protobuf body.
+- **Bounded read.** `read_frame` reads one fixed-size prefix, rejects an
+  oversized announced body before allocation, and then reads exactly that
+  body length. An unbounded peer cannot grow the host's heap.
 - **Three end-of-read shapes.** Peer closed cleanly before sending →
-  `Io(UnexpectedEof)`. Peer closed mid-frame (no `\n`, under cap) →
-  `Io(UnexpectedEof)`. Cap hit without `\n` → `OversizedPayload`.
-- **`kind` discriminator on `Envelope`** — reserved for v0.2+ payload-type
-  extension without bumping `PROTOCOL_VERSION`. Stamped by the constructors
-  via the `Payload` trait.
+  `Io(UnexpectedEof)`. Peer closed mid-frame after a valid prefix →
+  `Io(UnexpectedEof)`. Announced body length over the cap →
+  `OversizedPayload`.
+- **`kind` discriminator on `Envelope`** — a redundant dispatch and diagnostics
+  label stamped by constructors via the `Payload` trait. The protobuf `oneof`
+  is the typed payload. A `kind`/payload mismatch fails closed; adding or
+  removing payload variants still requires an atomic `PROTOCOL_VERSION` bump.
 - **`ExecResponse::truncated: Option<bool>`** — whether stdout/stderr was
-  truncated; `skip_serializing_if` so wire bytes are unchanged when absent.
+  truncated in buffered responses reconstructed from stream chunks.
 - **Adding an `ExecStatus` variant requires a `PROTOCOL_VERSION` bump.**
   No `#[non_exhaustive]` escape hatch — wire compat is the contract.
 - **`request_id` is opaque.** The protocol echoes it back unchanged and
@@ -43,8 +51,7 @@ The load-bearing wire invariants — the things consumers cannot derive from
   here once; that epic imports without re-declaring.
   See `docs/behaviors/lifecycle/exec-cancellation.md`.
 - **Streaming exec is opt-in (shipped v0.1).** `ExecRequest::streaming: bool`
-  with `default` + `skip_serializing_if`, so `streaming == false` is
-  wire-identical to a non-streaming request. When `streaming == true`, the
+  selects the real-time response shape. When `streaming == true`, the
   response is zero or more `exec_stdout` / `exec_stderr` envelopes followed
   by exactly one `exec_exit` terminal envelope. All frames carry the original
   `Envelope::request_id`. See `docs/design/wire-streaming-exec.md`.
@@ -60,10 +67,14 @@ The load-bearing wire invariants — the things consumers cannot derive from
   `file_write_begin` / `file_write_chunk` / `file_write_commit` sequence
   move bytes without spawning a shell. Responses carry `Option<FileError>`
   with `NotFound`, `PermissionDenied`, `IsADirectory`, `NotADirectory`,
-  `SymlinkRejected`, `TooLarge`, or `Io`. `FileRead` defaults to
-  `FILE_READ_LIMIT_DEFAULT` (16 MiB) and reports `truncated`; chunked write
-  returns an upload id and acks each chunk. See
-  `docs/design/wire-fops.md`.
+  `SymlinkRejected`, `TooLarge`, `InvalidSequence`, or `Io`. `FileRead` defaults to
+  `FILE_READ_LIMIT_DEFAULT` (16 MiB) and returns one or more
+  `file_read_chunk` frames ending in `done: true`; the terminal chunk reports
+  `truncated` or `error`. Direct writes are bounded by the active encoded
+  protobuf frame cap before guestd dispatch sees them. Chunked write returns an
+  upload id and acks each chunk with the matching upload id and sequence.
+  Byte-heavy read/write chunk frames use protobuf `bytes` fields on
+  the active wire, not base64 strings. See `docs/design/wire-fops.md`.
 - **Guest metrics are fixed-shape.** `metrics_request` has an empty payload;
   `metrics_response` carries typed CPU tick counters from `/proc/stat`, memory
   gauges from `/proc/meminfo`, and guestd request/error counters. There is no
@@ -87,12 +98,14 @@ The load-bearing wire invariants — the things consumers cannot derive from
 
 ## Dependencies
 
-`serde`, `serde_json`, `base64`, `thiserror`. None of the other m80 crates.
+`prost`, `prost-derive`, `thiserror`. Build-only dependencies are
+`prost-build`, `protoc-bin-vendored`, and `indexmap` pinned for the workspace
+Rust toolchain. None of the other m80 crates.
 
 ## Public Surface
 
-File-op exports: `FileReadRequest/Response`, `FileWriteRequest/Response`,
-`FileListRequest/Response`, `FileStatRequest/Response`,
+File-op exports: `FileReadRequest`, `FileReadChunk`,
+`FileReadResponse`, `FileWriteRequest/Response`, `FileListRequest/Response`, `FileStatRequest/Response`,
 `FileRemoveRequest/Response`, `FileWriteBeginRequest/Response`,
 `FileWriteChunkRequest/Response`, `FileWriteCommitRequest/Response`,
 `FileError`, `FileKind`, `DirEntry`, `FileStat`, `FILE_READ_LIMIT_DEFAULT`,
@@ -101,3 +114,8 @@ and their `PAYLOAD_KIND_*` constants.
 Guest metrics exports: `MetricsRequest`, `MetricsResponse`,
 `GuestCpuMetrics`, `GuestMemMetrics`, and
 `PAYLOAD_KIND_METRICS_REQUEST` / `PAYLOAD_KIND_METRICS_RESPONSE`.
+
+Generated wire module: `wire::generated` is generated from
+`proto/m80/wire.proto` and marked `#[doc(hidden)]`. Normal callers use the typed
+payload structs and frame helpers; generated structs are only for protocol
+plumbing and variant work inside `m80-proto`.

@@ -6,8 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit,
-    ExecRequest, ExecStatus, ExecStderr, ExecStdout, PAYLOAD_KIND_CANCEL_ACK,
+    read_frame, read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope,
+    ExecExit, ExecRequest, ExecStatus, ExecStderr, ExecStdout, PAYLOAD_KIND_CANCEL_ACK,
     PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
 };
 
@@ -50,11 +50,11 @@ fn run_streaming_with_open_reader(input: Vec<u8>) -> Vec<u8> {
     out
 }
 
-fn read_raw_frames(bytes: &[u8]) -> Vec<Envelope<serde_json::Value>> {
+fn read_raw_frames(bytes: &[u8]) -> Vec<m80_proto::RawEnvelope> {
     let mut cursor = Cursor::new(bytes);
     let mut frames = Vec::new();
     while (cursor.position() as usize) < bytes.len() {
-        frames.push(read_frame(&mut cursor).expect("read raw frame"));
+        frames.push(read_raw_frame(&mut cursor).expect("read raw frame"));
     }
     frames
 }
@@ -90,14 +90,20 @@ fn streaming_stdout_stderr_chunks_end_with_exit() {
     for frame in &frames[..frames.len() - 1] {
         match frame.kind.as_str() {
             PAYLOAD_KIND_EXEC_STDOUT => {
-                let chunk: ExecStdout =
-                    serde_json::from_value(frame.payload.clone()).expect("stdout payload");
+                let chunk = frame
+                    .clone()
+                    .decode::<ExecStdout>()
+                    .expect("stdout payload")
+                    .payload;
                 stdout_seqs.push(chunk.seq);
                 stdout.extend(chunk.bytes);
             }
             PAYLOAD_KIND_EXEC_STDERR => {
-                let chunk: ExecStderr =
-                    serde_json::from_value(frame.payload.clone()).expect("stderr payload");
+                let chunk = frame
+                    .clone()
+                    .decode::<ExecStderr>()
+                    .expect("stderr payload")
+                    .payload;
                 stderr_seqs.push(chunk.seq);
                 stderr.extend(chunk.bytes);
             }
@@ -110,7 +116,13 @@ fn streaming_stdout_stderr_chunks_end_with_exit() {
     assert_eq!(stdout, b"out");
     assert_eq!(stderr, b"err");
 
-    let exit: ExecExit = serde_json::from_value(frames.last().unwrap().payload.clone()).unwrap();
+    let exit = frames
+        .last()
+        .unwrap()
+        .clone()
+        .decode::<ExecExit>()
+        .unwrap()
+        .payload;
     assert_eq!(exit.status, ExecStatus::Completed);
     assert_eq!(exit.exit_code, Some(7));
     assert_eq!(exit.total_stdout_bytes, 3);
@@ -127,7 +139,7 @@ fn streaming_no_output_still_sends_terminal_exit() {
 
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].kind, PAYLOAD_KIND_EXEC_EXIT);
-    let exit: ExecExit = serde_json::from_value(frames[0].payload.clone()).unwrap();
+    let exit = frames[0].clone().decode::<ExecExit>().unwrap().payload;
     assert_eq!(exit.status, ExecStatus::Completed);
     assert_eq!(exit.exit_code, Some(0));
     assert_eq!(exit.total_stdout_bytes, 0);
@@ -145,7 +157,7 @@ fn streaming_repeated_execs_each_end_in_one_terminal_frame() {
 
         assert_eq!(frames.len(), 1, "request {i} must emit only terminal exit");
         assert_eq!(frames[0].kind, PAYLOAD_KIND_EXEC_EXIT);
-        let exit: ExecExit = serde_json::from_value(frames[0].payload.clone()).unwrap();
+        let exit = frames[0].clone().decode::<ExecExit>().unwrap().payload;
         assert_eq!(exit.status, ExecStatus::Completed);
         assert_eq!(exit.exit_code, Some(0));
     }
@@ -276,7 +288,7 @@ fn streaming_timeout_kills_shell_spawned_grandchild() {
 
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].kind, PAYLOAD_KIND_EXEC_EXIT);
-    let exit: ExecExit = serde_json::from_value(frames[0].payload.clone()).unwrap();
+    let exit = frames[0].clone().decode::<ExecExit>().unwrap().payload;
     assert_eq!(exit.status, ExecStatus::TimedOut);
     assert!(
         elapsed < Duration::from_secs(5),

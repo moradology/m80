@@ -1,12 +1,14 @@
 mod common;
 
-use common::{HandshakeBehavior, spawn_fake_firecracker_uds};
+use common::{spawn_fake_firecracker_uds, HandshakeBehavior};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 #[test]
 fn drop_keeps_host_uds() {
-    let (_dir, path, server) =
-        spawn_fake_firecracker_uds(HandshakeBehavior::OkThenHold { port: 33333, hold_ms: 200 });
+    let (_dir, path, server) = spawn_fake_firecracker_uds(HandshakeBehavior::OkThenHold {
+        port: 33333,
+        hold_ms: 200,
+    });
 
     let channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
 
@@ -22,8 +24,10 @@ fn drop_keeps_host_uds() {
 
 #[test]
 fn close_keeps_host_uds() {
-    let (_dir, path, server) =
-        spawn_fake_firecracker_uds(HandshakeBehavior::OkThenHold { port: 44444, hold_ms: 200 });
+    let (_dir, path, server) = spawn_fake_firecracker_uds(HandshakeBehavior::OkThenHold {
+        port: 44444,
+        hold_ms: 200,
+    });
 
     let channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
 

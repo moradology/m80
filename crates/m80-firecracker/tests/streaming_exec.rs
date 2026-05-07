@@ -8,8 +8,7 @@ use std::time::Duration;
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, ExecChunk, ExecRequest, ExecStatus,
-    SandboxConfig,
+    Backend, BackendConfig, CgroupMode, ExecChunk, ExecRequest, ExecStatus, SandboxConfig,
 };
 
 fn backend() -> (Arc<Backend>, std::path::PathBuf) {

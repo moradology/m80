@@ -3,13 +3,13 @@ use std::os::unix::fs::PermissionsExt;
 
 use m80_proto::{
     read_frame, write_frame, DirEntry, Envelope, FileError, FileKind, FileListResponse,
-    FileReadRequest, FileReadResponse, FileRemoveRequest, FileRemoveResponse, FileStatRequest,
+    FileReadChunk, FileReadRequest, FileRemoveRequest, FileRemoveResponse, FileStatRequest,
     FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest,
     FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse, FileWriteRequest,
     FileWriteResponse,
 };
 
-fn frame<T: m80_proto::Payload + serde::Serialize>(payload: T) -> Vec<u8> {
+fn frame<T: m80_proto::Payload + Clone>(payload: T) -> Vec<u8> {
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &Envelope::new(payload)).unwrap();
     bytes
@@ -17,14 +17,43 @@ fn frame<T: m80_proto::Payload + serde::Serialize>(payload: T) -> Vec<u8> {
 
 fn handle(input: Vec<u8>) -> Vec<u8> {
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection_with_reader_ready(BufReader::new(Cursor::new(input)), &mut out, |_| true)
-        .unwrap();
+    m80_guestd::connection::handle_connection_with_reader_ready(
+        BufReader::new(Cursor::new(input)),
+        &mut out,
+        |_| true,
+    )
+    .unwrap();
     out
 }
 
-fn read_one<T: serde::de::DeserializeOwned>(bytes: Vec<u8>) -> T {
+fn read_one<T: m80_proto::Payload + Clone>(bytes: Vec<u8>) -> T {
     let env: Envelope<T> = read_frame(&mut Cursor::new(bytes)).unwrap();
     env.payload
+}
+
+fn read_file_chunks(bytes: Vec<u8>) -> Vec<FileReadChunk> {
+    let mut cursor = Cursor::new(bytes);
+    let mut chunks = Vec::new();
+    loop {
+        let env: Envelope<FileReadChunk> = read_frame(&mut cursor).unwrap();
+        let done = env.payload.done;
+        chunks.push(env.payload);
+        if done {
+            return chunks;
+        }
+    }
+}
+
+fn collect_read(chunks: &[FileReadChunk]) -> (Vec<u8>, bool, Option<FileError>) {
+    let mut bytes = Vec::new();
+    let mut truncated = false;
+    let mut error = None;
+    for chunk in chunks {
+        bytes.extend_from_slice(&chunk.bytes);
+        truncated = chunk.truncated;
+        error = chunk.error;
+    }
+    (bytes, truncated, error)
 }
 
 #[test]
@@ -33,14 +62,16 @@ fn file_read_returns_bytes() {
     let path = dir.path().join("a.txt");
     std::fs::write(&path, b"hello").unwrap();
 
-    let response: FileReadResponse = read_one(handle(frame(FileReadRequest {
+    let chunks = read_file_chunks(handle(frame(FileReadRequest {
         path: path.display().to_string(),
         max_bytes: None,
     })));
+    let (bytes, truncated, error) = collect_read(&chunks);
 
-    assert_eq!(response.bytes, b"hello");
-    assert!(!response.truncated);
-    assert_eq!(response.error, None);
+    assert_eq!(bytes, b"hello");
+    assert!(!truncated);
+    assert_eq!(error, None);
+    assert_eq!(chunks.last().unwrap().seq, 1);
 }
 
 #[test]
@@ -49,13 +80,38 @@ fn file_read_honors_max_bytes() {
     let path = dir.path().join("a.txt");
     std::fs::write(&path, b"abcdef").unwrap();
 
-    let response: FileReadResponse = read_one(handle(frame(FileReadRequest {
+    let chunks = read_file_chunks(handle(frame(FileReadRequest {
         path: path.display().to_string(),
         max_bytes: Some(3),
     })));
+    let (bytes, truncated, error) = collect_read(&chunks);
 
-    assert_eq!(response.bytes, b"abc");
-    assert!(response.truncated);
+    assert_eq!(bytes, b"abc");
+    assert!(truncated);
+    assert_eq!(error, None);
+}
+
+#[test]
+fn file_read_streams_large_file_in_multiple_chunks() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large.bin");
+    let mut expected = Vec::with_capacity(5 * 1024 * 1024 + 123);
+    for i in 0..(5 * 1024 * 1024 + 123) {
+        expected.push((i % 251) as u8);
+    }
+    std::fs::write(&path, &expected).unwrap();
+
+    let chunks = read_file_chunks(handle(frame(FileReadRequest {
+        path: path.display().to_string(),
+        max_bytes: Some(expected.len() as u64),
+    })));
+    let (bytes, truncated, error) = collect_read(&chunks);
+
+    assert_eq!(bytes, expected);
+    assert!(!truncated);
+    assert_eq!(error, None);
+    assert!(chunks.len() > 2);
+    assert!(chunks.last().unwrap().done);
 }
 
 #[test]
@@ -66,13 +122,15 @@ fn file_read_rejects_final_symlink() {
     std::fs::write(&target, b"secret").unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
 
-    let response: FileReadResponse = read_one(handle(frame(FileReadRequest {
+    let chunks = read_file_chunks(handle(frame(FileReadRequest {
         path: link.display().to_string(),
         max_bytes: None,
     })));
+    let (bytes, truncated, error) = collect_read(&chunks);
 
-    assert_eq!(response.error, Some(FileError::SymlinkRejected));
-    assert!(response.bytes.is_empty());
+    assert_eq!(error, Some(FileError::SymlinkRejected));
+    assert!(!truncated);
+    assert!(bytes.is_empty());
 }
 
 #[test]

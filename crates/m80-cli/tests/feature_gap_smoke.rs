@@ -9,7 +9,6 @@ use common::m80;
 
 use m80_cli::errors::{EXIT_CONFIG, EXIT_NOT_IMPLEMENTED};
 
-
 fn assert_feature_gap(args: &[&str], expected_stderr: &str) {
     let output = m80().args(args).output().unwrap();
     assert_eq!(output.status.code(), Some(EXIT_NOT_IMPLEMENTED));

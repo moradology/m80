@@ -65,7 +65,10 @@ impl Subtree {
             // one; otherwise propagate the original error unchanged.
             let controllers_path = parent.join("cgroup.controllers");
             if let Ok(controllers) = fs::read_to_string(&controllers_path) {
-                for name in REQUIRED_SUBTREE_CONTROL.split_whitespace().map(|s| s.trim_start_matches('+')) {
+                for name in REQUIRED_SUBTREE_CONTROL
+                    .split_whitespace()
+                    .map(|s| s.trim_start_matches('+'))
+                {
                     if !controllers.split_whitespace().any(|c| c == name) {
                         return Err(CgroupError::ControllerNotEnabled(name.to_owned()));
                     }

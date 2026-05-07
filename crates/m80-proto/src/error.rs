@@ -17,12 +17,10 @@ pub enum ProtoError {
     /// connection on this error; the stream is unrecoverable after a parse
     /// failure.
     #[error("malformed payload: {0}")]
-    MalformedPayload(serde_json::Error),
-    /// `serde_json::to_vec` failed while encoding a value for the wire.
-    /// All m80-proto types serialize cleanly; this fires only when an
-    /// external caller passes a `T: Serialize` whose impl returns an error.
+    MalformedPayload(String),
+    /// Protobuf encoding failed while building a frame.
     #[error("encode failed: {0}")]
-    EncodeFailed(serde_json::Error),
+    EncodeFailed(String),
     /// A frame exceeded [`MAX_FRAME_BYTES`].
     #[error("oversized payload: {size} bytes exceeds limit of {limit}")]
     OversizedPayload {

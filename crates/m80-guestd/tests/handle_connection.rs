@@ -202,6 +202,29 @@ fn cancel_mid_exec_kills_shell_spawned_grandchild() {
 }
 
 #[test]
+fn malformed_control_frame_aborts_inflight_exec_quickly() {
+    let mut input = request_frame(
+        make_request("sleep", vec!["60".into()], None, 30_000),
+        Some("req-malformed-control"),
+    );
+    input.extend_from_slice(&4u32.to_be_bytes());
+    input.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+
+    let start = std::time::Instant::now();
+    let out = run_handler(input);
+    let elapsed = start.elapsed();
+
+    assert!(
+        out.is_empty(),
+        "malformed control should close without a response"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "malformed control should abort the in-flight exec, elapsed={elapsed:?}"
+    );
+}
+
+#[test]
 fn timeout_kills_shell_spawned_grandchild() {
     let req = make_request(
         "/bin/sh",

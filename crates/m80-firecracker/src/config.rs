@@ -246,7 +246,6 @@ fn apply_toml_layer(
     Ok(())
 }
 
-
 /// Best-effort home directory lookup without an external crate.
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)

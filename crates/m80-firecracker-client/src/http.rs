@@ -98,7 +98,9 @@ fn response_end(buf: &[u8]) -> Option<usize> {
     let status = {
         let line = header_text.lines().next()?.trim_end_matches('\r');
         let mut p = line.splitn(3, ' ');
-        if !p.next()?.starts_with("HTTP/1.") { return None; }
+        if !p.next()?.starts_with("HTTP/1.") {
+            return None;
+        }
         p.next()?.parse::<u16>().ok()?
     };
     if matches!(status, 100..=199 | 204 | 304) {
@@ -140,16 +142,19 @@ fn parse_response(bytes: &[u8]) -> io::Result<Response> {
         let line = header_text.lines().next().and_then(|l| {
             let l = l.trim_end_matches('\r');
             let mut p = l.splitn(3, ' ');
-            if !p.next()?.starts_with("HTTP/1.") { return None; }
+            if !p.next()?.starts_with("HTTP/1.") {
+                return None;
+            }
             p.next()?.parse::<u16>().ok()
         });
-        line.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "malformed HTTP status line"))?
+        line.ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "malformed HTTP status line")
+        })?
     };
 
     let body = bytes[(header_end + 4)..].to_vec();
     Ok(Response { status, body })
 }
-
 
 #[cfg(test)]
 mod tests {

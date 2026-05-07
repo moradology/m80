@@ -1,0 +1,292 @@
+syntax = "proto3";
+
+package m80.wire;
+
+message WireEnvelope {
+  uint32 version = 1;
+  string kind = 2;
+  optional string request_id = 3;
+
+  oneof payload {
+    WireHandshakeMessage handshake = 10;
+    WireExecRequest exec_request = 11;
+    WireExecResponse exec_response = 12;
+    WireShutdownRequest shutdown_request = 13;
+    WireShutdownResponse shutdown_response = 14;
+    WireCancelRequest cancel_request = 15;
+    WireCancelAck cancel_ack = 16;
+    WireMetricsRequest metrics_request = 17;
+    WireMetricsResponse metrics_response = 18;
+    WireFileReadRequest file_read_request = 19;
+    WireFileReadResponse file_read_response = 20;
+    WireFileReadChunk file_read_chunk = 21;
+    WireFileWriteRequest file_write_request = 22;
+    WireFileWriteResponse file_write_response = 23;
+    WireFileListRequest file_list_request = 24;
+    WireFileListResponse file_list_response = 25;
+    WireFileStatRequest file_stat_request = 26;
+    WireFileStatResponse file_stat_response = 27;
+    WireFileRemoveRequest file_remove_request = 28;
+    WireFileRemoveResponse file_remove_response = 29;
+    WireFileWriteBeginRequest file_write_begin_request = 30;
+    WireFileWriteBeginResponse file_write_begin_response = 31;
+    WireFileWriteChunkRequest file_write_chunk_request = 32;
+    WireFileWriteChunkResponse file_write_chunk_response = 33;
+    WireFileWriteCommitRequest file_write_commit_request = 34;
+    WireFileWriteCommitResponse file_write_commit_response = 35;
+    WireExecStreamChunk exec_stdout = 36;
+    WireExecStreamChunk exec_stderr = 37;
+    WireExecExit exec_exit = 38;
+    WirePtyRequest pty_request = 39;
+    WirePtyBytes pty_input = 40;
+    WirePtyBytes pty_output = 41;
+    WirePtyResize pty_resize = 42;
+    WirePtyControl pty_control = 43;
+    WirePtyExit pty_exit = 44;
+  }
+}
+
+message WireHandshakeMessage {
+  uint32 version = 1;
+}
+
+message WireEnvVar {
+  string key = 1;
+  string value = 2;
+}
+
+message WireExecTiming {
+  uint64 spawned_at_unix_ms = 1;
+  uint64 exited_at_unix_ms = 2;
+  uint64 spawn_ms = 3;
+  uint64 run_ms = 4;
+}
+
+message WireExecRequest {
+  string program = 1;
+  repeated string args = 2;
+  optional string cwd = 3;
+  repeated WireEnvVar env = 4;
+  optional bytes stdin = 5;
+  optional uint64 timeout_ms = 6;
+  bool streaming = 7;
+}
+
+message WireExecResponse {
+  int32 status = 1;
+  optional int32 exit_code = 2;
+  bytes stdout = 3;
+  bytes stderr = 4;
+  optional bool truncated = 5;
+  optional WireExecTiming timing = 6;
+}
+
+message WireShutdownRequest {
+  optional string reason = 1;
+}
+
+message WireShutdownResponse {
+  int32 action = 1;
+}
+
+message WireCancelRequest {
+  string request_id = 1;
+}
+
+message WireCancelAck {
+  string request_id = 1;
+  int32 status = 2;
+}
+
+message WireMetricsRequest {}
+
+message WireGuestCpuMetrics {
+  uint64 user_ticks = 1;
+  uint64 nice_ticks = 2;
+  uint64 system_ticks = 3;
+  uint64 idle_ticks = 4;
+  uint64 iowait_ticks = 5;
+  uint64 irq_ticks = 6;
+  uint64 softirq_ticks = 7;
+  uint64 steal_ticks = 8;
+  uint64 guest_ticks = 9;
+  uint64 guest_nice_ticks = 10;
+  uint64 total_ticks = 11;
+}
+
+message WireGuestMemMetrics {
+  uint64 mem_total_bytes = 1;
+  uint64 mem_available_bytes = 2;
+  uint64 mem_free_bytes = 3;
+  uint64 buffers_bytes = 4;
+  uint64 cached_bytes = 5;
+  uint64 swap_total_bytes = 6;
+  uint64 swap_free_bytes = 7;
+}
+
+message WireMetricsResponse {
+  optional WireGuestCpuMetrics cpu = 1;
+  optional WireGuestMemMetrics mem = 2;
+  uint64 requests_total = 3;
+  uint64 errors_total = 4;
+}
+
+message WireFileReadRequest {
+  string path = 1;
+  optional uint64 max_bytes = 2;
+}
+
+message WireFileReadResponse {
+  bytes bytes = 1;
+  bool truncated = 2;
+  optional int32 error = 3;
+}
+
+message WireFileReadChunk {
+  uint64 seq = 1;
+  bytes bytes = 2;
+  bool done = 3;
+  bool truncated = 4;
+  optional int32 error = 5;
+}
+
+message WireFileWriteRequest {
+  string path = 1;
+  bytes bytes = 2;
+  optional uint32 mode = 3;
+}
+
+message WireFileWriteResponse {
+  uint64 bytes_written = 1;
+  optional int32 error = 2;
+}
+
+message WireFileListRequest {
+  string path = 1;
+}
+
+message WireDirEntry {
+  string name = 1;
+  int32 kind = 2;
+  uint64 size = 3;
+}
+
+message WireFileListResponse {
+  repeated WireDirEntry entries = 1;
+  optional int32 error = 2;
+}
+
+message WireFileStat {
+  int32 kind = 1;
+  uint64 size = 2;
+  int64 mtime_unix_ms = 3;
+  uint32 mode = 4;
+}
+
+message WireFileStatRequest {
+  string path = 1;
+}
+
+message WireFileStatResponse {
+  optional WireFileStat stat = 1;
+  optional int32 error = 2;
+}
+
+message WireFileRemoveRequest {
+  string path = 1;
+}
+
+message WireFileRemoveResponse {
+  bool removed = 1;
+  optional int32 error = 2;
+}
+
+message WireFileWriteBeginRequest {
+  string path = 1;
+  optional uint32 mode = 2;
+}
+
+message WireFileWriteBeginResponse {
+  optional string upload_id = 1;
+  optional int32 error = 2;
+}
+
+message WireFileWriteChunkRequest {
+  string upload_id = 1;
+  uint64 seq = 2;
+  bytes bytes = 3;
+}
+
+message WireFileWriteChunkResponse {
+  string upload_id = 1;
+  uint64 seq = 2;
+  uint64 bytes_written = 3;
+  optional int32 error = 4;
+}
+
+message WireFileWriteCommitRequest {
+  string upload_id = 1;
+}
+
+message WireFileWriteCommitResponse {
+  uint64 bytes_written = 1;
+  optional int32 error = 2;
+}
+
+message WireExecStreamChunk {
+  uint32 seq = 1;
+  bytes bytes = 2;
+}
+
+message WireExecExit {
+  int32 status = 1;
+  optional int32 exit_code = 2;
+  uint64 total_stdout_bytes = 3;
+  uint64 total_stderr_bytes = 4;
+  bool truncated = 5;
+  optional WireExecTiming timing = 6;
+}
+
+message WirePtySize {
+  uint32 rows = 1;
+  uint32 cols = 2;
+  optional uint32 pixel_width = 3;
+  optional uint32 pixel_height = 4;
+}
+
+message WirePtyRequest {
+  string program = 1;
+  repeated string args = 2;
+  optional string cwd = 3;
+  repeated WireEnvVar env = 4;
+  optional uint64 timeout_ms = 5;
+  optional WirePtySize size = 6;
+}
+
+message WirePtyBytes {
+  uint32 seq = 1;
+  bytes bytes = 2;
+}
+
+message WirePtyResize {
+  uint32 seq = 1;
+  optional WirePtySize size = 2;
+}
+
+message WirePtyControl {
+  uint32 seq = 1;
+  oneof event {
+    bool eof = 2;
+    int32 signal = 3;
+  }
+}
+
+message WirePtyExit {
+  int32 status = 1;
+  optional int32 exit_code = 2;
+  optional string exit_signal = 3;
+  uint64 total_input_bytes = 4;
+  uint64 total_output_bytes = 5;
+  bool truncated = 6;
+  optional WireExecTiming timing = 7;
+}

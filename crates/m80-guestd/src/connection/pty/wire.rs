@@ -3,12 +3,13 @@
 use std::io::{BufRead, Write};
 
 use m80_proto::{
-    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecStatus,
+    read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecStatus,
     PtyControl, PtyExit, PtyInput, PtyOutput, PtyResize, PAYLOAD_KIND_CANCEL_REQUEST,
     PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_INPUT, PAYLOAD_KIND_PTY_RESIZE,
 };
 
-use super::super::{failed_timing, write_payload_frame};
+use super::super::{failed_timing, protocol_log, write_payload_frame};
+use crate::guest_log::GuestLogPhase;
 
 pub(super) enum HostFrame {
     None,
@@ -23,6 +24,7 @@ pub(super) enum HostFrame {
 pub(super) fn poll_host_frame<R>(
     reader: &mut R,
     reader_ready: &mut impl FnMut(&mut R) -> bool,
+    request_id: Option<&str>,
 ) -> HostFrame
 where
     R: BufRead,
@@ -34,34 +36,76 @@ where
     match reader.fill_buf() {
         Ok([]) => HostFrame::Disconnect,
         Ok(_) => {
-            let next: Envelope<serde_json::Value> = match read_frame(reader) {
+            let next = match read_raw_frame(reader) {
                 Ok(env) => env,
-                Err(_) => return HostFrame::Disconnect,
+                Err(e) => {
+                    protocol_log::warn_proto_error(
+                        GuestLogPhase::Exec,
+                        request_id,
+                        Some("pty_control"),
+                        &e,
+                    );
+                    return HostFrame::Disconnect;
+                }
             };
             match next.kind.as_str() {
-                PAYLOAD_KIND_PTY_INPUT => match serde_json::from_value::<PtyInput>(next.payload) {
-                    Ok(input) => HostFrame::Input(input),
-                    Err(_) => HostFrame::Other,
+                PAYLOAD_KIND_PTY_INPUT => match next.decode::<PtyInput>() {
+                    Ok(env) => HostFrame::Input(env.payload),
+                    Err(e) => {
+                        protocol_log::warn_proto_error(
+                            GuestLogPhase::Exec,
+                            request_id,
+                            Some(PAYLOAD_KIND_PTY_INPUT),
+                            &e,
+                        );
+                        HostFrame::Other
+                    }
                 },
-                PAYLOAD_KIND_PTY_RESIZE => {
-                    match serde_json::from_value::<PtyResize>(next.payload) {
-                        Ok(resize) => HostFrame::Resize(resize),
-                        Err(_) => HostFrame::Other,
+                PAYLOAD_KIND_PTY_RESIZE => match next.decode::<PtyResize>() {
+                    Ok(env) => HostFrame::Resize(env.payload),
+                    Err(e) => {
+                        protocol_log::warn_proto_error(
+                            GuestLogPhase::Exec,
+                            request_id,
+                            Some(PAYLOAD_KIND_PTY_RESIZE),
+                            &e,
+                        );
+                        HostFrame::Other
                     }
-                }
-                PAYLOAD_KIND_PTY_CONTROL => {
-                    match serde_json::from_value::<PtyControl>(next.payload) {
-                        Ok(control) => HostFrame::Control(control),
-                        Err(_) => HostFrame::Other,
+                },
+                PAYLOAD_KIND_PTY_CONTROL => match next.decode::<PtyControl>() {
+                    Ok(env) => HostFrame::Control(env.payload),
+                    Err(e) => {
+                        protocol_log::warn_proto_error(
+                            GuestLogPhase::Exec,
+                            request_id,
+                            Some(PAYLOAD_KIND_PTY_CONTROL),
+                            &e,
+                        );
+                        HostFrame::Other
                     }
-                }
-                PAYLOAD_KIND_CANCEL_REQUEST => {
-                    match serde_json::from_value::<CancelRequest>(next.payload) {
-                        Ok(cancel) => HostFrame::Cancel(cancel),
-                        Err(_) => HostFrame::Other,
+                },
+                PAYLOAD_KIND_CANCEL_REQUEST => match next.decode::<CancelRequest>() {
+                    Ok(env) => HostFrame::Cancel(env.payload),
+                    Err(e) => {
+                        protocol_log::warn_proto_error(
+                            GuestLogPhase::Exec,
+                            request_id,
+                            Some(PAYLOAD_KIND_CANCEL_REQUEST),
+                            &e,
+                        );
+                        HostFrame::Other
                     }
+                },
+                _ => {
+                    protocol_log::warn_unexpected_frame(
+                        GuestLogPhase::Exec,
+                        request_id,
+                        Some("pty_control"),
+                        next.kind.as_str(),
+                    );
+                    HostFrame::Other
                 }
-                _ => HostFrame::Other,
             }
         }
         Err(_) => HostFrame::Disconnect,

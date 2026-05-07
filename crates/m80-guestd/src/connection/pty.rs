@@ -9,23 +9,23 @@ use std::thread;
 use std::time::Instant;
 
 use m80_proto::{
-    CancelStatus, Envelope, ExecTiming, PtyControlEvent, PtyExit, PtyOutput, PtyRequest,
+    CancelStatus, ExecTiming, PtyControlEvent, PtyExit, PtyOutput, PtyRequest, RawEnvelope,
 };
 use portable_pty::{native_pty_system, ExitStatus as PortableExitStatus};
 
+use super::{protocol_log, write_payload_frame};
 use process::{
     command_builder, join_output_thread, signal_pty_child, spawn_output_thread, terminal_status,
     terminate_pty_child, timeout_deadline, to_portable_size, PtyFrame,
 };
 use wire::{poll_host_frame, write_cancel_ack, write_pty_failed, HostFrame};
-use super::write_payload_frame;
 
 use crate::guest_log::{self, GuestLogPhase};
 
 use super::{unix_ms_now, ConnectionOutcome, POLL_INTERVAL};
 
 pub(super) fn handle_pty_exec<R, W>(
-    raw: Envelope<serde_json::Value>,
+    raw: RawEnvelope,
     mut reader: R,
     writer: &mut W,
     received_at: u64,
@@ -36,8 +36,8 @@ where
     W: Write,
 {
     let request_id = raw.request_id.clone();
-    let req: PtyRequest = match serde_json::from_value(raw.payload) {
-        Ok(r) => r,
+    let req: PtyRequest = match raw.decode::<PtyRequest>() {
+        Ok(env) => env.payload,
         Err(e) => {
             guest_log::warn(
                 GuestLogPhase::Exec,
@@ -132,6 +132,8 @@ where
     let mut output_done = false;
     let mut total_input_bytes = 0u64;
     let mut total_output_bytes = 0u64;
+    let mut expected_input_seq = 0u32;
+    let mut expected_control_seq = 0u32;
 
     loop {
         let mut progressed = false;
@@ -195,7 +197,7 @@ where
             progressed = true;
         }
 
-        match poll_host_frame(&mut reader, reader_ready) {
+        match poll_host_frame(&mut reader, reader_ready, request_id.as_deref()) {
             HostFrame::None => {}
             HostFrame::Other => {
                 progressed = true;
@@ -211,6 +213,20 @@ where
             }
             HostFrame::Input(input) => {
                 progressed = true;
+                if !accept_host_sequence(
+                    request_id.as_deref(),
+                    "pty_input",
+                    &mut expected_input_seq,
+                    input.seq,
+                ) {
+                    if exit_status.is_none() {
+                        let _ = terminate_pty_child(child.as_mut());
+                    }
+                    drop(pty_writer.take());
+                    drop(rx);
+                    join_output_thread(&mut output_thread);
+                    return Ok(ConnectionOutcome::Continue);
+                }
                 if let Some(handle) = pty_writer.as_mut() {
                     total_input_bytes = total_input_bytes.saturating_add(input.bytes.len() as u64);
                     if let Err(e) = handle.write_all(&input.bytes).and_then(|()| handle.flush()) {
@@ -229,6 +245,20 @@ where
             }
             HostFrame::Resize(resize) => {
                 progressed = true;
+                if !accept_host_sequence(
+                    request_id.as_deref(),
+                    "pty_control",
+                    &mut expected_control_seq,
+                    resize.seq,
+                ) {
+                    if exit_status.is_none() {
+                        let _ = terminate_pty_child(child.as_mut());
+                    }
+                    drop(pty_writer.take());
+                    drop(rx);
+                    join_output_thread(&mut output_thread);
+                    return Ok(ConnectionOutcome::Continue);
+                }
                 if let Err(e) = pair.master.resize(to_portable_size(resize.size)) {
                     guest_log::warn(
                         GuestLogPhase::Exec,
@@ -239,6 +269,20 @@ where
             }
             HostFrame::Control(control) => {
                 progressed = true;
+                if !accept_host_sequence(
+                    request_id.as_deref(),
+                    "pty_control",
+                    &mut expected_control_seq,
+                    control.seq,
+                ) {
+                    if exit_status.is_none() {
+                        let _ = terminate_pty_child(child.as_mut());
+                    }
+                    drop(pty_writer.take());
+                    drop(rx);
+                    join_output_thread(&mut output_thread);
+                    return Ok(ConnectionOutcome::Continue);
+                }
                 match control.event {
                     PtyControlEvent::Eof => {
                         drop(pty_writer.take());
@@ -331,4 +375,35 @@ where
             thread::sleep(POLL_INTERVAL);
         }
     }
+}
+
+fn accept_host_sequence(
+    request_id: Option<&str>,
+    stream_id: &str,
+    expected: &mut u32,
+    got: u32,
+) -> bool {
+    if got != *expected {
+        protocol_log::warn_sequence_mismatch(
+            GuestLogPhase::Exec,
+            request_id,
+            stream_id,
+            u64::from(*expected),
+            u64::from(got),
+        );
+        return false;
+    }
+
+    let Some(next) = expected.checked_add(1) else {
+        protocol_log::warn_sequence_mismatch(
+            GuestLogPhase::Exec,
+            request_id,
+            stream_id,
+            u64::from(*expected) + 1,
+            u64::from(got),
+        );
+        return false;
+    };
+    *expected = next;
+    true
 }

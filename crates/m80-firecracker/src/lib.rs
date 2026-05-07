@@ -26,7 +26,7 @@ pub use config::{
     backend_config_from_effective, load as load_config, load_from_paths as load_config_from_paths,
     ConfigFilePaths,
 };
-pub use error::{FcError, LifecycleFailureKind};
+pub use error::{FcError, LifecycleFailureKind, WireProtocolError};
 pub use layout::{
     boot_identity_path, console_log_path, firecracker_api_socket_path, rootfs_overlay_path,
     run_dir_path, scratch_image_path, vsock_socket_path, BOOT_IDENTITY_FILE, CONSOLE_LOG,

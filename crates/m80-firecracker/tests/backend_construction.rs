@@ -6,8 +6,6 @@ use std::sync::Arc;
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError};
 
-
-
 #[test]
 fn backend_reused_across_admissions_shares_admission_state() {
     let dir = tempfile::tempdir().unwrap();

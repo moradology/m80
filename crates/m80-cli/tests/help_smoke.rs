@@ -2,7 +2,6 @@
 //!
 //! Uses `assert_cmd` to run the actual binary.
 
-
 mod common;
 
 use common::m80;

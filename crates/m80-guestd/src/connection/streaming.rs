@@ -7,18 +7,19 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest,
+    read_raw_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest,
     ExecStatus, ExecStderr, ExecStdout, ExecTiming, PAYLOAD_KIND_CANCEL_REQUEST,
 };
 
 use crate::guest_log::{self, GuestLogPhase};
 
 use super::{
-    build_child_command, failed_timing, unix_ms_now, write_payload_frame, ConnectionOutcome,
-    MAX_TIMEOUT_MS, POLL_INTERVAL,
+    build_child_command, failed_timing, protocol_log, unix_ms_now, write_payload_frame,
+    ConnectionOutcome, MAX_TIMEOUT_MS, POLL_INTERVAL,
 };
 
 const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
+const STREAM_CHANNEL_BOUND: usize = 1;
 
 enum StreamFrame {
     Stdout { seq: u32, bytes: Vec<u8> },
@@ -75,7 +76,12 @@ where
     let mut child = match build_child_command(&req).spawn() {
         Ok(child) => child,
         Err(e) => {
-            write_spawn_failed(writer, &request_id, received_at, format!("spawn failed: {e}"));
+            write_spawn_failed(
+                writer,
+                &request_id,
+                received_at,
+                format!("spawn failed: {e}"),
+            );
             return Ok(ConnectionOutcome::Continue);
         }
     };
@@ -98,7 +104,7 @@ where
 
     let stdout_handle = child.stdout.take().expect("stdout piped");
     let stderr_handle = child.stderr.take().expect("stderr piped");
-    let (tx, rx) = mpsc::sync_channel::<StreamFrame>(1);
+    let (tx, rx) = mpsc::sync_channel::<StreamFrame>(STREAM_CHANNEL_BOUND);
     let mut threads = StreamThreads {
         stdout: Some(spawn_stream_thread(
             stdout_handle,
@@ -176,7 +182,7 @@ where
             progressed = true;
         }
 
-        match poll_control_frame(&mut reader, reader_ready) {
+        match poll_control_frame(&mut reader, reader_ready, request_id.as_deref()) {
             ControlFrame::None => {}
             ControlFrame::Other => {
                 progressed = true;
@@ -358,6 +364,7 @@ fn write_spawn_failed<W: Write>(
 fn poll_control_frame<R>(
     reader: &mut R,
     reader_ready: &mut impl FnMut(&mut R) -> bool,
+    request_id: Option<&str>,
 ) -> ControlFrame
 where
     R: BufRead,
@@ -369,16 +376,38 @@ where
     match reader.fill_buf() {
         Ok([]) => ControlFrame::Disconnect,
         Ok(_) => {
-            let next: Envelope<serde_json::Value> = match read_frame(reader) {
+            let next = match read_raw_frame(reader) {
                 Ok(env) => env,
-                Err(_) => return ControlFrame::Disconnect,
+                Err(e) => {
+                    protocol_log::warn_proto_error(
+                        GuestLogPhase::Exec,
+                        request_id,
+                        Some("control"),
+                        &e,
+                    );
+                    return ControlFrame::Disconnect;
+                }
             };
             if next.kind == PAYLOAD_KIND_CANCEL_REQUEST {
-                match serde_json::from_value::<CancelRequest>(next.payload) {
-                    Ok(req) => ControlFrame::Cancel(req),
-                    Err(_) => ControlFrame::Other,
+                match next.decode::<CancelRequest>() {
+                    Ok(env) => ControlFrame::Cancel(env.payload),
+                    Err(e) => {
+                        protocol_log::warn_proto_error(
+                            GuestLogPhase::Exec,
+                            request_id,
+                            Some(PAYLOAD_KIND_CANCEL_REQUEST),
+                            &e,
+                        );
+                        ControlFrame::Other
+                    }
                 }
             } else {
+                protocol_log::warn_unexpected_frame(
+                    GuestLogPhase::Exec,
+                    request_id,
+                    Some("control"),
+                    next.kind.as_str(),
+                );
                 ControlFrame::Other
             }
         }
@@ -432,5 +461,30 @@ fn cancel_status_from_group_signals(
         (Err(e), _) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
         (_, Err(e)) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
         _ => CancelStatus::Cancelled,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_frame_channel_is_bounded_to_one_waiting_frame() {
+        let (tx, _rx) = mpsc::sync_channel::<StreamFrame>(STREAM_CHANNEL_BOUND);
+
+        assert!(tx
+            .try_send(StreamFrame::Stdout {
+                seq: 0,
+                bytes: vec![1, 2, 3],
+            })
+            .is_ok());
+
+        let err = tx
+            .try_send(StreamFrame::Stderr {
+                seq: 0,
+                bytes: vec![4, 5, 6],
+            })
+            .expect_err("second frame must block behind slow host writer");
+        assert!(matches!(err, mpsc::TrySendError::Full(_)));
     }
 }

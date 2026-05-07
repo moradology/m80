@@ -22,6 +22,9 @@
 //! 4. `RunningSandbox::stop` tears down the VM cleanly.
 //! 5. `StoppedSandbox::delete` removes the run-dir.
 
+use std::io::Write as _;
+use std::process::{Command, Stdio};
+
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn end_to_end_real_kvm_boot_exec_stop_delete() {
@@ -129,7 +132,8 @@ fn end_to_end_real_kvm_file_ops() {
         .expect("stat_file");
     assert_eq!(stat.size, written);
 
-    let blob = vec![b'x'; 5 * 1024 * 1024];
+    let blob = deterministic_payload((5 * 1024 * 1024) + 123);
+    let expected_hash = sha256_hex_bytes(&blob);
     let uploaded = running
         .upload_file_chunked(
             "/tmp/m80-fileops-big.bin",
@@ -139,15 +143,118 @@ fn end_to_end_real_kvm_file_ops() {
         )
         .expect("upload_file_chunked");
     assert_eq!(uploaded, blob.len() as u64);
+    let stat = running
+        .stat_file("/tmp/m80-fileops-big.bin")
+        .expect("stat uploaded blob");
+    assert_eq!(stat.size, blob.len() as u64);
+    let guest_hash = running
+        .exec(m80_proto::ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                "bytes=$(wc -c < /tmp/m80-fileops-big.bin); \
+                 hash=$(sha256sum /tmp/m80-fileops-big.bin | cut -d ' ' -f1); \
+                 printf '%s %s\\n' \"$bytes\" \"$hash\""
+                    .into(),
+            ],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(10_000),
+            streaming: false,
+        })
+        .expect("guest hash uploaded blob");
+    assert_eq!(guest_hash.status, m80_proto::ExecStatus::Completed);
+    assert_eq!(guest_hash.exit_code, Some(0));
+    let guest_hash_stdout = String::from_utf8_lossy(&guest_hash.stdout);
+    assert_eq!(
+        guest_hash_stdout.trim(),
+        format!("{} {expected_hash}", blob.len())
+    );
+
+    running
+        .exec(m80_proto::ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                "cp /tmp/m80-fileops-big.bin /tmp/m80-fileops-roundtrip.bin".into(),
+            ],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(10_000),
+            streaming: false,
+        })
+        .expect("copy uploaded blob inside guest");
     let (read_blob, truncated) = running
-        .read_file("/tmp/m80-fileops-big.bin", Some(blob.len() as u64))
+        .read_file("/tmp/m80-fileops-roundtrip.bin", Some(blob.len() as u64))
         .expect("read uploaded blob");
     assert_eq!(read_blob, blob);
+    assert_eq!(sha256_hex_bytes(&read_blob), expected_hash);
     assert!(!truncated);
+    assert_no_protocol_warnings(&run_root);
 
     running
         .remove_file("/tmp/m80-fileops.txt")
         .expect("remove_file");
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
+}
+
+fn deterministic_payload(len: usize) -> Vec<u8> {
+    let mut state = 0x4d80_cafe_u64;
+    let mut out = Vec::with_capacity(len);
+    for _ in 0..len {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        out.push((state >> 32) as u8);
+    }
+    out
+}
+
+fn sha256_hex_bytes(bytes: &[u8]) -> String {
+    let mut child = Command::new("sha256sum")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn sha256sum");
+    child
+        .stdin
+        .as_mut()
+        .expect("sha256sum stdin")
+        .write_all(bytes)
+        .expect("write sha256sum stdin");
+    let output = child.wait_with_output().expect("wait sha256sum");
+    assert!(output.status.success(), "sha256sum failed: {output:?}");
+    String::from_utf8(output.stdout)
+        .expect("sha256sum utf8")
+        .split_whitespace()
+        .next()
+        .expect("sha256 hex")
+        .to_owned()
+}
+
+fn assert_no_protocol_warnings(run_root: &std::path::Path) {
+    let mut text = String::new();
+    for entry in std::fs::read_dir(run_root).expect("read run root") {
+        let path = entry.expect("run root entry").path();
+        for name in ["console.log", "diagnostics.jsonl"] {
+            let file = path.join(name);
+            if let Ok(contents) = std::fs::read_to_string(file) {
+                text.push_str(&contents);
+            }
+        }
+    }
+    for needle in [
+        "OversizedPayload",
+        "oversized payload",
+        "malformed frame",
+        "malformed payload",
+        "unexpected EOF",
+        "disconnect before terminal",
+    ] {
+        assert!(
+            !text.contains(needle),
+            "unexpected protocol warning {needle:?} in run logs:\n{text}"
+        );
+    }
 }

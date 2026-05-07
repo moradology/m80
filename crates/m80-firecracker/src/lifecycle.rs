@@ -4,6 +4,7 @@
 mod exec;
 mod fileops;
 mod metrics;
+mod protocol;
 mod stopped;
 
 use std::path::{Path, PathBuf};

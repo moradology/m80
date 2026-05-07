@@ -6,8 +6,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use m80_proto::{
-    write_frame, Envelope, GuestCpuMetrics, GuestMemMetrics, MetricsResponse,
-    PAYLOAD_KIND_METRICS_REQUEST,
+    write_frame, Envelope, GuestCpuMetrics, GuestMemMetrics, MetricsRequest, MetricsResponse,
+    RawEnvelope, PAYLOAD_KIND_METRICS_REQUEST,
 };
 
 static REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -26,7 +26,7 @@ pub(super) fn record_error() {
 }
 
 pub(super) fn handle_metrics<R, W>(
-    raw: Envelope<serde_json::Value>,
+    raw: RawEnvelope,
     _reader: R,
     writer: &mut W,
 ) -> anyhow::Result<crate::connection::ConnectionOutcome>
@@ -34,14 +34,15 @@ where
     R: BufRead,
     W: Write,
 {
-    if let Err(e) = serde_json::from_value::<m80_proto::MetricsRequest>(raw.payload) {
+    let request_id = raw.request_id.clone();
+    if let Err(e) = raw.decode::<MetricsRequest>() {
         record_error();
         anyhow::bail!("malformed metrics_request payload: {e:#}");
     }
     let response = collect_metrics().inspect_err(|_| {
         record_error();
     })?;
-    let out_env = match raw.request_id {
+    let out_env = match request_id {
         Some(request_id) => Envelope::with_request_id(response, request_id),
         None => Envelope::new(response),
     };

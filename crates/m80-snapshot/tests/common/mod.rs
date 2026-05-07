@@ -95,5 +95,8 @@ pub fn assert_round_trips<T>(
 {
     write(&value, path).expect("write must succeed");
     let restored = read(path).expect("read must succeed");
-    assert_eq!(value, restored, "round-tripped value must equal the original");
+    assert_eq!(
+        value, restored,
+        "round-tripped value must equal the original"
+    );
 }

@@ -1,11 +1,12 @@
 use std::os::unix::net::UnixStream;
 
-use m80_firecracker::{ExecRequest, FcError, WarmPool};
+use m80_firecracker::{FcError, WarmPool};
 
 use super::control::{
     self, WarmControlResponse, WarmErrorResponse, WarmRunResult, WarmStreamFrame,
 };
 use super::status::{self, WarmOwnerIdentity};
+use crate::cmds::proto_json::ExecRequestJson;
 
 pub(super) fn handle_run(
     pool: &WarmPool,
@@ -13,7 +14,7 @@ pub(super) fn handle_run(
     profile: Option<String>,
     egress: &str,
     request_id: String,
-    request: ExecRequest,
+    request: ExecRequestJson,
     accepting_leases: bool,
 ) -> WarmControlResponse {
     if let Err(e) = validate_run_compatibility(identity, profile, egress, accepting_leases) {
@@ -35,7 +36,7 @@ pub(super) fn handle_run(
     let run_dir = lease.run_dir().display().to_string();
     let reset_decision = format!("{:?}", lease.reset_decision());
     let discard_reason = format!("{:?}", lease.discard_reason());
-    let response = match lease.exec_with_request_id(request, request_id.clone()) {
+    let response = match lease.exec_with_request_id(request.into(), request_id.clone()) {
         Ok(response) => response,
         Err(e) => {
             let _ = lease.discard();
@@ -53,7 +54,7 @@ pub(super) fn handle_run(
     }
     WarmControlResponse::Run(WarmRunResult {
         request_id,
-        response,
+        response: response.into(),
         reset_decision,
         discard_reason,
         run_dir,
@@ -89,7 +90,7 @@ pub(super) fn handle_run_streaming(
     let run_dir = lease.run_dir().display().to_string();
     let reset_decision = format!("{:?}", lease.reset_decision());
     let discard_reason = format!("{:?}", lease.discard_reason());
-    let exit = lease.exec_streaming_with_request_id(request, request_id.clone(), |chunk| {
+    let exit = lease.exec_streaming_with_request_id(request.into(), request_id.clone(), |chunk| {
         control::write_stream_frame(stream, &control::stream_frame_for_chunk(chunk))
     });
     let exit = match exit {
@@ -106,7 +107,7 @@ pub(super) fn handle_run_streaming(
     }
     let frame = WarmStreamFrame::Exit {
         request_id,
-        exit,
+        exit: exit.into(),
         reset_decision,
         discard_reason,
         run_dir,
@@ -118,7 +119,7 @@ pub(super) struct StreamingRun {
     pub(super) profile: Option<String>,
     pub(super) egress: String,
     pub(super) request_id: String,
-    pub(super) request: ExecRequest,
+    pub(super) request: ExecRequestJson,
     pub(super) accepting_leases: bool,
 }
 
@@ -161,8 +162,8 @@ mod tests {
     use std::sync::Arc;
 
     use m80_firecracker::{
-        Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig, SnapshotPaths,
-        WarmPoolConfig,
+        Backend, BackendConfig, CgroupMode, ExecRequest, NetworkPolicy, SandboxConfig,
+        SnapshotPaths, WarmPoolConfig,
     };
 
     use super::*;
@@ -185,7 +186,7 @@ mod tests {
             Some("minimal".to_owned()),
             "none",
             "req-empty-pool".to_owned(),
-            ready_probe(),
+            ready_probe().into(),
             true,
         );
 

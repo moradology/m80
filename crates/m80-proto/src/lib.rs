@@ -1,41 +1,43 @@
-//! Wire envelope and NDJSON framing for m80 host↔guest communication.
+//! Wire envelope and protobuf framing for m80 host↔guest communication.
 //!
 //! Both the host (`m80-firecracker`) and in-VM daemon (`m80-guestd`) depend on
 //! this crate. Every value that crosses the vsock boundary is wrapped in an
-//! [`Envelope`] and serialized as a single NDJSON record.
+//! [`Envelope`] and serialized as a single length-prefixed protobuf frame.
 //!
-//! Peers exchange a [`HandshakeMessage`] on every fresh connection before
-//! processing any application payload. [`negotiate_version`] validates the
-//! remote version. `Vec<u8>` fields encode as base64 (~33% inflation), so the
-//! practical raw-output budget per [`MAX_FRAME_BYTES`]-capped frame is around
-//! 2.9 MiB. The `kind` discriminator on [`Envelope`] reserves the extension
-//! point for v0.2+ payload types without bumping [`PROTOCOL_VERSION`].
+//! Every application frame carries a protocol `version`; the active host and
+//! guest fail closed when that value differs from [`PROTOCOL_VERSION`].
+//! [`negotiate_version`] is the exact-match policy helper used by tests and
+//! reserved control payloads. The launch ready signal is a separate one-byte
+//! boot-readiness check, not an application-channel prelude. `Vec<u8>` fields
+//! encode as protobuf `bytes` without base64 inflation; large transfers use
+//! bounded chunk frames rather than one unbounded envelope.
 
 #![deny(missing_docs)]
 
 mod error;
 mod framing;
+#[cfg(test)]
+mod test_helpers;
 mod types;
 mod version;
-#[cfg(test)]
-pub(crate) mod test_helpers;
+pub mod wire;
 
 pub use error::ProtoError;
-pub use framing::{read_frame, write_frame};
+pub use framing::{read_frame, read_raw_frame, write_frame, write_raw_frame, Frame};
 pub use types::{
     CancelAck, CancelRequest, CancelStatus, DirEntry, Envelope, ExecExit, ExecRequest,
     ExecResponse, ExecStatus, ExecStderr, ExecStdout, ExecTiming, FileError, FileKind,
-    FileListRequest, FileListResponse, FileReadRequest, FileReadResponse, FileRemoveRequest,
-    FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
-    FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
-    FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, GuestCpuMetrics, GuestMemMetrics,
-    HandshakeMessage, MetricsRequest, MetricsResponse, Payload, PtyControl, PtyControlEvent,
-    PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal, PtySize, ShutdownAction,
-    ShutdownRequest, ShutdownResponse, FILE_READ_LIMIT_DEFAULT, PAYLOAD_KIND_CANCEL_ACK,
-    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_REQUEST,
-    PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
-    PAYLOAD_KIND_FILE_LIST_REQUEST, PAYLOAD_KIND_FILE_LIST_RESPONSE,
-    PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_READ_RESPONSE,
+    FileListRequest, FileListResponse, FileReadChunk, FileReadRequest, FileReadResponse,
+    FileRemoveRequest, FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse,
+    FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse,
+    FileWriteCommitRequest, FileWriteCommitResponse, FileWriteRequest, FileWriteResponse,
+    GuestCpuMetrics, GuestMemMetrics, HandshakeMessage, MetricsRequest, MetricsResponse, Payload,
+    PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,
+    PtySize, ShutdownAction, ShutdownRequest, ShutdownResponse, FILE_READ_LIMIT_DEFAULT,
+    PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_EXIT,
+    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_EXEC_STDERR,
+    PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_FILE_LIST_REQUEST, PAYLOAD_KIND_FILE_LIST_RESPONSE,
+    PAYLOAD_KIND_FILE_READ_CHUNK, PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_READ_RESPONSE,
     PAYLOAD_KIND_FILE_REMOVE_REQUEST, PAYLOAD_KIND_FILE_REMOVE_RESPONSE,
     PAYLOAD_KIND_FILE_STAT_REQUEST, PAYLOAD_KIND_FILE_STAT_RESPONSE,
     PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST, PAYLOAD_KIND_FILE_WRITE_BEGIN_RESPONSE,
@@ -48,6 +50,7 @@ pub use types::{
     PAYLOAD_KIND_SHUTDOWN_RESPONSE,
 };
 pub use version::{negotiate_version, MAX_FRAME_BYTES, PROTOCOL_VERSION};
+pub use wire::{encode_raw_envelope, RawEnvelope};
 
 /// Default vsock port the in-VM `m80-guestd` daemon listens on.
 ///

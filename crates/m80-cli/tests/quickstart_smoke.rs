@@ -9,7 +9,6 @@ use std::process::Command as StdCommand;
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
 use serde_json::Value;
 
-
 fn run_checked(cmd: &mut StdCommand, label: &str) {
     let output = cmd.output().unwrap();
     assert!(

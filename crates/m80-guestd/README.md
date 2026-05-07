@@ -183,16 +183,17 @@ File operations are direct guestd handlers, not shell commands. Dispatch table:
 
 | Request kind | Response kind | Behavior |
 |---|---|---|
-| `file_read_request` | `file_read_response` | Open final component with `O_NOFOLLOW`, read up to `max_bytes` or `FILE_READ_LIMIT_DEFAULT`, report `truncated`. |
+| `file_read_request` | `file_read_chunk` stream | Open final component with `O_NOFOLLOW`, read up to `max_bytes` or `FILE_READ_LIMIT_DEFAULT`, emit bounded chunks, and finish with one terminal `done` chunk that reports `truncated` or `error`. |
 | `file_write_request` | `file_write_response` | Create/truncate one file with final-component `O_NOFOLLOW`; parent directory must exist; optional mode is applied after write. |
 | `file_list_request` | `file_list_response` | List one directory level with `DirEntry { name, kind, size }`; no recursion. |
 | `file_stat_request` | `file_stat_response` | `symlink_metadata` one path and return kind, size, mtime, mode. |
 | `file_remove_request` | `file_remove_response` | Remove one non-directory path; directories return `IsADirectory`. |
-| `file_write_begin/chunk/commit` | matching responses | Per-connection upload table writes `<path>.m80-upload.<upload_id>`, acks chunks, fsyncs, then renames on commit. Disconnect drops the table and removes temp files. |
+| `file_write_begin/chunk/commit` | matching responses | Per-connection upload table writes `<path>.m80-upload.<upload_id>`, requires zero-based monotonic chunk sequences, acks chunks, fsyncs, then renames on commit. Disconnect drops the table and removes temp files. |
 
-Errors are returned as `FileError` variants on the response. m80-guestd does
-not enforce path-prefix policy, chown/permissions verbs, recursive listing, or
-adapter-level tool semantics.
+Errors are returned as `FileError` variants on the response, including
+`InvalidSequence` for malformed chunked uploads. m80-guestd does not enforce
+path-prefix policy, chown/permissions verbs, recursive listing, or adapter-level
+tool semantics.
 
 Behavior details:
 
@@ -294,7 +295,6 @@ Binary-only; no library API. `m80-guestd --help` for flags.
 
 - `m80-proto` — wire envelope.
 - `vsock` — Linux `AF_VSOCK` listener.
-- `serde`, `serde_json`.
 - `thiserror`, `anyhow`, `tracing`, `nix`.
 - `scopeguard` — `defer!` macro used in `pivot_rootfs` for FD cleanup.
 - (Cross-compiled to the guest target. Runs on the kernel + rootfs that

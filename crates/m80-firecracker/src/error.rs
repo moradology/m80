@@ -15,6 +15,56 @@ use m80_snapshot::SnapshotError;
 use m80_storage::StorageError;
 use m80_vsock::VsockError;
 
+/// Host-side wire protocol failures after a vsock channel is open.
+#[derive(Debug, thiserror::Error)]
+pub enum WireProtocolError {
+    /// Peer sent bytes that could not be decoded as an m80 protobuf envelope.
+    #[error("malformed peer frame: {0}")]
+    MalformedPeer(String),
+    /// Peer announced or encoded a protobuf frame larger than the active cap.
+    #[error("oversized frame: {size} bytes exceeds limit of {limit}")]
+    OversizedFrame {
+        /// Observed frame size in bytes.
+        size: usize,
+        /// Configured frame cap in bytes.
+        limit: usize,
+    },
+    /// Peer used a protocol version this binary does not speak.
+    #[error("unsupported protocol version: expected {expected}, got {got}")]
+    UnsupportedVersion {
+        /// Version expected by this binary.
+        expected: u32,
+        /// Version observed on the wire.
+        got: u32,
+    },
+    /// Peer sent a well-formed frame whose kind is illegal in the current state.
+    #[error("unexpected frame in {context}: expected {expected}, got {got}")]
+    UnexpectedFrame {
+        /// State or request that was receiving the frame.
+        context: &'static str,
+        /// Expected frame kind or set.
+        expected: &'static str,
+        /// Actual frame kind.
+        got: String,
+    },
+    /// Peer disconnected before the request produced its required terminal frame.
+    #[error("disconnect before terminal frame in {context}")]
+    DisconnectBeforeTerminal {
+        /// State or request that was awaiting a terminal frame.
+        context: &'static str,
+    },
+    /// Peer sent a stream chunk out of sequence.
+    #[error("stream sequence mismatch in {stream}: expected {expected}, got {got}")]
+    SequenceMismatch {
+        /// Stream whose sequence was violated.
+        stream: &'static str,
+        /// Expected sequence number.
+        expected: u64,
+        /// Actual sequence number.
+        got: u64,
+    },
+}
+
 /// Bounded lifecycle failure vocabulary used in behavior docs and tests.
 ///
 /// The top-level [`FcError`] variants still preserve the concrete source
@@ -85,6 +135,9 @@ pub enum FcError {
     /// `Proto` variant.
     #[error("vsock: {0}")]
     Vsock(#[from] VsockError),
+    /// Host-side protocol failure after a vsock channel was established.
+    #[error("protocol: {0}")]
+    Protocol(WireProtocolError),
     /// Snapshot capture or restore failed.
     #[error("snapshot: {0}")]
     Snapshot(#[from] SnapshotError),

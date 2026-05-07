@@ -7,14 +7,11 @@ use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-
 use m80_observability::Phase;
 use m80_proto::{
     CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
-    ExecStatus, ExecStderr, ExecStdout, ExecTiming, ProtoError, PtyControl, PtyExit, PtyInput,
-    PtyOutput, PtyRequest, PtyResize, PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_EXEC_EXIT,
+    ExecStatus, ExecStderr, ExecStdout, ExecTiming, Payload, PtyControl, PtyExit, PtyInput,
+    PtyOutput, PtyRequest, PtyResize, RawEnvelope, PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_EXEC_EXIT,
     PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_PTY_EXIT,
     PAYLOAD_KIND_PTY_OUTPUT,
 };
@@ -169,12 +166,39 @@ impl RunningSandbox {
         let _event_forwarder = spawn_pty_event_forwarder(&channel, request_id.clone(), event_rx)?;
         let t = Instant::now();
         let mut output_total = 0u64;
+        let mut expected_output_seq = 0u32;
 
         loop {
-            let frame: Envelope<serde_json::Value> = channel.recv()?;
-            match frame.kind.as_str() {
+            let frame = match channel.recv_raw() {
+                Ok(frame) => frame,
+                Err(e) => {
+                    let err = super::protocol::recv_error(e, "pty exec");
+                    crate::diagnostics::record_protocol_error(
+                        &mut self.diagnostics,
+                        &self.vm_id,
+                        &request_id,
+                        "pty_exit",
+                        &err,
+                    );
+                    return Err(err);
+                }
+            };
+            let kind = frame.kind.clone();
+            match kind.as_str() {
                 PAYLOAD_KIND_PTY_OUTPUT => {
-                    let chunk: PtyOutput = decode_payload(frame.payload)?;
+                    let chunk = decode_frame::<PtyOutput>(frame)?;
+                    if let Err(err) =
+                        check_stream_sequence("pty_output", &mut expected_output_seq, chunk.seq)
+                    {
+                        crate::diagnostics::record_protocol_error(
+                            &mut self.diagnostics,
+                            &self.vm_id,
+                            &request_id,
+                            "pty_output",
+                            &err,
+                        );
+                        return Err(err);
+                    }
                     output_total = output_total.saturating_add(chunk.bytes.len() as u64);
                     on_output(PtyOutputChunk {
                         seq: chunk.seq,
@@ -182,7 +206,7 @@ impl RunningSandbox {
                     })?;
                 }
                 PAYLOAD_KIND_PTY_EXIT => {
-                    let exit: PtyExit = decode_payload(frame.payload)?;
+                    let exit = decode_frame::<PtyExit>(frame)?;
                     phase_event("pty_recv", &self.vm_id, t.elapsed());
                     self.last_activity_ns
                         .store(monotonic_ns(), Ordering::Relaxed);
@@ -196,7 +220,7 @@ impl RunningSandbox {
                     return Ok(exit);
                 }
                 PAYLOAD_KIND_CANCEL_ACK => {
-                    let ack: CancelAck = decode_payload(frame.payload)?;
+                    let ack = decode_frame::<CancelAck>(frame)?;
                     match ack.status {
                         CancelStatus::Cancelled => {
                             phase_event("pty_cancelled", &self.vm_id, t.elapsed());
@@ -221,9 +245,19 @@ impl RunningSandbox {
                     }
                 }
                 other => {
-                    return Err(FcError::Config(format!(
-                        "unexpected pty exec frame kind: {other}"
-                    )));
+                    let err = super::protocol::unexpected_frame(
+                        "pty exec",
+                        "pty_output|pty_exit|cancel_ack",
+                        other,
+                    );
+                    crate::diagnostics::record_protocol_error(
+                        &mut self.diagnostics,
+                        &self.vm_id,
+                        &request_id,
+                        "pty_control",
+                        &err,
+                    );
+                    return Err(err);
                 }
             }
         }
@@ -285,12 +319,40 @@ impl RunningSandbox {
         let t = Instant::now();
         let mut stdout_total = 0u64;
         let mut stderr_total = 0u64;
+        let mut expected_stdout_seq = 0u32;
+        let mut expected_stderr_seq = 0u32;
 
         loop {
-            let frame: Envelope<serde_json::Value> = channel.recv()?;
-            match frame.kind.as_str() {
+            let frame = match channel.recv_raw() {
+                Ok(frame) => frame,
+                Err(e) => {
+                    let err = super::protocol::recv_error(e, "streaming exec");
+                    crate::diagnostics::record_protocol_error(
+                        &mut self.diagnostics,
+                        &self.vm_id,
+                        &request_id,
+                        "exec_exit",
+                        &err,
+                    );
+                    return Err(err);
+                }
+            };
+            let kind = frame.kind.clone();
+            match kind.as_str() {
                 PAYLOAD_KIND_EXEC_STDOUT => {
-                    let chunk: ExecStdout = decode_payload(frame.payload)?;
+                    let chunk = decode_frame::<ExecStdout>(frame)?;
+                    if let Err(err) =
+                        check_stream_sequence("exec_stdout", &mut expected_stdout_seq, chunk.seq)
+                    {
+                        crate::diagnostics::record_protocol_error(
+                            &mut self.diagnostics,
+                            &self.vm_id,
+                            &request_id,
+                            "exec_stdout",
+                            &err,
+                        );
+                        return Err(err);
+                    }
                     stdout_total = stdout_total.saturating_add(chunk.bytes.len() as u64);
                     on_chunk(ExecChunk::Stdout {
                         seq: chunk.seq,
@@ -298,7 +360,19 @@ impl RunningSandbox {
                     })?;
                 }
                 PAYLOAD_KIND_EXEC_STDERR => {
-                    let chunk: ExecStderr = decode_payload(frame.payload)?;
+                    let chunk = decode_frame::<ExecStderr>(frame)?;
+                    if let Err(err) =
+                        check_stream_sequence("exec_stderr", &mut expected_stderr_seq, chunk.seq)
+                    {
+                        crate::diagnostics::record_protocol_error(
+                            &mut self.diagnostics,
+                            &self.vm_id,
+                            &request_id,
+                            "exec_stderr",
+                            &err,
+                        );
+                        return Err(err);
+                    }
                     stderr_total = stderr_total.saturating_add(chunk.bytes.len() as u64);
                     on_chunk(ExecChunk::Stderr {
                         seq: chunk.seq,
@@ -306,7 +380,7 @@ impl RunningSandbox {
                     })?;
                 }
                 PAYLOAD_KIND_EXEC_EXIT => {
-                    let exit: ExecExit = decode_payload(frame.payload)?;
+                    let exit = decode_frame::<ExecExit>(frame)?;
                     phase_event("exec_recv", &self.vm_id, t.elapsed());
                     self.last_activity_ns
                         .store(monotonic_ns(), Ordering::Relaxed);
@@ -320,7 +394,7 @@ impl RunningSandbox {
                     return Ok(exit);
                 }
                 PAYLOAD_KIND_CANCEL_ACK => {
-                    let ack: CancelAck = decode_payload(frame.payload)?;
+                    let ack = decode_frame::<CancelAck>(frame)?;
                     match ack.status {
                         CancelStatus::Cancelled => {
                             phase_event("exec_cancelled", &self.vm_id, t.elapsed());
@@ -351,9 +425,19 @@ impl RunningSandbox {
                     }
                 }
                 other => {
-                    return Err(FcError::Config(format!(
-                        "unexpected streaming exec frame kind: {other}"
-                    )));
+                    let err = super::protocol::unexpected_frame(
+                        "streaming exec",
+                        "exec_stdout|exec_stderr|exec_exit|cancel_ack",
+                        other,
+                    );
+                    crate::diagnostics::record_protocol_error(
+                        &mut self.diagnostics,
+                        &self.vm_id,
+                        &request_id,
+                        "exec_stream",
+                        &err,
+                    );
+                    return Err(err);
                 }
             }
         }
@@ -388,6 +472,31 @@ impl Drop for PtyEventForwarder {
     }
 }
 
+fn decode_frame<T: Payload>(frame: RawEnvelope) -> Result<T, FcError> {
+    frame
+        .decode::<T>()
+        .map(|env| env.payload)
+        .map_err(super::protocol::proto_error)
+}
+
+fn check_stream_sequence(
+    stream: &'static str,
+    expected: &mut u32,
+    got: u32,
+) -> Result<(), FcError> {
+    if got != *expected {
+        return Err(super::protocol::sequence_mismatch(
+            stream,
+            u64::from(*expected),
+            u64::from(got),
+        ));
+    }
+    *expected = expected
+        .checked_add(1)
+        .ok_or_else(|| FcError::Config(format!("{stream} sequence overflow")))?;
+    Ok(())
+}
+
 fn append_capped(dst: &mut Vec<u8>, bytes: &[u8]) -> bool {
     let remaining = EXEC_BUFFER_LIMIT.saturating_sub(dst.len());
     if remaining == 0 {
@@ -397,15 +506,6 @@ fn append_capped(dst: &mut Vec<u8>, bytes: &[u8]) -> bool {
     dst.extend_from_slice(&bytes[..to_copy]);
     to_copy < bytes.len()
 }
-
-pub(super) fn decode_payload<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, FcError> {
-    serde_json::from_value(value).map_err(|e| {
-        FcError::Vsock(m80_vsock::VsockError::Proto(ProtoError::MalformedPayload(
-            e,
-        )))
-    })
-}
-
 
 fn spawn_pty_event_forwarder(
     channel: &Channel,
@@ -507,7 +607,7 @@ pub(super) fn send_envelope_with_open_retry<T>(
     envelope: &Envelope<T>,
 ) -> Result<Channel, FcError>
 where
-    T: Serialize,
+    T: m80_proto::Payload + Clone,
 {
     let mut last_error = None;
     for attempt in 1..=EXEC_OPEN_SEND_RETRIES {
@@ -612,5 +712,47 @@ mod tests {
         assert_eq!(exit.total_stdout_bytes, 7);
         assert_eq!(exit.total_stderr_bytes, 11);
         assert!(exit.timing.exited_at_unix_ms >= 1_000);
+    }
+
+    #[test]
+    fn stream_sequence_accepts_monotonic_chunks() {
+        let mut expected = 0;
+
+        check_stream_sequence("exec_stdout", &mut expected, 0).unwrap();
+        check_stream_sequence("exec_stdout", &mut expected, 1).unwrap();
+
+        assert_eq!(expected, 2);
+    }
+
+    #[test]
+    fn stream_sequence_gap_returns_protocol_error() {
+        let mut expected = 0;
+        let err = check_stream_sequence("exec_stderr", &mut expected, 2).unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(crate::error::WireProtocolError::SequenceMismatch {
+                stream: "exec_stderr",
+                expected: 0,
+                got: 2
+            })
+        ));
+        assert_eq!(expected, 0);
+    }
+
+    #[test]
+    fn stream_sequence_duplicate_returns_protocol_error() {
+        let mut expected = 0;
+        check_stream_sequence("pty_output", &mut expected, 0).unwrap();
+        let err = check_stream_sequence("pty_output", &mut expected, 0).unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(crate::error::WireProtocolError::SequenceMismatch {
+                stream: "pty_output",
+                expected: 1,
+                got: 0
+            })
+        ));
     }
 }

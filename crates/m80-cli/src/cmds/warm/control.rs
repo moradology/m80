@@ -4,8 +4,9 @@ use std::os::unix::net::UnixStream;
 
 use serde::{Deserialize, Serialize};
 
-use m80_firecracker::{ExecChunk, ExecExit, ExecRequest, ExecResponse, FcError};
+use m80_firecracker::{ExecChunk, FcError};
 
+use crate::cmds::proto_json::{ExecExitJson, ExecRequestJson, ExecResponseJson};
 use crate::errors;
 
 use super::status;
@@ -22,13 +23,13 @@ pub(super) enum WarmControlRequest {
         profile: Option<String>,
         egress: String,
         request_id: String,
-        request: ExecRequest,
+        request: ExecRequestJson,
     },
     RunStream {
         profile: Option<String>,
         egress: String,
         request_id: String,
-        request: ExecRequest,
+        request: ExecRequestJson,
     },
 }
 
@@ -44,7 +45,7 @@ pub(super) enum WarmControlResponse {
 #[serde(deny_unknown_fields)]
 pub(super) struct WarmRunResult {
     pub request_id: String,
-    pub response: ExecResponse,
+    pub response: ExecResponseJson,
     pub reset_decision: String,
     pub discard_reason: String,
     pub run_dir: String,
@@ -63,7 +64,7 @@ pub(super) enum WarmStreamFrame {
     },
     Exit {
         request_id: String,
-        exit: ExecExit,
+        exit: ExecExitJson,
         reset_decision: String,
         discard_reason: String,
         run_dir: String,
@@ -102,6 +103,7 @@ pub(super) enum WarmErrorKind {
     Io,
     Config,
     IdleTimedOut,
+    Protocol,
 }
 
 impl WarmErrorKind {
@@ -115,6 +117,7 @@ impl WarmErrorKind {
             FcError::Network(_) => Self::Network,
             FcError::Client(_) => Self::Client,
             FcError::Vsock(_) => Self::Vsock,
+            FcError::Protocol(_) => Self::Protocol,
             FcError::Snapshot(_) => Self::Snapshot,
             FcError::FileOp(_) => Self::FileOp,
             FcError::AdmissionRefused { .. } => Self::AdmissionRefused,
@@ -148,6 +151,7 @@ impl WarmErrorKind {
             Self::Io => "Io",
             Self::Config => "Config",
             Self::IdleTimedOut => "IdleTimedOut",
+            Self::Protocol => "Protocol",
         }
     }
 }

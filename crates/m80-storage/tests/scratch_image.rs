@@ -12,7 +12,11 @@ fn sizing(used_bytes: u64) -> u64 {
     let padded = used_bytes.saturating_add(PAD);
     let raw = padded.max(MIN);
     let remainder = raw % ALIGN;
-    if remainder == 0 { raw } else { raw.saturating_add(ALIGN - remainder) }
+    if remainder == 0 {
+        raw
+    } else {
+        raw.saturating_add(ALIGN - remainder)
+    }
 }
 
 #[test]

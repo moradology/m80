@@ -4,9 +4,9 @@ use std::io::{BufRead, BufReader, Cursor};
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecStatus,
-    PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySize,
-    PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_OUTPUT,
+    read_frame, read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope,
+    ExecStatus, PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize,
+    PtySize, PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_OUTPUT,
 };
 
 fn pty_size(rows: u16, cols: u16) -> PtySize {
@@ -91,16 +91,20 @@ fn run_pty_with_open_reader(input: Vec<u8>) -> Vec<u8> {
 
 fn run_pty_with_disconnect(input: Vec<u8>) -> Vec<u8> {
     let mut out = Vec::new();
-    m80_guestd::connection::handle_connection_with_reader_ready(BufReader::new(Cursor::new(input)), &mut out, |_| true)
-        .expect("handle pty connection");
+    m80_guestd::connection::handle_connection_with_reader_ready(
+        BufReader::new(Cursor::new(input)),
+        &mut out,
+        |_| true,
+    )
+    .expect("handle pty connection");
     out
 }
 
-fn read_raw_frames(bytes: &[u8]) -> Vec<Envelope<serde_json::Value>> {
+fn read_raw_frames(bytes: &[u8]) -> Vec<m80_proto::RawEnvelope> {
     let mut cursor = Cursor::new(bytes);
     let mut frames = Vec::new();
     while (cursor.position() as usize) < bytes.len() {
-        frames.push(read_frame(&mut cursor).expect("read raw frame"));
+        frames.push(read_raw_frame(&mut cursor).expect("read raw frame"));
     }
     frames
 }
@@ -116,13 +120,21 @@ fn output_and_exit(bytes: &[u8]) -> (Vec<u8>, PtyExit) {
     let mut output = Vec::new();
     for frame in &frames[..frames.len() - 1] {
         assert_eq!(frame.kind, PAYLOAD_KIND_PTY_OUTPUT);
-        let chunk: PtyOutput =
-            serde_json::from_value(frame.payload.clone()).expect("pty output payload");
+        let chunk = frame
+            .clone()
+            .decode::<PtyOutput>()
+            .expect("pty output payload")
+            .payload;
         output.extend(chunk.bytes);
     }
 
-    let exit: PtyExit =
-        serde_json::from_value(frames.last().unwrap().payload.clone()).expect("pty exit payload");
+    let exit = frames
+        .last()
+        .unwrap()
+        .clone()
+        .decode::<PtyExit>()
+        .expect("pty exit payload")
+        .payload;
     (output, exit)
 }
 
@@ -133,7 +145,7 @@ fn pty_echo_probe_round_trips_terminal_output() {
         "pty-echo",
     );
     input.extend(input_frame("pty-echo", 0, b"hello from pty\n"));
-    input.extend(eof_frame("pty-echo", 1));
+    input.extend(eof_frame("pty-echo", 0));
 
     let (output, exit) = output_and_exit(&run_pty_with_open_reader(input));
 
@@ -231,6 +243,28 @@ fn pty_spawn_failure_returns_failed_exit() {
         String::from_utf8_lossy(&output).contains("spawn failed"),
         "spawn failure should be surfaced in pty output, got: {:?}",
         String::from_utf8_lossy(&output)
+    );
+}
+
+#[test]
+fn pty_input_sequence_gap_kills_child_without_exit_frame() {
+    let mut input = request_frame(
+        pty_request("/bin/cat", vec![], 30_000, pty_size(24, 80)),
+        "pty-input-gap",
+    );
+    input.extend(input_frame("pty-input-gap", 1, b"out-of-order\n"));
+
+    let start = Instant::now();
+    let out = run_pty_with_open_reader(input);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "pty input sequence mismatch must fail closed promptly, elapsed={elapsed:?}"
+    );
+    assert!(
+        out.is_empty(),
+        "sequence mismatch must not emit PtyExit; got {out:?}"
     );
 }
 

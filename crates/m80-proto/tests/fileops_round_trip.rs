@@ -1,14 +1,14 @@
 use m80_proto::{
     read_frame, write_frame, DirEntry, Envelope, FileError, FileKind, FileListRequest,
-    FileListResponse, FileReadRequest, FileReadResponse, FileRemoveRequest, FileRemoveResponse,
-    FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse,
-    FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse,
-    FileWriteRequest, FileWriteResponse, PAYLOAD_KIND_FILE_READ_REQUEST,
+    FileListResponse, FileReadChunk, FileReadRequest, FileReadResponse, FileRemoveRequest,
+    FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
+    FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
+    FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, PAYLOAD_KIND_FILE_READ_REQUEST,
 };
 
 fn round_trip<T>(payload: T) -> Envelope<T>
 where
-    T: m80_proto::Payload + serde::Serialize + serde::de::DeserializeOwned,
+    T: m80_proto::Payload + Clone,
 {
     let env = Envelope::with_request_id(payload, "req-file".to_owned());
     let mut bytes = Vec::new();
@@ -129,10 +129,11 @@ fn chunked_upload_payloads_round_trip() {
     let chunk_resp = round_trip(FileWriteChunkResponse {
         upload_id: "u1".into(),
         seq: 2,
-        bytes_written: 5,
-        error: None,
+        bytes_written: 0,
+        error: Some(FileError::InvalidSequence),
     });
-    assert_eq!(chunk_resp.payload.bytes_written, 5);
+    assert_eq!(chunk_resp.payload.bytes_written, 0);
+    assert_eq!(chunk_resp.payload.error, Some(FileError::InvalidSequence));
 
     let commit = round_trip(FileWriteCommitRequest {
         upload_id: "u1".into(),
@@ -144,6 +145,29 @@ fn chunked_upload_payloads_round_trip() {
         error: None,
     });
     assert_eq!(commit_resp.payload.bytes_written, 5);
+}
+
+#[test]
+fn byte_heavy_file_chunks_do_not_emit_base64_payloads() {
+    let payload = FileWriteChunkRequest {
+        upload_id: "u1".into(),
+        seq: 0,
+        bytes: b"chunk".to_vec(),
+    };
+    let env = Envelope::with_request_id(payload, "req-file".to_owned());
+    let mut bytes = Vec::new();
+    write_frame(&mut bytes, &env).unwrap();
+
+    assert!(!bytes.windows(b"Y2h1bms=".len()).any(|w| w == b"Y2h1bms="));
+
+    let read_back = round_trip(FileReadChunk {
+        seq: 3,
+        bytes: b"read-chunk".to_vec(),
+        done: false,
+        truncated: false,
+        error: None,
+    });
+    assert_eq!(read_back.payload.bytes, b"read-chunk");
 }
 
 #[test]

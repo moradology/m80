@@ -23,13 +23,11 @@ pub struct HealthSnapshot {
 }
 
 /// Per-VM operational metrics rolled up across the run-root.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default)]
 pub struct OpsMetrics {
     /// Number of VMs the metrics span.
     pub vm_count: u32,
     /// Guest metrics sampled from one running VM at scrape time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guest: Option<MetricsResponse>,
 }
 

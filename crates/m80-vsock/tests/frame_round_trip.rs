@@ -69,9 +69,9 @@ fn cloned_sender_writes_control_frame_on_same_connection() {
     let server = std::thread::spawn(move || {
         let mut reader = accept_and_handshake(&listener, 22222);
 
-        let received: Envelope<serde_json::Value> = m80_proto::read_frame(&mut reader).unwrap();
+        let received = m80_proto::read_raw_frame(&mut reader).unwrap();
         assert_eq!(received.kind, PAYLOAD_KIND_CANCEL_REQUEST);
-        let cancel: CancelRequest = serde_json::from_value(received.payload).unwrap();
+        let cancel = received.decode::<CancelRequest>().unwrap().payload;
         assert_eq!(cancel.request_id, "req-1");
     });
 

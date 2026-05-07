@@ -1,25 +1,29 @@
+mod read;
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use m80_proto::{
-    read_frame, write_frame, DirEntry, Envelope, FileError, FileKind, FileListRequest,
-    FileListResponse, FileReadRequest, FileReadResponse, FileRemoveRequest, FileRemoveResponse,
-    FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse,
+    read_raw_frame, write_frame, DirEntry, Envelope, FileError, FileKind, FileListRequest,
+    FileListResponse, FileReadRequest, FileRemoveRequest, FileRemoveResponse, FileStat,
+    FileStatRequest, FileStatResponse, FileWriteBeginRequest, FileWriteBeginResponse,
     FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest, FileWriteCommitResponse,
-    FileWriteRequest, FileWriteResponse, FILE_READ_LIMIT_DEFAULT, PAYLOAD_KIND_FILE_LIST_REQUEST,
+    FileWriteRequest, FileWriteResponse, Payload, RawEnvelope, PAYLOAD_KIND_FILE_LIST_REQUEST,
     PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_REMOVE_REQUEST,
     PAYLOAD_KIND_FILE_STAT_REQUEST, PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST,
     PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST, PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST,
     PAYLOAD_KIND_FILE_WRITE_REQUEST,
 };
 
-use super::ConnectionOutcome;
-
-const WRITE_ENVELOPE_CAP: usize = 64 * 1024 * 1024;
+use super::{protocol_log, ConnectionOutcome};
+use crate::guest_log::GuestLogPhase;
+use read::stream_file_read;
 
 #[derive(Default)]
 struct Uploads {
@@ -32,6 +36,7 @@ struct Upload {
     temp_path: PathBuf,
     file: File,
     bytes_written: u64,
+    next_seq: u64,
     mode: Option<u32>,
 }
 
@@ -58,7 +63,7 @@ pub fn is_fileop_kind(kind: &str) -> bool {
 }
 
 pub fn handle_fileop<R, W>(
-    first: Envelope<serde_json::Value>,
+    first: RawEnvelope,
     mut reader: R,
     writer: &mut W,
 ) -> anyhow::Result<ConnectionOutcome>
@@ -74,9 +79,17 @@ where
     }
 
     loop {
-        let next: Envelope<serde_json::Value> = match read_frame(&mut reader) {
+        let next = match read_raw_frame(&mut reader) {
             Ok(frame) => frame,
-            Err(_) => return Ok(ConnectionOutcome::Continue),
+            Err(e) => {
+                protocol_log::warn_proto_error(
+                    GuestLogPhase::Exec,
+                    None,
+                    Some("fileop_upload"),
+                    &e,
+                );
+                return Ok(ConnectionOutcome::Continue);
+            }
         };
         let keep_open = handle_one(next, writer, &mut uploads)?;
         if !keep_open {
@@ -87,62 +100,75 @@ where
 }
 
 fn handle_one<W: Write>(
-    raw: Envelope<serde_json::Value>,
+    raw: RawEnvelope,
     writer: &mut W,
     uploads: &mut Uploads,
 ) -> anyhow::Result<bool> {
     match raw.kind.as_str() {
         PAYLOAD_KIND_FILE_READ_REQUEST => {
-            let req = decode::<FileReadRequest>(raw.payload)?;
-            respond(writer, raw.request_id, read_file(req))?;
+            let (request_id, req) = decode::<FileReadRequest>(raw)?;
+            stream_file_read(writer, request_id, req)?;
             Ok(false)
         }
         PAYLOAD_KIND_FILE_WRITE_REQUEST => {
-            let req = decode::<FileWriteRequest>(raw.payload)?;
-            respond(writer, raw.request_id, write_file(req))?;
+            let (request_id, req) = decode::<FileWriteRequest>(raw)?;
+            respond(writer, request_id, write_file(req))?;
             Ok(false)
         }
         PAYLOAD_KIND_FILE_LIST_REQUEST => {
-            let req = decode::<FileListRequest>(raw.payload)?;
-            respond(writer, raw.request_id, list_dir(req))?;
+            let (request_id, req) = decode::<FileListRequest>(raw)?;
+            respond(writer, request_id, list_dir(req))?;
             Ok(false)
         }
         PAYLOAD_KIND_FILE_STAT_REQUEST => {
-            let req = decode::<FileStatRequest>(raw.payload)?;
-            respond(writer, raw.request_id, stat_file(req))?;
+            let (request_id, req) = decode::<FileStatRequest>(raw)?;
+            respond(writer, request_id, stat_file(req))?;
             Ok(false)
         }
         PAYLOAD_KIND_FILE_REMOVE_REQUEST => {
-            let req = decode::<FileRemoveRequest>(raw.payload)?;
-            respond(writer, raw.request_id, remove_file(req))?;
+            let (request_id, req) = decode::<FileRemoveRequest>(raw)?;
+            respond(writer, request_id, remove_file(req))?;
             Ok(false)
         }
         PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST => {
-            let req = decode::<FileWriteBeginRequest>(raw.payload)?;
+            let (request_id, req) = decode::<FileWriteBeginRequest>(raw)?;
             let response = begin_upload(req, uploads);
             let keep_open = response.error.is_none();
-            respond(writer, raw.request_id, response)?;
+            respond(writer, request_id, response)?;
             Ok(keep_open)
         }
         PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST => {
-            let req = decode::<FileWriteChunkRequest>(raw.payload)?;
-            respond(writer, raw.request_id, write_chunk(req, uploads))?;
+            let (request_id, req) = decode::<FileWriteChunkRequest>(raw)?;
+            respond(writer, request_id, write_chunk(req, uploads))?;
             Ok(true)
         }
         PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST => {
-            let req = decode::<FileWriteCommitRequest>(raw.payload)?;
-            respond(writer, raw.request_id, commit_upload(req, uploads))?;
+            let (request_id, req) = decode::<FileWriteCommitRequest>(raw)?;
+            respond(writer, request_id, commit_upload(req, uploads))?;
             Ok(false)
         }
         _ => Ok(false),
     }
 }
 
-fn decode<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> anyhow::Result<T> {
-    serde_json::from_value(value).context("decode file operation payload")
+fn decode<T: Payload>(raw: RawEnvelope) -> anyhow::Result<(Option<String>, T)> {
+    let request_id = raw.request_id.clone();
+    let kind = raw.kind.clone();
+    let env = raw
+        .decode::<T>()
+        .inspect_err(|e| {
+            protocol_log::warn_proto_error(
+                GuestLogPhase::Exec,
+                request_id.as_deref(),
+                Some(kind.as_str()),
+                e,
+            );
+        })
+        .context("decode file operation payload")?;
+    Ok((env.request_id, env.payload))
 }
 
-fn respond<T: m80_proto::Payload + serde::Serialize, W: Write>(
+fn respond<T: m80_proto::Payload + Clone, W: Write>(
     writer: &mut W,
     request_id: Option<String>,
     payload: T,
@@ -156,48 +182,7 @@ fn respond<T: m80_proto::Payload + serde::Serialize, W: Write>(
     Ok(())
 }
 
-fn read_file(req: FileReadRequest) -> FileReadResponse {
-    let path = Path::new(&req.path);
-    let limit = req
-        .max_bytes
-        .unwrap_or(FILE_READ_LIMIT_DEFAULT)
-        .min(usize::MAX as u64) as usize;
-    match open_nofollow_read(path) {
-        Ok(mut file) => {
-            let mut bytes = Vec::new();
-            let mut limited = (&mut file).take(limit as u64 + 1);
-            match limited.read_to_end(&mut bytes) {
-                Ok(_) => {
-                    let truncated = bytes.len() > limit;
-                    bytes.truncate(limit);
-                    FileReadResponse {
-                        bytes,
-                        truncated,
-                        error: None,
-                    }
-                }
-                Err(e) => FileReadResponse {
-                    bytes: Vec::new(),
-                    truncated: false,
-                    error: Some(map_io_error(&e)),
-                },
-            }
-        }
-        Err(error) => FileReadResponse {
-            bytes: Vec::new(),
-            truncated: false,
-            error: Some(error),
-        },
-    }
-}
-
 fn write_file(req: FileWriteRequest) -> FileWriteResponse {
-    if req.bytes.len() > WRITE_ENVELOPE_CAP {
-        return FileWriteResponse {
-            bytes_written: 0,
-            error: Some(FileError::TooLarge),
-        };
-    }
     let path = Path::new(&req.path);
     match open_nofollow_write(path, false) {
         Ok(mut file) => match file.write_all(&req.bytes).and_then(|()| file.sync_all()) {
@@ -325,7 +310,13 @@ fn begin_upload(req: FileWriteBeginRequest, uploads: &mut Uploads) -> FileWriteB
             };
         }
     }
-    uploads.next_id = uploads.next_id.saturating_add(1);
+    let Some(next_id) = uploads.next_id.checked_add(1) else {
+        return FileWriteBeginResponse {
+            upload_id: None,
+            error: Some(FileError::TooLarge),
+        };
+    };
+    uploads.next_id = next_id;
     let upload_id = format!("u{}", uploads.next_id);
     let temp_path = PathBuf::from(format!("{}.m80-upload.{upload_id}", req.path));
     let file = match open_nofollow_write(&temp_path, true) {
@@ -344,6 +335,7 @@ fn begin_upload(req: FileWriteBeginRequest, uploads: &mut Uploads) -> FileWriteB
             temp_path,
             file,
             bytes_written: 0,
+            next_seq: 0,
             mode: req.mode,
         },
     );
@@ -362,22 +354,61 @@ fn write_chunk(req: FileWriteChunkRequest, uploads: &mut Uploads) -> FileWriteCh
             error: Some(FileError::NotFound),
         };
     };
-    match upload.file.write_all(&req.bytes) {
-        Ok(()) => {
-            upload.bytes_written = upload.bytes_written.saturating_add(req.bytes.len() as u64);
-            FileWriteChunkResponse {
-                upload_id: req.upload_id,
-                seq: req.seq,
-                bytes_written: req.bytes.len() as u64,
-                error: None,
-            }
-        }
-        Err(e) => FileWriteChunkResponse {
+    if req.seq != upload.next_seq {
+        remove_upload(&req.upload_id, uploads);
+        return FileWriteChunkResponse {
             upload_id: req.upload_id,
             seq: req.seq,
             bytes_written: 0,
-            error: Some(map_io_error(&e)),
-        },
+            error: Some(FileError::InvalidSequence),
+        };
+    }
+    let bytes_written = req.bytes.len() as u64;
+    let Some(total_written) = upload.bytes_written.checked_add(bytes_written) else {
+        remove_upload(&req.upload_id, uploads);
+        return FileWriteChunkResponse {
+            upload_id: req.upload_id,
+            seq: req.seq,
+            bytes_written: 0,
+            error: Some(FileError::TooLarge),
+        };
+    };
+    let Some(next_seq) = upload.next_seq.checked_add(1) else {
+        remove_upload(&req.upload_id, uploads);
+        return FileWriteChunkResponse {
+            upload_id: req.upload_id,
+            seq: req.seq,
+            bytes_written: 0,
+            error: Some(FileError::InvalidSequence),
+        };
+    };
+    match upload.file.write_all(&req.bytes) {
+        Ok(()) => {
+            upload.bytes_written = total_written;
+            upload.next_seq = next_seq;
+            FileWriteChunkResponse {
+                upload_id: req.upload_id,
+                seq: req.seq,
+                bytes_written,
+                error: None,
+            }
+        }
+        Err(e) => {
+            let error = map_io_error(&e);
+            remove_upload(&req.upload_id, uploads);
+            FileWriteChunkResponse {
+                upload_id: req.upload_id,
+                seq: req.seq,
+                bytes_written: 0,
+                error: Some(error),
+            }
+        }
+    }
+}
+
+fn remove_upload(upload_id: &str, uploads: &mut Uploads) {
+    if let Some(upload) = uploads.open.remove(upload_id) {
+        let _ = std::fs::remove_file(upload.temp_path);
     }
 }
 

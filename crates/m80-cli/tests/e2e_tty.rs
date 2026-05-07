@@ -18,12 +18,11 @@
 //! `--egress outbound` to exercise the CLI policy path, but it does not require
 //! external network access or any Claude credentials.
 
-
 use common::{append_file, run_root_entries};
 mod common;
 use std::fs::{self, File};
 use std::io::{Read as _, Write as _};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -246,7 +245,6 @@ fn read_until(
     }
 }
 
-
 fn failure_report(output: &[u8], run_root: &Path) -> String {
     format!(
         "pty_output={:?}\nrequest_id/run-dir/console evidence lives under:\n{}",
@@ -289,5 +287,3 @@ fn dump_run_root(run_root: &Path) -> String {
     }
     out
 }
-
-

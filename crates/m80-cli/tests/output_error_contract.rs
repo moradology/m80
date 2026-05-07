@@ -12,7 +12,6 @@ use m80_firecracker::FcError;
 use m80_image_manifest::ManifestError;
 use m80_preflight::PreflightError;
 
-
 #[test]
 fn config_wrapper_failure_uses_stderr_exit_code_and_empty_stdout() {
     let output = m80()

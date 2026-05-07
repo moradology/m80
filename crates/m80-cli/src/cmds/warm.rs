@@ -11,6 +11,7 @@ use crate::args::{EgressMode, WarmAction};
 use crate::errors;
 use crate::json;
 
+use super::proto_json::{ExecRequestJson, ExecResponseJson};
 use control::{WarmControlRequest, WarmControlResponse};
 
 pub(super) fn cmd_warm(action: WarmAction, json: bool) -> anyhow::Result<i32> {
@@ -58,7 +59,7 @@ pub(super) fn cmd_run_warm(
         profile,
         egress: status::egress_label(egress).to_owned(),
         request_id,
-        request: req,
+        request: ExecRequestJson::from(req),
     }) {
         Ok(WarmControlResponse::Run(result)) => render_warm_run(result.response, json_mode),
         Ok(WarmControlResponse::Error(err)) => render_owner_error(err, json_mode),
@@ -80,7 +81,7 @@ fn render_warm_streaming_run(
         profile,
         egress: status::egress_label(egress).to_owned(),
         request_id,
-        request: req,
+        request: ExecRequestJson::from(req),
     }) {
         Ok(reader) => reader,
         Err(e) => return errors::render_error(&e, false),
@@ -107,6 +108,7 @@ fn render_warm_streaming_run(
                 if let Err(e) = stdout.flush().and_then(|_| stderr.flush()) {
                     return errors::render_error(&FcError::Io(e), false);
                 }
+                let exit = m80_firecracker::ExecExit::from(exit);
                 return super::run_stream::process_exit_code(exit.status, exit.exit_code, None);
             }
             Ok(control::WarmStreamFrame::Error(err)) => return render_owner_error(err, false),
@@ -191,26 +193,27 @@ fn send_owner_lifecycle_response(response: WarmControlResponse, json_mode: bool)
     }
 }
 
-fn render_warm_run(response: ExecResponse, json_mode: bool) -> i32 {
+fn render_warm_run(response: ExecResponseJson, json_mode: bool) -> i32 {
+    let response_native = ExecResponse::from(response.clone());
     if json_mode {
         println!("{}", json::to_pretty(&response));
     } else {
         let mut stdout = stdout().lock();
         let mut stderr = std::io::stderr().lock();
         if let Err(e) = stdout
-            .write_all(&response.stdout)
+            .write_all(&response_native.stdout)
             .and_then(|_| stdout.flush())
         {
             return errors::render_error(&FcError::Io(e), json_mode);
         }
         if let Err(e) = stderr
-            .write_all(&response.stderr)
+            .write_all(&response_native.stderr)
             .and_then(|_| stderr.flush())
         {
             return errors::render_error(&FcError::Io(e), json_mode);
         }
     }
-    super::run_stream::process_exit_code(response.status, response.exit_code, None)
+    super::run_stream::process_exit_code(response_native.status, response_native.exit_code, None)
 }
 
 fn render_owner_error(err: control::WarmErrorResponse, json_mode: bool) -> i32 {

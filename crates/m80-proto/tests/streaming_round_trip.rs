@@ -77,27 +77,7 @@ fn exit_frame_round_trips() {
 }
 
 #[test]
-fn streaming_false_matches_v01_golden() {
-    let env = Envelope::new(ExecRequest {
-        program: "/bin/echo".into(),
-        args: vec!["hi".into()],
-        cwd: None,
-        env: None,
-        stdin: None,
-        timeout_ms: Some(1_000),
-        streaming: false,
-    });
-
-    let serialized = serde_json::to_vec(&env).expect("serialize request");
-    let golden = include_str!("golden/exec_request_v01_streaming_false.json")
-        .trim_end()
-        .as_bytes()
-        .to_vec();
-    assert_eq!(serialized, golden);
-}
-
-#[test]
-fn streaming_true_serializes_explicit_field() {
+fn streaming_flag_round_trips_through_protobuf() {
     let env = Envelope::new(ExecRequest {
         program: "/bin/echo".into(),
         args: vec!["hi".into()],
@@ -108,9 +88,8 @@ fn streaming_true_serializes_explicit_field() {
         streaming: true,
     });
 
-    let serialized = serde_json::to_string(&env).expect("serialize request");
-    assert!(
-        serialized.contains("\"streaming\":true"),
-        "streaming=true must be explicit in JSON: {serialized}"
-    );
+    let mut buf = Vec::new();
+    write_frame(&mut buf, &env).expect("write request");
+    let decoded: Envelope<ExecRequest> = read_frame(&mut Cursor::new(&buf)).expect("read request");
+    assert!(decoded.payload.streaming);
 }

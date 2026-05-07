@@ -21,11 +21,11 @@ fn serializes_program_args_env_cwd_timeout() {
 
     let env = Envelope::with_request_id(req.clone(), "test-req-001".into());
 
-    // Serialize via write_frame.
+    // Encode via write_frame.
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write_frame must succeed");
 
-    // Deserialize via read_frame.
+    // Decode via read_frame.
     let mut cursor = Cursor::new(&buf);
     let back: Envelope<ExecRequest> = read_frame(&mut cursor).expect("read_frame must succeed");
 

@@ -22,8 +22,6 @@ fn make_backend_at(max: u32, run_root: &std::path::Path) -> Arc<Backend> {
     Arc::new(Backend::new(config).expect("Backend::new should not fail"))
 }
 
-
-
 #[test]
 fn admit_up_to_limit_succeeds() {
     let backend = make_backend(2);
