@@ -42,11 +42,12 @@ hands a config in and gets back a launchable chroot — or a typed error.
   Firecracker PID file and exits; m80 reaps that parent and records
   `jailer_pid = 0` as the no-live-jailer sentinel.
 - Mount namespace and `pivot_root` isolation, `/dev/{kvm,net/tun,urandom}`
-  `mknod`, `/proc`/`/sys` omission, startup environment clearing, and
-  close-range hygiene are delegated to Firecracker's official jailer. m80
-  does not run `pivot_root` in `Plan::materialize()` because that code runs
-  in the host orchestrator process; doing so would isolate the orchestrator
-  instead of the Firecracker process.
+  `mknod`, `/proc`/`/sys` omission, private copy of the Firecracker
+  executable, startup environment clearing, and close-range hygiene are
+  delegated to Firecracker's official jailer. m80 does not run `pivot_root` in
+  `Plan::materialize()` because that code runs in the host orchestrator
+  process; doing so would isolate the orchestrator instead of the Firecracker
+  process.
 - If `JailerConfig::stdio_log` is `Some(path)`, `launch` appends the
   jailed process stdout and stderr to that host file. m80-firecracker
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
@@ -109,4 +110,5 @@ hands a config in and gets back a launchable chroot — or a typed error.
   and `new_pid_ns` parent reaping.
 - `tests/integration_root.rs` — ignored root-only smoke for real
   materialization and real Firecracker-jailer `--new-pid-ns` launch state
-  (`jailer_pid = 0`, Firecracker `NSpid` ends in `1`, resource limit live).
+  (`jailer_pid = 0`, Firecracker `NSpid` ends in `1`, resource limit live,
+  private Firecracker executable copy).

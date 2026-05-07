@@ -6,7 +6,11 @@ m80 exposes immutable launch artifacts to the jail as read-only inputs. In the
 current Firecracker launch path, the kernel is bound read-only at `kernel`, and
 the shared base rootfs is bound read-only at `rootfs.ext4`. The Firecracker
 binary itself is supplied through `JailerConfig::firecracker_bin`; the official
-jailer uses that executable path when it performs the final exec.
+jailer copies that executable into the jail root with `O_NOFOLLOW`, rejects
+hard-linked destinations, chowns the copy to the jail uid/gid, and uses the
+copied in-jail binary for the final exec. Under m80's hardening wrapper umask,
+the live copy is owner-only (`0700`). m80 does not bind-mount the Firecracker
+executable.
 
 This is a hard cutover from predecessor's older in-jail names
 `bin/firecracker` and `kernel/vmlinux`.
@@ -16,6 +20,7 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/jailer.rs`
 `build_jailer_plan` lines 288-296.
 
 Test: `crates/m80-jailer/tests/jailer/asset_binding.rs::binds_kernel_and_rootfs_ro`.
+Test: `crates/m80-firecracker/tests/end_to_end_real_kvm.rs::end_to_end_real_kvm_jailer_security_parity`.
 
 ## drives-rw
 

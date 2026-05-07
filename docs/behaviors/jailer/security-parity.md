@@ -4,8 +4,9 @@
 `jailer` binary. m80 materializes the host-side bind plan, then launches the
 official jailer with explicit arguments. The official jailer owns the fresh
 mount namespace, recursive slave propagation, `pivot_root`, old-root detach,
-in-jail device-node creation, PID namespace entry, environment cleanup, and
-close-range cleanup before Firecracker is exec'd.
+private copy of the Firecracker executable, in-jail device-node creation, PID
+namespace entry, environment cleanup, and close-range cleanup before
+Firecracker is exec'd.
 
 `Plan::materialize()` does not call `unshare()` or `pivot_root()`: it runs in
 the host orchestrator process, so doing that there would isolate m80 itself
@@ -44,11 +45,14 @@ Runtime evidence:
   `NoNewPrivs: 1`, zero permitted/effective/inheritable/ambient caps, empty
   signal mask, hardened bind mount flags, read-only rootfs binding, and
   jailer-created `/dev/kvm`, `/dev/net/tun`, and `/dev/urandom` character
-  devices.
+  devices. It also proves `/firecracker` inside the jail is a private copy,
+  not a bind mount or hard link, with `nlink == 1`, owner-only mode, and jail
+  uid/gid ownership.
 - `crates/m80-jailer/tests/integration_root.rs::launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one`
   launches real Firecracker through the official jailer with `--new-pid-ns`,
   then asserts `jailer_pid = 0`, Firecracker's `NSpid` ends in `1`, and the
-  configured resource limit and inherited hardening state are live.
+  configured resource limit, inherited hardening state, and private
+  Firecracker executable copy are live.
 - `crates/m80-jailer-harden/tests/integration_root.rs::wrapper_applies_inherited_hardening_before_exec`
   execs a shell through the hardening wrapper and inspects `/proc/self/status`,
   the environment, and a deliberately inherited fd for the wrapper-level

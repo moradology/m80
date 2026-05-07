@@ -24,7 +24,7 @@
 //! 5. `StoppedSandbox::delete` removes the run-dir.
 
 use std::io::Write as _;
-use std::os::unix::fs::FileTypeExt as _;
+use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
 use std::process::{Command, Stdio};
 
 #[test]
@@ -208,6 +208,7 @@ fn end_to_end_real_kvm_file_ops() {
 fn end_to_end_real_kvm_jailer_security_parity() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let firecracker_bin = discovery.firecracker_bin.clone();
 
     let run_root = discovery.run_root.clone();
     let config = m80_firecracker::BackendConfig {
@@ -277,6 +278,7 @@ fn end_to_end_real_kvm_jailer_security_parity() {
             "{path} must be a character device"
         );
     }
+    assert_exec_file_is_private_copy(pid, &firecracker_bin, 3000, 3000);
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
@@ -337,6 +339,30 @@ fn mount_options(pid: u32, mount_point: &str) -> String {
         }
     }
     panic!("missing {mount_point} in mountinfo:\n{mountinfo}");
+}
+
+fn assert_exec_file_is_private_copy(pid: u32, source: &std::path::Path, uid: u32, gid: u32) {
+    let copied = format!("/proc/{pid}/root/firecracker");
+    let source_meta = std::fs::metadata(source).expect("source firecracker metadata");
+    let copied_meta = std::fs::metadata(&copied).expect("copied firecracker metadata");
+
+    assert_ne!(
+        (source_meta.dev(), source_meta.ino()),
+        (copied_meta.dev(), copied_meta.ino()),
+        "jailed firecracker binary must be a copy, not a bind mount or hard link"
+    );
+    assert_eq!(
+        copied_meta.nlink(),
+        1,
+        "copied binary must not be hard-linked"
+    );
+    assert_eq!(copied_meta.uid(), uid, "copied binary uid");
+    assert_eq!(copied_meta.gid(), gid, "copied binary gid");
+    assert_eq!(
+        copied_meta.mode() & 0o777,
+        0o700,
+        "copied binary mode must be owner-only under m80 hardening"
+    );
 }
 
 fn sha256_hex_bytes(bytes: &[u8]) -> String {

@@ -10,6 +10,7 @@
 use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
 /// Documents materialize behaviour: CreateDir and Bind steps are executed via
@@ -131,12 +132,42 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
     assert_status_contains(jailed.firecracker_pid, "CapAmb:", "0000000000000000");
     assert_status_contains(jailed.firecracker_pid, "SigBlk:", "0000000000000000");
     assert_supplementary_groups_empty(jailed.firecracker_pid);
+    assert_exec_file_is_private_copy(
+        jailed.firecracker_pid,
+        &cfg.firecracker_bin,
+        cfg.uid,
+        cfg.gid,
+    );
 
     kill(
         Pid::from_raw(jailed.firecracker_pid as i32),
         Signal::SIGKILL,
     )
     .expect("kill firecracker");
+}
+
+fn assert_exec_file_is_private_copy(pid: u32, source: &std::path::Path, uid: u32, gid: u32) {
+    let copied = PathBuf::from(format!("/proc/{pid}/root/firecracker"));
+    let source_meta = std::fs::metadata(source).expect("source firecracker metadata");
+    let copied_meta = std::fs::metadata(&copied).expect("copied firecracker metadata");
+
+    assert_ne!(
+        (source_meta.dev(), source_meta.ino()),
+        (copied_meta.dev(), copied_meta.ino()),
+        "jailed firecracker binary must be a copy, not a bind mount or hard link"
+    );
+    assert_eq!(
+        copied_meta.nlink(),
+        1,
+        "copied binary must not be hard-linked"
+    );
+    assert_eq!(copied_meta.uid(), uid, "copied binary uid");
+    assert_eq!(copied_meta.gid(), gid, "copied binary gid");
+    assert_eq!(
+        copied_meta.mode() & 0o777,
+        0o700,
+        "copied binary mode must be owner-only under m80 hardening"
+    );
 }
 
 fn assert_status_contains(pid: u32, label: &str, expected: &str) {
