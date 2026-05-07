@@ -1,15 +1,47 @@
-//! Shared test fixtures: fake `Manifest` + fake `Discovery` so each
-//! integration test doesn't reinvent the placeholder values.
+//! Shared test fixtures for `m80-firecracker` integration tests.
 //!
-//! Also provides [`RunDirDumpGuard`], a drop-guard that dumps
+//! Provides [`RunDirDumpGuard`], a drop-guard that dumps
 //! `<run_dir>/console.log` and `<run_dir>/diagnostics.jsonl` to stderr
 //! when the test thread is panicking — making failures self-explaining
 //! without any extra effort from the caller.
+//!
+//! [`fake_manifest`], [`fake_discovery`], [`EnvRestore`], and [`env_lock`]
+//! are re-exported from `m80-test-helpers`.
 
-use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+
+// ── Re-exports from m80-test-helpers ─────────────────────────────────────────
+
+// These re-exports are consumed by sibling integration test files via
+// `common::env_lock()`, `common::EnvRestore`, and `common::fake_manifest`.
+// Clippy flags them as "unused" because it only checks within a single binary;
+// suppress the lint here since the items are genuinely in use.
+#[allow(unused_imports)]
+pub use m80_test_helpers::env::{env_lock, EnvRestore};
+#[allow(unused_imports)]
+pub use m80_test_helpers::manifest::fake_manifest;
+
+/// Fake [`m80_preflight::Discovery`] whose `run_root` is `run_root`.
+///
+/// Thin wrapper so call sites keep the `common::fake_discovery(dir)` spelling.
+#[allow(dead_code)]
+pub fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
+    m80_test_helpers::manifest::fake_discovery_at(run_root)
+}
+
+// ── Firecracker-specific fixtures ─────────────────────────────────────────────
+
+#[allow(dead_code)]
+pub const CONFIG_ENV_KEYS: &[&str] = &[
+    "HOME",
+    "M80_DEFAULT_PROFILE",
+    "M80_MAX_CONCURRENT_VMS",
+    "M80_RUN_ROOT",
+    "M80_JAIL_UID",
+    "M80_JAIL_GID",
+    "M80_CGROUP_MODE",
+];
 
 pub fn sandbox_config() -> m80_firecracker::SandboxConfig {
     m80_firecracker::SandboxConfig {
@@ -30,91 +62,6 @@ pub fn sandbox_config_with_id(vm_id: impl Into<String>) -> m80_firecracker::Sand
     m80_firecracker::SandboxConfig {
         vm_id: Some(vm_id.into()),
         ..sandbox_config()
-    }
-}
-
-#[allow(dead_code)]
-pub const CONFIG_ENV_KEYS: &[&str] = &[
-    "HOME",
-    "M80_DEFAULT_PROFILE",
-    "M80_MAX_CONCURRENT_VMS",
-    "M80_RUN_ROOT",
-    "M80_JAIL_UID",
-    "M80_JAIL_GID",
-    "M80_CGROUP_MODE",
-];
-
-#[allow(dead_code)]
-pub fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-pub struct EnvRestore {
-    values: Vec<(&'static str, Option<OsString>)>,
-}
-
-impl EnvRestore {
-    #[allow(dead_code)]
-    pub fn capture(keys: &[&'static str]) -> Self {
-        Self {
-            values: keys
-                .iter()
-                .map(|key| (*key, std::env::var_os(key)))
-                .collect(),
-        }
-    }
-}
-
-impl Drop for EnvRestore {
-    fn drop(&mut self) {
-        for (key, value) in &self.values {
-            if let Some(value) = value {
-                std::env::set_var(key, value);
-            } else {
-                std::env::remove_var(key);
-            }
-        }
-    }
-}
-
-#[allow(dead_code)]
-pub fn fake_manifest() -> m80_image_manifest::Manifest {
-    m80_image_manifest::Manifest {
-        schema_version: m80_image_manifest::SCHEMA_VERSION,
-        image_kind: m80_image_manifest::ImageKind::Ubuntu,
-        kernel_kind: m80_image_manifest::KernelKind::Stock,
-        expected_firecracker_version: "v1.0.0".into(),
-        kernel_image: PathBuf::from("/dev/null"),
-        kernel_image_sha256: "0".repeat(64),
-        output_rootfs_image: PathBuf::from("/dev/null"),
-        output_rootfs_sha256: "0".repeat(64),
-        source_rootfs_image: Some(PathBuf::from("/dev/null")),
-        source_rootfs_sha256: Some("0".repeat(64)),
-        daemon_binary_path: PathBuf::from("/dev/null"),
-        daemon_binary_sha256: "0".repeat(64),
-        service_unit_path: Some(PathBuf::from("/dev/null")),
-        service_unit_sha256: Some("0".repeat(64)),
-        workspace_mount_path: Some(PathBuf::from("/dev/null")),
-        workspace_mount_sha256: Some("0".repeat(64)),
-        boot_target: Some("multi-user.target".into()),
-        guest_port: 9001,
-        no_egress_reason: None,
-        ready_marker: "GUESTD_READY".into(),
-    }
-}
-
-#[allow(dead_code)]
-pub fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
-    m80_preflight::Discovery {
-        firecracker_bin: PathBuf::from("/dev/null"),
-        jailer_bin: PathBuf::from("/dev/null"),
-        kernel: PathBuf::from("/dev/null"),
-        rootfs: PathBuf::from("/dev/null"),
-        manifest: fake_manifest(),
-        run_root: run_root.to_path_buf(),
-        privilege: m80_preflight::PrivilegeStatus::Root,
-        report: vec![],
     }
 }
 

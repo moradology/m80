@@ -1,0 +1,16 @@
+[package]
+name = "m80-test-helpers"
+description = "Shared test fixtures and utilities for m80 integration tests (dev-dependency only)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+m80-image-manifest.workspace = true
+m80-preflight.workspace = true
+tempfile.workspace = true

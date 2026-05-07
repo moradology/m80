@@ -65,3 +65,4 @@ m80-net-outbound = { path = "crates/m80-net-outbound" }
 m80-snapshot = { path = "crates/m80-snapshot" }
 m80-observability = { path = "crates/m80-observability" }
 m80-firecracker = { path = "crates/m80-firecracker" }
+m80-test-helpers = { path = "crates/m80-test-helpers" }

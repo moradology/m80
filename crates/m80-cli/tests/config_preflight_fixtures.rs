@@ -4,10 +4,9 @@
 //! not depend on a developer machine's /etc or user config.
 
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::sync::{Mutex, OnceLock};
 
 use m80_firecracker::{load_config_from_paths, ConfigFilePaths, ConfigSource, EffectiveConfig};
+use m80_test_helpers::env::{env_lock, EnvRestore};
 use tempfile::TempDir;
 
 const ENV_KEYS: &[&str] = &[
@@ -20,41 +19,9 @@ const ENV_KEYS: &[&str] = &[
     "M80_CGROUP_MODE",
 ];
 
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-struct EnvRestore {
-    values: Vec<(&'static str, Option<OsString>)>,
-}
-
-impl EnvRestore {
-    fn capture() -> Self {
-        Self {
-            values: ENV_KEYS
-                .iter()
-                .map(|key| (*key, std::env::var_os(key)))
-                .collect(),
-        }
-    }
-}
-
-impl Drop for EnvRestore {
-    fn drop(&mut self) {
-        for (key, value) in &self.values {
-            if let Some(value) = value {
-                std::env::set_var(key, value);
-            } else {
-                std::env::remove_var(key);
-            }
-        }
-    }
-}
-
 fn with_isolated_home(test: impl FnOnce(&TempDir)) {
     let _lock = env_lock().lock().unwrap();
-    let _restore = EnvRestore::capture();
+    let _restore = EnvRestore::capture(ENV_KEYS);
     for key in ENV_KEYS {
         std::env::remove_var(key);
     }
