@@ -3,6 +3,7 @@
 
 mod exec;
 mod fileops;
+mod hotplug;
 mod metrics;
 mod protocol;
 mod stopped;
@@ -137,6 +138,7 @@ impl RunningSandbox {
             rootfs: _rootfs,
             scratch,
             snapshot_mount,
+            preallocated_drive_slots: _preallocated_drive_slots,
             client: _client,
             firecracker: _firecracker,
             permit,
@@ -215,6 +217,7 @@ impl RunningSandbox {
             rootfs: _rootfs,
             scratch,
             snapshot_mount,
+            preallocated_drive_slots: _preallocated_drive_slots,
             client: _client,
             firecracker: _firecracker,
             permit,

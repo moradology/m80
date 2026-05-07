@@ -159,6 +159,23 @@ pub struct PtyOutputChunk {
     pub bytes: Vec<u8>,
 }
 
+/// Request to attach one preallocated Firecracker drive slot and verify the
+/// guest-mounted identity bytes before returning the VM to the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HotplugDriveAttach {
+    /// Zero-based preallocated drive slot index.
+    pub slot: u8,
+    /// New Firecracker `path_on_host` for the slot. Because Firecracker is
+    /// jailed, this path must be visible inside the jail namespace.
+    pub path_on_host: PathBuf,
+    /// Guest mount path, e.g. `/workspace`.
+    pub mount_path: String,
+    /// Guest file path to read after mount.
+    pub identity_path: String,
+    /// Opaque bytes expected from `identity_path`.
+    pub expected_identity: Vec<u8>,
+}
+
 /// Snapshot of the merged configuration with each field tagged by source.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -387,6 +404,8 @@ pub struct RunningSandbox {
     pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
     /// Optional diagnostics writer for `<run_dir>/diagnostics.jsonl`.
     pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
+    /// Number of preallocated hotplug slots PUT before instance start.
+    pub(crate) preallocated_drive_slots: u8,
     /// Fallback cleanup guard; disarmed by `stop()` and `force_kill()` before
     /// they perform their own teardown, so Drop is a no-op on the happy path.
     pub(crate) kill_guard: ForceKillGuard,

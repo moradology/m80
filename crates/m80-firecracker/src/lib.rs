@@ -41,7 +41,8 @@ pub use m80_storage::ChangeSet;
 pub use runroot::OWNERSHIP_LOCK;
 pub use types::{
     Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig, EffectiveField, ExecChunk,
-    PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig, StoppedSandbox,
-    DEFAULT_PREALLOCATED_DRIVE_SLOTS, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+    HotplugDriveAttach, PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig,
+    StoppedSandbox, DEFAULT_PREALLOCATED_DRIVE_SLOTS, FIRST_LINE_MEM_SIZE_MIB,
+    FIRST_LINE_VCPU_COUNT,
 };
 pub use warm_pool::{WarmLease, WarmPool, WarmPoolConfig, WarmPoolSnapshot};

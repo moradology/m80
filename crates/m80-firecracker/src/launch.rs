@@ -356,6 +356,7 @@ impl Sandbox {
             watcher_stop,
             watcher_thread,
             diagnostics,
+            preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
             kill_guard,
         })
     }
@@ -609,6 +610,7 @@ impl Sandbox {
             watcher_stop,
             watcher_thread,
             diagnostics,
+            preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
             kill_guard,
         })
     }

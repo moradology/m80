@@ -97,6 +97,18 @@ mode does not expose separated stdout/stderr streams.
 guest `FileError` responses to `FcError::FileOp`; callers do not need to
 spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
 
+`RunningSandbox::attach_drive_verified(self, HotplugDriveAttach)` retargets one
+preallocated Firecracker drive slot with `PATCH /drives/{id}`, asks guestd to
+mount that block device, and verifies the caller's opaque tenant identity bytes
+before returning the still-running sandbox. `HotplugDriveAttach::path_on_host`
+is the Firecracker-visible path for the new backing file; because m80 runs
+Firecracker in a jail, callers must pass an absolute path that is visible inside
+that jail namespace. Attach, mount, protocol, or identity failures consume the
+running sandbox and force-kill/delete the VM so a partially attached tenant
+drive is never returned to the caller as reusable state. Guest mount failures
+map to `FcError::DriveHotplug`; byte mismatches map to
+`FcError::TenantIdentityMismatch`.
+
 After a vsock channel is established, malformed protobuf, oversized frames,
 unsupported protocol versions, unexpected frame kinds, stream sequence gaps, and
 disconnects before a required terminal frame map to
@@ -122,6 +134,7 @@ snapshot without spawning a guest process.
 | `RunningSandbox::stat_file` | `(&mut self, path) -> Result<FileStat, FcError>` | Stat one guest path without following final symlink. |
 | `RunningSandbox::remove_file` | `(&mut self, path) -> Result<(), FcError>` | Remove one non-directory guest path. |
 | `RunningSandbox::upload_file_chunked` | `(&mut self, path, mode, reader, chunk_size) -> Result<u64, FcError>` | Upload via begin/chunk/commit on one vsock connection. |
+| `RunningSandbox::attach_drive_verified` | `(self, HotplugDriveAttach) -> Result<RunningSandbox, FcError>` | Retarget one preallocated drive slot, wait for guest mount ACK, verify opaque identity bytes, and discard the VM on failure. |
 | `RunningSandbox::guest_metrics` | `(&mut self) -> Result<MetricsResponse, FcError>` | Read guest CPU, memory, and guestd counter metrics over vsock. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
 | `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
@@ -400,6 +413,7 @@ Core types:
 - `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
 - `WarmLease` — single exec slot checked out from `WarmPool`.
 - `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, etc.).
+- `HotplugDriveAttach` — host-side request to attach and verify one preallocated drive slot.
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
 - `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.
 - `FcError` — exhaustive typed error for all phases.

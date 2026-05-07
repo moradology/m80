@@ -10,7 +10,7 @@ use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
 use m80_net_outbound::NetError;
 use m80_preflight::PreflightError;
-use m80_proto::FileError;
+use m80_proto::{DriveHotplugError, FileError};
 use m80_snapshot::SnapshotError;
 use m80_storage::StorageError;
 use m80_vsock::VsockError;
@@ -180,6 +180,22 @@ pub enum FcError {
     /// Guest-side file operation failed with a typed wire error.
     #[error("file operation: {0:?}")]
     FileOp(FileError),
+    /// Guest-side drive hotplug failed with a typed wire error.
+    #[error("drive hotplug: {0:?}")]
+    DriveHotplug(DriveHotplugError),
+    /// Guest-mounted drive identity bytes did not match the caller's expected
+    /// opaque identity.
+    #[error(
+        "tenant identity mismatch for {drive_id}: expected {expected_len} bytes, got {actual_len}"
+    )]
+    TenantIdentityMismatch {
+        /// Firecracker drive id whose mounted identity was checked.
+        drive_id: String,
+        /// Expected opaque identity byte length.
+        expected_len: usize,
+        /// Actual opaque identity byte length.
+        actual_len: usize,
+    },
     /// Admission was refused (semaphore at limit; no permit available).
     #[error("admission refused: {limit} concurrent VMs already running")]
     AdmissionRefused {
