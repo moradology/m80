@@ -123,6 +123,23 @@ struct SchemaVersionProbe {
 }
 
 impl Manifest {
+    /// Parse and structurally validate a manifest from raw bytes. Probes
+    /// `schema_version` before the full parse so future-version payloads
+    /// report `UnsupportedSchemaVersion` instead of leaking
+    /// `Json("unknown field …")` from `deny_unknown_fields`.
+    /// Does NOT verify sha256s — call [`Manifest::verify`] for that.
+    pub fn from_bytes(raw: &[u8]) -> Result<Manifest, ManifestError> {
+        let probe: SchemaVersionProbe = serde_json::from_slice(raw)?;
+        if probe.schema_version != SCHEMA_VERSION {
+            return Err(ManifestError::UnsupportedSchemaVersion(
+                probe.schema_version,
+            ));
+        }
+        let manifest: Manifest = serde_json::from_slice(raw)?;
+        manifest.check_kind_invariants()?;
+        Ok(manifest)
+    }
+
     /// Read and structurally validate a manifest. Probes `schema_version`
     /// before the full parse so future-version files report cleanly.
     /// Does NOT verify sha256s — call [`Manifest::verify`] for that.
@@ -131,15 +148,7 @@ impl Manifest {
             path: path.to_path_buf(),
             source,
         })?;
-        let probe: SchemaVersionProbe = serde_json::from_slice(&raw)?;
-        if probe.schema_version != SCHEMA_VERSION {
-            return Err(ManifestError::UnsupportedSchemaVersion(
-                probe.schema_version,
-            ));
-        }
-        let manifest: Manifest = serde_json::from_slice(&raw)?;
-        manifest.check_kind_invariants()?;
-        Ok(manifest)
+        Manifest::from_bytes(&raw)
     }
 
     /// Write this manifest to `path` as pretty-printed JSON with a trailing

@@ -7,22 +7,13 @@
 
 mod common;
 
-use std::path::Path;
-
 use m80_image_manifest::{Manifest, ManifestError};
 
-fn write_with_mutation(
-    dir: &Path,
-    name: &str,
-    mutate: impl FnOnce(&mut serde_json::Value),
-) -> std::path::PathBuf {
+fn mutated_bytes(dir: &std::path::Path, mutate: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {
     let m = common::make_artifacts(dir);
     let mut v = serde_json::to_value(&m).unwrap();
     mutate(&mut v);
-    let raw = format!("{}\n", serde_json::to_string_pretty(&v).unwrap());
-    let path = dir.join(name);
-    std::fs::write(&path, raw.as_bytes()).unwrap();
-    path
+    serde_json::to_vec_pretty(&v).unwrap()
 }
 
 /// Bead m80-sz1.4.1: future schema_version is rejected as
@@ -30,10 +21,10 @@ fn write_with_mutation(
 #[test]
 fn future_schema_version_rejected() {
     let dir = tempfile::tempdir().unwrap();
-    let path = write_with_mutation(dir.path(), "future_schema.json", |v| {
+    let raw = mutated_bytes(dir.path(), |v| {
         v["schema_version"] = serde_json::json!(42u32);
     });
-    let err = Manifest::read(&path).unwrap_err();
+    let err = Manifest::from_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(42)),
         "expected UnsupportedSchemaVersion(42), got {err:?}"
@@ -44,10 +35,10 @@ fn future_schema_version_rejected() {
 #[test]
 fn zero_schema_version_rejected() {
     let dir = tempfile::tempdir().unwrap();
-    let path = write_with_mutation(dir.path(), "zero_schema.json", |v| {
+    let raw = mutated_bytes(dir.path(), |v| {
         v["schema_version"] = serde_json::json!(0u32);
     });
-    let err = Manifest::read(&path).unwrap_err();
+    let err = Manifest::from_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(0)),
         "expected UnsupportedSchemaVersion(0), got {err:?}"
@@ -58,10 +49,10 @@ fn zero_schema_version_rejected() {
 #[test]
 fn missing_required_field_rejected() {
     let dir = tempfile::tempdir().unwrap();
-    let path = write_with_mutation(dir.path(), "missing_field.json", |v| {
+    let raw = mutated_bytes(dir.path(), |v| {
         v.as_object_mut().unwrap().remove("daemon_binary_path");
     });
-    let err = Manifest::read(&path).unwrap_err();
+    let err = Manifest::from_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::Json(_)),
         "expected Json error for missing field, got {err:?}"
@@ -72,10 +63,10 @@ fn missing_required_field_rejected() {
 #[test]
 fn unknown_field_rejected() {
     let dir = tempfile::tempdir().unwrap();
-    let path = write_with_mutation(dir.path(), "unknown_field.json", |v| {
+    let raw = mutated_bytes(dir.path(), |v| {
         v["UNKNOWN_KEY"] = serde_json::json!("surprise");
     });
-    let err = Manifest::read(&path).unwrap_err();
+    let err = Manifest::from_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::Json(_)),
         "expected Json error for unknown field, got {err:?}"
@@ -88,26 +79,25 @@ fn unknown_field_rejected() {
 #[test]
 fn schema_version_check_fires_before_unknown_field_check() {
     let dir = tempfile::tempdir().unwrap();
-    let path = write_with_mutation(dir.path(), "future_with_unknown.json", |v| {
+    let raw = mutated_bytes(dir.path(), |v| {
         v["schema_version"] = serde_json::json!(99u32);
         v.as_object_mut()
             .unwrap()
             .insert("future_field".into(), serde_json::json!("v0.99 stuff"));
     });
-    let err = Manifest::read(&path).unwrap_err();
+    let err = Manifest::from_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(99)),
         "expected UnsupportedSchemaVersion(99), got {err:?}"
     );
 }
 
-/// A valid manifest reads without error (sanity check that the helper isn't
-/// systematically broken).
+/// A valid manifest round-trips through bytes without error (sanity check
+/// that the helper isn't systematically broken).
 #[test]
 fn valid_manifest_reads_clean() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::make_artifacts(dir.path());
-    let path = dir.path().join("valid.json");
-    m.write(&path).unwrap();
-    Manifest::read(&path).unwrap();
+    let raw = serde_json::to_vec_pretty(&m).unwrap();
+    Manifest::from_bytes(&raw).unwrap();
 }

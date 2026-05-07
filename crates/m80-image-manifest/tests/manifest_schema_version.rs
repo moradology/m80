@@ -25,14 +25,12 @@ fn stamps_schema_and_firecracker_version() {
 fn wrong_schema_version_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::make_artifacts(dir.path());
-    let path = dir.path().join("bad_schema.json");
 
     let mut v = serde_json::to_value(&m).unwrap();
     v["schema_version"] = serde_json::json!(99u32);
-    let raw = format!("{}\n", serde_json::to_string_pretty(&v).unwrap());
-    std::fs::write(&path, raw.as_bytes()).unwrap();
+    let raw = serde_json::to_string_pretty(&v).unwrap();
 
-    let err = Manifest::read(&path).unwrap_err();
+    let err = Manifest::from_bytes(raw.as_bytes()).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(99)),
         "expected UnsupportedSchemaVersion(99), got {err:?}"

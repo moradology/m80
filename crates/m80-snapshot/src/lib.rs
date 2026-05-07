@@ -346,24 +346,37 @@ fn write_pretty_json_0644<T: Serialize>(value: &T, path: &Path) -> Result<(), Sn
 /// Probe `schema_version` before full parse so a v0.2 file reports
 /// `UnsupportedSchemaVersion(2)` instead of leaking the unrelated
 /// `Json("unknown field …")` from `deny_unknown_fields`.
-fn read_with_schema_probe<T: DeserializeOwned>(path: &Path) -> Result<T, SnapshotError> {
-    let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let probe: SchemaVersionProbe = serde_json::from_slice(&raw).map_err(SnapshotError::Json)?;
+fn parse_with_schema_probe<T: DeserializeOwned>(raw: &[u8]) -> Result<T, SnapshotError> {
+    let probe: SchemaVersionProbe =
+        serde_json::from_slice(raw).map_err(SnapshotError::Json)?;
     if probe.schema_version != SCHEMA_VERSION {
         return Err(SnapshotError::UnsupportedSchemaVersion(
             probe.schema_version,
         ));
     }
-    serde_json::from_slice(&raw).map_err(SnapshotError::Json)
+    serde_json::from_slice(raw).map_err(SnapshotError::Json)
+}
+
+fn read_with_schema_probe<T: DeserializeOwned>(path: &Path) -> Result<T, SnapshotError> {
+    let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    parse_with_schema_probe(&raw)
 }
 
 impl SnapshotManifest {
     /// Write to `path` as pretty JSON + trailing newline + mode 0644 (Unix).
     pub fn write(&self, path: &Path) -> Result<(), SnapshotError> {
         write_pretty_json_0644(self, path)
+    }
+
+    /// Parse and structurally validate a manifest from raw bytes. Probes
+    /// `schema_version` before full parse so future-version payloads report
+    /// `UnsupportedSchemaVersion` instead of leaking `Json("unknown field …")`
+    /// from `deny_unknown_fields`. sha256s are NOT checked here.
+    pub fn from_bytes(raw: &[u8]) -> Result<SnapshotManifest, SnapshotError> {
+        parse_with_schema_probe(raw)
     }
 
     /// Read and structurally validate a manifest at `path`. Probes
