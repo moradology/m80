@@ -11,11 +11,10 @@ use serde::{Deserialize, Serialize};
 
 /// Caller intent: opt-in network egress with optional bounded private
 /// exceptions. Default for any new construction is [`NetworkPolicy::NoEgress`].
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum NetworkPolicy {
     /// No NIC, no iptables, no privilege required.
-    #[default]
     NoEgress,
     /// Outbound NAT to admitted public-IPv4 destinations, plus bounded
     /// private-IPv4 exception CIDRs.

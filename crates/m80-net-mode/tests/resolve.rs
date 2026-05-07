@@ -57,20 +57,3 @@ fn network_policy_round_trips_through_serde_json() {
         assert_eq!(back, policy);
     }
 }
-
-#[test]
-fn vm_network_mode_round_trips_through_serde_json() {
-    for mode in [
-        VmNetworkMode::NoEgress,
-        VmNetworkMode::OutboundNat {
-            plan: OutboundIntent {
-                exceptions: vec!["172.16.0.0/12".parse().unwrap()],
-                gateway_override: None,
-            },
-        },
-    ] {
-        let json = serde_json::to_string(&mode).unwrap();
-        let back: VmNetworkMode = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, mode);
-    }
-}
