@@ -335,9 +335,9 @@ mod tests {
             version: PROTOCOL_VERSION,
         };
         let mut buf = Vec::new();
-        write_frame(&mut buf, &h).unwrap();
-        let back: HandshakeMessage = read_frame(&mut Cursor::new(buf)).unwrap();
-        assert_eq!(back, h);
+        write_frame(&mut buf, &Envelope::new(h.clone())).unwrap();
+        let back: Envelope<HandshakeMessage> = read_frame(&mut Cursor::new(buf)).unwrap();
+        assert_eq!(back.payload, h);
     }
 
     #[test]

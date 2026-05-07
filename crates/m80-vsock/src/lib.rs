@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use sha2::Digest;
 
-use m80_proto::{encode_raw_envelope, Envelope, Frame, ProtoError, RawEnvelope};
+use m80_proto::{encode_raw_envelope, Envelope, Payload, ProtoError, RawEnvelope};
 
 /// Re-export the canonical default vsock port from `m80-proto`.
 pub use m80_proto::GUEST_PORT_DEFAULT;
@@ -82,9 +82,9 @@ impl std::fmt::Debug for ChannelSender {
 fn send_envelope<W, T>(stream: &mut W, envelope: &Envelope<T>) -> Result<(), VsockError>
 where
     W: Write,
-    Envelope<T>: Frame,
+    T: Payload + Clone,
 {
-    let raw = envelope.to_raw_frame()?;
+    let raw = RawEnvelope::from_typed(envelope.clone());
     if debug_wire::is_enabled("vsock") {
         let bytes = encode_raw_envelope(raw.clone())?;
         tracing::trace!(
@@ -157,7 +157,7 @@ impl Channel {
     /// Send one [`Envelope`] over the channel.
     pub fn send<T>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError>
     where
-        Envelope<T>: Frame,
+        T: Payload + Clone,
     {
         send_envelope(&mut self.stream, envelope)
     }
@@ -176,7 +176,7 @@ impl Channel {
     /// Receive one protobuf-framed [`Envelope`] from the channel.
     pub fn recv<U>(&mut self) -> Result<Envelope<U>, VsockError>
     where
-        Envelope<U>: Frame,
+        U: Payload,
     {
         let envelope: Envelope<U> = m80_proto::read_frame(&mut self.buf_reader)?;
         if debug_wire::is_enabled("vsock") {
@@ -219,7 +219,7 @@ impl ChannelSender {
     /// Send one [`Envelope`] over the cloned write half.
     pub fn send<T>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError>
     where
-        Envelope<T>: Frame,
+        T: Payload + Clone,
     {
         send_envelope(&mut self.stream, envelope)
     }

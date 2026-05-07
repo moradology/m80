@@ -3,7 +3,7 @@
 use std::io::{self, Read, Write};
 
 use crate::error::ProtoError;
-use crate::types::{Envelope, HandshakeMessage, Payload};
+use crate::types::{Envelope, Payload};
 use crate::version::{MAX_FRAME_BYTES, PROTOCOL_VERSION};
 use crate::wire::{decode_raw_envelope, encode_raw_envelope, RawEnvelope};
 
@@ -19,44 +19,13 @@ fn check_size(n: usize) -> Result<(), ProtoError> {
     Ok(())
 }
 
-/// A value that can be encoded as one m80 protobuf frame.
-pub trait Frame: Sized {
-    /// Convert this value into a raw envelope for writing.
-    fn to_raw_frame(&self) -> Result<RawEnvelope, ProtoError>;
-    /// Decode this value from a raw envelope after reading.
-    fn from_raw_frame(raw: RawEnvelope) -> Result<Self, ProtoError>;
-}
-
-impl<T> Frame for Envelope<T>
-where
-    T: Payload + Clone,
-{
-    fn to_raw_frame(&self) -> Result<RawEnvelope, ProtoError> {
-        Ok(RawEnvelope::from_typed(self.clone()))
-    }
-
-    fn from_raw_frame(raw: RawEnvelope) -> Result<Self, ProtoError> {
-        raw.decode()
-    }
-}
-
-impl Frame for HandshakeMessage {
-    fn to_raw_frame(&self) -> Result<RawEnvelope, ProtoError> {
-        Ok(RawEnvelope::from_typed(Envelope::new(self.clone())))
-    }
-
-    fn from_raw_frame(raw: RawEnvelope) -> Result<Self, ProtoError> {
-        Ok(raw.decode::<HandshakeMessage>()?.payload)
-    }
-}
-
 /// Read one typed protobuf frame from `reader`.
-pub fn read_frame<R, T>(reader: &mut R) -> Result<T, ProtoError>
+pub fn read_frame<R, T>(reader: &mut R) -> Result<Envelope<T>, ProtoError>
 where
     R: Read,
-    T: Frame,
+    T: Payload,
 {
-    T::from_raw_frame(read_raw_frame(reader)?)
+    read_raw_frame(reader)?.decode()
 }
 
 /// Read one protobuf frame from `reader` without choosing a payload type.
@@ -84,12 +53,12 @@ where
 }
 
 /// Write one typed protobuf frame to `writer`.
-pub fn write_frame<W, T>(writer: &mut W, value: &T) -> Result<(), ProtoError>
+pub fn write_frame<W, T>(writer: &mut W, envelope: &Envelope<T>) -> Result<(), ProtoError>
 where
     W: Write,
-    T: Frame,
+    T: Payload + Clone,
 {
-    write_raw_frame(writer, value.to_raw_frame()?)
+    write_raw_frame(writer, RawEnvelope::from_typed(envelope.clone()))
 }
 
 /// Write one protobuf frame to `writer` without choosing a payload type.

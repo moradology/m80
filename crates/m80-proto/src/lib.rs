@@ -21,7 +21,7 @@ mod version;
 pub mod wire;
 
 pub use error::ProtoError;
-pub use framing::{read_frame, read_raw_frame, write_frame, write_raw_frame, Frame};
+pub use framing::{read_frame, read_raw_frame, write_frame, write_raw_frame};
 pub use types::{
     CancelResponse, CancelRequest, CancelStatus, DirEntry, Envelope, ExecExit, ExecRequest,
     ExecResponse, ExecStatus, ExecStderr, ExecStdout, ExecTiming, FileError, FileKind,

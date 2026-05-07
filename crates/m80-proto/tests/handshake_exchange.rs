@@ -13,11 +13,11 @@ fn reserved_handshake_payload_round_trips_exact_version() {
     let host_shake = HandshakeMessage {
         version: PROTOCOL_VERSION,
     };
-    write_frame(&mut channel, &host_shake).unwrap();
+    write_frame(&mut channel, &Envelope::new(host_shake)).unwrap();
 
     let mut reader = Cursor::new(&channel);
-    let remote: HandshakeMessage = read_frame(&mut reader).unwrap();
-    negotiate_version(remote.version).expect("same-version negotiation must succeed");
+    let remote: Envelope<HandshakeMessage> = read_frame(&mut reader).unwrap();
+    negotiate_version(remote.payload.version).expect("same-version negotiation must succeed");
 }
 
 #[test]

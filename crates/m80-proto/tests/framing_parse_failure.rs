@@ -13,7 +13,7 @@ fn malformed_protobuf_returns_error_and_drops_connection() {
     malformed.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     let mut cursor = Cursor::new(malformed);
 
-    let err: ProtoError = read_frame::<_, Envelope<ExecRequest>>(&mut cursor)
+    let err: ProtoError = read_frame::<_, ExecRequest>(&mut cursor)
         .expect_err("malformed protobuf must return an error");
     assert!(
         matches!(err, ProtoError::MalformedPayload(_)),
@@ -30,7 +30,7 @@ fn short_frame_body_returns_unexpected_eof() {
     short.extend_from_slice(&[0, 1, 2]);
     let mut cursor = Cursor::new(short);
 
-    let err = read_frame::<_, Envelope<ExecRequest>>(&mut cursor)
+    let err = read_frame::<_, ExecRequest>(&mut cursor)
         .expect_err("short protobuf body must return EOF");
 
     assert!(matches!(err, ProtoError::Io(err) if err.kind() == io::ErrorKind::UnexpectedEof));
@@ -60,7 +60,7 @@ fn unsupported_version_returns_incompatible_version() {
     let mut bytes = (body.len() as u32).to_be_bytes().to_vec();
     bytes.extend_from_slice(&body);
 
-    let err = read_frame::<_, Envelope<ExecRequest>>(&mut Cursor::new(bytes))
+    let err = read_frame::<_, ExecRequest>(&mut Cursor::new(bytes))
         .expect_err("unsupported version must fail closed");
 
     assert!(matches!(

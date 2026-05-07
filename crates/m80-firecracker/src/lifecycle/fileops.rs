@@ -275,7 +275,7 @@ fn recv_fileop<T>(
     context: &'static str,
 ) -> Result<Envelope<T>, FcError>
 where
-    Envelope<T>: m80_proto::Frame,
+    T: m80_proto::Payload,
 {
     channel
         .recv()
