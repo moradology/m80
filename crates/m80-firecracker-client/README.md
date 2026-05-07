@@ -25,7 +25,7 @@ without inheriting m80's lifecycle assumptions.
   Concurrency is the caller's job.
 - Every API method maps 1:1 to a Firecracker REST resource:
   `put_boot_source`, `put_machine_config`, `put_drive`, `put_vsock`,
-  `instance_action`, `patch_vm_state`, `put_snapshot_create`,
+  `patch_drive`, `instance_action`, `patch_vm_state`, `put_snapshot_create`,
   `put_snapshot_load`. The method signature mirrors the Firecracker schema
   exactly.
 - The client owns no global state. Constructing one is `Client::new(uds_path)`;
@@ -48,7 +48,7 @@ without inheriting m80's lifecycle assumptions.
 - `SnapshotType { Full, Diff }` — for `CreateSnapshotConfig`.
 - `MemBackendType { File, Uffd }` — for `MemBackendConfig`.
 - Firecracker config types: `BootSourceConfig`, `MachineConfig`,
-  `DriveConfig`, `VsockConfig`, `CreateSnapshotConfig`,
+  `DriveConfig`, `PartialDriveConfig`, `VsockConfig`, `CreateSnapshotConfig`,
   `LoadSnapshotConfig`, `MemBackendConfig`, `VsockOverride`.
 - `ClientError` — typed per-resource failure.
 
@@ -91,7 +91,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
 
 - `tests/put_each_resource.rs` — for each Firecracker resource, a fixture
   `UnixListener` records the request body and asserts the JSON shape; the
-  client returns `Ok(())` on a fixture 204.
+  client returns `Ok(())` on a fixture 204. Drive tests cover preboot
+  `PUT /drives/{id}` and post-boot `PATCH /drives/{id}` partial updates.
 - `tests/error_mapping.rs` — fixture server returns a 400 with a
   Firecracker fault body for each resource; asserts the matching typed
   `ClientError::*WriteFailed` variant fires (and `Connect(io::Error)` on

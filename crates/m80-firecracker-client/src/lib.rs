@@ -72,6 +72,19 @@ impl Client {
         })
     }
 
+    /// PATCH `/drives/{drive_id}`. The `drive_id` is taken from the config.
+    pub fn patch_drive(&self, config: &PartialDriveConfig) -> Result<(), ClientError> {
+        let path = format!("/drives/{}", config.drive_id);
+        let body = serde_json::to_vec(config)?;
+        let resp = self.patch(&path, &body)?;
+        if ok(resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::DriveWriteFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
     /// PUT `/vsock`.
     pub fn put_vsock(&self, config: &VsockConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(config)?;
@@ -257,7 +270,8 @@ fn is_broken_pipe(e: &io::Error) -> bool {
 ///
 /// `String::from_utf8` avoids the extra allocation on the (typical) valid-UTF-8 path.
 fn body_to_string(body: &[u8]) -> String {
-    String::from_utf8(body.to_vec()).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+    String::from_utf8(body.to_vec())
+        .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 // ---------------------------------------------------------------------------
@@ -304,6 +318,17 @@ pub struct DriveConfig {
     pub is_root_device: bool,
     /// Whether this drive is mounted read-only.
     pub is_read_only: bool,
+}
+
+/// Post-boot update for an existing drive slot.
+#[derive(Debug, Clone, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartialDriveConfig {
+    /// Stable drive identifier (e.g., `"workspace_slot_0"`).
+    pub drive_id: String,
+    /// New absolute host path for the existing drive backing file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_on_host: Option<PathBuf>,
 }
 
 /// Vsock device config — guest CID + host UDS path.
@@ -441,7 +466,7 @@ pub enum ClientError {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },
-    /// `PUT /drives/{id}` failed.
+    /// `PUT` or `PATCH` `/drives/{id}` failed.
     #[error("drive write failed: {fault}")]
     DriveWriteFailed {
         /// Firecracker fault JSON (verbatim).

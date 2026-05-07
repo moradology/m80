@@ -4,7 +4,9 @@
 mod fixture_server;
 use fixture_server::{resp_204, FixtureServer};
 
-use m80_firecracker_client::{BootSourceConfig, Client, DriveConfig, MachineConfig, VsockConfig};
+use m80_firecracker_client::{
+    BootSourceConfig, Client, DriveConfig, MachineConfig, PartialDriveConfig, VsockConfig,
+};
 use std::path::PathBuf;
 
 #[test]
@@ -73,6 +75,36 @@ fn put_drive_sends_correct_json_and_url() {
     );
     assert!(result.request.contains("\"drive_id\":\"rootfs\""));
     assert!(result.request.contains("\"is_root_device\":true"));
+}
+
+#[test]
+fn patch_drive_sends_partial_drive_json_and_url() {
+    let server = FixtureServer::spawn(resp_204()).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+    client
+        .patch_drive(&PartialDriveConfig {
+            drive_id: "workspace_slot_0".to_owned(),
+            path_on_host: Some(PathBuf::from("/var/fc/workspace.ext4")),
+        })
+        .unwrap();
+    let result = server.join();
+    assert!(
+        result
+            .request
+            .starts_with("PATCH /drives/workspace_slot_0 HTTP/1.1\r\n"),
+        "drive_id must appear in PATCH URL: {}",
+        result.request.lines().next().unwrap()
+    );
+    assert!(result.request.contains("\"drive_id\":\"workspace_slot_0\""));
+    assert!(result.request.contains("\"path_on_host\""));
+    assert!(
+        !result.request.contains("\"is_root_device\""),
+        "PartialDrive must not carry preboot-only Drive fields"
+    );
+    assert!(
+        !result.request.contains("\"is_read_only\""),
+        "PartialDrive must not carry preboot-only Drive fields"
+    );
 }
 
 #[test]

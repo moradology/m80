@@ -5,7 +5,8 @@ mod fixture_server;
 use fixture_server::{resp_400, FixtureServer};
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, ClientError, DriveConfig, InstanceAction, MachineConfig, VsockConfig,
+    BootSourceConfig, Client, ClientError, DriveConfig, InstanceAction, MachineConfig,
+    PartialDriveConfig, VsockConfig,
 };
 use std::path::PathBuf;
 
@@ -72,6 +73,20 @@ fn drive_400_returns_drive_write_failed() {
             })
         },
         |e| matches!(e, ClientError::DriveWriteFailed { fault } if fault.contains("drive not found")),
+    );
+}
+
+#[test]
+fn patch_drive_400_returns_drive_write_failed() {
+    assert_error(
+        "drive slot update failed",
+        |c| {
+            c.patch_drive(&PartialDriveConfig {
+                drive_id: "workspace_slot_0".to_owned(),
+                path_on_host: Some(PathBuf::from("/missing.ext4")),
+            })
+        },
+        |e| matches!(e, ClientError::DriveWriteFailed { fault } if fault.contains("drive slot update failed")),
     );
 }
 
