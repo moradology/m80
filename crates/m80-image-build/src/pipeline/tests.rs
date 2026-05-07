@@ -6,12 +6,12 @@ use tempfile::TempDir;
 
 use super::install_into_rootfs;
 
-fn install_fixture() -> (TempDir, std::path::PathBuf) {
+fn install_fixture() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     let daemon = dir.path().join("source-m80-guestd");
     fs::write(&daemon, b"guestd").unwrap();
     install_into_rootfs(dir.path(), &daemon).unwrap();
-    (dir, daemon)
+    dir
 }
 
 fn read_link(path: &Path) -> String {
@@ -20,7 +20,7 @@ fn read_link(path: &Path) -> String {
 
 #[test]
 fn installs_guest_daemon_binary_at_usr_local_bin() {
-    let (dir, _daemon) = install_fixture();
+    let dir = install_fixture();
 
     let installed = dir.path().join("usr/local/bin/m80-guestd");
     assert_eq!(fs::read(&installed).unwrap(), b"guestd");
@@ -33,7 +33,7 @@ fn installs_guest_daemon_binary_at_usr_local_bin() {
 
 #[test]
 fn installs_service_unit_for_basic_target_boot() {
-    let (dir, _daemon) = install_fixture();
+    let dir = install_fixture();
 
     let unit_path = dir.path().join("etc/systemd/system/m80-guestd.service");
     let unit = fs::read_to_string(unit_path).unwrap();
@@ -67,7 +67,7 @@ fn installs_service_unit_for_basic_target_boot() {
 
 #[test]
 fn installs_workspace_mount_unit() {
-    let (dir, _daemon) = install_fixture();
+    let dir = install_fixture();
 
     let unit = fs::read_to_string(dir.path().join("etc/systemd/system/workspace.mount")).unwrap();
     assert!(unit.contains("What=/dev/vdb"), "{unit}");
@@ -86,7 +86,7 @@ fn installs_workspace_mount_unit() {
 
 #[test]
 fn does_not_install_guestd_environment_file() {
-    let (dir, _daemon) = install_fixture();
+    let dir = install_fixture();
 
     assert!(
         !dir.path().join("etc/default/m80-guestd").exists(),

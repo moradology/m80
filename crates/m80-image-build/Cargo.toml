@@ -18,12 +18,9 @@ path = "src/main.rs"
 m80-proto.workspace = true
 m80-image-manifest.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 sha2.workspace = true
 hex.workspace = true
-thiserror.workspace = true
 anyhow.workspace = true
-tracing.workspace = true
 toml.workspace = true
 tempfile.workspace = true
 

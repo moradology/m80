@@ -16,7 +16,19 @@ use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
 use crate::minimal;
 
+// Filenames drift per Firecracker CI artifact track: v1.15 currently ships
+// these names. TODO(v0.2): probe the bucket index instead of hardcoding.
+pub(crate) const KERNEL_FILENAME: &str = "vmlinux-5.10.245";
+pub(crate) const UBUNTU_SQUASHFS: &str = "ubuntu-24.04.squashfs";
+
 const SERVICE_UNIT: &str = include_str!("../assets/m80-guestd.service");
+
+/// Return the manifest path for a rootfs image: `<rootfs>.manifest.json`.
+pub(crate) fn manifest_path(rootfs: &Path) -> PathBuf {
+    let mut name = rootfs.file_name().unwrap_or_default().to_owned();
+    name.push(".manifest.json");
+    rootfs.with_file_name(name)
+}
 const WORKSPACE_MOUNT_UNIT: &str = include_str!("../assets/workspace.mount");
 const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
 const GUEST_DAEMON_PATH: &str = "/usr/local/bin/m80-guestd";
@@ -62,22 +74,15 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     // host-readable artifact to sha256. The in-VM destination is a build
     // constant (`GUEST_DAEMON_PATH`) and not the manifest's concern.
     let daemon_binary_host = cfg.output.dir.join("m80-guestd");
-    let manifest_path = {
-        let mut p = output_rootfs.clone().into_os_string();
-        p.push(".manifest.json");
-        PathBuf::from(p)
-    };
+    let manifest_path = manifest_path(&output_rootfs);
 
-    // Filenames drift per Firecracker CI artifact track: v1.15 currently
-    // ships `vmlinux-5.10.245` and `ubuntu-24.04.squashfs`.
-    // TODO(v0.2): probe the bucket index instead of hardcoding filenames.
     let kernel_url = format!(
-        "{}/{}/{}/vmlinux-5.10.245",
-        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch
+        "{}/{}/{}/{}",
+        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch, KERNEL_FILENAME
     );
     let rootfs_url = format!(
-        "{}/{}/{}/ubuntu-24.04.squashfs",
-        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch
+        "{}/{}/{}/{}",
+        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch, UBUNTU_SQUASHFS
     );
 
     let steps: Vec<String> = vec![
@@ -315,14 +320,14 @@ pub(crate) fn loop_umount(mount_dir: &Path) -> anyhow::Result<()> {
 fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
     // Step 6: copy daemon binary.
     let guest_bin = mount.join("usr/local/bin/m80-guestd");
-    std::fs::create_dir_all(guest_bin.parent().unwrap())
+    std::fs::create_dir_all(guest_bin.parent().expect("constructed path has parent"))
         .context("creating /usr/local/bin in rootfs")?;
     std::fs::copy(daemon_binary, &guest_bin).context("copying m80-guestd into rootfs")?;
     set_executable(&guest_bin).context("chmod +x m80-guestd")?;
 
     // Step 7: install service unit.
     let svc_dest = mount.join("etc/systemd/system/m80-guestd.service");
-    std::fs::create_dir_all(svc_dest.parent().unwrap())
+    std::fs::create_dir_all(svc_dest.parent().expect("constructed path has parent"))
         .context("creating /etc/systemd/system in rootfs")?;
     std::fs::write(&svc_dest, SERVICE_UNIT).context("writing m80-guestd.service")?;
 

@@ -145,14 +145,12 @@ fn parse_args(argv: Vec<String>) -> anyhow::Result<Args> {
 }
 
 fn run_verify(rootfs: PathBuf) -> anyhow::Result<()> {
-    let manifest_path = {
-        let mut p = rootfs.clone().into_os_string();
-        p.push(".manifest.json");
-        PathBuf::from(p)
-    };
+    let manifest_path = pipeline::manifest_path(&rootfs);
     let manifest = m80_image_manifest::Manifest::read(&manifest_path)
         .with_context(|| format!("reading manifest at {}", manifest_path.display()))?;
-    let root = rootfs.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let root = rootfs
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("rootfs path has no parent: {}", rootfs.display()))?;
     manifest
         .verify(root)
         .with_context(|| format!("verifying manifest at {}", manifest_path.display()))?;

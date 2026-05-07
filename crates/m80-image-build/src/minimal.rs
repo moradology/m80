@@ -13,14 +13,14 @@
 //!    `busybox-static` on Debian/Ubuntu.
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use anyhow::Context;
 
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
-use crate::pipeline::{loop_mount, loop_umount, run_curl, set_executable, truncate_file};
+use crate::pipeline::{loop_mount, loop_umount, manifest_path, run_curl, set_executable, truncate_file, KERNEL_FILENAME};
 
 const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
 const HOST_BUSYBOX: &str = "/bin/busybox";
@@ -48,15 +48,11 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
     let kernel = cfg.output.dir.join("vmlinux");
     let output_rootfs = cfg.output.dir.join("output.ext4");
     let daemon_binary_host = cfg.output.dir.join("m80-guestd");
-    let manifest_path = {
-        let mut p = output_rootfs.clone().into_os_string();
-        p.push(".manifest.json");
-        PathBuf::from(p)
-    };
+    let manifest_path = manifest_path(&output_rootfs);
 
     let kernel_url = format!(
-        "{}/{}/{}/vmlinux-5.10.245",
-        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch
+        "{}/{}/{}/{}",
+        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch, KERNEL_FILENAME
     );
 
     let steps: Vec<String> = vec![
