@@ -138,8 +138,14 @@ pub fn render_error(err: &FcError, json: bool) -> i32 {
         eprintln!("{}", json::to_pretty(&env));
     } else if let Some(request_id) = request_id::current() {
         eprintln!("error: [{request_id}] {err}");
+        if let FcError::Preflight(pe) = err {
+            eprintln!("hint: {}", pe.hint());
+        }
     } else {
         eprintln!("error: {err}");
+        if let FcError::Preflight(pe) = err {
+            eprintln!("hint: {}", pe.hint());
+        }
     }
     exit_code_for(err)
 }

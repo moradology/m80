@@ -17,8 +17,30 @@ const KVM_PATH: &str = "/dev/kvm";
 
 const REQUIRED_KERNEL_MODULES: &[&str] = &["tap", "bridge"];
 
-/// Run all 10 checks in order. First failure returns a typed error immediately.
+/// Run all 10 checks in order, deriving binary and artifact config from env.
+///
+/// This is the zero-argument convenience entry point. Callers that have
+/// already resolved an effective config (e.g. from a TOML file) should use
+/// [`run_with_configs`] so that TOML-set fields like `run_root` are honoured.
 pub fn run() -> Result<Discovery, PreflightError> {
+    run_with_configs(
+        BinaryDiscoveryConfig::from_env(),
+        ArtifactPreflightConfig::from_env(),
+    )
+}
+
+/// Run all 10 checks in order with explicit binary and artifact configs.
+///
+/// Use this when the caller has already resolved the effective configuration
+/// (e.g. from `/etc/m80/config.toml` or `~/.config/m80/config.toml`) and
+/// needs preflight to validate the same paths that will be used at runtime.
+/// Fields not present in the effective config (e.g. `firecracker_bin`,
+/// `kernel_image`) are still read from env inside the individual `from_env`
+/// constructors; only the fields that the caller overrides here win.
+pub fn run_with_configs(
+    binary_config: BinaryDiscoveryConfig,
+    artifact_config: ArtifactPreflightConfig,
+) -> Result<Discovery, PreflightError> {
     let mut report: Vec<CheckRow> = Vec::new();
 
     // 1. OS gate
@@ -34,7 +56,7 @@ pub fn run() -> Result<Discovery, PreflightError> {
     let privilege = check_privilege(&mut report)?;
 
     // 5-6. Firecracker and jailer binaries
-    let binaries = discover_binaries(&BinaryDiscoveryConfig::from_env())?;
+    let binaries = discover_binaries(&binary_config)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
         passed: true,
@@ -52,7 +74,7 @@ pub fn run() -> Result<Discovery, PreflightError> {
     });
 
     // 7-10. Kernel/rootfs artifacts, run-root, and storage helpers
-    let artifacts = verify_artifacts(&ArtifactPreflightConfig::from_env())?;
+    let artifacts = verify_artifacts(&artifact_config)?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
         passed: true,

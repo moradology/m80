@@ -7,7 +7,9 @@
 #![deny(missing_docs)]
 
 use std::io;
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 
 use serde::{Deserialize, Serialize};
 
@@ -72,16 +74,6 @@ pub enum StorageError {
         /// Underlying I/O error.
         err: io::Error,
     },
-    /// `mkfs.ext4 -F` exited with a non-zero status.
-    #[error("mkfs.ext4 failed on {} (exit {status}): {stderr}", path.display())]
-    MkfsFailed {
-        /// Path of the overlay file being formatted.
-        path: PathBuf,
-        /// Exit code from `mkfs.ext4` (`-1` if the process was signalled).
-        status: i32,
-        /// Captured stderr (or stdout if stderr was empty).
-        stderr: String,
-    },
     /// Overlay template creation or lock acquisition failed.
     #[error("overlay template create failed at {}: {err}", path.display())]
     OverlayTemplateCreateFailed {
@@ -108,15 +100,16 @@ pub enum StorageError {
         /// Underlying I/O error.
         err: io::Error,
     },
-    /// `mkfs.ext4` failed during scratch image creation.
-    #[error("mkfs.ext4 failed: {0}")]
-    Mkfs(io::Error),
-    /// `e2fsck` exited with a fatal code.
-    #[error("e2fsck exit={exit}: {stderr}")]
-    E2fsckFailed {
-        /// Process exit code.
-        exit: i32,
-        /// Captured stderr (best-effort UTF-8).
+    /// A storage subprocess (mkfs.ext4, e2fsck, etc.) exited non-zero.
+    #[error("{program} failed on {} (exit {status}): {stderr}", path.display())]
+    SubprocessFailed {
+        /// Name of the program that failed (e.g. `"mkfs.ext4"`, `"e2fsck"`).
+        program: &'static str,
+        /// Path the subprocess was operating on.
+        path: PathBuf,
+        /// Formatted exit status.
+        status: String,
+        /// Captured stderr (or stdout if stderr was empty).
         stderr: String,
     },
     /// The admissibility scan refused the change set.
@@ -135,6 +128,20 @@ pub enum StorageError {
         #[source]
         source: io::Error,
     },
+}
+
+/// Format a process exit status for display in error messages.
+///
+/// Returns the numeric exit code as a string, or `"signal: <N>"` when the
+/// process was terminated by a signal and `ExitStatus::code()` is `None`.
+pub(crate) fn format_exit(status: ExitStatus) -> String {
+    if let Some(code) = status.code() {
+        code.to_string()
+    } else if let Some(sig) = status.signal() {
+        format!("signal: {sig}")
+    } else {
+        "unknown".to_owned()
+    }
 }
 
 /// Map an [`io::Error`] to [`StorageError::Io`] carrying `path`.

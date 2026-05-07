@@ -77,16 +77,17 @@ fn prepare_missing_parent_returns_overlay_template_clone_failed() {
     }
 }
 
-/// `mkfs.ext4` on a zero-byte template exits non-zero; that surfaces as `MkfsFailed`.
+/// `mkfs.ext4` on a zero-byte template exits non-zero; that surfaces as `SubprocessFailed`.
 #[test]
-fn prepare_mkfs_failure_returns_mkfs_failed() {
+fn prepare_mkfs_failure_returns_subprocess_failed() {
     let (_dir, base, overlay) = paths();
     let err = Rootfs::prepare(&base, &overlay, 0).unwrap_err();
     match err {
-        StorageError::MkfsFailed { status, .. } => {
-            assert_ne!(status, 0, "mkfs must have exited non-zero");
+        StorageError::SubprocessFailed { program, status, .. } => {
+            assert_eq!(program, "mkfs.ext4", "program must be mkfs.ext4");
+            assert_ne!(status, "0", "mkfs must have exited non-zero");
         }
-        other => panic!("expected MkfsFailed, got {other:?}"),
+        other => panic!("expected SubprocessFailed, got {other:?}"),
     }
 }
 

@@ -7,7 +7,7 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::StorageError;
+use crate::{format_exit, StorageError};
 
 const TEMPLATE_SCHEMA_VERSION: u32 = 1;
 const TEMPLATE_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -177,9 +177,10 @@ fn mkfs_ext4(path: &Path) -> Result<(), StorageError> {
         } else {
             String::from_utf8_lossy(&out.stderr).trim().to_owned()
         };
-        return Err(StorageError::MkfsFailed {
+        return Err(StorageError::SubprocessFailed {
+            program: "mkfs.ext4",
             path: path.to_path_buf(),
-            status: out.status.code().unwrap_or(-1),
+            status: format_exit(out.status),
             stderr: detail,
         });
     }

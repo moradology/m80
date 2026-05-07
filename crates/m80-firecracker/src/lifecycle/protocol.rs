@@ -11,7 +11,7 @@ pub(super) fn recv_error(err: VsockError, context: &'static str) -> FcError {
             FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal { context })
         }
         VsockError::Proto(err) => proto_error(err),
-        VsockError::Io(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+        VsockError::Io { source, .. } if source.kind() == io::ErrorKind::UnexpectedEof => {
             FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal { context })
         }
         other => FcError::Vsock(other),
@@ -75,7 +75,10 @@ mod tests {
     #[test]
     fn unexpected_eof_maps_to_disconnect_before_terminal() {
         let err = recv_error(
-            VsockError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)),
+            VsockError::Io {
+                path: std::path::PathBuf::new(),
+                source: io::Error::from(io::ErrorKind::UnexpectedEof),
+            },
             "streaming exec",
         );
 

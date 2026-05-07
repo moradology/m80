@@ -9,7 +9,7 @@ mod debug_wire;
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -97,6 +97,17 @@ where
     Ok(())
 }
 
+/// Wrap `source` in [`VsockError::Io`] carrying the UDS path.
+///
+/// Used by every call site that converts an [`io::Error`] coming from a
+/// stream operation on `host_uds`.
+fn io_err(host_uds: &Arc<Path>, source: io::Error) -> VsockError {
+    VsockError::Io {
+        path: host_uds.to_path_buf(),
+        source,
+    }
+}
+
 /// Emit a drop-teardown warning. Called from both [`Channel`] and
 /// [`ChannelSender`] Drop impls; must not panic.
 fn warn_teardown(host_uds: &Path, context: &str, err: impl std::fmt::Display) {
@@ -117,29 +128,35 @@ impl Channel {
             errno: e.raw_os_error(),
         })?;
 
+        // Build the Arc<Path> early so we can use io_err throughout this fn.
+        let host_uds_arc: Arc<Path> = Arc::from(host_uds);
+
         stream
             .set_read_timeout(Some(BRIDGE_IO_TIMEOUT))
-            .map_err(VsockError::Io)?;
+            .map_err(|e| io_err(&host_uds_arc, e))?;
         stream
             .set_write_timeout(Some(BRIDGE_IO_TIMEOUT))
-            .map_err(VsockError::Io)?;
+            .map_err(|e| io_err(&host_uds_arc, e))?;
 
         // Write CONNECT line.
         {
             let mut w = &stream;
             let line = format!("CONNECT {guest_port}\n");
-            w.write_all(line.as_bytes()).map_err(VsockError::Io)?;
-            w.flush().map_err(VsockError::Io)?;
+            w.write_all(line.as_bytes())
+                .map_err(|e| io_err(&host_uds_arc, e))?;
+            w.flush().map_err(|e| io_err(&host_uds_arc, e))?;
             if debug_wire::is_enabled("vsock") {
                 tracing::trace!(direction = "out", msg = line.trim(), "vsock handshake");
             }
         }
 
         // Read OK response.
-        let reader_stream = stream.try_clone().map_err(VsockError::Io)?;
+        let reader_stream = stream.try_clone().map_err(|e| io_err(&host_uds_arc, e))?;
         let mut buf_reader = BufReader::new(reader_stream);
         let mut ack = String::new();
-        buf_reader.read_line(&mut ack).map_err(VsockError::Io)?;
+        buf_reader
+            .read_line(&mut ack)
+            .map_err(|e| io_err(&host_uds_arc, e))?;
         if debug_wire::is_enabled("vsock") {
             tracing::trace!(direction = "in", msg = ack.trim(), "vsock handshake");
         }
@@ -148,7 +165,7 @@ impl Channel {
         }
 
         Ok(Channel {
-            host_uds: Arc::from(host_uds),
+            host_uds: host_uds_arc,
             stream,
             buf_reader,
         })
@@ -169,7 +186,10 @@ impl Channel {
     pub fn try_clone_sender(&self) -> Result<ChannelSender, VsockError> {
         Ok(ChannelSender {
             host_uds: Arc::clone(&self.host_uds),
-            stream: self.stream.try_clone().map_err(VsockError::Io)?,
+            stream: self
+                .stream
+                .try_clone()
+                .map_err(|e| io_err(&self.host_uds, e))?,
         })
     }
 
@@ -197,7 +217,7 @@ impl Channel {
     /// Flush the connection stream. The host-side UDS is owned by Firecracker
     /// and remains in place for subsequent connections.
     fn teardown(&mut self) -> Result<(), VsockError> {
-        self.stream.flush().map_err(VsockError::Io)
+        self.stream.flush().map_err(|e| io_err(&self.host_uds, e))
     }
 
     /// Close the connection. The VM's host-side UDS remains available for the
@@ -226,7 +246,7 @@ impl ChannelSender {
 
     /// Flush the cloned sender.
     pub fn close(mut self) -> Result<(), VsockError> {
-        self.stream.flush().map_err(VsockError::Io)
+        self.stream.flush().map_err(|e| io_err(&self.host_uds, e))
     }
 }
 
@@ -254,9 +274,16 @@ pub enum VsockError {
     /// The Firecracker UDS-to-vsock handshake was malformed.
     #[error("vsock handshake failed")]
     HandshakeFailed,
-    /// Underlying I/O failure.
-    #[error("i/o: {0}")]
-    Io(#[from] io::Error),
+    /// Underlying I/O failure; carries the UDS path so callers don't have to
+    /// guess which socket operation failed.
+    #[error("i/o on {}: {source}", path.display())]
+    Io {
+        /// UDS path the I/O was attempted against.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
     /// Frame-level protocol error.
     #[error("proto: {0}")]
     Proto(#[from] ProtoError),

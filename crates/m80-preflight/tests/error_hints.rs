@@ -1,5 +1,4 @@
-//! Each PreflightError variant must Display-render to a non-empty string that
-//! includes a "hint:" line (per README "Errors carry 'what to try next' hints").
+//! Each PreflightError variant must expose a non-empty hint via `hint()`.
 
 use caps::Capability;
 use m80_image_manifest::ManifestError;
@@ -8,9 +7,13 @@ use m80_preflight::PreflightError;
 fn assert_hint(err: &PreflightError) {
     let msg = err.to_string();
     assert!(!msg.is_empty(), "Display for {err:?} must not be empty");
+    // Hint is now a separate method, not embedded in Display.
+    let hint = err.hint();
+    assert!(!hint.is_empty(), "hint() for {err:?} must not be empty");
+    // Display must NOT contain embedded hint text (regression guard).
     assert!(
-        msg.contains("hint:"),
-        "Display for {err:?} must contain a 'hint:' line; got:\n{msg}"
+        !msg.contains("hint:"),
+        "Display for {err:?} must not embed hint text; got:\n{msg}"
     );
 }
 

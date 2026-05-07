@@ -15,23 +15,18 @@ fn overlay_create_failed_displays_path() {
 }
 
 #[test]
-fn mkfs_failed_displays_path_and_status() {
-    let e = StorageError::MkfsFailed {
+fn subprocess_failed_displays_program_path_and_status() {
+    let e = StorageError::SubprocessFailed {
+        program: "mkfs.ext4",
         path: PathBuf::from("/run/m80/vm-1/overlay.ext4"),
-        status: 1,
+        status: "1".into(),
         stderr: "bad magic number".into(),
     };
     let s = format!("{e}");
+    assert!(s.contains("mkfs.ext4"), "program must appear: {s}");
     assert!(s.contains("overlay.ext4"), "path must appear: {s}");
     assert!(s.contains('1'), "status must appear: {s}");
     assert!(s.contains("bad magic"), "stderr must appear: {s}");
-}
-
-#[test]
-fn mkfs_error_displays() {
-    let e = StorageError::Mkfs(std::io::Error::other("device busy"));
-    let s = format!("{e}");
-    assert!(s.contains("mkfs"), "expected 'mkfs' in: {s}");
 }
 
 #[test]
@@ -76,12 +71,15 @@ fn overlay_template_clone_failed_displays_paths() {
 }
 
 #[test]
-fn e2fsck_failed_displays_exit_and_stderr() {
-    let e = StorageError::E2fsckFailed {
-        exit: 8,
+fn subprocess_failed_e2fsck_displays_exit_and_stderr() {
+    let e = StorageError::SubprocessFailed {
+        program: "e2fsck",
+        path: PathBuf::from("/run/m80/vm-1/scratch.ext4"),
+        status: "8".into(),
         stderr: "filesystem corrupted".into(),
     };
     let s = format!("{e}");
+    assert!(s.contains("e2fsck"), "expected program name in: {s}");
     assert!(s.contains("8"), "expected exit code in: {s}");
     assert!(
         s.contains("filesystem corrupted"),

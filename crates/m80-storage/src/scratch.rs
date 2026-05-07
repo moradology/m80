@@ -9,7 +9,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
-use crate::{io_err, ChangeSet, Rejection, RejectionReason, StorageError};
+use crate::{format_exit, io_err, ChangeSet, Rejection, RejectionReason, StorageError};
 
 /// Minimum scratch image size: 64 MiB.
 pub const MIN_SCRATCH_BYTES: u64 = 64 * 1024 * 1024;
@@ -158,14 +158,19 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
         .arg("-F")
         .arg(image)
         .output()
-        .map_err(StorageError::Mkfs)?;
+        .map_err(|e| io_err(image, e))?;
     if !mkfs_out.status.success() {
         let detail = if mkfs_out.stderr.is_empty() {
             String::from_utf8_lossy(&mkfs_out.stdout).trim().to_owned()
         } else {
             String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned()
         };
-        return Err(StorageError::Mkfs(std::io::Error::other(detail)));
+        return Err(StorageError::SubprocessFailed {
+            program: "mkfs.ext4",
+            path: image.to_path_buf(),
+            status: format_exit(mkfs_out.status),
+            stderr: detail,
+        });
     }
 
     let mount_dir = TempDir::new().map_err(|e| io_err(image, e))?;
@@ -205,8 +210,10 @@ fn run_e2fsck(image: &Path) -> Result<(), StorageError> {
     } else {
         String::from_utf8_lossy(&out.stderr).trim().to_owned()
     };
-    Err(StorageError::E2fsckFailed {
-        exit: out.status.code().unwrap_or(-1),
+    Err(StorageError::SubprocessFailed {
+        program: "e2fsck",
+        path: image.to_path_buf(),
+        status: format_exit(out.status),
         stderr: detail,
     })
 }

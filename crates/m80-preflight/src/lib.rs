@@ -114,51 +114,35 @@ pub use binary::{
     discover_binaries, BinaryDiscovery, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN,
     DEFAULT_JAILER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN,
 };
-pub use checks::run;
+pub use checks::{run, run_with_configs};
 
-/// Errors surfaced by preflight. Each variant carries actionable hint text
-/// when rendered.
+/// Errors surfaced by preflight. `Display` is lowercase, no trailing period,
+/// no embedded hint text. Actionable hints live in [`PreflightError::hint`].
 #[derive(Debug, thiserror::Error)]
 pub enum PreflightError {
     /// Host kernel is not Linux.
-    #[error(
-        "unsupported host platform: {actual}\n\
-         hint: m80 requires a Linux host; macOS and Windows are not supported"
-    )]
+    #[error("unsupported host platform: {actual}")]
     UnsupportedHostPlatform {
         /// Platform reported by `uname -s`.
         actual: String,
     },
 
     /// `/dev/kvm` is missing.
-    #[error(
-        "KVM device unavailable at {}\n\
-         hint: ensure KVM is enabled in the host kernel and /dev/kvm exists",
-        path.display()
-    )]
+    #[error("kvm device unavailable at {}", path.display())]
     KvmUnavailable {
         /// KVM device path that was missing.
         path: PathBuf,
     },
 
     /// `/dev/kvm` exists but is not writable.
-    #[error(
-        "KVM device is not writable at {}\n\
-         hint: add your user to the `kvm` group (`sudo usermod -aG kvm $USER`) \
-         or run m80 as root",
-        path.display()
-    )]
+    #[error("kvm device is not writable at {}", path.display())]
     KvmNotWritable {
         /// KVM device path that rejected write access.
         path: PathBuf,
     },
 
     /// Required kernel modules are not loaded/loadable.
-    #[error(
-        "kernel modules missing: {missing:?}\n\
-         hint: load the missing modules with `sudo modprobe <name>` or add \
-         them to /etc/modules to persist across reboots"
-    )]
+    #[error("kernel modules missing: {missing:?}")]
     KernelModulesMissing {
         /// Names of the missing modules (e.g., `tap`, `bridge`).
         missing: Vec<String>,
@@ -168,31 +152,18 @@ pub enum PreflightError {
     /// [`REQUIRED_CAPABILITIES`] are absent from the effective set.
     /// Operator must run as root, `setcap` the binary, or grant the caps via
     /// a container `securityContext`.
-    #[error(
-        "insufficient privilege; missing capabilities: {missing_caps:?}\n\
-         hint: run as root, use `setcap cap_net_admin,cap_sys_admin,\
-         cap_mknod,cap_chown,cap_fowner,cap_kill+ep <binary>`, \
-         or set securityContext.capabilities.add in your pod spec"
-    )]
+    #[error("insufficient privilege; missing capabilities: {missing_caps:?}")]
     PrivilegeUnavailable {
         /// Capabilities that were required but not present.
         missing_caps: Vec<Capability>,
     },
 
     /// `firecracker` not found via env or default path.
-    #[error(
-        "firecracker binary not found\n\
-         hint: install firecracker to /opt/firecracker/bin/firecracker or \
-         set M80_FIRECRACKER_BIN to the binary path"
-    )]
+    #[error("firecracker binary not found")]
     FirecrackerBinaryNotFound,
 
     /// `firecracker --version` did not match the configured pin.
-    #[error(
-        "firecracker version mismatch: expected {expected}, got {actual}\n\
-         hint: install the expected version or set M80_FIRECRACKER_VERSION \
-         to the installed version to skip the version pin"
-    )]
+    #[error("firecracker version mismatch: expected {expected}, got {actual}")]
     FirecrackerVersionMismatch {
         /// Pinned version (from env).
         expected: String,
@@ -201,19 +172,11 @@ pub enum PreflightError {
     },
 
     /// `jailer` binary not found.
-    #[error(
-        "jailer binary not found\n\
-         hint: install jailer to /opt/firecracker/bin/jailer (it ships \
-         alongside firecracker) or set M80_JAILER_BIN to the binary path"
-    )]
+    #[error("jailer binary not found")]
     JailerBinaryNotFound,
 
     /// A host artifact path was present but was not absolute.
-    #[error(
-        "{kind} path is not absolute: {}\n\
-         hint: set the corresponding M80_* path env var to an absolute host path",
-        path.display()
-    )]
+    #[error("{kind} path is not absolute: {}", path.display())]
     NonAbsolutePath {
         /// Artifact class, e.g. `kernel` or `rootfs`.
         kind: String,
@@ -222,39 +185,21 @@ pub enum PreflightError {
     },
 
     /// No `vmlinux-*` discovered.
-    #[error(
-        "kernel image not found\n\
-         hint: set M80_KERNEL_IMAGE to an absolute path, or place a \
-         vmlinux-* file under M80_ARTIFACT_DIR \
-         (default /opt/m80/artifacts)"
-    )]
+    #[error("kernel image not found")]
     KernelNotFound,
 
     /// No rootfs image discovered (or env override missing).
-    #[error(
-        "rootfs image not found\n\
-         hint: set M80_ROOTFS_IMAGE to the absolute path of a built \
-         m80 rootfs image"
-    )]
+    #[error("rootfs image not found")]
     RootfsNotFound,
 
     /// Manifest read/validate failed.
-    #[error(
-        "manifest: {0}\n\
-         hint: rebuild the guest image with `m80-image-build` to regenerate \
-         a valid manifest"
-    )]
+    #[error("manifest: {0}")]
     Manifest(#[from] ManifestError),
 
     /// Run-root directory is absent or has insufficient free capacity
     /// (< 100 MiB). This variant covers both "directory does not exist" and
     /// "not enough space" so a single variant name handles both conditions.
-    #[error(
-        "run-root unavailable: {reason}\n\
-         hint: create the directory (`sudo mkdir -p /var/run/m80`) and \
-         ensure at least 100 MiB of free space is available, or set \
-         M80_RUN_ROOT to a different path"
-    )]
+    #[error("run-root unavailable: {reason}")]
     RunRootUnavailable {
         /// Human-readable reason (missing directory or insufficient space).
         reason: String,
@@ -262,17 +207,65 @@ pub enum PreflightError {
 
     /// One of the storage helpers (`mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
     /// `e2fsck`) is missing.
-    #[error(
-        "storage helper missing on PATH: {0}\n\
-         hint: install e2fsprogs (`sudo apt-get install e2fsprogs` on Debian \
-         / Ubuntu)"
-    )]
+    #[error("storage helper missing on PATH: {0}")]
     StorageHelperMissing(String),
 
     /// Underlying I/O failure.
-    #[error(
-        "i/o: {0}\n\
-         hint: check file permissions and whether the path exists"
-    )]
+    #[error("i/o: {0}")]
     Io(#[from] io::Error),
+}
+
+impl PreflightError {
+    /// Actionable operator hint for this error.
+    ///
+    /// Rendered by the CLI in non-JSON mode as a `hint:` line after the error
+    /// message; omitted from the JSON `detail` field so machine readers see a
+    /// clean error string.
+    pub fn hint(&self) -> &'static str {
+        match self {
+            Self::UnsupportedHostPlatform { .. } => {
+                "m80 requires a Linux host; macOS and Windows are not supported"
+            }
+            Self::KvmUnavailable { .. } => {
+                "ensure KVM is enabled in the host kernel and /dev/kvm exists"
+            }
+            Self::KvmNotWritable { .. } => {
+                "add your user to the `kvm` group (`sudo usermod -aG kvm $USER`) or run m80 as root"
+            }
+            Self::KernelModulesMissing { .. } => {
+                "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"
+            }
+            Self::PrivilegeUnavailable { .. } => {
+                "run as root, use `setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill+ep <binary>`, or set securityContext.capabilities.add in your pod spec"
+            }
+            Self::FirecrackerBinaryNotFound => {
+                "install firecracker to /opt/firecracker/bin/firecracker or set M80_FIRECRACKER_BIN to the binary path"
+            }
+            Self::FirecrackerVersionMismatch { .. } => {
+                "install the expected version or set M80_FIRECRACKER_VERSION to the installed version to skip the version pin"
+            }
+            Self::JailerBinaryNotFound => {
+                "install jailer to /opt/firecracker/bin/jailer (it ships alongside firecracker) or set M80_JAILER_BIN to the binary path"
+            }
+            Self::NonAbsolutePath { .. } => {
+                "set the corresponding M80_* path env var to an absolute host path"
+            }
+            Self::KernelNotFound => {
+                "set M80_KERNEL_IMAGE to an absolute path, or place a vmlinux-* file under M80_ARTIFACT_DIR (default /opt/m80/artifacts)"
+            }
+            Self::RootfsNotFound => {
+                "set M80_ROOTFS_IMAGE to the absolute path of a built m80 rootfs image"
+            }
+            Self::Manifest(_) => {
+                "rebuild the guest image with `m80-image-build` to regenerate a valid manifest"
+            }
+            Self::RunRootUnavailable { .. } => {
+                "create the directory (`sudo mkdir -p /var/run/m80`) and ensure at least 100 MiB of free space is available, or set M80_RUN_ROOT to a different path"
+            }
+            Self::StorageHelperMissing(_) => {
+                "install e2fsprogs (`sudo apt-get install e2fsprogs` on Debian / Ubuntu)"
+            }
+            Self::Io(_) => "check file permissions and whether the path exists",
+        }
+    }
 }

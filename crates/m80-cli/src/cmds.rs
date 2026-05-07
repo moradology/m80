@@ -38,7 +38,22 @@ fn build_run_backend(profile: Option<String>) -> Result<(Arc<Backend>, Effective
 fn backend_from_effective(
     effective: EffectiveConfig,
 ) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
-    let discovery = m80_preflight::run()?;
+    let run_root = effective
+        .fields
+        .iter()
+        .find(|f| f.name == "run_root")
+        .map(|f| std::path::PathBuf::from(&f.value));
+    let artifact_config = match run_root {
+        Some(run_root) => m80_preflight::ArtifactPreflightConfig {
+            run_root,
+            ..m80_preflight::ArtifactPreflightConfig::from_env()
+        },
+        None => m80_preflight::ArtifactPreflightConfig::from_env(),
+    };
+    let discovery = m80_preflight::run_with_configs(
+        m80_preflight::BinaryDiscoveryConfig::from_env(),
+        artifact_config,
+    )?;
     let backend_config = config::backend_config(discovery, &effective)
         .map_err(|e| FcError::Config(format!("{e:#}")))?;
     let backend = Backend::new_with_effective_config(backend_config, effective.clone())?;
@@ -367,7 +382,30 @@ fn render_warning(code: &str, detail: &str, json: bool) {
 
 /// `m80 preflight` — run host capability checks and render a table.
 pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
-    Ok(render_preflight_result(m80_preflight::run(), json))
+    let result = preflight_with_effective_config();
+    Ok(render_preflight_result(result, json))
+}
+
+fn preflight_with_effective_config() -> Result<m80_preflight::Discovery, m80_preflight::PreflightError> {
+    let run_root = config::load_effective(&std::collections::HashMap::new())
+        .ok()
+        .and_then(|eff| {
+            eff.fields
+                .into_iter()
+                .find(|f| f.name == "run_root")
+                .map(|f| std::path::PathBuf::from(f.value))
+        });
+    let artifact_config = match run_root {
+        Some(run_root) => m80_preflight::ArtifactPreflightConfig {
+            run_root,
+            ..m80_preflight::ArtifactPreflightConfig::from_env()
+        },
+        None => m80_preflight::ArtifactPreflightConfig::from_env(),
+    };
+    m80_preflight::run_with_configs(
+        m80_preflight::BinaryDiscoveryConfig::from_env(),
+        artifact_config,
+    )
 }
 
 fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool) -> i32 {
@@ -401,7 +439,7 @@ pub fn cmd_env(json: bool) -> anyhow::Result<i32> {
 }
 
 fn emit_guest_boot_trace_if_enabled(run_dir: &Path) {
-    if std::env::var("M80_PHASE_TRACE").ok().as_deref() != Some("1") {
+    if !std::env::var("M80_PHASE_TRACE").is_ok_and(|v| v == "1") {
         return;
     }
     let console = run_dir.join("console.log");

@@ -624,11 +624,8 @@ where
                 phase_event("exec_send", vm_id, t.elapsed());
                 return Ok(channel);
             }
-            Err(m80_vsock::VsockError::Io(e))
-                if e.kind() == std::io::ErrorKind::BrokenPipe
-                    && attempt < EXEC_OPEN_SEND_RETRIES =>
-            {
-                last_error = Some(FcError::Vsock(m80_vsock::VsockError::Io(e)));
+            Err(e) if is_transient_exec_open_send_error(&e) && attempt < EXEC_OPEN_SEND_RETRIES => {
+                last_error = Some(FcError::Vsock(e));
                 std::thread::sleep(EXEC_OPEN_SEND_RETRY_SLEEP);
             }
             Err(e) => return Err(FcError::Vsock(e)),
@@ -641,7 +638,9 @@ where
 fn is_transient_exec_open_send_error(err: &m80_vsock::VsockError) -> bool {
     match err {
         m80_vsock::VsockError::HandshakeFailed => true,
-        m80_vsock::VsockError::Io(e) => e.kind() == std::io::ErrorKind::BrokenPipe,
+        m80_vsock::VsockError::Io { source, .. } => {
+            source.kind() == std::io::ErrorKind::BrokenPipe
+        }
         _ => false,
     }
 }
@@ -676,13 +675,19 @@ mod tests {
 
     #[test]
     fn exec_open_retry_classifies_broken_pipe_as_transient() {
-        let err = m80_vsock::VsockError::Io(io::Error::new(io::ErrorKind::BrokenPipe, "closed"));
+        let err = m80_vsock::VsockError::Io {
+            path: std::path::PathBuf::new(),
+            source: io::Error::new(io::ErrorKind::BrokenPipe, "closed"),
+        };
         assert!(is_transient_exec_open_send_error(&err));
     }
 
     #[test]
     fn exec_open_retry_does_not_retry_receive_style_timeouts() {
-        let err = m80_vsock::VsockError::Io(io::Error::new(io::ErrorKind::TimedOut, "timeout"));
+        let err = m80_vsock::VsockError::Io {
+            path: std::path::PathBuf::new(),
+            source: io::Error::new(io::ErrorKind::TimedOut, "timeout"),
+        };
         assert!(!is_transient_exec_open_send_error(&err));
     }
 

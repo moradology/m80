@@ -161,9 +161,17 @@ impl Client {
                 let new_stream =
                     UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
                 *guard = new_stream;
-                http::send_json(&mut guard, "PATCH", path, body)?
+                http::send_json(&mut guard, "PATCH", path, body).map_err(|e| ClientError::Io {
+                    path: self.uds_path.clone(),
+                    source: e,
+                })?
             }
-            Err(e) => return Err(ClientError::Io(e)),
+            Err(e) => {
+                return Err(ClientError::Io {
+                    path: self.uds_path.clone(),
+                    source: e,
+                })
+            }
         };
         trace_response(&resp);
         Ok(resp)
@@ -189,9 +197,17 @@ impl Client {
                 let new_stream =
                     UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
                 *guard = new_stream;
-                http::send_json(&mut guard, "PUT", path, body)?
+                http::send_json(&mut guard, "PUT", path, body).map_err(|e| ClientError::Io {
+                    path: self.uds_path.clone(),
+                    source: e,
+                })?
             }
-            Err(e) => return Err(ClientError::Io(e)),
+            Err(e) => {
+                return Err(ClientError::Io {
+                    path: self.uds_path.clone(),
+                    source: e,
+                })
+            }
         };
         trace_response(&resp);
         Ok(resp)
@@ -473,16 +489,26 @@ pub enum ClientError {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },
-    /// Underlying I/O failure.
-    #[error("i/o: {0}")]
-    Io(#[from] io::Error),
+    /// Underlying I/O failure; carries the socket path so callers don't have
+    /// to guess which UDS operation failed.
+    #[error("i/o on {}: {source}", path.display())]
+    Io {
+        /// Socket path the I/O was attempted against.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
 }
 
 // `serde_json::Error` is not `io::Error`, so provide an explicit conversion
 // so that serialization failures (which should not happen for our own types)
-// surface cleanly rather than silently poisoning a `From<io::Error>` path.
+// surface cleanly rather than silently poisoning an `Io` path.
 impl From<serde_json::Error> for ClientError {
     fn from(e: serde_json::Error) -> Self {
-        ClientError::Io(io::Error::new(io::ErrorKind::InvalidData, e))
+        ClientError::Io {
+            path: PathBuf::new(),
+            source: io::Error::new(io::ErrorKind::InvalidData, e),
+        }
     }
 }

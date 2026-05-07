@@ -110,7 +110,7 @@ behaviour is identical for the scratch image sizes m80 targets (64 MiB
 – 512 MiB). The `debugfs` path would be more efficient for very large
 images but adds non-trivial output-parsing surface.
 
-## Public surface (full)
+## Public surface
 
 - `Rootfs::prepare(base, overlay_dest, overlay_size_bytes)`,
   `Rootfs::new_at(base, overlay)`,

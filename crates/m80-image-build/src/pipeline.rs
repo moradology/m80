@@ -7,8 +7,9 @@
 //! path: Docker-builds the kernel, runs the container, and copies the output
 //! vmlinux to `kernels/vmlinux-m80-<config-sha>.bin`.
 
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 use anyhow::Context;
 
@@ -235,7 +236,7 @@ pub(crate) fn run_curl(url: &str, dest: &Path) -> anyhow::Result<()> {
         .status()
         .context("spawning curl")?;
     if !status.success() {
-        anyhow::bail!("curl failed (exit {:?}) downloading {}", status.code(), url);
+        anyhow::bail!("curl failed (exit {}) downloading {}", format_exit(status), url);
     }
     Ok(())
 }
@@ -263,7 +264,7 @@ fn squashfs_to_ext4(
         .status()
         .context("spawning unsquashfs")?;
     if !status.success() {
-        anyhow::bail!("unsquashfs failed (exit {:?})", status.code());
+        anyhow::bail!("unsquashfs failed (exit {})", format_exit(status));
     }
     truncate_file(ext4, size_bytes).context("pre-sizing source ext4 image")?;
     let status = Command::new("mkfs.ext4")
@@ -273,7 +274,7 @@ fn squashfs_to_ext4(
         .status()
         .context("spawning mkfs.ext4")?;
     if !status.success() {
-        anyhow::bail!("mkfs.ext4 failed (exit {:?})", status.code());
+        anyhow::bail!("mkfs.ext4 failed (exit {})", format_exit(status));
     }
     std::fs::remove_dir_all(&squash_out).context("removing squashfs-root after mkfs")?;
     Ok(())
@@ -416,11 +417,12 @@ pub fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<PathBuf> {
         .output()
         .context("spawning docker run")?;
     if !output.status.success() {
-        anyhow::bail!(
-            "docker run failed (exit {:?}): {}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let detail = if output.stderr.is_empty() {
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        } else {
+            String::from_utf8_lossy(&output.stderr).into_owned()
+        };
+        anyhow::bail!("docker run failed (exit {}): {}", format_exit(output.status), detail);
     }
 
     // Step 3: parse container stdout for the output path.
@@ -447,6 +449,20 @@ pub fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<PathBuf> {
         );
     }
     Ok(host_path)
+}
+
+/// Format a process exit status for display in error messages.
+///
+/// Returns the numeric exit code as a string, or `"signal: <N>"` when the
+/// process was terminated by a signal and `ExitStatus::code()` is `None`.
+fn format_exit(status: ExitStatus) -> String {
+    if let Some(code) = status.code() {
+        code.to_string()
+    } else if let Some(sig) = status.signal() {
+        format!("signal: {sig}")
+    } else {
+        "unknown".to_owned()
+    }
 }
 
 #[cfg(unix)]
