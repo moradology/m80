@@ -195,6 +195,7 @@ Behavior details:
 
 - `docs/behaviors/wire-protocol/pty.md`
 - `docs/behaviors/cli/interactive-pty.md`
+- `docs/behaviors/guest-exec/deferred-storage-readiness.md`
 
 ### Metrics fields
 
