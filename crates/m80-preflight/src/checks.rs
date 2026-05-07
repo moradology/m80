@@ -184,7 +184,7 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
 fn check_privilege(report: &mut Vec<CheckRow>) -> Result<PrivilegeStatus, PreflightError> {
     let euid = geteuid().as_raw();
     let effective = caps::read(None, CapSet::Effective)
-        .map_err(|e| PreflightError::Io(std::io::Error::other(e.to_string())))?;
+        .map_err(PreflightError::CapabilityRead)?;
     let status = classify_privilege(euid, &effective)?;
 
     report.push(CheckRow {

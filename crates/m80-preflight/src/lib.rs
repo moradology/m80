@@ -210,6 +210,11 @@ pub enum PreflightError {
     #[error("storage helper missing on PATH: {0}")]
     StorageHelperMissing(String),
 
+    /// `caps::read()` syscall failed (capability system error, not an I/O
+    /// error).
+    #[error("capability read failed: {0}")]
+    CapabilityRead(#[source] caps::errors::CapsError),
+
     /// Underlying I/O failure.
     #[error("i/o: {0}")]
     Io(#[from] io::Error),
@@ -264,6 +269,9 @@ impl PreflightError {
             }
             Self::StorageHelperMissing(_) => {
                 "install e2fsprogs (`sudo apt-get install e2fsprogs` on Debian / Ubuntu)"
+            }
+            Self::CapabilityRead(_) => {
+                "the capability subsystem reported an error; check that /proc/*/status is readable and the kernel supports POSIX capabilities"
             }
             Self::Io(_) => "check file permissions and whether the path exists",
         }

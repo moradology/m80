@@ -117,3 +117,11 @@ fn io_error_has_hint() {
     let io_err = std::io::Error::other("disk full");
     assert_hint(&PreflightError::Io(io_err));
 }
+
+#[test]
+fn capability_read_has_hint() {
+    use caps::errors::CapsError;
+    let err = PreflightError::CapabilityRead(CapsError::from("kernel returned EINVAL"));
+    assert_hint(&err);
+    assert!(err.to_string().contains("capability read failed"));
+}
