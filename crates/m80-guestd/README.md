@@ -104,7 +104,8 @@ that wire type directly.)
 - `env: Option<Vec<(String, String)>>` — optional. Replaces (does not
   augment) the child environment when set.
 - `stdin: Option<Vec<u8>>` — optional. Bytes piped to the child's stdin
-  before close.
+  before close. The daemon rejects stdin larger than 1 MiB before spawning the
+  child.
 - `timeout_ms: Option<u64>` — optional. When unset or above the daemon
   ceiling, the daemon applies its one-hour maximum.
 - `streaming: bool` — optional on the wire, defaults false. `false`

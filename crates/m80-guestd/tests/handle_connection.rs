@@ -6,7 +6,7 @@
 use std::io::Cursor;
 
 use m80_proto::{
-    read_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope, ExecRequest,
+    read_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope, ExecRequest,
     ExecResponse, ExecStatus, PAYLOAD_KIND_CANCEL_RESPONSE,
 };
 
@@ -99,6 +99,20 @@ fn exec_with_stdin_round_trips() {
     let env = read_response(&run_handler(request_frame(req, None)));
     assert_eq!(env.payload.status, ExecStatus::Completed);
     assert_eq!(env.payload.stdout, b"hello\n");
+}
+
+#[test]
+fn exec_rejects_oversized_stdin_before_spawn() {
+    let req = make_request("cat", vec![], Some(vec![b'x'; (1 << 20) + 1]), 5_000);
+    let env = read_response(&run_handler(request_frame(req, None)));
+
+    assert_eq!(env.payload.status, ExecStatus::Failed);
+    assert!(env.payload.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&env.payload.stderr);
+    assert!(
+        stderr.contains("stdin payload too large"),
+        "unexpected stderr: {stderr}"
+    );
 }
 
 #[test]

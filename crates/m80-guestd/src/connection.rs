@@ -57,6 +57,7 @@ pub enum ConnectionOutcome {
 
 /// Per-stream capture limit: 1 MiB.
 const CAPTURE_LIMIT: usize = 1 << 20;
+const EXEC_STDIN_LIMIT: usize = CAPTURE_LIMIT;
 
 /// Hard ceiling on the per-exec timeout, even if the host sends `None` or
 /// a larger value. Without this a guest process that never exits would hold
@@ -169,6 +170,20 @@ pub(crate) fn build_child_command(req: &ExecRequest) -> Command {
         cmd.stdin(Stdio::null());
     }
     cmd
+}
+
+pub(super) fn validate_exec_stdin(req: &ExecRequest) -> anyhow::Result<()> {
+    let Some(stdin) = &req.stdin else {
+        return Ok(());
+    };
+    if stdin.len() > EXEC_STDIN_LIMIT {
+        anyhow::bail!(
+            "stdin payload too large: {} bytes exceeds limit {}",
+            stdin.len(),
+            EXEC_STDIN_LIMIT
+        );
+    }
+    Ok(())
 }
 
 /// Write one payload frame with an optional `request_id` correlation header.
@@ -610,6 +625,8 @@ fn exec_request_with_cancel(
     pid_slot: Arc<Mutex<Option<u32>>>,
     cancel_rx: mpsc::Receiver<()>,
 ) -> anyhow::Result<ExecResponse> {
+    validate_exec_stdin(req)?;
+
     let mut child = build_child_command(req)
         .spawn()
         .map_err(|e| anyhow::anyhow!("spawn failed: {e}"))?;

@@ -15,8 +15,8 @@ use crate::guest_log::{self, GuestLogPhase};
 
 use super::{
     build_child_command, cancel_status_from_group_signals, failed_timing, protocol_log,
-    timeout_deadline, unix_ms_now, write_cancel_ack, write_payload_frame, ConnectionOutcome,
-    POLL_INTERVAL,
+    timeout_deadline, unix_ms_now, validate_exec_stdin, write_cancel_ack, write_payload_frame,
+    ConnectionOutcome, POLL_INTERVAL,
 };
 
 const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
@@ -74,6 +74,11 @@ where
     W: Write,
 {
     let spawn_start = unix_ms_now();
+    if let Err(e) = validate_exec_stdin(&req) {
+        write_spawn_failed(writer, &request_id, received_at, format!("{e:#}"));
+        return Ok(ConnectionOutcome::Continue);
+    }
+
     let mut child = match build_child_command(&req).spawn() {
         Ok(child) => child,
         Err(e) => {

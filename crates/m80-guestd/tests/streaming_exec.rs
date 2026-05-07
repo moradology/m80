@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, read_raw_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope,
+    read_frame, read_raw_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope,
     ExecExit, ExecRequest, ExecStatus, ExecStderr, ExecStdout, PAYLOAD_KIND_CANCEL_RESPONSE,
     PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
 };
@@ -131,6 +131,27 @@ fn streaming_stdout_stderr_chunks_end_with_exit() {
 }
 
 #[test]
+fn streaming_exec_rejects_oversized_stdin_before_spawn() {
+    let mut req = streaming_request("cat", vec![], 5_000);
+    req.stdin = Some(vec![b'x'; (1 << 20) + 1]);
+    let frames = read_raw_frames(&run_streaming_with_open_reader(request_frame(
+        req,
+        "stream-oversized-stdin",
+    )));
+
+    assert_eq!(frames.len(), 2, "expected stderr plus terminal exit");
+    assert_eq!(frames[0].kind, PAYLOAD_KIND_EXEC_STDERR);
+    assert_eq!(frames[1].kind, PAYLOAD_KIND_EXEC_EXIT);
+    let stderr = frames[0].clone().decode::<ExecStderr>().unwrap().payload;
+    assert!(
+        String::from_utf8_lossy(&stderr.bytes).contains("stdin payload too large"),
+        "unexpected stderr chunk: {stderr:?}"
+    );
+    let exit = frames[1].clone().decode::<ExecExit>().unwrap().payload;
+    assert_eq!(exit.status, ExecStatus::Failed);
+}
+
+#[test]
 fn streaming_no_output_still_sends_terminal_exit() {
     let req = streaming_request("/bin/true", vec![], 5_000);
     let frames = read_raw_frames(&run_streaming_with_open_reader(request_frame(
@@ -179,7 +200,8 @@ fn streaming_cancel_request_kills_child_and_returns_ack() {
     )
     .expect("handle streaming cancel");
 
-    let ack: Envelope<CancelResponse> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
+    let ack: Envelope<CancelResponse> =
+        read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
     assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack.payload.request_id, "stream-cancel");
     assert_eq!(ack.payload.status, CancelStatus::Cancelled);
@@ -207,7 +229,8 @@ fn streaming_cancel_request_kills_shell_spawned_grandchild() {
     .expect("handle streaming cancel");
     let elapsed = start.elapsed();
 
-    let ack: Envelope<CancelResponse> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
+    let ack: Envelope<CancelResponse> =
+        read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
     assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack.payload.request_id, "stream-cancel-grandchild");
     assert_eq!(ack.payload.status, CancelStatus::Cancelled);
