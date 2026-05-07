@@ -23,7 +23,7 @@ fn capture_full_sends_pause_then_create_in_order() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
 
     let req = CaptureRequest {
-        fc_socket: &server.socket_path,
+        fc_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/run/m80/vms/vm-1/snapshots/vm.snap"),
             mem: PathBuf::from("/run/m80/vms/vm-1/snapshots/mem.snap"),
@@ -62,7 +62,7 @@ fn capture_full_kind_serializes_snapshot_type_full() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
 
     let req = CaptureRequest {
-        fc_socket: &server.socket_path,
+        fc_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/snap/vm.snap"),
             mem: PathBuf::from("/snap/mem.snap"),
@@ -86,7 +86,7 @@ fn capture_diff_kind_serializes_snapshot_type_diff() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
 
     let req = CaptureRequest {
-        fc_socket: &server.socket_path,
+        fc_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/snap/vm.snap"),
             mem: PathBuf::from("/snap/mem.snap"),
@@ -110,7 +110,7 @@ fn capture_sends_correct_paths_in_create_body() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
 
     let req = CaptureRequest {
-        fc_socket: &server.socket_path,
+        fc_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/run/fc/snap-state.bin"),
             mem: PathBuf::from("/run/fc/snap-mem.bin"),
@@ -144,7 +144,7 @@ fn capture_pause_failure_returns_client_error() {
     let server = FixtureServer::spawn(vec![resp_400(fault)]).unwrap();
 
     let req = CaptureRequest {
-        fc_socket: &server.socket_path,
+        fc_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/snap/vm.snap"),
             mem: PathBuf::from("/snap/mem.snap"),
@@ -168,7 +168,7 @@ fn capture_create_failure_returns_client_error() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_400(fault)]).unwrap();
 
     let req = CaptureRequest {
-        fc_socket: &server.socket_path,
+        fc_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/snap/vm.snap"),
             mem: PathBuf::from("/snap/mem.snap"),

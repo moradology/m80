@@ -9,7 +9,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 // Re-export the client types callers need to construct requests.
@@ -46,8 +46,8 @@ pub const RESTORE_METADATA_FILE: &str = "restore-metadata.json";
 pub struct SnapshotManifest {
     /// sha256 over the artifact set in declared order.
     pub artifact_set_sha256: String,
-    /// The five-element artifact set in declared order. Optional artifacts
-    /// (diagnostics, metrics) may be appended after the required five.
+    /// Ordered artifact set: 5 required entries, up to 2 optional appended
+    /// (diagnostics, metrics).
     pub artifacts: Vec<Artifact>,
     /// Unix epoch milliseconds at capture time.
     pub created_at_unix_ms: u64,
@@ -150,9 +150,9 @@ pub enum SnapshotKind {
 }
 
 /// Parameters for [`capture`].
-pub struct CaptureRequest<'a> {
+pub struct CaptureRequest {
     /// Path to the Firecracker API socket.
-    pub fc_socket: &'a Path,
+    pub fc_socket: PathBuf,
     /// On-disk paths for the snapshot artifact pair.
     pub paths: SnapshotPaths,
     /// Full or Diff snapshot.
@@ -190,8 +190,8 @@ pub struct RestoreRequest {
 /// # Errors
 ///
 /// Returns [`SnapshotError::Client`] if either REST call fails.
-pub fn capture(req: CaptureRequest<'_>) -> Result<(), SnapshotError> {
-    let client = FirecrackerClient::new(req.fc_socket).map_err(SnapshotError::Client)?;
+pub fn capture(req: CaptureRequest) -> Result<(), SnapshotError> {
+    let client = FirecrackerClient::new(&req.fc_socket).map_err(SnapshotError::Client)?;
 
     client
         .patch_vm_state(VmState::Paused)
@@ -346,7 +346,7 @@ fn write_pretty_json_0644<T: Serialize>(value: &T, path: &Path) -> Result<(), Sn
 /// Probe `schema_version` before full parse so a v0.2 file reports
 /// `UnsupportedSchemaVersion(2)` instead of leaking the unrelated
 /// `Json("unknown field …")` from `deny_unknown_fields`.
-fn read_with_schema_probe<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, SnapshotError> {
+fn read_with_schema_probe<T: DeserializeOwned>(path: &Path) -> Result<T, SnapshotError> {
     let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
         path: path.to_path_buf(),
         source,

@@ -90,10 +90,12 @@ fn read_full_request(stream: &mut UnixStream) -> String {
                     }
                 })
                 .unwrap_or(0);
-            expected_total = Some(hdr_len + content_length);
-            if buf.len() >= hdr_len + content_length {
+            let total = hdr_len + content_length;
+            expected_total = Some(total);
+            if buf.len() >= total {
                 break;
             }
+            continue;
         }
     }
 
