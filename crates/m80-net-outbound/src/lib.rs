@@ -206,7 +206,7 @@ pub fn reject_guest_ipv4_collision(
         if !state_path.exists() {
             continue;
         }
-        let state = read_vm_network_state(&state_path)?;
+        let state = state::read_vm_network_state_minimal(&state_path)?;
         if state.vm_id == current_vm_id {
             continue;
         }
@@ -235,7 +235,7 @@ pub fn reject_host_route_collision_from_proc_net_route(
     allowed_interface: Option<&str>,
     route_text: &str,
 ) -> Result<(), NetError> {
-    for route in parse_proc_net_route(route_text, Path::new("/proc/net/route"))? {
+    for route in state::parse_host_routes(route_text, Path::new("/proc/net/route"))? {
         if route.cidr.prefix_len() == 0 {
             continue;
         }
@@ -257,95 +257,6 @@ fn run_root_digest(run_root: &Path) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(run_root.as_os_str().as_bytes());
     hasher.finalize().into()
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct VmNetworkState {
-    vm_id: String,
-    bridge: VmBridgeState,
-    guest_ipv4: Ipv4Addr,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct VmBridgeState {
-    cidr: Ipv4Net,
-}
-
-#[derive(Debug)]
-struct HostRoute {
-    interface: String,
-    cidr: Ipv4Net,
-}
-
-fn read_vm_network_state(path: &Path) -> Result<VmNetworkState, NetError> {
-    let bytes = fs::read(path)?;
-    serde_json::from_slice(&bytes).map_err(|source| NetError::InvalidNetworkState {
-        path: path.to_path_buf(),
-        detail: source.to_string(),
-    })
-}
-
-fn parse_proc_net_route(text: &str, path: &Path) -> Result<Vec<HostRoute>, NetError> {
-    let mut routes = Vec::new();
-    for (line_number, line) in text.lines().enumerate() {
-        if line_number == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let columns = line.split_whitespace().collect::<Vec<_>>();
-        if columns.len() < 8 {
-            return Err(NetError::InvalidNetworkState {
-                path: path.to_path_buf(),
-                detail: format!("route line {} has too few columns", line_number + 1),
-            });
-        }
-        let destination = parse_proc_route_ipv4(columns[1], path)?;
-        let mask = parse_proc_route_ipv4(columns[7], path)?;
-        let prefix_len =
-            ipv4_mask_prefix_len(mask).ok_or_else(|| NetError::InvalidNetworkState {
-                path: path.to_path_buf(),
-                detail: format!(
-                    "route line {} has non-contiguous mask {mask}",
-                    line_number + 1
-                ),
-            })?;
-        let cidr = Ipv4Net::new(destination, prefix_len).map_err(|source| {
-            NetError::InvalidNetworkState {
-                path: path.to_path_buf(),
-                detail: source.to_string(),
-            }
-        })?;
-        routes.push(HostRoute {
-            interface: columns[0].to_owned(),
-            cidr,
-        });
-    }
-    Ok(routes)
-}
-
-fn parse_proc_route_ipv4(hex: &str, path: &Path) -> Result<Ipv4Addr, NetError> {
-    let raw = u32::from_str_radix(hex, 16).map_err(|_| NetError::InvalidNetworkState {
-        path: path.to_path_buf(),
-        detail: format!("invalid procfs IPv4 hex value {hex:?}"),
-    })?;
-    Ok(Ipv4Addr::new(
-        (raw & 0xff) as u8,
-        ((raw >> 8) & 0xff) as u8,
-        ((raw >> 16) & 0xff) as u8,
-        ((raw >> 24) & 0xff) as u8,
-    ))
-}
-
-fn ipv4_mask_prefix_len(mask: Ipv4Addr) -> Option<u8> {
-    let mask = u32::from(mask);
-    let prefix_len = mask.count_ones() as u8;
-    let expected = if prefix_len == 0 {
-        0
-    } else {
-        u32::MAX << (32 - prefix_len)
-    };
-    (mask == expected).then_some(prefix_len)
 }
 
 fn ipv4_net_overlaps(a: Ipv4Net, b: Ipv4Net) -> bool {

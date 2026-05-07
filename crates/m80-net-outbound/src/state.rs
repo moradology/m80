@@ -71,8 +71,6 @@ pub struct VmNetworkStateRecord {
     pub run_dir: PathBuf,
     /// Embedded run-root bridge state.
     pub bridge: BridgeState,
-    /// Guest network interface id.
-    pub iface_id: String,
     /// Derived host TAP interface name.
     pub tap_name: String,
     /// Guest MAC address.
@@ -154,7 +152,6 @@ pub fn planned_vm_network_state(
         vm_id: vm_id.to_owned(),
         run_dir: run_dir.to_path_buf(),
         bridge,
-        iface_id: "eth0".to_owned(),
         tap_name: derive_tap_name(run_root, vm_id),
         guest_mac,
         guest_ipv4,
@@ -185,6 +182,100 @@ pub fn write_vm_network_state_record(
     state: &VmNetworkStateRecord,
 ) -> Result<(), NetError> {
     write_json_atomically(&vm_network_state_path(run_dir), state)
+}
+
+/// Minimal projection of a VM network state for collision detection.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct VmNetworkStateMinimal {
+    pub(crate) vm_id: String,
+    pub(crate) bridge: VmBridgeStateMinimal,
+    pub(crate) guest_ipv4: std::net::Ipv4Addr,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct VmBridgeStateMinimal {
+    pub(crate) cidr: Ipv4Net,
+}
+
+pub(crate) struct HostRoute {
+    pub(crate) interface: String,
+    pub(crate) cidr: Ipv4Net,
+}
+
+pub(crate) fn read_vm_network_state_minimal(
+    path: &Path,
+) -> Result<VmNetworkStateMinimal, crate::NetError> {
+    let bytes = fs::read(path)?;
+    serde_json::from_slice(&bytes).map_err(|source| crate::NetError::InvalidNetworkState {
+        path: path.to_path_buf(),
+        detail: source.to_string(),
+    })
+}
+
+pub(crate) fn parse_host_routes(
+    text: &str,
+    path: &Path,
+) -> Result<Vec<HostRoute>, crate::NetError> {
+    let mut routes = Vec::new();
+    for (line_number, line) in text.lines().enumerate() {
+        if line_number == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let columns = line.split_whitespace().collect::<Vec<_>>();
+        if columns.len() < 8 {
+            return Err(crate::NetError::InvalidNetworkState {
+                path: path.to_path_buf(),
+                detail: format!("route line {} has too few columns", line_number + 1),
+            });
+        }
+        let destination = parse_proc_route_ipv4(columns[1], path)?;
+        let mask = parse_proc_route_ipv4(columns[7], path)?;
+        let prefix_len =
+            ipv4_mask_prefix_len(mask).ok_or_else(|| crate::NetError::InvalidNetworkState {
+                path: path.to_path_buf(),
+                detail: format!(
+                    "route line {} has non-contiguous mask {mask}",
+                    line_number + 1
+                ),
+            })?;
+        let cidr = Ipv4Net::new(destination, prefix_len).map_err(|source| {
+            crate::NetError::InvalidNetworkState {
+                path: path.to_path_buf(),
+                detail: source.to_string(),
+            }
+        })?;
+        routes.push(HostRoute {
+            interface: columns[0].to_owned(),
+            cidr,
+        });
+    }
+    Ok(routes)
+}
+
+fn parse_proc_route_ipv4(hex: &str, path: &Path) -> Result<std::net::Ipv4Addr, crate::NetError> {
+    let raw = u32::from_str_radix(hex, 16).map_err(|_| crate::NetError::InvalidNetworkState {
+        path: path.to_path_buf(),
+        detail: format!("invalid procfs IPv4 hex value {hex:?}"),
+    })?;
+    Ok(std::net::Ipv4Addr::new(
+        (raw & 0xff) as u8,
+        ((raw >> 8) & 0xff) as u8,
+        ((raw >> 16) & 0xff) as u8,
+        ((raw >> 24) & 0xff) as u8,
+    ))
+}
+
+fn ipv4_mask_prefix_len(mask: std::net::Ipv4Addr) -> Option<u8> {
+    let mask = u32::from(mask);
+    let prefix_len = mask.count_ones() as u8;
+    let expected = if prefix_len == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix_len)
+    };
+    (mask == expected).then_some(prefix_len)
 }
 
 pub(crate) fn bridge_state_matches_identity(existing: &BridgeState, planned: &BridgeState) -> bool {

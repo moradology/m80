@@ -326,9 +326,7 @@ fn other_bridge_users_exist(state: &VmNetworkStateRecord) -> Result<bool, NetErr
         if !candidate_state_path.exists() {
             continue;
         }
-        let Ok(candidate) = read_vm_network_state_record(&candidate_dir) else {
-            return Ok(true);
-        };
+        let candidate = read_vm_network_state_record(&candidate_dir)?;
         if candidate.bridge.run_root == state.bridge.run_root
             && candidate.bridge.bridge_name == state.bridge.bridge_name
         {

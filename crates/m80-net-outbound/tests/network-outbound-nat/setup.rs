@@ -98,7 +98,6 @@ fn vm_network_state_is_atomic_with_phase_transition() {
     assert_eq!(json["vm_id"], "vm-123");
     assert_eq!(json["run_dir"], run_dir.to_string_lossy().as_ref());
     assert_eq!(json["bridge"]["setup_phase"], "ready");
-    assert_eq!(json["iface_id"], "eth0");
     assert_eq!(json["tap_name"], planned.tap_name);
     assert_eq!(json["guest_mac"], planned.guest_mac);
     assert_eq!(json["guest_ipv4"], planned.guest_ipv4.to_string());

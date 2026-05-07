@@ -52,7 +52,7 @@ fn startup_scavenges_orphan_bridge_when_unused() {
 }
 
 #[test]
-fn malformed_peer_state_preserves_bridge() {
+fn malformed_peer_state_surfaces_error() {
     let temp = tempfile::tempdir().unwrap();
     let state = ready_state(temp.path(), "vm-a");
     write_bridge_state(temp.path(), &state.bridge).unwrap();
@@ -63,9 +63,9 @@ fn malformed_peer_state_preserves_bridge() {
     let mut links = RecordingLinkOps::with_existing(&[&state.tap_name, &state.bridge.bridge_name]);
     let mut policy = NoopPolicyOps;
 
-    cleanup_vm_with_ops(&mut links, &mut policy, "vm-a", temp.path()).unwrap();
+    let err = cleanup_vm_with_ops(&mut links, &mut policy, "vm-a", temp.path()).unwrap_err();
 
-    assert!(temp.path().join("outbound-bridge-state.json").exists());
+    assert!(matches!(err, NetError::InvalidNetworkState { .. }));
     assert!(!links.deleted(&state.bridge.bridge_name));
 }
 

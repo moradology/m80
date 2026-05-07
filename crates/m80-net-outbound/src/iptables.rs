@@ -240,7 +240,7 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "ACCEPT".into(),
             ],
-            RulePlacement::Append,
+            false,
         )?;
         ensure_iptables_rule(
             ops,
@@ -260,7 +260,7 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "ACCEPT".into(),
             ],
-            RulePlacement::Append,
+            false,
         )?;
     }
 
@@ -281,7 +281,7 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "REJECT".into(),
             ],
-            RulePlacement::Append,
+            false,
         )?;
     }
 
@@ -300,7 +300,7 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "ACCEPT".into(),
             ],
-            RulePlacement::Append,
+            false,
         )?;
     }
 
@@ -319,7 +319,7 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "REJECT".into(),
             ],
-            RulePlacement::Append,
+            false,
         )?;
     }
 
@@ -335,7 +335,7 @@ fn ensure_filter_chain_rules(
             "-j".into(),
             "ACCEPT".into(),
         ],
-        RulePlacement::Append,
+        false,
     )
 }
 
@@ -362,7 +362,7 @@ fn ensure_forwarding_entry_rules(
             "-j".into(),
             chain.into(),
         ],
-        RulePlacement::Insert,
+        true,
     )?;
     ensure_iptables_rule(
         ops,
@@ -380,7 +380,7 @@ fn ensure_forwarding_entry_rules(
             "-j".into(),
             "REJECT".into(),
         ],
-        RulePlacement::Insert,
+        true,
     )?;
     ensure_iptables_rule(
         ops,
@@ -402,7 +402,7 @@ fn ensure_forwarding_entry_rules(
             "-j".into(),
             "ACCEPT".into(),
         ],
-        RulePlacement::Insert,
+        true,
     )
 }
 
@@ -425,14 +425,8 @@ fn ensure_nat_masquerade_rule(
             "-j".into(),
             "MASQUERADE".into(),
         ],
-        RulePlacement::Append,
+        false,
     )
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RulePlacement {
-    Append,
-    Insert,
 }
 
 fn ensure_iptables_rule(
@@ -440,7 +434,7 @@ fn ensure_iptables_rule(
     table: &str,
     chain: &str,
     rule: Vec<String>,
-    placement: RulePlacement,
+    insert: bool,
 ) -> Result<(), NetError> {
     if ops
         .command_output("iptables", &iptables_args(table, "-C", chain, &rule))?
@@ -449,16 +443,8 @@ fn ensure_iptables_rule(
         return Ok(());
     }
 
-    let mut args = iptables_args(
-        table,
-        match placement {
-            RulePlacement::Append => "-A",
-            RulePlacement::Insert => "-I",
-        },
-        chain,
-        &[],
-    );
-    if placement == RulePlacement::Insert {
+    let mut args = iptables_args(table, if insert { "-I" } else { "-A" }, chain, &[]);
+    if insert {
         args.push("1".to_owned());
     }
     args.extend(rule);
