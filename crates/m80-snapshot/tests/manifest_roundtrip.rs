@@ -11,9 +11,7 @@ fn round_trip_equals_original() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_manifest(dir.path());
     let path = dir.path().join("snapshot-manifest.json");
-    m.write(&path).unwrap();
-    let m2 = SnapshotManifest::read(&path).unwrap();
-    assert_eq!(m, m2, "round-tripped manifest must equal the original");
+    common::assert_round_trips(m, &path, |v, p| v.write(p), SnapshotManifest::read);
 }
 
 /// Writing twice produces byte-identical files (stable serialization).

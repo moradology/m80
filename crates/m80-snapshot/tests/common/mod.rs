@@ -10,7 +10,9 @@
 
 use std::path::Path;
 
-use m80_snapshot::{Artifact, ArtifactKind, RestoreMetadata, SnapshotManifest, SCHEMA_VERSION};
+use m80_snapshot::{
+    Artifact, ArtifactKind, RestoreMetadata, SnapshotError, SnapshotManifest, SCHEMA_VERSION,
+};
 
 /// Return the five required artifacts pointing at `dir`-relative paths.
 /// All sha256 and size values are fixed constants — no real files needed.
@@ -78,4 +80,20 @@ pub fn sample_restore_metadata(dir: &Path) -> RestoreMetadata {
         source_vm_id: "vm-xyz".into(),
         source_workspace_id: "ws-123".into(),
     }
+}
+
+/// Assert that a value survives a write→read round-trip unchanged.
+///
+/// `write` and `read` are the type-specific persistence closures.
+pub fn assert_round_trips<T>(
+    value: T,
+    path: &std::path::Path,
+    write: impl Fn(&T, &std::path::Path) -> Result<(), SnapshotError>,
+    read: impl Fn(&std::path::Path) -> Result<T, SnapshotError>,
+) where
+    T: PartialEq + std::fmt::Debug,
+{
+    write(&value, path).expect("write must succeed");
+    let restored = read(path).expect("read must succeed");
+    assert_eq!(value, restored, "round-tripped value must equal the original");
 }

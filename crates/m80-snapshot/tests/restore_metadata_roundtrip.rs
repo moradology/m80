@@ -11,9 +11,7 @@ fn round_trip_equals_original() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_restore_metadata(dir.path());
     let path = dir.path().join("restore-metadata.json");
-    m.write(&path).unwrap();
-    let m2 = RestoreMetadata::read(&path).unwrap();
-    assert_eq!(m, m2, "round-tripped metadata must equal the original");
+    common::assert_round_trips(m, &path, |v, p| v.write(p), RestoreMetadata::read);
 }
 
 /// Writing twice produces byte-identical files.

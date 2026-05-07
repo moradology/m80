@@ -408,7 +408,8 @@ impl RestoreMetadata {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
+/// use m80_snapshot::persistence_path;
 /// let p = persistence_path(
 ///     std::path::Path::new("/var/snapshots"),
 ///     "ws-1",

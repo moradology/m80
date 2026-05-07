@@ -7,8 +7,6 @@
 //! Used by the capture/restore integration tests to avoid a real Firecracker
 //! binary.
 
-#![allow(dead_code)]
-
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::thread::{self, JoinHandle};
@@ -16,6 +14,7 @@ use std::thread::{self, JoinHandle};
 use tempfile::TempDir;
 
 /// A running fixture server handle that serves N responses in sequence.
+#[allow(dead_code)]
 pub struct FixtureServer {
     /// Path the listener is bound to.
     pub socket_path: std::path::PathBuf,
