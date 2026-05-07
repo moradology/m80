@@ -189,10 +189,10 @@ is deferred.
 - With global `--json`, every command that emits machine-readable output writes
   `{"version": 1, "data": ...}`. The integer version is monotonically
   increasing; breaking schema changes bump it.
-- Errors render to stderr. Stable exit codes are defined in
-  `crates/m80-cli/src/errors.rs`: `1`=generic, `2`=preflight, `3`=admission,
-  `4`=manifest, `5`=invalid state, `6`=config, `7`=explicit v0.x feature gap,
-  `8`=warm pool empty.
+- Errors render to stderr. Canonical mapping: see
+  `crates/m80-cli/src/errors.rs::FcError::exit_code()`. Summary:
+  `1`=generic, `2`=preflight, `3`=admission, `4`=manifest, `5`=invalid state,
+  `6`=config, `7`=explicit v0.x feature gap, `8`=warm pool empty.
 - Stderr is informational until paired with a wrapper exit code or JSON error
   envelope. A successful guest command may write stderr; in pipe mode that is
   still guest stderr, not an m80 wrapper failure.

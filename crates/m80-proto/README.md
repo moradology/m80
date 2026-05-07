@@ -81,6 +81,42 @@ The load-bearing wire invariants — the things consumers cannot derive from
   free-form key/value map. See
   `docs/behaviors/observability/guest-metrics-vsock.md`.
 
+## Public surface
+
+Frame I/O: `read_frame`, `write_frame`, `read_raw_frame`, `write_raw_frame`.
+Frame sizing: `MAX_FRAME_BYTES`, `PROTOCOL_VERSION`.
+
+Envelope and traits: `Envelope<T>`, `Payload` (implemented by all payload
+types), `RawEnvelope`.
+
+Core exec types: `ExecRequest`, `ExecResponse`, `ExecExit`, `ExecChunk`,
+`ExecStatus`, `CancelRequest`, `CancelAck`, `CancelStatus`.
+
+PTY types: `PtyRequest`, `PtyExit`, `PtyOutputChunk`, `PtyHostEvent`,
+`PtyInput`, `PtyResize`, `PtyControl`.
+
+File-op exports: `FileReadRequest`, `FileReadChunk`,
+`FileReadResponse`, `FileWriteRequest`, `FileWriteResponse`,
+`FileListRequest`, `FileListResponse`, `FileStatRequest`, `FileStatResponse`,
+`FileRemoveRequest`, `FileRemoveResponse`, `FileWriteBeginRequest`,
+`FileWriteBeginResponse`, `FileWriteChunkRequest`, `FileWriteChunkResponse`,
+`FileWriteCommitRequest`, `FileWriteCommitResponse`,
+`FileError`, `FileKind`, `DirEntry`, `FileStat`, `FILE_READ_LIMIT_DEFAULT`,
+and their `PAYLOAD_KIND_*` constants.
+
+Guest metrics exports: `MetricsRequest`, `MetricsResponse`,
+`GuestCpuMetrics`, `GuestMemMetrics`, and
+`PAYLOAD_KIND_METRICS_REQUEST` / `PAYLOAD_KIND_METRICS_RESPONSE`.
+
+Error type: `ProtoError`.
+
+Port constants: `GUEST_PORT_DEFAULT`, `READY_PORT_DEFAULT`.
+
+Generated wire module: `wire::generated` is generated from
+`proto/m80/wire.proto` and marked `#[doc(hidden)]`. Normal callers use the typed
+payload structs and frame helpers; generated structs are only for protocol
+plumbing and variant work inside `m80-proto`.
+
 ## Non-goals
 
 - **No transport.** `m80-proto` does not own a vsock socket, a UDS handle,
@@ -102,20 +138,11 @@ The load-bearing wire invariants — the things consumers cannot derive from
 `prost-build`, `protoc-bin-vendored`, and `indexmap` pinned for the workspace
 Rust toolchain. None of the other m80 crates.
 
-## Public Surface
+## Tests
 
-File-op exports: `FileReadRequest`, `FileReadChunk`,
-`FileReadResponse`, `FileWriteRequest/Response`, `FileListRequest/Response`, `FileStatRequest/Response`,
-`FileRemoveRequest/Response`, `FileWriteBeginRequest/Response`,
-`FileWriteChunkRequest/Response`, `FileWriteCommitRequest/Response`,
-`FileError`, `FileKind`, `DirEntry`, `FileStat`, `FILE_READ_LIMIT_DEFAULT`,
-and their `PAYLOAD_KIND_*` constants.
-
-Guest metrics exports: `MetricsRequest`, `MetricsResponse`,
-`GuestCpuMetrics`, `GuestMemMetrics`, and
-`PAYLOAD_KIND_METRICS_REQUEST` / `PAYLOAD_KIND_METRICS_RESPONSE`.
-
-Generated wire module: `wire::generated` is generated from
-`proto/m80/wire.proto` and marked `#[doc(hidden)]`. Normal callers use the typed
-payload structs and frame helpers; generated structs are only for protocol
-plumbing and variant work inside `m80-proto`.
+- `tests/fileops_round_trip.rs` — each file-op request/response pair
+  round-trips through `write_frame` + `read_frame` byte-equivalent.
+- Unit tests in-crate: `Envelope` kind/payload mismatch fails closed,
+  `OversizedPayload` fires at `MAX_FRAME_BYTES + 1`, EOF before prefix vs.
+  EOF mid-frame both map to `Io(UnexpectedEof)`, `negotiate_version`
+  rejects any version other than `PROTOCOL_VERSION`.

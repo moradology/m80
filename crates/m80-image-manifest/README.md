@@ -10,21 +10,6 @@ Single source of truth shared by `m80-image-build` (writer) and
 `m80-preflight` (reader/verifier) so the schema cannot drift. Validation
 logic (sha256 recompute, schema-version probe) lives here once.
 
-## Schema
-
-### v3 (current)
-
-`schema_version: 3`. Added `kernel_kind: KernelKind` field (§ Public
-surface). The field has `#[serde(default)]` so JSON without `kernel_kind`
-deserializes as `KernelKind::Stock`. Existing v2 manifests must be rebuilt
-(no migration code — per CLAUDE.md, new schema versions are new code).
-
-### v2
-
-Added `image_kind` discriminator and made systemd-related fields `Option<>`
-so a `Minimal` image can emit a manifest without lying about absent
-artifacts.
-
 ## Black-box contract
 
 - `schema_version` is the integer **3**. A manifest with any other value
@@ -57,6 +42,21 @@ artifacts.
   `m80-preflight`). This crate has no `FirecrackerVersionMismatch` variant.
 - The manifest is **side-by-side** with the rootfs (`<rootfs>.manifest.json`).
   This crate does not look up a manifest by some registry or env var.
+
+## Schema
+
+### v3 (current)
+
+`schema_version: 3`. Added `kernel_kind: KernelKind` field (§ Public
+surface). The field has `#[serde(default)]` so JSON without `kernel_kind`
+deserializes as `KernelKind::Stock`. Existing v2 manifests must be rebuilt
+(no migration code — per CLAUDE.md, new schema versions are new code).
+
+### v2
+
+Added `image_kind` discriminator and made systemd-related fields `Option<>`
+so a `Minimal` image can emit a manifest without lying about absent
+artifacts.
 
 ## Public surface
 

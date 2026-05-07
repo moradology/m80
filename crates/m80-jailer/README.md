@@ -61,3 +61,22 @@ hands a config in and gets back a launchable chroot — or a typed error.
   child PIDs once `launch()` returns.
 - **No general "make me a chroot" service.** This crate is shaped around
   Firecracker's jailer specifically.
+
+## Dependencies
+
+- `serde`, `serde_json`, `thiserror`, `tracing`.
+- No other m80 crates.
+- Requires the `jailer` binary on `PATH` (or a configured path) and
+  privilege (`CAP_SYS_CHROOT` / root) at materialize time; `m80-preflight`
+  verifies at startup.
+
+## Tests
+
+- `tests/plan_compute.rs` — pure `Plan::compute` produces expected
+  bind-source paths and jail-root layout given fixed inputs; no filesystem
+  access.
+- `tests/recovery.rs` — `recover_from_run_dir` returns `NoJail` for a
+  missing run-dir, `OrphanJail` for a plan-only (no live pid) dir, and
+  `LiveJail` when the state JSON records a running pid.
+- `tests/jail_root_path.rs` — `jail_root_path` output matches the
+  expected jailer-hardcoded layout for several input combinations.

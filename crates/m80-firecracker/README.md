@@ -359,6 +359,58 @@ an invariant fails closed.
 - `LifecycleFailureKind::ALL` is the bounded lifecycle vocabulary used by
   behavior docs and tests. `FcError` remains the concrete public error surface.
 
+## Public surface
+
+Core types:
+
+- `Sandbox` — pre-launch handle; owned by `Backend::admit().launch()`.
+- `RunningSandbox` — live VM handle; all exec/file-op/PTY methods live here.
+- `StoppedSandbox` — post-stop handle; carries `delete()` and `preserve_for_triage()`.
+- `Backend` — orchestration root: `new(BackendConfig)`, `admit()`, `recover_stale_run_root()`.
+- `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
+- `WarmLease` — single exec slot checked out from `WarmPool`.
+- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, etc.).
+- `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
+- `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.
+- `FcError` — exhaustive typed error for all phases.
+
+Re-exports for callers:
+
+- `SnapshotPaths` (from `m80-snapshot`).
+- `WireProtocolError` (from `m80-proto`).
+- `ExecRequest`, `ExecResponse`, `ExecExit`, `ExecChunk`, `ExecStatus` (from `m80-proto`).
+- `PtyRequest`, `PtyExit`, `PtyOutputChunk`, `PtyHostEvent` (from `m80-proto`).
+- `DirEntry`, `FileStat` (from `m80-proto`).
+- `MetricsResponse` (from `m80-proto`).
+
+Config helpers:
+
+- `load_config(flags) -> EffectiveConfig`
+- `load_config_from_paths(flags, ConfigFilePaths) -> EffectiveConfig`
+
+Layout helpers:
+
+- `run_dir_path`, `firecracker_api_socket_path`, `vsock_socket_path`,
+  `rootfs_overlay_path`, `scratch_image_path`, `console_log_path`,
+  `boot_identity_path`.
+
+Boot config:
+
+- `boot_args_for(image_kind, kernel_kind) -> &'static str`.
+- `FIRST_LINE_VCPU_COUNT`, `FIRST_LINE_MEM_SIZE_MIB`.
+
+Cleanup vocabulary (behavior docs + regression tests):
+
+- `CleanupPhase` / `CLEANUP_PHASE_ORDER`.
+- `StopDisposition` / `STOP_DISPOSITIONS`.
+- `CleanupReleaseBlocker` / `CLEANUP_RELEASE_BLOCKERS`.
+- `CleanupAuthority` / `CLEANUP_AUTHORITY`.
+- `LifecycleFailureKind::ALL`.
+
+Warm pool:
+
+- `WarmPoolConfig`, `BlankVmResetEvidence`.
+
 ## Non-goals
 
 - **No agent semantics.** No tool catalog, no `EffectClass`, no authority
@@ -368,3 +420,45 @@ an invariant fails closed.
   returns `FcError::PoolEmpty` when no slot is ready.
 - **No "execute and forget".** All sandboxes return through `stop()` or
   `force_kill()`.
+
+## Dependencies
+
+- `m80-firecracker-client` — Firecracker REST API calls.
+- `m80-vsock` — vsock channel open and frame transport.
+- `m80-jailer` — jail chroot setup and teardown.
+- `m80-cgroup` — cgroup v2 subtree lifecycle.
+- `m80-storage` — rootfs overlay and scratch image preparation.
+- `m80-preflight` — host capability verification at backend construction.
+- `m80-net-mode` — network policy resolution.
+- `m80-net-outbound` — outbound NAT wiring (v0.2; gated at construction time in v0.1).
+- `m80-snapshot` — snapshot path types.
+- `m80-proto` — wire types re-exported for callers.
+- `m80-image-manifest` — image kind / kernel kind for boot-args selection.
+- `serde`, `serde_json`, `thiserror`, `tracing`, `toml`.
+
+## Debug instrumentation
+
+`M80_DEBUG_WIRE` is the global wire-trace knob. The following targets are
+recognized across the workspace:
+
+| Target | Crate that honors it | What it traces |
+|--------|----------------------|----------------|
+| `vsock` | `m80-vsock` | vsock handshake lines and every frame sent/received, with hex+ASCII preview up to 1024 bytes |
+| `fcrest` | `m80-firecracker-client` | Firecracker REST PUT request (method, path, body) and response (status, body), with hex+ASCII preview up to 1024 bytes |
+| `all` | both | enables all targets |
+
+Usage rules (identical in both crates):
+
+- Matching is exact (`==`): `M80_DEBUG_WIRE= vsock` (leading space) does not match.
+- Multiple targets are comma-separated: `M80_DEBUG_WIRE=vsock,fcrest`.
+- Unknown tokens are silently ignored.
+- The gate is a single atomic load on the hot path; no serialization occurs unless it fires.
+
+## Tests
+
+- `tests/boot_args.rs` — `boot_args_for` matrix for all four `(ImageKind, KernelKind)` combinations.
+- `tests/config_loading.rs` — precedence chain, drop-in ordering, unknown-key rejection, and env-override isolation using `load_config_from_paths` and in-memory fixtures.
+- `tests/cleanup_vocabulary.rs` — `CleanupPhase`, `StopDisposition`, `CleanupReleaseBlocker`, `CleanupAuthority`, and `LifecycleFailureKind::ALL` are exhaustive and match behavior docs.
+- `tests/layout.rs` — pure path helpers produce expected strings given fixed run-root + vm-id inputs.
+- `tests/warm_pool.rs` — `WarmPool::new` rejects `target_ready == 0` and workspace-backed configs; `BlankVmResetEvidence` fields are exhaustively named.
+- KVM integration tests (`#[ignore]`) live in `tests/e2e_*.rs`; they require a real Firecracker binary and KVM device.

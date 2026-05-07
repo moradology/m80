@@ -37,6 +37,12 @@ It's small. It earns its keep by being the API border between
   a future `NetworkPolicy::parse_from_strings(...)` entrypoint would be
   the place to surface those errors.
 
+## Public surface
+
+- `NetworkPolicy` — caller-facing intent enum: `NoEgress` | `OutboundNat { exceptions: Vec<Ipv4Net> }`.
+- `VmNetworkMode` — resolved implementation mode: `NoEgress` | `OutboundNat { exceptions }`.
+- `resolve(policy: &NetworkPolicy) -> VmNetworkMode` — pure, infallible resolution.
+
 ## Non-goals
 
 - **No iptables.** That's `m80-net-outbound`.
@@ -44,3 +50,15 @@ It's small. It earns its keep by being the API border between
 - **No "should I network" inference.** The caller decides.
 - **No string-input parser.** CIDR parsing and IPv6 rejection live at the
   caller boundary, not here.
+
+## Dependencies
+
+- `ipnet` for `Ipv4Net`.
+- No other m80 crates.
+
+## Tests
+
+- `NetworkPolicy` default is `NoEgress`.
+- `resolve(NoEgress)` returns `VmNetworkMode::NoEgress`.
+- `resolve(OutboundNat { exceptions: [] })` returns `VmNetworkMode::OutboundNat`.
+- `resolve(OutboundNat { exceptions: [...] })` carries exceptions through unchanged.

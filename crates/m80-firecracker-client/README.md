@@ -88,6 +88,9 @@ with a hex+ASCII preview of up to 1024 bytes.
 - The gate is a single atomic load on the hot path; no serialization occurs
   unless the gate fires.
 
+See `crates/m80-firecracker/README.md` "Debug instrumentation" for the
+complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
+
 ## Tests
 
 - `tests/put_each_resource.rs` — for each Firecracker resource, a fixture

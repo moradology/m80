@@ -13,6 +13,28 @@ writing `O_TRUNC` to a virtual file returns EINVAL on some kernels.
 A separate crate gives that surface one test boundary and lets
 `m80-firecracker` skip cgroups cleanly on hosts without unified-v2.
 
+## Black-box contract
+
+- `Subtree::probe()` confirms the host runs cgroup v2 unified hierarchy;
+  returns `CgroupError::UnsupportedHostMode` on hybrid or v1-only hosts.
+  This is a **precondition check**, not an idempotent guard — callers are
+  expected to gate cgroup usage on a single probe result.
+- `Subtree::create(vm_id, &MaterializedJail, &JailedFirecracker)`
+  materializes the leaf directory under
+  `/sys/fs/cgroup/m80-firecracker/<vm_id>/`, enables the `cpu`, `memory`,
+  and `pids` controllers in `cgroup.subtree_control`, and enrols the
+  deduped jailer + firecracker pid set. All three steps happen atomically
+  from the OS's perspective; partial state is cleaned up on error.
+- `Subtree::leaf_path(vm_id)` is a pure, no-I/O path helper that returns
+  the expected leaf directory for a given VM id. Callers may use it for
+  triage or inspection without holding a `Subtree` handle.
+- **Cleanup on drop.** `Subtree::Drop` removes the leaf cgroup directory
+  with `rmdir`. If `rmdir` fails (e.g., processes are still enrolled),
+  the failure is logged via `tracing`; the drop never panics.
+- **v2 unified hierarchy only.** No cgroup v1 or hybrid-mode support in
+  v0.1. Any host that does not present a pure unified hierarchy fails at
+  `probe()` time, not at `create()` time.
+
 ## Public surface
 
 See rustdoc for full signatures.
@@ -34,6 +56,13 @@ See rustdoc for full signatures.
   `m80-firecracker` intentionally passes `Limits::m80_default()` when
   `CgroupMode::UnifiedV2` is enabled.
 - **No metrics scraping.** Reading `cpu.stat` / `memory.stat` belongs in `m80-observability`.
+
+## Dependencies
+
+- `thiserror`, `tracing`.
+- No other m80 crates.
+- Requires `/sys/fs/cgroup` at runtime; tests that touch the real
+  cgroup hierarchy are `#[ignore]` and run with `sudo`.
 
 ## Tests
 
