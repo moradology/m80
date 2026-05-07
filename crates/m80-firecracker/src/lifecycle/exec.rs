@@ -9,24 +9,25 @@ use std::time::{Duration, Instant};
 
 use m80_observability::Phase;
 use m80_proto::{
-    CancelResponse, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
+    CancelRequest, CancelResponse, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
     ExecStatus, ExecStderr, ExecStdout, ExecTiming, Payload, PtyControl, PtyExit, PtyInput,
-    PtyOutput, PtyRequest, PtyResize, RawEnvelope, PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_EXEC_EXIT,
-    PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_PTY_EXIT,
-    PAYLOAD_KIND_PTY_OUTPUT,
+    PtyOutput, PtyRequest, PtyResize, RawEnvelope, PAYLOAD_KIND_CANCEL_RESPONSE,
+    PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
+    PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_OUTPUT,
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
+use crate::diagnostics::phase_event;
 use crate::error::{ConfigError, FcError};
 use crate::lifecycle::monotonic_ns;
 use crate::runroot::unix_ms_now;
-use crate::diagnostics::phase_event;
 use crate::types::{ExecChunk, PtyHostEvent, PtyOutputChunk, RunningSandbox};
 
 const EXEC_OPEN_SEND_RETRIES: usize = 25;
 const EXEC_OPEN_SEND_RETRY_SLEEP: Duration = Duration::from_millis(100);
 const EXEC_BUFFER_LIMIT: usize = 1 << 20;
 const CANCEL_FORWARDER_POLL: Duration = Duration::from_millis(50);
+const FORWARDER_JOIN_TIMEOUT: Duration = Duration::from_millis(100);
 
 impl RunningSandbox {
     /// Send one exec request to the in-VM daemon and return a buffered
@@ -208,27 +209,25 @@ impl RunningSandbox {
                     );
                     return Ok(exit);
                 }
-                PAYLOAD_KIND_CANCEL_RESPONSE => {
-                    match decode_cancel_ack(frame, "pty")? {
-                        CancelResponseDisposition::Cancelled => {
-                            phase_event("pty_cancelled", &self.vm_id, t.elapsed());
-                            self.last_activity_ns
-                                .store(monotonic_ns(), Ordering::Relaxed);
-                            crate::diagnostics::record_owned(
-                                &mut self.diagnostics,
-                                Phase::Request,
-                                &self.vm_id,
-                                Some(request_id.as_str()),
-                                "pty request cancelled",
-                            );
-                            return Ok(cancelled_pty_exit(started_at_unix_ms, output_total));
-                        }
-                        CancelResponseDisposition::AlreadyExited => continue,
-                        CancelResponseDisposition::Failed(msg) => {
-                            return Err(FcError::Config(ConfigError::Other(msg)))
-                        }
+                PAYLOAD_KIND_CANCEL_RESPONSE => match decode_cancel_ack(frame, "pty")? {
+                    CancelResponseDisposition::Cancelled => {
+                        phase_event("pty_cancelled", &self.vm_id, t.elapsed());
+                        self.last_activity_ns
+                            .store(monotonic_ns(), Ordering::Relaxed);
+                        crate::diagnostics::record_owned(
+                            &mut self.diagnostics,
+                            Phase::Request,
+                            &self.vm_id,
+                            Some(request_id.as_str()),
+                            "pty request cancelled",
+                        );
+                        return Ok(cancelled_pty_exit(started_at_unix_ms, output_total));
                     }
-                }
+                    CancelResponseDisposition::AlreadyExited => continue,
+                    CancelResponseDisposition::Failed(msg) => {
+                        return Err(FcError::Config(ConfigError::Other(msg)))
+                    }
+                },
                 other => {
                     let err = super::protocol::unexpected_frame(
                         "pty exec",
@@ -302,7 +301,9 @@ impl RunningSandbox {
                 let stop = Arc::new(AtomicBool::new(false));
                 let stop_for_thread = Arc::clone(&stop);
                 let request_id_clone = request_id.clone();
+                let (done_tx, done_rx) = mpsc::channel();
                 let handle = std::thread::spawn(move || {
+                    let _done = ForwarderDone(done_tx);
                     while !stop_for_thread.load(Ordering::Relaxed) {
                         match cancel_rx.recv_timeout(CANCEL_FORWARDER_POLL) {
                             Ok(()) => {
@@ -319,6 +320,7 @@ impl RunningSandbox {
                 });
                 Some(CancelForwarder {
                     stop,
+                    done_rx,
                     handle: Some(handle),
                 })
             }
@@ -401,31 +403,29 @@ impl RunningSandbox {
                     );
                     return Ok(exit);
                 }
-                PAYLOAD_KIND_CANCEL_RESPONSE => {
-                    match decode_cancel_ack(frame, "exec")? {
-                        CancelResponseDisposition::Cancelled => {
-                            phase_event("exec_cancelled", &self.vm_id, t.elapsed());
-                            self.last_activity_ns
-                                .store(monotonic_ns(), Ordering::Relaxed);
-                            crate::diagnostics::record_owned(
-                                &mut self.diagnostics,
-                                Phase::Request,
-                                &self.vm_id,
-                                Some(request_id.as_str()),
-                                "exec request cancelled",
-                            );
-                            return Ok(cancelled_exit(
-                                started_at_unix_ms,
-                                stdout_total,
-                                stderr_total,
-                            ));
-                        }
-                        CancelResponseDisposition::AlreadyExited => continue,
-                        CancelResponseDisposition::Failed(msg) => {
-                            return Err(FcError::Config(ConfigError::Other(msg)))
-                        }
+                PAYLOAD_KIND_CANCEL_RESPONSE => match decode_cancel_ack(frame, "exec")? {
+                    CancelResponseDisposition::Cancelled => {
+                        phase_event("exec_cancelled", &self.vm_id, t.elapsed());
+                        self.last_activity_ns
+                            .store(monotonic_ns(), Ordering::Relaxed);
+                        crate::diagnostics::record_owned(
+                            &mut self.diagnostics,
+                            Phase::Request,
+                            &self.vm_id,
+                            Some(request_id.as_str()),
+                            "exec request cancelled",
+                        );
+                        return Ok(cancelled_exit(
+                            started_at_unix_ms,
+                            stdout_total,
+                            stderr_total,
+                        ));
                     }
-                }
+                    CancelResponseDisposition::AlreadyExited => continue,
+                    CancelResponseDisposition::Failed(msg) => {
+                        return Err(FcError::Config(ConfigError::Other(msg)))
+                    }
+                },
                 other => {
                     let err = super::protocol::unexpected_frame(
                         "streaming exec",
@@ -448,34 +448,64 @@ impl RunningSandbox {
 
 struct CancelForwarder {
     stop: Arc<AtomicBool>,
+    done_rx: mpsc::Receiver<()>,
     handle: Option<JoinHandle<()>>,
 }
 
 impl Drop for CancelForwarder {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.handle.take() {
-            match handle.join() {
-                Ok(()) => {}
-                Err(panic) => tracing::error!(?panic, "cancel forwarder thread panicked"),
-            }
-        }
+        join_forwarder_with_timeout(
+            "cancel forwarder",
+            &self.done_rx,
+            &mut self.handle,
+            FORWARDER_JOIN_TIMEOUT,
+        );
     }
 }
 
 struct PtyEventForwarder {
     stop: Arc<AtomicBool>,
+    done_rx: mpsc::Receiver<()>,
     handle: Option<JoinHandle<()>>,
 }
 
 impl Drop for PtyEventForwarder {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.handle.take() {
-            match handle.join() {
-                Ok(()) => {}
-                Err(panic) => tracing::error!(?panic, "pty event forwarder thread panicked"),
-            }
+        join_forwarder_with_timeout(
+            "pty event forwarder",
+            &self.done_rx,
+            &mut self.handle,
+            FORWARDER_JOIN_TIMEOUT,
+        );
+    }
+}
+
+struct ForwarderDone(mpsc::Sender<()>);
+
+impl Drop for ForwarderDone {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
+
+fn join_forwarder_with_timeout(
+    name: &'static str,
+    done_rx: &mpsc::Receiver<()>,
+    handle: &mut Option<JoinHandle<()>>,
+    timeout: Duration,
+) {
+    let Some(thread) = handle.take() else {
+        return;
+    };
+    match done_rx.recv_timeout(timeout) {
+        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => match thread.join() {
+            Ok(()) => {}
+            Err(panic) => tracing::error!(?panic, "{name} thread panicked"),
+        },
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            tracing::warn!("{name} thread did not stop within {timeout:?}; detaching");
         }
     }
 }
@@ -491,7 +521,10 @@ enum CancelResponseDisposition {
 }
 
 /// Decode a raw frame as `CancelResponse` and classify its status.
-fn decode_cancel_ack(frame: RawEnvelope, request_kind: &str) -> Result<CancelResponseDisposition, FcError> {
+fn decode_cancel_ack(
+    frame: RawEnvelope,
+    request_kind: &str,
+) -> Result<CancelResponseDisposition, FcError> {
     let ack = decode_frame::<CancelResponse>(frame)?;
     Ok(match ack.status {
         CancelStatus::Cancelled => CancelResponseDisposition::Cancelled,
@@ -522,9 +555,9 @@ fn check_stream_sequence(
             u64::from(got),
         ));
     }
-    *expected = expected
-        .checked_add(1)
-        .ok_or_else(|| FcError::Config(ConfigError::Other(format!("{stream} sequence overflow"))))?;
+    *expected = expected.checked_add(1).ok_or_else(|| {
+        FcError::Config(ConfigError::Other(format!("{stream} sequence overflow")))
+    })?;
     Ok(())
 }
 
@@ -546,7 +579,9 @@ fn spawn_pty_event_forwarder(
     let mut sender = channel.try_clone_sender().map_err(FcError::Vsock)?;
     let stop = Arc::new(AtomicBool::new(false));
     let stop_for_thread = Arc::clone(&stop);
+    let (done_tx, done_rx) = mpsc::channel();
     let handle = std::thread::spawn(move || {
+        let _done = ForwarderDone(done_tx);
         let mut input_seq = 0u32;
         let mut control_seq = 0u32;
         while !stop_for_thread.load(Ordering::Relaxed) {
@@ -587,6 +622,7 @@ fn spawn_pty_event_forwarder(
     });
     Ok(PtyEventForwarder {
         stop,
+        done_rx,
         handle: Some(handle),
     })
 }
@@ -674,9 +710,7 @@ where
 fn is_transient_exec_open_send_error(err: &m80_vsock::VsockError) -> bool {
     match err {
         m80_vsock::VsockError::HandshakeFailed => true,
-        m80_vsock::VsockError::Io { source, .. } => {
-            source.kind() == std::io::ErrorKind::BrokenPipe
-        }
+        m80_vsock::VsockError::Io { source, .. } => source.kind() == std::io::ErrorKind::BrokenPipe,
         _ => false,
     }
 }
@@ -793,5 +827,33 @@ mod tests {
                 got: 0
             })
         ));
+    }
+
+    #[test]
+    fn cancel_forwarder_drop_detaches_after_join_timeout() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let (done_tx, done_rx) = mpsc::channel();
+        let (thread_released_tx, thread_released_rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let _done = ForwarderDone(done_tx);
+            std::thread::sleep(FORWARDER_JOIN_TIMEOUT * 3);
+            let _ = thread_released_tx.send(());
+        });
+        let forwarder = CancelForwarder {
+            stop,
+            done_rx,
+            handle: Some(handle),
+        };
+
+        let started = Instant::now();
+        drop(forwarder);
+
+        assert!(
+            started.elapsed() < FORWARDER_JOIN_TIMEOUT * 2,
+            "drop waited for a blocked forwarder instead of detaching"
+        );
+        thread_released_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("detached test thread should still finish promptly");
     }
 }

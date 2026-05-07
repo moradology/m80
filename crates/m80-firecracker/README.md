@@ -78,7 +78,9 @@ the same exec paths. They attach an opaque request id, clone a write-only
 sender for the same vsock connection, and send `cancel_request` when the caller
 signals the provided receiver. `CancelAck { Cancelled }` returns
 `ExecStatus::Cancelled`; `CancelAck { AlreadyExited }` keeps waiting for the
-normal terminal exec result.
+normal terminal exec result. The helper thread that forwards a host cancel is
+joined only after it reports completion; if it is still blocked after 100 ms,
+the Drop path logs and detaches it so the exec caller cannot hang indefinitely.
 
 `RunningSandbox::exec_pty(&mut self, PtyRequest, Receiver<PtyHostEvent>,
 on_output)` is the interactive terminal form. It opens one vsock connection,
