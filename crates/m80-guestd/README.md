@@ -257,6 +257,20 @@ contract. `m80-guestd` checks them rather than creating them at boot.
   the workspace drive was `/dev/vdb`; after the overlay pivot (`m80-ovrl.4`),
   it is `/dev/vdc` (drive position 3 per `docs/design/storage-overlay.md §2`).
 
+### Hotplug event infrastructure
+
+`m80-guestd` has a guest-local uevent layer for future drive hotplug handlers:
+
+- parses kernel `NETLINK_KOBJECT_UEVENT` messages into `Uevent` values;
+- provides a `UeventMatcher` trait plus a block-device matcher;
+- keeps a cached event list so callers can observe devices that appeared
+  before the waiter was installed;
+- uses a `Condvar`-based bounded wait path, not busy polling.
+
+The listener and registry are infrastructure only until the drive mount
+handler is wired. They do not mount workspace/cache/scratch drives by
+themselves.
+
 ### Guest stderr format
 
 All internal guestd lifecycle logs go to stderr with this line shape:
