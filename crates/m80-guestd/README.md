@@ -304,6 +304,10 @@ contract. `m80-guestd` checks them rather than creating them at boot.
 - keeps a cached event list so callers can observe devices that appeared
   before the waiter was installed;
 - uses a `Condvar`-based bounded wait path, not busy polling.
+- on `add` uevents for `SUBSYSTEM=cpu` or `SUBSYSTEM=memory`, writes `1` to
+  the kernel device's `/sys/.../online` file so newly hot-plugged CPU and
+  memory devices are made available inside the guest. Write failures are logged
+  to guest stderr and the event is still cached for waiters.
 
 The drive mount handler serves `DriveMountRequest` directly in guestd. The
 request names Firecracker drive ids from the preallocated-slot pattern
