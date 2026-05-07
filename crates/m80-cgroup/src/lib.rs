@@ -54,12 +54,10 @@ impl Subtree {
         jailed: &JailedFirecracker,
     ) -> Result<Self, CgroupError> {
         let parent = PathBuf::from(CGROUP_ROOT);
+        let io_err = |path: PathBuf| move |source| CgroupError::Io { path, source };
 
         // create_dir_all is race-safe against concurrent sandboxes.
-        fs::create_dir_all(&parent).map_err(|source| CgroupError::Io {
-            path: parent.clone(),
-            source,
-        })?;
+        fs::create_dir_all(&parent).map_err(io_err(parent.clone()))?;
 
         let subtree_control = parent.join("cgroup.subtree_control");
         if let Err(cgroup_err) = write_cgroup_file(&subtree_control, REQUIRED_SUBTREE_CONTROL) {
@@ -67,7 +65,7 @@ impl Subtree {
             // one; otherwise propagate the original error unchanged.
             let controllers_path = parent.join("cgroup.controllers");
             if let Ok(controllers) = fs::read_to_string(&controllers_path) {
-                for name in ["cpu", "memory", "pids"] {
+                for name in REQUIRED_SUBTREE_CONTROL.split_whitespace().map(|s| s.trim_start_matches('+')) {
                     if !controllers.split_whitespace().any(|c| c == name) {
                         return Err(CgroupError::ControllerNotEnabled(name.to_owned()));
                     }
@@ -77,10 +75,7 @@ impl Subtree {
         }
 
         let leaf = Self::leaf_path(vm_id);
-        fs::create_dir_all(&leaf).map_err(|source| CgroupError::Io {
-            path: leaf.clone(),
-            source,
-        })?;
+        fs::create_dir_all(&leaf).map_err(io_err(leaf.clone()))?;
 
         let procs = leaf.join("cgroup.procs");
         for pid in pid_assignment_list(jailed) {
@@ -89,10 +84,8 @@ impl Subtree {
 
         let cgroup_path_txt = jail.plan.config.run_dir.join("cgroup-path.txt");
         let leaf_str = format!("{}\n", leaf.display());
-        fs::write(&cgroup_path_txt, leaf_str.as_bytes()).map_err(|source| CgroupError::Io {
-            path: cgroup_path_txt.clone(),
-            source,
-        })?;
+        fs::write(&cgroup_path_txt, leaf_str.as_bytes())
+            .map_err(io_err(cgroup_path_txt.clone()))?;
 
         Ok(Subtree { path: leaf })
     }
@@ -108,7 +101,7 @@ impl Subtree {
                 } => {
                     format!("{quota_us} {period_us}\n")
                 }
-                CpuMax::Max => "max 100000\n".to_owned(),
+                CpuMax::Max => "max\n".to_owned(),
             };
             write_cgroup_file(&self.path.join("cpu.max"), &val)?;
         }
@@ -122,12 +115,6 @@ impl Subtree {
         }
 
         Ok(())
-    }
-
-    /// Path of the materialized cgroup subtree. Persisted at
-    /// `<run_dir>/cgroup-path.txt` for offline triage.
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 
     /// Compute the absolute cgroup v2 leaf path for `vm_id`.
@@ -260,11 +247,8 @@ pub fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
         return Err(CgroupError::UnsupportedHostMode);
     }
 
-    // Also confirm the smoking-gun file is readable.
-    let control_file = Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control");
-    if !control_file.exists() {
-        return Err(CgroupError::UnsupportedHostMode);
-    }
+    fs::read_to_string(Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control"))
+        .map_err(|_| CgroupError::UnsupportedHostMode)?;
 
     Ok(())
 }

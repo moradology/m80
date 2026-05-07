@@ -8,7 +8,7 @@ fn render_cpu_max(v: &CpuMax) -> String {
             quota_us,
             period_us,
         } => format!("{quota_us} {period_us}\n"),
-        CpuMax::Max => "max 100000\n".to_owned(),
+        CpuMax::Max => "max\n".to_owned(),
     }
 }
 
@@ -23,5 +23,5 @@ fn quota_formats_as_two_numbers() {
 
 #[test]
 fn max_variant_formats_as_max_with_period() {
-    assert_eq!(render_cpu_max(&CpuMax::Max), "max 100000\n");
+    assert_eq!(render_cpu_max(&CpuMax::Max), "max\n");
 }
