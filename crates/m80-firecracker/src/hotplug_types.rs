@@ -18,3 +18,13 @@ pub struct HotplugDriveAttach {
     /// Opaque bytes expected from `identity_path`.
     pub expected_identity: Vec<u8>,
 }
+
+/// Request to ask the guest to unmount one preallocated drive slot and retarget
+/// the Firecracker slot back to its placeholder backing file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HotplugDriveDetach {
+    /// Zero-based preallocated drive slot index.
+    pub slot: u8,
+    /// Guest mount path to unmount, e.g. `/workspace`.
+    pub mount_path: String,
+}

@@ -43,7 +43,7 @@ Keeping the guest small has direct benefits:
   connect back to the host ready port, then loop on `accept()`.
 - On each accepted connection:
   1. Read one
-     `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | DriveMountRequest | ShutdownRequest>`
+     `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | DriveMountRequest | DriveDetachRequest | ShutdownRequest>`
      (fail closed on version mismatch).
   2. For `ExecRequest` / `PtyRequest`, spawn the child process per the request
      (argv + optional cwd + optional env).
@@ -67,15 +67,18 @@ Keeping the guest small has direct benefits:
      `device_path` when needed, mount it as ext4 at the requested guest path,
      optionally read opaque tenant-identity bytes, and return one
      `DriveMountStatus` per device.
-  9. For exec / PTY, apply the request's `timeout_ms` budget; on expiry,
+  9. If the request is `DriveDetachRequest`, sync guest filesystems, unmount
+     each requested guest mount path, and return one `DriveDetachStatus` per
+     device. Already-unmounted paths return `NotMounted`.
+  10. For exec / PTY, apply the request's `timeout_ms` budget; on expiry,
      terminate the child process group.
-  10. For exec / PTY, reap, build the terminal response, and write it back as
+  11. For exec / PTY, reap, build the terminal response, and write it back as
      one or more `m80-proto` envelopes. Direct file-op and metrics requests
      write their direct response without spawning a child.
-  11. Exec, PTY, file-op, and shutdown paths sync filesystems before close so
+  12. Exec, PTY, file-op, and shutdown paths sync filesystems before close so
      post-stop change extraction sees the final state. Metrics is read-only and
      does not force a filesystem sync.
-  12. Close.
+  13. Close.
 - Concurrent connections per VM are **not supported in v0.1**. The
   daemon serializes (`accept()` returns one at a time, processes,
   closes, accepts again).
@@ -303,6 +306,12 @@ source fails closed. Multi-device requests return partial status instead of
 rolling back successful mounts. If `identity_path` is set, guestd reads that
 exact guest path and returns opaque `TenantIdentityReport` bytes; m80 does not
 parse or authorize the identity payload.
+
+The drive detach handler serves `DriveDetachRequest` directly in guestd. It
+treats an absent mount as an idempotent `NotMounted` success, calls guest
+filesystem sync before unmounting a present mount, and returns `Detached` only
+after the unmount call succeeds. Unmount failures return
+`DriveHotplugError::UnmountFailed`.
 
 ### Guest stderr format
 

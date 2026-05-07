@@ -5,13 +5,15 @@ use std::time::Instant;
 
 use m80_firecracker_client::PartialDriveConfig;
 use m80_proto::{
+    DriveDetachRequest, DriveDetachResponse, DriveDetachSpec, DriveDetachStatusKind,
     DriveHotplugError, DriveMountRequest, DriveMountResponse, DriveMountSpec, DriveMountStatusKind,
     Envelope, TenantIdentityReport,
 };
 
 use crate::diagnostics::phase_event;
 use crate::error::{ConfigError, FcError};
-use crate::hotplug_types::HotplugDriveAttach;
+use crate::hotplug_types::{HotplugDriveAttach, HotplugDriveDetach};
+use crate::layout::preallocated_drive_slot_jail_path;
 use crate::lifecycle::exec::{request_id_for, send_envelope_with_open_retry};
 use crate::lifecycle::monotonic_ns;
 use crate::preboot::preallocated_drive_slot_id;
@@ -26,7 +28,16 @@ impl RunningSandbox {
     pub fn attach_drive_verified(mut self, request: HotplugDriveAttach) -> Result<Self, FcError> {
         match self.attach_drive_verified_inner(&request) {
             Ok(()) => Ok(self),
-            Err(err) => Err(discard_after_attach_failure(self, err)),
+            Err(err) => Err(discard_after_hotplug_failure(self, err)),
+        }
+    }
+
+    /// Ask guestd to unmount one hotplug slot, then retarget that Firecracker
+    /// slot back to its placeholder backing file before returning the VM.
+    pub fn detach_drive(mut self, request: HotplugDriveDetach) -> Result<Self, FcError> {
+        match self.detach_drive_inner(&request) {
+            Ok(()) => Ok(self),
+            Err(err) => Err(discard_after_hotplug_failure(self, err)),
         }
     }
 
@@ -78,6 +89,55 @@ impl RunningSandbox {
         Ok(())
     }
 
+    fn detach_drive_inner(&mut self, request: &HotplugDriveDetach) -> Result<(), FcError> {
+        self.prepare_hotplug_activity()?;
+        validate_detach_request(request)?;
+        if request.slot >= self.preallocated_drive_slots {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "slot",
+                reason: format!(
+                    "slot {} is outside {} preallocated drive slots",
+                    request.slot, self.preallocated_drive_slots
+                ),
+            }));
+        }
+
+        let drive_id = preallocated_drive_slot_id(request.slot);
+        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "drive_detach");
+        let envelope = Envelope::with_request_id(
+            DriveDetachRequest {
+                devices: vec![DriveDetachSpec {
+                    drive_id: drive_id.clone(),
+                    mount_path: request.mount_path.clone(),
+                }],
+            },
+            request_id,
+        );
+        let t_detach = Instant::now();
+        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
+        let response: Envelope<DriveDetachResponse> = channel
+            .recv()
+            .map_err(|e| super::protocol::recv_error(e, "drive detach"))?;
+        validate_detach_response(&response.payload, &drive_id)?;
+        phase_event("hotplug_drive_detach", &self.vm_id, t_detach.elapsed());
+
+        let patch = PartialDriveConfig {
+            drive_id,
+            path_on_host: Some(preallocated_drive_slot_jail_path(request.slot)),
+        };
+        let t_patch = Instant::now();
+        self.client.patch_drive(&patch)?;
+        phase_event(
+            "hotplug_drive_placeholder_patch",
+            &self.vm_id,
+            t_patch.elapsed(),
+        );
+        self.last_activity_ns
+            .store(monotonic_ns(), Ordering::Relaxed);
+        Ok(())
+    }
+
     fn prepare_hotplug_activity(&self) -> Result<(), FcError> {
         if self.idle_timed_out.load(Ordering::Relaxed) {
             return Err(FcError::IdleTimedOut);
@@ -104,6 +164,16 @@ fn validate_attach_request(request: &HotplugDriveAttach) -> Result<(), FcError> 
     if request.identity_path.is_empty() {
         return Err(FcError::Config(ConfigError::InvalidValue {
             field: "identity_path",
+            reason: "must not be empty".into(),
+        }));
+    }
+    Ok(())
+}
+
+fn validate_detach_request(request: &HotplugDriveDetach) -> Result<(), FcError> {
+    if request.mount_path.is_empty() {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "mount_path",
             reason: "must not be empty".into(),
         }));
     }
@@ -143,6 +213,26 @@ fn validate_mount_response(
     verify_identity(drive_id, &request.expected_identity, identity)
 }
 
+fn validate_detach_response(response: &DriveDetachResponse, drive_id: &str) -> Result<(), FcError> {
+    let status = response
+        .statuses
+        .iter()
+        .find(|status| status.drive_id == drive_id)
+        .ok_or_else(|| {
+            super::protocol::unexpected_frame(
+                "drive detach",
+                "status for requested drive",
+                "missing",
+            )
+        })?;
+    match status.status {
+        DriveDetachStatusKind::Detached | DriveDetachStatusKind::NotMounted => Ok(()),
+        DriveDetachStatusKind::Failed => Err(FcError::DriveHotplug(
+            status.error.unwrap_or(DriveHotplugError::UnmountFailed),
+        )),
+    }
+}
+
 fn verify_identity(
     drive_id: &str,
     expected: &[u8],
@@ -175,181 +265,15 @@ fn virtio_blk_suffix(mut index: u16) -> String {
     suffix.iter().rev().collect()
 }
 
-fn discard_after_attach_failure(sandbox: RunningSandbox, err: FcError) -> FcError {
+fn discard_after_hotplug_failure(sandbox: RunningSandbox, err: FcError) -> FcError {
     if let Err(cleanup) = sandbox.force_kill().and_then(|stopped| stopped.delete()) {
         tracing::warn!(
             error = %cleanup,
-            "failed to discard sandbox after drive attach failure"
+            "failed to discard sandbox after drive hotplug failure"
         );
     }
     err
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::*;
-    use m80_proto::{DriveMountStatus, DriveMountStatusKind};
-
-    fn attach_request(expected_identity: &[u8]) -> HotplugDriveAttach {
-        HotplugDriveAttach {
-            slot: 0,
-            path_on_host: PathBuf::from("/tenant.ext4"),
-            mount_path: "/workspace".into(),
-            identity_path: "/workspace/.tenant-identity".into(),
-            expected_identity: expected_identity.to_vec(),
-        }
-    }
-
-    fn mounted_response(bytes: &[u8]) -> DriveMountResponse {
-        DriveMountResponse {
-            statuses: vec![DriveMountStatus {
-                drive_id: "hotplug_slot_0".into(),
-                mount_path: "/workspace".into(),
-                status: DriveMountStatusKind::Mounted,
-                error: None,
-            }],
-            identities: vec![TenantIdentityReport {
-                drive_id: "hotplug_slot_0".into(),
-                path: "/workspace/.tenant-identity".into(),
-                bytes: bytes.to_vec(),
-            }],
-        }
-    }
-
-    #[test]
-    fn slot_device_path_without_workspace_starts_at_vdc() {
-        assert_eq!(preallocated_drive_device_path(false, 0), "/dev/vdc");
-        assert_eq!(preallocated_drive_device_path(false, 1), "/dev/vdd");
-    }
-
-    #[test]
-    fn slot_device_path_with_workspace_starts_at_vdd() {
-        assert_eq!(preallocated_drive_device_path(true, 0), "/dev/vdd");
-        assert_eq!(preallocated_drive_device_path(true, 1), "/dev/vde");
-    }
-
-    #[test]
-    fn slot_device_path_supports_post_z_suffixes() {
-        assert_eq!(preallocated_drive_device_path(false, 24), "/dev/vdaa");
-    }
-
-    #[test]
-    fn mount_response_accepts_matching_identity() {
-        validate_mount_response(
-            &mounted_response(b"tenant-a"),
-            &attach_request(b"tenant-a"),
-            "hotplug_slot_0",
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn mount_response_accepts_already_mounted_matching_identity() {
-        let mut response = mounted_response(b"tenant-a");
-        response.statuses[0].status = DriveMountStatusKind::AlreadyMounted;
-
-        validate_mount_response(&response, &attach_request(b"tenant-a"), "hotplug_slot_0").unwrap();
-    }
-
-    #[test]
-    fn mount_response_rejects_missing_requested_status() {
-        let err = validate_mount_response(
-            &mounted_response(b"tenant-a"),
-            &attach_request(b"tenant-a"),
-            "hotplug_slot_1",
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            FcError::Protocol(crate::error::WireProtocolError::UnexpectedFrame {
-                context: "drive mount",
-                expected: "status for requested drive",
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn mount_response_rejects_missing_identity_report() {
-        let response = DriveMountResponse {
-            statuses: vec![DriveMountStatus {
-                drive_id: "hotplug_slot_0".into(),
-                mount_path: "/workspace".into(),
-                status: DriveMountStatusKind::Mounted,
-                error: None,
-            }],
-            identities: vec![],
-        };
-
-        let err =
-            validate_mount_response(&response, &attach_request(b"tenant-a"), "hotplug_slot_0")
-                .unwrap_err();
-
-        assert!(matches!(
-            err,
-            FcError::DriveHotplug(DriveHotplugError::IdentityMissing)
-        ));
-    }
-
-    #[test]
-    fn mount_response_rejects_identity_mismatch() {
-        let err = validate_mount_response(
-            &mounted_response(b"tenant-b"),
-            &attach_request(b"tenant-a"),
-            "hotplug_slot_0",
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            FcError::TenantIdentityMismatch {
-                drive_id,
-                expected_len: 8,
-                actual_len: 8,
-            } if drive_id == "hotplug_slot_0"
-        ));
-    }
-
-    #[test]
-    fn mount_response_rejects_failed_guest_status() {
-        let response = DriveMountResponse {
-            statuses: vec![DriveMountStatus {
-                drive_id: "hotplug_slot_0".into(),
-                mount_path: "/workspace".into(),
-                status: DriveMountStatusKind::Failed,
-                error: Some(DriveHotplugError::Timeout),
-            }],
-            identities: vec![],
-        };
-
-        let err =
-            validate_mount_response(&response, &attach_request(b"tenant-a"), "hotplug_slot_0")
-                .unwrap_err();
-
-        assert!(matches!(
-            err,
-            FcError::DriveHotplug(DriveHotplugError::Timeout)
-        ));
-    }
-
-    #[test]
-    fn attach_request_rejects_relative_firecracker_path() {
-        let request = HotplugDriveAttach {
-            path_on_host: PathBuf::from("tenant.ext4"),
-            ..attach_request(b"tenant-a")
-        };
-
-        let err = validate_attach_request(&request).unwrap_err();
-
-        assert!(matches!(
-            err,
-            FcError::Config(ConfigError::InvalidValue {
-                field: "path_on_host",
-                ..
-            })
-        ));
-    }
-}
+mod tests;

@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use m80_proto::{
-    read_frame, write_frame, DriveHotplugError, DriveMountRequest, DriveMountResponse,
+    read_frame, write_frame, DriveDetachRequest, DriveDetachResponse, DriveDetachSpec,
+    DriveDetachStatusKind, DriveHotplugError, DriveMountRequest, DriveMountResponse,
     DriveMountSpec, DriveMountStatusKind, Envelope,
 };
 
@@ -18,6 +19,8 @@ struct FakeOps {
     identities: RefCell<HashMap<PathBuf, Vec<u8>>>,
     waited_for: RefCell<Vec<String>>,
     mount_calls: Cell<usize>,
+    sync_calls: Cell<usize>,
+    unmount_calls: Cell<usize>,
 }
 
 impl FakeOps {
@@ -63,6 +66,17 @@ impl MountOps for FakeOps {
         Ok(())
     }
 
+    fn sync_all(&self) -> io::Result<()> {
+        self.sync_calls.set(self.sync_calls.get() + 1);
+        Ok(())
+    }
+
+    fn unmount(&self, target: &Path) -> io::Result<()> {
+        self.unmount_calls.set(self.unmount_calls.get() + 1);
+        self.mountpoints.borrow_mut().remove(target);
+        Ok(())
+    }
+
     fn read_identity(&self, path: &Path) -> io::Result<Vec<u8>> {
         self.identities
             .borrow()
@@ -80,6 +94,10 @@ fn request(devices: Vec<DriveMountSpec>) -> DriveMountRequest {
     DriveMountRequest { devices }
 }
 
+fn detach_request(devices: Vec<DriveDetachSpec>) -> DriveDetachRequest {
+    DriveDetachRequest { devices }
+}
+
 fn spec(
     drive_id: &str,
     device_path: &str,
@@ -91,6 +109,13 @@ fn spec(
         device_path: device_path.to_owned(),
         mount_path: mount_path.to_owned(),
         identity_path: identity_path.map(str::to_owned),
+    }
+}
+
+fn detach_spec(drive_id: &str, mount_path: &str) -> DriveDetachSpec {
+    DriveDetachSpec {
+        drive_id: drive_id.to_owned(),
+        mount_path: mount_path.to_owned(),
     }
 }
 
@@ -213,6 +238,68 @@ fn handler_decodes_request_and_writes_response() {
     assert_eq!(
         decoded.payload.statuses[0].status,
         DriveMountStatusKind::Mounted
+    );
+}
+
+#[test]
+fn detach_unmounts_mounted_path_after_sync() {
+    let ops = FakeOps::default().with_mount("/tenant", "/dev/vdd");
+    let response = detach_devices(
+        &detach_request(vec![detach_spec("hotplug_slot_0", "/tenant")]),
+        &ops,
+    );
+
+    assert_eq!(response.statuses.len(), 1);
+    assert_eq!(response.statuses[0].status, DriveDetachStatusKind::Detached);
+    assert_eq!(response.statuses[0].error, None);
+    assert_eq!(ops.sync_calls.get(), 1);
+    assert_eq!(ops.unmount_calls.get(), 1);
+    assert_eq!(
+        ops.mount_source(Path::new("/tenant")).unwrap(),
+        None,
+        "detach must clear the guest mount"
+    );
+}
+
+#[test]
+fn detach_not_mounted_is_idempotent_noop() {
+    let ops = FakeOps::default();
+    let response = detach_devices(
+        &detach_request(vec![detach_spec("hotplug_slot_0", "/tenant")]),
+        &ops,
+    );
+
+    assert_eq!(
+        response.statuses[0].status,
+        DriveDetachStatusKind::NotMounted
+    );
+    assert_eq!(response.statuses[0].error, None);
+    assert_eq!(ops.sync_calls.get(), 0);
+    assert_eq!(ops.unmount_calls.get(), 0);
+}
+
+#[test]
+fn detach_handler_decodes_request_and_writes_response() {
+    let ops = FakeOps::default().with_mount("/tenant", "/dev/vdd");
+    let env = Envelope::with_request_id(
+        detach_request(vec![detach_spec("hotplug_slot_0", "/tenant")]),
+        "req-detach".to_owned(),
+    );
+    let mut bytes = Vec::new();
+    write_frame(&mut bytes, &env).unwrap();
+    let mut cursor = std::io::Cursor::new(bytes);
+    let raw = m80_proto::read_raw_frame(&mut cursor).unwrap();
+    let mut out = Vec::new();
+
+    let outcome = handle_detach_with_ops(raw, &mut out, &ops).unwrap();
+
+    assert_eq!(outcome, ConnectionOutcome::Continue);
+    let decoded: Envelope<DriveDetachResponse> =
+        read_frame(&mut std::io::Cursor::new(out)).unwrap();
+    assert_eq!(decoded.request_id.as_deref(), Some("req-detach"));
+    assert_eq!(
+        decoded.payload.statuses[0].status,
+        DriveDetachStatusKind::Detached
     );
 }
 
