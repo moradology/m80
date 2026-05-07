@@ -6,7 +6,7 @@
 //! assertion.
 
 mod fixture_server;
-use fixture_server::{resp_204, resp_400, FixtureServer};
+use fixture_server::{resp_400, setup_with_204, FixtureServer};
 
 use m80_firecracker_client::{
     Client, ClientError, CreateSnapshotConfig, LoadSnapshotConfig, MemBackendConfig,
@@ -14,14 +14,31 @@ use m80_firecracker_client::{
 };
 use std::path::PathBuf;
 
+const SNAP_PATH: &str = "/run/fc/snap.bin";
+const MEM_PATH: &str = "/run/fc/mem.bin";
+const VSOCK_PATH: &str = "/run/fc/slot-7/vsock.sock";
+
+fn default_load_config() -> LoadSnapshotConfig {
+    LoadSnapshotConfig {
+        snapshot_path: PathBuf::from(SNAP_PATH),
+        mem_backend: Some(MemBackendConfig {
+            backend_type: MemBackendType::File,
+            backend_path: PathBuf::from(MEM_PATH),
+        }),
+        mem_file_path: None,
+        enable_diff_snapshots: None,
+        resume_vm: None,
+        vsock_override: None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // patch_vm_state — happy paths
 // ---------------------------------------------------------------------------
 
 #[test]
 fn patch_vm_state_paused_sends_correct_json_and_url() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client.patch_vm_state(VmState::Paused).unwrap();
     let result = server.join();
     assert!(
@@ -38,8 +55,7 @@ fn patch_vm_state_paused_sends_correct_json_and_url() {
 
 #[test]
 fn patch_vm_state_resumed_sends_correct_json() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client.patch_vm_state(VmState::Resumed).unwrap();
     let result = server.join();
     assert!(result.request.contains("\"state\":\"Resumed\""));
@@ -72,12 +88,11 @@ fn patch_vm_state_400_returns_vm_state_write_failed() {
 
 #[test]
 fn put_snapshot_create_sends_correct_url_and_required_fields() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
         .put_snapshot_create(&CreateSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_file_path: PathBuf::from("/run/fc/mem.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
+            mem_file_path: PathBuf::from(MEM_PATH),
             snapshot_type: None,
         })
         .unwrap();
@@ -90,19 +105,18 @@ fn put_snapshot_create_sends_correct_url_and_required_fields() {
         result.request.lines().next()
     );
     assert!(result.request.contains("\"snapshot_path\""));
-    assert!(result.request.contains("/run/fc/snap.bin"));
+    assert!(result.request.contains(SNAP_PATH));
     assert!(result.request.contains("\"mem_file_path\""));
-    assert!(result.request.contains("/run/fc/mem.bin"));
+    assert!(result.request.contains(MEM_PATH));
 }
 
 #[test]
 fn put_snapshot_create_omits_snapshot_type_when_none() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
         .put_snapshot_create(&CreateSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_file_path: PathBuf::from("/run/fc/mem.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
+            mem_file_path: PathBuf::from(MEM_PATH),
             snapshot_type: None,
         })
         .unwrap();
@@ -115,12 +129,11 @@ fn put_snapshot_create_omits_snapshot_type_when_none() {
 
 #[test]
 fn put_snapshot_create_includes_snapshot_type_when_set() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
         .put_snapshot_create(&CreateSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_file_path: PathBuf::from("/run/fc/mem.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
+            mem_file_path: PathBuf::from(MEM_PATH),
             snapshot_type: Some(SnapshotType::Full),
         })
         .unwrap();
@@ -133,12 +146,11 @@ fn put_snapshot_create_includes_snapshot_type_when_set() {
 
 #[test]
 fn put_snapshot_create_diff_type_serializes_correctly() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
         .put_snapshot_create(&CreateSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_file_path: PathBuf::from("/run/fc/mem.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
+            mem_file_path: PathBuf::from(MEM_PATH),
             snapshot_type: Some(SnapshotType::Diff),
         })
         .unwrap();
@@ -157,8 +169,8 @@ fn put_snapshot_create_400_returns_snapshot_create_failed() {
     let client = Client::new(&server.socket_path).unwrap();
     let err = client
         .put_snapshot_create(&CreateSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_file_path: PathBuf::from("/run/fc/mem.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
+            mem_file_path: PathBuf::from(MEM_PATH),
             snapshot_type: None,
         })
         .unwrap_err();
@@ -179,20 +191,9 @@ fn put_snapshot_create_400_returns_snapshot_create_failed() {
 
 #[test]
 fn put_snapshot_load_with_mem_backend_sends_correct_url_and_fields() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
-        .put_snapshot_load(&LoadSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_backend: Some(MemBackendConfig {
-                backend_type: MemBackendType::File,
-                backend_path: PathBuf::from("/run/fc/mem.bin"),
-            }),
-            mem_file_path: None,
-            enable_diff_snapshots: None,
-            resume_vm: None,
-            vsock_override: None,
-        })
+        .put_snapshot_load(&default_load_config())
         .unwrap();
     let result = server.join();
     assert!(
@@ -203,28 +204,17 @@ fn put_snapshot_load_with_mem_backend_sends_correct_url_and_fields() {
         result.request.lines().next()
     );
     assert!(result.request.contains("\"snapshot_path\""));
-    assert!(result.request.contains("/run/fc/snap.bin"));
+    assert!(result.request.contains(SNAP_PATH));
     assert!(result.request.contains("\"mem_backend\""));
     assert!(result.request.contains("\"backend_type\":\"File\""));
-    assert!(result.request.contains("/run/fc/mem.bin"));
+    assert!(result.request.contains(MEM_PATH));
 }
 
 #[test]
 fn put_snapshot_load_omits_optional_fields_when_none() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
-        .put_snapshot_load(&LoadSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_backend: Some(MemBackendConfig {
-                backend_type: MemBackendType::File,
-                backend_path: PathBuf::from("/run/fc/mem.bin"),
-            }),
-            mem_file_path: None,
-            enable_diff_snapshots: None,
-            resume_vm: None,
-            vsock_override: None,
-        })
+        .put_snapshot_load(&default_load_config())
         .unwrap();
     let result = server.join();
     assert!(
@@ -247,14 +237,13 @@ fn put_snapshot_load_omits_optional_fields_when_none() {
 
 #[test]
 fn put_snapshot_load_resume_vm_true_serializes_correctly() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
         .put_snapshot_load(&LoadSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
             mem_backend: Some(MemBackendConfig {
                 backend_type: MemBackendType::File,
-                backend_path: PathBuf::from("/run/fc/mem.bin"),
+                backend_path: PathBuf::from(MEM_PATH),
             }),
             mem_file_path: None,
             enable_diff_snapshots: None,
@@ -268,37 +257,35 @@ fn put_snapshot_load_resume_vm_true_serializes_correctly() {
 
 #[test]
 fn put_snapshot_load_vsock_override_serializes_correctly() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
         .put_snapshot_load(&LoadSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
             mem_backend: Some(MemBackendConfig {
                 backend_type: MemBackendType::File,
-                backend_path: PathBuf::from("/run/fc/mem.bin"),
+                backend_path: PathBuf::from(MEM_PATH),
             }),
             mem_file_path: None,
             enable_diff_snapshots: None,
             resume_vm: None,
             vsock_override: Some(VsockOverride {
-                uds_path: PathBuf::from("/run/fc/slot-7/vsock.sock"),
+                uds_path: PathBuf::from(VSOCK_PATH),
             }),
         })
         .unwrap();
     let result = server.join();
     assert!(result.request.contains("\"vsock_override\""));
-    assert!(result.request.contains("/run/fc/slot-7/vsock.sock"));
+    assert!(result.request.contains(VSOCK_PATH));
 }
 
 #[test]
 fn put_snapshot_load_with_deprecated_mem_file_path() {
-    let server = FixtureServer::spawn(resp_204()).unwrap();
-    let client = Client::new(&server.socket_path).unwrap();
+    let (server, client) = setup_with_204();
     client
         .put_snapshot_load(&LoadSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
+            snapshot_path: PathBuf::from(SNAP_PATH),
             mem_backend: None,
-            mem_file_path: Some(PathBuf::from("/run/fc/mem.bin")),
+            mem_file_path: Some(PathBuf::from(MEM_PATH)),
             enable_diff_snapshots: None,
             resume_vm: None,
             vsock_override: None,
@@ -319,17 +306,7 @@ fn put_snapshot_load_400_returns_snapshot_load_failed() {
     let server = FixtureServer::spawn(resp_400(fault)).unwrap();
     let client = Client::new(&server.socket_path).unwrap();
     let err = client
-        .put_snapshot_load(&LoadSnapshotConfig {
-            snapshot_path: PathBuf::from("/run/fc/snap.bin"),
-            mem_backend: Some(MemBackendConfig {
-                backend_type: MemBackendType::File,
-                backend_path: PathBuf::from("/run/fc/mem.bin"),
-            }),
-            mem_file_path: None,
-            enable_diff_snapshots: None,
-            resume_vm: None,
-            vsock_override: None,
-        })
+        .put_snapshot_load(&default_load_config())
         .unwrap_err();
     server.join();
     assert!(

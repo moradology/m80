@@ -52,45 +52,71 @@ fn pty_request_round_trips_with_initial_size() {
 }
 
 #[test]
-fn pty_input_output_resize_control_and_exit_round_trip() {
-    let req_id = "req-pty-stream".to_owned();
+fn pty_input_round_trips() {
+    let env = Envelope::with_request_id(
+        PtyInput { seq: 0, bytes: b"hello\r".to_vec() },
+        "req-pty-stream".into(),
+    );
+    let mut buf = Vec::new();
+    write_frame(&mut buf, &env).expect("write input");
+    let decoded: Envelope<PtyInput> = read_frame(&mut Cursor::new(&buf)).expect("read input");
+    assert_eq!(decoded.kind, PAYLOAD_KIND_PTY_INPUT);
+    assert_eq!(decoded.payload.seq, 0);
+    assert_eq!(decoded.payload.bytes, b"hello\r");
+}
 
-    let input = Envelope::with_request_id(
-        PtyInput {
-            seq: 0,
-            bytes: b"hello\r".to_vec(),
-        },
-        req_id.clone(),
+#[test]
+fn pty_output_round_trips() {
+    let env = Envelope::with_request_id(
+        PtyOutput { seq: 0, bytes: b"hello\r\n".to_vec() },
+        "req-pty-stream".into(),
     );
-    let output = Envelope::with_request_id(
-        PtyOutput {
-            seq: 0,
-            bytes: b"hello\r\n".to_vec(),
-        },
-        req_id.clone(),
-    );
-    let resize = Envelope::with_request_id(
+    let mut buf = Vec::new();
+    write_frame(&mut buf, &env).expect("write output");
+    let decoded: Envelope<PtyOutput> = read_frame(&mut Cursor::new(&buf)).expect("read output");
+    assert_eq!(decoded.kind, PAYLOAD_KIND_PTY_OUTPUT);
+    assert_eq!(decoded.payload.bytes, b"hello\r\n");
+}
+
+#[test]
+fn pty_resize_round_trips() {
+    let env = Envelope::with_request_id(
         PtyResize {
             seq: 1,
-            size: PtySize {
-                rows: 50,
-                cols: 132,
-                pixel_width: None,
-                pixel_height: None,
-            },
+            size: PtySize { rows: 50, cols: 132, pixel_width: None, pixel_height: None },
         },
-        req_id.clone(),
+        "req-pty-stream".into(),
     );
-    let control = Envelope::with_request_id(
+    let mut buf = Vec::new();
+    write_frame(&mut buf, &env).expect("write resize");
+    let decoded: Envelope<PtyResize> = read_frame(&mut Cursor::new(&buf)).expect("read resize");
+    assert_eq!(decoded.kind, PAYLOAD_KIND_PTY_RESIZE);
+    assert_eq!(decoded.payload.size.cols, 132);
+}
+
+#[test]
+fn pty_control_round_trips() {
+    let env = Envelope::with_request_id(
         PtyControl {
             seq: 2,
-            event: PtyControlEvent::Signal {
-                signal: PtySignal::Interrupt,
-            },
+            event: PtyControlEvent::Signal { signal: PtySignal::Interrupt },
         },
-        req_id.clone(),
+        "req-pty-stream".into(),
     );
-    let exit = Envelope::with_request_id(
+    let mut buf = Vec::new();
+    write_frame(&mut buf, &env).expect("write control");
+    let decoded: Envelope<PtyControl> =
+        read_frame(&mut Cursor::new(&buf)).expect("read control");
+    assert_eq!(decoded.kind, PAYLOAD_KIND_PTY_CONTROL);
+    assert_eq!(
+        decoded.payload.event,
+        PtyControlEvent::Signal { signal: PtySignal::Interrupt }
+    );
+}
+
+#[test]
+fn pty_exit_round_trips() {
+    let env = Envelope::with_request_id(
         PtyExit {
             status: ExecStatus::Completed,
             exit_code: Some(0),
@@ -100,41 +126,15 @@ fn pty_input_output_resize_control_and_exit_round_trip() {
             truncated: false,
             timing: common::sample_timing(),
         },
-        req_id,
+        "req-pty-stream".into(),
     );
-
     let mut buf = Vec::new();
-    write_frame(&mut buf, &input).expect("write input");
-    write_frame(&mut buf, &output).expect("write output");
-    write_frame(&mut buf, &resize).expect("write resize");
-    write_frame(&mut buf, &control).expect("write control");
-    write_frame(&mut buf, &exit).expect("write exit");
-
-    let mut cursor = Cursor::new(&buf);
-    let decoded_input: Envelope<PtyInput> = read_frame(&mut cursor).expect("read input");
-    let decoded_output: Envelope<PtyOutput> = read_frame(&mut cursor).expect("read output");
-    let decoded_resize: Envelope<PtyResize> = read_frame(&mut cursor).expect("read resize");
-    let decoded_control: Envelope<PtyControl> = read_frame(&mut cursor).expect("read control");
-    let decoded_exit: Envelope<PtyExit> = read_frame(&mut cursor).expect("read exit");
-
-    assert_eq!(decoded_input.kind, PAYLOAD_KIND_PTY_INPUT);
-    assert_eq!(decoded_input.payload.seq, 0);
-    assert_eq!(decoded_input.payload.bytes, b"hello\r");
-    assert_eq!(decoded_output.kind, PAYLOAD_KIND_PTY_OUTPUT);
-    assert_eq!(decoded_output.payload.bytes, b"hello\r\n");
-    assert_eq!(decoded_resize.kind, PAYLOAD_KIND_PTY_RESIZE);
-    assert_eq!(decoded_resize.payload.size.cols, 132);
-    assert_eq!(decoded_control.kind, PAYLOAD_KIND_PTY_CONTROL);
-    assert_eq!(
-        decoded_control.payload.event,
-        PtyControlEvent::Signal {
-            signal: PtySignal::Interrupt
-        }
-    );
-    assert_eq!(decoded_exit.kind, PAYLOAD_KIND_PTY_EXIT);
-    assert_eq!(decoded_exit.payload.status, ExecStatus::Completed);
-    assert_eq!(decoded_exit.payload.total_input_bytes, 6);
-    assert_eq!(decoded_exit.payload.total_output_bytes, 7);
+    write_frame(&mut buf, &env).expect("write exit");
+    let decoded: Envelope<PtyExit> = read_frame(&mut Cursor::new(&buf)).expect("read exit");
+    assert_eq!(decoded.kind, PAYLOAD_KIND_PTY_EXIT);
+    assert_eq!(decoded.payload.status, ExecStatus::Completed);
+    assert_eq!(decoded.payload.total_input_bytes, 6);
+    assert_eq!(decoded.payload.total_output_bytes, 7);
 }
 
 #[test]

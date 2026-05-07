@@ -111,3 +111,12 @@ pub fn resp_400(body: &str) -> Vec<u8> {
     )
     .into_bytes()
 }
+
+/// Spawn a fixture server that returns 204 and open a client connected to it.
+///
+/// Call `server.join()` after the client call completes to capture the request.
+pub fn setup_with_204() -> (FixtureServer, m80_firecracker_client::Client) {
+    let server = FixtureServer::spawn(resp_204()).unwrap();
+    let client = m80_firecracker_client::Client::new(&server.socket_path).unwrap();
+    (server, client)
+}

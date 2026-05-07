@@ -39,7 +39,7 @@ impl Client {
     pub fn put_boot_source(&self, config: &BootSourceConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(config)?;
         let resp = self.put("/boot-source", &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::BootSourceWriteFailed {
@@ -51,7 +51,7 @@ impl Client {
     pub fn put_machine_config(&self, config: &MachineConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(config)?;
         let resp = self.put("/machine-config", &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::MachineConfigWriteFailed {
@@ -64,7 +64,7 @@ impl Client {
         let path = format!("/drives/{}", config.drive_id);
         let body = serde_json::to_vec(config)?;
         let resp = self.put(&path, &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::DriveWriteFailed {
@@ -76,7 +76,7 @@ impl Client {
     pub fn put_vsock(&self, config: &VsockConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(config)?;
         let resp = self.put("/vsock", &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::VsockWriteFailed {
@@ -89,7 +89,7 @@ impl Client {
         let payload = serde_json::json!({ "state": state });
         let body = serde_json::to_vec(&payload)?;
         let resp = self.patch("/vm", &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::VmStateWriteFailed {
@@ -106,7 +106,7 @@ impl Client {
     pub fn put_snapshot_create(&self, cfg: &CreateSnapshotConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(cfg)?;
         let resp = self.put("/snapshot/create", &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::SnapshotCreateFailed {
@@ -123,7 +123,7 @@ impl Client {
     pub fn put_snapshot_load(&self, cfg: &LoadSnapshotConfig) -> Result<(), ClientError> {
         let body = serde_json::to_vec(cfg)?;
         let resp = self.put("/snapshot/load", &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::SnapshotLoadFailed {
@@ -139,7 +139,7 @@ impl Client {
         let payload = serde_json::json!({ "action_type": action });
         let body = serde_json::to_vec(&payload)?;
         let resp = self.put("/actions", &body)?;
-        if (200..300).contains(&resp.status) {
+        if ok(resp.status) {
             return Ok(());
         }
         Err(ClientError::InstanceActionFailed {
@@ -163,13 +163,13 @@ impl Client {
             .stream
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let resp = match http::patch_json(&mut guard, path, body) {
+        let resp = match http::send_json(&mut guard, "PATCH", path, body) {
             Ok(resp) => resp,
             Err(e) if is_broken_pipe(&e) => {
                 let new_stream =
                     UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
                 *guard = new_stream;
-                http::patch_json(&mut guard, path, body)?
+                http::send_json(&mut guard, "PATCH", path, body)?
             }
             Err(e) => return Err(ClientError::Io(e)),
         };
@@ -205,14 +205,14 @@ impl Client {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         // If the previous call left the stream in a broken state (e.g., the
         // firecracker process restarted), reconnect transparently.
-        let resp = match http::put_json(&mut guard, path, body) {
+        let resp = match http::send_json(&mut guard, "PUT", path, body) {
             Ok(resp) => resp,
             Err(e) if is_broken_pipe(&e) => {
                 // Reconnect once and retry.
                 let new_stream =
                     UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
                 *guard = new_stream;
-                http::put_json(&mut guard, path, body)?
+                http::send_json(&mut guard, "PUT", path, body)?
             }
             Err(e) => return Err(ClientError::Io(e)),
         };
@@ -226,6 +226,11 @@ impl Client {
         }
         Ok(resp)
     }
+}
+
+/// Return `true` when `status` is a 2xx success.
+fn ok(status: u16) -> bool {
+    (200..300).contains(&status)
 }
 
 /// Return `true` for I/O errors that indicate the connection is dead and a
@@ -247,7 +252,7 @@ fn body_to_string(body: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 
 /// `BootSource` config — kernel image path + boot args + optional initrd.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BootSourceConfig {
     /// Absolute path to the kernel image inside the jail (or on the host
@@ -262,7 +267,7 @@ pub struct BootSourceConfig {
 }
 
 /// `MachineConfig` — vCPU count, memory size, SMT flag.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineConfig {
     /// Number of virtual CPUs.
@@ -275,7 +280,7 @@ pub struct MachineConfig {
 }
 
 /// One drive slot. `drive_id == "rootfs"` is the conventional root drive id.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DriveConfig {
     /// Stable drive identifier (e.g., `"rootfs"`, `"workspace"`).
@@ -289,7 +294,7 @@ pub struct DriveConfig {
 }
 
 /// Vsock device config — guest CID + host UDS path.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct VsockConfig {
     /// Vsock context id assigned to the guest.
@@ -299,7 +304,7 @@ pub struct VsockConfig {
 }
 
 /// VM running state — used with PATCH `/vm`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum VmState {
     /// Pause vCPU execution (required before snapshot creation).
@@ -309,7 +314,7 @@ pub enum VmState {
 }
 
 /// Snapshot type: full copy of all guest memory, or diff since the last snapshot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum SnapshotType {
     /// Full snapshot — all guest memory pages are saved.
@@ -324,7 +329,7 @@ pub enum SnapshotType {
 /// writes two files: the microVM state file (`snapshot_path`) and the guest
 /// memory file (`mem_file_path`). Both paths must be writable by the
 /// Firecracker process.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct CreateSnapshotConfig {
     /// Path to write the microVM state file (device + vCPU register state).
     pub snapshot_path: PathBuf,
@@ -336,7 +341,7 @@ pub struct CreateSnapshotConfig {
 }
 
 /// Memory backend type for snapshot load.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum MemBackendType {
     /// Load memory from a regular file (`mmap(MAP_PRIVATE)`).
@@ -346,7 +351,7 @@ pub enum MemBackendType {
 }
 
 /// Memory backend configuration for `PUT /snapshot/load`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemBackendConfig {
     /// How guest memory is loaded on restore.
@@ -360,7 +365,7 @@ pub struct MemBackendConfig {
 /// Use this when restoring into a jail with a different path than the one
 /// embedded in the snapshot, or when restoring multiple VMs from the same
 /// snapshot (each needs its own UDS path).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct VsockOverride {
     /// New host UDS path for the vsock device.
@@ -375,7 +380,7 @@ pub struct VsockOverride {
 /// `vsock_override` to redirect to a different path when needed.
 ///
 /// Exactly one of `mem_backend` or `mem_file_path` must be present.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct LoadSnapshotConfig {
     /// Path to the microVM state file produced by `PUT /snapshot/create`.
     pub snapshot_path: PathBuf,

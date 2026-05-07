@@ -1,3 +1,4 @@
+//! SENTINEL
 //! NDJSON framing: `read_frame`, `write_frame`, version-probe.
 
 use std::io::{self, BufRead, Read, Write};
@@ -97,40 +98,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming};
+    use crate::test_helpers::{sample_request, sample_response, sample_timing};
+    use crate::types::{Envelope, ExecRequest, ExecResponse, ExecStatus};
     use std::io::Cursor;
-
-    fn sample_timing() -> ExecTiming {
-        ExecTiming {
-            spawned_at_unix_ms: 1_000_000,
-            exited_at_unix_ms: 1_000_100,
-            spawn_ms: 10,
-            run_ms: 90,
-        }
-    }
-
-    fn sample_request() -> ExecRequest {
-        ExecRequest {
-            program: "/bin/sh".into(),
-            args: vec!["-c".into(), "echo hi".into()],
-            cwd: None,
-            env: None,
-            stdin: None,
-            timeout_ms: Some(5_000),
-            streaming: false,
-        }
-    }
-
-    fn sample_response() -> ExecResponse {
-        ExecResponse {
-            status: ExecStatus::Completed,
-            exit_code: Some(0),
-            stdout: b"hello\n".to_vec(),
-            stderr: Vec::new(),
-            truncated: None,
-            timing: sample_timing(),
-        }
-    }
 
     #[test]
     fn request_round_trip() {

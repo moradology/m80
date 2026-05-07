@@ -30,8 +30,8 @@ The load-bearing wire invariants — the things consumers cannot derive from
 - **`kind` discriminator on `Envelope`** — reserved for v0.2+ payload-type
   extension without bumping `PROTOCOL_VERSION`. Stamped by the constructors
   via the `Payload` trait.
-- **`ExecResponse::truncated: Option<bool>`** — reserved for v0.2; always
-  `None` in v0.1; `skip_serializing_if` so v0.1 wire bytes are unchanged.
+- **`ExecResponse::truncated: Option<bool>`** — whether stdout/stderr was
+  truncated; `skip_serializing_if` so wire bytes are unchanged when absent.
 - **Adding an `ExecStatus` variant requires a `PROTOCOL_VERSION` bump.**
   No `#[non_exhaustive]` escape hatch — wire compat is the contract.
 - **`request_id` is opaque.** The protocol echoes it back unchanged and
@@ -42,10 +42,9 @@ The load-bearing wire invariants — the things consumers cannot derive from
   Shared with the `m80-5vha` streaming-exec epic — these types are defined
   here once; that epic imports without re-declaring.
   See `docs/behaviors/lifecycle/exec-cancellation.md`.
-- **Streaming exec is opt-in.** v0.2 adds
-  `ExecRequest::streaming: bool` with `default` +
-  `skip_serializing_if = is_false`, so `streaming == false` remains
-  byte-identical to the v0.1 request wire. When `streaming == true`, the
+- **Streaming exec is opt-in (shipped v0.1).** `ExecRequest::streaming: bool`
+  with `default` + `skip_serializing_if`, so `streaming == false` is
+  wire-identical to a non-streaming request. When `streaming == true`, the
   response is zero or more `exec_stdout` / `exec_stderr` envelopes followed
   by exactly one `exec_exit` terminal envelope. All frames carry the original
   `Envelope::request_id`. See `docs/design/wire-streaming-exec.md`.

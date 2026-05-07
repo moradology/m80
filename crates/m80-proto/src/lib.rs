@@ -17,6 +17,8 @@ mod error;
 mod framing;
 mod types;
 mod version;
+#[cfg(test)]
+pub(crate) mod test_helpers;
 
 pub use error::ProtoError;
 pub use framing::{read_frame, write_frame};

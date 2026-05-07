@@ -210,8 +210,9 @@ pub struct ExecResponse {
     /// Standard error, inline. On the wire: base64-encoded JSON string.
     #[serde(with = "b64::single")]
     pub stderr: Vec<u8>,
-    /// Reserved for the v0.2 externalization story. Always `None` in v0.1.
-    /// Skipped on serialization when `None` so v0.1 wire bytes are unchanged.
+    /// Whether stdout or stderr was truncated before being included in this
+    /// response. `None` means not truncated or unknown. Skipped on
+    /// serialization when `None` so wire bytes are unchanged when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
     /// Timing for this execution.
@@ -346,33 +347,7 @@ fn is_false(v: &bool) -> bool {
 mod tests {
     use super::*;
 
-    fn sample_request() -> ExecRequest {
-        ExecRequest {
-            program: "/bin/sh".into(),
-            args: vec!["-c".into(), "echo hi".into()],
-            cwd: None,
-            env: None,
-            stdin: None,
-            timeout_ms: Some(5_000),
-            streaming: false,
-        }
-    }
-
-    fn sample_response() -> ExecResponse {
-        ExecResponse {
-            status: ExecStatus::Completed,
-            exit_code: Some(0),
-            stdout: b"hello\n".to_vec(),
-            stderr: Vec::new(),
-            truncated: None,
-            timing: ExecTiming {
-                spawned_at_unix_ms: 1_000_000,
-                exited_at_unix_ms: 1_000_100,
-                spawn_ms: 10,
-                run_ms: 90,
-            },
-        }
-    }
+    use crate::test_helpers::{sample_request, sample_response};
 
     #[test]
     fn envelope_new_stamps_protocol_version_and_kind() {

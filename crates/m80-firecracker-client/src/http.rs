@@ -15,17 +15,7 @@ pub(crate) struct Response {
     pub(crate) body: Vec<u8>,
 }
 
-/// Write a PUT request with a JSON body and read back the response.
-pub(crate) fn put_json(stream: &mut UnixStream, path: &str, body: &[u8]) -> io::Result<Response> {
-    send_json(stream, "PUT", path, body)
-}
-
-/// Write a PATCH request with a JSON body and read back the response.
-pub(crate) fn patch_json(stream: &mut UnixStream, path: &str, body: &[u8]) -> io::Result<Response> {
-    send_json(stream, "PATCH", path, body)
-}
-
-fn send_json(
+pub(crate) fn send_json(
     stream: &mut UnixStream,
     method: &str,
     path: &str,
@@ -105,11 +95,23 @@ fn response_end(buf: &[u8]) -> Option<usize> {
     let header_end = buf.windows(4).position(|w| w == b"\r\n\r\n")?;
     let header_len = header_end + 4;
     let header_text = std::str::from_utf8(&buf[..header_end]).ok()?;
-    let status = status_from_header_text(header_text)?;
+    let status = {
+        let line = header_text.lines().next()?.trim_end_matches('\r');
+        let mut p = line.splitn(3, ' ');
+        if !p.next()?.starts_with("HTTP/1.") { return None; }
+        p.next()?.parse::<u16>().ok()?
+    };
     if matches!(status, 100..=199 | 204 | 304) {
         return Some(header_len);
     }
-    let content_length = content_length_from_header_text(header_text)?;
+    let content_length = header_text.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            value.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    })?;
     let total = header_len + content_length;
     if buf.len() >= total {
         Some(total)
@@ -134,33 +136,20 @@ fn parse_response(bytes: &[u8]) -> io::Result<Response> {
         )
     })?;
 
-    let status = status_from_header_text(header_text)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "malformed HTTP status line"))?;
+    let status = {
+        let line = header_text.lines().next().and_then(|l| {
+            let l = l.trim_end_matches('\r');
+            let mut p = l.splitn(3, ' ');
+            if !p.next()?.starts_with("HTTP/1.") { return None; }
+            p.next()?.parse::<u16>().ok()
+        });
+        line.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "malformed HTTP status line"))?
+    };
 
     let body = bytes[(header_end + 4)..].to_vec();
     Ok(Response { status, body })
 }
 
-fn status_from_header_text(header_text: &str) -> Option<u16> {
-    let status_line = header_text.lines().next()?.trim_end_matches('\r');
-    let mut parts = status_line.splitn(3, ' ');
-    let proto = parts.next()?;
-    if !proto.starts_with("HTTP/1.") {
-        return None;
-    }
-    parts.next()?.parse::<u16>().ok()
-}
-
-fn content_length_from_header_text(header_text: &str) -> Option<usize> {
-    header_text.lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        if name.trim().eq_ignore_ascii_case("content-length") {
-            value.trim().parse::<usize>().ok()
-        } else {
-            None
-        }
-    })
-}
 
 #[cfg(test)]
 mod tests {
@@ -257,7 +246,7 @@ mod tests {
         });
 
         let mut stream = UnixStream::connect(&sock).unwrap();
-        put_json(&mut stream, "/boot-source", br#"{"k":"v"}"#).unwrap();
+        send_json(&mut stream, "PUT", "/boot-source", br#"{"k":"v"}"#).unwrap();
         let req = server.join().unwrap();
         assert!(
             req.starts_with("PUT /boot-source HTTP/1.1\r\n"),
