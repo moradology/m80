@@ -12,9 +12,9 @@ stamped to `PROTOCOL_VERSION` so peers can fail-closed on mismatch without
 parsing the rest of the payload.
 
 **Present-tense statement:** The `Envelope<T>` type includes `version: u32`.
-`write_frame` stamps it to `PROTOCOL_VERSION`. `read_frame` extracts `version`
-via a partial parse *before* deserializing the full payload, and returns
-`ProtoError::IncompatibleVersion` if the value does not equal `PROTOCOL_VERSION`.
+`write_frame` stamps it to `PROTOCOL_VERSION`. `read_frame` decodes the
+protobuf `WireEnvelope`, then returns `ProtoError::IncompatibleVersion` if the
+decoded version does not equal `PROTOCOL_VERSION`.
 
 **predecessor source:**
 - `crates/sandbox/agent-guest-proto/src/envelope.rs:42` — `pub version: u32` on `GuestRequest`
@@ -24,7 +24,7 @@ via a partial parse *before* deserializing the full payload, and returns
 **m80 implementation:**
 - `crates/m80-proto/src/version.rs` — `pub const PROTOCOL_VERSION: u32 = 1`
 - `crates/m80-proto/src/types.rs` — `Envelope<T> { version: u32, kind: String, ... }`
-- `crates/m80-proto/src/framing.rs` — `read_frame` version probe at the `VersionProbe` partial-deserialize step
+- `crates/m80-proto/src/framing.rs` — `read_frame` decoded-envelope version check
 
 **Test:** `crates/m80-proto/tests/envelope_version.rs::request_and_response_carry_protocol_version`
 
@@ -64,7 +64,7 @@ for the guest to spawn a process. It does not carry `tool_call_id`,
 **m80 implementation:**
 - `crates/m80-proto/src/types.rs` — `ExecRequest` struct; the wrapping
   `Envelope<ExecRequest>` carries `kind: "exec_request"` per the
-  forward-compat discriminator scheme
+  dispatch discriminator
 
 **Test:** `crates/m80-proto/tests/envelope_request_payload.rs::serializes_program_args_env_cwd_timeout`
 
@@ -82,8 +82,7 @@ uses the `request_id` field on the outer `Envelope<T>`.
 
 **Present-tense statement:** `ExecResponse` contains `status`, `exit_code`,
 `stdout`, `stderr`, `truncated`, and `timing`. `truncated` is reserved for
-the v0.2 externalization story (always `None` in v0.1); the field has
-`skip_serializing_if = "Option::is_none"` so v0.1 wire bytes are unchanged.
+the v0.2 externalization story (normally `None` in v0.1 buffered responses).
 `ExecResponse` does not carry `tool_call_id`, `error_class` (agent semantics),
 `captured_artifacts` (agent-tier externalized output), or any identity field.
 

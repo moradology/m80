@@ -1,42 +1,42 @@
-# Wire Protocol — Version Handshake
+# Wire Protocol - Version Check
 
 Behaviors captured by bead epic `m80-g3x`, leaves `m80-g3x.3.1` and
 `m80-g3x.3.2`.
 
 ---
 
-## exchange
+## application frames
 
-On every fresh connection, both peers exchange a `HandshakeMessage { version: u32 }`
-before processing any application payload. The handshake runs first so an
-incompatible peer is detected and the connection closed before any exec work
-begins.
+Every active application payload is carried in a length-prefixed protobuf
+`Envelope` with `version: u32`, `kind`, optional opaque `request_id`, and a
+typed `oneof` payload. The reader validates `version == PROTOCOL_VERSION`
+before dispatching the payload. There is no NDJSON prelude, no JSON/base64
+compatibility path, and no separate application-channel protocol byte.
 
-**Present-tense statement:** When a connection is established, the initiating
-peer writes a `HandshakeMessage` serialized as an NDJSON line. The responder
-reads it, calls `negotiate_version(remote.version)`, and writes its own
-`HandshakeMessage` in return. Only after both sides have confirmed the version
-do they enter the application request loop (`Envelope<ExecRequest>` / `Envelope<ExecResponse>`).
+**Present-tense statement:** When a host/guest application frame is read,
+`read_raw_frame` decodes the protobuf body and rejects any envelope whose
+`version` differs from `PROTOCOL_VERSION`. The connection handler logs and
+surfaces that protocol error instead of trying an older wire shape.
 
-`HandshakeMessage::current()` constructs a handshake stamped to
-`PROTOCOL_VERSION`. `negotiate_version(remote)` returns `Ok(())` iff
-`remote == PROTOCOL_VERSION`, otherwise `Err(ProtoError::IncompatibleVersion)`.
-The error always reports `expected: PROTOCOL_VERSION` regardless of caller
-context.
-
-**predecessor source:**
-- `services/guestd-rs/src/main.rs:428-439` — `perform_stdio_handshake`: reads one
-  handshake line, calls `deserialize_handshake_request`, calls
-  `negotiate_handshake`, writes `serialize_handshake_response`, flushes, then
-  returns to `serve_stdio_with_workspace_setup` which enters the request loop
-- `services/guestd-rs/src/main.rs:402-406` — `perform_stdio_handshake` is called
-  before `serve_stdio_request_loop`
+The only live protocol byte outside an application frame is the inverted
+boot-readiness signal: after binding its exec listener, `m80-guestd` connects
+to the host ready port and writes one `PROTOCOL_VERSION` byte. The host treats
+that byte as "guestd is listening and speaks this build's protocol." It is not
+a reusable application-channel handshake.
 
 **m80 implementation:**
-- `crates/m80-proto/src/types.rs` — `HandshakeMessage`, `HandshakeMessage::current()`
-- `crates/m80-proto/src/version.rs` — `negotiate_version`
+- `crates/m80-proto/src/framing.rs` — `read_raw_frame` checks each envelope version.
+- `crates/m80-proto/src/wire.rs` — protobuf `WireEnvelope` decode/encode.
+- `crates/m80-guestd/src/main.rs` — ready signal writes one `PROTOCOL_VERSION` byte.
+- `crates/m80-firecracker/src/launch.rs` — ready signal validates that byte before
+  opening the exec channel.
 
-**Test:** `crates/m80-proto/tests/handshake_exchange.rs::handshake_runs_before_first_request`
+**Tests:**
+- `crates/m80-proto/tests/envelope_version.rs` pins envelope version stamping.
+- `crates/m80-proto/tests/framing_parse_failure.rs` pins version-mismatch rejection.
+- `crates/m80-proto/tests/handshake_exchange.rs` keeps the reserved
+  `HandshakeMessage` payload as an exact-match protobuf round trip; it is not
+  an active connection prelude.
 
 ---
 
@@ -68,4 +68,4 @@ pipeline — do not weaken the protocol boundary.
 - `crates/m80-proto/src/version.rs` — `negotiate_version`
 - `crates/m80-proto/src/error.rs` — `ProtoError::IncompatibleVersion { expected: u32, got: u32 }`
 
-**Test:** `crates/m80-proto/tests/handshake_mismatch.rs::rejects_incompatible_version`
+**Test:** `crates/m80-proto/src/version.rs::tests::rejects_newer_version`

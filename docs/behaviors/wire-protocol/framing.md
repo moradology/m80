@@ -5,18 +5,18 @@ Behaviors captured by bead epic `m80-g3x`, leaves `m80-g3x.2.1` through
 
 ---
 
-## ndjson
+## length-prefixed protobuf
 
-The transport serializes each envelope as a single NDJSON record: compact JSON
-(no pretty-printing) terminated by a single `\n`. There are no continuation
-frames and no embedded raw newlines inside a record.
+The transport serializes each envelope as one length-prefixed protobuf frame:
+a four-byte big-endian body length followed by that many protobuf body bytes.
+There are no newline delimiters and no continuation frames.
 
-**Present-tense statement:** `write_frame` serializes the envelope to compact
-JSON via `serde_json::to_vec`, checks the size, and then appends `b'\n'` before
-writing to the `Write` implementor. `read_frame` wraps the reader in a bounded
-`Read::take(MAX_FRAME_BYTES + 2)` and calls `BufRead::read_until(b'\n', ...)`
-to consume exactly one `\n`-terminated line within the cap, strips the trailing
-newline (and a leading `\r`, for CRLF tolerance), and then parses.
+**Present-tense statement:** `write_frame` converts the typed envelope into a
+raw protobuf envelope, encodes it, checks the encoded body length, writes a
+four-byte big-endian length prefix, and then writes the body. `read_frame`
+reads exactly the prefix, rejects an announced body larger than
+`MAX_FRAME_BYTES`, reads exactly that many body bytes, decodes protobuf, and
+then checks `PROTOCOL_VERSION`.
 
 **predecessor source:**
 - `crates/sandbox/agent-guest-proto/src/envelope.rs:292-296` — `ndjson_serialize`:
@@ -27,31 +27,26 @@ newline (and a leading `\r`, for CRLF tolerance), and then parses.
 **m80 implementation:**
 - `crates/m80-proto/src/framing.rs` — `write_frame` and `read_frame`
 
-**Test:** `crates/m80-proto/tests/framing_ndjson.rs::serializes_one_record_per_line`
+**Test:** `crates/m80-proto/tests/framing_protobuf.rs::serializes_one_length_prefixed_frame_per_envelope`
 
 ---
 
 ## size-cap
 
-The deserializer rejects any frame whose post-trim payload exceeds 4 MiB
+The deserializer rejects any protobuf body whose announced length exceeds 4 MiB
 (`MAX_FRAME_BYTES = 4 * 1024 * 1024`) with `ProtoError::OversizedPayload`.
 
-The comparison is **strict `>`**: a frame whose trimmed length equals exactly
+The comparison is **strict `>`**: a frame whose body length equals exactly
 `MAX_FRAME_BYTES` bytes passes the size gate. A frame of `MAX_FRAME_BYTES + 1`
 bytes is rejected immediately with `OversizedPayload { size: MAX_FRAME_BYTES + 1, limit: MAX_FRAME_BYTES }`.
 
-**Present-tense statement:** `read_frame` reads at most `MAX_FRAME_BYTES + 2`
-bytes through `Read::take` (one extra byte beyond the cap so a strict-`>`
-check has signal to fire). If `read_until(b'\n', ...)` exhausts the cap
-without finding a newline, the frame is rejected as `OversizedPayload` —
-peer-driven unbounded-allocation attacks cannot grow the host buffer past the
-cap. After the line is read, the trailing `\n` (and an optional `\r`) is
-stripped and `trimmed.len()` is checked against `MAX_FRAME_BYTES` with strict
-`>`. The encoder (`write_frame`) applies the same guard before writing.
+**Present-tense statement:** `read_frame` allocates the body buffer only after
+the four-byte prefix has passed the strict cap check. The encoder
+(`write_frame`) applies the same body-length guard before writing.
 
-A peer that closes mid-frame (`n_read > 0` and no `\n` and `n_read < cap`)
-surfaces as `Io(UnexpectedEof)`, **not** `OversizedPayload` — the cap-hit
-variant is reserved for genuine oversize.
+A peer that closes before the four-byte prefix or before the announced body is
+fully read surfaces as `Io(UnexpectedEof)`, **not** `OversizedPayload` — the
+cap variant is reserved for a body length that is genuinely too large.
 
 **predecessor source:**
 - `crates/sandbox/agent-guest-proto/src/envelope.rs:22` — `MAX_NDJSON_PAYLOAD_BYTES = 4 * 1024 * 1024`
@@ -59,7 +54,7 @@ variant is reserved for genuine oversize.
 
 **m80 implementation:**
 - `crates/m80-proto/src/version.rs` — `pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024`
-- `crates/m80-proto/src/framing.rs` — bounded read via `Read::take`, oversize/EOF triage, strict-`>` size gate, write-side cap
+- `crates/m80-proto/src/framing.rs` — length prefix read, oversize/EOF triage, strict-`>` size gate, write-side cap
 
 **Test:** `crates/m80-proto/tests/framing_size_cap.rs::rejects_frame_above_4mib_with_oversized_error`
 
@@ -67,9 +62,9 @@ variant is reserved for genuine oversize.
 
 ## parse-failure
 
-When `serde_json` fails to parse a frame, `read_frame` returns
+When protobuf decoding fails to parse a frame, `read_frame` returns
 `ProtoError::MalformedPayload(detail)` where `detail` is the
-`serde_json::Error::to_string()` output. Connection handlers **must** drop the
+decoder error string. Connection handlers **must** drop the
 connection on this error; the byte stream is in an unrecoverable state and
 attempting to read further frames from the same connection is undefined
 behaviour at the protocol level.
@@ -85,7 +80,7 @@ closing the connection. m80's connection handlers (in `m80-guestd` and
 - `services/guestd-rs/src/main.rs:322-323` — `serve_connection` returns on any `Err`; the loop at `serve_vsock_connections:318-326` logs and continues to the next connection (not the same connection)
 
 **m80 implementation:**
-- `crates/m80-proto/src/framing.rs` — `read_frame` returns `Err(ProtoError::MalformedPayload(...))` on JSON parse failure
+- `crates/m80-proto/src/framing.rs` — `read_frame` returns `Err(ProtoError::MalformedPayload(...))` on protobuf parse failure
 - `crates/m80-proto/src/error.rs` — `ProtoError::MalformedPayload(String)`
 
-**Test:** `crates/m80-proto/tests/framing_parse_failure.rs::malformed_json_returns_error_and_drops_connection`
+**Test:** `crates/m80-proto/tests/framing_parse_failure.rs::malformed_protobuf_returns_error_and_drops_connection`

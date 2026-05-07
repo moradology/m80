@@ -1,7 +1,7 @@
 # Wire Streaming Exec
 
 **Bead:** `m80-5vha.1`
-**Status:** DESIGN - no code landed in this leaf
+**Status:** IMPLEMENTED - active wire is length-prefixed protobuf
 
 ---
 
@@ -11,20 +11,19 @@ Buffered exec is useful for short commands, but it is the wrong surface for a
 thin process wrapper. Long builds, test runs, `tail -f`, and text user
 interfaces need stdout and stderr as the child produces them.
 
-Streaming exec keeps the existing length-prefixed JSON envelope protocol and
+Streaming exec uses the active length-prefixed protobuf envelope protocol and
 adds one opt-in mode:
 
 ```rust
 pub struct ExecRequest {
     // existing fields...
-    #[serde(default, skip_serializing_if = "is_false")]
     pub streaming: bool,
 }
 ```
 
-`streaming == false` is the default and serializes identically to the v0.1
-request shape. `streaming == true` changes only the response side: the guest
-sends zero or more output chunk envelopes followed by one terminal envelope.
+`streaming == false` keeps the buffered exec response shape. `streaming ==
+true` changes only the response side: the guest sends zero or more output
+chunk envelopes followed by one terminal envelope.
 
 This is a hard cutover design for the v0.x workspace. Host and guest move
 together; there is no compatibility shim.
@@ -46,13 +45,11 @@ exec_exit
 ```rust
 pub struct ExecStdout {
     pub seq: u32,
-    #[serde(with = "b64::single")]
     pub bytes: Vec<u8>,
 }
 
 pub struct ExecStderr {
     pub seq: u32,
-    #[serde(with = "b64::single")]
     pub bytes: Vec<u8>,
 }
 ```
@@ -70,7 +67,6 @@ The `request_id` lives on the enclosing `Envelope`, as it does for
 ```rust
 pub struct ExecExit {
     pub status: ExecStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
     pub total_stdout_bytes: u64,
     pub total_stderr_bytes: u64,
@@ -153,8 +149,8 @@ The guest keeps the current two-reader shape:
 The writer lock is a serialization point only. It must not become an unbounded
 queue. A slow host should backpressure the capture thread directly.
 
-Chunks must remain well below `MAX_FRAME_BYTES` after base64 and JSON encoding.
-The proposed 4 KiB raw read size is deliberately conservative.
+Chunks must remain well below `MAX_FRAME_BYTES` after protobuf envelope
+encoding. The proposed 4 KiB raw read size is deliberately conservative.
 
 ---
 
@@ -304,9 +300,8 @@ foundation crates.
 
 Protocol tests:
 
-- `ExecRequest { streaming: false }` serializes byte-identically to the v0.1
-  golden request.
-- `ExecRequest { streaming: true }` includes `streaming: true`.
+- `ExecRequest { streaming: false }` and `ExecRequest { streaming: true }`
+  round-trip through the protobuf envelope.
 - `ExecStdout`, `ExecStderr`, and `ExecExit` round-trip through
   `Envelope<T>`.
 

@@ -6,5 +6,11 @@ connection. Guestd stores open uploads in a per-connection table and writes to
 `<path>.m80-upload.<upload_id>` until commit fsyncs and renames the file.
 Disconnect before commit drops the table and unlinks temp files.
 
-Tests: `m80-proto/tests/fileops_round_trip.rs::chunked_upload_payloads_round_trip`
-and `m80-guestd/tests/fileops.rs::chunked_upload_writes_chunks_and_commits`.
+Chunk sequences start at zero and advance by one for each upload id. Guestd
+rejects gaps and duplicates with `FileError::InvalidSequence`, removes the
+failed upload, and unlinks the temp file before appending bytes. The host fails
+closed if a chunk ack echoes the wrong upload id or sequence.
+
+Tests: `m80-proto/tests/fileops_round_trip.rs::chunked_upload_payloads_round_trip`,
+`m80-guestd/src/connection/fileops/tests.rs::chunked_upload_rejects_sequence_gap_without_writing`,
+and `m80-firecracker/src/lifecycle/fileops.rs::tests::chunk_ack_rejects_wrong_sequence`.

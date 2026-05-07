@@ -50,10 +50,10 @@ dependencies: [m80-fops]
 **Description.** Pin the contract every IMPL leaf consumes:
 
 1. **Verb set (final).** Five "small" verbs — `FileRead`, `FileWrite`, `FileList`, `FileStat`, `FileRemove` — plus a chunked-upload trio (`FileWriteBegin` → 0..N `FileWriteChunk` → `FileWriteCommit`). No `FileMove`, no `FileCopy` in v0.2; out of scope.
-2. **Error model.** Every verb returns its dedicated response type which carries an `Option<FileError>` discriminant: `NotFound`, `PermissionDenied`, `IsADirectory`, `NotADirectory`, `SymlinkRejected`, `TooLarge`, `Io { detail }`. Per CLAUDE.md "no catch-and-rewrap" — the `Io` variant is reserved for cases that don't map to a domain variant; we do *not* shadow `NotFound` as `Io`. Reclassification is uniform across the surface.
+2. **Error model.** Every verb returns its dedicated response type which carries an `Option<FileError>` discriminant: `NotFound`, `PermissionDenied`, `IsADirectory`, `NotADirectory`, `SymlinkRejected`, `TooLarge`, `InvalidSequence`, or `Io`. Per CLAUDE.md "no catch-and-rewrap" — the `Io` variant is reserved for cases that don't map to a domain variant; we do *not* shadow `NotFound` as `Io`. Reclassification is uniform across the surface.
 3. **Symlinks.** Final component is opened with `O_NOFOLLOW`; intermediate components follow the kernel default (the alternative — `O_PATH` walk + `openat2` with `RESOLVE_NO_SYMLINKS` — is overkill for v0.2). A symlink at the final component yields `SymlinkRejected`.
-4. **Size caps.** `FileRead` honours an optional `max_bytes` (default: a `FILE_READ_LIMIT` constant in `m80-proto`, proposed 16 MiB). When the file is larger than `max_bytes` we read `max_bytes` and set `truncated: true`. `FileWrite`'s body is implicitly capped by the maximum envelope size on the wire (currently 64 MiB per `m80-proto::framing`); larger uploads must use the chunked path.
-5. **Chunked upload state machine.** `FileWriteBegin { path, mode }` returns `FileWriteBeginResponse { upload_id }`. The guest creates `<path>.m80-upload.<upload_id>` and keeps an open file handle keyed by `upload_id` in a per-connection map. Each `FileWriteChunk { upload_id, bytes }` appends. `FileWriteCommit { upload_id }` fsyncs, atomically renames `<path>.m80-upload.<upload_id>` → `<path>`, and drops the handle. Disconnect on the connection unconditionally drops the handle and unlinks the temp file (no resume across reconnects in v0.2). Concurrent uploads on one connection are allowed (each has its own `upload_id`); the guest rejects `FileWriteChunk`/`Commit` for an unknown id with `Failed`.
+4. **Size caps.** `FileRead` honours an optional `max_bytes` (default: a `FILE_READ_LIMIT` constant in `m80-proto`, proposed 16 MiB). When the file is larger than `max_bytes` we read `max_bytes` and set `truncated: true`. `FileWrite`'s body is implicitly capped by the active encoded protobuf frame cap (currently 4 MiB); larger uploads must use the chunked path.
+5. **Chunked upload state machine.** `FileWriteBegin { path, mode }` returns `FileWriteBeginResponse { upload_id }`. The guest creates `<path>.m80-upload.<upload_id>` and keeps an open file handle keyed by `upload_id` in a per-connection map. Each `FileWriteChunk { upload_id, seq, bytes }` appends only when `seq` matches the next expected zero-based sequence. `FileWriteCommit { upload_id }` fsyncs, atomically renames `<path>.m80-upload.<upload_id>` → `<path>`, and drops the handle. Disconnect on the connection unconditionally drops the handle and unlinks the temp file (no resume across reconnects in v0.2). The guest rejects `FileWriteChunk` for sequence gaps or repeats with `InvalidSequence` and `FileWriteChunk`/`Commit` for an unknown id with `NotFound`.
 6. **Listing.** `FileList { path }` reads one directory level (no recursion). `DirEntry { name, kind: FileKind, size }` where `FileKind` is `File | Dir | Symlink | Other`. `size` for directories is the raw `st_size` (not the recursive total); document that.
 7. **Stat.** `FileStat` returns `kind`, `size`, `mtime_unix_ms`, `mode` (Unix mode bits as `u32`). No `inode`, `device`, `ctime`, or `xattrs` in v0.2.
 8. **Concurrency.** Each request is handled inline on the connection thread, same as `ExecRequest`. No background work, no separate vsock channel.
@@ -118,8 +118,8 @@ pub enum FileError {
     NotADirectory,
     SymlinkRejected,
     TooLarge,
-    UnknownUploadId,
-    Io { detail: String },
+    InvalidSequence,
+    Io,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -297,7 +297,7 @@ On disconnect (read error / EOF), drop the entire `UploadTable`; each `UploadHan
 - File-ops handlers in `crates/m80-guestd/src/fops.rs` (split from `connection.rs` per file-size rule).
 - `handle_connection` loops until EOF; documented in module-level rustdoc.
 - Unit tests with `Cursor`-backed reader/writer for happy paths and the documented error variants. One `#[test]` per scenario (no bundling).
-- Integration-style test that uploads 64 MiB across multiple chunks and verifies the byte-for-byte content + fsync semantics.
+- Integration-style test that uploads payloads larger than the active frame cap across multiple chunks and verifies the byte-for-byte content + fsync semantics.
 - `crates/m80-guestd/README.md` updated.
 
 **Effort.** L (3–4 days).
@@ -321,7 +321,7 @@ dependencies: [m80-fops.3]
 - Six methods on `RunningSandbox`. `phase_event` calls per round-trip, same as `exec_send`/`exec_recv`.
 - `FcError::File(FileError)` variant added with `thiserror` mapping; existing `FcError` variants untouched.
 - `crates/m80-firecracker/README.md` "Public surface" updated.
-- Loopback integration test under `crates/m80-firecracker/tests/fops/` boots a VM, writes 1 MiB + 64 MiB files, reads them back, lists and stats them, removes them.
+- Loopback integration test under `crates/m80-firecracker/tests/fops/` boots a VM, writes an inline file plus a chunked file larger than the active frame cap, reads them back, lists and stats them, removes them.
 
 **Effort.** M (1–2 days).
 
@@ -339,11 +339,12 @@ dependencies: [m80-fops.3]
 ```
 
 **Description.** Per-leaf tests are colocated; this leaf is the cross-cutting matrix:
-- Each `FileError` variant produced by each verb has its own `#[test]` (no bundling). Symlink-at-final-component → `SymlinkRejected`. Read on a directory → `IsADirectory`. Write into a non-existent parent → `Io { detail }` (we do *not* synthesize `NotFound` for the parent; the kernel's `ENOENT` text is preserved per CLAUDE.md "no catch-and-rewrap").
+- Each `FileError` variant produced by each verb has its own `#[test]` (no bundling). Symlink-at-final-component → `SymlinkRejected`. Read on a directory → `IsADirectory`. Write into a non-existent parent → `NotFound` via uniform errno mapping.
 - `FileRead` truncation: write 17 MiB, `FileRead { max_bytes: 16 MiB }`, expect `bytes.len() == 16 MiB && truncated == true`.
 - Chunked upload: disconnect mid-`FileWriteChunk`, verify `<path>.m80-upload.<id>` is unlinked and `<path>` does not exist.
 - Chunked upload: two concurrent `upload_id`s on one connection writing different files — both commit cleanly.
-- `FileWriteChunk` with unknown `upload_id` → `UnknownUploadId`.
+- `FileWriteChunk` with unknown `upload_id` → `NotFound`.
+- `FileWriteChunk` with a sequence gap or duplicate → `InvalidSequence`.
 
 **Acceptance.** Tests live next to the code they exercise (`crates/m80-guestd/tests/fops/`, `crates/m80-proto/src/types/fops.rs::tests`). All scenarios in distinct `#[test]` fns.
 

@@ -4,9 +4,10 @@ Bead: `m80-1f8.4.2`
 
 ## Behavior
 
-`m80-guestd` accepts a direct `metrics_request` envelope on the same JSON-framed
-vsock protocol as exec, PTY, shutdown, and file operations. The request has an
-empty fixed-shape payload. The response is a `metrics_response` envelope with
+`m80-guestd` accepts a direct `metrics_request` envelope on the same
+length-prefixed protobuf vsock protocol as exec, PTY, shutdown, and file
+operations. The request has an empty fixed-shape payload. The response is a
+`metrics_response` envelope with
 typed CPU counters, memory gauges, and guestd request/error counters.
 
 CPU fields are sampled from the aggregate `cpu` line in `/proc/stat` and are

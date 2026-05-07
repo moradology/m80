@@ -34,13 +34,13 @@ fields. Those remain host orchestration and adapter concerns.
 
 ## Terminal Bytes
 
-`PtyInput` and `PtyOutput` carry raw bytes as base64-encoded JSON strings.
-Both have a monotonic `seq` within their direction for one request.
+`PtyInput` and `PtyOutput` carry raw terminal bytes as protobuf `bytes`
+fields. Both have a monotonic `seq` within their direction for one request.
 
 PTY output is the terminal stream. It does not preserve separate stdout and
 stderr streams because a pseudo-terminal merges them by design.
 
-Each frame still uses the global NDJSON size cap. A large terminal stream is
+Each frame still uses the global protobuf frame size cap. A large terminal stream is
 represented as many bounded `pty_output` frames, not as one aggregate output
 frame. Backpressure is inherited from the transport: a slow reader should fill
 the socket and block the writer rather than queueing unbounded terminal bytes.
