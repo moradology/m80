@@ -219,15 +219,17 @@ avoidance: distinct `<run_root>` paths.
 
 ### Boot cmdline
 
-`boot_args_for(image_kind, kernel_kind)` selects the kernel command line based
-on the two-axis `(ImageKind, KernelKind)` matrix from the image manifest:
+`boot_args_for(image_kind, kernel_kind, include_workspace_drive)` selects the
+kernel command line based on the two-axis `(ImageKind, KernelKind)` matrix from
+the image manifest and appends `m80.workspace=0|1` so PID-1 guestd knows
+whether `/dev/vdc` is an actual workspace drive:
 
 | `ImageKind` | `KernelKind` | Cmdline |
 |---|---|---|
-| `Ubuntu` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off` |
-| `Ubuntu` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1` |
-| `Minimal` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd` |
-| `Minimal` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd` |
+| `Ubuntu` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off m80.workspace=0|1` |
+| `Ubuntu` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 m80.workspace=0|1` |
+| `Minimal` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0|1` |
+| `Minimal` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0|1` |
 
 Stripped-kernel differences from the Stock baseline:
 - `quiet loglevel=0` added — suppresses per-device init messages while keeping
@@ -236,7 +238,9 @@ Stripped-kernel differences from the Stock baseline:
   UARTs. Locked at `=1` (not `=0`): preserving console output for boot-stage
   diagnostics is non-negotiable per CLAUDE.md "diagnostics before hypotheses".
 
-`SandboxConfig::boot_args` overrides the whole cmdline when set.
+`SandboxConfig::boot_args` overrides the base cmdline when set; m80 still
+appends `m80.workspace=0|1` because it is an internal guestd/layout contract,
+not caller policy.
 
 ### Drive layout
 
@@ -422,7 +426,7 @@ Layout helpers:
 
 Boot config:
 
-- `boot_args_for(image_kind, kernel_kind) -> &'static str`.
+- `boot_args_for(image_kind, kernel_kind, include_workspace_drive) -> String`.
 - `FIRST_LINE_VCPU_COUNT`, `FIRST_LINE_MEM_SIZE_MIB`.
 
 Cleanup vocabulary (behavior docs + regression tests):

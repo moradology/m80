@@ -11,6 +11,7 @@ use vsock::{VsockListener, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST};
 mod connection;
 mod guest_log;
 mod pid_one;
+mod uevent;
 
 use guest_log::{BootTimer, GuestLogPhase};
 

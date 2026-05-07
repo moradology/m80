@@ -7,8 +7,9 @@
 ## pid-one-workspace-device
 
 In Minimal image PID-1 mode, `m80-guestd` mounts the optional workspace scratch
-drive from `/dev/vdc` to `/workspace`. `/dev/vdc` is the third Firecracker block
-device after the storage pivot:
+drive from `/dev/vdc` to `/workspace` only when the host boot cmdline contains
+`m80.workspace=1`. `/dev/vdc` is the third Firecracker block device after the
+storage pivot:
 
 1. `/dev/vda` is the shared read-only base rootfs.
 2. `/dev/vdb` is the per-VM writable rootfs overlay.
@@ -26,7 +27,10 @@ merged overlayfs root, not a mount on the discarded initial root.
 
 ## optional-no-drive
 
-When no workspace was configured, Firecracker does not attach the third block
-device. PID-1 treats the missing `/dev/vdc` as documented optional state: it
-logs the skipped mount, emits the `workspace_absent` boot milestone, and
-continues startup. Other mount failures still fail PID-1 setup.
+When no workspace was configured, Firecracker does not attach the workspace
+drive and the boot cmdline contains `m80.workspace=0`. PID-1 skips the
+workspace mount before inspecting `/dev/vdc`, because preallocated hotplug slots
+may legitimately occupy that device position. Missing `/dev/vdc` remains
+documented optional state when `m80.workspace=1`: guestd logs the skipped mount,
+emits the `workspace_absent` boot milestone, and continues startup. Other mount
+failures still fail PID-1 setup.

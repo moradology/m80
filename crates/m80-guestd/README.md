@@ -43,7 +43,7 @@ Keeping the guest small has direct benefits:
   connect back to the host ready port, then loop on `accept()`.
 - On each accepted connection:
   1. Read one
-     `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | ShutdownRequest>`
+     `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | DriveMountRequest | ShutdownRequest>`
      (fail closed on version mismatch).
   2. For `ExecRequest` / `PtyRequest`, spawn the child process per the request
      (argv + optional cwd + optional env).
@@ -63,15 +63,19 @@ Keeping the guest small has direct benefits:
   7. If the request is `MetricsRequest`, read `/proc/stat` and
      `/proc/meminfo`, attach guestd-local request/error counters, and return
      `MetricsResponse`.
-  8. For exec / PTY, apply the request's `timeout_ms` budget; on expiry,
+  8. If the request is `DriveMountRequest`, wait for each requested guest
+     `device_path` when needed, mount it as ext4 at the requested guest path,
+     optionally read opaque tenant-identity bytes, and return one
+     `DriveMountStatus` per device.
+  9. For exec / PTY, apply the request's `timeout_ms` budget; on expiry,
      terminate the child process group.
-  9. For exec / PTY, reap, build the terminal response, and write it back as
+  10. For exec / PTY, reap, build the terminal response, and write it back as
      one or more `m80-proto` envelopes. Direct file-op and metrics requests
      write their direct response without spawning a child.
-  10. Exec, PTY, file-op, and shutdown paths sync filesystems before close so
+  11. Exec, PTY, file-op, and shutdown paths sync filesystems before close so
      post-stop change extraction sees the final state. Metrics is read-only and
      does not force a filesystem sync.
-  11. Close.
+  12. Close.
 - Concurrent connections per VM are **not supported in v0.1**. The
   daemon serializes (`accept()` returns one at a time, processes,
   closes, accepts again).
@@ -218,6 +222,19 @@ Behavior details:
 - `docs/behaviors/wire-protocol/file-remove.md`
 - `docs/behaviors/wire-protocol/chunked-upload.md`
 
+### Drive mount fields
+
+Drive mount is a direct guestd handler, not a shell command. Dispatch table:
+
+| Request kind | Response kind | Behavior |
+|---|---|---|
+| `drive_mount_request` | `drive_mount_response` | Wait for each requested `device_path` when needed, mount ext4 at the requested path, optionally read opaque identity bytes, and return per-device `Mounted` / `AlreadyMounted` / `Failed` status. |
+
+Behavior details:
+
+- `docs/behaviors/lifecycle/guest-drive-mount-handler.md`
+- `docs/behaviors/lifecycle/guest-uevent-hotplug.md`
+
 ### PID-1 overlay+pivot startup sequence
 
 Implements `docs/design/storage-overlay.md §3.1` (11-step pseudocode).
@@ -233,7 +250,10 @@ Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 8. Bind-mount `/proc` (`MS_BIND|MS_REC`), `/sys` (`MS_BIND`), `/dev` (`MS_BIND`) into `/merged/{proc,sys,dev}` so they survive pivot.
 9. Apply `MS_SLAVE|MS_REC` on `/` and `MS_BIND|MS_REC` of `/merged` onto itself (required by `pivot_root(".", ".")`).
 10. Call `pivot_rootfs("/merged")` — lifted verbatim from `kata-containers/src/agent/rustjail/src/mount.rs:523-559` (Apache-2.0, © 2019 Ant Financial). Uses `defer!` (scopeguard) for FD cleanup.
-11. Mount `/dev/vdc` (workspace scratch ext4) at `/workspace` **inside the pivoted root**. Skipped if `/dev/vdc` does not exist (workspace is optional).
+11. If the boot cmdline contains `m80.workspace=1`, mount `/dev/vdc`
+    (workspace scratch ext4) at `/workspace` **inside the pivoted root**.
+    Skipped if the flag is absent/zero or if `/dev/vdc` does not exist
+    (workspace is optional).
 
 **Failure policy:** any step failure panics. No retry, no fallback —
 failure here is structural. Every step logs to stderr in the structured
@@ -249,17 +269,19 @@ contract. `m80-guestd` checks them rather than creating them at boot.
 - **Ubuntu image**: the systemd-installed mount unit attaches the host-
   provided scratch ext4 at `/workspace` before the daemon starts. The
   daemon does not mount anything itself.
-- **Minimal image (PID-1 mode)**: m80-guestd mounts `/dev/vdc` →
-  `/workspace` itself (step 11 above) after `pivot_root`, inside the
-  merged overlayfs root. If `/dev/vdc` does not exist (Sandbox launched
-  without a workspace directory), the mount is skipped — workspace is
-  documented-optional, not an error. **Note:** before the overlay pivot,
-  the workspace drive was `/dev/vdb`; after the overlay pivot (`m80-ovrl.4`),
-  it is `/dev/vdc` (drive position 3 per `docs/design/storage-overlay.md §2`).
+- **Minimal image (PID-1 mode)**: when the host boot cmdline contains
+  `m80.workspace=1`, m80-guestd mounts `/dev/vdc` → `/workspace` itself
+  (step 11 above) after `pivot_root`, inside the merged overlayfs root. If the
+  flag is absent/zero, the mount is skipped before checking `/dev/vdc`; this
+  prevents preallocated hotplug slots from being mistaken for a workspace
+  drive. If the flag is set but `/dev/vdc` does not exist, the mount is skipped
+  as documented-optional state. **Note:** before the overlay pivot, the
+  workspace drive was `/dev/vdb`; after the overlay pivot (`m80-ovrl.4`), it is
+  `/dev/vdc` (drive position 3 per `docs/design/storage-overlay.md §2`).
 
 ### Hotplug event infrastructure
 
-`m80-guestd` has a guest-local uevent layer for future drive hotplug handlers:
+`m80-guestd` has a guest-local uevent layer for drive hotplug handlers:
 
 - parses kernel `NETLINK_KOBJECT_UEVENT` messages into `Uevent` values;
 - provides a `UeventMatcher` trait plus a block-device matcher;
@@ -267,9 +289,20 @@ contract. `m80-guestd` checks them rather than creating them at boot.
   before the waiter was installed;
 - uses a `Condvar`-based bounded wait path, not busy polling.
 
-The listener and registry are infrastructure only until the drive mount
-handler is wired. They do not mount workspace/cache/scratch drives by
-themselves.
+The drive mount handler serves `DriveMountRequest` directly in guestd. The
+request names Firecracker drive ids from the preallocated-slot pattern
+(`hotplug_slot_N`), the explicit guest `device_path`, and guest mount paths.
+The host owns device-path derivation because it knows the actual drive PUT
+layout for that VM. If the block device node already exists, guestd mounts
+immediately; otherwise it starts the netlink listener and waits for the
+matching block `DEVNAME` with a bounded timeout.
+
+An already-mounted matching device is a no-op and returns
+`DriveMountStatusKind::AlreadyMounted`; a target mounted from a different
+source fails closed. Multi-device requests return partial status instead of
+rolling back successful mounts. If `identity_path` is set, guestd reads that
+exact guest path and returns opaque `TenantIdentityReport` bytes; m80 does not
+parse or authorize the identity payload.
 
 ### Guest stderr format
 

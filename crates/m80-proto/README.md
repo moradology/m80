@@ -101,7 +101,8 @@ Drive hotplug types: `DriveMountRequest`, `DriveMountResponse`,
 `DriveDetachStatus`, `DriveDetachStatusKind`, `DriveHotplugError`,
 `TenantIdentityReport`, and their `PAYLOAD_KIND_*` constants. These carry
 VM-mechanics data only: Firecracker drive ids, guest mount paths, per-device
-status/error values, and opaque tenant identity bytes.
+status/error values, explicit guest block-device paths, and opaque tenant
+identity bytes.
 
 File-op exports: `FileReadRequest`, `FileReadChunk`,
 `FileReadResponse`, `FileWriteRequest`, `FileWriteResponse`,

@@ -299,6 +299,7 @@ message WireDriveMountSpec {
   string drive_id = 1;
   string mount_path = 2;
   optional string identity_path = 3;
+  string device_path = 4;
 }
 
 message WireDriveMountRequest {

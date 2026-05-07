@@ -44,8 +44,11 @@ vsock device:
 - `workspace`: `/scratch.ext4`, non-root, read-write.
 
 The scratch image becomes `/dev/vdc` and is mounted by guestd at `/workspace`.
-When no workspace is configured, this drive is omitted. This is the m80 form of
-the predecessor workspace drive behavior recorded at
+When no workspace is configured, this drive is omitted. The boot cmdline always
+includes `m80.workspace=1` or `m80.workspace=0` so PID-1 guestd can distinguish
+an actual workspace `/dev/vdc` from a preallocated hotplug slot that happens to
+occupy the same block-device position. This is the m80 form of the predecessor
+workspace drive behavior recorded at
 `crates/sandbox/agent-sandbox-firecracker/src/lifecycle.rs:665-670`, with the
 current m80 filename `/scratch.ext4` rather than predecessor's older
 `workspace.ext4` wording.

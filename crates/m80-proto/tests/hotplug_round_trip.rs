@@ -23,11 +23,13 @@ fn drive_mount_request_round_trips_mount_specs() {
         devices: vec![
             DriveMountSpec {
                 drive_id: "hotplug_slot_0".to_owned(),
+                device_path: "/dev/vdd".to_owned(),
                 mount_path: "/workspace".to_owned(),
                 identity_path: Some("/workspace/.tenant-identity".to_owned()),
             },
             DriveMountSpec {
                 drive_id: "hotplug_slot_1".to_owned(),
+                device_path: "/dev/vde".to_owned(),
                 mount_path: "/cache".to_owned(),
                 identity_path: None,
             },
@@ -36,6 +38,7 @@ fn drive_mount_request_round_trips_mount_specs() {
 
     assert_eq!(decoded.request_id.as_deref(), Some("req-hotplug"));
     assert_eq!(decoded.payload.devices[0].drive_id, "hotplug_slot_0");
+    assert_eq!(decoded.payload.devices[0].device_path, "/dev/vdd");
     assert_eq!(
         decoded.payload.devices[0].identity_path.as_deref(),
         Some("/workspace/.tenant-identity")

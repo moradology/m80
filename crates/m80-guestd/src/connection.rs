@@ -22,6 +22,7 @@
 //! (single-flight invariant enforced by guestd's sequential accept loop).
 
 mod fileops;
+mod hotplug;
 mod metrics;
 mod protocol_log;
 mod pty;
@@ -126,6 +127,7 @@ where
         PAYLOAD_KIND_CANCEL_REQUEST => handle_cancel_no_exec(raw, &mut writer),
         PAYLOAD_KIND_SHUTDOWN_REQUEST => handle_shutdown(raw, &mut writer, received_at),
         kind if fileops::is_fileop_kind(kind) => fileops::handle_fileop(raw, reader, &mut writer),
+        kind if hotplug::is_hotplug_kind(kind) => hotplug::handle_hotplug(raw, reader, &mut writer),
         kind if metrics::is_metrics_kind(kind) => metrics::handle_metrics(raw, reader, &mut writer),
         other => {
             metrics::record_error();

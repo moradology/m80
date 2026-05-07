@@ -56,6 +56,7 @@ pub(crate) fn plan_preboot_puts(
                 image_kind,
                 kernel_kind,
                 config.boot_args.as_deref(),
+                include_workspace_drive,
             )),
             initrd_path: None,
         }),
@@ -131,20 +132,21 @@ fn boot_args_for(
     kind: ImageKind,
     kernel_kind: KernelKind,
     config_override: Option<&str>,
+    include_workspace_drive: bool,
 ) -> String {
-    if let Some(custom) = config_override {
-        return custom.to_owned();
-    }
-    match (kind, kernel_kind) {
-        (ImageKind::Ubuntu, KernelKind::Stock) => COMMON_BOOT_ARGS.to_owned(),
-        (ImageKind::Ubuntu, KernelKind::Stripped) => STRIPPED_BOOT_ARGS.to_owned(),
-        (ImageKind::Minimal, KernelKind::Stock) => {
+    let base = match (config_override, kind, kernel_kind) {
+        (Some(custom), _, _) => custom.to_owned(),
+        (None, ImageKind::Ubuntu, KernelKind::Stock) => COMMON_BOOT_ARGS.to_owned(),
+        (None, ImageKind::Ubuntu, KernelKind::Stripped) => STRIPPED_BOOT_ARGS.to_owned(),
+        (None, ImageKind::Minimal, KernelKind::Stock) => {
             format!("{COMMON_BOOT_ARGS} init=/m80-guestd")
         }
-        (ImageKind::Minimal, KernelKind::Stripped) => {
+        (None, ImageKind::Minimal, KernelKind::Stripped) => {
             format!("{STRIPPED_BOOT_ARGS} init=/m80-guestd")
         }
-    }
+    };
+    let workspace = u8::from(include_workspace_drive);
+    format!("{base} m80.workspace={workspace}")
 }
 
 #[cfg(test)]
@@ -195,7 +197,7 @@ mod tests {
         assert_eq!(boot.kernel_image_path, PathBuf::from("/kernel"));
         assert_eq!(
             boot.boot_args.as_deref(),
-            Some("console=ttyS0 reboot=k panic=-1 pci=off")
+            Some("console=ttyS0 reboot=k panic=-1 pci=off m80.workspace=0")
         );
         assert!(boot.initrd_path.is_none());
     }
@@ -306,32 +308,40 @@ mod tests {
     #[test]
     fn boot_args_ubuntu_stock() {
         assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off",
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None, false),
+            "console=ttyS0 reboot=k panic=-1 pci=off m80.workspace=0",
         );
     }
 
     #[test]
     fn boot_args_ubuntu_stripped() {
         assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1",
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None, false),
+            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 m80.workspace=0",
         );
     }
 
     #[test]
     fn boot_args_minimal_stock() {
         assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd",
+            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, false),
+            "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0",
         );
     }
 
     #[test]
     fn boot_args_minimal_stripped() {
         assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None),
-            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd",
+            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None, false),
+            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0",
+        );
+    }
+
+    #[test]
+    fn boot_args_mark_workspace_when_drive_is_present() {
+        assert_eq!(
+            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, true),
+            "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=1",
         );
     }
 
@@ -339,13 +349,18 @@ mod tests {
     fn boot_args_override_wins_over_kind_default() {
         let custom = "console=ttyS0 my=custom args";
         assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, Some(custom)),
-            custom,
+            boot_args_for(
+                ImageKind::Minimal,
+                KernelKind::Stripped,
+                Some(custom),
+                false
+            ),
+            "console=ttyS0 my=custom args m80.workspace=0",
             "explicit override must take precedence regardless of kind and kernel_kind"
         );
         assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, Some(custom)),
-            custom,
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, Some(custom), true),
+            "console=ttyS0 my=custom args m80.workspace=1",
         );
     }
 

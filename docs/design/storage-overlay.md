@@ -152,8 +152,8 @@ pivot_rootfs("/merged")?;
 
 // ── Phase 7: workspace ────────────────────────────────────────────────────
 // Step 10. Mount /dev/vdc at /workspace inside the new root.
-//          Only when a workspace drive is present.
-if Path::new("/dev/vdc").exists() {
+//          Only when m80.workspace=1 says a workspace drive is present.
+if cmdline_has("m80.workspace=1") && Path::new("/dev/vdc").exists() {
     fs::create_dir_all("/workspace")?;   // /workspace is provided by the base
     mount("/dev/vdc", "/workspace", "ext4", MsFlags::empty(), None)?;
 }

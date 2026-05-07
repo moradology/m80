@@ -23,6 +23,8 @@ pub const PAYLOAD_KIND_DRIVE_DETACH_RESPONSE: &str = "drive_detach_response";
 pub struct DriveMountSpec {
     /// Firecracker drive id, e.g. `hotplug_slot_0`.
     pub drive_id: String,
+    /// Guest block-device path, e.g. `/dev/vdd`.
+    pub device_path: String,
     /// Guest mount path, e.g. `/workspace`.
     pub mount_path: String,
     /// Optional guest path to read for opaque tenant identity bytes.
@@ -222,6 +224,7 @@ fn opt_hotplug_error_to_i32(value: Option<DriveHotplugError>) -> Option<i32> {
 fn mount_spec_to_wire(spec: DriveMountSpec) -> WireDriveMountSpec {
     WireDriveMountSpec {
         drive_id: spec.drive_id,
+        device_path: spec.device_path,
         mount_path: spec.mount_path,
         identity_path: spec.identity_path,
     }
@@ -230,6 +233,7 @@ fn mount_spec_to_wire(spec: DriveMountSpec) -> WireDriveMountSpec {
 fn mount_spec_from_wire(spec: WireDriveMountSpec) -> DriveMountSpec {
     DriveMountSpec {
         drive_id: spec.drive_id,
+        device_path: spec.device_path,
         mount_path: spec.mount_path,
         identity_path: spec.identity_path,
     }
