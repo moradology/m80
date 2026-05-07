@@ -83,6 +83,25 @@ struct WarmPoolState {
     filling: usize,
     leased: usize,
     discarded: usize,
+    /// The most recent slot-fill failure message, or `None` if the last fill
+    /// succeeded (or no fill has been attempted).
+    ///
+    /// # Staleness limitation
+    ///
+    /// This field is set when a fill attempt fails and cleared when a fill
+    /// attempt succeeds. It is NOT cleared by the passage of time. If no fill
+    /// has been attempted for an extended period — for example because
+    /// `target_ready` was reduced to zero, the pool is shutting down, or all
+    /// background fill workers have exited — the stored message may refer to an
+    /// error that occurred seconds or minutes ago and no longer reflects the
+    /// current state of the pool.
+    ///
+    /// `wait_for_ready` reports this value on timeout, so a caller may see a
+    /// stale error message that predates the timeout window. A future revision
+    /// (bead m80-r5-future) could add a timestamp alongside the message to let
+    /// callers distinguish "failure within the last N seconds" from an old
+    /// failure. For now, treat the value as "the most recent failure since last
+    /// success", not "the current state of the pool".
     last_fill_error: Option<String>,
     /// Number of consecutive slot-launch failures; reset to 0 on success.
     /// Used to index into `FILL_BACKOFF` to throttle retry threads.

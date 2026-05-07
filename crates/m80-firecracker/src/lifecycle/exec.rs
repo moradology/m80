@@ -273,6 +273,29 @@ impl RunningSandbox {
         let envelope = Envelope::with_request_id(req, request_id.clone());
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
         let started_at_unix_ms = unix_ms_now();
+        // NOTE — BufReader + cloned-stream concurrency model
+        //
+        // `channel` holds two handles to the same underlying UnixStream file
+        // descriptor:
+        //   - `channel.stream`     — the raw write side (via `send`)
+        //   - `channel.buf_reader` — a BufReader wrapping a `try_clone`d FD
+        //                            used for reading response frames
+        //
+        // `try_clone_sender` creates yet another clone of the write-side FD,
+        // handed to a background thread for out-of-band cancel frames.
+        //
+        // This is safe at the syscall level: Unix sockets are full-duplex, so
+        // concurrent reads and writes on clones of the same FD do not interfere
+        // at the kernel level. The BufReader's internal buffer holds bytes
+        // already consumed from the kernel; writes go directly to the kernel
+        // send buffer and do not touch the BufReader's state, so no corruption
+        // occurs.
+        //
+        // Frame ordering between the read loop and the cancel-sender thread is
+        // NOT synchronized here — that is the protocol's responsibility. Guestd
+        // processes the cancel request after the current command finishes
+        // reading its input, and responds with a `CancelResponse` frame read
+        // by the loop below.
         let _cancel_forwarder = match cancel_rx {
             Some(cancel_rx) => {
                 let mut sender = channel.try_clone_sender().map_err(FcError::Vsock)?;

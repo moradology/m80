@@ -195,6 +195,16 @@ impl Channel {
     }
 
     /// Receive one protobuf-framed [`Envelope`] from the channel.
+    ///
+    /// # Note — `OversizedPayload` leaves the connection unrecoverable
+    ///
+    /// If `read_frame` returns [`m80_proto::ProtoError::OversizedPayload`], the
+    /// `BufReader` may have partially consumed bytes from the malformed frame.
+    /// The internal buffer is now misaligned with respect to the frame boundary,
+    /// and subsequent calls to `recv` or `recv_raw` will produce garbage or
+    /// further errors. **Callers must not attempt to continue reading after this
+    /// error.** Drop the `Channel` and open a new connection. The contract:
+    /// `OversizedPayload` is unrecoverable on the same connection.
     pub fn recv<U>(&mut self) -> Result<Envelope<U>, VsockError>
     where
         U: Payload,
@@ -207,6 +217,9 @@ impl Channel {
     }
 
     /// Receive one protobuf frame without choosing the payload type first.
+    ///
+    /// See [`Channel::recv`] for the `OversizedPayload` unrecoverability
+    /// contract — the same applies here.
     pub fn recv_raw(&mut self) -> Result<RawEnvelope, VsockError> {
         let envelope = m80_proto::read_raw_frame(&mut self.buf_reader)?;
         if debug_wire::is_enabled("vsock") {
