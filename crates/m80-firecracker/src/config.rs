@@ -161,7 +161,7 @@ pub fn load_from_paths(
             std::collections::hash_map::Entry::Vacant(entry) => {
                 return Err(FcError::Config(ConfigError::InvalidValue {
                     field: "config override",
-                    reason: format!("unknown key {:?}", entry.key()),
+                    reason: format!("unknown config override key {:?}", entry.key()),
                 }));
             }
         }

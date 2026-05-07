@@ -114,7 +114,7 @@ pub fn cmd_run(
     if scratch_size == Some(0) {
         let e = FcError::Config(ConfigError::InvalidValue {
             field: "scratch_size",
-            reason: "must be greater than zero".into(),
+            reason: "--scratch-size must be greater than zero".into(),
         });
         return Ok(errors::render_error(&e, json));
     }
@@ -321,13 +321,13 @@ fn parse_env(values: Vec<String>) -> Result<Option<Vec<(String, String)>>, FcErr
         let Some((key, val)) = value.split_once('=') else {
             return Err(FcError::Config(ConfigError::InvalidValue {
                 field: "env",
-                reason: format!("must be KEY=VAL, got `{value}`"),
+                reason: format!("environment override must be KEY=VAL, got `{value}`"),
             }));
         };
         if key.is_empty() {
             return Err(FcError::Config(ConfigError::InvalidValue {
                 field: "env",
-                reason: "key must not be empty".into(),
+                reason: "environment override key must not be empty".into(),
             }));
         }
         pairs.push((key.to_owned(), val.to_owned()));
@@ -343,7 +343,10 @@ fn build_process_env(
     for key in secret_keys {
         validate_secret_env_key(&key)?;
         let value = std::env::var(&key).map_err(|_| {
-            FcError::Config(ConfigError::MissingField { field: "secret_env" })
+            FcError::Config(ConfigError::InvalidValue {
+                field: "secret_env",
+                reason: format!("secret env `{key}` is not set"),
+            })
         })?;
         pairs.push((key, value));
     }
@@ -354,13 +357,13 @@ fn validate_secret_env_key(key: &str) -> Result<(), FcError> {
     if key.is_empty() {
         return Err(FcError::Config(ConfigError::InvalidValue {
             field: "secret_env",
-            reason: "key must not be empty".into(),
+            reason: "secret env key must not be empty".into(),
         }));
     }
     if key.contains('=') {
         return Err(FcError::Config(ConfigError::InvalidValue {
             field: "secret_env",
-            reason: format!("key must be a variable name, got `{key}`"),
+            reason: format!("secret env key must be a variable name, got `{key}`"),
         }));
     }
     Ok(())
