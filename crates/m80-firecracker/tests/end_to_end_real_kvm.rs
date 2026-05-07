@@ -57,6 +57,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        daemonize: false,
         request_id: None,
     };
 
@@ -79,6 +80,75 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
     assert_eq!(response.exit_code, Some(0));
     let stdout = String::from_utf8_lossy(&response.stdout);
     assert!(stdout.trim() == "hello", "expected 'hello', got {stdout:?}");
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn end_to_end_real_kvm_daemonized_boot_exec_stop_delete() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+
+    let run_root = discovery.run_root.clone();
+
+    let config = m80_firecracker::BackendConfig {
+        discovery,
+        max_concurrent_vms: 1,
+        run_root: run_root.clone(),
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
+    };
+
+    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
+
+    let sandbox_config = m80_firecracker::SandboxConfig {
+        vm_id: Some("e2e-daemonized-test".into()),
+        workspace: None,
+        network: m80_firecracker::NetworkPolicy::NoEgress,
+        vcpu_count: Some(1),
+        mem_size_mib: Some(512),
+        boot_args: None,
+        overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
+        daemonize: true,
+        request_id: None,
+    };
+
+    let sandbox = backend.admit(sandbox_config).expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+    let run_dir = running.run_dir().to_path_buf();
+    let state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap())
+            .unwrap();
+    assert_eq!(state["jailer_pid"], 0);
+    let pid = state["firecracker_pid"].as_u64().expect("firecracker_pid") as u32;
+    assert!(
+        std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "daemonized firecracker pid must be live"
+    );
+
+    let response = running
+        .exec(m80_proto::ExecRequest {
+            program: "/bin/echo".into(),
+            args: vec!["daemonized".into()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        })
+        .expect("exec");
+
+    assert_eq!(response.status, m80_proto::ExecStatus::Completed);
+    assert_eq!(response.exit_code, Some(0));
+    let stdout = String::from_utf8_lossy(&response.stdout);
+    assert!(
+        stdout.trim() == "daemonized",
+        "expected 'daemonized', got {stdout:?}"
+    );
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
@@ -109,6 +179,7 @@ fn end_to_end_real_kvm_file_ops() {
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        daemonize: false,
         request_id: None,
     };
 
@@ -230,6 +301,7 @@ fn end_to_end_real_kvm_jailer_security_parity() {
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        daemonize: false,
         request_id: None,
     };
 
@@ -313,6 +385,7 @@ fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        daemonize: false,
         request_id: None,
     };
 

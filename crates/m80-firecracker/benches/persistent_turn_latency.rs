@@ -72,6 +72,7 @@ fn sandbox_config(vm_id: String) -> SandboxConfig {
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
         idle_timeout: None,
+        daemonize: false,
         request_id: None,
     }
 }

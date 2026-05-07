@@ -37,6 +37,7 @@ fn materialize_creates_jail_root_and_persists_plan() {
         sockets: Vec::new(),
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: false,
+        daemonize: false,
         netns_path: None,
         stdio_log: None,
     };
@@ -94,6 +95,7 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
             fsize: None,
         },
         new_pid_ns: true,
+        daemonize: false,
         netns_path: None,
         stdio_log: Some(run_dir.path().join("console.log")),
     };

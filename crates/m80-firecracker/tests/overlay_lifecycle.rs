@@ -72,6 +72,7 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
             idle_timeout: None,
+            daemonize: false,
             request_id: None,
         })
         .expect("admit");

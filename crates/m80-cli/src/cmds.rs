@@ -311,6 +311,7 @@ fn sandbox_config_for_run(
         boot_args: None,
         overlay_size_bytes: scratch_size.unwrap_or(512 * 1024 * 1024),
         idle_timeout: None,
+        daemonize: false,
         request_id: Some(request_id),
     }
 }

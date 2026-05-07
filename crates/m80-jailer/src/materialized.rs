@@ -59,10 +59,14 @@ impl MaterializedJail {
         // to the jailed firecracker binary. `--api-sock` is firecracker's
         // arg, not jailer's, so it goes on the right side of the separator.
         //
-        // We do NOT pass `--daemonize`. Without it, jailer `exec()`s into
+        // Without `--daemonize` or `--new-pid-ns`, jailer `exec()`s into
         // firecracker, so this `Child` handle's pid IS the firecracker pid.
-        // We never `wait()` on it (that would block until the VM exits).
-        // Drop on `JailedFirecracker` is responsible for kill+reap.
+        // We never `wait()` on that handle (that would block until the VM
+        // exits). Drop on `JailedFirecracker` is responsible for kill+reap.
+        //
+        // With `--daemonize` or `--new-pid-ns`, the official jailer parent
+        // exits after writing `firecracker.pid`; m80 records jailer_pid = 0 as
+        // the no-live-jailer-parent sentinel.
         //
         let (command_path, mut command) =
             if let Some(harden_bin) = &self.plan.config.jailer_harden_bin {
@@ -109,6 +113,10 @@ impl MaterializedJail {
 
         if self.plan.config.new_pid_ns {
             command.arg("--new-pid-ns");
+        }
+
+        if self.plan.config.daemonize {
+            command.arg("--daemonize");
         }
 
         if let Some(netns_path) = &self.plan.config.netns_path {
@@ -178,8 +186,12 @@ impl MaterializedJail {
             thread::sleep(Duration::from_millis(25));
         };
 
-        let recorded_jailer_pid = if self.plan.config.new_pid_ns {
-            wait_for_namespace_parent(&mut child)?
+        let recorded_jailer_pid = if self.plan.config.daemonize {
+            wait_for_detached_parent(&mut child, "daemonized jailer parent")?;
+            0
+        } else if self.plan.config.new_pid_ns {
+            wait_for_detached_parent(&mut child, "new-pid-ns parent")?;
+            0
         } else {
             // Do NOT wait on `child`: jailer `exec()`s into firecracker, so this
             // child handle's pid is the firecracker pid. Waiting blocks until
@@ -230,25 +242,34 @@ fn validate_netns_path(path: &Path) -> Result<(), JailerError> {
     Ok(())
 }
 
-fn wait_for_namespace_parent(child: &mut std::process::Child) -> Result<u32, JailerError> {
+fn wait_for_detached_parent(
+    child: &mut std::process::Child,
+    label: &'static str,
+) -> Result<(), JailerError> {
     let deadline = Instant::now() + Duration::from_secs(1);
     loop {
-        if child
-            .try_wait()
-            .map_err(|source| JailerError::Io {
-                path: PathBuf::from("jailer process"),
-                source,
-            })?
-            .is_some()
-        {
-            return Ok(0);
+        if let Some(status) = child.try_wait().map_err(|source| JailerError::Io {
+            path: PathBuf::from(label),
+            source,
+        })? {
+            if status.success() {
+                return Ok(());
+            }
+            return Err(JailerError::Io {
+                path: PathBuf::from(label),
+                source: io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("jailer parent exited with {status}"),
+                ),
+            });
         }
 
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(JailerError::FirecrackerPidTimeout {
-                jail_path: PathBuf::from("new-pid-ns parent did not exit"),
+            return Err(JailerError::Io {
+                path: PathBuf::from("jailer process"),
+                source: io::Error::new(io::ErrorKind::TimedOut, format!("{label} did not exit")),
             });
         }
 
@@ -423,6 +444,7 @@ echo fake-firecracker-stderr >&2
                 fsize: Some(4096),
             },
             new_pid_ns: false,
+            daemonize: false,
             netns_path: None,
             stdio_log: Some(stdio_log.clone()),
         };
@@ -506,6 +528,7 @@ fi
             sockets: Vec::new(),
             resource_limits: crate::types::ResourceLimits::default(),
             new_pid_ns: true,
+            daemonize: false,
             netns_path: None,
             stdio_log: None,
         };
@@ -525,6 +548,90 @@ fi
         let state = std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&state).unwrap();
         assert_eq!(parsed["jailer_pid"], 0);
+    }
+
+    #[test]
+    fn launch_with_daemonize_reaps_jailer_parent_and_records_daemon_pid() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("vm-daemon");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let jailer_bin = dir.path().join("fake-jailer-daemon.sh");
+        std::fs::write(
+            &jailer_bin,
+            r#"#!/bin/sh
+id=
+chroot_base=
+exec_file=
+daemonize=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --chroot-base-dir) chroot_base="$2"; shift 2 ;;
+    --exec-file) exec_file="$2"; shift 2 ;;
+    --daemonize) daemonize=1; shift ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec_base="${exec_file##*/}"
+jail_root="$chroot_base/$exec_base/$id/root"
+/bin/mkdir -p "$jail_root"
+if [ "$daemonize" -eq 1 ]; then
+  /bin/sleep 30 &
+  echo $! > "$jail_root/firecracker.pid"
+  exit 0
+fi
+echo $$ > "$jail_root/firecracker.pid"
+/bin/sleep 30
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&jailer_bin, perms).unwrap();
+
+        let cfg = JailerConfig {
+            jailer_bin,
+            jailer_harden_bin: None,
+            firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+            run_dir: run_dir.clone(),
+            uid: 3000,
+            gid: 3000,
+            bindings: Vec::new(),
+            sockets: Vec::new(),
+            resource_limits: crate::types::ResourceLimits::default(),
+            new_pid_ns: false,
+            daemonize: true,
+            netns_path: None,
+            stdio_log: None,
+        };
+        let plan = Plan::compute(&cfg).unwrap();
+        let jail_path = run_dir.join("firecracker").join("vm-daemon").join("root");
+        let jail = MaterializedJail {
+            plan,
+            jail_path,
+            bind_mounts: Vec::new(),
+            created_dirs: Vec::new(),
+            placeholder_files: Vec::new(),
+        };
+
+        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        assert_eq!(jailed.jailer_pid, 0);
+        assert!(
+            std::path::Path::new(&format!("/proc/{}", jailed.firecracker_pid)).exists(),
+            "daemonized firecracker pid must remain live after jailer parent exits"
+        );
+
+        let state = std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&state).unwrap();
+        assert_eq!(parsed["jailer_pid"], 0);
+        assert_eq!(parsed["firecracker_pid"], jailed.firecracker_pid);
+
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(jailed.firecracker_pid as i32),
+            nix::sys::signal::Signal::SIGKILL,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -577,6 +684,7 @@ echo $$ > "$jail_root/firecracker.pid"
             sockets: Vec::new(),
             resource_limits: crate::types::ResourceLimits::default(),
             new_pid_ns: false,
+            daemonize: false,
             netns_path: None,
             stdio_log: None,
         };

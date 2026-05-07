@@ -228,6 +228,10 @@ pub struct SandboxConfig {
     /// `stop()` the sandbox. `None` disables the watcher entirely — the VM
     /// runs until the caller explicitly stops it.
     pub idle_timeout: Option<Duration>,
+    /// Ask the official Firecracker jailer to double-fork before exec'ing
+    /// Firecracker. The API socket remains the management surface; m80 records
+    /// no live jailer parent PID for daemonized launches.
+    pub daemonize: bool,
     /// Opaque request id associated with the launch/lifecycle owner of this
     /// sandbox. CLI callers set this once per invocation so diagnostics and
     /// guest stderr can be grepped with the same token.
@@ -245,6 +249,7 @@ impl Default for SandboxConfig {
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
             idle_timeout: Some(Duration::from_secs(300)),
+            daemonize: false,
             request_id: None,
         }
     }

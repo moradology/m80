@@ -135,6 +135,11 @@ realizer is wired into launch. `JoinNetns { netns_path }` delegates namespace
 creation and policy to the caller: m80 validates the namespace path and passes it
 to Firecracker's official jailer as `--netns` before Firecracker is exec'd.
 
+`SandboxConfig::daemonize` asks the official Firecracker jailer to double-fork
+before exec'ing Firecracker. The Firecracker API socket remains the management
+surface; m80 records the daemon Firecracker PID and uses `jailer_pid = 0` as the
+no-live-jailer-parent sentinel.
+
 ### First-line machine shape
 
 `FIRST_LINE_VCPU_COUNT` and `FIRST_LINE_MEM_SIZE_MIB` name the default
@@ -377,7 +382,7 @@ Core types:
 - `Backend` — orchestration root: `new(BackendConfig)`, `admit()`, `recover_stale_run_root()`.
 - `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
 - `WarmLease` — single exec slot checked out from `WarmPool`.
-- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, etc.).
+- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, etc.).
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
 - `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.
 - `FcError` — exhaustive typed error for all phases.

@@ -162,6 +162,7 @@ impl Sandbox {
                     run_dir: &run_dir,
                     kernel: &backend_config.discovery.kernel,
                     storage: &storage,
+                    daemonize: self.config.daemonize,
                     netns_path: join_netns_path(&self.config.network),
                 })
             }
@@ -457,6 +458,7 @@ impl Sandbox {
                     run_dir: &run_dir,
                     kernel: &backend_config.discovery.kernel,
                     storage: &storage,
+                    daemonize: self.config.daemonize,
                     netns_path: join_netns_path(&self.config.network),
                 })
             }
@@ -708,6 +710,7 @@ struct JailerMaterializeInput<'a> {
     run_dir: &'a Path,
     kernel: &'a Path,
     storage: &'a StoragePrep,
+    daemonize: bool,
     netns_path: Option<&'a Path>,
 }
 
@@ -757,6 +760,7 @@ fn phase_4_jailer_materialize(
         sockets,
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: false,
+        daemonize: input.daemonize,
         netns_path: input.netns_path.map(Path::to_path_buf),
         stdio_log: Some(console_log_path(input.run_dir)),
     };

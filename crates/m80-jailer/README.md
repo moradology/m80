@@ -29,19 +29,19 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
 - `MaterializedJail::launch(...)` exec's `firecracker` inside the jail
-  via `m80-jailer-harden` and Firecracker's official jailer binary (no
-  `--daemonize`). The hardening wrapper first drops supplementary groups,
+  via `m80-jailer-harden` and Firecracker's official jailer binary. The hardening wrapper first drops supplementary groups,
   clears inheritable/ambient capabilities, sets `no_new_privs`, sets
   `PDEATHSIG=SIGKILL`, resets the signal mask, and sets umask `0077`, then
   execs the official jailer. m80 passes `--resource-limit no-file=<n>` on every launch, optionally passes
   `--resource-limit fsize=<bytes>`, clears the jailer process environment,
   gives stdin `/dev/null`, gives stdout/stderr either the configured log file
-  or `/dev/null`, can pass `--new-pid-ns`, and can pass `--netns <path>` after
-  validating the path with `O_NOFOLLOW` and `NSFS_MAGIC`. Without `new_pid_ns`, jailer
-  `exec()`s into firecracker, so `jailer_pid` and `firecracker_pid` refer to
-  the same OS process. With `new_pid_ns`, the official jailer writes the
-  Firecracker PID file and exits; m80 reaps that parent and records
-  `jailer_pid = 0` as the no-live-jailer sentinel.
+  or `/dev/null`, can pass `--new-pid-ns`, can pass `--daemonize`, and can pass
+  `--netns <path>` after validating the path with `O_NOFOLLOW` and `NSFS_MAGIC`.
+  Without `new_pid_ns` or `daemonize`, jailer `exec()`s into firecracker, so
+  `jailer_pid` and `firecracker_pid` refer to the same OS process. With
+  `new_pid_ns` or `daemonize`, the official jailer writes the Firecracker PID
+  file and exits; m80 reaps that parent and records `jailer_pid = 0` as the
+  no-live-jailer sentinel.
 - Mount namespace and `pivot_root` isolation, `/dev/{kvm,net/tun,urandom}`
   `mknod`, `/proc`/`/sys` omission, private copy of the Firecracker
   executable, startup environment clearing, and close-range hygiene are
@@ -65,7 +65,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
 
 ## Public surface
 
-- `JailerConfig`, including `resource_limits`, `new_pid_ns`, optional
+- `JailerConfig`, including `resource_limits`, `new_pid_ns`, `daemonize`, optional
   `netns_path`,
   `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
@@ -110,7 +110,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   expected jailer-hardcoded layout for several input combinations.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,
-  netns validation, and `new_pid_ns` parent reaping.
+  netns validation, `new_pid_ns` parent reaping, and daemonized parent reaping.
 - `tests/integration_root.rs` — ignored root-only smoke for real
   materialization and real Firecracker-jailer `--new-pid-ns` launch state
   (`jailer_pid = 0`, Firecracker `NSpid` ends in `1`, resource limit live,

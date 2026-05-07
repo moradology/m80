@@ -17,8 +17,8 @@ use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-use crate::error::{ConfigError, FcError, StopDisposition};
 use crate::diagnostics::phase_event;
+use crate::error::{ConfigError, FcError, StopDisposition};
 use crate::types::{RunningSandbox, StoppedSandbox};
 
 /// Per-attempt deadline for the shutdown vsock round-trip (open UDS,
@@ -496,6 +496,10 @@ pub(crate) fn kill_pid(pid: u32) -> Result<(), FcError> {
     use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;
 
+    if pid == 0 {
+        return Ok(());
+    }
+
     match kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {
         Ok(()) => Ok(()),
         Err(Errno::ESRCH) => Ok(()), // Process already gone.
@@ -518,5 +522,10 @@ mod tests {
     #[test]
     fn force_kill_targets_firecracker_and_jailer_without_guest_rpc() {
         assert_eq!(force_kill_disposition(), StopDisposition::HostForceKill);
+    }
+
+    #[test]
+    fn kill_pid_zero_is_no_live_jailer_sentinel() {
+        kill_pid(0).expect("pid zero sentinel is a no-op");
     }
 }

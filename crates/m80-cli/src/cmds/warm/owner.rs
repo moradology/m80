@@ -221,6 +221,7 @@ fn warm_sandbox_config(vm_id: impl Into<String>, egress: EgressMode) -> SandboxC
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,
+        daemonize: false,
         request_id: None,
     }
 }
