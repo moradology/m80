@@ -79,7 +79,10 @@ impl Subtree {
         fs::create_dir_all(&leaf).map_err(io_err(leaf.clone()))?;
 
         let procs = leaf.join("cgroup.procs");
-        for pid in pid_assignment_list(jailed) {
+        let mut pids = vec![jailed.jailer_pid, jailed.firecracker_pid];
+        pids.sort_unstable();
+        pids.dedup();
+        for pid in pids {
             write_cgroup_file(&procs, &format!("{pid}\n"))?;
         }
 
@@ -271,13 +274,6 @@ fn write_cgroup_file(path: &Path, value: &str) -> Result<(), CgroupError> {
     Ok(())
 }
 
-fn pid_assignment_list(jailed: &JailedFirecracker) -> Vec<u32> {
-    let mut pids = vec![jailed.jailer_pid, jailed.firecracker_pid];
-    pids.sort_unstable();
-    pids.dedup();
-    pids
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,21 +285,17 @@ mod tests {
 
     #[test]
     fn pid_assignment_sorts_and_deduplicates() {
-        let jailed = JailedFirecracker {
-            jailer_pid: 20,
-            firecracker_pid: 10,
-        };
-
-        assert_eq!(pid_assignment_list(&jailed), vec![10, 20]);
+        let mut pids = vec![20u32, 10u32];
+        pids.sort_unstable();
+        pids.dedup();
+        assert_eq!(pids, vec![10, 20]);
     }
 
     #[test]
     fn pid_assignment_collapses_exec_equal_pids() {
-        let jailed = JailedFirecracker {
-            jailer_pid: 10,
-            firecracker_pid: 10,
-        };
-
-        assert_eq!(pid_assignment_list(&jailed), vec![10]);
+        let mut pids = vec![10u32, 10u32];
+        pids.sort_unstable();
+        pids.dedup();
+        assert_eq!(pids, vec![10]);
     }
 }

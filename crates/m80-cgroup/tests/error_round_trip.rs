@@ -6,34 +6,40 @@ use std::path::PathBuf;
 use m80_cgroup::CgroupError;
 
 #[test]
-fn all_variants_display_distinct_messages() {
-    let variants: Vec<(&str, CgroupError)> = vec![
-        ("UnsupportedHostMode", CgroupError::UnsupportedHostMode),
-        (
-            "ControllerNotEnabled",
-            CgroupError::ControllerNotEnabled("cpu"),
-        ),
-        (
-            "Io",
-            CgroupError::Io {
-                path: PathBuf::from("/tmp/test"),
-                source: io::Error::from(io::ErrorKind::NotFound),
-            },
-        ),
-    ];
+fn unsupported_host_mode_display_non_empty() {
+    assert!(!CgroupError::UnsupportedHostMode.to_string().is_empty());
+}
 
-    let messages: Vec<String> = variants.iter().map(|(_, e)| e.to_string()).collect();
-    // All messages non-empty.
-    for (name, msg) in variants.iter().zip(messages.iter()) {
-        assert!(!msg.is_empty(), "{} display must not be empty", name.0);
-    }
-    // All messages distinct.
+#[test]
+fn controller_not_enabled_display_non_empty() {
+    assert!(!CgroupError::ControllerNotEnabled("cpu").to_string().is_empty());
+}
+
+#[test]
+fn io_error_display_non_empty() {
+    let e = CgroupError::Io {
+        path: PathBuf::from("/tmp/test"),
+        source: io::Error::from(io::ErrorKind::NotFound),
+    };
+    assert!(!e.to_string().is_empty());
+}
+
+#[test]
+fn all_variants_display_distinct_messages() {
+    let messages = [
+        CgroupError::UnsupportedHostMode.to_string(),
+        CgroupError::ControllerNotEnabled("cpu").to_string(),
+        CgroupError::Io {
+            path: PathBuf::from("/tmp/test"),
+            source: io::Error::from(io::ErrorKind::NotFound),
+        }
+        .to_string(),
+    ];
     for i in 0..messages.len() {
         for j in (i + 1)..messages.len() {
             assert_ne!(
                 messages[i], messages[j],
-                "variants {} and {} must have distinct display messages",
-                variants[i].0, variants[j].0
+                "variants at index {i} and {j} must have distinct display messages"
             );
         }
     }
