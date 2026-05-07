@@ -27,7 +27,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use m80_proto::{
-    CancelResponse, CancelRequest, CancelStatus, Envelope, ExecRequest, PAYLOAD_KIND_CANCEL_RESPONSE,
+    CancelRequest, CancelResponse, CancelStatus, Envelope, ExecRequest,
+    PAYLOAD_KIND_CANCEL_RESPONSE,
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
@@ -74,6 +75,7 @@ fn launch_vm(
             boot_args: None,
             overlay_size_bytes: 256 * 1024 * 1024,
             idle_timeout: None,
+            daemonize: false,
             request_id: None,
         })
         .expect("admit");
