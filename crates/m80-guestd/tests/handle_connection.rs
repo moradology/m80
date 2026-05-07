@@ -6,8 +6,8 @@
 use std::io::Cursor;
 
 use m80_proto::{
-    read_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest,
-    ExecResponse, ExecStatus, PAYLOAD_KIND_CANCEL_ACK,
+    read_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope, ExecRequest,
+    ExecResponse, ExecStatus, PAYLOAD_KIND_CANCEL_RESPONSE,
 };
 
 fn make_request(
@@ -52,7 +52,7 @@ fn read_response(bytes: &[u8]) -> Envelope<ExecResponse> {
     read_frame(&mut cursor).expect("read_frame in test")
 }
 
-fn read_cancel_ack(bytes: &[u8]) -> Envelope<CancelAck> {
+fn read_cancel_ack(bytes: &[u8]) -> Envelope<CancelResponse> {
     let mut cursor = Cursor::new(bytes);
     read_frame(&mut cursor).expect("read_frame in test")
 }
@@ -139,7 +139,7 @@ fn exec_request_id_round_trips() {
 
 /// Cancel while a long-running exec is in flight: the cancel frame is
 /// pre-buffered after the exec frame. The handler reads exec, spawns sleep,
-/// polls the buffer, sees the cancel, SIGKILLs, and replies with CancelAck.
+/// polls the buffer, sees the cancel, SIGKILLs, and replies with CancelResponse.
 #[test]
 fn cancel_mid_exec_returns_cancelled_ack() {
     let mut input = request_frame(
@@ -151,7 +151,7 @@ fn cancel_mid_exec_returns_cancelled_ack() {
     let out = run_handler(input);
     let ack = read_cancel_ack(&out);
 
-    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_ACK);
+    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack.payload.request_id, "req-cancel-1");
     assert_eq!(ack.payload.status, CancelStatus::Cancelled);
 }
@@ -269,7 +269,7 @@ fn cancel_wrong_request_id_returns_already_exited() {
     let remaining = &out[{
         // Advance past the ack frame length.
         let mut cur = Cursor::new(&out);
-        let _: Envelope<CancelAck> = read_frame(&mut cur).unwrap();
+        let _: Envelope<CancelResponse> = read_frame(&mut cur).unwrap();
         cur.position() as usize
     }..];
     let exec_resp: Envelope<ExecResponse> = {

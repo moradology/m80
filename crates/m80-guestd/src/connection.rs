@@ -13,7 +13,7 @@
 //!    reads the child process-group id from `Arc<Mutex<Option<u32>>>`, sends
 //!    SIGTERM followed by bounded SIGKILL to that process group, waits for the
 //!    child-wait thread to confirm reap, and replies with
-//!    `CancelAck`. The child-wait thread's pending
+//!    `CancelResponse`. The child-wait thread's pending
 //!    `ExecResponse` is then discarded — it is never written to the wire.
 //! 3. If the child exits before a cancel arrives the `ExecResponse` is written
 //!    normally and the cancel path is never exercised.
@@ -35,7 +35,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
-    read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest,
+    read_raw_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope, ExecRequest,
     ExecResponse, ExecStatus, ExecTiming, Payload, RawEnvelope, ShutdownAction, ShutdownRequest,
     ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST,
     PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
@@ -267,7 +267,7 @@ where
                 error_response(format!("{e:#}").into_bytes(), timing)
             }
         };
-        // Ignore send error: the main thread may have already sent CancelAck
+        // Ignore send error: the main thread may have already sent CancelResponse
         // and moved on.
         let _ = child_tx.send(ChildResult::Done(response));
     });
@@ -374,7 +374,7 @@ where
                             // Wait for the child thread to finish reaping.
                             let _ = child_rx.recv();
 
-                            let ack = CancelAck {
+                            let ack = CancelResponse {
                                 request_id: cancel_req.request_id,
                                 status,
                             };
@@ -398,7 +398,7 @@ where
                         } else {
                             // Wrong request_id — process either already exited or
                             // this is a stale cancel from the host.
-                            let ack = CancelAck {
+                            let ack = CancelResponse {
                                 request_id: cancel_req.request_id,
                                 status: CancelStatus::AlreadyExited,
                             };
@@ -516,7 +516,7 @@ fn handle_cancel_no_exec<W: Write>(
             return Ok(ConnectionOutcome::Continue);
         }
     };
-    let ack = CancelAck {
+    let ack = CancelResponse {
         request_id: cancel_req.request_id,
         status: CancelStatus::AlreadyExited,
     };
@@ -665,7 +665,7 @@ fn exec_request_with_cancel(
         (ExecStatus::TimedOut, None)
     } else if cancelled {
         // Cancelled path: response is produced but discarded by the cancel
-        // handler (which has already sent CancelAck). Use Cancelled status
+        // handler (which has already sent CancelResponse). Use Cancelled status
         // so the thread's response is internally consistent.
         (ExecStatus::Cancelled, None)
     } else {
@@ -768,7 +768,7 @@ fn signal_process_group(
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pgid.as_raw()), signal)
 }
 
-fn cancel_status_from_group_signals(
+pub(crate) fn cancel_status_from_group_signals(
     term: Result<(), nix::errno::Errno>,
     kill: Result<(), nix::errno::Errno>,
 ) -> CancelStatus {
@@ -780,6 +780,26 @@ fn cancel_status_from_group_signals(
         (_, Err(e)) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
         _ => CancelStatus::Cancelled,
     }
+}
+
+/// Compute an `Instant` deadline from an optional timeout in milliseconds,
+/// clamped to [`MAX_TIMEOUT_MS`]. Shared by streaming and PTY exec paths.
+pub(crate) fn timeout_deadline(timeout_ms: Option<u64>) -> std::time::Instant {
+    let effective_ms = timeout_ms.unwrap_or(MAX_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
+    std::time::Instant::now() + Duration::from_millis(effective_ms)
+}
+
+/// Write a `CancelResponse` frame and flush the writer.
+pub(crate) fn write_cancel_ack<W: Write>(
+    writer: &mut W,
+    request_id: String,
+    status: CancelStatus,
+) -> Result<(), m80_proto::ProtoError> {
+    let ack = CancelResponse { request_id, status };
+    let env = Envelope::new(ack);
+    write_frame(writer, &env)?;
+    writer.flush()?;
+    Ok(())
 }
 
 pub(crate) fn failed_timing(received_at: u64) -> ExecTiming {

@@ -1,4 +1,4 @@
-//! Wire-level cancellation contract: cancel envelope, guestd handler, CancelAck.
+//! Wire-level cancellation contract: cancel envelope, guestd handler, CancelResponse.
 //!
 //! All tests are `#[ignore]` and require a KVM-capable host with Firecracker +
 //! jailer binaries and a built m80 guest image — run with:
@@ -15,7 +15,7 @@
 //! sends both the `exec_request` and the `cancel_request` frames before
 //! reading any response. The kernel buffers both frames; guestd reads the
 //! exec frame, spawns the process, polls the buffer, finds the cancel, SIGKILLs,
-//! and replies with `CancelAck`. This faithfully exercises the guestd cancel
+//! and replies with `CancelResponse`. This faithfully exercises the guestd cancel
 //! handler without requiring two threads or a Drop-guard (both Wave-4 concerns).
 //!
 //! The UDS path is derived from the jailer layout:
@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use m80_proto::{
-    CancelAck, CancelRequest, CancelStatus, Envelope, ExecRequest, PAYLOAD_KIND_CANCEL_ACK,
+    CancelResponse, CancelRequest, CancelStatus, Envelope, ExecRequest, PAYLOAD_KIND_CANCEL_RESPONSE,
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
@@ -97,7 +97,7 @@ fn open_raw_channel(
 // ── Scenario 1: cancel kills a running process ────────────────────────────────
 
 /// Boot VM → send `sleep 60` exec + cancel on the same channel → assert
-/// `CancelAck { status: Cancelled }` arrives, total elapsed << 60 s.
+/// `CancelResponse { status: Cancelled }` arrives, total elapsed << 60 s.
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn cancel_kills_running_process() {
@@ -130,13 +130,13 @@ fn cancel_kills_running_process() {
     });
     channel.send(&cancel_env).expect("send cancel_request");
 
-    // Read the CancelAck response.
+    // Read the CancelResponse response.
     let start = Instant::now();
-    let ack_env: Envelope<CancelAck> = channel.recv().expect("recv CancelAck");
+    let ack_env: Envelope<CancelResponse> = channel.recv().expect("recv CancelResponse");
     let elapsed = start.elapsed();
 
     assert_eq!(
-        ack_env.kind, PAYLOAD_KIND_CANCEL_ACK,
+        ack_env.kind, PAYLOAD_KIND_CANCEL_RESPONSE,
         "expected cancel_ack envelope"
     );
     assert_eq!(ack_env.payload.request_id, "cancel-test-req-1");
@@ -153,7 +153,7 @@ fn cancel_kills_running_process() {
 // ── Scenario 2: cancel after process already exited ───────────────────────────
 
 /// Boot VM → exec `/bin/true` → wait for it to complete → send cancel →
-/// assert `CancelAck { status: AlreadyExited }`.
+/// assert `CancelResponse { status: AlreadyExited }`.
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn cancel_after_exit_returns_already_exited() {
@@ -184,8 +184,8 @@ fn cancel_after_exit_returns_already_exited() {
     });
     channel.send(&cancel_env).expect("send cancel_request");
 
-    let ack_env: Envelope<CancelAck> = channel.recv().expect("recv CancelAck");
-    assert_eq!(ack_env.kind, PAYLOAD_KIND_CANCEL_ACK);
+    let ack_env: Envelope<CancelResponse> = channel.recv().expect("recv CancelResponse");
+    assert_eq!(ack_env.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack_env.payload.request_id, "cancel-test-req-2");
     assert_eq!(ack_env.payload.status, CancelStatus::AlreadyExited);
 
@@ -196,7 +196,7 @@ fn cancel_after_exit_returns_already_exited() {
 // ── Scenario 3: wrong request_id returns AlreadyExited ────────────────────────
 
 /// Boot VM → send `sleep 60` exec + cancel with BOGUS request_id on same
-/// channel → assert `CancelAck { status: AlreadyExited }` (not Cancelled).
+/// channel → assert `CancelResponse { status: AlreadyExited }` (not Cancelled).
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn wrong_request_id_returns_already_exited() {
@@ -229,9 +229,9 @@ fn wrong_request_id_returns_already_exited() {
     });
     channel.send(&cancel_env).expect("send cancel_request");
 
-    // The first response should be the CancelAck with AlreadyExited (wrong ID).
-    let ack_env: Envelope<CancelAck> = channel.recv().expect("recv CancelAck");
-    assert_eq!(ack_env.kind, PAYLOAD_KIND_CANCEL_ACK);
+    // The first response should be the CancelResponse with AlreadyExited (wrong ID).
+    let ack_env: Envelope<CancelResponse> = channel.recv().expect("recv CancelResponse");
+    assert_eq!(ack_env.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack_env.payload.request_id, "bogus-req-id");
     assert_eq!(ack_env.payload.status, CancelStatus::AlreadyExited);
 

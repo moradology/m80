@@ -16,8 +16,6 @@
 
 mod error;
 mod framing;
-#[cfg(test)]
-mod test_helpers;
 mod types;
 mod version;
 pub mod wire;
@@ -25,7 +23,7 @@ pub mod wire;
 pub use error::ProtoError;
 pub use framing::{read_frame, read_raw_frame, write_frame, write_raw_frame, Frame};
 pub use types::{
-    CancelAck, CancelRequest, CancelStatus, DirEntry, Envelope, ExecExit, ExecRequest,
+    CancelResponse, CancelRequest, CancelStatus, DirEntry, Envelope, ExecExit, ExecRequest,
     ExecResponse, ExecStatus, ExecStderr, ExecStdout, ExecTiming, FileError, FileKind,
     FileListRequest, FileListResponse, FileReadChunk, FileReadRequest, FileReadResponse,
     FileRemoveRequest, FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse,
@@ -34,7 +32,7 @@ pub use types::{
     GuestCpuMetrics, GuestMemMetrics, HandshakeMessage, MetricsRequest, MetricsResponse, Payload,
     PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,
     PtySize, ShutdownAction, ShutdownRequest, ShutdownResponse, FILE_READ_LIMIT_DEFAULT,
-    PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_EXIT,
+    PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_EXIT,
     PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_EXEC_STDERR,
     PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_FILE_LIST_REQUEST, PAYLOAD_KIND_FILE_LIST_RESPONSE,
     PAYLOAD_KIND_FILE_READ_CHUNK, PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_READ_RESPONSE,

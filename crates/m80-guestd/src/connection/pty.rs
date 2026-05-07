@@ -13,16 +13,27 @@ use m80_proto::{
 };
 use portable_pty::{native_pty_system, ExitStatus as PortableExitStatus};
 
-use super::{protocol_log, write_payload_frame};
+use super::{protocol_log, write_cancel_ack, write_payload_frame};
 use process::{
     command_builder, join_output_thread, signal_pty_child, spawn_output_thread, terminal_status,
     terminate_pty_child, timeout_deadline, to_portable_size, PtyFrame,
 };
-use wire::{poll_host_frame, write_cancel_ack, write_pty_failed, HostFrame};
+use wire::{poll_host_frame, write_pty_failed, HostFrame};
 
 use crate::guest_log::{self, GuestLogPhase};
 
 use super::{unix_ms_now, ConnectionOutcome, POLL_INTERVAL};
+
+/// Drop the PTY writer, receiver, and output thread, then return Continue.
+/// Used at every early-exit point inside `handle_pty_exec`.
+macro_rules! abort_pty {
+    ($pty_writer:expr, $rx:expr, $output_thread:expr) => {{
+        drop($pty_writer.take());
+        drop($rx);
+        join_output_thread(&mut $output_thread);
+        return Ok(ConnectionOutcome::Continue);
+    }};
+}
 
 pub(super) fn handle_pty_exec<R, W>(
     raw: RawEnvelope,
@@ -151,10 +162,7 @@ where
                             format!("pty output frame write failed: {e}"),
                         );
                         let _ = terminate_pty_child(child.as_mut());
-                        drop(pty_writer.take());
-                        drop(rx);
-                        join_output_thread(&mut output_thread);
-                        return Ok(ConnectionOutcome::Continue);
+                        abort_pty!(pty_writer, rx, output_thread);
                     }
                 }
                 Err(TryRecvError::Empty) => {}
@@ -181,10 +189,7 @@ where
                         format!("pty child wait polling failed: {e}"),
                     );
                     let _ = terminate_pty_child(child.as_mut());
-                    drop(pty_writer.take());
-                    drop(rx);
-                    join_output_thread(&mut output_thread);
-                    return Ok(ConnectionOutcome::Continue);
+                    abort_pty!(pty_writer, rx, output_thread);
                 }
             }
         }
@@ -206,10 +211,7 @@ where
                 if exit_status.is_none() {
                     let _ = terminate_pty_child(child.as_mut());
                 }
-                drop(pty_writer.take());
-                drop(rx);
-                join_output_thread(&mut output_thread);
-                return Ok(ConnectionOutcome::Continue);
+                abort_pty!(pty_writer, rx, output_thread);
             }
             HostFrame::Input(input) => {
                 progressed = true;
@@ -222,10 +224,7 @@ where
                     if exit_status.is_none() {
                         let _ = terminate_pty_child(child.as_mut());
                     }
-                    drop(pty_writer.take());
-                    drop(rx);
-                    join_output_thread(&mut output_thread);
-                    return Ok(ConnectionOutcome::Continue);
+                    abort_pty!(pty_writer, rx, output_thread);
                 }
                 if let Some(handle) = pty_writer.as_mut() {
                     total_input_bytes = total_input_bytes.saturating_add(input.bytes.len() as u64);
@@ -236,10 +235,7 @@ where
                             format!("pty input write failed: {e}"),
                         );
                         let _ = terminate_pty_child(child.as_mut());
-                        drop(pty_writer.take());
-                        drop(rx);
-                        join_output_thread(&mut output_thread);
-                        return Ok(ConnectionOutcome::Continue);
+                        abort_pty!(pty_writer, rx, output_thread);
                     }
                 }
             }
@@ -254,10 +250,7 @@ where
                     if exit_status.is_none() {
                         let _ = terminate_pty_child(child.as_mut());
                     }
-                    drop(pty_writer.take());
-                    drop(rx);
-                    join_output_thread(&mut output_thread);
-                    return Ok(ConnectionOutcome::Continue);
+                    abort_pty!(pty_writer, rx, output_thread);
                 }
                 if let Err(e) = pair.master.resize(to_portable_size(resize.size)) {
                     guest_log::warn(
@@ -278,10 +271,7 @@ where
                     if exit_status.is_none() {
                         let _ = terminate_pty_child(child.as_mut());
                     }
-                    drop(pty_writer.take());
-                    drop(rx);
-                    join_output_thread(&mut output_thread);
-                    return Ok(ConnectionOutcome::Continue);
+                    abort_pty!(pty_writer, rx, output_thread);
                 }
                 match control.event {
                     PtyControlEvent::Eof => {
@@ -306,10 +296,7 @@ where
                         .is_err()
                     {
                         let _ = terminate_pty_child(child.as_mut());
-                        drop(pty_writer.take());
-                        drop(rx);
-                        join_output_thread(&mut output_thread);
-                        return Ok(ConnectionOutcome::Continue);
+                        abort_pty!(pty_writer, rx, output_thread);
                     }
                     continue;
                 }
@@ -318,10 +305,7 @@ where
                     if write_cancel_ack(writer, cancel_req.request_id, CancelStatus::AlreadyExited)
                         .is_err()
                     {
-                        drop(pty_writer.take());
-                        drop(rx);
-                        join_output_thread(&mut output_thread);
-                        return Ok(ConnectionOutcome::Continue);
+                        abort_pty!(pty_writer, rx, output_thread);
                     }
                     continue;
                 }

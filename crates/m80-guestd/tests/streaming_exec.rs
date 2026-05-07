@@ -6,8 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope,
-    ExecExit, ExecRequest, ExecStatus, ExecStderr, ExecStdout, PAYLOAD_KIND_CANCEL_ACK,
+    read_frame, read_raw_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope,
+    ExecExit, ExecRequest, ExecStatus, ExecStderr, ExecStdout, PAYLOAD_KIND_CANCEL_RESPONSE,
     PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
 };
 
@@ -179,8 +179,8 @@ fn streaming_cancel_request_kills_child_and_returns_ack() {
     )
     .expect("handle streaming cancel");
 
-    let ack: Envelope<CancelAck> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
-    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_ACK);
+    let ack: Envelope<CancelResponse> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
+    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack.payload.request_id, "stream-cancel");
     assert_eq!(ack.payload.status, CancelStatus::Cancelled);
 }
@@ -207,8 +207,8 @@ fn streaming_cancel_request_kills_shell_spawned_grandchild() {
     .expect("handle streaming cancel");
     let elapsed = start.elapsed();
 
-    let ack: Envelope<CancelAck> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
-    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_ACK);
+    let ack: Envelope<CancelResponse> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
+    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack.payload.request_id, "stream-cancel-grandchild");
     assert_eq!(ack.payload.status, CancelStatus::Cancelled);
     assert!(

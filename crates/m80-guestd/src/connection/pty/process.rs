@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::Read;
 use std::sync::mpsc::SyncSender;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use m80_proto::{CancelStatus, ExecStatus, PtyRequest, PtySignal as ProtoPtySignal, PtySize};
 use portable_pty::{
@@ -12,7 +12,8 @@ use portable_pty::{
     PtySize as PortablePtySize,
 };
 
-use super::super::MAX_TIMEOUT_MS;
+use super::super::cancel_status_from_group_signals;
+pub(super) use super::super::timeout_deadline;
 
 const OUTPUT_CHUNK_BYTES: usize = 4096;
 const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
@@ -86,11 +87,6 @@ pub(super) fn join_output_thread(output_thread: &mut Option<JoinHandle<u64>>) ->
         .unwrap_or(0)
 }
 
-pub(super) fn timeout_deadline(timeout_ms: Option<u64>) -> Instant {
-    let effective_ms = timeout_ms.unwrap_or(MAX_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
-    Instant::now() + Duration::from_millis(effective_ms)
-}
-
 pub(super) fn terminal_status(
     timed_out: bool,
     exit_status: Option<PortableExitStatus>,
@@ -162,20 +158,6 @@ fn cancel_status_from_single_signal(result: Result<(), nix::errno::Errno>) -> Ca
         Ok(()) => CancelStatus::Cancelled,
         Err(nix::errno::Errno::ESRCH) => CancelStatus::AlreadyExited,
         Err(_) => CancelStatus::Failed,
-    }
-}
-
-fn cancel_status_from_group_signals(
-    term: Result<(), nix::errno::Errno>,
-    kill: Result<(), nix::errno::Errno>,
-) -> CancelStatus {
-    match (term, kill) {
-        (Err(nix::errno::Errno::ESRCH), Err(nix::errno::Errno::ESRCH)) => {
-            CancelStatus::AlreadyExited
-        }
-        (Err(e), _) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
-        (_, Err(e)) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
-        _ => CancelStatus::Cancelled,
     }
 }
 

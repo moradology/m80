@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 
 use m80_observability::Phase;
 use m80_proto::{
-    CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
+    CancelResponse, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
     ExecStatus, ExecStderr, ExecStdout, ExecTiming, Payload, PtyControl, PtyExit, PtyInput,
-    PtyOutput, PtyRequest, PtyResize, RawEnvelope, PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_EXEC_EXIT,
+    PtyOutput, PtyRequest, PtyResize, RawEnvelope, PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_EXEC_EXIT,
     PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_PTY_EXIT,
     PAYLOAD_KIND_PTY_OUTPUT,
 };
@@ -20,7 +20,7 @@ use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 use crate::error::FcError;
 use crate::lifecycle::monotonic_ns;
 use crate::runroot::unix_ms_now;
-use crate::timing::phase_event;
+use crate::diagnostics::phase_event;
 use crate::types::{ExecChunk, PtyHostEvent, PtyOutputChunk, RunningSandbox};
 
 const EXEC_OPEN_SEND_RETRIES: usize = 25;
@@ -66,30 +66,19 @@ impl RunningSandbox {
         let mut stderr = Vec::new();
         let mut truncated = false;
 
-        let exit = match cancel_rx {
-            Some(cancel_rx) => self.exec_streaming_inner(req, Some(cancel_rx), |chunk| {
-                match chunk {
-                    ExecChunk::Stdout { bytes, .. } => {
-                        truncated |= append_capped(&mut stdout, &bytes);
-                    }
-                    ExecChunk::Stderr { bytes, .. } => {
-                        truncated |= append_capped(&mut stderr, &bytes);
-                    }
+        let mut buffer_chunk = |chunk: ExecChunk| -> Result<(), FcError> {
+            match chunk {
+                ExecChunk::Stdout { bytes, .. } => {
+                    truncated |= append_capped(&mut stdout, &bytes);
                 }
-                Ok(())
-            })?,
-            None => self.exec_streaming(req, |chunk| {
-                match chunk {
-                    ExecChunk::Stdout { bytes, .. } => {
-                        truncated |= append_capped(&mut stdout, &bytes);
-                    }
-                    ExecChunk::Stderr { bytes, .. } => {
-                        truncated |= append_capped(&mut stderr, &bytes);
-                    }
+                ExecChunk::Stderr { bytes, .. } => {
+                    truncated |= append_capped(&mut stderr, &bytes);
                 }
-                Ok(())
-            })?,
+            }
+            Ok(())
         };
+
+        let exit = self.exec_streaming_inner(req, cancel_rx, &mut buffer_chunk)?;
 
         Ok(ExecResponse {
             status: exit.status,
@@ -219,10 +208,9 @@ impl RunningSandbox {
                     );
                     return Ok(exit);
                 }
-                PAYLOAD_KIND_CANCEL_ACK => {
-                    let ack = decode_frame::<CancelAck>(frame)?;
-                    match ack.status {
-                        CancelStatus::Cancelled => {
+                PAYLOAD_KIND_CANCEL_RESPONSE => {
+                    match decode_cancel_ack(frame, "pty")? {
+                        CancelResponseDisposition::Cancelled => {
                             phase_event("pty_cancelled", &self.vm_id, t.elapsed());
                             self.last_activity_ns
                                 .store(monotonic_ns(), Ordering::Relaxed);
@@ -235,13 +223,8 @@ impl RunningSandbox {
                             );
                             return Ok(cancelled_pty_exit(started_at_unix_ms, output_total));
                         }
-                        CancelStatus::AlreadyExited => continue,
-                        CancelStatus::Failed => {
-                            return Err(FcError::Config(format!(
-                                "guest failed to cancel pty request {}",
-                                ack.request_id
-                            )));
-                        }
+                        CancelResponseDisposition::AlreadyExited => continue,
+                        CancelResponseDisposition::Failed(msg) => return Err(FcError::Config(msg)),
                     }
                 }
                 other => {
@@ -393,10 +376,9 @@ impl RunningSandbox {
                     );
                     return Ok(exit);
                 }
-                PAYLOAD_KIND_CANCEL_ACK => {
-                    let ack = decode_frame::<CancelAck>(frame)?;
-                    match ack.status {
-                        CancelStatus::Cancelled => {
+                PAYLOAD_KIND_CANCEL_RESPONSE => {
+                    match decode_cancel_ack(frame, "exec")? {
+                        CancelResponseDisposition::Cancelled => {
                             phase_event("exec_cancelled", &self.vm_id, t.elapsed());
                             self.last_activity_ns
                                 .store(monotonic_ns(), Ordering::Relaxed);
@@ -413,15 +395,8 @@ impl RunningSandbox {
                                 stderr_total,
                             ));
                         }
-                        CancelStatus::AlreadyExited => {
-                            continue;
-                        }
-                        CancelStatus::Failed => {
-                            return Err(FcError::Config(format!(
-                                "guest failed to cancel exec request {}",
-                                ack.request_id
-                            )));
-                        }
+                        CancelResponseDisposition::AlreadyExited => continue,
+                        CancelResponseDisposition::Failed(msg) => return Err(FcError::Config(msg)),
                     }
                 }
                 other => {
@@ -470,6 +445,29 @@ impl Drop for PtyEventForwarder {
             let _ = handle.join();
         }
     }
+}
+
+/// Result of decoding a `CANCEL_ACK` frame.
+enum CancelResponseDisposition {
+    /// Guest confirmed the child was cancelled; caller should return a cancel exit.
+    Cancelled,
+    /// Guest says the child already exited; caller should keep reading frames.
+    AlreadyExited,
+    /// Guest failed to cancel; caller should return an error.
+    Failed(String),
+}
+
+/// Decode a raw frame as `CancelResponse` and classify its status.
+fn decode_cancel_ack(frame: RawEnvelope, request_kind: &str) -> Result<CancelResponseDisposition, FcError> {
+    let ack = decode_frame::<CancelResponse>(frame)?;
+    Ok(match ack.status {
+        CancelStatus::Cancelled => CancelResponseDisposition::Cancelled,
+        CancelStatus::AlreadyExited => CancelResponseDisposition::AlreadyExited,
+        CancelStatus::Failed => CancelResponseDisposition::Failed(format!(
+            "guest failed to cancel {request_kind} request {}",
+            ack.request_id
+        )),
+    })
 }
 
 fn decode_frame<T: Payload>(frame: RawEnvelope) -> Result<T, FcError> {

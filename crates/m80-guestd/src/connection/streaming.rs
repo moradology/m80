@@ -7,15 +7,16 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_raw_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecExit, ExecRequest,
-    ExecStatus, ExecStderr, ExecStdout, ExecTiming, PAYLOAD_KIND_CANCEL_REQUEST,
+    read_raw_frame, CancelRequest, CancelStatus, ExecExit, ExecRequest, ExecStatus, ExecStderr,
+    ExecStdout, ExecTiming, PAYLOAD_KIND_CANCEL_REQUEST,
 };
 
 use crate::guest_log::{self, GuestLogPhase};
 
 use super::{
-    build_child_command, failed_timing, protocol_log, unix_ms_now, write_payload_frame,
-    ConnectionOutcome, MAX_TIMEOUT_MS, POLL_INTERVAL,
+    build_child_command, cancel_status_from_group_signals, failed_timing, protocol_log,
+    timeout_deadline, unix_ms_now, write_cancel_ack, write_payload_frame, ConnectionOutcome,
+    POLL_INTERVAL,
 };
 
 const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
@@ -320,19 +321,6 @@ fn write_stream_frame<W: Write>(
     }
 }
 
-fn write_cancel_ack<W: Write>(
-    writer: &mut W,
-    request_id: String,
-    status: CancelStatus,
-) -> Result<(), m80_proto::ProtoError> {
-    let ack = CancelAck { request_id, status };
-    let env = Envelope::new(ack);
-    use m80_proto::write_frame;
-    write_frame(writer, &env)?;
-    writer.flush()?;
-    Ok(())
-}
-
 fn write_spawn_failed<W: Write>(
     writer: &mut W,
     request_id: &Option<String>,
@@ -415,11 +403,6 @@ where
     }
 }
 
-fn timeout_deadline(timeout_ms: Option<u64>) -> Instant {
-    let effective_ms = timeout_ms.unwrap_or(MAX_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
-    Instant::now() + Duration::from_millis(effective_ms)
-}
-
 fn terminal_status(timed_out: bool, exit_status: Option<ExitStatus>) -> (ExecStatus, Option<i32>) {
     if timed_out {
         return (ExecStatus::TimedOut, None);
@@ -448,20 +431,6 @@ fn signal_process_group(
     signal: nix::sys::signal::Signal,
 ) -> Result<(), nix::errno::Errno> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pgid.as_raw()), signal)
-}
-
-fn cancel_status_from_group_signals(
-    term: Result<(), nix::errno::Errno>,
-    kill: Result<(), nix::errno::Errno>,
-) -> CancelStatus {
-    match (term, kill) {
-        (Err(nix::errno::Errno::ESRCH), Err(nix::errno::Errno::ESRCH)) => {
-            CancelStatus::AlreadyExited
-        }
-        (Err(e), _) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
-        (_, Err(e)) if e != nix::errno::Errno::ESRCH => CancelStatus::Failed,
-        _ => CancelStatus::Cancelled,
-    }
 }
 
 #[cfg(test)]

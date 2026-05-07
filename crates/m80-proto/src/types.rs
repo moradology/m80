@@ -51,8 +51,8 @@ pub const PAYLOAD_KIND_SHUTDOWN_RESPONSE: &str = "shutdown_response";
 /// Wire `kind` value for an envelope carrying [`CancelRequest`].
 pub const PAYLOAD_KIND_CANCEL_REQUEST: &str = "cancel_request";
 
-/// Wire `kind` value for an envelope carrying [`CancelAck`].
-pub const PAYLOAD_KIND_CANCEL_ACK: &str = "cancel_ack";
+/// Wire `kind` value for an envelope carrying [`CancelResponse`].
+pub const PAYLOAD_KIND_CANCEL_RESPONSE: &str = "cancel_response";
 
 /// Marker trait for types that have a canonical protobuf wire `kind`.
 pub trait Payload: Sized {
@@ -220,10 +220,10 @@ pub struct CancelRequest {
     pub request_id: String,
 }
 
-/// Cancel acknowledgement — guest → host. Sent after the guest has
+/// Cancel response — guest → host. Sent after the guest has
 /// processed a [`CancelRequest`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CancelAck {
+pub struct CancelResponse {
     /// Echoed back from [`CancelRequest::request_id`].
     pub request_id: String,
     /// Outcome of the cancellation attempt.
@@ -258,8 +258,39 @@ mod tests {
 
     use std::io::Cursor;
 
-    use crate::test_helpers::{sample_request, sample_response};
     use crate::{read_frame, write_frame};
+
+    fn sample_timing() -> ExecTiming {
+        ExecTiming {
+            spawned_at_unix_ms: 1_000_000,
+            exited_at_unix_ms: 1_000_100,
+            spawn_ms: 10,
+            run_ms: 90,
+        }
+    }
+
+    fn sample_request() -> ExecRequest {
+        ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), "echo hi".into()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        }
+    }
+
+    fn sample_response() -> ExecResponse {
+        ExecResponse {
+            status: ExecStatus::Completed,
+            exit_code: Some(0),
+            stdout: b"hello\n".to_vec(),
+            stderr: Vec::new(),
+            truncated: None,
+            timing: sample_timing(),
+        }
+    }
 
     #[test]
     fn envelope_new_stamps_protocol_version_and_kind() {
@@ -325,41 +356,41 @@ mod tests {
 
     #[test]
     fn cancel_ack_cancelled_round_trip() {
-        let ack = CancelAck {
+        let ack = CancelResponse {
             request_id: "req-42".into(),
             status: CancelStatus::Cancelled,
         };
         let env = Envelope::new(ack);
-        assert_eq!(env.kind, PAYLOAD_KIND_CANCEL_ACK);
+        assert_eq!(env.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
         let mut buf = Vec::new();
         write_frame(&mut buf, &env).unwrap();
-        let back: Envelope<CancelAck> = read_frame(&mut Cursor::new(buf)).unwrap();
+        let back: Envelope<CancelResponse> = read_frame(&mut Cursor::new(buf)).unwrap();
         assert_eq!(back.payload.status, CancelStatus::Cancelled);
     }
 
     #[test]
     fn cancel_ack_already_exited_round_trip() {
-        let ack = CancelAck {
+        let ack = CancelResponse {
             request_id: "req-7".into(),
             status: CancelStatus::AlreadyExited,
         };
         let env = Envelope::new(ack);
         let mut buf = Vec::new();
         write_frame(&mut buf, &env).unwrap();
-        let back: Envelope<CancelAck> = read_frame(&mut Cursor::new(buf)).unwrap();
+        let back: Envelope<CancelResponse> = read_frame(&mut Cursor::new(buf)).unwrap();
         assert_eq!(back.payload.status, CancelStatus::AlreadyExited);
     }
 
     #[test]
     fn cancel_ack_failed_round_trip() {
-        let ack = CancelAck {
+        let ack = CancelResponse {
             request_id: "req-9".into(),
             status: CancelStatus::Failed,
         };
         let env = Envelope::new(ack);
         let mut buf = Vec::new();
         write_frame(&mut buf, &env).unwrap();
-        let back: Envelope<CancelAck> = read_frame(&mut Cursor::new(buf)).unwrap();
+        let back: Envelope<CancelResponse> = read_frame(&mut Cursor::new(buf)).unwrap();
         assert_eq!(back.payload.status, CancelStatus::Failed);
     }
 }

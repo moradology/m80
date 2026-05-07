@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use tracing::warn;
 
-use m80_jailer::recover_from_run_dir;
+use m80_jailer::inspect_run_dir;
 
 use crate::error::FcError;
 use crate::runroot::{run_dir_liveness, RunDirLiveness};
@@ -112,8 +112,8 @@ impl Backend {
                 RunDirLiveness::Dead => {}
             }
 
-            match recover_from_run_dir(&subdir) {
-                Ok(m80_jailer::RecoveryDecision::LiveJail {
+            match inspect_run_dir(&subdir) {
+                Ok(m80_jailer::InspectionDecision::LiveJail {
                     jailer_pid,
                     firecracker_pid,
                 }) => {
@@ -129,7 +129,7 @@ impl Backend {
                     kill_orphan_pids(jailer_pid, firecracker_pid);
                     remove_run_dir(&subdir);
                 }
-                Ok(m80_jailer::RecoveryDecision::OrphanJail { .. }) => {
+                Ok(m80_jailer::InspectionDecision::OrphanJail { .. }) => {
                     // `reap_steps` from the plan file is ignored —
                     // `remove_run_dir` reads `/proc/self/mountinfo` for the
                     // authoritative mount list, which covers cases the
@@ -137,14 +137,14 @@ impl Backend {
                     // binary, etc.).
                     remove_run_dir(&subdir);
                 }
-                Ok(m80_jailer::RecoveryDecision::NoJail) => {
+                Ok(m80_jailer::InspectionDecision::NoJail) => {
                     remove_run_dir(&subdir);
                 }
                 Err(e) => {
                     warn!(
                         path = %subdir.display(),
                         err = %e,
-                        "recover_stale_run_root: recover_from_run_dir failed"
+                        "recover_stale_run_root: inspect_run_dir failed"
                     );
                 }
             }

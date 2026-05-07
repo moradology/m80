@@ -17,9 +17,9 @@ use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-use crate::cleanup::StopDisposition;
+use crate::error::StopDisposition;
 use crate::error::FcError;
-use crate::timing::phase_event;
+use crate::diagnostics::phase_event;
 use crate::types::{RunningSandbox, StoppedSandbox};
 
 /// Per-attempt deadline for the shutdown vsock round-trip (open UDS,
@@ -67,7 +67,7 @@ impl RunningSandbox {
         )?;
         let fc_socket = self.jail.jail_path.join("firecracker.sock");
         snapshot_capture(CaptureRequest {
-            fc_socket: &fc_socket,
+            fc_socket,
             paths: snapshot_bind.paths.clone(),
             kind: SnapshotKind::Full,
         })
@@ -92,14 +92,12 @@ impl RunningSandbox {
     ///    into the returned `StoppedSandbox`.
     pub fn stop(mut self) -> Result<StoppedSandbox, FcError> {
         let run_root = self.backend.config.run_root.clone();
-        let vm_id_for_event = self.vm_id.clone();
-        let request_id_for_event = self.request_id.clone();
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
         crate::diagnostics::record_owned(
             &mut self.diagnostics,
             Phase::Stop,
-            &vm_id_for_event,
-            request_id_for_event.as_deref(),
+            &self.vm_id,
+            self.request_id.as_deref(),
             "stop started",
         );
 
@@ -108,13 +106,12 @@ impl RunningSandbox {
         self.watcher_stop.store(true, Ordering::Relaxed);
 
         // Phase 2: bounded_stop.
-        let t = Instant::now();
+        let t_bounded = Instant::now();
         let exit_reason = bounded_stop(self.firecracker.firecracker_pid, &vsock_uds)?;
-        phase_event("stop_bounded", &vm_id_for_event, t.elapsed());
 
         // Phase 4: release. Destructure to drop everything except what moves
         // into StoppedSandbox.
-        let t = Instant::now();
+        let t_release = Instant::now();
         let RunningSandbox {
             vm_id,
             request_id,
@@ -136,17 +133,18 @@ impl RunningSandbox {
         } = self;
         let mut diagnostics = diagnostics;
 
+        phase_event("stop_bounded", &vm_id, t_bounded.elapsed());
         // Join the watcher thread after destructuring (the stop flag is already
         // set above; the thread will exit on its next wake interval).
         if let Some(handle) = watcher_thread {
             let _ = handle.join();
         }
         unmount_snapshot_bind(snapshot_mount.as_deref());
-        phase_event("stop_release", &vm_id_for_event, t.elapsed());
+        phase_event("stop_release", &vm_id, t_release.elapsed());
         crate::diagnostics::record_stop_reason(
             &mut diagnostics,
-            &vm_id_for_event,
-            request_id_for_event.as_deref(),
+            &vm_id,
+            request_id.as_deref(),
             "stop complete",
             exit_reason,
         );
@@ -169,13 +167,11 @@ impl RunningSandbox {
     /// further via [`StoppedSandbox::preserve_for_triage`].
     pub fn force_kill(mut self) -> Result<StoppedSandbox, FcError> {
         let run_root = self.backend.config.run_root.clone();
-        let vm_id_for_event = self.vm_id.clone();
-        let request_id_for_event = self.request_id.clone();
         crate::diagnostics::record_owned(
             &mut self.diagnostics,
             Phase::Stop,
-            &vm_id_for_event,
-            request_id_for_event.as_deref(),
+            &self.vm_id,
+            self.request_id.as_deref(),
             "force kill started",
         );
 
@@ -219,8 +215,8 @@ impl RunningSandbox {
         unmount_snapshot_bind(snapshot_mount.as_deref());
         crate::diagnostics::record_stop_reason(
             &mut diagnostics,
-            &vm_id_for_event,
-            request_id_for_event.as_deref(),
+            &vm_id,
+            request_id.as_deref(),
             "force kill complete",
             ExitReason::ForceKill,
         );

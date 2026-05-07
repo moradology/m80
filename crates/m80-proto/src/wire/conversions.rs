@@ -2,7 +2,7 @@
 
 use crate::error::ProtoError;
 use crate::types::{
-    CancelAck, CancelRequest, CancelStatus, DirEntry, ExecExit, ExecRequest, ExecResponse,
+    CancelResponse, CancelRequest, CancelStatus, DirEntry, ExecExit, ExecRequest, ExecResponse,
     ExecStatus, ExecStderr, ExecStdout, ExecTiming, FileError, FileKind, FileListRequest,
     FileListResponse, FileReadChunk, FileReadRequest, FileReadResponse, FileRemoveRequest,
     FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
@@ -10,7 +10,7 @@ use crate::types::{
     FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, GuestCpuMetrics, GuestMemMetrics,
     HandshakeMessage, MetricsRequest, MetricsResponse, Payload, PtyControl, PtyControlEvent,
     PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal, PtySize, ShutdownAction,
-    ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_CANCEL_REQUEST,
+    ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_CANCEL_REQUEST,
     PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE,
     PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_FILE_LIST_REQUEST,
     PAYLOAD_KIND_FILE_LIST_RESPONSE, PAYLOAD_KIND_FILE_READ_CHUNK, PAYLOAD_KIND_FILE_READ_REQUEST,
@@ -267,7 +267,7 @@ fn payload_name(payload: &WirePayload) -> &'static str {
         WirePayload::ShutdownRequest(_) => "shutdown_request",
         WirePayload::ShutdownResponse(_) => "shutdown_response",
         WirePayload::CancelRequest(_) => "cancel_request",
-        WirePayload::CancelAck(_) => "cancel_ack",
+        WirePayload::CancelAck(_) => "cancel_response",
         WirePayload::MetricsRequest(_) => "metrics_request",
         WirePayload::MetricsResponse(_) => "metrics_response",
         WirePayload::FileReadRequest(_) => "file_read_request",
@@ -392,15 +392,15 @@ payload_impl!(
 );
 
 payload_impl!(
-    CancelAck,
-    PAYLOAD_KIND_CANCEL_ACK,
+    CancelResponse,
+    PAYLOAD_KIND_CANCEL_RESPONSE,
     CancelAck,
     WireCancelAck,
     |v| WireCancelAck {
         request_id: v.request_id,
         status: cancel_status_to_i32(v.status),
     },
-    |v| Ok(CancelAck {
+    |v| Ok(CancelResponse {
         request_id: v.request_id,
         status: cancel_status_from_i32(v.status)?,
     })

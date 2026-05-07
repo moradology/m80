@@ -38,9 +38,9 @@ use crate::layout::{
     scratch_image_path, vsock_socket_path,
 };
 use crate::lifecycle::{bind_snapshot_parent_into_jail, monotonic_ns, spawn_idle_watcher};
-use crate::preboot::{apply_preboot_puts, build_preboot_puts};
+use crate::preboot::{apply_preboot_puts, plan_preboot_puts};
 use crate::runroot::write_ownership_lock;
-use crate::timing::{phase, phase_event};
+use crate::diagnostics::{phase, phase_event};
 use crate::types::{
     CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
 };
@@ -721,7 +721,7 @@ fn phase_11_rest_puts(
     image_kind: m80_image_manifest::ImageKind,
     kernel_kind: m80_image_manifest::KernelKind,
 ) -> Result<(), FcError> {
-    let puts = build_preboot_puts(
+    let puts = plan_preboot_puts(
         config,
         vm_id,
         image_kind,

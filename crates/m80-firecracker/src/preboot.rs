@@ -40,7 +40,7 @@ pub(crate) enum PrebootPut {
 }
 
 /// Build the ordered Firecracker resource PUTs for a cold boot.
-pub(crate) fn build_preboot_puts(
+pub(crate) fn plan_preboot_puts(
     config: &SandboxConfig,
     vm_id: &str,
     image_kind: ImageKind,
@@ -138,7 +138,7 @@ mod tests {
     use super::*;
 
     fn plan_without_workspace() -> Vec<PrebootPut> {
-        build_preboot_puts(
+        plan_preboot_puts(
             &SandboxConfig::default(),
             "vm-alpha",
             ImageKind::Ubuntu,
@@ -155,7 +155,7 @@ mod tests {
             ..SandboxConfig::default()
         };
 
-        let puts = build_preboot_puts(
+        let puts = plan_preboot_puts(
             &config,
             "vm-alpha",
             ImageKind::Ubuntu,
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn scratch_drive_put_with_workspace_id() {
-        let puts = build_preboot_puts(
+        let puts = plan_preboot_puts(
             &SandboxConfig::default(),
             "vm-alpha",
             ImageKind::Ubuntu,

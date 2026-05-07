@@ -3,9 +3,9 @@
 use std::io::{BufRead, Write};
 
 use m80_proto::{
-    read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope, ExecStatus,
-    PtyControl, PtyExit, PtyInput, PtyOutput, PtyResize, PAYLOAD_KIND_CANCEL_REQUEST,
-    PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_INPUT, PAYLOAD_KIND_PTY_RESIZE,
+    read_raw_frame, CancelRequest, ExecStatus, PtyControl, PtyExit, PtyInput, PtyOutput, PtyResize,
+    PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_INPUT,
+    PAYLOAD_KIND_PTY_RESIZE,
 };
 
 use super::super::{failed_timing, protocol_log, write_payload_frame};
@@ -110,18 +110,6 @@ where
         }
         Err(_) => HostFrame::Disconnect,
     }
-}
-
-pub(super) fn write_cancel_ack<W: Write>(
-    writer: &mut W,
-    request_id: String,
-    status: CancelStatus,
-) -> Result<(), m80_proto::ProtoError> {
-    let ack = CancelAck { request_id, status };
-    let env = Envelope::new(ack);
-    write_frame(writer, &env)?;
-    writer.flush()?;
-    Ok(())
 }
 
 pub(super) fn write_pty_failed<W: Write>(

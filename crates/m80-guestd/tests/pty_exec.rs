@@ -4,9 +4,9 @@ use std::io::{BufRead, BufReader, Cursor};
 use std::time::{Duration, Instant};
 
 use m80_proto::{
-    read_frame, read_raw_frame, write_frame, CancelAck, CancelRequest, CancelStatus, Envelope,
+    read_frame, read_raw_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope,
     ExecStatus, PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize,
-    PtySize, PAYLOAD_KIND_CANCEL_ACK, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_OUTPUT,
+    PtySize, PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_OUTPUT,
 };
 
 fn pty_size(rows: u16, cols: u16) -> PtySize {
@@ -277,9 +277,9 @@ fn pty_cancel_request_kills_child_and_returns_ack() {
     input.extend(cancel_frame("pty-cancel"));
 
     let out = run_pty_with_disconnect(input);
-    let ack: Envelope<CancelAck> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
+    let ack: Envelope<CancelResponse> = read_frame(&mut Cursor::new(&out)).expect("read cancel ack");
 
-    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_ACK);
+    assert_eq!(ack.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
     assert_eq!(ack.payload.request_id, "pty-cancel");
     assert_eq!(ack.payload.status, CancelStatus::Cancelled);
 }

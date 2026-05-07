@@ -9,6 +9,16 @@ use crate::wire::{decode_raw_envelope, encode_raw_envelope, RawEnvelope};
 
 const LENGTH_PREFIX_BYTES: usize = 4;
 
+fn check_size(n: usize) -> Result<(), ProtoError> {
+    if n > MAX_FRAME_BYTES {
+        return Err(ProtoError::OversizedPayload {
+            size: n,
+            limit: MAX_FRAME_BYTES,
+        });
+    }
+    Ok(())
+}
+
 /// A value that can be encoded as one m80 protobuf frame.
 pub trait Frame: Sized {
     /// Convert this value into a raw envelope for writing.
@@ -59,12 +69,7 @@ where
         .read_exact(&mut prefix)
         .map_err(map_read_exact_error)?;
     let size = u32::from_be_bytes(prefix) as usize;
-    if size > MAX_FRAME_BYTES {
-        return Err(ProtoError::OversizedPayload {
-            size,
-            limit: MAX_FRAME_BYTES,
-        });
-    }
+    check_size(size)?;
 
     let mut body = vec![0u8; size];
     reader.read_exact(&mut body).map_err(map_read_exact_error)?;
@@ -93,12 +98,7 @@ where
     W: Write,
 {
     let body = encode_raw_envelope(envelope)?;
-    if body.len() > MAX_FRAME_BYTES {
-        return Err(ProtoError::OversizedPayload {
-            size: body.len(),
-            limit: MAX_FRAME_BYTES,
-        });
-    }
+    check_size(body.len())?;
     let size = u32::try_from(body.len())
         .map_err(|_| ProtoError::EncodeFailed("frame length does not fit in u32".into()))?;
     writer.write_all(&size.to_be_bytes())?;

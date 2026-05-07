@@ -48,7 +48,6 @@ impl RawEnvelope {
 
     /// Decode the raw payload into the requested m80 payload type.
     pub fn decode<T: Payload>(self) -> Result<crate::types::Envelope<T>, ProtoError> {
-        let payload = T::from_wire(self.payload)?;
         if self.kind != T::KIND {
             return Err(ProtoError::MalformedPayload(format!(
                 "payload kind mismatch: envelope kind {:?}, decoded kind {:?}",
@@ -56,6 +55,7 @@ impl RawEnvelope {
                 T::KIND
             )));
         }
+        let payload = T::from_wire(self.payload)?;
         Ok(crate::types::Envelope {
             version: self.version,
             kind: self.kind,
