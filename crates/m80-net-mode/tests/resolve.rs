@@ -41,19 +41,26 @@ fn allow_outbound_with_one_cidr_round_trips_through_resolver() {
     );
 }
 
+fn assert_policy_round_trips(policy: NetworkPolicy) {
+    let json = serde_json::to_string(&policy).unwrap();
+    let back: NetworkPolicy = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, policy);
+}
+
 /// `#[serde(tag = "kind", rename_all = "snake_case")]` survives round-trip
-/// for both variants. The serde framework itself is tested upstream; this
+/// for `NoEgress`. The serde framework itself is tested upstream; this test
+/// pins the attribute application.
+#[test]
+fn network_policy_no_egress_round_trips() {
+    assert_policy_round_trips(NetworkPolicy::NoEgress);
+}
+
+/// `#[serde(tag = "kind", rename_all = "snake_case")]` survives round-trip
+/// for `AllowOutbound`. The serde framework itself is tested upstream; this
 /// test pins the attribute application.
 #[test]
-fn network_policy_round_trips_through_serde_json() {
-    for policy in [
-        NetworkPolicy::NoEgress,
-        NetworkPolicy::AllowOutbound {
-            exceptions: vec!["192.168.1.0/24".parse().unwrap()],
-        },
-    ] {
-        let json = serde_json::to_string(&policy).unwrap();
-        let back: NetworkPolicy = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, policy);
-    }
+fn network_policy_allow_outbound_round_trips() {
+    assert_policy_round_trips(NetworkPolicy::AllowOutbound {
+        exceptions: vec!["192.168.1.0/24".parse().unwrap()],
+    });
 }
