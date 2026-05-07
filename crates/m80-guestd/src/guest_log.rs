@@ -166,7 +166,7 @@ impl BootTimer {
 }
 
 /// Format one machine-readable boot milestone line.
-pub fn format_boot_milestone_line(name: &str, elapsed_us: u128, delta_us: u128) -> String {
+pub(crate) fn format_boot_milestone_line(name: &str, elapsed_us: u128, delta_us: u128) -> String {
     format!("M80_GUEST_BOOT name={name} elapsed_us={elapsed_us} delta_us={delta_us}")
 }
 

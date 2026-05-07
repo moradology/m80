@@ -16,15 +16,15 @@ use guest_log::{BootTimer, GuestLogPhase};
 
 /// Parsed command-line arguments.
 #[derive(Debug)]
-pub struct Args {
+pub(crate) struct Args {
     /// Override the default vsock port (testing only).
-    pub port: Option<u32>,
+    pub(crate) port: Option<u32>,
     /// Print version and exit.
-    pub print_version: bool,
+    pub(crate) print_version: bool,
 }
 
 /// Hand-rolled argv parser. Walks `std::env::args()` without pulling in clap.
-pub fn parse_args() -> anyhow::Result<Args> {
+pub(crate) fn parse_args() -> anyhow::Result<Args> {
     let mut args = Args {
         port: None,
         print_version: false,
@@ -49,7 +49,7 @@ pub fn parse_args() -> anyhow::Result<Args> {
 }
 
 /// Main run loop. Prints version and returns, or binds vsock and serves.
-pub fn run(args: Args) -> anyhow::Result<()> {
+pub(crate) fn run(args: Args) -> anyhow::Result<()> {
     let mut boot_timer = BootTimer::start();
     boot_timer.mark("process_start");
 
