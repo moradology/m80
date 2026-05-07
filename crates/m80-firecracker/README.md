@@ -50,6 +50,15 @@ same VM. Each call opens a fresh vsock connection to guestd, performs exactly
 one request/response exchange, and closes that connection; the VM and its
 writable overlay remain alive for the next call.
 
+`SandboxConfig::one_shot = true` changes that reuse contract. The first user
+exec or PTY request marks the running VM consumed before the guest request is
+sent, and later exec attempts return `FcError::OneShotConsumed`. Warm-pool ready
+probes are internal health checks and do not consume the one-shot token. When a
+`WarmLease` holds a one-shot sandbox, its exec methods run the workload, then
+force-kill/delete the VM and trigger pool refill before returning success. This
+lets conveyor-belt callers hand off one workload without external cleanup
+state.
+
 `RunningSandbox::exec_streaming(&mut self, ..., on_chunk)` is the real-time
 stdout/stderr form. It forces `ExecRequest::streaming = true`, invokes
 `on_chunk` for each `ExecChunk::Stdout` / `ExecChunk::Stderr` frame, and
@@ -199,7 +208,7 @@ Public surface:
 | `WarmLease::exec_with_request_id` | Delegates one exec while temporarily stamping the leased slot with the caller request id. |
 | `WarmLease::exec_streaming` | Delegates one streaming exec to the leased `RunningSandbox`, preserving stdout/stderr chunks before terminal exit. |
 | `WarmLease::exec_streaming_with_request_id` | Streaming exec plus temporary caller request-id stamping. |
-| `WarmLease::discard` | Kills and deletes the slot, then starts background refill. `Drop` performs the same discard best-effort. |
+| `WarmLease::discard` | Kills and deletes the slot, then starts background refill. `Drop` performs the same discard best-effort. One-shot leases perform this after the first exec. |
 
 The first implementation never infers reuse from liveness, process
 handles, socket existence, metrics, or clean-looking directories.
@@ -284,6 +293,8 @@ allocation costs zero disk bytes at creation.
 `Some(300s)`). See "Idle timeout" below.
 `SandboxConfig::request_id` controls diagnostics and wire-frame correlation
 for callers that already minted an opaque request id.
+`SandboxConfig::one_shot` controls destroy-after-use behavior for warm conveyor
+slots. It defaults to `false`.
 
 ### Preboot REST wiring
 
@@ -412,7 +423,7 @@ Core types:
 - `Backend` — orchestration root: `new(BackendConfig)`, `admit()`, `recover_stale_run_root()`.
 - `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
 - `WarmLease` — single exec slot checked out from `WarmPool`.
-- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, etc.).
+- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, one-shot mode, etc.).
 - `HotplugDriveAttach` — host-side request to attach and verify one preallocated drive slot.
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
 - `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.

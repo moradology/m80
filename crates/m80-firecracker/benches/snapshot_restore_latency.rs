@@ -106,6 +106,7 @@ fn sandbox_config(vm_id: String) -> SandboxConfig {
         daemonize: false,
         request_id: None,
         preallocated_drive_slots: 0,
+        one_shot: false,
     }
 }
 

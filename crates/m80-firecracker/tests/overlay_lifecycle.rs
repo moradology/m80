@@ -75,6 +75,7 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
             daemonize: false,
             request_id: None,
             preallocated_drive_slots: 0,
+            one_shot: false,
         })
         .expect("admit");
     let mut running = sandbox.launch().expect("launch");

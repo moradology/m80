@@ -1,16 +1,19 @@
 //! Warm-pool allocator built on top of snapshot restore.
 
+mod lease;
+
 use std::collections::VecDeque;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use m80_proto::{ExecExit, ExecRequest, ExecResponse, ExecStatus};
+use m80_proto::{ExecRequest, ExecStatus};
 use m80_snapshot::SnapshotPaths;
 
 use crate::error::{ConfigError, FcError};
-use crate::types::{Backend, ExecChunk, RunningSandbox, SandboxConfig};
+use crate::types::{Backend, RunningSandbox, SandboxConfig};
+
+pub use lease::WarmLease;
 
 const RESTORED_SLOT_SETTLE: Duration = Duration::from_secs(1);
 
@@ -184,10 +187,7 @@ impl WarmPool {
             sandbox
         };
         self.inner.start_background_fill();
-        Ok(WarmLease {
-            sandbox: Some(sandbox),
-            pool: Arc::clone(&self.inner),
-        })
+        Ok(WarmLease::new(sandbox, Arc::clone(&self.inner)))
     }
 
     /// Wait until at least `min_ready` slots are ready.
@@ -330,126 +330,14 @@ impl WarmPoolInner {
     }
 }
 
-/// A leased warm-pool slot.
-pub struct WarmLease {
-    sandbox: Option<RunningSandbox>,
-    pool: Arc<WarmPoolInner>,
-}
-
-impl WarmLease {
-    /// Run one exec request on the leased slot.
-    pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
-        self.sandbox
-            .as_mut()
-            .expect("warm lease holds sandbox until discard")
-            .exec(req)
-    }
-
-    /// Run one exec request on the leased slot with a caller-supplied opaque
-    /// request id for wire frames and diagnostics.
-    pub fn exec_with_request_id(
-        &mut self,
-        req: ExecRequest,
-        request_id: impl Into<String>,
-    ) -> Result<ExecResponse, FcError> {
-        let sandbox = self
-            .sandbox
-            .as_mut()
-            .expect("warm lease holds sandbox until discard");
-        with_sandbox_request_id(sandbox, request_id.into(), |sandbox| sandbox.exec(req))
-    }
-
-    /// Run one exec request on the leased slot and forward stdout/stderr
-    /// chunks as guestd emits them.
-    pub fn exec_streaming(
-        &mut self,
-        req: ExecRequest,
-        on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
-    ) -> Result<ExecExit, FcError> {
-        self.sandbox
-            .as_mut()
-            .expect("warm lease holds sandbox until discard")
-            .exec_streaming(req, on_chunk)
-    }
-
-    /// Run one streaming exec request on the leased slot with a caller-supplied
-    /// opaque request id for wire frames and diagnostics.
-    pub fn exec_streaming_with_request_id(
-        &mut self,
-        req: ExecRequest,
-        request_id: impl Into<String>,
-        on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
-    ) -> Result<ExecExit, FcError> {
-        let sandbox = self
-            .sandbox
-            .as_mut()
-            .expect("warm lease holds sandbox until discard");
-        with_sandbox_request_id(sandbox, request_id.into(), |sandbox| {
-            sandbox.exec_streaming(req, on_chunk)
-        })
-    }
-
-    /// VM id for the leased slot.
-    pub fn vm_id(&self) -> &str {
-        self.sandbox
-            .as_ref()
-            .expect("warm lease holds sandbox until discard")
-            .vm_id()
-    }
-
-    /// Run directory for the leased slot. Useful for diagnostics before a
-    /// failed lease is discarded.
-    pub fn run_dir(&self) -> &Path {
-        self.sandbox
-            .as_ref()
-            .expect("warm lease holds sandbox until discard")
-            .run_dir()
-    }
-
-    /// Consume the lease, force-kill the slot, delete its run-dir, and allow
-    /// the pool to refill a replacement.
-    pub fn discard(mut self) -> Result<(), FcError> {
-        let sandbox = self.sandbox.take();
-        let result = if let Some(sandbox) = sandbox {
-            discard_sandbox(sandbox)
-        } else {
-            Ok(())
-        };
-        self.pool.lease_finished();
-        self.pool.start_background_fill();
-        result
-    }
-}
-
-impl Drop for WarmLease {
-    fn drop(&mut self) {
-        if let Some(sandbox) = self.sandbox.take() {
-            let _ = discard_sandbox(sandbox);
-            self.pool.lease_finished();
-            self.pool.start_background_fill();
-        }
-    }
-}
-
 fn discard_sandbox(sandbox: RunningSandbox) -> Result<(), FcError> {
     sandbox.force_kill()?.delete()
-}
-
-fn with_sandbox_request_id<T>(
-    sandbox: &mut RunningSandbox,
-    request_id: String,
-    f: impl FnOnce(&mut RunningSandbox) -> Result<T, FcError>,
-) -> Result<T, FcError> {
-    let old = sandbox.request_id.replace(request_id);
-    let result = f(sandbox);
-    sandbox.request_id = old;
-    result
 }
 
 fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<(), FcError> {
     let mut last_error = None;
     for _ in 0..5 {
-        match sandbox.exec(req.clone()) {
+        match sandbox.exec_ready_probe(req.clone()) {
             Ok(resp) if resp.status == ExecStatus::Completed && resp.exit_code == Some(0) => {
                 std::thread::sleep(RESTORED_SLOT_SETTLE);
                 return Ok(());

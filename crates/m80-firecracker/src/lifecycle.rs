@@ -138,7 +138,6 @@ impl RunningSandbox {
             rootfs: _rootfs,
             scratch,
             snapshot_mount,
-            preallocated_drive_slots: _preallocated_drive_slots,
             client: _client,
             firecracker: _firecracker,
             permit,
@@ -148,6 +147,9 @@ impl RunningSandbox {
             watcher_stop: _watcher_stop,
             watcher_thread,
             diagnostics,
+            preallocated_drive_slots: _preallocated_drive_slots,
+            one_shot: _one_shot,
+            one_shot_consumed: _one_shot_consumed,
             kill_guard: _kill_guard,
         } = self;
         let mut diagnostics = diagnostics;
@@ -217,7 +219,6 @@ impl RunningSandbox {
             rootfs: _rootfs,
             scratch,
             snapshot_mount,
-            preallocated_drive_slots: _preallocated_drive_slots,
             client: _client,
             firecracker: _firecracker,
             permit,
@@ -227,6 +228,9 @@ impl RunningSandbox {
             watcher_stop: _watcher_stop,
             watcher_thread,
             diagnostics,
+            preallocated_drive_slots: _preallocated_drive_slots,
+            one_shot: _one_shot,
+            one_shot_consumed: _one_shot_consumed,
             kill_guard: _kill_guard,
         } = self;
         let mut diagnostics = diagnostics;

@@ -56,6 +56,7 @@ pub fn sandbox_config() -> m80_firecracker::SandboxConfig {
         daemonize: false,
         request_id: None,
         preallocated_drive_slots: 0,
+        one_shot: false,
     }
 }
 

@@ -78,6 +78,7 @@ fn launch_vm(
             daemonize: false,
             request_id: None,
             preallocated_drive_slots: 0,
+            one_shot: false,
         })
         .expect("admit");
     let running = sandbox.launch().expect("launch");

@@ -254,6 +254,10 @@ pub enum FcError {
     /// resources.
     #[error("sandbox idle timeout expired")]
     IdleTimedOut,
+    /// The sandbox is configured for one workload and that workload already
+    /// began. The caller must stop/drop/discard this VM instead of reusing it.
+    #[error("one-shot sandbox already consumed")]
+    OneShotConsumed,
 }
 
 impl FcError {

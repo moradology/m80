@@ -357,6 +357,8 @@ impl Sandbox {
             watcher_thread,
             diagnostics,
             preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
+            one_shot: self.config.one_shot,
+            one_shot_consumed: false,
             kill_guard,
         })
     }
@@ -611,6 +613,8 @@ impl Sandbox {
             watcher_thread,
             diagnostics,
             preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
+            one_shot: self.config.one_shot,
+            one_shot_consumed: false,
             kill_guard,
         })
     }

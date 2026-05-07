@@ -49,6 +49,13 @@ fn guestd_ready_timeout_is_typed() {
 }
 
 #[test]
+fn one_shot_consumed_displays() {
+    let e = FcError::OneShotConsumed;
+    let s = e.to_string();
+    assert!(s.contains("one-shot"), "got: {s}");
+}
+
+#[test]
 fn lifecycle_failure_kinds_are_bounded() {
     use m80_firecracker::LifecycleFailureKind;
 

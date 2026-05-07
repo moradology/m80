@@ -4,7 +4,9 @@ use std::io::{BufRead as _, BufReader, Read as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use m80_firecracker::{Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
+use m80_firecracker::{
+    Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig,
+};
 use m80_preflight::{Discovery, PreflightError};
 
 use crate::args::{EgressMode, QuickstartArgs, WarmAction, WritebackMode};
@@ -314,6 +316,7 @@ fn sandbox_config_for_run(
         daemonize: false,
         request_id: Some(request_id),
         preallocated_drive_slots: 0,
+        one_shot: false,
     }
 }
 
@@ -408,7 +411,8 @@ pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
     Ok(render_preflight_result(result, json))
 }
 
-fn preflight_with_effective_config() -> Result<m80_preflight::Discovery, m80_preflight::PreflightError> {
+fn preflight_with_effective_config(
+) -> Result<m80_preflight::Discovery, m80_preflight::PreflightError> {
     let run_root = config::load_effective(&std::collections::HashMap::new())
         .ok()
         .and_then(|eff| {

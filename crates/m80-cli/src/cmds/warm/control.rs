@@ -96,6 +96,8 @@ pub(super) enum WarmErrorKind {
     Vsock,
     Snapshot,
     FileOp,
+    DriveHotplug,
+    TenantIdentityMismatch,
     AdmissionRefused,
     PoolEmpty,
     InvalidState,
@@ -104,6 +106,7 @@ pub(super) enum WarmErrorKind {
     Io,
     Config,
     IdleTimedOut,
+    OneShotConsumed,
     Protocol,
 }
 
@@ -121,6 +124,8 @@ impl WarmErrorKind {
             FcError::Protocol(_) => Self::Protocol,
             FcError::Snapshot(_) => Self::Snapshot,
             FcError::FileOp(_) => Self::FileOp,
+            FcError::DriveHotplug(_) => Self::DriveHotplug,
+            FcError::TenantIdentityMismatch { .. } => Self::TenantIdentityMismatch,
             FcError::AdmissionRefused { .. } => Self::AdmissionRefused,
             FcError::PoolEmpty { .. } => Self::PoolEmpty,
             FcError::InvalidState { .. } => Self::InvalidState,
@@ -129,6 +134,7 @@ impl WarmErrorKind {
             FcError::Io(_) => Self::Io,
             FcError::Config(_) => Self::Config,
             FcError::IdleTimedOut => Self::IdleTimedOut,
+            FcError::OneShotConsumed => Self::OneShotConsumed,
         }
     }
 
@@ -144,6 +150,8 @@ impl WarmErrorKind {
             Self::Vsock => "Vsock",
             Self::Snapshot => "Snapshot",
             Self::FileOp => "FileOp",
+            Self::DriveHotplug => "DriveHotplug",
+            Self::TenantIdentityMismatch => "TenantIdentityMismatch",
             Self::AdmissionRefused => "AdmissionRefused",
             Self::PoolEmpty => "PoolEmpty",
             Self::InvalidState => "InvalidState",
@@ -152,6 +160,7 @@ impl WarmErrorKind {
             Self::Io => "Io",
             Self::Config => "Config",
             Self::IdleTimedOut => "IdleTimedOut",
+            Self::OneShotConsumed => "OneShotConsumed",
             Self::Protocol => "Protocol",
         }
     }
@@ -209,8 +218,8 @@ fn connect_owner() -> Result<UnixStream, FcError> {
 }
 
 fn write_request(stream: &mut UnixStream, req: &WarmControlRequest) -> Result<(), FcError> {
-    let payload = serde_json::to_vec(req)
-        .map_err(|e| config_error("serialize warm control request", e))?;
+    let payload =
+        serde_json::to_vec(req).map_err(|e| config_error("serialize warm control request", e))?;
     stream.write_all(&payload).map_err(FcError::Io)?;
     stream.shutdown(Shutdown::Write).map_err(FcError::Io)
 }
@@ -218,8 +227,7 @@ fn write_request(stream: &mut UnixStream, req: &WarmControlRequest) -> Result<()
 pub(super) fn read_request(stream: &mut UnixStream) -> Result<WarmControlRequest, FcError> {
     let mut bytes = Vec::new();
     stream.read_to_end(&mut bytes).map_err(FcError::Io)?;
-    serde_json::from_slice(&bytes)
-        .map_err(|e| config_error("parse warm control request", e))
+    serde_json::from_slice(&bytes).map_err(|e| config_error("parse warm control request", e))
 }
 
 pub(super) fn write_response(
@@ -236,8 +244,8 @@ pub(super) fn write_stream_frame(
     stream: &mut UnixStream,
     frame: &WarmStreamFrame,
 ) -> Result<(), FcError> {
-    let payload = serde_json::to_vec(frame)
-        .map_err(|e| config_error("serialize warm stream frame", e))?;
+    let payload =
+        serde_json::to_vec(frame).map_err(|e| config_error("serialize warm stream frame", e))?;
     stream.write_all(&payload).map_err(FcError::Io)?;
     stream.write_all(b"\n").map_err(FcError::Io)?;
     stream.flush().map_err(FcError::Io)

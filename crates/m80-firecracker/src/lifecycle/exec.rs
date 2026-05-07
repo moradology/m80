@@ -42,7 +42,7 @@ impl RunningSandbox {
     /// Internally this uses [`RunningSandbox::exec_streaming`] and buffers
     /// stdout/stderr up to the existing 1 MiB per-stream cap.
     pub fn exec(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
-        self.exec_inner(req, None)
+        self.exec_inner(req, None, true)
     }
 
     /// Send one exec request and return a buffered response, cancelling the
@@ -55,13 +55,18 @@ impl RunningSandbox {
         req: ExecRequest,
         cancel_rx: mpsc::Receiver<()>,
     ) -> Result<ExecResponse, FcError> {
-        self.exec_inner(req, Some(cancel_rx))
+        self.exec_inner(req, Some(cancel_rx), true)
+    }
+
+    pub(crate) fn exec_ready_probe(&mut self, req: ExecRequest) -> Result<ExecResponse, FcError> {
+        self.exec_inner(req, None, false)
     }
 
     fn exec_inner(
         &mut self,
         req: ExecRequest,
         cancel_rx: Option<mpsc::Receiver<()>>,
+        consume_one_shot: bool,
     ) -> Result<ExecResponse, FcError> {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -79,7 +84,8 @@ impl RunningSandbox {
             Ok(())
         };
 
-        let exit = self.exec_streaming_inner(req, cancel_rx, &mut buffer_chunk)?;
+        let exit =
+            self.exec_streaming_inner(req, cancel_rx, &mut buffer_chunk, consume_one_shot)?;
 
         Ok(ExecResponse {
             status: exit.status,
@@ -105,7 +111,7 @@ impl RunningSandbox {
         req: ExecRequest,
         on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
     ) -> Result<ExecExit, FcError> {
-        self.exec_streaming_inner(req, None, on_chunk)
+        self.exec_streaming_inner(req, None, on_chunk, true)
     }
 
     /// Send one streaming exec request, cancelling the in-flight guest child
@@ -120,7 +126,7 @@ impl RunningSandbox {
         cancel_rx: mpsc::Receiver<()>,
         on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
     ) -> Result<ExecExit, FcError> {
-        self.exec_streaming_inner(req, Some(cancel_rx), on_chunk)
+        self.exec_streaming_inner(req, Some(cancel_rx), on_chunk, true)
     }
 
     /// Send one PTY exec request and call `on_output` as merged terminal
@@ -135,6 +141,7 @@ impl RunningSandbox {
         event_rx: mpsc::Receiver<PtyHostEvent>,
         mut on_output: impl FnMut(PtyOutputChunk) -> Result<(), FcError>,
     ) -> Result<PtyExit, FcError> {
+        self.claim_one_shot_exec()?;
         if self.idle_timed_out.load(Ordering::Relaxed) {
             return Err(FcError::IdleTimedOut);
         }
@@ -252,7 +259,11 @@ impl RunningSandbox {
         mut req: ExecRequest,
         cancel_rx: Option<mpsc::Receiver<()>>,
         mut on_chunk: impl FnMut(ExecChunk) -> Result<(), FcError>,
+        consume_one_shot: bool,
     ) -> Result<ExecExit, FcError> {
+        if consume_one_shot {
+            self.claim_one_shot_exec()?;
+        }
         if self.idle_timed_out.load(Ordering::Relaxed) {
             return Err(FcError::IdleTimedOut);
         }
@@ -444,6 +455,21 @@ impl RunningSandbox {
             }
         }
     }
+
+    fn claim_one_shot_exec(&mut self) -> Result<(), FcError> {
+        claim_one_shot_exec(self.one_shot, &mut self.one_shot_consumed)
+    }
+}
+
+fn claim_one_shot_exec(one_shot: bool, consumed: &mut bool) -> Result<(), FcError> {
+    if !one_shot {
+        return Ok(());
+    }
+    if *consumed {
+        return Err(FcError::OneShotConsumed);
+    }
+    *consumed = true;
+    Ok(())
 }
 
 struct CancelForwarder {
@@ -785,6 +811,27 @@ mod tests {
         assert_eq!(exit.total_stdout_bytes, 7);
         assert_eq!(exit.total_stderr_bytes, 11);
         assert!(exit.timing.exited_at_unix_ms >= 1_000);
+    }
+
+    #[test]
+    fn non_one_shot_exec_claim_never_consumes() {
+        let mut consumed = false;
+
+        claim_one_shot_exec(false, &mut consumed).unwrap();
+        claim_one_shot_exec(false, &mut consumed).unwrap();
+
+        assert!(!consumed);
+    }
+
+    #[test]
+    fn one_shot_exec_claim_allows_only_first_workload() {
+        let mut consumed = false;
+
+        claim_one_shot_exec(true, &mut consumed).unwrap();
+        let err = claim_one_shot_exec(true, &mut consumed).unwrap_err();
+
+        assert!(matches!(err, FcError::OneShotConsumed));
+        assert!(consumed);
     }
 
     #[test]

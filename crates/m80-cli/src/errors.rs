@@ -60,8 +60,11 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Protocol(_)
         | FcError::Snapshot(_)
         | FcError::FileOp(_)
+        | FcError::DriveHotplug(_)
+        | FcError::TenantIdentityMismatch { .. }
         | FcError::Io(_)
-        | FcError::IdleTimedOut => EXIT_GENERIC,
+        | FcError::IdleTimedOut
+        | FcError::OneShotConsumed => EXIT_GENERIC,
     }
 }
 
@@ -121,7 +124,10 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Config(_) => "Config",
         FcError::Snapshot(_) => "Snapshot",
         FcError::FileOp(_) => "FileOp",
+        FcError::DriveHotplug(_) => "DriveHotplug",
+        FcError::TenantIdentityMismatch { .. } => "TenantIdentityMismatch",
         FcError::IdleTimedOut => "IdleTimedOut",
+        FcError::OneShotConsumed => "OneShotConsumed",
     }
 }
 

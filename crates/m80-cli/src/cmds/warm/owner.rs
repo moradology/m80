@@ -224,6 +224,7 @@ fn warm_sandbox_config(vm_id: impl Into<String>, egress: EgressMode) -> SandboxC
         daemonize: false,
         request_id: None,
         preallocated_drive_slots: 0,
+        one_shot: false,
     }
 }
 

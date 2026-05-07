@@ -8,6 +8,7 @@ mod boot_identity;
 mod config;
 mod diagnostics;
 mod error;
+mod hotplug_types;
 mod launch;
 mod layout;
 mod lifecycle;
@@ -26,6 +27,7 @@ pub use error::{
     LifecycleFailureKind, StopDisposition, WireProtocolError, CLEANUP_AUTHORITY,
     CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS, STOP_DISPOSITIONS,
 };
+pub use hotplug_types::HotplugDriveAttach;
 pub use layout::{
     boot_identity_path, console_log_path, firecracker_api_socket_path, rootfs_overlay_path,
     run_dir_path, scratch_image_path, vsock_socket_path, BOOT_IDENTITY_FILE, CONSOLE_LOG,
@@ -41,8 +43,7 @@ pub use m80_storage::ChangeSet;
 pub use runroot::OWNERSHIP_LOCK;
 pub use types::{
     Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig, EffectiveField, ExecChunk,
-    HotplugDriveAttach, PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig,
-    StoppedSandbox, DEFAULT_PREALLOCATED_DRIVE_SLOTS, FIRST_LINE_MEM_SIZE_MIB,
-    FIRST_LINE_VCPU_COUNT,
+    PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig, StoppedSandbox,
+    DEFAULT_PREALLOCATED_DRIVE_SLOTS, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 pub use warm_pool::{WarmLease, WarmPool, WarmPoolConfig, WarmPoolSnapshot};

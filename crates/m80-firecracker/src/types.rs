@@ -159,23 +159,6 @@ pub struct PtyOutputChunk {
     pub bytes: Vec<u8>,
 }
 
-/// Request to attach one preallocated Firecracker drive slot and verify the
-/// guest-mounted identity bytes before returning the VM to the caller.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HotplugDriveAttach {
-    /// Zero-based preallocated drive slot index.
-    pub slot: u8,
-    /// New Firecracker `path_on_host` for the slot. Because Firecracker is
-    /// jailed, this path must be visible inside the jail namespace.
-    pub path_on_host: PathBuf,
-    /// Guest mount path, e.g. `/workspace`.
-    pub mount_path: String,
-    /// Guest file path to read after mount.
-    pub identity_path: String,
-    /// Opaque bytes expected from `identity_path`.
-    pub expected_identity: Vec<u8>,
-}
-
 /// Snapshot of the merged configuration with each field tagged by source.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -259,6 +242,9 @@ pub struct SandboxConfig {
     /// Number of writable placeholder drive slots created before
     /// `InstanceStart` so later attachment can use `PATCH /drives/{id}`.
     pub preallocated_drive_slots: u8,
+    /// Destroy-after-use mode for conveyor-belt callers. The first user exec
+    /// consumes the VM for reuse; later exec attempts fail typed.
+    pub one_shot: bool,
 }
 
 impl Default for SandboxConfig {
@@ -275,6 +261,7 @@ impl Default for SandboxConfig {
             daemonize: false,
             request_id: None,
             preallocated_drive_slots: DEFAULT_PREALLOCATED_DRIVE_SLOTS,
+            one_shot: false,
         }
     }
 }
@@ -406,6 +393,8 @@ pub struct RunningSandbox {
     pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
     /// Number of preallocated hotplug slots PUT before instance start.
     pub(crate) preallocated_drive_slots: u8,
+    pub(crate) one_shot: bool,
+    pub(crate) one_shot_consumed: bool,
     /// Fallback cleanup guard; disarmed by `stop()` and `force_kill()` before
     /// they perform their own teardown, so Drop is a no-op on the happy path.
     pub(crate) kill_guard: ForceKillGuard,

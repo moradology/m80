@@ -11,10 +11,11 @@ use m80_proto::{
 
 use crate::diagnostics::phase_event;
 use crate::error::{ConfigError, FcError};
+use crate::hotplug_types::HotplugDriveAttach;
 use crate::lifecycle::exec::{request_id_for, send_envelope_with_open_retry};
 use crate::lifecycle::monotonic_ns;
 use crate::preboot::preallocated_drive_slot_id;
-use crate::types::{HotplugDriveAttach, RunningSandbox};
+use crate::types::RunningSandbox;
 
 impl RunningSandbox {
     /// Attach one preallocated drive slot, ask guestd to mount it, and return
