@@ -4,6 +4,7 @@
 
 use ipnet::Ipv4Net;
 use m80_net_mode::{resolve, NetworkPolicy, OutboundIntent, VmNetworkMode};
+use std::path::PathBuf;
 
 #[test]
 fn noegress_resolves_to_noegress() {
@@ -41,6 +42,15 @@ fn allow_outbound_with_one_cidr_round_trips_through_resolver() {
     );
 }
 
+#[test]
+fn join_netns_carries_path_through_resolver() {
+    let path = PathBuf::from("/var/run/netns/m80-test");
+    let mode = resolve(&NetworkPolicy::JoinNetns {
+        netns_path: path.clone(),
+    });
+    assert_eq!(mode, VmNetworkMode::JoinNetns { netns_path: path });
+}
+
 fn assert_policy_round_trips(policy: NetworkPolicy) {
     let json = serde_json::to_string(&policy).unwrap();
     let back: NetworkPolicy = serde_json::from_str(&json).unwrap();
@@ -62,5 +72,14 @@ fn network_policy_no_egress_round_trips() {
 fn network_policy_allow_outbound_round_trips() {
     assert_policy_round_trips(NetworkPolicy::AllowOutbound {
         exceptions: vec!["192.168.1.0/24".parse().unwrap()],
+    });
+}
+
+/// `#[serde(tag = "kind", rename_all = "snake_case")]` survives round-trip
+/// for `JoinNetns`.
+#[test]
+fn network_policy_join_netns_round_trips() {
+    assert_policy_round_trips(NetworkPolicy::JoinNetns {
+        netns_path: PathBuf::from("/var/run/netns/m80-test"),
     });
 }

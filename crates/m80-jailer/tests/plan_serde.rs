@@ -66,13 +66,14 @@ fn bind_mode_serializes_as_snake_case() {
 }
 
 #[test]
-fn resource_limits_and_pid_namespace_persist_in_plan_json() {
+fn resource_limits_pid_namespace_and_netns_persist_in_plan_json() {
     let mut cfg = common::minimal_config(Path::new("/tmp/run/vm-limits"));
     cfg.resource_limits = m80_jailer::ResourceLimits {
         no_file: 1024,
         fsize: Some(4096),
     };
     cfg.new_pid_ns = true;
+    cfg.netns_path = Some(PathBuf::from("/var/run/netns/m80-test"));
 
     let plan = Plan::compute(&cfg).unwrap();
     let v: serde_json::Value = serde_json::to_value(&plan).unwrap();
@@ -80,4 +81,5 @@ fn resource_limits_and_pid_namespace_persist_in_plan_json() {
     assert_eq!(v["config"]["resource_limits"]["no_file"], 1024);
     assert_eq!(v["config"]["resource_limits"]["fsize"], 4096);
     assert_eq!(v["config"]["new_pid_ns"], true);
+    assert_eq!(v["config"]["netns_path"], "/var/run/netns/m80-test");
 }

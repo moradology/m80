@@ -128,6 +128,13 @@ wire-frame pairing only, not an agent semantic identifier.
 `WireProtocolError` is re-exported for callers that need to distinguish broken
 peer bytes from transport failures.
 
+`SandboxConfig::network` supports three caller intents. `NoEgress` launches with
+no guest NIC and no host iptables changes. `AllowOutbound` resolves to
+OutboundNat and is still rejected in this crate until the outbound network
+realizer is wired into launch. `JoinNetns { netns_path }` delegates namespace
+creation and policy to the caller: m80 validates the namespace path and passes it
+to Firecracker's official jailer as `--netns` before Firecracker is exec'd.
+
 ### First-line machine shape
 
 `FIRST_LINE_VCPU_COUNT` and `FIRST_LINE_MEM_SIZE_MIB` name the default

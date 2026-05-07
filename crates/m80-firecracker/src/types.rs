@@ -295,7 +295,14 @@ impl ForceKillGuard {
         watcher_stop: Arc<std::sync::atomic::AtomicBool>,
         snapshot_mount: Option<PathBuf>,
     ) -> Self {
-        Self { vm_id, firecracker_pid, jailer_pid, watcher_stop, snapshot_mount, armed: true }
+        Self {
+            vm_id,
+            firecracker_pid,
+            jailer_pid,
+            watcher_stop,
+            snapshot_mount,
+            armed: true,
+        }
     }
 
     /// Disarm the guard so Drop is a no-op.
@@ -310,7 +317,8 @@ impl Drop for ForceKillGuard {
             return;
         }
         tracing::warn!(vm_id = %self.vm_id, "RunningSandbox dropped without stop/force_kill — force-killing");
-        self.watcher_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.watcher_stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         // Best-effort SIGKILL; errors logged and swallowed — Drop must not panic.
         if let Err(e) = crate::lifecycle::kill_pid(self.firecracker_pid) {
             tracing::error!(vm_id = %self.vm_id, error = %e, "Drop force-kill firecracker failed");
@@ -443,4 +451,9 @@ impl std::fmt::Debug for StoragePrep {
 pub(crate) enum RealizedNetwork {
     /// No NIC configured; iptables untouched.
     NoEgress,
+    /// Firecracker will join a caller-provided network namespace.
+    JoinNetns {
+        /// Namespace path supplied by the caller.
+        netns_path: PathBuf,
+    },
 }

@@ -36,7 +36,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
   execs the official jailer. m80 passes `--resource-limit no-file=<n>` on every launch, optionally passes
   `--resource-limit fsize=<bytes>`, clears the jailer process environment,
   gives stdin `/dev/null`, gives stdout/stderr either the configured log file
-  or `/dev/null`, and can pass `--new-pid-ns`. Without `new_pid_ns`, jailer
+  or `/dev/null`, can pass `--new-pid-ns`, and can pass `--netns <path>` after
+  validating the path with `O_NOFOLLOW` and `NSFS_MAGIC`. Without `new_pid_ns`, jailer
   `exec()`s into firecracker, so `jailer_pid` and `firecracker_pid` refer to
   the same OS process. With `new_pid_ns`, the official jailer writes the
   Firecracker PID file and exits; m80 reaps that parent and records
@@ -65,6 +66,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
 ## Public surface
 
 - `JailerConfig`, including `resource_limits`, `new_pid_ns`, optional
+  `netns_path`,
   `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
 - `ResourceLimits { no_file, fsize }`; default is `no_file = 2048`,
@@ -73,13 +75,14 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `inspect_run_dir`, `InspectionDecision`.
 - `JailerError`: `BindFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
-  `UidGidInvalid`, `Io { path, source }`. Privilege is verified once by
+  `UidGidInvalid`, `InvalidNetns`, `Io { path, source }`. Privilege is verified once by
   `m80-preflight`; this crate does not run a per-launch sudo probe.
 
 ## Non-goals
 
 - **No cgroup configuration.** `m80-cgroup` owns that.
-- **No network namespace setup.** `m80-net-outbound` lives outside.
+- **No network namespace creation.** JoinNetns callers provision namespaces;
+  this crate only validates and passes the namespace fd to Firecracker's jailer.
 - **No process supervision after launch.** The orchestrator owns the
   child PIDs once `launch()` returns.
 - **No general "make me a chroot" service.** This crate is shaped around
@@ -107,7 +110,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   expected jailer-hardcoded layout for several input combinations.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,
-  and `new_pid_ns` parent reaping.
+  netns validation, and `new_pid_ns` parent reaping.
 - `tests/integration_root.rs` — ignored root-only smoke for real
   materialization and real Firecracker-jailer `--new-pid-ns` launch state
   (`jailer_pid = 0`, Firecracker `NSpid` ends in `1`, resource limit live,

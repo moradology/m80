@@ -44,4 +44,12 @@ pub enum JailerError {
         #[source]
         source: io::Error,
     },
+    /// The caller supplied a path that is not a network namespace fd.
+    #[error("invalid network namespace path {}: filesystem type is {fs_type}", path.display())]
+    InvalidNetns {
+        /// Path that was checked.
+        path: PathBuf,
+        /// Filesystem type name returned by `fstatfs`.
+        fs_type: String,
+    },
 }

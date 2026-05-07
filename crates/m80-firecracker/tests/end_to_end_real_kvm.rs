@@ -26,6 +26,7 @@
 use std::io::Write as _;
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
 use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
@@ -284,6 +285,52 @@ fn end_to_end_real_kvm_jailer_security_parity() {
     stopped.delete().expect("delete");
 }
 
+#[test]
+#[ignore = "requires root, iproute2 netns support, KVM host, and real Firecracker binary"]
+fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
+    let netns = NetnsGuard::create();
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let run_root = discovery.run_root.clone();
+
+    let config = m80_firecracker::BackendConfig {
+        discovery,
+        max_concurrent_vms: 1,
+        run_root: run_root.clone(),
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
+    };
+    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
+    let sandbox_config = m80_firecracker::SandboxConfig {
+        vm_id: Some("e2e-join-netns".into()),
+        workspace: None,
+        network: m80_firecracker::NetworkPolicy::JoinNetns {
+            netns_path: netns.path.clone(),
+        },
+        vcpu_count: Some(1),
+        mem_size_mib: Some(512),
+        boot_args: None,
+        overlay_size_bytes: 512 * 1024 * 1024,
+        idle_timeout: None,
+        request_id: None,
+    };
+
+    let sandbox = backend.admit(sandbox_config).expect("admit");
+    let running = sandbox.launch().expect("launch");
+    let run_dir = running.run_dir().to_path_buf();
+    let state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap())
+            .unwrap();
+    let pid = state["firecracker_pid"].as_u64().expect("firecracker_pid") as u32;
+
+    assert_same_network_namespace(pid, &netns.path);
+
+    let stopped = running.stop().expect("stop");
+    assert_run_dir_has_no_protocol_warnings(&run_dir);
+    stopped.delete().expect("delete");
+}
+
 fn deterministic_payload(len: usize) -> Vec<u8> {
     let mut state = 0x4d80_cafe_u64;
     let mut out = Vec::with_capacity(len);
@@ -325,6 +372,49 @@ fn assert_supplementary_groups_empty(pid: u32) {
         .find(|line| line.starts_with("Groups:"))
         .unwrap_or_else(|| panic!("missing Groups in status:\n{status}"));
     assert_eq!(line.trim(), "Groups:", "supplementary groups must be empty");
+}
+
+struct NetnsGuard {
+    path: std::path::PathBuf,
+    name: String,
+}
+
+impl NetnsGuard {
+    fn create() -> Self {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let name = format!("m80-e2e-{suffix}");
+        let status = Command::new("ip")
+            .args(["netns", "add", &name])
+            .status()
+            .expect("run ip netns add");
+        assert!(status.success(), "ip netns add {name} failed: {status}");
+        Self {
+            path: std::path::PathBuf::from(format!("/var/run/netns/{name}")),
+            name,
+        }
+    }
+}
+
+impl Drop for NetnsGuard {
+    fn drop(&mut self) {
+        let _ = Command::new("ip")
+            .args(["netns", "del", &self.name])
+            .status();
+    }
+}
+
+fn assert_same_network_namespace(pid: u32, expected_netns: &std::path::Path) {
+    let process_netns = format!("/proc/{pid}/ns/net");
+    let expected = std::fs::metadata(expected_netns).expect("expected netns metadata");
+    let actual = std::fs::metadata(&process_netns).expect("firecracker netns metadata");
+    assert_eq!(
+        (actual.dev(), actual.ino()),
+        (expected.dev(), expected.ino()),
+        "firecracker must run inside the requested network namespace"
+    );
 }
 
 fn mount_options(pid: u32, mount_point: &str) -> String {
@@ -391,13 +481,27 @@ fn assert_no_protocol_warnings(run_root: &std::path::Path) {
     let mut text = String::new();
     for entry in std::fs::read_dir(run_root).expect("read run root") {
         let path = entry.expect("run root entry").path();
-        for name in ["console.log", "diagnostics.jsonl"] {
-            let file = path.join(name);
-            if let Ok(contents) = std::fs::read_to_string(file) {
-                text.push_str(&contents);
-            }
+        append_protocol_logs(&mut text, &path);
+    }
+    assert_protocol_logs_are_clean(&text);
+}
+
+fn assert_run_dir_has_no_protocol_warnings(run_dir: &std::path::Path) {
+    let mut text = String::new();
+    append_protocol_logs(&mut text, run_dir);
+    assert_protocol_logs_are_clean(&text);
+}
+
+fn append_protocol_logs(text: &mut String, run_dir: &std::path::Path) {
+    for name in ["console.log", "diagnostics.jsonl"] {
+        let file = run_dir.join(name);
+        if let Ok(contents) = std::fs::read_to_string(file) {
+            text.push_str(&contents);
         }
     }
+}
+
+fn assert_protocol_logs_are_clean(text: &str) {
     for needle in [
         "OversizedPayload",
         "oversized payload",

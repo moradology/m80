@@ -39,6 +39,9 @@ pub struct JailerConfig {
     /// Ask the official jailer to launch firecracker as PID 1 in a new PID
     /// namespace.
     pub new_pid_ns: bool,
+    /// Optional caller-provided network namespace path passed to the official
+    /// jailer as `--netns`.
+    pub netns_path: Option<PathBuf>,
     /// Optional host-side file that receives firecracker/jailer stdout and
     /// stderr. The orchestrator uses this for the per-VM serial console log.
     pub stdio_log: Option<PathBuf>,

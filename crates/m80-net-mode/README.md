@@ -1,14 +1,15 @@
 # `m80-net-mode`
 
-A tiny crate (~90 LOC) holding the one-bit decision: "does this VM get
-network egress, or doesn't it?"
+A tiny crate holding the small network-placement decision: "does this VM get no
+network, m80-owned outbound NAT, or a caller-owned network namespace?"
 
 ## Reason for being
 
 The decision is small but it's the seam between two very different
-implementations: `NoEgress` (no NIC, no iptables, no privilege needed)
-and `OutboundNat` (3,500 LOC of bridge/tap/IP/MAC/iptables policy in
-`m80-net-outbound`). Splitting the resolver from both lets:
+implementations: `NoEgress` (no NIC, no iptables, no privilege needed),
+`OutboundNat` (3,500 LOC of bridge/tap/IP/MAC/iptables policy in
+`m80-net-outbound`), and `JoinNetns` (the caller provisions the namespace and
+the Firecracker jailer joins it). Splitting the resolver from implementations lets:
 
 - Callers express *intent* (`NetworkPolicy::AllowOutbound { exceptions: ... }`)
   without dragging the OutboundNat implementation crate.
@@ -37,17 +38,21 @@ It's small. It earns its keep by being the API border between
   `resolve` is reached. This crate carries no string-input parser in v0.1;
   a future `NetworkPolicy::parse_from_strings(...)` entrypoint would be
   the place to surface those errors.
+- `JoinNetns` carries a namespace fd path only. The caller owns namespace
+  creation, interface setup, routing, firewall rules, and teardown. m80 validates
+  and joins the namespace downstream in `m80-jailer`; this resolver remains pure.
 
 ## Public surface
 
-- `NetworkPolicy` — caller-facing intent enum: `NoEgress` | `OutboundNat { exceptions: Vec<Ipv4Net> }`.
-- `VmNetworkMode` — resolved implementation mode: `NoEgress` | `OutboundNat { exceptions }`.
+- `NetworkPolicy` — caller-facing intent enum: `NoEgress` | `OutboundNat { exceptions: Vec<Ipv4Net> }` | `JoinNetns { netns_path: PathBuf }`.
+- `VmNetworkMode` — resolved implementation mode: `NoEgress` | `OutboundNat { exceptions }` | `JoinNetns { netns_path }`.
 - `resolve(policy: &NetworkPolicy) -> VmNetworkMode` — pure, infallible resolution.
 
 ## Non-goals
 
 - **No iptables.** That's `m80-net-outbound`.
 - **No DNS.** Also `m80-net-outbound`.
+- **No netns creation.** Callers provision and own `JoinNetns` namespaces.
 - **No "should I network" inference.** The caller decides.
 - **No string-input parser.** CIDR parsing and IPv6 rejection live at the
   caller boundary, not here.
@@ -62,3 +67,4 @@ It's small. It earns its keep by being the API border between
 - `resolve(NoEgress)` returns `VmNetworkMode::NoEgress`.
 - `resolve(OutboundNat { exceptions: [] })` returns `VmNetworkMode::OutboundNat`.
 - `resolve(OutboundNat { exceptions: [...] })` carries exceptions through unchanged.
+- `resolve(JoinNetns { netns_path })` carries the namespace path through unchanged.

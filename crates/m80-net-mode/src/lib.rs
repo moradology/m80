@@ -5,6 +5,7 @@
 #![deny(missing_docs)]
 
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 
 use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,12 @@ pub enum NetworkPolicy {
         /// Private-IPv4 destination CIDRs the VM may reach.
         exceptions: Vec<Ipv4Net>,
     },
+    /// Join an externally provisioned network namespace. The caller owns the
+    /// namespace's interfaces, routing, firewall policy, and lifetime.
+    JoinNetns {
+        /// Path to a namespace fd, usually `/var/run/netns/<name>`.
+        netns_path: PathBuf,
+    },
 }
 
 /// Resolved per-VM network mode. `m80-firecracker` consumes only this; it
@@ -36,6 +43,11 @@ pub enum VmNetworkMode {
     OutboundNat {
         /// Pre-validated payload for `m80-net-outbound` to realize.
         plan: OutboundIntent,
+    },
+    /// Launch Firecracker after joining a caller-provided network namespace.
+    JoinNetns {
+        /// Namespace path passed to the official Firecracker jailer.
+        netns_path: PathBuf,
     },
 }
 
@@ -63,6 +75,9 @@ pub fn resolve(policy: &NetworkPolicy) -> VmNetworkMode {
                 exceptions: exceptions.clone(),
                 gateway_override: None,
             },
+        },
+        NetworkPolicy::JoinNetns { netns_path } => VmNetworkMode::JoinNetns {
+            netns_path: netns_path.clone(),
         },
     }
 }

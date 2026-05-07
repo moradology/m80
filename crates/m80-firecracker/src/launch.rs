@@ -162,6 +162,7 @@ impl Sandbox {
                     run_dir: &run_dir,
                     kernel: &backend_config.discovery.kernel,
                     storage: &storage,
+                    netns_path: join_netns_path(&self.config.network),
                 })
             }
         )?;
@@ -177,7 +178,7 @@ impl Sandbox {
         )?;
 
         // Phase 6: resolve network mode.
-        let _net = diag_phase!(
+        let net = diag_phase!(
             &mut diagnostics,
             &vm_id,
             request_id.as_deref(),
@@ -185,12 +186,18 @@ impl Sandbox {
             "phase_6_network_realize",
             { phase_6_network_realize(&self.config) }
         )?;
+        let network_message = match &net {
+            RealizedNetwork::NoEgress => "network prepared".to_owned(),
+            RealizedNetwork::JoinNetns { netns_path } => {
+                format!("network prepared: join_netns {}", netns_path.display())
+            }
+        };
         crate::diagnostics::record_owned(
             &mut diagnostics,
             Phase::NetworkPrepare,
             &vm_id,
             request_id.as_deref(),
-            "network prepared",
+            &network_message,
         );
 
         // Phase 7: guest config injection — no-op in v0.1. OutboundNat is
@@ -450,6 +457,7 @@ impl Sandbox {
                     run_dir: &run_dir,
                     kernel: &backend_config.discovery.kernel,
                     storage: &storage,
+                    netns_path: join_netns_path(&self.config.network),
                 })
             }
         )?;
@@ -700,6 +708,7 @@ struct JailerMaterializeInput<'a> {
     run_dir: &'a Path,
     kernel: &'a Path,
     storage: &'a StoragePrep,
+    netns_path: Option<&'a Path>,
 }
 
 fn phase_4_jailer_materialize(
@@ -748,11 +757,19 @@ fn phase_4_jailer_materialize(
         sockets,
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: false,
+        netns_path: input.netns_path.map(Path::to_path_buf),
         stdio_log: Some(console_log_path(input.run_dir)),
     };
 
     let plan = Plan::compute(&jailer_config)?;
     plan.materialize().map_err(FcError::Jailer)
+}
+
+fn join_netns_path(policy: &crate::NetworkPolicy) -> Option<&Path> {
+    match policy {
+        crate::NetworkPolicy::JoinNetns { netns_path } => Some(netns_path.as_path()),
+        crate::NetworkPolicy::NoEgress | crate::NetworkPolicy::AllowOutbound { .. } => None,
+    }
 }
 
 /// Phase 5: probe that cgroup v2 is available when `UnifiedV2` mode is
@@ -807,6 +824,7 @@ fn phase_5b_cgroup_create(
 fn phase_6_network_realize(config: &SandboxConfig) -> Result<RealizedNetwork, FcError> {
     match m80_net_mode::resolve(&config.network) {
         VmNetworkMode::NoEgress => Ok(RealizedNetwork::NoEgress),
+        VmNetworkMode::JoinNetns { netns_path } => Ok(RealizedNetwork::JoinNetns { netns_path }),
         VmNetworkMode::OutboundNat { .. } => Err(FcError::Config(ConfigError::Other(
             "OutboundNat networking is deferred to v0.2; use NetworkPolicy::NoEgress in v0.1"
                 .into(),

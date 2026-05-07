@@ -111,6 +111,11 @@ impl MaterializedJail {
             command.arg("--new-pid-ns");
         }
 
+        if let Some(netns_path) = &self.plan.config.netns_path {
+            validate_netns_path(netns_path)?;
+            command.arg("--netns").arg(netns_path);
+        }
+
         command.arg("--").arg("--api-sock").arg(api_socket_name);
 
         command.stdin(Stdio::null());
@@ -201,6 +206,28 @@ impl MaterializedJail {
             firecracker_pid,
         })
     }
+}
+
+fn validate_netns_path(path: &Path) -> Result<(), JailerError> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|source| JailerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let stat = nix::sys::statfs::fstatfs(&file).map_err(|source| JailerError::Io {
+        path: path.to_path_buf(),
+        source: io::Error::from_raw_os_error(source as i32),
+    })?;
+    if stat.filesystem_type() != nix::sys::statfs::NSFS_MAGIC {
+        return Err(JailerError::InvalidNetns {
+            path: path.to_path_buf(),
+            fs_type: format!("{:?}", stat.filesystem_type()),
+        });
+    }
+    Ok(())
 }
 
 fn wait_for_namespace_parent(child: &mut std::process::Child) -> Result<u32, JailerError> {
@@ -396,6 +423,7 @@ echo fake-firecracker-stderr >&2
                 fsize: Some(4096),
             },
             new_pid_ns: false,
+            netns_path: None,
             stdio_log: Some(stdio_log.clone()),
         };
         let plan = Plan::compute(&cfg).unwrap();
@@ -478,6 +506,7 @@ fi
             sockets: Vec::new(),
             resource_limits: crate::types::ResourceLimits::default(),
             new_pid_ns: true,
+            netns_path: None,
             stdio_log: None,
         };
         let plan = Plan::compute(&cfg).unwrap();
@@ -548,6 +577,7 @@ echo $$ > "$jail_root/firecracker.pid"
             sockets: Vec::new(),
             resource_limits: crate::types::ResourceLimits::default(),
             new_pid_ns: false,
+            netns_path: None,
             stdio_log: None,
         };
         let plan = Plan::compute(&cfg).unwrap();
@@ -574,6 +604,31 @@ echo $$ > "$jail_root/firecracker.pid"
         assert_eq!(
             stdio.split_whitespace().collect::<Vec<_>>(),
             vec!["/dev/null", "/dev/null", "/dev/null"]
+        );
+    }
+
+    #[test]
+    fn validate_netns_path_rejects_regular_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let err = validate_netns_path(file.path()).unwrap_err();
+        assert!(
+            matches!(err, JailerError::InvalidNetns { .. }),
+            "expected InvalidNetns for regular file, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_netns_path_rejects_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        std::fs::write(&target, b"not a namespace").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let err = validate_netns_path(&link).unwrap_err();
+        assert!(
+            matches!(err, JailerError::Io { .. }),
+            "expected O_NOFOLLOW open failure for symlink, got {err:?}"
         );
     }
 }

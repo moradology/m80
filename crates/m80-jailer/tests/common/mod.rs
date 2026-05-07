@@ -19,6 +19,7 @@ pub fn minimal_config(run_dir: &Path) -> JailerConfig {
         sockets: Vec::new(),
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: false,
+        netns_path: None,
         stdio_log: None,
     }
 }
