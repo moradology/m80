@@ -1,3 +1,7 @@
+//! iptables policy application and cleanup for per-VM outbound NAT.
+//! Owns chain creation, DNS-accept/reject sequencing, permanent-deny rules,
+//! FORWARD inserts, NAT masquerade, and comment-tagged teardown.
+
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;

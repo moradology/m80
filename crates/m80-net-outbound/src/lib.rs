@@ -76,12 +76,17 @@ pub struct RealizedNetwork {
 /// collision detection, bridge + tap setup, guest network injection,
 /// iptables policy installation. The returned [`RealizedNetwork`] is what
 /// the orchestrator hands to `m80-firecracker-client` to PUT.
+///
+/// **v0.1 status:** the full pipeline is not yet wired here. Use
+/// [`realize_bridge_and_tap`], [`inject_guest_network_config`], and
+/// [`apply_outbound_nat_policy`] individually. This function will compose
+/// them in v0.2 (see `docs/behaviors/network/realize-pipeline.md`).
 pub fn realize(
     _intent: &OutboundIntent,
     _vm_id: &str,
     _run_root: &Path,
 ) -> Result<RealizedNetwork, NetError> {
-    todo!()
+    unimplemented!("v0.2: full realize pipeline not yet wired; call realize_bridge_and_tap / inject_guest_network_config / apply_outbound_nat_policy individually")
 }
 
 /// Realize only bridge/TAP setup with the real host link backend.

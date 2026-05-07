@@ -48,12 +48,14 @@ Sequestering it has three benefits:
 ### Realization
 
 - `realize(intent: &OutboundIntent, vm_id: &str, run_root: &Path) ->
-  Result<RealizedNetwork, NetError>` performs the full Phase 1–6 pipeline:
-  address allocation, collision detection (`reject_guest_ipv4_collision`,
-  `reject_host_route_collision`), bridge + tap setup, guest network
-  config injection into the VM's rootfs clone, iptables policy
-  installation. Each phase is independently testable; the top-level call
-  composes them.
+  Result<RealizedNetwork, NetError>` performs the full Phase 1–5 pipeline:
+  (1) address allocation, (2) collision detection
+  (`reject_guest_ipv4_collision`, `reject_host_route_collision`),
+  (3) bridge + tap setup, (4) guest network config injection into the VM's
+  rootfs clone, (5) iptables policy installation. Each phase is
+  independently testable; the top-level call composes them. **v0.1 status:**
+  the pipeline is not yet wired in `realize`; callers invoke the phase
+  functions directly.
 - `realize_bridge_and_tap(intent, vm_id, run_root, run_dir)` performs only
   the bridge/TAP setup phase. It writes bridge and per-VM network state
   atomically and uses the real link backend. Callers own parent directory

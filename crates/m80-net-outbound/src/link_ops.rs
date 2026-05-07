@@ -1,4 +1,6 @@
-#![allow(dead_code)]
+//! Bridge and TAP link operations, backed by rtnetlink and the Linux TUN/TAP
+//! driver. The [`LinkOps`] trait is the test seam; [`NetlinkLinkOps`] is the
+//! real host backend. The `ip` binary is not used at runtime.
 
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
@@ -52,6 +54,9 @@ pub trait LinkOps {
     ) -> Result<bool, NetError>;
 }
 
+/// Create a full bridge+tap stack in one call. Used in tests; production callers
+/// use [`create_tap_on_bridge`] after the bridge is already up.
+#[allow(dead_code)]
 pub(crate) fn create_tap_bridge(
     ops: &mut impl LinkOps,
     plan: &TapBridgePlan,
