@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 use crate::types::{BackendConfig, CgroupMode, ConfigSource, EffectiveConfig, EffectiveField};
 
 /// Field names recognized by the loader.
@@ -71,7 +71,7 @@ impl ConfigFilePaths {
     /// Host config paths: `/etc/m80/config.toml`, `/etc/m80/config.d`,
     /// `~/.config/m80/config.toml`, and `~/.config/m80/config.d` when `HOME`
     /// is set.
-    pub fn host() -> Self {
+    pub(crate) fn host() -> Self {
         Self {
             system: Some(PathBuf::from("/etc/m80/config.toml")),
             system_drop_in_dir: Some(PathBuf::from("/etc/m80/config.d")),
@@ -104,7 +104,7 @@ pub fn load_from_paths(
         if system_path.exists() {
             let content = std::fs::read_to_string(&system_path)?;
             apply_toml_layer(&mut fields, &content, ConfigSource::SystemFile)
-                .map_err(|e| FcError::Config(format!("system config: {e}")))?;
+                .map_err(|e| FcError::Config(ConfigError::Other(format!("system config: {e}"))))?;
         }
     }
 
@@ -123,7 +123,7 @@ pub fn load_from_paths(
         if user_path.exists() {
             let content = std::fs::read_to_string(&user_path)?;
             apply_toml_layer(&mut fields, &content, ConfigSource::UserFile)
-                .map_err(|e| FcError::Config(format!("user config: {e}")))?;
+                .map_err(|e| FcError::Config(ConfigError::Other(format!("user config: {e}"))))?;
         }
     }
 
@@ -159,10 +159,10 @@ pub fn load_from_paths(
                 entry.insert((v, ConfigSource::Flag));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                return Err(FcError::Config(format!(
-                    "unknown config override {:?}",
-                    entry.key()
-                )));
+                return Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "config override",
+                    reason: format!("unknown key {:?}", entry.key()),
+                }));
             }
         }
     }
@@ -194,10 +194,10 @@ fn apply_drop_in_dir(
         return Ok(());
     }
     if !dir.is_dir() {
-        return Err(FcError::Config(format!(
-            "{label} path is not a directory: {}",
-            dir.display()
-        )));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "config drop-in path",
+            reason: format!("{label} is not a directory: {}", dir.display()),
+        }));
     }
 
     let mut files = Vec::new();
@@ -212,8 +212,12 @@ fn apply_drop_in_dir(
 
     for path in files {
         let content = std::fs::read_to_string(&path)?;
-        apply_toml_layer(fields, &content, source)
-            .map_err(|e| FcError::Config(format!("{label} {}: {e}", path.display())))?;
+        apply_toml_layer(fields, &content, source).map_err(|e| {
+            FcError::Config(ConfigError::Other(format!(
+                "{label} {}: {e}",
+                path.display()
+            )))
+        })?;
     }
 
     Ok(())
@@ -269,27 +273,43 @@ pub fn backend_config_from_effective(
     let max_concurrent_vms: u32 = get(field::MAX_CONCURRENT_VMS)
         .unwrap_or("8")
         .parse()
-        .map_err(|e| FcError::Config(format!("max_concurrent_vms must be a u32: {e}")))?;
+        .map_err(|e| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: field::MAX_CONCURRENT_VMS,
+                reason: format!("must be a u32: {e}"),
+            })
+        })?;
 
     let run_root: PathBuf = get(field::RUN_ROOT).unwrap_or("/var/run/m80").into();
 
     let jail_uid: u32 = get(field::JAIL_UID)
         .unwrap_or("3000")
         .parse()
-        .map_err(|e| FcError::Config(format!("jail_uid must be a u32: {e}")))?;
+        .map_err(|e| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: field::JAIL_UID,
+                reason: format!("must be a u32: {e}"),
+            })
+        })?;
 
     let jail_gid: u32 = get(field::JAIL_GID)
         .unwrap_or("3000")
         .parse()
-        .map_err(|e| FcError::Config(format!("jail_gid must be a u32: {e}")))?;
+        .map_err(|e| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: field::JAIL_GID,
+                reason: format!("must be a u32: {e}"),
+            })
+        })?;
 
     let cgroup_mode = match get(field::CGROUP_MODE).unwrap_or("unified-v2") {
         "unified-v2" => CgroupMode::UnifiedV2,
         "disabled" => CgroupMode::Disabled,
         other => {
-            return Err(FcError::Config(format!(
-                "unknown cgroup_mode {other:?}; expected \"unified-v2\" or \"disabled\""
-            )));
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: field::CGROUP_MODE,
+                reason: format!("unknown value {other:?}; expected \"unified-v2\" or \"disabled\""),
+            }));
         }
     };
 

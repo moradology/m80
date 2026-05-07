@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
+use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
 
 fn config() -> JailerConfig {
     crate::common::minimal_config(Path::new("/tmp/run/vm-asset"))
@@ -71,14 +71,7 @@ fn binds_drives_rw() {
 #[test]
 fn sockets_created_inside_jail() {
     let mut cfg = config();
-    cfg.sockets = vec![
-        SocketSpec {
-            path: PathBuf::from("firecracker.sock"),
-        },
-        SocketSpec {
-            path: PathBuf::from("vsock.sock"),
-        },
-    ];
+    cfg.sockets = vec![JailerSocket::Firecracker, JailerSocket::Vsock];
 
     let plan = Plan::compute(&cfg).unwrap();
     let sockets = crate::common::socket_steps(&plan);
@@ -94,9 +87,7 @@ fn sockets_created_inside_jail() {
 fn host_only_artifacts_listed() {
     let mut cfg = config();
     cfg.stdio_log = Some(PathBuf::from("/run/vm/console.log"));
-    cfg.sockets = vec![SocketSpec {
-        path: PathBuf::from("firecracker.sock"),
-    }];
+    cfg.sockets = vec![JailerSocket::Firecracker];
 
     let plan = Plan::compute(&cfg).unwrap();
     let serialized = serde_json::to_string(&plan.steps).unwrap();

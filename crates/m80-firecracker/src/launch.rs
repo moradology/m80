@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use m80_cgroup::{Limits, Subtree};
 use m80_firecracker_client::{Client, InstanceAction};
-use m80_jailer::{BindMode, Binding, JailerConfig, Plan, SocketSpec};
+use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use m80_net_mode::VmNetworkMode;
 use m80_observability::Phase;
 use m80_preflight::Discovery;
@@ -32,7 +32,7 @@ use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
 use m80_storage::{Rootfs, Scratch};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 use crate::layout::{
     console_log_path, firecracker_api_socket_path, rootfs_overlay_path, run_dir_path,
     scratch_image_path, vsock_socket_path,
@@ -44,6 +44,25 @@ use crate::diagnostics::{phase, phase_event};
 use crate::types::{
     CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
 };
+
+/// Record a diagnostics-annotated phase result.
+///
+/// Takes `diagnostics` (`&mut Option<Diagnostics>`), `vm_id` (`&str`), and
+/// `request_id` (`Option<&str>`) as explicit arguments so the macro can be
+/// defined at module scope — Rust `macro_rules!` cannot capture local
+/// variables from the caller's scope.
+macro_rules! diag_phase {
+    ($diag:expr, $vid:expr, $rid:expr, $phase:expr, $name:literal, $body:expr) => {
+        crate::diagnostics::phase_result(
+            $diag,
+            $phase,
+            $name,
+            $vid,
+            $rid,
+            || $body,
+        )
+    };
+}
 
 /// Default scratch size: 64 MiB.
 const SCRATCH_DEFAULT_BYTES: u64 = 64 * 1024 * 1024;
@@ -72,9 +91,9 @@ impl Sandbox {
     /// but constructing a minimal Backend without a Discovery from preflight
     /// is not supported in v0.1. Use `Backend::admit` instead.
     pub fn new(_config: SandboxConfig) -> Result<Sandbox, FcError> {
-        Err(FcError::Config(
+        Err(FcError::Config(ConfigError::Other(
             "Sandbox::new is not supported in v0.1; use Backend::admit(config).launch()".into(),
-        ))
+        )))
     }
 
     /// Resolve or auto-generate the VM identifier.
@@ -101,18 +120,6 @@ impl Sandbox {
         })?;
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
-        macro_rules! diag_phase {
-            ($phase:expr, $name:literal, $body:expr) => {
-                crate::diagnostics::phase_result(
-                    &mut diagnostics,
-                    $phase,
-                    $name,
-                    &vm_id,
-                    request_id.as_deref(),
-                    || $body,
-                )
-            };
-        }
 
         // Phase 2: lease acquisition. NB: name the binding `_lease_guard`
         // (suffix after underscore) — a bare `_lease` would drop the guard
@@ -122,7 +129,7 @@ impl Sandbox {
 
         // Phase 3: storage prep. Artifact sha256 verification is owned by
         // m80-preflight before Backend construction, not by each launch.
-        let storage = diag_phase!(Phase::StoragePrepare, "phase_3_storage_prep", {
+        let storage = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::StoragePrepare, "phase_3_storage_prep", {
             phase_3_storage_prep(
                 &vm_id,
                 &backend_config.discovery.rootfs,
@@ -139,7 +146,7 @@ impl Sandbox {
         );
 
         // Phase 4: jailer materialize.
-        let jail = diag_phase!(Phase::Boot, "phase_4_jailer_materialize", {
+        let jail = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_4_jailer_materialize", {
             phase_4_jailer_materialize(
                 &backend_config.discovery.jailer_bin,
                 &backend_config.discovery.firecracker_bin,
@@ -152,12 +159,12 @@ impl Sandbox {
         })?;
 
         // Phase 5: probe cgroup availability (creation happens after phase 9).
-        diag_phase!(Phase::HostPreflight, "phase_5_cgroup_probe", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::HostPreflight, "phase_5_cgroup_probe", {
             phase_5_cgroup_probe(backend_config.cgroup_mode)
         })?;
 
         // Phase 6: resolve network mode.
-        let _net = diag_phase!(Phase::NetworkPrepare, "phase_6_network_realize", {
+        let _net = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::NetworkPrepare, "phase_6_network_realize", {
             phase_6_network_realize(&self.config)
         })?;
         crate::diagnostics::record_owned(
@@ -176,24 +183,24 @@ impl Sandbox {
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
         // Phase 9: jailer exec's firecracker. Returns live pids.
-        let firecracker = diag_phase!(Phase::Boot, "phase_9_jailer_launch", {
+        let firecracker = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_9_jailer_launch", {
             jail.launch(&api_socket).map_err(FcError::Jailer)
         })?;
 
         // Phase 5b: create cgroup subtree now that we have live pids.
-        let cgroup = diag_phase!(Phase::HostPreflight, "phase_5b_cgroup_create", {
+        let cgroup = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::HostPreflight, "phase_5b_cgroup_create", {
             phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)
         })?;
 
         // Phase 10: open UDS REST client (retries for up to 5 s).
         let host_api_socket =
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let client = diag_phase!(Phase::Boot, "phase_10_open_uds", {
+        let client = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_10_open_uds", {
             phase_10_open_uds(&host_api_socket)
         })?;
 
         // Phase 11: REST PUTs in documented order.
-        diag_phase!(Phase::Boot, "phase_11_rest_puts", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_11_rest_puts", {
             phase_11_rest_puts(
                 &client,
                 &storage,
@@ -211,16 +218,16 @@ impl Sandbox {
         // RSTs the guest. Must be created before InstanceStart.
         let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
         let ready_uds = ready_listener_path(&vsock_uds);
-        let ready_listener = diag_phase!(Phase::Ready, "phase_11b_ready_listener_bind", {
+        let ready_listener = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Ready, "phase_11b_ready_listener_bind", {
             phase_11b_bind_ready_listener(&ready_uds, backend_config.jail_uid)
         })?;
 
-        diag_phase!(Phase::Boot, "phase_11c_boot_identity_record", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_11c_boot_identity_record", {
             crate::boot_identity::record(&run_dir, &backend_config.discovery)
         })?;
 
         // Phase 12a: InstanceStart.
-        diag_phase!(Phase::Boot, "phase_12a_instance_start", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_12a_instance_start", {
             client.instance_action(InstanceAction::InstanceStart)
         })?;
         crate::diagnostics::record_owned(
@@ -234,7 +241,7 @@ impl Sandbox {
         // Phase 12b: accept the inverted-readiness signal from m80-guestd,
         // then probe the exec channel once. accept() returns event-driven the
         // moment guestd's outbound connect lands — no muxer-polling race.
-        diag_phase!(Phase::Ready, "phase_12b_ready_accept", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Ready, "phase_12b_ready_accept", {
             phase_12b_ready_accept(&ready_listener, &ready_uds, &vsock_uds, &vm_id)
         })?;
         crate::diagnostics::record_owned(
@@ -259,6 +266,13 @@ impl Sandbox {
             )
         });
 
+        let kill_guard = crate::types::ForceKillGuard::new(
+            vm_id.clone(),
+            firecracker.firecracker_pid,
+            firecracker.jailer_pid,
+            Arc::clone(&watcher_stop),
+            None,
+        );
         Ok(RunningSandbox {
             vm_id,
             request_id,
@@ -277,6 +291,7 @@ impl Sandbox {
             watcher_stop,
             watcher_thread,
             diagnostics,
+            kill_guard,
         })
     }
 }
@@ -329,25 +344,13 @@ impl Sandbox {
         })?;
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
-        macro_rules! diag_phase {
-            ($phase:expr, $name:literal, $body:expr) => {
-                crate::diagnostics::phase_result(
-                    &mut diagnostics,
-                    $phase,
-                    $name,
-                    &vm_id,
-                    request_id.as_deref(),
-                    || $body,
-                )
-            };
-        }
 
         // Phase 2: lease acquisition.
         let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
         // Phase 3: storage prep (overlay + optional scratch — still needed
         // for the jailer bind-mount layout even on restore path).
-        let storage = diag_phase!(Phase::StoragePrepare, "phase_3_storage_prep", {
+        let storage = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::StoragePrepare, "phase_3_storage_prep", {
             phase_3_storage_prep(
                 &vm_id,
                 &backend_config.discovery.rootfs,
@@ -364,7 +367,7 @@ impl Sandbox {
         );
 
         // Phase 4: jailer materialize.
-        let jail = diag_phase!(Phase::Boot, "phase_4_jailer_materialize", {
+        let jail = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_4_jailer_materialize", {
             phase_4_jailer_materialize(
                 &backend_config.discovery.jailer_bin,
                 &backend_config.discovery.firecracker_bin,
@@ -377,7 +380,7 @@ impl Sandbox {
         })?;
 
         // Phase 5: cgroup probe (restore path honours cgroup mode too).
-        diag_phase!(Phase::HostPreflight, "phase_5_cgroup_probe", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::HostPreflight, "phase_5_cgroup_probe", {
             phase_5_cgroup_probe(backend_config.cgroup_mode)
         })?;
 
@@ -386,26 +389,26 @@ impl Sandbox {
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
 
         // Phase 9: spawn Firecracker via jailer.
-        let firecracker = diag_phase!(Phase::Boot, "phase_9_jailer_launch", {
+        let firecracker = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_9_jailer_launch", {
             jail.launch(&api_socket).map_err(FcError::Jailer)
         })?;
 
         // Phase 5b: create cgroup subtree.
-        let cgroup = diag_phase!(Phase::HostPreflight, "phase_5b_cgroup_create", {
+        let cgroup = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::HostPreflight, "phase_5b_cgroup_create", {
             phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker)
         })?;
 
         // Phase 10: open UDS REST client.
         let host_api_socket =
             firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let client = diag_phase!(Phase::Boot, "phase_10_open_uds", {
+        let client = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_10_open_uds", {
             phase_10_open_uds(&host_api_socket)
         })?;
 
         // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +
         // PATCH /vm Resumed (resume: true).
         let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let snapshot_bind = diag_phase!(Phase::Boot, "phase_restore_snapshot_bind", {
+        let snapshot_bind = diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_restore_snapshot_bind", {
             bind_snapshot_parent_into_jail(
                 &jail.jail_path,
                 &snapshot,
@@ -413,7 +416,7 @@ impl Sandbox {
                 backend_config.jail_gid,
             )
         })?;
-        diag_phase!(Phase::Boot, "phase_restore_load", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Boot, "phase_restore_load", {
             snapshot_restore(RestoreRequest {
                 fc_socket: host_api_socket.clone(),
                 paths: snapshot_bind.paths.clone(),
@@ -432,7 +435,7 @@ impl Sandbox {
 
         // Phase restore-probe: CONNECT 9001 retry loop.
         // Replaces the cold-boot phase_12b_ready_accept.
-        diag_phase!(Phase::Ready, "phase_restore_probe_exec_channel", {
+        diag_phase!(&mut diagnostics, &vm_id, request_id.as_deref(), Phase::Ready, "phase_restore_probe_exec_channel", {
             phase_restore_probe_exec_channel(&vsock_uds, &vm_id)
         })?;
         crate::diagnostics::record_owned(
@@ -459,6 +462,14 @@ impl Sandbox {
             )
         });
 
+        let snapshot_mount = Some(snapshot_bind.into_mount_path());
+        let kill_guard = crate::types::ForceKillGuard::new(
+            vm_id.clone(),
+            firecracker.firecracker_pid,
+            firecracker.jailer_pid,
+            Arc::clone(&watcher_stop),
+            snapshot_mount.clone(),
+        );
         Ok(RunningSandbox {
             vm_id,
             request_id,
@@ -467,7 +478,7 @@ impl Sandbox {
             cgroup,
             rootfs: storage.rootfs,
             scratch: storage.scratch,
-            snapshot_mount: Some(snapshot_bind.into_mount_path()),
+            snapshot_mount,
             client,
             firecracker,
             permit: self.permit,
@@ -477,6 +488,7 @@ impl Sandbox {
             watcher_stop,
             watcher_thread,
             diagnostics,
+            kill_guard,
         })
     }
 }
@@ -604,14 +616,7 @@ fn phase_4_jailer_materialize(
         });
     }
 
-    let sockets = vec![
-        SocketSpec {
-            path: PathBuf::from("firecracker.sock"),
-        },
-        SocketSpec {
-            path: PathBuf::from("vsock.sock"),
-        },
-    ];
+    let sockets = vec![JailerSocket::Firecracker, JailerSocket::Vsock];
 
     let jailer_config = JailerConfig {
         jailer_bin: jailer_bin.to_path_buf(),
@@ -635,10 +640,15 @@ fn phase_5_cgroup_probe(mode: CgroupMode) -> Result<(), FcError> {
         CgroupMode::Disabled => Ok(()),
         CgroupMode::UnifiedV2 => match Subtree::probe() {
             Ok(()) => Ok(()),
-            Err(m80_cgroup::CgroupError::UnsupportedHostMode) => Err(FcError::Config(
-                "cgroup mode UnifiedV2 requested but host is not v2".into(),
-            )),
-            Err(e) => Err(FcError::Config(format!("cgroup probe: {e}"))),
+            Err(m80_cgroup::CgroupError::UnsupportedHostMode) => {
+                Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "cgroup_mode",
+                    reason: "UnifiedV2 requested but host is not cgroup v2".into(),
+                }))
+            }
+            Err(e) => Err(FcError::Config(ConfigError::Other(format!(
+                "cgroup probe: {e}"
+            )))),
         },
     }
 }
@@ -675,10 +685,10 @@ fn phase_5b_cgroup_create(
 fn phase_6_network_realize(config: &SandboxConfig) -> Result<RealizedNetwork, FcError> {
     match m80_net_mode::resolve(&config.network) {
         VmNetworkMode::NoEgress => Ok(RealizedNetwork::NoEgress),
-        VmNetworkMode::OutboundNat { .. } => Err(FcError::Config(
+        VmNetworkMode::OutboundNat { .. } => Err(FcError::Config(ConfigError::Other(
             "OutboundNat networking is deferred to v0.2; use NetworkPolicy::NoEgress in v0.1"
                 .into(),
-        )),
+        ))),
     }
 }
 
@@ -801,16 +811,18 @@ fn accept_ready_signal(
     let deadline = Instant::now() + timeout;
 
     let mut stream = loop {
+        // Check deadline before sleeping to avoid overshooting by one poll interval.
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FcError::GuestdReadyTimeout {
+                path: ready_path.to_path_buf(),
+                timeout,
+            });
+        }
         match ready_listener.accept() {
             Ok((s, _)) => break s,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                if Instant::now() >= deadline {
-                    return Err(FcError::GuestdReadyTimeout {
-                        path: ready_path.to_path_buf(),
-                        timeout,
-                    });
-                }
-                std::thread::sleep(READY_ACCEPT_POLL);
+                std::thread::sleep(remaining.min(READY_ACCEPT_POLL));
             }
             Err(e) => return Err(FcError::Io(e)),
         }

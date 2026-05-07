@@ -2,7 +2,7 @@
 
 mod common;
 
-use m80_jailer::{BindMode, Binding, Plan, SocketSpec};
+use m80_jailer::{BindMode, Binding, JailerSocket, Plan};
 use std::path::{Path, PathBuf};
 
 fn sample_plan() -> Plan {
@@ -24,9 +24,7 @@ fn sample_plan() -> Plan {
             mode: BindMode::CreateInsideJail,
         },
     ];
-    cfg.sockets = vec![SocketSpec {
-        path: PathBuf::from("run/firecracker.sock"),
-    }];
+    cfg.sockets = vec![JailerSocket::Firecracker];
     Plan::compute(&cfg).unwrap()
 }
 

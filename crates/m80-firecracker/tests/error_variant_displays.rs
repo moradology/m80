@@ -1,6 +1,6 @@
 //! Each `FcError` variant renders via `Display` without panic.
 
-use m80_firecracker::FcError;
+use m80_firecracker::{ConfigError, FcError};
 
 #[test]
 fn admission_refused_displays() {
@@ -82,7 +82,7 @@ fn io_error_displays() {
 
 #[test]
 fn config_error_displays() {
-    let e = FcError::Config("test config error".into());
+    let e = FcError::Config(ConfigError::Other("test config error".into()));
     let s = e.to_string();
     assert!(s.contains("test config error"), "got: {s}");
 }

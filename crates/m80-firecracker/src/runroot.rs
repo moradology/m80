@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 
 /// Contents of the `ownership.lock` file written by the process that created
 /// this run-dir.
@@ -43,17 +43,17 @@ pub(crate) fn write_ownership_lock(run_dir: &Path) -> Result<LeaseGuard, FcError
     // Check for a pre-existing lock from another live process.
     if lock_path.exists() {
         let existing = read_ownership_lock(&lock_path).map_err(|()| {
-            FcError::Config(format!(
+            FcError::Config(ConfigError::Other(format!(
                 "run-dir {} has an ambiguous ownership lock",
                 run_dir.display()
-            ))
+            )))
         })?;
         if pid_is_alive(existing.pid) {
-            return Err(FcError::Config(format!(
+            return Err(FcError::Config(ConfigError::Other(format!(
                 "run-dir {} already owned by pid {}",
                 run_dir.display(),
                 existing.pid
-            )));
+            ))));
         }
     }
 

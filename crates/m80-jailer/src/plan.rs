@@ -64,9 +64,9 @@ impl Plan {
         }
 
         // Step 4: socket reservations.
-        for spec in &config.sockets {
+        for socket in &config.sockets {
             steps.push(PlanStep::Socket {
-                path: jail_root.join(&spec.path),
+                path: jail_root.join(socket.jail_path()),
             });
         }
 

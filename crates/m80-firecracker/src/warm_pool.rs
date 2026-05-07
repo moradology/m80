@@ -9,95 +9,29 @@ use std::time::{Duration, Instant};
 use m80_proto::{ExecExit, ExecRequest, ExecResponse, ExecStatus};
 use m80_snapshot::SnapshotPaths;
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 use crate::types::{Backend, ExecChunk, RunningSandbox, SandboxConfig};
 
 const RESTORED_SLOT_SETTLE: Duration = Duration::from_secs(1);
 
-/// Reset decision for a leased blank VM.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlankVmResetDecision {
-    /// All reset evidence was present, current, and unambiguous.
-    Reusable,
-    /// At least one required evidence input was missing or failed.
-    Discard,
-}
+/// Maximum number of concurrent background fill workers per pool.
+///
+/// Prevents runaway thread spawning when `target_ready` is high or when the
+/// admit semaphore is the bottleneck. Additional fill demand beyond this cap is
+/// satisfied by existing workers completing and re-triggering.
+const MAX_FILL_THREADS: usize = 4;
 
-/// First missing or failed reset-evidence input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlankVmResetDiscardReason {
-    /// No reset evidence was provided for this release path.
-    ResetEvidenceUnavailable,
-    /// Ownership marker and lease evidence was absent or stale.
-    OwnershipAndLease,
-    /// Boot identity did not match the clean template.
-    BootIdentity,
-    /// Workspace identity was attached to the VM.
-    NoWorkspaceIdAttached,
-    /// Run identity was attached to the VM.
-    NoRunIdAttached,
-    /// Guest workspace was not empty or template-equal.
-    EmptyGuestWorkspace,
-    /// Run-root surface was not clean.
-    CleanRunRootSurface,
-    /// Diagnostics were not clean.
-    CleanDiagnostics,
-    /// Post-reset guestd probe failed.
-    PostResetGuestdProbe,
-}
-
-/// The eight explicit evidence inputs required before a blank VM may re-enter
-/// `Ready`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BlankVmResetEvidence {
-    /// Ownership marker and lease are current and match this VM.
-    pub ownership_and_lease: bool,
-    /// Boot identity matches the clean snapshot template.
-    pub boot_identity: bool,
-    /// No workspace id is attached.
-    pub no_workspace_id_attached: bool,
-    /// No run id is attached.
-    pub no_run_id_attached: bool,
-    /// Guest workspace is empty or template-equal.
-    pub empty_guest_workspace: bool,
-    /// Run-root has only expected clean artifacts.
-    pub clean_run_root_surface: bool,
-    /// Diagnostics contain no failure evidence.
-    pub clean_diagnostics: bool,
-    /// A post-reset guestd probe succeeded.
-    pub post_reset_guestd_probe: bool,
-}
-
-impl BlankVmResetEvidence {
-    /// Return `Reusable` only when every evidence input is explicitly true.
-    pub fn decision(self) -> Result<BlankVmResetDecision, BlankVmResetDiscardReason> {
-        if !self.ownership_and_lease {
-            return Err(BlankVmResetDiscardReason::OwnershipAndLease);
-        }
-        if !self.boot_identity {
-            return Err(BlankVmResetDiscardReason::BootIdentity);
-        }
-        if !self.no_workspace_id_attached {
-            return Err(BlankVmResetDiscardReason::NoWorkspaceIdAttached);
-        }
-        if !self.no_run_id_attached {
-            return Err(BlankVmResetDiscardReason::NoRunIdAttached);
-        }
-        if !self.empty_guest_workspace {
-            return Err(BlankVmResetDiscardReason::EmptyGuestWorkspace);
-        }
-        if !self.clean_run_root_surface {
-            return Err(BlankVmResetDiscardReason::CleanRunRootSurface);
-        }
-        if !self.clean_diagnostics {
-            return Err(BlankVmResetDiscardReason::CleanDiagnostics);
-        }
-        if !self.post_reset_guestd_probe {
-            return Err(BlankVmResetDiscardReason::PostResetGuestdProbe);
-        }
-        Ok(BlankVmResetDecision::Reusable)
-    }
-}
+/// Exponential-backoff delays applied to background fill retries after a
+/// consecutive run of slot-launch failures.
+///
+/// Indexed by `min(consecutive_fill_errors - 1, LEN - 1)`:
+///   errors=1 → 50 ms, errors=2 → 200 ms, errors=3 → 1 s, errors≥4 → 10 s.
+const FILL_BACKOFF: &[Duration] = &[
+    Duration::from_millis(50),
+    Duration::from_millis(200),
+    Duration::from_secs(1),
+    Duration::from_secs(10),
+];
 
 /// Warm-pool configuration.
 #[derive(Debug, Clone)]
@@ -150,6 +84,9 @@ struct WarmPoolState {
     leased: usize,
     discarded: usize,
     last_fill_error: Option<String>,
+    /// Number of consecutive slot-launch failures; reset to 0 on success.
+    /// Used to index into `FILL_BACKOFF` to throttle retry threads.
+    consecutive_fill_errors: u32,
 }
 
 impl WarmPool {
@@ -157,12 +94,17 @@ impl WarmPool {
     /// if the first request must be served from a pre-filled slot.
     pub fn new(backend: Arc<Backend>, config: WarmPoolConfig) -> Result<Self, FcError> {
         if config.target_ready == 0 {
-            return Err(FcError::Config("warm pool target_ready must be > 0".into()));
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "warm_pool.target_ready",
+                reason: "must be > 0".into(),
+            }));
         }
         if config.sandbox.workspace.is_some() {
-            return Err(FcError::Config(
-                "warm pool slots must be stateless: SandboxConfig::workspace must be None".into(),
-            ));
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "warm_pool.sandbox.workspace",
+                reason: "warm pool slots must be stateless: SandboxConfig::workspace must be None"
+                    .into(),
+            }));
         }
         Ok(WarmPool {
             inner: Arc::new(WarmPoolInner {
@@ -174,6 +116,7 @@ impl WarmPool {
                     leased: 0,
                     discarded: 0,
                     last_fill_error: None,
+                    consecutive_fill_errors: 0,
                 }),
                 changed: Condvar::new(),
                 shutdown: AtomicBool::new(false),
@@ -225,8 +168,6 @@ impl WarmPool {
         Ok(WarmLease {
             sandbox: Some(sandbox),
             pool: Arc::clone(&self.inner),
-            reset_decision: BlankVmResetDecision::Discard,
-            discard_reason: BlankVmResetDiscardReason::ResetEvidenceUnavailable,
         })
     }
 
@@ -241,7 +182,9 @@ impl WarmPool {
             let now = Instant::now();
             if now >= deadline {
                 if let Some(err) = &state.last_fill_error {
-                    return Err(FcError::Config(format!("warm pool fill failed: {err}")));
+                    return Err(FcError::Config(ConfigError::Other(format!(
+                        "warm pool fill failed: {err}"
+                    ))));
                 }
                 return Err(FcError::PoolEmpty {
                     target_ready: self.inner.config.target_ready,
@@ -295,7 +238,13 @@ impl WarmPoolInner {
                 if self.shutdown.load(Ordering::Relaxed) {
                     return;
                 }
-                if state.ready.len() + state.filling >= self.config.target_ready {
+                // Stop if the pool is already at target or already has the
+                // maximum number of concurrent fill workers running.
+                let deficit = self
+                    .config
+                    .target_ready
+                    .saturating_sub(state.ready.len() + state.filling);
+                if deficit == 0 || state.filling >= MAX_FILL_THREADS {
                     return;
                 }
                 state.filling += 1;
@@ -304,25 +253,38 @@ impl WarmPoolInner {
             let inner = Arc::clone(self);
             std::thread::spawn(move || {
                 let launched = inner.launch_slot();
-                let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                state.filling = state.filling.saturating_sub(1);
-                match launched {
-                    Ok(sandbox) if inner.shutdown.load(Ordering::Relaxed) => {
-                        drop(state);
-                        let _ = discard_sandbox(sandbox);
-                        inner.changed.notify_all();
+                let backoff = {
+                    let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                    state.filling = state.filling.saturating_sub(1);
+                    match launched {
+                        Ok(sandbox) if inner.shutdown.load(Ordering::Relaxed) => {
+                            drop(state);
+                            let _ = discard_sandbox(sandbox);
+                            inner.changed.notify_all();
+                            return;
+                        }
+                        Ok(sandbox) => {
+                            state.ready.push_back(sandbox);
+                            state.last_fill_error = None;
+                            state.consecutive_fill_errors = 0;
+                            inner.changed.notify_all();
+                            None
+                        }
+                        Err(e) => {
+                            state.consecutive_fill_errors =
+                                state.consecutive_fill_errors.saturating_add(1);
+                            let idx = (state.consecutive_fill_errors as usize - 1)
+                                .min(FILL_BACKOFF.len() - 1);
+                            let delay = FILL_BACKOFF[idx];
+                            state.last_fill_error = Some(e.to_string());
+                            inner.changed.notify_all();
+                            Some(delay)
+                        }
                     }
-                    Ok(sandbox) => {
-                        state.ready.push_back(sandbox);
-                        state.last_fill_error = None;
-                        inner.changed.notify_all();
-                    }
-                    Err(e) => {
-                        state.last_fill_error = Some(e.to_string());
-                        inner.changed.notify_all();
-                        drop(state);
-                        inner.start_background_fill();
-                    }
+                };
+                if let Some(delay) = backoff {
+                    std::thread::sleep(delay);
+                    inner.start_background_fill();
                 }
             });
         }
@@ -353,8 +315,6 @@ impl WarmPoolInner {
 pub struct WarmLease {
     sandbox: Option<RunningSandbox>,
     pool: Arc<WarmPoolInner>,
-    reset_decision: BlankVmResetDecision,
-    discard_reason: BlankVmResetDiscardReason,
 }
 
 impl WarmLease {
@@ -427,20 +387,6 @@ impl WarmLease {
             .run_dir()
     }
 
-    /// Reset decision selected for this lease.
-    ///
-    /// v0.2's first implementation never infers reuse from liveness or clean
-    /// looking host state, so leases default to `Discard` unless a future path
-    /// supplies complete [`BlankVmResetEvidence`].
-    pub fn reset_decision(&self) -> BlankVmResetDecision {
-        self.reset_decision
-    }
-
-    /// Reason this lease will be discarded.
-    pub fn discard_reason(&self) -> BlankVmResetDiscardReason {
-        self.discard_reason
-    }
-
     /// Consume the lease, force-kill the slot, delete its run-dir, and allow
     /// the pool to refill a replacement.
     pub fn discard(mut self) -> Result<(), FcError> {
@@ -490,10 +436,10 @@ fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<()
                 return Ok(());
             }
             Ok(resp) => {
-                return Err(FcError::Config(format!(
+                return Err(FcError::Config(ConfigError::Other(format!(
                     "warm pool ready probe failed: status={:?} exit_code={:?}",
                     resp.status, resp.exit_code
-                )));
+                ))));
             }
             Err(e) => {
                 last_error = Some(e);
@@ -501,5 +447,7 @@ fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<()
             }
         }
     }
-    Err(last_error.unwrap_or_else(|| FcError::Config("warm pool ready probe failed".into())))
+    Err(last_error.unwrap_or_else(|| {
+        FcError::Config(ConfigError::Other("warm pool ready probe failed".into()))
+    }))
 }

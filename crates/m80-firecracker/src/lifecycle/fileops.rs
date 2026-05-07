@@ -11,7 +11,7 @@ use m80_proto::{
     PAYLOAD_KIND_FILE_READ_CHUNK,
 };
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 use crate::lifecycle::exec::{request_id_for, send_envelope_with_open_retry};
 use crate::lifecycle::monotonic_ns;
 use crate::types::RunningSandbox;
@@ -93,7 +93,11 @@ impl RunningSandbox {
             }
             expected_seq = expected_seq
                 .checked_add(1)
-                .ok_or_else(|| FcError::Config("file_read chunk sequence overflow".into()))?;
+                .ok_or_else(|| {
+                    FcError::Config(ConfigError::Other(
+                        "file_read chunk sequence overflow".into(),
+                    ))
+                })?;
         }
     }
 
@@ -129,9 +133,11 @@ impl RunningSandbox {
         let response: FileStatResponse =
             self.fileop_round_trip(FileStatRequest { path: path.into() }, "file_stat")?;
         fileop_result(response.error)?;
-        response
-            .stat
-            .ok_or_else(|| FcError::Config("file_stat response missing stat".into()))
+        response.stat.ok_or_else(|| {
+            FcError::Config(ConfigError::Other(
+                "file_stat response missing stat".into(),
+            ))
+        })
     }
 
     /// Remove one non-directory guest path.
@@ -142,9 +148,9 @@ impl RunningSandbox {
         if response.removed {
             Ok(())
         } else {
-            Err(FcError::Config(
+            Err(FcError::Config(ConfigError::Other(
                 "file_remove response reported no removal and no error".into(),
-            ))
+            )))
         }
     }
 
@@ -157,7 +163,10 @@ impl RunningSandbox {
         chunk_size: usize,
     ) -> Result<u64, FcError> {
         if chunk_size == 0 {
-            return Err(FcError::Config("chunk_size must be > 0".into()));
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "chunk_size",
+                reason: "must be > 0".into(),
+            }));
         }
         self.prepare_fileop_activity()?;
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
@@ -175,7 +184,9 @@ impl RunningSandbox {
         let begin_response = begin_response.payload;
         fileop_result(begin_response.error)?;
         let upload_id = begin_response.upload_id.ok_or_else(|| {
-            FcError::Config("file upload begin response missing upload_id".into())
+            FcError::Config(ConfigError::Other(
+                "file upload begin response missing upload_id".into(),
+            ))
         })?;
 
         let mut seq = 0u64;
@@ -196,9 +207,11 @@ impl RunningSandbox {
             let response = response.payload;
             fileop_result(response.error)?;
             validate_chunk_ack(&upload_id, seq, &response)?;
-            seq = seq
-                .checked_add(1)
-                .ok_or_else(|| FcError::Config("file upload chunk sequence overflow".into()))?;
+            seq = seq.checked_add(1).ok_or_else(|| {
+                FcError::Config(ConfigError::Other(
+                    "file upload chunk sequence overflow".into(),
+                ))
+            })?;
         }
 
         channel.send(&Envelope::with_request_id(

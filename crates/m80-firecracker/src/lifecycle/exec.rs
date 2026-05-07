@@ -17,7 +17,7 @@ use m80_proto::{
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 use crate::lifecycle::monotonic_ns;
 use crate::runroot::unix_ms_now;
 use crate::diagnostics::phase_event;
@@ -224,7 +224,9 @@ impl RunningSandbox {
                             return Ok(cancelled_pty_exit(started_at_unix_ms, output_total));
                         }
                         CancelResponseDisposition::AlreadyExited => continue,
-                        CancelResponseDisposition::Failed(msg) => return Err(FcError::Config(msg)),
+                        CancelResponseDisposition::Failed(msg) => {
+                            return Err(FcError::Config(ConfigError::Other(msg)))
+                        }
                     }
                 }
                 other => {
@@ -396,7 +398,9 @@ impl RunningSandbox {
                             ));
                         }
                         CancelResponseDisposition::AlreadyExited => continue,
-                        CancelResponseDisposition::Failed(msg) => return Err(FcError::Config(msg)),
+                        CancelResponseDisposition::Failed(msg) => {
+                            return Err(FcError::Config(ConfigError::Other(msg)))
+                        }
                     }
                 }
                 other => {
@@ -428,7 +432,10 @@ impl Drop for CancelForwarder {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+            match handle.join() {
+                Ok(()) => {}
+                Err(panic) => tracing::error!(?panic, "cancel forwarder thread panicked"),
+            }
         }
     }
 }
@@ -442,7 +449,10 @@ impl Drop for PtyEventForwarder {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+            match handle.join() {
+                Ok(()) => {}
+                Err(panic) => tracing::error!(?panic, "pty event forwarder thread panicked"),
+            }
         }
     }
 }
@@ -491,7 +501,7 @@ fn check_stream_sequence(
     }
     *expected = expected
         .checked_add(1)
-        .ok_or_else(|| FcError::Config(format!("{stream} sequence overflow")))?;
+        .ok_or_else(|| FcError::Config(ConfigError::Other(format!("{stream} sequence overflow"))))?;
     Ok(())
 }
 
@@ -631,8 +641,11 @@ where
             Err(e) => return Err(FcError::Vsock(e)),
         }
     }
-    Err(last_error
-        .unwrap_or_else(|| FcError::Config("exec send retry exhausted without an error".into())))
+    Err(last_error.unwrap_or_else(|| {
+        FcError::Config(ConfigError::Other(
+            "exec send retry exhausted without an error".into(),
+        ))
+    }))
 }
 
 fn is_transient_exec_open_send_error(err: &m80_vsock::VsockError) -> bool {

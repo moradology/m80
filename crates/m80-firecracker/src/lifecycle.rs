@@ -17,8 +17,7 @@ use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
-use crate::error::StopDisposition;
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError, StopDisposition};
 use crate::diagnostics::phase_event;
 use crate::types::{RunningSandbox, StoppedSandbox};
 
@@ -91,6 +90,7 @@ impl RunningSandbox {
     /// 4. `release` — foundation resources dropped, permit and scratch moved
     ///    into the returned `StoppedSandbox`.
     pub fn stop(mut self) -> Result<StoppedSandbox, FcError> {
+        self.kill_guard.disarm();
         let run_root = self.backend.config.run_root.clone();
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
         crate::diagnostics::record_owned(
@@ -130,6 +130,7 @@ impl RunningSandbox {
             watcher_stop: _watcher_stop,
             watcher_thread,
             diagnostics,
+            kill_guard: _kill_guard,
         } = self;
         let mut diagnostics = diagnostics;
 
@@ -166,6 +167,7 @@ impl RunningSandbox {
     /// whether to delete it via [`StoppedSandbox::delete`] or preserve it
     /// further via [`StoppedSandbox::preserve_for_triage`].
     pub fn force_kill(mut self) -> Result<StoppedSandbox, FcError> {
+        self.kill_guard.disarm();
         let run_root = self.backend.config.run_root.clone();
         crate::diagnostics::record_owned(
             &mut self.diagnostics,
@@ -206,6 +208,7 @@ impl RunningSandbox {
             watcher_stop: _watcher_stop,
             watcher_thread,
             diagnostics,
+            kill_guard: _kill_guard,
         } = self;
         let mut diagnostics = diagnostics;
 
@@ -260,27 +263,36 @@ pub(crate) fn bind_snapshot_parent_into_jail(
     jail_uid: u32,
     jail_gid: u32,
 ) -> Result<SnapshotBind, FcError> {
-    let host_parent = paths
-        .vm_state
-        .parent()
-        .ok_or_else(|| FcError::Config("snapshot vm_state must have a parent directory".into()))?;
-    let mem_parent = paths
-        .mem
-        .parent()
-        .ok_or_else(|| FcError::Config("snapshot mem must have a parent directory".into()))?;
+    let host_parent = paths.vm_state.parent().ok_or_else(|| {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "snapshot.vm_state",
+            reason: "path must have a parent directory".into(),
+        })
+    })?;
+    let mem_parent = paths.mem.parent().ok_or_else(|| {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "snapshot.mem",
+            reason: "path must have a parent directory".into(),
+        })
+    })?;
     if host_parent != mem_parent {
-        return Err(FcError::Config(
-            "snapshot vm_state and mem paths must live in the same directory".into(),
-        ));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "snapshot",
+            reason: "vm_state and mem paths must live in the same directory".into(),
+        }));
     }
-    let vm_name = paths
-        .vm_state
-        .file_name()
-        .ok_or_else(|| FcError::Config("snapshot vm_state must have a file name".into()))?;
-    let mem_name = paths
-        .mem
-        .file_name()
-        .ok_or_else(|| FcError::Config("snapshot mem must have a file name".into()))?;
+    let vm_name = paths.vm_state.file_name().ok_or_else(|| {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "snapshot.vm_state",
+            reason: "path must have a file name".into(),
+        })
+    })?;
+    let mem_name = paths.mem.file_name().ok_or_else(|| {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "snapshot.mem",
+            reason: "path must have a file name".into(),
+        })
+    })?;
 
     std::fs::create_dir_all(host_parent)?;
     let mount_path = jail_path.join(SNAPSHOT_BIND_DEST);
@@ -463,7 +475,7 @@ pub(crate) fn idle_watcher_loop(
 }
 
 /// Send `SIGKILL` to `pid`. Treats `ESRCH` (no such process) as success.
-fn kill_pid(pid: u32) -> Result<(), FcError> {
+pub(crate) fn kill_pid(pid: u32) -> Result<(), FcError> {
     use nix::errno::Errno;
     use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;

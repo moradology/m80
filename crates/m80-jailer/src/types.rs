@@ -28,8 +28,8 @@ pub struct JailerConfig {
     pub gid: u32,
     /// Mounts to bind into the jail (RO, RW, or "create inside").
     pub bindings: Vec<Binding>,
-    /// Sockets to create inside the jail (e.g., the API and vsock UDSes).
-    pub sockets: Vec<SocketSpec>,
+    /// Sockets to reserve inside the jail (API socket and vsock UDS).
+    pub sockets: Vec<JailerSocket>,
     /// Optional host-side file that receives firecracker/jailer stdout and
     /// stderr. The orchestrator uses this for the per-VM serial console log.
     pub stdio_log: Option<PathBuf>,
@@ -74,12 +74,28 @@ pub enum BindMode {
     CreateInsideJail,
 }
 
-/// Path inside the jail where a UDS will be created at materialization time.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SocketSpec {
-    /// Path inside the jail (e.g., `firecracker.sock`).
-    pub path: PathBuf,
+/// One of the two UDS sockets the jailer creates inside the jail.
+///
+/// Each variant carries its canonical relative path; there is no variable-path
+/// data in this type because the two paths are hardcoded by the m80
+/// orchestration layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JailerSocket {
+    /// Firecracker's REST API socket (`firecracker.sock`).
+    Firecracker,
+    /// The virtio-vsock host-side socket (`vsock.sock`).
+    Vsock,
+}
+
+impl JailerSocket {
+    /// Canonical relative path inside the jail for this socket.
+    pub fn jail_path(self) -> &'static str {
+        match self {
+            JailerSocket::Firecracker => "firecracker.sock",
+            JailerSocket::Vsock => "vsock.sock",
+        }
+    }
 }
 
 /// Pure description of every filesystem step a materialize would take.

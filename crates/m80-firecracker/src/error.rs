@@ -102,6 +102,42 @@ impl LifecycleFailureKind {
     ];
 }
 
+/// Structured configuration error. Used as the inner payload of
+/// [`FcError::Config`].
+///
+/// `Other` is a last-resort fallback for anyhow chains at binary edges.
+/// Prefer `TomlSyntax`, `MissingField`, or `InvalidValue` when the site
+/// has enough information.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    /// A TOML config file could not be parsed.
+    #[error("{}: {source}", path.display())]
+    TomlSyntax {
+        /// Path of the file that failed to parse.
+        path: PathBuf,
+        /// The parse error from `toml`.
+        source: toml::de::Error,
+    },
+    /// A required configuration field was absent.
+    #[error("missing required field `{field}`")]
+    MissingField {
+        /// Name of the missing field.
+        field: &'static str,
+    },
+    /// A field was present but its value was rejected.
+    #[error("invalid value for `{field}`: {reason}")]
+    InvalidValue {
+        /// Name of the invalid field.
+        field: &'static str,
+        /// Human-readable rejection reason.
+        reason: String,
+    },
+    /// Catch-all for anyhow chains at binary edges. Document the specific
+    /// call site with a comment; prefer a typed variant where possible.
+    #[error("{0}")]
+    Other(String),
+}
+
 /// Top-level error for `m80-firecracker`. Each variant tells the caller
 /// which phase failed; the inner cause carries phase-specific detail.
 #[derive(Debug, thiserror::Error)]
@@ -194,7 +230,7 @@ pub enum FcError {
     Io(#[from] io::Error),
     /// Configuration loading or merging failure.
     #[error("config: {0}")]
-    Config(String),
+    Config(ConfigError),
     /// The sandbox was idle for longer than `SandboxConfig::idle_timeout`.
     ///
     /// The background watcher has issued a graceful shutdown; the caller must
@@ -202,6 +238,17 @@ pub enum FcError {
     /// resources.
     #[error("sandbox idle timeout expired")]
     IdleTimedOut,
+}
+
+impl FcError {
+    /// Convenience constructor for `FcError::Config(ConfigError::Other(msg))`.
+    ///
+    /// Use at call sites that have a formatted string but no more-specific
+    /// `ConfigError` variant. Prefer `InvalidValue` or `MissingField` when
+    /// the site has enough information.
+    pub fn config_other(msg: impl Into<String>) -> Self {
+        FcError::Config(ConfigError::Other(msg.into()))
+    }
 }
 
 /// Ordered host-side teardown phases for a running VM.

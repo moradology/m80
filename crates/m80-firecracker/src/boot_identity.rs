@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use m80_image_manifest::{ImageKind, KernelKind, Manifest};
 use m80_preflight::Discovery;
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 
 /// Current `boot-identity.json` schema version.
 const BOOT_IDENTITY_SCHEMA_VERSION: u32 = 1;
@@ -35,7 +35,7 @@ pub(crate) fn record(run_dir: &Path, discovery: &Discovery) -> Result<(), FcErro
     let identity = BootIdentity::from_discovery(discovery)?;
     let path = crate::layout::boot_identity_path(run_dir);
     let bytes = serde_json::to_vec_pretty(&identity)
-        .map_err(|e| FcError::Config(format!("serialize boot identity: {e}")))?;
+        .map_err(|e| FcError::Config(ConfigError::Other(format!("serialize boot identity: {e}"))))?;
     std::fs::write(path, bytes).map_err(FcError::Io)
 }
 
@@ -60,8 +60,11 @@ impl BootIdentity {
 }
 
 fn manifest_sha256(manifest: &Manifest) -> Result<String, FcError> {
-    let bytes = serde_json::to_vec(manifest)
-        .map_err(|e| FcError::Config(format!("serialize manifest for boot identity: {e}")))?;
+    let bytes = serde_json::to_vec(manifest).map_err(|e| {
+        FcError::Config(ConfigError::Other(format!(
+            "serialize manifest for boot identity: {e}"
+        )))
+    })?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 

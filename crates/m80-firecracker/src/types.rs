@@ -30,7 +30,7 @@ pub(crate) type Semaphore = Arc<SemaphoreInner>;
 /// An acquired admission permit. Releasing it (via Drop) returns one slot to
 /// the semaphore. Held inside `Sandbox` / `RunningSandbox` / `StoppedSandbox`
 /// — callers don't construct these directly.
-pub struct AdmissionPermit {
+pub(crate) struct AdmissionPermit {
     /// Handle back to the semaphore so Drop can return the slot.
     pub(crate) sem: Semaphore,
     /// The configured maximum (for error messages on exhaustion).
@@ -268,6 +268,62 @@ impl std::fmt::Debug for Sandbox {
     }
 }
 
+/// Fallback cleanup guard for a running Firecracker VM.
+///
+/// Dropped automatically when a `RunningSandbox` is abandoned without calling
+/// `stop()` or `force_kill()` — e.g., on an error path in the caller. Sends
+/// SIGKILL to the Firecracker and jailer processes and unmounts any snapshot
+/// bind-mount to avoid leaking processes and mount points.
+///
+/// `stop()` and `force_kill()` disarm the guard by calling
+/// [`ForceKillGuard::disarm`] before returning; their own cleanup supersedes
+/// this one.
+pub(crate) struct ForceKillGuard {
+    pub(crate) vm_id: String,
+    pub(crate) firecracker_pid: u32,
+    pub(crate) jailer_pid: u32,
+    pub(crate) watcher_stop: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) snapshot_mount: Option<PathBuf>,
+    armed: bool,
+}
+
+impl ForceKillGuard {
+    pub(crate) fn new(
+        vm_id: String,
+        firecracker_pid: u32,
+        jailer_pid: u32,
+        watcher_stop: Arc<std::sync::atomic::AtomicBool>,
+        snapshot_mount: Option<PathBuf>,
+    ) -> Self {
+        Self { vm_id, firecracker_pid, jailer_pid, watcher_stop, snapshot_mount, armed: true }
+    }
+
+    /// Disarm the guard so Drop is a no-op.
+    pub(crate) fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ForceKillGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        tracing::warn!(vm_id = %self.vm_id, "RunningSandbox dropped without stop/force_kill — force-killing");
+        self.watcher_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        // Best-effort SIGKILL; errors logged and swallowed — Drop must not panic.
+        if let Err(e) = crate::lifecycle::kill_pid(self.firecracker_pid) {
+            tracing::error!(vm_id = %self.vm_id, error = %e, "Drop force-kill firecracker failed");
+        }
+        if let Err(e) = crate::lifecycle::kill_pid(self.jailer_pid) {
+            tracing::error!(vm_id = %self.vm_id, error = %e, "Drop force-kill jailer failed");
+        }
+        if let Some(snap) = self.snapshot_mount.take() {
+            crate::lifecycle::unmount_snapshot_bind(Some(&snap));
+        }
+    }
+}
+
 /// A sandbox in `Running` state — VM booted, vsock ready, ready to accept
 /// exec requests. All fields are `pub(crate)` — callers use the typed
 /// methods on `impl RunningSandbox` (`vm_id`, `exec`, `stop`, `force_kill`).
@@ -311,6 +367,9 @@ pub struct RunningSandbox {
     pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
     /// Optional diagnostics writer for `<run_dir>/diagnostics.jsonl`.
     pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
+    /// Fallback cleanup guard; disarmed by `stop()` and `force_kill()` before
+    /// they perform their own teardown, so Drop is a no-op on the happy path.
+    pub(crate) kill_guard: ForceKillGuard,
 }
 
 impl RunningSandbox {

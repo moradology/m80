@@ -2,7 +2,7 @@
 
 mod common;
 
-use m80_jailer::{BindMode, Binding, JailerConfig, JailerError, PlanStep, SocketSpec};
+use m80_jailer::{BindMode, Binding, JailerConfig, JailerError, JailerSocket, PlanStep};
 use std::path::{Path, PathBuf};
 
 fn base_config() -> JailerConfig {
@@ -58,9 +58,7 @@ fn determinism_byte_equal_json() {
             mode: BindMode::Rw,
         },
     ];
-    cfg.sockets = vec![SocketSpec {
-        path: PathBuf::from("run/firecracker.sock"),
-    }];
+    cfg.sockets = vec![JailerSocket::Firecracker];
 
     let plan_a = m80_jailer::Plan::compute(&cfg).unwrap();
     let plan_b = m80_jailer::Plan::compute(&cfg).unwrap();
@@ -129,9 +127,7 @@ fn step_ordering_sockets_last() {
         dest: PathBuf::from("kernel/vmlinux"),
         mode: BindMode::Ro,
     }];
-    cfg.sockets = vec![SocketSpec {
-        path: PathBuf::from("run/fc.sock"),
-    }];
+    cfg.sockets = vec![JailerSocket::Firecracker];
 
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
 

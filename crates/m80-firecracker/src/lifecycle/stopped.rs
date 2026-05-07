@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use m80_observability::Phase;
 use m80_storage::ChangeSet;
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 use crate::runroot::unix_ms_now;
 use crate::types::StoppedSandbox;
 
@@ -21,7 +21,7 @@ impl StoppedSandbox {
     /// configured for this sandbox.
     pub fn extract_changes(&self, into: &Path) -> Result<ChangeSet, FcError> {
         let scratch = self.scratch.as_ref().ok_or_else(|| {
-            FcError::Config("no scratch image: workspace was not configured".into())
+            FcError::Config(ConfigError::MissingField { field: "workspace" })
         })?;
         let cs = m80_storage::Scratch::extract(scratch.path(), into)?;
         Ok(cs)

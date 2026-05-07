@@ -17,9 +17,9 @@ mod types;
 mod warm_pool;
 
 pub use error::{
-    CleanupAuthority, CleanupPhase, CleanupReleaseBlocker, FcError, LifecycleFailureKind,
-    StopDisposition, WireProtocolError, CLEANUP_AUTHORITY, CLEANUP_PHASE_ORDER,
-    CLEANUP_RELEASE_BLOCKERS, STOP_DISPOSITIONS,
+    CleanupAuthority, CleanupPhase, CleanupReleaseBlocker, ConfigError, FcError,
+    LifecycleFailureKind, StopDisposition, WireProtocolError, CLEANUP_AUTHORITY,
+    CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS, STOP_DISPOSITIONS,
 };
 pub use config::{
     backend_config_from_effective, load as load_config, load_from_paths as load_config_from_paths,
@@ -43,7 +43,4 @@ pub use types::{
     PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig, StoppedSandbox,
     FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
-pub use warm_pool::{
-    BlankVmResetDecision, BlankVmResetDiscardReason, BlankVmResetEvidence, WarmLease, WarmPool,
-    WarmPoolConfig, WarmPoolSnapshot,
-};
+pub use warm_pool::{WarmLease, WarmPool, WarmPoolConfig, WarmPoolSnapshot};

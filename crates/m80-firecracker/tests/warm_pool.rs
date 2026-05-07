@@ -6,43 +6,9 @@ use common::RunDirDumpGuard;
 use std::sync::Arc;
 
 use m80_firecracker::{
-    Backend, BackendConfig, BlankVmResetDecision, BlankVmResetDiscardReason, BlankVmResetEvidence,
-    CgroupMode, FcError, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig,
-    FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+    Backend, BackendConfig, CgroupMode, FcError, SandboxConfig, SnapshotPaths, WarmPool,
+    WarmPoolConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
-
-#[test]
-fn reset_evidence_requires_every_input() {
-    let evidence = BlankVmResetEvidence {
-        ownership_and_lease: true,
-        boot_identity: true,
-        no_workspace_id_attached: true,
-        no_run_id_attached: true,
-        empty_guest_workspace: true,
-        clean_run_root_surface: true,
-        clean_diagnostics: true,
-        post_reset_guestd_probe: true,
-    };
-    assert_eq!(evidence.decision(), Ok(BlankVmResetDecision::Reusable));
-}
-
-#[test]
-fn reset_evidence_does_not_infer_from_partial_truth() {
-    let evidence = BlankVmResetEvidence {
-        ownership_and_lease: true,
-        boot_identity: true,
-        no_workspace_id_attached: true,
-        no_run_id_attached: true,
-        empty_guest_workspace: true,
-        clean_run_root_surface: true,
-        clean_diagnostics: true,
-        post_reset_guestd_probe: false,
-    };
-    assert_eq!(
-        evidence.decision(),
-        Err(BlankVmResetDiscardReason::PostResetGuestdProbe)
-    );
-}
 
 fn make_backend_config(
     discovery: m80_preflight::Discovery,
@@ -171,7 +137,6 @@ fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
     assert_eq!(pool.snapshot().ready, 1);
 
     let mut lease = pool.try_lease().expect("lease");
-    assert_eq!(lease.reset_decision(), BlankVmResetDecision::Discard);
     let resp = lease
         .exec(m80_proto::ExecRequest {
             program: "/bin/echo".into(),
