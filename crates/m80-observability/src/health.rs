@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use m80_proto::MetricsResponse;
 
-use crate::{ObservabilityError, VmHealth, VmProbeRecord};
+use crate::probe::{VmHealth, VmProbeRecord};
+use crate::ObservabilityError;
 
 /// Aggregated rollup of probe records.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

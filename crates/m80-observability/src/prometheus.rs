@@ -1,4 +1,4 @@
-use crate::{HealthSnapshot, OpsMetrics};
+use crate::health::{HealthSnapshot, OpsMetrics};
 
 /// Render a Prometheus exposition-format text response.
 pub fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> String {

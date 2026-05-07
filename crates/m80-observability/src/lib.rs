@@ -5,8 +5,11 @@
 #![deny(missing_docs)]
 
 mod diagnostics;
+#[cfg(any(feature = "_test_internal", test))]
 mod health;
+#[cfg(any(feature = "_test_internal", test))]
 mod probe;
+#[cfg(any(feature = "_test_internal", test))]
 mod prometheus;
 
 use std::io;
@@ -15,8 +18,15 @@ pub use diagnostics::{
     Diagnostics, EventKind, ExitReason, Phase, PhaseOutcome, SourceClass, VmEvent,
     DIAGNOSTICS_FILE_NAME, DIAGNOSTICS_SCHEMA_VERSION,
 };
+/// Probe, health-rollup, and Prometheus-rendering symbols.  No production
+/// consumer exists in this workspace; they are gated behind `_test_internal`
+/// so integration tests can import them without widening the default public
+/// surface.
+#[cfg(feature = "_test_internal")]
 pub use health::{aggregate_health, render_health_json, HealthSnapshot, OpsMetrics};
+#[cfg(feature = "_test_internal")]
 pub use probe::{probe, VmHealth, VmProbeRecord};
+#[cfg(feature = "_test_internal")]
 pub use prometheus::render_prometheus;
 
 /// Errors surfaced by observability operations.

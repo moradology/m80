@@ -78,10 +78,16 @@ adapter, not below.
 - `DIAGNOSTICS_SCHEMA_VERSION`, `DIAGNOSTICS_FILE_NAME`.
 - `EventKind`, `Phase`, `PhaseOutcome`, `ExitReason`, `SourceClass`,
   `VmEvent`.
-- `probe(...)`, `VmProbeRecord`, `VmHealth`.
-- `aggregate_health(...)`, `HealthSnapshot`, `OpsMetrics`.
-- `render_prometheus(...)`, `render_health_json(...)`.
 - `ObservabilityError`.
+
+The following symbols have no production consumer in this workspace and are
+gated behind the `_test_internal` cargo feature. Integration tests enable the
+feature explicitly via `--features _test_internal`. They are not part of the
+stable default public surface.
+
+- `probe(...)`, `VmProbeRecord`, `VmHealth` (`_test_internal` only).
+- `aggregate_health(...)`, `HealthSnapshot`, `OpsMetrics` (`_test_internal` only).
+- `render_prometheus(...)`, `render_health_json(...)` (`_test_internal` only).
 
 ## Non-goals
 
