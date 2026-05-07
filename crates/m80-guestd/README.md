@@ -292,9 +292,14 @@ contract. `m80-guestd` checks them rather than creating them at boot.
   flag is absent/zero, the mount is skipped before checking `/dev/vdc`; this
   prevents preallocated hotplug slots from being mistaken for a workspace
   drive. If the flag is set but `/dev/vdc` does not exist, the mount is skipped
-  as documented-optional state. **Note:** before the overlay pivot, the
-  workspace drive was `/dev/vdb`; after the overlay pivot (`m80-ovrl.4`), it is
-  `/dev/vdc` (drive position 3 per `docs/design/storage-overlay.md §2`).
+  as documented-optional state. If the ext4 mount fails, guestd runs one
+  bounded repair attempt (`e2fsck -y -f` then `resize2fs`) and retries the
+  mount. A destructive `mkfs.ext4 -F` fallback is only allowed when the boot
+  cmdline also contains `m80.workspace.mkfs=1`; without that explicit flag, a
+  post-repair mount failure fails PID-1 setup. **Note:** before the overlay
+  pivot, the workspace drive was `/dev/vdb`; after the overlay pivot
+  (`m80-ovrl.4`), it is `/dev/vdc` (drive position 3 per
+  `docs/design/storage-overlay.md §2`).
 
 ### Hotplug event infrastructure
 
