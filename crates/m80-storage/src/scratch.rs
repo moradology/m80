@@ -27,24 +27,18 @@ pub struct Scratch {
 }
 
 impl Scratch {
-    /// Recommended scratch image size for a workspace with `used_bytes`
-    /// bytes of regular-file content.
-    ///
-    /// The rule is `max(64 MiB, used_bytes + 32 MiB)`, rounded up to a
-    /// 4 MiB boundary.
-    pub fn recommended_size_for_used_bytes(used_bytes: u64) -> u64 {
-        let padded = used_bytes.saturating_add(SCRATCH_PADDING_BYTES);
-        align_scratch_size(padded.max(MIN_SCRATCH_BYTES))
-    }
-
     /// Recommended scratch image size for `workspace`.
     ///
     /// Directory entries are walked recursively. Regular file lengths are
     /// counted; symlinks and special files return
     /// [`StorageError::AdmissibilityRefused`], matching hydration.
+    ///
+    /// The rule is `max(64 MiB, used_bytes + 32 MiB)`, rounded up to a
+    /// 4 MiB boundary.
     pub fn recommended_size_for_workspace(workspace: &Path) -> Result<u64, StorageError> {
         let used = workspace_used_bytes(workspace)?;
-        Ok(Self::recommended_size_for_used_bytes(used))
+        let padded = used.saturating_add(SCRATCH_PADDING_BYTES);
+        Ok(align_scratch_size(padded.max(MIN_SCRATCH_BYTES)))
     }
 
     /// Format a scratch ext4 image at `image` of `size` bytes and hydrate it
@@ -83,23 +77,20 @@ impl Scratch {
             return Err(StorageError::SwapFailed);
         }
 
-        // 1. e2fsck -p -f (preen + force-check even if clean).
         run_e2fsck(image)?;
 
-        // 2. Loop-mount read-only.
         let mount_dir = TempDir::new().map_err(|e| io_err(image, e))?;
-        mount_loop_ro(image, mount_dir.path())?;
+        run_mount(mount_dir.path(), &["mount", "-o", "loop,ro"], Some(image))?;
 
-        // 3 + 4 + 5: walk, scan admissibility, stage into a sibling temp dir.
         let stage_result = build_stage(mount_dir.path(), into);
 
-        // 6. Unmount before the rename. The staging tree lives in a sibling
-        //    `TempDir`, so it's not on the now-unmounted filesystem.
-        umount(mount_dir.path())?;
+        // Unmount before the rename; the staging tree lives in a sibling
+        // TempDir, so it's not on the now-unmounted filesystem.
+        run_mount(mount_dir.path(), &["umount"], None)?;
 
         let (stage_dir, change_set) = stage_result?;
 
-        // 7. Atomic rename into `into`; fail if it already exists or if the
+        // Atomic rename into `into`; fail if it already exists or if the
         // sibling-stage invariant was broken.
         fs::rename(stage_dir.path(), into).map_err(|_| StorageError::SwapFailed)?;
         // Prevent TempDir from trying to remove the path we just renamed away.
@@ -154,7 +145,6 @@ fn workspace_used_bytes(src: &Path) -> Result<u64, StorageError> {
 /// Inner pipeline for `Scratch::create`. Outer wrapper removes the image on
 /// any failure so callers don't have to clean up partial state.
 fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageError> {
-    // 1. Truncate-create the image file.
     let file = OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -164,7 +154,6 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
     file.set_len(size).map_err(|e| io_err(image, e))?;
     drop(file);
 
-    // 2. mkfs.ext4 -F image
     let mkfs_out = Command::new("mkfs.ext4")
         .arg("-F")
         .arg(image)
@@ -173,23 +162,20 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
     if !mkfs_out.status.success() {
         let stderr = String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned();
         let stdout = String::from_utf8_lossy(&mkfs_out.stdout).trim().to_owned();
-        return Err(StorageError::Mkfs(io::mkfs_error(if stderr.is_empty() {
-            stdout
-        } else {
-            stderr
-        })));
+        return Err(StorageError::Mkfs(std::io::Error::other(
+            if stderr.is_empty() { stdout } else { stderr },
+        )));
     }
 
-    // 3. Loop-mount to temp dir.
     let mount_dir = TempDir::new().map_err(|e| io_err(image, e))?;
-    mount_loop(image, mount_dir.path())?;
+    run_mount(mount_dir.path(), &["mount", "-o", "loop"], Some(image))?;
 
-    // 4. Copy workspace contents; always umount before returning. The copy
-    //    error wins over the umount error if both fail (the user wants to
-    //    know what went wrong with their workspace, not that umount also
-    //    couldn't recover).
+    // Copy workspace contents; always umount before returning. The copy
+    // error wins over the umount error if both fail (the user wants to
+    // know what went wrong with their workspace, not that umount also
+    // couldn't recover).
     let copy_result = copy_workspace_into(workspace, mount_dir.path());
-    let umount_result = umount(mount_dir.path());
+    let umount_result = run_mount(mount_dir.path(), &["umount"], None);
     copy_result?;
     umount_result
 }
@@ -219,18 +205,6 @@ fn run_e2fsck(image: &Path) -> Result<(), StorageError> {
         exit: out.status.code().unwrap_or(-1),
         stderr: if stderr.is_empty() { stdout } else { stderr },
     })
-}
-
-fn mount_loop(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
-    run_mount(mount_point, &["mount", "-o", "loop"], Some(image))
-}
-
-fn mount_loop_ro(image: &Path, mount_point: &Path) -> Result<(), StorageError> {
-    run_mount(mount_point, &["mount", "-o", "loop,ro"], Some(image))
-}
-
-fn umount(mount_point: &Path) -> Result<(), StorageError> {
-    run_mount(mount_point, &["umount"], None)
 }
 
 /// Spawn `argv[0]` with `argv[1..]` followed by an optional `image` path
@@ -409,12 +383,6 @@ fn walk_for_extract(
         }
     }
     Ok(())
-}
-
-mod io {
-    pub(crate) fn mkfs_error(msg: impl Into<String>) -> std::io::Error {
-        std::io::Error::other(msg.into())
-    }
 }
 
 #[cfg(test)]

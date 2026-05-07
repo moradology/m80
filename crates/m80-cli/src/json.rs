@@ -20,7 +20,7 @@ pub(crate) fn to_pretty<T: Serialize + ?Sized>(data: &T) -> String {
         request_id: request_id::current(),
         data,
     };
-    serde_json::to_string_pretty(&envelope).expect("json envelope serialization")
+    serde_json::to_string_pretty(&envelope).expect("infallible")
 }
 
 #[cfg(test)]

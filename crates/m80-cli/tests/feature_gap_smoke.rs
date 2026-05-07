@@ -3,12 +3,12 @@
 //! These paths must fail before preflight/backend work, so they are safe on a
 //! machine without KVM or Firecracker artifacts.
 
-use assert_cmd::Command;
+mod common;
+
+use common::m80;
+
 use m80_cli::errors::{EXIT_CONFIG, EXIT_NOT_IMPLEMENTED};
 
-fn m80() -> Command {
-    Command::cargo_bin("m80").unwrap()
-}
 
 fn assert_feature_gap(args: &[&str], expected_stderr: &str) {
     let output = m80().args(args).output().unwrap();

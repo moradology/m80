@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use m80_firecracker::{Backend, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig};
-use m80_preflight::{CheckRow, Discovery, PreflightError};
+use m80_preflight::{Discovery, PreflightError};
 
 use crate::args::{EgressMode, QuickstartArgs, WarmAction, WritebackMode};
 use crate::config;
@@ -210,9 +210,7 @@ pub fn cmd_run(
     };
 
     if should_writeback(writeback, guest_exit) {
-        let workspace = workspace_for_writeback
-            .as_ref()
-            .expect("writeback policy with no workspace is rejected before launch");
+        let workspace = workspace_for_writeback.as_ref().unwrap();
         if let Err(e) = stopped.extract_changes(workspace) {
             match stopped.preserve_for_triage() {
                 Ok(path) => render_warning(
@@ -361,7 +359,7 @@ fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool
         Ok(discovery) => {
             if json {
                 let rows = &discovery.report;
-                println!("{}", format_preflight_json(rows));
+                println!("{}", json::to_pretty(rows));
             } else {
                 println!("{}", discovery.render_table());
             }
@@ -413,21 +411,12 @@ pub fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
     }
 
     if json {
-        println!("{}", format_cleanup_json());
+        println!("{}", json::to_pretty(&serde_json::json!({ "status": "ok" })));
     } else {
         println!("cleanup complete");
     }
 
     Ok(0)
-}
-
-fn format_preflight_json(rows: &[CheckRow]) -> String {
-    json::to_pretty(rows)
-}
-
-fn format_cleanup_json() -> String {
-    let obj = serde_json::json!({ "status": "ok" });
-    json::to_pretty(&obj)
 }
 
 /// `m80 config show` — reveal the merged effective config with field sources.

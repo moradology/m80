@@ -11,8 +11,6 @@ use crate::error::FcError;
 #[derive(Debug)]
 struct OwnershipRecord {
     pid: u32,
-    #[allow(dead_code)]
-    started_at_ms: u64,
 }
 
 /// Liveness classification for one run directory.
@@ -71,17 +69,14 @@ pub(crate) fn write_ownership_lock(run_dir: &Path) -> Result<LeaseGuard, FcError
 fn read_ownership_lock(lock_path: &Path) -> Result<OwnershipRecord, ()> {
     let content = std::fs::read_to_string(lock_path).map_err(|_| ())?;
     let mut pid = None;
-    let mut started_at_ms = None;
     for line in content.lines() {
         if let Some(val) = line.strip_prefix("pid=") {
             pid = val.parse::<u32>().ok();
-        } else if let Some(val) = line.strip_prefix("started_at=") {
-            started_at_ms = val.parse::<u64>().ok();
         }
     }
-    match (pid, started_at_ms) {
-        (Some(pid), Some(started_at_ms)) => Ok(OwnershipRecord { pid, started_at_ms }),
-        _ => Err(()),
+    match pid {
+        Some(pid) => Ok(OwnershipRecord { pid }),
+        None => Err(()),
     }
 }
 

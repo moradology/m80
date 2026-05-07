@@ -18,6 +18,9 @@
 //! `--egress outbound` to exercise the CLI policy path, but it does not require
 //! external network access or any Claude credentials.
 
+
+use common::{append_file, run_root_entries};
+mod common;
 use std::fs::{self, File};
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -243,14 +246,6 @@ fn read_until(
     }
 }
 
-fn run_root_entries(run_root: &Path) -> Vec<PathBuf> {
-    let mut entries = fs::read_dir(run_root)
-        .unwrap_or_else(|e| panic!("read run root {}: {e}", run_root.display()))
-        .map(|entry| entry.expect("run-root entry").path())
-        .collect::<Vec<_>>();
-    entries.sort();
-    entries
-}
 
 fn failure_report(output: &[u8], run_root: &Path) -> String {
     format!(
@@ -295,30 +290,4 @@ fn dump_run_root(run_root: &Path) -> String {
     out
 }
 
-fn append_file(out: &mut String, dir: &Path, name: &str) {
-    let path = dir.join(name);
-    match fs::read_to_string(&path) {
-        Ok(contents) => {
-            out.push_str(&format!("--- {name} ---\n"));
-            if name == "console.log" {
-                append_tail(out, &contents, 100);
-            } else {
-                out.push_str(&contents);
-                if !contents.ends_with('\n') {
-                    out.push('\n');
-                }
-            }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => out.push_str(&format!("--- {name}: {e} ---\n")),
-    }
-}
 
-fn append_tail(out: &mut String, contents: &str, max_lines: usize) {
-    let lines = contents.lines().collect::<Vec<_>>();
-    let start = lines.len().saturating_sub(max_lines);
-    for line in &lines[start..] {
-        out.push_str(line);
-        out.push('\n');
-    }
-}

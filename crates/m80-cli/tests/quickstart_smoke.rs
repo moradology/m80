@@ -1,14 +1,14 @@
 //! Smoke test for `m80 quickstart --no-run` with a local release-like tarball.
 
+mod common;
+
+use common::m80;
+
 use std::process::Command as StdCommand;
 
-use assert_cmd::Command;
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
 use serde_json::Value;
 
-fn m80() -> Command {
-    Command::cargo_bin("m80").unwrap()
-}
 
 fn run_checked(cmd: &mut StdCommand, label: &str) {
     let output = cmd.output().unwrap();

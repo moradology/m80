@@ -138,7 +138,19 @@ pub fn load_from_paths(
     }
 
     // Layer 6: M80_* environment variables.
-    apply_env_layer(&mut fields);
+    let env_mapping: &[(&str, &str)] = &[
+        ("M80_DEFAULT_PROFILE", field::DEFAULT_PROFILE),
+        ("M80_MAX_CONCURRENT_VMS", field::MAX_CONCURRENT_VMS),
+        ("M80_RUN_ROOT", field::RUN_ROOT),
+        ("M80_JAIL_UID", field::JAIL_UID),
+        ("M80_JAIL_GID", field::JAIL_GID),
+        ("M80_CGROUP_MODE", field::CGROUP_MODE),
+    ];
+    for (env_key, field_name) in env_mapping {
+        if let Ok(val) = std::env::var(env_key) {
+            fields.insert(field_name.to_string(), (val, ConfigSource::Env));
+        }
+    }
 
     // Layer 7: caller-supplied flag overrides.
     for (k, v) in args_overrides {
@@ -234,22 +246,6 @@ fn apply_toml_layer(
     Ok(())
 }
 
-/// Map `M80_<UPPER_FIELD>` env vars to recognized fields.
-fn apply_env_layer(fields: &mut HashMap<String, (String, ConfigSource)>) {
-    let mapping: &[(&str, &str)] = &[
-        ("M80_DEFAULT_PROFILE", field::DEFAULT_PROFILE),
-        ("M80_MAX_CONCURRENT_VMS", field::MAX_CONCURRENT_VMS),
-        ("M80_RUN_ROOT", field::RUN_ROOT),
-        ("M80_JAIL_UID", field::JAIL_UID),
-        ("M80_JAIL_GID", field::JAIL_GID),
-        ("M80_CGROUP_MODE", field::CGROUP_MODE),
-    ];
-    for (env_key, field_name) in mapping {
-        if let Ok(val) = std::env::var(env_key) {
-            fields.insert(field_name.to_string(), (val, ConfigSource::Env));
-        }
-    }
-}
 
 /// Best-effort home directory lookup without an external crate.
 fn home_dir() -> Option<PathBuf> {

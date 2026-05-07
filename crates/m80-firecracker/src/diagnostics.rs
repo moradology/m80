@@ -9,15 +9,16 @@ use m80_observability::{Diagnostics, ExitReason, Phase, PhaseOutcome, VmEvent};
 /// Open diagnostics for one VM run-dir.
 pub(crate) fn open(run_dir: &Path, vm_id: &str, request_id: Option<&str>) -> Option<Diagnostics> {
     match Diagnostics::open(run_dir) {
-        Ok(mut diagnostics) => {
-            record(
-                Some(&mut diagnostics),
+        Ok(diagnostics) => {
+            let mut opt = Some(diagnostics);
+            record_owned(
+                &mut opt,
                 Phase::StartupScavenge,
                 vm_id,
                 request_id,
                 "diagnostics opened",
             );
-            Some(diagnostics)
+            opt
         }
         Err(e) => {
             tracing::warn!(
@@ -33,14 +34,14 @@ pub(crate) fn open(run_dir: &Path, vm_id: &str, request_id: Option<&str>) -> Opt
 
 /// Record one host-side lifecycle event. Any write failure disables the handle
 /// for this VM so diagnostics never break boot, exec, stop, or delete.
-pub(crate) fn record(
-    diagnostics: Option<&mut Diagnostics>,
+pub(crate) fn record_owned(
+    diagnostics: &mut Option<Diagnostics>,
     phase: Phase,
     vm_id: &str,
     request_id: Option<&str>,
     message: &str,
 ) {
-    let Some(handle) = diagnostics else {
+    let Some(handle) = diagnostics.as_mut() else {
         return;
     };
     let mut context = BTreeMap::new();
@@ -54,17 +55,6 @@ pub(crate) fn record(
     if let Err(e) = handle.record(&event) {
         tracing::warn!(vm_id, err = %e, "diagnostics record failed");
     }
-}
-
-/// Record through an optional owned handle.
-pub(crate) fn record_owned(
-    diagnostics: &mut Option<Diagnostics>,
-    phase: Phase,
-    vm_id: &str,
-    request_id: Option<&str>,
-    message: &str,
-) {
-    record(diagnostics.as_mut(), phase, vm_id, request_id, message);
 }
 
 /// Record typed stop/capture evidence.

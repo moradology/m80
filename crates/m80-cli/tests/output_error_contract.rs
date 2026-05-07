@@ -1,6 +1,9 @@
 //! Script-facing output and error contract tests.
 
-use assert_cmd::Command;
+mod common;
+
+use common::m80;
+
 use m80_cli::errors::{
     envelope, exit_code_for, EXIT_ADMISSION, EXIT_CONFIG, EXIT_GENERIC, EXIT_INVALID_STATE,
     EXIT_MANIFEST, EXIT_NOT_IMPLEMENTED, EXIT_POOL_EMPTY, EXIT_PREFLIGHT,
@@ -9,9 +12,6 @@ use m80_firecracker::FcError;
 use m80_image_manifest::ManifestError;
 use m80_preflight::PreflightError;
 
-fn m80() -> Command {
-    Command::cargo_bin("m80").unwrap()
-}
 
 #[test]
 fn config_wrapper_failure_uses_stderr_exit_code_and_empty_stdout() {

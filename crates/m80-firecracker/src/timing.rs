@@ -16,16 +16,9 @@
 
 use std::time::{Duration, Instant};
 
-/// Whether `M80_PHASE_TRACE=1` is set in the environment.
-fn enabled() -> bool {
-    std::env::var("M80_PHASE_TRACE")
-        .map(|v| v == "1")
-        .unwrap_or(false)
-}
-
 /// Emit one timing event to stderr (no-op unless `M80_PHASE_TRACE=1`).
 pub(crate) fn phase_event(name: &str, vm_id: &str, elapsed: Duration) {
-    if !enabled() {
+    if !std::env::var("M80_PHASE_TRACE").is_ok_and(|v| v == "1") {
         return;
     }
     eprintln!(

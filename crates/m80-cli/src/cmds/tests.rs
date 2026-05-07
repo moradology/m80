@@ -1,8 +1,9 @@
 use super::{
-    build_process_env, format_cleanup_json, format_config_json, format_config_table,
-    format_preflight_json, network_policy_for_egress, parse_env, render_preflight_result,
-    run_request, run_stream, sandbox_config_for_run, should_writeback,
+    build_process_env, format_config_json, format_config_table, network_policy_for_egress,
+    parse_env, render_preflight_result, run_request, run_stream, sandbox_config_for_run,
+    should_writeback,
 };
+use crate::json;
 use crate::args::{EgressMode, WritebackMode};
 use crate::errors::EXIT_PREFLIGHT;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, ExecStatus, NetworkPolicy};
@@ -261,7 +262,7 @@ fn preflight_success_fixture_needs_no_kvm() {
 #[test]
 fn preflight_json_formats_report_rows_without_kvm() {
     let rows = fake_discovery().report;
-    let json = format_preflight_json(&rows);
+    let json = json::to_pretty(rows.as_slice());
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
     assert_eq!(parsed["version"], 1);
@@ -271,7 +272,7 @@ fn preflight_json_formats_report_rows_without_kvm() {
 
 #[test]
 fn cleanup_json_formats_status_without_backend() {
-    let json = format_cleanup_json();
+    let json = json::to_pretty(&serde_json::json!({ "status": "ok" }));
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
     assert_eq!(parsed["version"], 1);

@@ -255,11 +255,31 @@ impl RunningSandbox {
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
         let started_at_unix_ms = unix_ms_now();
         let _cancel_forwarder = match cancel_rx {
-            Some(cancel_rx) => Some(spawn_cancel_forwarder(
-                &channel,
-                request_id.clone(),
-                cancel_rx,
-            )?),
+            Some(cancel_rx) => {
+                let mut sender = channel.try_clone_sender().map_err(FcError::Vsock)?;
+                let stop = Arc::new(AtomicBool::new(false));
+                let stop_for_thread = Arc::clone(&stop);
+                let request_id_clone = request_id.clone();
+                let handle = std::thread::spawn(move || {
+                    while !stop_for_thread.load(Ordering::Relaxed) {
+                        match cancel_rx.recv_timeout(CANCEL_FORWARDER_POLL) {
+                            Ok(()) => {
+                                let _ = sender.send(&Envelope::new(CancelRequest {
+                                    request_id: request_id_clone,
+                                }));
+                                let _ = sender.close();
+                                return;
+                            }
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                        }
+                    }
+                });
+                Some(CancelForwarder {
+                    stop,
+                    handle: Some(handle),
+                })
+            }
             None => None,
         };
         let t = Instant::now();
@@ -386,32 +406,6 @@ pub(super) fn decode_payload<T: DeserializeOwned>(value: serde_json::Value) -> R
     })
 }
 
-fn spawn_cancel_forwarder(
-    channel: &Channel,
-    request_id: String,
-    cancel_rx: mpsc::Receiver<()>,
-) -> Result<CancelForwarder, FcError> {
-    let mut sender = channel.try_clone_sender().map_err(FcError::Vsock)?;
-    let stop = Arc::new(AtomicBool::new(false));
-    let stop_for_thread = Arc::clone(&stop);
-    let handle = std::thread::spawn(move || {
-        while !stop_for_thread.load(Ordering::Relaxed) {
-            match cancel_rx.recv_timeout(CANCEL_FORWARDER_POLL) {
-                Ok(()) => {
-                    let _ = sender.send(&Envelope::new(CancelRequest { request_id }));
-                    let _ = sender.close();
-                    return;
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => return,
-            }
-        }
-    });
-    Ok(CancelForwarder {
-        stop,
-        handle: Some(handle),
-    })
-}
 
 fn spawn_pty_event_forwarder(
     channel: &Channel,

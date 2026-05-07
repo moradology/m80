@@ -2,11 +2,10 @@
 //!
 //! Uses `assert_cmd` to run the actual binary.
 
-use assert_cmd::Command;
 
-fn m80() -> Command {
-    Command::cargo_bin("m80").unwrap()
-}
+mod common;
+
+use common::m80;
 
 #[test]
 fn help_toplevel() {

@@ -1,10 +1,9 @@
 //! Smoke test: `m80 version` exits 0 and prints something meaningful.
 
-use assert_cmd::Command;
 
-fn m80() -> Command {
-    Command::cargo_bin("m80").unwrap()
-}
+mod common;
+
+use common::m80;
 
 #[test]
 fn version_exits_zero() {
