@@ -75,6 +75,10 @@ After `pty_exit`, guestd must not emit another `pty_output` for the same
 request. A PTY session that exits without terminal output is valid, but it
 still emits exactly one `pty_exit`.
 
+If the guest-side PTY output reader thread panics, guestd logs the helper
+failure and treats the reader as drained. The helper panic must not crash the
+connection loop.
+
 ## Evidence
 
 - Public surface: `crates/m80-proto/README.md`

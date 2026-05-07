@@ -12,6 +12,8 @@ use portable_pty::{
     PtySize as PortablePtySize,
 };
 
+use crate::guest_log::{self, GuestLogPhase};
+
 use super::super::cancel_status_from_group_signals;
 pub(super) use super::super::timeout_deadline;
 
@@ -81,10 +83,20 @@ fn capture_output(mut reader: Box<dyn Read + Send>, tx: SyncSender<PtyFrame>) ->
 }
 
 pub(super) fn join_output_thread(output_thread: &mut Option<JoinHandle<u64>>) -> u64 {
-    output_thread
-        .take()
-        .map(|h| h.join().expect("pty output thread panicked"))
-        .unwrap_or(0)
+    let Some(handle) = output_thread.take() else {
+        return 0;
+    };
+    match handle.join() {
+        Ok(total) => total,
+        Err(_) => {
+            guest_log::warn(
+                GuestLogPhase::Exec,
+                None,
+                "pty output thread panicked; ending pty session",
+            );
+            0
+        }
+    }
 }
 
 pub(super) fn terminal_status(
@@ -167,5 +179,25 @@ pub(super) fn to_portable_size(size: PtySize) -> PortablePtySize {
         cols: size.cols,
         pixel_width: size.pixel_width.unwrap_or(0),
         pixel_height: size.pixel_height.unwrap_or(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn join_output_thread_returns_zero_for_missing_thread() {
+        let mut output_thread = None;
+        assert_eq!(join_output_thread(&mut output_thread), 0);
+    }
+
+    #[test]
+    fn join_output_thread_does_not_panic_on_worker_panic() {
+        let mut output_thread = Some(thread::spawn(|| -> u64 {
+            panic!("pty output worker panic");
+        }));
+        assert_eq!(join_output_thread(&mut output_thread), 0);
+        assert!(output_thread.is_none());
     }
 }

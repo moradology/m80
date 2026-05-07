@@ -30,14 +30,14 @@ mod streaming;
 use std::io::{BufRead, Read, Write};
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
-    read_raw_frame, write_frame, CancelResponse, CancelRequest, CancelStatus, Envelope, ExecRequest,
-    ExecResponse, ExecStatus, ExecTiming, Payload, RawEnvelope, ShutdownAction, ShutdownRequest,
-    ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST,
+    read_raw_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope,
+    ExecRequest, ExecResponse, ExecStatus, ExecTiming, Payload, RawEnvelope, ShutdownAction,
+    ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST,
     PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
 
@@ -458,7 +458,7 @@ fn wait_for_pid_then_kill(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         {
-            let guard = pid_slot.lock().expect("pid_slot poisoned");
+            let guard = lock_pid_slot(pid_slot);
             if guard.is_some() {
                 drop(guard);
                 return terminate_child_group_by_slot(pid_slot);
@@ -477,7 +477,7 @@ fn wait_for_pid_then_kill(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
 /// `pid_slot` (if any) and return the appropriate [`CancelStatus`].
 fn terminate_child_group_by_slot(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelStatus {
     let pid = {
-        let guard = pid_slot.lock().expect("pid_slot poisoned");
+        let guard = lock_pid_slot(pid_slot);
         *guard
     };
 
@@ -495,6 +495,15 @@ fn terminate_child_group_by_slot(pid_slot: &Arc<Mutex<Option<u32>>>) -> CancelSt
             cancel_status_from_group_signals(term, kill)
         }
     }
+}
+
+fn lock_pid_slot(pid_slot: &Arc<Mutex<Option<u32>>>) -> MutexGuard<'_, Option<u32>> {
+    // Poisoning only says a previous owner panicked while touching an optional
+    // PID. There is no broader invariant to protect; recover the stored pid so
+    // cancellation can still avoid crashing guestd.
+    pid_slot
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Handle a `cancel_request` that arrived when no exec is in flight.
@@ -609,7 +618,7 @@ fn exec_request_with_cancel(
 
     // Publish PID so the cancel path can SIGKILL.
     {
-        let mut guard = pid_slot.lock().expect("pid_slot poisoned");
+        let mut guard = lock_pid_slot(&pid_slot);
         *guard = Some(child.id());
     }
 
@@ -644,7 +653,7 @@ fn exec_request_with_cancel(
 
     // Clear PID slot so a late-arriving cancel sees no target.
     {
-        let mut guard = pid_slot.lock().expect("pid_slot poisoned");
+        let mut guard = lock_pid_slot(&pid_slot);
         *guard = None;
     }
 
@@ -820,5 +829,36 @@ fn error_response(stderr: Vec<u8>, timing: ExecTiming) -> ExecResponse {
         stderr,
         truncated: None,
         timing,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn poisoned_pid_slot(value: Option<u32>) -> Arc<Mutex<Option<u32>>> {
+        let slot = Arc::new(Mutex::new(value));
+        let thread_slot = Arc::clone(&slot);
+        let _ = thread::spawn(move || {
+            let _guard = thread_slot.lock().unwrap();
+            panic!("poison pid slot");
+        })
+        .join();
+        slot
+    }
+
+    #[test]
+    fn pid_slot_poisoning_is_recovered_for_cancel_lookup() {
+        let slot = poisoned_pid_slot(Some(999_999));
+        assert_eq!(
+            terminate_child_group_by_slot(&slot),
+            CancelStatus::AlreadyExited
+        );
+    }
+
+    #[test]
+    fn pid_slot_poisoning_is_recovered_for_wait_then_kill() {
+        let slot = poisoned_pid_slot(Some(999_999));
+        assert_eq!(wait_for_pid_then_kill(&slot), CancelStatus::AlreadyExited);
     }
 }

@@ -81,7 +81,9 @@ Keeping the guest small has direct benefits:
 - On `cancel_request` for the in-flight request id: terminate the child process
   group, reap the direct child, write `CancelResponse`, and do not write a terminal
   `ExecExit` for that cancelled request. A mismatched or late cancel returns
-  `AlreadyExited` and the normal exec result continues.
+  `AlreadyExited` and the normal exec result continues. The in-flight PID slot
+  is recovered through mutex poisoning because it stores only an optional child
+  pid; poisoning must not crash guestd.
 
 Exec children are started in a fresh process group. Cancel, timeout,
 disconnect/read EOF, and streaming write failure use SIGTERM, wait a bounded
@@ -163,6 +165,10 @@ Timeout, `cancel_request`, host disconnect/read EOF, and output write failure
 terminate the PTY child process group with the same SIGTERM/100 ms/SIGKILL
 policy used by pipe streaming. Cancellation writes `CancelResponse` and does not
 write `PtyExit` for that request.
+
+The PTY output reader is an internal helper thread. If it panics, guestd logs
+the failure and ends the PTY session path; the panic is not propagated into the
+connection loop.
 
 Behavior details:
 
