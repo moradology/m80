@@ -20,128 +20,57 @@ mod pipeline;
 use std::path::PathBuf;
 
 use anyhow::Context;
+use clap::{Parser, Subcommand};
 
-/// Command-line subcommand selection.
-#[derive(Debug)]
-enum Subcommand {
+/// Build the m80 guest image and provenance manifest.
+#[derive(Debug, Parser)]
+#[command(name = "m80-image-build")]
+struct Args {
+    #[command(subcommand)]
+    subcommand: Cmd,
+}
+
+/// Top-level subcommand.
+#[derive(Debug, Subcommand)]
+enum Cmd {
     /// Run the full build pipeline using the config at the given path.
-    Run { config: PathBuf, dry_run: bool },
+    Run {
+        /// Path to the build config TOML.
+        #[arg(long)]
+        config: PathBuf,
+        /// Print steps to stderr without performing any I/O.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Re-verify an already-built rootfs against its manifest.
-    Verify { rootfs: PathBuf },
+    Verify {
+        /// Path to the output ext4 rootfs image.
+        #[arg(long)]
+        rootfs: PathBuf,
+    },
     /// Remove intermediate build artifacts (loop mount points, temp images).
-    Clean { workdir: PathBuf },
+    Clean {
+        /// Path to the work directory to remove.
+        #[arg(long)]
+        workdir: PathBuf,
+    },
+    /// Build or manage the stripped kernel.
+    Kernel {
+        #[command(subcommand)]
+        action: KernelAction,
+    },
+}
+
+/// Kernel sub-actions.
+#[derive(Debug, Subcommand)]
+enum KernelAction {
     /// Build the stripped kernel via Docker.
     /// Produces `kernels/vmlinux-m80-<config-sha>.bin` under the workspace root.
-    KernelBuild { workspace_root: PathBuf },
-}
-
-/// Top-level argv parse target.
-#[derive(Debug)]
-struct Args {
-    subcommand: Subcommand,
-}
-
-/// Parse command-line arguments from a flat argv list.
-fn parse_args(argv: Vec<String>) -> anyhow::Result<Args> {
-    let mut iter = argv.into_iter();
-    let subcmd = iter
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("missing subcommand: run | verify | clean | kernel"))?;
-
-    match subcmd.as_str() {
-        "run" => {
-            let mut config: Option<PathBuf> = None;
-            let mut dry_run = false;
-            while let Some(flag) = iter.next() {
-                match flag.as_str() {
-                    "--config" => {
-                        config = Some(
-                            iter.next()
-                                .ok_or_else(|| anyhow::anyhow!("--config requires a value"))?
-                                .into(),
-                        );
-                    }
-                    "--dry-run" => dry_run = true,
-                    other => anyhow::bail!("unknown flag for run: {}", other),
-                }
-            }
-            let config = config.ok_or_else(|| anyhow::anyhow!("run requires --config <path>"))?;
-            Ok(Args {
-                subcommand: Subcommand::Run { config, dry_run },
-            })
-        }
-        "verify" => {
-            let mut rootfs: Option<PathBuf> = None;
-            while let Some(flag) = iter.next() {
-                match flag.as_str() {
-                    "--rootfs" => {
-                        rootfs = Some(
-                            iter.next()
-                                .ok_or_else(|| anyhow::anyhow!("--rootfs requires a value"))?
-                                .into(),
-                        );
-                    }
-                    other => anyhow::bail!("unknown flag for verify: {}", other),
-                }
-            }
-            let rootfs =
-                rootfs.ok_or_else(|| anyhow::anyhow!("verify requires --rootfs <path>"))?;
-            Ok(Args {
-                subcommand: Subcommand::Verify { rootfs },
-            })
-        }
-        "clean" => {
-            let mut workdir: Option<PathBuf> = None;
-            while let Some(flag) = iter.next() {
-                match flag.as_str() {
-                    "--workdir" => {
-                        workdir = Some(
-                            iter.next()
-                                .ok_or_else(|| anyhow::anyhow!("--workdir requires a value"))?
-                                .into(),
-                        );
-                    }
-                    other => anyhow::bail!("unknown flag for clean: {}", other),
-                }
-            }
-            let workdir =
-                workdir.ok_or_else(|| anyhow::anyhow!("clean requires --workdir <path>"))?;
-            Ok(Args {
-                subcommand: Subcommand::Clean { workdir },
-            })
-        }
-        "kernel" => {
-            // `kernel build [--workspace <path>]`
-            let sub2 = iter
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("kernel requires a sub-action: build"))?;
-            if sub2 != "build" {
-                anyhow::bail!("unknown kernel sub-action '{}': expected 'build'", sub2);
-            }
-            let mut workspace_root: Option<PathBuf> = None;
-            while let Some(flag) = iter.next() {
-                match flag.as_str() {
-                    "--workspace" => {
-                        workspace_root = Some(
-                            iter.next()
-                                .ok_or_else(|| anyhow::anyhow!("--workspace requires a value"))?
-                                .into(),
-                        );
-                    }
-                    other => anyhow::bail!("unknown flag for kernel build: {}", other),
-                }
-            }
-            // Default workspace root: current directory.
-            let workspace_root = workspace_root.unwrap_or_else(|| PathBuf::from("."));
-            Ok(Args {
-                subcommand: Subcommand::KernelBuild { workspace_root },
-            })
-        }
-        other => anyhow::bail!(
-            "unknown subcommand '{}'; expected: run | verify | clean | kernel",
-            other
-        ),
-    }
+    Build {
+        /// Workspace root (default: current directory).
+        #[arg(long, default_value = ".")]
+        workspace: PathBuf,
+    },
 }
 
 fn run_verify(rootfs: PathBuf) -> anyhow::Result<()> {
@@ -167,13 +96,15 @@ fn run_clean(workdir: PathBuf) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+    let args = Args::parse();
     match args.subcommand {
-        Subcommand::Run { config, dry_run } => pipeline::run_build(config, dry_run),
-        Subcommand::Verify { rootfs } => run_verify(rootfs),
-        Subcommand::Clean { workdir } => run_clean(workdir),
-        Subcommand::KernelBuild { workspace_root } => {
-            let vmlinux = pipeline::build_stripped_kernel(&workspace_root)?;
+        Cmd::Run { config, dry_run } => pipeline::run_build(config, dry_run),
+        Cmd::Verify { rootfs } => run_verify(rootfs),
+        Cmd::Clean { workdir } => run_clean(workdir),
+        Cmd::Kernel {
+            action: KernelAction::Build { workspace },
+        } => {
+            let vmlinux = pipeline::build_stripped_kernel(&workspace)?;
             println!("vmlinux: {}", vmlinux.display());
             Ok(())
         }
@@ -184,14 +115,16 @@ fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    fn argv(args: &[&str]) -> Vec<String> {
-        args.iter().map(|s| s.to_string()).collect()
+    fn try_parse(args: &[&str]) -> Result<Args, clap::Error> {
+        // Prepend a fake argv[0] so clap sees the full argv.
+        let full: Vec<&str> = std::iter::once("m80-image-build").chain(args.iter().copied()).collect();
+        Args::try_parse_from(full)
     }
 
     #[test]
     fn parse_run_with_config() {
-        let args = parse_args(argv(&["run", "--config", "/tmp/foo.toml"])).unwrap();
-        let Subcommand::Run { config, dry_run } = args.subcommand else {
+        let args = try_parse(&["run", "--config", "/tmp/foo.toml"]).unwrap();
+        let Cmd::Run { config, dry_run } = args.subcommand else {
             panic!("expected Run")
         };
         assert_eq!(config, PathBuf::from("/tmp/foo.toml"));
@@ -200,8 +133,8 @@ mod tests {
 
     #[test]
     fn parse_run_dry_run() {
-        let args = parse_args(argv(&["run", "--config", "/tmp/foo.toml", "--dry-run"])).unwrap();
-        let Subcommand::Run { dry_run, .. } = args.subcommand else {
+        let args = try_parse(&["run", "--config", "/tmp/foo.toml", "--dry-run"]).unwrap();
+        let Cmd::Run { dry_run, .. } = args.subcommand else {
             panic!("expected Run")
         };
         assert!(dry_run);
@@ -209,8 +142,8 @@ mod tests {
 
     #[test]
     fn parse_verify() {
-        let args = parse_args(argv(&["verify", "--rootfs", "/tmp/r.ext4"])).unwrap();
-        let Subcommand::Verify { rootfs } = args.subcommand else {
+        let args = try_parse(&["verify", "--rootfs", "/tmp/r.ext4"]).unwrap();
+        let Cmd::Verify { rootfs } = args.subcommand else {
             panic!("expected Verify")
         };
         assert_eq!(rootfs, PathBuf::from("/tmp/r.ext4"));
@@ -218,8 +151,8 @@ mod tests {
 
     #[test]
     fn parse_clean() {
-        let args = parse_args(argv(&["clean", "--workdir", "/tmp/work"])).unwrap();
-        let Subcommand::Clean { workdir } = args.subcommand else {
+        let args = try_parse(&["clean", "--workdir", "/tmp/work"]).unwrap();
+        let Cmd::Clean { workdir } = args.subcommand else {
             panic!("expected Clean")
         };
         assert_eq!(workdir, PathBuf::from("/tmp/work"));
@@ -227,64 +160,54 @@ mod tests {
 
     #[test]
     fn parse_missing_subcommand_fails() {
-        let err = parse_args(vec![]).unwrap_err();
-        assert!(err.to_string().contains("missing subcommand"), "got: {err}");
+        assert!(try_parse(&[]).is_err());
     }
 
     #[test]
     fn parse_unknown_subcommand_fails() {
-        let err = parse_args(argv(&["frobnicate"])).unwrap_err();
-        assert!(err.to_string().contains("unknown subcommand"), "got: {err}");
+        assert!(try_parse(&["frobnicate"]).is_err());
     }
 
     #[test]
     fn parse_run_missing_config_fails() {
-        let err = parse_args(argv(&["run"])).unwrap_err();
-        assert!(err.to_string().contains("--config"), "got: {err}");
+        assert!(try_parse(&["run"]).is_err());
     }
 
     #[test]
     fn parse_verify_missing_rootfs_fails() {
-        let err = parse_args(argv(&["verify"])).unwrap_err();
-        assert!(err.to_string().contains("--rootfs"), "got: {err}");
+        assert!(try_parse(&["verify"]).is_err());
     }
 
     #[test]
     fn parse_clean_missing_workdir_fails() {
-        let err = parse_args(argv(&["clean"])).unwrap_err();
-        assert!(err.to_string().contains("--workdir"), "got: {err}");
+        assert!(try_parse(&["clean"]).is_err());
     }
 
     #[test]
     fn parse_kernel_build_default_workspace() {
-        let args = parse_args(argv(&["kernel", "build"])).unwrap();
-        let Subcommand::KernelBuild { workspace_root } = args.subcommand else {
-            panic!("expected KernelBuild")
+        let args = try_parse(&["kernel", "build"]).unwrap();
+        let Cmd::Kernel { action: KernelAction::Build { workspace } } = args.subcommand else {
+            panic!("expected Kernel/Build")
         };
-        assert_eq!(workspace_root, PathBuf::from("."));
+        assert_eq!(workspace, PathBuf::from("."));
     }
 
     #[test]
     fn parse_kernel_build_explicit_workspace() {
-        let args = parse_args(argv(&["kernel", "build", "--workspace", "/tmp/ws"])).unwrap();
-        let Subcommand::KernelBuild { workspace_root } = args.subcommand else {
-            panic!("expected KernelBuild")
+        let args = try_parse(&["kernel", "build", "--workspace", "/tmp/ws"]).unwrap();
+        let Cmd::Kernel { action: KernelAction::Build { workspace } } = args.subcommand else {
+            panic!("expected Kernel/Build")
         };
-        assert_eq!(workspace_root, PathBuf::from("/tmp/ws"));
+        assert_eq!(workspace, PathBuf::from("/tmp/ws"));
     }
 
     #[test]
     fn parse_kernel_missing_sub_action_fails() {
-        let err = parse_args(argv(&["kernel"])).unwrap_err();
-        assert!(err.to_string().contains("kernel requires"), "got: {err}");
+        assert!(try_parse(&["kernel"]).is_err());
     }
 
     #[test]
     fn parse_kernel_unknown_sub_action_fails() {
-        let err = parse_args(argv(&["kernel", "destroy"])).unwrap_err();
-        assert!(
-            err.to_string().contains("unknown kernel sub-action"),
-            "got: {err}"
-        );
+        assert!(try_parse(&["kernel", "destroy"]).is_err());
     }
 }

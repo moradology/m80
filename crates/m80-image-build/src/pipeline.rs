@@ -244,6 +244,8 @@ pub(crate) fn run_curl(url: &str, dest: &Path) -> anyhow::Result<()> {
 /// pre-sized with `truncate` before `mkfs.ext4 -d` (and we pass `-F` to
 /// accept the existing file) — without that, mkfs errors with "file does
 /// not exist and no size was specified".
+///
+/// 3-phase: clean stale dir → unsquashfs + mkfs.ext4 → clean temp dir.
 fn squashfs_to_ext4(
     squashfs: &Path,
     ext4: &Path,
@@ -377,12 +379,8 @@ fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()>
 /// 3. Parse the container's stdout for `output: /out/vmlinux-m80-<sha>.bin`
 ///    and return the host-side path.
 ///
-/// The config sha is computed from `kernel-builder/m80-stripped.config`
-/// (before `make olddefconfig`) but the container's `build.sh` runs
-/// `olddefconfig` first and prints the post-resolution sha — which is the
-/// sha embedded in the filename. Use `config_sha_from_file` to get the
-/// pre-resolution sha for unit tests and manifest production when the build
-/// output path is already known.
+/// The container's `build.sh` runs `make olddefconfig` first and hashes the
+/// post-resolution `.config` — that sha is embedded in the output filename.
 ///
 /// Requires Docker to be available on the host. If Docker is absent, the
 /// command fails with the underlying I/O error.
@@ -449,26 +447,6 @@ pub fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<PathBuf> {
         );
     }
     Ok(host_path)
-}
-
-/// Compute the sha256 hex digest of a kernel config file.
-///
-/// This is the config-sha used in the output filename convention:
-/// `vmlinux-m80-<config-sha>.bin`. Per design §5, the sha is of the
-/// `.config` file (the build input), not the vmlinux (the output).
-///
-/// Note: `build.sh` runs `make olddefconfig` first and hashes the
-/// post-resolution `.config`. For pre-resolution config files (e.g., the
-/// committed `m80-stripped.config`), the sha will differ from what the
-/// container prints. Use this function only when you need to hash a
-/// known-complete config.
-///
-/// Currently used by integration tests that validate the committed config;
-/// the binary wires the logic through `build_stripped_kernel` instead.
-#[allow(dead_code)]
-pub fn config_sha_from_file(config_path: &Path) -> anyhow::Result<String> {
-    sha256_file(config_path)
-        .with_context(|| format!("computing config sha256 from {}", config_path.display()))
 }
 
 #[cfg(unix)]
