@@ -32,14 +32,14 @@ fn bad_handshake_reply_returns_handshake_failed() {
 }
 
 #[test]
-fn connect_to_nonexistent_uds_returns_connect_failed() {
+fn connect_to_nonexistent_uds_returns_io_error() {
     let dir = tempdir().unwrap();
     let uds_path = dir.path().join("does_not_exist.sock");
 
     let err = Channel::open_uds_only(&uds_path, GUEST_PORT_DEFAULT).unwrap_err();
 
     assert!(
-        matches!(err, VsockError::ConnectFailed { .. }),
-        "expected ConnectFailed, got {err:?}"
+        matches!(err, VsockError::Io { .. }),
+        "expected Io, got {err:?}"
     );
 }

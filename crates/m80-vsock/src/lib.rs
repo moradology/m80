@@ -124,8 +124,9 @@ impl Channel {
     /// inverted-readiness vsock signal before this is called; this just
     /// opens the exec channel.
     pub fn open_uds_only(host_uds: &Path, guest_port: u32) -> Result<Self, VsockError> {
-        let stream = UnixStream::connect(host_uds).map_err(|e| VsockError::ConnectFailed {
-            errno: e.raw_os_error(),
+        let stream = UnixStream::connect(host_uds).map_err(|e| VsockError::Io {
+            path: host_uds.to_path_buf(),
+            source: e,
         })?;
 
         // Build the Arc<Path> early so we can use io_err throughout this fn.
@@ -264,13 +265,6 @@ pub enum VsockError {
     /// Guest daemon readiness signal did not arrive before the timeout.
     #[error("guestd readiness signal not observed before timeout")]
     NotReady,
-    /// Connect to the Firecracker UDS failed.
-    #[error("vsock connect failed (errno={errno:?})")]
-    ConnectFailed {
-        /// libc errno reported by the connect call, or `None` if the OS did
-        /// not surface one.
-        errno: Option<i32>,
-    },
     /// The Firecracker UDS-to-vsock handshake was malformed.
     #[error("vsock handshake failed")]
     HandshakeFailed,
