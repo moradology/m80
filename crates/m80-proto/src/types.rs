@@ -260,16 +260,7 @@ mod tests {
 
     use crate::{read_frame, write_frame};
 
-    fn sample_timing() -> ExecTiming {
-        ExecTiming {
-            spawned_at_unix_ms: 1_000_000,
-            exited_at_unix_ms: 1_000_100,
-            spawn_ms: 10,
-            run_ms: 90,
-        }
-    }
-
-    fn sample_request() -> ExecRequest {
+    fn make_request() -> ExecRequest {
         ExecRequest {
             program: "/bin/sh".into(),
             args: vec!["-c".into(), "echo hi".into()],
@@ -281,31 +272,36 @@ mod tests {
         }
     }
 
-    fn sample_response() -> ExecResponse {
+    fn make_response() -> ExecResponse {
         ExecResponse {
             status: ExecStatus::Completed,
             exit_code: Some(0),
             stdout: b"hello\n".to_vec(),
             stderr: Vec::new(),
             truncated: None,
-            timing: sample_timing(),
+            timing: ExecTiming {
+                spawned_at_unix_ms: 1_000_000,
+                exited_at_unix_ms: 1_000_100,
+                spawn_ms: 10,
+                run_ms: 90,
+            },
         }
     }
 
     #[test]
     fn envelope_new_stamps_protocol_version_and_kind() {
-        let env = Envelope::new(sample_request());
+        let env = Envelope::new(make_request());
         assert_eq!(env.version, PROTOCOL_VERSION);
         assert_eq!(env.kind, PAYLOAD_KIND_EXEC_REQUEST);
         assert_eq!(env.request_id, None);
 
-        let env = Envelope::new(sample_response());
+        let env = Envelope::new(make_response());
         assert_eq!(env.kind, PAYLOAD_KIND_EXEC_RESPONSE);
     }
 
     #[test]
     fn envelope_with_request_id_stamps_kind() {
-        let env = Envelope::with_request_id(sample_request(), "req-1".into());
+        let env = Envelope::with_request_id(make_request(), "req-1".into());
         assert_eq!(env.version, PROTOCOL_VERSION);
         assert_eq!(env.kind, PAYLOAD_KIND_EXEC_REQUEST);
         assert_eq!(env.request_id, Some("req-1".to_owned()));
@@ -319,7 +315,7 @@ mod tests {
             ExecStatus::Cancelled,
             ExecStatus::Failed,
         ] {
-            let mut response = sample_response();
+            let mut response = make_response();
             response.status = status;
             let env = Envelope::new(response);
             let mut buf = Vec::new();

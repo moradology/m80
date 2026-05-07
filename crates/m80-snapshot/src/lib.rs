@@ -150,6 +150,7 @@ pub enum SnapshotKind {
 }
 
 /// Parameters for [`capture`].
+#[derive(Debug, Clone)]
 pub struct CaptureRequest {
     /// Path to the Firecracker API socket.
     pub fc_socket: PathBuf,
@@ -160,6 +161,7 @@ pub struct CaptureRequest {
 }
 
 /// Parameters for [`restore`].
+#[derive(Debug, Clone)]
 pub struct RestoreRequest {
     /// Path to the Firecracker API socket for the **new** (restore-target) process.
     pub fc_socket: PathBuf,
@@ -322,23 +324,20 @@ struct SchemaVersionProbe {
     schema_version: u32,
 }
 
+fn wrap_io_err(path: &Path) -> impl Fn(io::Error) -> SnapshotError + '_ {
+    |source| SnapshotError::Io { path: path.to_path_buf(), source }
+}
+
 /// Write `value` to `path` as pretty JSON + trailing newline + mode 0644.
 fn write_pretty_json_0644<T: Serialize>(value: &T, path: &Path) -> Result<(), SnapshotError> {
     let mut json = serde_json::to_string_pretty(value).map_err(SnapshotError::Json)?;
     json.push('\n');
-    std::fs::write(path, json.as_bytes()).map_err(|source| SnapshotError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    std::fs::write(path, json.as_bytes()).map_err(wrap_io_err(path))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).map_err(
-            |source| SnapshotError::Io {
-                path: path.to_path_buf(),
-                source,
-            },
-        )?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644))
+            .map_err(wrap_io_err(path))?;
     }
     Ok(())
 }
@@ -358,10 +357,7 @@ fn parse_with_schema_probe<T: DeserializeOwned>(raw: &[u8]) -> Result<T, Snapsho
 }
 
 fn read_with_schema_probe<T: DeserializeOwned>(path: &Path) -> Result<T, SnapshotError> {
-    let raw = std::fs::read(path).map_err(|source| SnapshotError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let raw = std::fs::read(path).map_err(wrap_io_err(path))?;
     parse_with_schema_probe(&raw)
 }
 

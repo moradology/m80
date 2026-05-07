@@ -170,21 +170,29 @@ fn read_lines_if_present(path: &Path) -> Result<Vec<String>, FcError> {
     }
 }
 
+#[derive(serde::Deserialize)]
+struct DiagnosticsRecord {
+    timestamp_unix_ms: Option<u64>,
+    request_id: Option<String>,
+    phase: Option<String>,
+    event_kind: Option<String>,
+    #[serde(default)]
+    message: String,
+}
+
 fn diagnostics_record(line: &str, filter: LogFilter<'_>) -> Option<LogRecord> {
-    let value: serde_json::Value = serde_json::from_str(line).ok()?;
-    let timestamp_unix_ms = value["timestamp_unix_ms"].as_u64();
-    let request_id = value["request_id"].as_str().map(str::to_owned);
-    if !passes_filter(request_id.as_deref(), timestamp_unix_ms, filter) {
+    let rec: DiagnosticsRecord = serde_json::from_str(line).ok()?;
+    if !passes_filter(rec.request_id.as_deref(), rec.timestamp_unix_ms, filter) {
         return None;
     }
     Some(LogRecord {
         source: LogSource::Host,
-        timestamp_unix_ms,
+        timestamp_unix_ms: rec.timestamp_unix_ms,
         timestamp: None,
-        request_id,
-        phase: value["phase"].as_str().map(str::to_owned),
-        level: value["event_kind"].as_str().map(str::to_owned),
-        message: value["message"].as_str().unwrap_or("").to_owned(),
+        request_id: rec.request_id,
+        phase: rec.phase,
+        level: rec.event_kind,
+        message: rec.message,
         raw: line.to_owned(),
     })
 }

@@ -230,12 +230,14 @@ fn run_mount(mount_point: &Path, argv: &[&str], image: Option<&Path>) -> Result<
     cmd.arg(mount_point);
     let out = cmd.output().map_err(|e| io_err(mount_point, e))?;
     if !out.status.success() {
+        let detail = if out.stderr.is_empty() {
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        } else {
+            String::from_utf8_lossy(&out.stderr).trim().to_owned()
+        };
         return Err(io_err(
             mount_point,
-            std::io::Error::other(format!(
-                "{program} failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            )),
+            std::io::Error::other(format!("{program} failed: {detail}")),
         ));
     }
     Ok(())

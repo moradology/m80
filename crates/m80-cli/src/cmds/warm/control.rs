@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::io::{BufReader, Read as _, Write as _};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
@@ -190,6 +191,12 @@ pub(super) fn send_stream_request(
     Ok(BufReader::new(stream))
 }
 
+/// Wrap a serde/protocol error as `FcError::Config(ConfigError::Other(...))`.
+/// TODO(m80-65t3): migrate callers to `FcError::Protocol` once that variant lands.
+fn config_error(context: &str, source: impl Display) -> FcError {
+    FcError::Config(ConfigError::Other(format!("{context}: {source}")))
+}
+
 fn connect_owner() -> Result<UnixStream, FcError> {
     let socket = status::socket_path()?;
     UnixStream::connect(&socket).map_err(|e| {
@@ -202,13 +209,8 @@ fn connect_owner() -> Result<UnixStream, FcError> {
 }
 
 fn write_request(stream: &mut UnixStream, req: &WarmControlRequest) -> Result<(), FcError> {
-    // serde_json errors here are protocol framing errors, not config.
-    // Kept as ConfigError::Other until FcError gains a Protocol(Wire) variant.
-    let payload = serde_json::to_vec(req).map_err(|e| {
-        FcError::Config(ConfigError::Other(format!(
-            "serialize warm control request: {e}"
-        )))
-    })?;
+    let payload = serde_json::to_vec(req)
+        .map_err(|e| config_error("serialize warm control request", e))?;
     stream.write_all(&payload).map_err(FcError::Io)?;
     stream.shutdown(Shutdown::Write).map_err(FcError::Io)
 }
@@ -216,26 +218,16 @@ fn write_request(stream: &mut UnixStream, req: &WarmControlRequest) -> Result<()
 pub(super) fn read_request(stream: &mut UnixStream) -> Result<WarmControlRequest, FcError> {
     let mut bytes = Vec::new();
     stream.read_to_end(&mut bytes).map_err(FcError::Io)?;
-    // serde_json errors here are protocol framing errors, not config.
-    // Kept as ConfigError::Other until FcError gains a Protocol(Wire) variant.
-    serde_json::from_slice(&bytes).map_err(|e| {
-        FcError::Config(ConfigError::Other(format!(
-            "parse warm control request: {e}"
-        )))
-    })
+    serde_json::from_slice(&bytes)
+        .map_err(|e| config_error("parse warm control request", e))
 }
 
 pub(super) fn write_response(
     stream: &mut UnixStream,
     response: &WarmControlResponse,
 ) -> Result<(), FcError> {
-    // serde_json errors here are protocol framing errors, not config.
-    // Kept as ConfigError::Other until FcError gains a Protocol(Wire) variant.
-    let payload = serde_json::to_vec(response).map_err(|e| {
-        FcError::Config(ConfigError::Other(format!(
-            "serialize warm control response: {e}"
-        )))
-    })?;
+    let payload = serde_json::to_vec(response)
+        .map_err(|e| config_error("serialize warm control response", e))?;
     stream.write_all(&payload).map_err(FcError::Io)?;
     stream.flush().map_err(FcError::Io)
 }
@@ -244,13 +236,8 @@ pub(super) fn write_stream_frame(
     stream: &mut UnixStream,
     frame: &WarmStreamFrame,
 ) -> Result<(), FcError> {
-    // serde_json errors here are protocol framing errors, not config.
-    // Kept as ConfigError::Other until FcError gains a Protocol(Wire) variant.
-    let payload = serde_json::to_vec(frame).map_err(|e| {
-        FcError::Config(ConfigError::Other(format!(
-            "serialize warm stream frame: {e}"
-        )))
-    })?;
+    let payload = serde_json::to_vec(frame)
+        .map_err(|e| config_error("serialize warm stream frame", e))?;
     stream.write_all(&payload).map_err(FcError::Io)?;
     stream.write_all(b"\n").map_err(FcError::Io)?;
     stream.flush().map_err(FcError::Io)
@@ -263,15 +250,14 @@ where
     let mut line = String::new();
     let read = reader.read_line(&mut line).map_err(FcError::Io)?;
     if read == 0 {
-        // Protocol-level disconnect, not config.
-        // Kept as ConfigError::Other until FcError gains a Protocol(Wire) variant.
-        return Err(FcError::Config(ConfigError::Other(
-            "warm owner closed stream before terminal frame".into(),
-        )));
+        // Protocol-level disconnect; kept as ConfigError::Other until FcError
+        // gains a Protocol(Wire) variant (bead m80-65t3).
+        return Err(config_error(
+            "warm owner closed stream",
+            "no terminal frame received",
+        ));
     }
-    serde_json::from_str(&line).map_err(|e| {
-        FcError::Config(ConfigError::Other(format!("parse warm stream frame: {e}")))
-    })
+    serde_json::from_str(&line).map_err(|e| config_error("parse warm stream frame", e))
 }
 
 pub(super) fn stream_frame_for_chunk(chunk: ExecChunk) -> WarmStreamFrame {
@@ -284,13 +270,7 @@ pub(super) fn stream_frame_for_chunk(chunk: ExecChunk) -> WarmStreamFrame {
 fn read_response(stream: &mut UnixStream) -> Result<WarmControlResponse, FcError> {
     let mut bytes = Vec::new();
     stream.read_to_end(&mut bytes).map_err(FcError::Io)?;
-    // serde_json errors here are protocol framing errors, not config.
-    // Kept as ConfigError::Other until FcError gains a Protocol(Wire) variant.
-    serde_json::from_slice(&bytes).map_err(|e| {
-        FcError::Config(ConfigError::Other(format!(
-            "parse warm control response: {e}"
-        )))
-    })
+    serde_json::from_slice(&bytes).map_err(|e| config_error("parse warm control response", e))
 }
 
 #[cfg(test)]
