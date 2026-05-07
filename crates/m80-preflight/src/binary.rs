@@ -19,7 +19,7 @@ pub const DEFAULT_FIRECRACKER_BIN: &str = "/opt/firecracker/bin/firecracker";
 pub const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
 
 /// Inputs for the binary discovery preflight step.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct BinaryDiscoveryConfig {
     /// Firecracker binary path to probe with `--version`.
     pub firecracker_bin: PathBuf,
@@ -55,7 +55,7 @@ impl Default for BinaryDiscoveryConfig {
 }
 
 /// Resolved binary paths and the probed Firecracker version.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct BinaryDiscovery {
     /// Resolved Firecracker binary path.
     pub firecracker_bin: PathBuf,

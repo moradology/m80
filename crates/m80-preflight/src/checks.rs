@@ -15,6 +15,8 @@ use crate::{
 
 const KVM_PATH: &str = "/dev/kvm";
 
+const REQUIRED_KERNEL_MODULES: &[&str] = &["tap", "bridge"];
+
 /// Run all 10 checks in order. First failure returns a typed error immediately.
 pub fn run() -> Result<Discovery, PreflightError> {
     let mut report: Vec<CheckRow> = Vec::new();
@@ -89,11 +91,11 @@ pub fn run() -> Result<Discovery, PreflightError> {
 
 fn check_os(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
     let uts = uname().map_err(|e| PreflightError::Io(e.into()))?;
-    let sysname = uts.sysname().to_string_lossy().to_string();
+    let sysname = uts.sysname().to_string_lossy().into_owned();
     if sysname != "Linux" {
         return Err(PreflightError::UnsupportedHostPlatform { actual: sysname });
     }
-    let release = uts.release().to_string_lossy().to_string();
+    let release = uts.release().to_string_lossy().into_owned();
     report.push(CheckRow {
         label: "OS gate".to_string(),
         passed: true,
@@ -137,15 +139,15 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
         .filter_map(|line| line.split_whitespace().next())
         .collect();
 
-    let required = &["tap", "bridge"];
-    let mut missing: Vec<String> = Vec::new();
-    for module in required {
-        if !loaded.iter().any(|&m| m == *module) {
-            missing.push(module.to_string());
-        }
-    }
-
-    if !missing.is_empty() {
+    if REQUIRED_KERNEL_MODULES
+        .iter()
+        .any(|m| !loaded.contains(m))
+    {
+        let missing = REQUIRED_KERNEL_MODULES
+            .iter()
+            .filter(|m| !loaded.contains(*m))
+            .map(|m| m.to_string())
+            .collect::<Vec<_>>();
         return Err(PreflightError::KernelModulesMissing { missing });
     }
 

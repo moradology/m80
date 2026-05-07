@@ -34,7 +34,7 @@ pub const REQUIRED_STORAGE_HELPERS: &[&str] =
     &["mkfs.ext4", "cp", "fallocate", "debugfs", "e2fsck"];
 
 /// Inputs for boot artifact, run-root, and helper validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ArtifactPreflightConfig {
     /// Optional explicit kernel image path.
     pub kernel_image: Option<PathBuf>,
@@ -82,7 +82,7 @@ impl Default for ArtifactPreflightConfig {
 }
 
 /// Validated boot artifacts and host paths.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ArtifactPreflight {
     /// Resolved kernel image path.
     pub kernel: PathBuf,
