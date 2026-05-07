@@ -22,19 +22,19 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub use dns::{
-    discover_dns_resolvers, discover_dns_resolvers_with_ops, is_admitted_dns_resolver,
-    DnsCommandOutput, DnsDiscoveryOps,
+    CommandDnsDiscoveryOps, DnsCommandOutput, DnsDiscoveryOps, discover_dns_resolvers_with_ops,
+    is_admitted_dns_resolver,
 };
 pub use injection::{
-    build_guest_network_config, inject_guest_network_config, inject_guest_network_config_with_ops,
-    GuestNetworkConfig, GuestNetworkConfigOps, M80_NETWORKD_FILE, M80_RESOLVED_FILE,
+    CommandGuestNetworkConfigOps, GuestNetworkConfig, GuestNetworkConfigOps,
+    inject_guest_network_config_with_ops, M80_NETWORKD_FILE, M80_RESOLVED_FILE,
     SYSTEMD_NETWORK_DIR, SYSTEMD_RESOLVED_CONF_DIR,
 };
 pub use iptables::{
     apply_outbound_nat_policy, apply_outbound_nat_policy_with_ops, outbound_nat_filter_chain,
     outbound_nat_rule_comment, permanent_deny_cidrs, PolicyCommandOutput, PolicyOps,
 };
-pub use link_ops::LinkOps;
+pub use link_ops::{LinkOps, NetlinkLinkOps};
 pub use m80_net_mode::OutboundIntent;
 pub use state::{
     bridge_state_path, planned_bridge_state, planned_vm_network_state, read_bridge_state,
@@ -43,8 +43,7 @@ pub use state::{
     BRIDGE_STATE_FILE, NETWORK_STATE_SCHEMA_VERSION,
 };
 pub use teardown::{
-    cleanup_orphan_bridge, cleanup_orphan_bridge_with_ops, cleanup_outbound_nat_policy_with_ops,
-    cleanup_vm, cleanup_vm_with_ops,
+    cleanup_orphan_bridge_with_ops, cleanup_outbound_nat_policy_with_ops, cleanup_vm_with_ops,
 };
 
 /// Comment prefix m80 stamps on every iptables rule it owns. Used by cleanup
@@ -70,39 +69,6 @@ pub struct RealizedNetwork {
     pub guest_mac: String,
     /// Bridge CIDR (a /24 inside `172.16.0.0/12`).
     pub bridge_cidr: Ipv4Net,
-}
-
-/// Realize `intent` for `vm_id` under `run_root`: address allocation,
-/// collision detection, bridge + tap setup, guest network injection,
-/// iptables policy installation. The returned [`RealizedNetwork`] is what
-/// the orchestrator hands to `m80-firecracker-client` to PUT.
-///
-/// **v0.1 status:** the full pipeline is not yet wired here. Use
-/// [`realize_bridge_and_tap`], [`inject_guest_network_config`], and
-/// [`apply_outbound_nat_policy`] individually. This function will compose
-/// them in v0.2 (see `docs/behaviors/network/realize-pipeline.md`).
-pub fn realize(
-    _intent: &OutboundIntent,
-    _vm_id: &str,
-    _run_root: &Path,
-) -> Result<RealizedNetwork, NetError> {
-    unimplemented!("v0.2: full realize pipeline not yet wired; call realize_bridge_and_tap / inject_guest_network_config / apply_outbound_nat_policy individually")
-}
-
-/// Realize only bridge/TAP setup with the real host link backend.
-///
-/// This is the Phase 3/4 boundary used before guest network injection and
-/// iptables policy are wired into top-level [`realize`]. Callers must pass
-/// existing `run_root` and `run_dir` directories; this function writes state
-/// atomically but does not create parent directories.
-pub fn realize_bridge_and_tap(
-    intent: &OutboundIntent,
-    vm_id: &str,
-    run_root: &Path,
-    run_dir: &Path,
-) -> Result<RealizedNetwork, NetError> {
-    let mut ops = link_ops::NetlinkLinkOps::new()?;
-    realize_bridge_and_tap_with_ops(&mut ops, intent, vm_id, run_root, run_dir)
 }
 
 /// Realize bridge/TAP setup through a supplied link-ops backend.

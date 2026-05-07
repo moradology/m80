@@ -35,7 +35,8 @@ pub trait GuestNetworkConfigOps: DnsDiscoveryOps {
     fn run_command(&mut self, program: &str, args: &[String]) -> Result<(), NetError>;
 }
 
-struct CommandGuestNetworkConfigOps;
+/// Real-host backend for guest network config injection via `debugfs`.
+pub struct CommandGuestNetworkConfigOps;
 
 impl DnsDiscoveryOps for CommandGuestNetworkConfigOps {
     fn command_output(
@@ -69,15 +70,6 @@ impl GuestNetworkConfigOps for CommandGuestNetworkConfigOps {
     }
 }
 
-/// Discover DNS and inject guest network config into a runtime rootfs image.
-pub fn inject_guest_network_config(
-    state: &mut VmNetworkStateRecord,
-    runtime_rootfs: &Path,
-) -> Result<(), NetError> {
-    let mut ops = CommandGuestNetworkConfigOps;
-    inject_guest_network_config_with_ops(&mut ops, state, runtime_rootfs)
-}
-
 /// Discover DNS and inject guest network config through a supplied host seam.
 pub fn inject_guest_network_config_with_ops(
     ops: &mut impl GuestNetworkConfigOps,
@@ -95,7 +87,7 @@ pub fn inject_guest_network_config_with_ops(
 }
 
 /// Build the systemd-networkd and systemd-resolved file contents.
-pub fn build_guest_network_config(
+pub(crate) fn build_guest_network_config(
     state: &VmNetworkStateRecord,
     resolvers: &[Ipv4Addr],
 ) -> Result<GuestNetworkConfig, NetError> {

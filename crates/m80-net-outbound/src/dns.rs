@@ -48,7 +48,8 @@ pub trait DnsDiscoveryOps {
     fn read_to_string(&mut self, path: &Path) -> Result<String, NetError>;
 }
 
-struct CommandDnsDiscoveryOps;
+/// Real-host backend for DNS resolver discovery via shell commands and `/etc/resolv.conf`.
+pub struct CommandDnsDiscoveryOps;
 
 impl DnsDiscoveryOps for CommandDnsDiscoveryOps {
     fn command_output(
@@ -67,12 +68,6 @@ impl DnsDiscoveryOps for CommandDnsDiscoveryOps {
     fn read_to_string(&mut self, path: &Path) -> Result<String, NetError> {
         Ok(std::fs::read_to_string(path)?)
     }
-}
-
-/// Discover admitted DNS resolvers from the real host.
-pub fn discover_dns_resolvers() -> Result<Vec<Ipv4Addr>, NetError> {
-    let mut ops = CommandDnsDiscoveryOps;
-    discover_dns_resolvers_with_ops(&mut ops)
 }
 
 /// Discover admitted DNS resolvers through a supplied host seam.

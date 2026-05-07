@@ -93,14 +93,16 @@ pub(crate) fn create_tap_on_bridge(
     ops.set_link_up(&plan.tap_name)
 }
 
-pub(crate) struct NetlinkLinkOps {
+/// Real host backend for bridge and TAP link operations via rtnetlink and the TUN/TAP driver.
+pub struct NetlinkLinkOps {
     runtime: Runtime,
     handle: Handle,
     tap_devices: Vec<(String, tun::Device)>,
 }
 
 impl NetlinkLinkOps {
-    pub(crate) fn new() -> Result<Self, NetError> {
+    /// Open an rtnetlink connection and return a backend ready for link operations.
+    pub fn new() -> Result<Self, NetError> {
         let runtime = Builder::new_current_thread().enable_io().build()?;
         let (connection, handle, _) =
             new_connection().map_err(|source| NetError::NetlinkOperationFailed {
