@@ -35,7 +35,6 @@ pub struct OpsMetrics {
 pub fn aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError> {
     let mut snapshot = HealthSnapshot {
         total: records.len() as u32,
-        rollout_ready: true,
         ..HealthSnapshot::default()
     };
     for record in records {

@@ -62,7 +62,7 @@ adapter, not below.
 
 ### Prometheus rendering
 
-- `render_prometheus(snapshot: &HealthSnapshot, metrics: &OpsMetrics) -> Result<String, ObservabilityError>`
+- `render_prometheus(snapshot: &HealthSnapshot, metrics: &OpsMetrics) -> String`
   renders the standard exposition format. **Rendering only** — no
   embedded HTTP server. Hosting the `/metrics` endpoint is the
   deployer's job.

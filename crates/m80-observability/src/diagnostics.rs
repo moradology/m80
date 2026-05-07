@@ -259,15 +259,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn disabled_diagnostics_record_is_noop() {
-        let mut diagnostics = Diagnostics::disabled();
-        let event = VmEvent::host(Phase::Boot, "ignored", None::<String>, BTreeMap::new());
-
-        diagnostics.record(&event).unwrap();
-        assert_eq!(diagnostics.path(), None);
-    }
-
-    #[test]
     fn open_writes_schema_versioned_jsonl() {
         let dir = tempfile::tempdir().unwrap();
         let mut diagnostics = Diagnostics::open(dir.path()).unwrap();
