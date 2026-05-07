@@ -3,6 +3,7 @@
 
 mod exec;
 mod fileops;
+mod health;
 mod hotplug;
 mod metrics;
 mod protocol;

@@ -1,6 +1,7 @@
 //! Wire types: envelope, exec request/response, status, timing, handshake.
 
 mod fileops;
+mod health;
 mod hotplug;
 mod metrics;
 mod pty;
@@ -20,6 +21,9 @@ pub use fileops::{
     PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE, PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST,
     PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_REQUEST,
     PAYLOAD_KIND_FILE_WRITE_RESPONSE,
+};
+pub use health::{
+    PingRequest, PongResponse, PAYLOAD_KIND_PING_REQUEST, PAYLOAD_KIND_PONG_RESPONSE,
 };
 pub use hotplug::{
     DriveDetachRequest, DriveDetachResponse, DriveDetachSpec, DriveDetachStatus,

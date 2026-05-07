@@ -8,22 +8,23 @@ use crate::types::{
     FileRemoveResponse, FileStat, FileStatRequest, FileStatResponse, FileWriteBeginRequest,
     FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
     FileWriteCommitResponse, FileWriteRequest, FileWriteResponse, GuestCpuMetrics, GuestMemMetrics,
-    HandshakeMessage, MetricsRequest, MetricsResponse, Payload, PtyControl, PtyControlEvent,
-    PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal, PtySize, ShutdownAction,
-    ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_CANCEL_RESPONSE,
-    PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_EXEC_RESPONSE,
-    PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT, PAYLOAD_KIND_FILE_LIST_REQUEST,
-    PAYLOAD_KIND_FILE_LIST_RESPONSE, PAYLOAD_KIND_FILE_READ_CHUNK, PAYLOAD_KIND_FILE_READ_REQUEST,
-    PAYLOAD_KIND_FILE_READ_RESPONSE, PAYLOAD_KIND_FILE_REMOVE_REQUEST,
-    PAYLOAD_KIND_FILE_REMOVE_RESPONSE, PAYLOAD_KIND_FILE_STAT_REQUEST,
-    PAYLOAD_KIND_FILE_STAT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_BEGIN_RESPONSE, PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE, PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE, PAYLOAD_KIND_FILE_WRITE_REQUEST,
-    PAYLOAD_KIND_FILE_WRITE_RESPONSE, PAYLOAD_KIND_METRICS_REQUEST, PAYLOAD_KIND_METRICS_RESPONSE,
-    PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_INPUT,
-    PAYLOAD_KIND_PTY_OUTPUT, PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_PTY_RESIZE,
-    PAYLOAD_KIND_SHUTDOWN_REQUEST, PAYLOAD_KIND_SHUTDOWN_RESPONSE,
+    HandshakeMessage, MetricsRequest, MetricsResponse, Payload, PingRequest, PongResponse,
+    PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,
+    PtySize, ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST,
+    PAYLOAD_KIND_CANCEL_RESPONSE, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_REQUEST,
+    PAYLOAD_KIND_EXEC_RESPONSE, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
+    PAYLOAD_KIND_FILE_LIST_REQUEST, PAYLOAD_KIND_FILE_LIST_RESPONSE, PAYLOAD_KIND_FILE_READ_CHUNK,
+    PAYLOAD_KIND_FILE_READ_REQUEST, PAYLOAD_KIND_FILE_READ_RESPONSE,
+    PAYLOAD_KIND_FILE_REMOVE_REQUEST, PAYLOAD_KIND_FILE_REMOVE_RESPONSE,
+    PAYLOAD_KIND_FILE_STAT_REQUEST, PAYLOAD_KIND_FILE_STAT_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_BEGIN_REQUEST, PAYLOAD_KIND_FILE_WRITE_BEGIN_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_CHUNK_REQUEST, PAYLOAD_KIND_FILE_WRITE_CHUNK_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_COMMIT_REQUEST, PAYLOAD_KIND_FILE_WRITE_COMMIT_RESPONSE,
+    PAYLOAD_KIND_FILE_WRITE_REQUEST, PAYLOAD_KIND_FILE_WRITE_RESPONSE,
+    PAYLOAD_KIND_METRICS_REQUEST, PAYLOAD_KIND_METRICS_RESPONSE, PAYLOAD_KIND_PING_REQUEST,
+    PAYLOAD_KIND_PONG_RESPONSE, PAYLOAD_KIND_PTY_CONTROL, PAYLOAD_KIND_PTY_EXIT,
+    PAYLOAD_KIND_PTY_INPUT, PAYLOAD_KIND_PTY_OUTPUT, PAYLOAD_KIND_PTY_REQUEST,
+    PAYLOAD_KIND_PTY_RESIZE, PAYLOAD_KIND_SHUTDOWN_REQUEST, PAYLOAD_KIND_SHUTDOWN_RESPONSE,
 };
 
 use super::*;
@@ -300,6 +301,8 @@ fn payload_name(payload: &WirePayload) -> &'static str {
         WirePayload::DriveMountResponse(_) => "drive_mount_response",
         WirePayload::DriveDetachRequest(_) => "drive_detach_request",
         WirePayload::DriveDetachResponse(_) => "drive_detach_response",
+        WirePayload::PingRequest(_) => "ping_request",
+        WirePayload::PongResponse(_) => "pong_response",
     }
 }
 
@@ -480,6 +483,28 @@ payload_impl!(
             errors_total: v.errors_total,
         })
     }
+);
+
+payload_impl!(
+    PingRequest,
+    PAYLOAD_KIND_PING_REQUEST,
+    PingRequest,
+    WirePingRequest,
+    |_| WirePingRequest {},
+    |_| Ok(PingRequest {})
+);
+
+payload_impl!(
+    PongResponse,
+    PAYLOAD_KIND_PONG_RESPONSE,
+    PongResponse,
+    WirePongResponse,
+    |v| WirePongResponse {
+        guest_unix_ms: v.guest_unix_ms,
+    },
+    |v| Ok(PongResponse {
+        guest_unix_ms: v.guest_unix_ms,
+    })
 );
 
 payload_impl!(

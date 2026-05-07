@@ -1,13 +1,14 @@
 //! Protocol version and frame-size cap.
 
-/// Wire-protocol version. m80 v0.1 is hard-pinned to `1`; mismatch fails closed.
+/// Wire-protocol version. m80 v0.1 is hard-pinned to this exact value;
+/// mismatch fails closed.
 ///
 /// There is exactly one live protocol version at any time. When a protocol
 /// change ships, `PROTOCOL_VERSION` is bumped and all hosts and guests must
 /// run the new version atomically. Backward-compatible range checks
 /// (`MIN..=MAX`), dual-version dispatch paths, and host-side translation shims
 /// are explicitly forbidden — fix the deploy pipeline, not the protocol.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Maximum size of a single protobuf frame body in bytes.
 ///

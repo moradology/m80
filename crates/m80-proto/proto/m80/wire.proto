@@ -47,6 +47,8 @@ message WireEnvelope {
     WireDriveMountResponse drive_mount_response = 46;
     WireDriveDetachRequest drive_detach_request = 47;
     WireDriveDetachResponse drive_detach_response = 48;
+    WirePingRequest ping_request = 49;
+    WirePongResponse pong_response = 50;
   }
 }
 
@@ -342,4 +344,10 @@ message WireDriveDetachStatus {
 
 message WireDriveDetachResponse {
   repeated WireDriveDetachStatus statuses = 1;
+}
+
+message WirePingRequest {}
+
+message WirePongResponse {
+  uint64 guest_unix_ms = 1;
 }

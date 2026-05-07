@@ -16,10 +16,10 @@ single crate both sides depend on so divergence is impossible.
 The load-bearing wire invariants — the things consumers cannot derive from
 `cargo doc` alone:
 
-- **Hard cutover, no negotiation.** Every envelope carries `version: u32 = 1`
-  and `negotiate_version` is exact-match. There is no rolling-upgrade window
-  and no host-side translation shim. Bumping `PROTOCOL_VERSION` is an atomic
-  redeploy of both peers.
+- **Hard cutover, no negotiation.** Every envelope carries the exact
+  `PROTOCOL_VERSION` and `negotiate_version` is exact-match. There is no
+  rolling-upgrade window and no host-side translation shim. Bumping
+  `PROTOCOL_VERSION` is an atomic redeploy of both peers.
 - **Checked-in schema.** `proto/m80/wire.proto` owns the protobuf field tags.
   `build.rs` compiles it with `prost-build` and a vendored `protoc`, then the
   crate exposes a narrow typed facade over the generated wire structs.
@@ -80,6 +80,10 @@ The load-bearing wire invariants — the things consumers cannot derive from
   gauges from `/proc/meminfo`, and guestd request/error counters. There is no
   free-form key/value map. See
   `docs/behaviors/observability/guest-metrics-vsock.md`.
+- **Guest health probes are direct verbs.** `ping_request` has an empty
+  payload; `pong_response` carries `guest_unix_ms`, the guestd wall-clock
+  timestamp in Unix milliseconds at handling time. The verb does not spawn a
+  guest process.
 
 ## Public surface
 
@@ -116,6 +120,9 @@ and their `PAYLOAD_KIND_*` constants.
 Guest metrics exports: `MetricsRequest`, `MetricsResponse`,
 `GuestCpuMetrics`, `GuestMemMetrics`, and
 `PAYLOAD_KIND_METRICS_REQUEST` / `PAYLOAD_KIND_METRICS_RESPONSE`.
+
+Guest health exports: `PingRequest`, `PongResponse`, and
+`PAYLOAD_KIND_PING_REQUEST` / `PAYLOAD_KIND_PONG_RESPONSE`.
 
 Error type: `ProtoError`.
 

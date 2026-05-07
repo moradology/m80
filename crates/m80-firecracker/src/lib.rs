@@ -35,8 +35,8 @@ pub use layout::{
 };
 pub use m80_net_mode::NetworkPolicy;
 pub use m80_proto::{
-    ExecExit, ExecRequest, ExecResponse, ExecStatus, ExecTiming, FileError, PtyControlEvent,
-    PtyExit, PtyRequest, PtySize,
+    ExecExit, ExecRequest, ExecResponse, ExecStatus, ExecTiming, FileError, PongResponse,
+    PtyControlEvent, PtyExit, PtyRequest, PtySize,
 };
 pub use m80_snapshot::SnapshotPaths;
 pub use m80_storage::ChangeSet;

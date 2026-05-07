@@ -137,6 +137,9 @@ disconnects before a required terminal frame map to
 m80-guestd and returns the fixed-shape guest CPU, memory, and daemon counter
 snapshot without spawning a guest process.
 
+`RunningSandbox::ping_guest()` sends a direct `PingRequest` to m80-guestd and
+returns `PongResponse { guest_unix_ms }` without spawning a guest process.
+
 ### Public lifecycle methods
 
 | Method | Signature | Description |
@@ -155,6 +158,7 @@ snapshot without spawning a guest process.
 | `RunningSandbox::attach_drive_verified` | `(self, HotplugDriveAttach) -> Result<RunningSandbox, FcError>` | Retarget one preallocated drive slot, wait for guest mount ACK, verify opaque identity bytes, and discard the VM on failure. |
 | `RunningSandbox::detach_drive` | `(self, HotplugDriveDetach) -> Result<RunningSandbox, FcError>` | Ask guestd to unmount a preallocated slot, then retarget the slot to its placeholder backing file. |
 | `RunningSandbox::guest_metrics` | `(&mut self) -> Result<MetricsResponse, FcError>` | Read guest CPU, memory, and guestd counter metrics over vsock. |
+| `RunningSandbox::ping_guest` | `(&mut self) -> Result<PongResponse, FcError>` | Round-trip a guest health probe and return the guest handling timestamp. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
 | `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
 

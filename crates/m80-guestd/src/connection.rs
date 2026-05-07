@@ -37,9 +37,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
     read_raw_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope,
-    ExecRequest, ExecResponse, ExecStatus, ExecTiming, Payload, RawEnvelope, ShutdownAction,
-    ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST, PAYLOAD_KIND_EXEC_REQUEST,
-    PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
+    ExecRequest, ExecResponse, ExecStatus, ExecTiming, Payload, PingRequest, PongResponse,
+    RawEnvelope, ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST,
+    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_PING_REQUEST, PAYLOAD_KIND_PTY_REQUEST,
+    PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
 
 use crate::guest_log::{self, GuestLogPhase};
@@ -126,6 +127,7 @@ where
         }
         PAYLOAD_KIND_CANCEL_REQUEST => handle_cancel_no_exec(raw, &mut writer),
         PAYLOAD_KIND_SHUTDOWN_REQUEST => handle_shutdown(raw, &mut writer, received_at),
+        PAYLOAD_KIND_PING_REQUEST => handle_ping(raw, &mut writer),
         kind if fileops::is_fileop_kind(kind) => fileops::handle_fileop(raw, reader, &mut writer),
         kind if hotplug::is_hotplug_kind(kind) => hotplug::handle_hotplug(raw, reader, &mut writer),
         kind if metrics::is_metrics_kind(kind) => metrics::handle_metrics(raw, reader, &mut writer),
@@ -147,6 +149,28 @@ where
             Ok(ConnectionOutcome::Continue)
         }
     }
+}
+
+fn handle_ping<W: Write>(raw: RawEnvelope, writer: &mut W) -> anyhow::Result<ConnectionOutcome> {
+    let request_id = raw.request_id.clone();
+    if let Err(e) = raw.decode::<PingRequest>() {
+        metrics::record_error();
+        protocol_log::warn_proto_error(
+            GuestLogPhase::Exec,
+            request_id.as_deref(),
+            Some(PAYLOAD_KIND_PING_REQUEST),
+            &e,
+        );
+        return Ok(ConnectionOutcome::Continue);
+    }
+    write_payload_frame(
+        writer,
+        &request_id,
+        PongResponse {
+            guest_unix_ms: unix_ms_now(),
+        },
+    )?;
+    Ok(ConnectionOutcome::Continue)
 }
 
 /// Build a `Command` for `req` with stdout/stderr/stdin piped and process
