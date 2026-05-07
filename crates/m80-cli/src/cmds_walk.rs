@@ -6,8 +6,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
-
 use m80_firecracker::{FcError, OWNERSHIP_LOCK};
 use m80_jailer::{JAILER_PLAN_FILE, JAILER_STATE_FILE};
 
@@ -15,6 +13,12 @@ use crate::config;
 use crate::errors;
 use crate::json;
 
+/// Output for `m80 inspect`.
+///
+/// `contents` uses `serde_json::Value` because each file in the run-dir has
+/// a distinct schema owned by a different crate (jailer-state.json, jailer-plan.json,
+/// boot-identity.json). Typing each one here would couple this debug tool to every
+/// internal format; the Value passthrough is intentional.
 #[derive(serde::Serialize)]
 struct InspectOutput {
     vm_id: String,
@@ -167,9 +171,7 @@ pub fn cmd_list(json: bool) -> anyhow::Result<i32> {
 }
 
 fn list_entries(run_root: &Path) -> Result<Vec<ListEntry>, FcError> {
-    let read_dir = std::fs::read_dir(run_root)
-        .with_context(|| format!("listing {}", run_root.display()))
-        .map_err(|e| FcError::Config(format!("{e:#}")))?;
+    let read_dir = std::fs::read_dir(run_root).map_err(FcError::Io)?;
 
     let mut entries = Vec::new();
     for entry in read_dir.flatten() {

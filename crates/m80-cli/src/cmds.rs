@@ -70,29 +70,7 @@ pub fn cmd_run(
     let request_id = crate::request_id::new();
     let _request_id_scope = crate::request_id::set(request_id.clone());
 
-    if interactive && !tty {
-        let e = FcError::Config("m80 run -i requires --tty / -t".to_owned());
-        return Ok(errors::render_error(&e, json));
-    }
-    if tty && json {
-        let e = FcError::Config("m80 run --tty is incompatible with --json".to_owned());
-        return Ok(errors::render_error(&e, json));
-    }
-    if tty && stdin {
-        let e = FcError::Config("m80 run --stdin is incompatible with --tty".to_owned());
-        return Ok(errors::render_error(&e, json));
-    }
-    if warm && workspace.is_some() {
-        let e = FcError::Config(
-            "m80 run --warm --workspace is unsupported until attach-late workspace lands"
-                .to_owned(),
-        );
-        return Ok(errors::render_error(&e, json));
-    }
-    if warm && tty {
-        let e = FcError::Config(
-            "m80 run --warm is incompatible with --tty until warm terminal leases land".to_owned(),
-        );
+    if let Err(e) = validate_run_flags(interactive, tty, stdin, warm, workspace.is_some(), json) {
         return Ok(errors::render_error(&e, json));
     }
     if !allow_host.is_empty() || !allow_cidr.is_empty() {
@@ -239,6 +217,41 @@ pub fn cmd_run(
     }
 
     Ok(guest_exit)
+}
+
+fn validate_run_flags(
+    interactive: bool,
+    tty: bool,
+    stdin: bool,
+    warm: bool,
+    has_workspace: bool,
+    json: bool,
+) -> Result<(), FcError> {
+    if interactive && !tty {
+        return Err(FcError::Config("m80 run -i requires --tty / -t".to_owned()));
+    }
+    if tty && json {
+        return Err(FcError::Config(
+            "m80 run --tty is incompatible with --json".to_owned(),
+        ));
+    }
+    if tty && stdin {
+        return Err(FcError::Config(
+            "m80 run --stdin is incompatible with --tty".to_owned(),
+        ));
+    }
+    if warm && has_workspace {
+        return Err(FcError::Config(
+            "m80 run --warm --workspace is unsupported until attach-late workspace lands"
+                .to_owned(),
+        ));
+    }
+    if warm && tty {
+        return Err(FcError::Config(
+            "m80 run --warm is incompatible with --tty until warm terminal leases land".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn should_writeback(writeback: WritebackMode, guest_exit: i32) -> bool {
