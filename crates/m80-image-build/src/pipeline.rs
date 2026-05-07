@@ -50,7 +50,7 @@ struct BuildPaths {
 /// `cfg.rootfs.kind`: `"ubuntu"` (default) builds from the firecracker-ci
 /// squashfs; `"minimal"` builds an empty ext4 with busybox + static
 /// guestd as PID 1.
-pub fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
+pub(crate) fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
     let cfg = BuildConfig::from_file(&config_path)?;
     match cfg.rootfs.kind.as_deref() {
         Some("minimal") => minimal::run_build_minimal(cfg, dry_run),
@@ -385,7 +385,7 @@ fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()>
 ///
 /// Requires Docker to be available on the host. If Docker is absent, the
 /// command fails with the underlying I/O error.
-pub fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<PathBuf> {
     let builder_dir = workspace_root
         .join("crates")
         .join("m80-image-build")

@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 ///
 /// Streams the file through `Sha256` in 64 KiB chunks so hashing a
 /// multi-GiB rootfs doesn't allocate the whole file on the heap.
-pub fn sha256_file(path: &Path) -> anyhow::Result<String> {
+pub(crate) fn sha256_file(path: &Path) -> anyhow::Result<String> {
     let mut file = std::fs::File::open(path)
         .with_context(|| format!("opening {} for sha256", path.display()))?;
     let mut hasher = Sha256::new();

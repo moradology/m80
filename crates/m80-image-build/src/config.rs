@@ -7,7 +7,7 @@ use serde::Deserialize;
 /// Top-level build configuration loaded from an `m80-image-build.toml`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BuildConfig {
+pub(crate) struct BuildConfig {
     /// Kernel image configuration.
     pub kernel: KernelConfig,
     /// Source and output rootfs configuration.
@@ -21,7 +21,7 @@ pub struct BuildConfig {
 /// Kernel download parameters.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct KernelConfig {
+pub(crate) struct KernelConfig {
     /// Firecracker version pin, e.g. `"v1.15.1"`.
     pub version: String,
     /// Firecracker CI artifact directory track, e.g. `"v1.15"`.
@@ -33,7 +33,7 @@ pub struct KernelConfig {
 /// Source rootfs parameters.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RootfsConfig {
+pub(crate) struct RootfsConfig {
     /// Target ext4 size, e.g. `"1GiB"`, `"512MiB"`, `"100KiB"`.
     pub size: String,
     /// Image kind. `"ubuntu"` (default) builds from the firecracker-ci
@@ -47,7 +47,7 @@ pub struct RootfsConfig {
 /// Guest daemon binary parameters.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GuestdConfig {
+pub(crate) struct GuestdConfig {
     /// Path to the pre-built `m80-guestd` ELF binary on the host.
     pub binary: PathBuf,
 }
@@ -55,14 +55,14 @@ pub struct GuestdConfig {
 /// Build output parameters.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct OutputConfig {
+pub(crate) struct OutputConfig {
     /// Directory where artifacts (kernel, rootfs, manifest) are written.
     pub dir: PathBuf,
 }
 
 impl BuildConfig {
     /// Load and parse a TOML config from `path`.
-    pub fn from_file(path: &std::path::Path) -> anyhow::Result<BuildConfig> {
+    pub(crate) fn from_file(path: &std::path::Path) -> anyhow::Result<BuildConfig> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("reading config {}: {}", path.display(), e))?;
         let cfg: BuildConfig = toml::from_str(&raw)
@@ -99,14 +99,7 @@ fn validate_url_safe(field: &str, value: &str) -> anyhow::Result<()> {
 ///
 /// Supported suffixes (case-sensitive): `GiB`, `MiB`, `KiB`.
 /// The numeric part must be a non-zero positive integer.
-///
-/// ```
-/// use m80_image_build::config::parse_size;
-/// assert_eq!(parse_size("1GiB").unwrap(), 1 << 30);
-/// assert_eq!(parse_size("512MiB").unwrap(), 512 << 20);
-/// assert_eq!(parse_size("100KiB").unwrap(), 100 << 10);
-/// ```
-pub fn parse_size(s: &str) -> anyhow::Result<u64> {
+pub(crate) fn parse_size(s: &str) -> anyhow::Result<u64> {
     let (num, shift) = ["GiB", "MiB", "KiB"]
         .iter()
         .find_map(|suffix| {
