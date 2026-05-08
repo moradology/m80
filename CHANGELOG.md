@@ -5,6 +5,15 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — Firecracker network interface API surface (m80-2ggw.3.3)
+
+- Added `NetworkInterfaceConfig` and `Client::put_network_interface` for
+  Firecracker `PUT /network-interfaces/{iface_id}` with typed
+  `NetworkInterfaceWriteFailed` error mapping.
+- `m80-firecracker` preboot planning can now insert a network-interface PUT
+  for an already-realized OutboundNat TAP. `AllowOutbound` remains rejected in
+  phase 6 until the full OutboundNat launch wiring lands.
+
 ### Added — image-build atomicity coverage (m80-g0v8.4)
 
 - `m80-image-build` now enters a private mount namespace before loop-mounting

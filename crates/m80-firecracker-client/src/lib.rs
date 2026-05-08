@@ -97,6 +97,22 @@ impl Client {
         })
     }
 
+    /// PUT `/network-interfaces/{iface_id}`. The `iface_id` is taken from the config.
+    pub fn put_network_interface(
+        &self,
+        config: &NetworkInterfaceConfig,
+    ) -> Result<(), ClientError> {
+        let path = format!("/network-interfaces/{}", config.iface_id);
+        let body = serde_json::to_vec(config)?;
+        let resp = self.put(&path, &body)?;
+        if ok(resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::NetworkInterfaceWriteFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
     /// PATCH `/vm` — set the VM running state (`Paused` or `Resumed`).
     pub fn patch_vm_state(&self, state: VmState) -> Result<(), ClientError> {
         let payload = serde_json::json!({ "state": state });
@@ -341,6 +357,19 @@ pub struct VsockConfig {
     pub uds_path: PathBuf,
 }
 
+/// Virtio-net device config — host TAP name plus guest-visible identity.
+#[derive(Debug, Clone, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkInterfaceConfig {
+    /// Stable network interface identifier in Firecracker.
+    pub iface_id: String,
+    /// Host TAP device name Firecracker attaches to the guest.
+    pub host_dev_name: String,
+    /// Optional guest MAC address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest_mac: Option<String>,
+}
+
 /// VM running state — used with PATCH `/vm`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -475,6 +504,12 @@ pub enum ClientError {
     /// `PUT /vsock` failed.
     #[error("vsock write failed: {fault}")]
     VsockWriteFailed {
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PUT /network-interfaces/{id}` failed.
+    #[error("network interface write failed: {fault}")]
+    NetworkInterfaceWriteFailed {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },

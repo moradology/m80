@@ -507,6 +507,14 @@ impl std::fmt::Debug for StoragePrep {
 pub(crate) enum RealizedNetwork {
     /// No NIC configured; iptables untouched.
     NoEgress,
+    /// Firecracker will attach a host TAP to a guest virtio-net device.
+    #[allow(dead_code)] // Constructed by preboot tests until phase 6 realizes OutboundNat.
+    OutboundNat {
+        /// Host TAP device name.
+        tap_name: String,
+        /// Guest MAC address assigned during network planning.
+        guest_mac: String,
+    },
     /// Firecracker will join a caller-provided network namespace.
     JoinNetns {
         /// Namespace path supplied by the caller.

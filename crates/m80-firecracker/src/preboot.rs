@@ -2,12 +2,16 @@
 
 use std::path::PathBuf;
 
-use m80_firecracker_client::{BootSourceConfig, Client, DriveConfig, MachineConfig, VsockConfig};
+use m80_firecracker_client::{
+    BootSourceConfig, Client, DriveConfig, MachineConfig, NetworkInterfaceConfig, VsockConfig,
+};
 use m80_image_manifest::{ImageKind, KernelKind};
 
 use crate::error::FcError;
 use crate::layout::preallocated_drive_slot_jail_path;
-use crate::types::{SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT};
+use crate::types::{
+    RealizedNetwork, SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+};
 
 /// `panic=-1` triggers immediate reboot on kernel panic (vs. `panic=1`'s
 /// 1 s wait). For minimal-kind images where m80-guestd is PID 1, the
@@ -36,6 +40,8 @@ pub(crate) enum PrebootPut {
     BootSource(BootSourceConfig),
     /// PUT `/drives/{drive_id}`.
     Drive(DriveConfig),
+    /// PUT `/network-interfaces/{iface_id}`.
+    NetworkInterface(NetworkInterfaceConfig),
     /// PUT `/vsock`.
     Vsock(VsockConfig),
 }
@@ -47,6 +53,7 @@ pub(crate) fn plan_preboot_puts(
     image_kind: ImageKind,
     kernel_kind: KernelKind,
     include_workspace_drive: bool,
+    network: &RealizedNetwork,
 ) -> Vec<PrebootPut> {
     let mut puts = vec![
         PrebootPut::MachineConfig(machine_config_for(config)),
@@ -92,6 +99,18 @@ pub(crate) fn plan_preboot_puts(
         }));
     }
 
+    if let RealizedNetwork::OutboundNat {
+        tap_name,
+        guest_mac,
+    } = network
+    {
+        puts.push(PrebootPut::NetworkInterface(NetworkInterfaceConfig {
+            iface_id: "eth0".to_owned(),
+            host_dev_name: tap_name.clone(),
+            guest_mac: Some(guest_mac.clone()),
+        }));
+    }
+
     puts.push(PrebootPut::Vsock(VsockConfig {
         guest_cid: m80_vsock::cid_for_vm_id(vm_id),
         uds_path: PathBuf::from("/vsock.sock"),
@@ -107,6 +126,7 @@ pub(crate) fn apply_preboot_puts(client: &Client, puts: &[PrebootPut]) -> Result
             PrebootPut::MachineConfig(config) => client.put_machine_config(config)?,
             PrebootPut::BootSource(config) => client.put_boot_source(config)?,
             PrebootPut::Drive(config) => client.put_drive(config)?,
+            PrebootPut::NetworkInterface(config) => client.put_network_interface(config)?,
             PrebootPut::Vsock(config) => client.put_vsock(config)?,
         }
     }
@@ -158,6 +178,7 @@ mod tests {
             ImageKind::Ubuntu,
             KernelKind::Stock,
             false,
+            &RealizedNetwork::NoEgress,
         )
     }
 
@@ -175,6 +196,7 @@ mod tests {
             ImageKind::Ubuntu,
             KernelKind::Stock,
             false,
+            &RealizedNetwork::NoEgress,
         );
 
         let PrebootPut::MachineConfig(machine) = &puts[0] else {
@@ -234,6 +256,7 @@ mod tests {
             ImageKind::Ubuntu,
             KernelKind::Stock,
             true,
+            &RealizedNetwork::NoEgress,
         );
 
         let PrebootPut::Drive(workspace) = &puts[4] else {
@@ -272,6 +295,7 @@ mod tests {
             ImageKind::Ubuntu,
             KernelKind::Stock,
             false,
+            &RealizedNetwork::NoEgress,
         );
 
         let PrebootPut::Drive(slot0) = &puts[4] else {
@@ -289,6 +313,32 @@ mod tests {
 
         let PrebootPut::Vsock(_) = &puts[6] else {
             panic!("vsock must remain after all preboot drive slots");
+        };
+    }
+
+    #[test]
+    fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
+        let puts = plan_preboot_puts(
+            &SandboxConfig::default(),
+            "vm-alpha",
+            ImageKind::Ubuntu,
+            KernelKind::Stock,
+            false,
+            &RealizedNetwork::OutboundNat {
+                tap_name: "tfc123456789abc".to_owned(),
+                guest_mac: "02:00:00:00:00:02".to_owned(),
+            },
+        );
+
+        let PrebootPut::NetworkInterface(nic) = &puts[4] else {
+            panic!("network interface PUT must follow rootfs overlay drives");
+        };
+        assert_eq!(nic.iface_id, "eth0");
+        assert_eq!(nic.host_dev_name, "tfc123456789abc");
+        assert_eq!(nic.guest_mac.as_deref(), Some("02:00:00:00:00:02"));
+
+        let PrebootPut::Vsock(_) = &puts[5] else {
+            panic!("vsock must follow network interface PUT");
         };
     }
 

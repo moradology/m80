@@ -178,9 +178,12 @@ peer bytes from transport failures.
 `SandboxConfig::network` supports three caller intents. `NoEgress` launches with
 no guest NIC and no host iptables changes. `AllowOutbound` resolves to
 OutboundNat and is still rejected in this crate until the outbound network
-realizer is wired into launch. `JoinNetns { netns_path }` delegates namespace
-creation and policy to the caller: m80 validates the namespace path and passes it
-to Firecracker's official jailer as `--netns` before Firecracker is exec'd.
+realizer is wired into launch. The preboot planner already has the
+Firecracker `NetworkInterface` PUT shape for an already-realized TAP, but
+phase 6 does not yet create the TAP or guest network config. `JoinNetns {
+netns_path }` delegates namespace creation and policy to the caller: m80
+validates the namespace path and passes it to Firecracker's official jailer as
+`--netns` before Firecracker is exec'd.
 
 `SandboxConfig::daemonize` asks the official Firecracker jailer to double-fork
 before exec'ing Firecracker. The Firecracker API socket remains the management
@@ -323,11 +326,13 @@ slots. It defaults to `false`.
 `m80-firecracker` builds a pure ordered preboot PUT plan and applies it before
 `InstanceStart`: machine config, boot source, shared read-only rootfs drive,
 per-VM rootfs overlay drive, optional workspace scratch drive, optional
-preallocated hotplug drive slots, then vsock.
-Outbound NAT is rejected in v0.1 before this plan is built, so there is no NIC
-PUT in v0.1. After the plan succeeds and before `InstanceStart`, the launch
-path writes `<run_dir>/boot-identity.json` from the identity admitted by
-`m80-preflight`. See `docs/behaviors/lifecycle/preboot-wiring.md`.
+preallocated hotplug drive slots, optional network interface for an
+already-realized OutboundNat TAP, then vsock. Outbound NAT is still rejected in
+phase 6, so production launches do not yet emit the NIC PUT; the planner shape
+is present so enabling the realizer has a pinned Firecracker API path. After
+the plan succeeds and before `InstanceStart`, the launch path writes
+`<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
+See `docs/behaviors/lifecycle/preboot-wiring.md`.
 
 Preallocated slots are opt-in (`DEFAULT_PREALLOCATED_DRIVE_SLOTS = 0`) because
 ordinary one-shot launches do not need extra block devices. The slot exists

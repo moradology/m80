@@ -1,9 +1,8 @@
 # `m80-firecracker-client`
 
 A pure REST speaker for the Firecracker UDS API — `BootSource`, `Drive`,
-`MachineConfig`, `Vsock`, `InstanceAction`. No state. No policy. No
-knowledge of m80's lifecycle. (`NetworkInterface` lands in v0.2 with
-`OutboundNat`.)
+`MachineConfig`, `NetworkInterface`, `Vsock`, `InstanceAction`. No state.
+No policy. No knowledge of m80's lifecycle.
 
 ## Reason for being
 
@@ -24,10 +23,10 @@ without inheriting m80's lifecycle assumptions.
   runtime/executor dependency; one call blocks until Firecracker responds.
   Concurrency is the caller's job.
 - Every API method maps 1:1 to a Firecracker REST resource:
-  `put_boot_source`, `put_machine_config`, `put_drive`, `put_vsock`,
-  `patch_drive`, `instance_action`, `patch_vm_state`, `put_snapshot_create`,
-  `put_snapshot_load`. The method signature mirrors the Firecracker schema
-  exactly.
+  `put_boot_source`, `put_machine_config`, `put_drive`,
+  `put_network_interface`, `put_vsock`, `patch_drive`, `instance_action`,
+  `patch_vm_state`, `put_snapshot_create`, `put_snapshot_load`. The method
+  signature mirrors the Firecracker schema exactly.
 - The client owns no global state. Constructing one is `Client::new(uds_path)`;
   dropping it closes the underlying socket. Multiple clients can target
   the same UDS, but the caller is responsible for serializing concurrent
@@ -35,8 +34,9 @@ without inheriting m80's lifecycle assumptions.
   cleanly).
 - HTTP errors translate to typed `ClientError` variants per resource:
   `BootSourceWriteFailed`, `MachineConfigWriteFailed`,
-  `DriveWriteFailed`, `VsockWriteFailed`, `InstanceActionFailed`,
-  `VmStateWriteFailed`, `SnapshotCreateFailed`, `SnapshotLoadFailed`.
+  `DriveWriteFailed`, `NetworkInterfaceWriteFailed`, `VsockWriteFailed`,
+  `InstanceActionFailed`, `VmStateWriteFailed`, `SnapshotCreateFailed`,
+  `SnapshotLoadFailed`.
   Each carries the Firecracker fault JSON verbatim.
 ## Public surface
 
@@ -48,8 +48,9 @@ without inheriting m80's lifecycle assumptions.
 - `SnapshotType { Full, Diff }` — for `CreateSnapshotConfig`.
 - `MemBackendType { File, Uffd }` — for `MemBackendConfig`.
 - Firecracker config types: `BootSourceConfig`, `MachineConfig`,
-  `DriveConfig`, `PartialDriveConfig`, `VsockConfig`, `CreateSnapshotConfig`,
-  `LoadSnapshotConfig`, `MemBackendConfig`, `VsockOverride`.
+  `DriveConfig`, `PartialDriveConfig`, `NetworkInterfaceConfig`,
+  `VsockConfig`, `CreateSnapshotConfig`, `LoadSnapshotConfig`,
+  `MemBackendConfig`, `VsockOverride`.
 - `ClientError` — typed per-resource failure.
 
 ## Non-goals
@@ -99,6 +100,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
   a missing socket).
 - `tests/instance_action_serialization.rs` — `InstanceAction::InstanceStart`
   serializes to the expected `{"action_type": "InstanceStart"}` body.
+- `tests/network_interface_config_round_trip.rs` — URL, optional-field
+  omission, and typed 400 error mapping for `PUT /network-interfaces/{id}`.
 - `tests/snapshot.rs` — fixture-server tests for `patch_vm_state`,
   `put_snapshot_create`, and `put_snapshot_load`: URL, required fields,
   optional-field omission, `resume_vm`, `vsock_override`, and 400 error

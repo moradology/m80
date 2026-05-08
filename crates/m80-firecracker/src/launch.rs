@@ -191,6 +191,9 @@ impl Sandbox {
         )?;
         let network_message = match &net {
             RealizedNetwork::NoEgress => "network prepared".to_owned(),
+            RealizedNetwork::OutboundNat { tap_name, .. } => {
+                format!("network prepared: outbound_nat tap {tap_name}")
+            }
             RealizedNetwork::JoinNetns { netns_path } => {
                 format!("network prepared: join_netns {}", netns_path.display())
             }
@@ -262,6 +265,7 @@ impl Sandbox {
                     &vm_id,
                     backend_config.discovery.manifest.image_kind,
                     backend_config.discovery.manifest.kernel_kind,
+                    &net,
                 )
             }
         )?;
@@ -907,6 +911,7 @@ fn phase_11_rest_puts(
     vm_id: &str,
     image_kind: m80_image_manifest::ImageKind,
     kernel_kind: m80_image_manifest::KernelKind,
+    network: &RealizedNetwork,
 ) -> Result<(), FcError> {
     let puts = plan_preboot_puts(
         config,
@@ -914,6 +919,7 @@ fn phase_11_rest_puts(
         image_kind,
         kernel_kind,
         storage.scratch.is_some(),
+        network,
     );
     apply_preboot_puts(client, &puts)
 }
