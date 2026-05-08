@@ -31,6 +31,10 @@ The planned phase is written before bridge link mutation. The ready phase is
 written only after bridge creation/address/up succeeds, or is preserved when an
 already-ready matching bridge is reused.
 
+If a planned bridge state file exists from a prior interrupted setup, startup
+checks whether the corresponding kernel bridge still exists. Missing links are
+recreated from the planned state before the ready state is written.
+
 ## Tap Creation
 
 The system creates each per-VM TAP interface without invoking `ip` or
@@ -87,3 +91,8 @@ source-level no-`ip` contract for the link-ops implementation. The crate also
 keeps unit coverage in `src/link_ops.rs` for TAP/bridge lifecycle ordering and
 an ignored root/CAP_NET_ADMIN probe that creates and deletes a real TAP through
 the no-`/sbin/ip` path.
+
+Relevant setup tests:
+`bridge_setup_is_idempotent_with_matching_state`,
+`planned_bridge_state_recovers_existing_kernel_bridge_without_recreate`, and
+`planned_bridge_state_recreates_kernel_dropped_bridge`.

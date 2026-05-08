@@ -193,6 +193,47 @@ fn planned_bridge_state_recovers_existing_kernel_bridge_without_recreate() {
 }
 
 #[test]
+fn planned_bridge_state_recreates_kernel_dropped_bridge() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_dir = temp.path().join("vm-123");
+    std::fs::create_dir(&run_dir).unwrap();
+    let intent = intent_with_exception();
+    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    write_bridge_state(temp.path(), &planned_bridge).unwrap();
+    let mut ops = RecordingLinkOps::default();
+
+    let realized =
+        realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
+            .unwrap();
+
+    assert_eq!(
+        read_bridge_state(temp.path()).unwrap(),
+        planned_bridge.clone().with_phase(SetupPhase::Ready)
+    );
+    assert_eq!(
+        ops.operations[..5],
+        [
+            format!("link_exists {}", planned_bridge.bridge_name),
+            format!("create_bridge {}", planned_bridge.bridge_name),
+            format!(
+                "link_has_ipv4_address {} {}/{}",
+                planned_bridge.bridge_name,
+                planned_bridge.gateway_ipv4,
+                planned_bridge.cidr.prefix_len()
+            ),
+            format!(
+                "add_ipv4_address {} {}/{}",
+                planned_bridge.bridge_name,
+                planned_bridge.gateway_ipv4,
+                planned_bridge.cidr.prefix_len()
+            ),
+            format!("set_link_up {}", planned_bridge.bridge_name),
+        ]
+    );
+    assert_eq!(realized.bridge_name, planned_bridge.bridge_name);
+}
+
+#[test]
 fn bridge_state_mismatch_fails_before_link_mutation() {
     let temp = tempfile::tempdir().unwrap();
     let run_dir = temp.path().join("vm-123");
