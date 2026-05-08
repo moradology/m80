@@ -47,6 +47,18 @@ Test:
 `crates/m80-preflight/src/checks.rs::tests::preflight_missing_tun_module_typed`
 and `crates/m80-preflight/tests/error_hints.rs::tun_unavailable_has_hint`.
 
+## nf-conntrack-unavailable
+
+`m80-preflight` rejects a host without conntrack support with
+`PreflightError::NfConntrackUnavailable`. m80 needs conntrack for outbound NAT
+masquerade behavior, so the absence is reported before launch instead of
+surfacing as a later iptables failure.
+
+Test:
+`crates/m80-preflight/src/checks.rs::tests::preflight_missing_nf_conntrack_typed`
+and
+`crates/m80-preflight/tests/error_hints.rs::nf_conntrack_unavailable_has_hint`.
+
 ## unsupported-host
 
 `m80-preflight` rejects non-Linux hosts with

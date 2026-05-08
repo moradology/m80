@@ -15,6 +15,7 @@ use crate::{
 };
 
 const KVM_PATH: &str = "/dev/kvm";
+const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
 const TUN_PATH: &str = "/dev/net/tun";
 const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
 
@@ -222,12 +223,16 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
 
     classify_vsock_availability(&loaded, std::path::Path::new(VHOST_VSOCK_PATH).exists())?;
     classify_tun_availability(&loaded, std::path::Path::new(TUN_PATH).exists())?;
+    classify_nf_conntrack_availability(
+        &loaded,
+        std::path::Path::new(NF_CONNTRACK_MODULE_PATH).exists(),
+    )?;
     classify_required_modules(&loaded)?;
 
     report.push(CheckRow {
         label: "Kernel modules".to_string(),
         passed: true,
-        detail: "tap, bridge loaded; tun and vhost-vsock available".to_string(),
+        detail: "tap, bridge loaded; tun, vhost-vsock, nf_conntrack available".to_string(),
     });
     Ok(())
 }
@@ -250,6 +255,16 @@ fn classify_tun_availability(
         return Ok(());
     }
     Err(PreflightError::TunUnavailable)
+}
+
+fn classify_nf_conntrack_availability(
+    loaded_modules: &[&str],
+    sys_module_exists: bool,
+) -> Result<(), PreflightError> {
+    if loaded_modules.contains(&"nf_conntrack") || sys_module_exists {
+        return Ok(());
+    }
+    Err(PreflightError::NfConntrackUnavailable)
 }
 
 fn classify_required_modules(loaded: &[&str]) -> Result<(), PreflightError> {
@@ -323,6 +338,23 @@ mod tests {
     #[test]
     fn tun_device_satisfies_tun_preflight() {
         classify_tun_availability(&["tap", "bridge"], true).unwrap();
+    }
+
+    #[test]
+    fn preflight_missing_nf_conntrack_typed() {
+        let err = classify_nf_conntrack_availability(&["tap", "bridge"], false).unwrap_err();
+
+        assert!(matches!(err, PreflightError::NfConntrackUnavailable));
+    }
+
+    #[test]
+    fn nf_conntrack_module_satisfies_nat_preflight() {
+        classify_nf_conntrack_availability(&["tap", "bridge", "nf_conntrack"], false).unwrap();
+    }
+
+    #[test]
+    fn nf_conntrack_sys_module_satisfies_nat_preflight() {
+        classify_nf_conntrack_availability(&["tap", "bridge"], true).unwrap();
     }
 
     #[test]

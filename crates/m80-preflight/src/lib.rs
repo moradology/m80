@@ -158,6 +158,11 @@ pub enum PreflightError {
     #[error("tun unavailable")]
     TunUnavailable,
 
+    /// Host nf_conntrack support is absent. Outbound NAT needs conntrack for
+    /// stateful masquerade rules.
+    #[error("nf_conntrack unavailable")]
+    NfConntrackUnavailable,
+
     /// Required kernel modules are not loaded/loadable.
     #[error("kernel modules missing: {missing:?}")]
     KernelModulesMissing {
@@ -266,6 +271,9 @@ impl PreflightError {
             }
             Self::TunUnavailable => {
                 "load tun with `sudo modprobe tun` or ensure /dev/net/tun exists"
+            }
+            Self::NfConntrackUnavailable => {
+                "load nf_conntrack with `sudo modprobe nf_conntrack` before enabling outbound NAT"
             }
             Self::KernelModulesMissing { .. } => {
                 "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"

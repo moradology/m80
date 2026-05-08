@@ -32,6 +32,12 @@ either a loaded `tun` module in `/proc/modules` or an existing `/dev/net/tun`
 device. If neither signal is present, preflight returns
 `PreflightError::TunUnavailable`.
 
+The host must expose `nf_conntrack` for outbound NAT. Preflight accepts either a
+loaded `nf_conntrack` module in `/proc/modules` or `/sys/module/nf_conntrack`,
+which covers kernels that expose the module state outside the loaded-module
+text file. If neither signal is present, preflight returns
+`PreflightError::NfConntrackUnavailable`.
+
 ## Privilege Gate
 
 m80 accepts exactly two startup privilege shapes:
@@ -55,3 +61,4 @@ capabilities through the container runtime.
 - `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs`
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_vsock_module_typed`
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_tun_module_typed`
+- `crates/m80-preflight/src/checks.rs::tests::preflight_missing_nf_conntrack_typed`

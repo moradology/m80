@@ -60,6 +60,11 @@ fn tun_unavailable_has_hint() {
 }
 
 #[test]
+fn nf_conntrack_unavailable_has_hint() {
+    assert_hint(&PreflightError::NfConntrackUnavailable);
+}
+
+#[test]
 fn kernel_modules_missing_has_hint() {
     assert_hint(&PreflightError::KernelModulesMissing {
         missing: vec!["tap".into()],
