@@ -335,12 +335,14 @@ impl Drop for ForceKillGuard {
         tracing::warn!(vm_id = %self.vm_id, "RunningSandbox dropped without stop/force_kill — force-killing");
         self.watcher_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        // Best-effort SIGKILL; errors logged and swallowed — Drop must not panic.
-        if let Err(e) = crate::lifecycle::kill_pid(self.firecracker_pid) {
+        // Best-effort SIGKILL; errors logged and swallowed because Drop must not panic.
+        if let Err(e) = crate::lifecycle::kill_and_reap_pid(self.firecracker_pid) {
             tracing::error!(vm_id = %self.vm_id, error = %e, "Drop force-kill firecracker failed");
         }
-        if let Err(e) = crate::lifecycle::kill_pid(self.jailer_pid) {
-            tracing::error!(vm_id = %self.vm_id, error = %e, "Drop force-kill jailer failed");
+        if self.jailer_pid != self.firecracker_pid {
+            if let Err(e) = crate::lifecycle::kill_and_reap_pid(self.jailer_pid) {
+                tracing::error!(vm_id = %self.vm_id, error = %e, "Drop force-kill jailer failed");
+            }
         }
         if let Some(snap) = self.snapshot_mount.take() {
             crate::lifecycle::unmount_snapshot_bind(Some(&snap));

@@ -204,8 +204,10 @@ impl RunningSandbox {
 
         match force_kill_disposition() {
             StopDisposition::HostForceKill => {
-                kill_pid(self.firecracker.firecracker_pid)?;
-                kill_pid(self.firecracker.jailer_pid)?;
+                kill_and_reap_pid(self.firecracker.firecracker_pid)?;
+                if self.firecracker.jailer_pid != self.firecracker.firecracker_pid {
+                    kill_and_reap_pid(self.firecracker.jailer_pid)?;
+                }
             }
             StopDisposition::GuestdShutdownThenFirecrackerKill => {
                 unreachable!("force kill disposition")
@@ -392,7 +394,7 @@ fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<ExitReason, Fc
             } else {
                 ExitReason::NormalStop
             };
-            kill_pid(firecracker_pid)?;
+            kill_and_reap_pid(firecracker_pid)?;
             Ok(exit_reason)
         }
         StopDisposition::HostForceKill => unreachable!("normal stop disposition"),
@@ -531,6 +533,42 @@ pub(crate) fn kill_pid(pid: u32) -> Result<(), FcError> {
         Ok(()) => Ok(()),
         Err(Errno::ESRCH) => Ok(()), // Process already gone.
         Err(e) => Err(FcError::Io(std::io::Error::from_raw_os_error(e as i32))),
+    }
+}
+
+/// Send `SIGKILL` to `pid` and reap it when it is one of this process's
+/// children. Treat `ECHILD` as success because daemonized/new-pid-ns paths are
+/// reaped by their real parent.
+pub(crate) fn kill_and_reap_pid(pid: u32) -> Result<(), FcError> {
+    use nix::errno::Errno;
+    use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+    use nix::unistd::Pid;
+
+    kill_pid(pid)?;
+    if pid == 0 {
+        return Ok(());
+    }
+
+    let pid = Pid::from_raw(pid as i32);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::Exited(_, _))
+            | Ok(WaitStatus::Signaled(_, _, _))
+            | Err(Errno::ECHILD)
+            | Err(Errno::ESRCH) => return Ok(()),
+            Ok(WaitStatus::StillAlive) => {
+                if Instant::now() >= deadline {
+                    return Err(FcError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("timed out reaping pid {pid} after SIGKILL"),
+                    )));
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(_) => return Ok(()),
+            Err(e) => return Err(FcError::Io(std::io::Error::from_raw_os_error(e as i32))),
+        }
     }
 }
 
