@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, ExecChunk, ExecRequest, ExecStatus, SandboxConfig,
+    Backend, BackendConfig, CgroupMode, ExecChunk, ExecRequest, ExecStatus, FcError, SandboxConfig,
+    WireProtocolError,
 };
 
 fn backend() -> (Arc<Backend>, std::path::PathBuf) {
@@ -259,4 +260,83 @@ fn cancellable_large_stdout_stream_kills_writer_and_allows_next_exec() {
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn disconnect_mid_streaming_exec_maps_to_disconnect_before_terminal() {
+    let (backend, run_root) = backend();
+    let vm_id = "sdmx";
+    let sandbox = backend.admit(sandbox_config(vm_id)).expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+    let _dump_guard = RunDirDumpGuard::new(run_root.join(vm_id));
+    let firecracker_pid = firecracker_pid(running.run_dir());
+
+    let mut stdout_total = 0usize;
+    let mut killed_firecracker = false;
+    let err = running
+        .exec_streaming(
+            ExecRequest {
+                program: "/bin/sh".into(),
+                args: vec![
+                    "-c".into(),
+                    "while :; do printf 'm80-before-disconnect\\n'; done".into(),
+                ],
+                cwd: None,
+                env: None,
+                stdin: None,
+                timeout_ms: Some(30_000),
+                streaming: false,
+            },
+            |chunk| {
+                if let ExecChunk::Stdout { bytes, .. } = chunk {
+                    stdout_total = stdout_total.saturating_add(bytes.len());
+                    if stdout_total >= 64 * 1024 && !killed_firecracker {
+                        kill_process(firecracker_pid);
+                        killed_firecracker = true;
+                    }
+                }
+                Ok(())
+            },
+        )
+        .expect_err("guestd disconnect before exec_exit should be typed");
+
+    assert!(stdout_total > 0, "test did not observe stdout before drop");
+    assert!(
+        killed_firecracker,
+        "test never reached the host-side kill threshold"
+    );
+    assert!(
+        matches!(
+            err,
+            FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal {
+                context: "streaming exec"
+            })
+        ),
+        "expected DisconnectBeforeTerminal(streaming exec), got {err:?}"
+    );
+
+    let stopped = running.stop().expect("stop after guest disconnect");
+    stopped.delete().expect("delete");
+}
+
+fn firecracker_pid(run_dir: &std::path::Path) -> u32 {
+    let state_path = run_dir.join("jailer-state.json");
+    let state: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&state_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", state_path.display())),
+    )
+    .expect("jailer-state.json parses");
+    state["firecracker_pid"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("firecracker_pid missing from {}", state_path.display()))
+        as u32
+}
+
+fn kill_process(pid: u32) {
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(pid as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    )
+    .unwrap_or_else(|e| panic!("kill firecracker pid {pid}: {e}"));
 }
