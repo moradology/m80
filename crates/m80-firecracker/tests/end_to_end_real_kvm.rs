@@ -353,13 +353,18 @@ fn end_to_end_real_kvm_jailer_security_parity() {
         "rootfs bind must be read-only: {rootfs_options}"
     );
 
-    for path in ["dev/kvm", "dev/net/tun", "dev/urandom"] {
+    for (path, major, minor) in [
+        ("dev/kvm", 10, 232),
+        ("dev/net/tun", 10, 200),
+        ("dev/urandom", 1, 9),
+    ] {
         let meta = std::fs::metadata(format!("/proc/{pid}/root/{path}"))
             .unwrap_or_else(|e| panic!("{path} must exist in jail root: {e}"));
         assert!(
             meta.file_type().is_char_device(),
             "{path} must be a character device"
         );
+        assert_eq!(device_major_minor(meta.rdev()), (major, minor));
     }
     assert_exec_file_is_private_copy(pid, &firecracker_bin, 3000, 3000);
 
@@ -530,6 +535,12 @@ fn assert_no_mountinfo_references(path: &std::path::Path) {
         "host mountinfo still references {} after stop:\n{mountinfo}",
         path.display()
     );
+}
+
+fn device_major_minor(rdev: u64) -> (u64, u64) {
+    let major = ((rdev >> 8) & 0xfff) | ((rdev >> 32) & !0xfff);
+    let minor = (rdev & 0xff) | ((rdev >> 12) & !0xff);
+    (major, minor)
 }
 
 fn assert_exec_file_is_private_copy(pid: u32, source: &std::path::Path, uid: u32, gid: u32) {
