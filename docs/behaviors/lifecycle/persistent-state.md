@@ -110,9 +110,10 @@ second `exec` call while the first is outstanding without any runtime
 mechanism. Pipelining (concurrent exec on one VM) is not supported and
 cannot be expressed in safe Rust.
 
-This behavior has no dedicated runtime test — it is a type-system property
-verified by the fact that all persistent-state tests compile and use
-sequential `exec` calls without any `Mutex` or `Arc`.
+This behavior is pinned by the `RunningSandbox` rustdoc `compile_fail`
+example in `crates/m80-firecracker/src/types.rs`, which attempts to clone
+`Arc<RunningSandbox>` into a thread and call `exec`. The snippet must fail
+because `Arc<T>` cannot provide the required `&mut RunningSandbox`.
 
 ---
 

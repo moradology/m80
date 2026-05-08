@@ -353,6 +353,23 @@ impl Drop for ForceKillGuard {
 /// A sandbox in `Running` state — VM booted, vsock ready, ready to accept
 /// exec requests. All fields are `pub(crate)` — callers use the typed
 /// methods on `impl RunningSandbox` (`vm_id`, `exec`, `stop`, `force_kill`).
+///
+/// Concurrent exec on one persistent VM is intentionally not part of the
+/// contract. `exec` requires `&mut self`, so an `Arc<RunningSandbox>` cannot
+/// be cloned into threads and used for parallel exec calls:
+///
+/// ```compile_fail
+/// use std::sync::Arc;
+///
+/// use m80_firecracker::{ExecRequest, RunningSandbox};
+///
+/// fn cannot_exec_from_shared_arc(running: Arc<RunningSandbox>, req: ExecRequest) {
+///     let running = Arc::clone(&running);
+///     std::thread::spawn(move || {
+///         let _ = running.exec(req);
+///     });
+/// }
+/// ```
 pub struct RunningSandbox {
     /// VM identifier.
     pub(crate) vm_id: String,
