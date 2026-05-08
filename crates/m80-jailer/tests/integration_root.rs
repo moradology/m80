@@ -7,7 +7,9 @@
 //! sudo cargo test -p m80-jailer -- --ignored
 //! ```
 
-use m80_jailer::{jail_root_path, BindMode, Binding, JailerConfig, JailerSocket, Plan};
+use m80_jailer::{
+    jail_root_path, BindMode, Binding, InspectionDecision, JailerConfig, JailerSocket, Plan,
+};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -113,6 +115,76 @@ fn jailer_placeholder_cleanup_on_partial_bind_failure() {
         !first_placeholder.exists(),
         "first bind placeholder must be removed after partial materialize failure"
     );
+}
+
+#[test]
+#[ignore = "requires CAP_SYS_ADMIN / root"]
+fn jailer_partial_failure_mid_bind_reverses_prior_steps() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let file_one = tempfile::NamedTempFile::new().unwrap();
+    let file_two = tempfile::NamedTempFile::new().unwrap();
+    let file_three = tempfile::NamedTempFile::new().unwrap();
+    let failing_dir = tempfile::tempdir().unwrap();
+    let firecracker_bin = PathBuf::from("/usr/bin/firecracker");
+    let cfg = JailerConfig {
+        jailer_bin: PathBuf::from("/usr/bin/jailer"),
+        jailer_harden_bin: Some(PathBuf::from("/usr/bin/m80-jailer-harden")),
+        firecracker_bin: firecracker_bin.clone(),
+        run_dir: run_dir.path().to_path_buf(),
+        uid: 3000,
+        gid: 3000,
+        bindings: vec![
+            Binding {
+                source: file_one.path().to_path_buf(),
+                dest: PathBuf::from("one.bin"),
+                mode: BindMode::Ro,
+            },
+            Binding {
+                source: file_two.path().to_path_buf(),
+                dest: PathBuf::from("nested/two.bin"),
+                mode: BindMode::Ro,
+            },
+            Binding {
+                source: file_three.path().to_path_buf(),
+                dest: PathBuf::from("three.bin"),
+                mode: BindMode::Ro,
+            },
+            Binding {
+                source: failing_dir.path().to_path_buf(),
+                dest: PathBuf::from("four.bin"),
+                mode: BindMode::Ro,
+            },
+        ],
+        sockets: Vec::new(),
+        resource_limits: m80_jailer::ResourceLimits::default(),
+        new_pid_ns: false,
+        daemonize: false,
+        new_cgroup_ns: false,
+        netns_path: None,
+        stdio_log: None,
+    };
+    let jail_root = jail_root_path(run_dir.path(), &firecracker_bin);
+
+    let err = Plan::compute(&cfg)
+        .unwrap()
+        .materialize()
+        .expect_err("fourth bind must fail");
+
+    assert!(
+        err.to_string().contains("bind-mount failed"),
+        "unexpected materialize error: {err:?}"
+    );
+    for path in ["one.bin", "nested/two.bin", "three.bin"] {
+        assert!(
+            !jail_root.join(path).exists(),
+            "placeholder or bind residue survived at {path}"
+        );
+    }
+    assert_no_mountinfo_references(run_dir.path());
+    assert!(matches!(
+        m80_jailer::inspect_run_dir(run_dir.path()).unwrap(),
+        InspectionDecision::NoJail
+    ));
 }
 
 #[test]
@@ -325,5 +397,15 @@ fn assert_limit_contains(pid: u32, label: &str, soft: &str, hard: &str) {
     assert!(
         line.contains(soft) && line.contains(hard),
         "{label} line does not contain expected soft/hard limits {soft}/{hard}: {line}"
+    );
+}
+
+fn assert_no_mountinfo_references(path: &std::path::Path) {
+    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").expect("host mountinfo");
+    let needle = path.to_string_lossy();
+    assert!(
+        !mountinfo.contains(needle.as_ref()),
+        "host mountinfo still references {} after materialize failure:\n{mountinfo}",
+        path.display()
     );
 }
