@@ -10,6 +10,8 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, Sandbox
 
 #[path = "malicious/oversized_length.rs"]
 mod oversized_length;
+#[path = "malicious/response_type_mismatch.rs"]
+mod response_type_mismatch;
 #[path = "malicious/truncated_frame.rs"]
 mod truncated_frame;
 #[path = "malicious/unknown_variant.rs"]

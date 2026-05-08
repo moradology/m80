@@ -21,6 +21,10 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added `unknown_variant`, an adversarial mode that emits an out-of-schema
   envelope payload field and verifies the host reports the offending field
   number instead of silently dropping the unknown protobuf data.
+- Added `response_type_mismatch`, an adversarial mode that echoes the active
+  request id while returning an `exec_exit` envelope with a
+  `file_read_response` payload, verifying the host reports the expected and
+  observed payload kinds.
 
 ### Added — adversarial wire coverage map (m80-g0v8.12)
 

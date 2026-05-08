@@ -448,7 +448,20 @@ impl RunningSandbox {
                 }
                 PAYLOAD_KIND_EXEC_EXIT => {
                     let exit =
-                        decode_frame_for_request::<ExecExit>(frame, &request_id, "exec exit")?;
+                        match decode_frame_for_request::<ExecExit>(frame, &request_id, "exec exit")
+                        {
+                            Ok(exit) => exit,
+                            Err(err) => {
+                                crate::diagnostics::record_protocol_error(
+                                    &mut self.diagnostics,
+                                    &self.vm_id,
+                                    &request_id,
+                                    "exec_exit",
+                                    &err,
+                                );
+                                return Err(err);
+                            }
+                        };
                     phase_event("exec_recv", &self.vm_id, t.elapsed());
                     self.last_activity_ns
                         .store(monotonic_ns(), Ordering::Relaxed);

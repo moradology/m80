@@ -30,6 +30,10 @@ Current modes:
 - `unknown_variant` binds the standard guest vsock listener, sends the
   readiness byte, writes a valid envelope with out-of-schema payload field
   number 255, and closes the connection.
+- `response_type_mismatch` binds the standard guest vsock listener, sends the
+  readiness byte, reads the host request, echoes its request id, writes an
+  `exec_exit` envelope containing a `file_read_response` payload, and closes
+  the connection.
 
 ## Non-goals
 

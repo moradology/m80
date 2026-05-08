@@ -42,8 +42,13 @@ handling without relying on a malformed protobuf body.
 `unknown_variant` writes a valid envelope with an out-of-schema protobuf payload
 field number. This exercises the host's unknown envelope field rejection.
 
-Later L12 leaves add frame-producing modes such as wrong response type, bogus
-request id, unsolicited response, unsolicited flood, and slowloris.
+`response_type_mismatch` reads the host request, echoes its `request_id`, and
+then writes an `exec_exit` envelope containing a `file_read_response` payload.
+This exercises typed payload conversion after routing and request-id checks
+have already accepted the frame.
+
+Later L12 leaves add frame-producing modes such as bogus request id,
+unsolicited response, unsolicited flood, and slowloris.
 
 ## Evidence
 

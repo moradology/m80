@@ -1,8 +1,9 @@
 //! Test-only adversarial guest daemon for real-KVM guest-to-host wire tests.
 
-use std::io::Write;
+use std::io::{Read, Write};
 
 use anyhow::Context as _;
+use m80_proto::{FileReadResponse, Payload, RawEnvelope};
 use vsock::{VsockListener, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST};
 
 const ATTACK_ENV: &str = "M80_MALICIOUS_ATTACK";
@@ -14,6 +15,7 @@ enum Attack {
     OversizedLength,
     TruncatedFrame,
     UnknownVariant,
+    ResponseTypeMismatch,
 }
 
 impl Attack {
@@ -23,6 +25,7 @@ impl Attack {
             "oversized_length" => Ok(Attack::OversizedLength),
             "truncated_frame" => Ok(Attack::TruncatedFrame),
             "unknown_variant" => Ok(Attack::UnknownVariant),
+            "response_type_mismatch" => Ok(Attack::ResponseTypeMismatch),
             other => anyhow::bail!("unknown malicious guestd attack: {other}"),
         }
     }
@@ -33,6 +36,7 @@ impl Attack {
             Attack::OversizedLength => "oversized_length",
             Attack::TruncatedFrame => "truncated_frame",
             Attack::UnknownVariant => "unknown_variant",
+            Attack::ResponseTypeMismatch => "response_type_mismatch",
         }
     }
 }
@@ -90,6 +94,7 @@ fn run(args: Args) -> anyhow::Result<()> {
         println!("oversized_length");
         println!("truncated_frame");
         println!("unknown_variant");
+        println!("response_type_mismatch");
         return Ok(());
     }
 
@@ -103,7 +108,8 @@ fn run(args: Args) -> anyhow::Result<()> {
         Attack::Noop
         | Attack::OversizedLength
         | Attack::TruncatedFrame
-        | Attack::UnknownVariant => run_peer(attack),
+        | Attack::UnknownVariant
+        | Attack::ResponseTypeMismatch => run_peer(attack),
     }
 }
 
@@ -174,6 +180,10 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
                 write_unknown_variant(&mut stream)?;
                 drop(stream);
             }
+            Attack::ResponseTypeMismatch => {
+                read_request_then_write_response_type_mismatch(&mut stream)?;
+                drop(stream);
+            }
         }
     }
 }
@@ -215,6 +225,35 @@ fn write_unknown_variant(stream: &mut impl Write) -> anyhow::Result<()> {
         .write_all(&body)
         .context("write unknown-variant frame body")?;
     stream.flush().context("flush unknown-variant frame")
+}
+
+fn read_request_then_write_response_type_mismatch<S>(stream: &mut S) -> anyhow::Result<()>
+where
+    S: Read + Write,
+{
+    let request =
+        m80_proto::read_raw_frame(stream).context("read request before mismatch frame")?;
+    write_response_type_mismatch(stream, request)
+}
+
+fn write_response_type_mismatch(
+    stream: &mut impl Write,
+    request: RawEnvelope,
+) -> anyhow::Result<()> {
+    let envelope = RawEnvelope {
+        version: m80_proto::PROTOCOL_VERSION,
+        kind: m80_proto::PAYLOAD_KIND_EXEC_EXIT.to_owned(),
+        request_id: request.request_id,
+        max_duration_ms: None,
+        payload: FileReadResponse {
+            bytes: Vec::new(),
+            truncated: false,
+            error: None,
+        }
+        .into_wire(),
+    };
+    m80_proto::write_raw_frame(stream, envelope).context("write response-type-mismatch frame")?;
+    stream.flush().context("flush response-type-mismatch frame")
 }
 
 fn write_len_field(out: &mut Vec<u8>, field: u64, bytes: &[u8]) -> anyhow::Result<()> {
@@ -305,5 +344,37 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("unknown envelope field: 255"));
+    }
+
+    #[test]
+    fn response_type_mismatch_echoes_request_id_with_wrong_payload_shape() {
+        let request = RawEnvelope::from_typed(m80_proto::Envelope::with_request_id(
+            m80_proto::ExecRequest {
+                program: "/bin/true".into(),
+                args: Vec::new(),
+                cwd: None,
+                env: None,
+                stdin: None,
+                timeout_ms: None,
+                streaming: true,
+            },
+            "req-response-mismatch".into(),
+        ));
+        let mut frame = Vec::new();
+        write_response_type_mismatch(&mut frame, request).unwrap();
+
+        let raw = m80_proto::read_raw_frame(&mut std::io::Cursor::new(frame)).unwrap();
+        assert_eq!(raw.kind, m80_proto::PAYLOAD_KIND_EXEC_EXIT);
+        assert_eq!(raw.request_id.as_deref(), Some("req-response-mismatch"));
+        let err = raw.clone().decode::<m80_proto::ExecExit>().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("unexpected protobuf payload for exec_exit: file_read_response"),
+            "{err}"
+        );
+        assert!(matches!(
+            raw.payload,
+            m80_proto::wire::WirePayload::FileReadResponse(_)
+        ));
     }
 }
