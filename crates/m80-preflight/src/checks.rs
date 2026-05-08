@@ -50,13 +50,16 @@ pub fn run_with_configs(
     // 2. KVM
     check_kvm(&mut report)?;
 
-    // 3. Kernel modules
+    // 3. KVM CPU extensions
+    check_kvm_cpu_extensions(&mut report)?;
+
+    // 4. Kernel modules
     check_kernel_modules(&mut report)?;
 
-    // 4. Privilege
+    // 5. Privilege
     let privilege = check_privilege(&mut report)?;
 
-    // 5-6. Firecracker and jailer binaries
+    // 6-8. Firecracker and jailer binaries
     let binaries = discover_binaries(&binary_config)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
@@ -79,7 +82,7 @@ pub fn run_with_configs(
         detail: binaries.jailer_harden_bin.display().to_string(),
     });
 
-    // 7-10. Kernel/rootfs artifacts, run-root, and storage helpers
+    // 9-12. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config)?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
@@ -172,6 +175,40 @@ fn classify_kvm_access(
         }
         Err(_) => Ok(()),
     }
+}
+
+fn check_kvm_cpu_extensions(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
+    let cpuinfo = fs::read_to_string("/proc/cpuinfo").map_err(PreflightError::Io)?;
+    let flags = classify_kvm_cpu_flags(&cpuinfo)?;
+
+    report.push(CheckRow {
+        label: "KVM CPU extensions".to_string(),
+        passed: true,
+        detail: flags.join(", "),
+    });
+    Ok(())
+}
+
+fn classify_kvm_cpu_flags(cpuinfo: &str) -> Result<Vec<String>, PreflightError> {
+    let mut flags = Vec::new();
+    for line in cpuinfo.lines() {
+        let Some(rest) = line.strip_prefix("flags") else {
+            continue;
+        };
+        let Some((_, values)) = rest.split_once(':') else {
+            continue;
+        };
+        for flag in values.split_whitespace() {
+            if matches!(flag, "vmx" | "svm") && !flags.iter().any(|seen| seen == flag) {
+                flags.push(flag.to_owned());
+            }
+        }
+    }
+
+    if flags.is_empty() {
+        return Err(PreflightError::KvmCpuExtensionMissing);
+    }
+    Ok(flags)
 }
 
 fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
@@ -269,6 +306,33 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn preflight_missing_vmx_svm_returns_typed() {
+        let cpuinfo = "\
+processor\t: 0
+vendor_id\t: GenuineIntel
+flags\t\t: fpu tsc msr pae
+";
+
+        let err = classify_kvm_cpu_flags(cpuinfo).unwrap_err();
+
+        assert!(matches!(err, PreflightError::KvmCpuExtensionMissing));
+    }
+
+    #[test]
+    fn preflight_vmx_svm_flags_are_reported_once() {
+        let cpuinfo = "\
+processor\t: 0
+flags\t\t: fpu vmx tsc vmx
+processor\t: 1
+flags\t\t: fpu svm tsc
+";
+
+        let flags = classify_kvm_cpu_flags(cpuinfo).unwrap();
+
+        assert_eq!(flags, vec!["vmx", "svm"]);
     }
 
     fn err_hint_mentions_kvm_enable(err: &PreflightError) -> bool {

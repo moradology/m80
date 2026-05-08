@@ -144,6 +144,10 @@ pub enum PreflightError {
         path: PathBuf,
     },
 
+    /// `/proc/cpuinfo` does not advertise hardware virtualization support.
+    #[error("kvm cpu extension missing: expected vmx or svm in /proc/cpuinfo")]
+    KvmCpuExtensionMissing,
+
     /// Required kernel modules are not loaded/loadable.
     #[error("kernel modules missing: {missing:?}")]
     KernelModulesMissing {
@@ -243,6 +247,9 @@ impl PreflightError {
             }
             Self::KvmNotWritable { .. } => {
                 "add your user to the `kvm` group (`sudo usermod -aG kvm $USER`) or run m80 as root"
+            }
+            Self::KvmCpuExtensionMissing => {
+                "enable hardware virtualization in firmware/BIOS and ensure the host CPU exposes vmx or svm"
             }
             Self::KernelModulesMissing { .. } => {
                 "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"

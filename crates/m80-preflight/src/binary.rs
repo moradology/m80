@@ -3,6 +3,8 @@
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use crate::PreflightError;
 
@@ -111,10 +113,7 @@ pub fn discover_binaries(
 }
 
 fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> {
-    let out = Command::new(bin)
-        .arg("--version")
-        .output()
-        .map_err(PreflightError::Io)?;
+    let out = firecracker_version_output(bin)?;
 
     if !out.status.success() {
         return Err(PreflightError::Io(std::io::Error::other(format!(
@@ -131,4 +130,24 @@ fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> 
         .last()
         .unwrap_or(first_line)
         .to_string())
+}
+
+fn firecracker_version_output(
+    bin: &std::path::Path,
+) -> Result<std::process::Output, PreflightError> {
+    let mut last_text_busy = None;
+    for attempt in 0..5 {
+        match Command::new(bin).arg("--version").output() {
+            Ok(out) => return Ok(out),
+            Err(source) if source.raw_os_error() == Some(nix::libc::ETXTBSY) && attempt < 4 => {
+                last_text_busy = Some(source);
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(source) => return Err(PreflightError::Io(source)),
+        }
+    }
+
+    Err(PreflightError::Io(
+        last_text_busy.expect("ETXTBSY retry loop records the last error"),
+    ))
 }

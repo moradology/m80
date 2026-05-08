@@ -45,6 +45,11 @@ fn kvm_not_writable_has_hint() {
 }
 
 #[test]
+fn kvm_cpu_extension_missing_has_hint() {
+    assert_hint(&PreflightError::KvmCpuExtensionMissing);
+}
+
+#[test]
 fn kernel_modules_missing_has_hint() {
     assert_hint(&PreflightError::KernelModulesMissing {
         missing: vec!["tap".into()],

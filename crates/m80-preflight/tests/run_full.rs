@@ -2,6 +2,7 @@
 //!
 //! This test is `#[ignore]` by default because it requires:
 //! - A Linux host with `/dev/kvm` available and writable.
+//! - `vmx` or `svm` advertised in `/proc/cpuinfo`.
 //! - `bridge` and `tap` kernel modules loaded.
 //! - Root or the required Linux capabilities in the effective set.
 //! - Firecracker and jailer binaries installed (or env overrides set).
@@ -21,7 +22,28 @@ fn run_on_kvm_host() {
     match &result {
         Ok(d) => {
             eprintln!("Preflight passed. Table:\n{}", d.render_table());
-            assert_eq!(d.report.len(), 10, "expected 10 check rows");
+            let labels = d
+                .report
+                .iter()
+                .map(|row| row.label.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                labels,
+                vec![
+                    "OS gate",
+                    "KVM",
+                    "KVM CPU extensions",
+                    "Kernel modules",
+                    "Privilege",
+                    "Firecracker binary",
+                    "Jailer binary",
+                    "Jailer hardening wrapper",
+                    "Kernel image",
+                    "Rootfs + manifest",
+                    "Run-root",
+                    "Storage helpers",
+                ]
+            );
             for row in &d.report {
                 assert!(
                     row.passed,

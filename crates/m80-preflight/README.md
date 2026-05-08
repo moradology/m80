@@ -1,6 +1,6 @@
 # `m80-preflight`
 
-Pre-launch host validation: KVM, kernel modules, binaries, manifest,
+Pre-launch host validation: KVM, CPU virtualization flags, kernel modules, binaries, manifest,
 storage helpers, run-root capacity. Emits a tabular report and a
 machine-readable `Discovery` value.
 
@@ -23,31 +23,34 @@ which is the right place for a security review to start.
 - The check list is fixed and ordered:
   1. **OS gate** — `Linux` from `uname -s`; macOS rejects.
   2. **KVM** — `/dev/kvm` exists and is writable by this process.
-  3. **Kernel modules** — `bridge` and `tap` loaded (read from
+  3. **KVM CPU extensions** — `/proc/cpuinfo` advertises at least one of
+     `vmx` or `svm`, so launch failures from disabled hardware
+     virtualization surface before Firecracker startup.
+  4. **Kernel modules** — `bridge` and `tap` loaded (read from
      `/proc/modules`). v0.1 does not attempt to load missing modules; the
      operator must `modprobe` them before running preflight.
-  4. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
+  5. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
      `CAP_FOWNER`, `CAP_KILL`). Probed via the `caps` crate against the
      process's effective set. Returns `PrivilegeStatus::Root` or
      `PrivilegeStatus::CapabilityBearing`.
-  5. **Firecracker binary** — discovered via env override or default,
+  6. **Firecracker binary** — discovered via env override or default,
      `--version` matched against the configured pin.
-  6. **Jailer binary** — same protocol.
-  7. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
+  7. **Jailer binary** — same protocol.
+  8. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
-  8. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
+  9. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  9. **Rootfs + manifest** — manifest schema validates,
+  10. **Rootfs + manifest** — manifest schema validates,
      `m80-image-manifest::verify` recomputes every sha256. This is the
      boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
      not rehash these artifacts again for every VM.
-  10. **Run-root** — absolute, must already exist, >= 100 MiB free
+  11. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  11. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  12. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - Env keys are exact and case-sensitive. Preflight recognizes
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
@@ -94,7 +97,7 @@ which is the right place for a security review to start.
   `CAP_FOWNER`, `CAP_KILL`).
 - `PreflightError`: `UnsupportedHostPlatform { actual }`,
   `KvmUnavailable { path }`, `KvmNotWritable { path }`,
-  `KernelModulesMissing { missing: Vec<String> }`,
+  `KvmCpuExtensionMissing`, `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
   effective capability set),
