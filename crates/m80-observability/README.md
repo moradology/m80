@@ -63,9 +63,9 @@ adapter, not below.
 ### Prometheus rendering
 
 - `render_prometheus(snapshot: &HealthSnapshot, metrics: &OpsMetrics) -> String`
-  renders the standard exposition format. **Rendering only** — no
-  embedded HTTP server. Hosting the `/metrics` endpoint is the
-  deployer's job.
+  renders the standard exposition format with one `# HELP`, one `# TYPE`,
+  and one sample line per emitted metric. **Rendering only** — no embedded HTTP
+  server. Hosting the `/metrics` endpoint is the deployer's job.
 - `OpsMetrics::guest` optionally carries one `m80_proto::MetricsResponse`
   sampled from a running VM. When present, `render_prometheus` emits
   `m80_guest_cpu_*`, `m80_guest_mem_*`, `m80_guest_requests_total`, and
@@ -119,6 +119,7 @@ stable default public surface.
 - Probe classification: a fixture run-root with each {Healthy,
   Degraded, Stuck, Exited} layout produces the expected record kind.
 - Rollup determinism: same probe input → same `HealthSnapshot`.
-- Prometheus exposition format: rendered text contains VM health gauges,
-  operational gauges, and guest-side counter/gauge families when a guest sample
-  is present.
+- Prometheus exposition format: rendered text has complete `HELP`/`TYPE`/sample
+  triples for the expected VM health gauges, operational gauges, and guest-side
+  counter/gauge families when a guest sample is present; no unknown metrics are
+  emitted.
