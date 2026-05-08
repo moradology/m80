@@ -1,6 +1,7 @@
 //! The ordered preflight checks that populate a [`Discovery`].
 
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 use caps::CapSet;
@@ -135,22 +136,13 @@ fn check_os(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
 fn check_kvm(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
     let kvm = PathBuf::from(KVM_PATH);
 
-    if !kvm.exists() {
-        return Err(PreflightError::KvmUnavailable { path: kvm });
-    }
+    let exists = kvm.exists();
 
     // Write-access check: open O_WRONLY; close immediately.
     // EACCES → permission denied → fail; other errors (EBUSY etc.) are not
     // access-denial and we don't block on them.
-    let result = fs::OpenOptions::new().write(true).open(&kvm);
-
-    match result {
-        Ok(f) => drop(f),
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            return Err(PreflightError::KvmNotWritable { path: kvm });
-        }
-        Err(_) => {}
-    }
+    let write_open = fs::OpenOptions::new().write(true).open(&kvm).map(drop);
+    classify_kvm_access(&kvm, exists, write_open)?;
 
     report.push(CheckRow {
         label: "KVM".to_string(),
@@ -158,6 +150,28 @@ fn check_kvm(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
         detail: format!("{} present and writable", kvm.display()),
     });
     Ok(())
+}
+
+fn classify_kvm_access(
+    path: &std::path::Path,
+    exists: bool,
+    write_open: Result<(), io::Error>,
+) -> Result<(), PreflightError> {
+    if !exists {
+        return Err(PreflightError::KvmUnavailable {
+            path: path.to_path_buf(),
+        });
+    }
+
+    match write_open {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            Err(PreflightError::KvmNotWritable {
+                path: path.to_path_buf(),
+            })
+        }
+        Err(_) => Ok(()),
+    }
 }
 
 fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
@@ -205,4 +219,60 @@ fn check_privilege(report: &mut Vec<CheckRow>) -> Result<PrivilegeStatus, Prefli
         },
     });
     Ok(status)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preflight_missing_kvm_returns_typed_hint() {
+        let path = PathBuf::from("/dev/kvm");
+
+        let err = classify_kvm_access(&path, false, Ok(())).unwrap_err();
+
+        match err {
+            PreflightError::KvmUnavailable { path: actual } => {
+                assert_eq!(actual, path);
+                assert!(
+                    err_hint_mentions_kvm_enable(&PreflightError::KvmUnavailable { path: actual }),
+                    "hint must point at enabling KVM"
+                );
+            }
+            other => panic!("expected KvmUnavailable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn preflight_kvm_permission_denied_typed() {
+        let path = PathBuf::from("/dev/kvm");
+
+        let err = classify_kvm_access(
+            &path,
+            true,
+            Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied")),
+        )
+        .unwrap_err();
+
+        match err {
+            PreflightError::KvmNotWritable { path: actual } => assert_eq!(actual, path),
+            other => panic!("expected KvmNotWritable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_access_kvm_open_errors_do_not_block_preflight() {
+        let result = classify_kvm_access(
+            PathBuf::from("/dev/kvm").as_path(),
+            true,
+            Err(io::Error::new(io::ErrorKind::Other, "busy")),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    fn err_hint_mentions_kvm_enable(err: &PreflightError) -> bool {
+        let hint = err.hint();
+        hint.contains("KVM") && hint.contains("enabled")
+    }
 }
