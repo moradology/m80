@@ -48,6 +48,46 @@ fn no_state_file_returns_no_jail() {
 }
 
 #[test]
+fn plan_without_state_file_returns_orphan_reap_steps() {
+    let dir = tempfile::tempdir().unwrap();
+    write_plan(dir.path());
+
+    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
+        panic!("expected OrphanJail");
+    };
+    let plan = Plan::compute(&config_with_one_binding(dir.path())).unwrap();
+    let expected: Vec<_> = plan.steps.into_iter().rev().collect();
+    assert_eq!(reap_steps, expected);
+}
+
+#[test]
+fn partial_state_file_with_plan_returns_orphan_reap_steps() {
+    let dir = tempfile::tempdir().unwrap();
+    write_plan(dir.path());
+    std::fs::write(dir.path().join("jailer-state.json"), b"{\"jailer_pid\":").unwrap();
+
+    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
+        panic!("expected OrphanJail");
+    };
+    let plan = Plan::compute(&config_with_one_binding(dir.path())).unwrap();
+    let expected: Vec<_> = plan.steps.into_iter().rev().collect();
+    assert_eq!(reap_steps, expected);
+}
+
+#[test]
+fn partial_state_file_without_plan_returns_no_jail() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("jailer-state.json"), b"{\"jailer_pid\":").unwrap();
+
+    let decision = inspect_run_dir(dir.path()).unwrap();
+
+    assert!(
+        matches!(decision, InspectionDecision::NoJail),
+        "got {decision:?}"
+    );
+}
+
+#[test]
 fn stale_state_with_nonexistent_pids_returns_orphan() {
     let dir = tempfile::tempdir().unwrap();
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));

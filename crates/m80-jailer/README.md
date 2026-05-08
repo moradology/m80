@@ -58,8 +58,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
   guest serial console survive launch failures and stopped-VM triage.
 - `inspect_run_dir` reads any prior plan + state and returns
-  `LiveJail | OrphanJail { reap_steps } | NoJail`. The crate does not
-  act on the decision; the caller does.
+  `LiveJail | OrphanJail { reap_steps } | NoJail`. If a replayable
+  `jailer-plan.json` exists but `jailer-state.json` is missing or
+  malformed, recovery fails closed to `OrphanJail` with the plan steps
+  reversed so callers can still unmount/reap partial materialization. The
+  crate does not act on the decision; the caller does.
 - The actual chroot path is `<run_dir>/<firecracker basename>/<run_dir basename>/root/`
   — jailer's hardcoded layout, derived in `jail_root_path()`. We pre-create
   the parent dirs and bind RW sources are chowned to `uid:gid` so the
@@ -112,9 +115,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
   bind-source paths, private jail-internal directory modes, rejected
   `/proc`/`/sys`/escaping destinations, and jail-root layout given fixed
   inputs; no filesystem access.
-- `tests/recovery.rs` — `recover_from_run_dir` returns `NoJail` for a
-  missing run-dir, `OrphanJail` for a plan-only (no live pid) dir, and
-  `LiveJail` when the state JSON records a running pid, including the
+- `tests/recover.rs` — `inspect_run_dir` returns `NoJail` for an empty
+  run-dir, `OrphanJail` for plan-only, partial-state, or stale-pid residue,
+  and `LiveJail` when the state JSON records a running pid, including the
   `new_pid_ns` `jailer_pid = 0` sentinel.
 - `tests/jail_root_path.rs` — `jail_root_path` output matches the
   expected jailer-hardcoded layout for several input combinations.

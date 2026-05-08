@@ -42,13 +42,14 @@ pub fn inspect_run_dir(run_dir: &Path) -> Result<InspectionDecision, JailerError
     let state_path = run_dir.join(JAILER_STATE_FILE);
 
     if !state_path.exists() {
-        return Ok(InspectionDecision::NoJail);
+        return plan_backed_or_no_jail(run_dir);
     }
 
     let raw = std::fs::read(&state_path).map_err(io_err(state_path.clone()))?;
-    let state: JailerState = serde_json::from_slice(&raw)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-        .map_err(io_err(state_path.clone()))?;
+    let state: JailerState = match serde_json::from_slice(&raw) {
+        Ok(state) => state,
+        Err(_) => return plan_backed_or_no_jail(run_dir),
+    };
 
     if let (Some(jailer_pid), Some(fc_pid)) = (state.jailer_pid, state.firecracker_pid) {
         let jailer_live = jailer_pid == 0 || Path::new(&format!("/proc/{jailer_pid}")).exists();
@@ -61,17 +62,32 @@ pub fn inspect_run_dir(run_dir: &Path) -> Result<InspectionDecision, JailerError
         }
     }
 
-    // Orphan or partial — load plan steps in reverse for reaping.
-    let plan_path = run_dir.join(JAILER_PLAN_FILE);
-    let reap_steps = if plan_path.exists() {
-        let plan_raw = std::fs::read(&plan_path).map_err(io_err(plan_path.clone()))?;
-        let plan: Plan = serde_json::from_slice(&plan_raw)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-            .map_err(io_err(plan_path.clone()))?;
-        plan.steps.into_iter().rev().collect()
-    } else {
-        Vec::new()
-    };
+    // Orphan with parseable state — load plan steps in reverse for reaping.
+    Ok(InspectionDecision::OrphanJail {
+        reap_steps: load_reap_steps(run_dir)?,
+    })
+}
 
-    Ok(InspectionDecision::OrphanJail { reap_steps })
+fn plan_backed_or_no_jail(run_dir: &Path) -> Result<InspectionDecision, JailerError> {
+    let plan_path = run_dir.join(JAILER_PLAN_FILE);
+    if plan_path.exists() {
+        Ok(InspectionDecision::OrphanJail {
+            reap_steps: load_reap_steps(run_dir)?,
+        })
+    } else {
+        Ok(InspectionDecision::NoJail)
+    }
+}
+
+fn load_reap_steps(run_dir: &Path) -> Result<Vec<PlanStep>, JailerError> {
+    let plan_path = run_dir.join(JAILER_PLAN_FILE);
+    if !plan_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let plan_raw = std::fs::read(&plan_path).map_err(io_err(plan_path.clone()))?;
+    let plan: Plan = serde_json::from_slice(&plan_raw)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        .map_err(io_err(plan_path.clone()))?;
+    Ok(plan.steps.into_iter().rev().collect())
 }
