@@ -1,17 +1,17 @@
 # m80 — generic Firecracker VM sandboxing
 
-A Rust workspace that lifts Firecracker microVM orchestration out of `predecessor` and ships it as a reusable library + CLI + image-build tool. m80 is **generic sandboxing**: boot a kernel + rootfs, optionally give it a workspace and outbound NAT, run a command, return stdout/stderr/exit, tear down without leaks. Useful for agents — but not coupled to them.
+A Rust workspace that ships Firecracker microVM orchestration as a reusable library + CLI + image-build tool. m80 is **generic sandboxing**: boot a kernel + rootfs, optionally give it a workspace and outbound NAT, run a command, return stdout/stderr/exit, tear down without leaks. Useful for agents — but not coupled to them.
 
 ## Read first
 
-1. `README.md` (dossier intro)
+1. `README.md` (the user-facing intro and capability summary)
 2. `crates/<name>/README.md` for the crate you're touching — every crate's README **is** its contract; treat it as authoritative
 3. The active bead and its acceptance criteria
-4. `00-verdict.md` only — reach for the rest of the dossier when you need archaeology
+4. `docs/adapter-boundary.md` and `docs/positioning.md` when designing public surface or evaluating "should this be in m80?"
 
 ## Scope boundary — non-negotiable
 
-m80 captures **VM mechanics only**. The following live in a future `m80-adapter`, NOT here:
+m80 captures **VM mechanics only**. The following live in a future external `m80-adapter` (or any other adapter consumer), NOT here:
 
 - Tool catalog (`bash`/`exec`/`read_file`/...) and tool-registry validation
 - Semantic identifiers as carriers of meaning: `tool_call_id`, `correlation_id`, `idempotency_key`, `workspace_id`. m80's wire carries an opaque `request_id` at most
@@ -25,13 +25,13 @@ Test: if a behavior is "what the system does for the agent", it's not m80's. If 
 
 ## Workspace shape
 
-16 crates under `crates/`, each black-boxed:
+18 crates under `crates/`, each black-boxed:
 
-- **Foundation (9):** `m80-proto`, `m80-image-manifest`, `m80-firecracker-client`, `m80-vsock`, `m80-jailer`, `m80-cgroup`, `m80-storage`, `m80-preflight`, `m80-net-mode`. Privilege is acquired by the m80 process at startup (run as root, `setcap` the binary, or run inside a privileged container) and verified by `m80-preflight`; there is no per-call privilege shim.
-- **Networking (1):** `m80-net-outbound` — OutboundNat policy/iptables/DNS/cleanup (~3500 LOC; dossier's #1 risk)
-- **Deferred-but-reserved (2):** `m80-snapshot` (schemas active v0.1, execution v0.2), `m80-observability` (empty v0.1, populated v0.2)
-- **Orchestration (1):** `m80-firecracker` — composes foundation crates; owns the lifecycle state machine and run-root layout
-- **Binaries (3):** `m80-image-build`, `m80-guestd` (cross-compiled, in-VM), `m80-cli` (the `m80` binary)
+- **Foundation (10):** `m80-proto`, `m80-image-manifest`, `m80-firecracker-client`, `m80-vsock`, `m80-jailer`, `m80-jailer-harden`, `m80-cgroup`, `m80-storage`, `m80-preflight`, `m80-net-mode`. Privilege is acquired by the m80 process at startup (run as root, `setcap` the binary, or run inside a privileged container) and verified by `m80-preflight`; there is no per-call privilege shim. `m80-jailer-harden` is the exec wrapper that applies inheritable Group B hardening (supplementary groups, ambient caps, `no_new_privs`, signal mask, umask) before handing off to Firecracker's jailer.
+- **Feature crates (3):** `m80-net-outbound` (egress NAT/iptables/DNS/cleanup; ~3500 LOC; the largest single risk surface), `m80-snapshot` (capture/restore execution shipped per m80-rrp.3), `m80-observability` (probe + `render_prometheus` shipped).
+- **Orchestration (1):** `m80-firecracker` — composes foundation crates; owns the lifecycle state machine, run-root layout, drive hot-plug + tenant-identity verification (m80-iswt), and warm-pool / persistent-VM modes.
+- **Binaries (3):** `m80-image-build`, `m80-guestd` (cross-compiled, runs as PID 1 on minimal images), `m80-cli` (the `m80` binary).
+- **Test infrastructure (1):** `m80-test-helpers`.
 
 Cardinal rules:
 - No `m80-common` / `m80-shared` / `m80-utils` junk drawers. Cross-cutting types live in the crate that owns the producing domain.
@@ -40,9 +40,11 @@ Cardinal rules:
 
 ## Planning state — beads
 
-Live planning is in `.beads/` (prefix `m80-`, separate from predecessor). Today: 246 leaf behavior captures under 18 L1 epics (~332 beads total). Each leaf is a present-tense fact about the working predecessor implementation; closing it requires **both** a doc at `docs/behaviors/<area>/<topic>.md` AND a test at `crates/<crate>/tests/<area>/<topic>.rs`.
+Live planning is in `.beads/` (prefix `m80-`). Run `br stats` for current totals and `br ready` for unblocked work.
 
-Workflow: `bv --robot-triage` → `br update <id> --claim` → do work → `br update <id> --notes "doc=…; test=…"` → `br close <id> --reason "captured"`. Stage `.beads/issues.jsonl` alongside code on commit (auto-flush is on by default).
+Each leaf is a present-tense fact about working m80 behavior; closing it requires **both** a doc at `docs/behaviors/<area>/<topic>.md` AND a test at `crates/<crate>/tests/<area>/<topic>.rs`.
+
+Workflow: `br ready` → `br update <id> --claim` → do work → `br update <id> --notes "doc=…; test=…"` → `br close <id> --reason "captured"`. Stage `.beads/issues.jsonl` alongside code on commit (auto-flush is on by default).
 
 Bead authoring tooling lives under `specs/`: `01-skeleton.sh`, `02-author-leaves.py`, `02b-backfill-acceptance.py`, `03-validate.sh`, `04-deps.sh` are re-runnable; `leaves-*.md` is the human-reviewable spec source.
 
@@ -96,6 +98,12 @@ m80 is a v0.x internal crate set with a closed call graph (we own every consumer
 
 If you find yourself writing one of these because "what if someone…", stop. We are the someone. Change the code, not the assumption.
 
-## Dossier (`00-verdict.md` … `11-loc-and-surface-budget.md`)
+## Where to find things
 
-Historical analysis from the predecessor read. Useful for **why** decisions were made (coupling, network internals, LOC budget). Not normative — the crate READMEs and the beads are. Reach for the dossier when you need to recover *intent*.
+- **Crate-level contracts:** `crates/<name>/README.md`.
+- **Behavior captures (bead-paired docs):** `docs/behaviors/<area>/<topic>.md`.
+- **Adapter boundary + promotion bar for new wire verbs:** `docs/adapter-boundary.md`.
+- **Positioning vs smolvm/kata + canonical adapter pattern:** `docs/positioning.md`.
+- **Future direction (multi-tenant pool / Bestiary architecture):** `docs/future-directions/bestiary-conveyor-belt.md`.
+- **Performance bench data:** `docs/perf/cold-launch.md`.
+- **Live planning:** `.beads/` (CLI: `br ready`, `br stats`, `br show <id>`).

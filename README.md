@@ -22,7 +22,7 @@ The requested program must exist inside the selected guest image/profile or in
 the visible workspace. m80 does not run host binaries, pull OCI images, or
 install packages implicitly.
 
-## Quickstart Shape
+## Quickstart
 
 After a release artifact tarball exists, first contact is:
 
@@ -85,8 +85,44 @@ m80 run -it --workspace . --egress outbound --secret-env ANTHROPIC_API_KEY -- cl
 - `--tty -i` gives the process an interactive terminal for TUIs.
 - `--warm` leases from an explicit resident warm owner; it never silently falls
   back to cold boot.
+- `--persist` keeps a single VM alive across multiple `m80 run` invocations
+  for sequential exec workflows.
+- `--from-snapshot <path>` boots from a previously captured snapshot for fast
+  warm-start.
 
 See [examples](examples/) for copy-paste workloads.
+
+## Lifecycles
+
+m80 supports three lifecycle modes; the adapter or caller chooses by request:
+
+- **Cold run** — clean state, highest latency, simplest isolation. ~1.1 s P50
+  on minimal stripped images (kernel boot dominates; perf attack tracked in
+  `docs/perf/cold-launch.md`).
+- **Warm restore** — load a captured snapshot, skip kernel boot. ~270 ms P50;
+  the building block for warm pools. See `docs/behaviors/snapshot/`.
+- **Persistent VM** — single VM serves multiple sequential execs with shared
+  workspace state. Useful for build/test cycles where each step depends on
+  prior state. See `docs/behaviors/lifecycle/persistent-state.md`.
+
+Drive hot-plug + tenant-identity verification primitives are available for
+multi-tenant pool callers; see `docs/future-directions/bestiary-conveyor-belt.md`
+for the canonical pool architecture this enables.
+
+## File Operations
+
+Beyond exec, m80 exposes wire verbs for direct guest file movement that avoid
+shell-quoting and process-spawn overhead:
+
+- `read_file`, `write_file`, `list_dir`, `stat_file`, `remove_file`, `mkdir`
+- Chunked upload via `file_write_begin` / `file_write_chunk` / `file_write_commit`
+
+These map to typed `FileError` responses, not stderr-text + exit-code, so
+callers can pattern-match failure modes (`PermissionDenied`, `NotFound`, etc.).
+Exec remains the right primitive for arbitrary workflows; file verbs are for
+host-driven workspace manipulation in hot paths. See
+`docs/adapter-boundary.md` "Promotion Bar For New Core Verbs" for the rubric
+governing what becomes a core wire verb.
 
 ## Build The Artifacts
 
@@ -119,14 +155,30 @@ on tag pushes.
 
 ## Workspace
 
-m80 is a Rust workspace split into small black-box crates:
+m80 is a Rust workspace split into 18 black-box crates:
 
-- `m80-proto`, `m80-vsock`, `m80-firecracker-client`, `m80-jailer`,
-  `m80-cgroup`, `m80-storage`, `m80-preflight`, `m80-net-mode`
-- `m80-net-outbound`
-- `m80-firecracker`
-- `m80-image-build`, `m80-guestd`, `m80-cli`, `m80-jailer-harden`
-- reserved `m80-snapshot` and `m80-observability` surfaces
+**Foundation (10)** — privilege acquired at process startup and verified by
+`m80-preflight`; no per-call privilege shim:
+- `m80-proto`, `m80-vsock` — host↔guest wire protocol + transport
+- `m80-image-manifest`, `m80-firecracker-client` — manifest schema, FC REST API
+- `m80-jailer`, `m80-jailer-harden` — jail materialization + inheritable Group B hardening (supplementary groups, ambient caps, `no_new_privs`, signal mask, umask) wrapping FC's official jailer
+- `m80-cgroup`, `m80-storage` — cgroup-v2 limits, overlay+pivot rootfs
+- `m80-preflight`, `m80-net-mode` — host capability checks, network mode types
+
+**Feature crates (3)**:
+- `m80-net-outbound` — egress NAT/iptables/DNS/cleanup (~3500 LOC; the largest single risk surface)
+- `m80-snapshot` — capture/restore execution
+- `m80-observability` — probe + Prometheus render
+
+**Orchestration (1)**:
+- `m80-firecracker` — composes foundation crates; lifecycle state machine, run-root layout, drive hot-plug + tenant-identity verification, warm-pool / persistent-VM modes
+
+**Binaries (3)**:
+- `m80-image-build` — image construction pipeline (kernel + rootfs + guestd)
+- `m80-guestd` — cross-compiled, runs as PID 1 on minimal images
+- `m80-cli` — the `m80` binary
+
+**Test infrastructure (1)**: `m80-test-helpers`.
 
 Crate READMEs are contracts. A public-surface change updates the owning crate
 README in the same diff.
@@ -135,23 +187,29 @@ README in the same diff.
 
 m80 is the Firecracker foundation layer, not the agent product layer. It owns
 the reusable VM mechanics: artifact admission, jailer setup, read-only rootfs
-plus per-VM writable layers, vsock exec, PTY forwarding, direct guest file
-operations, outbound networking policy, warm pools, and cleanup evidence.
+plus per-VM writable layers, vsock exec + PTY forwarding, direct guest file
+operations, outbound networking policy, warm/persistent VM lifecycles, drive
+hot-plug, and cleanup evidence.
 
 Higher-level adapters can build on that surface for their own product model:
 
-- a predecessor adapter can translate tool calls, workspace authority, and semantic
-  events into m80 exec/file/network requests
+- a tool-call adapter can translate semantic operations, workspace authority,
+  and product events into m80 exec/file/network requests
 - a CI runner can expose untrusted pull requests as constrained processes
-- a SaaS host can isolate tenant plugins with explicit filesystem and egress
-  visibility
-- language bindings can wrap m80's generic process and file-operation APIs
+- a multi-tenant pool orchestrator can use the warm-pool + drive-hot-plug
+  primitives to serve isolated tenants from a shared VM pool
+- language bindings can wrap m80's typed APIs
 
-That split is deliberate. Projects like SmolVM optimize for an SDK-shaped AI
-sandbox experience. m80's edge is the audit-small Rust/Firecracker substrate:
-typed Rust APIs, process-transparent CLI behavior, direct VM-mechanics tests,
-and no hidden agent policy in the core. See [docs/positioning.md](docs/positioning.md)
-for the fuller comparison and adapter pattern.
+That split is deliberate. SmolVM optimizes for an SDK-shaped single-tenant
+sandbox experience (in-process VMM, virtio-fs, no jailer). m80's edge is the
+audit-small Rust/Firecracker substrate optimized for **multi-tenant**
+deployments: typed Rust APIs, process-transparent CLI behavior, direct
+VM-mechanics tests, mandatory jailer, and no hidden agent policy in the core.
+
+See:
+- [`docs/positioning.md`](docs/positioning.md) — fuller comparison and adapter pattern
+- [`docs/adapter-boundary.md`](docs/adapter-boundary.md) — what lives in m80 vs above (with the Promotion Bar For New Core Verbs)
+- [`docs/future-directions/bestiary-conveyor-belt.md`](docs/future-directions/bestiary-conveyor-belt.md) — multi-tenant pool architecture (out of m80 scope; consumer-side)
 
 ## What m80 Is Not
 
@@ -159,10 +217,6 @@ for the fuller comparison and adapter pattern.
 - Not an agent tool catalog or policy authority.
 - Not an OCI image puller or runtime package installer.
 - Not a hidden daemon. Warm execution uses an explicit resident owner.
-
-## Dossier
-
-The original extraction dossier is retained as historical context. Start with
-`00-verdict.md` when you need the reasoning behind the crate split, risk
-register, or LOC budget. The dossier is not normative; current crate READMEs
-and live beads are.
+- Not virtio-fs or shared-host-filesystem (deliberate; virtio-blk + overlay
+  per-VM is the chosen storage model).
+- Not single-tenant dev-ergonomics (use SmolVM for that audience).
