@@ -11,12 +11,14 @@ const CMDLINE_KEY: &str = "m80.malicious_attack";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Attack {
     Noop,
+    OversizedLength,
 }
 
 impl Attack {
     fn parse(raw: &str) -> anyhow::Result<Self> {
         match raw {
             "noop" => Ok(Attack::Noop),
+            "oversized_length" => Ok(Attack::OversizedLength),
             other => anyhow::bail!("unknown malicious guestd attack: {other}"),
         }
     }
@@ -24,6 +26,7 @@ impl Attack {
     fn as_str(self) -> &'static str {
         match self {
             Attack::Noop => "noop",
+            Attack::OversizedLength => "oversized_length",
         }
     }
 }
@@ -78,6 +81,7 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
     if args.list_attacks {
         println!("noop");
+        println!("oversized_length");
         return Ok(());
     }
 
@@ -88,7 +92,7 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
 
     match attack {
-        Attack::Noop => run_noop(),
+        Attack::Noop | Attack::OversizedLength => run_peer(attack),
     }
 }
 
@@ -120,7 +124,7 @@ fn proc_cmdline_attack() -> anyhow::Result<Option<String>> {
     }))
 }
 
-fn run_noop() -> anyhow::Result<()> {
+fn run_peer(attack: Attack) -> anyhow::Result<()> {
     let listener = VsockListener::bind_with_cid_port(VMADDR_CID_ANY, m80_proto::GUEST_PORT_DEFAULT)
         .with_context(|| {
             format!(
@@ -129,16 +133,14 @@ fn run_noop() -> anyhow::Result<()> {
             )
         })?;
 
-    let mut ready = VsockStream::connect_with_cid_port(
-        VMADDR_CID_HOST,
-        m80_proto::READY_PORT_DEFAULT,
-    )
-    .with_context(|| {
-        format!(
+    let mut ready =
+        VsockStream::connect_with_cid_port(VMADDR_CID_HOST, m80_proto::READY_PORT_DEFAULT)
+            .with_context(|| {
+                format!(
             "failed to connect malicious ready signal to host CID {VMADDR_CID_HOST} port {}",
             m80_proto::READY_PORT_DEFAULT
         )
-    })?;
+            })?;
     ready
         .write_all(&[m80_proto::PROTOCOL_VERSION as u8])
         .context("failed to write malicious ready version byte")?;
@@ -146,9 +148,24 @@ fn run_noop() -> anyhow::Result<()> {
     drop(ready);
 
     loop {
-        let (stream, _addr) = listener.accept().context("malicious vsock accept failed")?;
-        drop(stream);
+        let (mut stream, _addr) = listener.accept().context("malicious vsock accept failed")?;
+        match attack {
+            Attack::Noop => drop(stream),
+            Attack::OversizedLength => {
+                write_oversized_length(&mut stream)?;
+                drop(stream);
+            }
+        }
     }
+}
+
+fn write_oversized_length(stream: &mut impl Write) -> anyhow::Result<()> {
+    let size = u32::try_from(m80_proto::MAX_FRAME_BYTES + 1)
+        .context("MAX_FRAME_BYTES + 1 must fit in u32")?;
+    stream
+        .write_all(&size.to_be_bytes())
+        .context("write oversized length prefix")?;
+    stream.flush().context("flush oversized length prefix")
 }
 
 #[cfg(test)]
@@ -183,5 +200,16 @@ mod tests {
                 .map(str::to_owned)
         });
         assert_eq!(raw.as_deref(), Some("noop"));
+    }
+
+    #[test]
+    fn oversized_length_writes_only_prefix() {
+        let mut bytes = Vec::new();
+        write_oversized_length(&mut bytes).unwrap();
+        assert_eq!(bytes.len(), 4);
+        assert_eq!(
+            u32::from_be_bytes(bytes.try_into().unwrap()) as usize,
+            m80_proto::MAX_FRAME_BYTES + 1
+        );
     }
 }

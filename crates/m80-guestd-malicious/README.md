@@ -17,9 +17,13 @@ Attack mode selection is explicit:
 - `m80.malicious_attack=<name>` on the guest kernel command line when running
   as PID 1 inside a test image.
 
-The current harness mode is `noop`. It binds the standard guest vsock listener,
-sends the standard readiness byte to the host, and accepts connections without
-emitting adversarial frames. Later L12 leaves add named frame attacks here.
+Current modes:
+
+- `noop` binds the standard guest vsock listener, sends the standard readiness
+  byte to the host, and accepts connections without emitting adversarial frames.
+- `oversized_length` binds the standard guest vsock listener, sends the
+  readiness byte, and writes only a four-byte length prefix larger than
+  `m80_proto::MAX_FRAME_BYTES` on each accepted connection.
 
 ## Non-goals
 

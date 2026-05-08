@@ -12,6 +12,9 @@ All notable changes to m80 are documented here. Format roughly follows
   the normal guest vsock listener and sends the standard host readiness signal
   so later L12 leaves can add hostile frame emitters without touching
   production `m80-guestd`.
+- Added the first hostile frame mode, `oversized_length`, plus an ignored
+  real-KVM test that verifies the host returns
+  `WireProtocolError::OversizedFrame` without allocating the announced body.
 
 ### Added — adversarial wire coverage map (m80-g0v8.12)
 

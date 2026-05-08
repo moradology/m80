@@ -12,6 +12,10 @@ fn list_attacks_includes_noop() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.lines().any(|line| line == "noop"), "{stdout}");
+    assert!(
+        stdout.lines().any(|line| line == "oversized_length"),
+        "{stdout}"
+    );
 }
 
 #[test]

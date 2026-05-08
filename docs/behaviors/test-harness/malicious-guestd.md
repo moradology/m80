@@ -26,14 +26,18 @@ name exactly the peer behavior they are exercising.
 
 ## Attack Modes
 
-`noop` is the initial harness smoke mode. It binds the normal guest exec vsock
-port, sends the normal one-byte readiness signal to the host, and accepts
-connections without producing adversarial frames. It proves the artifact can
-replace production guestd inside the image and reach the host readiness path.
+`noop` binds the normal guest exec vsock port, sends the normal one-byte
+readiness signal to the host, and accepts connections without producing
+adversarial frames. It proves the artifact can replace production guestd inside
+the image and reach the host readiness path.
 
-Later L12 leaves add frame-producing modes such as oversized length, truncated
-frame, unknown variant, wrong response type, bogus request id, unsolicited
-response, unsolicited flood, and slowloris.
+`oversized_length` writes only a four-byte length prefix larger than
+`m80_proto::MAX_FRAME_BYTES` on each accepted connection. This exercises the
+host framing guard before the host allocates a frame body.
+
+Later L12 leaves add frame-producing modes such as truncated frame, unknown
+variant, wrong response type, bogus request id, unsolicited response,
+unsolicited flood, and slowloris.
 
 ## Evidence
 
