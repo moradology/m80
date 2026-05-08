@@ -57,6 +57,23 @@ fn cleanup_deletes_only_rules_with_owned_comment() {
 }
 
 #[test]
+fn cleanup_does_not_revert_host_ip_forward_sysctl() {
+    let state = ready_state(Path::new("/tmp/m80-teardown-run"), "vm-a");
+    let mut ops = RecordingPolicyOps::default();
+    apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    cleanup_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    let sysctl_runs = ops
+        .runs
+        .iter()
+        .map(String::as_str)
+        .filter(|command| command.starts_with("sysctl "))
+        .collect::<Vec<_>>();
+    assert_eq!(sysctl_runs, vec!["sysctl -w net.ipv4.ip_forward=1"]);
+}
+
+#[test]
 fn cleanup_foreign_rule_in_owned_chain_aborts() {
     let state = ready_state(Path::new("/tmp/m80-teardown-run"), "vm-a");
     let chain = outbound_nat_filter_chain(&state);

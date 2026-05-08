@@ -29,6 +29,17 @@ Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::cleanup_deletes_only_rules_with_owned_comment`
 and `::cleanup_foreign_rule_in_owned_chain_aborts`.
 
+## Host Forwarding Sysctl
+
+Policy setup enables IPv4 forwarding with `sysctl -w net.ipv4.ip_forward=1`
+before installing FORWARD or NAT rules. Teardown does not revert that host-wide
+sysctl. m80 owns the per-VM rules it stamped with the m80 comment; it does not
+try to infer whether some other host workload still needs forwarding.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::sysctl_ip_forward_set_before_rules`
+and `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::cleanup_does_not_revert_host_ip_forward_sysctl`.
+
 ## Chain Delete
 
 After deleting all comment-owned rules, m80 lists the per-VM filter chain
