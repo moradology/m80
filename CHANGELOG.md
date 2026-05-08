@@ -5,13 +5,16 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
-### Added — attack-runner payload crate (m80-g0v8.11.1)
+### Added — attack-runner payload and jailer harness (m80-g0v8.11.1/.2)
 
 - Added `m80-attack-runner`, a small malicious test payload with 30 stable
   attack primitives across filesystem, process, network, privilege, resource,
   and cross-tenant categories, plus the `echo_zero` harness negative control.
 - The crate builds for `x86_64-unknown-linux-musl` so later jailer
   defense-in-depth tests can copy a single static payload into the jail.
+- Added the ignored `m80-jailer` defense-in-depth harness that launches the
+  attack runner through the official Firecracker jailer path and verifies the
+  `echo_zero` negative control is observed as a successful attack.
 
 ### Added — PID-1 outbound network configuration (m80-mx2t.4.2)
 

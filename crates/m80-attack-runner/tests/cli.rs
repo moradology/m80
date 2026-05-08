@@ -39,3 +39,12 @@ fn echo_zero_negative_control_exits_success() {
         .assert()
         .success();
 }
+
+#[test]
+fn api_sock_form_selects_attack_for_jailer_harness() {
+    Command::cargo_bin("m80-attack-runner")
+        .unwrap()
+        .args(["--api-sock", "echo_zero"])
+        .assert()
+        .success();
+}

@@ -10,6 +10,10 @@ Exit contract:
 - exit non-zero: the attack was blocked; stderr contains the denial reason.
 - `echo_zero`: harness negative control that always exits `0`.
 
+The CLI accepts either `<attack-name>` or `--api-sock <attack-name>`. The
+second form is deliberately present for the official Firecracker jailer path,
+which always forwards `--api-sock` to the jailed executable.
+
 The runner exposes stable lowercase snake-case attack names grouped into six
 Layer-2 categories: filesystem, process, network, privilege, resource, and
 cross-tenant. Host or peer fixtures are provided through sentinel environment

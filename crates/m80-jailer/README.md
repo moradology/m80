@@ -128,3 +128,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   materialization and real Firecracker-jailer `--new-pid-ns` launch state
   (`jailer_pid = 0`, Firecracker `NSpid` ends in `1`, resource limit live,
   private Firecracker executable copy).
+- `tests/defense_in_depth.rs` — ignored root-only harness that launches the
+  musl `m80-attack-runner` payload through the official Firecracker jailer
+  path and waits for its exit code. The `echo_zero` negative control must exit
+  `0` so the harness can prove it detects a successful attack as a breach.

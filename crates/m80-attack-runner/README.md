@@ -10,6 +10,11 @@ The runner does not claim the host is safe by itself. It is an executable
 payload for later jailer tests, which decide where the binary runs and which
 sentinel paths are exposed.
 
+For the official Firecracker jailer harness, the runner also accepts
+`--api-sock <attack-name>`. m80's jailer launch path always forwards
+`--api-sock` to the jailed executable, so the harness reuses that field as the
+attack selector instead of adding a second launch API.
+
 ## Adding an Attack
 
 Add the function in `src/attacks/<category>.rs`, then register it in
