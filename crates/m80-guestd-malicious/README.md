@@ -34,6 +34,9 @@ Current modes:
   readiness byte, reads the host request, echoes its request id, writes an
   `exec_exit` envelope containing a `file_read_response` payload, and closes
   the connection.
+- `bogus_request_id` binds the standard guest vsock listener, sends the
+  readiness byte, reads the host request, writes a valid `exec_exit` envelope
+  for `malicious-stale-request-id`, and closes the connection.
 
 ## Non-goals
 

@@ -47,8 +47,12 @@ then writes an `exec_exit` envelope containing a `file_read_response` payload.
 This exercises typed payload conversion after routing and request-id checks
 have already accepted the frame.
 
-Later L12 leaves add frame-producing modes such as bogus request id,
-unsolicited response, unsolicited flood, and slowloris.
+`bogus_request_id` reads the host request, then writes a valid `exec_exit`
+envelope for `malicious-stale-request-id`. This exercises host-side
+request-correlation checks on a frame that is otherwise well formed.
+
+Later L12 leaves add frame-producing modes such as unsolicited response,
+unsolicited flood, and slowloris.
 
 ## Evidence
 

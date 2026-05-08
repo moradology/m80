@@ -25,6 +25,9 @@ All notable changes to m80 are documented here. Format roughly follows
   request id while returning an `exec_exit` envelope with a
   `file_read_response` payload, verifying the host reports the expected and
   observed payload kinds.
+- Added `bogus_request_id`, an adversarial mode that returns a valid
+  `exec_exit` frame for a fabricated request id and verifies the host reports
+  both expected and observed ids.
 
 ### Added — adversarial wire coverage map (m80-g0v8.12)
 

@@ -16,6 +16,7 @@ enum Attack {
     TruncatedFrame,
     UnknownVariant,
     ResponseTypeMismatch,
+    BogusRequestId,
 }
 
 impl Attack {
@@ -26,6 +27,7 @@ impl Attack {
             "truncated_frame" => Ok(Attack::TruncatedFrame),
             "unknown_variant" => Ok(Attack::UnknownVariant),
             "response_type_mismatch" => Ok(Attack::ResponseTypeMismatch),
+            "bogus_request_id" => Ok(Attack::BogusRequestId),
             other => anyhow::bail!("unknown malicious guestd attack: {other}"),
         }
     }
@@ -37,6 +39,7 @@ impl Attack {
             Attack::TruncatedFrame => "truncated_frame",
             Attack::UnknownVariant => "unknown_variant",
             Attack::ResponseTypeMismatch => "response_type_mismatch",
+            Attack::BogusRequestId => "bogus_request_id",
         }
     }
 }
@@ -95,6 +98,7 @@ fn run(args: Args) -> anyhow::Result<()> {
         println!("truncated_frame");
         println!("unknown_variant");
         println!("response_type_mismatch");
+        println!("bogus_request_id");
         return Ok(());
     }
 
@@ -109,7 +113,8 @@ fn run(args: Args) -> anyhow::Result<()> {
         | Attack::OversizedLength
         | Attack::TruncatedFrame
         | Attack::UnknownVariant
-        | Attack::ResponseTypeMismatch => run_peer(attack),
+        | Attack::ResponseTypeMismatch
+        | Attack::BogusRequestId => run_peer(attack),
     }
 }
 
@@ -184,6 +189,10 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
                 read_request_then_write_response_type_mismatch(&mut stream)?;
                 drop(stream);
             }
+            Attack::BogusRequestId => {
+                read_request_then_write_bogus_request_id(&mut stream)?;
+                drop(stream);
+            }
         }
     }
 }
@@ -254,6 +263,40 @@ fn write_response_type_mismatch(
     };
     m80_proto::write_raw_frame(stream, envelope).context("write response-type-mismatch frame")?;
     stream.flush().context("flush response-type-mismatch frame")
+}
+
+fn read_request_then_write_bogus_request_id<S>(stream: &mut S) -> anyhow::Result<()>
+where
+    S: Read + Write,
+{
+    let _request =
+        m80_proto::read_raw_frame(stream).context("read request before bogus request-id frame")?;
+    write_bogus_request_id(stream)
+}
+
+fn write_bogus_request_id(stream: &mut impl Write) -> anyhow::Result<()> {
+    let envelope = RawEnvelope {
+        version: m80_proto::PROTOCOL_VERSION,
+        kind: m80_proto::PAYLOAD_KIND_EXEC_EXIT.to_owned(),
+        request_id: Some("malicious-stale-request-id".to_owned()),
+        max_duration_ms: None,
+        payload: m80_proto::ExecExit {
+            status: m80_proto::ExecStatus::Completed,
+            exit_code: Some(0),
+            total_stdout_bytes: 0,
+            total_stderr_bytes: 0,
+            truncated: false,
+            timing: m80_proto::ExecTiming {
+                spawned_at_unix_ms: 1,
+                exited_at_unix_ms: 2,
+                spawn_ms: 0,
+                run_ms: 1,
+            },
+        }
+        .into_wire(),
+    };
+    m80_proto::write_raw_frame(stream, envelope).context("write bogus-request-id frame")?;
+    stream.flush().context("flush bogus-request-id frame")
 }
 
 fn write_len_field(out: &mut Vec<u8>, field: u64, bytes: &[u8]) -> anyhow::Result<()> {
@@ -376,5 +419,19 @@ mod tests {
             raw.payload,
             m80_proto::wire::WirePayload::FileReadResponse(_)
         ));
+    }
+
+    #[test]
+    fn bogus_request_id_writes_valid_exit_for_fabricated_request() {
+        let mut frame = Vec::new();
+        write_bogus_request_id(&mut frame).unwrap();
+
+        let raw = m80_proto::read_raw_frame(&mut std::io::Cursor::new(frame)).unwrap();
+        assert_eq!(raw.kind, m80_proto::PAYLOAD_KIND_EXEC_EXIT);
+        assert_eq!(
+            raw.request_id.as_deref(),
+            Some("malicious-stale-request-id")
+        );
+        raw.decode::<m80_proto::ExecExit>().unwrap();
     }
 }
