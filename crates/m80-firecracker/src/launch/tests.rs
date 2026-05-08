@@ -79,5 +79,5 @@ fn ready_signal_rejects_wrong_protocol_version() {
 
 #[test]
 fn guest_vsock_port_is_9001() {
-    assert_eq!(guest_ready_probe_port(), 9001);
+    assert_eq!(GUEST_PORT_DEFAULT, 9001);
 }

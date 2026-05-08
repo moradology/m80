@@ -1,0 +1,196 @@
+//! Real-KVM lifecycle-failure cleanup coverage.
+//!
+//! Ignored by default because these tests need a KVM-capable host, real
+//! Firecracker artifacts, and timeout budgets long enough to prove stalled
+//! guest readiness paths.
+
+mod common;
+
+use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use common::RunDirDumpGuard;
+use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, SandboxConfig, SnapshotPaths};
+use m80_proto::{ExecRequest, ExecStatus};
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker artifacts and waits for guestd ready timeout"]
+fn guestd_not_ready_timeout_cleans_partial_state() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
+    let vm_id = unique_vm_id("guestd-not-ready-cold");
+    let run_dir = discovery.run_root.join(&vm_id);
+
+    let sandbox = backend
+        .admit(stalled_guestd_config(&vm_id))
+        .expect("admit stalled cold launch");
+    let err = match sandbox.launch() {
+        Ok(running) => {
+            let stopped = running.force_kill().expect("force-kill unexpected launch");
+            stopped.delete().expect("delete unexpected launch");
+            panic!("stalled guestd cold launch unexpectedly reached RunningSandbox");
+        }
+        Err(err) => err,
+    };
+
+    assert_guestd_timeout(err);
+    assert!(
+        !run_dir.exists(),
+        "guestd ready timeout must remove partial cold-launch run-dir: {}",
+        run_dir.display()
+    );
+
+    let mut running = launch_healthy(&backend, "guestd-not-ready-cold-reuse");
+    assert_exec_ok(&mut running, "printf cold-reuse-ok");
+    running
+        .stop()
+        .expect("stop reuse VM")
+        .delete()
+        .expect("delete reuse VM");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker artifacts and snapshot support"]
+fn restore_guestd_not_ready_timeout_cleans_partial_state() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
+    let snap_dir = discovery
+        .run_root
+        .join(format!("guestd-not-ready-snap-{}", unique_suffix()));
+    let paths = snapshot_paths(&snap_dir);
+
+    let mut golden = launch_healthy(&backend, "guestd-not-ready-golden");
+    let _golden_dump = RunDirDumpGuard::new(golden.run_dir().to_path_buf());
+    assert_exec_ok(
+        &mut golden,
+        "(sleep 0.2; kill -STOP 1) >/dev/null 2>&1 & printf armed",
+    );
+    std::thread::sleep(Duration::from_millis(500));
+    golden
+        .capture(paths.clone())
+        .expect("capture snapshot with stopped guestd");
+    golden
+        .force_kill()
+        .expect("force-kill stopped-guestd golden")
+        .delete()
+        .expect("delete stopped-guestd golden");
+
+    let restore_vm_id = unique_vm_id("guestd-not-ready-restore");
+    let restore_run_dir = discovery.run_root.join(&restore_vm_id);
+    let sandbox = backend
+        .admit(default_config(&restore_vm_id))
+        .expect("admit restore timeout launch");
+    let err = match sandbox.launch_from_snapshot(paths.clone(), &discovery) {
+        Ok(running) => {
+            let stopped = running.force_kill().expect("force-kill unexpected restore");
+            stopped.delete().expect("delete unexpected restore");
+            panic!("stalled guestd restore unexpectedly reached RunningSandbox");
+        }
+        Err(err) => err,
+    };
+
+    assert_guestd_timeout(err);
+    assert!(
+        !restore_run_dir.exists(),
+        "guestd ready timeout must remove partial restore run-dir: {}",
+        restore_run_dir.display()
+    );
+
+    let mut running = launch_healthy(&backend, "guestd-not-ready-restore-reuse");
+    assert_exec_ok(&mut running, "printf restore-reuse-ok");
+    running
+        .stop()
+        .expect("stop restore reuse VM")
+        .delete()
+        .expect("delete restore reuse VM");
+
+    let _ = std::fs::remove_dir_all(snap_dir);
+}
+
+fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
+    let run_root = discovery.run_root.clone();
+    BackendConfig {
+        discovery,
+        max_concurrent_vms: 1,
+        run_root,
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: CgroupMode::Disabled,
+    }
+}
+
+fn default_config(vm_id: &str) -> SandboxConfig {
+    SandboxConfig {
+        vm_id: Some(vm_id.to_owned()),
+        vcpu_count: Some(m80_firecracker::FIRST_LINE_VCPU_COUNT),
+        mem_size_mib: Some(m80_firecracker::FIRST_LINE_MEM_SIZE_MIB),
+        ..common::sandbox_config()
+    }
+}
+
+fn stalled_guestd_config(vm_id: &str) -> SandboxConfig {
+    SandboxConfig {
+        boot_args: Some("console=ttyS0 reboot=k panic=-1 pci=off init=/bin/sh".into()),
+        ..default_config(vm_id)
+    }
+}
+
+fn launch_healthy(backend: &Arc<Backend>, prefix: &str) -> m80_firecracker::RunningSandbox {
+    let vm_id = unique_vm_id(prefix);
+    backend
+        .admit(default_config(&vm_id))
+        .expect("admit healthy launch")
+        .launch()
+        .expect("healthy launch after failure cleanup")
+}
+
+fn snapshot_paths(dir: &Path) -> SnapshotPaths {
+    std::fs::create_dir_all(dir).expect("create snapshot dir");
+    SnapshotPaths {
+        vm_state: dir.join("vm.snap"),
+        mem: dir.join("mem.snap"),
+    }
+}
+
+fn assert_exec_ok(running: &mut m80_firecracker::RunningSandbox, script: &str) {
+    let response = running
+        .exec(ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(10_000),
+            streaming: false,
+        })
+        .unwrap_or_else(|e| panic!("exec {script:?}: {e}"));
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "exec {script:?} failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+}
+
+fn assert_guestd_timeout(err: FcError) {
+    assert!(
+        matches!(err, FcError::GuestdReadyTimeout { .. }),
+        "expected GuestdReadyTimeout, got {err:?}"
+    );
+}
+
+fn unique_vm_id(prefix: &str) -> String {
+    format!("{prefix}-{}", unique_suffix() % 1_000_000_000)
+}
+
+fn unique_suffix() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_nanos()
+}

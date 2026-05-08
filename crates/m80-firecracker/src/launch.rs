@@ -45,6 +45,10 @@ use crate::types::{
     CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
 };
 
+mod failure_cleanup;
+
+use failure_cleanup::{LaunchProcessCleanupGuard, LaunchRunDirCleanupGuard};
+
 /// Record a diagnostics-annotated phase result.
 ///
 /// Takes `diagnostics` (`&mut Option<Diagnostics>`), `vm_id` (`&str`), and
@@ -108,6 +112,7 @@ impl Sandbox {
         let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
             phase_1_run_root_prep(run_root, &vm_id)
         })?;
+        let mut run_dir_cleanup = LaunchRunDirCleanupGuard::new(&vm_id, run_dir.clone());
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
 
@@ -212,6 +217,8 @@ impl Sandbox {
             "phase_9_jailer_launch",
             { jail.launch(&api_socket).map_err(FcError::Jailer) }
         )?;
+        let mut early_process_cleanup =
+            Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
 
         // Phase 5b: create cgroup subtree now that we have live pids.
         let cgroup = diag_phase!(
@@ -222,6 +229,9 @@ impl Sandbox {
             "phase_5b_cgroup_create",
             { phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker) }
         )?;
+        let mut process_cleanup = early_process_cleanup
+            .take()
+            .expect("launch process cleanup guard must exist after firecracker spawn");
 
         // Phase 10: open UDS REST client (retries for up to 5 s).
         let host_api_socket =
@@ -339,6 +349,8 @@ impl Sandbox {
             Arc::clone(&watcher_stop),
             None,
         );
+        process_cleanup.disarm();
+        run_dir_cleanup.disarm();
         Ok(RunningSandbox {
             vm_id,
             request_id,
@@ -413,6 +425,7 @@ impl Sandbox {
         let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
             phase_1_run_root_prep(run_root, &vm_id)
         })?;
+        let mut run_dir_cleanup = LaunchRunDirCleanupGuard::new(&vm_id, run_dir.clone());
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
 
@@ -490,6 +503,8 @@ impl Sandbox {
             "phase_9_jailer_launch",
             { jail.launch(&api_socket).map_err(FcError::Jailer) }
         )?;
+        let mut early_process_cleanup =
+            Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
 
         // Phase 5b: create cgroup subtree.
         let cgroup = diag_phase!(
@@ -500,6 +515,9 @@ impl Sandbox {
             "phase_5b_cgroup_create",
             { phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker) }
         )?;
+        let mut process_cleanup = early_process_cleanup
+            .take()
+            .expect("restore process cleanup guard must exist after firecracker spawn");
 
         // Phase 10: open UDS REST client.
         let host_api_socket =
@@ -599,6 +617,8 @@ impl Sandbox {
             Arc::clone(&watcher_stop),
             snapshot_mount.clone(),
         );
+        process_cleanup.disarm();
+        run_dir_cleanup.disarm();
         Ok(RunningSandbox {
             vm_id,
             request_id,
@@ -972,11 +992,6 @@ fn accept_ready_signal(
     }
     drop(stream);
     Ok(())
-}
-
-#[cfg(test)]
-fn guest_ready_probe_port() -> u32 {
-    GUEST_PORT_DEFAULT
 }
 
 #[cfg(test)]
