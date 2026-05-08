@@ -269,6 +269,106 @@ fn overlay_grows_under_sustained_guest_writes() {
     stopped.delete().expect("delete");
 }
 
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn three_drive_order_mounts_workspace_as_vdc_and_preserves_base() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let manifest_dir = discovery
+        .rootfs
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("/"));
+    discovery
+        .manifest
+        .verify(manifest_dir)
+        .expect("base artifacts must verify before launch");
+    let run_root = discovery.run_root.clone();
+    let backend = std::sync::Arc::new(
+        Backend::new(BackendConfig {
+            discovery: discovery.clone(),
+            max_concurrent_vms: 1,
+            run_root: run_root.clone(),
+            jail_uid: 3000,
+            jail_gid: 3000,
+            cgroup_mode: CgroupMode::Disabled,
+        })
+        .expect("Backend::new"),
+    );
+
+    let vm_id = format!("drive-order-{}", std::process::id());
+    let host_workspace = tempfile::tempdir().expect("workspace tempdir");
+    let sandbox = backend
+        .admit(SandboxConfig {
+            vm_id: Some(vm_id.clone()),
+            workspace: Some(host_workspace.path().to_path_buf()),
+            network: NetworkPolicy::NoEgress,
+            vcpu_count: Some(1),
+            mem_size_mib: Some(512),
+            boot_args: None,
+            overlay_size_bytes: 512 * 1024 * 1024,
+            idle_timeout: None,
+            daemonize: false,
+            request_id: Some("req-three-drive-order".into()),
+            preallocated_drive_slots: 0,
+            one_shot: false,
+        })
+        .expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+    let _dump = RunDirDumpGuard::new(run_root.join(&vm_id));
+
+    let response = running
+        .exec(ExecRequest {
+            program: "/bin/sh".to_string(),
+            args: vec![
+                "-c".to_string(),
+                "set -eu; \
+                 cat /proc/mounts; \
+                 printf 'cmdline='; cat /proc/cmdline; printf '\\n'; \
+                 printf ok > /workspace/drive-order.txt; \
+                 cat /workspace/drive-order.txt"
+                    .to_string(),
+            ],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(10_000),
+            streaming: false,
+        })
+        .expect("exec drive-order probe");
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "drive-order probe failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&response.stdout);
+    assert!(
+        stdout.contains("overlay / overlay "),
+        "root must be the overlayfs merged view:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("/dev/vdc /workspace ext4 "),
+        "workspace must be the third Firecracker drive, not the overlay upper:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("m80.workspace=1"),
+        "boot args must mark the workspace drive as present:\n{stdout}"
+    );
+    assert!(
+        stdout.trim_end().ends_with("ok"),
+        "workspace write/read probe failed:\n{stdout}"
+    );
+
+    let stopped = running.stop().expect("stop");
+    discovery
+        .manifest
+        .verify(manifest_dir)
+        .expect("base artifacts must still verify after workspace write");
+    stopped.delete().expect("delete");
+}
+
 fn write_guest_file(running: &mut m80_firecracker::RunningSandbox, path: &str, mib: u32) {
     let response = running
         .exec(ExecRequest {
