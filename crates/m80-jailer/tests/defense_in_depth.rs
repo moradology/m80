@@ -64,6 +64,36 @@ fn jailed_attacker_cannot_write_to_lower_layer() {
     assert_attack_blocked("write_to_lower_layer");
 }
 
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_observe_host_pid_status() {
+    assert_attack_blocked("observe_host_pid_status");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_signal_host_pid_probe() {
+    assert_attack_blocked("signal_host_pid_probe");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_read_host_pid_cmdline() {
+    assert_attack_blocked("read_host_pid_cmdline");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_enumerate_host_processes() {
+    assert_attack_blocked("enumerate_host_processes");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_read_host_proc_mountinfo() {
+    assert_attack_blocked("read_host_proc_mountinfo");
+}
+
 struct AttackRun {
     exit_code: Option<i32>,
 }

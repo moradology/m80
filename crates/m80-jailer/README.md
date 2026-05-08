@@ -134,4 +134,6 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `0` so the harness can prove it detects a successful attack as a breach.
   The same harness pins the filesystem escape battery: dotdot/openat-style
   chroot escape attempts, proc-self-root escape, host sentinel read/write, and
-  lower-layer write attempts must all exit non-zero.
+  lower-layer write attempts must all exit non-zero. It also pins process/PID
+  isolation: host PID status/cmdline/mountinfo observation, host-PID signal
+  probes, and broad host process enumeration must all exit non-zero.

@@ -18,6 +18,9 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added the ignored filesystem escape battery over that harness, covering
   dotdot/openat-style chroot escape attempts, proc-self-root escape, host
   sentinel read/write, and lower-layer write attempts.
+- Added the ignored process/PID isolation battery, covering host PID
+  status/cmdline/mountinfo observation, host-PID signal probes, and broad
+  process enumeration.
 
 ### Added — PID-1 outbound network configuration (m80-mx2t.4.2)
 
