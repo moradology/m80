@@ -4,6 +4,7 @@ mod common;
 use common::RunDirDumpGuard;
 
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, FcError, SandboxConfig, SnapshotPaths, WarmPool,
@@ -40,6 +41,15 @@ fn snapshot_paths(dir: &std::path::Path) -> SnapshotPaths {
         vm_state: dir.join("vm.snap"),
         mem: dir.join("mem.snap"),
     }
+}
+
+fn unique_name(prefix: &str) -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_millis()
+        % 1_000_000;
+    format!("{prefix}-{millis}")
 }
 
 #[test]
@@ -159,6 +169,67 @@ fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
     assert_no_run_dirs_with_prefix(&discovery.run_root, "warm-pool-slot");
 
     let _ = std::fs::remove_dir_all(&snap_dir);
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn warm_pool_empty_returns_pool_empty_error() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let suffix = unique_name("pool-empty");
+    let snap_dir = discovery.run_root.join(format!("{suffix}-snapshot"));
+
+    let golden_backend = Arc::new(
+        Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new golden"),
+    );
+    let golden = golden_backend
+        .admit(sandbox_config(format!("{suffix}-golden")))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture golden");
+    running
+        .force_kill()
+        .expect("force-kill golden")
+        .delete()
+        .expect("delete golden");
+
+    let pool_backend = Arc::new(
+        Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new pool"),
+    );
+    let pool = WarmPool::new(
+        Arc::clone(&pool_backend),
+        WarmPoolConfig {
+            target_ready: 1,
+            snapshot: paths.clone(),
+            sandbox: sandbox_config(format!("{suffix}-template")),
+            ready_probe: true_request(),
+            vm_id_prefix: format!("{suffix}-slot"),
+        },
+    )
+    .expect("WarmPool::new");
+    pool.fill_to_target_blocking().expect("prefill");
+    assert_eq!(pool.snapshot().ready, 1);
+
+    let lease = pool
+        .try_lease()
+        .expect("first lease drains only ready slot");
+    let err = match pool.try_lease() {
+        Ok(_) => panic!("second lease must fail while the only slot is leased"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(err, FcError::PoolEmpty { target_ready: 1 }),
+        "expected PoolEmpty after draining warm pool, got {err:?}"
+    );
+    assert_eq!(pool.snapshot().ready, 0);
+    assert_eq!(pool.snapshot().leased, 1);
+    lease.discard().expect("discard held lease");
+
+    drop(pool);
+    let _ = std::fs::remove_dir_all(&snap_dir);
+    assert_no_run_dirs_with_prefix(&discovery.run_root, &suffix);
 }
 
 fn assert_no_run_dirs_with_prefix(run_root: &std::path::Path, prefix: &str) {
