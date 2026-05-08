@@ -41,6 +41,12 @@ It's small. It earns its keep by being the API border between
 - `JoinNetns` carries a namespace fd path only. The caller owns namespace
   creation, interface setup, routing, firewall rules, and teardown. m80 validates
   and joins the namespace downstream in `m80-jailer`; this resolver remains pure.
+- These modes describe guest networking and VMM placement separately.
+  `NoEgress` means the guest gets no NIC; it does not create a private network
+  namespace for the Firecracker process. `AllowOutbound` means guest packets go
+  through m80-owned TAP/bridge/NAT policy; it likewise does not create a
+  process-private VMM namespace. `JoinNetns` is the only mode that explicitly
+  places Firecracker in a caller-provided namespace.
 
 ## Public surface
 
@@ -53,6 +59,8 @@ It's small. It earns its keep by being the API border between
 - **No iptables.** That's `m80-net-outbound`.
 - **No DNS.** Also `m80-net-outbound`.
 - **No netns creation.** Callers provision and own `JoinNetns` namespaces.
+- **No compromised-VMM host egress policy.** That stronger defense-in-depth
+  boundary belongs in launch/jailer wiring, not in this pure resolver.
 - **No "should I network" inference.** The caller decides.
 - **No string-input parser.** CIDR parsing and IPv6 rejection live at the
   caller boundary, not here.
@@ -68,3 +76,5 @@ It's small. It earns its keep by being the API border between
 - `resolve(OutboundNat { exceptions: [] })` returns `VmNetworkMode::OutboundNat`.
 - `resolve(OutboundNat { exceptions: [...] })` carries exceptions through unchanged.
 - `resolve(JoinNetns { netns_path })` carries the namespace path through unchanged.
+- `compromised_vmm_network_boundary_is_explicit_join_netns_only` pins that only
+  `JoinNetns` carries a VMM network namespace path.

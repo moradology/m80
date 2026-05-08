@@ -11,6 +11,12 @@ All notable changes to m80 are documented here. Format roughly follows
   Firecracker CVE floor before accepting any exact version pin, starting with
   AWS advisories CVE-2026-5747 and CVE-2026-1386.
 
+### Documented — compromised-VMM network boundary (m80-g0v8.11.12)
+
+- Documented that `NoEgress` and `AllowOutbound` are guest networking policies,
+  not private network namespace guarantees for a compromised Firecracker VMM
+  process, and pinned `JoinNetns` as the explicit VMM netns placement mode.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`

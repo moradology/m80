@@ -183,7 +183,9 @@ Firecracker `NetworkInterface` PUT shape for an already-realized TAP, but
 phase 6 does not yet create the TAP or guest network config. `JoinNetns {
 netns_path }` delegates namespace creation and policy to the caller: m80
 validates the namespace path and passes it to Firecracker's official jailer as
-`--netns` before Firecracker is exec'd.
+`--netns` before Firecracker is exec'd. `NoEgress` and `AllowOutbound` are guest
+networking policies, not private network namespaces for the Firecracker VMM
+process; the only current VMM netns placement promise is `JoinNetns`.
 
 `SandboxConfig::daemonize` asks the official Firecracker jailer to double-fork
 before exec'ing Firecracker. The Firecracker API socket remains the management

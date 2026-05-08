@@ -51,6 +51,24 @@ fn join_netns_carries_path_through_resolver() {
     assert_eq!(mode, VmNetworkMode::JoinNetns { netns_path: path });
 }
 
+#[test]
+fn compromised_vmm_network_boundary_is_explicit_join_netns_only() {
+    assert_eq!(resolve(&NetworkPolicy::NoEgress), VmNetworkMode::NoEgress);
+
+    assert!(matches!(
+        resolve(&NetworkPolicy::AllowOutbound { exceptions: vec![] }),
+        VmNetworkMode::OutboundNat { .. }
+    ));
+
+    let path = PathBuf::from("/var/run/netns/m80-security");
+    assert_eq!(
+        resolve(&NetworkPolicy::JoinNetns {
+            netns_path: path.clone()
+        }),
+        VmNetworkMode::JoinNetns { netns_path: path }
+    );
+}
+
 fn assert_policy_round_trips(policy: NetworkPolicy) {
     let json = serde_json::to_string(&policy).unwrap();
     let back: NetworkPolicy = serde_json::from_str(&json).unwrap();
