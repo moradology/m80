@@ -5,7 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use m80_cgroup::Limits;
-use m80_jailer::Binding;
+use m80_jailer::{Binding, ResourceLimits};
 use nix::unistd::{chown, Gid, Uid};
 use support::*;
 
@@ -80,6 +80,48 @@ fn attack_runner_can_be_enrolled_in_m80_cgroup_limits() {
     assert!(
         result.cgroup_contained_pid,
         "cgroup.procs must contain the jailed attack-runner pid before wait"
+    );
+}
+
+#[test]
+#[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_exhaust_file_descriptors() {
+    assert_resource_attack_blocked("open_many_file_descriptors");
+}
+
+#[test]
+#[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_spawn_past_pids_limit() {
+    assert_resource_attack_blocked("spawn_many_threads");
+}
+
+#[test]
+#[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_allocate_past_memory_limit() {
+    assert_resource_attack_blocked("allocate_large_memory");
+}
+
+#[test]
+#[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_write_past_file_size_limit() {
+    let result = run_attack_in_jailer_with_cgroup_and_resource_limits(
+        "create_large_tmp_file",
+        resource_attack_limits(),
+        ResourceLimits {
+            fsize: Some(1024 * 1024),
+            ..ResourceLimits::default()
+        },
+    )
+    .expect("run file-size resource attack");
+
+    assert_ne!(
+        result.exit_code,
+        Some(0),
+        "create_large_tmp_file wrote past the configured file-size limit"
+    );
+    assert!(
+        result.cgroup_contained_pid,
+        "resource attack must run after cgroup enrollment"
     );
 }
 
@@ -424,4 +466,26 @@ fn chown_tree(path: &Path, uid: u32, gid: u32) -> Result<(), Box<dyn std::error:
         chown(&entry?.path(), Some(uid), Some(gid))?;
     }
     Ok(())
+}
+
+fn assert_resource_attack_blocked(name: &str) {
+    let result = run_attack_in_jailer_with_cgroup(name, resource_attack_limits())
+        .expect("run cgroup-enrolled resource attack");
+    assert_ne!(
+        result.exit_code,
+        Some(0),
+        "{name} exhausted resources without hitting a configured limit"
+    );
+    assert!(
+        result.cgroup_contained_pid,
+        "resource attack must run after cgroup enrollment"
+    );
+}
+
+fn resource_attack_limits() -> Limits {
+    Limits {
+        memory_max: Some(64 * 1024 * 1024),
+        pids_max: Some(32),
+        ..Limits::m80_default()
+    }
 }

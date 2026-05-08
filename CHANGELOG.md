@@ -40,6 +40,11 @@ All notable changes to m80 are documented here. Format roughly follows
   peer-network-state read, peer-pid signal, and peer-run-dir bind-mount
   attempts.
 
+### Added — resource exhaustion attack battery (m80-g0v8.11.9)
+
+- Added ignored jailer harness tests for file-descriptor, pids, memory, and
+  file-size exhaustion attempts after cgroup enrollment.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`

@@ -64,3 +64,7 @@ coverage.
 Cross-tenant probes use the peer config keys above. The stable cross-tenant
 names are `read_peer_sentinel`, `write_peer_sentinel`, `list_peer_run_dir`,
 `read_peer_network_state`, `signal_peer_pid`, and `mount_peer_run_dir`.
+
+Resource probes are intentionally bounded by the jailer harness. The stable
+names are `open_many_file_descriptors`, `spawn_many_threads`,
+`allocate_large_memory`, and `create_large_tmp_file`.

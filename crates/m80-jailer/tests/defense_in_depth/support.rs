@@ -59,31 +59,48 @@ pub(crate) fn assert_attack_blocked(name: &str) {
 }
 
 pub(crate) fn run_attack_in_jailer(name: &str) -> Result<AttackRun, Box<dyn std::error::Error>> {
-    run_attack_in_jailer_inner(name, Vec::new(), None)
+    run_attack_in_jailer_inner(name, Vec::new(), None, ResourceLimits::default())
 }
 
 pub(crate) fn run_attack_in_jailer_with_bindings(
     name: &str,
     bindings: Vec<Binding>,
 ) -> Result<AttackRun, Box<dyn std::error::Error>> {
-    run_attack_in_jailer_inner(name, bindings, None)
+    run_attack_in_jailer_inner(name, bindings, None, ResourceLimits::default())
 }
 
 pub(crate) fn run_attack_in_jailer_with_cgroup(
     name: &str,
     limits: Limits,
 ) -> Result<AttackRun, Box<dyn std::error::Error>> {
-    run_attack_in_jailer_inner(name, Vec::new(), Some(limits))
+    run_attack_in_jailer_inner(name, Vec::new(), Some(limits), ResourceLimits::default())
+}
+
+pub(crate) fn run_attack_in_jailer_with_cgroup_and_resource_limits(
+    name: &str,
+    limits: Limits,
+    resource_limits: ResourceLimits,
+) -> Result<AttackRun, Box<dyn std::error::Error>> {
+    run_attack_in_jailer_inner(name, Vec::new(), Some(limits), resource_limits)
 }
 
 fn run_attack_in_jailer_inner(
     name: &str,
     bindings: Vec<Binding>,
     limits: Option<Limits>,
+    resource_limits: ResourceLimits,
 ) -> Result<AttackRun, Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let run_dir = temp.path().join(format!("attack-{name}"));
-    let live = launch_attack_in_jailer(name, &run_dir, 3000, 3000, bindings, limits)?;
+    let live = launch_attack_in_jailer_with_resource_limits(
+        name,
+        &run_dir,
+        3000,
+        3000,
+        bindings,
+        limits,
+        resource_limits,
+    )?;
 
     live.wait()
 }
@@ -95,6 +112,26 @@ pub(crate) fn launch_attack_in_jailer(
     gid: u32,
     bindings: Vec<Binding>,
     limits: Option<Limits>,
+) -> Result<LiveAttack, Box<dyn std::error::Error>> {
+    launch_attack_in_jailer_with_resource_limits(
+        name,
+        run_dir,
+        uid,
+        gid,
+        bindings,
+        limits,
+        ResourceLimits::default(),
+    )
+}
+
+pub(crate) fn launch_attack_in_jailer_with_resource_limits(
+    name: &str,
+    run_dir: &Path,
+    uid: u32,
+    gid: u32,
+    bindings: Vec<Binding>,
+    limits: Option<Limits>,
+    resource_limits: ResourceLimits,
 ) -> Result<LiveAttack, Box<dyn std::error::Error>> {
     std::fs::create_dir(run_dir)?;
     let stdio_log = run_dir.join("attack-runner.log");
@@ -110,7 +147,7 @@ pub(crate) fn launch_attack_in_jailer(
         gid,
         bindings,
         sockets: vec![JailerSocket::Firecracker],
-        resource_limits: ResourceLimits::default(),
+        resource_limits,
         new_pid_ns: false,
         daemonize: false,
         new_cgroup_ns: false,

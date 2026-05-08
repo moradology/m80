@@ -152,3 +152,5 @@ hands a config in and gets back a launchable chroot — or a typed error.
   bind a nonlocal host-only address must all exit non-zero. Cross-tenant
   attempts to read/write/list peer-private state, read peer network state,
   signal the peer pid, or bind-mount the peer run-dir must all exit non-zero.
+  Resource exhaustion attempts to exceed file descriptors, pids, memory, or
+  file-size limits must all exit non-zero after cgroup enrollment.

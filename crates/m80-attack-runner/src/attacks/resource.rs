@@ -1,9 +1,10 @@
 //! Bounded resource-exhaustion attack attempts.
 
 use std::fs::File;
+use std::io::Write;
 use std::thread;
 
-use crate::{blocked, AttackBlocked, AttackResult};
+use crate::{blocked, AttackResult};
 
 pub(crate) fn open_many_file_descriptors() -> AttackResult {
     let mut files = Vec::new();
@@ -28,17 +29,24 @@ pub(crate) fn spawn_many_threads() -> AttackResult {
 }
 
 pub(crate) fn allocate_large_memory() -> AttackResult {
-    let allocation = Vec::<u8>::with_capacity(1024 * 1024 * 1024);
-    if allocation.capacity() >= 1024 * 1024 * 1024 {
-        Ok(())
-    } else {
-        Err(AttackBlocked::new("allocator returned smaller capacity"))
+    let mut chunks = Vec::new();
+    for index in 0..512 {
+        let mut chunk = vec![0_u8; 1024 * 1024];
+        let last = chunk.len() - 1;
+        chunk[0] = index as u8;
+        chunk[last] = index as u8;
+        chunks.push(chunk);
     }
+    Ok(())
 }
 
 pub(crate) fn create_large_tmp_file() -> AttackResult {
-    let path = "/tmp/m80-attack-runner-large-file";
-    let file = File::create(path).map_err(|err| blocked(format!("create {path}"), err))?;
-    file.set_len(1024 * 1024 * 1024)
-        .map_err(|err| blocked(format!("set_len {path}"), err))
+    let path = "m80-attack-runner-large-file";
+    let mut file = File::create(path).map_err(|err| blocked(format!("create {path}"), err))?;
+    let chunk = [0xA5_u8; 64 * 1024];
+    for _ in 0..4096 {
+        file.write_all(&chunk)
+            .map_err(|err| blocked(format!("write {path}"), err))?;
+    }
+    Ok(())
 }
