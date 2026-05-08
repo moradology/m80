@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use common::RunDirDumpGuard;
-use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
+use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecRequest, ExecStatus};
 use serde_json::Value;
 
@@ -98,6 +98,62 @@ fn stop_disposition_force_records_force_kill() {
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
+fn forced_kill_ambiguous_blocks_release() {
+    let request_id = "req-force-kill-ambiguous";
+    let vm_id = unique_vm_id("force-kill-ambiguous");
+    let (backend, running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
+    let jailer_pid = jailer_pid(&run_dir);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+    let fault = EnvGuard::set(
+        "M80_TEST_FORCE_KILL_EPERM_FOR_PID",
+        &firecracker_pid.to_string(),
+    );
+
+    let err = match running.force_kill() {
+        Ok(stopped) => {
+            stopped.delete().expect("delete unexpected stopped sandbox");
+            panic!("forced-kill EPERM injection unexpectedly succeeded");
+        }
+        Err(err) => err,
+    };
+    let diagnostics = read_diagnostics(&run_dir);
+    let blocked_admission = backend
+        .admit(SandboxConfig {
+            vm_id: Some(unique_vm_id("force-kill-ambiguous-reuse")),
+            workspace: None,
+            network: NetworkPolicy::NoEgress,
+            vcpu_count: Some(1),
+            mem_size_mib: Some(512),
+            boot_args: None,
+            overlay_size_bytes: 512 * 1024 * 1024,
+            idle_timeout: None,
+            daemonize: false,
+            request_id: None,
+            preallocated_drive_slots: 0,
+            one_shot: false,
+        })
+        .expect_err("ambiguous force kill must keep the admission permit held");
+
+    drop(fault);
+    kill_pid_best_effort(firecracker_pid);
+    if jailer_pid != firecracker_pid {
+        kill_pid_best_effort(jailer_pid);
+    }
+    let _ = std::fs::remove_dir_all(&run_dir);
+
+    assert!(
+        matches!(err, FcError::Io(ref e) if e.kind() == std::io::ErrorKind::PermissionDenied),
+        "expected injected EPERM/PermissionDenied, got {err:?}"
+    );
+    assert!(matches!(
+        blocked_admission,
+        FcError::AdmissionRefused { .. }
+    ));
+    assert_diagnostics_message_contains(&diagnostics, "ForcedKillAmbiguous");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
 fn stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete() {
     let request_id = "req-stop-unreachable-guestd";
     let vm_id = unique_vm_id("stop-unreachable-guestd");
@@ -141,16 +197,23 @@ fn stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete(
 }
 
 fn firecracker_pid(run_dir: &Path) -> u32 {
+    jailer_state_pid(run_dir, "firecracker_pid")
+}
+
+fn jailer_pid(run_dir: &Path) -> u32 {
+    jailer_state_pid(run_dir, "jailer_pid")
+}
+
+fn jailer_state_pid(run_dir: &Path, key: &str) -> u32 {
     let state_path = run_dir.join("jailer-state.json");
     let state: Value = serde_json::from_str(
         &std::fs::read_to_string(&state_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", state_path.display())),
     )
     .expect("jailer-state.json parses");
-    state["firecracker_pid"]
+    state[key]
         .as_u64()
-        .unwrap_or_else(|| panic!("firecracker_pid missing from {}", state_path.display()))
-        as u32
+        .unwrap_or_else(|| panic!("{key} missing from {}", state_path.display())) as u32
 }
 
 fn process_exists(pid: u32) -> bool {
@@ -173,6 +236,20 @@ fn wait_dead(pid: u32) {
         !process_exists(pid),
         "firecracker pid {pid} should be gone after stop disposition"
     );
+}
+
+fn kill_pid_best_effort(pid: u32) {
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(pid as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if !process_exists(pid) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 fn exec_sh(running: &mut m80_firecracker::RunningSandbox, script: &str) {
@@ -218,4 +295,39 @@ fn assert_exit_reason(run_dir: &Path, request_id: &str, message: &str, reason: &
         }),
         "missing stop disposition message={message:?} reason={reason:?}; events={events:#?}"
     );
+}
+
+fn assert_diagnostics_message_contains(events: &[Value], needle: &str) {
+    assert!(
+        events.iter().any(|event| {
+            event["event_kind"] == "lifecycle"
+                && event["phase"] == "Stop"
+                && event["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains(needle))
+        }),
+        "missing diagnostics message containing {needle:?}; events={events:#?}"
+    );
+}
+
+struct EnvGuard {
+    key: &'static str,
+    old: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let old = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, old }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.old {
+            Some(old) => std::env::set_var(self.key, old),
+            None => std::env::remove_var(self.key),
+        }
+    }
 }

@@ -35,6 +35,13 @@ release have run. The stopped handle keeps ownership of the run directory until
 the caller chooses `delete()` or `preserve_for_triage()`. After `delete()`, the
 run directory is gone and the admission permit is available for another sandbox.
 
+If the host cannot prove the forced kill completed, cleanup release is blocked.
+`RunningSandbox::force_kill` records
+`CleanupReleaseBlocker::ForcedKillAmbiguous` in diagnostics, returns the
+underlying kill error, and intentionally does not release the admission permit.
+That keeps the host from reusing capacity while an unproven Firecracker process
+may still own the run directory or jail resources.
+
 ## Idempotent Stop
 
 Stop is type-state guarded rather than runtime-idempotent. `RunningSandbox::stop`
@@ -48,4 +55,5 @@ run-root recovery.
 
 - `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_disposition_normal_records_normal_stop`
 - `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_disposition_force_records_force_kill`
+- `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::forced_kill_ambiguous_blocks_release`
 - `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete`

@@ -11,6 +11,9 @@ All notable changes to m80 are documented here. Format roughly follows
   phase_5b failure after jailer launch and verifies `FcError::Cgroup`, fake
   Firecracker process cleanup, partial run-dir removal, and admission permit
   reuse.
+- Added forced-kill ambiguity coverage and behavior: an unproven SIGKILL now
+  records `CleanupReleaseBlocker::ForcedKillAmbiguous` and keeps the admission
+  permit held instead of silently releasing capacity.
 
 ### Added — malicious guestd test harness (m80-g0v8.12.1)
 

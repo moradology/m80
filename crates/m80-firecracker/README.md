@@ -23,7 +23,10 @@ Created → Running → Stopped → (Deleted | preserved-for-triage)
 Each state is a distinct Rust type (`Sandbox`, `RunningSandbox`,
 `StoppedSandbox`); transitions consume the prior handle so callers can't
 double-stop or exec on a stopped VM. `force_kill` collapses Running →
-Stopped while preserving the run-dir for offline inspection.
+Stopped while preserving the run-dir for offline inspection. If the host cannot
+prove the forced kill completed, `force_kill` returns the kill error, records
+`CleanupReleaseBlocker::ForcedKillAmbiguous`, and does not release the
+admission permit.
 
 The Created → Running transition runs the strict 12-phase preboot pipeline
 internally (via `Sandbox::launch`). Phases are sub-steps, not states —

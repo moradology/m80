@@ -20,12 +20,14 @@ use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, Sn
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::diagnostics::phase_event;
-use crate::error::{ConfigError, FcError, StopDisposition};
+use crate::error::{CleanupReleaseBlocker, ConfigError, FcError, StopDisposition};
 use crate::types::{RunningSandbox, StoppedSandbox};
 
 /// Per-attempt deadline for the shutdown vsock round-trip (open UDS,
 /// send request, read response).
 const SHUTDOWN_RPC_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(debug_assertions)]
+const FORCE_KILL_EPERM_FOR_PID_ENV: &str = "M80_TEST_FORCE_KILL_EPERM_FOR_PID";
 
 const SNAPSHOT_BIND_DEST: &str = "snapshot";
 
@@ -206,9 +208,17 @@ impl RunningSandbox {
 
         match force_kill_disposition() {
             StopDisposition::HostForceKill => {
-                kill_and_reap_pid(self.firecracker.firecracker_pid)?;
+                if let Err(err) = kill_and_reap_pid(self.firecracker.firecracker_pid) {
+                    self.record_forced_kill_ambiguous(&err);
+                    std::mem::forget(self);
+                    return Err(err);
+                }
                 if self.firecracker.jailer_pid != self.firecracker.firecracker_pid {
-                    kill_and_reap_pid(self.firecracker.jailer_pid)?;
+                    if let Err(err) = kill_and_reap_pid(self.firecracker.jailer_pid) {
+                        self.record_forced_kill_ambiguous(&err);
+                        std::mem::forget(self);
+                        return Err(err);
+                    }
                 }
             }
             StopDisposition::GuestdShutdownThenFirecrackerKill => {
@@ -265,6 +275,19 @@ impl RunningSandbox {
             run_root,
             diagnostics,
         })
+    }
+
+    fn record_forced_kill_ambiguous(&mut self, err: &FcError) {
+        crate::diagnostics::record_owned(
+            &mut self.diagnostics,
+            Phase::Stop,
+            &self.vm_id,
+            self.request_id.as_deref(),
+            &format!(
+                "cleanup release blocked: {:?}: {err}",
+                CleanupReleaseBlocker::ForcedKillAmbiguous
+            ),
+        );
     }
 }
 
@@ -532,12 +555,28 @@ pub(crate) fn kill_pid(pid: u32) -> Result<(), FcError> {
     if pid == 0 {
         return Ok(());
     }
+    fail_kill_pid_if_requested(pid)?;
 
     match kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {
         Ok(()) => Ok(()),
         Err(Errno::ESRCH) => Ok(()), // Process already gone.
         Err(e) => Err(FcError::Io(std::io::Error::from_raw_os_error(e as i32))),
     }
+}
+
+#[cfg(debug_assertions)]
+fn fail_kill_pid_if_requested(pid: u32) -> Result<(), FcError> {
+    if std::env::var(FORCE_KILL_EPERM_FOR_PID_ENV).ok().as_deref() == Some(&pid.to_string()) {
+        return Err(FcError::Io(std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied,
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(debug_assertions))]
+fn fail_kill_pid_if_requested(_pid: u32) -> Result<(), FcError> {
+    Ok(())
 }
 
 /// Send `SIGKILL` to `pid` and reap it when it is one of this process's
