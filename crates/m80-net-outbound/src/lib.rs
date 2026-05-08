@@ -30,9 +30,11 @@ pub use dns::{
     DnsCommandOutput, DnsDiscoveryOps,
 };
 pub use injection::{
-    inject_guest_network_config, inject_guest_network_config_with_ops,
-    CommandGuestNetworkConfigOps, GuestNetworkConfig, GuestNetworkConfigOps, M80_NETWORKD_FILE,
-    M80_RESOLVED_FILE, SYSTEMD_NETWORK_DIR, SYSTEMD_RESOLVED_CONF_DIR,
+    build_pid_one_network_cmdline, inject_guest_network_config,
+    inject_guest_network_config_with_ops, prepare_pid_one_network_cmdline,
+    prepare_pid_one_network_cmdline_with_ops, CommandGuestNetworkConfigOps, GuestNetworkConfig,
+    GuestNetworkConfigOps, PidOneNetworkCmdline, M80_NETWORKD_FILE, M80_RESOLVED_FILE,
+    SYSTEMD_NETWORK_DIR, SYSTEMD_RESOLVED_CONF_DIR,
 };
 pub use iptables::{
     apply_outbound_nat_policy, apply_outbound_nat_policy_with_ops, outbound_nat_filter_chain,

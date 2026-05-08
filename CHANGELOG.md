@@ -5,6 +5,16 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — PID-1 outbound network configuration (m80-mx2t.4.2)
+
+- `m80-guestd` PID-1 mode now parses bounded `m80.net.*` kernel cmdline
+  tokens, configures the guest interface directly through rtnetlink, adds the
+  default route, and writes `/etc/resolv.conf` after the overlay pivot.
+- `m80-net-outbound` now exposes a current-image PID-1 cmdline preparation
+  path that discovers admitted DNS, records configured network state, and
+  returns deterministic tokens for launch wiring. The older debugfs
+  networkd/resolved injection path is documented as systemd-image-only.
+
 ### Added — OutboundNat real-host entrypoints (m80-mx2t.4)
 
 - `m80-net-outbound` now exposes real-host wrappers for bridge/TAP realize,

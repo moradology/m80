@@ -45,6 +45,8 @@ pub fn enter_pid_one_mode(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
     boot_timer.mark("pseudo_fs_mounted");
     mount_overlay_and_pivot(boot_timer).context("overlay mount and pivot_root")?;
     boot_timer.mark("overlay_pivot_complete");
+    crate::pid_one_network::configure_from_proc_cmdline().context("outbound network setup")?;
+    boot_timer.mark("network_configured");
     mount_workspace_if_present(boot_timer).context("workspace mount")?;
     boot_timer.mark("pid1_setup_complete");
     Ok(())

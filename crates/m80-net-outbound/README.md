@@ -80,11 +80,18 @@ Sequestering it has three benefits:
   `/dev/net/tun`; m80 then manages the resulting link through rtnetlink.
   This split is intentional: Linux `tun.c` allows rtnetlink deletion and
   introspection for TUN/TAP links, but not creation.
-- `inject_guest_network_config(state, runtime_rootfs)` discovers admitted
-  public IPv4 DNS resolvers, writes the m80 systemd-networkd unit and
-  systemd-resolved drop-in into the supplied per-VM runtime rootfs ext4
-  image via `debugfs`, then records `dns_resolvers` and
-  `runtime_rootfs_configured=true` back to `<run_dir>/network-state.json`.
+- `prepare_pid_one_network_cmdline(state)` is the current Ubuntu/Minimal
+  PID-1 guest network path. It discovers admitted public IPv4 DNS resolvers,
+  records `dns_resolvers` and `runtime_rootfs_configured=true` back to
+  `<run_dir>/network-state.json`, and returns deterministic `m80.net.*`
+  kernel command-line tokens for `m80-guestd` to consume after its overlay
+  pivot.
+- `inject_guest_network_config(state, runtime_rootfs)` is retained for a
+  future systemd-image mode. It discovers admitted public IPv4 DNS resolvers,
+  writes the m80 systemd-networkd unit and systemd-resolved drop-in into the
+  supplied per-VM runtime rootfs ext4 image via `debugfs`, then records
+  `dns_resolvers` and `runtime_rootfs_configured=true` back to
+  `<run_dir>/network-state.json`.
 - `apply_outbound_nat_policy(state)` performs only the host firewall
   phase. The VM and bridge state must both be Ready before policy
   installation begins, and guest network configuration must already have
@@ -137,8 +144,14 @@ Sequestering it has three benefits:
   admission helpers.
 - `inject_guest_network_config(...)` and
   `inject_guest_network_config_with_ops(...)` — host-driven guest
-  networkd/resolved file injection into a runtime ext4 image; the
-  `_with_ops` variant is the deterministic debugfs/DNS seam.
+  networkd/resolved file injection into a runtime ext4 image for systemd
+  image mode; the `_with_ops` variant is the deterministic debugfs/DNS seam.
+- `prepare_pid_one_network_cmdline(...)` and
+  `prepare_pid_one_network_cmdline_with_ops(...)` — current PID-1 guest
+  network config preparation; discovers DNS, updates the network state file,
+  and returns deterministic `m80.net.*` cmdline tokens.
+- `build_pid_one_network_cmdline(...)` and `PidOneNetworkCmdline` — pure
+  renderer for the current PID-1 command-line token shape.
 - `cleanup_vm(vm_id, run_root) -> Result<(), NetError>`.
 - `cleanup_vm_with_ops(...)` — deterministic test seam for VM policy + TAP
   cleanup.
@@ -194,8 +207,9 @@ Sequestering it has three benefits:
 - **No outbound-rate-limiting / QoS.** v0.1 is connectivity, not
   shaping.
 - **No port forwarding.** Inbound is out of scope.
-- **No DHCP.** Static IPv4 is injected via systemd-networkd in the
-  guest rootfs clone; the host runs no DHCP server.
+- **No DHCP.** Static IPv4 is supplied as PID-1 cmdline tokens for current
+  images or systemd-networkd files for future systemd image mode; the host
+  runs no DHCP server.
 - **No DNS name allowlist yet.** The current policy admits DNS resolvers and
   enforces CIDR/IP rules. Domain allowlisting requires an explicit DNS proxy
   design; see `docs/behaviors/network-outbound-nat/dns-name-allowlist.md`.
@@ -232,9 +246,10 @@ Sequestering it has three benefits:
 - DNS discovery: tests pin `resolvectl dns` before `/etc/resolv.conf`
   fallback, public-IPv4 admission, and rejection of private/link-local/
   loopback/CGN/documentation/benchmark/reserved resolver addresses.
-- Guest network injection: tests pin the rendered `10-m80-outbound.network`
-  and `10-m80-dns.conf` contents, debugfs directory/write calls, network
-  state updates, and the absence of guest-daemon networking writes.
+- Guest network injection: tests pin the current PID-1 cmdline tokens, DNS
+  discovery/state updates, guest cmdline parsing, rtnetlink/resolv.conf
+  operation ordering, and the retained systemd-image
+  `10-m80-outbound.network` / `10-m80-dns.conf` writer.
 - iptables policy: command-recording tests pin sysctl ordering, chain
   naming, DNS accept/reject rules, private exception accepts,
   permanent-deny rejects, default ACCEPT placement, FORWARD inserts, NAT

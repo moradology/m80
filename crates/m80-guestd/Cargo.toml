@@ -26,6 +26,10 @@ portable-pty.workspace = true
 scopeguard.workspace = true
 thiserror.workspace = true
 vsock.workspace = true
+futures-util.workspace = true
+ipnet.workspace = true
+rtnetlink.workspace = true
+tokio = { workspace = true, features = ["net", "rt"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -700,12 +700,16 @@ name = "m80-guestd"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "futures-util",
+ "ipnet",
  "m80-proto",
  "nix 0.29.0",
  "portable-pty",
+ "rtnetlink",
  "scopeguard",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "vsock",
 ]
 

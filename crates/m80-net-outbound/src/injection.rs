@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::{
-    discover_dns_resolvers_with_ops, write_vm_network_state_record, DnsCommandOutput,
-    DnsDiscoveryOps, NetError, SetupPhase, VmNetworkStateRecord,
+    discover_dns_resolvers_with_ops, write_vm_network_state_record, CommandDnsDiscoveryOps,
+    DnsCommandOutput, DnsDiscoveryOps, NetError, SetupPhase, VmNetworkStateRecord,
 };
 
 /// systemd-networkd directory inside the runtime rootfs image.
@@ -27,6 +27,13 @@ pub struct GuestNetworkConfig {
     pub networkd: String,
     /// Contents of `10-m80-dns.conf`.
     pub resolved: String,
+}
+
+/// Kernel command-line tokens consumed by `m80-guestd` PID-1 networking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PidOneNetworkCmdline {
+    /// Tokens to append to the guest kernel command line.
+    pub args: Vec<String>,
 }
 
 /// Host seam for writing guest network configuration into an ext4 image.
@@ -93,6 +100,60 @@ pub fn inject_guest_network_config_with_ops(
     state.dns_resolvers = resolvers;
     state.runtime_rootfs_configured = true;
     write_vm_network_state_record(&state.run_dir, state)
+}
+
+/// Discover DNS and prepare PID-1 network command-line tokens.
+pub fn prepare_pid_one_network_cmdline(
+    state: &mut VmNetworkStateRecord,
+) -> Result<PidOneNetworkCmdline, NetError> {
+    let mut ops = CommandDnsDiscoveryOps;
+    prepare_pid_one_network_cmdline_with_ops(&mut ops, state)
+}
+
+/// Discover DNS and prepare PID-1 network command-line tokens through a seam.
+pub fn prepare_pid_one_network_cmdline_with_ops(
+    ops: &mut impl DnsDiscoveryOps,
+    state: &mut VmNetworkStateRecord,
+) -> Result<PidOneNetworkCmdline, NetError> {
+    validate_ready_state(state)?;
+    let resolvers = discover_dns_resolvers_with_ops(ops)?;
+    state.dns_resolvers = resolvers;
+    state.runtime_rootfs_configured = true;
+    let cmdline = build_pid_one_network_cmdline(state)?;
+    write_vm_network_state_record(&state.run_dir, state)?;
+    Ok(cmdline)
+}
+
+/// Build the `m80.net.*` kernel command-line tokens for PID-1 network setup.
+pub fn build_pid_one_network_cmdline(
+    state: &VmNetworkStateRecord,
+) -> Result<PidOneNetworkCmdline, NetError> {
+    validate_ready_state(state)?;
+    if state.dns_resolvers.is_empty() {
+        return Err(NetError::NoUsableDnsResolvers);
+    }
+    Ok(PidOneNetworkCmdline {
+        args: vec![
+            "m80.net=outbound".to_owned(),
+            "m80.net.iface=eth0".to_owned(),
+            format!("m80.net.mac={}", state.guest_mac),
+            format!(
+                "m80.net.ipv4={}/{}",
+                state.guest_ipv4,
+                state.bridge.cidr.prefix_len()
+            ),
+            format!("m80.net.gateway={}", state.bridge.gateway_ipv4),
+            format!(
+                "m80.net.dns={}",
+                state
+                    .dns_resolvers
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ],
+    })
 }
 
 /// Build the systemd-networkd and systemd-resolved file contents.

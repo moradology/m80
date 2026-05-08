@@ -34,10 +34,11 @@ Keeping the guest small has direct benefits:
 - **PID-1 mode** is detected at startup (`getpid() == 1`). When active:
   duplicate stdout and stderr to `/dev/console`, install a panic hook
   that exits non-zero, mount `/dev/shm` and `/dev/pts`, execute the overlay+pivot startup sequence (see
-  below), and poll-reap orphaned children between vsock requests so
-  re-parented orphans don't accumulate. No SIGCHLD or SIGTERM handlers
-  — the workspace forbids `unsafe` and the firecracker host stops the
-  VM with SIGKILL on the outside.
+  below), configure outbound networking from bounded `m80.net.*` kernel
+  cmdline tokens when requested, and poll-reap orphaned children between vsock
+  requests so re-parented orphans don't accumulate. No SIGCHLD or SIGTERM
+  handlers — the workspace forbids `unsafe` and the firecracker host stops
+  the VM with SIGKILL on the outside.
 - On startup: bind vsock port (default `m80_proto::GUEST_PORT_DEFAULT`),
   emit a structured ready log containing `m80_proto::READY_MARKER_DEFAULT`,
   connect back to the host ready port, then loop on `accept()`.
@@ -266,7 +267,8 @@ Behavior details:
 
 ### PID-1 overlay+pivot startup sequence
 
-Implements `docs/design/storage-overlay.md §3.1` (11-step pseudocode).
+Extends `docs/design/storage-overlay.md §3.1` with m80 PID-1 workspace and
+network setup.
 Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 
 1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs), `/dev/shm` (tmpfs `mode=1777`), and `/dev/pts` (devpts `gid=5,mode=620,ptmxmode=666`, no `MS_NODEV` so `/dev/pts/ptmx` can be opened). `EBUSY` (kernel pre-mounted) is accepted as success, and `/dev/ptmx` is normalized to `pts/ptmx`.
@@ -279,7 +281,12 @@ Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 8. Bind-mount `/proc` (`MS_BIND|MS_REC`), `/sys` (`MS_BIND`), `/dev` (`MS_BIND|MS_REC`) into `/merged/{proc,sys,dev}` so they survive pivot. `/dev` is recursive so the nested `/dev/pts` devpts mount remains available for PTY allocation after pivot.
 9. Apply `MS_SLAVE|MS_REC` on `/` and `MS_BIND|MS_REC` of `/merged` onto itself (required by `pivot_root(".", ".")`).
 10. Call `pivot_rootfs("/merged")` — lifted verbatim from `kata-containers/src/agent/rustjail/src/mount.rs:523-559` (Apache-2.0, © 2019 Ant Financial). Uses `defer!` (scopeguard) for FD cleanup.
-11. If the boot cmdline contains `m80.workspace=1`, mount `/dev/vdc`
+11. If the boot cmdline contains `m80.net=outbound`, parse the accompanying
+    `m80.net.iface`, `m80.net.mac`, `m80.net.ipv4`, `m80.net.gateway`, and
+    `m80.net.dns` tokens. Configure the interface directly through rtnetlink,
+    bring it up, add the default route, and write `/etc/resolv.conf` in the
+    pivoted root. If the outbound flag is absent, skip this step.
+12. If the boot cmdline contains `m80.workspace=1`, mount `/dev/vdc`
     (workspace scratch ext4) at `/workspace` **inside the pivoted root**.
     Skipped if the flag is absent/zero or if `/dev/vdc` does not exist
     (workspace is optional).
@@ -300,7 +307,7 @@ contract. `m80-guestd` checks them rather than creating them at boot.
   daemon does not mount anything itself.
 - **Minimal image (PID-1 mode)**: when the host boot cmdline contains
   `m80.workspace=1`, m80-guestd mounts `/dev/vdc` → `/workspace` itself
-  (step 11 above) after `pivot_root`, inside the merged overlayfs root. If the
+  (step 12 above) after `pivot_root`, inside the merged overlayfs root. If the
   flag is absent/zero, the mount is skipped before checking `/dev/vdc`; this
   prevents preallocated hotplug slots from being mistaken for a workspace
   drive. If the flag is set but `/dev/vdc` does not exist, the mount is skipped

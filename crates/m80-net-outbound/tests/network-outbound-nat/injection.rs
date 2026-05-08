@@ -1,8 +1,9 @@
 use std::net::Ipv4Addr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use m80_net_outbound::{
-    inject_guest_network_config_with_ops, planned_bridge_state, planned_vm_network_state,
+    build_pid_one_network_cmdline, inject_guest_network_config_with_ops, planned_bridge_state,
+    planned_vm_network_state, prepare_pid_one_network_cmdline_with_ops,
     read_vm_network_state_record, DnsCommandOutput, DnsDiscoveryOps, GuestNetworkConfigOps,
     NetError, OutboundIntent, SetupPhase, VmNetworkStateRecord, M80_NETWORKD_FILE,
     M80_RESOLVED_FILE,
@@ -64,32 +65,62 @@ fn resolved_dropin_injected_with_admitted_dns() {
 }
 
 #[test]
-fn guest_daemon_does_not_touch_networking() {
-    let guestd_src = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("m80-guestd")
-        .join("src");
+fn pid_one_cmdline_tokens_include_static_ip_mac_gateway_and_dns() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut state = ready_state(temp.path());
+    state.dns_resolvers = vec![Ipv4Addr::new(1, 1, 1, 1), Ipv4Addr::new(8, 8, 8, 8)];
 
-    for path in rust_files(&guestd_src) {
-        let text = std::fs::read_to_string(&path).unwrap();
-        for forbidden in [
-            "/etc/systemd/network",
-            "/etc/resolv.conf",
-            "resolvectl",
-            "systemd-networkd",
-            "10-m80-outbound",
-            "10-m80-dns",
-            "ip addr",
-            "ip link",
-        ] {
-            assert!(
-                !text.contains(forbidden),
-                "{} must not contain guest networking write path {forbidden:?}",
-                path.display()
-            );
-        }
-    }
+    let cmdline = build_pid_one_network_cmdline(&state).unwrap();
+
+    assert_eq!(
+        cmdline.args,
+        vec![
+            "m80.net=outbound".to_owned(),
+            "m80.net.iface=eth0".to_owned(),
+            format!("m80.net.mac={}", state.guest_mac),
+            format!(
+                "m80.net.ipv4={}/{}",
+                state.guest_ipv4,
+                state.bridge.cidr.prefix_len()
+            ),
+            format!("m80.net.gateway={}", state.bridge.gateway_ipv4),
+            "m80.net.dns=1.1.1.1,8.8.8.8".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn pid_one_cmdline_requires_discovered_dns() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = ready_state(temp.path());
+
+    let err = build_pid_one_network_cmdline(&state).unwrap_err();
+
+    assert!(matches!(err, NetError::NoUsableDnsResolvers));
+}
+
+#[test]
+fn pid_one_prepare_discovers_dns_and_records_configured_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut state = ready_state(temp.path());
+    let mut ops = FakeGuestConfigOps::with_resolvectl("Global: 9.9.9.9 10.0.0.1 1.1.1.1\n");
+
+    let cmdline = prepare_pid_one_network_cmdline_with_ops(&mut ops, &mut state).unwrap();
+
+    assert_eq!(
+        cmdline.args.last().map(String::as_str),
+        Some("m80.net.dns=9.9.9.9,1.1.1.1")
+    );
+    assert_eq!(
+        state.dns_resolvers,
+        [Ipv4Addr::new(9, 9, 9, 9), Ipv4Addr::new(1, 1, 1, 1)]
+    );
+    assert!(state.runtime_rootfs_configured);
+    assert!(
+        read_vm_network_state_record(&state.run_dir)
+            .unwrap()
+            .runtime_rootfs_configured
+    );
 }
 
 fn ready_state(run_root: &Path) -> VmNetworkStateRecord {
@@ -105,22 +136,6 @@ fn ready_state(run_root: &Path) -> VmNetworkStateRecord {
     let mut state = planned_vm_network_state(&intent, "vm-a", run_root, &run_dir, bridge);
     state.setup_phase = SetupPhase::Ready;
     state
-}
-
-fn rust_files(dir: &Path) -> Vec<PathBuf> {
-    std::fs::read_dir(dir)
-        .unwrap()
-        .flat_map(|entry| {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                rust_files(&path)
-            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-                vec![path]
-            } else {
-                Vec::new()
-            }
-        })
-        .collect()
 }
 
 struct FakeGuestConfigOps {

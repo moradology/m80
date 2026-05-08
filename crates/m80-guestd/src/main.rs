@@ -10,6 +10,7 @@ mod connection;
 mod guest_log;
 mod liveness;
 mod pid_one;
+mod pid_one_network;
 mod uevent;
 
 use guest_log::{BootTimer, GuestLogPhase};
