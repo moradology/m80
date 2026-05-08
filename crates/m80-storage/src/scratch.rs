@@ -274,6 +274,7 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
 
         if ft.is_dir() {
             fs::create_dir(&dst_path).map_err(|e| io_err(&dst_path, e))?;
+            fs::set_permissions(&dst_path, meta.permissions()).map_err(|e| io_err(&dst_path, e))?;
             copy_tree(root, &src_path, dst_root)?;
         } else if ft.is_file() {
             fs::copy(&src_path, &dst_path).map_err(|e| io_err(&src_path, e))?;
@@ -375,6 +376,7 @@ fn walk_for_extract(
 
         if ft.is_dir() {
             fs::create_dir(&dst_path).map_err(|e| io_err(&dst_path, e))?;
+            fs::set_permissions(&dst_path, meta.permissions()).map_err(|e| io_err(&dst_path, e))?;
             staged.push(rel.to_path_buf());
             walk_for_extract(
                 mount_root,
