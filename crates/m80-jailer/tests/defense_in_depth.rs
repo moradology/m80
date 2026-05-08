@@ -130,6 +130,36 @@ fn jailed_attacker_cannot_change_hostname() {
     assert_attack_blocked("change_hostname");
 }
 
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_open_raw_socket() {
+    assert_attack_blocked("open_raw_socket");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_open_raw_packet_socket() {
+    assert_attack_blocked("raw_packet_inject");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_mutate_links_over_netlink() {
+    assert_attack_blocked("send_arbitrary_netlink");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_bind_host_only_address() {
+    assert_attack_blocked("bind_on_host_interface");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_mutate_routes_over_netlink() {
+    assert_attack_blocked("privileged_route_mutation");
+}
+
 struct AttackRun {
     exit_code: Option<i32>,
 }

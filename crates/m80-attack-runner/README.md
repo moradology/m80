@@ -31,3 +31,10 @@ Use environment variables for harness-provided host or tenant sentinel paths:
 
 Each attack returns `Ok(())` only when it observed the forbidden capability.
 Expected kernel or filesystem denials return `AttackBlocked`.
+
+Network attacks are split by the current m80 boundary. Ordinary TCP connect or
+listen probes model guest-egress policy and are not used by the compromised-VMM
+Layer 2 battery. The privileged network probes (`open_raw_socket`,
+`raw_packet_inject`, `send_arbitrary_netlink`, `bind_on_host_interface`, and
+`privileged_route_mutation`) are the stable names for jailer/capability-drop
+coverage.

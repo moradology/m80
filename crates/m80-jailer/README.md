@@ -138,4 +138,6 @@ hands a config in and gets back a launchable chroot — or a typed error.
   isolation: host PID status/cmdline/mountinfo observation, host-PID signal
   probes, and broad host process enumeration must all exit non-zero. Privilege
   escalation attempts to become uid/gid 0, retain capabilities, unshare/mount,
-  or change host identity must all exit non-zero.
+  or change host identity must all exit non-zero. Network hardening attempts to
+  open raw sockets, open packet sockets, mutate links/routes over netlink, or
+  bind a nonlocal host-only address must all exit non-zero.

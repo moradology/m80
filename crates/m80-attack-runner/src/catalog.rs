@@ -122,6 +122,31 @@ const ATTACKS: &[Attack] = &[
         network::listen_all_interfaces,
     ),
     Attack::new(
+        "open_raw_socket",
+        AttackCategory::Network,
+        network::open_raw_socket,
+    ),
+    Attack::new(
+        "raw_packet_inject",
+        AttackCategory::Network,
+        network::raw_packet_inject,
+    ),
+    Attack::new(
+        "send_arbitrary_netlink",
+        AttackCategory::Network,
+        network::send_arbitrary_netlink,
+    ),
+    Attack::new(
+        "bind_on_host_interface",
+        AttackCategory::Network,
+        network::bind_on_host_interface,
+    ),
+    Attack::new(
+        "privileged_route_mutation",
+        AttackCategory::Network,
+        network::privileged_route_mutation,
+    ),
+    Attack::new(
         "become_uid_zero",
         AttackCategory::Privilege,
         privilege::become_uid_zero,

@@ -17,6 +17,12 @@ All notable changes to m80 are documented here. Format roughly follows
   not private network namespace guarantees for a compromised Firecracker VMM
   process, and pinned `JoinNetns` as the explicit VMM netns placement mode.
 
+### Added — network operation attack battery (m80-g0v8.11.7)
+
+- Added attack-runner primitives and ignored jailer harness tests for privileged
+  network operations: raw sockets, packet sockets, netlink link mutation,
+  nonlocal bind, and route mutation.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`
