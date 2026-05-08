@@ -71,19 +71,24 @@ impl StoppedSandbox {
 mod tests {
     use std::sync::{Arc, Condvar, Mutex};
 
+    use crate::runroot::write_ownership_lock;
     use crate::types::{AdmissionPermit, StoppedSandbox};
 
     fn stopped_sandbox(run_root: &std::path::Path, vm_id: &str) -> StoppedSandbox {
         let semaphore = Arc::new((Mutex::new(0), Condvar::new()));
+        let run_dir = run_root.join(vm_id);
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let lease_guard = write_ownership_lock(&run_dir).unwrap();
         StoppedSandbox {
             vm_id: vm_id.to_string(),
             request_id: None,
-            run_dir: run_root.join(vm_id),
+            run_dir,
             scratch: None,
             permit: AdmissionPermit {
                 sem: semaphore,
                 limit: 1,
             },
+            lease_guard,
             run_root: run_root.to_path_buf(),
             diagnostics: None,
         }
@@ -108,6 +113,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let run_root = dir.path();
         let sandbox = stopped_sandbox(run_root, "vm-delete-missing");
+        std::fs::remove_dir_all(sandbox.run_dir()).unwrap();
 
         sandbox.delete().unwrap();
     }

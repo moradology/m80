@@ -12,6 +12,8 @@ use m80_firecracker_client::Client;
 use m80_jailer::{JailedFirecracker, MaterializedJail};
 use m80_storage::{Rootfs, Scratch};
 
+use crate::runroot::LeaseGuard;
+
 pub use m80_net_mode::NetworkPolicy;
 
 /// First-line Firecracker shape used by default and by snapshot timing proofs.
@@ -394,6 +396,9 @@ pub struct RunningSandbox {
     pub(crate) firecracker: JailedFirecracker,
     /// Admission permit; held for the lifetime of this sandbox.
     pub(crate) permit: AdmissionPermit,
+    /// Per-run-dir ownership lock; held until the run-dir is deleted or
+    /// preserved so same-vm_id launches cannot reuse live state.
+    pub(crate) lease_guard: LeaseGuard,
     /// Reference to the backend.
     pub(crate) backend: Arc<Backend>,
     /// Monotonic timestamp (nanos since an arbitrary epoch) of the last
@@ -456,6 +461,9 @@ pub struct StoppedSandbox {
     /// returned to the semaphore.
     #[allow(dead_code)]
     pub(crate) permit: AdmissionPermit,
+    /// Per-run-dir ownership lock carried from launch through delete/preserve.
+    #[allow(dead_code)]
+    pub(crate) lease_guard: LeaseGuard,
     /// Run-root path (needed for `preserve_for_triage`).
     pub(crate) run_root: PathBuf,
     /// Optional diagnostics writer carried across Running -> Stopped.

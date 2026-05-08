@@ -111,11 +111,9 @@ impl Sandbox {
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
 
-        // Phase 2: lease acquisition. NB: name the binding `_lease_guard`
-        // (suffix after underscore) — a bare `_lease` would drop the guard
-        // immediately at the end of the let-statement, removing the
-        // ownership.lock before phase 3 runs.
-        let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
+        // Phase 2: lease acquisition. Keep the guard inside RunningSandbox so
+        // ownership.lock covers the whole VM lifetime, not just launch.
+        let lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
         // Phase 3: storage prep. Artifact sha256 verification is owned by
         // m80-preflight before Backend construction, not by each launch.
@@ -353,6 +351,7 @@ impl Sandbox {
             client,
             firecracker,
             permit: self.permit,
+            lease_guard,
             backend: self.backend,
             last_activity_ns,
             active_execs,
@@ -418,7 +417,7 @@ impl Sandbox {
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
 
         // Phase 2: lease acquisition.
-        let _lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
+        let lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
         // Phase 3: storage prep (overlay + optional scratch — still needed
         // for the jailer bind-mount layout even on restore path).
@@ -612,6 +611,7 @@ impl Sandbox {
             client,
             firecracker,
             permit: self.permit,
+            lease_guard,
             backend: self.backend,
             last_activity_ns,
             active_execs,

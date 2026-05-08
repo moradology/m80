@@ -142,6 +142,7 @@ impl RunningSandbox {
             client: _client,
             firecracker: _firecracker,
             permit,
+            lease_guard,
             backend: _backend,
             last_activity_ns: _last_activity_ns,
             active_execs: _active_execs,
@@ -178,6 +179,7 @@ impl RunningSandbox {
             run_dir,
             scratch,
             permit,
+            lease_guard,
             run_root,
             diagnostics,
         })
@@ -226,6 +228,7 @@ impl RunningSandbox {
             client: _client,
             firecracker: _firecracker,
             permit,
+            lease_guard,
             backend: _backend,
             last_activity_ns: _last_activity_ns,
             active_execs: _active_execs,
@@ -258,6 +261,7 @@ impl RunningSandbox {
             run_dir,
             scratch,
             permit,
+            lease_guard,
             run_root,
             diagnostics,
         })

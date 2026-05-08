@@ -8,3 +8,5 @@ mod layout;
 mod recovery_loop;
 #[path = "concurrency/stale_detection.rs"]
 mod stale_detection;
+#[path = "concurrency/stop_launch.rs"]
+mod stop_launch;
