@@ -45,6 +45,18 @@ pub(super) fn unexpected_frame(
     })
 }
 
+pub(super) fn request_id_mismatch(
+    context: &'static str,
+    expected: &str,
+    got: Option<String>,
+) -> FcError {
+    FcError::Protocol(WireProtocolError::RequestIdMismatch {
+        context,
+        expected: expected.to_owned(),
+        got,
+    })
+}
+
 pub(super) fn sequence_mismatch(stream: &'static str, expected: u64, got: u64) -> FcError {
     FcError::Protocol(WireProtocolError::SequenceMismatch {
         stream,

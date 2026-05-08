@@ -47,6 +47,16 @@ pub enum WireProtocolError {
         /// Actual frame kind.
         got: String,
     },
+    /// Peer sent a response frame for a different active request.
+    #[error("request_id mismatch in {context}: expected {expected}, got {got:?}")]
+    RequestIdMismatch {
+        /// State or request that was receiving the frame.
+        context: &'static str,
+        /// Request id currently active on this channel.
+        expected: String,
+        /// Request id observed on the peer frame.
+        got: Option<String>,
+    },
     /// Peer disconnected before the request produced its required terminal frame.
     #[error("disconnect before terminal frame in {context}")]
     DisconnectBeforeTerminal {

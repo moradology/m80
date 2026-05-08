@@ -18,6 +18,8 @@ Open -> Data* -> Done|Error|Canceled
 Illegal transitions observed before the terminal frame fail closed:
 
 - A missing terminal frame before peer disconnect is `DisconnectBeforeTerminal`.
+- A response envelope whose `request_id` is missing or belongs to another
+  request is `RequestIdMismatch`.
 - Sequence gaps or repeats are `SequenceMismatch`.
 
 The host returns as soon as it receives the terminal frame for a request and
@@ -82,6 +84,9 @@ and host consumer.
 
 - `crates/m80-proto/tests/framing_parse_failure.rs` rejects malformed protobuf
   and unsupported versions on the active protobuf wire.
+- `crates/m80-firecracker/src/lifecycle/exec.rs::tests::response_frame_rejects_stale_request_id`,
+  `response_frame_rejects_missing_request_id`, and
+  `cancel_ack_rejects_stale_request_id` pin host-side stale response rejection.
 - `crates/m80-firecracker/src/lifecycle/exec.rs::tests::stream_sequence_gap_returns_protocol_error`
   and `stream_sequence_duplicate_returns_protocol_error` pin host-side exec and
   PTY sequence rejection.

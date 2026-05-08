@@ -217,7 +217,8 @@ impl RunningSandbox {
             let kind = frame.kind.clone();
             match kind.as_str() {
                 PAYLOAD_KIND_PTY_OUTPUT => {
-                    let chunk = decode_frame::<PtyOutput>(frame)?;
+                    let chunk =
+                        decode_frame_for_request::<PtyOutput>(frame, &request_id, "pty output")?;
                     if let Err(err) =
                         check_stream_sequence("pty_output", &mut expected_output_seq, chunk.seq)
                     {
@@ -237,7 +238,7 @@ impl RunningSandbox {
                     })?;
                 }
                 PAYLOAD_KIND_PTY_EXIT => {
-                    let exit = decode_frame::<PtyExit>(frame)?;
+                    let exit = decode_frame_for_request::<PtyExit>(frame, &request_id, "pty exit")?;
                     phase_event("pty_recv", &self.vm_id, t.elapsed());
                     self.last_activity_ns
                         .store(monotonic_ns(), Ordering::Relaxed);
@@ -250,7 +251,8 @@ impl RunningSandbox {
                     );
                     return Ok(exit);
                 }
-                PAYLOAD_KIND_CANCEL_RESPONSE => match decode_cancel_ack(frame, "pty")? {
+                PAYLOAD_KIND_CANCEL_RESPONSE => match decode_cancel_ack(frame, "pty", &request_id)?
+                {
                     CancelResponseDisposition::Cancelled => {
                         phase_event("pty_cancelled", &self.vm_id, t.elapsed());
                         self.last_activity_ns
@@ -403,7 +405,8 @@ impl RunningSandbox {
             let kind = frame.kind.clone();
             match kind.as_str() {
                 PAYLOAD_KIND_EXEC_STDOUT => {
-                    let chunk = decode_frame::<ExecStdout>(frame)?;
+                    let chunk =
+                        decode_frame_for_request::<ExecStdout>(frame, &request_id, "exec stdout")?;
                     if let Err(err) =
                         check_stream_sequence("exec_stdout", &mut expected_stdout_seq, chunk.seq)
                     {
@@ -423,7 +426,8 @@ impl RunningSandbox {
                     })?;
                 }
                 PAYLOAD_KIND_EXEC_STDERR => {
-                    let chunk = decode_frame::<ExecStderr>(frame)?;
+                    let chunk =
+                        decode_frame_for_request::<ExecStderr>(frame, &request_id, "exec stderr")?;
                     if let Err(err) =
                         check_stream_sequence("exec_stderr", &mut expected_stderr_seq, chunk.seq)
                     {
@@ -443,7 +447,8 @@ impl RunningSandbox {
                     })?;
                 }
                 PAYLOAD_KIND_EXEC_EXIT => {
-                    let exit = decode_frame::<ExecExit>(frame)?;
+                    let exit =
+                        decode_frame_for_request::<ExecExit>(frame, &request_id, "exec exit")?;
                     phase_event("exec_recv", &self.vm_id, t.elapsed());
                     self.last_activity_ns
                         .store(monotonic_ns(), Ordering::Relaxed);
@@ -456,37 +461,39 @@ impl RunningSandbox {
                     );
                     return Ok(exit);
                 }
-                PAYLOAD_KIND_CANCEL_RESPONSE => match decode_cancel_ack(frame, "exec")? {
-                    CancelResponseDisposition::Cancelled => {
-                        phase_event("exec_cancelled", &self.vm_id, t.elapsed());
-                        self.last_activity_ns
-                            .store(monotonic_ns(), Ordering::Relaxed);
-                        crate::diagnostics::record_owned(
-                            &mut self.diagnostics,
-                            Phase::Request,
-                            &self.vm_id,
-                            Some(request_id.as_str()),
-                            "exec request cancelled",
-                        );
-                        return Ok(cancelled_exit(
-                            started_at_unix_ms,
-                            stdout_total,
-                            stderr_total,
-                        ));
+                PAYLOAD_KIND_CANCEL_RESPONSE => {
+                    match decode_cancel_ack(frame, "exec", &request_id)? {
+                        CancelResponseDisposition::Cancelled => {
+                            phase_event("exec_cancelled", &self.vm_id, t.elapsed());
+                            self.last_activity_ns
+                                .store(monotonic_ns(), Ordering::Relaxed);
+                            crate::diagnostics::record_owned(
+                                &mut self.diagnostics,
+                                Phase::Request,
+                                &self.vm_id,
+                                Some(request_id.as_str()),
+                                "exec request cancelled",
+                            );
+                            return Ok(cancelled_exit(
+                                started_at_unix_ms,
+                                stdout_total,
+                                stderr_total,
+                            ));
+                        }
+                        CancelResponseDisposition::AlreadyExited => continue,
+                        CancelResponseDisposition::Failed(msg) => {
+                            record_cancel_ack_failed(
+                                &mut self.diagnostics,
+                                &self.vm_id,
+                                &request_id,
+                                "exec",
+                                &msg,
+                                t.elapsed(),
+                            );
+                            return Err(FcError::Config(ConfigError::Other(msg)));
+                        }
                     }
-                    CancelResponseDisposition::AlreadyExited => continue,
-                    CancelResponseDisposition::Failed(msg) => {
-                        record_cancel_ack_failed(
-                            &mut self.diagnostics,
-                            &self.vm_id,
-                            &request_id,
-                            "exec",
-                            &msg,
-                            t.elapsed(),
-                        );
-                        return Err(FcError::Config(ConfigError::Other(msg)));
-                    }
-                },
+                }
                 other => {
                     let err = super::protocol::unexpected_frame(
                         "streaming exec",
@@ -600,6 +607,7 @@ fn join_forwarder_with_timeout(
 }
 
 /// Result of decoding a `CANCEL_ACK` frame.
+#[derive(Debug)]
 enum CancelResponseDisposition {
     /// Guest confirmed the child was cancelled; caller should return a cancel exit.
     Cancelled,
@@ -612,9 +620,17 @@ enum CancelResponseDisposition {
 /// Decode a raw frame as `CancelResponse` and classify its status.
 fn decode_cancel_ack(
     frame: RawEnvelope,
-    request_kind: &str,
+    request_kind: &'static str,
+    request_id: &str,
 ) -> Result<CancelResponseDisposition, FcError> {
     let ack = decode_frame::<CancelResponse>(frame)?;
+    if ack.request_id != request_id {
+        return Err(super::protocol::request_id_mismatch(
+            request_kind,
+            request_id,
+            Some(ack.request_id),
+        ));
+    }
     Ok(match ack.status {
         CancelStatus::Cancelled => CancelResponseDisposition::Cancelled,
         CancelStatus::AlreadyExited => CancelResponseDisposition::AlreadyExited,
@@ -648,6 +664,21 @@ fn decode_frame<T: Payload>(frame: RawEnvelope) -> Result<T, FcError> {
         .decode::<T>()
         .map(|env| env.payload)
         .map_err(super::protocol::proto_error)
+}
+
+fn decode_frame_for_request<T: Payload>(
+    frame: RawEnvelope,
+    request_id: &str,
+    context: &'static str,
+) -> Result<T, FcError> {
+    if frame.request_id.as_deref() != Some(request_id) {
+        return Err(super::protocol::request_id_mismatch(
+            context,
+            request_id,
+            frame.request_id,
+        ));
+    }
+    decode_frame::<T>(frame)
 }
 
 fn check_stream_sequence(
@@ -954,6 +985,77 @@ mod tests {
                 expected: 1,
                 got: 0
             })
+        ));
+    }
+
+    #[test]
+    fn response_frame_rejects_stale_request_id() {
+        let frame = RawEnvelope::from_typed(Envelope::with_request_id(
+            ExecStdout {
+                seq: 0,
+                bytes: b"wrong request".to_vec(),
+            },
+            "stale-req".to_owned(),
+        ));
+
+        let err =
+            decode_frame_for_request::<ExecStdout>(frame, "active-req", "exec stdout").unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(crate::error::WireProtocolError::RequestIdMismatch {
+                context: "exec stdout",
+                expected,
+                got: Some(got),
+            }) if expected == "active-req" && got == "stale-req"
+        ));
+    }
+
+    #[test]
+    fn response_frame_rejects_missing_request_id() {
+        let frame = RawEnvelope::from_typed(Envelope::new(ExecExit {
+            status: ExecStatus::Completed,
+            exit_code: Some(0),
+            total_stdout_bytes: 0,
+            total_stderr_bytes: 0,
+            truncated: false,
+            timing: ExecTiming {
+                spawned_at_unix_ms: 1,
+                exited_at_unix_ms: 2,
+                spawn_ms: 0,
+                run_ms: 1,
+            },
+        }));
+
+        let err =
+            decode_frame_for_request::<ExecExit>(frame, "active-req", "exec exit").unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(crate::error::WireProtocolError::RequestIdMismatch {
+                context: "exec exit",
+                expected,
+                got: None,
+            }) if expected == "active-req"
+        ));
+    }
+
+    #[test]
+    fn cancel_ack_rejects_stale_request_id() {
+        let frame = RawEnvelope::from_typed(Envelope::new(CancelResponse {
+            request_id: "stale-req".to_owned(),
+            status: CancelStatus::Cancelled,
+        }));
+
+        let err = decode_cancel_ack(frame, "exec", "active-req").unwrap_err();
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(crate::error::WireProtocolError::RequestIdMismatch {
+                context: "exec",
+                expected,
+                got: Some(got),
+            }) if expected == "active-req" && got == "stale-req"
         ));
     }
 

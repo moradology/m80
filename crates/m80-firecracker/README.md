@@ -128,10 +128,10 @@ idempotent guest outcomes; `Failed` maps to `FcError::DriveHotplug`. Detach,
 protocol, or host cleanup failures consume and discard the VM.
 
 After a vsock channel is established, malformed protobuf, oversized frames,
-unsupported protocol versions, unexpected frame kinds, stream sequence gaps, and
-disconnects before a required terminal frame map to
-`FcError::Protocol(WireProtocolError::...)`. Transport setup failures remain
-`FcError::Vsock`.
+unsupported protocol versions, unexpected frame kinds, response `request_id`
+mismatches, stream sequence gaps, and disconnects before a required terminal
+frame map to `FcError::Protocol(WireProtocolError::...)`. Transport setup
+failures remain `FcError::Vsock`.
 
 `RunningSandbox::guest_metrics()` sends a direct `MetricsRequest` to
 m80-guestd and returns the fixed-shape guest CPU, memory, and daemon counter
