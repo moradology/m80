@@ -153,6 +153,11 @@ pub enum PreflightError {
     #[error("vhost-vsock unavailable")]
     VsockUnavailable,
 
+    /// Host TUN support is absent. m80 needs `/dev/net/tun` or the `tun`
+    /// module for TAP-backed outbound networking.
+    #[error("tun unavailable")]
+    TunUnavailable,
+
     /// Required kernel modules are not loaded/loadable.
     #[error("kernel modules missing: {missing:?}")]
     KernelModulesMissing {
@@ -258,6 +263,9 @@ impl PreflightError {
             }
             Self::VsockUnavailable => {
                 "load vhost_vsock with `sudo modprobe vhost_vsock` or ensure /dev/vhost-vsock exists"
+            }
+            Self::TunUnavailable => {
+                "load tun with `sudo modprobe tun` or ensure /dev/net/tun exists"
             }
             Self::KernelModulesMissing { .. } => {
                 "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"

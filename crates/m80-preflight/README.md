@@ -27,10 +27,10 @@ which is the right place for a security review to start.
      `vmx` or `svm`, so launch failures from disabled hardware
      virtualization surface before Firecracker startup.
   4. **Kernel modules / devices** — `bridge` and `tap` loaded (read from
-     `/proc/modules`), plus vhost-vsock available through either the
-     `vhost_vsock` module or `/dev/vhost-vsock`. v0.1 does not attempt to load
-     missing modules; the operator must `modprobe` them before running
-     preflight.
+     `/proc/modules`), TUN available through either the `tun` module or
+     `/dev/net/tun`, and vhost-vsock available through either the `vhost_vsock`
+     module or `/dev/vhost-vsock`. v0.1 does not attempt to load missing
+     modules; the operator must `modprobe` them before running preflight.
   5. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
@@ -99,7 +99,7 @@ which is the right place for a security review to start.
   `CAP_FOWNER`, `CAP_KILL`).
 - `PreflightError`: `UnsupportedHostPlatform { actual }`,
   `KvmUnavailable { path }`, `KvmNotWritable { path }`,
-  `KvmCpuExtensionMissing`, `VsockUnavailable`,
+  `KvmCpuExtensionMissing`, `VsockUnavailable`, `TunUnavailable`,
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's

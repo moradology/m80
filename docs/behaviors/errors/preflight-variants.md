@@ -36,6 +36,17 @@ Test:
 `crates/m80-preflight/src/checks.rs::tests::preflight_missing_vsock_module_typed`
 and `crates/m80-preflight/tests/error_hints.rs::vsock_unavailable_has_hint`.
 
+## tun-unavailable
+
+`m80-preflight` rejects a host without TUN support with
+`PreflightError::TunUnavailable`. This is distinct from the generic kernel
+module list because TUN may be available through `/dev/net/tun` even when the
+`tun` module is not listed in `/proc/modules`.
+
+Test:
+`crates/m80-preflight/src/checks.rs::tests::preflight_missing_tun_module_typed`
+and `crates/m80-preflight/tests/error_hints.rs::tun_unavailable_has_hint`.
+
 ## unsupported-host
 
 `m80-preflight` rejects non-Linux hosts with

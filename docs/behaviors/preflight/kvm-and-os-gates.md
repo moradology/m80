@@ -27,6 +27,11 @@ channel. Preflight accepts either a loaded `vhost_vsock` module in
 expose the device without a loadable module entry. If neither signal is present,
 preflight returns `PreflightError::VsockUnavailable`.
 
+The host must expose TUN for TAP-backed outbound networking. Preflight accepts
+either a loaded `tun` module in `/proc/modules` or an existing `/dev/net/tun`
+device. If neither signal is present, preflight returns
+`PreflightError::TunUnavailable`.
+
 ## Privilege Gate
 
 m80 accepts exactly two startup privilege shapes:
@@ -49,3 +54,4 @@ capabilities through the container runtime.
 - `crates/m80-preflight/src/lib.rs::classify_privilege`
 - `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs`
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_vsock_module_typed`
+- `crates/m80-preflight/src/checks.rs::tests::preflight_missing_tun_module_typed`

@@ -15,6 +15,7 @@ use crate::{
 };
 
 const KVM_PATH: &str = "/dev/kvm";
+const TUN_PATH: &str = "/dev/net/tun";
 const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
 
 const REQUIRED_KERNEL_MODULES: &[&str] = &["tap", "bridge"];
@@ -220,12 +221,13 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
         .collect();
 
     classify_vsock_availability(&loaded, std::path::Path::new(VHOST_VSOCK_PATH).exists())?;
+    classify_tun_availability(&loaded, std::path::Path::new(TUN_PATH).exists())?;
     classify_required_modules(&loaded)?;
 
     report.push(CheckRow {
         label: "Kernel modules".to_string(),
         passed: true,
-        detail: "tap, bridge loaded; vhost-vsock available".to_string(),
+        detail: "tap, bridge loaded; tun and vhost-vsock available".to_string(),
     });
     Ok(())
 }
@@ -238,6 +240,16 @@ fn classify_vsock_availability(
         return Ok(());
     }
     Err(PreflightError::VsockUnavailable)
+}
+
+fn classify_tun_availability(
+    loaded_modules: &[&str],
+    tun_device_exists: bool,
+) -> Result<(), PreflightError> {
+    if loaded_modules.contains(&"tun") || tun_device_exists {
+        return Ok(());
+    }
+    Err(PreflightError::TunUnavailable)
 }
 
 fn classify_required_modules(loaded: &[&str]) -> Result<(), PreflightError> {
@@ -294,6 +306,23 @@ mod tests {
     #[test]
     fn vhost_vsock_device_satisfies_vsock_preflight() {
         classify_vsock_availability(&["tap", "bridge"], true).unwrap();
+    }
+
+    #[test]
+    fn preflight_missing_tun_module_typed() {
+        let err = classify_tun_availability(&["tap", "bridge"], false).unwrap_err();
+
+        assert!(matches!(err, PreflightError::TunUnavailable));
+    }
+
+    #[test]
+    fn tun_module_satisfies_tun_preflight() {
+        classify_tun_availability(&["tap", "bridge", "tun"], false).unwrap();
+    }
+
+    #[test]
+    fn tun_device_satisfies_tun_preflight() {
+        classify_tun_availability(&["tap", "bridge"], true).unwrap();
     }
 
     #[test]

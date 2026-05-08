@@ -55,6 +55,11 @@ fn vsock_unavailable_has_hint() {
 }
 
 #[test]
+fn tun_unavailable_has_hint() {
+    assert_hint(&PreflightError::TunUnavailable);
+}
+
+#[test]
 fn kernel_modules_missing_has_hint() {
     assert_hint(&PreflightError::KernelModulesMissing {
         missing: vec!["tap".into()],
