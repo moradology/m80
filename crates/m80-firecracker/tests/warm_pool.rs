@@ -3,7 +3,8 @@
 mod common;
 use common::RunDirDumpGuard;
 
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Barrier};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
@@ -226,6 +227,104 @@ fn warm_pool_empty_returns_pool_empty_error() {
     assert_eq!(pool.snapshot().ready, 0);
     assert_eq!(pool.snapshot().leased, 1);
     lease.discard().expect("discard held lease");
+    pool.wait_for_ready(1, std::time::Duration::from_secs(60))
+        .expect("refill after held lease discard");
+    assert_eq!(pool.snapshot().ready, 1);
+    assert_eq!(pool.snapshot().leased, 0);
+
+    drop(pool);
+    let _ = std::fs::remove_dir_all(&snap_dir);
+    assert_no_run_dirs_with_prefix(&discovery.run_root, &suffix);
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn warm_pool_simultaneous_lease_and_refill() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let suffix = unique_name("pool-race");
+    let snap_dir = discovery.run_root.join(format!("{suffix}-snapshot"));
+
+    let golden_backend = Arc::new(
+        Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new golden"),
+    );
+    let golden = golden_backend
+        .admit(sandbox_config(format!("{suffix}-golden")))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture golden");
+    running
+        .force_kill()
+        .expect("force-kill golden")
+        .delete()
+        .expect("delete golden");
+
+    let pool_backend = Arc::new(
+        Backend::new(make_backend_config(discovery.clone(), 4)).expect("Backend::new pool"),
+    );
+    let pool = Arc::new(
+        WarmPool::new(
+            Arc::clone(&pool_backend),
+            WarmPoolConfig {
+                target_ready: 2,
+                snapshot: paths.clone(),
+                sandbox: sandbox_config(format!("{suffix}-template")),
+                ready_probe: true_request(),
+                vm_id_prefix: format!("{suffix}-slot"),
+            },
+        )
+        .expect("WarmPool::new"),
+    );
+    pool.fill_to_target_blocking().expect("prefill");
+    assert_eq!(pool.snapshot().ready, 2);
+
+    let start = Arc::new(Barrier::new(3));
+    let release = Arc::new(Barrier::new(3));
+    let (tx, rx) = mpsc::channel();
+    let mut handles = Vec::new();
+
+    for worker_id in 0..2 {
+        let pool = Arc::clone(&pool);
+        let start = Arc::clone(&start);
+        let release = Arc::clone(&release);
+        let tx = tx.clone();
+        handles.push(thread::spawn(move || {
+            start.wait();
+            let lease = pool.try_lease();
+            tx.send((worker_id, lease.is_ok()))
+                .expect("send lease result");
+            release.wait();
+            if let Ok(lease) = lease {
+                lease.discard().expect("discard simultaneous lease");
+            }
+        }));
+    }
+    drop(tx);
+
+    start.wait();
+    let mut results = vec![false; 2];
+    for _ in 0..2 {
+        let (worker_id, leased) = rx.recv().expect("recv lease result");
+        results[worker_id] = leased;
+    }
+    assert_eq!(results, vec![true, true]);
+    let drained = pool.snapshot();
+    assert_eq!(drained.ready, 0);
+    assert_eq!(drained.leased, 2);
+
+    release.wait();
+    for handle in handles {
+        handle.join().expect("lease worker panicked");
+    }
+
+    pool.wait_for_ready(2, std::time::Duration::from_secs(60))
+        .expect("refill after simultaneous leases");
+    let refilled = pool.snapshot();
+    assert_eq!(refilled.ready, 2);
+    assert_eq!(refilled.leased, 0);
+    assert_eq!(refilled.discarded, 2);
 
     drop(pool);
     let _ = std::fs::remove_dir_all(&snap_dir);
@@ -233,17 +332,23 @@ fn warm_pool_empty_returns_pool_empty_error() {
 }
 
 fn assert_no_run_dirs_with_prefix(run_root: &std::path::Path, prefix: &str) {
-    let entries = std::fs::read_dir(run_root)
-        .unwrap_or_else(|e| panic!("read run root {}: {e}", run_root.display()));
-    let leaked = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.starts_with(prefix))
-        .collect::<Vec<_>>();
-    assert!(
-        leaked.is_empty(),
-        "warm-pool drop leaked run dirs: {leaked:?}"
-    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let entries = std::fs::read_dir(run_root)
+            .unwrap_or_else(|e| panic!("read run root {}: {e}", run_root.display()));
+        let leaked = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(prefix))
+            .collect::<Vec<_>>();
+        if leaked.is_empty() {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!("warm-pool drop leaked run dirs: {leaked:?}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 fn true_request() -> m80_proto::ExecRequest {
