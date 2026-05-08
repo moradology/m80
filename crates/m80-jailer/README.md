@@ -74,7 +74,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
 - `ResourceLimits { no_file, fsize, nproc, memlock, address_space, core, stack }`;
-  defaults are `no_file = 2048`, `fsize = None`, `nproc = 256`,
+  defaults are `no_file = 2048`, `fsize = None`, `nproc = None`,
   `memlock = 0`, `address_space = None`, `core = 0`, and `stack = 8 MiB`.
   Only `no_file` and `fsize` are forwarded to Firecracker's official jailer;
   the rest are applied by `m80-jailer-harden` before exec.

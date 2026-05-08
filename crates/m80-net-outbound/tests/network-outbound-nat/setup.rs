@@ -155,6 +155,44 @@ fn bridge_setup_is_idempotent_with_matching_state() {
 }
 
 #[test]
+fn planned_bridge_state_recovers_existing_kernel_bridge_without_recreate() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_dir = temp.path().join("vm-123");
+    std::fs::create_dir(&run_dir).unwrap();
+    let intent = intent_with_exception();
+    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    write_bridge_state(temp.path(), &planned_bridge).unwrap();
+    let mut ops = RecordingLinkOps::with_existing_link_address(true);
+
+    let realized =
+        realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
+            .unwrap();
+
+    assert_eq!(
+        read_bridge_state(temp.path()).unwrap(),
+        planned_bridge.clone().with_phase(SetupPhase::Ready)
+    );
+    assert!(!ops
+        .operations
+        .iter()
+        .any(|op| op == &format!("create_bridge {}", planned_bridge.bridge_name)));
+    assert_eq!(
+        ops.operations[..3],
+        [
+            format!("link_exists {}", planned_bridge.bridge_name),
+            format!(
+                "link_has_ipv4_address {} {}/{}",
+                planned_bridge.bridge_name,
+                planned_bridge.gateway_ipv4,
+                planned_bridge.cidr.prefix_len()
+            ),
+            format!("set_link_up {}", planned_bridge.bridge_name),
+        ]
+    );
+    assert_eq!(realized.bridge_name, planned_bridge.bridge_name);
+}
+
+#[test]
 fn bridge_state_mismatch_fails_before_link_mutation() {
     let temp = tempfile::tempdir().unwrap();
     let run_dir = temp.path().join("vm-123");
@@ -195,6 +233,7 @@ fn assert_only_state_file(dir: &std::path::Path, file_name: &str) {
 #[derive(Default)]
 struct RecordingLinkOps {
     operations: Vec<String>,
+    link_exists: bool,
     link_has_ipv4_address: bool,
 }
 
@@ -202,6 +241,15 @@ impl RecordingLinkOps {
     fn with_link_address(link_has_ipv4_address: bool) -> Self {
         Self {
             operations: Vec::new(),
+            link_exists: false,
+            link_has_ipv4_address,
+        }
+    }
+
+    fn with_existing_link_address(link_has_ipv4_address: bool) -> Self {
+        Self {
+            operations: Vec::new(),
+            link_exists: true,
             link_has_ipv4_address,
         }
     }
@@ -257,6 +305,11 @@ impl LinkOps for RecordingLinkOps {
         self.operations
             .push(format!("delete_link_if_exists {name}"));
         Ok(())
+    }
+
+    fn link_exists(&mut self, name: &str) -> Result<bool, NetError> {
+        self.operations.push(format!("link_exists {name}"));
+        Ok(self.link_exists)
     }
 
     fn link_has_ipv4_address(

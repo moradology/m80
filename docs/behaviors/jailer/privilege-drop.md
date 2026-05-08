@@ -30,9 +30,11 @@ Test: `crates/m80-jailer/tests/recover.rs::live_state_with_own_pid_returns_live_
 inherited limits `nproc`, `memlock`, `address_space`, `core`, and `stack`.
 `m80-jailer` forwards `no_file` and `fsize` to Firecracker's official jailer
 because those are the only upstream `--resource-limit` names it supports.
-`m80-jailer-harden` applies the full set before exec, so the official jailer
-and Firecracker inherit the additional fork, locked-memory, address-space,
-core-dump, and stack limits.
+`m80-jailer-harden` applies the configured extended set before exec, so the
+official jailer and Firecracker inherit locked-memory, address-space, core-dump,
+and stack limits by default. `nproc` remains opt-in because Linux enforces it
+per real uid across the whole host, not per VM; applying a low default before
+the official jailer exec can make saturated same-uid hosts fail with `EAGAIN`.
 
 Test: `crates/m80-jailer/tests/plan_serde.rs::resource_limits_pid_namespace_daemonize_and_netns_persist_in_plan_json`.
 Test: `crates/m80-jailer/src/materialized.rs::tests::launch_redirects_stdio_and_passes_hardening_args`.

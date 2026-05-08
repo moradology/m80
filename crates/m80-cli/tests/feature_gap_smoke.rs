@@ -7,7 +7,7 @@ mod common;
 
 use common::m80;
 
-use m80_cli::errors::{EXIT_CONFIG, EXIT_NOT_IMPLEMENTED};
+use m80_cli::errors::{EXIT_CONFIG, EXIT_GENERIC, EXIT_NOT_IMPLEMENTED};
 
 fn assert_feature_gap(args: &[&str], expected_stderr: &str) {
     let output = m80().args(args).output().unwrap();
@@ -72,7 +72,7 @@ fn run_warm_without_owner_fails_without_cold_booting() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(EXIT_CONFIG));
+    assert_eq!(output.status.code(), Some(EXIT_GENERIC));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("warm owner unavailable"));

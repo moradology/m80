@@ -10,7 +10,7 @@ mod protocol;
 mod stopped;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -144,6 +144,7 @@ impl RunningSandbox {
             permit,
             backend: _backend,
             last_activity_ns: _last_activity_ns,
+            active_execs: _active_execs,
             idle_timed_out: _idle_timed_out,
             watcher_stop: _watcher_stop,
             watcher_thread,
@@ -225,6 +226,7 @@ impl RunningSandbox {
             permit,
             backend: _backend,
             last_activity_ns: _last_activity_ns,
+            active_execs: _active_execs,
             idle_timed_out: _idle_timed_out,
             watcher_stop: _watcher_stop,
             watcher_thread,
@@ -430,16 +432,18 @@ pub(crate) fn monotonic_ns() -> u64 {
 /// Spawn the idle-timeout watcher thread.
 ///
 /// The watcher sleeps in a loop, waking every `poll_interval` to compare
-/// the elapsed time since `last_activity_ns` against `timeout`. When the
-/// deadline expires, it sends a graceful shutdown request over `vsock_uds`
-/// (best-effort; logs on failure) and sets `idle_timed_out` so the next
-/// `exec` returns `FcError::IdleTimedOut`.
+/// the elapsed time since `last_activity_ns` against `timeout`. In-flight execs
+/// suppress the idle decision; their drop guard resets the deadline when the
+/// request completes. When the deadline expires, the watcher sends a graceful
+/// shutdown request over `vsock_uds` (best-effort; logs on failure) and sets
+/// `idle_timed_out` so the next `exec` returns `FcError::IdleTimedOut`.
 ///
 /// The thread exits when `stop_flag` is set (by `stop()` or `force_kill()`).
 pub(crate) fn spawn_idle_watcher(
     timeout: Duration,
     vsock_uds: std::path::PathBuf,
     last_activity_ns: Arc<AtomicU64>,
+    active_execs: Arc<AtomicUsize>,
     idle_timed_out: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
     vm_id: String,
@@ -451,13 +455,25 @@ pub(crate) fn spawn_idle_watcher(
         idle_watcher_loop(
             timeout,
             poll_interval,
-            &vsock_uds,
-            &last_activity_ns,
-            &idle_timed_out,
-            &stop_flag,
-            &vm_id,
+            IdleWatcherContext {
+                vsock_uds: &vsock_uds,
+                last_activity_ns: &last_activity_ns,
+                active_execs: &active_execs,
+                idle_timed_out: &idle_timed_out,
+                stop_flag: &stop_flag,
+                vm_id: &vm_id,
+            },
         );
     })
+}
+
+pub(crate) struct IdleWatcherContext<'a> {
+    pub(crate) vsock_uds: &'a std::path::Path,
+    pub(crate) last_activity_ns: &'a AtomicU64,
+    pub(crate) active_execs: &'a AtomicUsize,
+    pub(crate) idle_timed_out: &'a AtomicBool,
+    pub(crate) stop_flag: &'a AtomicBool,
+    pub(crate) vm_id: &'a str,
 }
 
 /// Inner loop of the idle-timeout watcher. Extracted so it's testable
@@ -465,30 +481,33 @@ pub(crate) fn spawn_idle_watcher(
 pub(crate) fn idle_watcher_loop(
     timeout: Duration,
     poll_interval: Duration,
-    vsock_uds: &std::path::Path,
-    last_activity_ns: &AtomicU64,
-    idle_timed_out: &AtomicBool,
-    stop_flag: &AtomicBool,
-    vm_id: &str,
+    context: IdleWatcherContext<'_>,
 ) {
     loop {
         std::thread::sleep(poll_interval);
 
-        if stop_flag.load(Ordering::Relaxed) {
+        if context.stop_flag.load(Ordering::Relaxed) {
             return;
         }
 
-        let last_ns = last_activity_ns.load(Ordering::Relaxed);
+        if context.active_execs.load(Ordering::Relaxed) > 0 {
+            continue;
+        }
+
+        let last_ns = context.last_activity_ns.load(Ordering::Relaxed);
         let now_ns = monotonic_ns();
         let idle_ns = now_ns.saturating_sub(last_ns);
         let timeout_ns = timeout.as_nanos() as u64;
 
         if idle_ns >= timeout_ns {
-            tracing::info!(vm_id, "idle timeout expired; issuing graceful shutdown");
-            idle_timed_out.store(true, Ordering::Relaxed);
-            if let Err(e) = send_shutdown_request(vsock_uds) {
+            tracing::info!(
+                vm_id = context.vm_id,
+                "idle timeout expired; issuing graceful shutdown"
+            );
+            context.idle_timed_out.store(true, Ordering::Relaxed);
+            if let Err(e) = send_shutdown_request(context.vsock_uds) {
                 tracing::warn!(
-                    vm_id,
+                    vm_id = context.vm_id,
                     error = %e,
                     "idle watcher: graceful shutdown failed (VM may already be stopped)"
                 );
@@ -518,6 +537,7 @@ pub(crate) fn kill_pid(pid: u32) -> Result<(), FcError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn normal_stop_is_arch_independent_guestd_shutdown_then_firecracker_kill() {
@@ -535,5 +555,36 @@ mod tests {
     #[test]
     fn kill_pid_zero_is_no_live_jailer_sentinel() {
         kill_pid(0).expect("pid zero sentinel is a no-op");
+    }
+
+    #[test]
+    fn idle_watcher_does_not_fire_while_exec_is_in_flight() {
+        let last_activity = AtomicU64::new(0);
+        let active_execs = AtomicUsize::new(1);
+        let idle_timed_out = AtomicBool::new(false);
+        let stop_flag = AtomicBool::new(false);
+        let socket = std::path::PathBuf::from("/tmp/m80-idle-watcher-test.sock");
+
+        std::thread::scope(|scope| {
+            let handle = scope.spawn(|| {
+                idle_watcher_loop(
+                    Duration::from_millis(20),
+                    Duration::from_millis(5),
+                    IdleWatcherContext {
+                        vsock_uds: &socket,
+                        last_activity_ns: &last_activity,
+                        active_execs: &active_execs,
+                        idle_timed_out: &idle_timed_out,
+                        stop_flag: &stop_flag,
+                        vm_id: "vm-test",
+                    },
+                );
+            });
+            std::thread::sleep(Duration::from_millis(40));
+            stop_flag.store(true, Ordering::Relaxed);
+            handle.join().expect("watcher exits after stop");
+        });
+
+        assert!(!idle_timed_out.load(Ordering::Relaxed));
     }
 }

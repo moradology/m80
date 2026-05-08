@@ -134,3 +134,45 @@ Before adding a feature to m80 for an adapter, ask:
    top of the same primitive?
 
 If the answer to any question is no, the feature belongs above m80.
+
+## Promotion Bar For New Core Verbs
+
+Capabilities and operations may live as profile-provided adapter helpers, as
+exec invocations from generic VMs, or as m80 core wire verbs (`FileRead`,
+`ExecRequest`, etc.). A new core verb is a permanent wire commitment, so the
+bar to add one is high.
+
+A candidate operation belongs as an m80 core verb only if **all five hold**:
+
+1. **Generic VM/process/file/network mechanics.** Not a product-semantic
+   operation (no tool catalogs, no `tool_call_id`, no authority/idempotency
+   state machine).
+2. **Hot or byte-heavy.** Either called many times per request path (>5 typical)
+   so per-call overhead matters, or moves binary/structured data that exec/stdio
+   framing would corrupt or balloon.
+3. **Lossy or unsafe through exec.** Exec returns `stdout-text + stderr-text +
+   exit_code`. A typed verb is justified when exit codes are too coarse to
+   distinguish failure modes (e.g., `NotFound` vs `PermissionDenied`), when
+   shell-quoting introduces injection surface, or when the operation needs
+   atomicity that pipe-and-redirect cannot guarantee.
+4. **Expressible as finite typed request/response or bounded streams.** No
+   open-ended composition (`tar | grep | head` is a shell expression, not a
+   verb). No 17-flag POSIX commands rendered as wire enums.
+5. **No product semantic identifiers.** Carries an opaque `request_id` at most.
+   No `tool_call_id`, `correlation_id`, `idempotency_key`, `workspace_id`, or
+   other adapter-layer concepts.
+
+Examples that pass: `FileRead/Write/List/Stat/Remove`, `FileMkdir`, `Exec`,
+`ExecStreaming`, `PTY`, `Cancel`, `FileWriteBegin/Chunk/Commit`.
+
+Examples that fail (and stay above m80): `apply_patch`, tool catalog,
+`build_image`, `deploy`, `evaluate_policy`, anything that reads adapter state
+or writes adapter records.
+
+If a capability is profile-provided (lives in a specialized image with its own
+helper binary), it stays adapter-side. m80 may carry helper bytes via exec or
+the chunked file primitives; m80 does not interpret the capability's payload.
+Promotion to a core verb requires the capability to clear all five tests
+above.
+
+Source: m80-8njy.6 (closed; rubric migrated here for permanence).

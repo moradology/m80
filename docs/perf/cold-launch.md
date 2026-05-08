@@ -4,7 +4,7 @@ Bead m80-6a0q.6.
 
 ## Methodology
 
-`scripts/bench-cold-launch.sh` runs `m80 launch -- /bin/echo bench-N`
+`scripts/bench-cold-launch.sh` runs `m80 run --egress none -- /bin/echo bench-N`
 against each image kind on each load level, captures wallclock per
 launch + per-phase timings via `M80_PHASE_TRACE=1`, drops the first 2
 launches per cell as warmup, computes P50/P95/max from successful runs
@@ -111,7 +111,7 @@ provoking the muxer's local-init accept-loop into an EAGAIN. The
 minimal image, with no systemd, doesn't trip it. Worth a targeted
 investigation; not blocking v0.1 since minimal kind is the perf path.
 
-### stress-ng-loaded: 0 % success on both kinds
+### stress-ng-loaded: 0 % success on both kinds (2026-05-05 baseline)
 
 Under `stress-ng --cpu $(nproc)` the host CPU is saturated at 100 %.
 All 30 launches per cell failed. Per-phase data shows storage_prep
@@ -123,6 +123,33 @@ boot of CPU enough to miss timeouts.
 This isn't a release blocker but is on the "wallpaper over before
 GA" list. Realistic CI environments don't run with 100 %-saturated
 CPU; the loaded cell here is a worst case.
+
+### stress-ng-loaded recovery (m80-c78m, 2026-05-08)
+
+The release-gating saturation failure was not a vsock muxer starvation bug.
+The visible signal was Firecracker's stderr from the jailer wrapper:
+`Failed to exec into Firecracker: Resource temporarily unavailable (os error 11)`.
+That error is `EAGAIN` from `exec` after the hardening wrapper applied
+`RLIMIT_NPROC`.
+
+`RLIMIT_NPROC` is scoped to the process real UID across the host, not to an
+individual microVM. Under same-UID `stress-ng --cpu $(nproc)` load, the default
+`nproc = 256` limit could make the wrapper fail before Firecracker started. The
+fix is to leave `nproc` unset by default; callers that need a host-wide per-UID
+process ceiling can still opt in explicitly.
+
+Current proof after rebuilding `/tmp/m80-build/minimal` with the matching
+guestd/protocol version:
+
+| attempt | exit | wallclock ms | stdout | `phase_12b_ready_accept` us |
+|---:|---:|---:|---|---:|
+| 1 | 0 | 1958 | `c78m-1` | 1074190 |
+| 2 | 0 | 1967 | `c78m-2` | 1079927 |
+| 3 | 0 | 1807 | `c78m-3` | 1115150 |
+| 4 | 0 | 1644 | `c78m-4` | 1051004 |
+| 5 | 0 | 1835 | `c78m-5` | 1087164 |
+
+Summary: 5/5 loaded launches succeeded under `stress-ng --cpu $(nproc)`.
 
 ## Storage pivot impact (m80-f2zc.7)
 

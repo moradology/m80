@@ -22,13 +22,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub use dns::{
-    CommandDnsDiscoveryOps, DnsCommandOutput, DnsDiscoveryOps, discover_dns_resolvers_with_ops,
-    is_admitted_dns_resolver,
+    discover_dns_resolvers_with_ops, is_admitted_dns_resolver, CommandDnsDiscoveryOps,
+    DnsCommandOutput, DnsDiscoveryOps,
 };
 pub use injection::{
-    CommandGuestNetworkConfigOps, GuestNetworkConfig, GuestNetworkConfigOps,
-    inject_guest_network_config_with_ops, M80_NETWORKD_FILE, M80_RESOLVED_FILE,
-    SYSTEMD_NETWORK_DIR, SYSTEMD_RESOLVED_CONF_DIR,
+    inject_guest_network_config_with_ops, CommandGuestNetworkConfigOps, GuestNetworkConfig,
+    GuestNetworkConfigOps, M80_NETWORKD_FILE, M80_RESOLVED_FILE, SYSTEMD_NETWORK_DIR,
+    SYSTEMD_RESOLVED_CONF_DIR,
 };
 pub use iptables::{
     apply_outbound_nat_policy, apply_outbound_nat_policy_with_ops, outbound_nat_filter_chain,
@@ -270,6 +270,9 @@ fn ensure_bridge_ready_with_ops(
                 ),
             });
         }
+        if existing.setup_phase == SetupPhase::Planned {
+            return recover_planned_bridge(ops, run_root, planned);
+        }
     }
 
     write_bridge_state(run_root, planned)?;
@@ -279,6 +282,30 @@ fn ensure_bridge_ready_with_ops(
         planned.gateway_ipv4,
         planned.cidr.prefix_len(),
     )?;
+    ops.set_link_up(&planned.bridge_name)?;
+    write_bridge_state(run_root, &planned.clone().with_phase(SetupPhase::Ready))
+}
+
+fn recover_planned_bridge(
+    ops: &mut impl LinkOps,
+    run_root: &Path,
+    planned: &BridgeState,
+) -> Result<(), NetError> {
+    if !ops.link_exists(&planned.bridge_name)? {
+        write_bridge_state(run_root, planned)?;
+        ops.create_bridge(&planned.bridge_name)?;
+    }
+    if !ops.link_has_ipv4_address(
+        &planned.bridge_name,
+        planned.gateway_ipv4,
+        planned.cidr.prefix_len(),
+    )? {
+        ops.add_ipv4_address(
+            &planned.bridge_name,
+            planned.gateway_ipv4,
+            planned.cidr.prefix_len(),
+        )?;
+    }
     ops.set_link_up(&planned.bridge_name)?;
     write_bridge_state(run_root, &planned.clone().with_phase(SetupPhase::Ready))
 }

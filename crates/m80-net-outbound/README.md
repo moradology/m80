@@ -58,7 +58,10 @@ Sequestering it has three benefits:
   `<run_root>/outbound-bridge-state.json`.
 - Bridge state is written in a Planned phase before host link mutation and
   in a Ready phase after bridge creation/address/up succeeds. A matching
-  Ready state verifies the bridge address and skips bridge mutation.
+  Ready state verifies the bridge address and skips bridge mutation. A
+  matching Planned state is treated as crash-recovery input: if the bridge
+  already exists, m80 completes address/up and promotes the state to Ready
+  instead of trying to recreate the bridge.
 - Per-VM state is written at `<run_dir>/network-state.json` in a Planned
   phase before TAP mutation and in a Ready phase after TAP creation, MAC
   assignment, bridge attach, and link-up succeed.

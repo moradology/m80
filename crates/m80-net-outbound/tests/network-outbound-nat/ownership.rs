@@ -226,6 +226,10 @@ impl LinkOps for RecordingLinkOps {
         Ok(())
     }
 
+    fn link_exists(&mut self, name: &str) -> Result<bool, NetError> {
+        Ok(self.existing.iter().any(|existing| existing == name))
+    }
+
     fn link_has_ipv4_address(
         &mut self,
         _link_name: &str,

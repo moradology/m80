@@ -45,13 +45,15 @@ the sandbox enters the `Running` state. The thread:
 
 1. Sleeps for `min(timeout/4, 30s)` between checks to avoid burning CPU while
    remaining responsive.
-2. Loads `last_activity_ns` (an `Arc<AtomicU64>` shared with `exec`) and
+2. Suppresses expiry while `active_execs` is non-zero. This distinguishes a
+   silent in-flight command from an actually idle VM.
+3. Loads `last_activity_ns` (an `Arc<AtomicU64>` shared with `exec`) and
    compares it to `monotonic_ns()`. If `now - last_activity >= timeout`, the
    watcher fires.
-3. On firing: sets `idle_timed_out` (`Arc<AtomicBool>`) to `true`, then calls
+4. On firing: sets `idle_timed_out` (`Arc<AtomicBool>`) to `true`, then calls
    `send_shutdown_request` over the vsock channel (best-effort; logs a warning
    if the VM is already gone) and exits.
-4. Exits cleanly when `watcher_stop` is set (by `stop()` or `force_kill()`).
+5. Exits cleanly when `watcher_stop` is set (by `stop()` or `force_kill()`).
 
 The watcher does not consume `self` and cannot call `stop()` (which requires
 ownership). The caller observes expiry through `FcError::IdleTimedOut` on the
@@ -63,6 +65,10 @@ is set.
 
 **Test:** `watcher_does_not_fire_when_activity_reset` — unit; verifies that
 regularly resetting `last_activity_ns` prevents the watcher from firing.
+
+**Test:** `idle_watcher_does_not_fire_while_exec_is_in_flight` — unit; drives
+the actual watcher loop with stale activity and `active_execs = 1`, then proves
+the watcher does not mark the sandbox idle.
 
 ---
 
@@ -76,8 +82,9 @@ if self.idle_timed_out.load(Ordering::Relaxed) {
 }
 ```
 
-On success, `exec` touches `last_activity_ns` **twice**: once at the start of
-the call and once at the end. The double-touch ensures:
+On entry, `exec` creates an activity guard that increments `active_execs` and
+touches `last_activity_ns`. Dropping that guard decrements `active_execs` and
+touches `last_activity_ns` again. This ensures:
 
 - A long-running exec does not expire mid-flight (the deadline is extended for
   the duration of the exec).

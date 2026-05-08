@@ -131,6 +131,64 @@ fn streaming_stdout_stderr_chunks_end_with_exit() {
 }
 
 #[test]
+fn streaming_stdout_and_stderr_sequences_are_independent() {
+    let script = concat!(
+        "i=0; ",
+        "while [ \"$i\" -lt 4 ]; do ",
+        "dd if=/dev/zero bs=8192 count=1 2>/dev/null | tr '\\000' O; ",
+        "dd if=/dev/zero bs=8192 count=1 2>/dev/null | tr '\\000' E >&2; ",
+        "i=$((i + 1)); ",
+        "done"
+    );
+    let req = streaming_request("/bin/sh", vec!["-c".into(), script.into()], 5_000);
+    let frames = read_raw_frames(&run_streaming_with_open_reader(request_frame(
+        req,
+        "stream-independent-seq",
+    )));
+
+    let mut stdout_seqs = Vec::new();
+    let mut stderr_seqs = Vec::new();
+    let mut stdout_bytes = 0usize;
+    let mut stderr_bytes = 0usize;
+
+    for frame in &frames[..frames.len() - 1] {
+        match frame.kind.as_str() {
+            PAYLOAD_KIND_EXEC_STDOUT => {
+                let chunk = frame.clone().decode::<ExecStdout>().unwrap().payload;
+                stdout_seqs.push(chunk.seq);
+                stdout_bytes += chunk.bytes.len();
+            }
+            PAYLOAD_KIND_EXEC_STDERR => {
+                let chunk = frame.clone().decode::<ExecStderr>().unwrap().payload;
+                stderr_seqs.push(chunk.seq);
+                stderr_bytes += chunk.bytes.len();
+            }
+            other => panic!("unexpected streaming frame kind: {other}"),
+        }
+    }
+
+    assert!(stdout_seqs.len() > 1, "stdout should span multiple chunks");
+    assert!(stderr_seqs.len() > 1, "stderr should span multiple chunks");
+    assert_monotonic(&stdout_seqs);
+    assert_monotonic(&stderr_seqs);
+    assert_eq!(stdout_seqs[0], 0);
+    assert_eq!(stderr_seqs[0], 0);
+    assert_eq!(stdout_bytes, 32 * 1024);
+    assert_eq!(stderr_bytes, 32 * 1024);
+
+    let exit = frames
+        .last()
+        .unwrap()
+        .clone()
+        .decode::<ExecExit>()
+        .unwrap()
+        .payload;
+    assert_eq!(exit.status, ExecStatus::Completed);
+    assert_eq!(exit.total_stdout_bytes, stdout_bytes as u64);
+    assert_eq!(exit.total_stderr_bytes, stderr_bytes as u64);
+}
+
+#[test]
 fn streaming_exec_rejects_oversized_stdin_before_spawn() {
     let mut req = streaming_request("cat", vec![], 5_000);
     req.stdin = Some(vec![b'x'; (1 << 20) + 1]);

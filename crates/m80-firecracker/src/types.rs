@@ -2,7 +2,7 @@
 //! Implementation blocks live in the module that owns the type's domain.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -382,6 +382,8 @@ pub struct RunningSandbox {
     /// Written with `Relaxed` ordering — the watcher only needs a recent
     /// value; happens-before precision is not required.
     pub(crate) last_activity_ns: Arc<AtomicU64>,
+    /// Number of exec requests currently in flight.
+    pub(crate) active_execs: Arc<AtomicUsize>,
     /// Watcher sets this flag when the idle deadline expires.
     /// `exec` checks it at entry and returns `FcError::IdleTimedOut`.
     pub(crate) idle_timed_out: Arc<std::sync::atomic::AtomicBool>,

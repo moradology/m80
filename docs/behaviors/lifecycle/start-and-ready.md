@@ -25,14 +25,18 @@ rather than the console marker.
 
 ## Vsock Probe
 
-After the ready signal is accepted and the protocol byte is validated, m80 opens
-the guest exec channel over the Firecracker vsock muxer. This post-signal probe
-must succeed before `Sandbox::launch` returns `RunningSandbox`.
+After the ready signal is accepted and the protocol byte is validated,
+`Sandbox::launch` returns `RunningSandbox` without opening a dummy exec-channel
+connection. The ready signal is emitted only after guestd has bound the exec
+listener; consuming that same sequential listener during launch creates an
+avoidable handoff race before the caller's first real exec under fully saturated
+hosts. The first actual operation opens the normal guest exec channel through
+the request path's bounded retry loop.
 
 Receive-side guest protocol readiness is therefore two-step:
 
 1. guestd connects out to the ready listener and writes the protocol byte;
-2. the host opens the normal guest exec channel.
+2. the caller's first operation opens the normal guest exec channel.
 
 ## Guest Port
 

@@ -65,7 +65,13 @@ fn ready_signal_rejects_wrong_protocol_version() {
     let err = accept_ready_signal(&listener, &ready_path, Duration::from_secs(1)).unwrap_err();
 
     assert!(
-        matches!(err, FcError::Vsock(m80_vsock::VsockError::HandshakeFailed)),
+        matches!(
+            err,
+            FcError::Protocol(WireProtocolError::UnsupportedVersion {
+                expected: m80_proto::PROTOCOL_VERSION,
+                got: 0
+            })
+        ),
         "unexpected error: {err:?}"
     );
     client.join().unwrap();

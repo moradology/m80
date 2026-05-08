@@ -17,7 +17,7 @@
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -32,7 +32,7 @@ use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
 use crate::diagnostics::phase;
-use crate::error::{ConfigError, FcError};
+use crate::error::{ConfigError, FcError, WireProtocolError};
 use crate::layout::{
     console_log_path, firecracker_api_socket_path, preallocated_drive_slot_filename, run_dir_path,
     vsock_socket_path,
@@ -298,9 +298,10 @@ impl Sandbox {
             "instance started",
         );
 
-        // Phase 12b: accept the inverted-readiness signal from m80-guestd,
-        // then probe the exec channel once. accept() returns event-driven the
-        // moment guestd's outbound connect lands — no muxer-polling race.
+        // Phase 12b: accept the inverted-readiness signal from m80-guestd.
+        // The signal is emitted after guestd has bound the exec listener, so
+        // launch does not consume a dummy exec-channel connection before the
+        // caller's first real request.
         diag_phase!(
             &mut diagnostics,
             &vm_id,
@@ -318,6 +319,7 @@ impl Sandbox {
         );
 
         let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
+        let active_execs = Arc::new(AtomicUsize::new(0));
         let idle_timed_out = Arc::new(AtomicBool::new(false));
         let watcher_stop = Arc::new(AtomicBool::new(false));
         let watcher_thread = self.config.idle_timeout.map(|timeout| {
@@ -325,6 +327,7 @@ impl Sandbox {
                 timeout,
                 vsock_uds.clone(),
                 Arc::clone(&last_activity_ns),
+                Arc::clone(&active_execs),
                 Arc::clone(&idle_timed_out),
                 Arc::clone(&watcher_stop),
                 vm_id.clone(),
@@ -352,6 +355,7 @@ impl Sandbox {
             permit: self.permit,
             backend: self.backend,
             last_activity_ns,
+            active_execs,
             idle_timed_out,
             watcher_stop,
             watcher_thread,
@@ -573,6 +577,7 @@ impl Sandbox {
         let _ = discovery; // Discovery is passed for API symmetry; not needed beyond the phases above.
 
         let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
+        let active_execs = Arc::new(AtomicUsize::new(0));
         let idle_timed_out = Arc::new(AtomicBool::new(false));
         let watcher_stop = Arc::new(AtomicBool::new(false));
         let watcher_thread = self.config.idle_timeout.map(|timeout| {
@@ -580,6 +585,7 @@ impl Sandbox {
                 timeout,
                 vsock_uds.clone(),
                 Arc::clone(&last_activity_ns),
+                Arc::clone(&active_execs),
                 Arc::clone(&idle_timed_out),
                 Arc::clone(&watcher_stop),
                 vm_id.clone(),
@@ -608,6 +614,7 @@ impl Sandbox {
             permit: self.permit,
             backend: self.backend,
             last_activity_ns,
+            active_execs,
             idle_timed_out,
             watcher_stop,
             watcher_thread,
@@ -909,8 +916,8 @@ fn ready_listener_path(vsock_uds: &Path) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// `accept()` the inverted-readiness signal from m80-guestd, validate the
-/// protocol-version byte, then open the exec channel.
+/// `accept()` the inverted-readiness signal from m80-guestd and validate the
+/// protocol-version byte.
 ///
 /// The host-local `accept()` poll-loop here is not a muxer-polling race.
 /// We're polling our own UnixListener; the muxer only fires once (when guestd
@@ -918,15 +925,12 @@ fn ready_listener_path(vsock_uds: &Path) -> PathBuf {
 fn phase_12b_ready_accept(
     ready_listener: &UnixListener,
     ready_path: &Path,
-    vsock_uds: &Path,
+    _vsock_uds: &Path,
     vm_id: &str,
-) -> Result<Channel, FcError> {
+) -> Result<(), FcError> {
     accept_ready_signal(ready_listener, ready_path, READY_TIMEOUT)?;
     tracing::info!(vm_id, "ready signal received from guestd");
-
-    // Open the exec channel — same UDS, exec port. Synchronous; should
-    // succeed immediately since guestd is up.
-    Channel::open_uds_only(vsock_uds, guest_ready_probe_port()).map_err(FcError::Vsock)
+    Ok(())
 }
 
 fn accept_ready_signal(
@@ -961,12 +965,16 @@ fn accept_ready_signal(
     let mut buf = [0u8; 1];
     stream.read_exact(&mut buf).map_err(FcError::Io)?;
     if buf[0] != m80_proto::PROTOCOL_VERSION as u8 {
-        return Err(FcError::Vsock(m80_vsock::VsockError::HandshakeFailed));
+        return Err(FcError::Protocol(WireProtocolError::UnsupportedVersion {
+            expected: m80_proto::PROTOCOL_VERSION,
+            got: u32::from(buf[0]),
+        }));
     }
     drop(stream);
     Ok(())
 }
 
+#[cfg(test)]
 fn guest_ready_probe_port() -> u32 {
     GUEST_PORT_DEFAULT
 }

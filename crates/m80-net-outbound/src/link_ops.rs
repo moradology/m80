@@ -45,6 +45,8 @@ pub trait LinkOps {
     fn set_link_up(&mut self, name: &str) -> Result<(), NetError>;
     /// Delete a link when it exists.
     fn delete_link_if_exists(&mut self, name: &str) -> Result<(), NetError>;
+    /// Return whether a link exists.
+    fn link_exists(&mut self, name: &str) -> Result<bool, NetError>;
     /// Return whether a link has the given IPv4 address and prefix length.
     fn link_has_ipv4_address(
         &mut self,
@@ -262,6 +264,10 @@ impl LinkOps for NetlinkLinkOps {
         Ok(())
     }
 
+    fn link_exists(&mut self, name: &str) -> Result<bool, NetError> {
+        Ok(self.link_index(name)?.is_some())
+    }
+
     fn link_has_ipv4_address(
         &mut self,
         link_name: &str,
@@ -405,6 +411,11 @@ mod tests {
             self.operations
                 .push(format!("delete_link_if_exists {name}"));
             Ok(())
+        }
+
+        fn link_exists(&mut self, name: &str) -> Result<bool, NetError> {
+            self.operations.push(format!("link_exists {name}"));
+            Ok(true)
         }
 
         fn link_has_ipv4_address(

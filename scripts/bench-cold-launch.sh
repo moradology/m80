@@ -35,7 +35,7 @@
 #   KERNEL_KIND                      stock|stripped (default stock)
 #
 # Caveats:
-#   - "launch_ms" is wallclock from `m80 launch` invocation to exit, not a
+#   - "launch_ms" is wallclock from `m80 run` invocation to exit, not a
 #     precise InstanceStart-to-ready measurement. The per-phase CSV
 #     attributes the within-binary slice; spawn + teardown are external.
 #   - Guest boot milestone lines (`M80_GUEST_BOOT`) are forwarded by the CLI
@@ -195,8 +195,8 @@ run_one() {
             M80_FIRECRACKER_VERSION=v1.15.1 \
             M80_JAIL_UID="$(id -u)" \
             M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
-            ./target/release/m80 launch \
-            --network noegress -- /bin/echo "bench-$attempt" \
+            ./target/release/m80 run \
+            --egress none -- /bin/echo "bench-$attempt" \
             >/dev/null 2>"$stderr_file"; then
         exit_code=0
     else

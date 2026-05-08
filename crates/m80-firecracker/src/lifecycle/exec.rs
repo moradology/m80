@@ -30,6 +30,19 @@ const CANCEL_FORWARDER_POLL: Duration = Duration::from_millis(50);
 const FORWARDER_JOIN_TIMEOUT: Duration = Duration::from_millis(100);
 
 impl RunningSandbox {
+    fn begin_exec_activity(&self) -> Result<ExecActivityGuard, FcError> {
+        if self.idle_timed_out.load(Ordering::Relaxed) {
+            return Err(FcError::IdleTimedOut);
+        }
+        self.last_activity_ns
+            .store(monotonic_ns(), Ordering::Relaxed);
+        self.active_execs.fetch_add(1, Ordering::Relaxed);
+        Ok(ExecActivityGuard {
+            active_execs: Arc::clone(&self.active_execs),
+            last_activity_ns: Arc::clone(&self.last_activity_ns),
+        })
+    }
+
     /// Send one exec request to the in-VM daemon and return a buffered
     /// response.
     ///
@@ -167,11 +180,7 @@ impl RunningSandbox {
         mut on_output: impl FnMut(PtyOutputChunk) -> Result<(), FcError>,
     ) -> Result<PtyExit, FcError> {
         self.claim_one_shot_exec()?;
-        if self.idle_timed_out.load(Ordering::Relaxed) {
-            return Err(FcError::IdleTimedOut);
-        }
-        self.last_activity_ns
-            .store(monotonic_ns(), Ordering::Relaxed);
+        let _activity = self.begin_exec_activity()?;
 
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "pty");
@@ -257,7 +266,15 @@ impl RunningSandbox {
                     }
                     CancelResponseDisposition::AlreadyExited => continue,
                     CancelResponseDisposition::Failed(msg) => {
-                        return Err(FcError::Config(ConfigError::Other(msg)))
+                        record_cancel_ack_failed(
+                            &mut self.diagnostics,
+                            &self.vm_id,
+                            &request_id,
+                            "pty",
+                            &msg,
+                            t.elapsed(),
+                        );
+                        return Err(FcError::Config(ConfigError::Other(msg)));
                     }
                 },
                 other => {
@@ -290,11 +307,7 @@ impl RunningSandbox {
         if consume_one_shot {
             self.claim_one_shot_exec()?;
         }
-        if self.idle_timed_out.load(Ordering::Relaxed) {
-            return Err(FcError::IdleTimedOut);
-        }
-        self.last_activity_ns
-            .store(monotonic_ns(), Ordering::Relaxed);
+        let _activity = self.begin_exec_activity()?;
 
         req.streaming = true;
         let vsock_uds = self.jail.jail_path.join("vsock.sock");
@@ -463,7 +476,15 @@ impl RunningSandbox {
                     }
                     CancelResponseDisposition::AlreadyExited => continue,
                     CancelResponseDisposition::Failed(msg) => {
-                        return Err(FcError::Config(ConfigError::Other(msg)))
+                        record_cancel_ack_failed(
+                            &mut self.diagnostics,
+                            &self.vm_id,
+                            &request_id,
+                            "exec",
+                            &msg,
+                            t.elapsed(),
+                        );
+                        return Err(FcError::Config(ConfigError::Other(msg)));
                     }
                 },
                 other => {
@@ -487,6 +508,19 @@ impl RunningSandbox {
 
     fn claim_one_shot_exec(&mut self) -> Result<(), FcError> {
         claim_one_shot_exec(self.one_shot, &mut self.one_shot_consumed)
+    }
+}
+
+struct ExecActivityGuard {
+    active_execs: Arc<std::sync::atomic::AtomicUsize>,
+    last_activity_ns: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl Drop for ExecActivityGuard {
+    fn drop(&mut self) {
+        self.last_activity_ns
+            .store(monotonic_ns(), Ordering::Relaxed);
+        self.active_execs.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -589,6 +623,24 @@ fn decode_cancel_ack(
             ack.request_id
         )),
     })
+}
+
+fn record_cancel_ack_failed(
+    diagnostics: &mut Option<m80_observability::Diagnostics>,
+    vm_id: &str,
+    request_id: &str,
+    request_kind: &'static str,
+    message: &str,
+    elapsed: Duration,
+) {
+    phase_event(&format!("{request_kind}_cancel_failed"), vm_id, elapsed);
+    crate::diagnostics::record_owned(
+        diagnostics,
+        Phase::Request,
+        vm_id,
+        Some(request_id),
+        message,
+    );
 }
 
 fn decode_frame<T: Payload>(frame: RawEnvelope) -> Result<T, FcError> {
@@ -931,5 +983,28 @@ mod tests {
         thread_released_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("detached test thread should still finish promptly");
+    }
+
+    #[test]
+    fn cancel_ack_failed_records_request_diagnostics() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut diagnostics = Some(m80_observability::Diagnostics::open(dir.path()).unwrap());
+
+        record_cancel_ack_failed(
+            &mut diagnostics,
+            "vm-test",
+            "req-cancel",
+            "exec",
+            "guest failed to cancel exec request req-cancel",
+            Duration::from_millis(7),
+        );
+        drop(diagnostics);
+
+        let text =
+            std::fs::read_to_string(dir.path().join(m80_observability::DIAGNOSTICS_FILE_NAME))
+                .unwrap();
+        assert!(text.contains("\"phase\":\"Request\""));
+        assert!(text.contains("\"request_id\":\"req-cancel\""));
+        assert!(text.contains("guest failed to cancel exec request req-cancel"));
     }
 }

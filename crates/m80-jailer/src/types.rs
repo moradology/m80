@@ -63,7 +63,7 @@ pub struct ResourceLimits {
     pub no_file: u64,
     /// Optional maximum size, in bytes, of files created by the process.
     pub fsize: Option<u64>,
-    /// Optional maximum number of processes for the jailed uid.
+    /// Optional maximum number of processes for the process real uid.
     pub nproc: Option<u64>,
     /// Optional maximum bytes that may be locked into memory.
     pub memlock: Option<u64>,
@@ -80,7 +80,7 @@ impl Default for ResourceLimits {
         Self {
             no_file: 2048,
             fsize: None,
-            nproc: Some(256),
+            nproc: None,
             memlock: Some(0),
             address_space: None,
             core: Some(0),
@@ -198,4 +198,14 @@ pub enum PlanStep {
 pub(crate) struct JailerState {
     pub(crate) jailer_pid: Option<u32>,
     pub(crate) firecracker_pid: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_resource_limits_do_not_set_host_wide_nproc() {
+        assert_eq!(ResourceLimits::default().nproc, None);
+    }
 }
