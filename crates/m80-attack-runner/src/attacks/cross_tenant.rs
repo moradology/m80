@@ -2,7 +2,9 @@
 
 use std::fs;
 
-use crate::{blocked, peer_sentinel, AttackBlocked, AttackResult};
+use crate::{
+    blocked, peer_network_state, peer_run_dir, peer_sentinel, AttackBlocked, AttackResult,
+};
 
 pub(crate) fn read_peer_sentinel() -> AttackResult {
     read_forbidden(&peer_sentinel(), "peer sentinel readable")
@@ -15,8 +17,7 @@ pub(crate) fn write_peer_sentinel() -> AttackResult {
 }
 
 pub(crate) fn list_peer_run_dir() -> AttackResult {
-    let path =
-        std::env::var("M80_ATTACK_PEER_RUN_DIR").unwrap_or_else(|_| "/run/m80/peer".to_owned());
+    let path = peer_run_dir();
     let count = fs::read_dir(&path)
         .map_err(|err| blocked(format!("read_dir {path}"), err))?
         .filter_map(Result::ok)
@@ -30,8 +31,7 @@ pub(crate) fn list_peer_run_dir() -> AttackResult {
 }
 
 pub(crate) fn read_peer_network_state() -> AttackResult {
-    let path = std::env::var("M80_ATTACK_PEER_NETWORK_STATE")
-        .unwrap_or_else(|_| "/run/m80/peer/network-state.json".to_owned());
+    let path = peer_network_state();
     read_forbidden(&path, "peer network state readable")
 }
 

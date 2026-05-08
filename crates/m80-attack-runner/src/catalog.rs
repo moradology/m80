@@ -255,6 +255,9 @@ pub fn run_attack(name: &str) -> AttackResult {
         std::thread::sleep(std::time::Duration::from_secs(5));
         return Ok(());
     }
+    if name == "require_peer_config" {
+        return crate::require_peer_config();
+    }
     let attack = ATTACKS
         .iter()
         .find(|attack| attack.name == name)

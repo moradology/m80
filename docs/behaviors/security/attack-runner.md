@@ -16,9 +16,12 @@ which always forwards `--api-sock` to the jailed executable.
 
 The runner exposes stable lowercase snake-case attack names grouped into six
 Layer-2 categories: filesystem, process, network, privilege, resource, and
-cross-tenant. Host or peer fixtures are provided through sentinel environment
-variables such as `M80_ATTACK_HOST_SENTINEL`, `M80_ATTACK_PEER_SENTINEL`,
-`M80_ATTACK_LOWER_SENTINEL`, and `M80_ATTACK_HOST_PID`.
+cross-tenant. Direct fixtures can provide host or peer paths through sentinel
+environment variables such as `M80_ATTACK_HOST_SENTINEL`,
+`M80_ATTACK_PEER_SENTINEL`, `M80_ATTACK_LOWER_SENTINEL`, and
+`M80_ATTACK_HOST_PID`. The official jailer harness clears the child
+environment, so root tests that need peer inputs bind a read-only config file
+at `/m80-attack-runner.conf` instead.
 
 The crate compiles for `x86_64-unknown-linux-musl` so the harness can copy one
 static payload into a minimal jail without a dynamic linker dependency.

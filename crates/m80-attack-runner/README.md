@@ -18,7 +18,20 @@ attack selector instead of adding a second launch API.
 Harness controls are intentionally outside `attack_names()`: `echo_zero` exits
 `0` immediately to prove the harness detects a successful attack, and
 `sleep_briefly` exits `0` after a short delay so cgroup-enrollment tests can
-attach the live payload process before it terminates.
+attach the live payload process before it terminates. `require_peer_config`
+exits `0` only when the fixed in-jail config file contains the peer sentinel,
+run-dir, network-state, and pid keys needed by two-tenant tests.
+
+When the runner is launched through `m80-jailer`, the official launch path
+clears the child environment. The root harness therefore bind-mounts a
+read-only config file at `/m80-attack-runner.conf` and uses these keys:
+
+- `host_sentinel`
+- `lower_sentinel`
+- `peer_sentinel`
+- `peer_run_dir`
+- `peer_network_state`
+- `peer_pid`
 
 ## Adding an Attack
 
@@ -27,12 +40,16 @@ Add the function in `src/attacks/<category>.rs`, then register it in
 test contract; do not rename an attack without updating the corresponding bead
 and test.
 
-Use environment variables for harness-provided host or tenant sentinel paths:
+Direct non-jailer fixtures may still use environment variables for
+harness-provided host or tenant sentinel paths:
 
 - `M80_ATTACK_HOST_SENTINEL`
 - `M80_ATTACK_PEER_SENTINEL`
 - `M80_ATTACK_LOWER_SENTINEL`
 - `M80_ATTACK_HOST_PID`
+- `M80_ATTACK_PEER_RUN_DIR`
+- `M80_ATTACK_PEER_NETWORK_STATE`
+- `M80_ATTACK_PEER_PID`
 
 Each attack returns `Ok(())` only when it observed the forbidden capability.
 Expected kernel or filesystem denials return `AttackBlocked`.

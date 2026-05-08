@@ -2,6 +2,7 @@
 
 mod attacks;
 mod catalog;
+mod config;
 
 use std::fmt;
 
@@ -48,17 +49,52 @@ pub(crate) fn blocked(context: impl fmt::Display, err: impl fmt::Display) -> Att
 }
 
 pub(crate) fn host_sentinel() -> String {
-    std::env::var("M80_ATTACK_HOST_SENTINEL")
-        .unwrap_or_else(|_| "/m80-host-sentinel-deny".to_owned())
+    config::value(
+        "host_sentinel",
+        "M80_ATTACK_HOST_SENTINEL",
+        "/m80-host-sentinel-deny",
+    )
 }
 
 pub(crate) fn peer_sentinel() -> String {
-    std::env::var("M80_ATTACK_PEER_SENTINEL")
-        .unwrap_or_else(|_| "/m80-peer-sentinel-deny".to_owned())
+    config::value(
+        "peer_sentinel",
+        "M80_ATTACK_PEER_SENTINEL",
+        "/m80-peer-sentinel-deny",
+    )
 }
 
 pub(crate) fn lower_sentinel() -> String {
-    std::env::var("M80_ATTACK_LOWER_SENTINEL").unwrap_or_else(|_| "/lower".to_owned())
+    config::value("lower_sentinel", "M80_ATTACK_LOWER_SENTINEL", "/lower")
+}
+
+pub(crate) fn peer_run_dir() -> String {
+    config::value("peer_run_dir", "M80_ATTACK_PEER_RUN_DIR", "/run/m80/peer")
+}
+
+pub(crate) fn peer_network_state() -> String {
+    config::value(
+        "peer_network_state",
+        "M80_ATTACK_PEER_NETWORK_STATE",
+        "/run/m80/peer/network-state.json",
+    )
+}
+
+pub(crate) fn require_peer_config() -> AttackResult {
+    for key in ["peer_sentinel", "peer_run_dir", "peer_network_state"] {
+        if config::optional_value(key, "").is_none() {
+            return Err(AttackBlocked::new(format!(
+                "missing attack config key {key}"
+            )));
+        }
+    }
+    let Some(raw_pid) = config::optional_value("peer_pid", "M80_ATTACK_PEER_PID") else {
+        return Err(AttackBlocked::new("missing attack config key peer_pid"));
+    };
+    raw_pid
+        .parse::<u32>()
+        .map(|_| ())
+        .map_err(|err| AttackBlocked::new(format!("invalid peer_pid {raw_pid}: {err}")))
 }
 
 #[cfg(test)]

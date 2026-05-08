@@ -29,6 +29,11 @@ All notable changes to m80 are documented here. Format roughly follows
   defense-in-depth test that enrolls the live jailer-launched payload in
   `m80-cgroup` with `Limits::m80_default()`.
 
+### Added — two-tenant attack-runner harness (m80-g0v8.11.14)
+
+- Added fixed-file peer config transport for env-cleared attack-runner launches
+  plus an ignored two-tenant jailer fixture with distinct live uid/gid pairs.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`

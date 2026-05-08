@@ -135,7 +135,12 @@ hands a config in and gets back a launchable chroot — or a typed error.
   The `sleep_briefly` harness control is enrolled through
   `m80-cgroup::Subtree::create` with `Limits::m80_default()` and must be
   observed in `cgroup.procs`, proving later resource-exhaustion attacks can run
-  under production-equivalent cgroup limits.
+  under production-equivalent cgroup limits. Cross-tenant harness controls bind
+  a read-only `/m80-attack-runner.conf` into each jail because the official
+  launch path clears the child environment; `require_peer_config` proves that
+  peer sentinel/run-dir/network-state/pid inputs survive that path, and
+  `two_tenant_attack_runner_fixture_materializes_distinct_live_jails` proves two
+  attack-runner jails can be live at once with distinct uid/gid pairs.
   The same harness pins the filesystem escape battery: dotdot/openat-style
   chroot escape attempts, proc-self-root escape, host sentinel read/write, and
   lower-layer write attempts must all exit non-zero. It also pins process/PID
