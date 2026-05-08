@@ -166,10 +166,22 @@ fn read_cgroup_path_record(run_dir: &Path) -> Result<Option<PathBuf>, Box<dyn st
 }
 
 pub(crate) fn config_binding(source: PathBuf) -> Binding {
+    ro_binding(source, PathBuf::from(ATTACK_CONFIG_DEST))
+}
+
+pub(crate) fn ro_binding(source: PathBuf, dest: PathBuf) -> Binding {
     Binding {
         source,
-        dest: PathBuf::from(ATTACK_CONFIG_DEST),
+        dest,
         mode: BindMode::Ro,
+    }
+}
+
+pub(crate) fn create_inside_jail(dest: PathBuf) -> Binding {
+    Binding {
+        source: PathBuf::new(),
+        dest,
+        mode: BindMode::CreateInsideJail,
     }
 }
 

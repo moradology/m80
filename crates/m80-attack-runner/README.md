@@ -60,3 +60,7 @@ Layer 2 battery. The privileged network probes (`open_raw_socket`,
 `raw_packet_inject`, `send_arbitrary_netlink`, `bind_on_host_interface`, and
 `privileged_route_mutation`) are the stable names for jailer/capability-drop
 coverage.
+
+Cross-tenant probes use the peer config keys above. The stable cross-tenant
+names are `read_peer_sentinel`, `write_peer_sentinel`, `list_peer_run_dir`,
+`read_peer_network_state`, `signal_peer_pid`, and `mount_peer_run_dir`.

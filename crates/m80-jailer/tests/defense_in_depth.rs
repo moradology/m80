@@ -1,7 +1,12 @@
 #[path = "defense_in_depth/support.rs"]
 mod support;
 
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+
 use m80_cgroup::Limits;
+use m80_jailer::Binding;
+use nix::unistd::{chown, Gid, Uid};
 use support::*;
 
 #[test]
@@ -273,4 +278,150 @@ fn jailed_attacker_cannot_bind_host_only_address() {
 #[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
 fn jailed_attacker_cannot_mutate_routes_over_netlink() {
     assert_attack_blocked("privileged_route_mutation");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_read_peer_sentinel() {
+    assert_cross_tenant_attack_blocked("read_peer_sentinel", Vec::new());
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_write_peer_sentinel() {
+    assert_cross_tenant_attack_blocked("write_peer_sentinel", Vec::new());
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_list_peer_run_dir() {
+    assert_cross_tenant_attack_blocked("list_peer_run_dir", Vec::new());
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_read_peer_network_state() {
+    assert_cross_tenant_attack_blocked("read_peer_network_state", Vec::new());
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_signal_peer_pid() {
+    assert_cross_tenant_attack_blocked("signal_peer_pid", Vec::new());
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_mount_peer_run_dir() {
+    assert_cross_tenant_attack_blocked(
+        "mount_peer_run_dir",
+        vec![create_inside_jail(PathBuf::from("m80-peer-mount-target"))],
+    );
+}
+
+fn assert_cross_tenant_attack_blocked(name: &str, extra_bindings: Vec<Binding>) {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let tenant_a = TenantSpec::new(temp.path(), "tenant-a", 3000, 3000);
+    let tenant_b = TenantSpec::new(temp.path(), "tenant-b", 3001, 3001);
+    let peer_private = prepare_peer_private(temp.path(), tenant_b.uid, tenant_b.gid)
+        .expect("prepare peer private dir");
+
+    write_attack_config(
+        &tenant_b.config_path,
+        AttackConfig {
+            peer_sentinel: "/unused-peer-a/sentinel",
+            peer_run_dir: "/unused-peer-a/run",
+            peer_network_state: "/unused-peer-a/network-state.json",
+            peer_pid: 1,
+        },
+    )
+    .expect("write tenant-b config");
+    let live_b = launch_attack_in_jailer(
+        "sleep_briefly",
+        &tenant_b.run_dir,
+        tenant_b.uid,
+        tenant_b.gid,
+        vec![config_binding(tenant_b.config_path.clone())],
+        None,
+    )
+    .expect("launch peer tenant");
+
+    let peer_in_jail =
+        PathBuf::from("peers").join(peer_private.file_name().expect("peer private dir has name"));
+    let peer_in_jail_display = format!("/{}", peer_in_jail.display());
+    write_attack_config(
+        &tenant_a.config_path,
+        AttackConfig {
+            peer_sentinel: &format!("{peer_in_jail_display}/sentinel"),
+            peer_run_dir: &peer_in_jail_display,
+            peer_network_state: &format!("{peer_in_jail_display}/network-state.json"),
+            peer_pid: live_b.jailed.firecracker_pid,
+        },
+    )
+    .expect("write tenant-a config");
+
+    let mut attacker_bindings = vec![
+        config_binding(tenant_a.config_path.clone()),
+        ro_binding(temp.path().to_path_buf(), PathBuf::from("peers")),
+    ];
+    attacker_bindings.extend(extra_bindings);
+    let live_a = launch_attack_in_jailer(
+        name,
+        &tenant_a.run_dir,
+        tenant_a.uid,
+        tenant_a.gid,
+        attacker_bindings,
+        None,
+    )
+    .expect("launch attacker tenant");
+
+    let result_a = live_a.wait().expect("wait attacker tenant");
+    assert_ne!(
+        result_a.exit_code,
+        Some(0),
+        "{name} reached the peer tenant; exit_code={:?}",
+        result_a.exit_code
+    );
+    assert!(
+        proc_pid_exists(live_b.jailed.firecracker_pid),
+        "{name} must not kill the peer tenant process"
+    );
+    let result_b = live_b.wait().expect("wait peer tenant");
+    assert_eq!(result_b.exit_code, Some(0));
+}
+
+fn prepare_peer_private(
+    root: &Path,
+    uid: u32,
+    gid: u32,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let dir = root.join("peer-private");
+    std::fs::create_dir(&dir)?;
+    std::fs::write(dir.join("sentinel"), b"peer tenant sentinel\n")?;
+    std::fs::write(
+        dir.join("network-state.json"),
+        b"{\"tenant\":\"peer\",\"network\":\"private\"}\n",
+    )?;
+    set_mode(&dir, 0o700)?;
+    set_mode(&dir.join("sentinel"), 0o600)?;
+    set_mode(&dir.join("network-state.json"), 0o600)?;
+    chown_tree(&dir, uid, gid)?;
+    Ok(dir)
+}
+
+fn set_mode(path: &Path, mode: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(mode);
+    std::fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+fn chown_tree(path: &Path, uid: u32, gid: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let uid = Uid::from_raw(uid);
+    let gid = Gid::from_raw(gid);
+    chown(path, Some(uid), Some(gid))?;
+    for entry in std::fs::read_dir(path)? {
+        chown(&entry?.path(), Some(uid), Some(gid))?;
+    }
+    Ok(())
 }

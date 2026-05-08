@@ -149,4 +149,6 @@ hands a config in and gets back a launchable chroot — or a typed error.
   escalation attempts to become uid/gid 0, retain capabilities, unshare/mount,
   or change host identity must all exit non-zero. Network hardening attempts to
   open raw sockets, open packet sockets, mutate links/routes over netlink, or
-  bind a nonlocal host-only address must all exit non-zero.
+  bind a nonlocal host-only address must all exit non-zero. Cross-tenant
+  attempts to read/write/list peer-private state, read peer network state,
+  signal the peer pid, or bind-mount the peer run-dir must all exit non-zero.

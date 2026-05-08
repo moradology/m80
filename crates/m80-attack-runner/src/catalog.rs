@@ -216,6 +216,16 @@ const ATTACKS: &[Attack] = &[
         AttackCategory::CrossTenant,
         cross_tenant::read_peer_network_state,
     ),
+    Attack::new(
+        "signal_peer_pid",
+        AttackCategory::CrossTenant,
+        cross_tenant::signal_peer_pid,
+    ),
+    Attack::new(
+        "mount_peer_run_dir",
+        AttackCategory::CrossTenant,
+        cross_tenant::mount_peer_run_dir,
+    ),
 ];
 
 /// Return all stable attack names, excluding harness controls.

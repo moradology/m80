@@ -34,6 +34,12 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added fixed-file peer config transport for env-cleared attack-runner launches
   plus an ignored two-tenant jailer fixture with distinct live uid/gid pairs.
 
+### Added — cross-tenant attack battery (m80-g0v8.11.10)
+
+- Added ignored jailer harness tests for cross-tenant read/write/list,
+  peer-network-state read, peer-pid signal, and peer-run-dir bind-mount
+  attempts.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`

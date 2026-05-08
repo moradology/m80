@@ -80,6 +80,15 @@ pub(crate) fn peer_network_state() -> String {
     )
 }
 
+pub(crate) fn peer_pid() -> Result<u32, AttackBlocked> {
+    let Some(raw_pid) = config::optional_value("peer_pid", "M80_ATTACK_PEER_PID") else {
+        return Err(AttackBlocked::new("missing attack config key peer_pid"));
+    };
+    raw_pid
+        .parse::<u32>()
+        .map_err(|err| AttackBlocked::new(format!("invalid peer_pid {raw_pid}: {err}")))
+}
+
 pub(crate) fn require_peer_config() -> AttackResult {
     for key in ["peer_sentinel", "peer_run_dir", "peer_network_state"] {
         if config::optional_value(key, "").is_none() {
@@ -88,13 +97,7 @@ pub(crate) fn require_peer_config() -> AttackResult {
             )));
         }
     }
-    let Some(raw_pid) = config::optional_value("peer_pid", "M80_ATTACK_PEER_PID") else {
-        return Err(AttackBlocked::new("missing attack config key peer_pid"));
-    };
-    raw_pid
-        .parse::<u32>()
-        .map(|_| ())
-        .map_err(|err| AttackBlocked::new(format!("invalid peer_pid {raw_pid}: {err}")))
+    peer_pid().map(|_| ())
 }
 
 #[cfg(test)]

@@ -1,9 +1,14 @@
 //! Cross-tenant isolation attack attempts.
 
 use std::fs;
+use std::path::Path;
+
+use nix::mount::{mount, MsFlags};
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
 
 use crate::{
-    blocked, peer_network_state, peer_run_dir, peer_sentinel, AttackBlocked, AttackResult,
+    blocked, peer_network_state, peer_pid, peer_run_dir, peer_sentinel, AttackBlocked, AttackResult,
 };
 
 pub(crate) fn read_peer_sentinel() -> AttackResult {
@@ -33,6 +38,24 @@ pub(crate) fn list_peer_run_dir() -> AttackResult {
 pub(crate) fn read_peer_network_state() -> AttackResult {
     let path = peer_network_state();
     read_forbidden(&path, "peer network state readable")
+}
+
+pub(crate) fn signal_peer_pid() -> AttackResult {
+    let pid = peer_pid()?;
+    kill(Pid::from_raw(pid as i32), Signal::SIGTERM)
+        .map_err(|err| blocked(format!("kill peer pid {pid}"), err))
+}
+
+pub(crate) fn mount_peer_run_dir() -> AttackResult {
+    let path = peer_run_dir();
+    mount(
+        Some(Path::new(&path)),
+        Path::new("/m80-peer-mount-target"),
+        None::<&str>,
+        MsFlags::MS_BIND,
+        None::<&str>,
+    )
+    .map_err(|err| blocked(format!("bind-mount peer run dir {path}"), err))
 }
 
 fn read_forbidden(path: &str, context: &'static str) -> AttackResult {
