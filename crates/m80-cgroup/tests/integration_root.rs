@@ -56,6 +56,35 @@ with open(result_path, "w", encoding="utf-8") as result:
 sys.exit(99)
 "#;
 
+const PYTHON_TRY_WIDEN_AFFINITY: &str = r#"
+import os
+import sys
+import time
+
+result_path = os.environ["M80_TEST_RESULT_PATH"]
+
+sys.stdin.readline()
+
+try:
+    os.sched_setaffinity(0, set(range(os.cpu_count() or 1)))
+    affinity_errno = 0
+except OSError as exc:
+    affinity_errno = exc.errno
+
+allowed = ""
+with open(f"/proc/{os.getpid()}/status", encoding="utf-8") as status:
+    for line in status:
+        if line.startswith("Cpus_allowed_list:"):
+            allowed = line.split(":", 1)[1].strip()
+            break
+
+with open(result_path, "w", encoding="utf-8") as result:
+    result.write(f"affinity_errno={affinity_errno}\n")
+    result.write(f"cpus_allowed_list={allowed}\n")
+
+time.sleep(30)
+"#;
+
 #[test]
 #[ignore]
 fn probe_returns_ok_on_unified_v2_host() {
@@ -121,6 +150,52 @@ fn cgroup_pids_max_enforced_against_fork_bomb() {
     drop(guard);
 }
 
+#[test]
+#[ignore = "requires root and a writable cgroup v2 hierarchy"]
+fn cgroup_cpuset_pinning_actually_constrains_affinity() {
+    m80_cgroup::Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
+
+    let vm_id = format!("m80-cpuset-{}", std::process::id());
+    let result_dir = tempfile::tempdir().expect("tempdir");
+    let result_path = result_dir.path().join("affinity-result.txt");
+    let leaf = prepare_cpuset_enforcement_cgroup(&vm_id);
+    let guard = CgroupLeafGuard { leaf: leaf.clone() };
+
+    let pinned_cpu = fs::read_to_string(leaf.join("cpuset.cpus"))
+        .expect("read pinned cpuset")
+        .trim()
+        .to_owned();
+    let mut child = Command::new("python3")
+        .arg("-c")
+        .arg(PYTHON_TRY_WIDEN_AFFINITY)
+        .env("M80_TEST_RESULT_PATH", &result_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn affinity workload");
+
+    write_cgroup_file(&leaf.join("cgroup.procs"), &format!("{}\n", child.id()));
+    child
+        .stdin
+        .as_mut()
+        .expect("child stdin")
+        .write_all(b"go\n")
+        .expect("start affinity workload");
+
+    wait_for_file(&result_path, Duration::from_secs(10));
+    let result = read_key_values(&result_path);
+    assert_eq!(
+        result.get("cpus_allowed_list").map(String::as_str),
+        Some(pinned_cpu.as_str()),
+        "cpuset must constrain affinity after workload tries to widen it; result={result:?}"
+    );
+
+    drop(guard);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 struct CgroupLeafGuard {
     leaf: PathBuf,
 }
@@ -144,9 +219,9 @@ fn prepare_pids_enforcement_cgroup(vm_id: &str) -> PathBuf {
         fs::remove_dir(&leaf).expect("remove stale pids test cgroup");
     }
 
-    enable_pids_controller(root);
+    enable_controller(root, "pids");
     fs::create_dir_all(parent).expect("create m80 cgroup parent");
-    enable_pids_controller(parent);
+    enable_controller(parent, "pids");
     fs::create_dir(&leaf).expect("create pids test cgroup leaf");
     write_cgroup_file(
         &leaf.join("pids.max"),
@@ -155,17 +230,52 @@ fn prepare_pids_enforcement_cgroup(vm_id: &str) -> PathBuf {
     leaf
 }
 
-fn enable_pids_controller(path: &Path) {
+fn prepare_cpuset_enforcement_cgroup(vm_id: &str) -> PathBuf {
+    let root = Path::new(CGROUP_ROOT);
+    let parent = Path::new(M80_CGROUP_PARENT);
+    let leaf = parent.join(vm_id);
+
+    if leaf.exists() {
+        kill_pids_in_cgroup(&leaf);
+        wait_for_empty_cgroup(&leaf);
+        fs::remove_dir(&leaf).expect("remove stale cpuset test cgroup");
+    }
+
+    enable_controller(root, "cpuset");
+    fs::create_dir_all(parent).expect("create m80 cgroup parent");
+
+    let parent_cpus = fs::read_to_string(parent.join("cpuset.cpus.effective"))
+        .or_else(|_| fs::read_to_string(root.join("cpuset.cpus.effective")))
+        .expect("read effective parent cpuset.cpus");
+    let parent_mems = fs::read_to_string(parent.join("cpuset.mems.effective"))
+        .or_else(|_| fs::read_to_string(root.join("cpuset.mems.effective")))
+        .expect("read effective parent cpuset.mems");
+    write_cgroup_file(&parent.join("cpuset.cpus"), parent_cpus.trim());
+    write_cgroup_file(&parent.join("cpuset.mems"), parent_mems.trim());
+    enable_controller(parent, "cpuset");
+
+    fs::create_dir(&leaf).expect("create cpuset test cgroup leaf");
+    let pinned_cpu = first_cpuset_member(parent_cpus.trim());
+    let pinned_mem = first_cpuset_member(parent_mems.trim());
+    write_cgroup_file(&leaf.join("cpuset.cpus"), &format!("{pinned_cpu}\n"));
+    write_cgroup_file(&leaf.join("cpuset.mems"), &format!("{pinned_mem}\n"));
+    leaf
+}
+
+fn enable_controller(path: &Path, controller: &str) {
     let controllers =
         fs::read_to_string(path.join("cgroup.controllers")).expect("read cgroup.controllers");
     assert!(
         controllers
             .split_whitespace()
-            .any(|controller| controller == "pids"),
-        "{} must expose the pids controller: {controllers:?}",
+            .any(|candidate| candidate == controller),
+        "{} must expose the {controller} controller: {controllers:?}",
         path.display()
     );
-    write_cgroup_file(&path.join("cgroup.subtree_control"), "+pids\n");
+    write_cgroup_file(
+        &path.join("cgroup.subtree_control"),
+        &format!("+{controller}\n"),
+    );
 }
 
 fn write_cgroup_file(path: &Path, value: &str) {
@@ -200,6 +310,31 @@ fn read_key_values(path: &Path) -> BTreeMap<String, String> {
         })
         .map(|(key, value)| (key.to_owned(), value.to_owned()))
         .collect()
+}
+
+fn wait_for_file(path: &Path, timeout: Duration) {
+    let started = Instant::now();
+    while !path.exists() {
+        assert!(
+            started.elapsed() <= timeout,
+            "{} was not created within {timeout:?}",
+            path.display()
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn first_cpuset_member(value: &str) -> String {
+    let first_range = value
+        .split(',')
+        .next()
+        .unwrap_or_else(|| panic!("cpuset value must not be empty: {value:?}"));
+    first_range
+        .split('-')
+        .next()
+        .filter(|member| !member.is_empty())
+        .unwrap_or_else(|| panic!("cpuset range must start with a CPU/mem id: {value:?}"))
+        .to_owned()
 }
 
 fn kill_pids_in_cgroup(leaf: &Path) {

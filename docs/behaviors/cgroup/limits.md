@@ -34,6 +34,17 @@ Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_pids_max_enforced_aga
 waiting fork workload, and asserts the kernel rejects the next fork with
 `EAGAIN`, `pids.current` reaches 128, and `pids.events max` increments.
 
+## cpuset-pinning
+
+When the caller configures a leaf `cpuset.cpus`, the kernel constrains enrolled
+process affinity to that CPU set. A process inside the leaf cannot widen its
+effective `Cpus_allowed_list` beyond the cgroup cpuset.
+
+Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_cpuset_pinning_actually_constrains_affinity`
+(#[ignore]) creates a real cgroup leaf pinned to one effective host CPU,
+enrolls a workload that tries to widen its scheduler affinity, and asserts
+`/proc/<pid>/status` still reports only the pinned CPU.
+
 ## io-and-oom-defaults
 
 The default unified-v2 profile enables the `io` controller and writes
