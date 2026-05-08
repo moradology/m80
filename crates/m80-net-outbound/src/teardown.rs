@@ -7,6 +7,15 @@ use crate::{
     vm_network_state_path, LinkOps, NetError, PolicyOps, VmNetworkStateRecord,
 };
 
+/// Tear down network state owned by `vm_id` through real host backends.
+///
+/// Requires `CAP_NET_ADMIN` or root when owned links or iptables rules exist.
+pub fn cleanup_vm(vm_id: &str, run_root: &Path) -> Result<(), NetError> {
+    let mut links = crate::NetlinkLinkOps::new()?;
+    let mut policy_ops = crate::iptables::CommandPolicyOps;
+    cleanup_vm_with_ops(&mut links, &mut policy_ops, vm_id, run_root)
+}
+
 /// Tear down the network state owned by `vm_id` through supplied backends.
 pub fn cleanup_vm_with_ops(
     links: &mut impl LinkOps,
@@ -31,6 +40,14 @@ pub fn cleanup_vm_with_ops(
         remove_file_if_present(&bridge_state_path(&state.bridge.run_root))?;
     }
     remove_file_if_present(&state_path)
+}
+
+/// Remove the run-root bridge through the real link backend when unused.
+///
+/// Requires `CAP_NET_ADMIN` or root when the bridge exists.
+pub fn cleanup_orphan_bridge(run_root: &Path) -> Result<(), NetError> {
+    let mut links = crate::NetlinkLinkOps::new()?;
+    cleanup_orphan_bridge_with_ops(&mut links, run_root)
 }
 
 /// Remove the run-root bridge through a supplied link backend when unused.

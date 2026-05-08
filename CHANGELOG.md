@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — OutboundNat real-host entrypoints (m80-mx2t.4)
+
+- `m80-net-outbound` now exposes real-host wrappers for bridge/TAP realize,
+  guest network config injection, VM cleanup, and orphan bridge cleanup. These
+  match the README's existing public-surface contract and are the entrypoints
+  `m80-firecracker` needs before `AllowOutbound` can be wired through launch.
+
 ### Added — Firecracker network interface API surface (m80-2ggw.3.3)
 
 - Added `NetworkInterfaceConfig` and `Client::put_network_interface` for

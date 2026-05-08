@@ -30,9 +30,9 @@ pub use dns::{
     DnsCommandOutput, DnsDiscoveryOps,
 };
 pub use injection::{
-    inject_guest_network_config_with_ops, CommandGuestNetworkConfigOps, GuestNetworkConfig,
-    GuestNetworkConfigOps, M80_NETWORKD_FILE, M80_RESOLVED_FILE, SYSTEMD_NETWORK_DIR,
-    SYSTEMD_RESOLVED_CONF_DIR,
+    inject_guest_network_config, inject_guest_network_config_with_ops,
+    CommandGuestNetworkConfigOps, GuestNetworkConfig, GuestNetworkConfigOps, M80_NETWORKD_FILE,
+    M80_RESOLVED_FILE, SYSTEMD_NETWORK_DIR, SYSTEMD_RESOLVED_CONF_DIR,
 };
 pub use iptables::{
     apply_outbound_nat_policy, apply_outbound_nat_policy_with_ops, outbound_nat_filter_chain,
@@ -47,7 +47,8 @@ pub use state::{
     BRIDGE_STATE_FILE, NETWORK_STATE_SCHEMA_VERSION,
 };
 pub use teardown::{
-    cleanup_orphan_bridge_with_ops, cleanup_outbound_nat_policy_with_ops, cleanup_vm_with_ops,
+    cleanup_orphan_bridge, cleanup_orphan_bridge_with_ops, cleanup_outbound_nat_policy_with_ops,
+    cleanup_vm, cleanup_vm_with_ops,
 };
 
 /// Comment prefix m80 stamps on every iptables rule it owns. Used by cleanup
@@ -88,6 +89,21 @@ pub fn realize_bridge_and_tap_with_ops(
 ) -> Result<RealizedNetwork, NetError> {
     let host_routes = fs::read_to_string("/proc/net/route")?;
     realize_bridge_and_tap_with_ops_for_routes(ops, intent, vm_id, run_root, run_dir, &host_routes)
+}
+
+/// Realize bridge/TAP setup with real host link operations.
+///
+/// Requires `CAP_NET_ADMIN` or root. This performs only the bridge/TAP phase;
+/// callers must inject guest network config and apply the outbound NAT policy
+/// before booting a VM that expects connectivity.
+pub fn realize_bridge_and_tap(
+    intent: &OutboundIntent,
+    vm_id: &str,
+    run_root: &Path,
+    run_dir: &Path,
+) -> Result<RealizedNetwork, NetError> {
+    let mut ops = NetlinkLinkOps::new()?;
+    realize_bridge_and_tap_with_ops(&mut ops, intent, vm_id, run_root, run_dir)
 }
 
 /// Realize bridge/TAP setup with supplied `/proc/net/route` contents.
