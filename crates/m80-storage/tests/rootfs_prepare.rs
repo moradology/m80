@@ -1,5 +1,7 @@
 //! Tests for `Rootfs::prepare` and `Rootfs::new_at`.
 
+use std::os::unix::fs::MetadataExt as _;
+
 use m80_storage::{Rootfs, StorageError};
 
 fn paths() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
@@ -58,6 +60,18 @@ fn prepare_overlay_file_has_correct_size() {
     );
 }
 
+#[test]
+fn overlay_template_and_clone_are_sparse() {
+    let (dir, base, overlay) = paths();
+    let size: u64 = 64 * 1024 * 1024;
+
+    Rootfs::prepare(&base, &overlay, size).unwrap();
+
+    let template = dir.path().join(".rootfs-overlay-template-v1-67108864.ext4");
+    assert_sparse_file(&template, size);
+    assert_sparse_file(&overlay, size);
+}
+
 /// Missing parent directory returns `OverlayTemplateCloneFailed`.
 #[test]
 fn prepare_missing_parent_returns_overlay_template_clone_failed() {
@@ -83,7 +97,9 @@ fn prepare_mkfs_failure_returns_subprocess_failed() {
     let (_dir, base, overlay) = paths();
     let err = Rootfs::prepare(&base, &overlay, 0).unwrap_err();
     match err {
-        StorageError::SubprocessFailed { program, status, .. } => {
+        StorageError::SubprocessFailed {
+            program, status, ..
+        } => {
             assert_eq!(program, "mkfs.ext4", "program must be mkfs.ext4");
             assert_ne!(status, "0", "mkfs must have exited non-zero");
         }
@@ -149,4 +165,20 @@ fn stale_template_metadata_is_a_hard_error() {
         StorageError::OverlayTemplateMismatch { path, .. } => assert_eq!(path, meta),
         other => panic!("expected OverlayTemplateMismatch, got {other:?}"),
     }
+}
+
+fn assert_sparse_file(path: &std::path::Path, apparent_size: u64) {
+    let meta = std::fs::metadata(path).unwrap();
+    assert_eq!(
+        meta.len(),
+        apparent_size,
+        "{} apparent size",
+        path.display()
+    );
+    let allocated = meta.blocks() * 512;
+    assert!(
+        allocated < apparent_size / 2,
+        "{} must be sparse: allocated {allocated} bytes for apparent size {apparent_size}",
+        path.display()
+    );
 }
