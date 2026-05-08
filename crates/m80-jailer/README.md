@@ -132,3 +132,6 @@ hands a config in and gets back a launchable chroot — or a typed error.
   musl `m80-attack-runner` payload through the official Firecracker jailer
   path and waits for its exit code. The `echo_zero` negative control must exit
   `0` so the harness can prove it detects a successful attack as a breach.
+  The same harness pins the filesystem escape battery: dotdot/openat-style
+  chroot escape attempts, proc-self-root escape, host sentinel read/write, and
+  lower-layer write attempts must all exit non-zero.

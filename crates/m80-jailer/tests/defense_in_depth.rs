@@ -28,8 +28,54 @@ fn attack_runner_unknown_attack_reports_blocked() {
     );
 }
 
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_chroot_escape_via_dotdot() {
+    assert_attack_blocked("chroot_escape_via_dotdot");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_chroot_escape_via_openat_style_path() {
+    assert_attack_blocked("chroot_escape_via_openat_style_path");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_chroot_escape_via_proc_self_root() {
+    assert_attack_blocked("chroot_escape_via_proc_self_root");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_read_host_sentinel() {
+    assert_attack_blocked("read_host_sentinel");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_write_host_sentinel() {
+    assert_attack_blocked("write_host_sentinel");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_write_to_lower_layer() {
+    assert_attack_blocked("write_to_lower_layer");
+}
+
 struct AttackRun {
     exit_code: Option<i32>,
+}
+
+fn assert_attack_blocked(name: &str) {
+    let result = run_attack_in_jailer(name).expect("run attack");
+    assert_ne!(
+        result.exit_code,
+        Some(0),
+        "{name} escaped the jail; exit_code={:?}",
+        result.exit_code
+    );
 }
 
 fn run_attack_in_jailer(name: &str) -> Result<AttackRun, Box<dyn std::error::Error>> {

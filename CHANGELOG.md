@@ -15,6 +15,9 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added the ignored `m80-jailer` defense-in-depth harness that launches the
   attack runner through the official Firecracker jailer path and verifies the
   `echo_zero` negative control is observed as a successful attack.
+- Added the ignored filesystem escape battery over that harness, covering
+  dotdot/openat-style chroot escape attempts, proc-self-root escape, host
+  sentinel read/write, and lower-layer write attempts.
 
 ### Added — PID-1 outbound network configuration (m80-mx2t.4.2)
 
