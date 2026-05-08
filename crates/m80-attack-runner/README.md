@@ -15,6 +15,11 @@ For the official Firecracker jailer harness, the runner also accepts
 `--api-sock` to the jailed executable, so the harness reuses that field as the
 attack selector instead of adding a second launch API.
 
+Harness controls are intentionally outside `attack_names()`: `echo_zero` exits
+`0` immediately to prove the harness detects a successful attack, and
+`sleep_briefly` exits `0` after a short delay so cgroup-enrollment tests can
+attach the live payload process before it terminates.
+
 ## Adding an Attack
 
 Add the function in `src/attacks/<category>.rs`, then register it in

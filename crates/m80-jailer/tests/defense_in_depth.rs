@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use m80_cgroup::{Limits, Subtree};
 use m80_jailer::{JailerConfig, JailerSocket, Plan, ResourceLimits};
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::Pid;
@@ -25,6 +26,27 @@ fn attack_runner_unknown_attack_reports_blocked() {
         result.exit_code,
         Some(0),
         "unknown attack must exercise the harness blocked/nonzero path"
+    );
+}
+
+#[test]
+#[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn attack_runner_can_be_enrolled_in_m80_cgroup_limits() {
+    let result = run_attack_in_jailer_with_cgroup("sleep_briefly", Limits::m80_default())
+        .expect("run cgroup-enrolled attack");
+
+    assert_eq!(
+        result.exit_code,
+        Some(0),
+        "sleep_briefly must preserve the live harness control"
+    );
+    assert!(
+        result.cgroup_path.is_some(),
+        "cgroup enrollment must record cgroup-path.txt"
+    );
+    assert!(
+        result.cgroup_contained_pid,
+        "cgroup.procs must contain the jailed attack-runner pid before wait"
     );
 }
 
@@ -162,6 +184,8 @@ fn jailed_attacker_cannot_mutate_routes_over_netlink() {
 
 struct AttackRun {
     exit_code: Option<i32>,
+    cgroup_path: Option<PathBuf>,
+    cgroup_contained_pid: bool,
 }
 
 fn assert_attack_blocked(name: &str) {
@@ -175,6 +199,20 @@ fn assert_attack_blocked(name: &str) {
 }
 
 fn run_attack_in_jailer(name: &str) -> Result<AttackRun, Box<dyn std::error::Error>> {
+    run_attack_in_jailer_inner(name, None)
+}
+
+fn run_attack_in_jailer_with_cgroup(
+    name: &str,
+    limits: Limits,
+) -> Result<AttackRun, Box<dyn std::error::Error>> {
+    run_attack_in_jailer_inner(name, Some(limits))
+}
+
+fn run_attack_in_jailer_inner(
+    name: &str,
+    limits: Option<Limits>,
+) -> Result<AttackRun, Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let run_dir = temp.path().join(format!("attack-{name}"));
     std::fs::create_dir(&run_dir)?;
@@ -200,14 +238,42 @@ fn run_attack_in_jailer(name: &str) -> Result<AttackRun, Box<dyn std::error::Err
     };
     let jail = Plan::compute(&config)?.materialize()?;
     let jailed = jail.launch(Path::new(name))?;
+    let cgroup = if let Some(limits) = limits {
+        let vm_id = format!("attack-{name}-{}", std::process::id());
+        Some(Subtree::create(&vm_id, &jail, &jailed, &limits)?)
+    } else {
+        None
+    };
+    let cgroup_path = read_cgroup_path_record(&jail.plan.config.run_dir)?;
+    let cgroup_contained_pid =
+        cgroup_path.as_ref().is_some_and(|path| {
+            match std::fs::read_to_string(path.join("cgroup.procs")) {
+                Ok(procs) => procs
+                    .lines()
+                    .any(|pid| pid == jailed.firecracker_pid.to_string()),
+                Err(_) => false,
+            }
+        });
     let status = waitpid(Pid::from_raw(jailed.firecracker_pid as i32), None)?;
+    drop(cgroup);
     Ok(AttackRun {
         exit_code: match status {
             WaitStatus::Exited(_, code) => Some(code),
             WaitStatus::Signaled(_, signal, _) => Some(128 + signal as i32),
             other => panic!("unexpected attack-runner wait status: {other:?}"),
         },
+        cgroup_path,
+        cgroup_contained_pid,
     })
+}
+
+fn read_cgroup_path_record(run_dir: &Path) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    let path = run_dir.join("cgroup-path.txt");
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    Ok(Some(PathBuf::from(std::fs::read_to_string(path)?.trim())))
 }
 
 fn binary_from_env(env: &str, default: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {

@@ -18,4 +18,5 @@ tracing.workspace = true
 nix.workspace = true
 
 [dev-dependencies]
+m80-cgroup.workspace = true
 tempfile.workspace = true

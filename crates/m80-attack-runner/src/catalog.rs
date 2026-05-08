@@ -251,6 +251,10 @@ pub fn run_attack(name: &str) -> AttackResult {
     if name == "echo_zero" {
         return Ok(());
     }
+    if name == "sleep_briefly" {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        return Ok(());
+    }
     let attack = ATTACKS
         .iter()
         .find(|attack| attack.name == name)

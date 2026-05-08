@@ -23,6 +23,12 @@ All notable changes to m80 are documented here. Format roughly follows
   network operations: raw sockets, packet sockets, netlink link mutation,
   nonlocal bind, and route mutation.
 
+### Added — cgroup-enrolled attack-runner harness (m80-g0v8.11.13)
+
+- Added a `sleep_briefly` attack-runner harness control and an ignored
+  defense-in-depth test that enrolls the live jailer-launched payload in
+  `m80-cgroup` with `Limits::m80_default()`.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`

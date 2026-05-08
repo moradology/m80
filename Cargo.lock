@@ -764,6 +764,7 @@ dependencies = [
 name = "m80-jailer"
 version = "0.0.0"
 dependencies = [
+ "m80-cgroup",
  "nix 0.29.0",
  "serde",
  "serde_json",
