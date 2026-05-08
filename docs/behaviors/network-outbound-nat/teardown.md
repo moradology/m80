@@ -88,6 +88,13 @@ Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::repeated_cleanup_calls_are_safe`
 and `crates/m80-net-outbound/tests/network-outbound-nat/ownership.rs::orphan_tap_detected_and_cleaned`.
 
+`m80-firecracker` arms an outbound-network cleanup guard after successful
+phase-6 realization. If any later launch phase fails, the guard calls
+`cleanup_vm`. A successful launch carries the cleanup obligation in the
+`RunningSandbox` and then into `StoppedSandbox`; `delete` and
+`preserve_for_triage` reap owned network residue before releasing the VM
+lifetime.
+
 ## Foreign Rule Rejection
 
 Before installing into a pre-existing per-VM filter chain, m80 lists the

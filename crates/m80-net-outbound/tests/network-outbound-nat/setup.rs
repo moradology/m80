@@ -273,7 +273,7 @@ fn concurrent_launch_no_ipv4_collision() {
         std::thread::spawn(move || {
             let run_dir = run_root.join(&vm_id);
             std::fs::create_dir(&run_dir).unwrap();
-            let mut ops = RecordingLinkOps::default();
+            let mut ops = RecordingLinkOps::with_link_address(true);
             let intent = intent_with_exception();
             barrier.wait();
             realize_for_test(&mut ops, &intent, &vm_id, &run_root, &run_dir)
@@ -286,7 +286,7 @@ fn concurrent_launch_no_ipv4_collision() {
         std::thread::spawn(move || {
             let run_dir = run_root.join(&vm_id);
             std::fs::create_dir(&run_dir).unwrap();
-            let mut ops = RecordingLinkOps::default();
+            let mut ops = RecordingLinkOps::with_link_address(true);
             let intent = intent_with_exception();
             barrier.wait();
             realize_for_test(&mut ops, &intent, &vm_id, &run_root, &run_dir)

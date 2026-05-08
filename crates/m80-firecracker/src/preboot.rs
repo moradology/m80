@@ -55,6 +55,7 @@ pub(crate) fn plan_preboot_puts(
     kernel_kind: KernelKind,
     include_workspace_drive: bool,
     network: &RealizedNetwork,
+    extra_boot_args: &[String],
 ) -> Vec<PrebootPut> {
     let mut puts = vec![
         PrebootPut::MachineConfig(machine_config_for(config)),
@@ -65,6 +66,7 @@ pub(crate) fn plan_preboot_puts(
                 kernel_kind,
                 config.boot_args.as_deref(),
                 include_workspace_drive,
+                extra_boot_args,
             )),
             initrd_path: None,
         }),
@@ -155,6 +157,7 @@ fn boot_args_for(
     kernel_kind: KernelKind,
     config_override: Option<&str>,
     include_workspace_drive: bool,
+    extra_boot_args: &[String],
 ) -> String {
     let base = match (config_override, kind, kernel_kind) {
         (Some(custom), _, _) => custom.to_owned(),
@@ -166,7 +169,12 @@ fn boot_args_for(
         }
     };
     let workspace = u8::from(include_workspace_drive);
-    format!("{base} m80.workspace={workspace}")
+    let mut args = format!("{base} m80.workspace={workspace}");
+    if !extra_boot_args.is_empty() {
+        args.push(' ');
+        args.push_str(&extra_boot_args.join(" "));
+    }
+    args
 }
 
 #[cfg(test)]
@@ -181,6 +189,7 @@ mod tests {
             KernelKind::Stock,
             false,
             &RealizedNetwork::NoEgress,
+            &[],
         )
     }
 
@@ -199,6 +208,7 @@ mod tests {
             KernelKind::Stock,
             false,
             &RealizedNetwork::NoEgress,
+            &[],
         );
 
         let PrebootPut::MachineConfig(machine) = &puts[0] else {
@@ -271,6 +281,7 @@ mod tests {
             KernelKind::Stock,
             true,
             &RealizedNetwork::NoEgress,
+            &[],
         );
 
         let PrebootPut::Drive(workspace) = &puts[4] else {
@@ -310,6 +321,7 @@ mod tests {
             KernelKind::Stock,
             false,
             &RealizedNetwork::NoEgress,
+            &[],
         );
 
         let PrebootPut::Drive(slot0) = &puts[4] else {
@@ -342,6 +354,7 @@ mod tests {
                 tap_name: "tfc123456789abc".to_owned(),
                 guest_mac: "02:00:00:00:00:02".to_owned(),
             },
+            &[],
         );
 
         let PrebootPut::NetworkInterface(nic) = &puts[4] else {
@@ -371,6 +384,7 @@ mod tests {
                 tap_name: "tfc123456789abc".to_owned(),
                 guest_mac: "02:00:00:00:00:02".to_owned(),
             },
+            &[],
         );
 
         let kinds = puts
@@ -413,7 +427,7 @@ mod tests {
     #[test]
     fn boot_args_ubuntu_stock() {
         assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None, false),
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None, false, &[]),
             "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0",
         );
     }
@@ -421,7 +435,7 @@ mod tests {
     #[test]
     fn boot_args_ubuntu_stripped() {
         assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None, false),
+            boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None, false, &[]),
             "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0",
         );
     }
@@ -429,7 +443,7 @@ mod tests {
     #[test]
     fn boot_args_minimal_stock() {
         assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, false),
+            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, false, &[]),
             "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0",
         );
     }
@@ -437,7 +451,7 @@ mod tests {
     #[test]
     fn boot_args_minimal_stripped() {
         assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None, false),
+            boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None, false, &[]),
             "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0",
         );
     }
@@ -445,8 +459,25 @@ mod tests {
     #[test]
     fn boot_args_mark_workspace_when_drive_is_present() {
         assert_eq!(
-            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, true),
+            boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, true, &[]),
             "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=1",
+        );
+    }
+
+    #[test]
+    fn boot_args_append_pid_one_network_tokens_after_workspace_marker() {
+        assert_eq!(
+            boot_args_for(
+                ImageKind::Minimal,
+                KernelKind::Stock,
+                None,
+                false,
+                &[
+                    "m80.net=outbound".to_owned(),
+                    "m80.net.iface=eth0".to_owned(),
+                ],
+            ),
+            "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0 m80.net=outbound m80.net.iface=eth0",
         );
     }
 
@@ -458,13 +489,20 @@ mod tests {
                 ImageKind::Minimal,
                 KernelKind::Stripped,
                 Some(custom),
-                false
+                false,
+                &[],
             ),
             "console=ttyS0 my=custom args m80.workspace=0",
             "explicit override must take precedence regardless of kind and kernel_kind"
         );
         assert_eq!(
-            boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, Some(custom), true),
+            boot_args_for(
+                ImageKind::Ubuntu,
+                KernelKind::Stock,
+                Some(custom),
+                true,
+                &[]
+            ),
             "console=ttyS0 my=custom args m80.workspace=1",
         );
     }

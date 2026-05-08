@@ -53,6 +53,51 @@ pub(super) struct LaunchProcessCleanupGuard {
     armed: bool,
 }
 
+pub(super) struct LaunchNetworkCleanupGuard {
+    vm_id: String,
+    run_root: PathBuf,
+    armed: bool,
+}
+
+impl LaunchNetworkCleanupGuard {
+    pub(super) fn new(vm_id: &str, run_root: PathBuf) -> Self {
+        Self {
+            vm_id: vm_id.to_owned(),
+            run_root,
+            armed: true,
+        }
+    }
+
+    pub(super) fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for LaunchNetworkCleanupGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        match m80_net_outbound::cleanup_vm(&self.vm_id, &self.run_root) {
+            Ok(()) => {
+                tracing::warn!(
+                    vm_id = %self.vm_id,
+                    run_root = %self.run_root.display(),
+                    "launch failure cleanup removed outbound network residue"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    vm_id = %self.vm_id,
+                    run_root = %self.run_root.display(),
+                    error = %e,
+                    "launch failure cleanup failed to remove outbound network residue"
+                );
+            }
+        }
+    }
+}
+
 impl LaunchProcessCleanupGuard {
     pub(super) fn from_jailed(vm_id: &str, jailed: &m80_jailer::JailedFirecracker) -> Self {
         Self::new(vm_id, jailed.firecracker_pid, jailed.jailer_pid)

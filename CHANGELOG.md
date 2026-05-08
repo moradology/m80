@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — OutboundNat launch wiring (m80-mx2t.4)
+
+- `m80-firecracker` now wires `NetworkPolicy::AllowOutbound` through launch:
+  bridge/TAP realization, PID-1 `m80.net.*` boot tokens, host NAT/filter policy,
+  Firecracker `eth0` network-interface PUT, and owned network cleanup on launch
+  failure, delete, or preserve-for-triage after stop/force-kill.
+
 ### Added — Firecracker CVE floor (m80-g0v8.11.4)
 
 - `m80-preflight` now rejects Firecracker versions covered by the tracked

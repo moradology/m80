@@ -52,6 +52,11 @@ The system creates each per-VM TAP interface without invoking `ip` or
 resulting interface is managed through rtnetlink: set the guest MAC, attach
 the TAP to the run-root bridge, and bring the TAP link up.
 
+`m80-firecracker` calls this setup from launch phase 6 when
+`NetworkPolicy::AllowOutbound` resolves to `VmNetworkMode::OutboundNat`.
+The realized TAP name and guest MAC become the Firecracker
+`NetworkInterfaceConfig` for `eth0`.
+
 If TAP setup fails after the run-root bridge has been created, setup rolls back
 the VM network state file, deletes the TAP if it was partially created, and
 scavenges the now-unused run-root bridge state. A failed VM launch must not

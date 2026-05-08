@@ -2,12 +2,6 @@
 //!
 //! # v0.1 simplifications
 //!
-//! - **Phase 6**: `OutboundNat` is rejected with a clear error; `m80-net-outbound`
-//!   is deferred to v0.2 and would panic if called.
-//!
-//! - **Phase 7 (guest config injection)**: no-op in v0.1 because `OutboundNat`
-//!   is rejected in phase 6 before we reach this step.
-//!
 //! - **Phase 12b (ready accept)**: m80-guestd connects out to the host on
 //!   `m80_proto::READY_PORT_DEFAULT` immediately after binding its
 //!   listener; the host pre-creates a `UnixListener` at
@@ -47,7 +41,9 @@ use crate::types::{
 
 mod failure_cleanup;
 
-use failure_cleanup::{LaunchProcessCleanupGuard, LaunchRunDirCleanupGuard};
+use failure_cleanup::{
+    LaunchNetworkCleanupGuard, LaunchProcessCleanupGuard, LaunchRunDirCleanupGuard,
+};
 
 /// Record a diagnostics-annotated phase result.
 ///
@@ -187,8 +183,14 @@ impl Sandbox {
             request_id.as_deref(),
             Phase::NetworkPrepare,
             "phase_6_network_realize",
-            { phase_6_network_realize(&self.config) }
+            { phase_6_network_realize(&self.config, &vm_id, run_root, &run_dir) }
         )?;
+        let mut network_cleanup = match &net {
+            RealizedNetwork::OutboundNat { .. } => {
+                Some(LaunchNetworkCleanupGuard::new(&vm_id, run_root.clone()))
+            }
+            RealizedNetwork::NoEgress | RealizedNetwork::JoinNetns { .. } => None,
+        };
         let network_message = match &net {
             RealizedNetwork::NoEgress => "network prepared".to_owned(),
             RealizedNetwork::OutboundNat { tap_name, .. } => {
@@ -206,8 +208,16 @@ impl Sandbox {
             &network_message,
         );
 
-        // Phase 7: guest config injection — no-op in v0.1. OutboundNat is
-        // rejected in phase 6 before preboot REST PUTs are built.
+        // Phase 7: for OutboundNat, prepare PID-1 guest network tokens and
+        // apply the host firewall/NAT policy before the VM can boot.
+        let network_boot_args = diag_phase!(
+            &mut diagnostics,
+            &vm_id,
+            request_id.as_deref(),
+            Phase::NetworkPrepare,
+            "phase_7_outbound_guest_config",
+            { phase_7_outbound_guest_config(&net, &run_dir) }
+        )?;
 
         // Phase 8: compute the API socket path (inside the jail root).
         let api_socket =
@@ -266,6 +276,7 @@ impl Sandbox {
                     backend_config.discovery.manifest.image_kind,
                     backend_config.discovery.manifest.kernel_kind,
                     &net,
+                    &network_boot_args,
                 )
             }
         )?;
@@ -356,6 +367,10 @@ impl Sandbox {
             None,
         );
         process_cleanup.disarm();
+        let network_cleanup_enabled = network_cleanup.is_some();
+        if let Some(guard) = &mut network_cleanup {
+            guard.disarm();
+        }
         run_dir_cleanup.disarm();
         Ok(RunningSandbox {
             vm_id,
@@ -381,6 +396,7 @@ impl Sandbox {
             one_shot: self.config.one_shot,
             one_shot_consumed: false,
             kill_guard,
+            network_cleanup: network_cleanup_enabled,
         })
     }
 }
@@ -649,6 +665,7 @@ impl Sandbox {
             one_shot: self.config.one_shot,
             one_shot_consumed: false,
             kill_guard,
+            network_cleanup: false,
         })
     }
 }
@@ -861,15 +878,40 @@ fn fail_cgroup_create_if_requested(_vm_id: &str) -> Result<(), FcError> {
     Ok(())
 }
 
-/// Phase 6: resolve the network mode. Rejects `OutboundNat` (deferred to v0.2).
-fn phase_6_network_realize(config: &SandboxConfig) -> Result<RealizedNetwork, FcError> {
+/// Phase 6: resolve the network mode and realize any m80-owned host links.
+fn phase_6_network_realize(
+    config: &SandboxConfig,
+    vm_id: &str,
+    run_root: &Path,
+    run_dir: &Path,
+) -> Result<RealizedNetwork, FcError> {
     match m80_net_mode::resolve(&config.network) {
         VmNetworkMode::NoEgress => Ok(RealizedNetwork::NoEgress),
         VmNetworkMode::JoinNetns { netns_path } => Ok(RealizedNetwork::JoinNetns { netns_path }),
-        VmNetworkMode::OutboundNat { .. } => Err(FcError::Config(ConfigError::Other(
-            "OutboundNat networking is deferred to v0.2; use NetworkPolicy::NoEgress in v0.1"
-                .into(),
-        ))),
+        VmNetworkMode::OutboundNat { plan } => {
+            let realized =
+                m80_net_outbound::realize_bridge_and_tap(&plan, vm_id, run_root, run_dir)?;
+            Ok(RealizedNetwork::OutboundNat {
+                tap_name: realized.tap_name,
+                guest_mac: realized.guest_mac,
+            })
+        }
+    }
+}
+
+/// Phase 7: finalize OutboundNat guest boot tokens and host firewall policy.
+fn phase_7_outbound_guest_config(
+    network: &RealizedNetwork,
+    run_dir: &Path,
+) -> Result<Vec<String>, FcError> {
+    match network {
+        RealizedNetwork::OutboundNat { .. } => {
+            let mut state = m80_net_outbound::read_vm_network_state_record(run_dir)?;
+            let cmdline = m80_net_outbound::prepare_pid_one_network_cmdline(&mut state)?;
+            m80_net_outbound::apply_outbound_nat_policy(&state)?;
+            Ok(cmdline.args)
+        }
+        RealizedNetwork::NoEgress | RealizedNetwork::JoinNetns { .. } => Ok(Vec::new()),
     }
 }
 
@@ -902,7 +944,7 @@ fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
 /// Phase 11: PUT all Firecracker resources in the documented order.
 ///
 /// From Firecracker's perspective, resources must be PUT before `InstanceStart`:
-/// machine-config → boot-source → drives (root first) → vsock.
+/// machine-config → boot-source → drives (root first) → optional network NIC → vsock.
 #[allow(clippy::too_many_arguments)]
 fn phase_11_rest_puts(
     client: &Client,
@@ -912,6 +954,7 @@ fn phase_11_rest_puts(
     image_kind: m80_image_manifest::ImageKind,
     kernel_kind: m80_image_manifest::KernelKind,
     network: &RealizedNetwork,
+    extra_boot_args: &[String],
 ) -> Result<(), FcError> {
     let puts = plan_preboot_puts(
         config,
@@ -920,6 +963,7 @@ fn phase_11_rest_puts(
         kernel_kind,
         storage.scratch.is_some(),
         network,
+        extra_boot_args,
     );
     apply_preboot_puts(client, &puts)
 }

@@ -156,6 +156,7 @@ impl RunningSandbox {
             one_shot: _one_shot,
             one_shot_consumed: _one_shot_consumed,
             kill_guard: _kill_guard,
+            network_cleanup,
         } = self;
         let mut diagnostics = diagnostics;
 
@@ -184,6 +185,7 @@ impl RunningSandbox {
             lease_guard,
             run_root,
             diagnostics,
+            network_cleanup,
         })
     }
 
@@ -250,6 +252,7 @@ impl RunningSandbox {
             one_shot: _one_shot,
             one_shot_consumed: _one_shot_consumed,
             kill_guard: _kill_guard,
+            network_cleanup,
         } = self;
         let mut diagnostics = diagnostics;
 
@@ -274,6 +277,7 @@ impl RunningSandbox {
             lease_guard,
             run_root,
             diagnostics,
+            network_cleanup,
         })
     }
 

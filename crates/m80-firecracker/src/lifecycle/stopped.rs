@@ -20,9 +20,10 @@ impl StoppedSandbox {
     /// Returns `FcError::Config` if no workspace (scratch image) was
     /// configured for this sandbox.
     pub fn extract_changes(&self, into: &Path) -> Result<ChangeSet, FcError> {
-        let scratch = self.scratch.as_ref().ok_or_else(|| {
-            FcError::Config(ConfigError::MissingField { field: "workspace" })
-        })?;
+        let scratch = self
+            .scratch
+            .as_ref()
+            .ok_or_else(|| FcError::Config(ConfigError::MissingField { field: "workspace" }))?;
         let cs = m80_storage::Scratch::extract(scratch.path(), into)?;
         Ok(cs)
     }
@@ -36,6 +37,7 @@ impl StoppedSandbox {
             self.request_id.as_deref(),
             "delete started",
         );
+        self.cleanup_outbound_network_if_needed()?;
         match std::fs::remove_dir_all(&self.run_dir) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -60,10 +62,35 @@ impl StoppedSandbox {
             self.request_id.as_deref(),
             "preserve for triage",
         );
+        self.cleanup_outbound_network_if_needed()?;
         std::fs::rename(&self.run_dir, &dest)?;
 
         // `self` drops here; permit returned.
         Ok(dest)
+    }
+
+    fn cleanup_outbound_network_if_needed(&mut self) -> Result<(), FcError> {
+        let state_path = self.run_dir.join(m80_net_outbound::NETWORK_STATE_FILE);
+        if !self.network_cleanup && !state_path.exists() {
+            return Ok(());
+        }
+        crate::diagnostics::record_owned(
+            &mut self.diagnostics,
+            Phase::Delete,
+            &self.vm_id,
+            self.request_id.as_deref(),
+            "outbound network cleanup started",
+        );
+        m80_net_outbound::cleanup_vm(&self.vm_id, &self.run_root)?;
+        self.network_cleanup = false;
+        crate::diagnostics::record_owned(
+            &mut self.diagnostics,
+            Phase::Delete,
+            &self.vm_id,
+            self.request_id.as_deref(),
+            "outbound network cleanup complete",
+        );
+        Ok(())
     }
 }
 
@@ -91,6 +118,7 @@ mod tests {
             lease_guard,
             run_root: run_root.to_path_buf(),
             diagnostics: None,
+            network_cleanup: false,
         }
     }
 

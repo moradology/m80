@@ -424,6 +424,8 @@ pub struct RunningSandbox {
     /// Fallback cleanup guard; disarmed by `stop()` and `force_kill()` before
     /// they perform their own teardown, so Drop is a no-op on the happy path.
     pub(crate) kill_guard: ForceKillGuard,
+    /// Whether this VM owns outbound-network residue that delete must reap.
+    pub(crate) network_cleanup: bool,
 }
 
 impl RunningSandbox {
@@ -468,6 +470,8 @@ pub struct StoppedSandbox {
     pub(crate) run_root: PathBuf,
     /// Optional diagnostics writer carried across Running -> Stopped.
     pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
+    /// Whether delete must reap outbound-network residue before run-dir removal.
+    pub(crate) network_cleanup: bool,
 }
 
 impl std::fmt::Debug for StoppedSandbox {
@@ -508,7 +512,6 @@ pub(crate) enum RealizedNetwork {
     /// No NIC configured; iptables untouched.
     NoEgress,
     /// Firecracker will attach a host TAP to a guest virtio-net device.
-    #[allow(dead_code)] // Constructed by preboot tests until phase 6 realizes OutboundNat.
     OutboundNat {
         /// Host TAP device name.
         tap_name: String,

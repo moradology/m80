@@ -177,15 +177,15 @@ peer bytes from transport failures.
 
 `SandboxConfig::network` supports three caller intents. `NoEgress` launches with
 no guest NIC and no host iptables changes. `AllowOutbound` resolves to
-OutboundNat and is still rejected in this crate until the outbound network
-realizer is wired into launch. The preboot planner already has the
-Firecracker `NetworkInterface` PUT shape for an already-realized TAP, but
-phase 6 does not yet create the TAP or guest network config. `JoinNetns {
-netns_path }` delegates namespace creation and policy to the caller: m80
-validates the namespace path and passes it to Firecracker's official jailer as
-`--netns` before Firecracker is exec'd. `NoEgress` and `AllowOutbound` are guest
-networking policies, not private network namespaces for the Firecracker VMM
-process; the only current VMM netns placement promise is `JoinNetns`.
+OutboundNat: launch realizes the run-root bridge and per-VM TAP, prepares the
+PID-1 `m80.net.*` boot tokens, installs the host NAT/filter policy, emits a
+Firecracker `NetworkInterface` PUT for `eth0`, and records ownership state for
+failure/delete cleanup. `JoinNetns { netns_path }` delegates namespace creation
+and policy to the caller: m80 validates the namespace path and passes it to
+Firecracker's official jailer as `--netns` before Firecracker is exec'd.
+`NoEgress` and `AllowOutbound` are guest networking policies, not private
+network namespaces for the Firecracker VMM process; the only current VMM netns
+placement promise is `JoinNetns`.
 
 `SandboxConfig::daemonize` asks the official Firecracker jailer to double-fork
 before exec'ing Firecracker. The Firecracker API socket remains the management
@@ -331,10 +331,9 @@ slots. It defaults to `false`.
 `InstanceStart`: machine config with a CPU template, boot source, shared read-only rootfs drive,
 per-VM rootfs overlay drive, optional workspace scratch drive, optional
 preallocated hotplug drive slots, optional network interface for an
-already-realized OutboundNat TAP, then vsock. Outbound NAT is still rejected in
-phase 6, so production launches do not yet emit the NIC PUT; the planner shape
-is present so enabling the realizer has a pinned Firecracker API path. After
-the plan succeeds and before `InstanceStart`, the launch path writes
+OutboundNat TAP, then vsock. Outbound NAT boot-source args append the prepared
+`m80.net.*` PID-1 tokens after the `m80.workspace=<0|1>` marker. After the
+plan succeeds and before `InstanceStart`, the launch path writes
 `<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
 See `docs/behaviors/lifecycle/preboot-wiring.md`.
 
@@ -517,7 +516,7 @@ Warm pool:
 - `m80-storage` — rootfs overlay and scratch image preparation.
 - `m80-preflight` — host capability verification at backend construction.
 - `m80-net-mode` — network policy resolution.
-- `m80-net-outbound` — outbound NAT wiring (v0.2; gated at construction time in v0.1).
+- `m80-net-outbound` — outbound NAT bridge/TAP, guest config, iptables, and cleanup.
 - `m80-snapshot` — snapshot path types.
 - `m80-proto` — wire types re-exported for callers.
 - `m80-image-manifest` — image kind / kernel kind for boot-args selection.

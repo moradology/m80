@@ -27,9 +27,18 @@ resolvers, records them in `<run_dir>/network-state.json`, marks the guest
 network config phase complete, and returns deterministic cmdline tokens for
 the launcher to append.
 
+`m80-firecracker` runs that entrypoint during launch phase 7 after bridge/TAP
+realization and before Firecracker `InstanceStart`. The tokens are appended to
+the boot-source args, and phase 11 emits the matching `eth0` network-interface
+PUT with the realized TAP name and guest MAC.
+
 Verification:
 `crates/m80-guestd/src/pid_one_network.rs::tests::*` and
 `crates/m80-net-outbound/tests/network-outbound-nat/injection.rs::pid_one_*`.
+The launch/preboot composition is pinned by
+`crates/m80-firecracker/src/preboot.rs::tests::boot_args_append_pid_one_network_tokens_after_workspace_marker`
+and
+`crates/m80-firecracker/src/preboot.rs::tests::outbound_nat_network_interface_put_after_drives_and_before_vsock`.
 
 ## Networkd Unit
 
