@@ -7,7 +7,7 @@
 //! sudo cargo test -p m80-jailer -- --ignored
 //! ```
 
-use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
+use m80_jailer::{jail_root_path, BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::os::unix::fs::MetadataExt;
@@ -59,6 +59,58 @@ fn materialize_creates_jail_root_and_persists_plan() {
     assert!(
         run_dir.path().join("jailer-state.json").exists(),
         "jailer-state.json must be written"
+    );
+}
+
+#[test]
+#[ignore = "requires CAP_SYS_ADMIN / root"]
+fn jailer_placeholder_cleanup_on_partial_bind_failure() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let first_file = tempfile::NamedTempFile::new().unwrap();
+    let second_dir = tempfile::tempdir().unwrap();
+    let firecracker_bin = PathBuf::from("/usr/bin/firecracker");
+    let cfg = JailerConfig {
+        jailer_bin: PathBuf::from("/usr/bin/jailer"),
+        jailer_harden_bin: Some(PathBuf::from("/usr/bin/m80-jailer-harden")),
+        firecracker_bin: firecracker_bin.clone(),
+        run_dir: run_dir.path().to_path_buf(),
+        uid: 3000,
+        gid: 3000,
+        bindings: vec![
+            Binding {
+                source: first_file.path().to_path_buf(),
+                dest: PathBuf::from("first.bin"),
+                mode: BindMode::Ro,
+            },
+            Binding {
+                source: second_dir.path().to_path_buf(),
+                dest: PathBuf::from("second.bin"),
+                mode: BindMode::Ro,
+            },
+        ],
+        sockets: Vec::new(),
+        resource_limits: m80_jailer::ResourceLimits::default(),
+        new_pid_ns: false,
+        daemonize: false,
+        new_cgroup_ns: false,
+        netns_path: None,
+        stdio_log: None,
+    };
+    let jail_root = jail_root_path(run_dir.path(), &firecracker_bin);
+    let first_placeholder = jail_root.join("first.bin");
+
+    let err = Plan::compute(&cfg)
+        .unwrap()
+        .materialize()
+        .expect_err("second bind must fail");
+
+    assert!(
+        err.to_string().contains("bind-mount failed"),
+        "unexpected materialize error: {err:?}"
+    );
+    assert!(
+        !first_placeholder.exists(),
+        "first bind placeholder must be removed after partial materialize failure"
     );
 }
 
