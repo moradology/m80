@@ -217,6 +217,69 @@ fn two_concurrent_cancels_idempotent() {
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
+fn cancel_then_disconnect_handles_lost_ack() {
+    let discovery = m80_preflight::run().expect("preflight");
+    let run_root = discovery.run_root.clone();
+    let (mut running, run_dir) = launch_vm(&discovery, &run_root);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+
+    let vm_id = running.vm_id().to_owned();
+    let mut channel = open_raw_channel(&run_dir, &discovery.firecracker_bin, &vm_id);
+    let request_id = "cancel-lost-ack-req";
+    let pid_path = "/tmp/cancel-lost-ack.pid";
+
+    channel
+        .send(&Envelope::with_request_id(
+            ExecRequest {
+                program: "/bin/sh".into(),
+                args: vec!["-c".into(), format!("echo $$ > {pid_path}; sleep 60")],
+                cwd: None,
+                env: None,
+                stdin: None,
+                timeout_ms: Some(30_000),
+                streaming: false,
+            },
+            request_id.to_owned(),
+        ))
+        .expect("send exec_request");
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    channel
+        .send(&Envelope::new(CancelRequest {
+            request_id: request_id.to_owned(),
+        }))
+        .expect("send cancel frame before disconnect");
+    drop(channel);
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let probe = running
+        .exec(ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                format!(
+                    "pid=$(cat {pid_path}) || exit 43; \
+                     if [ -d /proc/$pid ]; then echo leaked:$pid >&2; exit 42; fi; \
+                     printf cancelled"
+                ),
+            ],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        })
+        .expect("guestd should accept new exec after lost cancel ack");
+    assert_eq!(probe.status, ExecStatus::Completed);
+    assert_eq!(probe.exit_code, Some(0), "stderr={:?}", probe.stderr);
+    assert_eq!(probe.stdout, b"cancelled");
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
 fn cancel_frame_mid_chunked_upload_leaves_no_partial_files() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
