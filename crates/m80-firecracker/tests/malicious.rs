@@ -10,6 +10,8 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, Sandbox
 
 #[path = "malicious/bogus_request_id.rs"]
 mod bogus_request_id;
+#[path = "malicious/dos_attacks.rs"]
+mod dos_attacks;
 #[path = "malicious/oversized_length.rs"]
 mod oversized_length;
 #[path = "malicious/response_type_mismatch.rs"]

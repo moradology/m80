@@ -8,6 +8,7 @@ use vsock::{VsockListener, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST};
 
 const ATTACK_ENV: &str = "M80_MALICIOUS_ATTACK";
 const CMDLINE_KEY: &str = "m80.malicious_attack";
+const UNSOLICITED_FLOOD_FRAMES: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Attack {
@@ -18,6 +19,8 @@ enum Attack {
     ResponseTypeMismatch,
     BogusRequestId,
     UnsolicitedResponse,
+    UnsolicitedFlood,
+    Slowloris,
 }
 
 impl Attack {
@@ -30,6 +33,8 @@ impl Attack {
             "response_type_mismatch" => Ok(Attack::ResponseTypeMismatch),
             "bogus_request_id" => Ok(Attack::BogusRequestId),
             "unsolicited_response" => Ok(Attack::UnsolicitedResponse),
+            "unsolicited_flood" => Ok(Attack::UnsolicitedFlood),
+            "slowloris" => Ok(Attack::Slowloris),
             other => anyhow::bail!("unknown malicious guestd attack: {other}"),
         }
     }
@@ -43,6 +48,8 @@ impl Attack {
             Attack::ResponseTypeMismatch => "response_type_mismatch",
             Attack::BogusRequestId => "bogus_request_id",
             Attack::UnsolicitedResponse => "unsolicited_response",
+            Attack::UnsolicitedFlood => "unsolicited_flood",
+            Attack::Slowloris => "slowloris",
         }
     }
 }
@@ -103,6 +110,8 @@ fn run(args: Args) -> anyhow::Result<()> {
         println!("response_type_mismatch");
         println!("bogus_request_id");
         println!("unsolicited_response");
+        println!("unsolicited_flood");
+        println!("slowloris");
         return Ok(());
     }
 
@@ -119,7 +128,9 @@ fn run(args: Args) -> anyhow::Result<()> {
         | Attack::UnknownVariant
         | Attack::ResponseTypeMismatch
         | Attack::BogusRequestId
-        | Attack::UnsolicitedResponse => run_peer(attack),
+        | Attack::UnsolicitedResponse
+        | Attack::UnsolicitedFlood
+        | Attack::Slowloris => run_peer(attack),
     }
 }
 
@@ -201,6 +212,16 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
             Attack::UnsolicitedResponse => {
                 write_unsolicited_response(&mut stream)?;
                 drop(stream);
+            }
+            Attack::UnsolicitedFlood => {
+                write_unsolicited_flood(&mut stream)?;
+                drop(stream);
+            }
+            Attack::Slowloris => {
+                write_slowloris_prefix(&mut stream)?;
+                loop {
+                    std::thread::park();
+                }
             }
         }
     }
@@ -289,6 +310,28 @@ fn write_bogus_request_id(stream: &mut impl Write) -> anyhow::Result<()> {
 
 fn write_unsolicited_response(stream: &mut impl Write) -> anyhow::Result<()> {
     write_exec_exit_for_request_id(stream, "unsolicited-response", "unsolicited-response")
+}
+
+fn write_unsolicited_flood(stream: &mut impl Write) -> anyhow::Result<()> {
+    for i in 0..UNSOLICITED_FLOOD_FRAMES {
+        write_exec_exit_for_request_id(
+            stream,
+            &format!("unsolicited-flood-{i}"),
+            "unsolicited-flood",
+        )?;
+    }
+    Ok(())
+}
+
+fn write_slowloris_prefix(stream: &mut impl Write) -> anyhow::Result<()> {
+    const DECLARED_LEN: u32 = 16;
+    stream
+        .write_all(&DECLARED_LEN.to_be_bytes())
+        .context("write slowloris frame length")?;
+    stream
+        .write_all(b"slow")
+        .context("write slowloris partial body")?;
+    stream.flush().context("flush slowloris partial body")
 }
 
 fn write_exec_exit_for_request_id(
@@ -468,5 +511,30 @@ mod tests {
         assert_eq!(raw.kind, m80_proto::PAYLOAD_KIND_EXEC_EXIT);
         assert_eq!(raw.request_id.as_deref(), Some("unsolicited-response"));
         raw.decode::<m80_proto::ExecExit>().unwrap();
+    }
+
+    #[test]
+    fn unsolicited_flood_writes_bounded_fabricated_responses() {
+        let mut frames = Vec::new();
+        write_unsolicited_flood(&mut frames).unwrap();
+
+        let mut cursor = std::io::Cursor::new(frames);
+        let first = m80_proto::read_raw_frame(&mut cursor).unwrap();
+        assert_eq!(first.request_id.as_deref(), Some("unsolicited-flood-0"));
+        first.decode::<m80_proto::ExecExit>().unwrap();
+
+        let second = m80_proto::read_raw_frame(&mut cursor).unwrap();
+        assert_eq!(second.request_id.as_deref(), Some("unsolicited-flood-1"));
+        second.decode::<m80_proto::ExecExit>().unwrap();
+    }
+
+    #[test]
+    fn slowloris_prefix_writes_short_incomplete_frame() {
+        let mut bytes = Vec::new();
+        write_slowloris_prefix(&mut bytes).unwrap();
+        let declared = u32::from_be_bytes(bytes[..4].try_into().unwrap()) as usize;
+        assert_eq!(declared, 16);
+        assert_eq!(&bytes[4..], b"slow");
+        assert!(bytes[4..].len() < declared);
     }
 }

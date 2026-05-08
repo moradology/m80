@@ -41,6 +41,12 @@ Current modes:
   readiness byte, writes a valid `exec_exit` envelope for
   `unsolicited-response` immediately after accepting a channel, and closes the
   connection without reading the host request.
+- `unsolicited_flood` binds the standard guest vsock listener, sends the
+  readiness byte, writes a bounded burst of fabricated `exec_exit` envelopes
+  without reading the host request, and closes the connection.
+- `slowloris` binds the standard guest vsock listener, sends the readiness
+  byte, writes an in-cap frame prefix plus a short partial body, and then keeps
+  the channel open without making progress.
 
 ## Non-goals
 

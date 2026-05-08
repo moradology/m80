@@ -10,12 +10,22 @@ pub(super) fn recv_error(err: VsockError, context: &'static str) -> FcError {
         VsockError::Proto(ProtoError::Io(err)) if err.kind() == io::ErrorKind::UnexpectedEof => {
             FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal { context })
         }
+        VsockError::Proto(ProtoError::Io(err)) if is_read_timeout(err.kind()) => {
+            FcError::Protocol(WireProtocolError::ReadTimeout { context })
+        }
         VsockError::Proto(err) => proto_error(err),
         VsockError::Io { source, .. } if source.kind() == io::ErrorKind::UnexpectedEof => {
             FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal { context })
         }
+        VsockError::Io { source, .. } if is_read_timeout(source.kind()) => {
+            FcError::Protocol(WireProtocolError::ReadTimeout { context })
+        }
         other => FcError::Vsock(other),
     }
+}
+
+fn is_read_timeout(kind: io::ErrorKind) -> bool {
+    matches!(kind, io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock)
 }
 
 pub(super) fn proto_error(err: ProtoError) -> FcError {
@@ -114,6 +124,39 @@ mod tests {
         assert!(matches!(
             err,
             FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal {
+                context: "streaming exec"
+            })
+        ));
+    }
+
+    #[test]
+    fn read_timeout_maps_to_protocol_timeout() {
+        let err = recv_error(
+            VsockError::Io {
+                path: std::path::PathBuf::new(),
+                source: io::Error::from(io::ErrorKind::TimedOut),
+            },
+            "streaming exec",
+        );
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(WireProtocolError::ReadTimeout {
+                context: "streaming exec"
+            })
+        ));
+    }
+
+    #[test]
+    fn proto_would_block_maps_to_protocol_timeout() {
+        let err = recv_error(
+            VsockError::Proto(ProtoError::Io(io::Error::from(io::ErrorKind::WouldBlock))),
+            "streaming exec",
+        );
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(WireProtocolError::ReadTimeout {
                 context: "streaming exec"
             })
         ));

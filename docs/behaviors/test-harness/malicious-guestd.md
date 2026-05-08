@@ -56,8 +56,13 @@ request-correlation checks on a frame that is otherwise well formed.
 reading the host request. This records the current reject-and-teardown policy
 for unsolicited guest output.
 
-Later L12 leaves add frame-producing modes such as unsolicited flood and
-slowloris.
+`unsolicited_flood` writes a bounded burst of fabricated `exec_exit` responses
+without reading the host request. This exercises fail-fast handling and host
+memory bounds for repeated unsolicited guest output.
+
+`slowloris` writes an in-cap frame prefix plus a short partial body, flushes,
+and then stops making progress while keeping the channel open. This exercises
+host no-progress timeout handling.
 
 ## Evidence
 

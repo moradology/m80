@@ -129,8 +129,9 @@ protocol, or host cleanup failures consume and discard the VM.
 
 After a vsock channel is established, malformed protobuf, oversized frames,
 unsupported protocol versions, unexpected frame kinds, response `request_id`
-mismatches, stream sequence gaps, and disconnects before a required terminal
-frame map to `FcError::Protocol(WireProtocolError::...)`. Transport setup
+mismatches, stream sequence gaps, disconnects before a required terminal
+frame, and no-progress read timeouts while awaiting that terminal frame map to
+`FcError::Protocol(WireProtocolError::...)`. Transport setup
 failures remain `FcError::Vsock`.
 
 `RunningSandbox::guest_metrics()` sends a direct `MetricsRequest` to

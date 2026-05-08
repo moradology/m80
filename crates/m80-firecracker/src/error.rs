@@ -63,6 +63,12 @@ pub enum WireProtocolError {
         /// State or request that was awaiting a terminal frame.
         context: &'static str,
     },
+    /// Peer stopped making read progress before the required terminal frame.
+    #[error("read timeout before terminal frame in {context}")]
+    ReadTimeout {
+        /// State or request that was awaiting a terminal frame.
+        context: &'static str,
+    },
     /// Peer sent a stream chunk out of sequence.
     #[error("stream sequence mismatch in {stream}: expected {expected}, got {got}")]
     SequenceMismatch {
