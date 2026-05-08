@@ -24,10 +24,10 @@
 mod common;
 
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
-    CancelRequest, CancelResponse, CancelStatus, Envelope, ExecRequest,
+    CancelRequest, CancelResponse, CancelStatus, Envelope, ExecRequest, ExecResponse, ExecStatus,
     PAYLOAD_KIND_CANCEL_RESPONSE,
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
@@ -67,7 +67,7 @@ fn launch_vm(
     let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(m80_firecracker::SandboxConfig {
-            vm_id: Some("cancel-test".into()),
+            vm_id: Some(unique_vm_id("cancel-test")),
             workspace: None,
             network: m80_firecracker::NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
@@ -84,6 +84,15 @@ fn launch_vm(
     let running = sandbox.launch().expect("launch");
     let run_dir = running.run_dir().to_owned();
     (running, run_dir)
+}
+
+fn unique_vm_id(prefix: &str) -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_millis()
+        % 1_000_000;
+    format!("{prefix}-{millis}")
 }
 
 /// Open a raw vsock channel to the running VM, bypassing `RunningSandbox::exec`
@@ -241,6 +250,63 @@ fn wrong_request_id_returns_already_exited() {
 
     // The exec (sleep 60) will be killed by the 5 s timeout.
     // We don't need to read the ExecResponse; just stop the VM.
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+/// Boot VM -> send `sleep 2; echo done` on channel A -> send matching cancel
+/// on channel B -> assert channel B reports no in-flight exec and channel A
+/// finishes normally. Cancellation is same-connection-only, not global by
+/// request id.
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn cancel_on_separate_connection_handled_safely() {
+    let discovery = m80_preflight::run().expect("preflight");
+    let run_root = discovery.run_root.clone();
+    let (running, run_dir) = launch_vm(&discovery, &run_root);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+
+    let vm_id = running.vm_id().to_owned();
+    let mut exec_channel = open_raw_channel(&run_dir, &discovery.firecracker_bin, &vm_id);
+    let mut cancel_channel = open_raw_channel(&run_dir, &discovery.firecracker_bin, &vm_id);
+
+    let request_id = "cancel-cross-connection";
+    exec_channel
+        .send(&Envelope::with_request_id(
+            ExecRequest {
+                program: "/bin/sh".into(),
+                args: vec!["-c".into(), "sleep 2; printf cross-connection-ok".into()],
+                cwd: None,
+                env: None,
+                stdin: None,
+                timeout_ms: Some(10_000),
+                streaming: false,
+            },
+            request_id.to_owned(),
+        ))
+        .expect("send exec_request on channel A");
+
+    cancel_channel
+        .send(&Envelope::new(CancelRequest {
+            request_id: request_id.to_owned(),
+        }))
+        .expect("send cancel_request on channel B");
+
+    let ack_env: Envelope<CancelResponse> = cancel_channel
+        .recv()
+        .expect("recv cross-channel cancel ack");
+    assert_eq!(ack_env.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
+    assert_eq!(ack_env.payload.request_id, request_id);
+    assert_eq!(ack_env.payload.status, CancelStatus::AlreadyExited);
+
+    let exec_env: Envelope<ExecResponse> = exec_channel
+        .recv()
+        .expect("recv original exec response after cross-channel cancel");
+    assert_eq!(exec_env.request_id.as_deref(), Some(request_id));
+    assert_eq!(exec_env.payload.status, ExecStatus::Completed);
+    assert_eq!(exec_env.payload.exit_code, Some(0));
+    assert_eq!(exec_env.payload.stdout, b"cross-connection-ok");
+
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
 }
