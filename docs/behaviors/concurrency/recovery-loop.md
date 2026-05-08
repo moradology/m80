@@ -40,3 +40,15 @@ not do it implicitly.
 
 Test:
 - `crates/m80-firecracker/tests/concurrency/recovery_loop.rs::startup_recovery_is_caller_driven_before_first_admission`
+
+## Mid-Launch Race
+
+A caller-owned recovery loop may run while new VMs are launching. Recovery must
+preserve fresh run directories whose `ownership.lock` still belongs to a live
+m80 process; otherwise a cleanup pass can kill a VM between run-root creation
+and ready.
+
+Test:
+- `crates/m80-firecracker/tests/concurrency/recovery_loop.rs::recovery_during_launch_preserves_fresh_vms`
+  (#[ignore]) runs `recover_stale_run_root()` in a 10 ms loop while ten real
+  KVM launches race through admit, launch, exec, stop, and delete.
