@@ -15,6 +15,7 @@ use crate::{
 };
 
 const KVM_PATH: &str = "/dev/kvm";
+const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
 
 const REQUIRED_KERNEL_MODULES: &[&str] = &["tap", "bridge"];
 
@@ -218,6 +219,28 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
         .filter_map(|line| line.split_whitespace().next())
         .collect();
 
+    classify_vsock_availability(&loaded, std::path::Path::new(VHOST_VSOCK_PATH).exists())?;
+    classify_required_modules(&loaded)?;
+
+    report.push(CheckRow {
+        label: "Kernel modules".to_string(),
+        passed: true,
+        detail: "tap, bridge loaded; vhost-vsock available".to_string(),
+    });
+    Ok(())
+}
+
+fn classify_vsock_availability(
+    loaded_modules: &[&str],
+    vhost_vsock_device_exists: bool,
+) -> Result<(), PreflightError> {
+    if loaded_modules.contains(&"vhost_vsock") || vhost_vsock_device_exists {
+        return Ok(());
+    }
+    Err(PreflightError::VsockUnavailable)
+}
+
+fn classify_required_modules(loaded: &[&str]) -> Result<(), PreflightError> {
     if REQUIRED_KERNEL_MODULES.iter().any(|m| !loaded.contains(m)) {
         let missing = REQUIRED_KERNEL_MODULES
             .iter()
@@ -226,12 +249,6 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
             .collect::<Vec<_>>();
         return Err(PreflightError::KernelModulesMissing { missing });
     }
-
-    report.push(CheckRow {
-        label: "Kernel modules".to_string(),
-        passed: true,
-        detail: "tap, bridge loaded".to_string(),
-    });
     Ok(())
 }
 
@@ -261,6 +278,35 @@ fn check_privilege(report: &mut Vec<CheckRow>) -> Result<PrivilegeStatus, Prefli
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preflight_missing_vsock_module_typed() {
+        let err = classify_vsock_availability(&["tap", "bridge"], false).unwrap_err();
+
+        assert!(matches!(err, PreflightError::VsockUnavailable));
+    }
+
+    #[test]
+    fn vhost_vsock_module_satisfies_vsock_preflight() {
+        classify_vsock_availability(&["tap", "bridge", "vhost_vsock"], false).unwrap();
+    }
+
+    #[test]
+    fn vhost_vsock_device_satisfies_vsock_preflight() {
+        classify_vsock_availability(&["tap", "bridge"], true).unwrap();
+    }
+
+    #[test]
+    fn required_kernel_modules_report_missing_tap_bridge() {
+        let err = classify_required_modules(&["vhost_vsock"]).unwrap_err();
+
+        match err {
+            PreflightError::KernelModulesMissing { missing } => {
+                assert_eq!(missing, vec!["tap".to_owned(), "bridge".to_owned()]);
+            }
+            other => panic!("expected KernelModulesMissing, got {other:?}"),
+        }
+    }
 
     #[test]
     fn preflight_missing_kvm_returns_typed_hint() {

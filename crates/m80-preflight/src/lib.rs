@@ -148,6 +148,11 @@ pub enum PreflightError {
     #[error("kvm cpu extension missing: expected vmx or svm in /proc/cpuinfo")]
     KvmCpuExtensionMissing,
 
+    /// Host vhost-vsock support is absent. Firecracker needs this for the
+    /// vsock device that carries m80's host↔guest control protocol.
+    #[error("vhost-vsock unavailable")]
+    VsockUnavailable,
+
     /// Required kernel modules are not loaded/loadable.
     #[error("kernel modules missing: {missing:?}")]
     KernelModulesMissing {
@@ -250,6 +255,9 @@ impl PreflightError {
             }
             Self::KvmCpuExtensionMissing => {
                 "enable hardware virtualization in firmware/BIOS and ensure the host CPU exposes vmx or svm"
+            }
+            Self::VsockUnavailable => {
+                "load vhost_vsock with `sudo modprobe vhost_vsock` or ensure /dev/vhost-vsock exists"
             }
             Self::KernelModulesMissing { .. } => {
                 "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"

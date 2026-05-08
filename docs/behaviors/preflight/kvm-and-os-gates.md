@@ -15,11 +15,17 @@ hosts return `PreflightError::UnsupportedHostPlatform`.
 returns `PreflightError::KvmUnavailable`; permission denial returns
 `PreflightError::KvmNotWritable`.
 
-## Kernel Modules
+## Kernel Modules And Vsock
 
 The host must have both `tap` and `bridge` loaded in `/proc/modules`. m80 reports
 missing modules with `PreflightError::KernelModulesMissing` and does not attempt
 to load them.
+
+The host must also expose vhost-vsock for Firecracker's host↔guest control
+channel. Preflight accepts either a loaded `vhost_vsock` module in
+`/proc/modules` or an existing `/dev/vhost-vsock` device, because some kernels
+expose the device without a loadable module entry. If neither signal is present,
+preflight returns `PreflightError::VsockUnavailable`.
 
 ## Privilege Gate
 
@@ -42,3 +48,4 @@ capabilities through the container runtime.
 - `crates/m80-preflight/src/checks.rs`
 - `crates/m80-preflight/src/lib.rs::classify_privilege`
 - `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs`
+- `crates/m80-preflight/src/checks.rs::tests::preflight_missing_vsock_module_typed`

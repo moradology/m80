@@ -24,6 +24,18 @@ predecessor source: `crates/sandbox/agent-sandbox-firecracker/src/errors.rs:206-
 Test: `crates/m80-preflight/tests/error_hints.rs::kvm_unavailable_has_hint` and
 `crates/m80-preflight/tests/error_hints.rs::kvm_not_writable_has_hint`.
 
+## vsock-unavailable
+
+`m80-preflight` rejects a host without vhost-vsock support with
+`PreflightError::VsockUnavailable`. This is distinct from the generic kernel
+module list because Firecracker's vsock device may be present as
+`/dev/vhost-vsock` even when there is no loadable `vhost_vsock` entry in
+`/proc/modules`.
+
+Test:
+`crates/m80-preflight/src/checks.rs::tests::preflight_missing_vsock_module_typed`
+and `crates/m80-preflight/tests/error_hints.rs::vsock_unavailable_has_hint`.
+
 ## unsupported-host
 
 `m80-preflight` rejects non-Linux hosts with

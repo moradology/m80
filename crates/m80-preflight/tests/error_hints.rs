@@ -50,6 +50,11 @@ fn kvm_cpu_extension_missing_has_hint() {
 }
 
 #[test]
+fn vsock_unavailable_has_hint() {
+    assert_hint(&PreflightError::VsockUnavailable);
+}
+
+#[test]
 fn kernel_modules_missing_has_hint() {
     assert_hint(&PreflightError::KernelModulesMissing {
         missing: vec!["tap".into()],
