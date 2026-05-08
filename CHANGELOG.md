@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — adversarial wire coverage map (m80-g0v8.12)
+
+- Documented the real-KVM malicious-guestd coverage matrix for guest-to-host
+  wire attacks, including synthetic-peer coverage, expected typed
+  errors/diagnostics, and residual gaps.
+
 ### Added — wire file operations (m80-6zim)
 
 - Added first-class wire verbs for `file_read`, `file_write`, `file_list`,
