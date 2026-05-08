@@ -28,7 +28,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use m80_proto::{
     CancelRequest, CancelResponse, CancelStatus, Envelope, ExecRequest, ExecResponse, ExecStatus,
-    PAYLOAD_KIND_CANCEL_RESPONSE,
+    FileError, FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest,
+    FileWriteChunkResponse, PAYLOAD_KIND_CANCEL_RESPONSE,
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
@@ -212,6 +213,79 @@ fn two_concurrent_cancels_idempotent() {
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn cancel_frame_mid_chunked_upload_leaves_no_partial_files() {
+    let discovery = m80_preflight::run().expect("preflight");
+    let run_root = discovery.run_root.clone();
+    let (mut running, run_dir) = launch_vm(&discovery, &run_root);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+
+    let vm_id = running.vm_id().to_owned();
+    let mut channel = open_raw_channel(&run_dir, &discovery.firecracker_bin, &vm_id);
+    let final_path = "/tmp/cancelled-upload.bin";
+    let request_id = "cancel-upload-req";
+
+    channel
+        .send(&Envelope::with_request_id(
+            FileWriteBeginRequest {
+                path: final_path.to_owned(),
+                mode: Some(0o600),
+            },
+            request_id.to_owned(),
+        ))
+        .expect("send upload begin");
+    let begin: Envelope<FileWriteBeginResponse> = channel.recv().expect("recv upload begin");
+    let upload_id = begin.payload.upload_id.expect("upload id");
+    assert_eq!(begin.payload.error, None);
+
+    for seq in 0..5 {
+        channel
+            .send(&Envelope::with_request_id(
+                FileWriteChunkRequest {
+                    upload_id: upload_id.clone(),
+                    seq,
+                    bytes: vec![b'x'; 1024 * 1024],
+                },
+                request_id.to_owned(),
+            ))
+            .expect("send upload chunk");
+        let chunk: Envelope<FileWriteChunkResponse> = channel.recv().expect("recv upload chunk");
+        assert_eq!(chunk.payload.error, None);
+        assert_eq!(chunk.payload.bytes_written, 1024 * 1024);
+    }
+
+    channel
+        .send(&Envelope::new(CancelRequest {
+            request_id: request_id.to_owned(),
+        }))
+        .expect("send cancel frame during open upload");
+    let close = channel.recv_raw();
+    assert!(
+        close.is_err(),
+        "file-op cancel frame should close the upload channel without a response"
+    );
+
+    assert_file_not_found(&mut running, final_path);
+    assert_file_not_found(
+        &mut running,
+        &format!("{final_path}.m80-upload.{upload_id}"),
+    );
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+fn assert_file_not_found(running: &mut m80_firecracker::RunningSandbox, path: &str) {
+    let err = running
+        .stat_file(path)
+        .expect_err("path should not exist after cancelled upload");
+    assert!(
+        matches!(err, m80_firecracker::FcError::FileOp(FileError::NotFound)),
+        "expected FileError::NotFound for {path}, got {err:?}"
+    );
 }
 
 // ── Scenario 2: cancel after process already exited ───────────────────────────

@@ -195,3 +195,68 @@ fn cancellable_streaming_exec_kills_shell_grandchild_and_allows_next_exec() {
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
 }
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn cancellable_large_stdout_stream_kills_writer_and_allows_next_exec() {
+    let (backend, run_root) = backend();
+    let vm_id = "scls";
+    let sandbox = backend.admit(sandbox_config(vm_id)).expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+    let _dump_guard = RunDirDumpGuard::new(run_root.join(vm_id));
+
+    let (cancel_tx, cancel_rx) = mpsc::channel();
+    let mut stdout_total = 0usize;
+    let mut cancel_sent = false;
+    let exit = running
+        .exec_streaming_with_cancel(
+            ExecRequest {
+                program: "/bin/sh".into(),
+                args: vec![
+                    "-c".into(),
+                    "while :; do printf 'm80-large-stdout-cancel\\n'; done".into(),
+                ],
+                cwd: None,
+                env: None,
+                stdin: None,
+                timeout_ms: Some(30_000),
+                streaming: false,
+            },
+            cancel_rx,
+            |chunk| {
+                if let ExecChunk::Stdout { bytes, .. } = chunk {
+                    stdout_total = stdout_total.saturating_add(bytes.len());
+                    if stdout_total >= 64 * 1024 && !cancel_sent {
+                        let _ = cancel_tx.send(());
+                        cancel_sent = true;
+                    }
+                }
+                Ok(())
+            },
+        )
+        .expect("large stdout streaming exec should cancel");
+
+    assert!(cancel_sent, "test never observed enough stdout to cancel");
+    assert_eq!(exit.status, ExecStatus::Cancelled);
+    assert!(
+        stdout_total >= 64 * 1024,
+        "expected at least 64 KiB before cancellation, got {stdout_total}"
+    );
+
+    let resp = running
+        .exec(ExecRequest {
+            program: "/bin/true".into(),
+            args: vec![],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        })
+        .expect("guestd should accept a new exec after large stdout cancellation");
+    assert_eq!(resp.status, ExecStatus::Completed);
+    assert_eq!(resp.exit_code, Some(0));
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
