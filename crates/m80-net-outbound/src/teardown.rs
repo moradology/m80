@@ -101,7 +101,7 @@ fn delete_forwarding_entry_rules(
         "FORWARD",
         &[
             "-i",
-            &state.tap_name,
+            &state.bridge.bridge_name,
             "-s",
             &guest,
             "-m",
@@ -118,7 +118,7 @@ fn delete_forwarding_entry_rules(
         "FORWARD",
         &[
             "-o",
-            &state.tap_name,
+            &state.bridge.bridge_name,
             "-d",
             &guest,
             "-m",
@@ -135,7 +135,7 @@ fn delete_forwarding_entry_rules(
         "FORWARD",
         &[
             "-o",
-            &state.tap_name,
+            &state.bridge.bridge_name,
             "-d",
             &guest,
             "-m",
@@ -245,7 +245,10 @@ fn list_iptables_chain_rules(
     }
     let mut rules = Vec::new();
     for line in output.stdout.lines().map(str::trim) {
-        if line.is_empty() || line == format!("-N {chain}") {
+        if line.is_empty()
+            || line == format!("-N {chain}")
+            || line.starts_with(&format!("-P {chain} "))
+        {
             continue;
         }
         let prefix = format!("-A {chain} ");

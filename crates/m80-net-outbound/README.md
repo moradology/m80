@@ -81,13 +81,13 @@ Sequestering it has three benefits:
   This split is intentional: Linux `tun.c` allows rtnetlink deletion and
   introspection for TUN/TAP links, but not creation.
 - `prepare_pid_one_network_cmdline(state)` is the current Ubuntu/Minimal
-  PID-1 guest network path. It discovers admitted public IPv4 DNS resolvers,
+  PID-1 guest network path. It discovers admitted non-loopback IPv4 DNS resolvers,
   records `dns_resolvers` and `runtime_rootfs_configured=true` back to
   `<run_dir>/network-state.json`, and returns deterministic `m80.net.*`
   kernel command-line tokens for `m80-guestd` to consume after its overlay
   pivot.
 - `inject_guest_network_config(state, runtime_rootfs)` is retained for a
-  future systemd-image mode. It discovers admitted public IPv4 DNS resolvers,
+  future systemd-image mode. It discovers admitted non-loopback IPv4 DNS resolvers,
   writes the m80 systemd-networkd unit and systemd-resolved drop-in into the
   supplied per-VM runtime rootfs ext4 image via `debugfs`, then records
   `dns_resolvers` and `runtime_rootfs_configured=true` back to
@@ -98,8 +98,8 @@ Sequestering it has three benefits:
   recorded at least one DNS resolver. It creates or reuses the
   deterministic per-VM filter chain, rejects foreign rules already present
   in that chain, sets `net.ipv4.ip_forward=1`, appends the per-VM filter
-  rules, inserts the FORWARD entries, and appends NAT POSTROUTING
-  masquerade.
+  rules, inserts bridge-interface FORWARD entries scoped by the guest `/32`,
+  and appends NAT POSTROUTING masquerade.
 - iptables rules are tagged with a per-VM comment prefix (rooted in
   `M80_RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
   never by index — so concurrent rule additions by other tools don't
@@ -111,8 +111,9 @@ Sequestering it has three benefits:
   `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`,
   `172.16.0.0/12`, `192.168.0.0/16`, documentation/benchmark ranges,
   multicast/reserved ranges, and the specific bridge CIDR.
-  Admitted DNS resolvers are public-IPv4 only (private/link-local/
-  loopback/CGN/doc-ranges/multicast all rejected).
+  Admitted DNS resolvers may be public or private LAN IPv4 addresses. Loopback,
+  link-local, CGN, documentation, benchmark, multicast, and reserved addresses
+  are rejected.
 
 ### Cleanup
 
@@ -140,7 +141,7 @@ Sequestering it has three benefits:
   `apply_outbound_nat_policy_with_ops(...)` — host sysctl/iptables phase;
   the `_with_ops` variant is the deterministic command-recording seam.
 - `discover_dns_resolvers(...)`, `discover_dns_resolvers_with_ops(...)`,
-  and `is_admitted_dns_resolver(...)` — DNS discovery and public-IPv4
+  and `is_admitted_dns_resolver(...)` — DNS discovery and resolver-address
   admission helpers.
 - `inject_guest_network_config(...)` and
   `inject_guest_network_config_with_ops(...)` — host-driven guest
@@ -244,8 +245,9 @@ Sequestering it has three benefits:
   shellout, and an ignored root/CAP_NET_ADMIN probe exercises real TAP
   create/delete through the no-`/sbin/ip` path.
 - DNS discovery: tests pin `resolvectl dns` before `/etc/resolv.conf`
-  fallback, public-IPv4 admission, and rejection of private/link-local/
-  loopback/CGN/documentation/benchmark/reserved resolver addresses.
+  fallback, public/private-LAN IPv4 admission, and rejection of loopback,
+  link-local, CGN, documentation, benchmark, multicast, and reserved resolver
+  addresses.
 - Guest network injection: tests pin the current PID-1 cmdline tokens, DNS
   discovery/state updates, guest cmdline parsing, rtnetlink/resolv.conf
   operation ordering, and the retained systemd-image
@@ -268,8 +270,8 @@ Sequestering it has three benefits:
   comment prefix, even when foreign rules exist in the same chains.
 - Orphan-bridge recovery: a state file pointing at a missing bridge
   cleans up gracefully; an ambiguous state file is preserved.
-- DNS admittance: every documented resolver category (private/link-local/
-  loopback/CGN/doc-ranges/multicast) is rejected; a public IPv4 is
-  accepted.
+- DNS admittance: every documented rejected resolver category (loopback,
+  link-local, CGN, doc-ranges, benchmark, multicast, and reserved) is rejected;
+  public and private LAN IPv4 resolvers are accepted.
 - Foreign rule guard: pre-existing rules in our chain return
   `ForeignChainRule` rather than being silently coexisted with.

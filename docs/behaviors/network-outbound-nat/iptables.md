@@ -92,12 +92,17 @@ Verification:
 ## Forward Entries
 
 The policy phase inserts three filter/FORWARD rules at index 1:
-`-i <tap> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
-per-VM filter chain, `-o <tap> -d <guest_ipv4>/32 -j REJECT` blocks new
+`-i <bridge> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
+per-VM filter chain, `-o <bridge> -d <guest_ipv4>/32 -j REJECT` blocks new
 inbound traffic, and
-`-o <tap> -d <guest_ipv4>/32 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`
+`-o <bridge> -d <guest_ipv4>/32 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`
 permits replies. Because all three use `-I ... 1`, the final effective order
 keeps RELATED/ESTABLISHED above the inbound reject.
+
+The FORWARD entries key on the Linux bridge interface, not the TAP device.
+Once the TAP is enslaved to the bridge, routed guest traffic reaches the host
+FORWARD chain as bridge ingress/egress; the guest `/32` keeps the rule scoped
+to one VM.
 
 Source: predecessor `ensure_forwarding_entry_rules` lines 1630-1695.
 

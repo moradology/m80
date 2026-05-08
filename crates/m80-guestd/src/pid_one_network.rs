@@ -142,6 +142,7 @@ struct RtnetlinkConfigurator {
 impl RtnetlinkConfigurator {
     fn new() -> anyhow::Result<Self> {
         let runtime = Builder::new_current_thread().enable_io().build()?;
+        let _runtime_guard = runtime.enter();
         let (connection, handle, _) = new_connection()?;
         let _connection_task = runtime.spawn(connection);
         Ok(Self { runtime, handle })

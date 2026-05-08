@@ -97,7 +97,6 @@ pub fn is_admitted_dns_resolver(address: Ipv4Addr) -> bool {
     let octets = address.octets();
     if address.is_unspecified()
         || address.is_loopback()
-        || address.is_private()
         || address.is_link_local()
         || address.is_multicast()
         || address.is_broadcast()

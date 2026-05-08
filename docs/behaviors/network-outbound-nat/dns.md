@@ -4,9 +4,9 @@
 
 The DNS discovery phase invokes `resolvectl dns` first and parses IPv4
 tokens from stdout. If that command is missing, fails, or yields no admitted
-public IPv4 resolvers, discovery falls back to parsing `nameserver` lines
-from `/etc/resolv.conf`. If both sources yield no admitted resolvers, the
-phase returns `NoUsableDnsResolvers`.
+IPv4 resolvers, discovery falls back to parsing `nameserver` lines from
+`/etc/resolv.conf`. If both sources yield no admitted resolvers, the phase
+returns `NoUsableDnsResolvers`.
 
 Source: predecessor
 `crates/sandbox/agent-sandbox-firecracker/src/network.rs::discover_dns_resolvers`
@@ -21,13 +21,16 @@ Verification:
 ## Admission
 
 Every candidate resolver passes through `is_admitted_dns_resolver`. The
-admitted set is public IPv4 only. Unspecified, loopback, private, link-local,
-multicast, broadcast, and documentation addresses are rejected.
+admitted set includes public IPv4 and host-configured RFC1918 LAN resolvers.
+Unspecified, loopback, link-local, multicast, broadcast, and documentation
+addresses are rejected. Private resolvers do not open broad private-network
+egress: the firewall policy admits only UDP/TCP port 53 to the exact resolver
+addresses, then applies the normal private-address deny list to other traffic.
 
 Source: predecessor `is_admitted_dns_resolver` lines 1467-1478.
 
 Verification:
-`crates/m80-net-outbound/tests/network-outbound-nat/dns.rs::is_admitted_dns_resolver_admits_public_ipv4_only`.
+`crates/m80-net-outbound/tests/network-outbound-nat/dns.rs::is_admitted_dns_resolver_admits_public_and_private_lan_ipv4`.
 
 ## Reject Categories
 

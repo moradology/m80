@@ -146,7 +146,21 @@ fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
         vcpu_count: config.vcpu_count.unwrap_or(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: config.mem_size_mib.unwrap_or(FIRST_LINE_MEM_SIZE_MIB),
         smt: false,
-        cpu_template: Some(CpuTemplate::T2),
+        cpu_template: host_cpu_template(),
+    }
+}
+
+fn host_cpu_template() -> Option<CpuTemplate> {
+    std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .and_then(|cpuinfo| cpu_template_for_cpuinfo(&cpuinfo))
+}
+
+fn cpu_template_for_cpuinfo(cpuinfo: &str) -> Option<CpuTemplate> {
+    if cpuinfo.contains("GenuineIntel") {
+        Some(CpuTemplate::T2)
+    } else {
+        None
     }
 }
 
@@ -217,7 +231,7 @@ mod tests {
         assert_eq!(machine.vcpu_count, 2);
         assert_eq!(machine.mem_size_mib, 2048);
         assert!(!machine.smt);
-        assert_eq!(machine.cpu_template, Some(CpuTemplate::T2));
+        assert_eq!(machine.cpu_template, host_cpu_template());
     }
 
     #[test]
@@ -227,8 +241,20 @@ mod tests {
         let PrebootPut::MachineConfig(machine) = &puts[0] else {
             panic!("first preboot PUT must be machine config");
         };
-        assert_eq!(machine.cpu_template, Some(CpuTemplate::T2));
+        assert_eq!(machine.cpu_template, host_cpu_template());
         assert!(!machine.smt);
+    }
+
+    #[test]
+    fn cpu_template_uses_t2_only_on_intel_hosts() {
+        assert_eq!(
+            cpu_template_for_cpuinfo("vendor_id\t: GenuineIntel\n"),
+            Some(CpuTemplate::T2)
+        );
+        assert_eq!(
+            cpu_template_for_cpuinfo("vendor_id\t: AuthenticAMD\n"),
+            None
+        );
     }
 
     #[test]

@@ -268,16 +268,24 @@ fn forward_inserts_route_guest_through_filter_chain() {
 
     assert!(ops.runs.contains(&format!(
         "iptables -w -t filter -I FORWARD 1 -i {} -s {} -m comment --comment {} -j {}",
-        state.tap_name, guest, comment, chain
+        state.bridge.bridge_name, guest, comment, chain
     )));
     assert!(ops.runs.contains(&format!(
         "iptables -w -t filter -I FORWARD 1 -o {} -d {} -m comment --comment {} -j REJECT",
-        state.tap_name, guest, comment
+        state.bridge.bridge_name, guest, comment
     )));
     assert!(ops.runs.contains(&format!(
         "iptables -w -t filter -I FORWARD 1 -o {} -d {} -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment {} -j ACCEPT",
-        state.tap_name, guest, comment
+        state.bridge.bridge_name, guest, comment
     )));
+    assert!(
+        !ops.runs
+            .iter()
+            .any(|run| run.starts_with("iptables -w -t filter -I FORWARD 1")
+                && (run.contains(&format!("-i {}", state.tap_name))
+                    || run.contains(&format!("-o {}", state.tap_name)))),
+        "routed bridge traffic must not be keyed by the TAP device"
+    );
 }
 
 #[test]

@@ -56,7 +56,7 @@ fn resolved_dropin_injected_with_admitted_dns() {
 
     assert_eq!(
         ops.write_content(M80_RESOLVED_FILE),
-        "[Resolve]\nDNS=9.9.9.9 1.1.1.1\nFallbackDNS=\nDomains=~.\n"
+        "[Resolve]\nDNS=9.9.9.9 10.0.0.1 1.1.1.1\nFallbackDNS=\nDomains=~.\n"
     );
     assert!(ops.mkdir_commands().contains(&format!(
         "debugfs -w -R mkdir /etc/systemd/resolved.conf.d {}",
@@ -109,11 +109,15 @@ fn pid_one_prepare_discovers_dns_and_records_configured_state() {
 
     assert_eq!(
         cmdline.args.last().map(String::as_str),
-        Some("m80.net.dns=9.9.9.9,1.1.1.1")
+        Some("m80.net.dns=9.9.9.9,10.0.0.1,1.1.1.1")
     );
     assert_eq!(
         state.dns_resolvers,
-        [Ipv4Addr::new(9, 9, 9, 9), Ipv4Addr::new(1, 1, 1, 1)]
+        [
+            Ipv4Addr::new(9, 9, 9, 9),
+            Ipv4Addr::new(10, 0, 0, 1),
+            Ipv4Addr::new(1, 1, 1, 1),
+        ]
     );
     assert!(state.runtime_rootfs_configured);
     assert!(

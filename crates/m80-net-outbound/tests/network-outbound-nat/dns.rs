@@ -9,20 +9,23 @@ use m80_net_outbound::{
 #[test]
 fn resolvectl_then_resolv_conf_fallback() {
     let mut ops = FakeDnsOps {
-        resolvectl: DnsCommandOutput::success("Link 2: 192.168.1.1\n"),
+        resolvectl: DnsCommandOutput::success("Link 2: 127.0.0.53\n"),
         resolv_conf: "nameserver 9.9.9.9\nnameserver 10.0.0.1\n".to_owned(),
         ..FakeDnsOps::default()
     };
 
     let resolvers = discover_dns_resolvers_with_ops(&mut ops).unwrap();
 
-    assert_eq!(resolvers, [Ipv4Addr::new(9, 9, 9, 9)]);
+    assert_eq!(
+        resolvers,
+        [Ipv4Addr::new(9, 9, 9, 9), Ipv4Addr::new(10, 0, 0, 1)]
+    );
     assert_eq!(ops.commands, ["resolvectl dns"]);
     assert_eq!(ops.reads, ["/etc/resolv.conf"]);
 }
 
 #[test]
-fn resolvectl_admitted_resolvers_win_without_resolv_conf() {
+fn resolvectl_admitted_resolvers_include_private_lan_dns() {
     let mut ops = FakeDnsOps {
         resolvectl: DnsCommandOutput::success("Global: 1.1.1.1 192.168.1.1 [8.8.8.8], 1.1.1.1"),
         resolv_conf: "nameserver 9.9.9.9\n".to_owned(),
@@ -33,7 +36,11 @@ fn resolvectl_admitted_resolvers_win_without_resolv_conf() {
 
     assert_eq!(
         resolvers,
-        [Ipv4Addr::new(1, 1, 1, 1), Ipv4Addr::new(8, 8, 8, 8)]
+        [
+            Ipv4Addr::new(1, 1, 1, 1),
+            Ipv4Addr::new(192, 168, 1, 1),
+            Ipv4Addr::new(8, 8, 8, 8),
+        ]
     );
     assert!(ops.reads.is_empty());
 }
@@ -42,7 +49,7 @@ fn resolvectl_admitted_resolvers_win_without_resolv_conf() {
 fn no_usable_dns_resolvers_errors() {
     let mut ops = FakeDnsOps {
         resolvectl: DnsCommandOutput::failure("resolvectl failed"),
-        resolv_conf: "nameserver 10.0.0.1\nnameserver 127.0.0.1\n".to_owned(),
+        resolv_conf: "nameserver 127.0.0.1\nnameserver 169.254.1.1\n".to_owned(),
         ..FakeDnsOps::default()
     };
 
@@ -52,16 +59,16 @@ fn no_usable_dns_resolvers_errors() {
 }
 
 #[test]
-fn is_admitted_dns_resolver_admits_public_ipv4_only() {
+fn is_admitted_dns_resolver_admits_public_and_private_lan_ipv4() {
     assert!(is_admitted_dns_resolver(Ipv4Addr::new(1, 1, 1, 1)));
     assert!(is_admitted_dns_resolver(Ipv4Addr::new(8, 8, 8, 8)));
+    assert!(is_admitted_dns_resolver(Ipv4Addr::new(10, 0, 0, 1)));
+    assert!(is_admitted_dns_resolver(Ipv4Addr::new(172, 16, 0, 1)));
+    assert!(is_admitted_dns_resolver(Ipv4Addr::new(192, 168, 0, 1)));
 
     for rejected in [
         Ipv4Addr::new(0, 0, 0, 0),
         Ipv4Addr::new(127, 0, 0, 1),
-        Ipv4Addr::new(10, 0, 0, 1),
-        Ipv4Addr::new(172, 16, 0, 1),
-        Ipv4Addr::new(192, 168, 0, 1),
         Ipv4Addr::new(169, 254, 1, 1),
         Ipv4Addr::new(224, 0, 0, 1),
         Ipv4Addr::new(255, 255, 255, 255),

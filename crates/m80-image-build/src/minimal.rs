@@ -32,6 +32,7 @@ const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
     "proc",
     "sys",
     "dev",
+    "etc",
     "lower",
     "upper",
     "merged",
@@ -227,6 +228,7 @@ mod tests {
                 "proc",
                 "sys",
                 "dev",
+                "etc",
                 "lower",
                 "upper",
                 "merged"

@@ -12,6 +12,12 @@ All notable changes to m80 are documented here. Format roughly follows
   Firecracker `eth0` network-interface PUT, and owned network cleanup on launch
   failure, delete, or preserve-for-triage after stop/force-kill.
 
+### Added — positive outbound egress E2E (m80-mx2t.2)
+
+- Added ignored real-KVM coverage that boots `NetworkPolicy::AllowOutbound` and
+  proves guest DNS resolution plus external HTTP when
+  `M80_RUN_EXTERNAL_NETWORK_E2E=1` is set.
+
 ### Added — Firecracker CVE floor (m80-g0v8.11.4)
 
 - `m80-preflight` now rejects Firecracker versions covered by the tracked

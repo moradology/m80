@@ -6,7 +6,9 @@ hypervisor, but it owns the Firecracker configuration it sends before
 
 Pinned configuration:
 
-- `PUT /machine-config` includes `cpu_template = "T2"` and `smt = false`.
+- `PUT /machine-config` includes `smt = false`. On Intel hosts it also includes
+  `cpu_template = "T2"`; on AMD hosts m80 omits `cpu_template` because
+  Firecracker rejects Intel templates with a CPU-vendor mismatch before boot.
 - The preboot PUT plan contains only documented devices: machine config, boot
   source, rootfs drive, rootfs overlay drive, optional workspace drive,
   optional preallocated hotplug drive slots, optional outbound NAT NIC, and

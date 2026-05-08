@@ -155,6 +155,7 @@ fn bridge_setup_is_idempotent_with_matching_state() {
     );
     let vm_state = read_vm_network_state_record(&run_dir).unwrap();
     assert_eq!(vm_state.setup_phase, SetupPhase::Ready);
+    assert_eq!(vm_state.bridge.setup_phase, SetupPhase::Ready);
     assert_eq!(vm_state.tap_name, realized.tap_name);
 }
 

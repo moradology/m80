@@ -23,10 +23,11 @@ Test: `m80-image-build::pipeline::tests::installs_init_symlink_for_pid_one_boot`
 
 ## pid-one-mountpoints
 
-The Ubuntu image pre-creates `/workspace`, `/proc`, `/sys`, `/dev`, `/lower`,
-`/upper`, and `/merged`. `/lower`, `/upper`, and `/merged` must exist before
-boot because the initial root is mounted read-only; PID-1 guestd uses them for
-the base+overlay pivot.
+The Ubuntu and Minimal images pre-create `/workspace`, `/proc`, `/sys`, `/dev`,
+`/etc`, `/lower`, `/upper`, and `/merged`. `/lower`, `/upper`, and `/merged`
+must exist before boot because the initial root is mounted read-only; PID-1
+guestd uses them for the base+overlay pivot. `/etc` must exist before outbound
+PID-1 network setup can write `/etc/resolv.conf` in the pivoted root.
 
 Test: `m80-image-build::pipeline::tests::installs_pid_one_mountpoint_dirs`.
 

@@ -46,6 +46,10 @@ egress to no-egress.
 Verification:
 `crates/m80-cli/src/cmds/tests.rs::run_egress_mode_maps_to_sandbox_network_policy`
 and the OutboundNat evidence under `docs/behaviors/network-outbound-nat/`.
+The real-KVM positive path is pinned by
+`crates/m80-firecracker/tests/egress_outbound_real_kvm.rs::{allow_outbound_resolves_external_dns,allow_outbound_reaches_external_http}`.
+Those ignored tests require `M80_RUN_EXTERNAL_NETWORK_E2E=1` because they touch
+the public network.
 
 ## Allowlist Follow-Up
 

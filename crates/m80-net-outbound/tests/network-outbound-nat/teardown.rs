@@ -255,7 +255,11 @@ impl PolicyOps for RecordingPolicyOps {
                         "No chain/target/match by that name",
                     ));
                 }
-                let mut stdout = format!("-N {chain}\n");
+                let mut stdout = if is_builtin_chain(table, chain) {
+                    format!("-P {chain} ACCEPT\n")
+                } else {
+                    format!("-N {chain}\n")
+                };
                 for rule in self
                     .rules
                     .iter()

@@ -120,13 +120,14 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
     run_dir: &Path,
     host_routes: &str,
 ) -> Result<RealizedNetwork, NetError> {
-    let bridge = planned_bridge_state(run_root, intent)?;
+    let planned_bridge = planned_bridge_state(run_root, intent)?;
     reject_host_route_collision_from_proc_net_route(
-        bridge.cidr,
-        Some(&bridge.bridge_name),
+        planned_bridge.cidr,
+        Some(&planned_bridge.bridge_name),
         host_routes,
     )?;
-    ensure_bridge_ready_with_ops(ops, run_root, &bridge)?;
+    ensure_bridge_ready_with_ops(ops, run_root, &planned_bridge)?;
+    let bridge = read_bridge_state(run_root)?;
 
     let vm_state = planned_vm_network_state(intent, vm_id, run_root, run_dir, bridge.clone());
     let allocation_lock = lock_network_allocation(run_root)?;

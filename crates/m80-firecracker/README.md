@@ -197,11 +197,12 @@ no-live-jailer-parent sentinel.
 `FIRST_LINE_VCPU_COUNT` and `FIRST_LINE_MEM_SIZE_MIB` name the default
 Firecracker shape: 1 vCPU and 1024 MiB. Omitted `SandboxConfig::vcpu_count`
 and `SandboxConfig::mem_size_mib` resolve to those values during preboot.
-Preboot machine config also sets `cpu_template = T2` and `smt = false` so the
-guest sees a stable, narrowed CPU surface. Callers may still supply explicit
-sizing for ordinary launches. Snapshot restore and warm-pool timing fixtures
-use the exported constants so latency proofs do not drift to a benchmark-only
-smaller VM.
+Preboot machine config also sets `smt = false` and applies the `T2` CPU
+template on Intel hosts. On non-Intel hosts it omits `cpu_template` because
+Firecracker rejects Intel templates when the host CPU vendor is AMD. Callers may
+still supply explicit sizing for ordinary launches. Snapshot restore and
+warm-pool timing fixtures use the exported constants so latency proofs do not
+drift to a benchmark-only smaller VM.
 
 ### Cleanup contract vocabulary
 

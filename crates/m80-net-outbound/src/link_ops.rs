@@ -106,6 +106,7 @@ impl NetlinkLinkOps {
     /// Open an rtnetlink connection and return a backend ready for link operations.
     pub fn new() -> Result<Self, NetError> {
         let runtime = Builder::new_current_thread().enable_io().build()?;
+        let _runtime_guard = runtime.enter();
         let (connection, handle, _) =
             new_connection().map_err(|source| NetError::NetlinkOperationFailed {
                 operation: "open rtnetlink connection",
