@@ -66,3 +66,23 @@ fn read_file_nonexistent_path_returns_not_found() {
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
 }
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn write_file_missing_parent_returns_not_found() {
+    let (mut running, run_dir) = launch_vm();
+    let _dump_guard = RunDirDumpGuard::new(run_dir);
+
+    let err = running
+        .write_file(
+            "/tmp/m80-missing-parent/file.txt",
+            b"will-not-write".to_vec(),
+            Some(0o600),
+        )
+        .expect_err("write with missing parent must fail");
+
+    assert!(matches!(err, FcError::FileOp(FileError::NotFound)));
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
