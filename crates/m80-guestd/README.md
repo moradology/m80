@@ -269,14 +269,14 @@ Behavior details:
 Implements `docs/design/storage-overlay.md §3.1` (11-step pseudocode).
 Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 
-1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs), `/dev/shm` (tmpfs `mode=1777`), and `/dev/pts` (devpts `gid=5,mode=620,ptmxmode=666`). `EBUSY` (kernel pre-mounted) is accepted as success, and `/dev/ptmx` is normalized to `pts/ptmx`.
+1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs), `/dev/shm` (tmpfs `mode=1777`), and `/dev/pts` (devpts `gid=5,mode=620,ptmxmode=666`, no `MS_NODEV` so `/dev/pts/ptmx` can be opened). `EBUSY` (kernel pre-mounted) is accepted as success, and `/dev/ptmx` is normalized to `pts/ptmx`.
 2. Make mount namespace fully private (`MS_REC | MS_PRIVATE` on `/`) so `pivot_root(2)` does not propagate to the host.
 3. Verify the image-built `/lower` mountpoint exists, then mount `/dev/vda` (shared read-only base ext4) there (`MS_RDONLY`).
 4. Verify the image-built `/upper` mountpoint exists, then mount `/dev/vdb` (per-VM writable overlay ext4) there.
 5. `mkdir /upper/root` and `mkdir /upper/.work` (idempotent — first boot creates, later boots already have them from a prior VM that used the overlay).
 6. Verify the image-built `/merged` mountpoint exists.
 7. Mount overlayfs: `lowerdir=/lower,upperdir=/upper/root,workdir=/upper/.work` at `/merged`.
-8. Bind-mount `/proc` (`MS_BIND|MS_REC`), `/sys` (`MS_BIND`), `/dev` (`MS_BIND`) into `/merged/{proc,sys,dev}` so they survive pivot.
+8. Bind-mount `/proc` (`MS_BIND|MS_REC`), `/sys` (`MS_BIND`), `/dev` (`MS_BIND|MS_REC`) into `/merged/{proc,sys,dev}` so they survive pivot. `/dev` is recursive so the nested `/dev/pts` devpts mount remains available for PTY allocation after pivot.
 9. Apply `MS_SLAVE|MS_REC` on `/` and `MS_BIND|MS_REC` of `/merged` onto itself (required by `pivot_root(".", ".")`).
 10. Call `pivot_rootfs("/merged")` — lifted verbatim from `kata-containers/src/agent/rustjail/src/mount.rs:523-559` (Apache-2.0, © 2019 Ant Financial). Uses `defer!` (scopeguard) for FD cleanup.
 11. If the boot cmdline contains `m80.workspace=1`, mount `/dev/vdc`

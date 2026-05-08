@@ -133,11 +133,11 @@ mount("overlay", "/merged", "overlay", MsFlags::empty(), Some(opts))?;
 
 // ── Phase 5: virtual filesystems into merged (before pivot) ───────────────
 // Step 7. Bind /proc, /sys, /dev INTO /merged/... so they are available
-//         after pivot.  Exact flags per runc-crun-overlayfs-init.md §4
-//         phase 4 (MS_BIND | MS_REC for /proc; MS_BIND for /sys and /dev).
+//         after pivot. /dev is recursive so the nested /dev/pts devpts
+//         mount remains available for PTY allocation after pivot.
 mount("/proc",  "/merged/proc",  None, MS_BIND | MS_REC, None)?;
 mount("/sys",   "/merged/sys",   None, MS_BIND,           None)?;
-mount("/dev",   "/merged/dev",   None, MS_BIND,           None)?;
+mount("/dev",   "/merged/dev",   None, MS_BIND | MS_REC, None)?;
 
 // ── Phase 6: pivot ────────────────────────────────────────────────────────
 // Step 8. Make the current root MS_SLAVE so unmounts don't propagate to

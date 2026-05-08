@@ -81,7 +81,7 @@ fn mount_pseudo_filesystems() -> anyhow::Result<()> {
         "devpts",
         DEV_PTS_TARGET,
         "devpts",
-        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        devpts_mount_flags(),
         Some(DEV_PTS_MOUNT_DATA),
     )?;
     ensure_ptmx_symlink().context("ensure /dev/ptmx -> /dev/pts/ptmx")?;
@@ -261,8 +261,8 @@ fn mount_overlay_and_pivot(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
 
     // ── Phase 5: virtual filesystems into merged (before pivot) ───────────
     // Step 7. Bind /proc, /sys, /dev into /merged/... so they survive pivot.
-    //         Flags per docs/exploration/runc-crun-overlayfs-init.md §4:
-    //         MS_BIND | MS_REC for /proc; MS_BIND for /sys and /dev.
+    //         /dev must be recursive because /dev/pts is a nested devpts mount
+    //         required by PTY allocation after pivot.
     guest_log::info(
         GuestLogPhase::Boot,
         None,
@@ -288,7 +288,7 @@ fn mount_overlay_and_pivot(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
         Some("/dev"),
         "/merged/dev",
         None::<&str>,
-        MsFlags::MS_BIND,
+        dev_bind_flags(),
         None::<&str>,
     )
     .context("step 7: bind /dev -> /merged/dev")?;
@@ -340,6 +340,14 @@ fn ensure_precreated_mountpoint(path: &str) -> anyhow::Result<()> {
         anyhow::bail!("{path} must be a directory");
     }
     Ok(())
+}
+
+fn dev_bind_flags() -> MsFlags {
+    MsFlags::MS_BIND | MsFlags::MS_REC
+}
+
+fn devpts_mount_flags() -> MsFlags {
+    MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC
 }
 
 // Adapted from kata-containers/src/agent/rustjail/src/mount.rs:507-559

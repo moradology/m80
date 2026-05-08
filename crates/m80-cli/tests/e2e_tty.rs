@@ -16,19 +16,21 @@
 //!
 //! `M80_RUN_ROOT`, `HOME`, `M80_CGROUP_MODE`, and
 //! `M80_MAX_CONCURRENT_VMS` are set by the fixture. The automated probe uses
-//! `--egress outbound` to exercise the CLI policy path, but it does not require
-//! external network access or any Claude credentials.
+//! `--egress none` so the terminal path is isolated from deferred outbound NAT
+//! support.
 
 use common::{append_file, run_root_entries};
 mod common;
 use std::fs::{self, File};
 use std::io::{Read as _, Write as _};
-use std::path::Path;
+use std::os::fd::AsFd;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use nix::pty::openpty;
+use nix::sys::termios::{self, InputFlags, LocalFlags, OutputFlags};
 use tempfile::TempDir;
 
 const READY_MARKER: &[u8] = b"M80_TTY_READY";
@@ -70,7 +72,10 @@ impl KvmFixture {
     fn new() -> Self {
         Self {
             home: tempfile::tempdir().expect("home tempdir"),
-            run_root: tempfile::tempdir().expect("run-root tempdir"),
+            run_root: tempfile::Builder::new()
+                .prefix("m")
+                .tempdir_in(run_root_parent())
+                .expect("run-root tempdir"),
         }
     }
 
@@ -84,7 +89,14 @@ impl KvmFixture {
     }
 
     fn assert_run_root_empty(&self) {
-        let entries = run_root_entries(self.run_root.path());
+        let entries = run_root_entries(self.run_root.path())
+            .into_iter()
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_none_or(|name| !name.starts_with(".rootfs-overlay-template-v1-"))
+            })
+            .collect::<Vec<_>>();
         assert!(
             entries.is_empty(),
             "m80 run must stop/delete sandbox state; leftover entries: {entries:?}\n{}",
@@ -95,6 +107,12 @@ impl KvmFixture {
     fn run_root(&self) -> &Path {
         self.run_root.path()
     }
+}
+
+fn run_root_parent() -> PathBuf {
+    std::env::var_os("M80_E2E_RUN_ROOT_PARENT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/var/lib"))
 }
 
 #[test]
@@ -113,7 +131,7 @@ fn interactive_tty_probe_reads_input_writes_ansi_and_preserves_exit_code() {
         .args([
             "run",
             "--egress",
-            "outbound",
+            "none",
             "--workspace",
             workspace
                 .path()
@@ -196,9 +214,12 @@ fn interactive_tty_probe_reads_input_writes_ansi_and_preserves_exit_code() {
         "PTY probe should preserve final ANSI/control output\n{}",
         failure_report(&output, fixture.run_root())
     );
+    let printable_output = String::from_utf8_lossy(&output)
+        .replace('\r', "")
+        .replace("\x1b[?25l", "")
+        .replace("\x1b[?25h", "");
     assert!(
-        String::from_utf8_lossy(&output)
-            .replace('\r', "")
+        printable_output
             .lines()
             .any(|line| line.split_whitespace().count() == 2
                 && line
@@ -214,6 +235,96 @@ fn interactive_tty_probe_reads_input_writes_ansi_and_preserves_exit_code() {
         "PTY probe should see the explicit workspace\n{}",
         failure_report(&output, fixture.run_root())
     );
+    fixture.assert_run_root_empty();
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and m80 artifacts"]
+fn interactive_tty_enables_and_restores_host_raw_mode() {
+    let fixture = KvmFixture::new();
+    let pty = openpty(None, None).expect("host pty");
+    let master = File::from(pty.master);
+    let slave = File::from(pty.slave);
+    let probe_slave = slave.try_clone().expect("clone pty slave probe");
+    let original = termios::tcgetattr(probe_slave.as_fd()).expect("read original host pty mode");
+
+    let child = fixture
+        .std_m80()
+        .args([
+            "run",
+            "--egress",
+            "none",
+            "--tty",
+            "-i",
+            "--",
+            "/bin/sh",
+            "-c",
+            "printf 'M80_RAW_READY\\n'; sleep 5; exit 0",
+        ])
+        .stdin(Stdio::from(
+            slave.try_clone().expect("clone pty slave stdin"),
+        ))
+        .stdout(Stdio::from(
+            slave.try_clone().expect("clone pty slave stdout"),
+        ))
+        .stderr(Stdio::from(slave))
+        .spawn()
+        .expect("spawn m80 run -it raw-mode probe");
+    let child = ChildGuard::new(child);
+
+    let mut reader = master.try_clone().expect("clone pty master reader");
+    let (chunk_tx, chunk_rx) = mpsc::channel();
+    let reader_thread = std::thread::spawn(move || {
+        let mut buf = [0u8; 1024];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => return,
+                Ok(n) => {
+                    if chunk_tx.send(buf[..n].to_vec()).is_err() {
+                        return;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(_) => return,
+            }
+        }
+    });
+
+    let mut output = Vec::new();
+    read_until(
+        &chunk_rx,
+        &mut output,
+        b"M80_RAW_READY",
+        Duration::from_secs(30),
+        fixture.run_root(),
+    );
+
+    let raw = termios::tcgetattr(probe_slave.as_fd()).expect("read active host pty mode");
+    assert_host_raw_mode(&raw, fixture.run_root(), &output);
+
+    let status = child.wait().expect("wait m80");
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "raw-mode probe should return the guest exit code\n{}",
+        failure_report(&output, fixture.run_root())
+    );
+    let restored = termios::tcgetattr(probe_slave.as_fd()).expect("read restored host pty mode");
+    assert_eq!(
+        restored.input_flags, original.input_flags,
+        "host pty input flags should be restored after m80 exits"
+    );
+    assert_eq!(
+        restored.output_flags, original.output_flags,
+        "host pty output flags should be restored after m80 exits"
+    );
+    assert_eq!(
+        restored.local_flags, original.local_flags,
+        "host pty local flags should be restored after m80 exits"
+    );
+    drop(probe_slave);
+    drop(master);
+    let _ = reader_thread.join();
     fixture.assert_run_root_empty();
 }
 
@@ -244,6 +355,32 @@ fn read_until(
             ),
         }
     }
+}
+
+fn assert_host_raw_mode(termios: &termios::Termios, run_root: &Path, output: &[u8]) {
+    assert!(
+        !termios.local_flags.intersects(
+            LocalFlags::ECHO | LocalFlags::ICANON | LocalFlags::ISIG | LocalFlags::IEXTEN
+        ),
+        "host pty local flags should be raw while m80 run -it is active\n{}",
+        failure_report(output, run_root)
+    );
+    assert!(
+        !termios.input_flags.intersects(
+            InputFlags::BRKINT
+                | InputFlags::ICRNL
+                | InputFlags::INPCK
+                | InputFlags::ISTRIP
+                | InputFlags::IXON
+        ),
+        "host pty input flags should be raw while m80 run -it is active\n{}",
+        failure_report(output, run_root)
+    );
+    assert!(
+        !termios.output_flags.contains(OutputFlags::OPOST),
+        "host pty output flags should be raw while m80 run -it is active\n{}",
+        failure_report(output, run_root)
+    );
 }
 
 fn failure_report(output: &[u8], run_root: &Path) -> String {

@@ -92,6 +92,21 @@ fn pid_one_mounts_linux_runtime_dev_filesystems() {
 }
 
 #[test]
+fn dev_bind_into_merged_must_be_recursive_for_devpts() {
+    let flags = dev_bind_flags();
+    assert!(flags.contains(MsFlags::MS_BIND));
+    assert!(flags.contains(MsFlags::MS_REC));
+}
+
+#[test]
+fn devpts_mount_must_permit_ptmx_device_open() {
+    let flags = devpts_mount_flags();
+    assert!(flags.contains(MsFlags::MS_NOSUID));
+    assert!(flags.contains(MsFlags::MS_NOEXEC));
+    assert!(!flags.contains(MsFlags::MS_NODEV));
+}
+
+#[test]
 fn workspace_cmdline_flag_controls_pid1_workspace_mount() {
     assert!(
         workspace_requested_from_cmdline("console=ttyS0 init=/m80-guestd m80.workspace=1").unwrap()
