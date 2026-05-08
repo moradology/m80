@@ -8,7 +8,8 @@
 //! ```
 
 use m80_jailer::{
-    jail_root_path, BindMode, Binding, InspectionDecision, JailerConfig, JailerSocket, Plan,
+    jail_root_path, BindMode, Binding, InspectionDecision, JailerConfig, JailerError, JailerSocket,
+    Plan,
 };
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
@@ -185,6 +186,80 @@ fn jailer_partial_failure_mid_bind_reverses_prior_steps() {
         m80_jailer::inspect_run_dir(run_dir.path()).unwrap(),
         InspectionDecision::NoJail
     ));
+}
+
+#[test]
+#[ignore = "requires CAP_SYS_ADMIN / root"]
+fn jailer_pid_timeout_recovery_returns_orphan_jail() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let jailer_bin = run_dir.path().join("fake-jailer-no-pid.sh");
+    std::fs::write(
+        &jailer_bin,
+        r#"#!/bin/sh
+id=
+chroot_base=
+exec_file=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --id) id="$2"; shift 2 ;;
+    --chroot-base-dir) chroot_base="$2"; shift 2 ;;
+    --exec-file) exec_file="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec_base="${exec_file##*/}"
+jail_root="$chroot_base/$exec_base/$id/root"
+/bin/mkdir -p "$jail_root"
+/bin/sleep 30
+"#,
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&jailer_bin, perms).unwrap();
+
+    let cfg = JailerConfig {
+        jailer_bin,
+        jailer_harden_bin: None,
+        firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+        run_dir: run_dir.path().to_path_buf(),
+        uid: 3000,
+        gid: 3000,
+        bindings: Vec::new(),
+        sockets: Vec::new(),
+        resource_limits: m80_jailer::ResourceLimits::default(),
+        new_pid_ns: false,
+        daemonize: false,
+        new_cgroup_ns: false,
+        netns_path: None,
+        stdio_log: None,
+    };
+
+    let plan = Plan::compute(&cfg).unwrap();
+    let jail = plan
+        .materialize()
+        .expect("materialize must succeed as root");
+    let err = jail
+        .launch(PathBuf::from("firecracker.sock").as_path())
+        .expect_err("missing firecracker.pid must time out");
+
+    assert!(matches!(err, JailerError::FirecrackerPidTimeout { .. }));
+    assert!(
+        jail.jail_path.exists(),
+        "timeout must leave materialized jail residue for recovery/drop"
+    );
+    let InspectionDecision::OrphanJail { reap_steps } =
+        m80_jailer::inspect_run_dir(run_dir.path()).unwrap()
+    else {
+        panic!("initial state without pids must be recoverable orphan residue");
+    };
+    assert!(
+        !reap_steps.is_empty(),
+        "recoverable orphan must carry plan reap steps"
+    );
+    drop(jail);
+    assert_no_mountinfo_references(run_dir.path());
 }
 
 #[test]
