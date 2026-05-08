@@ -6,11 +6,13 @@ use std::cmp::Ordering;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use m80_proto::{
-    encode_raw_envelope, read_frame, Envelope, ExecResponse, ExecStatus, FileWriteRequest,
-    FileWriteResponse, PingRequest, PongResponse, ProtoError, RawEnvelope, MAX_FRAME_BYTES,
+    encode_raw_envelope, read_frame, read_raw_frame, write_frame, Envelope, ExecExit, ExecRequest,
+    ExecResponse, ExecStatus, FileWriteRequest, FileWriteResponse, PingRequest, PongResponse,
+    ProtoError, RawEnvelope, MAX_FRAME_BYTES, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDOUT,
     PROTOCOL_VERSION,
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
@@ -123,6 +125,57 @@ fn exact_max_file_write_request() -> Envelope<FileWriteRequest> {
     panic!("could not construct exact MAX_FRAME_BYTES file_write envelope");
 }
 
+fn streaming_stdout_request() -> Envelope<ExecRequest> {
+    Envelope::with_request_id(
+        ExecRequest {
+            program: "/bin/sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "while :; do printf 'm80-before-malformed\\n'; done".to_owned(),
+            ],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(30_000),
+            streaming: true,
+        },
+        "malformed-mid-stream".to_owned(),
+    )
+}
+
+fn write_malformed_frame(raw: &mut BufReader<UnixStream>) {
+    raw.get_mut()
+        .write_all(&4u32.to_be_bytes())
+        .expect("write malformed frame length");
+    raw.get_mut()
+        .write_all(&[0xff, 0xff, 0xff, 0xff])
+        .expect("write malformed frame body");
+    raw.get_mut().flush().expect("flush malformed frame");
+}
+
+fn assert_console_protocol_error(run_dir: &Path) {
+    let console_log = m80_firecracker::console_log_path(run_dir);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let content = std::fs::read_to_string(&console_log).unwrap_or_default();
+        if content.contains("protocol_error peer=host-vsock")
+            && content.contains("request_id=malformed-mid-stream")
+            && content.contains("stream_id=control")
+            && content.contains("error_class=malformed_frame")
+        {
+            return;
+        }
+        if Instant::now() >= deadline {
+            panic!(
+                "console log did not expose malformed-frame protocol error at {}:\n{}",
+                console_log.display(),
+                content
+            );
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn frame_length_at_max_bytes_round_trips() {
@@ -174,6 +227,64 @@ fn frame_length_over_max_drops_current_channel_only() {
     fresh
         .send(&Envelope::new(PingRequest {}))
         .expect("send fresh ping after oversized drop");
+    let pong: Envelope<PongResponse> = fresh.recv().expect("recv fresh pong");
+    assert!(pong.payload.guest_unix_ms > 0);
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn malformed_frame_mid_stream_maps_to_user_visible_error() {
+    let discovery = m80_preflight::run().expect("preflight");
+    let (running, run_dir) = launch_vm(&discovery);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+    let vm_id = running.vm_id().to_owned();
+
+    let mut raw = open_raw_stream(&run_dir, &discovery.firecracker_bin, &vm_id);
+    write_frame(&mut raw.get_mut(), &streaming_stdout_request()).expect("write streaming exec");
+
+    let first = read_raw_frame(&mut raw).expect("recv first streaming frame");
+    assert_eq!(first.kind, PAYLOAD_KIND_EXEC_STDOUT);
+    let stdout = first
+        .decode::<m80_proto::ExecStdout>()
+        .expect("decode stdout");
+    assert!(
+        stdout.payload.bytes.starts_with(b"m80-before-malformed\n"),
+        "unexpected first stdout chunk: {:?}",
+        String::from_utf8_lossy(&stdout.payload.bytes)
+    );
+
+    write_malformed_frame(&mut raw);
+
+    let mut saw_teardown = None;
+    for _ in 0..256 {
+        match read_raw_frame(&mut raw) {
+            Ok(frame) if frame.kind == PAYLOAD_KIND_EXEC_STDOUT => {}
+            Ok(frame) if frame.kind == PAYLOAD_KIND_EXEC_EXIT => {
+                let exit = frame.decode::<ExecExit>().expect("decode exec exit");
+                panic!("malformed control frame produced terminal exit: {exit:?}");
+            }
+            Ok(frame) => panic!("unexpected frame after malformed control frame: {frame:?}"),
+            Err(err) => {
+                saw_teardown = Some(err);
+                break;
+            }
+        }
+    }
+    let err = saw_teardown.expect("malformed frame did not tear down current channel");
+    assert!(
+        matches!(err, ProtoError::Io(_)),
+        "current channel teardown should surface as I/O error, got {err:?}"
+    );
+
+    assert_console_protocol_error(&run_dir);
+
+    let mut fresh = open_channel(&run_dir, &discovery.firecracker_bin, &vm_id);
+    fresh
+        .send(&Envelope::new(PingRequest {}))
+        .expect("send fresh ping after malformed streaming frame");
     let pong: Envelope<PongResponse> = fresh.recv().expect("recv fresh pong");
     assert!(pong.payload.guest_unix_ms > 0);
 

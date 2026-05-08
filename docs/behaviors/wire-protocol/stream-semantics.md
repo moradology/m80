@@ -62,6 +62,12 @@ A host disconnect without `cancel_request` is treated by guestd as cancellation
 of the in-flight child and produces no host-visible terminal frame because the
 host has already gone away.
 
+A malformed host control frame during streaming is equivalent to a poisoned
+current channel: guestd logs a `protocol_error` with the active `request_id`
+and `stream_id=control`, kills the in-flight child, and drops the current
+connection without emitting a terminal `exec_exit` or `pty_exit`. A fresh
+channel to the same guest remains usable.
+
 ## Bounded memory
 
 The global protobuf frame cap remains 4 MiB, so a peer cannot force one frame
@@ -98,6 +104,10 @@ and host consumer.
 - `crates/m80-guestd/src/connection/protocol_log.rs` tests pin protocol
   diagnostics for malformed, oversized, version-mismatch, and unexpected-frame
   cases with request and stream context.
+- `crates/m80-firecracker/tests/wire_frame_boundaries_real_kvm.rs::malformed_frame_mid_stream_maps_to_user_visible_error`
+  pins real-KVM mid-stream malformed control-frame handling: current-channel
+  teardown, guest console `protocol_error` visibility, and fresh-channel
+  survival.
 - `crates/m80-guestd/tests/streaming_exec.rs` pins stdout/stderr per-stream
   sequence monotonicity, terminal exit, cancel ack, and disconnect cleanup.
 - `crates/m80-guestd/tests/pty_exec.rs` pins PTY output, cancel ack, and
