@@ -19,6 +19,44 @@ fn json_output_envelope_stable_across_subcommands() {
     assert_preflight_json();
 }
 
+#[test]
+fn env_json_on_failed_preflight_stable_schema() {
+    let output = m80()
+        .args(["--json", "env"])
+        .env("M80_FIRECRACKER_BIN", "/definitely/missing/firecracker")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "env JSON command must keep stderr empty: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|e| panic!("env output must be one JSON value: {e}\n{output:?}"));
+    assert_eq!(parsed["version"], 1);
+    assert_eq!(parsed["data"]["version"], 1);
+
+    let preflight = &parsed["data"]["preflight"];
+    assert_eq!(preflight["ok"], false);
+    assert!(
+        preflight
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .is_some(),
+        "failed preflight must include an error string: {parsed}"
+    );
+    assert_eq!(
+        preflight
+            .get("checks")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(0),
+        "failed preflight must use an empty checks array: {parsed}"
+    );
+}
+
 fn assert_success_json<const N: usize>(args: [&str; N]) {
     assert_success_json_with_env(args, None);
 }
