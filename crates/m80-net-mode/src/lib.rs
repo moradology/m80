@@ -29,6 +29,16 @@ pub enum NetworkPolicy {
     JoinNetns {
         /// Path to a namespace fd, usually `/var/run/netns/<name>`.
         netns_path: PathBuf,
+        /// Caller-created TAP device visible inside `netns_path`.
+        tap_name: String,
+        /// Guest MAC address assigned to the Firecracker virtio-net device.
+        guest_mac: String,
+        /// Guest IPv4 address with prefix configured by PID 1.
+        guest_ipv4: Ipv4Net,
+        /// Default gateway configured by PID 1.
+        gateway_ipv4: Ipv4Addr,
+        /// DNS resolvers written into the guest by PID 1.
+        dns_resolvers: Vec<Ipv4Addr>,
     },
 }
 
@@ -48,6 +58,16 @@ pub enum VmNetworkMode {
     JoinNetns {
         /// Namespace path passed to the official Firecracker jailer.
         netns_path: PathBuf,
+        /// Caller-created TAP device visible inside `netns_path`.
+        tap_name: String,
+        /// Guest MAC address assigned to the Firecracker virtio-net device.
+        guest_mac: String,
+        /// Guest IPv4 address with prefix configured by PID 1.
+        guest_ipv4: Ipv4Net,
+        /// Default gateway configured by PID 1.
+        gateway_ipv4: Ipv4Addr,
+        /// DNS resolvers written into the guest by PID 1.
+        dns_resolvers: Vec<Ipv4Addr>,
     },
 }
 
@@ -76,8 +96,20 @@ pub fn resolve(policy: &NetworkPolicy) -> VmNetworkMode {
                 gateway_override: None,
             },
         },
-        NetworkPolicy::JoinNetns { netns_path } => VmNetworkMode::JoinNetns {
+        NetworkPolicy::JoinNetns {
+            netns_path,
+            tap_name,
+            guest_mac,
+            guest_ipv4,
+            gateway_ipv4,
+            dns_resolvers,
+        } => VmNetworkMode::JoinNetns {
             netns_path: netns_path.clone(),
+            tap_name: tap_name.clone(),
+            guest_mac: guest_mac.clone(),
+            guest_ipv4: *guest_ipv4,
+            gateway_ipv4: *gateway_ipv4,
+            dns_resolvers: dns_resolvers.clone(),
         },
     }
 }

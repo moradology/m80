@@ -522,5 +522,15 @@ pub(crate) enum RealizedNetwork {
     JoinNetns {
         /// Namespace path supplied by the caller.
         netns_path: PathBuf,
+        /// Caller-created TAP device visible inside the namespace.
+        tap_name: String,
+        /// Guest MAC address assigned during network planning.
+        guest_mac: String,
+        /// Guest IPv4 address with prefix configured by PID 1.
+        guest_ipv4: String,
+        /// Default gateway configured by PID 1.
+        gateway_ipv4: String,
+        /// DNS resolvers written by PID 1.
+        dns_resolvers: Vec<String>,
     },
 }

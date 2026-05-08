@@ -4,6 +4,7 @@
 
 use ipnet::Ipv4Net;
 use m80_net_mode::{resolve, NetworkPolicy, OutboundIntent, VmNetworkMode};
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 
 #[test]
@@ -44,11 +45,19 @@ fn allow_outbound_with_one_cidr_round_trips_through_resolver() {
 
 #[test]
 fn join_netns_carries_path_through_resolver() {
-    let path = PathBuf::from("/var/run/netns/m80-test");
-    let mode = resolve(&NetworkPolicy::JoinNetns {
-        netns_path: path.clone(),
-    });
-    assert_eq!(mode, VmNetworkMode::JoinNetns { netns_path: path });
+    let policy = join_netns_policy("/var/run/netns/m80-test");
+    let mode = resolve(&policy);
+    assert_eq!(
+        mode,
+        VmNetworkMode::JoinNetns {
+            netns_path: PathBuf::from("/var/run/netns/m80-test"),
+            tap_name: "tapm80test".to_owned(),
+            guest_mac: "02:00:00:00:80:01".to_owned(),
+            guest_ipv4: "10.80.0.2/24".parse().unwrap(),
+            gateway_ipv4: Ipv4Addr::new(10, 80, 0, 1),
+            dns_resolvers: vec![Ipv4Addr::new(10, 80, 0, 1)],
+        }
+    );
 }
 
 #[test]
@@ -60,13 +69,28 @@ fn compromised_vmm_network_boundary_is_explicit_join_netns_only() {
         VmNetworkMode::OutboundNat { .. }
     ));
 
-    let path = PathBuf::from("/var/run/netns/m80-security");
     assert_eq!(
-        resolve(&NetworkPolicy::JoinNetns {
-            netns_path: path.clone()
-        }),
-        VmNetworkMode::JoinNetns { netns_path: path }
+        resolve(&join_netns_policy("/var/run/netns/m80-security")),
+        VmNetworkMode::JoinNetns {
+            netns_path: PathBuf::from("/var/run/netns/m80-security"),
+            tap_name: "tapm80test".to_owned(),
+            guest_mac: "02:00:00:00:80:01".to_owned(),
+            guest_ipv4: "10.80.0.2/24".parse().unwrap(),
+            gateway_ipv4: Ipv4Addr::new(10, 80, 0, 1),
+            dns_resolvers: vec![Ipv4Addr::new(10, 80, 0, 1)],
+        }
     );
+}
+
+fn join_netns_policy(netns_path: &str) -> NetworkPolicy {
+    NetworkPolicy::JoinNetns {
+        netns_path: PathBuf::from(netns_path),
+        tap_name: "tapm80test".to_owned(),
+        guest_mac: "02:00:00:00:80:01".to_owned(),
+        guest_ipv4: "10.80.0.2/24".parse().unwrap(),
+        gateway_ipv4: Ipv4Addr::new(10, 80, 0, 1),
+        dns_resolvers: vec![Ipv4Addr::new(10, 80, 0, 1)],
+    }
 }
 
 fn assert_policy_round_trips(policy: NetworkPolicy) {
@@ -97,7 +121,5 @@ fn network_policy_allow_outbound_round_trips() {
 /// for `JoinNetns`.
 #[test]
 fn network_policy_join_netns_round_trips() {
-    assert_policy_round_trips(NetworkPolicy::JoinNetns {
-        netns_path: PathBuf::from("/var/run/netns/m80-test"),
-    });
+    assert_policy_round_trips(join_netns_policy("/var/run/netns/m80-test"));
 }

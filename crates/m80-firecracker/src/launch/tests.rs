@@ -1,9 +1,14 @@
 use std::io::Write;
+use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use m80_proto::READY_PORT_DEFAULT;
+
+use super::ready::accept_ready_signal;
 use super::*;
+use crate::WireProtocolError;
 
 #[test]
 fn ready_listener_path_uses_muxer_port_suffix() {

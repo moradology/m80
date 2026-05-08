@@ -387,6 +387,7 @@ fn end_to_end_real_kvm_jailer_security_parity() {
 #[ignore = "requires root, iproute2 netns support, KVM host, and real Firecracker binary"]
 fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
     let netns = NetnsGuard::create();
+    netns.create_tap("tapm80struct");
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
@@ -403,9 +404,7 @@ fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
     let sandbox_config = m80_firecracker::SandboxConfig {
         vm_id: Some("e2e-join-netns".into()),
         workspace: None,
-        network: m80_firecracker::NetworkPolicy::JoinNetns {
-            netns_path: netns.path.clone(),
-        },
+        network: join_netns_policy(&netns.path, "tapm80struct"),
         vcpu_count: Some(1),
         mem_size_mib: Some(512),
         boot_args: None,
@@ -497,6 +496,31 @@ impl NetnsGuard {
             name,
         }
     }
+
+    fn create_tap(&self, tap_name: &str) {
+        let status = Command::new("ip")
+            .args(["netns", "exec", &self.name, "ip", "tuntap", "add", "dev"])
+            .arg(tap_name)
+            .args(["mode", "tap"])
+            .status()
+            .expect("run ip tuntap add");
+        assert!(
+            status.success(),
+            "ip tuntap add {tap_name} in {} failed: {status}",
+            self.name
+        );
+        let status = Command::new("ip")
+            .args(["netns", "exec", &self.name, "ip", "link", "set"])
+            .arg(tap_name)
+            .arg("up")
+            .status()
+            .expect("run ip link set tap up");
+        assert!(
+            status.success(),
+            "ip link set {tap_name} up in {} failed: {status}",
+            self.name
+        );
+    }
 }
 
 impl Drop for NetnsGuard {
@@ -504,6 +528,20 @@ impl Drop for NetnsGuard {
         let _ = Command::new("ip")
             .args(["netns", "del", &self.name])
             .status();
+    }
+}
+
+fn join_netns_policy(
+    netns_path: &std::path::Path,
+    tap_name: &str,
+) -> m80_firecracker::NetworkPolicy {
+    m80_firecracker::NetworkPolicy::JoinNetns {
+        netns_path: netns_path.to_path_buf(),
+        tap_name: tap_name.to_owned(),
+        guest_mac: "02:00:00:00:80:01".to_owned(),
+        guest_ipv4: "10.80.0.2/24".parse().unwrap(),
+        gateway_ipv4: std::net::Ipv4Addr::new(10, 80, 0, 1),
+        dns_resolvers: vec![std::net::Ipv4Addr::new(10, 80, 0, 1)],
     }
 }
 

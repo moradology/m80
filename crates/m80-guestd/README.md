@@ -281,11 +281,12 @@ Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 8. Bind-mount `/proc` (`MS_BIND|MS_REC`), `/sys` (`MS_BIND`), `/dev` (`MS_BIND|MS_REC`) into `/merged/{proc,sys,dev}` so they survive pivot. `/dev` is recursive so the nested `/dev/pts` devpts mount remains available for PTY allocation after pivot.
 9. Apply `MS_SLAVE|MS_REC` on `/` and `MS_BIND|MS_REC` of `/merged` onto itself (required by `pivot_root(".", ".")`).
 10. Call `pivot_rootfs("/merged")` — lifted verbatim from `kata-containers/src/agent/rustjail/src/mount.rs:523-559` (Apache-2.0, © 2019 Ant Financial). Uses `defer!` (scopeguard) for FD cleanup.
-11. If the boot cmdline contains `m80.net=outbound`, parse the accompanying
-    `m80.net.iface`, `m80.net.mac`, `m80.net.ipv4`, `m80.net.gateway`, and
-    `m80.net.dns` tokens. Configure the interface directly through rtnetlink,
-    bring it up, add the default route, and write `/etc/resolv.conf` in the
-    pivoted root. If the outbound flag is absent, skip this step.
+11. If the boot cmdline contains `m80.net=outbound` or `m80.net=join_netns`,
+    parse the accompanying `m80.net.iface`, `m80.net.mac`, `m80.net.ipv4`,
+    `m80.net.gateway`, and `m80.net.dns` tokens. Configure the interface
+    directly through rtnetlink, bring it up, add the default route, and write
+    `/etc/resolv.conf` in the pivoted root. If both network flags are absent,
+    skip this step.
 12. If the boot cmdline contains `m80.workspace=1`, mount `/dev/vdc`
     (workspace scratch ext4) at `/workspace` **inside the pivoted root**.
     Skipped if the flag is absent/zero or if `/dev/vdc` does not exist

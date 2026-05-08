@@ -180,9 +180,12 @@ no guest NIC and no host iptables changes. `AllowOutbound` resolves to
 OutboundNat: launch realizes the run-root bridge and per-VM TAP, prepares the
 PID-1 `m80.net.*` boot tokens, installs the host NAT/filter policy, emits a
 Firecracker `NetworkInterface` PUT for `eth0`, and records ownership state for
-failure/delete cleanup. `JoinNetns { netns_path }` delegates namespace creation
-and policy to the caller: m80 validates the namespace path and passes it to
-Firecracker's official jailer as `--netns` before Firecracker is exec'd.
+failure/delete cleanup. `JoinNetns { netns_path, tap_name, guest_mac,
+guest_ipv4, gateway_ipv4, dns_resolvers }` delegates namespace, TAP, routing,
+and firewall ownership to the caller: m80 validates the namespace path, passes
+it to Firecracker's official jailer as `--netns`, emits the Firecracker
+`NetworkInterface` PUT for the caller-created TAP, and passes static PID-1
+guest network tokens for `eth0`.
 `NoEgress` and `AllowOutbound` are guest networking policies, not private
 network namespaces for the Firecracker VMM process; the only current VMM netns
 placement promise is `JoinNetns`.

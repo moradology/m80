@@ -668,6 +668,7 @@ name = "m80-firecracker"
 version = "0.0.0"
 dependencies = [
  "hex",
+ "ipnet",
  "m80-cgroup",
  "m80-firecracker-client",
  "m80-image-manifest",

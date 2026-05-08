@@ -13,7 +13,8 @@ use tokio::runtime::{Builder, Runtime};
 
 use crate::guest_log::{self, GuestLogPhase};
 
-const NET_ENABLED: &str = "m80.net=outbound";
+const NET_OUTBOUND: &str = "m80.net=outbound";
+const NET_JOIN_NETNS: &str = "m80.net=join_netns";
 const NET_IFACE_PREFIX: &str = "m80.net.iface=";
 const NET_IPV4_PREFIX: &str = "m80.net.ipv4=";
 const NET_GATEWAY_PREFIX: &str = "m80.net.gateway=";
@@ -51,7 +52,10 @@ pub(crate) fn configure_from_proc_cmdline() -> anyhow::Result<()> {
 
 /// Parse m80 PID-1 outbound networking tokens from a kernel command line.
 pub fn parse_cmdline_network_config(cmdline: &str) -> anyhow::Result<Option<PidOneNetworkConfig>> {
-    if !cmdline.split_whitespace().any(|token| token == NET_ENABLED) {
+    if !cmdline
+        .split_whitespace()
+        .any(|token| token == NET_OUTBOUND || token == NET_JOIN_NETNS)
+    {
         return Ok(None);
     }
 
@@ -252,6 +256,23 @@ mod tests {
             vec![Ipv4Addr::new(1, 1, 1, 1), Ipv4Addr::new(8, 8, 8, 8)]
         );
         assert_eq!(config.mac, "02:00:00:00:00:02");
+    }
+
+    #[test]
+    fn parses_join_netns_cmdline_tokens() {
+        let config = parse_cmdline_network_config(
+            "console=ttyS0 m80.net=join_netns m80.net.iface=eth0 \
+             m80.net.ipv4=10.80.0.2/24 m80.net.gateway=10.80.0.1 \
+             m80.net.dns=10.80.0.1 m80.net.mac=02:00:00:00:80:01",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(config.iface, "eth0");
+        assert_eq!(config.ipv4, "10.80.0.2/24".parse::<Ipv4Net>().unwrap());
+        assert_eq!(config.gateway, Ipv4Addr::new(10, 80, 0, 1));
+        assert_eq!(config.dns, vec![Ipv4Addr::new(10, 80, 0, 1)]);
+        assert_eq!(config.mac, "02:00:00:00:80:01");
     }
 
     #[test]

@@ -102,16 +102,23 @@ pub(crate) fn plan_preboot_puts(
         }));
     }
 
-    if let RealizedNetwork::OutboundNat {
-        tap_name,
-        guest_mac,
-    } = network
-    {
-        puts.push(PrebootPut::NetworkInterface(NetworkInterfaceConfig {
-            iface_id: "eth0".to_owned(),
-            host_dev_name: tap_name.clone(),
-            guest_mac: Some(guest_mac.clone()),
-        }));
+    match network {
+        RealizedNetwork::OutboundNat {
+            tap_name,
+            guest_mac,
+        }
+        | RealizedNetwork::JoinNetns {
+            tap_name,
+            guest_mac,
+            ..
+        } => {
+            puts.push(PrebootPut::NetworkInterface(NetworkInterfaceConfig {
+                iface_id: "eth0".to_owned(),
+                host_dev_name: tap_name.clone(),
+                guest_mac: Some(guest_mac.clone()),
+            }));
+        }
+        RealizedNetwork::NoEgress => {}
     }
 
     puts.push(PrebootPut::Vsock(VsockConfig {
