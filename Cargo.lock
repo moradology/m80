@@ -621,6 +621,7 @@ name = "m80-cgroup"
 version = "0.0.0"
 dependencies = [
  "m80-jailer",
+ "nix 0.29.0",
  "serde",
  "serde_json",
  "tempfile",

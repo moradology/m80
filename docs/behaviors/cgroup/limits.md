@@ -29,6 +29,10 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `materialize_jailed_cgroup` (lines 95–99).
 
 Test: `crates/m80-cgroup/tests/cgroup/limits.rs::memory_and_pids_max`.
+Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_pids_max_enforced_against_fork_bomb`
+(#[ignore]) creates a real cgroup leaf with `pids.max = 128`, enrolls a
+waiting fork workload, and asserts the kernel rejects the next fork with
+`EAGAIN`, `pids.current` reaches 128, and `pids.events max` increments.
 
 ## io-and-oom-defaults
 
