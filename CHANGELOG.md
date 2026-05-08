@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — launch failure cleanup coverage (m80-g0v8.1)
+
+- Added an ignored real-host cgroup-create failure test that injects a
+  phase_5b failure after jailer launch and verifies `FcError::Cgroup`, fake
+  Firecracker process cleanup, partial run-dir removal, and admission permit
+  reuse.
+
 ### Added — malicious guestd test harness (m80-g0v8.12.1)
 
 - Added `m80-guestd-malicious`, a separate test-only guest daemon artifact for

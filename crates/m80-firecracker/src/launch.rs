@@ -77,6 +77,8 @@ const READY_ACCEPT_POLL: Duration = Duration::from_millis(10);
 /// Read-deadline for the proto-version byte after `accept()`.
 const READY_VERSION_READ_TIMEOUT: Duration = Duration::from_secs(2);
 const API_SOCKET_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(debug_assertions)]
+const FAIL_CGROUP_CREATE_FOR_VM_ENV: &str = "M80_TEST_FAIL_CGROUP_CREATE_FOR_VM";
 
 impl Sandbox {
     /// Standalone constructor for callers without a `Backend`.
@@ -823,6 +825,7 @@ fn phase_5b_cgroup_create(
     jail: &m80_jailer::MaterializedJail,
     jailed: &m80_jailer::JailedFirecracker,
 ) -> Result<Option<Subtree>, FcError> {
+    fail_cgroup_create_if_requested(vm_id)?;
     match mode {
         CgroupMode::Disabled => Ok(None),
         CgroupMode::UnifiedV2 => {
@@ -833,6 +836,25 @@ fn phase_5b_cgroup_create(
             Ok(Some(subtree))
         }
     }
+}
+
+#[cfg(debug_assertions)]
+fn fail_cgroup_create_if_requested(vm_id: &str) -> Result<(), FcError> {
+    if std::env::var_os(FAIL_CGROUP_CREATE_FOR_VM_ENV).as_deref()
+        != Some(std::ffi::OsStr::new(vm_id))
+    {
+        return Ok(());
+    }
+    let path = PathBuf::from("/sys/fs/cgroup/m80-firecracker").join(vm_id);
+    Err(FcError::Cgroup(m80_cgroup::CgroupError::Io {
+        path,
+        source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+    }))
+}
+
+#[cfg(not(debug_assertions))]
+fn fail_cgroup_create_if_requested(_vm_id: &str) -> Result<(), FcError> {
+    Ok(())
 }
 
 /// Phase 6: resolve the network mode. Rejects `OutboundNat` (deferred to v0.2).

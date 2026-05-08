@@ -19,7 +19,7 @@ use m80_proto::{ExecRequest, ExecStatus};
 #[ignore = "requires privileged jailer host with real m80 artifacts"]
 fn api_socket_timeout_cleans_partial_state() {
     let fake_dir = tempfile::tempdir().expect("fake firecracker tempdir");
-    let fake_firecracker = write_fake_firecracker(fake_dir.path());
+    let fake_firecracker = write_fake_firecracker(fake_dir.path(), "fake-firecracker");
     let mut discovery =
         m80_preflight::run().expect("preflight must pass on a privileged host with m80 artifacts");
     discovery.firecracker_bin = fake_firecracker;
@@ -54,6 +54,54 @@ fn api_socket_timeout_cleans_partial_state() {
         .admit(default_config("api-socket-timeout-permit-reuse"))
         .expect("admission permit must be released after api socket timeout");
     drop(admitted_after_timeout);
+}
+
+#[test]
+#[ignore = "requires privileged jailer host with writable cgroup v2 hierarchy"]
+fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
+    let fake_dir = tempfile::tempdir().expect("fake firecracker tempdir");
+    let fake_name = format!("fake-firecracker-cgroup-fail-{}", unique_suffix());
+    let fake_firecracker = write_fake_firecracker(fake_dir.path(), &fake_name);
+    let mut discovery =
+        m80_preflight::run().expect("preflight must pass on a privileged host with m80 artifacts");
+    discovery.firecracker_bin = fake_firecracker;
+    let backend = Arc::new(
+        Backend::new(make_backend_config_with_cgroup(
+            discovery.clone(),
+            CgroupMode::UnifiedV2,
+        ))
+        .unwrap(),
+    );
+    let vm_id = unique_vm_id("cgroup-create-failure");
+    let run_dir = discovery.run_root.join(&vm_id);
+    let _fault = EnvGuard::set("M80_TEST_FAIL_CGROUP_CREATE_FOR_VM", &vm_id);
+
+    let sandbox = backend
+        .admit(default_config(&vm_id))
+        .expect("admit cgroup failure launch");
+    let err = match sandbox.launch() {
+        Ok(running) => {
+            let stopped = running
+                .force_kill()
+                .expect("force-kill unexpected cgroup launch");
+            stopped.delete().expect("delete unexpected cgroup launch");
+            panic!("cgroup fault injection unexpectedly reached RunningSandbox");
+        }
+        Err(err) => err,
+    };
+
+    assert_cgroup_error(err);
+    assert!(
+        !run_dir.exists(),
+        "cgroup create failure must remove partial run-dir: {}",
+        run_dir.display()
+    );
+    assert_no_process_cmdline_contains(&fake_name);
+
+    let admitted_after_failure = backend
+        .admit(default_config("cgroup-create-failure-permit-reuse"))
+        .expect("admission permit must be released after cgroup create failure");
+    drop(admitted_after_failure);
 }
 
 #[test]
@@ -153,6 +201,13 @@ fn restore_guestd_not_ready_timeout_cleans_partial_state() {
 }
 
 fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
+    make_backend_config_with_cgroup(discovery, CgroupMode::Disabled)
+}
+
+fn make_backend_config_with_cgroup(
+    discovery: m80_preflight::Discovery,
+    cgroup_mode: CgroupMode,
+) -> BackendConfig {
     let run_root = discovery.run_root.clone();
     BackendConfig {
         discovery,
@@ -160,7 +215,7 @@ fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
         run_root,
         jail_uid: 3000,
         jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
+        cgroup_mode,
     }
 }
 
@@ -197,8 +252,8 @@ fn snapshot_paths(dir: &Path) -> SnapshotPaths {
     }
 }
 
-fn write_fake_firecracker(dir: &Path) -> std::path::PathBuf {
-    let path = dir.join("fake-firecracker");
+fn write_fake_firecracker(dir: &Path, name: &str) -> std::path::PathBuf {
+    let path = dir.join(name);
     std::fs::write(&path, "#!/bin/sh\nwhile true; do sleep 60; done\n")
         .expect("write fake firecracker");
     let mut perms = std::fs::metadata(&path)
@@ -245,6 +300,36 @@ fn assert_guestd_timeout(err: FcError) {
     );
 }
 
+fn assert_cgroup_error(err: FcError) {
+    assert!(
+        matches!(err, FcError::Cgroup(_)),
+        "expected Cgroup error, got {err:?}"
+    );
+}
+
+fn assert_no_process_cmdline_contains(needle: &str) {
+    let mut matches = Vec::new();
+    let entries = std::fs::read_dir("/proc").expect("read /proc");
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let cmdline = entry.path().join("cmdline");
+        let Ok(bytes) = std::fs::read(&cmdline) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes).replace('\0', " ");
+        if text.contains(needle) {
+            matches.push(format!("{}: {text}", entry.path().display()));
+        }
+    }
+    assert!(
+        matches.is_empty(),
+        "launch failure cleanup left fake Firecracker process(es): {matches:?}"
+    );
+}
+
 fn unique_vm_id(prefix: &str) -> String {
     format!("{prefix}-{}", unique_suffix() % 1_000_000_000)
 }
@@ -254,4 +339,26 @@ fn unique_suffix() -> u128 {
         .duration_since(UNIX_EPOCH)
         .expect("system clock before unix epoch")
         .as_nanos()
+}
+
+struct EnvGuard {
+    key: &'static str,
+    old: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let old = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, old }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.old {
+            Some(old) => std::env::set_var(self.key, old),
+            None => std::env::remove_var(self.key),
+        }
+    }
 }
