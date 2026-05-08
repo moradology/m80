@@ -12,24 +12,24 @@ logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Black-box contract
 
-- `schema_version` is the integer **3**. A manifest with any other value
+- `schema_version` is the integer **4**. A manifest with any other value
   rejects with `ManifestError::UnsupportedSchemaVersion`. The schema-
   version check fires **before** unknown-field detection, so an unknown
   future version is reported as a version error, not a parse error.
   There is no migration path inside this crate; new schema versions are
   new code.
-- `image_kind: ImageKind` declares which startup model the image was
-  built for: `Ubuntu` (systemd as PID 1; m80-guestd is a service) or
-  `Minimal` (m80-guestd is PID 1; busybox userland; no systemd).
+- `image_kind: ImageKind` declares which userland family the image was
+  built for: `Ubuntu` (Ubuntu userland from the Firecracker CI squashfs)
+  or `Minimal` (busybox userland built from scratch). Both kinds boot
+  m80-guestd as PID 1 and share the same overlay/workspace drive contract.
 - `kernel_kind: KernelKind` declares which kernel was used: `Stock`
   (upstream Firecracker CI kernel from S3) or `Stripped` (purpose-built
   via the m80-ci9i.2 pipeline). Defaults to `Stock` when absent in JSON.
-- The manifest covers up to six hash-bearing artifacts. `kernel_image`,
+- The manifest covers up to four hash-bearing artifacts. `kernel_image`,
   `output_rootfs_image`, and `daemon_binary_path` are always present;
-  `source_rootfs_image`, `service_unit_path`, and `workspace_mount_path`
-  are `Option<>` and present iff `image_kind == Ubuntu`. The
-  kind/field invariant is enforced on `read`, `write`, and `verify` and
-  surfaces as `ManifestError::InconsistentKind`.
+  `source_rootfs_image` is `Option<>` and present iff
+  `image_kind == Ubuntu`. The kind/field invariant is enforced on `read`,
+  `write`, and `verify` and surfaces as `ManifestError::InconsistentKind`.
 - `no_egress_reason` is operator audit metadata. m80-built images use
   `DEFAULT_NO_EGRESS_REASON` to state that the image is network-neutral and
   outbound access requires an explicit runtime policy.
@@ -45,7 +45,14 @@ logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Schema
 
-### v3 (current)
+### v4 (current)
+
+`schema_version: 4`. Removed the systemd service and workspace-mount unit
+artifact fields. Both image kinds now boot m80-guestd as PID 1; `Ubuntu`
+records only its source-rootfs provenance in addition to common artifacts.
+Existing v3 manifests must be rebuilt.
+
+### v3
 
 `schema_version: 3`. Added `kernel_kind: KernelKind` field (§ Public
 surface). The field has `#[serde(default)]` so JSON without `kernel_kind`
@@ -62,8 +69,7 @@ artifacts.
 
 - `Manifest` — struct mirroring the JSON. All fields public; paired
   `<artifact>_path` / `<artifact>_sha256` fields for each hash-bearing
-  artifact. The five Ubuntu-only fields (`boot_target`,
-  `service_unit_*`, `workspace_mount_*`, `source_rootfs_*`) are
+  artifact. The Ubuntu-only source-rootfs fields (`source_rootfs_*`) are
   `Option<>`. Field declaration order is alphabetical.
 - `ImageKind { Ubuntu, Minimal }` — discriminator on `Manifest`.
 - `KernelKind { Stock, Stripped }` — kernel provenance discriminator.
@@ -77,7 +83,7 @@ artifacts.
 - `Manifest::verify(&self, root: &Path) -> Result<(), ManifestError>` —
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
-- `SCHEMA_VERSION: u32 = 3`.
+- `SCHEMA_VERSION: u32 = 4`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for
   m80-built network-neutral images.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
@@ -107,12 +113,12 @@ artifacts.
 
 - A golden manifest fixture round-trips byte-equivalent through
   `read` → `write`.
-- Mutating any of the six sha256 fields by one byte and calling `verify`
+- Mutating any current sha256 field by one byte and calling `verify`
   returns `Sha256Mismatch` naming that field.
-- Setting `schema_version: 2` returns `UnsupportedSchemaVersion(2)`, even
+- Setting an older `schema_version` returns `UnsupportedSchemaVersion`, even
   when the same JSON also carries an unknown field — the version check
   fires first.
-- Pointing one of the six artifact paths at a nonexistent file and calling
+- Pointing one of the artifact paths at a nonexistent file and calling
   `verify` returns `Io { path, source: NotFound }` carrying the missing
   path.
 - Schema v3: `kernel_kind` absent from JSON deserializes as `KernelKind::Stock`.

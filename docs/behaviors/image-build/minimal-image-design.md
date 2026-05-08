@@ -40,20 +40,15 @@ pub struct Manifest {
     pub output_rootfs_sha256: String,
     pub ready_marker: String,
     pub schema_version: u32,
-    pub source_rootfs_image: PathBuf,
-    pub source_rootfs_sha256: String,
 
     // ubuntu-only fields (None when image_kind == Minimal):
-    pub boot_target: Option<String>,
-    pub service_unit_path: Option<PathBuf>,
-    pub service_unit_sha256: Option<String>,
-    pub workspace_mount_path: Option<PathBuf>,
-    pub workspace_mount_sha256: Option<String>,
+    pub source_rootfs_image: Option<PathBuf>,
+    pub source_rootfs_sha256: Option<String>,
 }
 ```
 
 `Manifest::verify` enforces the kind/field invariant: `Ubuntu` requires
-all five `Option` fields populated; `Minimal` requires all five to be
+the source-rootfs `Option` fields populated; `Minimal` requires them to be
 `None`. Asymmetric population is a hard error
 (`ManifestError::InconsistentKind`).
 
@@ -86,10 +81,10 @@ TOML; the kind is a config field, not a flag.
 |---|---|---|
 | Source rootfs | firecracker-ci ubuntu squashfs | None — built from scratch |
 | Mount + chroot | unsquashfs into ext4, loop-mount | mkfs.ext4, loop-mount |
-| Init system | systemd present in upstream image | not installed |
-| Daemon install | binary + systemd unit + workspace-mount unit | binary at `/m80-guestd` (or `/init`) |
-| /init | (systemd handles it) | symlink `/init → /m80-guestd` |
-| Manifest fields | populates all systemd-specific fields | leaves them `None` |
+| Init system | m80-guestd PID 1 | m80-guestd PID 1 |
+| Daemon install | binary at `/m80-guestd` | binary at `/m80-guestd` |
+| /init | symlink `/init → /m80-guestd` | symlink `/init → /m80-guestd` |
+| Manifest fields | populates `source_rootfs_*` | leaves `source_rootfs_*` as `None` |
 
 Static linking of `m80-guestd`: the binary must be self-contained
 (musl target or `-C target-feature=+crt-static`) so it runs under the
@@ -106,8 +101,7 @@ fn boot_args_for(kind: ImageKind, config_override: Option<&str>) -> String {
     if let Some(custom) = config_override { return custom.to_owned(); }
     let base = "console=ttyS0 reboot=k panic=1 pci=off";
     match kind {
-        ImageKind::Ubuntu  => base.to_owned(),                          // systemd is /sbin/init
-        ImageKind::Minimal => format!("{base} init=/m80-guestd"),
+        ImageKind::Ubuntu | ImageKind::Minimal => format!("{base} init=/m80-guestd"),
     }
 }
 ```
@@ -130,11 +124,11 @@ shorthand is a CLI ergonomics question, not a schema question.
   reap `SIGCHLD`; handle `SIGTERM`/`SIGINT`; never panic. Cite
   `smolvm/src/agent/main.rs` boot-log + `process::exit(1)` pattern.
 - **m80-6a0q.3** (workspace mount via mount(2)): `nix::mount::mount` of
-  the second drive (e.g., `/dev/vdb`) onto the workspace path *after*
+  the third drive (`/dev/vdc`) onto the workspace path *after*
   pseudo-fs mounts, *before* entering the request loop.
 - **m80-6a0q.4** (minimal initramfs/rootfs): mkfs.ext4 → loop-mount →
   install busybox + static `m80-guestd` → symlink `/init` → emit
-  manifest with `image_kind=Minimal` and the five systemd fields as
+  manifest with `image_kind=Minimal` and the source-rootfs fields as
   `None`.
 - **m80-6a0q.5** (boot-args dispatch): land `boot_args_for` and call
   it from phase 8.

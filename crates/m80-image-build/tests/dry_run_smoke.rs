@@ -90,13 +90,13 @@ fn dry_run_prints_steps_to_stderr_and_creates_no_output_files() {
     );
 
     // Capture each "<n>." prefix at the start of a line; assert the sequence
-    // is exactly 1..=12 in order. Using `contains` would pass even if labels
+    // is exactly 1..=10 in order. Using `contains` would pass even if labels
     // were duplicated or out of order.
     let observed = observed_step_numbers(&stderr);
     assert_eq!(
         observed,
-        (1..=12).collect::<Vec<_>>(),
-        "expected step numbers 1..=12 in order; got {observed:?}\nstderr:\n{stderr}"
+        (1..=10).collect::<Vec<_>>(),
+        "expected step numbers 1..=10 in order; got {observed:?}\nstderr:\n{stderr}"
     );
 
     // The output directory must not have been created.

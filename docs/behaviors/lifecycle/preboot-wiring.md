@@ -17,10 +17,12 @@ vCPU count, memory size, and `smt=false`. Omitted sizing uses the m80 defaults:
 m80 PUTs `/boot-source` after machine config and before any drives. The kernel
 is bind-mounted into the jailer chroot at `/kernel`, so Firecracker receives
 `kernel_image_path=/kernel`. Boot args are selected from the image kind and
-kernel kind, unless `SandboxConfig::boot_args` overrides the entire command
-line. This captures the m80 equivalent of predecessor's `BootSourceConfig`
-construction at `crates/sandbox/agent-sandbox-firecracker/src/boot.rs:115-122`
-and REST PUT at `client.rs:138`.
+kernel kind, unless `SandboxConfig::boot_args` overrides the base command line.
+Both Ubuntu and Minimal image kinds receive `init=/m80-guestd`; the image kind
+selects userland, not a different startup model. This captures the m80
+equivalent of predecessor's `BootSourceConfig` construction at
+`crates/sandbox/agent-sandbox-firecracker/src/boot.rs:115-122` and REST PUT at
+`client.rs:138`.
 
 ## Root Drive
 

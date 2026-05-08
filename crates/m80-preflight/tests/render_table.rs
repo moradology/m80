@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 fn fixture_manifest() -> Manifest {
     Manifest {
-        boot_target: Some("multi-user.target".into()),
         daemon_binary_path: PathBuf::from("/usr/local/bin/guestd"),
         daemon_binary_sha256: "a".repeat(64),
         expected_firecracker_version: "v1.15.1".into(),
@@ -21,12 +20,8 @@ fn fixture_manifest() -> Manifest {
         output_rootfs_sha256: "c".repeat(64),
         ready_marker: "READY".into(),
         schema_version: SCHEMA_VERSION,
-        service_unit_path: Some(PathBuf::from("/etc/systemd/system/guestd.service")),
-        service_unit_sha256: Some("d".repeat(64)),
         source_rootfs_image: Some(PathBuf::from("/opt/m80/images/source.ext4")),
         source_rootfs_sha256: Some("e".repeat(64)),
-        workspace_mount_path: Some(PathBuf::from("/etc/systemd/system/workspace.mount")),
-        workspace_mount_sha256: Some("f".repeat(64)),
     }
 }
 

@@ -162,12 +162,6 @@ fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
     if manifest.source_rootfs_image.is_some() {
         manifest.source_rootfs_image = Some(artifact_dir.join("source.ext4"));
     }
-    if manifest.service_unit_path.is_some() {
-        manifest.service_unit_path = Some(artifact_dir.join("m80-guestd.service"));
-    }
-    if manifest.workspace_mount_path.is_some() {
-        manifest.workspace_mount_path = Some(artifact_dir.join("workspace.mount"));
-    }
     manifest
         .write(&manifest_path)
         .map_err(|e| FcError::config_other(format!("writing relocated manifest: {e}")))?;

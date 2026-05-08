@@ -22,28 +22,29 @@ use crate::minimal;
 pub(crate) const KERNEL_FILENAME: &str = "vmlinux-5.10.245";
 pub(crate) const UBUNTU_SQUASHFS: &str = "ubuntu-24.04.squashfs";
 
-const SERVICE_UNIT: &str = include_str!("../assets/m80-guestd.service");
-
 /// Return the manifest path for a rootfs image: `<rootfs>.manifest.json`.
 pub(crate) fn manifest_path(rootfs: &Path) -> PathBuf {
     let mut name = rootfs.file_name().unwrap_or_default().to_owned();
     name.push(".manifest.json");
     rootfs.with_file_name(name)
 }
-const WORKSPACE_MOUNT_UNIT: &str = include_str!("../assets/workspace.mount");
 const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
-const GUEST_DAEMON_PATH: &str = "/usr/local/bin/m80-guestd";
-const GUEST_SERVICE_PATH: &str = "/etc/systemd/system/m80-guestd.service";
-const GUEST_MOUNT_PATH: &str = "/etc/systemd/system/workspace.mount";
-const GUEST_WORKSPACE_DIR: &str = "/workspace";
+const GUEST_DAEMON_PATH: &str = "/m80-guestd";
+const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
+    "workspace",
+    "proc",
+    "sys",
+    "dev",
+    "lower",
+    "upper",
+    "merged",
+];
 
 /// Resolved paths for a completed build.
 struct BuildPaths {
     kernel: PathBuf,
     source_rootfs: PathBuf,
     output_rootfs: PathBuf,
-    service_unit: PathBuf,
-    workspace_mount: PathBuf,
 }
 
 /// Run the full build pipeline or print a dry-run plan. Dispatches on
@@ -68,8 +69,6 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     let kernel = cfg.output.dir.join("vmlinux");
     let source_rootfs = cfg.output.dir.join("source.ext4");
     let output_rootfs = cfg.output.dir.join("output.ext4");
-    let service_unit_host = cfg.output.dir.join("m80-guestd.service");
-    let workspace_mount_host = cfg.output.dir.join("workspace.mount");
     // Host audit copy of the daemon binary so `Manifest::verify` (which
     // runs at preflight time and does not loop-mount the rootfs) has a
     // host-readable artifact to sha256. The in-VM destination is a build
@@ -110,18 +109,17 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
             cfg.guestd.binary.display(),
             GUEST_DAEMON_PATH
         ),
-        format!("7. Write service unit → <mount>{}", GUEST_SERVICE_PATH),
         format!(
-            "8. Write workspace mount unit → <mount>{}",
-            GUEST_MOUNT_PATH
+            "7. mkdir {} (PID-1 mount targets) + symlink <mount>/init → /m80-guestd",
+            PID_ONE_MOUNTPOINT_DIRS
+                .iter()
+                .map(|d| format!("/{d}"))
+                .collect::<Vec<_>>()
+                .join(" ")
         ),
-        format!(
-            "9. mkdir <mount>{} + enable guestd in basic.target.wants/ and workspace.mount in multi-user.target.wants/",
-            GUEST_WORKSPACE_DIR
-        ),
-        "10. Unmount".to_string(),
-        "11. Compute sha256 of 6 artifacts".to_string(),
-        format!("12. Write manifest → {}", manifest_path.display()),
+        "8. Unmount".to_string(),
+        "9. Compute sha256 of 4 artifacts".to_string(),
+        format!("10. Write manifest → {}", manifest_path.display()),
     ];
 
     if dry_run {
@@ -139,8 +137,6 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         kernel: kernel.clone(),
         source_rootfs: source_rootfs.clone(),
         output_rootfs: output_rootfs.clone(),
-        service_unit: service_unit_host.clone(),
-        workspace_mount: workspace_mount_host.clone(),
     };
 
     // Step 1: download kernel.
@@ -161,7 +157,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         .context("step 4a: copy source to output rootfs")?;
     truncate_file(&output_rootfs, size_bytes).context("step 4b: resize output rootfs")?;
 
-    // Steps 5-9: mount + install.
+    // Steps 5-7: mount + install.
     let mount_dir = tempfile::Builder::new()
         .prefix("m80-build-mnt-")
         .tempdir()
@@ -170,32 +166,24 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
 
     let install_result = install_into_rootfs(mount_dir.path(), &cfg.guestd.binary);
 
-    // Step 10: unmount before checking install result so we don't leak mounts.
-    let umount_result = loop_umount(mount_dir.path()).context("step 10: umount");
-    install_result.context("steps 6-9: chroot install")?;
+    // Step 8: unmount before checking install result so we don't leak mounts.
+    let umount_result = loop_umount(mount_dir.path()).context("step 8: umount");
+    install_result.context("steps 6-7: chroot install")?;
     umount_result?;
 
-    // Step 11: write unit files to output dir (they were embedded → written to host).
-    std::fs::write(&service_unit_host, SERVICE_UNIT)
-        .context("writing m80-guestd.service to output dir")?;
-    std::fs::write(&workspace_mount_host, WORKSPACE_MOUNT_UNIT)
-        .context("writing workspace.mount to output dir")?;
-    // Host audit copy of the daemon binary that was installed inside the
+    // Step 9: host audit copy of the daemon binary that was installed inside the
     // rootfs at GUEST_DAEMON_PATH.
     std::fs::copy(&cfg.guestd.binary, &daemon_binary_host)
         .context("copying m80-guestd to output dir")?;
 
-    // Step 12: hash all six artifacts.
+    // Step 9: hash all four artifacts.
     let kernel_sha = sha256_file(&paths.kernel).context("sha256 kernel")?;
     let source_sha = sha256_file(&paths.source_rootfs).context("sha256 source rootfs")?;
     let output_sha = sha256_file(&paths.output_rootfs).context("sha256 output rootfs")?;
     let daemon_sha = sha256_file(&cfg.guestd.binary).context("sha256 daemon binary")?;
-    let service_sha = sha256_file(&paths.service_unit).context("sha256 service unit")?;
-    let mount_sha = sha256_file(&paths.workspace_mount).context("sha256 workspace mount")?;
 
-    // Step 13: emit manifest.
+    // Step 10: emit manifest.
     let manifest = m80_image_manifest::Manifest {
-        boot_target: Some("multi-user.target".to_string()),
         daemon_binary_path: daemon_binary_host.clone(),
         daemon_binary_sha256: daemon_sha,
         expected_firecracker_version: cfg.kernel.version.clone(),
@@ -209,12 +197,8 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         output_rootfs_sha256: output_sha,
         ready_marker: m80_proto::READY_MARKER_DEFAULT.to_string(),
         schema_version: m80_image_manifest::SCHEMA_VERSION,
-        service_unit_path: Some(paths.service_unit.clone()),
-        service_unit_sha256: Some(service_sha),
         source_rootfs_image: Some(paths.source_rootfs.clone()),
         source_rootfs_sha256: Some(source_sha),
-        workspace_mount_path: Some(paths.workspace_mount.clone()),
-        workspace_mount_sha256: Some(mount_sha),
     };
     manifest
         .write(&manifest_path)
@@ -319,54 +303,21 @@ pub(crate) fn loop_umount(mount_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Install the daemon binary and systemd units into the mounted rootfs.
+/// Install the daemon binary and PID-1 mountpoint contract into the mounted rootfs.
 fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
     // Step 6: copy daemon binary.
-    let guest_bin = mount.join("usr/local/bin/m80-guestd");
-    std::fs::create_dir_all(guest_bin.parent().expect("constructed path has parent"))
-        .context("creating /usr/local/bin in rootfs")?;
+    let guest_bin = mount.join("m80-guestd");
     std::fs::copy(daemon_binary, &guest_bin).context("copying m80-guestd into rootfs")?;
     set_executable(&guest_bin).context("chmod +x m80-guestd")?;
 
-    // Step 7: install service unit.
-    let svc_dest = mount.join("etc/systemd/system/m80-guestd.service");
-    std::fs::create_dir_all(svc_dest.parent().expect("constructed path has parent"))
-        .context("creating /etc/systemd/system in rootfs")?;
-    std::fs::write(&svc_dest, SERVICE_UNIT).context("writing m80-guestd.service")?;
+    // Step 7: /init plus mountpoint dirs for m80-guestd's PID-1 setup.
+    std::os::unix::fs::symlink("/m80-guestd", mount.join("init"))
+        .context("symlinking /init → /m80-guestd")?;
 
-    // Step 8: install workspace mount unit.
-    let mnt_dest = mount.join("etc/systemd/system/workspace.mount");
-    std::fs::write(&mnt_dest, WORKSPACE_MOUNT_UNIT).context("writing workspace.mount")?;
-
-    // Step 9: create workspace mountpoint + enable units.
-    //
-    // m80-guestd.service is enabled under basic.target.wants (not
-    // multi-user.target.wants) so it starts as soon as filesystems are up
-    // and is NOT gated on the network-wait-online machinery whose timeout
-    // delayed boot by ~90s on ~40% of launches in the firecracker-ci
-    // ubuntu image.
-    //
-    // workspace.mount is still wired into multi-user.target so existing
-    // user-facing systemd workflows continue to see /workspace mounted at
-    // the conventional point.
-    let workspace = mount.join("workspace");
-    std::fs::create_dir_all(&workspace).context("creating /workspace in rootfs")?;
-
-    let basic_wants = mount.join("etc/systemd/system/basic.target.wants");
-    std::fs::create_dir_all(&basic_wants).context("creating basic.target.wants in rootfs")?;
-    std::os::unix::fs::symlink(
-        "/etc/systemd/system/m80-guestd.service",
-        basic_wants.join("m80-guestd.service"),
-    )
-    .context("symlinking m80-guestd.service into basic.target.wants")?;
-
-    let wants = mount.join("etc/systemd/system/multi-user.target.wants");
-    std::fs::create_dir_all(&wants).context("creating multi-user.target.wants in rootfs")?;
-    std::os::unix::fs::symlink(
-        "/etc/systemd/system/workspace.mount",
-        wants.join("workspace.mount"),
-    )
-    .context("symlinking workspace.mount into multi-user.target.wants")?;
+    for d in PID_ONE_MOUNTPOINT_DIRS {
+        std::fs::create_dir_all(mount.join(d))
+            .with_context(|| format!("creating /{d} in rootfs"))?;
+    }
 
     Ok(())
 }

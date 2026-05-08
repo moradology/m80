@@ -1,7 +1,7 @@
 //! `Manifest::verify` surfaces `Io { path, source: NotFound }` for each of
-//! the six artifact slots when its file is missing. The unit test in
-//! `src/lib.rs` only covers `kernel_image`; this file pins the other five
-//! so we don't ship a half-tested error path.
+//! the current artifact slots when its file is missing. The unit test in
+//! `src/lib.rs` only covers `kernel_image`; this file pins the others so we
+//! don't ship a half-tested error path.
 
 mod common;
 
@@ -46,19 +46,5 @@ fn missing_output_rootfs_surfaces_io() {
 fn missing_daemon_binary_surfaces_io() {
     assert_missing_field("daemon_binary_path", |m, p| {
         m.daemon_binary_path = p.clone()
-    });
-}
-
-#[test]
-fn missing_service_unit_surfaces_io() {
-    assert_missing_field("service_unit_path", |m, p| {
-        m.service_unit_path = Some(p.clone())
-    });
-}
-
-#[test]
-fn missing_workspace_mount_surfaces_io() {
-    assert_missing_field("workspace_mount_path", |m, p| {
-        m.workspace_mount_path = Some(p.clone())
     });
 }

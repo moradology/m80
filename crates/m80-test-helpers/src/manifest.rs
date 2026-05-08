@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 /// all synthetic `/dev/null` or repeated-char sha256 placeholders.
 pub fn fake_manifest() -> m80_image_manifest::Manifest {
     m80_image_manifest::Manifest {
-        boot_target: None,
         daemon_binary_path: "/tmp/m80-guestd".into(),
         daemon_binary_sha256: "0".repeat(64),
         expected_firecracker_version: "v1.0.0".to_owned(),
@@ -23,12 +22,8 @@ pub fn fake_manifest() -> m80_image_manifest::Manifest {
         output_rootfs_sha256: "2".repeat(64),
         ready_marker: "M80_READY".to_owned(),
         schema_version: m80_image_manifest::SCHEMA_VERSION,
-        service_unit_path: None,
-        service_unit_sha256: None,
         source_rootfs_image: None,
         source_rootfs_sha256: None,
-        workspace_mount_path: None,
-        workspace_mount_sha256: None,
     }
 }
 

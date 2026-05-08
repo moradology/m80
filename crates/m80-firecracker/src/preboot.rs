@@ -136,12 +136,10 @@ fn boot_args_for(
 ) -> String {
     let base = match (config_override, kind, kernel_kind) {
         (Some(custom), _, _) => custom.to_owned(),
-        (None, ImageKind::Ubuntu, KernelKind::Stock) => COMMON_BOOT_ARGS.to_owned(),
-        (None, ImageKind::Ubuntu, KernelKind::Stripped) => STRIPPED_BOOT_ARGS.to_owned(),
-        (None, ImageKind::Minimal, KernelKind::Stock) => {
+        (None, ImageKind::Ubuntu | ImageKind::Minimal, KernelKind::Stock) => {
             format!("{COMMON_BOOT_ARGS} init=/m80-guestd")
         }
-        (None, ImageKind::Minimal, KernelKind::Stripped) => {
+        (None, ImageKind::Ubuntu | ImageKind::Minimal, KernelKind::Stripped) => {
             format!("{STRIPPED_BOOT_ARGS} init=/m80-guestd")
         }
     };
@@ -197,7 +195,7 @@ mod tests {
         assert_eq!(boot.kernel_image_path, PathBuf::from("/kernel"));
         assert_eq!(
             boot.boot_args.as_deref(),
-            Some("console=ttyS0 reboot=k panic=-1 pci=off m80.workspace=0")
+            Some("console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0")
         );
         assert!(boot.initrd_path.is_none());
     }
@@ -309,7 +307,7 @@ mod tests {
     fn boot_args_ubuntu_stock() {
         assert_eq!(
             boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None, false),
-            "console=ttyS0 reboot=k panic=-1 pci=off m80.workspace=0",
+            "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0",
         );
     }
 
@@ -317,7 +315,7 @@ mod tests {
     fn boot_args_ubuntu_stripped() {
         assert_eq!(
             boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None, false),
-            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 m80.workspace=0",
+            "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0",
         );
     }
 

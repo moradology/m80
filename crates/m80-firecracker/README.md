@@ -266,8 +266,8 @@ whether `/dev/vdc` is an actual workspace drive:
 
 | `ImageKind` | `KernelKind` | Cmdline |
 |---|---|---|
-| `Ubuntu` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off m80.workspace=0|1` |
-| `Ubuntu` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 m80.workspace=0|1` |
+| `Ubuntu` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0|1` |
+| `Ubuntu` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0|1` |
 | `Minimal` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0|1` |
 | `Minimal` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0|1` |
 

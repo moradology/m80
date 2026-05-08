@@ -151,7 +151,6 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
 
     // Step 10: emit manifest.
     let manifest = m80_image_manifest::Manifest {
-        boot_target: None,
         daemon_binary_path: daemon_binary_host.clone(),
         daemon_binary_sha256: daemon_sha,
         expected_firecracker_version: cfg.kernel.version.clone(),
@@ -165,12 +164,8 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         output_rootfs_sha256: output_sha,
         ready_marker: m80_proto::READY_MARKER_DEFAULT.to_string(),
         schema_version: m80_image_manifest::SCHEMA_VERSION,
-        service_unit_path: None,
-        service_unit_sha256: None,
         source_rootfs_image: None,
         source_rootfs_sha256: None,
-        workspace_mount_path: None,
-        workspace_mount_sha256: None,
     };
     manifest
         .write(&manifest_path)

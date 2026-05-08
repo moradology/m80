@@ -27,7 +27,6 @@ struct BootIdentity {
     expected_firecracker_version: String,
     guest_port: u32,
     ready_marker: String,
-    boot_target: Option<String>,
 }
 
 /// Write `<run_dir>/boot-identity.json` from already-validated discovery data.
@@ -55,7 +54,6 @@ impl BootIdentity {
             expected_firecracker_version: manifest.expected_firecracker_version.clone(),
             guest_port: manifest.guest_port,
             ready_marker: manifest.ready_marker.clone(),
-            boot_target: manifest.boot_target.clone(),
         })
     }
 }
@@ -93,11 +91,6 @@ mod tests {
                 source_rootfs_sha256: None,
                 daemon_binary_path: PathBuf::from("m80-guestd"),
                 daemon_binary_sha256: "c".repeat(64),
-                service_unit_path: None,
-                service_unit_sha256: None,
-                workspace_mount_path: None,
-                workspace_mount_sha256: None,
-                boot_target: Some("basic.target".into()),
                 guest_port: 9001,
                 no_egress_reason: None,
                 ready_marker: "GUESTD_READY".into(),
@@ -124,7 +117,6 @@ mod tests {
         assert_eq!(identity.expected_firecracker_version, "v1.10.0");
         assert_eq!(identity.guest_port, 9001);
         assert_eq!(identity.ready_marker, "GUESTD_READY");
-        assert_eq!(identity.boot_target.as_deref(), Some("basic.target"));
         assert_eq!(identity.manifest_sha256.len(), 64);
     }
 

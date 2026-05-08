@@ -6,10 +6,10 @@
 
 ## pid-one-workspace-device
 
-In Minimal image PID-1 mode, `m80-guestd` mounts the optional workspace scratch
-drive from `/dev/vdc` to `/workspace` only when the host boot cmdline contains
-`m80.workspace=1`. `/dev/vdc` is the third Firecracker block device after the
-storage pivot:
+In PID-1 mode for both Minimal and Ubuntu image kinds, `m80-guestd` mounts the
+optional workspace scratch drive from `/dev/vdc` to `/workspace` only when the
+host boot cmdline contains `m80.workspace=1`. `/dev/vdc` is the third
+Firecracker block device after the storage pivot:
 
 1. `/dev/vda` is the shared read-only base rootfs.
 2. `/dev/vdb` is the per-VM writable rootfs overlay.

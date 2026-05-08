@@ -16,7 +16,7 @@ caller can use them:
 - The schema-version probe runs before unknown-field rejection, so a future
   manifest with extra fields still reports the unsupported version cleanly.
 - `ImageKind` invariants are enforced: Ubuntu manifests must include
-  systemd/source-rootfs fields, Minimal manifests must omit them.
+  source-rootfs fields, Minimal manifests must omit them.
 
 There is no partial acceptance and no migration path.
 
@@ -26,9 +26,9 @@ Tests: `m80-image-manifest/tests/manifest_verify_schema.rs` and
 ## sha256-recompute {#sha256-recompute}
 
 `Manifest::verify(root)` recomputes sha256 over every populated artifact path:
-kernel, source rootfs, output rootfs, daemon binary, service unit, and
-workspace mount unit. Absolute paths are used as-is; relative paths are joined
-with `root`. Minimal manifests skip the fields that are `None`.
+kernel, source rootfs, output rootfs, and daemon binary. Absolute paths are
+used as-is; relative paths are joined with `root`. Minimal manifests skip the
+source-rootfs fields that are `None`.
 
 Each artifact is streamed through SHA-256 in 64 KiB chunks. The recomputed
 lowercase hex digest must exactly match the recorded digest. Any mismatch

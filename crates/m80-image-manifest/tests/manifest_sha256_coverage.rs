@@ -1,4 +1,4 @@
-//! Bead m80-sz1.3.3 — sha256 coverage for all six artifact slots
+//! Bead m80-sz1.3.3 — sha256 coverage for all current artifact slots
 //!
 //! Doc anchor: `docs/behaviors/image-build/manifest.md#sha256-coverage`
 
@@ -6,7 +6,7 @@ mod common;
 
 use m80_image_manifest::{Manifest, ManifestError};
 
-/// Bead m80-sz1.3.3: all six artifact hash slots are populated and `verify()`
+/// Bead m80-sz1.3.3: all current artifact hash slots are populated and `verify()`
 /// validates them. Mutating any single hash field fires `Sha256Mismatch` on
 /// the corresponding path field.
 #[test]
@@ -32,14 +32,6 @@ fn sha256_covers_all_inputs() {
         (
             (|m| m.daemon_binary_sha256 = "dd".repeat(32)),
             "daemon_binary_path",
-        ),
-        (
-            (|m| m.service_unit_sha256 = Some("ee".repeat(32))),
-            "service_unit_path",
-        ),
-        (
-            (|m| m.workspace_mount_sha256 = Some("ff".repeat(32))),
-            "workspace_mount_path",
         ),
     ] {
         let mut bad = m.clone();

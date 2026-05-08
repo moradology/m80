@@ -1,7 +1,7 @@
 # `m80-image-build`
 
 Build-time tool that produces the m80 guest image: pulls the kernel,
-prepares the rootfs, installs the m80 daemon and systemd units, emits
+prepares the rootfs, installs the m80 daemon as PID 1, emits
 the provenance manifest. Run this before `m80-cli launch` ever sees a
 VM.
 
@@ -29,7 +29,7 @@ gives us:
 
 #### Ubuntu (default)
 
-12 numbered steps:
+10 numbered steps:
 
 1. Download kernel from `https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/<artifact_track>/<arch>` via `curl`.
 2. Download source rootfs squashfs from the same firecracker-ci bucket.
@@ -38,16 +38,15 @@ gives us:
 5. Loop-mount the output rootfs RW. (The m80 process must hold
    `CAP_SYS_ADMIN` or run as root; `m80-preflight` verifies this at
    startup.)
-6. Copy `m80-guestd` into `<rootfs>/usr/local/bin/`.
-7. Write the embedded `m80-guestd.service` into `<rootfs>/etc/systemd/system/`.
-8. Write the embedded workspace mount unit alongside it.
-9. `mkdir <rootfs>/workspace`, enable `m80-guestd.service` under
-   `basic.target.wants/`, and enable `workspace.mount` under
-   `multi-user.target.wants/`.
-10. Unmount the rootfs.
-11. sha256 every artifact (kernel, source rootfs, output rootfs, daemon
-    binary, service unit, workspace-mount unit).
-12. Emit `<rootfs>.manifest.json` with `image_kind=Ubuntu` via
+6. Copy `m80-guestd` into `<rootfs>/m80-guestd`.
+7. Symlink `<rootfs>/init` → `/m80-guestd` and `mkdir` the PID-1 mountpoint
+   dirs (`/workspace`, `/proc`, `/sys`, `/dev`, `/lower`, `/upper`,
+   `/merged`) inside the rootfs. `/lower`, `/upper`, and `/merged` must
+   exist before boot because the initial root is mounted read-only.
+8. Unmount the rootfs.
+9. sha256 every artifact (kernel, source rootfs, output rootfs, daemon
+   binary).
+10. Emit `<rootfs>.manifest.json` with `image_kind=Ubuntu` via
     `m80-image-manifest::Manifest::write`. The manifest records
     `no_egress_reason` with the shared m80 audit string because the image is
     network-neutral; runtime egress is selected at launch.
@@ -80,8 +79,7 @@ scratch. Smaller, faster cold boot, no package manager.
 9. sha256 the three artifacts that exist for Minimal kind (kernel,
    output rootfs, daemon binary).
 10. Emit `<rootfs>.manifest.json` with `image_kind=Minimal` and the
-    five Ubuntu-only fields (`source_rootfs_*`, `service_unit_*`,
-    `workspace_mount_*`, `boot_target`) as `null`. The manifest records
+    Ubuntu-only `source_rootfs_*` fields as `null`. The manifest records
     `no_egress_reason` with the shared m80 audit string because the image is
     network-neutral; runtime egress is selected at launch.
 
@@ -92,12 +90,12 @@ invocations** — `apt`/`dnf`/`pacman` are never spawned.
 
 | Property                | Ubuntu                              | Minimal                             |
 |-------------------------|-------------------------------------|-------------------------------------|
-| Init                    | systemd                             | m80-guestd as PID 1                 |
+| Init                    | m80-guestd as PID 1                 | m80-guestd as PID 1                 |
 | Userland                | Ubuntu 24.04 (full)                 | busybox + a few applets             |
 | Rootfs default size     | 1 GiB                               | 256 MiB (fits in much less)         |
 | Source                  | firecracker-ci squashfs             | built from scratch                  |
 | Package manager         | apt available inside guest          | none                                |
-| Cold boot               | slower (systemd init dominates)     | faster (m80-guestd starts directly) |
+| Cold boot               | slower (larger rootfs/userland)     | faster (smaller rootfs/userland)    |
 | Build network deps      | curl + S3 squashfs                  | curl only (kernel only)             |
 | Static guestd required? | no (glibc dynamic OK)               | yes (musl-static; see config example)|
 

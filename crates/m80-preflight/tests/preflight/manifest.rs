@@ -31,7 +31,6 @@ fn fixture_manifest(dir: &Path, kernel: &Path) -> (PathBuf, Manifest) {
     write_empty(&daemon);
 
     let manifest = Manifest {
-        boot_target: None,
         daemon_binary_path: daemon,
         daemon_binary_sha256: SHA256_EMPTY.to_string(),
         expected_firecracker_version: "v1.15.1".to_string(),
@@ -45,12 +44,8 @@ fn fixture_manifest(dir: &Path, kernel: &Path) -> (PathBuf, Manifest) {
         output_rootfs_sha256: SHA256_EMPTY.to_string(),
         ready_marker: "M80_READY".to_string(),
         schema_version: SCHEMA_VERSION,
-        service_unit_path: None,
-        service_unit_sha256: None,
         source_rootfs_image: None,
         source_rootfs_sha256: None,
-        workspace_mount_path: None,
-        workspace_mount_sha256: None,
     };
     let manifest_path = PathBuf::from(format!("{}.manifest.json", rootfs.display()));
     manifest.write(&manifest_path).unwrap();

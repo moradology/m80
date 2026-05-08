@@ -67,7 +67,6 @@ fn write_release_tarball(dir: &tempfile::TempDir) -> std::path::PathBuf {
 fn write_manifest_with_stale_paths(src: &std::path::Path) {
     let stale = std::path::PathBuf::from("/tmp/m80-release-artifacts");
     let manifest = Manifest {
-        boot_target: None,
         daemon_binary_path: stale.join("m80-guestd"),
         daemon_binary_sha256: sha256_hex(&src.join("m80-guestd")),
         expected_firecracker_version: "v1.15.1".to_owned(),
@@ -81,12 +80,8 @@ fn write_manifest_with_stale_paths(src: &std::path::Path) {
         output_rootfs_sha256: sha256_hex(&src.join("output.ext4")),
         ready_marker: m80_proto::READY_MARKER_DEFAULT.to_owned(),
         schema_version: SCHEMA_VERSION,
-        service_unit_path: None,
-        service_unit_sha256: None,
         source_rootfs_image: None,
         source_rootfs_sha256: None,
-        workspace_mount_path: None,
-        workspace_mount_sha256: None,
     };
     manifest
         .write(&src.join("output.ext4.manifest.json"))

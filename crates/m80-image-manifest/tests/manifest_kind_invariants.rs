@@ -2,9 +2,8 @@
 //!
 //! Doc anchor: `docs/behaviors/image-build/minimal-image-design.md`
 //!
-//! `Ubuntu` requires all systemd-related and source-rootfs Options
-//! populated; `Minimal` requires all of those `None`. Asymmetric
-//! population on either side is a hard error.
+//! `Ubuntu` requires source-rootfs Options populated; `Minimal` requires
+//! those `None`. Asymmetric population on either side is a hard error.
 
 mod common;
 
@@ -25,29 +24,10 @@ fn minimal_with_all_options_none_passes_verify() {
 }
 
 #[test]
-fn minimal_with_systemd_field_set_is_inconsistent() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut m = common::make_minimal_artifacts(dir.path());
-    m.boot_target = Some("multi-user.target".into());
-    let err = m.verify(dir.path()).unwrap_err();
-    assert!(
-        matches!(
-            &err,
-            ManifestError::InconsistentKind {
-                kind: ImageKind::Minimal,
-                field,
-                expected: "None",
-            } if field == "boot_target"
-        ),
-        "expected InconsistentKind(Minimal, boot_target, None), got {err:?}"
-    );
-}
-
-#[test]
-fn ubuntu_with_systemd_field_none_is_inconsistent() {
+fn ubuntu_with_source_rootfs_field_none_is_inconsistent() {
     let dir = tempfile::tempdir().unwrap();
     let mut m = common::make_artifacts(dir.path());
-    m.service_unit_path = None;
+    m.source_rootfs_image = None;
     let err = m.verify(dir.path()).unwrap_err();
     assert!(
         matches!(
@@ -56,9 +36,9 @@ fn ubuntu_with_systemd_field_none_is_inconsistent() {
                 kind: ImageKind::Ubuntu,
                 field,
                 expected: "Some(_)",
-            } if field == "service_unit_path"
+            } if field == "source_rootfs_image"
         ),
-        "expected InconsistentKind(Ubuntu, service_unit_path, Some(_)), got {err:?}"
+        "expected InconsistentKind(Ubuntu, source_rootfs_image, Some(_)), got {err:?}"
     );
 }
 
@@ -89,6 +69,6 @@ fn write_then_read_preserves_kind() {
     m.write(&path).unwrap();
     let m2 = Manifest::read(&path).unwrap();
     assert_eq!(m2.image_kind, ImageKind::Minimal);
-    assert!(m2.service_unit_path.is_none());
-    assert!(m2.workspace_mount_path.is_none());
+    assert!(m2.source_rootfs_image.is_none());
+    assert!(m2.source_rootfs_sha256.is_none());
 }

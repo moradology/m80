@@ -14,7 +14,7 @@ Cells (4 total):
 
 | kind    | load   | Notes                                           |
 |---------|--------|-------------------------------------------------|
-| ubuntu  | idle   | systemd as PID 1 (multi-user.target)            |
+| ubuntu  | idle   | historical schema-v3 run: systemd as PID 1      |
 | ubuntu  | loaded | `stress-ng --cpu $(nproc)` running in parallel  |
 | minimal | idle   | m80-guestd as PID 1 (no systemd)                |
 | minimal | loaded | same stress-ng load                             |

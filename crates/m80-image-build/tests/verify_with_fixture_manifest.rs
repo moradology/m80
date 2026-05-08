@@ -13,15 +13,13 @@ fn sha256_of(content: &[u8]) -> String {
     hex::encode(Sha256::digest(content))
 }
 
-/// Write six fixture artifact files and return a correctly-populated Manifest.
+/// Write four fixture artifact files and return a correctly-populated Manifest.
 fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
     let artifacts = [
         ("vmlinux", b"kernel-bytes" as &[u8]),
         ("source.ext4", b"source-rootfs-bytes"),
         ("output.ext4", b"output-rootfs-bytes"),
         ("m80-guestd", b"daemon-bytes"),
-        ("m80-guestd.service", b"service-unit-bytes"),
-        ("workspace.mount", b"workspace-mount-bytes"),
     ];
 
     for (name, content) in &artifacts {
@@ -29,7 +27,6 @@ fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
     }
 
     Manifest {
-        boot_target: Some("multi-user.target".to_string()),
         daemon_binary_path: dir.path().join("m80-guestd"),
         daemon_binary_sha256: sha256_of(b"daemon-bytes"),
         expected_firecracker_version: "v1.15.1".to_string(),
@@ -43,12 +40,8 @@ fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
         output_rootfs_sha256: sha256_of(b"output-rootfs-bytes"),
         ready_marker: "GUESTD_READY".to_string(),
         schema_version: SCHEMA_VERSION,
-        service_unit_path: Some(dir.path().join("m80-guestd.service")),
-        service_unit_sha256: Some(sha256_of(b"service-unit-bytes")),
         source_rootfs_image: Some(dir.path().join("source.ext4")),
         source_rootfs_sha256: Some(sha256_of(b"source-rootfs-bytes")),
-        workspace_mount_path: Some(dir.path().join("workspace.mount")),
-        workspace_mount_sha256: Some(sha256_of(b"workspace-mount-bytes")),
     }
 }
 

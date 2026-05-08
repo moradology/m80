@@ -19,10 +19,10 @@ fn read_link(path: &Path) -> String {
 }
 
 #[test]
-fn installs_guest_daemon_binary_at_usr_local_bin() {
+fn installs_guest_daemon_binary_as_pid_one_target() {
     let dir = install_fixture();
 
-    let installed = dir.path().join("usr/local/bin/m80-guestd");
+    let installed = dir.path().join("m80-guestd");
     assert_eq!(fs::read(&installed).unwrap(), b"guestd");
     assert_eq!(
         fs::metadata(&installed).unwrap().mode() & 0o777,
@@ -32,56 +32,30 @@ fn installs_guest_daemon_binary_at_usr_local_bin() {
 }
 
 #[test]
-fn installs_service_unit_for_basic_target_boot() {
+fn installs_init_symlink_for_pid_one_boot() {
     let dir = install_fixture();
 
-    let unit_path = dir.path().join("etc/systemd/system/m80-guestd.service");
-    let unit = fs::read_to_string(unit_path).unwrap();
-    assert!(unit.contains("Type=simple"), "{unit}");
-    assert!(unit.contains("DefaultDependencies=no"), "{unit}");
-    assert!(
-        unit.contains("ExecStart=/usr/local/bin/m80-guestd"),
-        "{unit}"
-    );
-    assert!(unit.contains("StandardOutput=journal+console"), "{unit}");
-    assert!(unit.contains("StandardError=journal+console"), "{unit}");
-    assert!(unit.contains("Restart=on-failure"), "{unit}");
-    assert!(unit.contains("WantedBy=basic.target"), "{unit}");
-    assert!(!unit.contains("Restart=always"), "{unit}");
-    assert!(!unit.contains("EnvironmentFile"), "{unit}");
-
-    assert_eq!(
-        read_link(
-            &dir.path()
-                .join("etc/systemd/system/basic.target.wants/m80-guestd.service")
-        ),
-        "/etc/systemd/system/m80-guestd.service"
-    );
-    assert!(
-        !dir.path()
-            .join("etc/systemd/system/multi-user.target.wants/m80-guestd.service")
-            .exists(),
-        "m80-guestd must not be gated on multi-user.target"
-    );
+    assert_eq!(read_link(&dir.path().join("init")), "/m80-guestd");
 }
 
 #[test]
-fn installs_workspace_mount_unit() {
+fn installs_pid_one_mountpoint_dirs() {
     let dir = install_fixture();
 
-    let unit = fs::read_to_string(dir.path().join("etc/systemd/system/workspace.mount")).unwrap();
-    assert!(unit.contains("What=/dev/vdb"), "{unit}");
-    assert!(unit.contains("Where=/workspace"), "{unit}");
-    assert!(unit.contains("Type=ext4"), "{unit}");
-    assert!(unit.contains("WantedBy=multi-user.target"), "{unit}");
-    assert!(dir.path().join("workspace").is_dir());
-    assert_eq!(
-        read_link(
-            &dir.path()
-                .join("etc/systemd/system/multi-user.target.wants/workspace.mount")
-        ),
-        "/etc/systemd/system/workspace.mount"
-    );
+    for dir_name in [
+        "workspace",
+        "proc",
+        "sys",
+        "dev",
+        "lower",
+        "upper",
+        "merged",
+    ] {
+        assert!(
+            dir.path().join(dir_name).is_dir(),
+            "/{dir_name} must exist for PID-1 overlay setup"
+        );
+    }
 }
 
 #[test]
@@ -95,5 +69,23 @@ fn does_not_install_guestd_environment_file() {
     assert!(
         !dir.path().join("etc/default/guestd-rs").exists(),
         "predecessor's guestd-rs EnvironmentFile must not be carried forward"
+    );
+}
+
+#[test]
+fn does_not_install_systemd_units_for_guestd_startup() {
+    let dir = install_fixture();
+
+    assert!(
+        !dir.path()
+            .join("etc/systemd/system/m80-guestd.service")
+            .exists(),
+        "Ubuntu image kind now boots guestd as PID 1, not as a systemd service"
+    );
+    assert!(
+        !dir.path()
+            .join("etc/systemd/system/workspace.mount")
+            .exists(),
+        "workspace is mounted by PID-1 guestd from /dev/vdc, not systemd from /dev/vdb"
     );
 }
