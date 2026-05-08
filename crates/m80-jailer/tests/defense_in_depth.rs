@@ -1,12 +1,9 @@
 #[path = "defense_in_depth/support.rs"]
 mod support;
 
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use m80_cgroup::Limits;
-use m80_jailer::{Binding, ResourceLimits};
-use nix::unistd::{chown, Gid, Uid};
 use support::*;
 
 #[test]
@@ -104,25 +101,7 @@ fn jailed_attacker_cannot_allocate_past_memory_limit() {
 #[test]
 #[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
 fn jailed_attacker_cannot_write_past_file_size_limit() {
-    let result = run_attack_in_jailer_with_cgroup_and_resource_limits(
-        "create_large_tmp_file",
-        resource_attack_limits(),
-        ResourceLimits {
-            fsize: Some(1024 * 1024),
-            ..ResourceLimits::default()
-        },
-    )
-    .expect("run file-size resource attack");
-
-    assert_ne!(
-        result.exit_code,
-        Some(0),
-        "create_large_tmp_file wrote past the configured file-size limit"
-    );
-    assert!(
-        result.cgroup_contained_pid,
-        "resource attack must run after cgroup enrollment"
-    );
+    assert_file_size_attack_blocked();
 }
 
 #[test]
@@ -359,133 +338,4 @@ fn jailed_attacker_cannot_mount_peer_run_dir() {
         "mount_peer_run_dir",
         vec![create_inside_jail(PathBuf::from("m80-peer-mount-target"))],
     );
-}
-
-fn assert_cross_tenant_attack_blocked(name: &str, extra_bindings: Vec<Binding>) {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let tenant_a = TenantSpec::new(temp.path(), "tenant-a", 3000, 3000);
-    let tenant_b = TenantSpec::new(temp.path(), "tenant-b", 3001, 3001);
-    let peer_private = prepare_peer_private(temp.path(), tenant_b.uid, tenant_b.gid)
-        .expect("prepare peer private dir");
-
-    write_attack_config(
-        &tenant_b.config_path,
-        AttackConfig {
-            peer_sentinel: "/unused-peer-a/sentinel",
-            peer_run_dir: "/unused-peer-a/run",
-            peer_network_state: "/unused-peer-a/network-state.json",
-            peer_pid: 1,
-        },
-    )
-    .expect("write tenant-b config");
-    let live_b = launch_attack_in_jailer(
-        "sleep_briefly",
-        &tenant_b.run_dir,
-        tenant_b.uid,
-        tenant_b.gid,
-        vec![config_binding(tenant_b.config_path.clone())],
-        None,
-    )
-    .expect("launch peer tenant");
-
-    let peer_in_jail =
-        PathBuf::from("peers").join(peer_private.file_name().expect("peer private dir has name"));
-    let peer_in_jail_display = format!("/{}", peer_in_jail.display());
-    write_attack_config(
-        &tenant_a.config_path,
-        AttackConfig {
-            peer_sentinel: &format!("{peer_in_jail_display}/sentinel"),
-            peer_run_dir: &peer_in_jail_display,
-            peer_network_state: &format!("{peer_in_jail_display}/network-state.json"),
-            peer_pid: live_b.jailed.firecracker_pid,
-        },
-    )
-    .expect("write tenant-a config");
-
-    let mut attacker_bindings = vec![
-        config_binding(tenant_a.config_path.clone()),
-        ro_binding(temp.path().to_path_buf(), PathBuf::from("peers")),
-    ];
-    attacker_bindings.extend(extra_bindings);
-    let live_a = launch_attack_in_jailer(
-        name,
-        &tenant_a.run_dir,
-        tenant_a.uid,
-        tenant_a.gid,
-        attacker_bindings,
-        None,
-    )
-    .expect("launch attacker tenant");
-
-    let result_a = live_a.wait().expect("wait attacker tenant");
-    assert_ne!(
-        result_a.exit_code,
-        Some(0),
-        "{name} reached the peer tenant; exit_code={:?}",
-        result_a.exit_code
-    );
-    assert!(
-        proc_pid_exists(live_b.jailed.firecracker_pid),
-        "{name} must not kill the peer tenant process"
-    );
-    let result_b = live_b.wait().expect("wait peer tenant");
-    assert_eq!(result_b.exit_code, Some(0));
-}
-
-fn prepare_peer_private(
-    root: &Path,
-    uid: u32,
-    gid: u32,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let dir = root.join("peer-private");
-    std::fs::create_dir(&dir)?;
-    std::fs::write(dir.join("sentinel"), b"peer tenant sentinel\n")?;
-    std::fs::write(
-        dir.join("network-state.json"),
-        b"{\"tenant\":\"peer\",\"network\":\"private\"}\n",
-    )?;
-    set_mode(&dir, 0o700)?;
-    set_mode(&dir.join("sentinel"), 0o600)?;
-    set_mode(&dir.join("network-state.json"), 0o600)?;
-    chown_tree(&dir, uid, gid)?;
-    Ok(dir)
-}
-
-fn set_mode(path: &Path, mode: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let mut permissions = std::fs::metadata(path)?.permissions();
-    permissions.set_mode(mode);
-    std::fs::set_permissions(path, permissions)?;
-    Ok(())
-}
-
-fn chown_tree(path: &Path, uid: u32, gid: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let uid = Uid::from_raw(uid);
-    let gid = Gid::from_raw(gid);
-    chown(path, Some(uid), Some(gid))?;
-    for entry in std::fs::read_dir(path)? {
-        chown(&entry?.path(), Some(uid), Some(gid))?;
-    }
-    Ok(())
-}
-
-fn assert_resource_attack_blocked(name: &str) {
-    let result = run_attack_in_jailer_with_cgroup(name, resource_attack_limits())
-        .expect("run cgroup-enrolled resource attack");
-    assert_ne!(
-        result.exit_code,
-        Some(0),
-        "{name} exhausted resources without hitting a configured limit"
-    );
-    assert!(
-        result.cgroup_contained_pid,
-        "resource attack must run after cgroup enrollment"
-    );
-}
-
-fn resource_attack_limits() -> Limits {
-    Limits {
-        memory_max: Some(64 * 1024 * 1024),
-        pids_max: Some(32),
-        ..Limits::m80_default()
-    }
 }

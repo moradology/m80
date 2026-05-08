@@ -45,6 +45,11 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added ignored jailer harness tests for file-descriptor, pids, memory, and
   file-size exhaustion attempts after cgroup enrollment.
 
+### Added — compromised-Firecracker composition test (m80-g0v8.11.11)
+
+- Added the ignored Layer 2 capstone that runs the jailer attack batteries as a
+  compromised-Firecracker simulation.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`

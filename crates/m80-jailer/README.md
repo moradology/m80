@@ -154,3 +154,6 @@ hands a config in and gets back a launchable chroot — or a typed error.
   signal the peer pid, or bind-mount the peer run-dir must all exit non-zero.
   Resource exhaustion attempts to exceed file descriptors, pids, memory, or
   file-size limits must all exit non-zero after cgroup enrollment.
+- `tests/defense_composition.rs` — ignored root-only capstone that assumes the
+  Firecracker process is compromised and reruns the Layer 2 jailer batteries as
+  one public security posture test.
