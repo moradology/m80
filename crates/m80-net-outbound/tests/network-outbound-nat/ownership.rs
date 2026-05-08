@@ -3,9 +3,14 @@ use std::path::Path;
 
 use m80_net_outbound::{
     cleanup_vm_with_ops, derive_tap_name, planned_bridge_state, planned_vm_network_state,
-    realize_bridge_and_tap_with_ops, write_bridge_state, write_vm_network_state_record, LinkOps,
-    NetError, OutboundIntent, PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
+    realize_bridge_and_tap_with_ops_for_routes, write_bridge_state, write_vm_network_state_record,
+    LinkOps, NetError, OutboundIntent, PolicyCommandOutput, PolicyOps, SetupPhase,
+    VmNetworkStateRecord,
 };
+
+const DEFAULT_ONLY_ROUTES: &str = "\
+Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n\
+eth0\t00000000\t0102000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n";
 
 #[test]
 fn bridge_removed_only_when_no_peer_references() {
@@ -120,7 +125,15 @@ fn crash_mid_vm_does_not_break_new_startup() {
     cleanup_vm_with_ops(&mut links, &mut policy, "missing-vm", temp.path()).unwrap();
     let run_dir = temp.path().join("vm-b");
     std::fs::create_dir(&run_dir).unwrap();
-    realize_bridge_and_tap_with_ops(&mut links, &intent, "vm-b", temp.path(), &run_dir).unwrap();
+    realize_bridge_and_tap_with_ops_for_routes(
+        &mut links,
+        &intent,
+        "vm-b",
+        temp.path(),
+        &run_dir,
+        DEFAULT_ONLY_ROUTES,
+    )
+    .unwrap();
 
     assert!(links.deleted(&bridge.bridge_name));
     assert!(links

@@ -4,10 +4,14 @@ use std::sync::{Arc, Barrier};
 
 use m80_net_outbound::{
     bridge_state_path, derive_guest_addressing, planned_bridge_state, planned_vm_network_state,
-    read_bridge_state, read_vm_network_state_record, realize_bridge_and_tap_with_ops,
+    read_bridge_state, read_vm_network_state_record, realize_bridge_and_tap_with_ops_for_routes,
     vm_network_state_path, write_bridge_state, write_vm_network_state_record, LinkOps, NetError,
-    OutboundIntent, SetupPhase, BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
+    OutboundIntent, RealizedNetwork, SetupPhase, BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
 };
+
+const DEFAULT_ONLY_ROUTES: &str = "\
+Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n\
+eth0\t00000000\t0102000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n";
 
 #[test]
 fn tap_creation_without_ip_binary_then_rtnetlink_attach() {
@@ -126,9 +130,7 @@ fn bridge_setup_is_idempotent_with_matching_state() {
     write_bridge_state(temp.path(), &ready_bridge).unwrap();
     let mut ops = RecordingLinkOps::with_link_address(true);
 
-    let realized =
-        realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
-            .unwrap();
+    let realized = realize_for_test(&mut ops, &intent, "vm-123", temp.path(), &run_dir).unwrap();
 
     assert_eq!(realized.bridge_name, ready_bridge.bridge_name);
     assert_eq!(realized.bridge_cidr, ready_bridge.cidr);
@@ -166,9 +168,7 @@ fn planned_bridge_state_recovers_existing_kernel_bridge_without_recreate() {
     write_bridge_state(temp.path(), &planned_bridge).unwrap();
     let mut ops = RecordingLinkOps::with_existing_link_address(true);
 
-    let realized =
-        realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
-            .unwrap();
+    let realized = realize_for_test(&mut ops, &intent, "vm-123", temp.path(), &run_dir).unwrap();
 
     assert_eq!(
         read_bridge_state(temp.path()).unwrap(),
@@ -204,9 +204,7 @@ fn planned_bridge_state_recreates_kernel_dropped_bridge() {
     write_bridge_state(temp.path(), &planned_bridge).unwrap();
     let mut ops = RecordingLinkOps::default();
 
-    let realized =
-        realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
-            .unwrap();
+    let realized = realize_for_test(&mut ops, &intent, "vm-123", temp.path(), &run_dir).unwrap();
 
     assert_eq!(
         read_bridge_state(temp.path()).unwrap(),
@@ -236,6 +234,32 @@ fn planned_bridge_state_recreates_kernel_dropped_bridge() {
 }
 
 #[test]
+fn host_route_collision_returns_typed_error_pre_mutation() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_dir = temp.path().join("vm-123");
+    std::fs::create_dir(&run_dir).unwrap();
+    let intent = intent_with_exception();
+    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    let host_routes = host_route_for(planned_bridge.cidr);
+    let mut ops = RecordingLinkOps::default();
+
+    let err = realize_bridge_and_tap_with_ops_for_routes(
+        &mut ops,
+        &intent,
+        "vm-123",
+        temp.path(),
+        &run_dir,
+        &host_routes,
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, NetError::HostRouteCollision { .. }));
+    assert!(ops.operations.is_empty());
+    assert!(!bridge_state_path(temp.path()).exists());
+    assert!(!vm_network_state_path(&run_dir).exists());
+}
+
+#[test]
 fn concurrent_launch_no_ipv4_collision() {
     let temp = tempfile::tempdir().unwrap();
     let run_root = temp.path().to_path_buf();
@@ -252,7 +276,7 @@ fn concurrent_launch_no_ipv4_collision() {
             let mut ops = RecordingLinkOps::default();
             let intent = intent_with_exception();
             barrier.wait();
-            realize_bridge_and_tap_with_ops(&mut ops, &intent, &vm_id, &run_root, &run_dir)
+            realize_for_test(&mut ops, &intent, &vm_id, &run_root, &run_dir)
         })
     };
     let second = {
@@ -265,7 +289,7 @@ fn concurrent_launch_no_ipv4_collision() {
             let mut ops = RecordingLinkOps::default();
             let intent = intent_with_exception();
             barrier.wait();
-            realize_bridge_and_tap_with_ops(&mut ops, &intent, &vm_id, &run_root, &run_dir)
+            realize_for_test(&mut ops, &intent, &vm_id, &run_root, &run_dir)
         })
     };
 
@@ -303,8 +327,7 @@ fn failed_launch_after_bridge_cleans_bridge() {
         ..RecordingLinkOps::default()
     };
 
-    let err = realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
-        .unwrap_err();
+    let err = realize_for_test(&mut ops, &intent, "vm-123", temp.path(), &run_dir).unwrap_err();
 
     assert!(matches!(
         err,
@@ -332,8 +355,7 @@ fn bridge_state_mismatch_fails_before_link_mutation() {
     write_bridge_state(temp.path(), &foreign.with_phase(SetupPhase::Ready)).unwrap();
     let mut ops = RecordingLinkOps::with_link_address(true);
 
-    let err = realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
-        .unwrap_err();
+    let err = realize_for_test(&mut ops, &intent, "vm-123", temp.path(), &run_dir).unwrap_err();
 
     assert!(matches!(err, NetError::BridgeOwnershipMismatch));
     assert!(ops.operations.is_empty());
@@ -347,6 +369,23 @@ fn intent_with_exception() -> OutboundIntent {
     }
 }
 
+fn realize_for_test(
+    ops: &mut impl LinkOps,
+    intent: &OutboundIntent,
+    vm_id: &str,
+    run_root: &std::path::Path,
+    run_dir: &std::path::Path,
+) -> Result<RealizedNetwork, NetError> {
+    realize_bridge_and_tap_with_ops_for_routes(
+        ops,
+        intent,
+        vm_id,
+        run_root,
+        run_dir,
+        DEFAULT_ONLY_ROUTES,
+    )
+}
+
 fn colliding_vm_ids(run_root: &std::path::Path) -> (String, String, Ipv4Addr) {
     let mut seen = HashMap::new();
     for index in 0..10_000 {
@@ -357,6 +396,20 @@ fn colliding_vm_ids(run_root: &std::path::Path) -> (String, String, Ipv4Addr) {
         }
     }
     panic!("expected a guest IP collision within 10k deterministic VM ids");
+}
+
+fn host_route_for(cidr: ipnet::Ipv4Net) -> String {
+    format!(
+        "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n\
+eth0\t{}\t00000000\t0001\t0\t0\t0\t{}\t0\t0\t0\n",
+        proc_route_hex(cidr.network()),
+        proc_route_hex(cidr.netmask())
+    )
+}
+
+fn proc_route_hex(ip: Ipv4Addr) -> String {
+    let [a, b, c, d] = ip.octets();
+    format!("{d:02X}{c:02X}{b:02X}{a:02X}")
 }
 
 fn read_json(path: &std::path::Path) -> serde_json::Value {

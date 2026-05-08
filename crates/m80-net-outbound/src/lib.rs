@@ -86,7 +86,28 @@ pub fn realize_bridge_and_tap_with_ops(
     run_root: &Path,
     run_dir: &Path,
 ) -> Result<RealizedNetwork, NetError> {
+    let host_routes = fs::read_to_string("/proc/net/route")?;
+    realize_bridge_and_tap_with_ops_for_routes(ops, intent, vm_id, run_root, run_dir, &host_routes)
+}
+
+/// Realize bridge/TAP setup with supplied `/proc/net/route` contents.
+///
+/// This is the deterministic test seam for host-route collision checks; real
+/// callers use [`realize_bridge_and_tap_with_ops`].
+pub fn realize_bridge_and_tap_with_ops_for_routes(
+    ops: &mut impl LinkOps,
+    intent: &OutboundIntent,
+    vm_id: &str,
+    run_root: &Path,
+    run_dir: &Path,
+    host_routes: &str,
+) -> Result<RealizedNetwork, NetError> {
     let bridge = planned_bridge_state(run_root, intent)?;
+    reject_host_route_collision_from_proc_net_route(
+        bridge.cidr,
+        Some(&bridge.bridge_name),
+        host_routes,
+    )?;
     ensure_bridge_ready_with_ops(ops, run_root, &bridge)?;
 
     let vm_state = planned_vm_network_state(intent, vm_id, run_root, run_dir, bridge.clone());

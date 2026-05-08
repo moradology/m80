@@ -14,6 +14,11 @@ If a bridge state file exists but the recorded identity differs from the
 planned run-root digest, bridge name, CIDR, or gateway, setup fails closed with
 `BridgeOwnershipMismatch` before mutating host links or writing per-VM state.
 
+Before any link mutation, setup also rejects a planned bridge CIDR that
+overlaps a non-default host route. The derived bridge interface itself is
+allowed so repeated setup can reuse its own host route, but unrelated host
+routes produce `HostRouteCollision`.
+
 ## Bridge State File
 
 The system writes `outbound-bridge-state.json` directly under the run-root. The
@@ -108,3 +113,5 @@ Relevant setup tests:
 `planned_bridge_state_recreates_kernel_dropped_bridge`. Failed setup cleanup is
 pinned by `failed_launch_after_bridge_cleans_bridge`. Concurrent guest-IP
 collision handling is pinned by `concurrent_launch_no_ipv4_collision`.
+Host-route pre-mutation rejection is pinned by
+`host_route_collision_returns_typed_error_pre_mutation`.

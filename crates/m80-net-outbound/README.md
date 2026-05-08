@@ -56,6 +56,9 @@ Sequestering it has three benefits:
   recorded ownership matches; otherwise they fail closed with
   `BridgeOwnershipMismatch`. State lives in
   `<run_root>/outbound-bridge-state.json`.
+- Before bridge/TAP mutation, setup rejects a planned bridge CIDR that overlaps
+  a non-default host route, except for the route already owned by the same
+  derived bridge interface.
 - Bridge state is written in a Planned phase before host link mutation and
   in a Ready phase after bridge creation/address/up succeeds. A matching
   Ready state verifies the bridge address and skips bridge mutation. A
@@ -124,6 +127,8 @@ Sequestering it has three benefits:
 - `realize_bridge_and_tap(...)` and
   `realize_bridge_and_tap_with_ops(...)` — bridge/TAP setup phase; the
   `_with_ops` variant is the deterministic test seam.
+- `realize_bridge_and_tap_with_ops_for_routes(...)` — deterministic test seam
+  for the same setup path with supplied `/proc/net/route` text.
 - `apply_outbound_nat_policy(...)` and
   `apply_outbound_nat_policy_with_ops(...)` — host sysctl/iptables phase;
   the `_with_ops` variant is the deterministic command-recording seam.
@@ -215,6 +220,8 @@ Sequestering it has three benefits:
 - Collision detection: a fixture with two VMs claiming the same guest IP
   produces `GuestIpv4Collision`; a barrier-synchronized setup test pins that
   concurrent colliding VM ids cannot both remain ready.
+- Host route collision: a fixture route overlapping the planned bridge CIDR
+  produces `HostRouteCollision` before any link operation runs.
 - Bridge/TAP setup: matching Ready bridge ownership skips bridge mutation,
   bridge and per-VM state files are written atomically with Planned/Ready
   phase transitions, ownership mismatch fails before link mutation, and a TAP
