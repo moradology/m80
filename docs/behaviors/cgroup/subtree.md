@@ -36,6 +36,8 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 
 Test: `crates/m80-cgroup/src/lib.rs::tests::required_subtree_control_enables_three_controllers`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
+The latter asserts `+cpu`, `+memory`, `+pids`, and `+io` are present on both
+ancestor levels in the synthetic hierarchy before process enrollment.
 
 ## sparse-cpuset-inheritance
 

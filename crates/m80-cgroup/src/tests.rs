@@ -121,12 +121,19 @@ fn create_applies_limits_before_pid_enrollment() {
         "0-1\n"
     );
     assert_eq!(fs::read_to_string(leaf.join("cpuset.mems")).unwrap(), "0\n");
-    assert!(fs::read_to_string(base.join("cgroup.subtree_control"))
-        .unwrap()
-        .contains("+io"));
-    assert!(fs::read_to_string(parent.join("cgroup.subtree_control"))
-        .unwrap()
-        .contains("+io"));
+    assert_subtree_control_contains_all_requested(&base);
+    assert_subtree_control_contains_all_requested(&parent);
+}
+
+fn assert_subtree_control_contains_all_requested(path: &std::path::Path) {
+    let content = fs::read_to_string(path.join("cgroup.subtree_control")).unwrap();
+    for controller in ["+cpu", "+memory", "+pids", "+io"] {
+        assert!(
+            content.split_whitespace().any(|entry| entry == controller),
+            "{} missing {controller}: {content:?}",
+            path.display()
+        );
+    }
 }
 
 #[test]
