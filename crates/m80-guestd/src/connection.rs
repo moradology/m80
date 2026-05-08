@@ -422,25 +422,20 @@ where
                             // Wait for the child thread to finish reaping.
                             let _ = child_rx.recv();
 
-                            let ack = CancelResponse {
-                                request_id: cancel_req.request_id,
-                                status,
-                            };
-                            let ack_env = Envelope::new(ack);
-                            if let Err(e) = write_frame(writer, &ack_env) {
+                            if let Err(e) = write_cancel_ack(writer, cancel_req.request_id, status)
+                            {
                                 guest_log::warn(
                                     GuestLogPhase::Exec,
                                     request_id.as_deref(),
                                     format!("failed to write cancel ack: {e}"),
                                 );
                             }
-                            if let Err(e) = writer.flush() {
-                                guest_log::warn(
-                                    GuestLogPhase::Exec,
-                                    request_id.as_deref(),
-                                    format!("failed to flush cancel ack: {e}"),
-                                );
-                            }
+                            drain_cancel_acks_after_exit(
+                                &mut reader,
+                                writer,
+                                reader_ready,
+                                request_id.as_deref(),
+                            );
                             nix::unistd::sync();
                             return Ok(ConnectionOutcome::Continue);
                         } else {
@@ -871,6 +866,67 @@ pub(crate) fn write_cancel_ack<W: Write>(
     write_frame(writer, &env)?;
     writer.flush()?;
     Ok(())
+}
+
+/// After an in-flight request is cancelled, acknowledge any already-buffered
+/// duplicate or late cancel frames before closing the connection.
+pub(crate) fn drain_cancel_acks_after_exit<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    reader_ready: &mut impl FnMut(&mut R) -> bool,
+    log_request_id: Option<&str>,
+) where
+    R: BufRead,
+    W: Write,
+{
+    while reader_ready(reader) {
+        match reader.fill_buf() {
+            Ok([]) => return,
+            Ok(_) => {}
+            Err(_) => return,
+        }
+
+        let next = match read_raw_frame(reader) {
+            Ok(env) => env,
+            Err(e) => {
+                protocol_log::warn_proto_error(
+                    GuestLogPhase::Exec,
+                    log_request_id,
+                    Some("post_cancel_control"),
+                    &e,
+                );
+                return;
+            }
+        };
+
+        if next.kind == PAYLOAD_KIND_CANCEL_REQUEST {
+            match next.decode::<CancelRequest>() {
+                Ok(env) => {
+                    if write_cancel_ack(writer, env.payload.request_id, CancelStatus::AlreadyExited)
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+                Err(e) => {
+                    protocol_log::warn_proto_error(
+                        GuestLogPhase::Exec,
+                        log_request_id,
+                        Some(PAYLOAD_KIND_CANCEL_REQUEST),
+                        &e,
+                    );
+                    return;
+                }
+            }
+        } else {
+            protocol_log::warn_unexpected_frame(
+                GuestLogPhase::Exec,
+                log_request_id,
+                Some("post_cancel_control"),
+                next.kind.as_str(),
+            );
+        }
+    }
 }
 
 pub(crate) fn failed_timing(received_at: u64) -> ExecTiming {

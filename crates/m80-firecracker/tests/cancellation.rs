@@ -125,8 +125,8 @@ fn cancel_kills_running_process() {
     // Send exec_request (sleep 60).
     let exec_env = Envelope::with_request_id(
         ExecRequest {
-            program: "/bin/sleep".into(),
-            args: vec!["60".into()],
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), "sleep 60".into()],
             cwd: None,
             env: None,
             stdin: None,
@@ -158,6 +158,57 @@ fn cancel_kills_running_process() {
         elapsed < std::time::Duration::from_secs(10),
         "cancel should complete in <10 s, elapsed={elapsed:?}"
     );
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn two_concurrent_cancels_idempotent() {
+    let discovery = m80_preflight::run().expect("preflight");
+    let run_root = discovery.run_root.clone();
+    let (running, run_dir) = launch_vm(&discovery, &run_root);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+
+    let vm_id = running.vm_id().to_owned();
+    let mut channel = open_raw_channel(&run_dir, &discovery.firecracker_bin, &vm_id);
+    let request_id = "double-cancel-req";
+
+    channel
+        .send(&Envelope::with_request_id(
+            ExecRequest {
+                program: "/bin/sh".into(),
+                args: vec!["-c".into(), "sleep 60".into()],
+                cwd: None,
+                env: None,
+                stdin: None,
+                timeout_ms: Some(30_000),
+                streaming: true,
+            },
+            request_id.to_owned(),
+        ))
+        .expect("send exec_request");
+    channel
+        .send(&Envelope::new(CancelRequest {
+            request_id: request_id.to_owned(),
+        }))
+        .expect("send first cancel_request");
+    channel
+        .send(&Envelope::new(CancelRequest {
+            request_id: request_id.to_owned(),
+        }))
+        .expect("send second cancel_request");
+
+    let first: Envelope<CancelResponse> = channel.recv().expect("recv first cancel ack");
+    let second: Envelope<CancelResponse> = channel.recv().expect("recv second cancel ack");
+
+    assert_eq!(first.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
+    assert_eq!(first.payload.request_id, request_id);
+    assert_eq!(first.payload.status, CancelStatus::Cancelled);
+    assert_eq!(second.kind, PAYLOAD_KIND_CANCEL_RESPONSE);
+    assert_eq!(second.payload.request_id, request_id);
+    assert_eq!(second.payload.status, CancelStatus::AlreadyExited);
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
@@ -224,8 +275,8 @@ fn wrong_request_id_returns_already_exited() {
     // Send exec_request (sleep 60, with request_id "real-req").
     let exec_env = Envelope::with_request_id(
         ExecRequest {
-            program: "/bin/sleep".into(),
-            args: vec!["60".into()],
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), "sleep 60".into()],
             cwd: None,
             env: None,
             stdin: None,

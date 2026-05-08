@@ -88,7 +88,8 @@ Keeping the guest small has direct benefits:
   Partial output may or may not have been flushed; the response is whatever
   state we observed.
 - On `cancel_request` for the in-flight request id: terminate the child process
-  group, reap the direct child, write `CancelResponse`, and do not write a terminal
+  group, reap the direct child, write `CancelResponse`, drain already-buffered
+  duplicate or late cancel frames as `AlreadyExited`, and do not write a terminal
   `ExecExit` for that cancelled request. A mismatched or late cancel returns
   `AlreadyExited` and the normal exec result continues. The in-flight PID slot
   is recovered through mutex poisoning because it stores only an optional child

@@ -14,9 +14,9 @@ use m80_proto::{
 use crate::guest_log::{self, GuestLogPhase};
 
 use super::{
-    build_child_command, cancel_status_from_group_signals, failed_timing, protocol_log,
-    timeout_deadline, unix_ms_now, validate_exec_stdin, write_cancel_ack, write_payload_frame,
-    ConnectionOutcome, POLL_INTERVAL,
+    build_child_command, cancel_status_from_group_signals, drain_cancel_acks_after_exit,
+    failed_timing, protocol_log, timeout_deadline, unix_ms_now, validate_exec_stdin,
+    write_cancel_ack, write_payload_frame, ConnectionOutcome, POLL_INTERVAL,
 };
 
 const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
@@ -236,6 +236,12 @@ where
                         "failed to write streaming cancel ack",
                     );
                 }
+                drain_cancel_acks_after_exit(
+                    &mut reader,
+                    writer,
+                    reader_ready,
+                    request_id.as_deref(),
+                );
                 nix::unistd::sync();
                 return Ok(ConnectionOutcome::Continue);
             }
