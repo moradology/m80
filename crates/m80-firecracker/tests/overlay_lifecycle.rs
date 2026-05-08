@@ -130,6 +130,87 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
 }
 
 #[test]
+#[ignore = "requires KVM host with real Firecracker binary and debugfs"]
+fn overlay_immutability_lower_unchanged_after_upper_write() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let manifest_dir = discovery
+        .rootfs
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("/"));
+    discovery
+        .manifest
+        .verify(manifest_dir)
+        .expect("base artifacts must verify before launch");
+    let run_root = discovery.run_root.clone();
+    let backend = std::sync::Arc::new(
+        Backend::new(BackendConfig {
+            discovery: discovery.clone(),
+            max_concurrent_vms: 1,
+            run_root,
+            jail_uid: 3000,
+            jail_gid: 3000,
+            cgroup_mode: CgroupMode::Disabled,
+        })
+        .expect("Backend::new"),
+    );
+
+    let vm_id = format!("ovlimm-{}", std::process::id());
+    let sandbox = backend
+        .admit(SandboxConfig {
+            vm_id: Some(vm_id),
+            workspace: None,
+            network: NetworkPolicy::NoEgress,
+            vcpu_count: Some(1),
+            mem_size_mib: Some(512),
+            boot_args: None,
+            overlay_size_bytes: 512 * 1024 * 1024,
+            idle_timeout: None,
+            daemonize: false,
+            request_id: Some("req-overlay-immutability".into()),
+            preallocated_drive_slots: 0,
+            one_shot: false,
+        })
+        .expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+
+    let target = "/bin/busybox";
+    let marker = "m80-overlay-copy-up\n";
+    let response = running
+        .exec(ExecRequest {
+            program: "/bin/sh".to_string(),
+            args: vec!["-c".to_string(), format!("printf '{marker}' > {target}")],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        })
+        .expect("exec lower write");
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "lower write failed for {target}: stdout={} stderr={}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+
+    let stopped = running.stop().expect("stop");
+    discovery
+        .manifest
+        .verify(manifest_dir)
+        .expect("base artifacts must still verify after lower-layer write");
+    let overlay = stopped.run_dir().join("rootfs.overlay.ext4");
+    let upper_path = format!("/root{target}");
+    let upper_file = debugfs_cat(&overlay, &upper_path);
+    assert_eq!(upper_file, marker);
+
+    stopped.delete().expect("delete");
+}
+
+#[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn overlay_grows_under_sustained_guest_writes() {
     let discovery =
