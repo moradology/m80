@@ -17,6 +17,7 @@ use m80_image_manifest::{Manifest, ManifestError};
 mod artifacts;
 mod binary;
 mod checks;
+mod cve_floor;
 mod table;
 
 /// Linux capabilities m80 needs when `euid != 0`; a process holding all of
@@ -204,6 +205,20 @@ pub enum PreflightError {
         actual: String,
     },
 
+    /// `firecracker --version` matched a version affected by a documented
+    /// security advisory or did not parse as a release version.
+    #[error(
+        "firecracker version fails CVE floor for {cve_id}: actual {actual}, fixed versions {fixed_versions}"
+    )]
+    FirecrackerCveFloorViolation {
+        /// CVE identifier, or `firecracker-version-format` for malformed versions.
+        cve_id: String,
+        /// Reported version.
+        actual: String,
+        /// Documented fixed version set.
+        fixed_versions: String,
+    },
+
     /// `jailer` binary not found.
     #[error("jailer binary not found")]
     JailerBinaryNotFound,
@@ -303,6 +318,9 @@ impl PreflightError {
             }
             Self::FirecrackerVersionMismatch { .. } => {
                 "install the expected version or set M80_FIRECRACKER_VERSION to the installed version to skip the version pin"
+            }
+            Self::FirecrackerCveFloorViolation { .. } => {
+                "upgrade firecracker to a version fixed for every advisory tracked by m80-preflight"
             }
             Self::JailerBinaryNotFound => {
                 "install jailer to /opt/firecracker/bin/jailer (it ships alongside firecracker) or set M80_JAILER_BIN to the binary path"

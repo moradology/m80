@@ -6,6 +6,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use crate::cve_floor::verify_firecracker_cve_floor;
 use crate::PreflightError;
 
 /// Environment key for overriding the Firecracker binary path.
@@ -88,6 +89,7 @@ pub fn discover_binaries(
     }
 
     let actual_version = firecracker_version(&config.firecracker_bin)?;
+    verify_firecracker_cve_floor(&actual_version)?;
     if let Some(expected) = &config.expected_firecracker_version {
         if &actual_version != expected {
             return Err(PreflightError::FirecrackerVersionMismatch {

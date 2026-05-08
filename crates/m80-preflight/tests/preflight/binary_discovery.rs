@@ -142,6 +142,26 @@ fn firecracker_version_mismatch_fails_closed() {
     }
 }
 
+#[test]
+fn firecracker_cve_floor_rejects_known_affected_version() {
+    let (_dir, config) = fixture_config("v1.15.0");
+
+    let err = discover_binaries(&config).unwrap_err();
+
+    match err {
+        PreflightError::FirecrackerCveFloorViolation {
+            cve_id,
+            actual,
+            fixed_versions,
+        } => {
+            assert_eq!(cve_id, "CVE-2026-5747");
+            assert_eq!(actual, "v1.15.0");
+            assert_eq!(fixed_versions, "v1.14.4 or v1.15.1");
+        }
+        other => panic!("expected CVE floor violation, got {other:?}"),
+    }
+}
+
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 struct EnvGuard {

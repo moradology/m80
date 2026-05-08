@@ -43,7 +43,8 @@ which is the right place for a security review to start.
      process's effective set. Returns `PrivilegeStatus::Root` or
      `PrivilegeStatus::CapabilityBearing`.
   7. **Firecracker binary** — discovered via env override or default,
-     `--version` matched against the configured pin.
+     `--version` must clear the documented CVE floor before any configured
+     exact version pin is accepted.
   8. **Jailer binary** — same protocol.
   9. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
@@ -81,7 +82,8 @@ which is the right place for a security review to start.
   expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
   the standalone binary-resolution step.
 - `discover_binaries(&BinaryDiscoveryConfig) -> Result<BinaryDiscovery,
-  PreflightError>`.
+  PreflightError>`; rejects Firecracker versions covered by the tracked CVE
+  floor before applying an optional exact pin.
 - `BinaryDiscovery { firecracker_bin, firecracker_version, jailer_bin,
   jailer_harden_bin }`.
 - `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
@@ -112,9 +114,11 @@ which is the right place for a security review to start.
   `NfConntrackUnavailable`,
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
+  `FirecrackerBinaryNotFound`,
+  `FirecrackerVersionMismatch { expected, actual }`,
+  `FirecrackerCveFloorViolation { cve_id, actual, fixed_versions }`,
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
   effective capability set),
-  `FirecrackerBinaryNotFound`, `FirecrackerVersionMismatch { expected, actual }`,
   `JailerBinaryNotFound`, `JailerHardenBinaryNotFound`, `NonAbsolutePath { kind, path }`,
   `KernelNotFound`, `RootfsNotFound`, `Manifest(m80_image_manifest::ManifestError)`,
   `RunRootUnavailable { reason: String }` (covers both missing-dir and

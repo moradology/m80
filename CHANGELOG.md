@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — Firecracker CVE floor (m80-g0v8.11.4)
+
+- `m80-preflight` now rejects Firecracker versions covered by the tracked
+  Firecracker CVE floor before accepting any exact version pin, starting with
+  AWS advisories CVE-2026-5747 and CVE-2026-1386.
+
 ### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
 
 - Firecracker machine config now carries an explicit `cpu_template = T2`

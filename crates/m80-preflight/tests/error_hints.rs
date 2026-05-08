@@ -106,6 +106,15 @@ fn firecracker_version_mismatch_has_hint() {
 }
 
 #[test]
+fn firecracker_cve_floor_violation_has_hint() {
+    assert_hint(&PreflightError::FirecrackerCveFloorViolation {
+        cve_id: "CVE-2026-5747".into(),
+        actual: "v1.15.0".into(),
+        fixed_versions: "v1.14.4 or v1.15.1".into(),
+    });
+}
+
+#[test]
 fn jailer_binary_not_found_has_hint() {
     assert_hint(&PreflightError::JailerBinaryNotFound);
 }
