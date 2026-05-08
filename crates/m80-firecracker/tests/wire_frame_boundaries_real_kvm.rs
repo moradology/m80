@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use m80_proto::{
-    encode_raw_envelope, read_frame, Envelope, FileWriteRequest, FileWriteResponse, PingRequest,
-    PongResponse, ProtoError, RawEnvelope, MAX_FRAME_BYTES,
+    encode_raw_envelope, read_frame, Envelope, ExecResponse, ExecStatus, FileWriteRequest,
+    FileWriteResponse, PingRequest, PongResponse, ProtoError, RawEnvelope, MAX_FRAME_BYTES,
+    PROTOCOL_VERSION,
 };
 use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
 
@@ -173,6 +174,56 @@ fn frame_length_over_max_drops_current_channel_only() {
     fresh
         .send(&Envelope::new(PingRequest {}))
         .expect("send fresh ping after oversized drop");
+    let pong: Envelope<PongResponse> = fresh.recv().expect("recv fresh pong");
+    assert!(pong.payload.guest_unix_ms > 0);
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn protocol_version_mismatch_returns_failed_response_and_fresh_channel_survives() {
+    let discovery = m80_preflight::run().expect("preflight");
+    let (running, run_dir) = launch_vm(&discovery);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+    let vm_id = running.vm_id().to_owned();
+
+    let mut raw = open_raw_stream(&run_dir, &discovery.firecracker_bin, &vm_id);
+    let mut body = encode_raw_envelope(RawEnvelope::from_typed(Envelope::new(PingRequest {})))
+        .expect("encode current-version ping");
+    assert_eq!(body[0], 0x08, "protobuf field 1 must be version");
+    assert_eq!(body[1], PROTOCOL_VERSION as u8);
+    body[1] = (PROTOCOL_VERSION + 1) as u8;
+    raw.get_mut()
+        .write_all(&(body.len() as u32).to_be_bytes())
+        .expect("write future-version length");
+    raw.get_mut()
+        .write_all(&body)
+        .expect("write future-version body");
+    raw.get_mut().flush().expect("flush future-version frame");
+
+    let response: Envelope<ExecResponse> =
+        read_frame(&mut raw).expect("recv protocol mismatch response");
+    assert_eq!(response.payload.status, ExecStatus::Failed);
+    let stderr = String::from_utf8(response.payload.stderr).expect("stderr utf8");
+    assert!(
+        stderr.contains("protocol version mismatch"),
+        "stderr did not describe version mismatch: {stderr:?}"
+    );
+    assert!(
+        stderr.contains(&format!("expected {PROTOCOL_VERSION}")),
+        "stderr did not carry expected version: {stderr:?}"
+    );
+    assert!(
+        stderr.contains(&format!("got {}", PROTOCOL_VERSION + 1)),
+        "stderr did not carry observed version: {stderr:?}"
+    );
+
+    let mut fresh = open_channel(&run_dir, &discovery.firecracker_bin, &vm_id);
+    fresh
+        .send(&Envelope::new(PingRequest {}))
+        .expect("send fresh ping after future-version rejection");
     let pong: Envelope<PongResponse> = fresh.recv().expect("recv fresh pong");
     assert!(pong.payload.guest_unix_ms > 0);
 
