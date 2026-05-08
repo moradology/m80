@@ -10,8 +10,9 @@
 use m80_jailer::{jail_root_path, BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::PathBuf;
+use std::process::Command;
 
 /// Documents materialize behaviour: CreateDir and Bind steps are executed via
 /// real syscalls, and `jailer-plan.json` + `jailer-state.json` are written to
@@ -111,6 +112,67 @@ fn jailer_placeholder_cleanup_on_partial_bind_failure() {
     assert!(
         !first_placeholder.exists(),
         "first bind placeholder must be removed after partial materialize failure"
+    );
+}
+
+#[test]
+#[ignore = "requires CAP_SYS_ADMIN / root and setpriv"]
+fn jailer_dir_perms_enforced_against_non_owner() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let mut run_dir_perms = std::fs::metadata(run_dir.path()).unwrap().permissions();
+    run_dir_perms.set_mode(0o755);
+    std::fs::set_permissions(run_dir.path(), run_dir_perms).unwrap();
+
+    let cfg = JailerConfig {
+        jailer_bin: PathBuf::from("/usr/bin/jailer"),
+        jailer_harden_bin: Some(PathBuf::from("/usr/bin/m80-jailer-harden")),
+        firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+        run_dir: run_dir.path().to_path_buf(),
+        uid: 3000,
+        gid: 3000,
+        bindings: Vec::new(),
+        sockets: Vec::new(),
+        resource_limits: m80_jailer::ResourceLimits::default(),
+        new_pid_ns: false,
+        daemonize: false,
+        new_cgroup_ns: false,
+        netns_path: None,
+        stdio_log: None,
+    };
+
+    let jail = Plan::compute(&cfg)
+        .unwrap()
+        .materialize()
+        .expect("materialize must succeed as root");
+    let meta = std::fs::metadata(&jail.jail_path).expect("jail root metadata");
+    assert_eq!(meta.mode() & 0o777, 0o700);
+    assert_eq!(meta.uid(), 3000);
+    assert_eq!(meta.gid(), 3000);
+
+    let output = Command::new("setpriv")
+        .args([
+            "--reuid",
+            "3001",
+            "--regid",
+            "3001",
+            "--clear-groups",
+            "--",
+            "/bin/ls",
+        ])
+        .arg(&jail.jail_path)
+        .output()
+        .expect("setpriv must run");
+    assert!(
+        !output.status.success(),
+        "non-owner unexpectedly listed jail root: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Permission denied"),
+        "non-owner failure should be EACCES: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
