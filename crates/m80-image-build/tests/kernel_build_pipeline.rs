@@ -117,14 +117,7 @@ fn stripped_config_keeps_overlay_xino_auto_built_in() {
 fn build_stripped_kernel_smoke() {
     use assert_cmd::Command;
 
-    // Workspace root is two levels up from CARGO_MANIFEST_DIR.
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let workspace_root = PathBuf::from(&manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let workspace_root = workspace_root();
 
     let mut cmd = Command::cargo_bin("m80-image-build").unwrap();
     cmd.args(["kernel", "build", "--workspace"])
@@ -155,4 +148,61 @@ fn build_stripped_kernel_smoke() {
         std::path::Path::new(path_str).exists(),
         "reported vmlinux path must exist on disk: {path_str}"
     );
+}
+
+#[test]
+#[ignore = "requires Docker daemon + network access; run manually with `-- --ignored`"]
+fn stripped_kernel_build_is_deterministic() {
+    let workspace_root = workspace_root();
+
+    let first = run_kernel_build(&workspace_root);
+    let first_sha = sha256_of_file(&first);
+    let second = run_kernel_build(&workspace_root);
+    let second_sha = sha256_of_file(&second);
+
+    assert_eq!(
+        first, second,
+        "same resolved kernel config must report the same vmlinux path"
+    );
+    assert_eq!(
+        first_sha, second_sha,
+        "same resolved kernel config must produce byte-identical vmlinux"
+    );
+}
+
+fn workspace_root() -> PathBuf {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    PathBuf::from(&manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+fn run_kernel_build(workspace_root: &std::path::Path) -> PathBuf {
+    use assert_cmd::Command;
+
+    let mut cmd = Command::cargo_bin("m80-image-build").unwrap();
+    cmd.args(["kernel", "build", "--workspace"])
+        .arg(workspace_root);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "kernel build should exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let path_str = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("vmlinux: "))
+        .expect("stdout must contain 'vmlinux: <path>' line");
+    let path = PathBuf::from(path_str);
+    assert!(
+        path.exists(),
+        "reported vmlinux path must exist on disk: {}",
+        path.display()
+    );
+    path
 }
