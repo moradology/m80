@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use anyhow::Context;
+use nix::mount::MsFlags;
+use nix::sched::CloneFlags;
 
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
@@ -162,7 +164,9 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         .prefix("m80-build-mnt-")
         .tempdir()
         .context("step 5: creating temp mount dir")?;
+    enter_private_mount_namespace().context("step 5: isolate loop mount namespace")?;
     loop_mount(&output_rootfs, mount_dir.path()).context("step 5: loop-mount output rootfs")?;
+    maybe_sleep_after_loop_mount(mount_dir.path()).context("test hook after loop mount")?;
 
     let install_result = install_into_rootfs(mount_dir.path(), &cfg.guestd.binary);
 
@@ -220,7 +224,11 @@ pub(crate) fn run_curl(url: &str, dest: &Path) -> anyhow::Result<()> {
         .status()
         .context("spawning curl")?;
     if !status.success() {
-        anyhow::bail!("curl failed (exit {}) downloading {}", format_exit(status), url);
+        anyhow::bail!(
+            "curl failed (exit {}) downloading {}",
+            format_exit(status),
+            url
+        );
     }
     Ok(())
 }
@@ -303,6 +311,46 @@ pub(crate) fn loop_umount(mount_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Enter a private mount namespace before creating loop mounts.
+///
+/// If the builder is SIGKILLed while the rootfs is mounted, the namespace dies
+/// with the process and the loop mount is not propagated into the host
+/// namespace.
+pub(crate) fn enter_private_mount_namespace() -> anyhow::Result<()> {
+    nix::sched::unshare(CloneFlags::CLONE_NEWNS).context("unshare(CLONE_NEWNS)")?;
+    nix::mount::mount::<str, str, str, str>(
+        None,
+        "/",
+        None,
+        MsFlags::MS_REC | MsFlags::MS_PRIVATE,
+        None,
+    )
+    .context("mount / MS_REC|MS_PRIVATE")
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn maybe_sleep_after_loop_mount(mount_dir: &Path) -> anyhow::Result<()> {
+    let Some(ready_path) = std::env::var_os("M80_TEST_SLEEP_AFTER_IMAGE_BUILD_LOOP_MOUNT") else {
+        return Ok(());
+    };
+
+    std::fs::write(&ready_path, format!("{}\n", mount_dir.display())).with_context(|| {
+        format!(
+            "writing test ready marker {}",
+            PathBuf::from(&ready_path).display()
+        )
+    })?;
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+}
+
+#[cfg(not(debug_assertions))]
+pub(crate) fn maybe_sleep_after_loop_mount(_mount_dir: &Path) -> anyhow::Result<()> {
+    Ok(())
+}
+
 /// Install the daemon binary and PID-1 mountpoint contract into the mounted rootfs.
 fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
     // Step 6: copy daemon binary.
@@ -373,7 +421,11 @@ pub(crate) fn build_stripped_kernel(workspace_root: &Path) -> anyhow::Result<Pat
         } else {
             String::from_utf8_lossy(&output.stderr).into_owned()
         };
-        anyhow::bail!("docker run failed (exit {}): {}", format_exit(output.status), detail);
+        anyhow::bail!(
+            "docker run failed (exit {}): {}",
+            format_exit(output.status),
+            detail
+        );
     }
 
     // Step 3: parse container stdout for the output path.

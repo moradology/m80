@@ -35,9 +35,11 @@ gives us:
 2. Download source rootfs squashfs from the same firecracker-ci bucket.
 3. Convert squashfs → ext4 (in a temp dir) via `unsquashfs` + `mkfs.ext4`.
 4. Resize the output ext4 to the configured size via `truncate`.
-5. Loop-mount the output rootfs RW. (The m80 process must hold
-   `CAP_SYS_ADMIN` or run as root; `m80-preflight` verifies this at
-   startup.)
+5. Enter a private mount namespace, then loop-mount the output rootfs RW.
+   (The m80 process must hold `CAP_SYS_ADMIN` or run as root;
+   `m80-preflight` verifies this at startup.) Mounts created by the builder
+   do not propagate into the host namespace, so `SIGKILL` during the install
+   phase does not leave a stale host-visible loop mount.
 6. Copy `m80-guestd` into `<rootfs>/m80-guestd`.
 7. Symlink `<rootfs>/init` → `/m80-guestd` and `mkdir` the PID-1 mountpoint
    dirs (`/workspace`, `/proc`, `/sys`, `/dev`, `/lower`, `/upper`,
@@ -59,7 +61,7 @@ scratch. Smaller, faster cold boot, no package manager.
 1. Download kernel (same as Ubuntu).
 2. Pre-allocate the output ext4 with `truncate`.
 3. `mkfs.ext4 -F` against the empty file.
-4. Loop-mount the output rootfs RW.
+4. Enter a private mount namespace, then loop-mount the output rootfs RW.
 5. Copy `/bin/busybox` from the host into `<rootfs>/bin/busybox` and
    symlink common applets (`sh`, `echo`, `cat`, `ls`, `mkdir`, `mount`,
    `umount`, `stat`, `ln`, `touch`, `true`, `false`) → `busybox`. **The host
@@ -151,6 +153,10 @@ Files:
   contexts. Exit code 1 plus stderr-rendered hint.
 - Any sha256 mismatch during verification is fatal; build outputs are
   marked `.tainted` and refused.
+- The manifest is emitted only after the mount/install phase has completed,
+  the rootfs has been unmounted, and all artifact hashes have been computed.
+  The loop-mount phase runs in a private mount namespace so a `SIGKILL` before
+  success leaves no partial manifest and no host-visible loop mount.
 
 ### Reproducibility
 
@@ -207,6 +213,7 @@ as `v1.15`.
 - `m80-image-manifest` — manifest schema + writer.
 - (no internal m80 privilege deps — the build process holds the required caps directly)
 - `serde`, `serde_json`, `sha2`, `hex`, `toml`.
+- `nix` — mount namespace isolation for the loop-mount phase.
 - `thiserror`, `anyhow`, `tracing`, `tempfile`.
 
 ## Tests
@@ -220,6 +227,10 @@ as `v1.15`.
 - `tests/kernel_build_pipeline.rs` — config-sha computation unit tests
   (unconditional). Docker build smoke test is `#[ignore]`d; run manually
   with `cargo test -- --ignored`.
+- `tests/write_atomicity_under_signal.rs` — ignored real-host test that
+  kills a Minimal build after the loop mount and verifies no manifest exists,
+  no mount leaked into the host namespace, and the output directory remains
+  cleanable.
 
 Real-build smoke tests (network + root + loop device) are run manually
 with `sudo m80-image-build run --config <path>`; CI doesn't have the

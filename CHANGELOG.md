@@ -5,6 +5,15 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — image-build atomicity coverage (m80-g0v8.4)
+
+- `m80-image-build` now enters a private mount namespace before loop-mounting
+  Ubuntu or Minimal output rootfs images, preventing host-visible loop mount
+  leaks if the builder is killed mid-install.
+- Added an ignored real-host SIGKILL regression that pauses a Minimal build
+  after the loop mount, kills the process, and verifies no partial manifest,
+  no leaked host mount, and a cleanable output directory.
+
 ### Added — launch failure cleanup coverage (m80-g0v8.1)
 
 - Added an ignored real-host cgroup-create failure test that injects a

@@ -21,8 +21,8 @@ use anyhow::Context;
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
 use crate::pipeline::{
-    loop_mount, loop_umount, manifest_path, run_curl, set_executable, truncate_file,
-    KERNEL_FILENAME,
+    enter_private_mount_namespace, loop_mount, loop_umount, manifest_path,
+    maybe_sleep_after_loop_mount, run_curl, set_executable, truncate_file, KERNEL_FILENAME,
 };
 
 const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
@@ -131,7 +131,9 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         .prefix("m80-build-mnt-")
         .tempdir()
         .context("step 4: creating temp mount dir")?;
+    enter_private_mount_namespace().context("step 4: isolate loop mount namespace")?;
     loop_mount(&output_rootfs, mount_dir.path()).context("step 4: loop-mount output rootfs")?;
+    maybe_sleep_after_loop_mount(mount_dir.path()).context("test hook after loop mount")?;
 
     let install_result = install_minimal(mount_dir.path(), &cfg.guestd.binary);
 
