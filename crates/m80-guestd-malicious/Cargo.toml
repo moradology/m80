@@ -1,0 +1,20 @@
+[package]
+name = "m80-guestd-malicious"
+description = "Test-only adversarial in-VM peer for real-KVM guest-to-host wire tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "m80-guestd-malicious"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+m80-proto.workspace = true
+vsock.workspace = true

@@ -5,6 +5,14 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — malicious guestd test harness (m80-g0v8.12.1)
+
+- Added `m80-guestd-malicious`, a separate test-only guest daemon artifact for
+  real-KVM adversarial guest-to-host wire tests. The initial `noop` mode binds
+  the normal guest vsock listener and sends the standard host readiness signal
+  so later L12 leaves can add hostile frame emitters without touching
+  production `m80-guestd`.
+
 ### Added — adversarial wire coverage map (m80-g0v8.12)
 
 - Documented the real-KVM malicious-guestd coverage matrix for guest-to-host
