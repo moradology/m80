@@ -37,6 +37,10 @@ Current modes:
 - `bogus_request_id` binds the standard guest vsock listener, sends the
   readiness byte, reads the host request, writes a valid `exec_exit` envelope
   for `malicious-stale-request-id`, and closes the connection.
+- `unsolicited_response` binds the standard guest vsock listener, sends the
+  readiness byte, writes a valid `exec_exit` envelope for
+  `unsolicited-response` immediately after accepting a channel, and closes the
+  connection without reading the host request.
 
 ## Non-goals
 

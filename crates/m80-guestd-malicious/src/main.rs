@@ -17,6 +17,7 @@ enum Attack {
     UnknownVariant,
     ResponseTypeMismatch,
     BogusRequestId,
+    UnsolicitedResponse,
 }
 
 impl Attack {
@@ -28,6 +29,7 @@ impl Attack {
             "unknown_variant" => Ok(Attack::UnknownVariant),
             "response_type_mismatch" => Ok(Attack::ResponseTypeMismatch),
             "bogus_request_id" => Ok(Attack::BogusRequestId),
+            "unsolicited_response" => Ok(Attack::UnsolicitedResponse),
             other => anyhow::bail!("unknown malicious guestd attack: {other}"),
         }
     }
@@ -40,6 +42,7 @@ impl Attack {
             Attack::UnknownVariant => "unknown_variant",
             Attack::ResponseTypeMismatch => "response_type_mismatch",
             Attack::BogusRequestId => "bogus_request_id",
+            Attack::UnsolicitedResponse => "unsolicited_response",
         }
     }
 }
@@ -99,6 +102,7 @@ fn run(args: Args) -> anyhow::Result<()> {
         println!("unknown_variant");
         println!("response_type_mismatch");
         println!("bogus_request_id");
+        println!("unsolicited_response");
         return Ok(());
     }
 
@@ -114,7 +118,8 @@ fn run(args: Args) -> anyhow::Result<()> {
         | Attack::TruncatedFrame
         | Attack::UnknownVariant
         | Attack::ResponseTypeMismatch
-        | Attack::BogusRequestId => run_peer(attack),
+        | Attack::BogusRequestId
+        | Attack::UnsolicitedResponse => run_peer(attack),
     }
 }
 
@@ -191,6 +196,10 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
             }
             Attack::BogusRequestId => {
                 read_request_then_write_bogus_request_id(&mut stream)?;
+                drop(stream);
+            }
+            Attack::UnsolicitedResponse => {
+                write_unsolicited_response(&mut stream)?;
                 drop(stream);
             }
         }
@@ -275,10 +284,22 @@ where
 }
 
 fn write_bogus_request_id(stream: &mut impl Write) -> anyhow::Result<()> {
+    write_exec_exit_for_request_id(stream, "malicious-stale-request-id", "bogus-request-id")
+}
+
+fn write_unsolicited_response(stream: &mut impl Write) -> anyhow::Result<()> {
+    write_exec_exit_for_request_id(stream, "unsolicited-response", "unsolicited-response")
+}
+
+fn write_exec_exit_for_request_id(
+    stream: &mut impl Write,
+    request_id: &str,
+    context: &str,
+) -> anyhow::Result<()> {
     let envelope = RawEnvelope {
         version: m80_proto::PROTOCOL_VERSION,
         kind: m80_proto::PAYLOAD_KIND_EXEC_EXIT.to_owned(),
-        request_id: Some("malicious-stale-request-id".to_owned()),
+        request_id: Some(request_id.to_owned()),
         max_duration_ms: None,
         payload: m80_proto::ExecExit {
             status: m80_proto::ExecStatus::Completed,
@@ -295,8 +316,11 @@ fn write_bogus_request_id(stream: &mut impl Write) -> anyhow::Result<()> {
         }
         .into_wire(),
     };
-    m80_proto::write_raw_frame(stream, envelope).context("write bogus-request-id frame")?;
-    stream.flush().context("flush bogus-request-id frame")
+    m80_proto::write_raw_frame(stream, envelope)
+        .with_context(|| format!("write {context} frame"))?;
+    stream
+        .flush()
+        .with_context(|| format!("flush {context} frame"))
 }
 
 fn write_len_field(out: &mut Vec<u8>, field: u64, bytes: &[u8]) -> anyhow::Result<()> {
@@ -432,6 +456,17 @@ mod tests {
             raw.request_id.as_deref(),
             Some("malicious-stale-request-id")
         );
+        raw.decode::<m80_proto::ExecExit>().unwrap();
+    }
+
+    #[test]
+    fn unsolicited_response_writes_exit_without_reading_a_request() {
+        let mut frame = Vec::new();
+        write_unsolicited_response(&mut frame).unwrap();
+
+        let raw = m80_proto::read_raw_frame(&mut std::io::Cursor::new(frame)).unwrap();
+        assert_eq!(raw.kind, m80_proto::PAYLOAD_KIND_EXEC_EXIT);
+        assert_eq!(raw.request_id.as_deref(), Some("unsolicited-response"));
         raw.decode::<m80_proto::ExecExit>().unwrap();
     }
 }

@@ -18,6 +18,8 @@ mod response_type_mismatch;
 mod truncated_frame;
 #[path = "malicious/unknown_variant.rs"]
 mod unknown_variant;
+#[path = "malicious/unsolicited_response.rs"]
+mod unsolicited_response;
 
 fn launch_malicious(
     attack: &str,

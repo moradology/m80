@@ -51,8 +51,13 @@ have already accepted the frame.
 envelope for `malicious-stale-request-id`. This exercises host-side
 request-correlation checks on a frame that is otherwise well formed.
 
-Later L12 leaves add frame-producing modes such as unsolicited response,
-unsolicited flood, and slowloris.
+`unsolicited_response` writes a valid `exec_exit` envelope for
+`unsolicited-response` immediately after accepting the host channel, without
+reading the host request. This records the current reject-and-teardown policy
+for unsolicited guest output.
+
+Later L12 leaves add frame-producing modes such as unsolicited flood and
+slowloris.
 
 ## Evidence
 

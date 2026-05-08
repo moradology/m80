@@ -28,6 +28,9 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added `bogus_request_id`, an adversarial mode that returns a valid
   `exec_exit` frame for a fabricated request id and verifies the host reports
   both expected and observed ids.
+- Added `unsolicited_response`, an adversarial mode that writes a valid
+  `exec_exit` frame without reading the host request and pins the current
+  reject-and-teardown policy as a request-id mismatch.
 
 ### Added — adversarial wire coverage map (m80-g0v8.12)
 
