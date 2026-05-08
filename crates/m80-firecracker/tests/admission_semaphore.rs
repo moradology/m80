@@ -2,10 +2,11 @@
 
 mod common;
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::Barrier;
 
-use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, SandboxConfig};
+use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, Sandbox, SandboxConfig};
 
 fn make_backend(max: u32) -> Arc<Backend> {
     make_backend_at(max, std::path::Path::new("/tmp/m80-test"))
@@ -176,9 +177,36 @@ fn failed_launch_returns_admission_slot() {
     );
 }
 
+#[test]
+fn launch_panic_releases_permit() {
+    let backend = make_backend(1);
+    let sandbox = backend
+        .admit(SandboxConfig {
+            vm_id: Some("panic-release".to_string()),
+            ..common::sandbox_config()
+        })
+        .expect("first admit must acquire the only slot");
+
+    let panic_result = catch_unwind(AssertUnwindSafe(|| injected_launch_panic(sandbox)));
+
+    assert!(panic_result.is_err(), "panic injection must unwind");
+    let retry = backend.admit(SandboxConfig {
+        vm_id: Some("after-panic".to_string()),
+        ..common::sandbox_config()
+    });
+    assert!(
+        retry.is_ok(),
+        "panic while launch owns the sandbox must release the admission permit"
+    );
+}
+
 #[derive(Debug)]
 enum AdmitOutcome {
     Accepted,
     Refused(u32),
     Unexpected,
+}
+
+fn injected_launch_panic(_sandbox: Sandbox) {
+    panic!("injected launch panic");
 }
