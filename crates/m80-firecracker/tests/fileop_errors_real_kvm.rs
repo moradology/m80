@@ -150,6 +150,38 @@ fn read_file_nonexistent_path_returns_not_found() {
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
+fn read_file_kernel_protected_returns_io() {
+    let (mut running, run_dir, _firecracker_bin) = launch_vm();
+    let _dump_guard = RunDirDumpGuard::new(run_dir);
+
+    let err = running
+        .read_file("/proc/1/mem", Some(16))
+        .expect_err("kernel-protected guest file must fail");
+
+    assert!(matches!(err, FcError::FileOp(FileError::Io)));
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn write_file_readonly_returns_permission_denied() {
+    let (mut running, run_dir, _firecracker_bin) = launch_vm();
+    let _dump_guard = RunDirDumpGuard::new(run_dir);
+
+    let err = running
+        .write_file("/sys/kernel/notes", b"will-not-write".to_vec(), Some(0o600))
+        .expect_err("write to read-only kernel notes must fail");
+
+    assert!(matches!(err, FcError::FileOp(FileError::PermissionDenied)));
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
 fn write_file_missing_parent_returns_not_found() {
     let (mut running, run_dir, _firecracker_bin) = launch_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
