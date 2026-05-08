@@ -803,6 +803,7 @@ name = "m80-preflight"
 version = "0.0.0"
 dependencies = [
  "caps",
+ "m80-cgroup",
  "m80-image-manifest",
  "nix 0.29.0",
  "serde",

@@ -28,6 +28,9 @@ fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
     m80_preflight::run_with_configs(
         m80_preflight::BinaryDiscoveryConfig::from_env(),
         artifact_config,
+        m80_preflight::HostFeaturePreflightConfig {
+            cgroup_mode: m80_preflight::CgroupPreflightMode::Disabled,
+        },
     )
     .expect("preflight for explicit image-kind artifacts")
 }

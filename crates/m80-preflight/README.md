@@ -1,7 +1,8 @@
 # `m80-preflight`
 
-Pre-launch host validation: KVM, CPU virtualization flags, kernel modules, binaries, manifest,
-storage helpers, run-root capacity. Emits a tabular report and a
+Pre-launch host validation: KVM, CPU virtualization flags, kernel modules,
+cgroup mode, binaries, manifest, storage helpers, run-root capacity. Emits a
+tabular report and a
 machine-readable `Discovery` value.
 
 ## Reason for being
@@ -32,28 +33,31 @@ which is the right place for a security review to start.
      module or `/dev/vhost-vsock`, and `nf_conntrack` available for outbound
      NAT. v0.1 does not attempt to load missing modules; the operator must
      `modprobe` them before running preflight.
-  5. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
+  5. **Cgroup mode** — when effective `cgroup_mode` is `unified-v2`,
+     `m80-cgroup::Subtree::probe()` must confirm a unified cgroup v2 hierarchy
+     before launch work begins. `cgroup_mode = "disabled"` skips this check.
+  6. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
      `CAP_FOWNER`, `CAP_KILL`). Probed via the `caps` crate against the
      process's effective set. Returns `PrivilegeStatus::Root` or
      `PrivilegeStatus::CapabilityBearing`.
-  6. **Firecracker binary** — discovered via env override or default,
+  7. **Firecracker binary** — discovered via env override or default,
      `--version` matched against the configured pin.
-  7. **Jailer binary** — same protocol.
-  8. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
+  8. **Jailer binary** — same protocol.
+  9. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
-  9. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
+  10. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  10. **Rootfs + manifest** — manifest schema validates,
+  11. **Rootfs + manifest** — manifest schema validates,
      `m80-image-manifest::verify` recomputes every sha256. This is the
      boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
      not rehash these artifacts again for every VM.
-  11. **Run-root** — absolute, must already exist, >= 100 MiB free
+  12. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  12. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  13. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - Env keys are exact and case-sensitive. Preflight recognizes
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
@@ -72,7 +76,7 @@ which is the right place for a security review to start.
 ## Public surface
 
 - `run() -> Result<Discovery, PreflightError>`.
-- `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
+- `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig, host_feature_config: HostFeaturePreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
 - `BinaryDiscoveryConfig { firecracker_bin, jailer_bin, jailer_harden_bin,
   expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
   the standalone binary-resolution step.
@@ -87,6 +91,9 @@ which is the right place for a security review to start.
 - `verify_artifacts(&ArtifactPreflightConfig) -> Result<ArtifactPreflight,
   PreflightError>`.
 - `ArtifactPreflight { kernel, rootfs, manifest, run_root, storage_helpers }`.
+- `HostFeaturePreflightConfig { cgroup_mode }` and
+  `CgroupPreflightMode { UnifiedV2, Disabled }` for checks whose required host
+  features depend on effective config.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
@@ -100,7 +107,8 @@ which is the right place for a security review to start.
   `CAP_FOWNER`, `CAP_KILL`).
 - `PreflightError`: `UnsupportedHostPlatform { actual }`,
   `KvmUnavailable { path }`, `KvmNotWritable { path }`,
-  `KvmCpuExtensionMissing`, `VsockUnavailable`, `TunUnavailable`,
+  `KvmCpuExtensionMissing`, `InvalidCgroupMode { actual }`,
+  `CgroupV2Unavailable`, `VsockUnavailable`, `TunUnavailable`,
   `NfConntrackUnavailable`,
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
@@ -124,6 +132,7 @@ which is the right place for a security review to start.
 
 ## Dependencies
 
+- `m80-cgroup` — for cgroup v2 mode probing.
 - `m80-image-manifest` — for manifest validation.
 - `caps` — for reading the process's effective Linux capability set.
 - `serde`, `thiserror`, `tracing`, `nix`.

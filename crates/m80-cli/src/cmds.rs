@@ -7,7 +7,7 @@ use std::sync::Arc;
 use m80_firecracker::{
     Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig, StoppedSandbox,
 };
-use m80_preflight::{Discovery, PreflightError};
+use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
 
 use crate::args::{EgressMode, QuickstartArgs, WarmAction, WritebackMode};
 use crate::config;
@@ -55,6 +55,7 @@ fn backend_from_effective(
     let discovery = m80_preflight::run_with_configs(
         m80_preflight::BinaryDiscoveryConfig::from_env(),
         artifact_config,
+        host_feature_config_from_effective(&effective)?,
     )?;
     let backend_config = config::backend_config(discovery, &effective)
         .map_err(|e| FcError::Config(ConfigError::Other(format!("{e:#}"))))?;
@@ -464,14 +465,13 @@ pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
 
 fn preflight_with_effective_config(
 ) -> Result<m80_preflight::Discovery, m80_preflight::PreflightError> {
-    let run_root = config::load_effective(&std::collections::HashMap::new())
-        .ok()
-        .and_then(|eff| {
-            eff.fields
-                .into_iter()
-                .find(|f| f.name == "run_root")
-                .map(|f| std::path::PathBuf::from(f.value))
-        });
+    let effective = config::load_effective(&std::collections::HashMap::new()).ok();
+    let run_root = effective.as_ref().and_then(|eff| {
+        eff.fields
+            .iter()
+            .find(|f| f.name == "run_root")
+            .map(|f| std::path::PathBuf::from(&f.value))
+    });
     let artifact_config = match run_root {
         Some(run_root) => m80_preflight::ArtifactPreflightConfig {
             run_root,
@@ -482,7 +482,36 @@ fn preflight_with_effective_config(
     m80_preflight::run_with_configs(
         m80_preflight::BinaryDiscoveryConfig::from_env(),
         artifact_config,
+        effective
+            .as_ref()
+            .map(host_feature_config_from_effective)
+            .transpose()?
+            .unwrap_or(HostFeaturePreflightConfig {
+                cgroup_mode: CgroupPreflightMode::UnifiedV2,
+            }),
     )
+}
+
+fn host_feature_config_from_effective(
+    effective: &EffectiveConfig,
+) -> Result<HostFeaturePreflightConfig, PreflightError> {
+    let cgroup_mode = effective
+        .fields
+        .iter()
+        .find(|f| f.name == "cgroup_mode")
+        .map(|f| f.value.as_str())
+        .unwrap_or("unified-v2");
+    Ok(HostFeaturePreflightConfig {
+        cgroup_mode: match cgroup_mode {
+            "disabled" => CgroupPreflightMode::Disabled,
+            "unified-v2" => CgroupPreflightMode::UnifiedV2,
+            other => {
+                return Err(PreflightError::InvalidCgroupMode {
+                    actual: other.to_owned(),
+                });
+            }
+        },
+    })
 }
 
 fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool) -> i32 {

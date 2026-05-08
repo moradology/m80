@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+m80-cgroup.workspace = true
 m80-image-manifest.workspace = true
 serde.workspace = true
 thiserror.workspace = true

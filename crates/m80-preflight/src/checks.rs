@@ -21,6 +21,49 @@ const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
 
 const REQUIRED_KERNEL_MODULES: &[&str] = &["tap", "bridge"];
 
+/// Cgroup mode preflight should validate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CgroupPreflightMode {
+    /// Caller will not use m80's cgroup v2 subtree support.
+    Disabled,
+    /// Caller will use m80's cgroup v2 subtree support.
+    UnifiedV2,
+}
+
+/// Host feature knobs whose required checks depend on effective config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostFeaturePreflightConfig {
+    /// Cgroup mode to validate.
+    pub cgroup_mode: CgroupPreflightMode,
+}
+
+impl HostFeaturePreflightConfig {
+    /// Build from exact m80 env vars. Absent `M80_CGROUP_MODE` defaults to
+    /// `unified-v2`, matching `m80-firecracker` config defaults.
+    pub fn from_env() -> Result<Self, PreflightError> {
+        let cgroup_mode = match std::env::var("M80_CGROUP_MODE") {
+            Ok(value) => parse_cgroup_mode(&value)?,
+            Err(std::env::VarError::NotPresent) => CgroupPreflightMode::UnifiedV2,
+            Err(std::env::VarError::NotUnicode(value)) => {
+                return Err(PreflightError::InvalidCgroupMode {
+                    actual: value.to_string_lossy().into_owned(),
+                });
+            }
+        };
+        Ok(Self { cgroup_mode })
+    }
+}
+
+fn parse_cgroup_mode(value: &str) -> Result<CgroupPreflightMode, PreflightError> {
+    match value {
+        "disabled" => Ok(CgroupPreflightMode::Disabled),
+        "unified-v2" => Ok(CgroupPreflightMode::UnifiedV2),
+        other => Err(PreflightError::InvalidCgroupMode {
+            actual: other.to_owned(),
+        }),
+    }
+}
+
 /// Run all checks in order, deriving binary and artifact config from env.
 ///
 /// This is the zero-argument convenience entry point. Callers that have
@@ -30,6 +73,7 @@ pub fn run() -> Result<Discovery, PreflightError> {
     run_with_configs(
         BinaryDiscoveryConfig::from_env(),
         ArtifactPreflightConfig::from_env(),
+        HostFeaturePreflightConfig::from_env()?,
     )
 }
 
@@ -44,6 +88,7 @@ pub fn run() -> Result<Discovery, PreflightError> {
 pub fn run_with_configs(
     binary_config: BinaryDiscoveryConfig,
     artifact_config: ArtifactPreflightConfig,
+    host_feature_config: HostFeaturePreflightConfig,
 ) -> Result<Discovery, PreflightError> {
     let mut report: Vec<CheckRow> = Vec::new();
 
@@ -59,10 +104,13 @@ pub fn run_with_configs(
     // 4. Kernel modules
     check_kernel_modules(&mut report)?;
 
-    // 5. Privilege
+    // 5. Cgroup host mode
+    check_cgroup_mode(host_feature_config.cgroup_mode, &mut report)?;
+
+    // 6. Privilege
     let privilege = check_privilege(&mut report)?;
 
-    // 6-8. Firecracker and jailer binaries
+    // 7-9. Firecracker and jailer binaries
     let binaries = discover_binaries(&binary_config)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
@@ -85,7 +133,7 @@ pub fn run_with_configs(
         detail: binaries.jailer_harden_bin.display().to_string(),
     });
 
-    // 9-12. Kernel/rootfs artifacts, run-root, and storage helpers
+    // 10-13. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config)?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
@@ -279,6 +327,54 @@ fn classify_required_modules(loaded: &[&str]) -> Result<(), PreflightError> {
     Ok(())
 }
 
+fn check_cgroup_mode(
+    mode: CgroupPreflightMode,
+    report: &mut Vec<CheckRow>,
+) -> Result<(), PreflightError> {
+    check_cgroup_mode_with_probe(mode, report, m80_cgroup::Subtree::probe)
+}
+
+fn check_cgroup_mode_with_probe<F>(
+    mode: CgroupPreflightMode,
+    report: &mut Vec<CheckRow>,
+    probe: F,
+) -> Result<(), PreflightError>
+where
+    F: FnOnce() -> Result<(), m80_cgroup::CgroupError>,
+{
+    if mode == CgroupPreflightMode::UnifiedV2 {
+        classify_cgroup_probe(mode, probe())?;
+    }
+    report.push(CheckRow {
+        label: "Cgroup mode".to_string(),
+        passed: true,
+        detail: match mode {
+            CgroupPreflightMode::Disabled => "disabled".to_string(),
+            CgroupPreflightMode::UnifiedV2 => "unified-v2 available".to_string(),
+        },
+    });
+    Ok(())
+}
+
+fn classify_cgroup_probe(
+    mode: CgroupPreflightMode,
+    probe: Result<(), m80_cgroup::CgroupError>,
+) -> Result<(), PreflightError> {
+    if mode == CgroupPreflightMode::Disabled {
+        return Ok(());
+    }
+
+    match probe {
+        Ok(()) => Ok(()),
+        Err(m80_cgroup::CgroupError::UnsupportedHostMode) => {
+            Err(PreflightError::CgroupV2Unavailable)
+        }
+        Err(err) => Err(PreflightError::Io(std::io::Error::other(format!(
+            "cgroup v2 probe: {err}"
+        )))),
+    }
+}
+
 fn check_privilege(report: &mut Vec<CheckRow>) -> Result<PrivilegeStatus, PreflightError> {
     let euid = geteuid().as_raw();
     let effective = caps::read(None, CapSet::Effective).map_err(PreflightError::CapabilityRead)?;
@@ -305,6 +401,75 @@ fn check_privilege(report: &mut Vec<CheckRow>) -> Result<PrivilegeStatus, Prefli
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cgroup_mode_parser_accepts_disabled() {
+        let mode = parse_cgroup_mode("disabled").unwrap();
+
+        assert_eq!(mode, CgroupPreflightMode::Disabled);
+    }
+
+    #[test]
+    fn cgroup_mode_parser_accepts_unified_v2() {
+        let mode = parse_cgroup_mode("unified-v2").unwrap();
+
+        assert_eq!(mode, CgroupPreflightMode::UnifiedV2);
+    }
+
+    #[test]
+    fn cgroup_mode_parser_rejects_unknown_value() {
+        let err = parse_cgroup_mode("legacy").unwrap_err();
+
+        match err {
+            PreflightError::InvalidCgroupMode { actual } => assert_eq!(actual, "legacy"),
+            other => panic!("expected InvalidCgroupMode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn preflight_cgroup_v2_unavailability_typed() {
+        let err = classify_cgroup_probe(
+            CgroupPreflightMode::UnifiedV2,
+            Err(m80_cgroup::CgroupError::UnsupportedHostMode),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, PreflightError::CgroupV2Unavailable));
+    }
+
+    #[test]
+    fn disabled_cgroup_mode_skips_cgroup_v2_probe() {
+        classify_cgroup_probe(
+            CgroupPreflightMode::Disabled,
+            Err(m80_cgroup::CgroupError::UnsupportedHostMode),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn disabled_cgroup_mode_does_not_call_live_probe() {
+        let mut report = Vec::new();
+
+        check_cgroup_mode_with_probe(CgroupPreflightMode::Disabled, &mut report, || {
+            panic!("disabled cgroup mode must not probe cgroup v2")
+        })
+        .unwrap();
+
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].label, "Cgroup mode");
+        assert_eq!(report[0].detail, "disabled");
+    }
+
+    #[test]
+    fn cgroup_v2_probe_errors_remain_typed_io() {
+        let err = classify_cgroup_probe(
+            CgroupPreflightMode::UnifiedV2,
+            Err(m80_cgroup::CgroupError::ControllerNotEnabled("cpu")),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, PreflightError::Io(_)));
+    }
 
     #[test]
     fn preflight_missing_vsock_module_typed() {

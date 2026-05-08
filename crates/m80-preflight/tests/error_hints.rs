@@ -50,6 +50,20 @@ fn kvm_cpu_extension_missing_has_hint() {
 }
 
 #[test]
+fn invalid_cgroup_mode_has_hint() {
+    let err = PreflightError::InvalidCgroupMode {
+        actual: "legacy".into(),
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("legacy"));
+}
+
+#[test]
+fn cgroup_v2_unavailable_has_hint() {
+    assert_hint(&PreflightError::CgroupV2Unavailable);
+}
+
+#[test]
 fn vsock_unavailable_has_hint() {
     assert_hint(&PreflightError::VsockUnavailable);
 }

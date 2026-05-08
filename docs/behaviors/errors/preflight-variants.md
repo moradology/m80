@@ -24,6 +24,20 @@ predecessor source: `crates/sandbox/agent-sandbox-firecracker/src/errors.rs:206-
 Test: `crates/m80-preflight/tests/error_hints.rs::kvm_unavailable_has_hint` and
 `crates/m80-preflight/tests/error_hints.rs::kvm_not_writable_has_hint`.
 
+## cgroup-v2-unavailable
+
+When effective config requests `cgroup_mode = "unified-v2"`, `m80-preflight`
+rejects a host without a unified cgroup v2 hierarchy with
+`PreflightError::CgroupV2Unavailable`. This happens before Firecracker launch
+phases, not after partial run-root/jailer setup. Invalid `M80_CGROUP_MODE`
+values fail with `PreflightError::InvalidCgroupMode { actual }`.
+
+Test:
+`crates/m80-preflight/src/checks.rs::tests::preflight_cgroup_v2_unavailability_typed`,
+`crates/m80-preflight/src/checks.rs::tests::disabled_cgroup_mode_skips_cgroup_v2_probe`,
+`crates/m80-preflight/tests/error_hints.rs::cgroup_v2_unavailable_has_hint`, and
+`crates/m80-preflight/tests/error_hints.rs::invalid_cgroup_mode_has_hint`.
+
 ## vsock-unavailable
 
 `m80-preflight` rejects a host without vhost-vsock support with

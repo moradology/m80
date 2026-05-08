@@ -117,7 +117,7 @@ pub use binary::{
     DEFAULT_JAILER_BIN, DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
     ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN,
 };
-pub use checks::{run, run_with_configs};
+pub use checks::{run, run_with_configs, CgroupPreflightMode, HostFeaturePreflightConfig};
 
 /// Errors surfaced by preflight. `Display` is lowercase, no trailing period,
 /// no embedded hint text. Actionable hints live in [`PreflightError::hint`].
@@ -147,6 +147,17 @@ pub enum PreflightError {
     /// `/proc/cpuinfo` does not advertise hardware virtualization support.
     #[error("kvm cpu extension missing: expected vmx or svm in /proc/cpuinfo")]
     KvmCpuExtensionMissing,
+
+    /// `M80_CGROUP_MODE` carried a value preflight does not understand.
+    #[error("invalid cgroup mode: {actual:?}")]
+    InvalidCgroupMode {
+        /// Observed value.
+        actual: String,
+    },
+
+    /// Host is not in unified cgroup v2 mode but cgroup v2 was requested.
+    #[error("cgroup v2 unavailable")]
+    CgroupV2Unavailable,
 
     /// Host vhost-vsock support is absent. Firecracker needs this for the
     /// vsock device that carries m80's host↔guest control protocol.
@@ -265,6 +276,12 @@ impl PreflightError {
             }
             Self::KvmCpuExtensionMissing => {
                 "enable hardware virtualization in firmware/BIOS and ensure the host CPU exposes vmx or svm"
+            }
+            Self::InvalidCgroupMode { .. } => {
+                "set M80_CGROUP_MODE to either `unified-v2` or `disabled`"
+            }
+            Self::CgroupV2Unavailable => {
+                "boot the host with a unified cgroup v2 hierarchy or set cgroup_mode = \"disabled\" only for development"
             }
             Self::VsockUnavailable => {
                 "load vhost_vsock with `sudo modprobe vhost_vsock` or ensure /dev/vhost-vsock exists"

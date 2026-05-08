@@ -38,6 +38,19 @@ which covers kernels that expose the module state outside the loaded-module
 text file. If neither signal is present, preflight returns
 `PreflightError::NfConntrackUnavailable`.
 
+## Cgroup Mode
+
+When effective config requests `cgroup_mode = "unified-v2"`, preflight calls
+`m80-cgroup::Subtree::probe()` before binary discovery or artifact validation.
+If the host is not in unified cgroup v2 mode, preflight returns
+`PreflightError::CgroupV2Unavailable`. When effective config requests
+`cgroup_mode = "disabled"`, preflight skips the cgroup v2 probe.
+
+Standalone `m80_preflight::run()` derives this setting from `M80_CGROUP_MODE`
+and defaults to `unified-v2`, matching `m80-firecracker` config defaults.
+Callers that already loaded effective config pass
+`HostFeaturePreflightConfig` to `run_with_configs`.
+
 ## Privilege Gate
 
 m80 accepts exactly two startup privilege shapes:
@@ -62,3 +75,4 @@ capabilities through the container runtime.
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_vsock_module_typed`
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_tun_module_typed`
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_nf_conntrack_typed`
+- `crates/m80-preflight/src/checks.rs::tests::preflight_cgroup_v2_unavailability_typed`

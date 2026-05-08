@@ -1,13 +1,13 @@
 use super::{
-    build_process_env, format_config_json, format_config_table, network_policy_for_egress,
-    parse_env, render_preflight_result, run_request, run_stream, sandbox_config_for_run,
-    should_writeback,
+    build_process_env, format_config_json, format_config_table, host_feature_config_from_effective,
+    network_policy_for_egress, parse_env, render_preflight_result, run_request, run_stream,
+    sandbox_config_for_run, should_writeback,
 };
 use crate::args::{EgressMode, WritebackMode};
 use crate::errors::EXIT_PREFLIGHT;
 use crate::json;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, ExecStatus, NetworkPolicy};
-use m80_preflight::{CheckRow, Discovery, PreflightError};
+use m80_preflight::{CgroupPreflightMode, CheckRow, Discovery, PreflightError};
 
 fn fake_discovery() -> Discovery {
     let mut d = m80_test_helpers::manifest::fake_discovery_at(std::path::Path::new("/tmp/m80-run"));
@@ -28,6 +28,39 @@ fn preflight_error_uses_shared_error_mapping() {
         false,
     );
     assert_eq!(code, EXIT_PREFLIGHT);
+}
+
+#[test]
+fn effective_cgroup_mode_maps_to_preflight_config() {
+    let config = EffectiveConfig {
+        fields: vec![EffectiveField {
+            name: "cgroup_mode".to_owned(),
+            value: "disabled".to_owned(),
+            source: ConfigSource::Env,
+        }],
+    };
+
+    let host_features = host_feature_config_from_effective(&config).unwrap();
+
+    assert_eq!(host_features.cgroup_mode, CgroupPreflightMode::Disabled);
+}
+
+#[test]
+fn invalid_effective_cgroup_mode_stays_typed_preflight_error() {
+    let config = EffectiveConfig {
+        fields: vec![EffectiveField {
+            name: "cgroup_mode".to_owned(),
+            value: "legacy".to_owned(),
+            source: ConfigSource::Env,
+        }],
+    };
+
+    let err = host_feature_config_from_effective(&config).unwrap_err();
+
+    match err {
+        PreflightError::InvalidCgroupMode { actual } => assert_eq!(actual, "legacy"),
+        other => panic!("expected InvalidCgroupMode, got {other:?}"),
+    }
 }
 
 #[test]
