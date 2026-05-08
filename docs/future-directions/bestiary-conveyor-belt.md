@@ -60,10 +60,31 @@ are solved by having enough capacity, which is straightforward to verify.
 2. **Tenant data enters only at allocation time.** When a request arrives for
    tenant X, the pool manager grabs a generic VM and attaches tenant X's block
    device via Firecracker's `PATCH /drive` API.
-3. **Tenant identity is verified cryptographically.** After mounting the block
-   device, guestd reads a tenant identity file (a UUID or signed token stored
-   on the tenant's disk image) and sends it to the host over the vsock channel.
-   The host compares it against the expected tenant. Mismatch = immediate kill.
+3. **Tenant identity is verified.** After mounting the block device, guestd
+   reads a caller-specified path on the tenant disk and sends the bytes to
+   the host over the vsock channel (m80 carries opaque bytes; the path is
+   configurable per-attach via the `identity_path` field on the hot-plug
+   request). The host compares the reported bytes against the expected tenant.
+   Mismatch = immediate kill.
+
+   **What m80 owns vs. what the Bestiary owns.** m80 provides the transport
+   and the byte-compare; **the threat model and any cryptographic structure of
+   the identity bytes are the Bestiary's responsibility**, not m80's. Choices
+   the Bestiary must make:
+   - **Threat model.** Is verification defending against (a) Bestiary's own
+     bookkeeping bugs, (b) disk-swap during attach, or (c) guest VM tampering
+     with the workspace? (a) and (b) need only opaque-bytes comparison; (c)
+     requires crypto-signed tokens with a key the workload doesn't have.
+   - **Token shape.** UUID, signed JWT, sealed nonce, filesystem-UUID
+     reflection, or virtio-blk serial. m80 doesn't care; it carries bytes.
+   - **Where the identity lives.** A file at `/workspace/.tenant-identity`
+     is the convention used in the m80 tests, but the path is just bytes
+     coming back over the wire — `/tenant/.tenant-identity`,
+     `/.identity`, or any other path works equally.
+   - **Pre-attach vs. post-attach population.** The Bestiary can write the
+     identity to the disk file pre-attach (host-side, before PATCH /drive)
+     or rely on the disk image already containing it. Either way, m80 just
+     reads from `identity_path` after the guest mounts the disk.
 4. **The VM serves exactly one workload for exactly one tenant.** No second
    mount, no second tenant, no cleanup step.
 5. **The VM is destroyed after the workload completes.** Kill the Firecracker
@@ -231,8 +252,10 @@ t=7ms     Guestd mounts block device at /workspace
           → mount(idempotent, 100 ms timeout)
           ~10-15 ms
 
-t=22ms    Guestd reads /workspace/.tenant-identity
-          → UUID or signed token
+t=22ms    Guestd reads the caller-configured `identity_path` on the
+          mounted tenant disk (e.g., /workspace/.tenant-identity)
+          → opaque bytes (UUID, signed token, or whatever the
+            Bestiary chose — m80 doesn't interpret)
           → sends over vsock to host
           ~3 ms
 
