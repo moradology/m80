@@ -6,10 +6,18 @@
 //! sudo cargo test -p m80-jailer-harden --test integration_root -- --ignored
 //! ```
 
+use std::io::Write;
 use std::os::fd::AsRawFd;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
+use std::{fs, io, thread};
 
 use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
+
+const M80_CGROUP_PARENT: &str = "/sys/fs/cgroup/m80-firecracker";
 
 #[test]
 #[ignore = "requires root or CAP_SETGID/CAP_SETPCAP"]
@@ -70,4 +78,134 @@ grep -E '^(Groups|NoNewPrivs|CapInh|CapAmb|SigBlk):' /proc/self/status
         .find(|line| line.starts_with("Groups:"))
         .unwrap_or_else(|| panic!("missing Groups line:\n{stdout}"));
     assert_eq!(groups.trim(), "Groups:", "{stdout}");
+}
+
+#[test]
+#[ignore = "requires root, CAP_SYS_ADMIN, and a writable cgroup v2 hierarchy"]
+fn wrapper_new_cgroup_ns_roots_proc_self_cgroup() {
+    let wrapper = env!("CARGO_BIN_EXE_m80-jailer-harden");
+    let vm_id = format!("m80-cgroup-ns-{}", std::process::id());
+    let leaf = Path::new(M80_CGROUP_PARENT).join(vm_id);
+    let guard = RealCgroupLeafGuard::create(leaf.clone());
+
+    let mut child = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(
+            "read _; exec \"$1\" --jailer-bin /bin/sh --uid 3000 --gid 3000 \
+             --new-cgroup-ns -- -c 'cat /proc/self/cgroup'",
+        )
+        .arg("m80-cgroup-ns-test")
+        .arg(wrapper)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn waiting wrapper process");
+
+    write_cgroup_file(&leaf.join("cgroup.procs"), &format!("{}\n", child.id()));
+    child
+        .stdin
+        .as_mut()
+        .expect("child stdin")
+        .write_all(b"go\n")
+        .expect("start wrapper process");
+
+    let output = wait_for_child_output(child, Duration::from_secs(10));
+    assert!(
+        output.status.success(),
+        "status={} stdout=\n{}\nstderr=\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        stdout.trim(),
+        "0::/",
+        "new cgroup namespace must hide host leaf {}; stdout={stdout:?}",
+        leaf.display()
+    );
+
+    drop(guard);
+}
+
+struct RealCgroupLeafGuard {
+    leaf: PathBuf,
+}
+
+impl RealCgroupLeafGuard {
+    fn create(leaf: PathBuf) -> Self {
+        if leaf.exists() {
+            kill_pids_in_cgroup(&leaf);
+            wait_for_empty_cgroup(&leaf);
+            fs::remove_dir(&leaf).expect("remove stale cgroup namespace test leaf");
+        }
+        fs::create_dir_all(M80_CGROUP_PARENT).expect("create m80 cgroup parent");
+        fs::create_dir(&leaf).expect("create cgroup namespace test leaf");
+        Self { leaf }
+    }
+}
+
+impl Drop for RealCgroupLeafGuard {
+    fn drop(&mut self) {
+        kill_pids_in_cgroup(&self.leaf);
+        wait_for_empty_cgroup(&self.leaf);
+        let _ = fs::remove_dir(&self.leaf);
+    }
+}
+
+fn write_cgroup_file(path: &Path, value: &str) {
+    fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .and_then(|mut file| file.write_all(value.as_bytes()))
+        .unwrap_or_else(|err| panic!("write {}: {err}", path.display()));
+}
+
+fn wait_for_child_output(mut child: Child, timeout: Duration) -> std::process::Output {
+    let started = Instant::now();
+    loop {
+        if child.try_wait().expect("poll child").is_some() {
+            return child.wait_with_output().expect("collect child output");
+        }
+        if started.elapsed() > timeout {
+            let _ = child.kill();
+            panic!("wrapper process did not finish within {timeout:?}");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn kill_pids_in_cgroup(leaf: &Path) {
+    for pid in read_cgroup_pids(leaf) {
+        match kill(Pid::from_raw(pid), Signal::SIGKILL) {
+            Ok(()) | Err(nix::errno::Errno::ESRCH) => {}
+            Err(err) => panic!("SIGKILL {pid}: {err}"),
+        }
+    }
+}
+
+fn wait_for_empty_cgroup(leaf: &Path) {
+    let started = Instant::now();
+    while !read_cgroup_pids(leaf).is_empty() {
+        assert!(
+            started.elapsed() <= Duration::from_secs(5),
+            "{} still has live pids: {:?}",
+            leaf.display(),
+            read_cgroup_pids(leaf)
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn read_cgroup_pids(leaf: &Path) -> Vec<i32> {
+    match fs::read_to_string(leaf.join("cgroup.procs")) {
+        Ok(content) => content
+            .split_whitespace()
+            .map(|pid| pid.parse::<i32>().expect("numeric cgroup pid"))
+            .collect(),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => panic!("read {}/cgroup.procs: {err}", leaf.display()),
+    }
 }

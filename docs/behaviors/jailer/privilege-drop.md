@@ -47,6 +47,10 @@ Test: `crates/m80-jailer-harden/src/lib.rs::tests::parse_captures_official_jaile
 hides the host cgroup hierarchy from the jailed process; `m80-cgroup` still
 owns cgroup creation, limit writes, OOM scoring, and PID enrolment.
 
+Test: `crates/m80-jailer-harden/tests/integration_root.rs::wrapper_new_cgroup_ns_roots_proc_self_cgroup`
+(#[ignore]) starts the wrapper from inside a real `/sys/fs/cgroup/m80-firecracker/<id>`
+leaf and asserts the exec target sees `/proc/self/cgroup` as `0::/`.
+
 ## startup-check
 
 m80 verifies jailer launch privilege once during process preflight, before

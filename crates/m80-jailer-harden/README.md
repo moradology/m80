@@ -53,4 +53,5 @@ or setgid. Those stay owned by Firecracker's official jailer and `m80-cgroup`.
 - Unit tests cover CLI parsing and missing argument errors.
 - Ignored root integration tests verify the wrapper's inherited process state
   via `/proc/self/status`, environment clearing, and inherited-fd closure inside
-  the exec target.
+  the exec target. They also verify `--new-cgroup-ns` makes
+  `/proc/self/cgroup` appear rooted at `/` after exec.
