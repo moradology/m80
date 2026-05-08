@@ -75,12 +75,18 @@ VM cleanup deletes the TAP through the link-operation seam's
 after the VM network state file is removed do not surface a missing-device
 error and do not attempt a second TAP deletion.
 
+When the per-VM network state file is missing, cleanup still derives the TAP
+name from `(run_root, vm_id)` and deletes that link before running orphan bridge
+scavenging. This catches interrupted setups where a TAP survived but
+`network-state.json` did not.
+
 Source: predecessor `delete_interface_if_present` lines 1301-1318 and
 `cleanup_vm_network_with_host` lines 1101-1121. m80 uses rtnetlink through
 `LinkOps` instead of shelling out to `ip`.
 
 Verification:
-`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::repeated_cleanup_calls_are_safe`.
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::repeated_cleanup_calls_are_safe`
+and `crates/m80-net-outbound/tests/network-outbound-nat/ownership.rs::orphan_tap_detected_and_cleaned`.
 
 ## Foreign Rule Rejection
 

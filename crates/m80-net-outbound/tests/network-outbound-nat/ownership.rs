@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 
 use m80_net_outbound::{
-    cleanup_vm_with_ops, planned_bridge_state, planned_vm_network_state,
+    cleanup_vm_with_ops, derive_tap_name, planned_bridge_state, planned_vm_network_state,
     realize_bridge_and_tap_with_ops, write_bridge_state, write_vm_network_state_record, LinkOps,
     NetError, OutboundIntent, PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
 };
@@ -49,6 +49,25 @@ fn startup_scavenges_orphan_bridge_when_unused() {
 
     assert!(!temp.path().join("outbound-bridge-state.json").exists());
     assert!(links.deleted(&bridge.bridge_name));
+}
+
+#[test]
+fn orphan_tap_detected_and_cleaned() {
+    let temp = tempfile::tempdir().unwrap();
+    let intent = intent();
+    let bridge = planned_bridge_state(temp.path(), &intent)
+        .unwrap()
+        .with_phase(SetupPhase::Ready);
+    let tap_name = derive_tap_name(temp.path(), "missing-vm");
+    write_bridge_state(temp.path(), &bridge).unwrap();
+    let mut links = RecordingLinkOps::with_existing(&[&bridge.bridge_name, &tap_name]);
+    let mut policy = NoopPolicyOps;
+
+    cleanup_vm_with_ops(&mut links, &mut policy, "missing-vm", temp.path()).unwrap();
+
+    assert!(links.deleted(&tap_name));
+    assert!(links.deleted(&bridge.bridge_name));
+    assert!(!temp.path().join("outbound-bridge-state.json").exists());
 }
 
 #[test]

@@ -108,7 +108,9 @@ Sequestering it has three benefits:
   removes only owned residue for that VM: exact comment-tagged FORWARD and
   NAT rules, comment-owned rules in the per-VM filter chain, the empty
   per-VM chain, the TAP link, and the VM network state file. Repeated calls
-  tolerate missing state and missing links.
+  tolerate missing state and missing links. If the state file is missing,
+  cleanup derives the TAP name from `(run_root, vm_id)` and deletes it before
+  orphan bridge recovery.
 - Cleanup aborts on foreign rules inside an owned per-VM filter chain. It
   never deletes unowned rules by index or broad match.
 - `cleanup_orphan_bridge(run_root: &Path) -> Result<(), NetError>` is
@@ -228,8 +230,8 @@ Sequestering it has three benefits:
   masquerade, and idempotent reapply behavior.
 - Bridge ownership/recovery: cleanup removes the shared bridge only after
   the last peer state is gone, startup scavenges orphan bridge state, malformed
-  peer state preserves ambiguous residue, and crash-mid-VM startup recovery is
-  pinned.
+  peer state preserves ambiguous residue, missing-state TAP orphans are deleted,
+  and crash-mid-VM startup recovery is pinned.
 - Teardown: command-recording tests pin per-VM comments on all owned rules,
   deletion by exact comment-owned rule specs, chain deletion only after
   empty, foreign-rule rejection, and repeated cleanup safety for missing TAP

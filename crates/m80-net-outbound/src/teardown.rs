@@ -2,9 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::{
-    bridge_state_path, link_ops, outbound_nat_filter_chain, outbound_nat_rule_comment,
-    read_bridge_state, read_vm_network_state_record, vm_network_state_path, LinkOps, NetError,
-    PolicyOps, VmNetworkStateRecord,
+    bridge_state_path, derive_tap_name, link_ops, outbound_nat_filter_chain,
+    outbound_nat_rule_comment, read_bridge_state, read_vm_network_state_record,
+    vm_network_state_path, LinkOps, NetError, PolicyOps, VmNetworkStateRecord,
 };
 
 /// Tear down the network state owned by `vm_id` through supplied backends.
@@ -17,6 +17,7 @@ pub fn cleanup_vm_with_ops(
     let run_dir = run_root.join(vm_id);
     let state_path = vm_network_state_path(&run_dir);
     if !state_path.exists() {
+        link_ops::teardown_tap(links, &derive_tap_name(run_root, vm_id))?;
         return cleanup_orphan_bridge_with_ops(links, run_root);
     }
 
