@@ -42,6 +42,11 @@ The system creates each per-VM TAP interface without invoking `ip` or
 resulting interface is managed through rtnetlink: set the guest MAC, attach
 the TAP to the run-root bridge, and bring the TAP link up.
 
+If TAP setup fails after the run-root bridge has been created, setup rolls back
+the VM network state file, deletes the TAP if it was partially created, and
+scavenges the now-unused run-root bridge state. A failed VM launch must not
+leave a bridge or per-VM state orphan behind.
+
 This is a deliberate correction from the inherited predecessor `ip tuntap` path.
 Kata's runtime validates the no-shellout posture for host link management, but
 Linux accepts TUN/TAP creation through `/dev/net/tun`, not as an rtnetlink
@@ -95,4 +100,5 @@ the no-`/sbin/ip` path.
 Relevant setup tests:
 `bridge_setup_is_idempotent_with_matching_state`,
 `planned_bridge_state_recovers_existing_kernel_bridge_without_recreate`, and
-`planned_bridge_state_recreates_kernel_dropped_bridge`.
+`planned_bridge_state_recreates_kernel_dropped_bridge`. Failed setup cleanup is
+pinned by `failed_launch_after_bridge_cleans_bridge`.

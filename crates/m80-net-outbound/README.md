@@ -65,6 +65,9 @@ Sequestering it has three benefits:
 - Per-VM state is written at `<run_dir>/network-state.json` in a Planned
   phase before TAP mutation and in a Ready phase after TAP creation, MAC
   assignment, bridge attach, and link-up succeed.
+- If TAP setup fails after bridge creation, m80 deletes the partial TAP if
+  present, removes the per-VM Planned state file, and scavenges the unused
+  run-root bridge so failed launches do not strand owned network residue.
 - Bridge creation, bridge address assignment, link MAC assignment, bridge
   attach/detach, link up/down, and link deletion use rtnetlink. The `ip`
   binary is not a runtime dependency for these operations.
@@ -208,7 +211,8 @@ Sequestering it has three benefits:
   produces `GuestIpv4Collision`.
 - Bridge/TAP setup: matching Ready bridge ownership skips bridge mutation,
   bridge and per-VM state files are written atomically with Planned/Ready
-  phase transitions, and ownership mismatch fails before link mutation.
+  phase transitions, ownership mismatch fails before link mutation, and a TAP
+  setup failure after bridge creation rolls back bridge/VM state.
 - Link-ops seam: tap/bridge lifecycle ordering is pinned without an `ip`
   shellout, and an ignored root/CAP_NET_ADMIN probe exercises real TAP
   create/delete through the no-`/sbin/ip` path.

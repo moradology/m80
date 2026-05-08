@@ -234,6 +234,36 @@ fn planned_bridge_state_recreates_kernel_dropped_bridge() {
 }
 
 #[test]
+fn failed_launch_after_bridge_cleans_bridge() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_dir = temp.path().join("vm-123");
+    std::fs::create_dir(&run_dir).unwrap();
+    let intent = intent_with_exception();
+    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    let mut ops = RecordingLinkOps {
+        fail_create_tap: true,
+        ..RecordingLinkOps::default()
+    };
+
+    let err = realize_bridge_and_tap_with_ops(&mut ops, &intent, "vm-123", temp.path(), &run_dir)
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        NetError::TapOperationFailed {
+            operation: "create tap",
+            ..
+        }
+    ));
+    assert!(ops.operations.contains(&format!(
+        "delete_link_if_exists {}",
+        planned_bridge.bridge_name
+    )));
+    assert!(!bridge_state_path(temp.path()).exists());
+    assert!(!vm_network_state_path(&run_dir).exists());
+}
+
+#[test]
 fn bridge_state_mismatch_fails_before_link_mutation() {
     let temp = tempfile::tempdir().unwrap();
     let run_dir = temp.path().join("vm-123");
@@ -276,6 +306,7 @@ struct RecordingLinkOps {
     operations: Vec<String>,
     link_exists: bool,
     link_has_ipv4_address: bool,
+    fail_create_tap: bool,
 }
 
 impl RecordingLinkOps {
@@ -284,6 +315,7 @@ impl RecordingLinkOps {
             operations: Vec::new(),
             link_exists: false,
             link_has_ipv4_address,
+            fail_create_tap: false,
         }
     }
 
@@ -292,6 +324,7 @@ impl RecordingLinkOps {
             operations: Vec::new(),
             link_exists: true,
             link_has_ipv4_address,
+            fail_create_tap: false,
         }
     }
 }
@@ -316,6 +349,12 @@ impl LinkOps for RecordingLinkOps {
 
     fn create_tap(&mut self, name: &str) -> Result<(), NetError> {
         self.operations.push(format!("create_tap {name}"));
+        if self.fail_create_tap {
+            return Err(NetError::TapOperationFailed {
+                operation: "create tap",
+                source: std::io::Error::other("injected tap failure"),
+            });
+        }
         Ok(())
     }
 

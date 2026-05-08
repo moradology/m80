@@ -94,7 +94,10 @@ pub fn realize_bridge_and_tap_with_ops(
         bridge_cidr: bridge.cidr,
         guest_mac: derive_guest_mac_bytes(run_root, vm_id),
     };
-    link_ops::create_tap_on_bridge(ops, &tap_plan)?;
+    if let Err(setup_err) = link_ops::create_tap_on_bridge(ops, &tap_plan) {
+        rollback_failed_vm_network_setup(ops, run_root, run_dir, &vm_state.tap_name)?;
+        return Err(setup_err);
+    }
 
     let ready_vm_state = vm_state.with_phase(SetupPhase::Ready);
     write_vm_network_state_record(run_dir, &ready_vm_state)?;
@@ -106,6 +109,25 @@ pub fn realize_bridge_and_tap_with_ops(
         guest_mac: ready_vm_state.guest_mac,
         bridge_cidr: ready_vm_state.bridge.cidr,
     })
+}
+
+fn rollback_failed_vm_network_setup(
+    ops: &mut impl LinkOps,
+    run_root: &Path,
+    run_dir: &Path,
+    tap_name: &str,
+) -> Result<(), NetError> {
+    link_ops::teardown_tap(ops, tap_name)?;
+    remove_file_if_present_local(&vm_network_state_path(run_dir))?;
+    teardown::cleanup_orphan_bridge_with_ops(ops, run_root)
+}
+
+fn remove_file_if_present_local(path: &Path) -> Result<(), NetError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(NetError::Io(err)),
+    }
 }
 
 /// Derive the bridge name from a run-root path. Pure: no I/O.
