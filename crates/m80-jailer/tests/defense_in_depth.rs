@@ -94,6 +94,42 @@ fn jailed_attacker_cannot_read_host_proc_mountinfo() {
     assert_attack_blocked("read_host_proc_mountinfo");
 }
 
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_become_uid_zero() {
+    assert_attack_blocked("become_uid_zero");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_become_gid_zero() {
+    assert_attack_blocked("become_gid_zero");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_retain_effective_capabilities() {
+    assert_attack_blocked("retain_effective_capabilities");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_unshare_mount_namespace() {
+    assert_attack_blocked("unshare_mount_namespace");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_mount_tmpfs() {
+    assert_attack_blocked("mount_tmpfs");
+}
+
+#[test]
+#[ignore = "requires root, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
+fn jailed_attacker_cannot_change_hostname() {
+    assert_attack_blocked("change_hostname");
+}
+
 struct AttackRun {
     exit_code: Option<i32>,
 }

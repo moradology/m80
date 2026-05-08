@@ -21,6 +21,9 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added the ignored process/PID isolation battery, covering host PID
   status/cmdline/mountinfo observation, host-PID signal probes, and broad
   process enumeration.
+- Added the ignored privilege escalation battery, covering uid/gid 0 attempts,
+  retained capabilities, mount namespace creation, tmpfs mounts, and hostname
+  mutation.
 
 ### Added — PID-1 outbound network configuration (m80-mx2t.4.2)
 

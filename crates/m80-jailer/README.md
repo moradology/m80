@@ -136,4 +136,6 @@ hands a config in and gets back a launchable chroot — or a typed error.
   chroot escape attempts, proc-self-root escape, host sentinel read/write, and
   lower-layer write attempts must all exit non-zero. It also pins process/PID
   isolation: host PID status/cmdline/mountinfo observation, host-PID signal
-  probes, and broad host process enumeration must all exit non-zero.
+  probes, and broad host process enumeration must all exit non-zero. Privilege
+  escalation attempts to become uid/gid 0, retain capabilities, unshare/mount,
+  or change host identity must all exit non-zero.
