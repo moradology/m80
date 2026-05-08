@@ -25,13 +25,14 @@ Test: if a behavior is "what the system does for the agent", it's not m80's. If 
 
 ## Workspace shape
 
-18 crates under `crates/`, each black-boxed:
+19 crates under `crates/`, each black-boxed:
 
 - **Foundation (10):** `m80-proto`, `m80-image-manifest`, `m80-firecracker-client`, `m80-vsock`, `m80-jailer`, `m80-jailer-harden`, `m80-cgroup`, `m80-storage`, `m80-preflight`, `m80-net-mode`. Privilege is acquired by the m80 process at startup (run as root, `setcap` the binary, or run inside a privileged container) and verified by `m80-preflight`; there is no per-call privilege shim. `m80-jailer-harden` is the exec wrapper that applies inheritable Group B hardening (supplementary groups, ambient caps, `no_new_privs`, signal mask, umask) before handing off to Firecracker's jailer.
 - **Feature crates (3):** `m80-net-outbound` (egress NAT/iptables/DNS/cleanup; ~3500 LOC; the largest single risk surface), `m80-snapshot` (capture/restore execution shipped per m80-rrp.3), `m80-observability` (probe + `render_prometheus` shipped).
 - **Orchestration (1):** `m80-firecracker` — composes foundation crates; owns the lifecycle state machine, run-root layout, drive hot-plug + tenant-identity verification (m80-iswt), and warm-pool / persistent-VM modes.
 - **Binaries (3):** `m80-image-build`, `m80-guestd` (cross-compiled, runs as PID 1 on minimal images), `m80-cli` (the `m80` binary).
-- **Test infrastructure (1):** `m80-test-helpers`.
+- **Test infrastructure (2):** `m80-test-helpers`, `m80-attack-runner`
+  (malicious payload binary for defense-in-depth jailer tests).
 
 Cardinal rules:
 - No `m80-common` / `m80-shared` / `m80-utils` junk drawers. Cross-cutting types live in the crate that owns the producing domain.

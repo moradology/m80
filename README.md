@@ -155,7 +155,7 @@ on tag pushes.
 
 ## Workspace
 
-m80 is a Rust workspace split into 18 black-box crates:
+m80 is a Rust workspace split into 19 black-box crates:
 
 **Foundation (10)** — privilege acquired at process startup and verified by
 `m80-preflight`; no per-call privilege shim:
@@ -178,7 +178,9 @@ m80 is a Rust workspace split into 18 black-box crates:
 - `m80-guestd` — cross-compiled, runs as PID 1 on minimal images
 - `m80-cli` — the `m80` binary
 
-**Test infrastructure (1)**: `m80-test-helpers`.
+**Test infrastructure (2)**:
+- `m80-test-helpers` — shared deterministic fixtures and assertions
+- `m80-attack-runner` — malicious payload binary for defense-in-depth jailer tests
 
 Crate READMEs are contracts. A public-surface change updates the owning crate
 README in the same diff.

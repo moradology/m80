@@ -5,6 +5,14 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — attack-runner payload crate (m80-g0v8.11.1)
+
+- Added `m80-attack-runner`, a small malicious test payload with 30 stable
+  attack primitives across filesystem, process, network, privilege, resource,
+  and cross-tenant categories, plus the `echo_zero` harness negative control.
+- The crate builds for `x86_64-unknown-linux-musl` so later jailer
+  defense-in-depth tests can copy a single static payload into the jail.
+
 ### Added — PID-1 outbound network configuration (m80-mx2t.4.2)
 
 - `m80-guestd` PID-1 mode now parses bounded `m80.net.*` kernel cmdline

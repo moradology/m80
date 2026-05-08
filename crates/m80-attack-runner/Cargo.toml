@@ -1,0 +1,26 @@
+[package]
+name = "m80-attack-runner"
+description = "Deliberately malicious test binary for m80 jailer defense-in-depth checks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "m80_attack_runner"
+path = "src/lib.rs"
+
+[[bin]]
+name = "m80-attack-runner"
+path = "src/main.rs"
+
+[dependencies]
+nix.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
