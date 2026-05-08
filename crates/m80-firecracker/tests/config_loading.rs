@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use m80_firecracker::{load_config_from_paths, ConfigFilePaths, ConfigSource, EffectiveConfig};
 use tempfile::TempDir;
 
+type LayerSetup = fn(&TempDir, &TempDir);
+
 fn with_isolated_env(test: impl FnOnce(&TempDir, &TempDir)) {
     let _lock = common::env_lock().lock().unwrap();
     let _restore = common::EnvRestore::capture(common::CONFIG_ENV_KEYS);
@@ -30,6 +32,10 @@ fn paths(system: &TempDir, home: &TempDir) -> ConfigFilePaths {
         user: Some(home.path().join(".config/m80/config.toml")),
         user_drop_in_dir: Some(home.path().join(".config/m80/config.d")),
     }
+}
+
+fn write_system_config(system: &TempDir, text: &str) {
+    std::fs::write(system.path().join("config.toml"), text).unwrap();
 }
 
 fn write_system_drop_in(system: &TempDir, name: &str, text: &str) {
@@ -56,6 +62,50 @@ fn field<'a>(effective: &'a EffectiveConfig, name: &str) -> &'a m80_firecracker:
         .iter()
         .find(|field| field.name == name)
         .unwrap_or_else(|| panic!("missing field {name}: {:?}", effective.fields))
+}
+
+#[test]
+fn dropin_lexicographic_ordering_stable() {
+    with_isolated_env(|system, home| {
+        let system_dropins = [
+            ("90-z.toml", "run_root = \"/system-90\"\n"),
+            ("10-a.toml", "run_root = \"/system-10\"\n"),
+            ("50-m.toml", "run_root = \"/system-50\"\n"),
+            ("20-b.toml", "run_root = \"/system-20\"\n"),
+            ("70-q.toml", "run_root = \"/system-70\"\n"),
+        ];
+        for (name, text) in system_dropins {
+            write_system_drop_in(system, name, text);
+        }
+
+        let effective = load_config_from_paths(HashMap::new(), paths(system, home)).unwrap();
+        assert_eq!(field(&effective, "run_root").value, "/system-90");
+        assert_eq!(
+            field(&effective, "run_root").source,
+            ConfigSource::SystemDropIn
+        );
+    });
+
+    with_isolated_env(|system, home| {
+        write_system_drop_in(system, "99-system.toml", "run_root = \"/system-99\"\n");
+        let user_dropins = [
+            ("30-c.toml", "run_root = \"/user-30\"\n"),
+            ("05-a.toml", "run_root = \"/user-05\"\n"),
+            ("99-z.toml", "run_root = \"/user-99\"\n"),
+            ("70-r.toml", "run_root = \"/user-70\"\n"),
+            ("50-m.toml", "run_root = \"/user-50\"\n"),
+        ];
+        for (name, text) in user_dropins {
+            write_user_drop_in(home, name, text);
+        }
+
+        let effective = load_config_from_paths(HashMap::new(), paths(system, home)).unwrap();
+        assert_eq!(field(&effective, "run_root").value, "/user-99");
+        assert_eq!(
+            field(&effective, "run_root").source,
+            ConfigSource::UserDropIn
+        );
+    });
 }
 
 #[test]
@@ -241,6 +291,73 @@ fn env_and_flags_override_drop_ins() {
         assert_eq!(
             field(&effective, "default_profile").source,
             ConfigSource::Flag
+        );
+    });
+}
+
+#[test]
+fn env_var_beats_both_dropin_layers() {
+    with_isolated_env(|system, home| {
+        write_system_drop_in(
+            system,
+            "99-last.toml",
+            "run_root = \"/from-system-dropin\"\n",
+        );
+        write_user_drop_in(home, "99-last.toml", "run_root = \"/from-user-dropin\"\n");
+        std::env::set_var("M80_RUN_ROOT", "/from-env");
+
+        let effective = load_config_from_paths(HashMap::new(), paths(system, home)).unwrap();
+
+        assert_eq!(field(&effective, "run_root").value, "/from-env");
+        assert_eq!(field(&effective, "run_root").source, ConfigSource::Env);
+    });
+}
+
+#[test]
+fn unknown_key_rejected_at_every_config_layer() {
+    let cases: &[(&str, LayerSetup)] = &[
+        ("system config", |system, _home| {
+            write_system_config(system, "future_field = \"value\"\n");
+        }),
+        ("user config", |_system, home| {
+            write_user_config(home, "future_field = \"value\"\n");
+        }),
+        ("system config drop-in", |system, _home| {
+            write_system_drop_in(system, "99.toml", "future_field = \"value\"\n");
+        }),
+        ("user config drop-in", |_system, home| {
+            write_user_drop_in(home, "99.toml", "future_field = \"value\"\n");
+        }),
+    ];
+
+    for (label, setup) in cases {
+        with_isolated_env(|system, home| {
+            setup(system, home);
+
+            let err = load_config_from_paths(HashMap::new(), paths(system, home)).unwrap_err();
+            let message = err.to_string();
+            assert!(
+                message.contains(label),
+                "error for {label} should name layer, got: {message}"
+            );
+            assert!(
+                message.contains("unknown config key"),
+                "error for {label} should reject unknown key, got: {message}"
+            );
+        });
+    }
+
+    with_isolated_env(|system, home| {
+        std::env::set_var("M80_UNKNOWN_VAR", "ignored");
+
+        let effective = load_config_from_paths(HashMap::new(), paths(system, home)).unwrap();
+
+        assert!(
+            effective
+                .fields
+                .iter()
+                .all(|field| field.name != "unknown_var"),
+            "unknown M80_* env vars are ignored, not promoted into EffectiveConfig"
         );
     });
 }
