@@ -83,5 +83,5 @@ See rustdoc for full signatures.
 
 - Unit (in-crate): mounts-string parsing, `Limits`/`CpuMax`/`IoMax` JSON round-trip, error `Display` shape, two-phase limit-before-enrolment ordering, recursive subtree-control writes, sparse cpuset inheritance, and an ignored real-host Drop-with-live-procs regression.
 - `tests/integration_root.rs` — `#[ignore]` real-host probe, pids.max
-  enforcement, and cpuset affinity enforcement;
+  enforcement, cpuset affinity enforcement, and io.max throughput enforcement;
   `sudo cargo test -p m80-cgroup -- --ignored`.

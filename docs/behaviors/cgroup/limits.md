@@ -60,6 +60,11 @@ Test: `crates/m80-cgroup/tests/cgroup/limits.rs::memory_and_pids_max`.
 Test: `crates/m80-cgroup/tests/cgroup/limits.rs::io_max_json_round_trip`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::io_max_formats_v2_row`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::io_weight_range_is_kernel_bounded`.
+Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_io_max_throttles_disk_writes`
+(#[ignore]) creates a real cgroup leaf with `io.max wbps=1048576` for the
+temp-dir backing device, enrolls a direct-write workload before it starts, and
+asserts measured throughput stays below 1.5 MiB/s while `io.stat` records
+writes for that device.
 
 ## device-controller-boundary
 
