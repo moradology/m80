@@ -150,6 +150,27 @@ fn manifest_sha256_mismatch_fails_closed() {
 }
 
 #[test]
+fn manifest_sha_mismatch_fails_preflight() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    fs::write(config.rootfs_image.as_ref().unwrap(), b"tampered rootfs").unwrap();
+
+    let err = verify_artifacts(&config).unwrap_err();
+
+    match err {
+        PreflightError::Manifest(ManifestError::Sha256Mismatch {
+            field,
+            expected,
+            actual,
+        }) => {
+            assert_eq!(field, "output_rootfs_image");
+            assert_eq!(expected, SHA256_EMPTY);
+            assert_ne!(actual, expected);
+        }
+        other => panic!("expected rootfs sha mismatch, got {other:?}"),
+    }
+}
+
+#[test]
 fn run_root_must_already_exist() {
     let (_artifact_dir, _helper_dir, mut config) = fixture_config();
     config.run_root = config.artifact_dir.join("missing-run-root");
