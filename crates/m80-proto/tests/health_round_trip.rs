@@ -20,8 +20,7 @@ fn ping_request_round_trips() {
 
 #[test]
 fn pong_response_round_trips() {
-    let env =
-        Envelope::with_request_id(PongResponse { guest_unix_ms: 42 }, "req-ping".to_owned());
+    let env = Envelope::with_request_id(PongResponse { guest_unix_ms: 42 }, "req-ping".to_owned());
     assert_eq!(env.kind, PAYLOAD_KIND_PONG_RESPONSE);
 
     let mut bytes = Vec::new();

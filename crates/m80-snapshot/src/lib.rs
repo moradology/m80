@@ -325,7 +325,10 @@ struct SchemaVersionProbe {
 }
 
 fn wrap_io_err(path: &Path) -> impl Fn(io::Error) -> SnapshotError + '_ {
-    |source| SnapshotError::Io { path: path.to_path_buf(), source }
+    |source| SnapshotError::Io {
+        path: path.to_path_buf(),
+        source,
+    }
 }
 
 /// Write `value` to `path` as pretty JSON + trailing newline + mode 0644.
@@ -346,8 +349,7 @@ fn write_pretty_json_0644<T: Serialize>(value: &T, path: &Path) -> Result<(), Sn
 /// `UnsupportedSchemaVersion(2)` instead of leaking the unrelated
 /// `Json("unknown field …")` from `deny_unknown_fields`.
 fn parse_with_schema_probe<T: DeserializeOwned>(raw: &[u8]) -> Result<T, SnapshotError> {
-    let probe: SchemaVersionProbe =
-        serde_json::from_slice(raw).map_err(SnapshotError::Json)?;
+    let probe: SchemaVersionProbe = serde_json::from_slice(raw).map_err(SnapshotError::Json)?;
     if probe.schema_version != SCHEMA_VERSION {
         return Err(SnapshotError::UnsupportedSchemaVersion(
             probe.schema_version,

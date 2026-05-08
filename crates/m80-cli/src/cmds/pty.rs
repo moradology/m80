@@ -290,7 +290,9 @@ mod tests {
         let mut terminal = FakeTerminalMode::default();
         let result = (|| -> Result<(), FcError> {
             let _guard = RawModeGuard::enter(&mut terminal).map_err(FcError::Io)?;
-            Err(FcError::Config(ConfigError::Other("wrapper error".to_owned())))
+            Err(FcError::Config(ConfigError::Other(
+                "wrapper error".to_owned(),
+            )))
         })();
 
         assert!(matches!(result, Err(FcError::Config(_))));

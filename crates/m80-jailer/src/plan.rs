@@ -46,11 +46,7 @@ impl Plan {
         for binding in &config.bindings {
             push_parent_dirs(&mut steps, &mut created_dirs, &jail_root, &binding.dest);
             if binding.mode == BindMode::CreateInsideJail {
-                push_create_dir(
-                    &mut steps,
-                    &mut created_dirs,
-                    jail_root.join(&binding.dest),
-                );
+                push_create_dir(&mut steps, &mut created_dirs, jail_root.join(&binding.dest));
             }
         }
 
@@ -263,11 +259,7 @@ fn push_parent_dirs(
     }
 }
 
-fn push_create_dir(
-    steps: &mut Vec<PlanStep>,
-    created_dirs: &mut BTreeSet<PathBuf>,
-    path: PathBuf,
-) {
+fn push_create_dir(steps: &mut Vec<PlanStep>, created_dirs: &mut BTreeSet<PathBuf>, path: PathBuf) {
     if created_dirs.insert(path.clone()) {
         steps.push(PlanStep::CreateDir { path, mode: 0o700 });
     }

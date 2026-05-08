@@ -232,8 +232,8 @@ fn malformed_pty_frame_is_rejected() {
     raw.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     let mut cursor = Cursor::new(raw);
 
-    let err = read_frame::<_, PtyOutput>(&mut cursor)
-        .expect_err("malformed protobuf payload must fail");
+    let err =
+        read_frame::<_, PtyOutput>(&mut cursor).expect_err("malformed protobuf payload must fail");
     assert!(
         matches!(err, ProtoError::MalformedPayload(_)),
         "expected MalformedPayload, got: {err:?}"

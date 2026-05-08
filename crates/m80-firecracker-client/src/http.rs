@@ -205,5 +205,4 @@ mod tests {
         let err = parse_response(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n").unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
-
 }

@@ -17,8 +17,7 @@ fn reserved_handshake_payload_round_trips_exact_version() {
     let mut reader = Cursor::new(&channel);
     let remote: Envelope<HandshakeMessage> = read_frame(&mut reader).unwrap();
     assert_eq!(
-        remote.payload.version,
-        PROTOCOL_VERSION,
+        remote.payload.version, PROTOCOL_VERSION,
         "same-version negotiation must succeed"
     );
 }

@@ -117,7 +117,9 @@ mod tests {
 
     fn try_parse(args: &[&str]) -> Result<Args, clap::Error> {
         // Prepend a fake argv[0] so clap sees the full argv.
-        let full: Vec<&str> = std::iter::once("m80-image-build").chain(args.iter().copied()).collect();
+        let full: Vec<&str> = std::iter::once("m80-image-build")
+            .chain(args.iter().copied())
+            .collect();
         Args::try_parse_from(full)
     }
 
@@ -186,7 +188,10 @@ mod tests {
     #[test]
     fn parse_kernel_build_default_workspace() {
         let args = try_parse(&["kernel", "build"]).unwrap();
-        let Cmd::Kernel { action: KernelAction::Build { workspace } } = args.subcommand else {
+        let Cmd::Kernel {
+            action: KernelAction::Build { workspace },
+        } = args.subcommand
+        else {
             panic!("expected Kernel/Build")
         };
         assert_eq!(workspace, PathBuf::from("."));
@@ -195,7 +200,10 @@ mod tests {
     #[test]
     fn parse_kernel_build_explicit_workspace() {
         let args = try_parse(&["kernel", "build", "--workspace", "/tmp/ws"]).unwrap();
-        let Cmd::Kernel { action: KernelAction::Build { workspace } } = args.subcommand else {
+        let Cmd::Kernel {
+            action: KernelAction::Build { workspace },
+        } = args.subcommand
+        else {
             panic!("expected Kernel/Build")
         };
         assert_eq!(workspace, PathBuf::from("/tmp/ws"));

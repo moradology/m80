@@ -122,8 +122,9 @@ fn run_quickstart(
             artifact_dir.display()
         ))
     })?;
-    fs::create_dir_all(run_root)
-        .map_err(|e| FcError::config_other(format!("creating run-root {}: {e}", run_root.display())))?;
+    fs::create_dir_all(run_root).map_err(|e| {
+        FcError::config_other(format!("creating run-root {}: {e}", run_root.display()))
+    })?;
 
     for file in REQUIRED_ARTIFACTS {
         copy_artifact(&extract_dir.join(file), &artifact_dir.join(file))?;
