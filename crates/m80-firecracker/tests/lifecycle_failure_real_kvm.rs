@@ -6,6 +6,7 @@
 
 mod common;
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,6 +14,47 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use common::RunDirDumpGuard;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, SandboxConfig, SnapshotPaths};
 use m80_proto::{ExecRequest, ExecStatus};
+
+#[test]
+#[ignore = "requires privileged jailer host with real m80 artifacts"]
+fn api_socket_timeout_cleans_partial_state() {
+    let fake_dir = tempfile::tempdir().expect("fake firecracker tempdir");
+    let fake_firecracker = write_fake_firecracker(fake_dir.path());
+    let mut discovery =
+        m80_preflight::run().expect("preflight must pass on a privileged host with m80 artifacts");
+    discovery.firecracker_bin = fake_firecracker;
+    let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
+    let vm_id = unique_vm_id("api-socket-timeout");
+    let run_dir = discovery.run_root.join(&vm_id);
+
+    let sandbox = backend
+        .admit(default_config(&vm_id))
+        .expect("admit api-socket timeout launch");
+    let err = match sandbox.launch() {
+        Ok(running) => {
+            let stopped = running
+                .force_kill()
+                .expect("force-kill unexpected api-socket launch");
+            stopped
+                .delete()
+                .expect("delete unexpected api-socket launch");
+            panic!("fake Firecracker unexpectedly reached RunningSandbox");
+        }
+        Err(err) => err,
+    };
+
+    assert_api_socket_timeout(err);
+    assert!(
+        !run_dir.exists(),
+        "api socket timeout must remove partial run-dir: {}",
+        run_dir.display()
+    );
+
+    let admitted_after_timeout = backend
+        .admit(default_config("api-socket-timeout-permit-reuse"))
+        .expect("admission permit must be released after api socket timeout");
+    drop(admitted_after_timeout);
+}
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker artifacts and waits for guestd ready timeout"]
@@ -155,6 +197,18 @@ fn snapshot_paths(dir: &Path) -> SnapshotPaths {
     }
 }
 
+fn write_fake_firecracker(dir: &Path) -> std::path::PathBuf {
+    let path = dir.join("fake-firecracker");
+    std::fs::write(&path, "#!/bin/sh\nwhile true; do sleep 60; done\n")
+        .expect("write fake firecracker");
+    let mut perms = std::fs::metadata(&path)
+        .expect("fake firecracker metadata")
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&path, perms).expect("chmod fake firecracker");
+    path
+}
+
 fn assert_exec_ok(running: &mut m80_firecracker::RunningSandbox, script: &str) {
     let response = running
         .exec(ExecRequest {
@@ -174,6 +228,13 @@ fn assert_exec_ok(running: &mut m80_firecracker::RunningSandbox, script: &str) {
         "exec {script:?} failed: stdout={} stderr={}",
         String::from_utf8_lossy(&response.stdout),
         String::from_utf8_lossy(&response.stderr)
+    );
+}
+
+fn assert_api_socket_timeout(err: FcError) {
+    assert!(
+        matches!(err, FcError::ApiSocketTimeout { .. }),
+        "expected ApiSocketTimeout, got {err:?}"
     );
 }
 
