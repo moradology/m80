@@ -352,6 +352,11 @@ fn end_to_end_real_kvm_jailer_security_parity() {
         rootfs_options.contains("ro"),
         "rootfs bind must be read-only: {rootfs_options}"
     );
+    let host_path_inside_jail = format!("/proc/{pid}/root{}", env!("CARGO_MANIFEST_DIR"));
+    assert!(
+        std::fs::metadata(&host_path_inside_jail).is_err(),
+        "host project path must not be visible through jailed root: {host_path_inside_jail}"
+    );
 
     for (path, major, minor) in [
         ("dev/kvm", 10, 232),
