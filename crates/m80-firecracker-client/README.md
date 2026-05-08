@@ -94,6 +94,7 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
   `UnixListener` records the request body and asserts the JSON shape; the
   client returns `Ok(())` on a fixture 204. Drive tests cover preboot
   `PUT /drives/{id}` and post-boot `PATCH /drives/{id}` partial updates.
+  Machine-config tests pin the serialized CPU template field.
 - `tests/error_mapping.rs` — fixture server returns a 400 with a
   Firecracker fault body for each resource; asserts the matching typed
   `ClientError::*WriteFailed` variant fires (and `Connect(io::Error)` on

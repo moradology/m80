@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — Layer-1 Firecracker config audit (m80-g0v8.11.3)
+
+- Firecracker machine config now carries an explicit `cpu_template = T2`
+  alongside `smt = false`, and tests pin the serialized REST body plus the
+  preboot plan's documented device set.
+
 ### Added — attack-runner payload and jailer harness (m80-g0v8.11.1/.2)
 
 - Added `m80-attack-runner`, a small malicious test payload with 30 stable

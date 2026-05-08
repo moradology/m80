@@ -5,7 +5,8 @@ mod fixture_server;
 use fixture_server::{resp_204, FixtureServer};
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, DriveConfig, MachineConfig, PartialDriveConfig, VsockConfig,
+    BootSourceConfig, Client, CpuTemplate, DriveConfig, MachineConfig, PartialDriveConfig,
+    VsockConfig,
 };
 use std::path::PathBuf;
 
@@ -43,6 +44,7 @@ fn put_machine_config_sends_correct_json() {
             vcpu_count: 2,
             mem_size_mib: 512,
             smt: false,
+            cpu_template: Some(CpuTemplate::T2),
         })
         .unwrap();
     let result = server.join();
@@ -51,6 +53,7 @@ fn put_machine_config_sends_correct_json() {
         .starts_with("PUT /machine-config HTTP/1.1\r\n"));
     assert!(result.request.contains("\"vcpu_count\":2"));
     assert!(result.request.contains("\"mem_size_mib\":512"));
+    assert!(result.request.contains("\"cpu_template\":\"T2\""));
 }
 
 #[test]

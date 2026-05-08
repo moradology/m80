@@ -309,7 +309,16 @@ pub struct BootSourceConfig {
     pub initrd_path: Option<PathBuf>,
 }
 
-/// `MachineConfig` — vCPU count, memory size, SMT flag.
+/// Firecracker CPU template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum CpuTemplate {
+    /// AWS T2-compatible template.
+    T2,
+    /// AWS C3-compatible template.
+    C3,
+}
+
+/// `MachineConfig` — vCPU count, memory size, SMT flag, CPU template.
 #[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineConfig {
@@ -320,6 +329,9 @@ pub struct MachineConfig {
     /// Symmetric multi-threading flag.
     #[serde(default)]
     pub smt: bool,
+    /// CPU template. m80 sets this for a stable, narrowed guest CPU surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_template: Option<CpuTemplate>,
 }
 
 /// One drive slot. `drive_id == "rootfs"` is the conventional root drive id.

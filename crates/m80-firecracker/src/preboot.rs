@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, DriveConfig, MachineConfig, NetworkInterfaceConfig, VsockConfig,
+    BootSourceConfig, Client, CpuTemplate, DriveConfig, MachineConfig, NetworkInterfaceConfig,
+    VsockConfig,
 };
 use m80_image_manifest::{ImageKind, KernelKind};
 
@@ -143,6 +144,7 @@ fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
         vcpu_count: config.vcpu_count.unwrap_or(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: config.mem_size_mib.unwrap_or(FIRST_LINE_MEM_SIZE_MIB),
         smt: false,
+        cpu_template: Some(CpuTemplate::T2),
     }
 }
 
@@ -204,6 +206,18 @@ mod tests {
         };
         assert_eq!(machine.vcpu_count, 2);
         assert_eq!(machine.mem_size_mib, 2048);
+        assert!(!machine.smt);
+        assert_eq!(machine.cpu_template, Some(CpuTemplate::T2));
+    }
+
+    #[test]
+    fn layer_1_machine_config_uses_narrow_cpu_surface() {
+        let puts = plan_without_workspace();
+
+        let PrebootPut::MachineConfig(machine) = &puts[0] else {
+            panic!("first preboot PUT must be machine config");
+        };
+        assert_eq!(machine.cpu_template, Some(CpuTemplate::T2));
         assert!(!machine.smt);
     }
 
@@ -340,6 +354,49 @@ mod tests {
         let PrebootPut::Vsock(_) = &puts[5] else {
             panic!("vsock must follow network interface PUT");
         };
+    }
+
+    #[test]
+    fn layer_1_preboot_plan_contains_only_documented_devices() {
+        let puts = plan_preboot_puts(
+            &SandboxConfig {
+                preallocated_drive_slots: 1,
+                ..SandboxConfig::default()
+            },
+            "vm-alpha",
+            ImageKind::Ubuntu,
+            KernelKind::Stock,
+            true,
+            &RealizedNetwork::OutboundNat {
+                tap_name: "tfc123456789abc".to_owned(),
+                guest_mac: "02:00:00:00:00:02".to_owned(),
+            },
+        );
+
+        let kinds = puts
+            .iter()
+            .map(|put| match put {
+                PrebootPut::MachineConfig(_) => "machine",
+                PrebootPut::BootSource(_) => "boot",
+                PrebootPut::Drive(DriveConfig { drive_id, .. }) => drive_id.as_str(),
+                PrebootPut::NetworkInterface(_) => "network-interface",
+                PrebootPut::Vsock(_) => "vsock",
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            kinds,
+            [
+                "machine",
+                "boot",
+                "rootfs",
+                "rootfs_overlay",
+                "workspace",
+                "hotplug_slot_0",
+                "network-interface",
+                "vsock",
+            ]
+        );
     }
 
     #[test]

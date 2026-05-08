@@ -5,7 +5,7 @@ mod fixture_server;
 use fixture_server::{resp_400, FixtureServer};
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, ClientError, DriveConfig, InstanceAction, MachineConfig,
+    BootSourceConfig, Client, ClientError, CpuTemplate, DriveConfig, InstanceAction, MachineConfig,
     PartialDriveConfig, VsockConfig,
 };
 use std::path::PathBuf;
@@ -54,6 +54,7 @@ fn machine_config_400_returns_machine_config_write_failed() {
                 vcpu_count: 0,
                 mem_size_mib: 0,
                 smt: false,
+                cpu_template: Some(CpuTemplate::T2),
             })
         },
         |e| matches!(e, ClientError::MachineConfigWriteFailed { fault } if fault.contains("invalid vcpu_count")),
