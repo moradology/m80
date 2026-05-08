@@ -35,9 +35,13 @@ the image and reach the host readiness path.
 `m80_proto::MAX_FRAME_BYTES` on each accepted connection. This exercises the
 host framing guard before the host allocates a frame body.
 
-Later L12 leaves add frame-producing modes such as truncated frame, unknown
-variant, wrong response type, bogus request id, unsolicited response,
-unsolicited flood, and slowloris.
+`truncated_frame` writes an in-cap length prefix, writes fewer body bytes than
+declared, flushes, and closes the connection. This exercises host under-read
+handling without relying on a malformed protobuf body.
+
+Later L12 leaves add frame-producing modes such as unknown variant, wrong
+response type, bogus request id, unsolicited response, unsolicited flood, and
+slowloris.
 
 ## Evidence
 

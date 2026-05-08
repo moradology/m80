@@ -24,6 +24,9 @@ Current modes:
 - `oversized_length` binds the standard guest vsock listener, sends the
   readiness byte, and writes only a four-byte length prefix larger than
   `m80_proto::MAX_FRAME_BYTES` on each accepted connection.
+- `truncated_frame` binds the standard guest vsock listener, sends the
+  readiness byte, writes an in-cap frame length, writes fewer body bytes than
+  promised, and closes the connection.
 
 ## Non-goals
 

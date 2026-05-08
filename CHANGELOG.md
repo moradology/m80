@@ -15,6 +15,9 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added the first hostile frame mode, `oversized_length`, plus an ignored
   real-KVM test that verifies the host returns
   `WireProtocolError::OversizedFrame` without allocating the announced body.
+- Added `truncated_frame`, an adversarial mode that declares a frame length,
+  writes a short body, closes the channel, and verifies the host returns a
+  bounded disconnect-before-terminal error without a stuck reader.
 
 ### Added — adversarial wire coverage map (m80-g0v8.12)
 

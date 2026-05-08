@@ -12,6 +12,7 @@ const CMDLINE_KEY: &str = "m80.malicious_attack";
 enum Attack {
     Noop,
     OversizedLength,
+    TruncatedFrame,
 }
 
 impl Attack {
@@ -19,6 +20,7 @@ impl Attack {
         match raw {
             "noop" => Ok(Attack::Noop),
             "oversized_length" => Ok(Attack::OversizedLength),
+            "truncated_frame" => Ok(Attack::TruncatedFrame),
             other => anyhow::bail!("unknown malicious guestd attack: {other}"),
         }
     }
@@ -27,6 +29,7 @@ impl Attack {
         match self {
             Attack::Noop => "noop",
             Attack::OversizedLength => "oversized_length",
+            Attack::TruncatedFrame => "truncated_frame",
         }
     }
 }
@@ -82,6 +85,7 @@ fn run(args: Args) -> anyhow::Result<()> {
     if args.list_attacks {
         println!("noop");
         println!("oversized_length");
+        println!("truncated_frame");
         return Ok(());
     }
 
@@ -92,7 +96,7 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
 
     match attack {
-        Attack::Noop | Attack::OversizedLength => run_peer(attack),
+        Attack::Noop | Attack::OversizedLength | Attack::TruncatedFrame => run_peer(attack),
     }
 }
 
@@ -155,6 +159,10 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
                 write_oversized_length(&mut stream)?;
                 drop(stream);
             }
+            Attack::TruncatedFrame => {
+                write_truncated_frame(&mut stream)?;
+                drop(stream);
+            }
         }
     }
 }
@@ -166,6 +174,18 @@ fn write_oversized_length(stream: &mut impl Write) -> anyhow::Result<()> {
         .write_all(&size.to_be_bytes())
         .context("write oversized length prefix")?;
     stream.flush().context("flush oversized length prefix")
+}
+
+fn write_truncated_frame(stream: &mut impl Write) -> anyhow::Result<()> {
+    const DECLARED_LEN: u32 = 16;
+    const WRITTEN_BODY: &[u8] = b"truncated";
+    stream
+        .write_all(&DECLARED_LEN.to_be_bytes())
+        .context("write truncated frame length")?;
+    stream
+        .write_all(WRITTEN_BODY)
+        .context("write truncated frame partial body")?;
+    stream.flush().context("flush truncated frame")
 }
 
 #[cfg(test)]
@@ -211,5 +231,14 @@ mod tests {
             u32::from_be_bytes(bytes.try_into().unwrap()) as usize,
             m80_proto::MAX_FRAME_BYTES + 1
         );
+    }
+
+    #[test]
+    fn truncated_frame_writes_short_body() {
+        let mut bytes = Vec::new();
+        write_truncated_frame(&mut bytes).unwrap();
+        let declared = u32::from_be_bytes(bytes[..4].try_into().unwrap()) as usize;
+        assert_eq!(declared, 16);
+        assert!(bytes[4..].len() < declared);
     }
 }

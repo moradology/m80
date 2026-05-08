@@ -16,6 +16,10 @@ fn list_attacks_includes_noop() {
         stdout.lines().any(|line| line == "oversized_length"),
         "{stdout}"
     );
+    assert!(
+        stdout.lines().any(|line| line == "truncated_frame"),
+        "{stdout}"
+    );
 }
 
 #[test]
