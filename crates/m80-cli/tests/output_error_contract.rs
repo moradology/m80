@@ -88,6 +88,35 @@ fn feature_gap_failure_uses_distinct_exit_code() {
     assert!(stderr.contains("reserved for egress allowlists"));
 }
 
+#[test]
+fn cli_exit_codes_parse_vs_runtime_distinct() {
+    let parse_error = m80()
+        .args(["run", "--not-a-real-flag", "--", "true"])
+        .output()
+        .unwrap();
+    let runtime_config = m80()
+        .args(["run", "--scratch-size", "0", "--", "true"])
+        .output()
+        .unwrap();
+    let run_root = tempfile::tempdir().unwrap();
+    let runtime_generic = m80()
+        .env("M80_RUN_ROOT", run_root.path())
+        .args(["run", "--warm", "--", "true"])
+        .output()
+        .unwrap();
+
+    let parse_code = parse_error.status.code().expect("parse exit code");
+    let config_code = runtime_config.status.code().expect("config exit code");
+    let generic_code = runtime_generic.status.code().expect("generic exit code");
+
+    assert_eq!(parse_code, 2, "clap parse errors should use EX_USAGE");
+    assert_eq!(config_code, EXIT_CONFIG);
+    assert_eq!(generic_code, EXIT_GENERIC);
+    assert_ne!(parse_code, config_code);
+    assert_ne!(parse_code, generic_code);
+    assert_ne!(config_code, generic_code);
+}
+
 fn assert_exit_code_and_payload(err: &FcError, expected_code: i32, expected_variant: &str) {
     assert_eq!(exit_code_for(err), expected_code, "{err:?}");
     let payload = envelope(err);
