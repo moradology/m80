@@ -40,6 +40,22 @@ Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::sysctl_ip_forward_set_before_rules`
 and `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::cleanup_does_not_revert_host_ip_forward_sysctl`.
 
+## NAT Masquerade Lifecycle
+
+Setup appends one owned `nat/POSTROUTING` MASQUERADE rule for the guest `/32`.
+Teardown deletes that exact rule. After deleting it, cleanup lists
+`nat/POSTROUTING`; any residual NAT rule carrying the same per-VM m80 comment is
+treated as owned-rule drift and fails closed instead of being silently left
+behind.
+
+Unrelated host NAT rules without the per-VM m80 comment are not owned by m80
+and are left alone.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::nat_postrouting_masquerade_for_guest_source`,
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::cleanup_removes_nat_masquerade_rule`, and
+`crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::residual_nat_rule_with_owned_comment_blocks_cleanup`.
+
 ## Chain Delete
 
 After deleting all comment-owned rules, m80 lists the per-VM filter chain

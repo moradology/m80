@@ -57,6 +57,54 @@ fn cleanup_deletes_only_rules_with_owned_comment() {
 }
 
 #[test]
+fn cleanup_removes_nat_masquerade_rule() {
+    let state = ready_state(Path::new("/tmp/m80-teardown-run"), "vm-a");
+    let comment = outbound_nat_rule_comment(&state);
+    let mut ops = RecordingPolicyOps::default();
+    apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    assert!(ops.rules.iter().any(|rule| {
+        rule.table == "nat"
+            && rule.chain == "POSTROUTING"
+            && rule.spec.iter().any(|arg| arg == &comment)
+    }));
+
+    cleanup_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    assert!(ops
+        .rules
+        .iter()
+        .filter(|rule| rule.table == "nat" && rule.chain == "POSTROUTING")
+        .all(|rule| !rule.spec.iter().any(|arg| arg == &comment)));
+}
+
+#[test]
+fn residual_nat_rule_with_owned_comment_blocks_cleanup() {
+    let state = ready_state(Path::new("/tmp/m80-teardown-run"), "vm-a");
+    let comment = outbound_nat_rule_comment(&state);
+    let mut ops = RecordingPolicyOps::default();
+    apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+    ops.rules.push(InstalledRule {
+        table: "nat".to_owned(),
+        chain: "POSTROUTING".to_owned(),
+        spec: vec![
+            "-s".to_owned(),
+            format!("{}/32", state.guest_ipv4),
+            "-m".to_owned(),
+            "comment".to_owned(),
+            "--comment".to_owned(),
+            comment,
+            "-j".to_owned(),
+            "SNAT".to_owned(),
+        ],
+    });
+
+    let err = cleanup_outbound_nat_policy_with_ops(&mut ops, &state).unwrap_err();
+
+    assert!(matches!(err, NetError::NetworkAllocationConflict { .. }));
+}
+
+#[test]
 fn cleanup_does_not_revert_host_ip_forward_sysctl() {
     let state = ready_state(Path::new("/tmp/m80-teardown-run"), "vm-a");
     let mut ops = RecordingPolicyOps::default();
@@ -202,7 +250,7 @@ impl PolicyOps for RecordingPolicyOps {
         let chain = &args[4];
         match op.as_str() {
             "-S" => {
-                if !self.has_chain(table, chain) {
+                if !self.has_chain(table, chain) && !is_builtin_chain(table, chain) {
                     return Ok(PolicyCommandOutput::failure(
                         "No chain/target/match by that name",
                     ));
@@ -266,6 +314,13 @@ impl PolicyOps for RecordingPolicyOps {
         }
         Ok(())
     }
+}
+
+fn is_builtin_chain(table: &str, chain: &str) -> bool {
+    matches!(
+        (table, chain),
+        ("filter", "FORWARD") | ("nat", "POSTROUTING")
+    )
 }
 
 #[derive(Debug)]

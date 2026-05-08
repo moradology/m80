@@ -65,6 +65,7 @@ pub fn cleanup_outbound_nat_policy_with_ops(
     let comment = outbound_nat_rule_comment(state);
     delete_forwarding_entry_rules(ops, state, &chain, &comment)?;
     delete_nat_masquerade_rule(ops, state, &comment)?;
+    reject_residual_nat_rules_with_comment(ops, &comment)?;
     delete_owned_iptables_chain_rules(ops, "filter", &chain, &comment)?;
     delete_iptables_chain_if_empty(ops, "filter", &chain, &comment)
 }
@@ -154,6 +155,22 @@ fn delete_nat_masquerade_rule(
             "MASQUERADE",
         ],
     )
+}
+
+fn reject_residual_nat_rules_with_comment(
+    ops: &mut impl PolicyOps,
+    comment: &str,
+) -> Result<(), NetError> {
+    let Some(rules) = list_iptables_chain_rules(ops, "nat", "POSTROUTING")? else {
+        return Ok(());
+    };
+    if let Some(rule) = rules.into_iter().find(|rule| rule.contains(comment)) {
+        return Err(NetError::NetworkAllocationConflict {
+            path: iptables_state_path("nat", "POSTROUTING"),
+            detail: format!("unexpected residual NAT rule carrying owned comment: {rule}"),
+        });
+    }
+    Ok(())
 }
 
 fn delete_owned_iptables_chain_rules(
