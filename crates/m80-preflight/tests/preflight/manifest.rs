@@ -101,6 +101,22 @@ fn kernel_auto_discovery_picks_latest_vmlinux_entry() {
 }
 
 #[test]
+fn kernel_must_be_absolute() {
+    let (_artifact_dir, _helper_dir, mut config) = fixture_config();
+    config.kernel_image = Some(PathBuf::from("relative-vmlinux"));
+
+    let err = verify_artifacts(&config).unwrap_err();
+
+    match err {
+        PreflightError::NonAbsolutePath { kind, path } => {
+            assert_eq!(kind, "kernel");
+            assert_eq!(path, PathBuf::from("relative-vmlinux"));
+        }
+        other => panic!("expected kernel non-absolute error, got {other:?}"),
+    }
+}
+
+#[test]
 fn rootfs_must_be_absolute() {
     let (_artifact_dir, _helper_dir, mut config) = fixture_config();
     config.rootfs_image = Some(PathBuf::from("relative-rootfs.ext4"));
