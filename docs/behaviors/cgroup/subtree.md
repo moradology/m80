@@ -76,3 +76,13 @@ return value only).
 
 Test: `crates/m80-cgroup/tests/integration_root.rs::subtree_creation_places_leaf_under_m80_firecracker`
 (#[ignore]).
+
+## live-proc-drop
+
+If a `Subtree` is dropped while the leaf still has live processes, the cgroup
+leaf remains in place because the kernel rejects `rmdir` on a busy cgroup. The
+drop path logs the failed `rmdir` and does not panic; after the live processes
+are killed, normal cleanup can remove the leaf.
+
+Test: `crates/m80-cgroup/src/lib.rs::tests::cgroup_drop_with_live_procs_does_not_rmdir`
+(#[ignore]).

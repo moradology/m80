@@ -1,5 +1,15 @@
 use super::*;
 
+use std::process::{Child, Command};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use nix::errno::Errno;
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
+
+const REAL_CGROUP_PARENT: &str = "/sys/fs/cgroup/m80-firecracker";
+
 #[test]
 fn required_subtree_control_enables_three_controllers() {
     assert_eq!(Limits::default().required_controllers(), BASE_CONTROLLERS);
@@ -179,4 +189,113 @@ fn oom_score_adj_range_is_kernel_bounded() {
             ..
         })
     ));
+}
+
+#[test]
+#[ignore = "requires root and a writable cgroup v2 hierarchy"]
+fn cgroup_drop_with_live_procs_does_not_rmdir() {
+    Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
+
+    let vm_id = format!("m80-drop-live-{}", std::process::id());
+    let leaf = PathBuf::from(REAL_CGROUP_PARENT).join(vm_id);
+    if leaf.exists() {
+        kill_pids_in_real_cgroup(&leaf);
+        wait_for_empty_real_cgroup(&leaf);
+        fs::remove_dir(&leaf).expect("remove stale live-proc cgroup leaf");
+    }
+    fs::create_dir_all(REAL_CGROUP_PARENT).expect("create m80 cgroup parent");
+    fs::create_dir(&leaf).expect("create live-proc cgroup leaf");
+
+    let child = Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn cgroup resident");
+    write_cgroup_file(&leaf.join("cgroup.procs"), &format!("{}\n", child.id())).unwrap();
+
+    let mut guard = LiveProcCgroupGuard {
+        leaf: leaf.clone(),
+        child: Some(child),
+        cleaned: false,
+    };
+
+    drop(Subtree(leaf.clone()));
+
+    assert!(
+        leaf.exists(),
+        "Subtree::Drop must not rmdir a cgroup with live procs"
+    );
+    assert!(
+        !fs::read_to_string(leaf.join("cgroup.procs"))
+            .expect("read cgroup.procs")
+            .trim()
+            .is_empty(),
+        "live process must still be enrolled after failed Drop rmdir"
+    );
+
+    guard.cleanup();
+    assert!(
+        !leaf.exists(),
+        "manual cleanup after killing live procs must remove the cgroup leaf"
+    );
+}
+
+struct LiveProcCgroupGuard {
+    leaf: PathBuf,
+    child: Option<Child>,
+    cleaned: bool,
+}
+
+impl LiveProcCgroupGuard {
+    fn cleanup(&mut self) {
+        if self.cleaned {
+            return;
+        }
+        kill_pids_in_real_cgroup(&self.leaf);
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        wait_for_empty_real_cgroup(&self.leaf);
+        let _ = fs::remove_dir(&self.leaf);
+        self.cleaned = true;
+    }
+}
+
+impl Drop for LiveProcCgroupGuard {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
+fn kill_pids_in_real_cgroup(leaf: &Path) {
+    for pid in read_real_cgroup_pids(leaf) {
+        match kill(Pid::from_raw(pid), Signal::SIGKILL) {
+            Ok(()) | Err(Errno::ESRCH) => {}
+            Err(err) => panic!("SIGKILL {pid}: {err}"),
+        }
+    }
+}
+
+fn wait_for_empty_real_cgroup(leaf: &Path) {
+    let started = Instant::now();
+    while !read_real_cgroup_pids(leaf).is_empty() {
+        assert!(
+            started.elapsed() <= Duration::from_secs(5),
+            "{} still has live pids: {:?}",
+            leaf.display(),
+            read_real_cgroup_pids(leaf)
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn read_real_cgroup_pids(leaf: &Path) -> Vec<i32> {
+    match fs::read_to_string(leaf.join("cgroup.procs")) {
+        Ok(content) => content
+            .split_whitespace()
+            .map(|pid| pid.parse::<i32>().expect("numeric cgroup pid"))
+            .collect(),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => panic!("read {}/cgroup.procs: {err}", leaf.display()),
+    }
 }
