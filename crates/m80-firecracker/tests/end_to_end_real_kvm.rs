@@ -287,6 +287,8 @@ fn end_to_end_real_kvm_jailer_security_parity() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let firecracker_bin = discovery.firecracker_bin.clone();
+    let host_mount_ns_before =
+        std::fs::read_link("/proc/self/ns/mnt").expect("host mount ns before launch");
 
     let run_root = discovery.run_root.clone();
     let config = m80_firecracker::BackendConfig {
@@ -333,7 +335,7 @@ fn end_to_end_real_kvm_jailer_security_parity() {
     assert_supplementary_groups_empty(pid);
     assert_ne!(
         std::fs::read_link(format!("/proc/{pid}/ns/mnt")).expect("firecracker mount ns"),
-        std::fs::read_link("/proc/self/ns/mnt").expect("host mount ns")
+        host_mount_ns_before
     );
     std::fs::metadata(format!("/proc/{pid}/root/kernel"))
         .expect("firecracker root must expose the jailed kernel binding");
@@ -362,6 +364,12 @@ fn end_to_end_real_kvm_jailer_security_parity() {
     assert_exec_file_is_private_copy(pid, &firecracker_bin, 3000, 3000);
 
     let stopped = running.stop().expect("stop");
+    assert_eq!(
+        std::fs::read_link("/proc/self/ns/mnt").expect("host mount ns after stop"),
+        host_mount_ns_before,
+        "jail teardown must leave the host test process in its original mount namespace"
+    );
+    assert_no_mountinfo_references(&run_dir);
     stopped.delete().expect("delete");
 }
 
@@ -512,6 +520,16 @@ fn mount_options(pid: u32, mount_point: &str) -> String {
         }
     }
     panic!("missing {mount_point} in mountinfo:\n{mountinfo}");
+}
+
+fn assert_no_mountinfo_references(path: &std::path::Path) {
+    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").expect("host mountinfo");
+    let needle = path.to_string_lossy();
+    assert!(
+        !mountinfo.contains(needle.as_ref()),
+        "host mountinfo still references {} after stop:\n{mountinfo}",
+        path.display()
+    );
 }
 
 fn assert_exec_file_is_private_copy(pid: u32, source: &std::path::Path, uid: u32, gid: u32) {
