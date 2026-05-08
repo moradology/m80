@@ -535,4 +535,4 @@ Usage rules (identical in both crates):
 - `tests/cleanup_vocabulary.rs` — `CleanupPhase`, `StopDisposition`, `CleanupReleaseBlocker`, `CleanupAuthority`, and `LifecycleFailureKind::ALL` are exhaustive and match behavior docs.
 - `tests/layout.rs` — pure path helpers produce expected strings given fixed run-root + vm-id inputs.
 - `tests/warm_pool.rs` — `WarmPool::new` rejects `target_ready == 0` and workspace-backed configs; `BlankVmResetEvidence` fields are exhaustively named.
-- KVM integration tests (`#[ignore]`) live in `tests/end_to_end_real_kvm.rs`, `tests/warm_pool.rs`, and related lifecycle files; they require a real Firecracker binary and KVM device. The Bestiary stand-in proof is `tests/bestiary_stand_in_real_kvm.rs`.
+- KVM integration tests (`#[ignore]`) live in `tests/end_to_end_real_kvm.rs`, `tests/warm_pool.rs`, and related lifecycle files; they require a real Firecracker binary and KVM device. The Bestiary stand-in proof is `tests/bestiary_stand_in_real_kvm.rs`; cgroup memory enforcement is pinned by `tests/cgroup_memory_oom_real_kvm.rs`.

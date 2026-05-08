@@ -33,6 +33,12 @@ Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_pids_max_enforced_aga
 (#[ignore]) creates a real cgroup leaf with `pids.max = 128`, enrolls a
 waiting fork workload, and asserts the kernel rejects the next fork with
 `EAGAIN`, `pids.current` reaches 128, and `pids.events max` increments.
+Test: `crates/m80-firecracker/tests/cgroup_memory_oom_real_kvm.rs::cgroup_memory_limit_oom_kills_workload`
+(#[ignore]) launches a real VM with unified-v2 cgroups enabled, verifies
+`memory.max` equals the default profile, forces guest tmpfs writes beyond that
+host cap, and asserts `memory.events` records OOM enforcement. Because the
+cgroup constrains the Firecracker process, the user-visible failure is VM
+teardown/protocol loss rather than a trustworthy guest workload exit code.
 
 ## cpuset-pinning
 
