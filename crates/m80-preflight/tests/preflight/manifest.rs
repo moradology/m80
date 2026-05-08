@@ -81,6 +81,13 @@ fn fixture_config() -> (
     (artifact_dir, helper_dir, config)
 }
 
+fn manifest_path(config: &ArtifactPreflightConfig) -> PathBuf {
+    PathBuf::from(format!(
+        "{}.manifest.json",
+        config.rootfs_image.as_ref().unwrap().display()
+    ))
+}
+
 #[test]
 fn kernel_auto_discovery_picks_latest_vmlinux_entry() {
     let (_artifact_dir, _helper_dir, config) = fixture_config();
@@ -112,10 +119,7 @@ fn rootfs_must_be_absolute() {
 #[test]
 fn manifest_schema_version_must_match_current_schema() {
     let (_artifact_dir, _helper_dir, config) = fixture_config();
-    let manifest_path = PathBuf::from(format!(
-        "{}.manifest.json",
-        config.rootfs_image.as_ref().unwrap().display()
-    ));
+    let manifest_path = manifest_path(&config);
     let raw = fs::read_to_string(&manifest_path).unwrap();
     fs::write(
         &manifest_path,
@@ -131,6 +135,44 @@ fn manifest_schema_version_must_match_current_schema() {
     match err {
         PreflightError::Manifest(ManifestError::UnsupportedSchemaVersion(2)) => {}
         other => panic!("expected schema version rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn manifest_future_schema_version_returns_typed_error() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let manifest_path = manifest_path(&config);
+    let raw = fs::read_to_string(&manifest_path).unwrap();
+    fs::write(
+        &manifest_path,
+        raw.replace(
+            &format!("\"schema_version\": {SCHEMA_VERSION}"),
+            "\"schema_version\": 99",
+        ),
+    )
+    .unwrap();
+
+    let err = verify_artifacts(&config).unwrap_err();
+
+    match err {
+        PreflightError::Manifest(ManifestError::UnsupportedSchemaVersion(99)) => {}
+        other => panic!("expected schema version rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn manifest_unknown_field_rejected_at_preflight() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let manifest_path = manifest_path(&config);
+    let raw = fs::read_to_string(&manifest_path).unwrap();
+    let mutated = raw.replace("\n}", ",\n  \"future_field\": \"surprise\"\n}");
+    fs::write(&manifest_path, mutated).unwrap();
+
+    let err = verify_artifacts(&config).unwrap_err();
+
+    match err {
+        PreflightError::Manifest(ManifestError::Json(_)) => {}
+        other => panic!("expected manifest JSON rejection, got {other:?}"),
     }
 }
 
@@ -167,6 +209,23 @@ fn manifest_sha_mismatch_fails_preflight() {
             assert_ne!(actual, expected);
         }
         other => panic!("expected rootfs sha mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn missing_manifest_returns_typed_io_error() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let manifest_path = manifest_path(&config);
+    fs::remove_file(&manifest_path).unwrap();
+
+    let err = verify_artifacts(&config).unwrap_err();
+
+    match err {
+        PreflightError::Manifest(ManifestError::Io { path, source }) => {
+            assert_eq!(path, manifest_path);
+            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+        }
+        other => panic!("expected missing manifest IO error, got {other:?}"),
     }
 }
 
