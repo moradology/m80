@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufRead as _, BufReader, Read as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use m80_firecracker::{
-    Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig,
+    Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig, StoppedSandbox,
 };
 use m80_preflight::{Discovery, PreflightError};
 
@@ -215,7 +215,7 @@ pub fn cmd_run(
 
     if should_writeback(writeback, guest_exit) {
         let workspace = workspace_for_writeback.as_ref().unwrap();
-        if let Err(e) = stopped.extract_changes(workspace) {
+        if let Err(e) = extract_workspace_replacing(&stopped, workspace) {
             match stopped.preserve_for_triage() {
                 Ok(path) => render_warning(
                     "writeback_failed_preserved",
@@ -240,6 +240,57 @@ pub fn cmd_run(
     }
 
     Ok(guest_exit)
+}
+
+fn extract_workspace_replacing(stopped: &StoppedSandbox, workspace: &Path) -> Result<(), FcError> {
+    let backup = workspace.exists().then(|| writeback_backup_path(workspace));
+
+    if let Some(backup) = &backup {
+        fs::rename(workspace, backup)?;
+    }
+
+    match stopped.extract_changes(workspace) {
+        Ok(_) => {
+            if let Some(backup) = backup {
+                remove_path(&backup)?;
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if let Some(backup) = backup {
+                if workspace.exists() {
+                    remove_path(workspace)?;
+                }
+                fs::rename(backup, workspace)?;
+            }
+            Err(e)
+        }
+    }
+}
+
+fn writeback_backup_path(workspace: &Path) -> PathBuf {
+    let parent = workspace
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = workspace
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace");
+    parent.join(format!(
+        ".{name}.m80-writeback-backup-{}-{}",
+        std::process::id(),
+        ulid::Ulid::new()
+    ))
+}
+
+fn remove_path(path: &Path) -> Result<(), std::io::Error> {
+    let meta = fs::symlink_metadata(path)?;
+    if meta.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
 }
 
 fn validate_run_flags(
