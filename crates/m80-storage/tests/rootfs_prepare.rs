@@ -1,6 +1,7 @@
 //! Tests for `Rootfs::prepare` and `Rootfs::new_at`.
 
 use std::os::unix::fs::MetadataExt as _;
+use std::process::Command;
 
 use m80_storage::{Rootfs, StorageError};
 
@@ -70,6 +71,29 @@ fn overlay_template_and_clone_are_sparse() {
     let template = dir.path().join(".rootfs-overlay-template-v1-67108864.ext4");
     assert_sparse_file(&template, size);
     assert_sparse_file(&overlay, size);
+}
+
+#[test]
+fn overlay_clone_fallback_on_non_reflink_fs() {
+    let dir = tempfile::Builder::new()
+        .prefix("m80-rootfs-non-reflink-")
+        .tempdir_in("/dev/shm")
+        .expect("/dev/shm tmpfs must be available for non-reflink fallback test");
+    assert_reflink_always_is_unsupported(dir.path());
+
+    let run_dir = dir.path().join("vm-1");
+    std::fs::create_dir(&run_dir).unwrap();
+    let base = dir.path().join("base.ext4");
+    let overlay = run_dir.join("rootfs.overlay.ext4");
+    std::fs::write(&base, b"fake-base").unwrap();
+
+    let size: u64 = 64 * 1024 * 1024;
+    let rootfs = Rootfs::prepare(&base, &overlay, size).unwrap();
+
+    assert_eq!(rootfs.overlay_path(), overlay.as_path());
+    assert_eq!(std::fs::metadata(&overlay).unwrap().nlink(), 1);
+    assert_sparse_file(&overlay, size);
+    assert_debugfs_can_read_ext4(&overlay);
 }
 
 /// Missing parent directory returns `OverlayTemplateCloneFailed`.
@@ -180,5 +204,39 @@ fn assert_sparse_file(path: &std::path::Path, apparent_size: u64) {
         allocated < apparent_size / 2,
         "{} must be sparse: allocated {allocated} bytes for apparent size {apparent_size}",
         path.display()
+    );
+}
+
+fn assert_reflink_always_is_unsupported(dir: &std::path::Path) {
+    let source = dir.join("reflink-source");
+    let dest = dir.join("reflink-dest");
+    std::fs::write(&source, b"x").unwrap();
+    let output = Command::new("cp")
+        .arg("--reflink=always")
+        .arg(&source)
+        .arg(&dest)
+        .output()
+        .expect("cp must run");
+    assert!(
+        !output.status.success(),
+        "test directory {} unexpectedly supports mandatory reflink",
+        dir.display()
+    );
+}
+
+fn assert_debugfs_can_read_ext4(path: &std::path::Path) {
+    let output = Command::new("debugfs")
+        .arg("-R")
+        .arg("stats")
+        .arg(path)
+        .output()
+        .expect("debugfs must run");
+    assert!(
+        output.status.success(),
+        "debugfs stats {} failed: status={:?}\nstdout={}\nstderr={}",
+        path.display(),
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
 }
