@@ -72,7 +72,23 @@ the file and asserts the content matches.
 
 ---
 
-### B4: A nonzero exit from exec N does not poison the vsock channel
+### B4: Workspace writeback after cancelled streaming exec is explicit
+
+`StoppedSandbox::extract_changes` is the only path that writes the scratch
+workspace image back to a host directory. After a streaming exec is cancelled
+mid-output, writeback either stages a coherent filesystem view or returns a
+typed `FcError::Storage` error. It must not silently produce a corrupt host
+workspace.
+
+**Test:** `extract_changes_after_unclean_stop_coherent`
+the guest writes a stable workspace file, then loops producing stdout and
+workspace writes until the host sends a same-channel cancel request. After
+`stop()`, `extract_changes` must either stage the stable file with exact
+content or fail with `FcError::Storage`.
+
+---
+
+### B5: A nonzero exit from exec N does not poison the vsock channel
 
 `ExecResponse::exit_code` is the guest process's exit status. A nonzero
 exit is a property of the child process, not a protocol error. The vsock
@@ -87,7 +103,7 @@ and expected stdout — confirming the channel is intact.
 
 ---
 
-### B5: Sequential constraint is enforced at compile time
+### B6: Sequential constraint is enforced at compile time
 
 `RunningSandbox::exec` takes `&mut self`. The borrow checker prevents a
 second `exec` call while the first is outstanding without any runtime

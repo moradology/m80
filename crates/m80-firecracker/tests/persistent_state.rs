@@ -18,6 +18,8 @@
 
 mod common;
 
+use std::sync::mpsc;
+
 use common::RunDirDumpGuard;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -142,6 +144,100 @@ fn two_execs_workspace_persists() {
     );
 
     let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn extract_changes_after_unclean_stop_coherent() {
+    let (backend, run_root) = make_backend();
+    let vm_id = "extract-after-cancel";
+    let _dump_guard = RunDirDumpGuard::new(run_root.join(vm_id));
+
+    let host_workspace = tempfile::tempdir().expect("workspace tempdir");
+    let sandbox = backend
+        .admit(sandbox_config_with_workspace(
+            vm_id,
+            host_workspace.path().to_path_buf(),
+        ))
+        .expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+
+    let (cancel_tx, cancel_rx) = mpsc::channel();
+    let mut stdout_total = 0usize;
+    let mut cancel_sent = false;
+    let exit = running
+        .exec_streaming_with_cancel(
+            m80_proto::ExecRequest {
+                program: "/bin/sh".into(),
+                args: vec![
+                    "-c".into(),
+                    "set -eu; \
+                     printf 'stable-before-cancel\\n' > /workspace/stable.txt; \
+                     i=0; \
+                     while :; do \
+                       printf 'm80-cancel-stream-%06d\\n' \"$i\"; \
+                       printf 'workspace-%06d\\n' \"$i\" >> /workspace/partial.log; \
+                       i=$((i + 1)); \
+                     done"
+                        .into(),
+                ],
+                cwd: None,
+                env: None,
+                stdin: None,
+                timeout_ms: Some(30_000),
+                streaming: false,
+            },
+            cancel_rx,
+            |chunk| {
+                if let m80_firecracker::ExecChunk::Stdout { bytes, .. } = chunk {
+                    stdout_total = stdout_total.saturating_add(bytes.len());
+                    if stdout_total >= 64 * 1024 && !cancel_sent {
+                        cancel_tx.send(()).expect("send cancel");
+                        cancel_sent = true;
+                    }
+                }
+                Ok(())
+            },
+        )
+        .expect("streaming exec cancel should return terminal status");
+
+    assert!(cancel_sent, "streaming exec never emitted enough stdout");
+    assert_eq!(exit.status, m80_proto::ExecStatus::Cancelled);
+
+    let stopped = running.stop().expect("stop after cancelled streaming exec");
+    let extract_parent = tempfile::tempdir().expect("extract parent tempdir");
+    let extracted = extract_parent.path().join("changes");
+    match stopped.extract_changes(&extracted) {
+        Ok(change_set) => {
+            assert!(
+                change_set
+                    .staged
+                    .iter()
+                    .any(|path| path == std::path::Path::new("stable.txt")),
+                "stable file must be present in coherent changeset: {change_set:?}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(extracted.join("stable.txt")).unwrap(),
+                "stable-before-cancel\n"
+            );
+            if let Ok(partial) = std::fs::read(extracted.join("partial.log")) {
+                assert!(
+                    std::str::from_utf8(&partial).is_ok(),
+                    "partial workspace log must remain UTF-8 text"
+                );
+                assert!(
+                    !partial.contains(&0),
+                    "partial workspace log must not contain NUL bytes"
+                );
+            }
+        }
+        Err(m80_firecracker::FcError::Storage(_)) => {}
+        Err(other) => panic!(
+            "writeback after cancelled exec must be coherent or typed storage error, got {other:?}"
+        ),
+    }
+
     stopped.delete().expect("delete");
 }
 
