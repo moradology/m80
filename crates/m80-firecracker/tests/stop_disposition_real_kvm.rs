@@ -3,10 +3,12 @@
 mod common;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
+use m80_proto::{ExecRequest, ExecStatus};
 use serde_json::Value;
 
 fn unique_vm_id(prefix: &str) -> String {
@@ -18,11 +20,14 @@ fn unique_vm_id(prefix: &str) -> String {
     format!("{prefix}-{millis}")
 }
 
-fn launch_vm(vm_id: &str, request_id: &str) -> (m80_firecracker::RunningSandbox, PathBuf, u32) {
+fn launch_vm(
+    vm_id: &str,
+    request_id: &str,
+) -> (Arc<Backend>, m80_firecracker::RunningSandbox, PathBuf, u32) {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
-    let backend = std::sync::Arc::new(
+    let backend = Arc::new(
         Backend::new(BackendConfig {
             discovery,
             max_concurrent_vms: 1,
@@ -56,7 +61,7 @@ fn launch_vm(vm_id: &str, request_id: &str) -> (m80_firecracker::RunningSandbox,
         process_exists(firecracker_pid),
         "firecracker pid {firecracker_pid} should be alive after launch"
     );
-    (running, run_root.join(vm_id), firecracker_pid)
+    (backend, running, run_root.join(vm_id), firecracker_pid)
 }
 
 #[test]
@@ -64,7 +69,7 @@ fn launch_vm(vm_id: &str, request_id: &str) -> (m80_firecracker::RunningSandbox,
 fn stop_disposition_normal_records_normal_stop() {
     let request_id = "req-stop-normal";
     let vm_id = unique_vm_id("stop-normal");
-    let (running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
+    let (_backend, running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
 
     let stopped = running.stop().expect("stop");
@@ -80,7 +85,7 @@ fn stop_disposition_normal_records_normal_stop() {
 fn stop_disposition_force_records_force_kill() {
     let request_id = "req-stop-force";
     let vm_id = unique_vm_id("stop-force");
-    let (running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
+    let (_backend, running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
 
     let stopped = running.force_kill().expect("force kill");
@@ -89,6 +94,50 @@ fn stop_disposition_force_records_force_kill() {
     assert_exit_reason(&run_dir, request_id, "force kill complete", "force_kill");
 
     stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete() {
+    let request_id = "req-stop-unreachable-guestd";
+    let vm_id = unique_vm_id("stop-unreachable-guestd");
+    let (backend, mut running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+
+    exec_sh(
+        &mut running,
+        "(sleep 0.2; kill -STOP 1) >/dev/null 2>&1 & printf armed",
+    );
+    std::thread::sleep(Duration::from_millis(500));
+
+    let stopped = running.stop().expect("stop with unreachable guestd");
+
+    wait_dead(firecracker_pid);
+    assert_exit_reason(&run_dir, request_id, "stop complete", "force_kill");
+
+    stopped.delete().expect("delete after failed shutdown RPC");
+    assert!(
+        !run_dir.exists(),
+        "delete must remove run-dir after failed shutdown RPC: {}",
+        run_dir.display()
+    );
+    let admitted = backend
+        .admit(SandboxConfig {
+            vm_id: Some(unique_vm_id("stop-unreachable-reuse")),
+            workspace: None,
+            network: NetworkPolicy::NoEgress,
+            vcpu_count: Some(1),
+            mem_size_mib: Some(512),
+            boot_args: None,
+            overlay_size_bytes: 512 * 1024 * 1024,
+            idle_timeout: None,
+            daemonize: false,
+            request_id: None,
+            preallocated_drive_slots: 0,
+            one_shot: false,
+        })
+        .expect("admission permit must be released after delete");
+    drop(admitted);
 }
 
 fn firecracker_pid(run_dir: &Path) -> u32 {
@@ -123,6 +172,28 @@ fn wait_dead(pid: u32) {
     assert!(
         !process_exists(pid),
         "firecracker pid {pid} should be gone after stop disposition"
+    );
+}
+
+fn exec_sh(running: &mut m80_firecracker::RunningSandbox, script: &str) {
+    let response = running
+        .exec(ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(10_000),
+            streaming: false,
+        })
+        .unwrap_or_else(|e| panic!("exec {script:?}: {e}"));
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "exec {script:?} failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
     );
 }
 

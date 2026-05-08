@@ -30,6 +30,11 @@ logs the RPC failure and still sends SIGKILL. The only bounded wait in this path
 is the shutdown RPC attempt (`SHUTDOWN_RPC_TIMEOUT`); there is no additional
 30-second graceful-poweroff wait in current m80.
 
+The failed-RPC path still returns `StoppedSandbox` after bounded stop and
+release have run. The stopped handle keeps ownership of the run directory until
+the caller chooses `delete()` or `preserve_for_triage()`. After `delete()`, the
+run directory is gone and the admission permit is available for another sandbox.
+
 ## Idempotent Stop
 
 Stop is type-state guarded rather than runtime-idempotent. `RunningSandbox::stop`
@@ -38,3 +43,9 @@ and `RunningSandbox::force_kill` consume `RunningSandbox` and return
 running handle. Repeated cleanup of the stopped run directory is represented by
 the separate `StoppedSandbox::delete` / `preserve_for_triage` phase and stale
 run-root recovery.
+
+## Evidence
+
+- `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_disposition_normal_records_normal_stop`
+- `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_disposition_force_records_force_kill`
+- `crates/m80-firecracker/tests/stop_disposition_real_kvm.rs::stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete`
