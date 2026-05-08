@@ -10,7 +10,7 @@ mod common;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use m80_firecracker::FcError;
 use m80_firecracker::SandboxConfig;
@@ -282,7 +282,6 @@ fn idle_timeout_fires_after_inactivity() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
-    let _dump_guard = RunDirDumpGuard::new(run_root.clone());
 
     let backend_config = BackendConfig {
         discovery,
@@ -299,6 +298,9 @@ fn idle_timeout_fires_after_inactivity() {
         ..SandboxConfig::default()
     };
     let mut sandbox = backend.admit(cfg).expect("admit").launch().expect("launch");
+    let run_dir = sandbox.run_dir().to_owned();
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+    let firecracker_pid = firecracker_pid(&run_dir);
 
     // Do not exec; just sleep past the timeout.
     std::thread::sleep(Duration::from_millis(3000));
@@ -318,4 +320,45 @@ fn idle_timeout_fires_after_inactivity() {
         matches!(err, FcError::IdleTimedOut),
         "expected FcError::IdleTimedOut, got: {err:?}"
     );
+    wait_for_process_exit(firecracker_pid, Duration::from_secs(5));
+}
+
+fn firecracker_pid(run_dir: &std::path::Path) -> u32 {
+    let state_path = run_dir.join("jailer-state.json");
+    let state: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&state_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", state_path.display())),
+    )
+    .expect("jailer-state.json parses");
+    state["firecracker_pid"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("firecracker_pid missing from {}", state_path.display()))
+        as u32
+}
+
+fn wait_for_process_exit(pid: u32, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    let proc_path = std::path::PathBuf::from(format!("/proc/{pid}"));
+    while Instant::now() < deadline {
+        if !process_is_running(pid, &proc_path) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("process {pid} still running after {timeout:?}");
+}
+
+fn process_is_running(pid: u32, proc_path: &std::path::Path) -> bool {
+    if !proc_path.exists() {
+        return false;
+    }
+    let stat_path = proc_path.join("stat");
+    let Ok(stat) = std::fs::read_to_string(&stat_path) else {
+        return false;
+    };
+    let Some(after_name) = stat.rsplit_once(") ") else {
+        panic!("malformed /proc/{pid}/stat: {stat:?}");
+    };
+    let state = after_name.1.as_bytes().first().copied();
+    state != Some(b'Z')
 }
