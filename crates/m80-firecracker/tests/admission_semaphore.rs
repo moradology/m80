@@ -3,6 +3,7 @@
 mod common;
 
 use std::sync::Arc;
+use std::sync::Barrier;
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, SandboxConfig};
 
@@ -59,6 +60,74 @@ fn admit_beyond_limit_returns_refused() {
 }
 
 #[test]
+fn admission_semaphore_concurrent_overflow() {
+    let limit = 4;
+    let contenders = limit + 1;
+    let backend = make_backend(limit as u32);
+    let start = Arc::new(Barrier::new(contenders));
+    let release = Arc::new(Barrier::new(contenders + 1));
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    let handles = (0..contenders)
+        .map(|idx| {
+            let backend = Arc::clone(&backend);
+            let start = Arc::clone(&start);
+            let release = Arc::clone(&release);
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                start.wait();
+                let admit = backend.admit(SandboxConfig {
+                    vm_id: Some(format!("concurrent-admit-{idx}")),
+                    ..common::sandbox_config()
+                });
+                let outcome = match &admit {
+                    Ok(_) => AdmitOutcome::Accepted,
+                    Err(FcError::AdmissionRefused { limit }) => AdmitOutcome::Refused(*limit),
+                    Err(_) => AdmitOutcome::Unexpected,
+                };
+                tx.send(outcome).expect("send admit outcome");
+                release.wait();
+                drop(admit);
+            })
+        })
+        .collect::<Vec<_>>();
+    drop(tx);
+
+    let outcomes = rx.iter().take(contenders).collect::<Vec<_>>();
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, AdmitOutcome::Accepted))
+            .count(),
+        limit
+    );
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, AdmitOutcome::Refused(4)))
+            .count(),
+        1,
+        "outcomes: {outcomes:?}"
+    );
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| !matches!(outcome, AdmitOutcome::Unexpected)),
+        "outcomes: {outcomes:?}"
+    );
+
+    release.wait();
+    for handle in handles {
+        handle.join().expect("admission contender thread");
+    }
+
+    let retry = backend
+        .admit(common::sandbox_config())
+        .expect("slot must return after accepted contenders drop");
+    drop(retry);
+}
+
+#[test]
 fn permit_drop_restores_slot() {
     let backend = make_backend(1);
     let s1 = backend
@@ -105,4 +174,11 @@ fn failed_launch_returns_admission_slot() {
         second.is_ok(),
         "failed launch must drop the admission permit and free the slot"
     );
+}
+
+#[derive(Debug)]
+enum AdmitOutcome {
+    Accepted,
+    Refused(u32),
+    Unexpected,
 }
