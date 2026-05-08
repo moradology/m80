@@ -20,6 +20,10 @@ fn list_attacks_includes_noop() {
         stdout.lines().any(|line| line == "truncated_frame"),
         "{stdout}"
     );
+    assert!(
+        stdout.lines().any(|line| line == "unknown_variant"),
+        "{stdout}"
+    );
 }
 
 #[test]

@@ -27,6 +27,9 @@ Current modes:
 - `truncated_frame` binds the standard guest vsock listener, sends the
   readiness byte, writes an in-cap frame length, writes fewer body bytes than
   promised, and closes the connection.
+- `unknown_variant` binds the standard guest vsock listener, sends the
+  readiness byte, writes a valid envelope with out-of-schema payload field
+  number 255, and closes the connection.
 
 ## Non-goals
 

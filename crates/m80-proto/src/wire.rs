@@ -107,7 +107,82 @@ pub fn encode_raw_envelope(raw: RawEnvelope) -> Result<Vec<u8>, ProtoError> {
 
 /// Decode a protobuf frame body into a raw envelope.
 pub fn decode_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, ProtoError> {
+    reject_unknown_envelope_fields(bytes)?;
     WireEnvelope::decode(bytes)
         .map_err(|e| ProtoError::MalformedPayload(e.to_string()))?
         .into_raw()
+}
+
+fn reject_unknown_envelope_fields(bytes: &[u8]) -> Result<(), ProtoError> {
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let key = read_varint(bytes, &mut offset)?;
+        let field = key >> 3;
+        let wire_type = key & 0x07;
+        if !known_envelope_field(field) {
+            return Err(ProtoError::MalformedPayload(format!(
+                "unknown envelope field: {field}"
+            )));
+        }
+        skip_field(bytes, &mut offset, wire_type)?;
+    }
+    Ok(())
+}
+
+fn known_envelope_field(field: u64) -> bool {
+    matches!(field, 1..=4 | 10..=52)
+}
+
+fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64, ProtoError> {
+    let mut value = 0u64;
+    for shift in (0..64).step_by(7) {
+        let Some(byte) = bytes.get(*offset).copied() else {
+            return Err(ProtoError::MalformedPayload(
+                "truncated protobuf varint".into(),
+            ));
+        };
+        *offset += 1;
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Ok(value);
+        }
+    }
+    Err(ProtoError::MalformedPayload(
+        "protobuf varint exceeds 64 bits".into(),
+    ))
+}
+
+fn skip_field(bytes: &[u8], offset: &mut usize, wire_type: u64) -> Result<(), ProtoError> {
+    match wire_type {
+        0 => {
+            let _ = read_varint(bytes, offset)?;
+        }
+        1 => skip_bytes(bytes, offset, 8)?,
+        2 => {
+            let len = read_varint(bytes, offset)?;
+            let len = usize::try_from(len)
+                .map_err(|_| ProtoError::MalformedPayload("field length too large".into()))?;
+            skip_bytes(bytes, offset, len)?;
+        }
+        5 => skip_bytes(bytes, offset, 4)?,
+        other => {
+            return Err(ProtoError::MalformedPayload(format!(
+                "unsupported protobuf wire type: {other}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn skip_bytes(bytes: &[u8], offset: &mut usize, len: usize) -> Result<(), ProtoError> {
+    let end = offset
+        .checked_add(len)
+        .ok_or_else(|| ProtoError::MalformedPayload("field length overflows usize".into()))?;
+    if end > bytes.len() {
+        return Err(ProtoError::MalformedPayload(
+            "truncated protobuf field".into(),
+        ));
+    }
+    *offset = end;
+    Ok(())
 }

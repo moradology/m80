@@ -38,6 +38,11 @@ The load-bearing wire invariants — the things consumers cannot derive from
   label stamped by constructors via the `Payload` trait. The protobuf `oneof`
   is the typed payload. A `kind`/payload mismatch fails closed; adding or
   removing payload variants still requires an atomic `PROTOCOL_VERSION` bump.
+- **Unknown envelope fields fail closed.** `read_raw_frame` rejects top-level
+  envelope field numbers outside the current schema before converting to a
+  typed payload. This turns unknown protobuf `oneof` payload tags into an
+  explicit `MalformedPayload` with the offending field number instead of
+  silently dropping them as unknown protobuf data.
 - **`ExecResponse::truncated: Option<bool>`** — whether stdout/stderr was
   truncated in buffered responses reconstructed from stream chunks.
 - **Adding an `ExecStatus` variant requires a `PROTOCOL_VERSION` bump.**
@@ -172,3 +177,5 @@ Rust toolchain. None of the other m80 crates.
   `OversizedPayload` fires at `MAX_FRAME_BYTES + 1`, EOF before prefix vs.
   EOF mid-frame both map to `Io(UnexpectedEof)`, `negotiate_version`
   rejects any version other than `PROTOCOL_VERSION`.
+- `tests/envelope_unknown_fields.rs` — unknown top-level envelope fields fail
+  closed with the offending field number.

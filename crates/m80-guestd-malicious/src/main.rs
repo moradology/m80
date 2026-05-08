@@ -13,6 +13,7 @@ enum Attack {
     Noop,
     OversizedLength,
     TruncatedFrame,
+    UnknownVariant,
 }
 
 impl Attack {
@@ -21,6 +22,7 @@ impl Attack {
             "noop" => Ok(Attack::Noop),
             "oversized_length" => Ok(Attack::OversizedLength),
             "truncated_frame" => Ok(Attack::TruncatedFrame),
+            "unknown_variant" => Ok(Attack::UnknownVariant),
             other => anyhow::bail!("unknown malicious guestd attack: {other}"),
         }
     }
@@ -30,6 +32,7 @@ impl Attack {
             Attack::Noop => "noop",
             Attack::OversizedLength => "oversized_length",
             Attack::TruncatedFrame => "truncated_frame",
+            Attack::UnknownVariant => "unknown_variant",
         }
     }
 }
@@ -86,6 +89,7 @@ fn run(args: Args) -> anyhow::Result<()> {
         println!("noop");
         println!("oversized_length");
         println!("truncated_frame");
+        println!("unknown_variant");
         return Ok(());
     }
 
@@ -96,7 +100,10 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
 
     match attack {
-        Attack::Noop | Attack::OversizedLength | Attack::TruncatedFrame => run_peer(attack),
+        Attack::Noop
+        | Attack::OversizedLength
+        | Attack::TruncatedFrame
+        | Attack::UnknownVariant => run_peer(attack),
     }
 }
 
@@ -163,6 +170,10 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
                 write_truncated_frame(&mut stream)?;
                 drop(stream);
             }
+            Attack::UnknownVariant => {
+                write_unknown_variant(&mut stream)?;
+                drop(stream);
+            }
         }
     }
 }
@@ -186,6 +197,48 @@ fn write_truncated_frame(stream: &mut impl Write) -> anyhow::Result<()> {
         .write_all(WRITTEN_BODY)
         .context("write truncated frame partial body")?;
     stream.flush().context("flush truncated frame")
+}
+
+fn write_unknown_variant(stream: &mut impl Write) -> anyhow::Result<()> {
+    let mut body = Vec::new();
+    write_varint(&mut body, 1 << 3);
+    write_varint(&mut body, u64::from(m80_proto::PROTOCOL_VERSION));
+    write_len_field(&mut body, 2, "unknown_variant".as_bytes())?;
+    write_varint(&mut body, (255 << 3) | 2);
+    write_varint(&mut body, 0);
+
+    let len = u32::try_from(body.len()).context("unknown-variant frame length fits u32")?;
+    stream
+        .write_all(&len.to_be_bytes())
+        .context("write unknown-variant frame length")?;
+    stream
+        .write_all(&body)
+        .context("write unknown-variant frame body")?;
+    stream.flush().context("flush unknown-variant frame")
+}
+
+fn write_len_field(out: &mut Vec<u8>, field: u64, bytes: &[u8]) -> anyhow::Result<()> {
+    write_varint(out, (field << 3) | 2);
+    write_varint(
+        out,
+        u64::try_from(bytes.len()).context("field length fits u64")?,
+    );
+    out.extend_from_slice(bytes);
+    Ok(())
+}
+
+fn write_varint(out: &mut Vec<u8>, mut value: u64) {
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -240,5 +293,17 @@ mod tests {
         let declared = u32::from_be_bytes(bytes[..4].try_into().unwrap()) as usize;
         assert_eq!(declared, 16);
         assert!(bytes[4..].len() < declared);
+    }
+
+    #[test]
+    fn unknown_variant_frame_carries_unknown_payload_field() {
+        let mut frame = Vec::new();
+        write_unknown_variant(&mut frame).unwrap();
+        let declared = u32::from_be_bytes(frame[..4].try_into().unwrap()) as usize;
+        assert_eq!(declared, frame[4..].len());
+        assert!(m80_proto::read_raw_frame(&mut std::io::Cursor::new(frame))
+            .unwrap_err()
+            .to_string()
+            .contains("unknown envelope field: 255"));
     }
 }

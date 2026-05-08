@@ -39,9 +39,11 @@ host framing guard before the host allocates a frame body.
 declared, flushes, and closes the connection. This exercises host under-read
 handling without relying on a malformed protobuf body.
 
-Later L12 leaves add frame-producing modes such as unknown variant, wrong
-response type, bogus request id, unsolicited response, unsolicited flood, and
-slowloris.
+`unknown_variant` writes a valid envelope with an out-of-schema protobuf payload
+field number. This exercises the host's unknown envelope field rejection.
+
+Later L12 leaves add frame-producing modes such as wrong response type, bogus
+request id, unsolicited response, unsolicited flood, and slowloris.
 
 ## Evidence
 

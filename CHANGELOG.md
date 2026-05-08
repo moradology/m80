@@ -18,6 +18,9 @@ All notable changes to m80 are documented here. Format roughly follows
 - Added `truncated_frame`, an adversarial mode that declares a frame length,
   writes a short body, closes the channel, and verifies the host returns a
   bounded disconnect-before-terminal error without a stuck reader.
+- Added `unknown_variant`, an adversarial mode that emits an out-of-schema
+  envelope payload field and verifies the host reports the offending field
+  number instead of silently dropping the unknown protobuf data.
 
 ### Added — adversarial wire coverage map (m80-g0v8.12)
 

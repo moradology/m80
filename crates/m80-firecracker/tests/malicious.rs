@@ -12,6 +12,8 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, Sandbox
 mod oversized_length;
 #[path = "malicious/truncated_frame.rs"]
 mod truncated_frame;
+#[path = "malicious/unknown_variant.rs"]
+mod unknown_variant;
 
 fn launch_malicious(
     attack: &str,
