@@ -1,5 +1,6 @@
 //! Snapshot integration tests: capture → restore round-trip, readiness after
-//! restore, and clear failure on missing snapshot files.
+//! restore, edge-case restore failures, and clear failure on missing snapshot
+//! files.
 //!
 //! All three tests that exercise real KVM are `#[ignore]`d by default.
 //! Run on a KVM-capable host with m80 artifacts:
@@ -13,12 +14,13 @@
 mod common;
 use common::RunDirDumpGuard;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, SandboxConfig, SnapshotPaths, FIRST_LINE_MEM_SIZE_MIB,
     FIRST_LINE_VCPU_COUNT,
 };
+use tempfile::TempDir;
 
 /// Build a `BackendConfig` from `m80_preflight::run()`.
 fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
@@ -43,7 +45,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
 }
 
 /// Create a `SnapshotPaths` in the given directory, creating the dir if absent.
-fn snapshot_paths(dir: &std::path::Path) -> SnapshotPaths {
+fn snapshot_paths(dir: &Path) -> SnapshotPaths {
     std::fs::create_dir_all(dir).expect("create snapshot dir");
     SnapshotPaths {
         vm_state: dir.join("vm.snap"),
@@ -209,7 +211,151 @@ fn restore_executes_after_idle() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: missing snapshot files produce a clearly-classified error (not a
+// Test 3: corrupted snapshot files fail restore clearly.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+fn corrupted_snapshot_file_fails_clearly() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let snap_dir = discovery.run_root.join("snap-corrupted");
+    let backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new"),
+    );
+
+    let golden = backend
+        .admit(sandbox_config("snap-corrupt-golden"))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture");
+    let stopped = running.stop().expect("stop golden");
+    stopped.delete().expect("delete golden run-dir");
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&paths.mem)
+        .expect("open mem snapshot")
+        .set_len(4096)
+        .expect("truncate mem snapshot");
+
+    let restore_backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new restore"),
+    );
+    let restore_sandbox = restore_backend
+        .admit(sandbox_config("snap-corrupt-restored"))
+        .expect("admit restore");
+    let err = restore_sandbox
+        .launch_from_snapshot(paths, &discovery)
+        .expect_err("corrupted snapshot restore must fail");
+    let display = err.to_string();
+    assert!(
+        display.contains("snapshot") || display.contains("client") || display.contains("i/o"),
+        "corrupted snapshot error must be clearly classified, got: {display}"
+    );
+
+    let _ = std::fs::remove_dir_all(&snap_dir);
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: post-capture mutations do not rewrite the source snapshot.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+fn post_capture_mutation_does_not_change_snapshot_restore_state() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let snap_dir = discovery.run_root.join("snap-mutation");
+    let backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new"),
+    );
+
+    let golden = backend
+        .admit(sandbox_config("snap-mutation-golden"))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+    assert_exec_ok(
+        &mut running,
+        "echo before > /tmp/snapshot-value",
+        "write pre-capture value",
+    );
+
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture");
+    let stopped = running.stop().expect("stop golden");
+    stopped.delete().expect("delete golden run-dir");
+
+    let mut first = restore_snapshot(&discovery, "snap-mutation-first", paths.clone());
+    let _dump_first = RunDirDumpGuard::new(first.run_dir().to_path_buf());
+    assert_exec_ok(
+        &mut first,
+        "echo after > /tmp/snapshot-value",
+        "mutate first restored VM",
+    );
+    let stopped_first = first.force_kill().expect("stop first restored");
+    stopped_first.delete().expect("delete first restored");
+
+    let mut second = restore_snapshot(&discovery, "snap-mutation-second", paths.clone());
+    let _dump_second = RunDirDumpGuard::new(second.run_dir().to_path_buf());
+    let read = exec_sh(
+        &mut second,
+        "cat /tmp/snapshot-value",
+        "read second restored value",
+    );
+    assert_eq!(
+        read.trim(),
+        "before",
+        "source snapshot must remain immutable"
+    );
+    let stopped_second = second.stop().expect("stop second restored");
+    stopped_second.delete().expect("delete second restored");
+
+    let _ = std::fs::remove_dir_all(&snap_dir);
+}
+
+// ---------------------------------------------------------------------------
+// Test 5: startup recovery removes interrupted snapshot-restore residue.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn interrupted_snapshot_restore_run_dir_recovery_removes_partial_state() {
+    let dir = TempDir::new().expect("tempdir");
+    let partial = dir.path().join("snap-restore-partial");
+    std::fs::create_dir_all(partial.join("snapshot")).expect("partial snapshot dir");
+    std::fs::write(partial.join("snapshot/vm.snap"), b"partial").expect("partial vm snap");
+    std::fs::write(partial.join("snapshot/mem.snap"), b"partial").expect("partial mem snap");
+    std::fs::write(
+        partial.join("ownership.lock"),
+        b"pid=999999\nstarted_at=1\n",
+    )
+    .expect("stale owner marker");
+
+    let config = BackendConfig {
+        discovery: common::fake_discovery(dir.path()),
+        max_concurrent_vms: 1,
+        run_root: dir.path().to_path_buf(),
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: CgroupMode::Disabled,
+    };
+    let backend = Backend::new(config).expect("Backend::new");
+    backend
+        .recover_stale_run_root()
+        .expect("startup recovery must handle partial restore dir");
+
+    assert!(
+        !partial.exists(),
+        "interrupted snapshot restore residue must be removed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: missing snapshot files produce a clearly-classified error (not a
 //         generic IO error swallow).
 //
 // This test does NOT require KVM — it calls launch_from_snapshot with a
@@ -297,4 +443,46 @@ fn missing_snapshot_error_is_classified_without_kvm() {
         display.contains("firecracker client") || display.contains("vsock UDS"),
         "error must be clearly classified as client or vsock-uds, got: {display}"
     );
+}
+
+fn restore_snapshot(
+    discovery: &m80_preflight::Discovery,
+    vm_id: &str,
+    paths: SnapshotPaths,
+) -> m80_firecracker::RunningSandbox {
+    let backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new restore"),
+    );
+    let sandbox = backend
+        .admit(sandbox_config(vm_id))
+        .unwrap_or_else(|e| panic!("admit restore {vm_id}: {e}"));
+    sandbox
+        .launch_from_snapshot(paths, discovery)
+        .unwrap_or_else(|e| panic!("launch_from_snapshot {vm_id}: {e}"))
+}
+
+fn exec_sh(running: &mut m80_firecracker::RunningSandbox, script: &str, label: &str) -> String {
+    let response = running
+        .exec(m80_proto::ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        })
+        .unwrap_or_else(|e| panic!("{label}: {e}"));
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "{label} failed: stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+    String::from_utf8_lossy(&response.stdout).into_owned()
+}
+
+fn assert_exec_ok(running: &mut m80_firecracker::RunningSandbox, script: &str, label: &str) {
+    let _ = exec_sh(running, script, label);
 }
