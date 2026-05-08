@@ -186,7 +186,6 @@ pub fn write_vm_network_state_record(
 
 /// Minimal projection of a VM network state for collision detection.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct VmNetworkStateMinimal {
     pub(crate) vm_id: String,
     pub(crate) bridge: VmBridgeStateMinimal,
@@ -194,7 +193,6 @@ pub(crate) struct VmNetworkStateMinimal {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct VmBridgeStateMinimal {
     pub(crate) cidr: Ipv4Net,
 }

@@ -64,7 +64,9 @@ Sequestering it has three benefits:
   instead of trying to recreate the bridge.
 - Per-VM state is written at `<run_dir>/network-state.json` in a Planned
   phase before TAP mutation and in a Ready phase after TAP creation, MAC
-  assignment, bridge attach, and link-up succeed.
+  assignment, bridge attach, and link-up succeed. Setup rejects a planned
+  guest IPv4 collision both before and after writing Planned state, so a racy
+  sibling setup cannot silently leave two VM states with the same guest IP.
 - If TAP setup fails after bridge creation, m80 deletes the partial TAP if
   present, removes the per-VM Planned state file, and scavenges the unused
   run-root bridge so failed launches do not strand owned network residue.
@@ -198,6 +200,7 @@ Sequestering it has three benefits:
 - `m80-net-mode` — for `OutboundIntent`.
 - `sha2`, `hex`, `ipnet` — derivation math.
 - `serde`, `serde_json` — state files.
+- `nix` — process/file locking around guest-IP allocation.
 - `rtnetlink`, `futures-util`, `tokio` — direct netlink control for
   bridge/address/link operations.
 - `tun` — safe TAP creation over the Linux TUN/TAP driver.
@@ -210,7 +213,8 @@ Sequestering it has three benefits:
 - Determinism table: a fixed list of `(run_root, vm_id)` inputs maps to
   a known set of bridge/tap/IP/MAC outputs. Pinned in JSON.
 - Collision detection: a fixture with two VMs claiming the same guest IP
-  produces `GuestIpv4Collision`.
+  produces `GuestIpv4Collision`; a barrier-synchronized setup test pins that
+  concurrent colliding VM ids cannot both remain ready.
 - Bridge/TAP setup: matching Ready bridge ownership skips bridge mutation,
   bridge and per-VM state files are written atomically with Planned/Ready
   phase transitions, ownership mismatch fails before link mutation, and a TAP

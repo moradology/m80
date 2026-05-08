@@ -11,15 +11,19 @@ mod link_ops;
 mod state;
 mod teardown;
 
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ipnet::Ipv4Net;
+use nix::fcntl::{Flock, FlockArg};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+static NETWORK_ALLOCATION_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub use dns::{
     discover_dns_resolvers_with_ops, is_admitted_dns_resolver, CommandDnsDiscoveryOps,
@@ -86,7 +90,15 @@ pub fn realize_bridge_and_tap_with_ops(
     ensure_bridge_ready_with_ops(ops, run_root, &bridge)?;
 
     let vm_state = planned_vm_network_state(intent, vm_id, run_root, run_dir, bridge.clone());
+    let allocation_lock = lock_network_allocation(run_root)?;
+    reject_guest_ipv4_collision(run_root, vm_id, bridge.cidr, vm_state.guest_ipv4)?;
     write_vm_network_state_record(run_dir, &vm_state)?;
+    if let Err(err) = reject_guest_ipv4_collision(run_root, vm_id, bridge.cidr, vm_state.guest_ipv4)
+    {
+        remove_file_if_present_local(&vm_network_state_path(run_dir))?;
+        return Err(err);
+    }
+    drop(allocation_lock);
 
     let tap_plan = link_ops::TapBridgePlan {
         bridge_name: bridge.bridge_name.clone(),
@@ -108,6 +120,31 @@ pub fn realize_bridge_and_tap_with_ops(
         guest_ipv4: ready_vm_state.guest_ipv4,
         guest_mac: ready_vm_state.guest_mac,
         bridge_cidr: ready_vm_state.bridge.cidr,
+    })
+}
+
+struct AllocationLock {
+    _process_lock: MutexGuard<'static, ()>,
+    _lock: Flock<File>,
+}
+
+fn lock_network_allocation(run_root: &Path) -> Result<AllocationLock, NetError> {
+    let process_lock = NETWORK_ALLOCATION_MUTEX
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let path = run_root.join(".network-allocation.lock");
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    let lock = Flock::lock(file, FlockArg::LockExclusive)
+        .map_err(|(_, errno)| NetError::Io(io::Error::from_raw_os_error(errno as i32)))?;
+    Ok(AllocationLock {
+        _process_lock: process_lock,
+        _lock: lock,
     })
 }
 

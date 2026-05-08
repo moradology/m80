@@ -776,6 +776,7 @@ dependencies = [
  "hex",
  "ipnet",
  "m80-net-mode",
+ "nix 0.29.0",
  "rtnetlink",
  "serde",
  "serde_json",

@@ -1,10 +1,12 @@
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::sync::{Arc, Barrier};
 
 use m80_net_outbound::{
-    bridge_state_path, planned_bridge_state, planned_vm_network_state, read_bridge_state,
-    read_vm_network_state_record, realize_bridge_and_tap_with_ops, vm_network_state_path,
-    write_bridge_state, write_vm_network_state_record, LinkOps, NetError, OutboundIntent,
-    SetupPhase, BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
+    bridge_state_path, derive_guest_addressing, planned_bridge_state, planned_vm_network_state,
+    read_bridge_state, read_vm_network_state_record, realize_bridge_and_tap_with_ops,
+    vm_network_state_path, write_bridge_state, write_vm_network_state_record, LinkOps, NetError,
+    OutboundIntent, SetupPhase, BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
 };
 
 #[test]
@@ -234,6 +236,62 @@ fn planned_bridge_state_recreates_kernel_dropped_bridge() {
 }
 
 #[test]
+fn concurrent_launch_no_ipv4_collision() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_root = temp.path().to_path_buf();
+    let (first_vm, second_vm, colliding_ip) = colliding_vm_ids(&run_root);
+    let barrier = Arc::new(Barrier::new(2));
+
+    let first = {
+        let run_root = run_root.clone();
+        let barrier = Arc::clone(&barrier);
+        let vm_id = first_vm.clone();
+        std::thread::spawn(move || {
+            let run_dir = run_root.join(&vm_id);
+            std::fs::create_dir(&run_dir).unwrap();
+            let mut ops = RecordingLinkOps::default();
+            let intent = intent_with_exception();
+            barrier.wait();
+            realize_bridge_and_tap_with_ops(&mut ops, &intent, &vm_id, &run_root, &run_dir)
+        })
+    };
+    let second = {
+        let run_root = run_root.clone();
+        let barrier = Arc::clone(&barrier);
+        let vm_id = second_vm.clone();
+        std::thread::spawn(move || {
+            let run_dir = run_root.join(&vm_id);
+            std::fs::create_dir(&run_dir).unwrap();
+            let mut ops = RecordingLinkOps::default();
+            let intent = intent_with_exception();
+            barrier.wait();
+            realize_bridge_and_tap_with_ops(&mut ops, &intent, &vm_id, &run_root, &run_dir)
+        })
+    };
+
+    let outcomes = [first.join().unwrap(), second.join().unwrap()];
+
+    assert!(
+        outcomes
+            .iter()
+            .any(|outcome| matches!(outcome, Err(NetError::GuestIpv4Collision { .. }))),
+        "at least one colliding setup must fail closed"
+    );
+    let ready_states = [first_vm, second_vm]
+        .into_iter()
+        .filter_map(|vm_id| read_vm_network_state_record(&run_root.join(vm_id)).ok())
+        .collect::<Vec<_>>();
+    assert!(
+        ready_states
+            .iter()
+            .filter(|state| state.guest_ipv4 == colliding_ip)
+            .count()
+            <= 1,
+        "colliding guest IP {colliding_ip} must not be assigned to two ready VM states"
+    );
+}
+
+#[test]
 fn failed_launch_after_bridge_cleans_bridge() {
     let temp = tempfile::tempdir().unwrap();
     let run_dir = temp.path().join("vm-123");
@@ -287,6 +345,18 @@ fn intent_with_exception() -> OutboundIntent {
         exceptions: vec!["10.42.0.0/16".parse().unwrap()],
         gateway_override: None,
     }
+}
+
+fn colliding_vm_ids(run_root: &std::path::Path) -> (String, String, Ipv4Addr) {
+    let mut seen = HashMap::new();
+    for index in 0..10_000 {
+        let vm_id = format!("vm-collision-{index}");
+        let (guest_ip, _) = derive_guest_addressing(run_root, &vm_id);
+        if let Some(first_vm) = seen.insert(guest_ip, vm_id.clone()) {
+            return (first_vm, vm_id, guest_ip);
+        }
+    }
+    panic!("expected a guest IP collision within 10k deterministic VM ids");
 }
 
 fn read_json(path: &std::path::Path) -> serde_json::Value {

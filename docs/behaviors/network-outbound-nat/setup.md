@@ -35,6 +35,11 @@ If a planned bridge state file exists from a prior interrupted setup, startup
 checks whether the corresponding kernel bridge still exists. Missing links are
 recreated from the planned state before the ready state is written.
 
+Per-VM setup checks sibling VM state files for the planned guest IPv4 before
+and after writing its own Planned state. The second check closes the
+state-file race where two concurrent launches derive the same guest address:
+at most one colliding VM state can remain ready.
+
 ## Tap Creation
 
 The system creates each per-VM TAP interface without invoking `ip` or
@@ -101,4 +106,5 @@ Relevant setup tests:
 `bridge_setup_is_idempotent_with_matching_state`,
 `planned_bridge_state_recovers_existing_kernel_bridge_without_recreate`, and
 `planned_bridge_state_recreates_kernel_dropped_bridge`. Failed setup cleanup is
-pinned by `failed_launch_after_bridge_cleans_bridge`.
+pinned by `failed_launch_after_bridge_cleans_bridge`. Concurrent guest-IP
+collision handling is pinned by `concurrent_launch_no_ipv4_collision`.
