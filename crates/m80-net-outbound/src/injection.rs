@@ -1,28 +1,31 @@
+#![allow(dead_code)]
+
 use std::io::Write;
 use std::net::Ipv4Addr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use crate::{
-    discover_dns_resolvers_with_ops, write_vm_network_state_record, CommandDnsDiscoveryOps,
-    DnsCommandOutput, DnsDiscoveryOps, NetError, SetupPhase, VmNetworkStateRecord,
+    discover_dns_resolvers_with_ops, iptables::invalid_state, write_vm_network_state_record,
+    CommandDnsDiscoveryOps, DnsCommandOutput, DnsDiscoveryOps, NetError, SetupPhase,
+    VmNetworkStateRecord,
 };
 
 /// systemd-networkd directory inside the runtime rootfs image.
-pub const SYSTEMD_NETWORK_DIR: &str = "/etc/systemd/network";
+pub(crate) const SYSTEMD_NETWORK_DIR: &str = "/etc/systemd/network";
 
 /// systemd-resolved drop-in directory inside the runtime rootfs image.
-pub const SYSTEMD_RESOLVED_CONF_DIR: &str = "/etc/systemd/resolved.conf.d";
+pub(crate) const SYSTEMD_RESOLVED_CONF_DIR: &str = "/etc/systemd/resolved.conf.d";
 
 /// m80 networkd unit path inside the runtime rootfs image.
-pub const M80_NETWORKD_FILE: &str = "/etc/systemd/network/10-m80-outbound.network";
+pub(crate) const NETWORKD_FILE: &str = "/etc/systemd/network/10-m80-outbound.network";
 
 /// m80 resolved drop-in path inside the runtime rootfs image.
-pub const M80_RESOLVED_FILE: &str = "/etc/systemd/resolved.conf.d/10-m80-dns.conf";
+pub(crate) const RESOLVED_FILE: &str = "/etc/systemd/resolved.conf.d/10-m80-dns.conf";
 
 /// Rendered guest networking configuration files.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GuestNetworkConfig {
+pub(crate) struct GuestNetworkConfig {
     /// Contents of `10-m80-outbound.network`.
     pub networkd: String,
     /// Contents of `10-m80-dns.conf`.
@@ -37,13 +40,13 @@ pub struct PidOneNetworkCmdline {
 }
 
 /// Host seam for writing guest network configuration into an ext4 image.
-pub trait GuestNetworkConfigOps: DnsDiscoveryOps {
+pub(crate) trait GuestNetworkConfigOps: DnsDiscoveryOps {
     /// Run a host command whose non-zero exit aborts injection.
     fn run_command(&mut self, program: &str, args: &[String]) -> Result<(), NetError>;
 }
 
 /// Real-host backend for guest network config injection via `debugfs`.
-pub struct CommandGuestNetworkConfigOps;
+pub(crate) struct CommandGuestNetworkConfigOps;
 
 impl DnsDiscoveryOps for CommandGuestNetworkConfigOps {
     fn command_output(
@@ -78,7 +81,7 @@ impl GuestNetworkConfigOps for CommandGuestNetworkConfigOps {
 }
 
 /// Discover DNS and inject guest network config through a supplied host seam.
-pub fn inject_guest_network_config(
+pub(crate) fn inject_guest_network_config(
     state: &mut VmNetworkStateRecord,
     runtime_rootfs: &Path,
 ) -> Result<(), NetError> {
@@ -87,7 +90,7 @@ pub fn inject_guest_network_config(
 }
 
 /// Discover DNS and inject guest network config through a supplied host seam.
-pub fn inject_guest_network_config_with_ops(
+pub(crate) fn inject_guest_network_config_with_ops(
     ops: &mut impl GuestNetworkConfigOps,
     state: &mut VmNetworkStateRecord,
     runtime_rootfs: &Path,
@@ -111,7 +114,7 @@ pub fn prepare_pid_one_network_cmdline(
 }
 
 /// Discover DNS and prepare PID-1 network command-line tokens through a seam.
-pub fn prepare_pid_one_network_cmdline_with_ops(
+pub(crate) fn prepare_pid_one_network_cmdline_with_ops(
     ops: &mut impl DnsDiscoveryOps,
     state: &mut VmNetworkStateRecord,
 ) -> Result<PidOneNetworkCmdline, NetError> {
@@ -125,7 +128,7 @@ pub fn prepare_pid_one_network_cmdline_with_ops(
 }
 
 /// Build the `m80.net.*` kernel command-line tokens for PID-1 network setup.
-pub fn build_pid_one_network_cmdline(
+pub(crate) fn build_pid_one_network_cmdline(
     state: &VmNetworkStateRecord,
 ) -> Result<PidOneNetworkCmdline, NetError> {
     validate_ready_state(state)?;
@@ -211,8 +214,8 @@ fn write_guest_network_config(
 ) -> Result<(), NetError> {
     ensure_ext4_dir(ops, runtime_rootfs, SYSTEMD_NETWORK_DIR)?;
     ensure_ext4_dir(ops, runtime_rootfs, SYSTEMD_RESOLVED_CONF_DIR)?;
-    write_ext4_file(ops, runtime_rootfs, M80_NETWORKD_FILE, &config.networkd)?;
-    write_ext4_file(ops, runtime_rootfs, M80_RESOLVED_FILE, &config.resolved)
+    write_ext4_file(ops, runtime_rootfs, NETWORKD_FILE, &config.networkd)?;
+    write_ext4_file(ops, runtime_rootfs, RESOLVED_FILE, &config.resolved)
 }
 
 fn ensure_ext4_dir(
@@ -274,9 +277,3 @@ fn write_ext4_file(
     )
 }
 
-fn invalid_state(path: impl Into<PathBuf>, detail: impl Into<String>) -> NetError {
-    NetError::InvalidNetworkState {
-        path: path.into(),
-        detail: detail.into(),
-    }
-}

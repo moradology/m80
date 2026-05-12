@@ -103,20 +103,14 @@ pub struct Discovery {
 
 impl Discovery {
     /// Render `report` as a fixed-width table for human consumption.
-    pub fn render_table(&self) -> String {
+    #[must_use] pub fn render_table(&self) -> String {
         table::render(&self.report)
     }
 }
 
-pub use artifacts::{
-    verify_artifacts, ArtifactPreflight, ArtifactPreflightConfig, DEFAULT_ARTIFACT_DIR,
-    DEFAULT_RUN_ROOT, ENV_ARTIFACT_DIR, ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE,
-    ENV_RUN_ROOT, MIN_RUN_ROOT_FREE_BYTES, REQUIRED_STORAGE_HELPERS,
-};
+pub use artifacts::{ArtifactPreflightConfig, ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE};
 pub use binary::{
-    discover_binaries, BinaryDiscovery, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN,
-    DEFAULT_JAILER_BIN, DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
-    ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN,
+    BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
 };
 pub use checks::{run, run_with_configs, CgroupPreflightMode, HostFeaturePreflightConfig};
 
@@ -152,6 +146,13 @@ pub enum PreflightError {
     /// `M80_CGROUP_MODE` carried a value preflight does not understand.
     #[error("invalid cgroup mode: {actual:?}")]
     InvalidCgroupMode {
+        /// Observed value.
+        actual: String,
+    },
+
+    /// `M80_KERNEL_KIND` carried a value preflight does not understand.
+    #[error("invalid kernel kind: {actual:?}")]
+    InvalidKernelKind {
         /// Observed value.
         actual: String,
     },
@@ -203,6 +204,15 @@ pub enum PreflightError {
         expected: String,
         /// Reported version.
         actual: String,
+    },
+
+    /// `firecracker --version` exited non-zero.
+    #[error("firecracker --version at {} exited with {status}", path.display())]
+    FirecrackerVersionCommandFailed {
+        /// Binary path that was executed.
+        path: PathBuf,
+        /// Exit status string.
+        status: String,
     },
 
     /// `firecracker --version` matched a version affected by a documented
@@ -267,9 +277,26 @@ pub enum PreflightError {
     #[error("capability read failed: {0}")]
     CapabilityRead(#[source] caps::errors::CapsError),
 
-    /// Underlying I/O failure.
-    #[error("i/o: {0}")]
-    Io(#[from] io::Error),
+    /// Filesystem I/O failure where the target path is known.
+    #[error("i/o on {}: {source}", path.display())]
+    PathIo {
+        /// Path the operation targeted.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
+
+    /// Host syscall or command execution failed without a single filesystem
+    /// target path.
+    #[error("{operation} failed: {source}")]
+    SystemIo {
+        /// Operation being attempted.
+        operation: &'static str,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl PreflightError {
@@ -278,7 +305,7 @@ impl PreflightError {
     /// Rendered by the CLI in non-JSON mode as a `hint:` line after the error
     /// message; omitted from the JSON `detail` field so machine readers see a
     /// clean error string.
-    pub fn hint(&self) -> &'static str {
+    #[must_use] pub fn hint(&self) -> &'static str {
         match self {
             Self::UnsupportedHostPlatform { .. } => {
                 "m80 requires a Linux host; macOS and Windows are not supported"
@@ -294,6 +321,9 @@ impl PreflightError {
             }
             Self::InvalidCgroupMode { .. } => {
                 "set M80_CGROUP_MODE to either `unified-v2` or `disabled`"
+            }
+            Self::InvalidKernelKind { .. } => {
+                "set M80_KERNEL_KIND to either `stock` or `stripped`"
             }
             Self::CgroupV2Unavailable => {
                 "boot the host with a unified cgroup v2 hierarchy or set cgroup_mode = \"disabled\" only for development"
@@ -318,6 +348,9 @@ impl PreflightError {
             }
             Self::FirecrackerVersionMismatch { .. } => {
                 "install the expected version or set M80_FIRECRACKER_VERSION to the installed version to skip the version pin"
+            }
+            Self::FirecrackerVersionCommandFailed { .. } => {
+                "run the firecracker binary manually with --version and inspect stderr"
             }
             Self::FirecrackerCveFloorViolation { .. } => {
                 "upgrade firecracker to a version fixed for every advisory tracked by m80-preflight"
@@ -349,7 +382,8 @@ impl PreflightError {
             Self::CapabilityRead(_) => {
                 "the capability subsystem reported an error; check that /proc/*/status is readable and the kernel supports POSIX capabilities"
             }
-            Self::Io(_) => "check file permissions and whether the path exists",
+            Self::PathIo { .. } => "check file permissions and whether the path exists",
+            Self::SystemIo { .. } => "inspect the host syscall or command failure above",
         }
     }
 }

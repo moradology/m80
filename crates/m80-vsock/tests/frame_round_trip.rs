@@ -10,11 +10,12 @@ use std::os::unix::net::UnixListener;
 
 use tempfile::TempDir;
 
+use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
     CancelRequest, Envelope, ExecRequest, ExecResponse, ExecStatus, ExecTiming,
     PAYLOAD_KIND_CANCEL_REQUEST,
 };
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
+use m80_vsock::Channel;
 
 fn sample_request() -> ExecRequest {
     ExecRequest {
@@ -82,7 +83,7 @@ fn cloned_sender_writes_control_frame_on_same_connection() {
             request_id: "req-1".to_owned(),
         }))
         .unwrap();
-    sender.close().unwrap();
+    drop(sender);
     drop(channel);
 
     server.join().unwrap();
@@ -120,6 +121,6 @@ fn send_recv_envelope_round_trips() {
     assert_eq!(response.payload.stdout, b"hello\n");
     assert_eq!(response.payload.exit_code, Some(0));
 
-    channel.close().unwrap();
+    drop(channel);
     server.join().unwrap();
 }

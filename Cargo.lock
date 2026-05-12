@@ -622,6 +622,7 @@ version = "0.0.0"
 dependencies = [
  "assert_cmd",
  "nix 0.29.0",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
@@ -843,7 +844,6 @@ dependencies = [
 name = "m80-proto"
 version = "0.0.0"
 dependencies = [
- "indexmap",
  "prost",
  "prost-build",
  "prost-derive",
@@ -883,8 +883,6 @@ dependencies = [
 name = "m80-test-helpers"
 version = "0.0.0"
 dependencies = [
- "m80-image-manifest",
- "m80-preflight",
  "tempfile",
 ]
 

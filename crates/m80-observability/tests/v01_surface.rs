@@ -1,6 +1,6 @@
 use m80_observability::{
-    aggregate_health, probe, render_health_json, render_prometheus, Diagnostics, EventKind,
-    HealthSnapshot, OpsMetrics, Phase, SourceClass, VmEvent, DIAGNOSTICS_SCHEMA_VERSION,
+    aggregate_health, probe, render_health_json, render_prometheus, Diagnostics, HealthSnapshot,
+    OpsMetrics, Phase, VmEvent,
 };
 
 fn sample_event() -> VmEvent {
@@ -45,19 +45,12 @@ fn render_health_json_returns_json() {
 
 #[test]
 fn vm_event_roundtrips_through_serde_json() {
-    let event = VmEvent {
-        schema_version: DIAGNOSTICS_SCHEMA_VERSION,
-        timestamp_unix_ms: 1_700_000_000_000,
-        event_kind: EventKind::Lifecycle,
-        source_class: SourceClass::Host,
-        phase: Phase::Boot,
-        message: "booting".to_string(),
-        request_id: Some("req-1".to_string()),
-        context: Default::default(),
-        duration_us: None,
-        outcome: None,
-        exit_reason: None,
-    };
+    let event = VmEvent::host(
+        Phase::Boot,
+        "booting",
+        Some("req-1".to_string()),
+        Default::default(),
+    );
     let json = serde_json::to_string(&event).expect("serialize");
     let back: VmEvent = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, event);

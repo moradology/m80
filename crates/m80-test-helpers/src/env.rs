@@ -27,7 +27,7 @@ pub struct EnvRestore {
 
 impl EnvRestore {
     /// Snapshot the current value (or absence) of each key in `keys`.
-    pub fn capture(keys: &[&'static str]) -> Self {
+    #[must_use] pub fn capture(keys: &[&'static str]) -> Self {
         Self {
             values: keys
                 .iter()

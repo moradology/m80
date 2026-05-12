@@ -89,7 +89,10 @@ fn io_error_displays() {
 
 #[test]
 fn config_error_displays() {
-    let e = FcError::Config(ConfigError::Other("test config error".into()));
+    let e = FcError::Config(ConfigError::InvalidValue {
+        field: "test",
+        reason: "test config error".into(),
+    });
     let s = e.to_string();
     assert!(s.contains("test config error"), "got: {s}");
 }

@@ -42,15 +42,7 @@ fn installs_init_symlink_for_pid_one_boot() {
 fn installs_pid_one_mountpoint_dirs() {
     let dir = install_fixture();
 
-    for dir_name in [
-        "workspace",
-        "proc",
-        "sys",
-        "dev",
-        "lower",
-        "upper",
-        "merged",
-    ] {
+    for dir_name in super::PID_ONE_MOUNTPOINT_DIRS {
         assert!(
             dir.path().join(dir_name).is_dir(),
             "/{dir_name} must exist for PID-1 overlay setup"

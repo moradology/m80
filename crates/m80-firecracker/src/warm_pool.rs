@@ -201,9 +201,9 @@ impl WarmPool {
             let now = Instant::now();
             if now >= deadline {
                 if let Some(err) = &state.last_fill_error {
-                    return Err(FcError::Config(ConfigError::Other(format!(
-                        "warm pool fill failed: {err}"
-                    ))));
+                    return Err(FcError::WarmPoolFillFailed {
+                        detail: err.clone(),
+                    });
                 }
                 return Err(FcError::PoolEmpty {
                     target_ready: self.inner.config.target_ready,
@@ -220,7 +220,7 @@ impl WarmPool {
     }
 
     /// Return an observable state snapshot.
-    pub fn snapshot(&self) -> WarmPoolSnapshot {
+    #[must_use] pub fn snapshot(&self) -> WarmPoolSnapshot {
         self.inner.snapshot()
     }
 }
@@ -228,12 +228,26 @@ impl WarmPool {
 impl Drop for WarmPool {
     fn drop(&mut self) {
         self.inner.shutdown.store(true, Ordering::Relaxed);
-        let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
-        let ready: Vec<RunningSandbox> = state.ready.drain(..).collect();
-        self.inner.changed.notify_all();
-        drop(state);
-        for sandbox in ready {
-            let _ = discard_sandbox(sandbox);
+        loop {
+            let ready = {
+                let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                if state.ready.is_empty() && state.filling == 0 {
+                    self.inner.changed.notify_all();
+                    return;
+                }
+                while state.ready.is_empty() && state.filling > 0 {
+                    let (next, _) = self
+                        .inner
+                        .changed
+                        .wait_timeout(state, Duration::from_millis(50))
+                        .unwrap_or_else(|p| p.into_inner());
+                    state = next;
+                }
+                state.ready.drain(..).collect::<Vec<_>>()
+            };
+            for sandbox in ready {
+                let _ = discard_sandbox(sandbox);
+            }
         }
     }
 }
@@ -273,16 +287,17 @@ impl WarmPoolInner {
             std::thread::spawn(move || {
                 let launched = inner.launch_slot();
                 let backoff = {
-                    let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                    state.filling = state.filling.saturating_sub(1);
                     match launched {
                         Ok(sandbox) if inner.shutdown.load(Ordering::Relaxed) => {
-                            drop(state);
                             let _ = discard_sandbox(sandbox);
+                            let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            state.filling = state.filling.saturating_sub(1);
                             inner.changed.notify_all();
                             return;
                         }
                         Ok(sandbox) => {
+                            let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            state.filling = state.filling.saturating_sub(1);
                             state.ready.push_back(sandbox);
                             state.last_fill_error = None;
                             state.consecutive_fill_errors = 0;
@@ -290,6 +305,8 @@ impl WarmPoolInner {
                             None
                         }
                         Err(e) => {
+                            let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            state.filling = state.filling.saturating_sub(1);
                             state.consecutive_fill_errors =
                                 state.consecutive_fill_errors.saturating_add(1);
                             let idx = (state.consecutive_fill_errors as usize - 1)
@@ -343,10 +360,10 @@ fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<()
                 return Ok(());
             }
             Ok(resp) => {
-                return Err(FcError::Config(ConfigError::Other(format!(
-                    "warm pool ready probe failed: status={:?} exit_code={:?}",
-                    resp.status, resp.exit_code
-                ))));
+                return Err(FcError::WarmReadyProbeRejected {
+                    status: resp.status,
+                    exit_code: resp.exit_code,
+                });
             }
             Err(e) => {
                 last_error = Some(e);
@@ -354,7 +371,5 @@ fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<()
             }
         }
     }
-    Err(last_error.unwrap_or_else(|| {
-        FcError::Config(ConfigError::Other("warm pool ready probe failed".into()))
-    }))
+    Err(last_error.unwrap_or(FcError::WarmReadyProbeNoResult))
 }

@@ -9,13 +9,74 @@ use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 
 const REAL_CGROUP_PARENT: &str = "/sys/fs/cgroup/m80-firecracker";
+const UNIFIED_V2_MOUNTS: &str = "\
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+cgroup2 /sys/fs/cgroup cgroup2 rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot 0 0
+";
+const V1_MOUNTS: &str = "\
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,cpu,cpuacct 0 0
+cgroup /sys/fs/cgroup/memory cgroup rw,memory 0 0
+cgroup /sys/fs/cgroup/pids cgroup rw,pids 0 0
+";
+const HYBRID_WRONG_MOUNT_MOUNTS: &str = "\
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+cgroup2 /sys/fs/cgroup/unified cgroup2 rw 0 0
+cgroup /sys/fs/cgroup/memory cgroup rw,memory 0 0
+";
 
 #[test]
 fn required_subtree_control_enables_three_controllers() {
     assert_eq!(Limits::default().required_controllers(), BASE_CONTROLLERS);
     assert_eq!(
-        Limits::m80_default().required_controllers(),
+        Limits::preset().required_controllers(),
         vec!["cpu", "memory", "pids", "io"]
+    );
+}
+
+#[test]
+fn unified_v2_mounts_accepts() {
+    let result = probe_mounts(UNIFIED_V2_MOUNTS);
+    match result {
+        Ok(()) | Err(CgroupError::UnsupportedHostMode) => {}
+        Err(e) => panic!("unexpected error from probe_mounts on v2 mounts: {e:?}"),
+    }
+}
+
+#[test]
+fn v1_mounts_returns_unsupported() {
+    let result = probe_mounts(V1_MOUNTS);
+    assert!(
+        matches!(result, Err(CgroupError::UnsupportedHostMode)),
+        "v1 mounts must return UnsupportedHostMode, got {result:?}"
+    );
+}
+
+#[test]
+fn hybrid_wrong_root_returns_unsupported() {
+    let result = probe_mounts(HYBRID_WRONG_MOUNT_MOUNTS);
+    assert!(
+        matches!(result, Err(CgroupError::UnsupportedHostMode)),
+        "cgroup2 at wrong mount point must return UnsupportedHostMode, got {result:?}"
+    );
+}
+
+#[test]
+fn empty_mounts_returns_unsupported() {
+    let result = probe_mounts("");
+    assert!(
+        matches!(result, Err(CgroupError::UnsupportedHostMode)),
+        "empty mounts must return UnsupportedHostMode, got {result:?}"
+    );
+}
+
+#[test]
+fn cgroup2_at_exact_root_is_required() {
+    let mounts = "cgroup2 /sys/fs/cgroup/foo cgroup2 rw 0 0\n";
+    let result = probe_mounts(mounts);
+    assert!(
+        matches!(result, Err(CgroupError::UnsupportedHostMode)),
+        "cgroup2 at subpath must not be accepted: {result:?}"
     );
 }
 

@@ -1,10 +1,11 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{
-    bridge_state_path, derive_tap_name, link_ops, outbound_nat_filter_chain,
-    outbound_nat_rule_comment, read_bridge_state, read_vm_network_state_record,
-    vm_network_state_path, LinkOps, NetError, PolicyOps, VmNetworkStateRecord,
+    bridge_state_path, derive_tap_name, iptables::iptables_args, iptables::iptables_state_path,
+    link_ops, outbound_nat_filter_chain, outbound_nat_rule_comment, read_bridge_state,
+    read_vm_network_state_record, vm_network_state_path, LinkOps, NetError, PolicyOps,
+    VmNetworkStateRecord,
 };
 
 /// Tear down network state owned by `vm_id` through real host backends.
@@ -289,18 +290,6 @@ fn split_iptables_rule_spec(rule: &str) -> Vec<String> {
         .collect()
 }
 
-fn iptables_args(table: &str, operation: &str, chain: &str, rest: &[String]) -> Vec<String> {
-    let mut args = vec![
-        "-w".to_owned(),
-        "-t".to_owned(),
-        table.to_owned(),
-        operation.to_owned(),
-        chain.to_owned(),
-    ];
-    args.extend(rest.iter().cloned());
-    args
-}
-
 fn remove_file_if_present(path: &Path) -> Result<(), NetError> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -389,6 +378,3 @@ fn validate_bridge_owner_record_for_cleanup(state: &VmNetworkStateRecord) -> Res
     })
 }
 
-fn iptables_state_path(table: &str, chain: &str) -> PathBuf {
-    PathBuf::from(format!("iptables:{table}:{chain}"))
-}

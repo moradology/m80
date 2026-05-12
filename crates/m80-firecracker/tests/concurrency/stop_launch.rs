@@ -22,7 +22,9 @@ fn concurrent_stop_launch_run_dir_race() {
         .expect("Backend::new"),
     );
 
-    let vm_id = format!("stop-launch-race-{}", unique_suffix());
+    // vm_id stays short: AF_UNIX path budget is 107 bytes and m80-jailer's
+    // nested layout uses vm_id twice.
+    let vm_id = format!("slr-{:04x}", unique_suffix() % 0x10000);
     let sandbox = backend.admit(config(&vm_id)).expect("admit first sandbox");
     let mut running = sandbox.launch().expect("launch first sandbox");
     let response = running.exec(true_request()).expect("exec true");

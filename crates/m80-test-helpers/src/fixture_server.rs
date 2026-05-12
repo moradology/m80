@@ -13,8 +13,6 @@
 //! Crate-specific convenience wrappers (`setup_with_204`, `resp_204`, etc.)
 //! live in the consumer crate's own `fixture_server` module.
 
-#![allow(dead_code)]
-
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::thread::{self, JoinHandle};
@@ -28,7 +26,7 @@ use tempfile::TempDir;
 /// `.join()` returns a [`FixtureResult`].
 pub struct SingleFixtureServer {
     pub socket_path: std::path::PathBuf,
-    pub _dir: TempDir,
+    _dir: TempDir,
     handle: JoinHandle<FixtureResult>,
 }
 
@@ -53,6 +51,7 @@ impl SingleFixtureServer {
     }
 
     /// Wait for the server thread and return what it captured.
+    /// Callers commonly use this purely as a teardown sync, dropping the result.
     pub fn join(self) -> FixtureResult {
         self.handle.join().expect("fixture server panicked")
     }
@@ -74,7 +73,7 @@ pub struct MultiFixtureServer {
     /// Path the listener is bound to.
     pub socket_path: std::path::PathBuf,
     /// Keep alive until after the test.
-    pub _dir: TempDir,
+    _dir: TempDir,
     handle: JoinHandle<Vec<String>>,
 }
 
@@ -106,6 +105,7 @@ impl MultiFixtureServer {
     }
 
     /// Wait for the server thread and return all captured requests in order.
+    /// Callers commonly use this purely as a teardown sync, dropping the result.
     pub fn join(self) -> Vec<String> {
         self.handle.join().expect("fixture server panicked")
     }
@@ -160,12 +160,12 @@ fn read_full_request(stream: &mut UnixStream) -> String {
 // ── Common response builders ─────────────────────────────────────────────────
 
 /// Build a `204 No Content` response.
-pub fn resp_204() -> Vec<u8> {
+#[must_use] pub fn resp_204() -> Vec<u8> {
     b"HTTP/1.1 204 No Content\r\n\r\n".to_vec()
 }
 
 /// Build a `400 Bad Request` response with a JSON body.
-pub fn resp_400(body: &str) -> Vec<u8> {
+#[must_use] pub fn resp_400(body: &str) -> Vec<u8> {
     format!(
         "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{}",
         body.len(),

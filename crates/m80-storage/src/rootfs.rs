@@ -56,7 +56,7 @@ impl Rootfs {
     ///
     /// Intended for tests and recovery scenarios where both files are already
     /// in place.
-    pub fn new_at(base: &Path, overlay: &Path) -> Self {
+    #[must_use] pub fn new_at(base: &Path, overlay: &Path) -> Self {
         Self {
             base: base.to_path_buf(),
             overlay: overlay.to_path_buf(),
@@ -65,12 +65,12 @@ impl Rootfs {
 
     /// The shared, read-only base ext4.  Same host file across all VMs from
     /// this image; host page cache deduplicates.
-    pub fn base_path(&self) -> &Path {
+    #[must_use] pub fn base_path(&self) -> &Path {
         &self.base
     }
 
     /// The per-VM writable overlay ext4 produced by [`Rootfs::prepare`].
-    pub fn overlay_path(&self) -> &Path {
+    #[must_use] pub fn overlay_path(&self) -> &Path {
         &self.overlay
     }
 }

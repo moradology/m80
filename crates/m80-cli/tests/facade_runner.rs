@@ -1,10 +1,10 @@
 //! Runner tests: exercise CLI dispatch without spawning the `m80` binary.
 
 use clap::Parser;
-use m80_cli::{
-    errors::{EXIT_CONFIG, EXIT_NOT_IMPLEMENTED},
-    runner, Cli,
-};
+use m80_cli::{runner, Cli};
+
+const EXIT_CONFIG: i32 = 6;
+const EXIT_NOT_IMPLEMENTED: i32 = 7;
 
 #[test]
 fn runner_dispatches_version_without_subprocess() {

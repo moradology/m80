@@ -9,7 +9,8 @@ use tracing::warn;
 
 use m80_jailer::inspect_run_dir;
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
+use crate::layout::{socket_path_len, SUN_PATH_BUDGET};
 use crate::runroot::{run_dir_liveness, RunDirLiveness};
 use crate::types::{
     AdmissionPermit, Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig,
@@ -48,8 +49,19 @@ impl Backend {
     /// Acquire one admission permit and return a [`Sandbox`] in Created state.
     ///
     /// Fails fast with [`FcError::AdmissionRefused`] when no permits are
-    /// available. Does not block.
+    /// available, or with [`ConfigError::VmIdPathBudgetExceeded`] when a
+    /// caller-supplied `vm_id` would overflow the AF_UNIX `sun_path` cap.
+    /// Does not block.
     pub fn admit(self: &Arc<Self>, config: SandboxConfig) -> Result<Sandbox, FcError> {
+        // Caller-supplied vm_ids are validated up front so the failure
+        // surfaces as a typed config error rather than as an opaque
+        // `bind() AF_UNIX path too long` deep inside launch. The
+        // auto-generated `vm-{pid}-{ts}` form (resolve_vm_id) is bounded by
+        // construction and does not need a check here.
+        if let Some(vm_id) = config.vm_id.as_deref() {
+            check_vm_id_path_budget(&self.config, vm_id)?;
+        }
+
         let (lock, _cvar) = self.semaphore.as_ref();
         let mut available = lock.lock().unwrap_or_else(|p| p.into_inner());
 
@@ -74,7 +86,7 @@ impl Backend {
     }
 
     /// Return the merged effective configuration for diagnostics.
-    pub fn show_effective_config(&self) -> EffectiveConfig {
+    #[must_use] pub fn show_effective_config(&self) -> EffectiveConfig {
         self.effective.clone()
     }
 
@@ -130,7 +142,7 @@ impl Backend {
                     remove_run_dir(&subdir);
                 }
                 Ok(m80_jailer::InspectionDecision::OrphanJail { .. }) => {
-                    // `reap_steps` from the plan file is ignored —
+                    // `reap_plan` from the plan file is ignored —
                     // `remove_run_dir` reads `/proc/self/mountinfo` for the
                     // authoritative mount list, which covers cases the
                     // persisted plan doesn't (partial materialize, older
@@ -152,6 +164,30 @@ impl Backend {
 
         Ok(())
     }
+}
+
+/// Reject a caller-supplied `vm_id` whose constructed AF_UNIX socket path
+/// would exceed the kernel's `sun_path` cap. The check is purely arithmetic
+/// (no filesystem access) so it can run before the admission permit is
+/// acquired.
+fn check_vm_id_path_budget(config: &BackendConfig, vm_id: &str) -> Result<(), FcError> {
+    let fc_basename = config
+        .discovery
+        .firecracker_bin
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("firecracker");
+    let path_len = socket_path_len(&config.run_root, vm_id, fc_basename);
+    if path_len > SUN_PATH_BUDGET {
+        return Err(FcError::Config(ConfigError::VmIdPathBudgetExceeded {
+            vm_id: vm_id.to_owned(),
+            run_root: config.run_root.clone(),
+            fc_basename: fc_basename.to_owned(),
+            path_len,
+            budget: SUN_PATH_BUDGET,
+        }));
+    }
+    Ok(())
 }
 
 /// Build an `EffectiveConfig` snapshot from a `BackendConfig`.

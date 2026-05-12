@@ -20,7 +20,7 @@ fn serializes_program_args_env_cwd_timeout() {
     };
 
     let env =
-        Envelope::with_request_id(req.clone(), "test-req-001".into()).with_max_duration_ms(90_000);
+        Envelope::with_request_id(req, "test-req-001".into()).with_max_duration_ms(90_000);
 
     // Encode via write_frame.
     let mut buf = Vec::new();

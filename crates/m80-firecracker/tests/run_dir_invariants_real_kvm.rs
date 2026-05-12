@@ -24,7 +24,7 @@ fn run_dir_invariants_post_boot() {
     let config = m80_firecracker::BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: m80_firecracker::CgroupMode::Disabled,
@@ -70,6 +70,12 @@ fn run_dir_invariants_post_boot() {
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
+    assert!(
+        !run_dir.exists(),
+        "delete must remove the run-dir and its {} file: {}",
+        m80_firecracker::OWNERSHIP_LOCK,
+        run_dir.display()
+    );
 }
 
 fn assert_top_level_run_dir_contract(run_dir: &Path, firecracker_bin: &Path) {
@@ -81,6 +87,7 @@ fn assert_top_level_run_dir_contract(run_dir: &Path, firecracker_bin: &Path) {
     let expected = BTreeSet::from([
         m80_firecracker::BOOT_IDENTITY_FILE.to_owned(),
         m80_firecracker::CONSOLE_LOG.to_owned(),
+        m80_firecracker::OWNERSHIP_LOCK.to_owned(),
         m80_firecracker::ROOTFS_OVERLAY_IMAGE.to_owned(),
         m80_jailer::JAILER_PLAN_FILE.to_owned(),
         m80_jailer::JAILER_STATE_FILE.to_owned(),

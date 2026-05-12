@@ -10,11 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use m80_firecracker_client::Client;
 use m80_jailer::{JailedFirecracker, MaterializedJail};
+use m80_net_mode::NetworkPolicy;
 use m80_storage::{Rootfs, Scratch};
 
 use crate::runroot::LeaseGuard;
-
-pub use m80_net_mode::NetworkPolicy;
 
 /// First-line Firecracker shape used by default and by snapshot timing proofs.
 pub const FIRST_LINE_VCPU_COUNT: u32 = 1;
@@ -24,7 +23,7 @@ pub const FIRST_LINE_VCPU_COUNT: u32 = 1;
 pub const FIRST_LINE_MEM_SIZE_MIB: u32 = 1024;
 
 /// Default count of preallocated hotplug drive slots.
-pub const DEFAULT_PREALLOCATED_DRIVE_SLOTS: u8 = 0;
+pub(crate) const DEFAULT_PREALLOCATED_DRIVE_SLOTS: u8 = 0;
 
 /// Inner state of the admission semaphore: `(available_permits, Condvar)`.
 pub(crate) type SemaphoreInner = (Mutex<u32>, Condvar);
@@ -77,7 +76,7 @@ pub struct Backend {
 impl Backend {
     /// The merged backend configuration (preflight discovery + admission
     /// limits + jail uid/gid + cgroup mode + run_root).
-    pub fn config(&self) -> &BackendConfig {
+    #[must_use] pub fn config(&self) -> &BackendConfig {
         &self.config
     }
 }
@@ -363,7 +362,8 @@ impl Drop for ForceKillGuard {
 /// ```compile_fail
 /// use std::sync::Arc;
 ///
-/// use m80_firecracker::{ExecRequest, RunningSandbox};
+/// use m80_firecracker::RunningSandbox;
+/// use m80_proto::ExecRequest;
 ///
 /// fn cannot_exec_from_shared_arc(running: Arc<RunningSandbox>, req: ExecRequest) {
 ///     let running = Arc::clone(&running);

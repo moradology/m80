@@ -4,7 +4,7 @@ use std::io::{BufRead, Read, Write};
 use std::process::{Child, ExitStatus};
 use std::sync::mpsc::{self, SyncSender, TryRecvError};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use m80_proto::{
     read_raw_frame, CancelRequest, CancelStatus, ExecExit, ExecRequest, ExecStatus, ExecStderr,
@@ -15,11 +15,10 @@ use crate::guest_log::{self, GuestLogPhase};
 
 use super::{
     build_child_command, cancel_status_from_group_signals, drain_cancel_acks_after_exit,
-    failed_timing, protocol_log, timeout_deadline, unix_ms_now, validate_exec_stdin,
-    write_cancel_ack, write_payload_frame, ConnectionOutcome, POLL_INTERVAL,
+    failed_timing, protocol_log, signal_process_group, timeout_deadline, unix_ms_now,
+    validate_exec_stdin, write_cancel_ack, write_payload_frame, ConnectionOutcome, POLL_INTERVAL,
+    PROCESS_GROUP_TERM_GRACE,
 };
-
-const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
 const STREAM_CHANNEL_BOUND: usize = 1;
 
 enum StreamFrame {
@@ -435,13 +434,6 @@ fn terminate_child_group(child: &mut Child) -> (CancelStatus, Option<ExitStatus>
     let kill = signal_process_group(pgid, nix::sys::signal::Signal::SIGKILL);
     let exit_status = child.wait().ok();
     (cancel_status_from_group_signals(term, kill), exit_status)
-}
-
-fn signal_process_group(
-    pgid: nix::unistd::Pid,
-    signal: nix::sys::signal::Signal,
-) -> Result<(), nix::errno::Errno> {
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pgid.as_raw()), signal)
 }
 
 #[cfg(test)]

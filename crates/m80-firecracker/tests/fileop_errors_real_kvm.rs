@@ -9,12 +9,13 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
+use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
     encode_raw_envelope, read_frame, Envelope, FileError, FileWriteBeginRequest,
     FileWriteBeginResponse, FileWriteChunkRequest, FileWriteChunkResponse, FileWriteCommitRequest,
     FileWriteCommitResponse, PingRequest, PongResponse, ProtoError, RawEnvelope, MAX_FRAME_BYTES,
 };
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
+use m80_vsock::Channel;
 
 use common::RunDirDumpGuard;
 
@@ -115,7 +116,7 @@ fn oversized_chunk_request(upload_id: &str) -> Envelope<FileWriteChunkRequest> {
             Ordering::Greater => {
                 high = mid
                     .checked_sub(1)
-                    .expect("zero-length chunk exceeded frame cap")
+                    .expect("zero-length chunk exceeded frame cap");
             }
         }
     }

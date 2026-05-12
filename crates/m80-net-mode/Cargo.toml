@@ -1,6 +1,6 @@
 [package]
 name = "m80-net-mode"
-description = "Resolver from caller intent to VmNetworkMode (NoEgress | OutboundNat)"
+description = "Resolver from caller intent to VmNetworkMode (NoEgress | AllowOutbound | JoinNetns)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

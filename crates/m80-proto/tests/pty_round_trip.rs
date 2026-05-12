@@ -182,7 +182,7 @@ fn interleaved_resize_and_input_frames_preserve_order_and_request_id() {
             seq: 1,
             event: PtyControlEvent::Eof,
         },
-        request_id.clone(),
+        request_id,
     );
 
     let mut buf = Vec::new();

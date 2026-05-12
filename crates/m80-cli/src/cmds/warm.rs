@@ -5,7 +5,8 @@ mod status;
 
 use std::io::{stdout, Write as _};
 
-use m80_firecracker::{ExecChunk, ExecRequest, ExecResponse, FcError};
+use m80_firecracker::{ConfigError, ExecChunk, FcError};
+use m80_proto::{ExecExit, ExecRequest, ExecResponse};
 
 use crate::args::{EgressMode, WarmAction};
 use crate::errors;
@@ -23,13 +24,16 @@ pub(super) fn cmd_warm(action: WarmAction, json: bool) -> anyhow::Result<i32> {
                     json,
                 )
             } else if !args.foreground {
-                let e = FcError::config_other(
-                    "m80 warm enable requires --foreground in the first owner implementation"
-                        .to_owned(),
-                );
+                let e = FcError::UnsupportedOperation {
+                    operation: "m80 warm enable",
+                    reason: "first owner implementation requires --foreground".to_owned(),
+                };
                 errors::render_error(&e, json)
             } else if args.size == 0 {
-                let e = FcError::config_other("m80 warm enable --size must be greater than zero");
+                let e = FcError::Config(ConfigError::InvalidValue {
+                    field: "size",
+                    reason: "m80 warm enable --size must be greater than zero".to_owned(),
+                });
                 errors::render_error(&e, json)
             } else {
                 owner::run_foreground(args.profile, args.egress, args.size, json)
@@ -64,7 +68,10 @@ pub(super) fn cmd_run_warm(
         Ok(WarmControlResponse::Run(result)) => render_warm_run(result.response, json_mode),
         Ok(WarmControlResponse::Error(err)) => render_owner_error(err, json_mode),
         Ok(WarmControlResponse::Status(_)) => errors::render_error(
-            &FcError::config_other("warm owner returned status for run request"),
+            &FcError::UnexpectedWarmResponse {
+                request: "run",
+                response: "status",
+            },
             json_mode,
         ),
         Err(e) => errors::render_error(&e, json_mode),
@@ -108,7 +115,7 @@ fn render_warm_streaming_run(
                 if let Err(e) = stdout.flush().and_then(|_| stderr.flush()) {
                     return errors::render_error(&FcError::Io(e), false);
                 }
-                let exit = m80_firecracker::ExecExit::from(exit);
+                let exit = ExecExit::from(exit);
                 return super::run_stream::process_exit_code(exit.status, exit.exit_code, None);
             }
             Ok(control::WarmStreamFrame::Error(err)) => return render_owner_error(err, false),
@@ -125,7 +132,10 @@ fn render_status(profile: Option<String>, json_mode: bool) -> i32 {
         Ok(WarmControlResponse::Status(status)) => status,
         Ok(WarmControlResponse::Error(err)) => return render_owner_error(err, json_mode),
         Ok(WarmControlResponse::Run(_)) => {
-            let e = FcError::config_other("warm owner returned run result for status request");
+            let e = FcError::UnexpectedWarmResponse {
+                request: "status",
+                response: "run result",
+            };
             return errors::render_error(&e, json_mode);
         }
         Err(_) => status::unavailable(profile),
@@ -150,7 +160,10 @@ fn send_owner_lifecycle_request(req: WarmControlRequest, json_mode: bool) -> i32
         }
         Ok(WarmControlResponse::Error(err)) => render_owner_error(err, json_mode),
         Ok(WarmControlResponse::Run(_)) => errors::render_error(
-            &FcError::config_other("warm owner returned run result for lifecycle request"),
+            &FcError::UnexpectedWarmResponse {
+                request: "lifecycle",
+                response: "run result",
+            },
             json_mode,
         ),
         Err(e) => errors::render_error(&e, json_mode),
@@ -187,7 +200,10 @@ fn send_owner_lifecycle_response(response: WarmControlResponse, json_mode: bool)
         }
         WarmControlResponse::Error(err) => render_owner_error(err, json_mode),
         WarmControlResponse::Run(_) => errors::render_error(
-            &FcError::config_other("warm owner returned run result for disable request"),
+            &FcError::UnexpectedWarmResponse {
+                request: "disable",
+                response: "run result",
+            },
             json_mode,
         ),
     }

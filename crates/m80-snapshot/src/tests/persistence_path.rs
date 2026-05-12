@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use m80_snapshot::persistence_path;
+use crate::persistence_path;
 
 /// The function produces the exact documented template:
 /// `<store_root>/<workspace_id>/<run_id>/<created_at_unix_ms>-<artifact_set_sha256>/`.

@@ -62,7 +62,7 @@ fn attack_runner_peer_config_transport_survives_env_clear() {
 #[test]
 #[ignore = "requires root, writable cgroup v2, official Firecracker jailer, m80-jailer-harden, and musl attack-runner"]
 fn attack_runner_can_be_enrolled_in_m80_cgroup_limits() {
-    let result = run_attack_in_jailer_with_cgroup("sleep_briefly", Limits::m80_default())
+    let result = run_attack_in_jailer_with_cgroup("sleep_briefly", Limits::preset())
         .expect("run cgroup-enrolled attack");
 
     assert_eq!(

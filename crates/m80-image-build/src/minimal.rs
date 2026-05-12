@@ -22,21 +22,11 @@ use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
 use crate::pipeline::{
     enter_private_mount_namespace, loop_mount, loop_umount, manifest_path,
-    maybe_sleep_after_loop_mount, run_curl, set_executable, truncate_file, KERNEL_FILENAME,
+    maybe_sleep_after_loop_mount, run_curl, set_executable, truncate_file, FC_CI_BASE,
+    KERNEL_FILENAME, PID_ONE_MOUNTPOINT_DIRS,
 };
 
-const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
 const HOST_BUSYBOX: &str = "/bin/busybox";
-const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
-    "workspace",
-    "proc",
-    "sys",
-    "dev",
-    "etc",
-    "lower",
-    "upper",
-    "merged",
-];
 
 /// Busybox applet symlinks installed at `/bin/<applet>`. Picked so the
 /// smoke test (`/bin/echo smoke-passes`) and any common m80-guestd
@@ -154,9 +144,9 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
 
     // Step 10: emit manifest.
     let manifest = m80_image_manifest::Manifest {
-        daemon_binary_path: daemon_binary_host.clone(),
+        daemon_binary_path: daemon_binary_host,
         daemon_binary_sha256: daemon_sha,
-        expected_firecracker_version: cfg.kernel.version.clone(),
+        expected_firecracker_version: cfg.kernel.version,
         guest_port: m80_proto::GUEST_PORT_DEFAULT,
         image_kind: m80_image_manifest::ImageKind::Minimal,
         kernel_image: kernel.clone(),
@@ -217,7 +207,8 @@ fn install_minimal(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BUSYBOX_APPLETS, PID_ONE_MOUNTPOINT_DIRS};
+    use super::BUSYBOX_APPLETS;
+    use crate::pipeline::PID_ONE_MOUNTPOINT_DIRS;
 
     #[test]
     fn pid_one_mountpoints_include_overlay_pivot_targets() {

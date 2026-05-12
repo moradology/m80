@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::Read;
 use std::sync::mpsc::SyncSender;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+
 
 use m80_proto::{CancelStatus, ExecStatus, PtyRequest, PtySignal as ProtoPtySignal, PtySize};
 use portable_pty::{
@@ -14,11 +14,10 @@ use portable_pty::{
 
 use crate::guest_log::{self, GuestLogPhase};
 
-use super::super::cancel_status_from_group_signals;
+use super::super::{cancel_status_from_group_signals, signal_process_group, PROCESS_GROUP_TERM_GRACE};
 pub(super) use super::super::timeout_deadline;
 
 const OUTPUT_CHUNK_BYTES: usize = 4096;
-const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
 
 pub(super) enum PtyFrame {
     Output { seq: u32, bytes: Vec<u8> },
@@ -156,13 +155,6 @@ fn to_nix_signal(signal: ProtoPtySignal) -> nix::sys::signal::Signal {
         ProtoPtySignal::Hangup => nix::sys::signal::Signal::SIGHUP,
         ProtoPtySignal::Kill => nix::sys::signal::Signal::SIGKILL,
     }
-}
-
-fn signal_process_group(
-    pgid: nix::unistd::Pid,
-    signal: nix::sys::signal::Signal,
-) -> Result<(), nix::errno::Errno> {
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pgid.as_raw()), signal)
 }
 
 fn cancel_status_from_single_signal(result: Result<(), nix::errno::Errno>) -> CancelStatus {

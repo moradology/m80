@@ -9,13 +9,14 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
     encode_raw_envelope, read_frame, read_raw_frame, write_frame, Envelope, ExecExit, ExecRequest,
     ExecResponse, ExecStatus, FileWriteRequest, FileWriteResponse, PingRequest, PongResponse,
     ProtoError, RawEnvelope, MAX_FRAME_BYTES, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDOUT,
     PROTOCOL_VERSION,
 };
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
+use m80_vsock::Channel;
 
 use common::RunDirDumpGuard;
 
@@ -117,7 +118,7 @@ fn exact_max_file_write_request() -> Envelope<FileWriteRequest> {
             Ordering::Greater => {
                 high = mid
                     .checked_sub(1)
-                    .expect("zero-length request exceeded frame cap")
+                    .expect("zero-length request exceeded frame cap");
             }
         }
     }

@@ -23,7 +23,7 @@ const NET_MAC_PREFIX: &str = "m80.net.mac=";
 
 /// Parsed PID-1 network configuration from the kernel command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PidOneNetworkConfig {
+pub(crate) struct PidOneNetworkConfig {
     /// Guest interface name, normally `eth0`.
     pub iface: String,
     /// Guest IPv4 address with prefix.
@@ -51,7 +51,7 @@ pub(crate) fn configure_from_proc_cmdline() -> anyhow::Result<()> {
 }
 
 /// Parse m80 PID-1 outbound networking tokens from a kernel command line.
-pub fn parse_cmdline_network_config(cmdline: &str) -> anyhow::Result<Option<PidOneNetworkConfig>> {
+pub(crate) fn parse_cmdline_network_config(cmdline: &str) -> anyhow::Result<Option<PidOneNetworkConfig>> {
     if !cmdline
         .split_whitespace()
         .any(|token| token == NET_OUTBOUND || token == NET_JOIN_NETNS)

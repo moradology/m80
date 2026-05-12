@@ -38,8 +38,10 @@ events carry that opaque id in `<run_dir>/diagnostics.jsonl`.
 transition for the warm-pool restore path. It skips the full cold-boot
 pipeline and instead loads a snapshot pair into a new Firecracker process.
 The VM is left Running after a successful restore; the exec channel readiness
-is confirmed by probing `CONNECT 9001` against the restored vsock UDS
-(retry loop, 50 ms sleep, 5 s cap).
+is confirmed by sending an internal lightweight exec request over the restored
+vsock UDS and waiting for guestd's terminal response (retry loop, 50 ms sleep,
+5 s cap). A bare `CONNECT 9001` is not sufficient on restore because the guest
+kernel can accept the socket while guestd itself is stopped.
 
 `RunningSandbox::capture` pauses the live VM and writes a Full snapshot pair
 to caller-supplied paths. The VM is left in the Paused state after a
@@ -168,8 +170,15 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 | `RunningSandbox::ping_guest` | `(&mut self) -> Result<PongResponse, FcError>` | Round-trip a guest health probe and return the guest handling timestamp. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
 | `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
+| `StoppedSandbox::run_dir` | `(&self) -> &Path` | Return the stopped VM run directory. |
+| `StoppedSandbox::extract_changes` | `(&self, into: &Path) -> Result<ChangeSet, FcError>` | Extract caller-requested workspace changes from the scratch image. |
+| `StoppedSandbox::delete` | `(self) -> Result<(), FcError>` | Remove the run directory and release the admission permit. |
+| `StoppedSandbox::preserve_for_triage` | `(self) -> Result<PathBuf, FcError>` | Move the run directory under `.preserved/` and release the admission permit. |
 
-`SnapshotPaths` is re-exported from `m80-snapshot` for caller convenience.
+`SnapshotPaths` is re-exported from `m80-snapshot` for caller convenience
+because snapshot capture/restore methods are first-class `m80-firecracker`
+lifecycle methods. `ChangeSet` is likewise re-exported from `m80-storage`
+because `StoppedSandbox::extract_changes` returns it directly.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and
 wire-frame pairing only, not an agent semantic identifier.
 `WireProtocolError` is re-exported for callers that need to distinguish broken
@@ -180,12 +189,11 @@ no guest NIC and no host iptables changes. `AllowOutbound` resolves to
 OutboundNat: launch realizes the run-root bridge and per-VM TAP, prepares the
 PID-1 `m80.net.*` boot tokens, installs the host NAT/filter policy, emits a
 Firecracker `NetworkInterface` PUT for `eth0`, and records ownership state for
-failure/delete cleanup. `JoinNetns { netns_path, tap_name, guest_mac,
-guest_ipv4, gateway_ipv4, dns_resolvers }` delegates namespace, TAP, routing,
-and firewall ownership to the caller: m80 validates the namespace path, passes
-it to Firecracker's official jailer as `--netns`, emits the Firecracker
-`NetworkInterface` PUT for the caller-created TAP, and passes static PID-1
-guest network tokens for `eth0`.
+failure/delete cleanup. `JoinNetns { spec: NetnsSpec }` delegates namespace,
+TAP, routing, and firewall ownership to the caller: m80 validates the namespace
+path, passes it to Firecracker's official jailer as `--netns`, emits the
+Firecracker `NetworkInterface` PUT for the caller-created TAP, and passes
+static PID-1 guest network tokens for `eth0`.
 `NoEgress` and `AllowOutbound` are guest networking policies, not private
 network namespaces for the Firecracker VMM process; the only current VMM netns
 placement promise is `JoinNetns`.
@@ -235,12 +243,18 @@ Public surface:
 | `WarmPoolConfig` | Target ready-slot count, snapshot pair, stateless `SandboxConfig`, ready-probe `ExecRequest`, and VM id prefix. |
 | `WarmPool::new` | Constructs the pool; rejects `target_ready == 0` and workspace-backed configs. |
 | `WarmPool::fill_to_target_blocking` | Synchronously pre-restores ready slots before serving traffic. |
+| `WarmPool::start_background_fill` | Starts bounded background restore workers until ready plus filling slots cover the target. |
 | `WarmPool::try_lease` | Returns a ready `WarmLease` or `FcError::PoolEmpty`; never cold-boots or restores on the allocation path. |
+| `WarmPool::wait_for_ready` | Waits until a minimum ready-slot count is available or returns `PoolEmpty` / the most recent fill error on timeout. |
+| `WarmPool::snapshot` | Returns `WarmPoolSnapshot` for status reporting and tests. |
+| `WarmPoolSnapshot` | Observable pool counts: target, ready, filling, leased, discarded. |
 | `WarmLease::exec` | Delegates one exec to the leased `RunningSandbox`. |
 | `WarmLease::exec_with_request_id` | Delegates one exec while temporarily stamping the leased slot with the caller request id. |
 | `WarmLease::exec_streaming` | Delegates one streaming exec to the leased `RunningSandbox`, preserving stdout/stderr chunks before terminal exit. |
 | `WarmLease::exec_streaming_with_request_id` | Streaming exec plus temporary caller request-id stamping. |
 | `WarmLease::attach_drive_verified` | Attaches and identity-verifies a tenant drive before the lease workload; failures release the lease and refill a replacement. |
+| `WarmLease::vm_id` | Returns the leased slot VM id for diagnostics. |
+| `WarmLease::run_dir` | Returns the leased slot run directory for diagnostics before discard. |
 | `WarmLease::discard` | Kills and deletes the slot, then starts background refill. `Drop` performs the same discard best-effort. One-shot leases perform this after the first exec. |
 
 The first implementation never infers reuse from liveness, process
@@ -272,12 +286,12 @@ writing it fails, boot and teardown continue and the failure is logged through
 scan; v0.1 has no background recovery thread. Cross-process collision
 avoidance: distinct `<run_root>` paths.
 
-### Boot cmdline
+### Boot cmdline behavior
 
-`boot_args_for(image_kind, kernel_kind, include_workspace_drive)` selects the
-kernel command line based on the two-axis `(ImageKind, KernelKind)` matrix from
-the image manifest and appends `m80.workspace=0|1` so PID-1 guestd knows
-whether `/dev/vdc` is an actual workspace drive:
+The internal preboot planner selects the kernel command line based on the
+two-axis `(ImageKind, KernelKind)` matrix from the image manifest and appends
+`m80.workspace=0|1` so PID-1 guestd knows whether `/dev/vdc` is an actual
+workspace drive:
 
 | `ImageKind` | `KernelKind` | Cmdline |
 |---|---|---|
@@ -341,7 +355,7 @@ plan succeeds and before `InstanceStart`, the launch path writes
 `<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
 See `docs/behaviors/lifecycle/preboot-wiring.md`.
 
-Preallocated slots are opt-in (`DEFAULT_PREALLOCATED_DRIVE_SLOTS = 0`) because
+Preallocated slots are opt-in and default to zero because
 ordinary one-shot launches do not need extra block devices. The slot exists
 only so request-path attach is a `PATCH /drives/{id}` against a previously
 PUT drive, not a create-then-attach operation. Firecracker versions that do
@@ -434,14 +448,34 @@ causes carry detail. No silent degradation — anything that compromises
 an invariant fails closed.
 
 - `FcError::Config(ConfigError)` carries structured configuration failures via
-  the `ConfigError` enum (`TomlSyntax`, `MissingField`, `InvalidValue`, `Other`
-  variants). It is not a fallback bucket: it is reserved for caller
-  configuration, CLI flag, and config merge failures where no lower crate owns
-  a more specific typed cause.
+  the `ConfigError` enum (`TomlSyntax`, `MissingField`, `InvalidValue`,
+  `VmIdPathBudgetExceeded`). It is not a fallback bucket: it is reserved for
+  caller configuration, CLI flag, and config merge failures where no lower crate
+  owns a more specific typed cause.
+- `ConfigError::VmIdPathBudgetExceeded` is raised at `Backend::admit()` when a
+  caller-supplied `vm_id` would produce an AF_UNIX socket path longer than the
+  kernel `sun_path` cap (107 usable bytes). The path layout is
+  `<run_root>/<vm_id>/<fc_basename>/<vm_id>/root/firecracker.sock`; vm_id
+  appears twice because the jail layout inherits Firecracker's jailer
+  convention. The check is pure arithmetic and runs before the admission
+  permit is acquired — over-budget admits never consume a permit.
 - `FcError::ApiSocketTimeout { path, timeout }` — Firecracker did not create
   its REST API socket during launch.
 - `FcError::GuestdReadyTimeout { path, timeout }` — m80-guestd did not connect
   on the inverted-readiness socket during launch/restore.
+- `FcError::RunDirOwnershipAmbiguous`, `RunDirAlreadyOwned`, and
+  `RunDirNotFound` distinguish run-root admission/walk failures.
+- `FcError::PathIo`, `Json`, `CommandSpawnFailed`, `CommandFailed`, and
+  `ArtifactMissing` preserve concrete host paths, serialization contexts, and
+  helper-command status instead of collapsing them into config strings.
+- `FcError::UnsupportedOperation` names an unavailable v0.x API surface without
+  pretending the caller supplied bad configuration.
+- Warm-pool/owner failures use typed variants (`WarmPoolFillFailed`,
+  `WarmReadyProbeRejected`, `WarmReadyProbeNoResult`,
+  `WarmOwnerSocketExists`, `WarmOwnerNotAcceptingLeases`,
+  `WarmOwnerDrainTimeout`, `WarmCompatibilityMismatch`,
+  `UnexpectedWarmResponse`) so CLI IPC and owner-state failures remain
+  distinguishable from configuration.
 - `FcError::IdleTimedOut` — returned by `exec` when the idle-timeout watcher
   has fired. The caller must drop or `stop()` the sandbox.
 - `LifecycleFailureKind::ALL` is the bounded lifecycle vocabulary used by
@@ -454,8 +488,11 @@ Core types:
 - `Sandbox` — pre-launch handle; owned by `Backend::admit().launch()`.
 - `RunningSandbox` — live VM handle; all exec/file-op/PTY methods live here.
 - `StoppedSandbox` — post-stop handle; carries `delete()` and `preserve_for_triage()`.
-- `Backend` — orchestration root: `new(BackendConfig)`, `admit()`, `recover_stale_run_root()`.
+- `Backend` — orchestration root: `new(BackendConfig)`,
+  `new_with_effective_config(BackendConfig, EffectiveConfig)`, `config()`,
+  `admit()`, `show_effective_config()`, and `recover_stale_run_root()`.
 - `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
+- `WarmPoolSnapshot` — observable warm-pool counts.
 - `WarmLease` — single exec slot checked out from `WarmPool`.
 - `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, one-shot mode, etc.).
 - `HotplugDriveAttach` — host-side request to attach and verify one preallocated drive slot.
@@ -466,12 +503,15 @@ Core types:
 
 Re-exports for callers:
 
-- `SnapshotPaths` (from `m80-snapshot`).
-- `WireProtocolError` (from `m80-proto`).
-- `ExecRequest`, `ExecResponse`, `ExecExit`, `ExecChunk`, `ExecStatus` (from `m80-proto`).
-- `PtyRequest`, `PtyExit`, `PtyOutputChunk`, `PtyHostEvent` (from `m80-proto`).
-- `DirEntry`, `FileMkdirRequest`, `FileMkdirResponse`, `FileStat` (from `m80-proto`).
-- `MetricsResponse` (from `m80-proto`).
+- `SnapshotPaths` (from `m80-snapshot`; intentional lifecycle ergonomics).
+- `NetworkPolicy` and `NetnsSpec` (from `m80-net-mode`).
+- `WireProtocolError` (defined by `m80-firecracker`).
+- `ExecChunk`, `PtyHostEvent`, `PtyOutputChunk` (defined by `m80-firecracker`).
+- `ChangeSet` (from `m80-storage`; intentional stopped-sandbox ergonomics).
+
+Wire request/response types such as `ExecRequest`, `ExecResponse`,
+`ExecExit`, `ExecStatus`, `ExecTiming`, `PtyRequest`, and `FileError` are owned
+by `m80-proto`; callers import them directly from that crate.
 
 Config helpers:
 
@@ -483,10 +523,12 @@ Layout helpers:
 - `run_dir_path`, `firecracker_api_socket_path`, `vsock_socket_path`,
   `rootfs_overlay_path`, `scratch_image_path`, `console_log_path`,
   `boot_identity_path`.
+- `BOOT_IDENTITY_FILE`, `CONSOLE_LOG`, `FIRECRACKER_API_SOCKET`,
+  `ROOTFS_OVERLAY_IMAGE`, `SCRATCH_IMAGE`, `VSOCK_SOCKET`, and
+  `OWNERSHIP_LOCK`.
 
-Boot config:
+Config defaults:
 
-- `boot_args_for(image_kind, kernel_kind, include_workspace_drive) -> String`.
 - `FIRST_LINE_VCPU_COUNT`, `FIRST_LINE_MEM_SIZE_MIB`.
 
 Cleanup vocabulary (behavior docs + regression tests):
@@ -500,6 +542,7 @@ Cleanup vocabulary (behavior docs + regression tests):
 Warm pool:
 
 - `WarmPoolConfig`.
+- `WarmPoolSnapshot`.
 
 ## Non-goals
 
@@ -546,7 +589,7 @@ Usage rules (identical in both crates):
 
 ## Tests
 
-- `tests/boot_args.rs` — `boot_args_for` matrix for all four `(ImageKind, KernelKind)` combinations.
+- `src/preboot.rs` tests — preboot PUT order, boot-source cmdline behavior, drive order, and network-interface placement.
 - `tests/config_loading.rs` — precedence chain, drop-in ordering, unknown-key rejection, and env-override isolation using `load_config_from_paths` and in-memory fixtures.
 - `tests/cleanup_vocabulary.rs` — `CleanupPhase`, `StopDisposition`, `CleanupReleaseBlocker`, `CleanupAuthority`, and `LifecycleFailureKind::ALL` are exhaustive and match behavior docs.
 - `tests/layout.rs` — pure path helpers produce expected strings given fixed run-root + vm-id inputs.

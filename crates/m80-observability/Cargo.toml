@@ -9,8 +9,8 @@ rust-version.workspace = true
 
 [features]
 ## Re-exports probe, health, and prometheus symbols so integration tests can
-## import them.  Not for production use.  Enabled automatically by `cargo test`
-## via dev-dependency feature activation.
+## import them.  Not for production use.  Must be passed explicitly:
+## `cargo test --features _test_internal`.
 _test_internal = []
 
 [lints]

@@ -31,12 +31,24 @@ does this, in order:
 The wrapper does not perform chroot, pivot_root, mknod, cgroup placement, setuid,
 or setgid. Those stay owned by Firecracker's official jailer and `m80-cgroup`.
 
+The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
+`m80-preflight` and launch configuration may override that path with
+`M80_JAILER_HARDEN_BIN`.
+
 ## Public Surface
 
-- Binary: `m80-jailer-harden`.
-- Library helpers used by tests: `parse_args`, `apply_process_hardening`,
-  `exec_jailer`, `run`, plus the parsed `ResourceLimit` / `ResourceLimitKind`
-  values used for argument tests.
+| Public item | Contract |
+| --- | --- |
+| Binary `m80-jailer-harden` | Parses wrapper arguments, applies process hardening, clears the environment, and execs the official jailer. |
+| `HardenArgs` | Opaque parsed argument bundle returned by `parse_args` and consumed by `exec_jailer`. It carries the official jailer path, forwarded jailer args, requested `ResourceLimit` rows, and the cgroup-namespace flag; fields are crate-private. `--uid` and `--gid` remain required parse-time validation inputs but are not stored because the official jailer receives its own uid/gid through the forwarded args after `--`. |
+| `HardenArgs::resource_limits()` | Read-only view of the parsed resource-limit rows for `apply_process_hardening`. |
+| `HardenArgs::new_cgroup_ns()` | Parsed `--new-cgroup-ns` flag for `apply_process_hardening`. |
+| `ResourceLimit { kind, value }` | Public parsed resource-limit row used by tests and callers that inspect parse output. |
+| `ResourceLimitKind` | Supported resource limit names: `NoFile`, `FSize`, `NProc`, `MemLock`, `AddressSpace`, `Core`, and `Stack`. |
+| `HardenError` | Typed pre-exec failure surface: `MissingArgument`, `InvalidValue`, `MissingSeparator`, `MissingJailerArgs`, `SetGroups`, `ClearCaps`, `NoNewPrivs`, `ParentDeathSignal`, `CgroupNamespace`, `SetResourceLimit`, `SignalMask`, `EnumerateFds`, `CloseFd`, and `Exec`. |
+| `parse_args(args)` | Parses wrapper args from an iterator that starts after argv[0]; validates required `--jailer-bin`, `--uid`, `--gid`, separator, and forwarded jailer args. |
+| `apply_process_hardening(resource_limits, new_cgroup_ns)` | Applies the inheritable hardening sequence without execing. |
+| `exec_jailer(args)` | Clears the environment and replaces the current process with the official jailer. Returns only if `exec` fails. |
 
 ## Non-Goals
 

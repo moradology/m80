@@ -2,7 +2,7 @@ use m80_cgroup::{CpuMax, IoMax, Limits};
 
 #[test]
 fn cpu_max_one_cpu() {
-    let limits = Limits::m80_default();
+    let limits = Limits::preset();
 
     match limits.cpu_max.expect("default cpu limit") {
         CpuMax::Quota {
@@ -18,7 +18,7 @@ fn cpu_max_one_cpu() {
 
 #[test]
 fn memory_and_pids_max() {
-    let limits = Limits::m80_default();
+    let limits = Limits::preset();
 
     assert_eq!(limits.memory_max, Some(1_610_612_736));
     assert_eq!(limits.pids_max, Some(128));

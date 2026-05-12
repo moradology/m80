@@ -17,9 +17,6 @@ use sha2::Digest;
 
 use m80_proto::{encode_raw_envelope, Envelope, Payload, ProtoError, RawEnvelope};
 
-/// Re-export the canonical default vsock port from `m80-proto`.
-pub use m80_proto::GUEST_PORT_DEFAULT;
-
 /// Read/write timeout applied to every vsock bridge stream.
 const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -29,7 +26,7 @@ const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
 /// same CID; different `vm_id`s get distinct CIDs (modulo the 32-bit space).
 /// CID is always in the range `3..=u32::MAX - 1`; Firecracker reserves
 /// 0, 1, 2, and `u32::MAX`.
-pub fn cid_for_vm_id(vm_id: &str) -> u32 {
+#[must_use] pub fn cid_for_vm_id(vm_id: &str) -> u32 {
     let mut hasher = sha2::Sha256::new();
     hasher.update(vm_id.as_bytes());
     let bytes = hasher.finalize();
@@ -233,12 +230,6 @@ impl Channel {
     fn teardown(&mut self) -> Result<(), VsockError> {
         self.stream.flush().map_err(|e| io_err(&self.host_uds, e))
     }
-
-    /// Close the connection. The VM's host-side UDS remains available for the
-    /// next channel.
-    pub fn close(mut self) -> Result<(), VsockError> {
-        self.teardown()
-    }
 }
 
 impl Drop for Channel {
@@ -257,11 +248,6 @@ impl ChannelSender {
     {
         send_envelope(&mut self.stream, envelope)
     }
-
-    /// Flush the cloned sender.
-    pub fn close(mut self) -> Result<(), VsockError> {
-        self.stream.flush().map_err(|e| io_err(&self.host_uds, e))
-    }
 }
 
 impl Drop for ChannelSender {
@@ -275,9 +261,6 @@ impl Drop for ChannelSender {
 /// Errors surfaced by [`Channel`] operations.
 #[derive(Debug, thiserror::Error)]
 pub enum VsockError {
-    /// Guest daemon readiness signal did not arrive before the timeout.
-    #[error("guestd readiness signal not observed before timeout")]
-    NotReady,
     /// The Firecracker UDS-to-vsock handshake was malformed.
     #[error("vsock handshake failed")]
     HandshakeFailed,

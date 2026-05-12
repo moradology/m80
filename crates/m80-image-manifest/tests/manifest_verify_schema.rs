@@ -16,6 +16,13 @@ fn mutated_bytes(dir: &std::path::Path, mutate: impl FnOnce(&mut serde_json::Val
     serde_json::to_vec_pretty(&v).unwrap()
 }
 
+fn read_bytes(raw: &[u8]) -> Result<Manifest, ManifestError> {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("manifest.json");
+    std::fs::write(&path, raw).unwrap();
+    Manifest::read(&path)
+}
+
 /// Bead m80-sz1.4.1: future schema_version is rejected as
 /// `UnsupportedSchemaVersion`, not as a structural parse error.
 #[test]
@@ -24,7 +31,7 @@ fn future_schema_version_rejected() {
     let raw = mutated_bytes(dir.path(), |v| {
         v["schema_version"] = serde_json::json!(42u32);
     });
-    let err = Manifest::from_bytes(&raw).unwrap_err();
+    let err = read_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(42)),
         "expected UnsupportedSchemaVersion(42), got {err:?}"
@@ -38,7 +45,7 @@ fn zero_schema_version_rejected() {
     let raw = mutated_bytes(dir.path(), |v| {
         v["schema_version"] = serde_json::json!(0u32);
     });
-    let err = Manifest::from_bytes(&raw).unwrap_err();
+    let err = read_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(0)),
         "expected UnsupportedSchemaVersion(0), got {err:?}"
@@ -52,7 +59,7 @@ fn missing_required_field_rejected() {
     let raw = mutated_bytes(dir.path(), |v| {
         v.as_object_mut().unwrap().remove("daemon_binary_path");
     });
-    let err = Manifest::from_bytes(&raw).unwrap_err();
+    let err = read_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::Json(_)),
         "expected Json error for missing field, got {err:?}"
@@ -66,7 +73,7 @@ fn unknown_field_rejected() {
     let raw = mutated_bytes(dir.path(), |v| {
         v["UNKNOWN_KEY"] = serde_json::json!("surprise");
     });
-    let err = Manifest::from_bytes(&raw).unwrap_err();
+    let err = read_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::Json(_)),
         "expected Json error for unknown field, got {err:?}"
@@ -85,7 +92,7 @@ fn schema_version_check_fires_before_unknown_field_check() {
             .unwrap()
             .insert("future_field".into(), serde_json::json!("v0.99 stuff"));
     });
-    let err = Manifest::from_bytes(&raw).unwrap_err();
+    let err = read_bytes(&raw).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(99)),
         "expected UnsupportedSchemaVersion(99), got {err:?}"
@@ -99,5 +106,5 @@ fn valid_manifest_reads_clean() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::make_artifacts(dir.path());
     let raw = serde_json::to_vec_pretty(&m).unwrap();
-    Manifest::from_bytes(&raw).unwrap();
+    read_bytes(&raw).unwrap();
 }

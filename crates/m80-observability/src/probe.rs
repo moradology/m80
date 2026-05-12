@@ -4,12 +4,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::ObservabilityError;
 
+// Keep these local: `m80-firecracker` depends on `m80-observability`, so this
+// crate cannot import layout constants from the orchestrator without a cycle.
+const FIRECRACKER_API_SOCKET: &str = "firecracker.sock";
 const OWNERSHIP_LOCK: &str = "ownership.lock";
+const VSOCK_SOCKET: &str = "vsock.sock";
 
 /// One per-VM probe record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct VmProbeRecord {
+pub(crate) struct VmProbeRecord {
     /// Health classification.
     pub health: VmHealth,
     /// Path of the run-dir.
@@ -31,7 +35,7 @@ pub struct VmProbeRecord {
 /// Health classification produced by the probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum VmHealth {
+pub(crate) enum VmHealth {
     /// Live but with degraded indicators.
     Degraded,
     /// Process tree gone; residue remains.
@@ -43,14 +47,20 @@ pub enum VmHealth {
 }
 
 /// Probe over a run-root and emit one record per owned VM.
-pub fn probe(run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError> {
+pub(crate) fn probe(run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError> {
     let mut records = Vec::new();
     if !run_root.exists() {
         return Ok(records);
     }
 
-    for entry in std::fs::read_dir(run_root)? {
-        let entry = entry?;
+    for entry in std::fs::read_dir(run_root).map_err(|source| ObservabilityError::PathIo {
+        path: run_root.to_path_buf(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| ObservabilityError::PathIo {
+            path: run_root.to_path_buf(),
+            source,
+        })?;
         let path = entry.path();
         if !path.is_dir() || !path.join(OWNERSHIP_LOCK).exists() {
             continue;
@@ -69,8 +79,8 @@ fn probe_one(vm_id: &str, run_dir: &Path) -> Result<VmProbeRecord, Observability
     let owner_live = ownership_pid
         .map(|pid| Path::new(&format!("/proc/{pid}")).exists())
         .unwrap_or(false);
-    let api_socket_visible = tree_contains_file_name(run_dir, "firecracker.sock")?;
-    let vsock_socket_visible = tree_contains_file_name(run_dir, "vsock.sock")?;
+    let api_socket_visible = tree_contains_file_name(run_dir, FIRECRACKER_API_SOCKET)?;
+    let vsock_socket_visible = tree_contains_file_name(run_dir, VSOCK_SOCKET)?;
     let diagnostics_visible = run_dir.join(crate::DIAGNOSTICS_FILE_NAME).exists();
     let health = classify(owner_live, api_socket_visible, vsock_socket_visible);
 
@@ -108,8 +118,14 @@ fn read_ownership_pid(run_dir: &Path) -> Option<u32> {
 fn tree_contains_file_name(root: &Path, file_name: &str) -> Result<bool, ObservabilityError> {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir)? {
-            let entry = entry?;
+        for entry in std::fs::read_dir(&dir).map_err(|source| ObservabilityError::PathIo {
+            path: dir.clone(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| ObservabilityError::PathIo {
+                path: dir.clone(),
+                source,
+            })?;
             let path = entry.path();
             if path.file_name().and_then(|name| name.to_str()) == Some(file_name) {
                 return Ok(true);
@@ -139,8 +155,8 @@ mod tests {
         let live = write_owned_vm(temp.path(), "live", std::process::id());
         std::fs::File::create(live.join(crate::DIAGNOSTICS_FILE_NAME)).unwrap();
         std::fs::create_dir_all(live.join("jail")).unwrap();
-        std::fs::File::create(live.join("jail/firecracker.sock")).unwrap();
-        std::fs::File::create(live.join("jail/vsock.sock")).unwrap();
+        std::fs::File::create(live.join("jail").join(FIRECRACKER_API_SOCKET)).unwrap();
+        std::fs::File::create(live.join("jail").join(VSOCK_SOCKET)).unwrap();
         std::fs::create_dir_all(temp.path().join("foreign")).unwrap();
 
         let records = probe(temp.path()).unwrap();

@@ -80,22 +80,17 @@ which is the right place for a security review to start.
 - `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig, host_feature_config: HostFeaturePreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
 - `BinaryDiscoveryConfig { firecracker_bin, jailer_bin, jailer_harden_bin,
   expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
-  the standalone binary-resolution step.
-- `discover_binaries(&BinaryDiscoveryConfig) -> Result<BinaryDiscovery,
-  PreflightError>`; rejects Firecracker versions covered by the tracked CVE
-  floor before applying an optional exact pin.
-- `BinaryDiscovery { firecracker_bin, firecracker_version, jailer_bin,
-  jailer_harden_bin }`.
+  explicit `run_with_configs` callers. There is no `Default`; callers must use
+  `from_env()` or construct the full effective config.
 - `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
   kernel_kind, run_root, helper_search_path }` and
-  `ArtifactPreflightConfig::from_env()` for standalone artifact, run-root, and
-  helper validation.
-- `verify_artifacts(&ArtifactPreflightConfig) -> Result<ArtifactPreflight,
-  PreflightError>`.
-- `ArtifactPreflight { kernel, rootfs, manifest, run_root, storage_helpers }`.
+  `ArtifactPreflightConfig::from_env()` for explicit `run_with_configs`
+  callers. There is no `Default`; callers must use `from_env()` or construct
+  the full effective config.
 - `HostFeaturePreflightConfig { cgroup_mode }` and
-  `CgroupPreflightMode { UnifiedV2, Disabled }` for checks whose required host
-  features depend on effective config.
+  `HostFeaturePreflightConfig::from_env() -> Result<Self, PreflightError>`,
+  plus `CgroupPreflightMode { UnifiedV2, Disabled }`, for checks whose
+  required host features depend on effective config.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
@@ -103,10 +98,16 @@ which is the right place for a security review to start.
   rootfs: PathBuf, manifest: m80_image_manifest::Manifest, run_root: PathBuf,
   privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
 - `Discovery::render_table()` → `String`.
+- `CheckRow { label, passed, detail }`.
 - `PrivilegeStatus { Root, CapabilityBearing }`.
 - `REQUIRED_CAPABILITIES: &[caps::Capability]` — the per-call cap list
   (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
   `CAP_FOWNER`, `CAP_KILL`).
+- `ENV_FIRECRACKER_BIN`, `ENV_FIRECRACKER_VERSION`,
+  `DEFAULT_FIRECRACKER_BIN`, `ENV_KERNEL_IMAGE`, `ENV_KERNEL_KIND`, and
+  `ENV_ROOTFS_IMAGE` — shared keys/default used by the CLI when it displays or
+  overlays effective preflight inputs. Other env keys/default paths remain
+  crate-private implementation details of `from_env()`.
 - `PreflightError`: `UnsupportedHostPlatform { actual }`,
   `KvmUnavailable { path }`, `KvmNotWritable { path }`,
   `KvmCpuExtensionMissing`, `InvalidCgroupMode { actual }`,
@@ -123,6 +124,7 @@ which is the right place for a security review to start.
   `KernelNotFound`, `RootfsNotFound`, `Manifest(m80_image_manifest::ManifestError)`,
   `RunRootUnavailable { reason: String }` (covers both missing-dir and
   insufficient-space), `StorageHelperMissing(String)`, `Io(io::Error)`.
+- `PreflightError::hint() -> &'static str`.
 
 ## Non-goals
 

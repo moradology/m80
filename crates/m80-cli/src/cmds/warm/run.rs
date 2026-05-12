@@ -133,21 +133,21 @@ fn validate_run_compatibility(
 ) -> Result<(), FcError> {
     let requested = status::requested_profile(profile);
     if requested != identity.profile {
-        return Err(FcError::config_other(format!(
-            "warm profile mismatch: requested {}, owner active {}",
-            requested, identity.profile
-        )));
+        return Err(FcError::WarmCompatibilityMismatch {
+            field: "profile",
+            requested,
+            active: identity.profile.clone(),
+        });
     }
     if egress != identity.egress {
-        return Err(FcError::config_other(format!(
-            "warm egress mismatch: requested {}, owner active {}",
-            egress, identity.egress
-        )));
+        return Err(FcError::WarmCompatibilityMismatch {
+            field: "egress",
+            requested: egress.to_owned(),
+            active: identity.egress.clone(),
+        });
     }
     if !accepting_leases {
-        return Err(FcError::config_other(
-            "warm owner is draining and not accepting leases".to_owned(),
-        ));
+        return Err(FcError::WarmOwnerNotAcceptingLeases);
     }
     Ok(())
 }
@@ -164,9 +164,10 @@ mod tests {
     use std::sync::Arc;
 
     use m80_firecracker::{
-        Backend, BackendConfig, CgroupMode, ExecRequest, NetworkPolicy, SandboxConfig,
-        SnapshotPaths, WarmPoolConfig,
+        Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig, SnapshotPaths,
+        WarmPoolConfig,
     };
+    use m80_proto::ExecRequest;
 
     use super::*;
 
@@ -275,6 +276,36 @@ mod tests {
     }
 
     fn fake_discovery(run_root: &std::path::Path) -> m80_preflight::Discovery {
-        m80_test_helpers::manifest::fake_discovery_at(run_root)
+        m80_preflight::Discovery {
+            firecracker_bin: "/tmp/firecracker".into(),
+            jailer_bin: "/tmp/jailer".into(),
+            jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
+            kernel: "/tmp/vmlinux".into(),
+            rootfs: "/tmp/rootfs.ext4".into(),
+            manifest: fake_manifest(),
+            run_root: run_root.to_path_buf(),
+            privilege: m80_preflight::PrivilegeStatus::Root,
+            report: Vec::new(),
+        }
+    }
+
+    fn fake_manifest() -> m80_image_manifest::Manifest {
+        m80_image_manifest::Manifest {
+            daemon_binary_path: "/tmp/m80-guestd".into(),
+            daemon_binary_sha256: "0".repeat(64),
+            expected_firecracker_version: "v1.0.0".to_owned(),
+            guest_port: 52,
+            image_kind: m80_image_manifest::ImageKind::Minimal,
+            kernel_image: "/tmp/vmlinux".into(),
+            kernel_image_sha256: "1".repeat(64),
+            kernel_kind: m80_image_manifest::KernelKind::Stock,
+            no_egress_reason: None,
+            output_rootfs_image: "/tmp/rootfs.ext4".into(),
+            output_rootfs_sha256: "2".repeat(64),
+            ready_marker: "M80_READY".to_owned(),
+            schema_version: m80_image_manifest::SCHEMA_VERSION,
+            source_rootfs_image: None,
+            source_rootfs_sha256: None,
+        }
     }
 }

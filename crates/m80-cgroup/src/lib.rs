@@ -60,7 +60,7 @@ impl Subtree {
             Path::new(CGROUP_V2_ROOT),
             Path::new(CGROUP_ROOT),
             vm_id,
-            jail.plan.config.run_dir.as_path(),
+            jail.run_dir(),
             jailed,
             limits,
         )?;
@@ -102,14 +102,14 @@ impl Subtree {
         let cgroup_path_txt = run_dir.join("cgroup-path.txt");
         let leaf_str = format!("{}\n", leaf.display());
         fs::write(&cgroup_path_txt, leaf_str.as_bytes())
-            .map_err(io_err(cgroup_path_txt.clone()))?;
+            .map_err(io_err(cgroup_path_txt))?;
 
         Ok(subtree)
     }
 
     /// Apply per-controller limits. Fields set to `None` leave the existing
     /// value alone.
-    pub fn apply_limits(&self, limits: &Limits) -> Result<(), CgroupError> {
+    pub(crate) fn apply_limits(&self, limits: &Limits) -> Result<(), CgroupError> {
         if let Some(cpu_max) = &limits.cpu_max {
             let path = self.0.join("cpu.max");
             match cpu_max {
@@ -142,7 +142,7 @@ impl Subtree {
     }
 
     /// Compute the absolute cgroup v2 leaf path for `vm_id`.
-    pub fn leaf_path(vm_id: &str) -> PathBuf {
+    #[must_use] pub fn leaf_path(vm_id: &str) -> PathBuf {
         PathBuf::from(CGROUP_ROOT).join(vm_id)
     }
 }
@@ -221,7 +221,7 @@ impl Limits {
     ///
     /// CPU is one full 100 ms CPU period, memory is 1.5 GiB, and pids are
     /// capped at 128.
-    pub fn m80_default() -> Self {
+    #[must_use] pub fn preset() -> Self {
         Self {
             cpu_max: Some(CpuMax::Quota {
                 quota_us: DEFAULT_CPU_QUOTA_US,
@@ -328,11 +328,7 @@ pub enum CgroupError {
     },
 }
 
-/// Probe a `/proc/mounts`-shaped string for the unified-v2 hierarchy.
-/// Separated from [`Subtree::probe`] so integration tests can pass a
-/// synthetic mounts string without touching the host filesystem.
-#[doc(hidden)]
-pub fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
+fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
     let has_v2 = mounts.lines().any(|line| {
         let mut cols = line.split_whitespace();
         let _dev = cols.next();

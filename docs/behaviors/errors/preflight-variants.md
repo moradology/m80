@@ -95,9 +95,9 @@ predecessor source:
 `crates/sandbox/agent-sandbox-firecracker/src/errors.rs:226-229`.
 
 Test:
-`crates/m80-firecracker/src/launch.rs::tests::machine_config_honors_caller_sizing`
+`crates/m80-firecracker/src/preboot.rs::tests::machine_config_honors_caller_sizing`
 and
-`crates/m80-firecracker/src/launch.rs::tests::machine_config_uses_default_sizing_when_omitted`.
+`crates/m80-firecracker/src/preboot.rs::tests::machine_config_uses_default_sizing_when_omitted`.
 
 ## priv-jailer-unavail
 

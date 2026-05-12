@@ -96,7 +96,7 @@ struct BinaryDump {
 struct RunRootDump {
     path: Option<PathBuf>,
     exists: bool,
-    vm_dir_count: Option<usize>,
+    run_dir_count: Option<usize>,
     error: Option<String>,
 }
 
@@ -354,7 +354,7 @@ fn run_root_dump(effective: Option<&EffectiveConfig>) -> RunRootDump {
         return RunRootDump {
             path: None,
             exists: false,
-            vm_dir_count: None,
+            run_dir_count: None,
             error: Some("effective config unavailable".to_owned()),
         };
     };
@@ -367,12 +367,12 @@ fn run_root_dump(effective: Option<&EffectiveConfig>) -> RunRootDump {
         return RunRootDump {
             path: None,
             exists: false,
-            vm_dir_count: None,
+            run_dir_count: None,
             error: Some("run_root field missing".to_owned()),
         };
     };
     let exists = path.exists();
-    let (vm_dir_count, error) = if exists {
+    let (run_dir_count, error) = if exists {
         match std::fs::read_dir(&path) {
             Ok(entries) => (
                 Some(
@@ -391,7 +391,7 @@ fn run_root_dump(effective: Option<&EffectiveConfig>) -> RunRootDump {
     RunRootDump {
         path: Some(path),
         exists,
-        vm_dir_count,
+        run_dir_count,
         error,
     }
 }

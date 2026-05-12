@@ -94,7 +94,7 @@ impl Default for ResourceLimits {
 /// Firecracker's jailer hardcodes the nested layout
 /// `<chroot-base>/<exec-file basename>/<id>/root/`; m80 passes `run_dir` for
 /// `--chroot-base-dir` and `run_dir`'s basename for `--id`.
-pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+#[must_use] pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
     let exec_basename = firecracker_bin
         .file_name()
         .unwrap_or_else(|| std::ffi::OsStr::new("firecracker"));
@@ -134,7 +134,7 @@ pub enum BindMode {
 /// data in this type because the two paths are hardcoded by the m80
 /// orchestration layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum JailerSocket {
     /// Firecracker's REST API socket (`firecracker.sock`).
     Firecracker,
@@ -144,7 +144,7 @@ pub enum JailerSocket {
 
 impl JailerSocket {
     /// Canonical relative path inside the jail for this socket.
-    pub fn jail_path(self) -> &'static str {
+    pub(crate) fn jail_path(self) -> &'static str {
         match self {
             JailerSocket::Firecracker => "firecracker.sock",
             JailerSocket::Vsock => "vsock.sock",
@@ -158,15 +158,15 @@ impl JailerSocket {
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     /// The config the plan was derived from.
-    pub config: JailerConfig,
+    pub(crate) config: JailerConfig,
     /// Ordered steps the materializer will execute.
-    pub steps: Vec<PlanStep>,
+    pub(crate) steps: Vec<PlanStep>,
 }
 
 /// One step in a [`Plan`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
-pub enum PlanStep {
+pub(crate) enum PlanStep {
     /// Create a directory at `path` with the given mode.
     CreateDir {
         /// Path to create.

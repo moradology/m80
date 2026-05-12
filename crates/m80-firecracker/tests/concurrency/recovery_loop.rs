@@ -96,7 +96,7 @@ fn recovery_during_launch_preserves_fresh_vms() {
     });
 
     let barrier = Arc::new(Barrier::new(LAUNCHES));
-    let suffix = unique_suffix();
+    let suffix = unique_suffix() % 0x10000;
     let mut handles = Vec::new();
     for index in 0..LAUNCHES {
         let backend = Arc::clone(&backend);
@@ -105,7 +105,7 @@ fn recovery_during_launch_preserves_fresh_vms() {
             barrier.wait();
             let sandbox = backend
                 .admit(SandboxConfig {
-                    vm_id: Some(format!("recovery-race-{suffix}-{index}")),
+                    vm_id: Some(format!("rec-race-{suffix:04x}-{index}")),
                     workspace: None,
                     network: NetworkPolicy::NoEgress,
                     vcpu_count: Some(1),

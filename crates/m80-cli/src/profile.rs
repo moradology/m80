@@ -5,13 +5,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use m80_firecracker::{ConfigSource, EffectiveConfig, FcError};
+use m80_firecracker::{ConfigError, ConfigSource, EffectiveConfig, FcError};
+use m80_preflight::{ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE};
 
 const DEFAULT_PROFILE_FIELD: &str = "default_profile";
 const BUILTIN_ENV_PROFILE: &str = "env";
-const ENV_KERNEL_IMAGE: &str = "M80_KERNEL_IMAGE";
-const ENV_KERNEL_KIND: &str = "M80_KERNEL_KIND";
-const ENV_ROOTFS_IMAGE: &str = "M80_ROOTFS_IMAGE";
 
 /// Directory set used for profile-file lookup.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,9 +78,9 @@ pub(crate) fn resolve_from_effective(
         .fields
         .iter()
         .find(|field| field.name == DEFAULT_PROFILE_FIELD)
-        .ok_or_else(|| {
-            FcError::config_other(format!("missing config field {DEFAULT_PROFILE_FIELD:?}"))
-        })?;
+        .ok_or(FcError::Config(ConfigError::MissingField {
+            field: DEFAULT_PROFILE_FIELD,
+        }))?;
     resolve_named_profile(&selected.value, selected.source, paths)
 }
 
@@ -122,22 +120,24 @@ fn resolve_named_profile(
     }
 
     let Some((body_source, file_path)) = selected_path else {
-        return Err(FcError::config_other(format!(
-            "runtime profile {name:?} not found; searched /etc/m80/profiles/{name}.toml and ~/.config/m80/profiles/{name}.toml"
-        )));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "default_profile",
+            reason: format!(
+                "runtime profile {name:?} not found; searched /etc/m80/profiles/{name}.toml and ~/.config/m80/profiles/{name}.toml"
+            ),
+        }));
     };
 
-    let raw = std::fs::read_to_string(&file_path).map_err(|e| {
-        FcError::config_other(format!(
-            "runtime profile {} could not be read: {e}",
-            file_path.display()
-        ))
+    let raw = std::fs::read_to_string(&file_path).map_err(|e| FcError::PathIo {
+        path: file_path.clone(),
+        source: e,
     })?;
-    let parsed: RuntimeProfileFile = toml::from_str(&raw).map_err(|e| {
-        FcError::config_other(format!(
-            "runtime profile {} is invalid: {e}",
-            file_path.display()
-        ))
+    let parsed: RuntimeProfileFile = toml::from_str(&raw).map_err(|source| {
+        FcError::Config(ConfigError::TomlSyntax {
+            layer: "runtime profile",
+            path: file_path.clone(),
+            source,
+        })
     })?;
     validate_absolute_path("kernel_image", &parsed.kernel_image)?;
     validate_absolute_path("rootfs_image", &parsed.rootfs_image)?;
@@ -159,19 +159,22 @@ fn resolve_named_profile(
 
 fn validate_profile_name(name: &str) -> Result<(), FcError> {
     if name.is_empty() {
-        return Err(FcError::config_other(
-            "runtime profile name must not be empty".to_owned(),
-        ));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "default_profile",
+            reason: "runtime profile name must not be empty".to_owned(),
+        }));
     }
     if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
-        return Err(FcError::config_other(format!(
-            "runtime profile name {name:?} must be a single path segment"
-        )));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "default_profile",
+            reason: format!("runtime profile name {name:?} must be a single path segment"),
+        }));
     }
     if Path::new(name).is_absolute() {
-        return Err(FcError::config_other(format!(
-            "runtime profile name {name:?} must not be absolute"
-        )));
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "default_profile",
+            reason: format!("runtime profile name {name:?} must not be absolute"),
+        }));
     }
     Ok(())
 }
@@ -179,20 +182,24 @@ fn validate_profile_name(name: &str) -> Result<(), FcError> {
 fn validate_kernel_kind(kind: &str) -> Result<(), FcError> {
     match kind {
         "stock" | "stripped" => Ok(()),
-        other => Err(FcError::config_other(format!(
-            "runtime profile kernel_kind must be stock|stripped, got {other:?}"
-        ))),
+        other => Err(FcError::Config(ConfigError::InvalidValue {
+            field: "kernel_kind",
+            reason: format!("runtime profile kernel_kind must be stock|stripped, got {other:?}"),
+        })),
     }
 }
 
-fn validate_absolute_path(field: &str, path: &Path) -> Result<(), FcError> {
+fn validate_absolute_path(field: &'static str, path: &Path) -> Result<(), FcError> {
     if path.is_absolute() {
         return Ok(());
     }
-    Err(FcError::config_other(format!(
-        "runtime profile {field} must be an absolute host path, got {}",
-        path.display()
-    )))
+    Err(FcError::Config(ConfigError::InvalidValue {
+        field,
+        reason: format!(
+            "{field} must be an absolute host path, got {}",
+            path.display()
+        ),
+    }))
 }
 
 fn profile_filename(name: &str) -> String {

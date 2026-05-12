@@ -12,10 +12,13 @@ use tempfile::TempDir;
 use crate::{format_exit, io_err, ChangeSet, Rejection, RejectionReason, StorageError};
 
 /// Minimum scratch image size: 64 MiB.
+#[cfg(test)]
 pub(crate) const MIN_SCRATCH_BYTES: u64 = 64 * 1024 * 1024;
 /// Extra headroom added above the host workspace's current file bytes.
+#[cfg(test)]
 pub(crate) const SCRATCH_PADDING_BYTES: u64 = 32 * 1024 * 1024;
 /// Scratch image sizes are rounded up to a 4 MiB boundary.
+#[cfg(test)]
 pub(crate) const SCRATCH_ALIGNMENT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// A per-VM scratch ext4 image.
@@ -35,7 +38,8 @@ impl Scratch {
     ///
     /// The rule is `max(64 MiB, used_bytes + 32 MiB)`, rounded up to a
     /// 4 MiB boundary.
-    pub fn recommended_size_for_workspace(workspace: &Path) -> Result<u64, StorageError> {
+    #[cfg(test)]
+    pub(crate) fn recommended_size_for_workspace(workspace: &Path) -> Result<u64, StorageError> {
         let used = workspace_used_bytes(workspace)?;
         let padded = used.saturating_add(SCRATCH_PADDING_BYTES);
         Ok(align_scratch_size(padded.max(MIN_SCRATCH_BYTES)))
@@ -100,11 +104,12 @@ impl Scratch {
     }
 
     /// Path of this scratch image.
-    pub fn path(&self) -> &Path {
+    #[must_use] pub fn path(&self) -> &Path {
         &self.path
     }
 }
 
+#[cfg(test)]
 fn align_scratch_size(size: u64) -> u64 {
     let remainder = size % SCRATCH_ALIGNMENT_BYTES;
     if remainder == 0 {
@@ -114,6 +119,7 @@ fn align_scratch_size(size: u64) -> u64 {
     }
 }
 
+#[cfg(test)]
 fn workspace_used_bytes(src: &Path) -> Result<u64, StorageError> {
     let mut used = 0_u64;
     for entry in fs::read_dir(src).map_err(|e| io_err(src, e))? {
@@ -128,7 +134,7 @@ fn workspace_used_bytes(src: &Path) -> Result<u64, StorageError> {
             || ft.is_block_device()
             || ft.is_char_device()
         {
-            return Err(StorageError::AdmissibilityRefused);
+            return Err(admissibility_refused(&src_path));
         }
 
         if ft.is_dir() {
@@ -136,7 +142,7 @@ fn workspace_used_bytes(src: &Path) -> Result<u64, StorageError> {
         } else if ft.is_file() {
             used = used.saturating_add(meta.len());
         } else {
-            return Err(StorageError::AdmissibilityRefused);
+            return Err(admissibility_refused(&src_path));
         }
     }
     Ok(used)
@@ -269,7 +275,7 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
             || ft.is_block_device()
             || ft.is_char_device()
         {
-            return Err(StorageError::AdmissibilityRefused);
+            return Err(admissibility_refused(&src_path));
         }
 
         if ft.is_dir() {
@@ -279,7 +285,7 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
         } else if ft.is_file() {
             fs::copy(&src_path, &dst_path).map_err(|e| io_err(&src_path, e))?;
         } else {
-            return Err(StorageError::AdmissibilityRefused);
+            return Err(admissibility_refused(&src_path));
         }
     }
     Ok(())
@@ -393,11 +399,17 @@ fn walk_for_extract(
         } else {
             rejected.push(Rejection {
                 path: rel.to_path_buf(),
-                reason: RejectionReason::Other("unsupported file type".into()),
+                reason: RejectionReason::SpecialFile,
             });
         }
     }
     Ok(())
+}
+
+fn admissibility_refused(path: &Path) -> StorageError {
+    StorageError::AdmissibilityRefused {
+        path: path.to_path_buf(),
+    }
 }
 
 #[cfg(test)]
@@ -420,5 +432,54 @@ mod tests {
     #[test]
     fn relative_stage_parent_defaults_to_current_directory() {
         assert_eq!(stage_parent(Path::new("ws")), PathBuf::from("."));
+    }
+
+    #[test]
+    fn sizing_obeys_padding_and_alignment() {
+        let mib = 1024 * 1024;
+
+        assert_eq!(align_scratch_size(0), 0);
+        assert_eq!(
+            align_scratch_size((33 * mib) + SCRATCH_PADDING_BYTES),
+            68 * mib
+        );
+        assert_eq!(
+            align_scratch_size((96 * mib + 1) + SCRATCH_PADDING_BYTES),
+            132 * mib
+        );
+    }
+
+    #[test]
+    fn workspace_sizing_counts_regular_file_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let nested = workspace.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(workspace.join("a.bin"), vec![0_u8; 33 * 1024 * 1024]).unwrap();
+        fs::write(nested.join("b.bin"), b"x").unwrap();
+
+        assert_eq!(
+            Scratch::recommended_size_for_workspace(&workspace).unwrap(),
+            68 * 1024 * 1024
+        );
+    }
+
+    #[test]
+    fn workspace_sizing_rejects_symlink_like_hydration() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(workspace.join("ok.txt"), b"ok").unwrap();
+        symlink("ok.txt", workspace.join("link.txt")).unwrap();
+
+        let err = Scratch::recommended_size_for_workspace(&workspace).unwrap_err();
+        match err {
+            StorageError::AdmissibilityRefused { path } => {
+                assert_eq!(path, workspace.join("link.txt"));
+            }
+            other => panic!("expected AdmissibilityRefused, got {other:?}"),
+        }
     }
 }

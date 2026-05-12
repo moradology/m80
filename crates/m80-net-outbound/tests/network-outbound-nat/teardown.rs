@@ -1,10 +1,11 @@
 use std::net::Ipv4Addr;
 use std::path::Path;
 
+use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
     apply_outbound_nat_policy_with_ops, cleanup_outbound_nat_policy_with_ops, cleanup_vm_with_ops,
     outbound_nat_filter_chain, outbound_nat_rule_comment, planned_bridge_state,
-    planned_vm_network_state, write_vm_network_state_record, LinkOps, NetError, OutboundIntent,
+    planned_vm_network_state, write_vm_network_state_record, LinkOps, NetError,
     PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
 };
 
@@ -203,9 +204,8 @@ fn ready_state(run_root: &Path, vm_id: &str) -> VmNetworkStateRecord {
     }
     let intent = OutboundIntent {
         exceptions: vec!["10.42.0.0/24".parse().unwrap()],
-        gateway_override: None,
     };
-    let bridge = planned_bridge_state(run_root, &intent)
+    let bridge = planned_bridge_state(run_root)
         .unwrap()
         .with_phase(SetupPhase::Ready);
     let mut state = planned_vm_network_state(&intent, vm_id, run_root, &run_dir, bridge);

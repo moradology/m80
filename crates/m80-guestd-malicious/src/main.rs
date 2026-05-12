@@ -24,6 +24,18 @@ enum Attack {
 }
 
 impl Attack {
+    const ALL: [Attack; 9] = [
+        Attack::Noop,
+        Attack::OversizedLength,
+        Attack::TruncatedFrame,
+        Attack::UnknownVariant,
+        Attack::ResponseTypeMismatch,
+        Attack::BogusRequestId,
+        Attack::UnsolicitedResponse,
+        Attack::UnsolicitedFlood,
+        Attack::Slowloris,
+    ];
+
     fn parse(raw: &str) -> anyhow::Result<Self> {
         match raw {
             "noop" => Ok(Attack::Noop),
@@ -103,15 +115,9 @@ fn run(args: Args) -> anyhow::Result<()> {
         return Ok(());
     }
     if args.list_attacks {
-        println!("noop");
-        println!("oversized_length");
-        println!("truncated_frame");
-        println!("unknown_variant");
-        println!("response_type_mismatch");
-        println!("bogus_request_id");
-        println!("unsolicited_response");
-        println!("unsolicited_flood");
-        println!("slowloris");
+        for attack in Attack::ALL {
+            println!("{}", attack.as_str());
+        }
         return Ok(());
     }
 
@@ -249,12 +255,16 @@ fn write_truncated_frame(stream: &mut impl Write) -> anyhow::Result<()> {
 }
 
 fn write_unknown_variant(stream: &mut impl Write) -> anyhow::Result<()> {
-    let mut body = Vec::new();
-    write_varint(&mut body, 1 << 3);
-    write_varint(&mut body, u64::from(m80_proto::PROTOCOL_VERSION));
-    write_len_field(&mut body, 2, "unknown_variant".as_bytes())?;
-    write_varint(&mut body, (255 << 3) | 2);
-    write_varint(&mut body, 0);
+    let envelope = RawEnvelope {
+        version: m80_proto::PROTOCOL_VERSION,
+        kind: "unknown_variant".to_owned(),
+        request_id: None,
+        max_duration_ms: None,
+        payload: m80_proto::PingRequest {}.into_wire(),
+    };
+    let mut body = m80_proto::encode_raw_envelope(envelope)
+        .context("encode known envelope before unknown-variant mutation")?;
+    mutate_ping_payload_tag_to_unknown(&mut body)?;
 
     let len = u32::try_from(body.len()).context("unknown-variant frame length fits u32")?;
     stream
@@ -264,6 +274,17 @@ fn write_unknown_variant(stream: &mut impl Write) -> anyhow::Result<()> {
         .write_all(&body)
         .context("write unknown-variant frame body")?;
     stream.flush().context("flush unknown-variant frame")
+}
+
+fn mutate_ping_payload_tag_to_unknown(body: &mut [u8]) -> anyhow::Result<()> {
+    const PING_REQUEST_TAG: [u8; 2] = [0x9a, 0x03];
+    const UNKNOWN_PAYLOAD_TAG: [u8; 2] = [0xfa, 0x0f];
+    let offset = body
+        .windows(PING_REQUEST_TAG.len())
+        .position(|window| window == PING_REQUEST_TAG)
+        .context("encoded ping_request payload tag missing")?;
+    body[offset..offset + UNKNOWN_PAYLOAD_TAG.len()].copy_from_slice(&UNKNOWN_PAYLOAD_TAG);
+    Ok(())
 }
 
 fn read_request_then_write_response_type_mismatch<S>(stream: &mut S) -> anyhow::Result<()>
@@ -364,30 +385,6 @@ fn write_exec_exit_for_request_id(
     stream
         .flush()
         .with_context(|| format!("flush {context} frame"))
-}
-
-fn write_len_field(out: &mut Vec<u8>, field: u64, bytes: &[u8]) -> anyhow::Result<()> {
-    write_varint(out, (field << 3) | 2);
-    write_varint(
-        out,
-        u64::try_from(bytes.len()).context("field length fits u64")?,
-    );
-    out.extend_from_slice(bytes);
-    Ok(())
-}
-
-fn write_varint(out: &mut Vec<u8>, mut value: u64) {
-    loop {
-        let mut byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value != 0 {
-            byte |= 0x80;
-        }
-        out.push(byte);
-        if value == 0 {
-            break;
-        }
-    }
 }
 
 #[cfg(test)]

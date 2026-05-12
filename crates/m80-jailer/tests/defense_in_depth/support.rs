@@ -172,7 +172,7 @@ pub(crate) fn resource_attack_limits() -> Limits {
     Limits {
         memory_max: Some(64 * 1024 * 1024),
         pids_max: Some(32),
-        ..Limits::m80_default()
+        ..Limits::preset()
     }
 }
 
@@ -289,7 +289,7 @@ pub(crate) fn launch_attack_in_jailer_with_resource_limits(
 
 impl LiveAttack {
     pub(crate) fn wait(self) -> Result<AttackRun, Box<dyn std::error::Error>> {
-        let cgroup_path = read_cgroup_path_record(&self.jail.plan.config.run_dir)?;
+        let cgroup_path = read_cgroup_path_record(self.jail.run_dir())?;
         let jailed_pid = self.jailed.firecracker_pid.to_string();
         let cgroup_contained_pid = cgroup_path.as_ref().is_some_and(|path| {
             match std::fs::read_to_string(path.join("cgroup.procs")) {

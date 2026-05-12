@@ -71,7 +71,10 @@ pub(super) fn cmd_logs(
     };
     let run_dir = run_root.join(vm_id);
     if !run_dir.exists() {
-        let e = FcError::config_other(format!("no run-dir found for vm_id={vm_id}"));
+        let e = FcError::RunDirNotFound {
+            vm_id: vm_id.to_owned(),
+            run_dir,
+        };
         return Ok(errors::render_error(&e, json_mode));
     }
 
@@ -170,6 +173,9 @@ fn read_lines_if_present(path: &Path) -> Result<Vec<String>, FcError> {
     }
 }
 
+/// Partial projection of a diagnostics JSONL record. Intentionally omits
+/// `#[serde(deny_unknown_fields)]` — the real record carries more fields
+/// (context, level, etc.) and we only need these five for filtering/rendering.
 #[derive(serde::Deserialize)]
 struct DiagnosticsRecord {
     timestamp_unix_ms: Option<u64>,
@@ -286,9 +292,10 @@ fn parse_since(value: &str) -> Result<u64, FcError> {
         return Ok(ms);
     }
     rfc3339_seconds_to_unix_ms(value).ok_or_else(|| {
-        FcError::config_other(format!(
-            "m80 logs --since must be UNIX milliseconds or YYYY-MM-DDTHH:MM:SSZ, got `{value}`"
-        ))
+        FcError::Config(m80_firecracker::ConfigError::InvalidValue {
+            field: "since",
+            reason: format!("must be UNIX milliseconds or YYYY-MM-DDTHH:MM:SSZ, got `{value}`"),
+        })
     })
 }
 

@@ -41,6 +41,8 @@ pub(crate) fn allocate_large_memory() -> AttackResult {
 }
 
 pub(crate) fn create_large_tmp_file() -> AttackResult {
+    // Stay cwd-relative so the jailer harness controls which mounted layer and
+    // quota boundary receive the write.
     let path = "m80-attack-runner-large-file";
     let mut file = File::create(path).map_err(|err| blocked(format!("create {path}"), err))?;
     let chunk = [0xA5_u8; 64 * 1024];

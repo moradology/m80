@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use m80_firecracker::{
     Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig, StoppedSandbox,
+    CONSOLE_LOG,
 };
 use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
 
@@ -20,8 +21,7 @@ use crate::profile::{self, ProfileFilePaths};
 pub(crate) fn build_backend(
     flag_overrides: &HashMap<&str, String>,
 ) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
-    let effective = config::load_effective(flag_overrides)
-        .map_err(|e| FcError::Config(ConfigError::Other(format!("{e:#}"))))?;
+    let effective = config::load_effective(flag_overrides)?;
     backend_from_effective(effective)
 }
 
@@ -30,8 +30,7 @@ fn build_run_backend(profile: Option<String>) -> Result<(Arc<Backend>, Effective
     if let Some(profile) = profile {
         flag_overrides.insert("default_profile", profile);
     }
-    let effective = config::load_effective(&flag_overrides)
-        .map_err(|e| FcError::Config(ConfigError::Other(format!("{e:#}"))))?;
+    let effective = config::load_effective(&flag_overrides)?;
     let runtime_profile = profile::resolve_from_effective(&effective, ProfileFilePaths::host())?;
     let _profile_env = runtime_profile.apply_env();
     backend_from_effective(effective)
@@ -57,15 +56,14 @@ fn backend_from_effective(
         artifact_config,
         host_feature_config_from_effective(&effective)?,
     )?;
-    let backend_config = config::backend_config(discovery, &effective)
-        .map_err(|e| FcError::Config(ConfigError::Other(format!("{e:#}"))))?;
+    let backend_config = config::backend_config(discovery, &effective)?;
     let backend = Backend::new_with_effective_config(backend_config, effective.clone())?;
     Ok((Arc::new(backend), effective))
 }
 
 /// `m80 run` — boot a sandbox, run one process, mirror stdout/stderr/exit.
 #[allow(clippy::too_many_arguments)]
-pub fn cmd_run(
+pub(crate) fn cmd_run(
     profile: Option<String>,
     workspace: Option<PathBuf>,
     cwd: Option<String>,
@@ -428,14 +426,8 @@ fn validate_secret_env_key(key: &str) -> Result<(), FcError> {
 
 pub(super) fn render_not_implemented(message: &str, json: bool) -> i32 {
     if json {
-        let request_id = crate::request_id::current();
-        let obj = serde_json::json!({
-            "request_id": request_id,
-            "variant": "NotImplemented",
-            "detail": message,
-            "exit_code": errors::EXIT_NOT_IMPLEMENTED,
-        });
-        eprintln!("{}", json::to_pretty(&obj));
+        let env = errors::not_implemented_envelope(message);
+        eprintln!("{}", json::to_pretty(&env));
     } else if let Some(request_id) = crate::request_id::current() {
         eprintln!("error: [{request_id}] {message}");
     } else {
@@ -458,7 +450,7 @@ fn render_warning(code: &str, detail: &str, json: bool) {
 }
 
 /// `m80 preflight` — run host capability checks and render a table.
-pub fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
     let result = preflight_with_effective_config();
     Ok(render_preflight_result(result, json))
 }
@@ -532,15 +524,15 @@ fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool
     }
 }
 
-pub fn cmd_warm(action: WarmAction, json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_warm(action: WarmAction, json: bool) -> anyhow::Result<i32> {
     warm::cmd_warm(action, json)
 }
 
-pub fn cmd_quickstart(args: QuickstartArgs, json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_quickstart(args: QuickstartArgs, json: bool) -> anyhow::Result<i32> {
     quickstart::cmd_quickstart(args, json)
 }
 
-pub fn cmd_env(json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_env(json: bool) -> anyhow::Result<i32> {
     env::cmd_env(json)
 }
 
@@ -548,7 +540,7 @@ fn emit_guest_boot_trace_if_enabled(run_dir: &Path) {
     if !std::env::var("M80_PHASE_TRACE").is_ok_and(|v| v == "1") {
         return;
     }
-    let console = run_dir.join("console.log");
+    let console = run_dir.join(CONSOLE_LOG);
     let Ok(file) = File::open(&console) else {
         return;
     };
@@ -560,7 +552,7 @@ fn emit_guest_boot_trace_if_enabled(run_dir: &Path) {
 }
 
 /// `m80 cleanup` — trigger `recover_stale_run_root()`.
-pub fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
     let (backend, _effective) = match build_backend(&HashMap::new()) {
         Ok(pair) => pair,
         Err(e) => return Ok(errors::render_error(&e, json)),
@@ -583,14 +575,11 @@ pub fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
 }
 
 /// `m80 config show` — reveal the merged effective config with field sources.
-pub fn cmd_config_show(json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_config_show(json: bool) -> anyhow::Result<i32> {
     let effective = match config::load_effective(&HashMap::new()) {
         Ok(result) => result,
         Err(e) => {
-            return Ok(errors::render_error(
-                &FcError::Config(ConfigError::Other(format!("{e:#}"))),
-                json,
-            ))
+            return Ok(errors::render_error(&e, json));
         }
     };
 
@@ -620,7 +609,7 @@ fn format_config_json(effective: &EffectiveConfig) -> String {
     json::to_pretty(effective)
 }
 
-pub fn cmd_version(json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_version(json: bool) -> anyhow::Result<i32> {
     version::cmd_version(json)
 }
 

@@ -229,12 +229,12 @@ const ATTACKS: &[Attack] = &[
 ];
 
 /// Return all stable attack names, excluding harness controls.
-pub fn attack_names() -> Vec<&'static str> {
+#[must_use] pub fn attack_names() -> Vec<&'static str> {
     ATTACKS.iter().map(|attack| attack.name).collect()
 }
 
 /// Return attacks grouped by category.
-pub fn attacks_by_category() -> Vec<(AttackCategory, Vec<&'static str>)> {
+#[must_use] pub fn attacks_by_category() -> Vec<(AttackCategory, Vec<&'static str>)> {
     let mut grouped = Vec::new();
     for category in [
         AttackCategory::Filesystem,
@@ -273,4 +273,31 @@ pub fn run_attack(name: &str) -> AttackResult {
         .find(|attack| attack.name == name)
         .ok_or_else(|| AttackBlocked::new(format!("unknown attack {name}")))?;
     (attack.run)()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_network_attacks_are_cataloged_for_egress_policy_tests() {
+        let names: Vec<_> = ATTACKS
+            .iter()
+            .filter(|attack| attack.category == AttackCategory::Network)
+            .map(|attack| attack.name)
+            .collect();
+
+        for expected in [
+            "connect_imds_http",
+            "connect_public_dns_tcp",
+            "connect_private_rfc1918",
+            "bind_privileged_port",
+            "listen_all_interfaces",
+        ] {
+            assert!(
+                names.contains(&expected),
+                "{expected} must stay available for guest-egress policy tests"
+            );
+        }
+    }
 }

@@ -18,29 +18,29 @@ use crate::request_id;
 // =====================================================================
 
 /// Generic / unclassified error.
-pub const EXIT_GENERIC: i32 = 1;
+pub(crate) const EXIT_GENERIC: i32 = 1;
 /// Preflight check failed.
-pub const EXIT_PREFLIGHT: i32 = 2;
+pub(crate) const EXIT_PREFLIGHT: i32 = 2;
 /// Admission refused (concurrency limit).
-pub const EXIT_ADMISSION: i32 = 3;
+pub(crate) const EXIT_ADMISSION: i32 = 3;
 /// Manifest read/validate failed.
-pub const EXIT_MANIFEST: i32 = 4;
+pub(crate) const EXIT_MANIFEST: i32 = 4;
 /// Invalid lifecycle state.
-pub const EXIT_INVALID_STATE: i32 = 5;
+pub(crate) const EXIT_INVALID_STATE: i32 = 5;
 /// Configuration loading or merging failure.
-pub const EXIT_CONFIG: i32 = 6;
+pub(crate) const EXIT_CONFIG: i32 = 6;
 /// Feature explicitly not implemented in v0.1 (e.g., `m80 exec` CLI stub
 /// pending the v0.2 out-of-process IPC). Distinct from `EXIT_INVALID_STATE`
 /// so callers can branch on "feature gap" vs "lifecycle bug".
-pub const EXIT_NOT_IMPLEMENTED: i32 = 7;
+pub(crate) const EXIT_NOT_IMPLEMENTED: i32 = 7;
 /// Warm pool had no ready slot and does not cold-boot as fallback.
-pub const EXIT_POOL_EMPTY: i32 = 8;
+pub(crate) const EXIT_POOL_EMPTY: i32 = 8;
 
 /// Map an [`FcError`] to its stable CLI exit code.
 ///
 /// The mapping is intentionally one-to-one at the variant level so
 /// downstream scripts can `case $?` without parsing stderr.
-pub fn exit_code_for(err: &FcError) -> i32 {
+pub(crate) fn exit_code_for(err: &FcError) -> i32 {
     match err {
         FcError::Preflight(_) => EXIT_PREFLIGHT,
         FcError::AdmissionRefused { .. } => EXIT_ADMISSION,
@@ -48,9 +48,11 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         FcError::Manifest(_) => EXIT_MANIFEST,
         FcError::InvalidState { .. } => EXIT_INVALID_STATE,
         FcError::Config(_) => EXIT_CONFIG,
+        FcError::UnsupportedOperation { .. } => EXIT_NOT_IMPLEMENTED,
         FcError::ApiSocketTimeout { .. } | FcError::GuestdReadyTimeout { .. } => EXIT_GENERIC,
-        // Storage, Jailer, Network, Client, Vsock, Io are all "something
-        // went wrong at runtime" — generic.
+        // Storage, Jailer, Network, Client, Vsock, Io, and typed runtime
+        // cleanup/serialization failures are all "something went wrong at
+        // runtime" — generic.
         FcError::Storage(_)
         | FcError::Jailer(_)
         | FcError::Cgroup(_)
@@ -63,6 +65,25 @@ pub fn exit_code_for(err: &FcError) -> i32 {
         | FcError::DriveHotplug(_)
         | FcError::TenantIdentityMismatch { .. }
         | FcError::Io(_)
+        | FcError::PathIo { .. }
+        | FcError::Json { .. }
+        | FcError::CommandSpawnFailed { .. }
+        | FcError::CommandFailed { .. }
+        | FcError::ArtifactMissing { .. }
+        | FcError::WarmPoolFillFailed { .. }
+        | FcError::WarmReadyProbeRejected { .. }
+        | FcError::WarmReadyProbeNoResult
+        | FcError::WarmOwnerSocketExists { .. }
+        | FcError::WarmOwnerNotAcceptingLeases
+        | FcError::WarmOwnerDrainTimeout { .. }
+        | FcError::WarmCompatibilityMismatch { .. }
+        | FcError::UnexpectedWarmResponse { .. }
+        | FcError::KillFailed { .. }
+        | FcError::ReapTimeout { .. }
+        | FcError::ReapFailed { .. }
+        | FcError::RunDirOwnershipAmbiguous { .. }
+        | FcError::RunDirAlreadyOwned { .. }
+        | FcError::RunDirNotFound { .. }
         | FcError::IdleTimedOut
         | FcError::OneShotConsumed => EXIT_GENERIC,
     }
@@ -81,25 +102,35 @@ pub fn exit_code_for(err: &FcError) -> i32 {
 /// capture stderr have both pieces in one object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ErrorEnvelope {
+pub(crate) struct ErrorEnvelope {
     /// Opaque request id for the current `m80 run` invocation, when present.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
+    pub(crate) request_id: Option<String>,
     /// Error class / variant name (e.g., `"Preflight"`, `"Config"`).
-    pub variant: &'static str,
+    pub(crate) variant: &'static str,
     /// Full human-readable description.
-    pub detail: String,
+    pub(crate) detail: String,
     /// Corresponding CLI exit code.
-    pub exit_code: i32,
+    pub(crate) exit_code: i32,
 }
 
 /// Build an [`ErrorEnvelope`] from an [`FcError`].
-pub fn envelope(err: &FcError) -> ErrorEnvelope {
+pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
     ErrorEnvelope {
         request_id: request_id::current(),
         variant: variant_name(err),
         detail: err.to_string(),
         exit_code: exit_code_for(err),
+    }
+}
+
+/// Build an [`ErrorEnvelope`] for an explicit v0.x feature gap.
+pub(crate) fn not_implemented_envelope(message: &str) -> ErrorEnvelope {
+    ErrorEnvelope {
+        request_id: request_id::current(),
+        variant: "NotImplemented",
+        detail: message.to_owned(),
+        exit_code: EXIT_NOT_IMPLEMENTED,
     }
 }
 
@@ -120,6 +151,26 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::InvalidState { .. } => "InvalidState",
         FcError::ApiSocketTimeout { .. } => "ApiSocketTimeout",
         FcError::GuestdReadyTimeout { .. } => "GuestdReadyTimeout",
+        FcError::RunDirOwnershipAmbiguous { .. } => "RunDirOwnershipAmbiguous",
+        FcError::RunDirAlreadyOwned { .. } => "RunDirAlreadyOwned",
+        FcError::RunDirNotFound { .. } => "RunDirNotFound",
+        FcError::PathIo { .. } => "PathIo",
+        FcError::Json { .. } => "Json",
+        FcError::UnsupportedOperation { .. } => "UnsupportedOperation",
+        FcError::CommandSpawnFailed { .. } => "CommandSpawnFailed",
+        FcError::CommandFailed { .. } => "CommandFailed",
+        FcError::ArtifactMissing { .. } => "ArtifactMissing",
+        FcError::WarmPoolFillFailed { .. } => "WarmPoolFillFailed",
+        FcError::WarmReadyProbeRejected { .. } => "WarmReadyProbeRejected",
+        FcError::WarmReadyProbeNoResult => "WarmReadyProbeNoResult",
+        FcError::WarmOwnerSocketExists { .. } => "WarmOwnerSocketExists",
+        FcError::WarmOwnerNotAcceptingLeases => "WarmOwnerNotAcceptingLeases",
+        FcError::WarmOwnerDrainTimeout { .. } => "WarmOwnerDrainTimeout",
+        FcError::WarmCompatibilityMismatch { .. } => "WarmCompatibilityMismatch",
+        FcError::UnexpectedWarmResponse { .. } => "UnexpectedWarmResponse",
+        FcError::KillFailed { .. } => "KillFailed",
+        FcError::ReapTimeout { .. } => "ReapTimeout",
+        FcError::ReapFailed { .. } => "ReapFailed",
         FcError::Io(_) => "Io",
         FcError::Config(_) => "Config",
         FcError::Snapshot(_) => "Snapshot",
@@ -137,7 +188,7 @@ fn variant_name(err: &FcError) -> &'static str {
 /// Non-error progress / log lines may already be on stderr (that is fine;
 /// stderr is informational — bead m80-4ef.3.3). Only the error itself is
 /// written here, always last.
-pub fn render_error(err: &FcError, json: bool) -> i32 {
+pub(crate) fn render_error(err: &FcError, json: bool) -> i32 {
     if json {
         let env = envelope(err);
         // Unwrap: serializing a struct of strings cannot fail.
@@ -187,7 +238,10 @@ mod tests {
 
     #[test]
     fn config_is_6() {
-        let err = FcError::Config(ConfigError::Other("bad toml".into()));
+        let err = FcError::Config(ConfigError::InvalidValue {
+            field: "config",
+            reason: "bad toml".into(),
+        });
         assert_eq!(exit_code_for(&err), EXIT_CONFIG);
     }
 
@@ -230,7 +284,10 @@ mod tests {
 
     #[test]
     fn config_exit_code_is_nonzero() {
-        let err = FcError::Config(ConfigError::Other("x".into()));
+        let err = FcError::Config(ConfigError::InvalidValue {
+            field: "config",
+            reason: "x".into(),
+        });
         assert_ne!(exit_code_for(&err), 0);
     }
 
@@ -270,7 +327,7 @@ mod tests {
 
     #[test]
     fn file_op_exit_code_is_nonzero() {
-        let err = FcError::FileOp(m80_firecracker::FileError::NotFound);
+        let err = FcError::FileOp(m80_proto::FileError::NotFound);
         assert_ne!(exit_code_for(&err), 0);
     }
 
@@ -295,7 +352,10 @@ mod tests {
 
     #[test]
     fn json_envelope_fields() {
-        let err = FcError::Config(ConfigError::Other("bad".into()));
+        let err = FcError::Config(ConfigError::InvalidValue {
+            field: "config",
+            reason: "bad".into(),
+        });
         let env = envelope(&err);
         assert_eq!(env.variant, "Config");
         assert_eq!(env.exit_code, EXIT_CONFIG);
@@ -304,7 +364,10 @@ mod tests {
 
     #[test]
     fn json_envelope_is_stable() {
-        let err = FcError::Config(ConfigError::Other("bad".into()));
+        let err = FcError::Config(ConfigError::InvalidValue {
+            field: "config",
+            reason: "bad".into(),
+        });
         let env = envelope(&err);
         let json = serde_json::to_string(&env).unwrap();
         // Fields variant, detail, exit_code must always be present.
@@ -318,7 +381,10 @@ mod tests {
 
     #[test]
     fn rendered_error_json_is_versioned() {
-        let err = FcError::Config(ConfigError::Other("bad".into()));
+        let err = FcError::Config(ConfigError::InvalidValue {
+            field: "config",
+            reason: "bad".into(),
+        });
         let env = envelope(&err);
         let rendered = json::to_pretty(&env);
         let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap();

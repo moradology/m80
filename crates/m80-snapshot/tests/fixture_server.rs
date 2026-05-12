@@ -6,6 +6,6 @@
 
 #![allow(dead_code)]
 
-pub use m80_test_helpers::fixture_server::{resp_204, resp_400};
+pub(crate) use m80_test_helpers::fixture_server::{resp_204, resp_400};
 // Alias: existing tests call `FixtureServer::spawn(vec![...])` → multi-response.
-pub use m80_test_helpers::fixture_server::MultiFixtureServer as FixtureServer;
+pub(crate) use m80_test_helpers::fixture_server::MultiFixtureServer as FixtureServer;

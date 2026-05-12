@@ -35,12 +35,14 @@ fn join_netns_routes_guest_traffic_through_caller_namespace() {
             vm_id: Some(unique_name("join-route")),
             workspace: None,
             network: NetworkPolicy::JoinNetns {
-                netns_path: topology.join.path.clone(),
-                tap_name: topology.tap_name.clone(),
-                guest_mac: "02:00:00:00:80:02".to_owned(),
-                guest_ipv4: topology.guest_ipv4,
-                gateway_ipv4: topology.peer_ipv4,
-                dns_resolvers: vec![topology.peer_ipv4],
+                spec: m80_firecracker::NetnsSpec {
+                    netns_path: topology.join.path.clone(),
+                    tap_name: topology.tap_name.clone(),
+                    guest_mac: "02:00:00:00:80:02".to_owned(),
+                    guest_ipv4: topology.guest_ipv4,
+                    gateway_ipv4: topology.peer_ipv4,
+                    dns_resolvers: vec![topology.peer_ipv4],
+                },
             },
             vcpu_count: Some(1),
             mem_size_mib: Some(512),
@@ -55,7 +57,7 @@ fn join_netns_routes_guest_traffic_through_caller_namespace() {
         .expect("admit");
     let mut running = sandbox.launch().expect("launch join-netns");
     let run_dir = running.run_dir().to_owned();
-    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+    let _dump_guard = RunDirDumpGuard::new(run_dir);
 
     let response = running
         .exec(shell_request(&format!(

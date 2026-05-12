@@ -1,12 +1,14 @@
 //! Fixed in-jail configuration file for env-cleared jailer launches.
 
+use std::path::Path;
+
 /// Absolute path inside the jail where the harness may bind a config file.
 pub(crate) const CONFIG_PATH: &str = "/m80-attack-runner.conf";
 
 pub(crate) fn value(key: &str, env: &str, default: &str) -> String {
     std::env::var(env)
         .ok()
-        .or_else(|| file_value(key))
+        .or_else(|| file_value_at(CONFIG_PATH, key))
         .unwrap_or_else(|| default.to_owned())
 }
 
@@ -14,11 +16,11 @@ pub(crate) fn optional_value(key: &str, env: &str) -> Option<String> {
     (!env.is_empty())
         .then(|| std::env::var(env).ok())
         .flatten()
-        .or_else(|| file_value(key))
+        .or_else(|| file_value_at(CONFIG_PATH, key))
 }
 
-fn file_value(key: &str) -> Option<String> {
-    let raw = std::fs::read_to_string(CONFIG_PATH).ok()?;
+fn file_value_at(path: impl AsRef<Path>, key: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
     parse_value(&raw, key)
 }
 
@@ -49,5 +51,14 @@ mod tests {
         let raw = "peer_sentinel=/peer/sentinel\n";
 
         assert_eq!(parse_value(raw, "peer_pid"), None);
+    }
+
+    #[test]
+    fn file_value_reads_host_pid_from_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("m80-attack-runner.conf");
+        std::fs::write(&path, "host_pid = 123\n").unwrap();
+
+        assert_eq!(file_value_at(&path, "host_pid").as_deref(), Some("123"));
     }
 }

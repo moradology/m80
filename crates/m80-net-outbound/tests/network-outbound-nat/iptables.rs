@@ -1,9 +1,10 @@
 use std::net::Ipv4Addr;
 use std::path::Path;
 
+use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
     apply_outbound_nat_policy_with_ops, outbound_nat_filter_chain, outbound_nat_rule_comment,
-    permanent_deny_cidrs, planned_bridge_state, planned_vm_network_state, NetError, OutboundIntent,
+    permanent_deny_cidrs, planned_bridge_state, planned_vm_network_state, NetError,
     PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
 };
 
@@ -323,9 +324,8 @@ fn ready_state() -> VmNetworkStateRecord {
             "10.42.0.0/24".parse().unwrap(),
             "192.168.50.0/24".parse().unwrap(),
         ],
-        gateway_override: None,
     };
-    let bridge = planned_bridge_state(run_root, &intent)
+    let bridge = planned_bridge_state(run_root)
         .unwrap()
         .with_phase(SetupPhase::Ready);
     let mut state = planned_vm_network_state(&intent, "vm-a", run_root, &run_dir, bridge);

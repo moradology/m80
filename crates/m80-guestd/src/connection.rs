@@ -69,7 +69,7 @@ const MAX_TIMEOUT_MS: u64 = 60 * 60 * 1000;
 
 /// How long to sleep between poll iterations in the cancel-aware wait loop.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
-const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
+pub(super) const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
 
 fn unix_ms_now() -> u64 {
     SystemTime::now()
@@ -180,7 +180,7 @@ fn handle_ping<W: Write>(raw: RawEnvelope, writer: &mut W) -> anyhow::Result<Con
 
 /// Build a `Command` for `req` with stdout/stderr/stdin piped and process
 /// group set to 0. Shared by the buffered and streaming exec paths.
-pub(crate) fn build_child_command(req: &ExecRequest) -> Command {
+fn build_child_command(req: &ExecRequest) -> Command {
     let mut cmd = Command::new(&req.program);
     cmd.args(&req.args);
     cmd.stdout(Stdio::piped());
@@ -219,7 +219,7 @@ pub(super) fn validate_exec_stdin(req: &ExecRequest) -> anyhow::Result<()> {
 
 /// Write one payload frame with an optional `request_id` correlation header.
 /// Shared by the buffered-exec, streaming-exec, and PTY exec paths.
-pub(crate) fn write_payload_frame<W, T>(
+fn write_payload_frame<W, T>(
     writer: &mut W,
     request_id: &Option<String>,
     payload: T,
@@ -303,7 +303,7 @@ where
     let (child_tx, child_rx) = mpsc::channel::<ChildResult>();
 
     let spawn_start = unix_ms_now();
-    let thread_req = req.clone();
+    let thread_req = req;
 
     thread::spawn(move || {
         let result =
@@ -692,7 +692,6 @@ fn exec_request_with_cancel(
     // If cancelled, the SIGKILL was already sent by the cancel handler — we
     // just need to reap.
 
-    // Reap the child after kill (or natural exit).
     let exit_status = child.wait().ok();
     let exited_at = unix_ms_now();
 
@@ -794,7 +793,6 @@ fn wait_with_timeout_and_cancel(
             Err(_) => return (false, false),      // error polling — don't kill
         }
 
-        // Check for cancel signal (non-blocking).
         if cancel_rx.try_recv().is_ok() {
             return (false, true);
         }
@@ -815,14 +813,14 @@ fn terminate_child_group(raw_pid: u32) -> CancelStatus {
     cancel_status_from_group_signals(term, kill)
 }
 
-fn signal_process_group(
+pub(super) fn signal_process_group(
     pgid: nix::unistd::Pid,
     signal: nix::sys::signal::Signal,
 ) -> Result<(), nix::errno::Errno> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pgid.as_raw()), signal)
 }
 
-pub(crate) fn cancel_status_from_group_signals(
+fn cancel_status_from_group_signals(
     term: Result<(), nix::errno::Errno>,
     kill: Result<(), nix::errno::Errno>,
 ) -> CancelStatus {
@@ -838,12 +836,12 @@ pub(crate) fn cancel_status_from_group_signals(
 
 /// Compute an `Instant` deadline from an optional timeout in milliseconds,
 /// clamped to [`MAX_TIMEOUT_MS`]. Shared by streaming and PTY exec paths.
-pub(crate) fn timeout_deadline(timeout_ms: Option<u64>) -> std::time::Instant {
+fn timeout_deadline(timeout_ms: Option<u64>) -> std::time::Instant {
     let effective_ms = timeout_ms.unwrap_or(MAX_TIMEOUT_MS).min(MAX_TIMEOUT_MS);
     std::time::Instant::now() + Duration::from_millis(effective_ms)
 }
 
-pub(crate) fn effective_call_timeout_ms(
+fn effective_call_timeout_ms(
     request_timeout_ms: Option<u64>,
     max_duration_ms: Option<u64>,
 ) -> Option<u64> {
@@ -856,7 +854,7 @@ pub(crate) fn effective_call_timeout_ms(
 }
 
 /// Write a `CancelResponse` frame and flush the writer.
-pub(crate) fn write_cancel_ack<W: Write>(
+fn write_cancel_ack<W: Write>(
     writer: &mut W,
     request_id: String,
     status: CancelStatus,
@@ -870,7 +868,7 @@ pub(crate) fn write_cancel_ack<W: Write>(
 
 /// After an in-flight request is cancelled, acknowledge any already-buffered
 /// duplicate or late cancel frames before closing the connection.
-pub(crate) fn drain_cancel_acks_after_exit<R, W>(
+fn drain_cancel_acks_after_exit<R, W>(
     reader: &mut R,
     writer: &mut W,
     reader_ready: &mut impl FnMut(&mut R) -> bool,
@@ -929,7 +927,7 @@ pub(crate) fn drain_cancel_acks_after_exit<R, W>(
     }
 }
 
-pub(crate) fn failed_timing(received_at: u64) -> ExecTiming {
+fn failed_timing(received_at: u64) -> ExecTiming {
     let now = unix_ms_now();
     ExecTiming {
         spawned_at_unix_ms: received_at,

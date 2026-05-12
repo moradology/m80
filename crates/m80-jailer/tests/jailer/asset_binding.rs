@@ -90,7 +90,7 @@ fn host_only_artifacts_listed() {
     cfg.sockets = vec![JailerSocket::Firecracker];
 
     let plan = Plan::compute(&cfg).unwrap();
-    let serialized = serde_json::to_string(&plan.steps).unwrap();
+    let serialized = serde_json::to_string(&crate::common::steps(&plan)).unwrap();
 
     for host_only in [
         "ownership.lock",

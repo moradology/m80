@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::ObservabilityError;
 
 /// Diagnostics JSONL schema version.
-pub const DIAGNOSTICS_SCHEMA_VERSION: u16 = 2;
+pub(crate) const DIAGNOSTICS_SCHEMA_VERSION: u16 = 2;
 
 /// File name used inside each per-VM run directory.
 pub const DIAGNOSTICS_FILE_NAME: &str = "diagnostics.jsonl";
@@ -25,7 +25,7 @@ pub struct Diagnostics {
 
 impl Diagnostics {
     /// Return a no-op [`Diagnostics`] handle.
-    pub fn disabled() -> Self {
+    #[must_use] pub fn disabled() -> Self {
         Self {
             file: None,
             path: None,
@@ -35,16 +35,18 @@ impl Diagnostics {
     /// Open `<run_dir>/diagnostics.jsonl` for append, creating it if needed.
     pub fn open(run_dir: &Path) -> Result<Self, ObservabilityError> {
         let path = run_dir.join(DIAGNOSTICS_FILE_NAME);
-        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|source| ObservabilityError::PathIo {
+                path: path.clone(),
+                source,
+            })?;
         Ok(Self {
             file: Some(file),
             path: Some(path),
         })
-    }
-
-    /// Return the diagnostics file path when this handle is enabled.
-    pub fn path(&self) -> Option<&Path> {
-        self.path.as_deref()
     }
 
     /// Append one [`VmEvent`] to the diagnostics log.
@@ -53,8 +55,19 @@ impl Diagnostics {
             return Ok(());
         };
         serde_json::to_writer(&mut *file, event)?;
-        file.write_all(b"\n")?;
-        file.flush()?;
+        let path = self
+            .path
+            .as_ref()
+            .expect("file handle has diagnostics path");
+        file.write_all(b"\n")
+            .map_err(|source| ObservabilityError::PathIo {
+                path: path.clone(),
+                source,
+            })?;
+        file.flush().map_err(|source| ObservabilityError::PathIo {
+            path: path.clone(),
+            source,
+        })?;
         Ok(())
     }
 }
@@ -73,33 +86,33 @@ impl Drop for Diagnostics {
 #[serde(deny_unknown_fields)]
 pub struct VmEvent {
     /// Diagnostics schema version.
-    pub schema_version: u16,
+    pub(crate) schema_version: u16,
     /// Unix epoch milliseconds at the time of recording.
-    pub timestamp_unix_ms: u64,
+    pub(crate) timestamp_unix_ms: u64,
     /// Event kind.
     #[serde(default)]
-    pub event_kind: EventKind,
+    pub(crate) event_kind: EventKind,
     /// Source class that emitted the event.
-    pub source_class: SourceClass,
+    pub(crate) source_class: SourceClass,
     /// Lifecycle phase the event belongs to.
-    pub phase: Phase,
+    pub(crate) phase: Phase,
     /// Caller-supplied free-text message.
-    pub message: String,
+    pub(crate) message: String,
     /// Opaque request id when a caller request is in scope.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
+    pub(crate) request_id: Option<String>,
     /// Bounded key/value context for grep-friendly triage.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub context: BTreeMap<String, String>,
+    pub(crate) context: BTreeMap<String, String>,
     /// Duration for completed phase events.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration_us: Option<u64>,
+    pub(crate) duration_us: Option<u64>,
     /// Completion outcome for completed phase or stop events.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub outcome: Option<PhaseOutcome>,
+    pub(crate) outcome: Option<PhaseOutcome>,
     /// Typed stop/capture reason when the event is stop evidence.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub exit_reason: Option<ExitReason>,
+    pub(crate) exit_reason: Option<ExitReason>,
 }
 
 impl VmEvent {
@@ -156,7 +169,7 @@ impl VmEvent {
     }
 
     /// Attach typed stop/capture evidence.
-    pub fn with_exit_reason(mut self, reason: ExitReason) -> Self {
+    #[must_use] pub fn with_exit_reason(mut self, reason: ExitReason) -> Self {
         self.exit_reason = Some(reason);
         self
     }
@@ -165,7 +178,7 @@ impl VmEvent {
 /// Diagnostics event kind.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum EventKind {
+pub(crate) enum EventKind {
     /// Human-readable lifecycle milestone.
     #[default]
     Lifecycle,
@@ -200,10 +213,6 @@ pub enum ExitReason {
     ForceKill,
     /// Snapshot capture paused the VM and wrote snapshot artifacts.
     SnapshotCapture,
-    /// Guest kernel panic evidence was observed.
-    KernelPanic,
-    /// Guest OOM-kill evidence was observed.
-    OomKill,
     /// VMM exited with a host-visible exit code.
     VmmExited {
         /// Process exit code.
@@ -214,7 +223,7 @@ pub enum ExitReason {
 /// Event source class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum SourceClass {
+pub(crate) enum SourceClass {
     /// Host-side m80 process.
     Host,
     /// Guest-side m80-guestd process.
@@ -243,8 +252,6 @@ pub enum Phase {
     StoragePrepare,
     /// Run-root recovery loop reaped a stale run-dir.
     StartupScavenge,
-    /// Caller-requested writeback/extract-changes phase.
-    Writeback,
 }
 
 fn unix_ms_now() -> u64 {
@@ -326,7 +333,6 @@ mod tests {
             Phase::Ready,
             Phase::Request,
             Phase::Stop,
-            Phase::Writeback,
             Phase::Delete,
         ];
 
@@ -351,7 +357,6 @@ mod tests {
                 "Ready",
                 "Request",
                 "Stop",
-                "Writeback",
                 "Delete",
             ]
         );

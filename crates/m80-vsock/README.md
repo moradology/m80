@@ -32,7 +32,8 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
   `3..=u32::MAX - 1`, avoiding `0`, `VMADDR_CID_HYPERVISOR`,
   `VMADDR_CID_HOST`, and `VMADDR_CID_ANY`.
 - The guest exec port is fixed at `9001` by default
-  (`m80_proto::GUEST_PORT_DEFAULT`, re-exported here as `GUEST_PORT_DEFAULT`).
+  (`m80_proto::GUEST_PORT_DEFAULT`). Callers import the port from `m80-proto`,
+  not through `m80-vsock`.
 - One `Channel` is one connection. The Firecracker UDS is the VM's listener;
   callers may open a fresh sequential `Channel` for each request. Concurrent
   connections to the same VM are not supported in v0.1.
@@ -44,17 +45,21 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
   connection. It does not remove the host-side UDS; the orchestrator owns
   socket cleanup during VM teardown/restore.
 
+## Timeouts
+
+`BRIDGE_IO_TIMEOUT` is five seconds. It is applied as both the read timeout and
+the write timeout on every Firecracker UDS stream opened by
+`Channel::open_uds_only`.
+
 ## Public surface
 
 - `Channel::open_uds_only(...)`, `Channel::send(&mut Envelope<T>)`,
-  `Channel::recv() -> Envelope<U>`, `Channel::try_clone_sender()`, and
-  `Channel::close()`.
-- `ChannelSender::send(&mut Envelope<T>)` and `ChannelSender::close()` for
-  same-connection control frames.
+  `Channel::recv() -> Envelope<U>`, `Channel::recv_raw() -> RawEnvelope`,
+  and `Channel::try_clone_sender()`.
+- `ChannelSender::send(&mut Envelope<T>)` for same-connection control frames.
 - `cid_for_vm_id(vm_id: &str) -> u32`.
-- `GUEST_PORT_DEFAULT`, re-exported from `m80-proto`.
-- `VsockError`: `NotReady`, `HandshakeFailed`,
-  `Io { path: PathBuf, source: io::Error }`, `Proto(m80_proto::ProtoError)`.
+- `VsockError`: `HandshakeFailed`, `Io { path: PathBuf, source: io::Error }`,
+  `Proto(m80_proto::ProtoError)`.
 
 ## Non-goals
 
@@ -99,8 +104,7 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
   `HandshakeFailed`, and missing UDS to `Io`.
 - `tests/frame_round_trip.rs` checks envelope round trips and cloned-sender
   same-connection control frames.
-- `tests/drop_cleanup.rs` checks that dropping a `Channel` and calling
-  `close()` both leave the Firecracker UDS listener in place for future
-  connections.
+- `tests/drop_cleanup.rs` checks that dropping a `Channel` leaves the
+  Firecracker UDS listener in place for future connections.
 - `crates/m80-firecracker/src/launch.rs` owns the inverted-readiness tests:
   listener path, protocol byte validation, timeout, and exec-channel probe.

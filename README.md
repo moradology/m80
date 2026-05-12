@@ -178,9 +178,10 @@ m80 is a Rust workspace split into 20 black-box crates:
 - `m80-guestd` — cross-compiled, runs as PID 1 on minimal images
 - `m80-cli` — the `m80` binary
 
-**Test infrastructure (2)**:
+**Test infrastructure (3)**:
 - `m80-test-helpers` — shared deterministic fixtures and assertions
 - `m80-attack-runner` — malicious payload binary for defense-in-depth jailer tests
+- `m80-guestd-malicious` — adversarial in-VM peer for real-KVM guest-to-host wire tests
 
 Crate READMEs are contracts. A public-surface change updates the owning crate
 README in the same diff.

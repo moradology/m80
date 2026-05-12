@@ -8,6 +8,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use m80_observability::Phase;
+use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
     CancelRequest, CancelResponse, CancelStatus, Envelope, ExecExit, ExecRequest, ExecResponse,
     ExecStatus, ExecStderr, ExecStdout, ExecTiming, Payload, PtyControl, PtyExit, PtyInput,
@@ -15,10 +16,11 @@ use m80_proto::{
     PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR, PAYLOAD_KIND_EXEC_STDOUT,
     PAYLOAD_KIND_PTY_EXIT, PAYLOAD_KIND_PTY_OUTPUT,
 };
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
+use m80_vsock::Channel;
 
 use crate::diagnostics::phase_event;
-use crate::error::{ConfigError, FcError};
+use crate::error::{FcError, WireProtocolError};
+use crate::layout::VSOCK_SOCKET;
 use crate::lifecycle::monotonic_ns;
 use crate::runroot::unix_ms_now;
 use crate::types::{ExecChunk, PtyHostEvent, PtyOutputChunk, RunningSandbox};
@@ -182,7 +184,7 @@ impl RunningSandbox {
         self.claim_one_shot_exec()?;
         let _activity = self.begin_exec_activity()?;
 
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "pty");
         crate::diagnostics::record_owned(
             &mut self.diagnostics,
@@ -276,7 +278,10 @@ impl RunningSandbox {
                             &msg,
                             t.elapsed(),
                         );
-                        return Err(FcError::Config(ConfigError::Other(msg)));
+                        return Err(FcError::Protocol(WireProtocolError::PeerRejected {
+                            context: "pty cancel",
+                            detail: msg,
+                        }));
                     }
                 },
                 other => {
@@ -312,7 +317,7 @@ impl RunningSandbox {
         let _activity = self.begin_exec_activity()?;
 
         req.streaming = true;
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "exec");
         crate::diagnostics::record_owned(
             &mut self.diagnostics,
@@ -365,7 +370,6 @@ impl RunningSandbox {
                                 let _ = sender.send(&Envelope::new(CancelRequest {
                                     request_id: request_id_clone,
                                 }));
-                                let _ = sender.close();
                                 return;
                             }
                             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -503,7 +507,10 @@ impl RunningSandbox {
                                 &msg,
                                 t.elapsed(),
                             );
-                            return Err(FcError::Config(ConfigError::Other(msg)));
+                            return Err(FcError::Protocol(WireProtocolError::PeerRejected {
+                                context: "exec cancel",
+                                detail: msg,
+                            }));
                         }
                     }
                 }
@@ -706,9 +713,12 @@ fn check_stream_sequence(
             u64::from(got),
         ));
     }
-    *expected = expected.checked_add(1).ok_or_else(|| {
-        FcError::Config(ConfigError::Other(format!("{stream} sequence overflow")))
-    })?;
+    *expected =
+        expected
+            .checked_add(1)
+            .ok_or(FcError::Protocol(WireProtocolError::SequenceOverflow {
+                stream,
+            }))?;
     Ok(())
 }
 
@@ -763,7 +773,6 @@ fn spawn_pty_event_forwarder(
                 }
                 Ok(PtyHostEvent::Cancel) => {
                     let _ = sender.send(&Envelope::new(CancelRequest { request_id }));
-                    let _ = sender.close();
                     return;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -852,16 +861,20 @@ where
         }
     }
     Err(last_error.unwrap_or_else(|| {
-        FcError::Config(ConfigError::Other(
-            "exec send retry exhausted without an error".into(),
-        ))
+        FcError::Protocol(WireProtocolError::PeerRejected {
+            context: "exec send retry",
+            detail: "retry exhausted without an error".to_owned(),
+        })
     }))
 }
 
 fn is_transient_exec_open_send_error(err: &m80_vsock::VsockError) -> bool {
     match err {
         m80_vsock::VsockError::HandshakeFailed => true,
-        m80_vsock::VsockError::Io { source, .. } => source.kind() == std::io::ErrorKind::BrokenPipe,
+        m80_vsock::VsockError::Io { source, .. } => matches!(
+            source.kind(),
+            std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionRefused
+        ),
         _ => false,
     }
 }
@@ -899,6 +912,15 @@ mod tests {
         let err = m80_vsock::VsockError::Io {
             path: std::path::PathBuf::new(),
             source: io::Error::new(io::ErrorKind::BrokenPipe, "closed"),
+        };
+        assert!(is_transient_exec_open_send_error(&err));
+    }
+
+    #[test]
+    fn exec_open_retry_classifies_connection_refused_as_transient() {
+        let err = m80_vsock::VsockError::Io {
+            path: std::path::PathBuf::new(),
+            source: io::Error::new(io::ErrorKind::ConnectionRefused, "not yet listening"),
         };
         assert!(is_transient_exec_open_send_error(&err));
     }

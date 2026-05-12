@@ -38,11 +38,14 @@ without inheriting m80's lifecycle assumptions.
   `InstanceActionFailed`, `VmStateWriteFailed`, `SnapshotCreateFailed`,
   `SnapshotLoadFailed`.
   Each carries the Firecracker fault JSON verbatim.
+- Request serialization errors surface as `ClientError::Serialize`; they are
+  not collapsed into an I/O error because no socket operation occurred.
 ## Public surface
 
 - `Client::new(uds_path: &Path) -> Result<Client, ClientError>`.
 - One method per Firecracker resource, taking the resource's config
   struct (re-exported from this crate) and returning `Result<(), ClientError>`.
+- `CpuTemplate { T2, C3 }` — optional CPU template on `MachineConfig`.
 - `InstanceAction { InstanceStart }`.
 - `VmState { Paused, Resumed }` — for `patch_vm_state`.
 - `SnapshotType { Full, Diff }` — for `CreateSnapshotConfig`.
@@ -51,7 +54,8 @@ without inheriting m80's lifecycle assumptions.
   `DriveConfig`, `PartialDriveConfig`, `NetworkInterfaceConfig`,
   `VsockConfig`, `CreateSnapshotConfig`, `LoadSnapshotConfig`,
   `MemBackendConfig`, `VsockOverride`.
-- `ClientError` — typed per-resource failure.
+- `ClientError` — typed per-resource failure plus `Connect`, `Serialize`,
+  and socket-path-carrying `Io`.
 
 ## Non-goals
 

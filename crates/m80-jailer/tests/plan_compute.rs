@@ -2,7 +2,7 @@
 
 mod common;
 
-use m80_jailer::{BindMode, Binding, JailerConfig, JailerError, JailerSocket, PlanStep};
+use m80_jailer::{BindMode, Binding, JailerConfig, JailerError, JailerSocket};
 use std::path::{Path, PathBuf};
 
 fn base_config() -> JailerConfig {
@@ -72,16 +72,14 @@ fn determinism_byte_equal_json() {
 fn step_ordering_jail_root_first() {
     let cfg = base_config();
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
-    let first = plan
-        .steps
-        .first()
-        .expect("plan must have at least one step");
+    let steps = common::steps(&plan);
+    let first = steps.first().expect("plan must have at least one step");
     // Jailer's hardcoded chroot layout: <run_dir>/<exec basename>/<id>/root/.
     // With `firecracker_bin = /usr/bin/firecracker` (basename `firecracker`)
     // and `run_dir = /tmp/run/vm-1` (basename used as `--id`), the chroot
     // is at /tmp/run/vm-1/firecracker/vm-1/root.
     assert!(
-        matches!(first, PlanStep::CreateDir { path, .. } if path == &PathBuf::from("/tmp/run/vm-1/firecracker/vm-1/root")),
+        first["kind"] == "create_dir" && first["path"] == "/tmp/run/vm-1/firecracker/vm-1/root",
         "first step must be CreateDir for jail root, got {first:?}"
     );
 }
@@ -97,9 +95,9 @@ fn jail_internal_dirs_are_private() {
 
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
 
-    for step in plan.steps {
-        if let PlanStep::CreateDir { mode, .. } = step {
-            assert_eq!(mode, 0o700);
+    for step in common::steps(&plan) {
+        if step["kind"] == "create_dir" {
+            assert_eq!(step["mode"], 0o700);
         }
     }
 }
@@ -176,15 +174,16 @@ fn step_ordering_create_inside_before_binds() {
 
     // CreateDir steps must appear before Bind steps (after jail root).
     let mut saw_bind = false;
-    for step in &plan.steps {
-        match step {
-            PlanStep::CreateDir { .. } => {
+    for step in common::steps(&plan) {
+        match step["kind"].as_str().expect("step kind") {
+            "create_dir" => {
                 assert!(!saw_bind, "CreateDir appeared after a Bind step: {plan:?}");
             }
-            PlanStep::Bind { .. } => {
+            "bind" => {
                 saw_bind = true;
             }
-            PlanStep::Socket { .. } => {}
+            "socket" => {}
+            other => panic!("unexpected step kind {other}"),
         }
     }
 }
@@ -200,15 +199,16 @@ fn bind_parent_directories_are_created_before_binds() {
 
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
     let parent = PathBuf::from("/tmp/run/vm-1/firecracker/vm-1/root/kernel");
-    let bind_index = plan
-        .steps
+    let steps = common::steps(&plan);
+    let bind_index = steps
         .iter()
-        .position(|step| matches!(step, PlanStep::Bind { .. }))
+        .position(|step| step["kind"] == "bind")
         .expect("bind step");
-    let parent_index = plan
-        .steps
+    let parent_index = steps
         .iter()
-        .position(|step| matches!(step, PlanStep::CreateDir { path, .. } if path == &parent))
+        .position(|step| {
+            step["kind"] == "create_dir" && step["path"].as_str() == Some(parent.to_str().unwrap())
+        })
         .expect("parent dir step");
 
     assert!(parent_index < bind_index, "{plan:?}");
@@ -226,9 +226,10 @@ fn step_ordering_sockets_last() {
 
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
 
-    let last = plan.steps.last().expect("plan must have steps");
+    let steps = common::steps(&plan);
+    let last = steps.last().expect("plan must have steps");
     assert!(
-        matches!(last, PlanStep::Socket { .. }),
+        last["kind"] == "socket",
         "last step must be Socket, got {last:?}"
     );
 }
@@ -252,7 +253,7 @@ fn declared_order_preserved_for_binds() {
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
     let bind_steps: Vec<_> = common::bind_steps(&plan)
         .into_iter()
-        .map(|(src, _, _)| src.to_path_buf())
+        .map(|(src, _, _)| src)
         .collect();
 
     assert_eq!(

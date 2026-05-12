@@ -8,12 +8,12 @@
 #![deny(missing_docs)]
 
 pub mod args;
-pub mod errors;
 pub mod runner;
 
 mod cmds;
 mod cmds_walk;
 mod config;
+mod errors;
 mod json;
 mod profile;
 mod request_id;

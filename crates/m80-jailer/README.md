@@ -28,7 +28,10 @@ hands a config in and gets back a launchable chroot — or a typed error.
   not caller-provided host binds.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
-- `MaterializedJail::launch(...)` exec's `firecracker` inside the jail
+- `MaterializedJail::jail_root()` returns the materialized chroot root;
+  `MaterializedJail::run_dir()` returns the run directory that owns the
+  persisted plan/state files. `MaterializedJail::launch(...)` exec's
+  `firecracker` inside the jail
   via `m80-jailer-harden` and Firecracker's official jailer binary. The
   hardening wrapper first applies m80's extended inherited resource limits
   (`nproc`, `memlock`, address-space, core, stack, plus mirrored `no-file` and
@@ -58,10 +61,10 @@ hands a config in and gets back a launchable chroot — or a typed error.
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
   guest serial console survive launch failures and stopped-VM triage.
 - `inspect_run_dir` reads any prior plan + state and returns
-  `LiveJail | OrphanJail { reap_steps } | NoJail`. If a replayable
+  `LiveJail | OrphanJail { reap_plan } | NoJail`. If a replayable
   `jailer-plan.json` exists but `jailer-state.json` is missing or
   malformed, recovery fails closed to `OrphanJail` with the plan steps
-  reversed so callers can still unmount/reap partial materialization. The
+  captured in an opaque reverse-order `ReapPlan`. The
   crate does not act on the decision; the caller does.
 - The actual chroot path is `<run_dir>/<firecracker basename>/<run_dir basename>/root/`
   — jailer's hardcoded layout, derived in `jail_root_path()`. We pre-create
@@ -76,14 +79,18 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `new_cgroup_ns`, optional `netns_path`,
   `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
   `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
+- `JAILER_PLAN_FILE` and `JAILER_STATE_FILE` are the persisted run-dir file
+  names for the replayable plan and live pid state.
 - `ResourceLimits { no_file, fsize, nproc, memlock, address_space, core, stack }`;
   defaults are `no_file = 2048`, `fsize = None`, `nproc = None`,
-  `memlock = 0`, `address_space = None`, `core = 0`, and `stack = 8 MiB`.
+  `memlock = Some(0)`, `address_space = None`, `core = Some(0)`, and
+  `stack = Some(8 MiB)`.
   Only `no_file` and `fsize` are forwarded to Firecracker's official jailer;
   the rest are applied by `m80-jailer-harden` before exec.
 - `Plan`, `MaterializedJail`, `JailedFirecracker`.
+- `MaterializedJail::jail_root()`, `MaterializedJail::run_dir()`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
-- `inspect_run_dir`, `InspectionDecision`.
+- `inspect_run_dir`, `InspectionDecision`, `ReapPlan`.
 - `JailerError`: `BindFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
   `UidGidInvalid`, `InvalidNetns`, `Io { path, source }`. Privilege is verified once by
   `m80-preflight`; this crate does not run a per-launch sudo probe.
@@ -119,7 +126,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   run-dir, `OrphanJail` for plan-only, partial-state, or stale-pid residue,
   and `LiveJail` when the state JSON records a running pid, including the
   `new_pid_ns` `jailer_pid = 0` sentinel.
-- `tests/jail_root_path.rs` — `jail_root_path` output matches the
+- `tests/jailer/jail_root_layout.rs` — `jail_root_path` output matches the
   expected jailer-hardcoded layout for several input combinations.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,

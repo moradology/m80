@@ -30,13 +30,14 @@ pub(crate) fn manifest_path(rootfs: &Path) -> PathBuf {
     name.push(".manifest.json");
     rootfs.with_file_name(name)
 }
-const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
+pub(crate) const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
 const GUEST_DAEMON_PATH: &str = "/m80-guestd";
-const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
+pub(crate) const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
     "workspace",
     "proc",
     "sys",
     "dev",
+    "etc",
     "lower",
     "upper",
     "merged",
@@ -188,9 +189,9 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
 
     // Step 10: emit manifest.
     let manifest = m80_image_manifest::Manifest {
-        daemon_binary_path: daemon_binary_host.clone(),
+        daemon_binary_path: daemon_binary_host,
         daemon_binary_sha256: daemon_sha,
-        expected_firecracker_version: cfg.kernel.version.clone(),
+        expected_firecracker_version: cfg.kernel.version,
         guest_port: m80_proto::GUEST_PORT_DEFAULT,
         image_kind: m80_image_manifest::ImageKind::Ubuntu,
         kernel_image: paths.kernel.clone(),

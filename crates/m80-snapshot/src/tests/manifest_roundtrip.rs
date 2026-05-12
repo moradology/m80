@@ -1,16 +1,15 @@
 //! Round-trip and emit tests for `SnapshotManifest`.
 //! Beads: m80-0tf.1.1, m80-0tf.1.2
 
-mod common;
-
-use m80_snapshot::SnapshotManifest;
+use super::common;
+use crate::{SchemaError, SnapshotManifest, SNAPSHOT_MANIFEST_FILE};
 
 /// `write` then `read` produces a struct equal to the original.
 #[test]
 fn round_trip_equals_original() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_manifest(dir.path());
-    let path = dir.path().join("snapshot-manifest.json");
+    let path = dir.path().join(SNAPSHOT_MANIFEST_FILE);
     common::assert_round_trips(m, &path, |v, p| v.write(p), SnapshotManifest::read);
 }
 
@@ -103,7 +102,7 @@ fn deny_unknown_fields_rejects_extra_key() {
 
     let err = SnapshotManifest::read(&path).unwrap_err();
     assert!(
-        matches!(err, m80_snapshot::SnapshotError::Json(_)),
+        matches!(err, SchemaError::Json(_)),
         "unknown field must surface as Json error, got {err:?}"
     );
 }
@@ -113,13 +112,10 @@ fn deny_unknown_fields_rejects_extra_key() {
 fn write_missing_parent_surfaces_io_error_with_path() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_manifest(dir.path());
-    let path = dir
-        .path()
-        .join("nonexistent")
-        .join("snapshot-manifest.json");
+    let path = dir.path().join("nonexistent").join(SNAPSHOT_MANIFEST_FILE);
     let err = m.write(&path).unwrap_err();
     match err {
-        m80_snapshot::SnapshotError::Io { path: p, .. } => {
+        SchemaError::Io { path: p, .. } => {
             assert_eq!(p, path, "Io variant must carry the attempted path");
         }
         other => panic!("expected Io error with path, got {other:?}"),
@@ -133,7 +129,7 @@ fn read_missing_file_surfaces_io_error_with_path() {
     let path = dir.path().join("does-not-exist.json");
     let err = SnapshotManifest::read(&path).unwrap_err();
     match err {
-        m80_snapshot::SnapshotError::Io { path: p, source } => {
+        SchemaError::Io { path: p, source } => {
             assert_eq!(p, path);
             assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
         }
@@ -151,7 +147,7 @@ fn five_required_artifact_kinds_round_trip() {
         5,
         "sample must contain exactly 5 artifacts"
     );
-    let path = dir.path().join("snapshot-manifest.json");
+    let path = dir.path().join(SNAPSHOT_MANIFEST_FILE);
     m.write(&path).unwrap();
     let m2 = SnapshotManifest::read(&path).unwrap();
     assert_eq!(m2.artifacts.len(), 5);

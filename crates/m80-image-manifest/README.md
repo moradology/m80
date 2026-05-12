@@ -12,12 +12,11 @@ logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Black-box contract
 
-- `schema_version` is the integer **4**. A manifest with any other value
-  rejects with `ManifestError::UnsupportedSchemaVersion`. The schema-
-  version check fires **before** unknown-field detection, so an unknown
-  future version is reported as a version error, not a parse error.
-  There is no migration path inside this crate; new schema versions are
-  new code.
+- `schema_version` is the integer **4**. `read` rejects any other value with
+  `ManifestError::UnsupportedSchemaVersion` before unknown-field detection,
+  so an unknown future version is reported as a version error, not a parse
+  error. `write` enforces the same invariant before creating the file. There
+  is no migration path inside this crate; new schema versions are new code.
 - `image_kind: ImageKind` declares which userland family the image was
   built for: `Ubuntu` (Ubuntu userland from the Firecracker CI squashfs)
   or `Minimal` (busybox userland built from scratch). Both kinds boot
@@ -67,10 +66,15 @@ artifacts.
 
 ## Public surface
 
-- `Manifest` — struct mirroring the JSON. All fields public; paired
-  `<artifact>_path` / `<artifact>_sha256` fields for each hash-bearing
-  artifact. The Ubuntu-only source-rootfs fields (`source_rootfs_*`) are
-  `Option<>`. Field declaration order is alphabetical.
+- `Manifest` — struct mirroring the JSON. All fields are public:
+  `daemon_binary_path`, `daemon_binary_sha256`,
+  `expected_firecracker_version`, `guest_port`, `image_kind`,
+  `kernel_image`, `kernel_image_sha256`, `kernel_kind`,
+  `no_egress_reason`, `output_rootfs_image`, `output_rootfs_sha256`,
+  `ready_marker`, `schema_version`, `source_rootfs_image`, and
+  `source_rootfs_sha256`. Paired `<artifact>_path` / `<artifact>_sha256`
+  fields cover each hash-bearing artifact. The Ubuntu-only source-rootfs
+  fields are `Option<>`. Field declaration order is alphabetical.
 - `ImageKind { Ubuntu, Minimal }` — discriminator on `Manifest`.
 - `KernelKind { Stock, Stripped }` — kernel provenance discriminator.
   `Default = Stock`. Serializes as `"stock"` / `"stripped"`.
@@ -78,8 +82,8 @@ artifacts.
   `schema_version` first via a probe struct, then deserialize the full
   struct, then enforce the kind/field invariant.
 - `Manifest::write(&self, path: &Path) -> Result<(), ManifestError>` —
-  enforces the kind/field invariant before writing. Caller is responsible
-  for the parent directory existing.
+  enforces `schema_version == SCHEMA_VERSION` and the kind/field invariant
+  before writing. Caller is responsible for the parent directory existing.
 - `Manifest::verify(&self, root: &Path) -> Result<(), ManifestError>` —
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.

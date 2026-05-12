@@ -13,52 +13,22 @@ writing `O_TRUNC` to a virtual file returns EINVAL on some kernels.
 A separate crate gives that surface one test boundary and lets
 `m80-firecracker` skip cgroups cleanly on hosts without unified-v2.
 
-## Black-box contract
-
-- `Subtree::probe()` confirms the host runs cgroup v2 unified hierarchy;
-  returns `CgroupError::UnsupportedHostMode` on hybrid or v1-only hosts.
-  This is a **precondition check**, not an idempotent guard — callers are
-  expected to gate cgroup usage on a single probe result.
-- `Subtree::create(vm_id, &MaterializedJail, &JailedFirecracker, &Limits)`
-  materializes the leaf directory under
-  `/sys/fs/cgroup/m80-firecracker/<vm_id>/`, recursively enables the `cpu`,
-  `memory`, `pids`, and when requested `io` controllers in ancestor
-  `cgroup.subtree_control` files, applies limits, and only then enrols the
-  deduped jailer + firecracker pid set. `jailer_pid = 0` is the m80-jailer
-  sentinel for "official jailer parent already exited" in `new_pid_ns` mode
-  and is skipped.
-- Sparse `cpuset.cpus` / `cpuset.mems` leaf files inherit the nearest
-  non-empty ancestor value before PID enrolment. If the file exists but no
-  ancestor has a value, `SparseInheritedFile` is returned instead of silently
-  enrolling into an unusable leaf.
-- `Limits::m80_default()` writes one CPU, 1.5 GiB memory, 128 pids, default
-  cgroup v2 `io.weight = 100`, and `/proc/<pid>/oom_score_adj = 500`.
-  `io.max` rows are caller-configured because the device major/minor is
-  host-specific.
-- `Subtree::leaf_path(vm_id)` is a pure, no-I/O path helper that returns
-  the expected leaf directory for a given VM id. Callers may use it for
-  triage or inspection without holding a `Subtree` handle.
-- **Cleanup on drop.** `Subtree::Drop` removes the leaf cgroup directory
-  with `rmdir`. If `rmdir` fails (e.g., processes are still enrolled),
-  the failure is logged via `tracing`; the drop never panics.
-- **v2 unified hierarchy only.** No cgroup v1 or hybrid-mode support in
-  v0.1. Any host that does not present a pure unified hierarchy fails at
-  `probe()` time, not at `create()` time.
-
-## Public surface
+## Public surface and black-box contract
 
 See rustdoc for full signatures.
 
-- `Subtree::probe()` — preflight gate; returns `UnsupportedHostMode` on hybrid/v1 hosts.
-- `Subtree::create(vm_id, &MaterializedJail, &JailedFirecracker, &Limits)` — materialize the leaf, apply limits, tune OOM score, and enrol the deduped jailer/firecracker pid set.
-- `Subtree::apply_limits(&Limits)` — write per-controller files; `None` fields leave existing values alone.
-- `Subtree::leaf_path(vm_id)` — pure path helper for the public cgroup layout.
-- `Subtree::Drop` — `rmdir` the leaf if empty; logs on failure, never panics.
-- `cleanup_orphan_subtree(vm_id)` — startup helper for stale leaves from prior crashed runs.
-- `Limits { cpu_max, memory_max, pids_max, io_max, io_weight, oom_score_adj }`.
-- `IoMax { major, minor, rbps, wbps, riops, wiops }` — one cgroup v2 `io.max` throttle row.
-- `Limits::m80_default()` — one full CPU, 1.5 GiB memory, 128 pids, default io weight 100, OOM score 500.
-- `CgroupError`: `UnsupportedHostMode`, `ControllerNotEnabled(&'static str)`, `SparseInheritedFile(&'static str)`, `InvalidLimit { field, value }`, `Io { path, source }`.
+| Public item | Contract |
+| --- | --- |
+| `Subtree::probe()` | Confirms the host runs cgroup v2 unified hierarchy and returns `CgroupError::UnsupportedHostMode` on hybrid or v1-only hosts. This is a precondition check; callers gate cgroup usage on a single probe result. |
+| `Subtree::create(vm_id, &MaterializedJail, &JailedFirecracker, &Limits)` | Materializes `/sys/fs/cgroup/m80-firecracker/<vm_id>/`, recursively enables `cpu`, `memory`, `pids`, and requested `io` controllers, applies limits, tunes OOM score, and only then enrols the deduped jailer/firecracker pid set. `jailer_pid = 0` is skipped as the `new_pid_ns` sentinel. Sparse `cpuset.cpus` and `cpuset.mems` leaf files inherit the nearest non-empty ancestor value before PID enrolment or return `SparseInheritedFile`. |
+| `Subtree::leaf_path(vm_id)` | Pure no-I/O helper returning the expected public leaf path for triage and inspection. |
+| `Subtree::Drop` | Removes the leaf cgroup directory with `rmdir`; if live processes or another kernel condition prevents removal, logs through `tracing` and never panics. |
+| `cleanup_orphan_subtree(vm_id)` | Startup helper for stale leaves from prior crashed runs. Missing leaves are accepted; non-empty `cgroup.procs` leaves are logged and preserved; empty leaves are removed. |
+| `Limits { cpu_max, memory_max, pids_max, io_max, io_weight, oom_score_adj }` | Caller-provided limit profile. `None` fields leave existing controller values alone; empty `io_max` leaves device throttles alone. |
+| `Limits::m80_default()` | One full CPU, 1.5 GiB memory, 128 pids, cgroup v2 `io.weight = 100`, and `/proc/<pid>/oom_score_adj = 500`. Device-specific `io.max` rows remain caller-provided. |
+| `CpuMax` | Field type for `Limits::cpu_max`; either a concrete `(quota_us, period_us)` pair or `Max`. |
+| `IoMax { major, minor, rbps, wbps, riops, wiops }` | Field type for `Limits::io_max`; one cgroup v2 `io.max` throttle row for a host-specific block device. Its `Display` implementation renders the kernel file row. |
+| `CgroupError` | `UnsupportedHostMode`, `ControllerNotEnabled(&'static str)`, `SparseInheritedFile(&'static str)`, `InvalidLimit { field, value }`, and `Io { path, source }`. |
 
 ## Non-goals
 
@@ -67,15 +37,17 @@ See rustdoc for full signatures.
   v1-era device-controller files. m80's v2-only device-access hardening stays
   with jailer mount/device-node policy unless a future BPF device-controller
   surface is deliberately added.
-- **No hidden limit selection inside `Subtree::apply_limits`.** `Limits` is an input.
-  `m80-firecracker` intentionally passes `Limits::m80_default()` when
-  `CgroupMode::UnifiedV2` is enabled.
+- **No hidden limit selection.** `Limits` is an input. `m80-firecracker`
+  intentionally passes `Limits::m80_default()` when `CgroupMode::UnifiedV2`
+  is enabled.
+- **No standalone construction helpers.** `CpuMax` and `IoMax` are field types;
+  callers use enum variants and struct literals directly.
 - **No metrics scraping.** Reading `cpu.stat` / `memory.stat` belongs in `m80-observability`.
 
 ## Dependencies
 
-- `thiserror`, `tracing`.
-- No other m80 crates.
+- `m80-jailer` public jail/process types.
+- `serde`, `thiserror`, `tracing`.
 - Requires `/sys/fs/cgroup` at runtime; tests that touch the real
   cgroup hierarchy are `#[ignore]` and run with `sudo`.
 

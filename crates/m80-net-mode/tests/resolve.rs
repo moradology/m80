@@ -3,7 +3,7 @@
 //! Beads: m80-xbn.1.* (resolver semantics), m80-xbn.2.* (single-seam decision).
 
 use ipnet::Ipv4Net;
-use m80_net_mode::{resolve, NetworkPolicy, OutboundIntent, VmNetworkMode};
+use m80_net_mode::{resolve, NetnsSpec, NetworkPolicy, OutboundIntent, VmNetworkMode};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 
@@ -18,10 +18,7 @@ fn allow_outbound_with_no_exceptions_resolves_to_outbound_nat() {
     assert_eq!(
         mode,
         VmNetworkMode::OutboundNat {
-            plan: OutboundIntent {
-                exceptions: vec![],
-                gateway_override: None
-            },
+            plan: OutboundIntent { exceptions: vec![] },
         }
     );
 }
@@ -37,7 +34,6 @@ fn allow_outbound_with_one_cidr_round_trips_through_resolver() {
         VmNetworkMode::OutboundNat {
             plan: OutboundIntent {
                 exceptions: vec!["10.0.0.0/8".parse().unwrap()],
-                gateway_override: None,
             },
         }
     );
@@ -50,12 +46,7 @@ fn join_netns_carries_path_through_resolver() {
     assert_eq!(
         mode,
         VmNetworkMode::JoinNetns {
-            netns_path: PathBuf::from("/var/run/netns/m80-test"),
-            tap_name: "tapm80test".to_owned(),
-            guest_mac: "02:00:00:00:80:01".to_owned(),
-            guest_ipv4: "10.80.0.2/24".parse().unwrap(),
-            gateway_ipv4: Ipv4Addr::new(10, 80, 0, 1),
-            dns_resolvers: vec![Ipv4Addr::new(10, 80, 0, 1)],
+            spec: netns_spec("/var/run/netns/m80-test"),
         }
     );
 }
@@ -72,18 +63,19 @@ fn compromised_vmm_network_boundary_is_explicit_join_netns_only() {
     assert_eq!(
         resolve(&join_netns_policy("/var/run/netns/m80-security")),
         VmNetworkMode::JoinNetns {
-            netns_path: PathBuf::from("/var/run/netns/m80-security"),
-            tap_name: "tapm80test".to_owned(),
-            guest_mac: "02:00:00:00:80:01".to_owned(),
-            guest_ipv4: "10.80.0.2/24".parse().unwrap(),
-            gateway_ipv4: Ipv4Addr::new(10, 80, 0, 1),
-            dns_resolvers: vec![Ipv4Addr::new(10, 80, 0, 1)],
+            spec: netns_spec("/var/run/netns/m80-security"),
         }
     );
 }
 
 fn join_netns_policy(netns_path: &str) -> NetworkPolicy {
     NetworkPolicy::JoinNetns {
+        spec: netns_spec(netns_path),
+    }
+}
+
+fn netns_spec(netns_path: &str) -> NetnsSpec {
+    NetnsSpec {
         netns_path: PathBuf::from(netns_path),
         tap_name: "tapm80test".to_owned(),
         guest_mac: "02:00:00:00:80:01".to_owned(),
@@ -122,4 +114,46 @@ fn network_policy_allow_outbound_round_trips() {
 #[test]
 fn network_policy_join_netns_round_trips() {
     assert_policy_round_trips(join_netns_policy("/var/run/netns/m80-test"));
+}
+
+#[test]
+fn network_policy_rejects_unknown_fields() {
+    let err = serde_json::from_str::<NetworkPolicy>(
+        r#"{"kind":"allow_outbound","exceptions":[],"unknown":true}"#,
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("unknown field"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn outbound_intent_rejects_unknown_fields() {
+    let err =
+        serde_json::from_str::<OutboundIntent>(r#"{"exceptions":[],"unknown":true}"#).unwrap_err();
+    assert!(
+        err.to_string().contains("unknown field"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn netns_spec_rejects_unknown_fields() {
+    let err = serde_json::from_str::<NetnsSpec>(
+        r#"{
+            "netns_path":"/var/run/netns/m80-test",
+            "tap_name":"tapm80test",
+            "guest_mac":"02:00:00:00:80:01",
+            "guest_ipv4":"10.80.0.2/24",
+            "gateway_ipv4":"10.80.0.1",
+            "dns_resolvers":["10.80.0.1"],
+            "unknown":true
+        }"#,
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("unknown field"),
+        "unexpected error: {err}"
+    );
 }

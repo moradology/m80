@@ -44,9 +44,6 @@ pub enum GuestLogLevel {
     Warn,
     /// Normal lifecycle progress.
     Info,
-    /// Verbose diagnostics. Emitted only when callers choose to call it.
-    #[allow(dead_code)]
-    Debug,
 }
 
 impl GuestLogLevel {
@@ -55,7 +52,6 @@ impl GuestLogLevel {
             GuestLogLevel::Error => "ERROR",
             GuestLogLevel::Warn => "WARN",
             GuestLogLevel::Info => "INFO",
-            GuestLogLevel::Debug => "DEBUG",
         }
     }
 }
@@ -64,7 +60,7 @@ impl GuestLogLevel {
 ///
 /// Shape:
 /// `[<RFC3339-timestamp>] [<phase>] [<request_id-or-boot>] <level> <message>`
-pub fn format_line(
+#[must_use] pub fn format_line(
     timestamp: &str,
     phase: GuestLogPhase,
     request_id: Option<&str>,
@@ -81,7 +77,7 @@ pub fn format_line(
 
 /// Emit one structured line to stderr. Failures are intentionally ignored:
 /// logging must not change guest control flow.
-pub fn log(
+pub(crate) fn log(
     phase: GuestLogPhase,
     request_id: Option<&str>,
     level: GuestLogLevel,
@@ -159,17 +155,17 @@ fn civil_from_days(days_since_unix_epoch: i64) -> (i32, u32, u32) {
 }
 
 /// Emit an `INFO` line.
-pub fn info(phase: GuestLogPhase, request_id: Option<&str>, message: impl AsRef<str>) {
+pub(crate) fn info(phase: GuestLogPhase, request_id: Option<&str>, message: impl AsRef<str>) {
     log(phase, request_id, GuestLogLevel::Info, message);
 }
 
 /// Emit a `WARN` line.
-pub fn warn(phase: GuestLogPhase, request_id: Option<&str>, message: impl AsRef<str>) {
+pub(crate) fn warn(phase: GuestLogPhase, request_id: Option<&str>, message: impl AsRef<str>) {
     log(phase, request_id, GuestLogLevel::Warn, message);
 }
 
 /// Emit an `ERROR` line.
-pub fn error(phase: GuestLogPhase, request_id: Option<&str>, message: impl AsRef<str>) {
+pub(crate) fn error(phase: GuestLogPhase, request_id: Option<&str>, message: impl AsRef<str>) {
     log(phase, request_id, GuestLogLevel::Error, message);
 }
 
@@ -181,14 +177,14 @@ pub fn error(phase: GuestLogPhase, request_id: Option<&str>, message: impl AsRef
 ///
 /// `M80_GUEST_BOOT name=<name> elapsed_us=<micros> delta_us=<micros>`
 #[derive(Debug)]
-pub struct BootTimer {
+pub(crate) struct BootTimer {
     start: Instant,
     last: Instant,
 }
 
 impl BootTimer {
     /// Start a new boot timer at the current monotonic instant.
-    pub fn start() -> Self {
+    #[must_use] pub(crate) fn start() -> Self {
         let now = Instant::now();
         Self {
             start: now,
@@ -197,7 +193,7 @@ impl BootTimer {
     }
 
     /// Emit one boot milestone to stderr and advance the delta baseline.
-    pub fn mark(&mut self, name: &str) {
+    pub(crate) fn mark(&mut self, name: &str) {
         let now = Instant::now();
         let elapsed_us = now.duration_since(self.start).as_micros();
         let delta_us = now.duration_since(self.last).as_micros();

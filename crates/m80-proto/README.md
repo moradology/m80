@@ -100,16 +100,28 @@ The load-bearing wire invariants — the things consumers cannot derive from
 ## Public surface
 
 Frame I/O: `read_frame`, `write_frame`, `read_raw_frame`, `write_raw_frame`.
-Frame sizing: `MAX_FRAME_BYTES`, `PROTOCOL_VERSION`.
+Raw protobuf helpers: `RawEnvelope`, `encode_raw_envelope`.
+Frame sizing and ports: `MAX_FRAME_BYTES`, `PROTOCOL_VERSION`,
+`GUEST_PORT_DEFAULT`, `READY_PORT_DEFAULT`, `READY_MARKER_DEFAULT`.
 
 Envelope and traits: `Envelope<T>`, `Payload` (implemented by all payload
-types), `RawEnvelope`.
+types).
 
 Core exec types: `ExecRequest`, `ExecResponse`, `ExecStdout`, `ExecStderr`,
-`ExecExit`, `ExecStatus`, `CancelRequest`, `CancelResponse`, `CancelStatus`.
+`ExecExit`, `ExecStatus`, `ExecTiming`, `CancelRequest`, `CancelResponse`,
+`CancelStatus`, and `PAYLOAD_KIND_EXEC_REQUEST`,
+`PAYLOAD_KIND_EXEC_RESPONSE`, `PAYLOAD_KIND_EXEC_STDOUT`,
+`PAYLOAD_KIND_EXEC_STDERR`, `PAYLOAD_KIND_EXEC_EXIT`,
+`PAYLOAD_KIND_CANCEL_REQUEST`, `PAYLOAD_KIND_CANCEL_RESPONSE`.
+
+Shutdown types: `ShutdownRequest`, `ShutdownResponse`, `ShutdownAction`,
+`PAYLOAD_KIND_SHUTDOWN_REQUEST`, and `PAYLOAD_KIND_SHUTDOWN_RESPONSE`.
 
 PTY types: `PtyRequest`, `PtyOutput`, `PtyInput`, `PtyResize`, `PtyControl`,
-`PtyExit`.
+`PtyControlEvent`, `PtySignal`, `PtySize`, `PtyExit`, and
+`PAYLOAD_KIND_PTY_REQUEST`, `PAYLOAD_KIND_PTY_INPUT`,
+`PAYLOAD_KIND_PTY_OUTPUT`, `PAYLOAD_KIND_PTY_RESIZE`,
+`PAYLOAD_KIND_PTY_CONTROL`, `PAYLOAD_KIND_PTY_EXIT`.
 
 Drive hotplug types: `DriveMountRequest`, `DriveMountResponse`,
 `DriveMountSpec`, `DriveMountStatus`, `DriveMountStatusKind`,
@@ -139,12 +151,13 @@ Guest health exports: `PingRequest`, `PongResponse`, and
 
 Error type: `ProtoError`.
 
-Port constants: `GUEST_PORT_DEFAULT`, `READY_PORT_DEFAULT`.
-
 Generated wire module: `wire::generated` is generated from
 `proto/m80/wire.proto` and marked `#[doc(hidden)]`. Normal callers use the typed
 payload structs and frame helpers; generated structs are only for protocol
-plumbing and variant work inside `m80-proto`.
+plumbing and variant work inside `m80-proto`. The one public generated variant
+type, `wire::WirePayload`, exists for malicious-protocol harnesses that need to
+construct mismatched or intentionally malformed envelopes; production callers
+should use typed payloads through `Envelope<T>`.
 
 ## Non-goals
 
@@ -173,6 +186,8 @@ Rust toolchain. None of the other m80 crates.
   round-trips through `write_frame` + `read_frame` byte-equivalent.
 - `tests/hotplug_round_trip.rs` — drive mount/detach payloads round-trip,
   preserve partial-success statuses, and carry tenant identity as opaque bytes.
+- `tests/shutdown_round_trip.rs` — shutdown request/response payloads
+  round-trip for every declared shutdown action.
 - Unit tests in-crate: `Envelope` kind/payload mismatch fails closed,
   `OversizedPayload` fires at `MAX_FRAME_BYTES + 1`, EOF before prefix vs.
   EOF mid-frame both map to `Io(UnexpectedEof)`, `negotiate_version`

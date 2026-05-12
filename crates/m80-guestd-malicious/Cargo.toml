@@ -10,9 +10,19 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+malicious-artifact = []
+
 [[bin]]
 name = "m80-guestd-malicious"
 path = "src/main.rs"
+required-features = ["malicious-artifact"]
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["malicious-artifact"]
 
 [dependencies]
 anyhow.workspace = true

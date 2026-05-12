@@ -53,7 +53,7 @@ fn materialize_creates_jail_root_and_persists_plan() {
         .expect("materialize must succeed as root");
 
     assert!(
-        jail.jail_path.exists(),
+        jail.jail_root().exists(),
         "jail root must exist after materialize"
     );
     assert!(
@@ -246,17 +246,17 @@ jail_root="$chroot_base/$exec_base/$id/root"
 
     assert!(matches!(err, JailerError::FirecrackerPidTimeout { .. }));
     assert!(
-        jail.jail_path.exists(),
+        jail.jail_root().exists(),
         "timeout must leave materialized jail residue for recovery/drop"
     );
-    let InspectionDecision::OrphanJail { reap_steps } =
+    let InspectionDecision::OrphanJail { reap_plan } =
         m80_jailer::inspect_run_dir(run_dir.path()).unwrap()
     else {
         panic!("initial state without pids must be recoverable orphan residue");
     };
     assert!(
-        !reap_steps.is_empty(),
-        "recoverable orphan must carry plan reap steps"
+        !reap_plan.is_empty(),
+        "recoverable orphan must carry plan reap plan"
     );
     drop(jail);
     assert_no_mountinfo_references(run_dir.path());
@@ -291,7 +291,7 @@ fn jailer_dir_perms_enforced_against_non_owner() {
         .unwrap()
         .materialize()
         .expect("materialize must succeed as root");
-    let meta = std::fs::metadata(&jail.jail_path).expect("jail root metadata");
+    let meta = std::fs::metadata(jail.jail_root()).expect("jail root metadata");
     assert_eq!(meta.mode() & 0o777, 0o700);
     assert_eq!(meta.uid(), 3000);
     assert_eq!(meta.gid(), 3000);
@@ -306,7 +306,7 @@ fn jailer_dir_perms_enforced_against_non_owner() {
             "--",
             "/bin/ls",
         ])
-        .arg(&jail.jail_path)
+        .arg(jail.jail_root())
         .output()
         .expect("setpriv must run");
     assert!(

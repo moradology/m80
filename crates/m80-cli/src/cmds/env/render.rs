@@ -80,11 +80,11 @@ pub(super) fn render_env_human(dump: &EnvDump) -> String {
             .unwrap_or("unknown")
     ));
     out.push_str(&format!(
-        "run_root: {} exists={} vm_dirs={}\n",
+        "run_root: {} exists={} run_dirs={}\n",
         display_optional_path(dump.run_root.path.as_deref()),
         dump.run_root.exists,
         dump.run_root
-            .vm_dir_count
+            .run_dir_count
             .map(|count| count.to_string())
             .unwrap_or_else(|| "unknown".to_owned())
     ));

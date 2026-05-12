@@ -6,10 +6,13 @@
 
 mod dns;
 mod injection;
-mod iptables;
+pub(crate) mod iptables;
 mod link_ops;
 mod state;
 mod teardown;
+
+#[cfg(test)]
+extern crate self as m80_net_outbound;
 
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -25,37 +28,43 @@ use sha2::{Digest, Sha256};
 
 static NETWORK_ALLOCATION_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 
+pub(crate) use dns::CommandDnsDiscoveryOps;
 pub use dns::{
-    discover_dns_resolvers_with_ops, is_admitted_dns_resolver, CommandDnsDiscoveryOps,
-    DnsCommandOutput, DnsDiscoveryOps,
+    discover_dns_resolvers_with_ops, is_admitted_dns_resolver, DnsCommandOutput, DnsDiscoveryOps,
 };
-pub use injection::{
-    build_pid_one_network_cmdline, inject_guest_network_config,
-    inject_guest_network_config_with_ops, prepare_pid_one_network_cmdline,
-    prepare_pid_one_network_cmdline_with_ops, CommandGuestNetworkConfigOps, GuestNetworkConfig,
-    GuestNetworkConfigOps, PidOneNetworkCmdline, M80_NETWORKD_FILE, M80_RESOLVED_FILE,
-    SYSTEMD_NETWORK_DIR, SYSTEMD_RESOLVED_CONF_DIR,
+#[cfg(test)]
+pub(crate) use injection::{
+    build_pid_one_network_cmdline, inject_guest_network_config_with_ops,
+    prepare_pid_one_network_cmdline_with_ops, GuestNetworkConfigOps, NETWORKD_FILE,
+    RESOLVED_FILE,
 };
+pub use injection::{prepare_pid_one_network_cmdline, PidOneNetworkCmdline};
 pub use iptables::{
     apply_outbound_nat_policy, apply_outbound_nat_policy_with_ops, outbound_nat_filter_chain,
     outbound_nat_rule_comment, permanent_deny_cidrs, PolicyCommandOutput, PolicyOps,
 };
-pub use link_ops::{LinkOps, NetlinkLinkOps};
-pub use m80_net_mode::OutboundIntent;
-pub use state::{
+pub use link_ops::LinkOps;
+pub(crate) use link_ops::NetlinkLinkOps;
+use m80_net_mode::OutboundIntent;
+#[cfg(test)]
+pub(crate) use state::BRIDGE_STATE_FILE;
+pub(crate) use state::{
     bridge_state_path, planned_bridge_state, planned_vm_network_state, read_bridge_state,
-    read_vm_network_state_record, vm_network_state_path, write_bridge_state,
-    write_vm_network_state_record, BridgeState, SetupPhase, VmNetworkStateRecord,
-    BRIDGE_STATE_FILE, NETWORK_STATE_SCHEMA_VERSION,
+    vm_network_state_path, write_bridge_state, write_vm_network_state_record, BridgeState,
+    SetupPhase,
 };
+pub use state::{read_vm_network_state_record, VmNetworkStateRecord};
 pub use teardown::{
     cleanup_orphan_bridge, cleanup_orphan_bridge_with_ops, cleanup_outbound_nat_policy_with_ops,
     cleanup_vm, cleanup_vm_with_ops,
 };
 
+#[cfg(test)]
+mod tests;
+
 /// Comment prefix m80 stamps on every iptables rule it owns. Used by cleanup
 /// to find rules by comment match (never by index).
-pub const M80_RULE_COMMENT_PREFIX: &str = "m80";
+pub const RULE_COMMENT_PREFIX: &str = "m80";
 
 /// Per-VM network state filename under each VM run directory.
 pub const NETWORK_STATE_FILE: &str = "network-state.json";
@@ -120,7 +129,7 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
     run_dir: &Path,
     host_routes: &str,
 ) -> Result<RealizedNetwork, NetError> {
-    let planned_bridge = planned_bridge_state(run_root, intent)?;
+    let planned_bridge = planned_bridge_state(run_root)?;
     reject_host_route_collision_from_proc_net_route(
         planned_bridge.cidr,
         Some(&planned_bridge.bridge_name),
@@ -179,9 +188,16 @@ fn lock_network_allocation(run_root: &Path) -> Result<AllocationLock, NetError> 
         .write(true)
         .create(true)
         .truncate(false)
-        .open(path)?;
-    let lock = Flock::lock(file, FlockArg::LockExclusive)
-        .map_err(|(_, errno)| NetError::Io(io::Error::from_raw_os_error(errno as i32)))?;
+        .open(&path)
+        .map_err(|source| NetError::PathIo {
+            path: path.clone(),
+            source,
+        })?;
+    let lock =
+        Flock::lock(file, FlockArg::LockExclusive).map_err(|(_, errno)| NetError::PathIo {
+            path: path.clone(),
+            source: io::Error::from_raw_os_error(errno as i32),
+        })?;
     Ok(AllocationLock {
         _process_lock: process_lock,
         _lock: lock,
@@ -203,15 +219,18 @@ fn remove_file_if_present_local(path: &Path) -> Result<(), NetError> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(NetError::Io(err)),
+        Err(source) => Err(NetError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 
 /// Derive the bridge name from a run-root path. Pure: no I/O.
 ///
 /// Format: `brfc` followed by the first 11 hex chars of `sha256(run_root_path)`.
-pub fn derive_bridge_name(run_root: &Path) -> String {
-    let digest = run_root_digest(run_root);
+pub(crate) fn derive_bridge_name(run_root: &Path) -> String {
+    let digest = state::run_root_digest(run_root);
     format!("brfc{}", &hex::encode(digest)[..11])
 }
 
@@ -219,13 +238,13 @@ pub fn derive_bridge_name(run_root: &Path) -> String {
 ///
 /// Format: `tfc` followed by the first 12 hex chars of
 /// `sha256(run_root_path || vm_id)`.
-pub fn derive_tap_name(run_root: &Path, vm_id: &str) -> String {
+pub(crate) fn derive_tap_name(run_root: &Path, vm_id: &str) -> String {
     let digest = vm_digest(run_root, vm_id);
     format!("tfc{}", &hex::encode(digest)[..12])
 }
 
 /// Derive the guest IPv4 + MAC for a VM. Pure: no I/O.
-pub fn derive_guest_addressing(run_root: &Path, vm_id: &str) -> (Ipv4Addr, String) {
+pub(crate) fn derive_guest_addressing(run_root: &Path, vm_id: &str) -> (Ipv4Addr, String) {
     let bridge_cidr = derive_bridge_cidr(run_root);
     let digest = vm_digest(run_root, vm_id);
     let host = 2 + (((u16::from(digest[5]) << 8) | u16::from(digest[6])) % 253) as u8;
@@ -242,15 +261,15 @@ pub fn derive_guest_addressing(run_root: &Path, vm_id: &str) -> (Ipv4Addr, Strin
 ///
 /// Format: `172.<o2>.<o3>.0/24` where `o2 = (sha256(run_root)[0] % 16) + 16`
 /// and `o3 = sha256(run_root)[1]`.
-pub fn derive_bridge_cidr(run_root: &Path) -> Ipv4Net {
-    let digest = run_root_digest(run_root);
+pub(crate) fn derive_bridge_cidr(run_root: &Path) -> Ipv4Net {
+    let digest = state::run_root_digest(run_root);
     let o2 = (digest[0] % 16) + 16;
     let o3 = digest[1];
     Ipv4Net::new(Ipv4Addr::new(172, o2, o3, 0), 24).expect("static /24 prefix is valid")
 }
 
 /// Reject a planned guest IPv4 if a sibling VM state file already claims it.
-pub fn reject_guest_ipv4_collision(
+pub(crate) fn reject_guest_ipv4_collision(
     run_root: &Path,
     current_vm_id: &str,
     planned_bridge_cidr: Ipv4Net,
@@ -285,17 +304,8 @@ pub fn reject_guest_ipv4_collision(
     Ok(())
 }
 
-/// Reject a planned bridge CIDR if it overlaps a non-default host route.
-pub fn reject_host_route_collision(
-    planned_cidr: Ipv4Net,
-    allowed_interface: Option<&str>,
-) -> Result<(), NetError> {
-    let text = fs::read_to_string("/proc/net/route")?;
-    reject_host_route_collision_from_proc_net_route(planned_cidr, allowed_interface, &text)
-}
-
 /// Reject a planned bridge CIDR against supplied `/proc/net/route` text.
-pub fn reject_host_route_collision_from_proc_net_route(
+pub(crate) fn reject_host_route_collision_from_proc_net_route(
     planned_cidr: Ipv4Net,
     allowed_interface: Option<&str>,
     route_text: &str,
@@ -316,12 +326,6 @@ pub fn reject_host_route_collision_from_proc_net_route(
         }
     }
     Ok(())
-}
-
-fn run_root_digest(run_root: &Path) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(run_root.as_os_str().as_bytes());
-    hasher.finalize().into()
 }
 
 fn ipv4_net_overlaps(a: Ipv4Net, b: Ipv4Net) -> bool {
@@ -412,9 +416,6 @@ fn recover_planned_bridge(
 /// Errors surfaced by network operations.
 #[derive(Debug, thiserror::Error)]
 pub enum NetError {
-    /// IPv6 was requested but is not supported in v0.1.
-    #[error("IPv6 is not supported in v0.1")]
-    Ipv6Unsupported,
     /// Another VM in the run-root already claims this guest IPv4.
     #[error("guest IPv4 collision with peer VM {peer_vm_id}")]
     GuestIpv4Collision {
@@ -487,6 +488,15 @@ pub enum NetError {
         path: PathBuf,
         /// Description of the conflict.
         detail: String,
+    },
+    /// Filesystem I/O failure where the target path is known.
+    #[error("i/o on {}: {source}", path.display())]
+    PathIo {
+        /// Path the operation targeted.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
     },
     /// Underlying I/O failure.
     #[error("i/o: {0}")]

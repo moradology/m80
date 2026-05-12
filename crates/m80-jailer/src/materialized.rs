@@ -12,15 +12,16 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 
 use crate::error::JailerError;
+use crate::plan::write_file_no_follow;
 use crate::types::{JailerState, Plan, JAILER_STATE_FILE};
 
 /// A materialized chroot. Drop tears it down.
 #[derive(Debug)]
 pub struct MaterializedJail {
     /// The plan that produced this jail.
-    pub plan: Plan,
+    pub(crate) plan: Plan,
     /// Path to the chroot root.
-    pub jail_path: PathBuf,
+    pub(crate) jail_path: PathBuf,
     /// Bind-mount destinations, in execution order (reversed on drop).
     pub(crate) bind_mounts: Vec<PathBuf>,
     /// Directories created (in execution order; reversed on drop).
@@ -32,6 +33,16 @@ pub struct MaterializedJail {
 }
 
 impl MaterializedJail {
+    /// Path to the actual chroot root created for this jail.
+    #[must_use] pub fn jail_root(&self) -> &Path {
+        &self.jail_path
+    }
+
+    /// Per-VM run directory that owns the persisted jailer plan and state.
+    #[must_use] pub fn run_dir(&self) -> &Path {
+        &self.plan.config.run_dir
+    }
+
     /// Exec `firecracker` inside the jail via the official `jailer` binary
     /// and return both pids tracked.
     ///
@@ -69,8 +80,8 @@ impl MaterializedJail {
         // the no-live-jailer-parent sentinel.
         //
         let (command_path, mut command) =
-            if let Some(harden_bin) = &self.plan.config.jailer_harden_bin {
-                let mut command = Command::new(harden_bin);
+            if let Some(jailer_harden_bin) = &self.plan.config.jailer_harden_bin {
+                let mut command = Command::new(jailer_harden_bin);
                 command
                     .arg("--jailer-bin")
                     .arg(&self.plan.config.jailer_bin)
@@ -83,7 +94,7 @@ impl MaterializedJail {
                     command.arg("--new-cgroup-ns");
                 }
                 command.arg("--");
-                (harden_bin, command)
+                (jailer_harden_bin, command)
             } else {
                 (
                     &self.plan.config.jailer_bin,
@@ -202,7 +213,6 @@ impl MaterializedJail {
             jailer_pid
         };
 
-        // Persist updated state.
         let state_path = self.plan.config.run_dir.join(JAILER_STATE_FILE);
         let state = JailerState {
             jailer_pid: Some(recorded_jailer_pid),
@@ -318,30 +328,10 @@ fn spawn_jailer_command(command_path: &Path, command: &mut Command) -> Result<Ch
     })
 }
 
-fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
-    use std::io::Write;
-
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .custom_flags(nix::libc::O_NOFOLLOW)
-        .open(path)
-        .map_err(|source| JailerError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    file.write_all(bytes).map_err(|source| JailerError::Io {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
 impl Drop for MaterializedJail {
     fn drop(&mut self) {
         use nix::mount::{umount2, MntFlags};
 
-        // Unmount bind mounts in reverse order.
         for path in self.bind_mounts.iter().rev() {
             if let Err(e) = umount2(path.as_path(), MntFlags::MNT_DETACH) {
                 warn!("drop: umount2({}) failed: {e}", path.display());
@@ -356,7 +346,6 @@ impl Drop for MaterializedJail {
             }
         }
 
-        // Remove directories in reverse order.
         for path in self.created_dirs.iter().rev() {
             if let Err(e) = std::fs::remove_dir(path) {
                 warn!("drop: rmdir({}) failed: {e}", path.display());
@@ -377,7 +366,7 @@ pub struct JailedFirecracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{JailerConfig, Plan};
+    use crate::types::{JailerConfig, JailerSocket, Plan};
     use std::os::unix::fs::PermissionsExt;
 
     struct EnvGuard {
@@ -409,10 +398,10 @@ mod tests {
         let run_dir = dir.path().join("vm-stdio");
         std::fs::create_dir_all(&run_dir).unwrap();
         let jailer_bin = dir.path().join("fake-jailer.sh");
-        let harden_bin = dir.path().join("fake-harden.sh");
+        let jailer_harden_bin = dir.path().join("fake-harden.sh");
         let harden_args_path = run_dir.join("harden-args.txt");
         std::fs::write(
-            &harden_bin,
+            &jailer_harden_bin,
             format!(
                 r#"#!/bin/sh
 printf '%s\n' "$*" > "{harden_args}"
@@ -468,14 +457,14 @@ echo fake-firecracker-stderr >&2
         let mut perms = std::fs::metadata(&jailer_bin).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&jailer_bin, perms).unwrap();
-        let mut perms = std::fs::metadata(&harden_bin).unwrap().permissions();
+        let mut perms = std::fs::metadata(&jailer_harden_bin).unwrap().permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&harden_bin, perms).unwrap();
+        std::fs::set_permissions(&jailer_harden_bin, perms).unwrap();
 
         let stdio_log = run_dir.join("console.log");
         let cfg = JailerConfig {
             jailer_bin,
-            jailer_harden_bin: Some(harden_bin),
+            jailer_harden_bin: Some(jailer_harden_bin),
             firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
             run_dir: run_dir.clone(),
             uid: 3000,
@@ -508,7 +497,9 @@ echo fake-firecracker-stderr >&2
         };
 
         let _env_guard = EnvGuard::set("M80_JAILER_ENV_LEAK", "secret");
-        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        let jailed = jail
+            .launch(Path::new(JailerSocket::Firecracker.jail_path()))
+            .unwrap();
         nix::sys::signal::kill(
             nix::unistd::Pid::from_raw(jailed.jailer_pid as i32),
             nix::sys::signal::Signal::SIGKILL,
@@ -609,7 +600,9 @@ fi
             placeholder_files: Vec::new(),
         };
 
-        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        let jailed = jail
+            .launch(Path::new(JailerSocket::Firecracker.jail_path()))
+            .unwrap();
         assert_eq!(jailed.jailer_pid, 0);
 
         let state = std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap();
@@ -683,7 +676,9 @@ echo $$ > "$jail_root/firecracker.pid"
             placeholder_files: Vec::new(),
         };
 
-        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        let jailed = jail
+            .launch(Path::new(JailerSocket::Firecracker.jail_path()))
+            .unwrap();
         assert_eq!(jailed.jailer_pid, 0);
         assert!(
             std::path::Path::new(&format!("/proc/{}", jailed.firecracker_pid)).exists(),
@@ -770,7 +765,9 @@ echo $$ > "$jail_root/firecracker.pid"
             placeholder_files: Vec::new(),
         };
 
-        let jailed = jail.launch(Path::new("firecracker.sock")).unwrap();
+        let jailed = jail
+            .launch(Path::new(JailerSocket::Firecracker.jail_path()))
+            .unwrap();
         nix::sys::signal::kill(
             nix::unistd::Pid::from_raw(jailed.jailer_pid as i32),
             nix::sys::signal::Signal::SIGKILL,

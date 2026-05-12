@@ -10,13 +10,14 @@
 
 use std::path::Path;
 
-use m80_snapshot::{
-    Artifact, ArtifactKind, RestoreMetadata, SnapshotError, SnapshotManifest, SCHEMA_VERSION,
+use crate::{
+    artifact_set_sha256, Artifact, ArtifactKind, RestoreMetadata, SchemaError, SnapshotManifest,
+    SCHEMA_VERSION,
 };
 
 /// Return the five required artifacts pointing at `dir`-relative paths.
 /// All sha256 and size values are fixed constants — no real files needed.
-pub fn five_artifacts(dir: &Path) -> Vec<Artifact> {
+pub(crate) fn five_artifacts(dir: &Path) -> Vec<Artifact> {
     vec![
         Artifact {
             kind: ArtifactKind::BootIdentity,
@@ -53,9 +54,9 @@ pub fn five_artifacts(dir: &Path) -> Vec<Artifact> {
 
 /// Build a minimal valid `SnapshotManifest` whose artifact paths sit under
 /// `dir`. Tests that only care about round-trip behavior use this.
-pub fn sample_manifest(dir: &Path) -> SnapshotManifest {
+pub(crate) fn sample_manifest(dir: &Path) -> SnapshotManifest {
     let arts = five_artifacts(dir);
-    let sha = hex::encode(m80_snapshot::artifact_set_sha256(&arts));
+    let sha = hex::encode(artifact_set_sha256(&arts));
     SnapshotManifest {
         artifact_set_sha256: sha,
         artifacts: arts,
@@ -71,7 +72,7 @@ pub fn sample_manifest(dir: &Path) -> SnapshotManifest {
 }
 
 /// Build a minimal valid `RestoreMetadata`.
-pub fn sample_restore_metadata(dir: &Path) -> RestoreMetadata {
+pub(crate) fn sample_restore_metadata(dir: &Path) -> RestoreMetadata {
     RestoreMetadata {
         expected_firecracker_version: "v1.15.1".into(),
         schema_version: SCHEMA_VERSION,
@@ -85,11 +86,11 @@ pub fn sample_restore_metadata(dir: &Path) -> RestoreMetadata {
 /// Assert that a value survives a write→read round-trip unchanged.
 ///
 /// `write` and `read` are the type-specific persistence closures.
-pub fn assert_round_trips<T>(
+pub(crate) fn assert_round_trips<T>(
     value: T,
     path: &std::path::Path,
-    write: impl Fn(&T, &std::path::Path) -> Result<(), SnapshotError>,
-    read: impl Fn(&std::path::Path) -> Result<T, SnapshotError>,
+    write: impl Fn(&T, &std::path::Path) -> Result<(), SchemaError>,
+    read: impl Fn(&std::path::Path) -> Result<T, SchemaError>,
 ) where
     T: PartialEq + std::fmt::Debug,
 {

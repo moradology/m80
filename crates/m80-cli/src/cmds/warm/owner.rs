@@ -4,9 +4,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
-    ExecRequest, FcError, NetworkPolicy, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig,
+    FcError, NetworkPolicy, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig,
     WarmPoolSnapshot,
 };
+use m80_proto::ExecRequest;
 
 use crate::args::EgressMode;
 use crate::errors;
@@ -37,10 +38,7 @@ fn run_foreground_inner(
     let socket_path = status::socket_path()?;
     let warm_root = status::warm_root()?;
     if socket_path.exists() {
-        return Err(FcError::config_other(format!(
-            "warm owner socket already exists at {}; run `m80 warm disable` first",
-            socket_path.display()
-        )));
+        return Err(FcError::WarmOwnerSocketExists { socket_path });
     }
     fs::create_dir_all(&warm_root).map_err(FcError::Io)?;
 
@@ -199,9 +197,7 @@ fn wait_for_filling_to_settle(pool: &WarmPool, timeout: Duration) -> Result<(), 
     let deadline = Instant::now() + timeout;
     while pool.snapshot().filling > 0 {
         if Instant::now() >= deadline {
-            return Err(FcError::config_other(
-                "warm owner drain timed out waiting for filling slots".to_owned(),
-            ));
+            return Err(FcError::WarmOwnerDrainTimeout { timeout });
         }
         std::thread::sleep(Duration::from_millis(100));
     }

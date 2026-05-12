@@ -1,4 +1,4 @@
-use m80_firecracker::{ExecRequest, PtyRequest};
+use m80_proto::{ExecRequest, PtyRequest};
 
 use super::pty;
 

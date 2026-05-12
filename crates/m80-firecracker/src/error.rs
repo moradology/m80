@@ -2,6 +2,7 @@
 
 use std::io;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 use std::time::Duration;
 
 use m80_cgroup::CgroupError;
@@ -10,7 +11,7 @@ use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
 use m80_net_outbound::NetError;
 use m80_preflight::PreflightError;
-use m80_proto::{DriveHotplugError, FileError};
+use m80_proto::{DriveHotplugError, ExecStatus, FileError};
 use m80_snapshot::SnapshotError;
 use m80_storage::StorageError;
 use m80_vsock::VsockError;
@@ -79,6 +80,31 @@ pub enum WireProtocolError {
         /// Actual sequence number.
         got: u64,
     },
+    /// Peer reported a typed failure for a request that should only fail by
+    /// returning a terminal error payload.
+    #[error("peer rejected {context}: {detail}")]
+    PeerRejected {
+        /// Request or protocol path that was rejected.
+        context: &'static str,
+        /// Peer-supplied rejection detail.
+        detail: String,
+    },
+    /// Host-side sequence counter overflowed before the peer sent a terminal
+    /// frame. This is a protocol failure because the stream cannot continue
+    /// with a unique next sequence number.
+    #[error("stream sequence overflow in {stream}")]
+    SequenceOverflow {
+        /// Stream whose local sequence counter overflowed.
+        stream: &'static str,
+    },
+    /// Peer omitted a required field from a success response.
+    #[error("missing required field {field} in {context}")]
+    MissingField {
+        /// Response context.
+        context: &'static str,
+        /// Missing field name.
+        field: &'static str,
+    },
 }
 
 /// Bounded lifecycle failure vocabulary used in behavior docs and tests.
@@ -121,17 +147,17 @@ impl LifecycleFailureKind {
 /// Structured configuration error. Used as the inner payload of
 /// [`FcError::Config`].
 ///
-/// `Other` is a last-resort fallback for anyhow chains at binary edges.
-/// Prefer `TomlSyntax`, `MissingField`, or `InvalidValue` when the site
-/// has enough information.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     /// A TOML config file could not be parsed.
-    #[error("{}: {source}", path.display())]
+    #[error("{layer} {}: {source}", path.display())]
     TomlSyntax {
+        /// Config/profile layer that supplied the TOML.
+        layer: &'static str,
         /// Path of the file that failed to parse.
         path: PathBuf,
         /// The parse error from `toml`.
+        #[source]
         source: toml::de::Error,
     },
     /// A required configuration field was absent.
@@ -148,10 +174,26 @@ pub enum ConfigError {
         /// Human-readable rejection reason.
         reason: String,
     },
-    /// Catch-all for anyhow chains at binary edges. Document the specific
-    /// call site with a comment; prefer a typed variant where possible.
-    #[error("{0}")]
-    Other(String),
+    /// The caller-supplied `vm_id` would produce an AF_UNIX socket path that
+    /// exceeds the kernel's `sun_path` cap. Surfaces at admission time so the
+    /// failure cannot reach `bind()` / `connect()` as an opaque IO error.
+    #[error(
+        "vm_id {vm_id:?} would produce a {path_len}-byte AF_UNIX socket path under run_root {} (cap {budget})",
+        run_root.display()
+    )]
+    VmIdPathBudgetExceeded {
+        /// Caller-supplied vm_id whose path would overflow.
+        vm_id: String,
+        /// Configured run-root.
+        run_root: PathBuf,
+        /// Firecracker binary basename consumed by the jail layout.
+        fc_basename: String,
+        /// Computed path length in bytes.
+        path_len: usize,
+        /// Usable AF_UNIX `sun_path` cap (kernel reserves 108 bytes including
+        /// the null terminator; usable bytes therefore max at 107).
+        budget: usize,
+    },
 }
 
 /// Top-level error for `m80-firecracker`. Each variant tells the caller
@@ -257,6 +299,155 @@ pub enum FcError {
         /// Readiness budget that expired.
         timeout: Duration,
     },
+    /// A run directory has an ownership marker that cannot be parsed.
+    #[error("run-dir {} has an ambiguous ownership lock", run_dir.display())]
+    RunDirOwnershipAmbiguous {
+        /// Run directory with the ambiguous marker.
+        run_dir: PathBuf,
+    },
+    /// A run directory is already owned by another live host process.
+    #[error("run-dir {} already owned by pid {pid}", run_dir.display())]
+    RunDirAlreadyOwned {
+        /// Run directory already owned.
+        run_dir: PathBuf,
+        /// Live owner pid from the lock file.
+        pid: u32,
+    },
+    /// A caller requested a run directory that does not exist.
+    #[error("no run-dir found for vm_id={vm_id} at {}", run_dir.display())]
+    RunDirNotFound {
+        /// Caller-supplied VM id.
+        vm_id: String,
+        /// Expected run directory path.
+        run_dir: PathBuf,
+    },
+    /// A filesystem operation failed and the path is known at the call site.
+    #[error("i/o on {}: {source}", path.display())]
+    PathIo {
+        /// Path the operation targeted.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
+    /// JSON serialization failed before an operation could write its target.
+    #[error("json in {context}: {source}")]
+    Json {
+        /// Operation that was serializing JSON.
+        context: &'static str,
+        /// Underlying serde error.
+        #[source]
+        source: serde_json::Error,
+    },
+    /// A public API exists in the v0.x surface but is intentionally unavailable.
+    #[error("{operation} is unsupported: {reason}")]
+    UnsupportedOperation {
+        /// API or command that was requested.
+        operation: &'static str,
+        /// Why the operation is unavailable.
+        reason: String,
+    },
+    /// Spawning a host helper command failed before an exit status existed.
+    #[error("failed to spawn command `{command}`: {source}")]
+    CommandSpawnFailed {
+        /// Host command label.
+        command: &'static str,
+        /// Spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A host helper command exited unsuccessfully.
+    #[error("command `{command}` failed with {status}{output}")]
+    CommandFailed {
+        /// Host command label.
+        command: &'static str,
+        /// Process exit status.
+        status: ExitStatus,
+        /// Captured output, prefixed with `: ` when present.
+        output: String,
+    },
+    /// A required artifact was absent after unpacking or installation.
+    #[error("required artifact missing: {}", path.display())]
+    ArtifactMissing {
+        /// Missing artifact path.
+        path: PathBuf,
+    },
+    /// Warm-pool background fill failed before the requested ready count arrived.
+    #[error("warm pool fill failed: {detail}")]
+    WarmPoolFillFailed {
+        /// Most recent fill error detail recorded by the background worker.
+        detail: String,
+    },
+    /// Warm-pool ready probe produced a non-ready exec response.
+    #[error("warm pool ready probe failed: status={status:?} exit_code={exit_code:?}")]
+    WarmReadyProbeRejected {
+        /// Exec terminal status.
+        status: ExecStatus,
+        /// Guest exit code, when one was present.
+        exit_code: Option<i32>,
+    },
+    /// Warm-pool ready probe exhausted retries without a recorded error.
+    #[error("warm pool ready probe exhausted retries without a recorded error")]
+    WarmReadyProbeNoResult,
+    /// A warm-owner socket already exists where a new owner would bind.
+    #[error("warm owner socket already exists at {}; run `m80 warm disable` first", socket_path.display())]
+    WarmOwnerSocketExists {
+        /// Existing socket path.
+        socket_path: PathBuf,
+    },
+    /// Warm owner is draining and will not accept new leases.
+    #[error("warm owner is draining and not accepting leases")]
+    WarmOwnerNotAcceptingLeases,
+    /// Warm owner drain did not settle in the caller's deadline.
+    #[error("warm owner drain timed out after {timeout:?} waiting for filling slots")]
+    WarmOwnerDrainTimeout {
+        /// Drain settle budget.
+        timeout: Duration,
+    },
+    /// A warm run request targets a different owner profile or egress policy.
+    #[error("warm {field} mismatch: requested {requested}, owner active {active}")]
+    WarmCompatibilityMismatch {
+        /// Compatibility dimension that differed.
+        field: &'static str,
+        /// Caller-requested value.
+        requested: String,
+        /// Owner-active value.
+        active: String,
+    },
+    /// The warm owner returned a valid envelope of the wrong response kind.
+    #[error("warm owner returned {response} for {request} request")]
+    UnexpectedWarmResponse {
+        /// Request kind the caller sent.
+        request: &'static str,
+        /// Response kind received.
+        response: &'static str,
+    },
+    /// SIGKILL failed for a concrete host pid.
+    #[error("failed to kill pid {pid}: {source}")]
+    KillFailed {
+        /// Host pid that was targeted.
+        pid: u32,
+        /// Underlying syscall error.
+        #[source]
+        source: io::Error,
+    },
+    /// Host timed out waiting for a killed child process to reap.
+    #[error("timed out reaping pid {pid} after SIGKILL within {timeout:?}")]
+    ReapTimeout {
+        /// Host pid that did not reap in time.
+        pid: u32,
+        /// Reap budget.
+        timeout: Duration,
+    },
+    /// waitpid failed for a concrete host pid.
+    #[error("failed to reap pid {pid}: {source}")]
+    ReapFailed {
+        /// Host pid passed to waitpid.
+        pid: u32,
+        /// Underlying syscall error.
+        #[source]
+        source: io::Error,
+    },
     /// Underlying I/O failure.
     #[error("i/o: {0}")]
     Io(#[from] io::Error),
@@ -274,17 +465,6 @@ pub enum FcError {
     /// began. The caller must stop/drop/discard this VM instead of reusing it.
     #[error("one-shot sandbox already consumed")]
     OneShotConsumed,
-}
-
-impl FcError {
-    /// Convenience constructor for `FcError::Config(ConfigError::Other(msg))`.
-    ///
-    /// Use at call sites that have a formatted string but no more-specific
-    /// `ConfigError` variant. Prefer `InvalidValue` or `MissingField` when
-    /// the site has enough information.
-    pub fn config_other(msg: impl Into<String>) -> Self {
-        FcError::Config(ConfigError::Other(msg.into()))
-    }
 }
 
 /// Ordered host-side teardown phases for a running VM.

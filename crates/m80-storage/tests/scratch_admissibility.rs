@@ -34,7 +34,7 @@ fn classify(
     if is_dir || is_file {
         return None;
     }
-    Some(RejectionReason::Other("unsupported file type".into()))
+    Some(RejectionReason::SpecialFile)
 }
 
 #[test]
@@ -78,9 +78,9 @@ fn char_device_rejected_as_special() {
 }
 
 #[test]
-fn unknown_type_rejected_as_other() {
+fn unknown_type_rejected_as_special_file() {
     let r = classify(false, false, false, false, false, false, false).unwrap();
-    assert!(matches!(r, RejectionReason::Other(_)));
+    assert!(matches!(r, RejectionReason::SpecialFile));
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +103,9 @@ fn copy_workspace_into_rejects_symlink() {
     // We can't run the full Scratch::create without root, but we can verify
     // that AdmissibilityRefused surfaces from the copy path by reading the
     // StorageError type's Display.
-    let err_variant = StorageError::AdmissibilityRefused;
+    let err_variant = StorageError::AdmissibilityRefused {
+        path: workspace.join("link.txt"),
+    };
     let display = format!("{err_variant}");
     assert!(
         display.contains("admissibility"),
@@ -113,7 +115,9 @@ fn copy_workspace_into_rejects_symlink() {
 
 #[test]
 fn admissibility_refused_display_is_sensible() {
-    let e = StorageError::AdmissibilityRefused;
+    let e = StorageError::AdmissibilityRefused {
+        path: Path::new("some/link").to_path_buf(),
+    };
     let s = format!("{e}");
     assert!(!s.is_empty());
     assert!(s.contains("admissibility"));

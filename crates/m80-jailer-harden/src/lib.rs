@@ -18,26 +18,36 @@ use nix::unistd::{close, setgroups};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HardenArgs {
     /// Official Firecracker jailer binary to exec after hardening.
-    pub jailer_bin: PathBuf,
-    /// Jailed uid, carried for diagnostics and future proof checks.
-    pub uid: u32,
-    /// Jailed gid, carried for diagnostics and future proof checks.
-    pub gid: u32,
+    pub(crate) jailer_bin: PathBuf,
     /// Arguments forwarded to the official jailer.
-    pub jailer_args: Vec<OsString>,
+    pub(crate) jailer_args: Vec<OsString>,
     /// Resource limits to apply before execing the official jailer.
-    pub resource_limits: Vec<ResourceLimit>,
+    pub(crate) resource_limits: Vec<ResourceLimit>,
     /// Enter a private cgroup namespace before execing the official jailer.
-    pub new_cgroup_ns: bool,
+    pub(crate) new_cgroup_ns: bool,
+}
+
+impl HardenArgs {
+    /// Resource limits requested by the parsed wrapper arguments.
+    #[must_use]
+    pub fn resource_limits(&self) -> &[ResourceLimit] {
+        &self.resource_limits
+    }
+
+    /// Whether the wrapper should enter a new cgroup namespace before exec.
+    #[must_use]
+    pub fn new_cgroup_ns(&self) -> bool {
+        self.new_cgroup_ns
+    }
 }
 
 /// One process resource limit applied by `m80-jailer-harden`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceLimit {
     /// Limit kind.
-    pub kind: ResourceLimitKind,
+    pub(crate) kind: ResourceLimitKind,
     /// Soft and hard limit value.
-    pub value: u64,
+    pub(crate) value: u64,
 }
 
 /// Supported process resource limit kinds.
@@ -68,9 +78,7 @@ pub enum HardenError {
     /// Argument value could not be parsed.
     #[error("invalid {field}: {value}")]
     InvalidValue {
-        /// Field name.
         field: &'static str,
-        /// Supplied value.
         value: String,
     },
     /// The `--` separator before jailer args was absent.
@@ -151,10 +159,10 @@ where
             if jailer_args.is_empty() {
                 return Err(HardenError::MissingJailerArgs);
             }
+            let _uid = uid.ok_or(HardenError::MissingArgument("--uid"))?;
+            let _gid = gid.ok_or(HardenError::MissingArgument("--gid"))?;
             return Ok(HardenArgs {
                 jailer_bin: jailer_bin.ok_or(HardenError::MissingArgument("--jailer-bin"))?,
-                uid: uid.ok_or(HardenError::MissingArgument("--uid"))?,
-                gid: gid.ok_or(HardenError::MissingArgument("--gid"))?,
                 jailer_args,
                 resource_limits,
                 new_cgroup_ns,
@@ -339,17 +347,6 @@ pub fn exec_jailer(args: HardenArgs) -> Result<(), HardenError> {
     })
 }
 
-/// Parse, harden, and exec.
-pub fn run<I, S>(args: I) -> Result<(), HardenError>
-where
-    I: IntoIterator<Item = S>,
-    S: Into<OsString>,
-{
-    let args = parse_args(args)?;
-    apply_process_hardening(&args.resource_limits, args.new_cgroup_ns)?;
-    exec_jailer(args)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,6 +395,10 @@ mod tests {
             "memlock=0",
             "--new-cgroup-ns",
             "--",
+            "--uid",
+            "3000",
+            "--gid",
+            "3001",
             "--id",
             "vm-1",
         ])
@@ -407,9 +408,23 @@ mod tests {
             parsed.jailer_bin,
             PathBuf::from("/opt/firecracker/bin/jailer")
         );
-        assert_eq!(parsed.uid, 3000);
-        assert_eq!(parsed.gid, 3001);
-        assert_eq!(parsed.jailer_args, vec!["--id", "vm-1"]);
+        assert_eq!(
+            parsed.jailer_args,
+            vec!["--uid", "3000", "--gid", "3001", "--id", "vm-1"]
+        );
+        assert_eq!(
+            parsed.resource_limits(),
+            &[
+                ResourceLimit {
+                    kind: ResourceLimitKind::NProc,
+                    value: 64,
+                },
+                ResourceLimit {
+                    kind: ResourceLimitKind::MemLock,
+                    value: 0,
+                },
+            ]
+        );
         assert_eq!(
             parsed.resource_limits,
             vec![
@@ -423,7 +438,7 @@ mod tests {
                 },
             ]
         );
-        assert!(parsed.new_cgroup_ns);
+        assert!(parsed.new_cgroup_ns());
     }
 
     #[test]
@@ -445,6 +460,36 @@ mod tests {
             err,
             HardenError::InvalidValue { field: "--uid", .. }
         ));
+    }
+
+    #[test]
+    fn parse_requires_uid_before_separator() {
+        let err = parse_args([
+            "--jailer-bin",
+            "/bin/echo",
+            "--gid",
+            "3000",
+            "--",
+            "--id",
+            "vm",
+        ])
+        .unwrap_err();
+        assert!(matches!(err, HardenError::MissingArgument("--uid")));
+    }
+
+    #[test]
+    fn parse_requires_gid_before_separator() {
+        let err = parse_args([
+            "--jailer-bin",
+            "/bin/echo",
+            "--uid",
+            "3000",
+            "--",
+            "--id",
+            "vm",
+        ])
+        .unwrap_err();
+        assert!(matches!(err, HardenError::MissingArgument("--gid")));
     }
 
     #[test]

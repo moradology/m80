@@ -13,7 +13,7 @@ use m80_proto::{
 use crate::diagnostics::phase_event;
 use crate::error::{ConfigError, FcError};
 use crate::hotplug_types::{HotplugDriveAttach, HotplugDriveDetach};
-use crate::layout::preallocated_drive_slot_jail_path;
+use crate::layout::{preallocated_drive_slot_jail_path, VSOCK_SOCKET};
 use crate::lifecycle::exec::{request_id_for, send_envelope_with_open_retry};
 use crate::lifecycle::monotonic_ns;
 use crate::preboot::preallocated_drive_slot_id;
@@ -64,7 +64,7 @@ impl RunningSandbox {
         self.client.patch_drive(&patch)?;
         phase_event("hotplug_drive_patch", &self.vm_id, t_patch.elapsed());
 
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "drive_mount");
         let envelope = Envelope::with_request_id(
             DriveMountRequest {
@@ -103,7 +103,7 @@ impl RunningSandbox {
         }
 
         let drive_id = preallocated_drive_slot_id(request.slot);
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "drive_detach");
         let envelope = Envelope::with_request_id(
             DriveDetachRequest {

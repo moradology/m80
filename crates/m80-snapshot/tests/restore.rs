@@ -40,7 +40,7 @@ fn restore_no_resume_sends_load_only() {
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: paths(),
         vsock_uds,
         resume: false,
@@ -74,7 +74,7 @@ fn restore_with_resume_sends_load_then_resumed() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: paths(),
         vsock_uds,
         resume: true,
@@ -119,7 +119,7 @@ fn restore_load_body_uses_file_backed_mem_backend() {
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/snap/vm.snap"),
             mem: PathBuf::from("/snap/mem.snap"),
@@ -174,7 +174,7 @@ fn restore_absent_vsock_uds_is_not_an_error() {
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: paths(),
         vsock_uds,
         resume: false,
@@ -195,7 +195,7 @@ fn restore_removes_existing_vsock_uds_before_load() {
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: paths(),
         vsock_uds: vsock_uds.clone(),
         resume: false,
@@ -224,9 +224,9 @@ fn restore_vsock_uds_unlink_failure_surfaces_error() {
     let server = FixtureServer::spawn(vec![]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: paths(),
-        vsock_uds: vsock_uds.clone(),
+        vsock_uds: vsock_uds,
         resume: false,
     };
     let err = restore(req).unwrap_err();
@@ -256,7 +256,7 @@ fn restore_load_failure_returns_client_error() {
     let server = FixtureServer::spawn(vec![resp_400(fault)]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: paths(),
         vsock_uds,
         resume: false,
@@ -282,7 +282,7 @@ fn restore_resume_failure_returns_client_error() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_400(fault)]).unwrap();
 
     let req = RestoreRequest {
-        fc_socket: server.socket_path.clone(),
+        api_socket: server.socket_path.clone(),
         paths: paths(),
         vsock_uds,
         resume: true,

@@ -163,7 +163,10 @@ fn storage_helper_missing_has_hint() {
 #[test]
 fn io_error_has_hint() {
     let io_err = std::io::Error::other("disk full");
-    assert_hint(&PreflightError::Io(io_err));
+    assert_hint(&PreflightError::PathIo {
+        path: std::path::PathBuf::from("/tmp/artifact"),
+        source: io_err,
+    });
 }
 
 #[test]

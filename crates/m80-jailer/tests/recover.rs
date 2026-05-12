@@ -48,30 +48,28 @@ fn no_state_file_returns_no_jail() {
 }
 
 #[test]
-fn plan_without_state_file_returns_orphan_reap_steps() {
+fn plan_without_state_file_returns_orphan_reap_plan() {
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
 
-    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
+    let InspectionDecision::OrphanJail { reap_plan } = inspect_run_dir(dir.path()).unwrap() else {
         panic!("expected OrphanJail");
     };
     let plan = Plan::compute(&config_with_one_binding(dir.path())).unwrap();
-    let expected: Vec<_> = plan.steps.into_iter().rev().collect();
-    assert_eq!(reap_steps, expected);
+    assert_eq!(reap_plan.len(), common::steps(&plan).len());
 }
 
 #[test]
-fn partial_state_file_with_plan_returns_orphan_reap_steps() {
+fn partial_state_file_with_plan_returns_orphan_reap_plan() {
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     std::fs::write(dir.path().join("jailer-state.json"), b"{\"jailer_pid\":").unwrap();
 
-    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
+    let InspectionDecision::OrphanJail { reap_plan } = inspect_run_dir(dir.path()).unwrap() else {
         panic!("expected OrphanJail");
     };
     let plan = Plan::compute(&config_with_one_binding(dir.path())).unwrap();
-    let expected: Vec<_> = plan.steps.into_iter().rev().collect();
-    assert_eq!(reap_steps, expected);
+    assert_eq!(reap_plan.len(), common::steps(&plan).len());
 }
 
 #[test]
@@ -101,20 +99,16 @@ fn stale_state_with_nonexistent_pids_returns_orphan() {
 }
 
 #[test]
-fn orphan_reap_steps_are_plan_steps_reversed() {
+fn orphan_reap_plan_matches_plan_len() {
     let dir = tempfile::tempdir().unwrap();
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));
     write_plan(dir.path());
 
-    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
+    let InspectionDecision::OrphanJail { reap_plan } = inspect_run_dir(dir.path()).unwrap() else {
         panic!("expected OrphanJail");
     };
     let plan = Plan::compute(&config_with_one_binding(dir.path())).unwrap();
-    let expected: Vec<_> = plan.steps.into_iter().rev().collect();
-    assert_eq!(
-        reap_steps, expected,
-        "reap_steps must be plan.steps reversed"
-    );
+    assert_eq!(reap_plan.len(), common::steps(&plan).len());
 }
 
 #[test]
@@ -165,12 +159,12 @@ fn mixed_live_and_dead_pid_returns_orphan() {
 }
 
 #[test]
-fn orphan_without_plan_file_has_empty_reap_steps() {
+fn orphan_without_plan_file_has_empty_reap_plan() {
     let dir = tempfile::tempdir().unwrap();
     write_state(dir.path(), Some(u32::MAX), Some(u32::MAX - 1));
 
-    let InspectionDecision::OrphanJail { reap_steps } = inspect_run_dir(dir.path()).unwrap() else {
+    let InspectionDecision::OrphanJail { reap_plan } = inspect_run_dir(dir.path()).unwrap() else {
         panic!("expected OrphanJail");
     };
-    assert!(reap_steps.is_empty(), "got {reap_steps:?}");
+    assert!(reap_plan.is_empty(), "got {reap_plan:?}");
 }

@@ -40,7 +40,7 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
     let config = m80_firecracker::BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: m80_firecracker::CgroupMode::Disabled,
@@ -98,7 +98,7 @@ fn end_to_end_real_kvm_daemonized_boot_exec_stop_delete() {
     let config = m80_firecracker::BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: m80_firecracker::CgroupMode::Disabled,
@@ -168,14 +168,15 @@ fn end_to_end_real_kvm_file_ops() {
     let config = m80_firecracker::BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: m80_firecracker::CgroupMode::Disabled,
     };
     let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
+    let vm_id = format!("e2e-file-{:04x}", unique_suffix() % 0x10000);
     let sandbox_config = m80_firecracker::SandboxConfig {
-        vm_id: Some("e2e-fileops-test".into()),
+        vm_id: Some(vm_id),
         workspace: None,
         network: m80_firecracker::NetworkPolicy::NoEgress,
         vcpu_count: Some(1),
@@ -191,6 +192,7 @@ fn end_to_end_real_kvm_file_ops() {
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
     let mut running = sandbox.launch().expect("launch");
+    let run_dir = running.run_dir().to_path_buf();
 
     let bytes = b"hello fileops".to_vec();
     let written = running
@@ -272,7 +274,7 @@ fn end_to_end_real_kvm_file_ops() {
     assert_eq!(read_blob, blob);
     assert_eq!(sha256_hex_bytes(&read_blob), expected_hash);
     assert!(!truncated);
-    assert_no_protocol_warnings(&run_root);
+    assert_run_dir_has_no_protocol_warnings(&run_dir);
 
     running
         .remove_file("/tmp/m80-fileops.txt")
@@ -294,7 +296,7 @@ fn end_to_end_real_kvm_jailer_security_parity() {
     let config = m80_firecracker::BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: m80_firecracker::CgroupMode::Disabled,
@@ -395,7 +397,7 @@ fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
     let config = m80_firecracker::BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: m80_firecracker::CgroupMode::Disabled,
@@ -439,6 +441,13 @@ fn deterministic_payload(len: usize) -> Vec<u8> {
         out.push((state >> 32) as u8);
     }
     out
+}
+
+fn unique_suffix() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock before Unix epoch")
+        .as_nanos()
 }
 
 fn assert_limit_contains(pid: u32, label: &str, soft: &str, hard: &str) {
@@ -536,12 +545,14 @@ fn join_netns_policy(
     tap_name: &str,
 ) -> m80_firecracker::NetworkPolicy {
     m80_firecracker::NetworkPolicy::JoinNetns {
-        netns_path: netns_path.to_path_buf(),
-        tap_name: tap_name.to_owned(),
-        guest_mac: "02:00:00:00:80:01".to_owned(),
-        guest_ipv4: "10.80.0.2/24".parse().unwrap(),
-        gateway_ipv4: std::net::Ipv4Addr::new(10, 80, 0, 1),
-        dns_resolvers: vec![std::net::Ipv4Addr::new(10, 80, 0, 1)],
+        spec: m80_firecracker::NetnsSpec {
+            netns_path: netns_path.to_path_buf(),
+            tap_name: tap_name.to_owned(),
+            guest_mac: "02:00:00:00:80:01".to_owned(),
+            guest_ipv4: "10.80.0.2/24".parse().unwrap(),
+            gateway_ipv4: std::net::Ipv4Addr::new(10, 80, 0, 1),
+            dns_resolvers: vec![std::net::Ipv4Addr::new(10, 80, 0, 1)],
+        },
     }
 }
 
@@ -632,42 +643,35 @@ fn sha256_hex_bytes(bytes: &[u8]) -> String {
         .to_owned()
 }
 
-fn assert_no_protocol_warnings(run_root: &std::path::Path) {
-    let mut text = String::new();
-    for entry in std::fs::read_dir(run_root).expect("read run root") {
-        let path = entry.expect("run root entry").path();
-        append_protocol_logs(&mut text, &path);
-    }
-    assert_protocol_logs_are_clean(&text);
-}
-
+/// Fail if `<run_dir>/diagnostics.jsonl` contains an entry produced by
+/// [`m80_firecracker::diagnostics::record_protocol_error`].
+///
+/// We match on `phase == "Request"` plus the canonical message prefix
+/// `"protocol error stream_id="` rather than on raw substrings of forbidden
+/// error class names. Substring matches over the full `diagnostics.jsonl` +
+/// `console.log` text would false-positive on benign log lines that happen to
+/// mention `ProtoError` Display fragments (e.g., `"malformed payload: ..."`)
+/// without those lines actually being host-emitted protocol-error records.
+/// `console.log` is the guest serial firehose and never carries host-side
+/// protocol events; it is excluded.
 fn assert_run_dir_has_no_protocol_warnings(run_dir: &std::path::Path) {
-    let mut text = String::new();
-    append_protocol_logs(&mut text, run_dir);
-    assert_protocol_logs_are_clean(&text);
-}
-
-fn append_protocol_logs(text: &mut String, run_dir: &std::path::Path) {
-    for name in ["console.log", "diagnostics.jsonl"] {
-        let file = run_dir.join(name);
-        if let Ok(contents) = std::fs::read_to_string(file) {
-            text.push_str(&contents);
+    let diag_path = run_dir.join("diagnostics.jsonl");
+    let Ok(text) = std::fs::read_to_string(&diag_path) else {
+        return;
+    };
+    for (idx, line) in text.lines().enumerate() {
+        let entry: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let phase = entry.get("phase").and_then(|v| v.as_str()).unwrap_or("");
+        let message = entry.get("message").and_then(|v| v.as_str()).unwrap_or("");
+        if phase == "Request" && message.starts_with("protocol error stream_id=") {
+            panic!(
+                "unexpected protocol error in {} line {}: {entry}",
+                diag_path.display(),
+                idx + 1
+            );
         }
-    }
-}
-
-fn assert_protocol_logs_are_clean(text: &str) {
-    for needle in [
-        "OversizedPayload",
-        "oversized payload",
-        "malformed frame",
-        "malformed payload",
-        "unexpected EOF",
-        "disconnect before terminal",
-    ] {
-        assert!(
-            !text.contains(needle),
-            "unexpected protocol warning {needle:?} in run logs:\n{text}"
-        );
     }
 }

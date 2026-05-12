@@ -133,8 +133,9 @@ fn pty_sigint_during_read_returns_exit_130() {
                             signal: PtySignal::Interrupt,
                         },
                     ))
-                    .map_err(|e| {
-                        FcError::Config(m80_firecracker::ConfigError::Other(e.to_string()))
+                    .map_err(|_| FcError::InvalidState {
+                        expected: "pty interrupt receiver alive",
+                        actual: "closed",
                     })?;
                     sent_interrupt = true;
                 }

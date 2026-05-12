@@ -50,7 +50,7 @@ impl Drop for Uploads {
     }
 }
 
-pub(crate) fn is_fileop_kind(kind: &str) -> bool {
+pub(super) fn is_fileop_kind(kind: &str) -> bool {
     matches!(
         kind,
         PAYLOAD_KIND_FILE_READ_REQUEST
@@ -65,7 +65,7 @@ pub(crate) fn is_fileop_kind(kind: &str) -> bool {
     )
 }
 
-pub(crate) fn handle_fileop<R, W>(
+pub(super) fn handle_fileop<R, W>(
     first: RawEnvelope,
     mut reader: R,
     writer: &mut W,

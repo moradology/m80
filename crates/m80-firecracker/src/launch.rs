@@ -19,11 +19,16 @@ use m80_jailer::{BindMode, Binding, JailerConfig, JailerSocket, Plan};
 use m80_net_mode::VmNetworkMode;
 use m80_observability::Phase;
 use m80_preflight::Discovery;
+use m80_proto::GUEST_PORT_DEFAULT;
+use m80_proto::{
+    Envelope, ExecExit, ExecRequest, RawEnvelope, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR,
+    PAYLOAD_KIND_EXEC_STDOUT,
+};
 use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
+use m80_vsock::{Channel, VsockError};
 
 use crate::diagnostics::phase;
-use crate::error::{ConfigError, FcError};
+use crate::error::{ConfigError, FcError, WireProtocolError};
 use crate::layout::{
     console_log_path, firecracker_api_socket_path, preallocated_drive_slot_filename, run_dir_path,
     vsock_socket_path,
@@ -67,9 +72,10 @@ impl Sandbox {
     /// but constructing a minimal Backend without a Discovery from preflight
     /// is not supported in v0.1. Use `Backend::admit` instead.
     pub fn new(_config: SandboxConfig) -> Result<Sandbox, FcError> {
-        Err(FcError::Config(ConfigError::Other(
-            "Sandbox::new is not supported in v0.1; use Backend::admit(config).launch()".into(),
-        )))
+        Err(FcError::UnsupportedOperation {
+            operation: "Sandbox::new",
+            reason: "v0.1 requires Backend::admit(config).launch()".into(),
+        })
     }
 
     /// Resolve or auto-generate the VM identifier.
@@ -412,8 +418,9 @@ impl Sandbox {
     /// 5. Call `m80_snapshot::restore` with `resume: true` — this (a) removes
     ///    any stale `vsock.sock`, (b) issues PUT `/snapshot/load`, (c) issues
     ///    PATCH `/vm` Resumed.
-    /// 6. Probe `CONNECT 9001` against the restored vsock UDS to confirm
-    ///    guestd's exec listen socket is live (retry loop, 50 ms sleep, 5 s cap).
+    /// 6. Send a lightweight exec readiness probe over the restored vsock UDS
+    ///    to confirm guestd itself can read, execute, and reply (retry loop,
+    ///    50 ms sleep, 5 s cap).
     ///
     /// The cold-boot inverted-readiness handshake (phases 11b / 12b) is
     /// **not used** on the restore path — guestd does not re-dial after
@@ -548,7 +555,7 @@ impl Sandbox {
             "phase_restore_snapshot_bind",
             {
                 bind_snapshot_parent_into_jail(
-                    &jail.jail_path,
+                    jail.jail_root(),
                     &snapshot,
                     backend_config.jail_uid,
                     backend_config.jail_gid,
@@ -563,7 +570,7 @@ impl Sandbox {
             "phase_restore_load",
             {
                 snapshot_restore(RestoreRequest {
-                    fc_socket: host_api_socket.clone(),
+                    api_socket: host_api_socket.clone(),
                     paths: snapshot_bind.paths.clone(),
                     vsock_uds: vsock_uds.clone(),
                     resume: true,
@@ -579,7 +586,7 @@ impl Sandbox {
             "snapshot restored",
         );
 
-        // Phase restore-probe: CONNECT 9001 retry loop.
+        // Phase restore-probe: exec round-trip retry loop.
         // Replaces the cold-boot phase_12b_ready_accept.
         diag_phase!(
             &mut diagnostics,
@@ -654,33 +661,37 @@ impl Sandbox {
     }
 }
 
-/// Probe `CONNECT <GUEST_PORT_DEFAULT>` against the restored vsock UDS.
+/// Probe guestd over `<GUEST_PORT_DEFAULT>` against the restored vsock UDS.
 ///
 /// After `PATCH /vm Resumed`, Firecracker delivers the queued
 /// `VIRTIO_VSOCK_EVENT_TRANSPORT_RESET` to the guest. The guest vsock
 /// driver processes it and tears down established connections; vsock LISTEN
-/// sockets (guestd's exec listener on port 9001) survive.
+/// sockets (guestd's exec listener on port 9001) survive. A bare CONNECT is
+/// not enough to prove guestd is scheduled and reading, because the kernel can
+/// accept the socket while guestd is stopped. The probe therefore sends a tiny
+/// exec request and waits for the terminal `exec_exit` frame.
 ///
-/// The probe races against TRANSPORT_RESET processing. On failure the muxer
-/// returns `RST` / `EOF`; we sleep 50 ms and retry. A 5 s cap is safe:
-/// empirically the settle time is < 1 s.
-fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<Channel, FcError> {
+/// The probe races against TRANSPORT_RESET processing. On failure the muxer can
+/// return `RST` / `EOF`, or the opened channel can fail to make request/response
+/// progress; we sleep 50 ms and retry. A 5 s cap is safe: empirically the
+/// settle time is < 1 s.
+fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<(), FcError> {
     let deadline = Instant::now() + RESTORE_PROBE_TIMEOUT;
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        match Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT) {
-            Ok(channel) => {
-                tracing::info!(vm_id, attempt, "restore probe: exec channel live");
-                return Ok(channel);
+        match try_restore_exec_probe(vsock_uds, vm_id, attempt) {
+            Ok(()) => {
+                tracing::info!(vm_id, attempt, "restore probe: guestd exec round-trip live");
+                return Ok(());
             }
-            Err(e) => {
+            Err(FcError::Vsock(e)) => {
                 if Instant::now() >= deadline {
                     tracing::error!(
                         vm_id,
                         attempt,
                         error = %e,
-                        "restore probe: exec channel not live after timeout"
+                        "restore probe: guestd exec round-trip not live after timeout"
                     );
                     return Err(FcError::GuestdReadyTimeout {
                         path: vsock_uds.to_path_buf(),
@@ -691,12 +702,62 @@ fn phase_restore_probe_exec_channel(vsock_uds: &Path, vm_id: &str) -> Result<Cha
                     vm_id,
                     attempt,
                     error = %e,
-                    "restore probe: attempt failed, retrying"
+                    "restore probe: vsock attempt failed, retrying"
                 );
                 std::thread::sleep(RESTORE_PROBE_SLEEP);
             }
+            Err(e) => return Err(e),
         }
     }
+}
+
+fn try_restore_exec_probe(vsock_uds: &Path, vm_id: &str, attempt: u32) -> Result<(), FcError> {
+    let request_id = format!("{vm_id}-restore-probe-{attempt}");
+    let req = ExecRequest {
+        program: "/bin/true".into(),
+        args: Vec::new(),
+        cwd: None,
+        env: None,
+        stdin: None,
+        timeout_ms: Some(1_000),
+        streaming: true,
+    };
+    let envelope = Envelope::with_request_id(req, request_id.clone());
+    let mut channel = Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT)?;
+    channel.send(&envelope)?;
+
+    loop {
+        let frame = channel.recv_raw()?;
+        check_restore_probe_request_id(&frame, &request_id)?;
+        let kind = frame.kind.clone();
+        match kind.as_str() {
+            PAYLOAD_KIND_EXEC_STDOUT | PAYLOAD_KIND_EXEC_STDERR => {}
+            PAYLOAD_KIND_EXEC_EXIT => {
+                let _exit: m80_proto::Envelope<ExecExit> = frame
+                    .decode()
+                    .map_err(|e| FcError::Vsock(VsockError::Proto(e)))?;
+                return Ok(());
+            }
+            _ => {
+                return Err(FcError::Protocol(WireProtocolError::UnexpectedFrame {
+                    context: "restore ready probe",
+                    expected: "exec_stdout|exec_stderr|exec_exit",
+                    got: kind,
+                }));
+            }
+        }
+    }
+}
+
+fn check_restore_probe_request_id(frame: &RawEnvelope, request_id: &str) -> Result<(), FcError> {
+    if frame.request_id.as_deref() == Some(request_id) {
+        return Ok(());
+    }
+    Err(FcError::Protocol(WireProtocolError::RequestIdMismatch {
+        context: "restore ready probe",
+        expected: request_id.to_owned(),
+        got: frame.request_id.clone(),
+    }))
 }
 
 /// Phase 1: create `<run_root>/<vm_id>/`.
@@ -790,7 +851,7 @@ fn phase_4_jailer_materialize(
 
 fn join_netns_path(policy: &crate::NetworkPolicy) -> Option<&Path> {
     match policy {
-        crate::NetworkPolicy::JoinNetns { netns_path, .. } => Some(netns_path.as_path()),
+        crate::NetworkPolicy::JoinNetns { spec } => Some(spec.netns_path.as_path()),
         crate::NetworkPolicy::NoEgress | crate::NetworkPolicy::AllowOutbound { .. } => None,
     }
 }
@@ -808,9 +869,7 @@ fn phase_5_cgroup_probe(mode: CgroupMode) -> Result<(), FcError> {
                     reason: "UnifiedV2 requested but host is not cgroup v2".into(),
                 }))
             }
-            Err(e) => Err(FcError::Config(ConfigError::Other(format!(
-                "cgroup probe: {e}"
-            )))),
+            Err(e) => Err(FcError::Cgroup(e)),
         },
     }
 }
@@ -837,7 +896,7 @@ fn phase_5b_cgroup_create(
             // FcError::Cgroup wraps CgroupError via #[from]; `?` does the
             // conversion so we keep the structured cause for the CLI's
             // error → exit-code map.
-            let subtree = Subtree::create(vm_id, jail, jailed, &Limits::m80_default())?;
+            let subtree = Subtree::create(vm_id, jail, jailed, &Limits::preset())?;
             Ok(Some(subtree))
         }
     }
@@ -871,20 +930,14 @@ fn phase_6_network_realize(
 ) -> Result<RealizedNetwork, FcError> {
     match m80_net_mode::resolve(&config.network) {
         VmNetworkMode::NoEgress => Ok(RealizedNetwork::NoEgress),
-        VmNetworkMode::JoinNetns {
-            netns_path,
-            tap_name,
-            guest_mac,
-            guest_ipv4,
-            gateway_ipv4,
-            dns_resolvers,
-        } => Ok(RealizedNetwork::JoinNetns {
-            netns_path,
-            tap_name,
-            guest_mac,
-            guest_ipv4: guest_ipv4.to_string(),
-            gateway_ipv4: gateway_ipv4.to_string(),
-            dns_resolvers: dns_resolvers
+        VmNetworkMode::JoinNetns { spec } => Ok(RealizedNetwork::JoinNetns {
+            netns_path: spec.netns_path,
+            tap_name: spec.tap_name,
+            guest_mac: spec.guest_mac,
+            guest_ipv4: spec.guest_ipv4.to_string(),
+            gateway_ipv4: spec.gateway_ipv4.to_string(),
+            dns_resolvers: spec
+                .dns_resolvers
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect(),

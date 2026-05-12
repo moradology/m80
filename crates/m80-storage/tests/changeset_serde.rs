@@ -17,8 +17,8 @@ fn make_changeset() -> ChangeSet {
                 reason: RejectionReason::SpecialFile,
             },
             Rejection {
-                path: PathBuf::from("weird"),
-                reason: RejectionReason::Other("unsupported file type".into()),
+                path: PathBuf::from("fifo"),
+                reason: RejectionReason::SpecialFile,
             },
         ],
         total_bytes: 4096,
@@ -59,20 +59,6 @@ fn rejection_reason_special_file_round_trips() {
     assert!(json.contains("special_file"), "tag must appear: {json}");
     let r2: Rejection = serde_json::from_str(&json).unwrap();
     assert!(matches!(r2.reason, RejectionReason::SpecialFile));
-}
-
-#[test]
-fn rejection_reason_other_preserves_message() {
-    let r = Rejection {
-        path: PathBuf::from("x"),
-        reason: RejectionReason::Other("some reason".into()),
-    };
-    let json = serde_json::to_string(&r).unwrap();
-    let r2: Rejection = serde_json::from_str(&json).unwrap();
-    match r2.reason {
-        RejectionReason::Other(msg) => assert_eq!(msg, "some reason"),
-        other => panic!("unexpected: {other:?}"),
-    }
 }
 
 #[test]

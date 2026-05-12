@@ -1,11 +1,11 @@
 use std::net::Ipv4Addr;
 use std::path::Path;
 
+use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
     cleanup_vm_with_ops, derive_tap_name, planned_bridge_state, planned_vm_network_state,
     realize_bridge_and_tap_with_ops_for_routes, write_bridge_state, write_vm_network_state_record,
-    LinkOps, NetError, OutboundIntent, PolicyCommandOutput, PolicyOps, SetupPhase,
-    VmNetworkStateRecord,
+    LinkOps, NetError, PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
 };
 
 const DEFAULT_ONLY_ROUTES: &str = "\
@@ -42,8 +42,7 @@ fn bridge_removed_only_when_no_peer_references() {
 #[test]
 fn startup_scavenges_orphan_bridge_when_unused() {
     let temp = tempfile::tempdir().unwrap();
-    let intent = intent();
-    let bridge = planned_bridge_state(temp.path(), &intent)
+    let bridge = planned_bridge_state(temp.path())
         .unwrap()
         .with_phase(SetupPhase::Ready);
     write_bridge_state(temp.path(), &bridge).unwrap();
@@ -59,8 +58,7 @@ fn startup_scavenges_orphan_bridge_when_unused() {
 #[test]
 fn orphan_tap_detected_and_cleaned() {
     let temp = tempfile::tempdir().unwrap();
-    let intent = intent();
-    let bridge = planned_bridge_state(temp.path(), &intent)
+    let bridge = planned_bridge_state(temp.path())
         .unwrap()
         .with_phase(SetupPhase::Ready);
     let tap_name = derive_tap_name(temp.path(), "missing-vm");
@@ -115,7 +113,7 @@ fn bridge_owner_mismatch_blocks_bridge_delete() {
 fn crash_mid_vm_does_not_break_new_startup() {
     let temp = tempfile::tempdir().unwrap();
     let intent = intent();
-    let bridge = planned_bridge_state(temp.path(), &intent)
+    let bridge = planned_bridge_state(temp.path())
         .unwrap()
         .with_phase(SetupPhase::Ready);
     write_bridge_state(temp.path(), &bridge).unwrap();
@@ -146,7 +144,7 @@ fn ready_state(run_root: &Path, vm_id: &str) -> VmNetworkStateRecord {
     let run_dir = run_root.join(vm_id);
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent();
-    let bridge = planned_bridge_state(run_root, &intent)
+    let bridge = planned_bridge_state(run_root)
         .unwrap()
         .with_phase(SetupPhase::Ready);
     let mut state = planned_vm_network_state(&intent, vm_id, run_root, &run_dir, bridge);
@@ -159,7 +157,6 @@ fn ready_state(run_root: &Path, vm_id: &str) -> VmNetworkStateRecord {
 fn intent() -> OutboundIntent {
     OutboundIntent {
         exceptions: Vec::new(),
-        gateway_override: None,
     }
 }
 

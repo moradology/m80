@@ -189,10 +189,14 @@ is deferred.
 - With global `--json`, every command that emits machine-readable output writes
   `{"version": 1, "data": ...}`. The integer version is monotonically
   increasing; breaking schema changes bump it.
-- Errors render to stderr. Canonical mapping: see
-  `crates/m80-cli/src/errors.rs::FcError::exit_code()`. Summary:
+- Errors render to stderr. Canonical mapping lives in
+  `crates/m80-cli/src/errors.rs`. Summary:
   `1`=generic, `2`=preflight, `3`=admission, `4`=manifest, `5`=invalid state,
   `6`=config, `7`=explicit v0.x feature gap, `8`=warm pool empty.
+- Clap parse/usage errors also exit `2` (`EX_USAGE`) before `m80-cli` dispatch
+  runs. That numeric collision is intentional: parse failures are identified by
+  clap-formatted stderr, while runtime preflight failures render through m80's
+  plain or JSON error path.
 - Stderr is informational until paired with a wrapper exit code or JSON error
   envelope. A successful guest command may write stderr; in pipe mode that is
   still guest stderr, not an m80 wrapper failure.
@@ -217,11 +221,31 @@ contract are captured in
 `docs/behaviors/configuration/env-schema.md` and
 `docs/behaviors/configuration/loading-order.md`.
 
+### Diagnostic environment
+
+- `M80_PHASE_TRACE=1` enables stderr-only host lifecycle phase rows and forwards
+  guest boot milestone rows used by the cold-launch benchmark and diagnostics
+  docs. It is a diagnostic/debugging knob, not a stable script-facing output
+  schema.
+
 ## Public surface
 
-The binary itself. The lib target exposes `args`, `runner`, and `errors` so the
-binary and integration tests can exercise the facade without subprocess-only
-coverage; those modules are not a supported embedding API.
+The binary itself. The lib target exposes only the parser and runner facade so
+the binary and integration tests can exercise dispatch without subprocess-only
+coverage; it is not a general embedding API.
+
+Rust library items:
+
+- `args` module - clap parser types.
+- `runner` module - parsed-CLI dispatch.
+- `Cli` - top-level clap parser.
+- `Cmd` - supported subcommand enum.
+- `ConfigAction` - `m80 config` action enum.
+- `EgressMode` - `m80 run --egress` value enum.
+- `QuickstartArgs` - `m80 quickstart` argument struct.
+- `WarmAction` - `m80 warm` action enum.
+- `WarmEnableArgs` - `m80 warm enable` argument struct.
+- `WritebackMode` - `m80 run --writeback` value enum.
 
 Stable surfaces:
 

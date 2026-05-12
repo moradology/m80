@@ -2,11 +2,12 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use m80_preflight::{
-    discover_binaries, BinaryDiscoveryConfig, PreflightError, DEFAULT_FIRECRACKER_BIN,
-    DEFAULT_JAILER_BIN, DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
-    ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN,
+use super::{
+    discover_binaries, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN, DEFAULT_JAILER_BIN,
+    DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN,
+    ENV_JAILER_HARDEN_BIN,
 };
+use crate::PreflightError;
 
 fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();

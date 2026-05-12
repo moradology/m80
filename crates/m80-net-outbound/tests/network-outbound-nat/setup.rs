@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Barrier};
 
+use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
     bridge_state_path, derive_guest_addressing, planned_bridge_state, planned_vm_network_state,
     read_bridge_state, read_vm_network_state_record, realize_bridge_and_tap_with_ops_for_routes,
     vm_network_state_path, write_bridge_state, write_vm_network_state_record, LinkOps, NetError,
-    OutboundIntent, RealizedNetwork, SetupPhase, BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
+    RealizedNetwork, SetupPhase, BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
 };
 
 const DEFAULT_ONLY_ROUTES: &str = "\
@@ -58,8 +59,7 @@ fn assert_contains(haystack: &str, needle: &str) {
 #[test]
 fn bridge_state_file_is_atomic_and_at_run_root() {
     let temp = tempfile::tempdir().unwrap();
-    let intent = intent_with_exception();
-    let planned = planned_bridge_state(temp.path(), &intent).unwrap();
+    let planned = planned_bridge_state(temp.path()).unwrap();
 
     write_bridge_state(temp.path(), &planned).unwrap();
 
@@ -88,7 +88,7 @@ fn vm_network_state_is_atomic_with_phase_transition() {
     let run_dir = temp.path().join("vm-123");
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
-    let bridge = planned_bridge_state(temp.path(), &intent)
+    let bridge = planned_bridge_state(temp.path())
         .unwrap()
         .with_phase(SetupPhase::Ready);
     let planned =
@@ -124,7 +124,7 @@ fn bridge_setup_is_idempotent_with_matching_state() {
     let run_dir = temp.path().join("vm-123");
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
-    let ready_bridge = planned_bridge_state(temp.path(), &intent)
+    let ready_bridge = planned_bridge_state(temp.path())
         .unwrap()
         .with_phase(SetupPhase::Ready);
     write_bridge_state(temp.path(), &ready_bridge).unwrap();
@@ -165,7 +165,7 @@ fn planned_bridge_state_recovers_existing_kernel_bridge_without_recreate() {
     let run_dir = temp.path().join("vm-123");
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
-    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    let planned_bridge = planned_bridge_state(temp.path()).unwrap();
     write_bridge_state(temp.path(), &planned_bridge).unwrap();
     let mut ops = RecordingLinkOps::with_existing_link_address(true);
 
@@ -201,7 +201,7 @@ fn planned_bridge_state_recreates_kernel_dropped_bridge() {
     let run_dir = temp.path().join("vm-123");
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
-    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    let planned_bridge = planned_bridge_state(temp.path()).unwrap();
     write_bridge_state(temp.path(), &planned_bridge).unwrap();
     let mut ops = RecordingLinkOps::default();
 
@@ -240,7 +240,7 @@ fn host_route_collision_returns_typed_error_pre_mutation() {
     let run_dir = temp.path().join("vm-123");
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
-    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    let planned_bridge = planned_bridge_state(temp.path()).unwrap();
     let host_routes = host_route_for(planned_bridge.cidr);
     let mut ops = RecordingLinkOps::default();
 
@@ -322,7 +322,7 @@ fn failed_launch_after_bridge_cleans_bridge() {
     let run_dir = temp.path().join("vm-123");
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
-    let planned_bridge = planned_bridge_state(temp.path(), &intent).unwrap();
+    let planned_bridge = planned_bridge_state(temp.path()).unwrap();
     let mut ops = RecordingLinkOps {
         fail_create_tap: true,
         ..RecordingLinkOps::default()
@@ -351,7 +351,7 @@ fn bridge_state_mismatch_fails_before_link_mutation() {
     let run_dir = temp.path().join("vm-123");
     std::fs::create_dir(&run_dir).unwrap();
     let intent = intent_with_exception();
-    let mut foreign = planned_bridge_state(temp.path(), &intent).unwrap();
+    let mut foreign = planned_bridge_state(temp.path()).unwrap();
     foreign.bridge_name = "brfcforeign01".to_owned();
     write_bridge_state(temp.path(), &foreign.with_phase(SetupPhase::Ready)).unwrap();
     let mut ops = RecordingLinkOps::with_link_address(true);
@@ -366,7 +366,6 @@ fn bridge_state_mismatch_fails_before_link_mutation() {
 fn intent_with_exception() -> OutboundIntent {
     OutboundIntent {
         exceptions: vec!["10.42.0.0/16".parse().unwrap()],
-        gateway_override: None,
     }
 }
 

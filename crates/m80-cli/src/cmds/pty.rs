@@ -4,10 +4,8 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 
-use m80_firecracker::{
-    FcError, PtyControlEvent, PtyExit, PtyHostEvent, PtyOutputChunk, PtyRequest, PtySize,
-    RunningSandbox,
-};
+use m80_firecracker::{FcError, PtyHostEvent, PtyOutputChunk, RunningSandbox};
+use m80_proto::{PtyControlEvent, PtyExit, PtyRequest, PtySize};
 use nix::sys::termios::{self, SetArg, Termios};
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM, SIGWINCH};
 use signal_hook::iterator::{Handle, Signals};
@@ -29,7 +27,7 @@ pub(super) fn exec_pty_streaming(
         None
     };
     let _input_thread = if interactive {
-        Some(InputThread::spawn(event_tx.clone()))
+        Some(InputThread::spawn(event_tx))
     } else {
         None
     };
@@ -233,7 +231,7 @@ impl Drop for PtySignalForwarder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use m80_firecracker::{ConfigError, ExecStatus};
+    use m80_proto::{ExecStatus, ExecTiming};
 
     #[derive(Default)]
     struct FakeTerminalMode {
@@ -290,12 +288,13 @@ mod tests {
         let mut terminal = FakeTerminalMode::default();
         let result = (|| -> Result<(), FcError> {
             let _guard = RawModeGuard::enter(&mut terminal).map_err(FcError::Io)?;
-            Err(FcError::Config(ConfigError::Other(
-                "wrapper error".to_owned(),
-            )))
+            Err(FcError::InvalidState {
+                expected: "pty wrapper success",
+                actual: "wrapper error",
+            })
         })();
 
-        assert!(matches!(result, Err(FcError::Config(_))));
+        assert!(matches!(result, Err(FcError::InvalidState { .. })));
         assert_eq!(terminal.restore_calls, 1);
     }
 
@@ -323,7 +322,7 @@ mod tests {
             total_input_bytes: 0,
             total_output_bytes: 0,
             truncated: false,
-            timing: m80_firecracker::ExecTiming {
+            timing: ExecTiming {
                 spawned_at_unix_ms: 0,
                 exited_at_unix_ms: 0,
                 spawn_ms: 0,

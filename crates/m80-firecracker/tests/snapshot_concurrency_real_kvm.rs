@@ -18,10 +18,14 @@ use m80_proto::{ExecRequest, ExecStatus};
 fn snapshot_concurrent_capture_and_restore() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery
+    let initial_snap_dir = discovery
         .run_root
-        .join(format!("snap-concurrency-{}", unique_suffix()));
-    let paths = snapshot_paths(&snap_dir);
+        .join(format!("snap-concurrency-initial-{}", unique_suffix()));
+    let recapture_snap_dir = discovery
+        .run_root
+        .join(format!("snap-concurrency-recapture-{}", unique_suffix()));
+    let initial_paths = snapshot_paths(&initial_snap_dir);
+    let recapture_paths = snapshot_paths(&recapture_snap_dir);
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
 
     let golden = backend
@@ -30,7 +34,9 @@ fn snapshot_concurrent_capture_and_restore() {
     let mut golden = golden.launch().expect("launch golden");
     let _golden_dump = RunDirDumpGuard::new(golden.run_dir().to_path_buf());
     assert_exec_ok(&mut golden, "echo initial > /tmp/snapshot-race");
-    golden.capture(paths.clone()).expect("initial capture");
+    golden
+        .capture(initial_paths.clone())
+        .expect("initial capture");
     golden
         .stop()
         .expect("stop golden")
@@ -47,7 +53,7 @@ fn snapshot_concurrent_capture_and_restore() {
     let barrier = Arc::new(Barrier::new(2));
     let restore_backend = Arc::clone(&backend);
     let restore_discovery = discovery.clone();
-    let restore_paths = paths.clone();
+    let restore_paths = initial_paths.clone();
     let restore_barrier = Arc::clone(&barrier);
     let restore = std::thread::spawn(move || {
         restore_barrier.wait();
@@ -66,7 +72,10 @@ fn snapshot_concurrent_capture_and_restore() {
             .expect("delete restoring");
     });
 
-    let capture_paths = paths.clone();
+    // Snapshot files are caller-owned artifacts, not an internally locked
+    // database. This test covers concurrent capture and restore operations,
+    // not simultaneous read/write mutation of the same snapshot pair.
+    let capture_paths = recapture_paths.clone();
     let capture_barrier = Arc::clone(&barrier);
     let capture = std::thread::spawn(move || {
         capture_barrier.wait();
@@ -81,14 +90,15 @@ fn snapshot_concurrent_capture_and_restore() {
     restore.join().expect("restore thread");
     capture.join().expect("capture thread");
 
-    assert_snapshot_files_nonempty(&paths);
+    assert_snapshot_files_nonempty(&initial_paths);
+    assert_snapshot_files_nonempty(&recapture_paths);
 
     let final_backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
     let final_sandbox = final_backend
         .admit(sandbox_config("snap-concurrency-final"))
         .expect("admit final restore");
     let mut final_restore = final_sandbox
-        .launch_from_snapshot(paths.clone(), &discovery)
+        .launch_from_snapshot(recapture_paths, &discovery)
         .expect("final restore after concurrent capture");
     let _final_dump = RunDirDumpGuard::new(final_restore.run_dir().to_path_buf());
     assert_exec_ok(&mut final_restore, "cat /tmp/snapshot-race >/dev/null");
@@ -98,7 +108,8 @@ fn snapshot_concurrent_capture_and_restore() {
         .delete()
         .expect("delete final restore");
 
-    let _ = std::fs::remove_dir_all(snap_dir);
+    let _ = std::fs::remove_dir_all(initial_snap_dir);
+    let _ = std::fs::remove_dir_all(recapture_snap_dir);
 }
 
 fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {

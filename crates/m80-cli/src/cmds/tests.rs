@@ -6,17 +6,48 @@ use super::{
 use crate::args::{EgressMode, WritebackMode};
 use crate::errors::EXIT_PREFLIGHT;
 use crate::json;
-use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, ExecStatus, NetworkPolicy};
+use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
 use m80_preflight::{CgroupPreflightMode, CheckRow, Discovery, PreflightError};
+use m80_proto::ExecStatus;
 
 fn fake_discovery() -> Discovery {
-    let mut d = m80_test_helpers::manifest::fake_discovery_at(std::path::Path::new("/tmp/m80-run"));
+    let mut d = Discovery {
+        firecracker_bin: "/tmp/firecracker".into(),
+        jailer_bin: "/tmp/jailer".into(),
+        jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
+        kernel: "/tmp/vmlinux".into(),
+        rootfs: "/tmp/rootfs.ext4".into(),
+        manifest: fake_manifest(),
+        run_root: "/tmp/m80-run".into(),
+        privilege: m80_preflight::PrivilegeStatus::Root,
+        report: Vec::new(),
+    };
     d.report = vec![CheckRow {
         label: "kvm".to_owned(),
         passed: true,
         detail: "fixture".to_owned(),
     }];
     d
+}
+
+fn fake_manifest() -> m80_image_manifest::Manifest {
+    m80_image_manifest::Manifest {
+        daemon_binary_path: "/tmp/m80-guestd".into(),
+        daemon_binary_sha256: "0".repeat(64),
+        expected_firecracker_version: "v1.0.0".to_owned(),
+        guest_port: 52,
+        image_kind: m80_image_manifest::ImageKind::Minimal,
+        kernel_image: "/tmp/vmlinux".into(),
+        kernel_image_sha256: "1".repeat(64),
+        kernel_kind: m80_image_manifest::KernelKind::Stock,
+        no_egress_reason: None,
+        output_rootfs_image: "/tmp/rootfs.ext4".into(),
+        output_rootfs_sha256: "2".repeat(64),
+        ready_marker: "M80_READY".to_owned(),
+        schema_version: m80_image_manifest::SCHEMA_VERSION,
+        source_rootfs_image: None,
+        source_rootfs_sha256: None,
+    }
 }
 
 #[test]
@@ -137,7 +168,7 @@ fn run_cwd_env_and_terminal_size_map_to_pty_request() {
     let request = run_request::pty_request_for_run(
         "/usr/bin/vim",
         &args,
-        env.clone(),
+        env,
         Some("/workspace".to_owned()),
     );
 

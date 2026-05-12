@@ -19,7 +19,7 @@ static ENABLED_TARGETS: OnceLock<HashSet<String>> = OnceLock::new();
 /// Parse the comma-separated `M80_DEBUG_WIRE` value into enabled targets.
 ///
 /// Parameterised on `&str` so tests can call it without touching the env.
-pub(crate) fn parse_targets(raw: &str) -> HashSet<String> {
+fn parse_targets(raw: &str) -> HashSet<String> {
     raw.split(',').map(|t| t.to_owned()).collect()
 }
 

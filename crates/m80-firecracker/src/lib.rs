@@ -33,17 +33,13 @@ pub use layout::{
     run_dir_path, scratch_image_path, vsock_socket_path, BOOT_IDENTITY_FILE, CONSOLE_LOG,
     FIRECRACKER_API_SOCKET, ROOTFS_OVERLAY_IMAGE, SCRATCH_IMAGE, VSOCK_SOCKET,
 };
-pub use m80_net_mode::NetworkPolicy;
-pub use m80_proto::{
-    ExecExit, ExecRequest, ExecResponse, ExecStatus, ExecTiming, FileError, FileMkdirRequest,
-    FileMkdirResponse, PongResponse, PtyControlEvent, PtyExit, PtyRequest, PtySize,
-};
+pub use m80_net_mode::{NetnsSpec, NetworkPolicy};
 pub use m80_snapshot::SnapshotPaths;
 pub use m80_storage::ChangeSet;
 pub use runroot::OWNERSHIP_LOCK;
 pub use types::{
     Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig, EffectiveField, ExecChunk,
     PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig, StoppedSandbox,
-    DEFAULT_PREALLOCATED_DRIVE_SLOTS, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+    FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 pub use warm_pool::{WarmLease, WarmPool, WarmPoolConfig, WarmPoolSnapshot};

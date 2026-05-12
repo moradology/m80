@@ -1,5 +1,5 @@
 #[test]
-fn list_attacks_includes_noop() {
+fn list_attacks_includes_every_attack_mode() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_m80-guestd-malicious"))
         .arg("--list-attacks")
         .output()
@@ -11,18 +11,20 @@ fn list_attacks_includes_noop() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.lines().any(|line| line == "noop"), "{stdout}");
-    assert!(
-        stdout.lines().any(|line| line == "oversized_length"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.lines().any(|line| line == "truncated_frame"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.lines().any(|line| line == "unknown_variant"),
-        "{stdout}"
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        [
+            "noop",
+            "oversized_length",
+            "truncated_frame",
+            "unknown_variant",
+            "response_type_mismatch",
+            "bogus_request_id",
+            "unsolicited_response",
+            "unsolicited_flood",
+            "slowloris",
+        ]
     );
 }
 

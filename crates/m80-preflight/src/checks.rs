@@ -8,10 +8,10 @@ use caps::CapSet;
 use nix::sys::utsname::uname;
 use nix::unistd::geteuid;
 
+use crate::artifacts::{verify_artifacts, ArtifactPreflightConfig};
+use crate::binary::{discover_binaries, BinaryDiscoveryConfig};
 use crate::{
-    classify_privilege, discover_binaries, verify_artifacts, ArtifactPreflightConfig,
-    BinaryDiscoveryConfig, CheckRow, Discovery, PreflightError, PrivilegeStatus,
-    REQUIRED_CAPABILITIES,
+    classify_privilege, CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES,
 };
 
 const KVM_PATH: &str = "/dev/kvm";
@@ -173,7 +173,10 @@ pub fn run_with_configs(
 }
 
 fn check_os(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
-    let uts = uname().map_err(|e| PreflightError::Io(e.into()))?;
+    let uts = uname().map_err(|e| PreflightError::SystemIo {
+        operation: "uname",
+        source: e.into(),
+    })?;
     let sysname = uts.sysname().to_string_lossy().into_owned();
     if sysname != "Linux" {
         return Err(PreflightError::UnsupportedHostPlatform { actual: sysname });
@@ -229,7 +232,10 @@ fn classify_kvm_access(
 }
 
 fn check_kvm_cpu_extensions(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
-    let cpuinfo = fs::read_to_string("/proc/cpuinfo").map_err(PreflightError::Io)?;
+    let cpuinfo = fs::read_to_string("/proc/cpuinfo").map_err(|source| PreflightError::PathIo {
+        path: PathBuf::from("/proc/cpuinfo"),
+        source,
+    })?;
     let flags = classify_kvm_cpu_flags(&cpuinfo)?;
 
     report.push(CheckRow {
@@ -263,7 +269,10 @@ fn classify_kvm_cpu_flags(cpuinfo: &str) -> Result<Vec<String>, PreflightError> 
 }
 
 fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
-    let content = fs::read_to_string("/proc/modules").map_err(PreflightError::Io)?;
+    let content = fs::read_to_string("/proc/modules").map_err(|source| PreflightError::PathIo {
+        path: PathBuf::from("/proc/modules"),
+        source,
+    })?;
     let loaded: Vec<&str> = content
         .lines()
         .filter_map(|line| line.split_whitespace().next())
@@ -369,9 +378,10 @@ fn classify_cgroup_probe(
         Err(m80_cgroup::CgroupError::UnsupportedHostMode) => {
             Err(PreflightError::CgroupV2Unavailable)
         }
-        Err(err) => Err(PreflightError::Io(std::io::Error::other(format!(
-            "cgroup v2 probe: {err}"
-        )))),
+        Err(err) => Err(PreflightError::SystemIo {
+            operation: "cgroup v2 probe",
+            source: std::io::Error::other(format!("{err}")),
+        }),
     }
 }
 
@@ -461,14 +471,20 @@ mod tests {
     }
 
     #[test]
-    fn cgroup_v2_probe_errors_remain_typed_io() {
+    fn cgroup_v2_probe_errors_remain_typed_system_io() {
         let err = classify_cgroup_probe(
             CgroupPreflightMode::UnifiedV2,
             Err(m80_cgroup::CgroupError::ControllerNotEnabled("cpu")),
         )
         .unwrap_err();
 
-        assert!(matches!(err, PreflightError::Io(_)));
+        assert!(matches!(
+            err,
+            PreflightError::SystemIo {
+                operation: "cgroup v2 probe",
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -42,7 +42,7 @@ Sequestering it has three benefits:
 - Guest IPv4 is derived deterministically from `(run_root, vm_id)`;
   guest MAC is `02:` + the first 5 bytes of the same digest, with the
   locally-administered bit set.
-- These derivations are public, documented, and pinned by tests.
+- These derivations are internal, documented, and pinned by in-crate tests.
   Implementations must reproduce them byte-for-byte.
 
 ### Realization
@@ -86,10 +86,10 @@ Sequestering it has three benefits:
   `<run_dir>/network-state.json`, and returns deterministic `m80.net.*`
   kernel command-line tokens for `m80-guestd` to consume after its overlay
   pivot.
-- `inject_guest_network_config(state, runtime_rootfs)` is retained for a
-  future systemd-image mode. It discovers admitted non-loopback IPv4 DNS resolvers,
-  writes the m80 systemd-networkd unit and systemd-resolved drop-in into the
-  supplied per-VM runtime rootfs ext4 image via `debugfs`, then records
+- The old systemd-image injection path is retained internally for a future
+  systemd-image mode. It discovers admitted non-loopback IPv4 DNS resolvers,
+  writes the m80 systemd-networkd unit and systemd-resolved drop-in into a
+  per-VM runtime rootfs ext4 image via `debugfs`, then records
   `dns_resolvers` and `runtime_rootfs_configured=true` back to
   `<run_dir>/network-state.json`.
 - `apply_outbound_nat_policy(state)` performs only the host firewall
@@ -140,56 +140,45 @@ Sequestering it has three benefits:
 - `apply_outbound_nat_policy(...)` and
   `apply_outbound_nat_policy_with_ops(...)` — host sysctl/iptables phase;
   the `_with_ops` variant is the deterministic command-recording seam.
-- `discover_dns_resolvers(...)`, `discover_dns_resolvers_with_ops(...)`,
-  and `is_admitted_dns_resolver(...)` — DNS discovery and resolver-address
-  admission helpers.
-- `inject_guest_network_config(...)` and
-  `inject_guest_network_config_with_ops(...)` — host-driven guest
-  networkd/resolved file injection into a runtime ext4 image for systemd
-  image mode; the `_with_ops` variant is the deterministic debugfs/DNS seam.
-- `prepare_pid_one_network_cmdline(...)` and
-  `prepare_pid_one_network_cmdline_with_ops(...)` — current PID-1 guest
+- `discover_dns_resolvers_with_ops(...)` and
+  `is_admitted_dns_resolver(...)` — DNS discovery seam and resolver-address
+  admission helper.
+- `prepare_pid_one_network_cmdline(...)` — current PID-1 guest
   network config preparation; discovers DNS, updates the network state file,
   and returns deterministic `m80.net.*` cmdline tokens.
-- `build_pid_one_network_cmdline(...)` and `PidOneNetworkCmdline` — pure
-  renderer for the current PID-1 command-line token shape.
+- `PidOneNetworkCmdline { args }` — current PID-1 command-line token shape.
 - `cleanup_vm(vm_id, run_root) -> Result<(), NetError>`.
 - `cleanup_vm_with_ops(...)` — deterministic test seam for VM policy + TAP
   cleanup.
 - `cleanup_outbound_nat_policy_with_ops(...)` — deterministic test seam for
   policy-only cleanup.
-- `cleanup_orphan_bridge(run_root) -> Result<(), NetError>`.
-- `OutboundIntent` (re-exported from `m80-net-mode`).
+- `cleanup_orphan_bridge(run_root) -> Result<(), NetError>` and
+  `cleanup_orphan_bridge_with_ops(...)` — orphan bridge recovery, with a
+  deterministic test seam.
 - `M80_RULE_COMMENT_PREFIX`, `outbound_nat_filter_chain(...)`,
   `outbound_nat_rule_comment(...)`, and `permanent_deny_cidrs(...)` —
   public deterministic helpers for policy identity and tests.
-- `SYSTEMD_NETWORK_DIR`, `SYSTEMD_RESOLVED_CONF_DIR`,
-  `M80_NETWORKD_FILE`, and `M80_RESOLVED_FILE` — guest config paths
-  written by the injection phase.
+- `NETWORK_STATE_FILE` — per-VM network state filename under each VM run
+  directory.
 - `RealizedNetwork { bridge_name, tap_name, guest_ipv4, guest_mac,
   bridge_cidr }` — observable handles for diagnostics.
-- `GuestNetworkConfig { networkd, resolved }` — rendered contents for the
-  guest systemd files.
-- `derive_bridge_name(run_root) -> String` and friends — public,
-  deterministic helpers.
-- `BridgeState`, `VmNetworkStateRecord`, `SetupPhase`, and
-  `planned_*`/`read_*`/`write_*` helpers for the bridge and per-VM network
-  state files.
+- `VmNetworkStateRecord` — opaque per-VM network state record returned by
+  `read_vm_network_state_record(...)` and accepted by cmdline/policy helpers.
+- `read_vm_network_state_record(...)` — read the opaque per-VM network state
+  record from a VM run directory.
 - `LinkOps` — bridge/TAP setup link-operation seam used by tests and the
-  real rtnetlink/TUN backend.
-- `PolicyOps` and `PolicyCommandOutput` — host policy command seam used
-  by tests and the real `sysctl`/`iptables` backend.
-- `DnsDiscoveryOps`, `DnsCommandOutput`, and `GuestNetworkConfigOps` —
-  host seams for DNS discovery and debugfs-backed guest config writes.
-- `CommandDnsDiscoveryOps` — the real `resolvectl`/`/etc/resolv.conf`
-  backend that implements `DnsDiscoveryOps`.
-- `CommandGuestNetworkConfigOps` — the real `debugfs`-backed backend that
-  implements `GuestNetworkConfigOps`.
-- `NetlinkLinkOps` — the real rtnetlink/TUN backend that implements
-  `LinkOps`.
-- `reject_guest_ipv4_collision(...)` and
-  `reject_host_route_collision(...)` — fail-closed collision checks for the
-  pure planning phase.
+  real internal rtnetlink/TUN backend.
+- `PolicyOps` — host policy command seam used by tests and the real
+  `sysctl`/`iptables` backend. Implementors provide `command_output(...)`;
+  the default `run_command(...)` turns non-zero status into `NetError`.
+- `PolicyCommandOutput { status_success, stdout, stderr }` with
+  `success(...)` and `failure(...)` constructors — captured host policy
+  command output.
+- `DnsDiscoveryOps` — host seam for DNS discovery. Implementors provide
+  `command_output(...)` and `read_to_string(...)`.
+- `DnsCommandOutput { status_success, stdout, stderr }` with
+  `success(...)` and `failure(...)` constructors — captured DNS helper
+  command output.
 - `NetError`: `Ipv6Unsupported`, `GuestIpv4Collision { peer_vm_id }`,
   `HostRouteCollision { existing }`, `BridgeOwnershipMismatch`,
   `NetworkCommandFailed { program, stderr }`,
@@ -198,7 +187,8 @@ Sequestering it has three benefits:
   `TapOperationFailed { operation, source }`,
   `LinkNotFound { operation, name }`, `ForeignChainRule { rule }`,
   `NetworkAllocationConflict { path, detail }`,
-  `InvalidNetworkState { path, detail }`, `Io(io::Error)`.
+  `InvalidNetworkState { path, detail }`,
+  `PathIo { path, source }`, `Io(io::Error)`.
 
 ## Non-goals
 
@@ -217,7 +207,8 @@ Sequestering it has three benefits:
 
 ## Dependencies
 
-- `m80-net-mode` — for `OutboundIntent`.
+- `m80-net-mode` — callers pass `m80_net_mode::OutboundIntent` into the
+  setup/policy helpers; `m80-net-outbound` does not re-export it.
 - `sha2`, `hex`, `ipnet` — derivation math.
 - `serde`, `serde_json` — state files.
 - `nix` — process/file locking around guest-IP allocation.

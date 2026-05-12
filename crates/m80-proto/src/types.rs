@@ -271,7 +271,7 @@ pub enum CancelStatus {
 /// Active application connections do not send this as a prelude; every
 /// application [`Envelope`] carries and validates its own version.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HandshakeMessage {
+pub(crate) struct HandshakeMessage {
     /// Protocol version this peer is running.
     pub version: u32,
 }
@@ -365,7 +365,7 @@ mod tests {
         let req = CancelRequest {
             request_id: "req-42".into(),
         };
-        let env = Envelope::with_request_id(req.clone(), "req-42".into());
+        let env = Envelope::with_request_id(req, "req-42".into());
         assert_eq!(env.kind, PAYLOAD_KIND_CANCEL_REQUEST);
         let mut buf = Vec::new();
         write_frame(&mut buf, &env).unwrap();

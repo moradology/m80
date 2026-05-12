@@ -1,6 +1,13 @@
+//! CLI-owned JSON wrappers for `m80-proto` wire types.
+//!
+//! `m80-proto` deliberately stays transport-focused and does not depend on
+//! serde. The CLI owns these shadow structs as its human/tool-facing JSON
+//! surface, then converts at the command boundary before speaking protobuf-ish
+//! host/guest wire types.
+
 use serde::{Deserialize, Serialize};
 
-use m80_firecracker::{ExecExit, ExecRequest, ExecResponse, ExecStatus, ExecTiming};
+use m80_proto::{ExecExit, ExecRequest, ExecResponse, ExecStatus, ExecTiming};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,7 +60,7 @@ pub(super) struct ExecTimingJson {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum ExecStatusJson {
     Completed,
     TimedOut,

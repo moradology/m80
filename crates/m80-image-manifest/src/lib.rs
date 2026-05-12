@@ -81,7 +81,6 @@ pub struct Manifest {
     /// sha256 hex digest of the kernel image bytes.
     pub kernel_image_sha256: String,
     /// Which kernel was used to boot this image.
-    #[serde(default)]
     pub kernel_kind: KernelKind,
     /// Free-text reason recorded when the image is built without egress
     /// configured.
@@ -92,8 +91,10 @@ pub struct Manifest {
     pub output_rootfs_sha256: String,
     /// Serial-console marker the guest emits when the daemon is ready.
     pub ready_marker: String,
-    /// Always [`SCHEMA_VERSION`].
-    pub schema_version: u32,
+    /// Always [`SCHEMA_VERSION`]. Private so callers cannot supply an
+    /// arbitrary version; use [`Manifest::new`] to construct and
+    /// [`Manifest::schema_version`] to read.
+    schema_version: u32,
     /// Absolute path of the source rootfs (squashfs or upstream ext4).
     /// `None` for `Minimal` images (built from scratch with no upstream).
     pub source_rootfs_image: Option<PathBuf>,
@@ -111,6 +112,50 @@ struct SchemaVersionProbe {
 }
 
 impl Manifest {
+    /// Construct a new [`Manifest`] with `schema_version` automatically set
+    /// to [`SCHEMA_VERSION`]. This is the only construction path; the field
+    /// is private so callers cannot supply an arbitrary version.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        daemon_binary_path: PathBuf,
+        daemon_binary_sha256: String,
+        expected_firecracker_version: String,
+        guest_port: u32,
+        image_kind: ImageKind,
+        kernel_image: PathBuf,
+        kernel_image_sha256: String,
+        kernel_kind: KernelKind,
+        no_egress_reason: Option<String>,
+        output_rootfs_image: PathBuf,
+        output_rootfs_sha256: String,
+        ready_marker: String,
+        source_rootfs_image: Option<PathBuf>,
+        source_rootfs_sha256: Option<String>,
+    ) -> Manifest {
+        Manifest {
+            daemon_binary_path,
+            daemon_binary_sha256,
+            expected_firecracker_version,
+            guest_port,
+            image_kind,
+            kernel_image,
+            kernel_image_sha256,
+            kernel_kind,
+            no_egress_reason,
+            output_rootfs_image,
+            output_rootfs_sha256,
+            ready_marker,
+            schema_version: SCHEMA_VERSION,
+            source_rootfs_image,
+            source_rootfs_sha256,
+        }
+    }
+
+    /// Returns the manifest's schema version; always equal to [`SCHEMA_VERSION`].
+    pub fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
     /// Parse and structurally validate a manifest from raw bytes. Probes
     /// `schema_version` before the full parse so future-version payloads
     /// report `UnsupportedSchemaVersion` instead of leaking

@@ -7,7 +7,7 @@ use crate::wire::generated::{
     WireDriveMountRequest, WireDriveMountResponse, WireDriveMountSpec, WireDriveMountStatus,
     WireTenantIdentityReport,
 };
-use crate::wire::{WirePayload, WirePayload::*};
+use crate::wire::WirePayload;
 
 /// Wire `kind` for [`DriveMountRequest`].
 pub const PAYLOAD_KIND_DRIVE_MOUNT_REQUEST: &str = "drive_mount_request";
@@ -309,14 +309,14 @@ impl Payload for DriveMountRequest {
     const KIND: &'static str = PAYLOAD_KIND_DRIVE_MOUNT_REQUEST;
 
     fn into_wire(self) -> WirePayload {
-        DriveMountRequest(WireDriveMountRequest {
+        WirePayload::DriveMountRequest(WireDriveMountRequest {
             devices: self.devices.into_iter().map(mount_spec_to_wire).collect(),
         })
     }
 
     fn from_wire(payload: WirePayload) -> Result<Self, ProtoError> {
         match payload {
-            DriveMountRequest(value) => Ok(Self {
+            WirePayload::DriveMountRequest(value) => Ok(Self {
                 devices: value
                     .devices
                     .into_iter()
@@ -334,7 +334,7 @@ impl Payload for DriveMountResponse {
     const KIND: &'static str = PAYLOAD_KIND_DRIVE_MOUNT_RESPONSE;
 
     fn into_wire(self) -> WirePayload {
-        DriveMountResponse(WireDriveMountResponse {
+        WirePayload::DriveMountResponse(WireDriveMountResponse {
             statuses: self
                 .statuses
                 .into_iter()
@@ -346,7 +346,7 @@ impl Payload for DriveMountResponse {
 
     fn from_wire(payload: WirePayload) -> Result<Self, ProtoError> {
         match payload {
-            DriveMountResponse(value) => Ok(Self {
+            WirePayload::DriveMountResponse(value) => Ok(Self {
                 statuses: value
                     .statuses
                     .into_iter()
@@ -369,14 +369,14 @@ impl Payload for DriveDetachRequest {
     const KIND: &'static str = PAYLOAD_KIND_DRIVE_DETACH_REQUEST;
 
     fn into_wire(self) -> WirePayload {
-        DriveDetachRequest(WireDriveDetachRequest {
+        WirePayload::DriveDetachRequest(WireDriveDetachRequest {
             devices: self.devices.into_iter().map(detach_spec_to_wire).collect(),
         })
     }
 
     fn from_wire(payload: WirePayload) -> Result<Self, ProtoError> {
         match payload {
-            DriveDetachRequest(value) => Ok(Self {
+            WirePayload::DriveDetachRequest(value) => Ok(Self {
                 devices: value
                     .devices
                     .into_iter()
@@ -394,7 +394,7 @@ impl Payload for DriveDetachResponse {
     const KIND: &'static str = PAYLOAD_KIND_DRIVE_DETACH_RESPONSE;
 
     fn into_wire(self) -> WirePayload {
-        DriveDetachResponse(WireDriveDetachResponse {
+        WirePayload::DriveDetachResponse(WireDriveDetachResponse {
             statuses: self
                 .statuses
                 .into_iter()
@@ -405,7 +405,7 @@ impl Payload for DriveDetachResponse {
 
     fn from_wire(payload: WirePayload) -> Result<Self, ProtoError> {
         match payload {
-            DriveDetachResponse(value) => Ok(Self {
+            WirePayload::DriveDetachResponse(value) => Ok(Self {
                 statuses: value
                     .statuses
                     .into_iter()

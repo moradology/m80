@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, ExecChunk, ExecRequest, ExecStatus, FcError, SandboxConfig,
-    WireProtocolError,
+    Backend, BackendConfig, CgroupMode, ExecChunk, FcError, SandboxConfig, WireProtocolError,
 };
+use m80_proto::{ExecRequest, ExecStatus};
 
 fn backend() -> (Arc<Backend>, std::path::PathBuf) {
     let discovery =

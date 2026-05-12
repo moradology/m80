@@ -8,12 +8,15 @@ mod common;
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, SandboxConfig, SnapshotPaths};
-use m80_proto::{ExecRequest, ExecStatus};
+use m80_proto::GUEST_PORT_DEFAULT;
+use m80_proto::{Envelope, ExecRequest, ExecStatus};
+use m80_vsock::Channel;
 
 #[test]
 #[ignore = "requires privileged jailer host with real m80 artifacts"]
@@ -24,7 +27,7 @@ fn api_socket_timeout_cleans_partial_state() {
         m80_preflight::run().expect("preflight must pass on a privileged host with m80 artifacts");
     discovery.firecracker_bin = fake_firecracker;
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
-    let vm_id = unique_vm_id("api-socket-timeout");
+    let vm_id = unique_vm_id("api-sock-to");
     let run_dir = discovery.run_root.join(&vm_id);
 
     let sandbox = backend
@@ -51,7 +54,7 @@ fn api_socket_timeout_cleans_partial_state() {
     );
 
     let admitted_after_timeout = backend
-        .admit(default_config("api-socket-timeout-permit-reuse"))
+        .admit(default_config("api-sock-to-reuse"))
         .expect("admission permit must be released after api socket timeout");
     drop(admitted_after_timeout);
 }
@@ -60,7 +63,9 @@ fn api_socket_timeout_cleans_partial_state() {
 #[ignore = "requires privileged jailer host with writable cgroup v2 hierarchy"]
 fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
     let fake_dir = tempfile::tempdir().expect("fake firecracker tempdir");
-    let fake_name = format!("fake-firecracker-cgroup-fail-{}", unique_suffix());
+    // fc_basename eats into the 107-byte AF_UNIX path budget alongside vm_id;
+    // keep the fake binary name short so the path stays under the cap.
+    let fake_name = format!("fake-fc-cgr-{:04x}", unique_suffix() % 0x10000);
     let fake_firecracker = write_fake_firecracker(fake_dir.path(), &fake_name);
     let mut discovery =
         m80_preflight::run().expect("preflight must pass on a privileged host with m80 artifacts");
@@ -72,7 +77,7 @@ fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
         ))
         .unwrap(),
     );
-    let vm_id = unique_vm_id("cgroup-create-failure");
+    let vm_id = unique_vm_id("cgr-fail");
     let run_dir = discovery.run_root.join(&vm_id);
     let _fault = EnvGuard::set("M80_TEST_FAIL_CGROUP_CREATE_FOR_VM", &vm_id);
 
@@ -99,7 +104,7 @@ fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
     assert_no_process_cmdline_contains(&fake_name);
 
     let admitted_after_failure = backend
-        .admit(default_config("cgroup-create-failure-permit-reuse"))
+        .admit(default_config("cgr-fail-reuse"))
         .expect("admission permit must be released after cgroup create failure");
     drop(admitted_after_failure);
 }
@@ -110,7 +115,7 @@ fn guestd_not_ready_timeout_cleans_partial_state() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
-    let vm_id = unique_vm_id("guestd-not-ready-cold");
+    let vm_id = unique_vm_id("gnr-cold");
     let run_dir = discovery.run_root.join(&vm_id);
 
     let sandbox = backend
@@ -132,7 +137,7 @@ fn guestd_not_ready_timeout_cleans_partial_state() {
         run_dir.display()
     );
 
-    let mut running = launch_healthy(&backend, "guestd-not-ready-cold-reuse");
+    let mut running = launch_healthy(&backend, "gnr-cold-r");
     assert_exec_ok(&mut running, "printf cold-reuse-ok");
     running
         .stop()
@@ -149,31 +154,28 @@ fn restore_guestd_not_ready_timeout_cleans_partial_state() {
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
     let snap_dir = discovery
         .run_root
-        .join(format!("guestd-not-ready-snap-{}", unique_suffix()));
+        .join(format!("gnr-snap-{:04x}", unique_suffix() % 0x10000));
     let paths = snapshot_paths(&snap_dir);
 
-    let mut golden = launch_healthy(&backend, "guestd-not-ready-golden");
+    let mut golden = launch_healthy(&backend, "gnr-gold");
     let _golden_dump = RunDirDumpGuard::new(golden.run_dir().to_path_buf());
-    assert_exec_ok(
-        &mut golden,
-        "(sleep 0.2; kill -STOP 1) >/dev/null 2>&1 & printf armed",
-    );
+    let _blocking_exec = start_blocking_exec(&golden, &discovery);
     std::thread::sleep(Duration::from_millis(500));
     golden
         .capture(paths.clone())
-        .expect("capture snapshot with stopped guestd");
+        .expect("capture snapshot with busy guestd");
     golden
         .force_kill()
-        .expect("force-kill stopped-guestd golden")
+        .expect("force-kill busy-guestd golden")
         .delete()
-        .expect("delete stopped-guestd golden");
+        .expect("delete busy-guestd golden");
 
-    let restore_vm_id = unique_vm_id("guestd-not-ready-restore");
+    let restore_vm_id = unique_vm_id("gnr-rest");
     let restore_run_dir = discovery.run_root.join(&restore_vm_id);
     let sandbox = backend
         .admit(default_config(&restore_vm_id))
         .expect("admit restore timeout launch");
-    let err = match sandbox.launch_from_snapshot(paths.clone(), &discovery) {
+    let err = match sandbox.launch_from_snapshot(paths, &discovery) {
         Ok(running) => {
             let stopped = running.force_kill().expect("force-kill unexpected restore");
             stopped.delete().expect("delete unexpected restore");
@@ -189,7 +191,7 @@ fn restore_guestd_not_ready_timeout_cleans_partial_state() {
         restore_run_dir.display()
     );
 
-    let mut running = launch_healthy(&backend, "guestd-not-ready-restore-reuse");
+    let mut running = launch_healthy(&backend, "gnr-rest-r");
     assert_exec_ok(&mut running, "printf restore-reuse-ok");
     running
         .stop()
@@ -254,8 +256,47 @@ fn snapshot_paths(dir: &Path) -> SnapshotPaths {
 
 fn write_fake_firecracker(dir: &Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
-    std::fs::write(&path, "#!/bin/sh\nwhile true; do sleep 60; done\n")
-        .expect("write fake firecracker");
+    let source = dir.join(format!("{name}.c"));
+    // The real jailer chroots before execing Firecracker, so a shell script
+    // fake would fail unless the jail root also carried `/bin/sh` and its
+    // loader/libs. Compile a tiny static ELF that writes the same pid file
+    // Firecracker writes inside the jail and then stays alive without creating
+    // the API socket.
+    std::fs::write(
+        &source,
+        r#"#include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
+
+int main(void) {
+    FILE *pid = fopen("/firecracker.pid", "w");
+    if (pid == NULL) {
+        return 111;
+    }
+    fprintf(pid, "%ld\n", (long)getpid());
+    fclose(pid);
+    for (;;) {
+        pause();
+    }
+}
+"#,
+    )
+    .expect("write fake firecracker source");
+    let output = Command::new("cc")
+        .arg("-static")
+        .arg("-O2")
+        .arg(&source)
+        .arg("-o")
+        .arg(&path)
+        .output()
+        .expect("run cc for fake firecracker");
+    assert!(
+        output.status.success(),
+        "compile fake firecracker failed: status={} stdout={} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let mut perms = std::fs::metadata(&path)
         .expect("fake firecracker metadata")
         .permissions();
@@ -284,6 +325,31 @@ fn assert_exec_ok(running: &mut m80_firecracker::RunningSandbox, script: &str) {
         String::from_utf8_lossy(&response.stdout),
         String::from_utf8_lossy(&response.stderr)
     );
+}
+
+fn start_blocking_exec(
+    running: &m80_firecracker::RunningSandbox,
+    discovery: &m80_preflight::Discovery,
+) -> Channel {
+    let vsock = m80_firecracker::vsock_socket_path(running.run_dir(), &discovery.firecracker_bin);
+    let mut channel =
+        Channel::open_uds_only(&vsock, GUEST_PORT_DEFAULT).expect("open blocking exec channel");
+    let req = ExecRequest {
+        program: "/bin/sh".into(),
+        args: vec!["-c".into(), "sleep 60".into()],
+        cwd: None,
+        env: None,
+        stdin: None,
+        timeout_ms: Some(60_000),
+        streaming: true,
+    };
+    channel
+        .send(&Envelope::with_request_id(
+            req,
+            "restore-blocking-exec".into(),
+        ))
+        .expect("send blocking exec request");
+    channel
 }
 
 fn assert_api_socket_timeout(err: FcError) {
@@ -330,8 +396,14 @@ fn assert_no_process_cmdline_contains(needle: &str) {
     );
 }
 
+// vm_ids must stay short: the AF_UNIX socket path
+// `<run_root>/<vm_id>/<fc_basename>/<vm_id>/root/firecracker.sock` is capped at
+// 107 bytes by the kernel, and m80-jailer's nested layout uses vm_id twice.
+// With run_root=/var/lib/m80-run (16) and fc_basename="firecracker" (11), V<=27;
+// the fake-firecracker cases tighten this further. Prefixes here are kept under
+// ~17 chars and the suffix is 4 hex digits to leave headroom for both.
 fn unique_vm_id(prefix: &str) -> String {
-    format!("{prefix}-{}", unique_suffix() % 1_000_000_000)
+    format!("{prefix}-{:04x}", unique_suffix() % 0x10000)
 }
 
 fn unique_suffix() -> u128 {

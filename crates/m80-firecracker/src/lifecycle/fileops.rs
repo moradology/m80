@@ -11,7 +11,8 @@ use m80_proto::{
     FileWriteRequest, FileWriteResponse, PAYLOAD_KIND_FILE_READ_CHUNK,
 };
 
-use crate::error::{ConfigError, FcError};
+use crate::error::{ConfigError, FcError, WireProtocolError};
+use crate::layout::VSOCK_SOCKET;
 use crate::lifecycle::exec::{request_id_for, send_envelope_with_open_retry};
 use crate::lifecycle::monotonic_ns;
 use crate::types::RunningSandbox;
@@ -24,7 +25,7 @@ impl RunningSandbox {
         max_bytes: Option<u64>,
     ) -> Result<(Vec<u8>, bool), FcError> {
         self.prepare_fileop_activity()?;
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "file_read");
         let envelope = Envelope::with_request_id(
             FileReadRequest {
@@ -91,11 +92,11 @@ impl RunningSandbox {
             if chunk.done {
                 return Ok((bytes, chunk.truncated));
             }
-            expected_seq = expected_seq.checked_add(1).ok_or_else(|| {
-                FcError::Config(ConfigError::Other(
-                    "file_read chunk sequence overflow".into(),
-                ))
-            })?;
+            expected_seq = expected_seq.checked_add(1).ok_or(FcError::Protocol(
+                WireProtocolError::SequenceOverflow {
+                    stream: "file_read",
+                },
+            ))?;
         }
     }
 
@@ -131,9 +132,12 @@ impl RunningSandbox {
         let response: FileStatResponse =
             self.fileop_round_trip(FileStatRequest { path: path.into() }, "file_stat")?;
         fileop_result(response.error)?;
-        response.stat.ok_or_else(|| {
-            FcError::Config(ConfigError::Other("file_stat response missing stat".into()))
-        })
+        response
+            .stat
+            .ok_or(FcError::Protocol(WireProtocolError::MissingField {
+                context: "file_stat response",
+                field: "stat",
+            }))
     }
 
     /// Remove one non-directory guest path.
@@ -144,9 +148,10 @@ impl RunningSandbox {
         if response.removed {
             Ok(())
         } else {
-            Err(FcError::Config(ConfigError::Other(
-                "file_remove response reported no removal and no error".into(),
-            )))
+            Err(FcError::Protocol(WireProtocolError::PeerRejected {
+                context: "file_remove response",
+                detail: "reported no removal and no error".to_owned(),
+            }))
         }
     }
 
@@ -184,7 +189,7 @@ impl RunningSandbox {
             }));
         }
         self.prepare_fileop_activity()?;
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "file_upload");
         let begin = Envelope::with_request_id(
             FileWriteBeginRequest {
@@ -198,11 +203,13 @@ impl RunningSandbox {
             recv_fileop(&mut channel, "file upload begin")?;
         let begin_response = begin_response.payload;
         fileop_result(begin_response.error)?;
-        let upload_id = begin_response.upload_id.ok_or_else(|| {
-            FcError::Config(ConfigError::Other(
-                "file upload begin response missing upload_id".into(),
-            ))
-        })?;
+        let upload_id =
+            begin_response
+                .upload_id
+                .ok_or(FcError::Protocol(WireProtocolError::MissingField {
+                    context: "file upload begin response",
+                    field: "upload_id",
+                }))?;
 
         let mut seq = 0u64;
         let mut buf = vec![0u8; chunk_size];
@@ -222,11 +229,11 @@ impl RunningSandbox {
             let response = response.payload;
             fileop_result(response.error)?;
             validate_chunk_ack(&upload_id, seq, &response)?;
-            seq = seq.checked_add(1).ok_or_else(|| {
-                FcError::Config(ConfigError::Other(
-                    "file upload chunk sequence overflow".into(),
-                ))
-            })?;
+            seq = seq.checked_add(1).ok_or(FcError::Protocol(
+                WireProtocolError::SequenceOverflow {
+                    stream: "file_upload",
+                },
+            ))?;
         }
 
         channel.send(&Envelope::with_request_id(
@@ -248,7 +255,7 @@ impl RunningSandbox {
         U: m80_proto::Payload + Clone,
     {
         self.prepare_fileop_activity()?;
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), kind);
         let envelope = Envelope::with_request_id(payload, request_id);
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;

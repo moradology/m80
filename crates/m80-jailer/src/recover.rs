@@ -28,11 +28,30 @@ pub enum InspectionDecision {
     },
     /// A stale jail was found; reaping is needed.
     OrphanJail {
-        /// Steps the caller should run to clean up.
-        reap_steps: Vec<PlanStep>,
+        /// Opaque plan the caller may hand back to this crate for future reap
+        /// support.
+        reap_plan: ReapPlan,
     },
     /// No jail was found at this run-dir.
     NoJail,
+}
+
+/// Opaque recovery plan for a stale jail.
+#[derive(Debug, Clone)]
+pub struct ReapPlan {
+    steps: Vec<PlanStep>,
+}
+
+impl ReapPlan {
+    /// Number of materialization steps captured for reverse-order cleanup.
+    #[must_use] pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+
+    /// Whether there are no materialization steps available.
+    #[must_use] pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
 }
 
 /// Inspect a run-dir for prior jail state. The returned [`InspectionDecision`]
@@ -45,26 +64,26 @@ pub fn inspect_run_dir(run_dir: &Path) -> Result<InspectionDecision, JailerError
         return plan_backed_or_no_jail(run_dir);
     }
 
-    let raw = std::fs::read(&state_path).map_err(io_err(state_path.clone()))?;
+    let raw = std::fs::read(&state_path).map_err(io_err(state_path))?;
     let state: JailerState = match serde_json::from_slice(&raw) {
         Ok(state) => state,
         Err(_) => return plan_backed_or_no_jail(run_dir),
     };
 
-    if let (Some(jailer_pid), Some(fc_pid)) = (state.jailer_pid, state.firecracker_pid) {
+    if let (Some(jailer_pid), Some(firecracker_pid)) = (state.jailer_pid, state.firecracker_pid) {
         let jailer_live = jailer_pid == 0 || Path::new(&format!("/proc/{jailer_pid}")).exists();
-        let firecracker_live = Path::new(&format!("/proc/{fc_pid}")).exists();
+        let firecracker_live = Path::new(&format!("/proc/{firecracker_pid}")).exists();
         if jailer_live && firecracker_live {
             return Ok(InspectionDecision::LiveJail {
                 jailer_pid,
-                firecracker_pid: fc_pid,
+                firecracker_pid,
             });
         }
     }
 
     // Orphan with parseable state — load plan steps in reverse for reaping.
     Ok(InspectionDecision::OrphanJail {
-        reap_steps: load_reap_steps(run_dir)?,
+        reap_plan: load_reap_plan(run_dir)?,
     })
 }
 
@@ -72,22 +91,74 @@ fn plan_backed_or_no_jail(run_dir: &Path) -> Result<InspectionDecision, JailerEr
     let plan_path = run_dir.join(JAILER_PLAN_FILE);
     if plan_path.exists() {
         Ok(InspectionDecision::OrphanJail {
-            reap_steps: load_reap_steps(run_dir)?,
+            reap_plan: load_reap_plan(run_dir)?,
         })
     } else {
         Ok(InspectionDecision::NoJail)
     }
 }
 
-fn load_reap_steps(run_dir: &Path) -> Result<Vec<PlanStep>, JailerError> {
+fn load_reap_plan(run_dir: &Path) -> Result<ReapPlan, JailerError> {
     let plan_path = run_dir.join(JAILER_PLAN_FILE);
     if !plan_path.exists() {
-        return Ok(Vec::new());
+        return Ok(ReapPlan { steps: Vec::new() });
     }
 
     let plan_raw = std::fs::read(&plan_path).map_err(io_err(plan_path.clone()))?;
     let plan: Plan = serde_json::from_slice(&plan_raw)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-        .map_err(io_err(plan_path.clone()))?;
-    Ok(plan.steps.into_iter().rev().collect())
+        .map_err(io_err(plan_path))?;
+    Ok(ReapPlan {
+        steps: plan.steps.into_iter().rev().collect(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn reap_plan_reverses_plan_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = Plan {
+            config: crate::types::JailerConfig {
+                jailer_bin: PathBuf::from("/usr/bin/jailer"),
+                jailer_harden_bin: Some(PathBuf::from("/usr/bin/m80-jailer-harden")),
+                firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+                run_dir: dir.path().to_path_buf(),
+                uid: 3000,
+                gid: 3000,
+                bindings: Vec::new(),
+                sockets: Vec::new(),
+                resource_limits: crate::types::ResourceLimits::default(),
+                new_pid_ns: false,
+                daemonize: false,
+                new_cgroup_ns: false,
+                netns_path: None,
+                stdio_log: None,
+            },
+            steps: vec![
+                PlanStep::CreateDir {
+                    path: PathBuf::from("/jail/root"),
+                    mode: 0o700,
+                },
+                PlanStep::Socket {
+                    path: PathBuf::from("/jail/root/firecracker.sock"),
+                },
+            ],
+        };
+        std::fs::write(
+            dir.path().join(JAILER_PLAN_FILE),
+            serde_json::to_vec_pretty(&plan).unwrap(),
+        )
+        .unwrap();
+
+        let reap_plan = load_reap_plan(dir.path()).unwrap();
+        assert_eq!(
+            reap_plan.steps,
+            plan.steps.into_iter().rev().collect::<Vec<_>>()
+        );
+    }
 }

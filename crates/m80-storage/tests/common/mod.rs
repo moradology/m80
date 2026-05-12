@@ -4,7 +4,7 @@
 /// banner and returns false. The `#[ignore]` attribute is the canonical
 /// gate; this helper is a second line of defense for `--ignored` runs on
 /// hosts where the user forgot to escalate.
-pub fn require_root(test_name: &str) -> bool {
+pub(crate) fn require_root(test_name: &str) -> bool {
     if nix::unistd::Uid::effective().is_root() {
         true
     } else {

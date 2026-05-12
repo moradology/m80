@@ -91,7 +91,7 @@ time.sleep(30)
 "#;
 
 #[test]
-#[ignore]
+#[ignore = "requires cgroup v2 host; run with sudo cargo test -p m80-cgroup -- --ignored"]
 fn probe_returns_ok_on_unified_v2_host() {
     m80_cgroup::Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
 }

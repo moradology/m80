@@ -300,7 +300,7 @@ fn post_capture_mutation_does_not_change_snapshot_restore_state() {
     let stopped_first = first.force_kill().expect("stop first restored");
     stopped_first.delete().expect("delete first restored");
 
-    let mut second = restore_snapshot(&discovery, "snap-mutation-second", paths.clone());
+    let mut second = restore_snapshot(&discovery, "snap-mutation-second", paths);
     let _dump_second = RunDirDumpGuard::new(second.run_dir().to_path_buf());
     let read = exec_sh(
         &mut second,
@@ -416,6 +416,8 @@ fn restore_with_missing_snapshot_fails_clearly() {
 /// This test covers the classification property without a live Firecracker.
 #[test]
 fn missing_snapshot_error_is_classified_without_kvm() {
+    // INTENTIONAL: this bypasses m80-firecracker's launch API so the
+    // m80_snapshot::restore error classification can be tested without KVM.
     use m80_snapshot::{restore, RestoreRequest, SnapshotPaths};
 
     // Use a non-existent Firecracker socket — the vsock.sock removal step will
@@ -423,7 +425,7 @@ fn missing_snapshot_error_is_classified_without_kvm() {
     // a typed ClientError, not a generic IO swallow.
     let missing_fc_socket = PathBuf::from("/tmp/m80-no-such-socket.sock");
     let result = restore(RestoreRequest {
-        fc_socket: missing_fc_socket,
+        api_socket: missing_fc_socket,
         paths: SnapshotPaths {
             vm_state: PathBuf::from("/tmp/m80-no-such-vm.snap"),
             mem: PathBuf::from("/tmp/m80-no-such-mem.snap"),
@@ -437,8 +439,7 @@ fn missing_snapshot_error_is_classified_without_kvm() {
     // The error must not be opaque — it must carry context about what failed.
     let display = err.to_string();
     assert!(!display.is_empty(), "error display must not be empty");
-    // Must NOT be the SnapshotError::DestinationCollision or schema variant
-    // (those only apply to manifest read paths). Must be Client or VsockUdsUnlink.
+    // Must be the public REST/UDS snapshot error surface, not an opaque error.
     assert!(
         display.contains("firecracker client") || display.contains("vsock UDS"),
         "error must be clearly classified as client or vsock-uds, got: {display}"

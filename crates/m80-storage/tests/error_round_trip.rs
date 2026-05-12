@@ -89,10 +89,13 @@ fn subprocess_failed_e2fsck_displays_exit_and_stderr() {
 
 #[test]
 fn admissibility_refused_displays() {
-    let e = StorageError::AdmissibilityRefused;
+    let e = StorageError::AdmissibilityRefused {
+        path: PathBuf::from("/tmp/workspace/link.txt"),
+    };
     let s = format!("{e}");
     assert!(!s.is_empty());
     assert!(s.contains("admissibility"));
+    assert!(s.contains("link.txt"), "path must appear: {s}");
 }
 
 #[test]

@@ -1,16 +1,15 @@
 //! Round-trip tests for `RestoreMetadata`.
 //! Bead: m80-0tf.1.3
 
-mod common;
-
-use m80_snapshot::{RestoreMetadata, SnapshotError};
+use super::common;
+use crate::{RestoreMetadata, SchemaError, RESTORE_METADATA_FILE};
 
 /// `write` then `read` produces a struct equal to the original.
 #[test]
 fn round_trip_equals_original() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_restore_metadata(dir.path());
-    let path = dir.path().join("restore-metadata.json");
+    let path = dir.path().join(RESTORE_METADATA_FILE);
     common::assert_round_trips(m, &path, |v, p| v.write(p), RestoreMetadata::read);
 }
 
@@ -46,7 +45,7 @@ fn wrong_schema_version_returns_unsupported() {
     std::fs::write(&path, raw.as_bytes()).unwrap();
     let err = RestoreMetadata::read(&path).unwrap_err();
     assert!(
-        matches!(err, SnapshotError::UnsupportedSchemaVersion(42)),
+        matches!(err, SchemaError::UnsupportedSchemaVersion(42)),
         "expected UnsupportedSchemaVersion(42), got {err:?}"
     );
 }
@@ -67,7 +66,7 @@ fn deny_unknown_fields_rejects_extra_key() {
 
     let err = RestoreMetadata::read(&path).unwrap_err();
     assert!(
-        matches!(err, SnapshotError::Json(_)),
+        matches!(err, SchemaError::Json(_)),
         "unknown field must surface as Json error, got {err:?}"
     );
 }
@@ -79,7 +78,7 @@ fn read_missing_file_surfaces_io_error_with_path() {
     let path = dir.path().join("missing.json");
     let err = RestoreMetadata::read(&path).unwrap_err();
     match err {
-        SnapshotError::Io { path: p, source } => {
+        SchemaError::Io { path: p, source } => {
             assert_eq!(p, path);
             assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
         }

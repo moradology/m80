@@ -49,7 +49,7 @@ pub trait DnsDiscoveryOps {
 }
 
 /// Real-host backend for DNS resolver discovery via shell commands and `/etc/resolv.conf`.
-pub struct CommandDnsDiscoveryOps;
+pub(crate) struct CommandDnsDiscoveryOps;
 
 impl DnsDiscoveryOps for CommandDnsDiscoveryOps {
     fn command_output(
@@ -93,7 +93,7 @@ pub fn discover_dns_resolvers_with_ops(
 }
 
 /// Return true when an IPv4 address is admissible as an upstream DNS resolver.
-pub fn is_admitted_dns_resolver(address: Ipv4Addr) -> bool {
+#[must_use] pub fn is_admitted_dns_resolver(address: Ipv4Addr) -> bool {
     let octets = address.octets();
     if address.is_unspecified()
         || address.is_loopback()

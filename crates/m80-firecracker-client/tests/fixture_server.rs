@@ -6,14 +6,14 @@
 
 #![allow(dead_code, unused_imports)]
 
-pub use m80_test_helpers::fixture_server::{resp_204, resp_400, FixtureResult};
+pub(crate) use m80_test_helpers::fixture_server::{resp_204, resp_400, FixtureResult};
 // Alias: existing tests call `FixtureServer::spawn(bytes)` → single-response.
-pub use m80_test_helpers::fixture_server::SingleFixtureServer as FixtureServer;
+pub(crate) use m80_test_helpers::fixture_server::SingleFixtureServer as FixtureServer;
 
 /// Spawn a fixture server that returns 204 and open a client connected to it.
 ///
 /// Call `server.join()` after the client call completes to capture the request.
-pub fn setup_with_204() -> (FixtureServer, m80_firecracker_client::Client) {
+pub(crate) fn setup_with_204() -> (FixtureServer, m80_firecracker_client::Client) {
     let server = FixtureServer::spawn(resp_204()).unwrap();
     let client = m80_firecracker_client::Client::new(&server.socket_path).unwrap();
     (server, client)

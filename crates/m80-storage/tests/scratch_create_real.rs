@@ -49,15 +49,15 @@ fn scratch_create_rejects_symlink_in_workspace() {
     let image = dir.path().join("scratch.ext4");
     let err = Scratch::create(&workspace, &image, 64 * 1024 * 1024).unwrap_err();
     assert!(
-        matches!(err, m80_storage::StorageError::AdmissibilityRefused),
+        matches!(err, m80_storage::StorageError::AdmissibilityRefused { .. }),
         "expected AdmissibilityRefused, got {err:?}"
     );
 }
 
 #[test]
 #[ignore = "requires root and a loop device"]
-fn scratch_recommended_size_and_bounds() {
-    if !common::require_root("scratch_recommended_size_and_bounds") {
+fn scratch_create_accepts_large_explicit_size() {
+    if !common::require_root("scratch_create_accepts_large_explicit_size") {
         return;
     }
 
@@ -67,10 +67,7 @@ fn scratch_recommended_size_and_bounds() {
     let file = std::fs::File::create(workspace.join("large.bin")).unwrap();
     file.set_len(100 * 1024 * 1024).unwrap();
 
-    let recommended = Scratch::recommended_size_for_workspace(&workspace).unwrap();
-    assert_eq!(recommended, 132 * 1024 * 1024);
-
-    let oversized = recommended * 3 / 2;
+    let oversized = 200 * 1024 * 1024;
     let image = dir.path().join("scratch.ext4");
     let scratch = Scratch::create(&workspace, &image, oversized).expect("oversized create");
 

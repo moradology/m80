@@ -12,13 +12,16 @@ use m80_proto::ExecRequest;
 
 use common::RunDirDumpGuard;
 
+// vm_id must stay under ~22 chars so the AF_UNIX socket path
+// `<run_root>/<vm_id>/<fc_basename>/<vm_id>/root/firecracker.sock` fits the
+// 107-byte kernel cap (vm_id appears twice in the jail layout).
 fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
+    let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before unix epoch")
         .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
+        % 0x10000;
+    format!("{prefix}-{suffix:04x}")
 }
 
 fn shell_request(script: &str) -> ExecRequest {
@@ -48,7 +51,7 @@ fn cgroup_memory_limit_oom_kills_workload() {
         cgroup_mode: CgroupMode::UnifiedV2,
     };
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
-    let vm_id = unique_vm_id("cgroup-memory-oom-e2e");
+    let vm_id = unique_vm_id("cgr-oom");
     let sandbox = backend
         .admit(SandboxConfig {
             vm_id: Some(vm_id),
@@ -74,7 +77,7 @@ fn cgroup_memory_limit_oom_kills_workload() {
     let memory_max = std::fs::read_to_string(cgroup.join("memory.max")).expect("memory.max");
     assert_eq!(
         memory_max.trim(),
-        m80_cgroup::Limits::m80_default()
+        m80_cgroup::Limits::preset()
             .memory_max
             .expect("default memory.max")
             .to_string(),

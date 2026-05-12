@@ -10,12 +10,34 @@ dedicated malicious test image. The binary speaks only enough of the guestd
 startup contract to let the host boot a VM, receive the inverted readiness
 signal, and connect to the guest exec vsock port.
 
+The malicious binary and its CLI integration tests are excluded from default
+workspace builds by `required-features = ["malicious-artifact"]`. Build or test
+them only when producing the dedicated malicious test image:
+
+```sh
+cargo build -p m80-guestd-malicious --features malicious-artifact
+cargo test -p m80-guestd-malicious --features malicious-artifact
+```
+
 Attack mode selection is explicit:
 
 - `--attack <name>` for direct host-side checks.
 - `M80_MALICIOUS_ATTACK=<name>` for host process smoke checks.
 - `m80.malicious_attack=<name>` on the guest kernel command line when running
   as PID 1 inside a test image.
+
+Harness-only commands:
+
+- `--check-config` resolves the selected attack, prints `attack=<name>`, and
+  exits without binding vsock. This is for host-side image/build validation.
+- `--list-attacks` prints every supported attack name, one per line.
+- `--version` prints the malicious guestd package version plus the active
+  m80-proto protocol version.
+
+When no `--attack` flag or `M80_MALICIOUS_ATTACK` environment variable is
+present, the binary reads `/proc/cmdline` for `m80.malicious_attack=<name>`.
+`/proc/cmdline` missing is treated as "no kernel selection"; any other
+`/proc/cmdline` read error is fatal.
 
 Current modes:
 

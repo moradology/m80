@@ -57,7 +57,7 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
         Backend::new(BackendConfig {
             discovery: discovery.clone(),
             max_concurrent_vms: 1,
-            run_root: run_root.clone(),
+            run_root: run_root,
             jail_uid: 3000,
             jail_gid: 3000,
             cgroup_mode: CgroupMode::Disabled,
@@ -220,7 +220,7 @@ fn overlay_grows_under_sustained_guest_writes() {
         Backend::new(BackendConfig {
             discovery,
             max_concurrent_vms: 1,
-            run_root: run_root.clone(),
+            run_root: run_root,
             jail_uid: 3000,
             jail_gid: 3000,
             cgroup_mode: CgroupMode::Disabled,
@@ -231,7 +231,7 @@ fn overlay_grows_under_sustained_guest_writes() {
     let vm_id = format!("overlay-growth-{}", std::process::id());
     let sandbox = backend
         .admit(SandboxConfig {
-            vm_id: Some(vm_id.clone()),
+            vm_id: Some(vm_id),
             workspace: None,
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),

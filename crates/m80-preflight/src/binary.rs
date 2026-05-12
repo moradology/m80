@@ -14,16 +14,16 @@ pub const ENV_FIRECRACKER_BIN: &str = "M80_FIRECRACKER_BIN";
 /// Environment key for enabling an exact Firecracker version check.
 pub const ENV_FIRECRACKER_VERSION: &str = "M80_FIRECRACKER_VERSION";
 /// Environment key for overriding the jailer binary path.
-pub const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
+pub(crate) const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
 /// Environment key for overriding the m80 jailer hardening wrapper path.
-pub const ENV_JAILER_HARDEN_BIN: &str = "M80_JAILER_HARDEN_BIN";
+pub(crate) const ENV_JAILER_HARDEN_BIN: &str = "M80_JAILER_HARDEN_BIN";
 
 /// Default Firecracker binary location when no env override is present.
 pub const DEFAULT_FIRECRACKER_BIN: &str = "/opt/firecracker/bin/firecracker";
 /// Default jailer binary location when no env override is present.
-pub const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
+pub(crate) const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
 /// Default m80 jailer hardening wrapper location when no env override is present.
-pub const DEFAULT_JAILER_HARDEN_BIN: &str = "/opt/m80/bin/m80-jailer-harden";
+pub(crate) const DEFAULT_JAILER_HARDEN_BIN: &str = "/opt/m80/bin/m80-jailer-harden";
 
 /// Inputs for the binary discovery preflight step.
 #[derive(Debug, Clone)]
@@ -56,32 +56,21 @@ impl BinaryDiscoveryConfig {
     }
 }
 
-impl Default for BinaryDiscoveryConfig {
-    fn default() -> Self {
-        Self {
-            firecracker_bin: PathBuf::from(DEFAULT_FIRECRACKER_BIN),
-            jailer_bin: PathBuf::from(DEFAULT_JAILER_BIN),
-            jailer_harden_bin: PathBuf::from(DEFAULT_JAILER_HARDEN_BIN),
-            expected_firecracker_version: None,
-        }
-    }
-}
-
 /// Resolved binary paths and the probed Firecracker version.
 #[derive(Debug, Clone)]
-pub struct BinaryDiscovery {
+pub(crate) struct BinaryDiscovery {
     /// Resolved Firecracker binary path.
-    pub firecracker_bin: PathBuf,
+    pub(crate) firecracker_bin: PathBuf,
     /// Version parsed from `firecracker --version`.
-    pub firecracker_version: String,
+    pub(crate) firecracker_version: String,
     /// Resolved jailer binary path.
-    pub jailer_bin: PathBuf,
+    pub(crate) jailer_bin: PathBuf,
     /// Resolved m80 jailer hardening wrapper path.
-    pub jailer_harden_bin: PathBuf,
+    pub(crate) jailer_harden_bin: PathBuf,
 }
 
 /// Resolve Firecracker and jailer binaries and fail closed on version mismatch.
-pub fn discover_binaries(
+pub(crate) fn discover_binaries(
     config: &BinaryDiscoveryConfig,
 ) -> Result<BinaryDiscovery, PreflightError> {
     if !config.firecracker_bin.exists() {
@@ -118,11 +107,10 @@ fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> 
     let out = firecracker_version_output(bin)?;
 
     if !out.status.success() {
-        return Err(PreflightError::Io(std::io::Error::other(format!(
-            "{} --version exited with {}",
-            bin.display(),
-            out.status
-        ))));
+        return Err(PreflightError::FirecrackerVersionCommandFailed {
+            path: bin.to_path_buf(),
+            status: out.status.to_string(),
+        });
     }
 
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -145,11 +133,20 @@ fn firecracker_version_output(
                 last_text_busy = Some(source);
                 thread::sleep(Duration::from_millis(10));
             }
-            Err(source) => return Err(PreflightError::Io(source)),
+            Err(source) => {
+                return Err(PreflightError::PathIo {
+                    path: bin.to_path_buf(),
+                    source,
+                });
+            }
         }
     }
 
-    Err(PreflightError::Io(
-        last_text_busy.expect("ETXTBSY retry loop records the last error"),
-    ))
+    Err(PreflightError::PathIo {
+        path: bin.to_path_buf(),
+        source: last_text_busy.expect("ETXTBSY retry loop records the last error"),
+    })
 }
+
+#[cfg(test)]
+mod tests;

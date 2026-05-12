@@ -191,7 +191,7 @@ fn idle_timed_out_error_displays() {
 ///
 /// Requires KVM access; run with `cargo test -- --ignored`.
 #[test]
-#[ignore]
+#[ignore = "requires KVM access and m80 artifacts"]
 fn idle_timeout_resets_on_exec() {
     use common::RunDirDumpGuard;
     use m80_firecracker::{Backend, BackendConfig, CgroupMode};
@@ -204,7 +204,7 @@ fn idle_timeout_resets_on_exec() {
     let backend_config = BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: CgroupMode::Disabled,
@@ -219,7 +219,7 @@ fn idle_timeout_resets_on_exec() {
 
     // First exec — resets the deadline.
     sandbox
-        .exec(m80_firecracker::ExecRequest {
+        .exec(m80_proto::ExecRequest {
             program: "/bin/true".into(),
             args: vec![],
             cwd: None,
@@ -235,7 +235,7 @@ fn idle_timeout_resets_on_exec() {
 
     // Second exec — still within the reset window.
     sandbox
-        .exec(m80_firecracker::ExecRequest {
+        .exec(m80_proto::ExecRequest {
             program: "/bin/true".into(),
             args: vec![],
             cwd: None,
@@ -251,7 +251,7 @@ fn idle_timeout_resets_on_exec() {
 
     // Third exec — must return IdleTimedOut.
     let err = sandbox
-        .exec(m80_firecracker::ExecRequest {
+        .exec(m80_proto::ExecRequest {
             program: "/bin/true".into(),
             args: vec![],
             cwd: None,
@@ -274,7 +274,7 @@ fn idle_timeout_resets_on_exec() {
 ///
 /// Requires KVM access; run with `cargo test -- --ignored`.
 #[test]
-#[ignore]
+#[ignore = "requires KVM access and m80 artifacts"]
 fn idle_timeout_fires_after_inactivity() {
     use common::RunDirDumpGuard;
     use m80_firecracker::{Backend, BackendConfig, CgroupMode};
@@ -286,7 +286,7 @@ fn idle_timeout_fires_after_inactivity() {
     let backend_config = BackendConfig {
         discovery,
         max_concurrent_vms: 1,
-        run_root: run_root.clone(),
+        run_root: run_root,
         jail_uid: 3000,
         jail_gid: 3000,
         cgroup_mode: CgroupMode::Disabled,
@@ -306,7 +306,7 @@ fn idle_timeout_fires_after_inactivity() {
     std::thread::sleep(Duration::from_millis(3000));
 
     let err = sandbox
-        .exec(m80_firecracker::ExecRequest {
+        .exec(m80_proto::ExecRequest {
             program: "/bin/true".into(),
             args: vec![],
             cwd: None,

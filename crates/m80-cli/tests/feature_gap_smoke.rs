@@ -7,7 +7,9 @@ mod common;
 
 use common::m80;
 
-use m80_cli::errors::{EXIT_CONFIG, EXIT_GENERIC, EXIT_NOT_IMPLEMENTED};
+const EXIT_CONFIG: i32 = 6;
+const EXIT_GENERIC: i32 = 1;
+const EXIT_NOT_IMPLEMENTED: i32 = 7;
 
 fn assert_feature_gap(args: &[&str], expected_stderr: &str) {
     let output = m80().args(args).output().unwrap();

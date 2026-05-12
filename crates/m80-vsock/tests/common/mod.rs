@@ -11,7 +11,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 /// What the fake Firecracker UDS server does after accepting a connection.
-pub enum HandshakeBehavior {
+pub(crate) enum HandshakeBehavior {
     /// Complete the handshake (`OK N\n`) then hold the connection briefly.
     OkThenHold { port: u32, hold_ms: u64 },
     /// Complete the handshake with a bad reply (triggers `HandshakeFailed`).
@@ -26,7 +26,7 @@ pub enum HandshakeBehavior {
 ///
 /// The server closes the connection (and exits the thread) after completing
 /// the configured [`HandshakeBehavior`].
-pub fn spawn_fake_firecracker_uds(
+pub(crate) fn spawn_fake_firecracker_uds(
     behavior: HandshakeBehavior,
 ) -> (TempDir, PathBuf, JoinHandle<()>) {
     let dir = TempDir::new().expect("temp dir");

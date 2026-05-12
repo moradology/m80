@@ -74,11 +74,16 @@ adapter, not below.
 ## Public surface
 
 - `Diagnostics::open(run_dir)`, `Diagnostics::disabled()`,
-  `Diagnostics::record(&VmEvent)`, `Diagnostics::path()`.
-- `DIAGNOSTICS_SCHEMA_VERSION`, `DIAGNOSTICS_FILE_NAME`.
-- `EventKind`, `Phase`, `PhaseOutcome`, `ExitReason`, `SourceClass`,
-  `VmEvent`.
-- `ObservabilityError`.
+  `Diagnostics::record(&VmEvent)`.
+- `DIAGNOSTICS_FILE_NAME`.
+- `Phase`, `PhaseOutcome`, `ExitReason`, `VmEvent`.
+- `VmEvent::host(phase, message, request_id, context)`.
+- `VmEvent::phase_started(phase, message, request_id, context)`.
+- `VmEvent::phase_completed(phase, message, request_id, context,
+  duration_us, outcome)`.
+- `VmEvent::with_exit_reason(reason)`.
+- `ObservabilityError` — public because diagnostics writer and
+  `_test_internal` probe/health helpers return it directly.
 
 The following symbols have no production consumer in this workspace and are
 gated behind the `_test_internal` cargo feature. Integration tests enable the

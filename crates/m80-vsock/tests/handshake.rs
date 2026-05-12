@@ -1,7 +1,8 @@
 mod common;
 
 use common::{spawn_fake_firecracker_uds, HandshakeBehavior};
-use m80_vsock::{Channel, VsockError, GUEST_PORT_DEFAULT};
+use m80_proto::GUEST_PORT_DEFAULT;
+use m80_vsock::{Channel, VsockError};
 use tempfile::tempdir;
 
 #[test]
@@ -12,7 +13,7 @@ fn successful_handshake_opens_channel() {
     });
 
     let channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
-    channel.close().unwrap();
+    drop(channel);
 
     server.join().unwrap();
 }

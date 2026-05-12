@@ -26,12 +26,13 @@ mod common;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
     CancelRequest, CancelResponse, CancelStatus, Envelope, ExecRequest, ExecResponse, ExecStatus,
     FileError, FileWriteBeginRequest, FileWriteBeginResponse, FileWriteChunkRequest,
     FileWriteChunkResponse, PAYLOAD_KIND_CANCEL_RESPONSE,
 };
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
+use m80_vsock::Channel;
 
 use common::RunDirDumpGuard;
 

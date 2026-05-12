@@ -14,15 +14,15 @@ use crate::{
 };
 
 /// Run-root-level bridge ownership state filename.
-pub const BRIDGE_STATE_FILE: &str = "outbound-bridge-state.json";
+pub(crate) const BRIDGE_STATE_FILE: &str = "outbound-bridge-state.json";
 
 /// Schema version for bridge and per-VM network state files.
-pub const NETWORK_STATE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const NETWORK_STATE_SCHEMA_VERSION: u32 = 1;
 
 /// Setup phase recorded in bridge and VM network state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub enum SetupPhase {
+pub(crate) enum SetupPhase {
     /// State has been planned and written before host link mutation.
     Planned,
     /// Host link mutation succeeded and the state is ready for consumers.
@@ -32,26 +32,26 @@ pub enum SetupPhase {
 /// Run-root-level ownership record for the outbound bridge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BridgeState {
+pub(crate) struct BridgeState {
     /// State schema version.
-    pub schema_version: u32,
+    pub(crate) schema_version: u32,
     /// Current setup phase.
-    pub setup_phase: SetupPhase,
+    pub(crate) setup_phase: SetupPhase,
     /// Run-root path that owns the bridge.
-    pub run_root: PathBuf,
+    pub(crate) run_root: PathBuf,
     /// Hex-encoded SHA-256 digest of the run-root path.
-    pub run_root_digest: String,
+    pub(crate) run_root_digest: String,
     /// Derived Linux bridge interface name.
-    pub bridge_name: String,
+    pub(crate) bridge_name: String,
     /// Derived bridge CIDR.
-    pub cidr: Ipv4Net,
+    pub(crate) cidr: Ipv4Net,
     /// IPv4 gateway assigned to the bridge.
-    pub gateway_ipv4: Ipv4Addr,
+    pub(crate) gateway_ipv4: Ipv4Addr,
 }
 
 impl BridgeState {
     /// Return this state with a different setup phase.
-    pub fn with_phase(mut self, setup_phase: SetupPhase) -> Self {
+    pub(crate) fn with_phase(mut self, setup_phase: SetupPhase) -> Self {
         self.setup_phase = setup_phase;
         self
     }
@@ -62,69 +62,57 @@ impl BridgeState {
 #[serde(deny_unknown_fields)]
 pub struct VmNetworkStateRecord {
     /// State schema version.
-    pub schema_version: u32,
+    pub(crate) schema_version: u32,
     /// Current setup phase.
-    pub setup_phase: SetupPhase,
+    pub(crate) setup_phase: SetupPhase,
     /// VM id this state belongs to.
-    pub vm_id: String,
+    pub(crate) vm_id: String,
     /// Per-VM run directory.
-    pub run_dir: PathBuf,
+    pub(crate) run_dir: PathBuf,
     /// Embedded run-root bridge state.
-    pub bridge: BridgeState,
+    pub(crate) bridge: BridgeState,
     /// Derived host TAP interface name.
-    pub tap_name: String,
+    pub(crate) tap_name: String,
     /// Guest MAC address.
-    pub guest_mac: String,
+    pub(crate) guest_mac: String,
     /// Guest IPv4 address.
-    pub guest_ipv4: Ipv4Addr,
+    pub(crate) guest_ipv4: Ipv4Addr,
     /// Private IPv4 exception CIDRs admitted by caller policy.
-    pub private_ipv4_exceptions: Vec<Ipv4Net>,
+    pub(crate) private_ipv4_exceptions: Vec<Ipv4Net>,
     /// DNS resolvers discovered for guest injection.
-    pub dns_resolvers: Vec<Ipv4Addr>,
+    pub(crate) dns_resolvers: Vec<Ipv4Addr>,
     /// Whether guest rootfs network configuration has been written.
-    pub runtime_rootfs_configured: bool,
+    pub(crate) runtime_rootfs_configured: bool,
 }
 
 impl VmNetworkStateRecord {
     /// Return this state with a different setup phase.
-    pub fn with_phase(mut self, setup_phase: SetupPhase) -> Self {
+    pub(crate) fn with_phase(mut self, setup_phase: SetupPhase) -> Self {
         self.setup_phase = setup_phase;
         self
     }
 }
 
 /// Return the path to the run-root bridge state file.
-pub fn bridge_state_path(run_root: &Path) -> PathBuf {
+pub(crate) fn bridge_state_path(run_root: &Path) -> PathBuf {
     run_root.join(BRIDGE_STATE_FILE)
 }
 
 /// Return the path to the per-VM network state file.
-pub fn vm_network_state_path(run_dir: &Path) -> PathBuf {
+pub(crate) fn vm_network_state_path(run_dir: &Path) -> PathBuf {
     run_dir.join(crate::NETWORK_STATE_FILE)
 }
 
-/// Build the planned bridge state for a run-root and outbound intent.
-pub fn planned_bridge_state(
-    run_root: &Path,
-    intent: &OutboundIntent,
-) -> Result<BridgeState, NetError> {
+/// Build the planned bridge state for a run-root.
+pub(crate) fn planned_bridge_state(run_root: &Path) -> Result<BridgeState, NetError> {
     let cidr = derive_bridge_cidr(run_root);
-    let gateway_ipv4 = match intent.gateway_override {
-        Some(gateway) if cidr.hosts().any(|host| host == gateway) => gateway,
-        Some(gateway) => {
-            return Err(NetError::InvalidNetworkState {
-                path: run_root.to_path_buf(),
-                detail: format!("gateway override {gateway} is not a usable host in {cidr}"),
-            });
-        }
-        None => cidr
-            .hosts()
-            .next()
-            .ok_or_else(|| NetError::InvalidNetworkState {
-                path: run_root.to_path_buf(),
-                detail: format!("{cidr} has no usable gateway host"),
-            })?,
-    };
+    let gateway_ipv4 = cidr
+        .hosts()
+        .next()
+        .ok_or_else(|| NetError::InvalidNetworkState {
+            path: run_root.to_path_buf(),
+            detail: format!("{cidr} has no usable gateway host"),
+        })?;
 
     Ok(BridgeState {
         schema_version: NETWORK_STATE_SCHEMA_VERSION,
@@ -138,7 +126,7 @@ pub fn planned_bridge_state(
 }
 
 /// Build the planned per-VM network state for a VM.
-pub fn planned_vm_network_state(
+pub(crate) fn planned_vm_network_state(
     intent: &OutboundIntent,
     vm_id: &str,
     run_root: &Path,
@@ -162,12 +150,12 @@ pub fn planned_vm_network_state(
 }
 
 /// Read the run-root bridge state file.
-pub fn read_bridge_state(run_root: &Path) -> Result<BridgeState, NetError> {
+pub(crate) fn read_bridge_state(run_root: &Path) -> Result<BridgeState, NetError> {
     read_json_state(&bridge_state_path(run_root))
 }
 
 /// Atomically write the run-root bridge state file.
-pub fn write_bridge_state(run_root: &Path, state: &BridgeState) -> Result<(), NetError> {
+pub(crate) fn write_bridge_state(run_root: &Path, state: &BridgeState) -> Result<(), NetError> {
     write_json_atomically(&bridge_state_path(run_root), state)
 }
 
@@ -177,7 +165,7 @@ pub fn read_vm_network_state_record(run_dir: &Path) -> Result<VmNetworkStateReco
 }
 
 /// Atomically write a per-VM network state file.
-pub fn write_vm_network_state_record(
+pub(crate) fn write_vm_network_state_record(
     run_dir: &Path,
     state: &VmNetworkStateRecord,
 ) -> Result<(), NetError> {
@@ -185,6 +173,10 @@ pub fn write_vm_network_state_record(
 }
 
 /// Minimal projection of a VM network state for collision detection.
+///
+/// **Intentionally omits `#[serde(deny_unknown_fields)]`**: the on-disk
+/// `VmNetworkStateRecord` has more fields than this projection reads, and
+/// adding `deny_unknown_fields` here would fail on every real file.
 #[derive(Debug, Deserialize)]
 pub(crate) struct VmNetworkStateMinimal {
     pub(crate) vm_id: String,
@@ -192,6 +184,8 @@ pub(crate) struct VmNetworkStateMinimal {
     pub(crate) guest_ipv4: std::net::Ipv4Addr,
 }
 
+/// Partial projection of a bridge record — see [`VmNetworkStateMinimal`] for
+/// the rationale on the missing `deny_unknown_fields`.
 #[derive(Debug, Deserialize)]
 pub(crate) struct VmBridgeStateMinimal {
     pub(crate) cidr: Ipv4Net,

@@ -2,10 +2,9 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::{verify_artifacts, ArtifactPreflightConfig, REQUIRED_STORAGE_HELPERS};
+use crate::PreflightError;
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, ManifestError, SCHEMA_VERSION};
-use m80_preflight::{
-    verify_artifacts, ArtifactPreflightConfig, PreflightError, REQUIRED_STORAGE_HELPERS,
-};
 
 const SHA256_EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 

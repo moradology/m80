@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 use m80_proto::{Envelope, PingRequest, PongResponse};
 
 use crate::error::{FcError, WireProtocolError};
+use crate::layout::VSOCK_SOCKET;
 use crate::lifecycle::exec::{request_id_for, send_envelope_with_open_retry};
 use crate::lifecycle::monotonic_ns;
 use crate::types::RunningSandbox;
@@ -17,7 +18,7 @@ impl RunningSandbox {
         }
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "ping");
         let envelope = Envelope::with_request_id(PingRequest {}, request_id.clone());
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;

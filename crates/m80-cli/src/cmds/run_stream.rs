@@ -3,9 +3,8 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 
-use m80_firecracker::{
-    ExecChunk, ExecExit, ExecRequest, ExecResponse, ExecStatus, FcError, RunningSandbox,
-};
+use m80_firecracker::{ExecChunk, FcError, RunningSandbox};
+use m80_proto::{ExecExit, ExecRequest, ExecResponse, ExecStatus};
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::{Handle, Signals};
 

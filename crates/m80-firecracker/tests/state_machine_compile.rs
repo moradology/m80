@@ -27,8 +27,14 @@ fn sandbox_new_returns_deferred_error_in_v0_1() {
         .expect_err("Sandbox::new should return an error in v0.1");
 
     assert!(
-        matches!(err, FcError::Config(_)),
-        "expected FcError::Config, got {err:?}"
+        matches!(
+            err,
+            FcError::UnsupportedOperation {
+                operation: "Sandbox::new",
+                ..
+            }
+        ),
+        "expected FcError::UnsupportedOperation for Sandbox::new, got {err:?}"
     );
     let msg = err.to_string();
     assert!(

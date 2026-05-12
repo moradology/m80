@@ -11,6 +11,4 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-m80-image-manifest.workspace = true
-m80-preflight.workspace = true
 tempfile.workspace = true

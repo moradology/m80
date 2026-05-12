@@ -15,12 +15,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use m80_observability::{ExitReason, Phase};
+use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
 use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
-use m80_vsock::{Channel, GUEST_PORT_DEFAULT};
+use m80_vsock::Channel;
 
 use crate::diagnostics::phase_event;
-use crate::error::{CleanupReleaseBlocker, ConfigError, FcError, StopDisposition};
+use crate::error::{
+    CleanupReleaseBlocker, ConfigError, FcError, StopDisposition, WireProtocolError,
+};
+use crate::layout::{FIRECRACKER_API_SOCKET, VSOCK_SOCKET};
 use crate::types::{RunningSandbox, StoppedSandbox};
 
 /// Per-attempt deadline for the shutdown vsock round-trip (open UDS,
@@ -78,14 +82,14 @@ impl RunningSandbox {
     /// `force_kill()`.
     pub fn capture(&mut self, paths: SnapshotPaths) -> Result<(), FcError> {
         let snapshot_bind = bind_snapshot_parent_into_jail(
-            &self.jail.jail_path,
+            self.jail.jail_root(),
             &paths,
             self.backend.config.jail_uid,
             self.backend.config.jail_gid,
         )?;
-        let fc_socket = self.jail.jail_path.join("firecracker.sock");
+        let api_socket = self.jail.jail_root().join(FIRECRACKER_API_SOCKET);
         snapshot_capture(CaptureRequest {
-            fc_socket,
+            api_socket,
             paths: snapshot_bind.paths.clone(),
             kind: SnapshotKind::Full,
         })
@@ -112,7 +116,7 @@ impl RunningSandbox {
     pub fn stop(mut self) -> Result<StoppedSandbox, FcError> {
         self.kill_guard.disarm();
         let run_root = self.backend.config.run_root.clone();
-        let vsock_uds = self.jail.jail_path.join("vsock.sock");
+        let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         crate::diagnostics::record_owned(
             &mut self.diagnostics,
             Phase::Stop,
@@ -443,7 +447,9 @@ fn send_shutdown_request(vsock_uds: &Path) -> Result<ShutdownAction, FcError> {
 
     let resp_env: Envelope<ShutdownResponse> = channel.recv()?;
     if Instant::now() > deadline {
-        return Err(FcError::Vsock(m80_vsock::VsockError::NotReady));
+        return Err(FcError::Protocol(WireProtocolError::ReadTimeout {
+            context: "shutdown_response",
+        }));
     }
     Ok(resp_env.payload.action)
 }
@@ -564,16 +570,20 @@ pub(crate) fn kill_pid(pid: u32) -> Result<(), FcError> {
     match kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {
         Ok(()) => Ok(()),
         Err(Errno::ESRCH) => Ok(()), // Process already gone.
-        Err(e) => Err(FcError::Io(std::io::Error::from_raw_os_error(e as i32))),
+        Err(e) => Err(FcError::KillFailed {
+            pid,
+            source: std::io::Error::from_raw_os_error(e as i32),
+        }),
     }
 }
 
 #[cfg(debug_assertions)]
 fn fail_kill_pid_if_requested(pid: u32) -> Result<(), FcError> {
     if std::env::var(FORCE_KILL_EPERM_FOR_PID_ENV).ok().as_deref() == Some(&pid.to_string()) {
-        return Err(FcError::Io(std::io::Error::from(
-            std::io::ErrorKind::PermissionDenied,
-        )));
+        return Err(FcError::KillFailed {
+            pid,
+            source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        });
     }
     Ok(())
 }
@@ -596,25 +606,28 @@ pub(crate) fn kill_and_reap_pid(pid: u32) -> Result<(), FcError> {
         return Ok(());
     }
 
-    let pid = Pid::from_raw(pid as i32);
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let reap_pid = Pid::from_raw(pid as i32);
+    let timeout = Duration::from_secs(2);
+    let deadline = Instant::now() + timeout;
     loop {
-        match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
+        match waitpid(reap_pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::Exited(_, _))
             | Ok(WaitStatus::Signaled(_, _, _))
             | Err(Errno::ECHILD)
             | Err(Errno::ESRCH) => return Ok(()),
             Ok(WaitStatus::StillAlive) => {
                 if Instant::now() >= deadline {
-                    return Err(FcError::Io(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        format!("timed out reaping pid {pid} after SIGKILL"),
-                    )));
+                    return Err(FcError::ReapTimeout { pid, timeout });
                 }
                 std::thread::sleep(Duration::from_millis(20));
             }
             Ok(_) => return Ok(()),
-            Err(e) => return Err(FcError::Io(std::io::Error::from_raw_os_error(e as i32))),
+            Err(e) => {
+                return Err(FcError::ReapFailed {
+                    pid,
+                    source: std::io::Error::from_raw_os_error(e as i32),
+                });
+            }
         }
     }
 }

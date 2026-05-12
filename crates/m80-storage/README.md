@@ -68,10 +68,6 @@ base from one set of pages.
   `mkfs.ext4`, loop-mounts it, copies the host workspace tree, and
   unmounts. The host source is opaque to the guest — only the mounted
   device shows up in-VM.
-- `Scratch::recommended_size_for_workspace(workspace: &Path) ->
-  Result<u64, StorageError>` walks the host workspace, counts regular-file
-  bytes, rejects symlinks/special files, and applies the sizing rule:
-  `max(64 MiB, used_bytes + 32 MiB)` rounded up to a 4 MiB boundary.
 - `Scratch::extract(image: &Path, into: &Path) -> Result<ChangeSet, StorageError>`
   is the post-stop extraction:
   0. Fail with `SwapFailed` if `into` already exists.
@@ -116,16 +112,15 @@ images but adds non-trivial output-parsing surface.
   `Rootfs::new_at(base, overlay)`,
   `Rootfs::base_path()`, `Rootfs::overlay_path()`.
 - `Scratch::create(workspace, image, size)`,
-  `Scratch::recommended_size_for_workspace(workspace)`,
   `Scratch::extract(image, into)`, `Scratch::path()`.
 - `ChangeSet { staged: Vec<PathBuf>, rejected: Vec<Rejection>, total_bytes: u64 }`.
 - `Rejection { path: PathBuf, reason: RejectionReason }`.
-- `RejectionReason`: `Symlink`, `SpecialFile`, `Other(String)`.
+- `RejectionReason`: `Symlink`, `SpecialFile`.
 - `StorageError`: `OverlayCreateFailed`,
   `OverlayTemplateCreateFailed`, `OverlayTemplateMismatch`,
   `OverlayTemplateCloneFailed`,
-  `SubprocessFailed { program: String, path: PathBuf, status: std::process::ExitStatus, stderr: String }`,
-  `AdmissibilityRefused`, `SwapFailed`,
+  `SubprocessFailed { program: &'static str, path: PathBuf, status: String, stderr: String }`,
+  `AdmissibilityRefused { path: PathBuf }`, `SwapFailed`,
   `Io { path: PathBuf, source: io::Error }`.
 
 Removed variants:
@@ -147,6 +142,9 @@ Removed variants:
 - **No EffectClass.** Extraction happens iff the caller asks.
 - **No sha256 verification inside `Rootfs::prepare`.** The caller
   verifies before calling.
+- **No public scratch-sizing policy.** Callers pass the scratch image size
+  they want to `Scratch::create`; m80's current internal recommendation is
+  deliberately not part of the library contract.
 
 ## Dependencies
 
@@ -173,9 +171,8 @@ Root/loop-mount (`#[ignore]`, run with `sudo cargo test -- --ignored`):
 - `tests/scratch_create_real.rs` — hydration and symlink rejection.
 - `tests/scratch_extract_real.rs` — full create→extract round trip;
   SwapFailed on existing `into`.
-- `tests/storage/scratch_image.rs` — behavior-capture fixtures for hydration
-  and scratch size calculation.
-- `tests/storage/change_extraction.rs` — behavior-capture fixtures for opt-in
+- `tests/scratch_image.rs` — behavior-capture fixtures for hydration.
+- `tests/change_extraction.rs` — behavior-capture fixtures for opt-in
   extraction and rollback on destination failure.
 
 ## Migration note (v0.1 → v0.1.x; landing in same release line)

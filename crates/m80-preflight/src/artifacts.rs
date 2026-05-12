@@ -17,20 +17,20 @@ pub const ENV_KERNEL_KIND: &str = "M80_KERNEL_KIND";
 /// Environment key for selecting the rootfs image path.
 pub const ENV_ROOTFS_IMAGE: &str = "M80_ROOTFS_IMAGE";
 /// Environment key for selecting the managed artifact directory.
-pub const ENV_ARTIFACT_DIR: &str = "M80_ARTIFACT_DIR";
+pub(crate) const ENV_ARTIFACT_DIR: &str = "M80_ARTIFACT_DIR";
 /// Environment key for selecting the run-root directory.
-pub const ENV_RUN_ROOT: &str = "M80_RUN_ROOT";
+pub(crate) const ENV_RUN_ROOT: &str = "M80_RUN_ROOT";
 
 /// Default managed artifact directory.
-pub const DEFAULT_ARTIFACT_DIR: &str = "/opt/m80/artifacts";
+pub(crate) const DEFAULT_ARTIFACT_DIR: &str = "/opt/m80/artifacts";
 /// Default run-root directory.
-pub const DEFAULT_RUN_ROOT: &str = "/var/run/m80";
+pub(crate) const DEFAULT_RUN_ROOT: &str = "/var/run/m80";
 
 /// 100 MiB minimum free space for the run-root.
-pub const MIN_RUN_ROOT_FREE_BYTES: u64 = 100 * 1024 * 1024;
+pub(crate) const MIN_RUN_ROOT_FREE_BYTES: u64 = 100 * 1024 * 1024;
 
 /// Storage helpers required by the storage and overlay preparation path.
-pub const REQUIRED_STORAGE_HELPERS: &[&str] =
+pub(crate) const REQUIRED_STORAGE_HELPERS: &[&str] =
     &["mkfs.ext4", "cp", "fallocate", "debugfs", "e2fsck"];
 
 /// Inputs for boot artifact, run-root, and helper validation.
@@ -68,36 +68,23 @@ impl ArtifactPreflightConfig {
     }
 }
 
-impl Default for ArtifactPreflightConfig {
-    fn default() -> Self {
-        Self {
-            kernel_image: None,
-            artifact_dir: PathBuf::from(DEFAULT_ARTIFACT_DIR),
-            rootfs_image: None,
-            kernel_kind: None,
-            run_root: PathBuf::from(DEFAULT_RUN_ROOT),
-            helper_search_path: env::var_os("PATH"),
-        }
-    }
-}
-
 /// Validated boot artifacts and host paths.
 #[derive(Debug, Clone)]
-pub struct ArtifactPreflight {
+pub(crate) struct ArtifactPreflight {
     /// Resolved kernel image path.
-    pub kernel: PathBuf,
+    pub(crate) kernel: PathBuf,
     /// Resolved rootfs image path.
-    pub rootfs: PathBuf,
+    pub(crate) rootfs: PathBuf,
     /// Validated provenance manifest.
-    pub manifest: Manifest,
+    pub(crate) manifest: Manifest,
     /// Validated run-root path.
-    pub run_root: PathBuf,
+    pub(crate) run_root: PathBuf,
     /// Required storage helpers that were found on PATH.
-    pub storage_helpers: Vec<String>,
+    pub(crate) storage_helpers: Vec<String>,
 }
 
 /// Validate boot artifacts, run-root, and required storage helper binaries.
-pub fn verify_artifacts(
+pub(crate) fn verify_artifacts(
     config: &ArtifactPreflightConfig,
 ) -> Result<ArtifactPreflight, PreflightError> {
     let kernel = discover_kernel(config)?;
@@ -129,7 +116,10 @@ fn discover_kernel(config: &ArtifactPreflightConfig) -> Result<PathBuf, Prefligh
     }
 
     let mut candidates: Vec<PathBuf> = fs::read_dir(&config.artifact_dir)
-        .map_err(PreflightError::Io)?
+        .map_err(|source| PreflightError::PathIo {
+            path: config.artifact_dir.clone(),
+            source,
+        })?
         .filter_map(|entry| entry.ok())
         .filter(|e| e.file_name().to_string_lossy().starts_with("vmlinux-"))
         .map(|e| e.path())
@@ -173,10 +163,9 @@ fn parse_kernel_kind(raw: &str) -> Result<KernelKind, PreflightError> {
     match raw {
         "stock" => Ok(KernelKind::Stock),
         "stripped" => Ok(KernelKind::Stripped),
-        other => Err(PreflightError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("M80_KERNEL_KIND must be stock|stripped, got {other}"),
-        ))),
+        other => Err(PreflightError::InvalidKernelKind {
+            actual: other.to_owned(),
+        }),
     }
 }
 
@@ -241,3 +230,6 @@ fn find_in_path(binary: &str, search_path: Option<&OsString>) -> Option<PathBuf>
         .map(|dir| dir.join(binary))
         .find(|candidate| candidate.exists())
 }
+
+#[cfg(test)]
+mod tests;

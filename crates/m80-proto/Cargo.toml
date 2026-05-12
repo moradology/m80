@@ -16,6 +16,5 @@ prost-derive.workspace = true
 thiserror.workspace = true
 
 [build-dependencies]
-indexmap.workspace = true
 prost-build.workspace = true
 protoc-bin-vendored.workspace = true

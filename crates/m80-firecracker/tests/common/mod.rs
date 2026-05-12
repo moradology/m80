@@ -5,8 +5,8 @@
 //! when the test thread is panicking — making failures self-explaining
 //! without any extra effort from the caller.
 //!
-//! [`fake_manifest`], [`fake_discovery`], [`EnvRestore`], and [`env_lock`]
-//! are re-exported from `m80-test-helpers`.
+//! [`fake_discovery`], [`EnvRestore`], and [`env_lock`] are re-exported from
+//! `m80-test-helpers`.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -14,26 +14,54 @@ use std::path::{Path, PathBuf};
 // ── Re-exports from m80-test-helpers ─────────────────────────────────────────
 
 // These re-exports are consumed by sibling integration test files via
-// `common::env_lock()`, `common::EnvRestore`, and `common::fake_manifest`.
+// `common::env_lock()` and `common::EnvRestore`.
 // Clippy flags them as "unused" because it only checks within a single binary;
 // suppress the lint here since the items are genuinely in use.
 #[allow(unused_imports)]
-pub use m80_test_helpers::env::{env_lock, EnvRestore};
-#[allow(unused_imports)]
-pub use m80_test_helpers::manifest::fake_manifest;
+pub(crate) use m80_test_helpers::env::{env_lock, EnvRestore};
 
 /// Fake [`m80_preflight::Discovery`] whose `run_root` is `run_root`.
 ///
 /// Thin wrapper so call sites keep the `common::fake_discovery(dir)` spelling.
 #[allow(dead_code)]
-pub fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
-    m80_test_helpers::manifest::fake_discovery_at(run_root)
+pub(crate) fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
+    m80_preflight::Discovery {
+        firecracker_bin: PathBuf::from("/tmp/firecracker"),
+        jailer_bin: PathBuf::from("/tmp/jailer"),
+        jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
+        kernel: PathBuf::from("/tmp/vmlinux"),
+        rootfs: PathBuf::from("/tmp/rootfs.ext4"),
+        manifest: fake_manifest(),
+        run_root: run_root.to_path_buf(),
+        privilege: m80_preflight::PrivilegeStatus::Root,
+        report: Vec::new(),
+    }
+}
+
+fn fake_manifest() -> m80_image_manifest::Manifest {
+    m80_image_manifest::Manifest {
+        daemon_binary_path: "/tmp/m80-guestd".into(),
+        daemon_binary_sha256: "0".repeat(64),
+        expected_firecracker_version: "v1.0.0".to_owned(),
+        guest_port: 52,
+        image_kind: m80_image_manifest::ImageKind::Minimal,
+        kernel_image: "/tmp/vmlinux".into(),
+        kernel_image_sha256: "1".repeat(64),
+        kernel_kind: m80_image_manifest::KernelKind::Stock,
+        no_egress_reason: None,
+        output_rootfs_image: "/tmp/rootfs.ext4".into(),
+        output_rootfs_sha256: "2".repeat(64),
+        ready_marker: "M80_READY".to_owned(),
+        schema_version: m80_image_manifest::SCHEMA_VERSION,
+        source_rootfs_image: None,
+        source_rootfs_sha256: None,
+    }
 }
 
 // ── Firecracker-specific fixtures ─────────────────────────────────────────────
 
 #[allow(dead_code)]
-pub const CONFIG_ENV_KEYS: &[&str] = &[
+pub(crate) const CONFIG_ENV_KEYS: &[&str] = &[
     "HOME",
     "M80_DEFAULT_PROFILE",
     "M80_MAX_CONCURRENT_VMS",
@@ -43,7 +71,7 @@ pub const CONFIG_ENV_KEYS: &[&str] = &[
     "M80_CGROUP_MODE",
 ];
 
-pub fn sandbox_config() -> m80_firecracker::SandboxConfig {
+pub(crate) fn sandbox_config() -> m80_firecracker::SandboxConfig {
     m80_firecracker::SandboxConfig {
         vm_id: None,
         workspace: None,
@@ -61,7 +89,7 @@ pub fn sandbox_config() -> m80_firecracker::SandboxConfig {
 }
 
 #[allow(dead_code)]
-pub fn sandbox_config_with_id(vm_id: impl Into<String>) -> m80_firecracker::SandboxConfig {
+pub(crate) fn sandbox_config_with_id(vm_id: impl Into<String>) -> m80_firecracker::SandboxConfig {
     m80_firecracker::SandboxConfig {
         vm_id: Some(vm_id.into()),
         ..sandbox_config()
@@ -95,7 +123,7 @@ pub fn sandbox_config_with_id(vm_id: impl Into<String>) -> m80_firecracker::Sand
 /// A passing test produces no extra output. A panicking test prints the
 /// run-dir path and the last [`Self::console_tail_lines`] lines of
 /// `console.log` plus the full `diagnostics.jsonl`.
-pub struct RunDirDumpGuard {
+pub(crate) struct RunDirDumpGuard {
     run_dir: PathBuf,
     console_tail_lines: usize,
 }
@@ -104,7 +132,7 @@ impl RunDirDumpGuard {
     /// Create a guard for `run_dir` with a 100-line console tail.
     ///
     /// The run-dir must already exist; this constructor does not create it.
-    pub fn new(run_dir: impl Into<PathBuf>) -> Self {
+    pub(crate) fn new(run_dir: impl Into<PathBuf>) -> Self {
         RunDirDumpGuard {
             run_dir: run_dir.into(),
             console_tail_lines: 100,
@@ -112,7 +140,7 @@ impl RunDirDumpGuard {
     }
 
     /// Override the default 100-line console tail limit.
-    pub fn with_tail_lines(mut self, n: usize) -> Self {
+    pub(crate) fn with_tail_lines(mut self, n: usize) -> Self {
         self.console_tail_lines = n;
         self
     }

@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 /// Caller intent: opt-in network egress with optional bounded private
 /// exceptions. Callers must pick a variant explicitly; `NoEgress` is the
 /// conservative choice when in doubt.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NetworkPolicy {
     /// No NIC, no iptables, no privilege required.
     NoEgress,
@@ -27,25 +27,32 @@ pub enum NetworkPolicy {
     /// Join an externally provisioned network namespace. The caller owns the
     /// namespace's interfaces, routing, firewall policy, and lifetime.
     JoinNetns {
-        /// Path to a namespace fd, usually `/var/run/netns/<name>`.
-        netns_path: PathBuf,
-        /// Caller-created TAP device visible inside `netns_path`.
-        tap_name: String,
-        /// Guest MAC address assigned to the Firecracker virtio-net device.
-        guest_mac: String,
-        /// Guest IPv4 address with prefix configured by PID 1.
-        guest_ipv4: Ipv4Net,
-        /// Default gateway configured by PID 1.
-        gateway_ipv4: Ipv4Addr,
-        /// DNS resolvers written into the guest by PID 1.
-        dns_resolvers: Vec<Ipv4Addr>,
+        /// Caller-owned namespace and static guest network contract.
+        spec: NetnsSpec,
     },
+}
+
+/// Caller-owned network namespace and static guest networking contract.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetnsSpec {
+    /// Path to a namespace fd, usually `/var/run/netns/<name>`.
+    pub netns_path: PathBuf,
+    /// Caller-created TAP device visible inside `netns_path`.
+    pub tap_name: String,
+    /// Guest MAC address assigned to the Firecracker virtio-net device.
+    pub guest_mac: String,
+    /// Guest IPv4 address with prefix configured by PID 1.
+    pub guest_ipv4: Ipv4Net,
+    /// Default gateway configured by PID 1.
+    pub gateway_ipv4: Ipv4Addr,
+    /// DNS resolvers written into the guest by PID 1.
+    pub dns_resolvers: Vec<Ipv4Addr>,
 }
 
 /// Resolved per-VM network mode. `m80-firecracker` consumes only this; it
 /// never inspects the original `NetworkPolicy`.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, PartialEq, Eq)]
 pub enum VmNetworkMode {
     /// VM gets no NIC; iptables untouched.
     NoEgress,
@@ -56,60 +63,33 @@ pub enum VmNetworkMode {
     },
     /// Launch Firecracker after joining a caller-provided network namespace.
     JoinNetns {
-        /// Namespace path passed to the official Firecracker jailer.
-        netns_path: PathBuf,
-        /// Caller-created TAP device visible inside `netns_path`.
-        tap_name: String,
-        /// Guest MAC address assigned to the Firecracker virtio-net device.
-        guest_mac: String,
-        /// Guest IPv4 address with prefix configured by PID 1.
-        guest_ipv4: Ipv4Net,
-        /// Default gateway configured by PID 1.
-        gateway_ipv4: Ipv4Addr,
-        /// DNS resolvers written into the guest by PID 1.
-        dns_resolvers: Vec<Ipv4Addr>,
+        /// Caller-owned namespace and static guest network contract.
+        spec: NetnsSpec,
     },
 }
 
 /// Pre-validated payload for `m80-net-outbound::realize`. The resolver hands
 /// this off; the realizer does not re-validate fields the resolver already
 /// checked.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutboundIntent {
     /// Bounded private-IPv4 CIDRs the VM may reach in addition to the
     /// admitted-DNS / public-IPv4 default-allow set.
     pub exceptions: Vec<Ipv4Net>,
-    /// Optional override for the bridge gateway IP. Most callers leave this
-    /// `None` and accept the deterministic derivation from the run-root path.
-    pub gateway_override: Option<Ipv4Addr>,
 }
 
 /// Resolve caller intent to a per-VM network mode. Pure, no I/O. Infallible:
 /// `exceptions` is already typed `Ipv4Net`, so CIDR parsing + IPv6 rejection
 /// happen at the call-site before reaching here.
-pub fn resolve(policy: &NetworkPolicy) -> VmNetworkMode {
+#[must_use] pub fn resolve(policy: &NetworkPolicy) -> VmNetworkMode {
     match policy {
         NetworkPolicy::NoEgress => VmNetworkMode::NoEgress,
         NetworkPolicy::AllowOutbound { exceptions } => VmNetworkMode::OutboundNat {
             plan: OutboundIntent {
                 exceptions: exceptions.clone(),
-                gateway_override: None,
             },
         },
-        NetworkPolicy::JoinNetns {
-            netns_path,
-            tap_name,
-            guest_mac,
-            guest_ipv4,
-            gateway_ipv4,
-            dns_resolvers,
-        } => VmNetworkMode::JoinNetns {
-            netns_path: netns_path.clone(),
-            tap_name: tap_name.clone(),
-            guest_mac: guest_mac.clone(),
-            guest_ipv4: *guest_ipv4,
-            gateway_ipv4: *gateway_ipv4,
-            dns_resolvers: dns_resolvers.clone(),
-        },
+        NetworkPolicy::JoinNetns { spec } => VmNetworkMode::JoinNetns { spec: spec.clone() },
     }
 }

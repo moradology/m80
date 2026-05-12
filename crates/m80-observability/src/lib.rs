@@ -13,10 +13,10 @@ mod probe;
 mod prometheus;
 
 use std::io;
+use std::path::PathBuf;
 
 pub use diagnostics::{
-    Diagnostics, EventKind, ExitReason, Phase, PhaseOutcome, SourceClass, VmEvent,
-    DIAGNOSTICS_FILE_NAME, DIAGNOSTICS_SCHEMA_VERSION,
+    Diagnostics, ExitReason, Phase, PhaseOutcome, VmEvent, DIAGNOSTICS_FILE_NAME,
 };
 /// Probe, health-rollup, and Prometheus-rendering symbols.  No production
 /// consumer exists in this workspace; they are gated behind `_test_internal`
@@ -30,11 +30,20 @@ pub use probe::{probe, VmHealth, VmProbeRecord};
 pub use prometheus::render_prometheus;
 
 /// Errors surfaced by observability operations.
+///
+/// Public because `Diagnostics::open`, `Diagnostics::record`, and the
+/// `_test_internal` probe/health helpers return it directly.
 #[derive(Debug, thiserror::Error)]
 pub enum ObservabilityError {
-    /// Underlying I/O failure.
-    #[error("i/o: {0}")]
-    Io(#[from] io::Error),
+    /// Filesystem I/O failure where the target path is known.
+    #[error("i/o on {}: {source}", path.display())]
+    PathIo {
+        /// Path the operation targeted.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
     /// JSON encode/decode failure.
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),

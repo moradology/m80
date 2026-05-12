@@ -1,9 +1,8 @@
 //! Tests for `artifact_set_sha256`.
 //! Bead: m80-0tf.1.2
 
-mod common;
-
-use m80_snapshot::{artifact_set_sha256, Artifact, ArtifactKind};
+use super::common;
+use crate::{artifact_set_sha256, Artifact, ArtifactKind};
 
 fn base_artifacts() -> Vec<Artifact> {
     common::five_artifacts(std::path::Path::new("/snap"))
@@ -24,7 +23,7 @@ fn artifact_set_sha256_changes_when_an_artifact_changes() {
     let arts = base_artifacts();
     let original = artifact_set_sha256(&arts);
 
-    let mut mutated = arts.clone();
+    let mut mutated = arts;
     // Replace the 'a'-repeat sha256 of the first artifact with 'f'-repeat.
     mutated[0].sha256 = "f".repeat(64);
     let changed = artifact_set_sha256(&mutated);
@@ -44,7 +43,7 @@ fn artifact_set_sha256_changes_when_order_changes() {
 
     let original = artifact_set_sha256(&arts);
 
-    let mut reordered = arts.clone();
+    let mut reordered = arts;
     reordered.swap(0, 1);
     let swapped = artifact_set_sha256(&reordered);
 
@@ -79,7 +78,7 @@ fn artifact_set_sha256_changes_when_size_changes() {
     let arts = base_artifacts();
     let original = artifact_set_sha256(&arts);
 
-    let mut mutated = arts.clone();
+    let mut mutated = arts;
     mutated[0].size += 1;
     let changed = artifact_set_sha256(&mutated);
 
@@ -96,7 +95,7 @@ fn artifact_set_sha256_changes_when_kind_changes() {
     let original = artifact_set_sha256(&arts);
 
     // Swap VmState → Memory on the first artifact.
-    let mut mutated = arts.clone();
+    let mut mutated = arts;
     mutated[3].kind = ArtifactKind::Memory; // index 3 is VmState in common::five_artifacts
     let changed = artifact_set_sha256(&mutated);
 

@@ -31,20 +31,20 @@ where
 #[test]
 fn missing_source_rootfs_surfaces_io() {
     assert_missing_field("source_rootfs_image", |m, p| {
-        m.source_rootfs_image = Some(p.clone())
+        m.source_rootfs_image = Some(p.clone());
     });
 }
 
 #[test]
 fn missing_output_rootfs_surfaces_io() {
     assert_missing_field("output_rootfs_image", |m, p| {
-        m.output_rootfs_image = p.clone()
+        m.output_rootfs_image = p.clone();
     });
 }
 
 #[test]
 fn missing_daemon_binary_surfaces_io() {
     assert_missing_field("daemon_binary_path", |m, p| {
-        m.daemon_binary_path = p.clone()
+        m.daemon_binary_path = p.clone();
     });
 }

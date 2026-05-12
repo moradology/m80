@@ -50,12 +50,7 @@ fn stages_into_sibling_directory() {
     std::fs::write(workspace.join("a.txt"), b"alpha").unwrap();
 
     let image = dir.path().join("scratch.ext4");
-    Scratch::create(
-        &workspace,
-        &image,
-        Scratch::recommended_size_for_workspace(&workspace).unwrap(),
-    )
-    .expect("create");
+    Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create");
 
     let into = dir.path().join("extracted");
     let change_set = Scratch::extract(&image, &into).expect("extract");
@@ -86,12 +81,7 @@ fn loop_mount_extracts_changed_file_set() {
     std::fs::write(workspace.join("changed.txt"), b"changed").unwrap();
 
     let image = dir.path().join("scratch.ext4");
-    Scratch::create(
-        &workspace,
-        &image,
-        Scratch::recommended_size_for_workspace(&workspace).unwrap(),
-    )
-    .expect("create");
+    Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create");
 
     let into = dir.path().join("extracted");
     let change_set = Scratch::extract(&image, &into).expect("extract");

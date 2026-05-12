@@ -11,7 +11,7 @@ use crate::types::StoppedSandbox;
 
 impl StoppedSandbox {
     /// Return the per-VM run directory.
-    pub fn run_dir(&self) -> &Path {
+    #[must_use] pub fn run_dir(&self) -> &Path {
         &self.run_dir
     }
 

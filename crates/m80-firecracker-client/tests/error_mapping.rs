@@ -8,6 +8,7 @@ use m80_firecracker_client::{
     BootSourceConfig, Client, ClientError, CpuTemplate, DriveConfig, InstanceAction, MachineConfig,
     PartialDriveConfig, VsockConfig,
 };
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 fn fault_body(msg: &str) -> String {
@@ -129,5 +130,19 @@ fn connect_error_on_missing_socket() {
     assert!(
         matches!(err, ClientError::Connect(_)),
         "expected Connect, got {err:?}"
+    );
+}
+
+#[test]
+fn serde_json_error_maps_to_serialize_not_io() {
+    let mut invalid_json_map_key = BTreeMap::new();
+    invalid_json_map_key.insert(vec![1_u8, 2, 3], "value");
+    let serde_error = serde_json::to_vec(&invalid_json_map_key).unwrap_err();
+
+    let err = ClientError::from(serde_error);
+
+    assert!(
+        matches!(err, ClientError::Serialize(_)),
+        "expected Serialize, got {err:?}"
     );
 }

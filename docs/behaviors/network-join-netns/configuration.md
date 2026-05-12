@@ -1,20 +1,21 @@
 # JoinNetns Configuration
 
-`NetworkPolicy::JoinNetns { netns_path, tap_name, guest_mac, guest_ipv4,
-gateway_ipv4, dns_resolvers }` launches Firecracker inside a caller-provided
-network namespace and attaches a caller-created TAP to the guest. m80 does not
-create the namespace, add links, configure routes, or install firewall rules for
-this mode. The caller owns that setup and teardown.
+`NetworkPolicy::JoinNetns { spec: NetnsSpec }` launches Firecracker inside a
+caller-provided network namespace and attaches a caller-created TAP to the
+guest. `NetnsSpec` carries the namespace path, TAP name, guest MAC, guest
+IPv4/prefix, gateway, and DNS resolvers. m80 does not create the namespace, add
+links, configure routes, or install firewall rules for this mode. The caller
+owns that setup and teardown.
 
-During launch, `m80-net-mode::resolve` carries the namespace path through as
-`VmNetworkMode::JoinNetns`. `m80-firecracker` copies that path into
+During launch, `m80-net-mode::resolve` carries the `NetnsSpec` through as
+`VmNetworkMode::JoinNetns`. `m80-firecracker` copies the namespace path into
 `JailerConfig::netns_path`. `m80-jailer` opens the path with `O_NOFOLLOW`,
 verifies the fd is backed by `NSFS_MAGIC`, then passes `--netns <path>` to
 Firecracker's official jailer. The official jailer performs `setns(CLONE_NEWNET)`
 before execing Firecracker. After the Firecracker API socket is ready,
-`m80-firecracker` emits `PUT /network-interfaces/eth0` using `tap_name` and
-`guest_mac`; because Firecracker is already inside the joined namespace, the TAP
-name is resolved there. PID 1 configures `eth0` from the static
+`m80-firecracker` emits `PUT /network-interfaces/eth0` using the spec's
+`tap_name` and `guest_mac`; because Firecracker is already inside the joined
+namespace, the TAP name is resolved there. PID 1 configures `eth0` from the static
 `m80.net=join_netns` boot tokens.
 
 This mode is separate from `NoEgress` and `AllowOutbound`. `NoEgress` still

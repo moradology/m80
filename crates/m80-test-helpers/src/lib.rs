@@ -8,4 +8,3 @@
 
 pub mod env;
 pub mod fixture_server;
-pub mod manifest;

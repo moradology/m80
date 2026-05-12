@@ -4,11 +4,10 @@
 
 Scratch hydration and post-stop extraction admit only directories and regular
 files. Symlinks are refused as `RejectionReason::Symlink`; fifos, sockets,
-block devices, and character devices are refused as
-`RejectionReason::SpecialFile`; unsupported file types are refused as
-`RejectionReason::Other`.
+block devices, character devices, and any other non-regular entry type are
+refused as `RejectionReason::SpecialFile`.
 
-Hydration fails the operation with `StorageError::AdmissibilityRefused`.
+Hydration fails the operation with `StorageError::AdmissibilityRefused { path }`.
 Extraction records rejected entries in `ChangeSet::rejected` and does not copy
 them into the staged tree.
 

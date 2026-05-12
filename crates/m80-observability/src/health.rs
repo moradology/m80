@@ -8,7 +8,7 @@ use crate::ObservabilityError;
 /// Aggregated rollup of probe records.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HealthSnapshot {
+pub(crate) struct HealthSnapshot {
     /// Number of degraded VMs.
     pub degraded: u32,
     /// Number of exited VMs awaiting cleanup.
@@ -25,7 +25,7 @@ pub struct HealthSnapshot {
 
 /// Per-VM operational metrics rolled up across the run-root.
 #[derive(Debug, Clone, Default)]
-pub struct OpsMetrics {
+pub(crate) struct OpsMetrics {
     /// Number of VMs the metrics span.
     pub vm_count: u32,
     /// Guest metrics sampled from one running VM at scrape time.
@@ -33,7 +33,7 @@ pub struct OpsMetrics {
 }
 
 /// Aggregate probe records into a [`HealthSnapshot`].
-pub fn aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError> {
+pub(crate) fn aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError> {
     let mut snapshot = HealthSnapshot {
         total: records.len() as u32,
         ..HealthSnapshot::default()
@@ -51,7 +51,7 @@ pub fn aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, Obs
 }
 
 /// Render a JSON health snapshot.
-pub fn render_health_json(health: &HealthSnapshot) -> String {
+pub(crate) fn render_health_json(health: &HealthSnapshot) -> String {
     serde_json::to_string_pretty(health).unwrap()
 }
 

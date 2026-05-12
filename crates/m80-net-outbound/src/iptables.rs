@@ -9,7 +9,7 @@ use std::process::Command;
 use ipnet::Ipv4Net;
 use sha2::{Digest, Sha256};
 
-use crate::{NetError, SetupPhase, VmNetworkStateRecord, M80_RULE_COMMENT_PREFIX};
+use crate::{NetError, SetupPhase, VmNetworkStateRecord, RULE_COMMENT_PREFIX};
 
 /// Output returned by a host network policy command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,24 +106,24 @@ pub fn apply_outbound_nat_policy_with_ops(
 /// Return the per-VM filter chain name.
 ///
 /// Format: `tfw` followed by the first 12 hex chars of `sha256(run_dir)`.
-pub fn outbound_nat_filter_chain(state: &VmNetworkStateRecord) -> String {
+#[must_use] pub fn outbound_nat_filter_chain(state: &VmNetworkStateRecord) -> String {
     format!("tfw{}", &digest_path(&state.run_dir)[..12])
 }
 
 /// Return the per-VM iptables rule comment.
 ///
-/// Format: `<M80_RULE_COMMENT_PREFIX>:<first 12 hex chars sha256(run_root)>:<tap_name>`.
-pub fn outbound_nat_rule_comment(state: &VmNetworkStateRecord) -> String {
+/// Format: `<RULE_COMMENT_PREFIX>:<first 12 hex chars sha256(run_root)>:<tap_name>`.
+#[must_use] pub fn outbound_nat_rule_comment(state: &VmNetworkStateRecord) -> String {
     format!(
         "{}:{}:{}",
-        M80_RULE_COMMENT_PREFIX,
+        RULE_COMMENT_PREFIX,
         &digest_path(&state.bridge.run_root)[..12],
         state.tap_name
     )
 }
 
 /// Return the permanent-deny IPv4 CIDRs for one VM policy.
-pub fn permanent_deny_cidrs(bridge_cidr: Ipv4Net) -> Vec<Ipv4Net> {
+#[must_use] pub fn permanent_deny_cidrs(bridge_cidr: Ipv4Net) -> Vec<Ipv4Net> {
     let mut cidrs = vec![
         "0.0.0.0/8",
         "10.0.0.0/8",
@@ -451,7 +451,7 @@ fn ensure_iptables_rule(
     ops.run_command("iptables", &args)
 }
 
-fn iptables_args(table: &str, operation: &str, chain: &str, rest: &[String]) -> Vec<String> {
+pub(crate) fn iptables_args(table: &str, operation: &str, chain: &str, rest: &[String]) -> Vec<String> {
     let mut args = vec![
         "-w".to_owned(),
         "-t".to_owned(),
@@ -469,13 +469,13 @@ fn digest_path(path: &Path) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn invalid_state(path: impl Into<PathBuf>, detail: impl Into<String>) -> NetError {
+pub(crate) fn invalid_state(path: impl Into<PathBuf>, detail: impl Into<String>) -> NetError {
     NetError::InvalidNetworkState {
         path: path.into(),
         detail: detail.into(),
     }
 }
 
-fn iptables_state_path(table: &str, chain: &str) -> PathBuf {
+pub(crate) fn iptables_state_path(table: &str, chain: &str) -> PathBuf {
     PathBuf::from(format!("iptables:{table}:{chain}"))
 }

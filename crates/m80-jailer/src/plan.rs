@@ -280,7 +280,7 @@ fn bind_remount_flags() -> nix::mount::MsFlags {
         | nix::mount::MsFlags::MS_NOSUID
 }
 
-fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
+pub(crate) fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
     use std::io::Write;
 
     let mut file = std::fs::OpenOptions::new()

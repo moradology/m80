@@ -367,8 +367,7 @@ All internal guestd lifecycle logs go to stderr with this line shape:
 `phase` is one of `Boot`, `Ready`, `Exec`, or `Shutdown`.
 `request_id` is the opaque request id from the host when one exists, and
 `boot` before a request is in scope. `level` is `ERROR`, `WARN`,
-`INFO`, or `DEBUG`. Log emission is best-effort and never changes
-control flow.
+or `INFO`. Log emission is best-effort and never changes control flow.
 
 In systemd images, the unit routes stdout and stderr to
 `journal+console`; in PID-1 images, guestd duplicates stdout/stderr to
@@ -391,7 +390,53 @@ normal command output.
 
 ## Public surface
 
-Binary-only; no library API. `m80-guestd --help` for flags.
+### Binary
+
+- `m80-guestd`
+  - Runs inside the guest, binds the guest vsock command port, emits the
+    ready signal to the host, and handles one request per accepted connection.
+- `m80-guestd --version`
+  - Prints the guestd package version and m80 protocol version, then exits.
+- `m80-guestd --port <u32>`
+  - Testing-only override for the guest vsock command port. Production images
+    omit it and bind `m80_proto::GUEST_PORT_DEFAULT`.
+
+### Test-support library
+
+The crate also exposes a small library target for integration tests. This is
+not a stable embedder API; it exists so guestd's protocol handlers and log
+format can be tested without booting a VM.
+
+- `connection::handle_connection_with_reader_ready(reader, writer, reader_ready)`
+  - Runs one request/response cycle over generic buffered I/O and returns a
+    `ConnectionOutcome`.
+- `connection::ConnectionOutcome`
+  - `Continue` means the main accept loop should accept another connection.
+  - `Shutdown(ShutdownAction)` means a shutdown request was acknowledged and
+    the daemon should terminate according to the requested action.
+- `guest_log::GuestLogPhase`
+  - Guest lifecycle phase used in structured stderr lines:
+    `Boot`, `Ready`, `Exec`, or `Shutdown`.
+- `guest_log::GuestLogLevel`
+  - Guest log severity used in structured stderr lines:
+    `Error`, `Warn`, or `Info`.
+- `guest_log::format_line(timestamp, phase, request_id, level, message)`
+  - Formats one guest stderr line without writing it.
+- `guest_log::log(phase, request_id, level, message)`
+  - Emits one best-effort structured guest log line to stderr and `/dev/kmsg`.
+- `guest_log::info(phase, request_id, message)`
+  - Convenience wrapper for `GuestLogLevel::Info`.
+- `guest_log::warn(phase, request_id, message)`
+  - Convenience wrapper for `GuestLogLevel::Warn`.
+- `guest_log::error(phase, request_id, message)`
+  - Convenience wrapper for `GuestLogLevel::Error`.
+- `guest_log::BootTimer`
+  - Process-start-relative boot milestone tracker used by the binary's startup
+    path.
+- `guest_log::BootTimer::start()`
+  - Starts a new boot milestone timer.
+- `guest_log::BootTimer::mark(name)`
+  - Emits one `M80_GUEST_BOOT` milestone line.
 
 ## Non-goals
 

@@ -179,54 +179,40 @@ impl Client {
 
     /// Send a PATCH request over the stored `UnixStream`.
     fn patch(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
-        trace_request("PATCH", path, body);
-        let mut guard = self
-            .stream
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let resp = match http::send_json(&mut guard, "PATCH", path, body) {
-            Ok(resp) => resp,
-            Err(e) if is_broken_pipe(&e) => {
-                let new_stream =
-                    UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
-                *guard = new_stream;
-                http::send_json(&mut guard, "PATCH", path, body).map_err(|e| ClientError::Io {
-                    path: self.uds_path.clone(),
-                    source: e,
-                })?
-            }
-            Err(e) => {
-                return Err(ClientError::Io {
-                    path: self.uds_path.clone(),
-                    source: e,
-                })
-            }
-        };
-        trace_response(&resp);
-        Ok(resp)
+        self.send("PATCH", path, body)
     }
 
     /// Send a PUT request over the stored `UnixStream`.
+    fn put(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
+        self.send("PUT", path, body)
+    }
+
+    /// Send one JSON request over the stored `UnixStream`.
     ///
     /// A `Mutex` is used so `&self` methods can mutably access the stream.
     /// The caller is responsible for not calling concurrently — Firecracker
     /// itself does not handle concurrent config writes cleanly.
-    fn put(&self, path: &str, body: &[u8]) -> Result<http::Response, ClientError> {
-        trace_request("PUT", path, body);
+    fn send(
+        &self,
+        method: &'static str,
+        path: &str,
+        body: &[u8],
+    ) -> Result<http::Response, ClientError> {
+        trace_request(method, path, body);
         let mut guard = self
             .stream
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         // If the previous call left the stream in a broken state (e.g., the
         // firecracker process restarted), reconnect transparently.
-        let resp = match http::send_json(&mut guard, "PUT", path, body) {
+        let resp = match http::send_json(&mut guard, method, path, body) {
             Ok(resp) => resp,
             Err(e) if is_broken_pipe(&e) => {
                 // Reconnect once and retry.
                 let new_stream =
                     UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
                 *guard = new_stream;
-                http::send_json(&mut guard, "PUT", path, body).map_err(|e| ClientError::Io {
+                http::send_json(&mut guard, method, path, body).map_err(|e| ClientError::Io {
                     path: self.uds_path.clone(),
                     source: e,
                 })?
@@ -293,6 +279,11 @@ fn body_to_string(body: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 // Firecracker config types
 // ---------------------------------------------------------------------------
+//
+// These schema structs stay public even when m80-firecracker is the only
+// current production consumer: this crate's contract is a generic
+// Firecracker REST speaker, and its public methods intentionally mirror the
+// Firecracker request bodies.
 
 /// `BootSource` config — kernel image path + boot args + optional initrd.
 #[derive(Debug, Clone, Serialize)]
@@ -384,7 +375,6 @@ pub struct NetworkInterfaceConfig {
 
 /// VM running state — used with PATCH `/vm`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub enum VmState {
     /// Pause vCPU execution (required before snapshot creation).
     Paused,
@@ -394,7 +384,6 @@ pub enum VmState {
 
 /// Snapshot type: full copy of all guest memory, or diff since the last snapshot.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub enum SnapshotType {
     /// Full snapshot — all guest memory pages are saved.
     Full,
@@ -409,6 +398,7 @@ pub enum SnapshotType {
 /// memory file (`mem_file_path`). Both paths must be writable by the
 /// Firecracker process.
 #[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateSnapshotConfig {
     /// Path to write the microVM state file (device + vCPU register state).
     pub snapshot_path: PathBuf,
@@ -421,7 +411,6 @@ pub struct CreateSnapshotConfig {
 
 /// Memory backend type for snapshot load.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub enum MemBackendType {
     /// Load memory from a regular file (`mmap(MAP_PRIVATE)`).
     File,
@@ -460,6 +449,7 @@ pub struct VsockOverride {
 ///
 /// Exactly one of `mem_backend` or `mem_file_path` must be present.
 #[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoadSnapshotConfig {
     /// Path to the microVM state file produced by `PUT /snapshot/create`.
     pub snapshot_path: PathBuf,
@@ -482,7 +472,7 @@ pub struct LoadSnapshotConfig {
 
 /// Lifecycle action requested via PUT `/actions`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase")]
 pub enum InstanceAction {
     /// Boot the VM.
     InstanceStart,
@@ -553,6 +543,9 @@ pub enum ClientError {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },
+    /// Request-body serialization failed before any HTTP request was sent.
+    #[error("serialize request body: {0}")]
+    Serialize(#[from] serde_json::Error),
     /// Underlying I/O failure; carries the socket path so callers don't have
     /// to guess which UDS operation failed.
     #[error("i/o on {}: {source}", path.display())]
@@ -563,16 +556,4 @@ pub enum ClientError {
         #[source]
         source: io::Error,
     },
-}
-
-// `serde_json::Error` is not `io::Error`, so provide an explicit conversion
-// so that serialization failures (which should not happen for our own types)
-// surface cleanly rather than silently poisoning an `Io` path.
-impl From<serde_json::Error> for ClientError {
-    fn from(e: serde_json::Error) -> Self {
-        ClientError::Io {
-            path: PathBuf::new(),
-            source: io::Error::new(io::ErrorKind::InvalidData, e),
-        }
-    }
 }

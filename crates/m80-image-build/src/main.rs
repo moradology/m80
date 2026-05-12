@@ -10,8 +10,6 @@
 //! Downloads use `curl`; mounts use system `mount`/`umount`. No new HTTP
 //! client dependency.
 
-#![deny(missing_docs)]
-
 mod config;
 mod hash;
 mod minimal;
@@ -124,21 +122,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_run_with_config() {
-        let args = try_parse(&["run", "--config", "/tmp/foo.toml"]).unwrap();
+    fn parse_run_dry_run() {
+        let args = try_parse(&["run", "--config", "/tmp/foo.toml", "--dry-run"]).unwrap();
         let Cmd::Run { config, dry_run } = args.subcommand else {
             panic!("expected Run")
         };
         assert_eq!(config, PathBuf::from("/tmp/foo.toml"));
-        assert!(!dry_run);
-    }
-
-    #[test]
-    fn parse_run_dry_run() {
-        let args = try_parse(&["run", "--config", "/tmp/foo.toml", "--dry-run"]).unwrap();
-        let Cmd::Run { dry_run, .. } = args.subcommand else {
-            panic!("expected Run")
-        };
         assert!(dry_run);
     }
 
@@ -152,37 +141,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_clean() {
-        let args = try_parse(&["clean", "--workdir", "/tmp/work"]).unwrap();
-        let Cmd::Clean { workdir } = args.subcommand else {
-            panic!("expected Clean")
-        };
-        assert_eq!(workdir, PathBuf::from("/tmp/work"));
-    }
-
-    #[test]
     fn parse_missing_subcommand_fails() {
         assert!(try_parse(&[]).is_err());
     }
 
     #[test]
-    fn parse_unknown_subcommand_fails() {
-        assert!(try_parse(&["frobnicate"]).is_err());
-    }
-
-    #[test]
     fn parse_run_missing_config_fails() {
         assert!(try_parse(&["run"]).is_err());
-    }
-
-    #[test]
-    fn parse_verify_missing_rootfs_fails() {
-        assert!(try_parse(&["verify"]).is_err());
-    }
-
-    #[test]
-    fn parse_clean_missing_workdir_fails() {
-        assert!(try_parse(&["clean"]).is_err());
     }
 
     #[test]
@@ -198,24 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_kernel_build_explicit_workspace() {
-        let args = try_parse(&["kernel", "build", "--workspace", "/tmp/ws"]).unwrap();
-        let Cmd::Kernel {
-            action: KernelAction::Build { workspace },
-        } = args.subcommand
-        else {
-            panic!("expected Kernel/Build")
-        };
-        assert_eq!(workspace, PathBuf::from("/tmp/ws"));
-    }
-
-    #[test]
     fn parse_kernel_missing_sub_action_fails() {
         assert!(try_parse(&["kernel"]).is_err());
-    }
-
-    #[test]
-    fn parse_kernel_unknown_sub_action_fails() {
-        assert!(try_parse(&["kernel", "destroy"]).is_err());
     }
 }

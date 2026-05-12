@@ -137,7 +137,7 @@ fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
         Arc::clone(&pool_backend),
         WarmPoolConfig {
             target_ready: 1,
-            snapshot: paths.clone(),
+            snapshot: paths,
             sandbox: sandbox_config("warm-template"),
             ready_probe: true_request(),
             vm_id_prefix: "warm-pool-slot".into(),
@@ -203,7 +203,7 @@ fn warm_pool_empty_returns_pool_empty_error() {
         Arc::clone(&pool_backend),
         WarmPoolConfig {
             target_ready: 1,
-            snapshot: paths.clone(),
+            snapshot: paths,
             sandbox: sandbox_config(format!("{suffix}-template")),
             ready_probe: true_request(),
             vm_id_prefix: format!("{suffix}-slot"),
@@ -269,7 +269,7 @@ fn warm_pool_simultaneous_lease_and_refill() {
             Arc::clone(&pool_backend),
             WarmPoolConfig {
                 target_ready: 2,
-                snapshot: paths.clone(),
+                snapshot: paths,
                 sandbox: sandbox_config(format!("{suffix}-template")),
                 ready_probe: true_request(),
                 vm_id_prefix: format!("{suffix}-slot"),

@@ -55,9 +55,6 @@ pub enum RejectionReason {
     Symlink,
     /// Path was a special file (device, fifo, socket).
     SpecialFile,
-    /// Other reason; free text. Used for unsupported file types not covered
-    /// by the more-specific variants above.
-    Other(String),
 }
 
 /// Errors surfaced by storage operations.
@@ -112,9 +109,12 @@ pub enum StorageError {
         /// Captured stderr (or stdout if stderr was empty).
         stderr: String,
     },
-    /// The admissibility scan refused the change set.
-    #[error("admissibility scan refused the change set")]
-    AdmissibilityRefused,
+    /// The admissibility scan refused a host workspace path.
+    #[error("admissibility scan refused {}", path.display())]
+    AdmissibilityRefused {
+        /// Path rejected by the admissibility scan.
+        path: PathBuf,
+    },
     /// The atomic swap into the destination failed.
     #[error("atomic swap into destination failed")]
     SwapFailed,

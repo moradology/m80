@@ -1,7 +1,7 @@
 use crate::health::{HealthSnapshot, OpsMetrics};
 
 /// Render a Prometheus exposition-format text response.
-pub fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> String {
+pub(crate) fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> String {
     let mut out = String::new();
     render_metric(
         &mut out,

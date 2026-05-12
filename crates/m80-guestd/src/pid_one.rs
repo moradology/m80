@@ -29,14 +29,14 @@ use nix::unistd::{dup2, Pid};
 use crate::guest_log::{self, BootTimer, GuestLogPhase};
 
 /// True when this process was launched by the kernel as init (PID 1).
-pub fn is_pid_one() -> bool {
+pub(crate) fn is_pid_one() -> bool {
     std::process::id() == 1
 }
 
 /// Configure the process for PID-1 duty: pseudo-fs mounts, overlay mount,
 /// pivot_root, workspace mount, and panic hook. Call exactly once early in
 /// `main`.
-pub fn enter_pid_one_mode(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
+pub(crate) fn enter_pid_one_mode(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
     redirect_stdio_to_console().context("redirect stdio to /dev/console")?;
     boot_timer.mark("stdio_redirected");
     install_panic_hook();
@@ -382,11 +382,11 @@ fn pivot_root<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(
 }
 
 /// Lift verbatim from kata-containers/src/agent/rustjail/src/mount.rs:523-559.
-pub fn pivot_rootfs<P: ?Sized + NixPath + std::fmt::Debug>(path: &P) -> anyhow::Result<()> {
+pub(crate) fn pivot_rootfs<P: ?Sized + NixPath + std::fmt::Debug>(path: &P) -> anyhow::Result<()> {
     let oldroot = fcntl::open("/", OFlag::O_DIRECTORY | OFlag::O_RDONLY, Mode::empty())?;
-    defer!(unistd::close(oldroot).unwrap());
+    defer!{ if let Err(e) = unistd::close(oldroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(oldroot): {e}")); } }
     let newroot = fcntl::open(path, OFlag::O_DIRECTORY | OFlag::O_RDONLY, Mode::empty())?;
-    defer!(unistd::close(newroot).unwrap());
+    defer!{ if let Err(e) = unistd::close(newroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(newroot): {e}")); } }
 
     // Change to the new root so that the pivot_root actually acts on it.
     unistd::fchdir(newroot)?;
@@ -614,7 +614,7 @@ fn mount_workspace_after_repair(
 /// Reap any pending zombies. Call between requests so orphans (children
 /// of children that re-parent to PID 1) don't accumulate. Non-blocking;
 /// returns once `waitpid(WNOHANG)` reports nothing more to reap.
-pub fn reap_pending() {
+pub(crate) fn reap_pending() {
     loop {
         match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => break,

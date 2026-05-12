@@ -4,7 +4,9 @@ Small malicious binary used by the defense-in-depth test harness. It runs one
 named attack and exits:
 
 - `0` when the attack succeeded, meaning the jail was breached.
-- non-zero when the attack was blocked, printing the block reason to stderr.
+- `1` when the attack was blocked, printing the block reason to stderr.
+- `2` when the invocation is invalid. Missing attack names print usage and the
+  known attack list to stderr.
 
 The runner does not claim the host is safe by itself. It is an executable
 payload for later jailer tests, which decide where the binary runs and which
@@ -27,11 +29,33 @@ clears the child environment. The root harness therefore bind-mounts a
 read-only config file at `/m80-attack-runner.conf` and uses these keys:
 
 - `host_sentinel`
+- `host_pid`
 - `lower_sentinel`
 - `peer_sentinel`
 - `peer_run_dir`
 - `peer_network_state`
 - `peer_pid`
+
+## Public surface
+
+The package keeps a library target because the binary, catalog tests, and
+jailer harness tests need to inspect or invoke the stable attack catalog without
+spawning a subprocess for every assertion.
+
+- `Attack` — one registered attack primitive with stable `name` and
+  `category` fields.
+- `AttackCategory` — category enum used by defense-in-depth batteries:
+  `Filesystem`, `Process`, `Network`, `Privilege`, `Resource`,
+  `CrossTenant`.
+- `AttackBlocked` — structured block reason returned when a kernel or jail
+  policy prevented the attempted breach.
+- `AttackBlocked::new(reason)` — constructs a block reason.
+- `AttackBlocked::reason()` — returns the human-readable block reason.
+- `AttackResult` — alias for `Result<(), AttackBlocked>`.
+- `attack_names()` — returns all stable attack names, excluding harness
+  controls such as `echo_zero`.
+- `attacks_by_category()` — returns stable attack names grouped by category.
+- `run_attack(name)` — runs one stable attack or harness control by name.
 
 ## Adding an Attack
 
@@ -41,7 +65,7 @@ test contract; do not rename an attack without updating the corresponding bead
 and test.
 
 Direct non-jailer fixtures may still use environment variables for
-harness-provided host or tenant sentinel paths:
+harness-provided host or tenant sentinel paths and PIDs:
 
 - `M80_ATTACK_HOST_SENTINEL`
 - `M80_ATTACK_PEER_SENTINEL`
@@ -56,7 +80,10 @@ Expected kernel or filesystem denials return `AttackBlocked`.
 
 Network attacks are split by the current m80 boundary. Ordinary TCP connect or
 listen probes model guest-egress policy and are not used by the compromised-VMM
-Layer 2 battery. The privileged network probes (`open_raw_socket`,
+Layer 2 battery. They stay in this crate as the catalog home for egress-policy
+tests: `connect_imds_http`, `connect_public_dns_tcp`,
+`connect_private_rfc1918`, `bind_privileged_port`, and
+`listen_all_interfaces`. The privileged network probes (`open_raw_socket`,
 `raw_packet_inject`, `send_arbitrary_netlink`, `bind_on_host_interface`, and
 `privileged_route_mutation`) are the stable names for jailer/capability-drop
 coverage.

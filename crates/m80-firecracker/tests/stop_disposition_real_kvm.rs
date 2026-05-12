@@ -11,13 +11,16 @@ use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy
 use m80_proto::{ExecRequest, ExecStatus};
 use serde_json::Value;
 
+// vm_id must stay under ~22 chars: the AF_UNIX socket path
+// `<run_root>/<vm_id>/<fc_basename>/<vm_id>/root/firecracker.sock` is capped at
+// 107 bytes by the kernel and the jail layout uses vm_id twice.
 fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
+    let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before unix epoch")
         .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
+        % 0x10000;
+    format!("{prefix}-{suffix:04x}")
 }
 
 fn launch_vm(
@@ -100,7 +103,7 @@ fn stop_disposition_force_records_force_kill() {
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn forced_kill_ambiguous_blocks_release() {
     let request_id = "req-force-kill-ambiguous";
-    let vm_id = unique_vm_id("force-kill-ambiguous");
+    let vm_id = unique_vm_id("fk-ambig");
     let (backend, running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
     let jailer_pid = jailer_pid(&run_dir);
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
@@ -119,7 +122,7 @@ fn forced_kill_ambiguous_blocks_release() {
     let diagnostics = read_diagnostics(&run_dir);
     let blocked_admission = backend
         .admit(SandboxConfig {
-            vm_id: Some(unique_vm_id("force-kill-ambiguous-reuse")),
+            vm_id: Some(unique_vm_id("fk-ambig-r")),
             workspace: None,
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
@@ -156,7 +159,7 @@ fn forced_kill_ambiguous_blocks_release() {
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete() {
     let request_id = "req-stop-unreachable-guestd";
-    let vm_id = unique_vm_id("stop-unreachable-guestd");
+    let vm_id = unique_vm_id("stop-unreach");
     let (backend, mut running, run_dir, firecracker_pid) = launch_vm(&vm_id, request_id);
     let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
 
@@ -179,7 +182,7 @@ fn stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete(
     );
     let admitted = backend
         .admit(SandboxConfig {
-            vm_id: Some(unique_vm_id("stop-unreachable-reuse")),
+            vm_id: Some(unique_vm_id("stop-unreach-r")),
             workspace: None,
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),

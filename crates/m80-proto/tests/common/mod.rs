@@ -5,7 +5,7 @@
 
 use m80_proto::{ExecRequest, ExecResponse, ExecStatus, ExecTiming};
 
-pub fn sample_timing() -> ExecTiming {
+pub(crate) fn sample_timing() -> ExecTiming {
     ExecTiming {
         spawned_at_unix_ms: 1_000_000,
         exited_at_unix_ms: 1_000_100,
@@ -14,7 +14,7 @@ pub fn sample_timing() -> ExecTiming {
     }
 }
 
-pub fn sample_request() -> ExecRequest {
+pub(crate) fn sample_request() -> ExecRequest {
     ExecRequest {
         program: "/bin/sh".into(),
         args: vec!["-c".into(), "echo hi".into()],
@@ -26,7 +26,7 @@ pub fn sample_request() -> ExecRequest {
     }
 }
 
-pub fn sample_response() -> ExecResponse {
+pub(crate) fn sample_response() -> ExecResponse {
     ExecResponse {
         status: ExecStatus::Completed,
         exit_code: Some(0),

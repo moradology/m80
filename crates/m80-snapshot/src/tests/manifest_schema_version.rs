@@ -1,9 +1,8 @@
 //! Schema version gate tests for `SnapshotManifest`.
 //! Bead: m80-0tf.1.1
 
-mod common;
-
-use m80_snapshot::{SnapshotError, SnapshotManifest, SCHEMA_VERSION};
+use super::common;
+use crate::{SchemaError, SnapshotManifest, SCHEMA_VERSION};
 
 fn bytes_with_version(dir: &std::path::Path, version: u32) -> Vec<u8> {
     let m = common::sample_manifest(dir);
@@ -19,7 +18,7 @@ fn wrong_schema_version_returns_unsupported() {
     let raw = bytes_with_version(dir.path(), 99);
     let err = SnapshotManifest::from_bytes(&raw).unwrap_err();
     assert!(
-        matches!(err, SnapshotError::UnsupportedSchemaVersion(99)),
+        matches!(err, SchemaError::UnsupportedSchemaVersion(99)),
         "expected UnsupportedSchemaVersion(99), got {err:?}"
     );
 }
@@ -31,7 +30,7 @@ fn version_zero_returns_unsupported() {
     let raw = bytes_with_version(dir.path(), 0);
     let err = SnapshotManifest::from_bytes(&raw).unwrap_err();
     assert!(
-        matches!(err, SnapshotError::UnsupportedSchemaVersion(0)),
+        matches!(err, SchemaError::UnsupportedSchemaVersion(0)),
         "expected UnsupportedSchemaVersion(0), got {err:?}"
     );
 }
@@ -51,7 +50,7 @@ fn schema_version_check_fires_before_unknown_field_check() {
 
     let err = SnapshotManifest::from_bytes(&raw).unwrap_err();
     assert!(
-        matches!(err, SnapshotError::UnsupportedSchemaVersion(2)),
+        matches!(err, SchemaError::UnsupportedSchemaVersion(2)),
         "expected UnsupportedSchemaVersion(2), got {err:?}"
     );
 }

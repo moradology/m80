@@ -15,7 +15,7 @@ pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/m80.wire.rs"));
 }
 
-use generated::*;
+use generated::{WireCancelAck, WireCancelRequest, WireDirEntry, WireEnvVar, WireEnvelope, WireExecExit, WireExecRequest, WireExecResponse, WireExecStreamChunk, WireExecTiming, WireFileListRequest, WireFileListResponse, WireFileMkdirRequest, WireFileMkdirResponse, WireFileReadChunk, WireFileReadRequest, WireFileReadResponse, WireFileRemoveRequest, WireFileRemoveResponse, WireFileStat, WireFileStatRequest, WireFileStatResponse, WireFileWriteBeginRequest, WireFileWriteBeginResponse, WireFileWriteChunkRequest, WireFileWriteChunkResponse, WireFileWriteCommitRequest, WireFileWriteCommitResponse, WireFileWriteRequest, WireFileWriteResponse, WireGuestCpuMetrics, WireGuestMemMetrics, WireHandshakeMessage, WireMetricsRequest, WireMetricsResponse, WirePingRequest, WirePongResponse, WirePtyBytes, WirePtyControl, WirePtyExit, WirePtyRequest, WirePtyResize, WirePtySize, WireShutdownRequest, WireShutdownResponse};
 
 /// Active protobuf payload variants.
 pub use generated::wire_envelope::Payload as WirePayload;
@@ -106,7 +106,7 @@ pub fn encode_raw_envelope(raw: RawEnvelope) -> Result<Vec<u8>, ProtoError> {
 }
 
 /// Decode a protobuf frame body into a raw envelope.
-pub fn decode_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, ProtoError> {
+pub(crate) fn decode_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, ProtoError> {
     reject_unknown_envelope_fields(bytes)?;
     WireEnvelope::decode(bytes)
         .map_err(|e| ProtoError::MalformedPayload(e.to_string()))?

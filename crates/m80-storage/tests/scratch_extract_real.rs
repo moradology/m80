@@ -93,12 +93,7 @@ fn writeback_preserves_file_modes() {
     write_with_mode(&workspace.join("executable.sh"), b"#!/bin/sh\n", 0o755);
 
     let image = dir.path().join("scratch.ext4");
-    Scratch::create(
-        &workspace,
-        &image,
-        Scratch::recommended_size_for_workspace(&workspace).unwrap(),
-    )
-    .expect("create");
+    Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create");
 
     let into = dir.path().join("extracted");
     Scratch::extract(&image, &into).expect("extract");

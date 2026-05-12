@@ -17,9 +17,11 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
 
 pub(crate) fn cmd_quickstart(args: QuickstartArgs, json_output: bool) -> anyhow::Result<i32> {
     if json_output && !args.no_run {
-        let err = FcError::config_other(
-            "m80 quickstart --json requires --no-run so stdout remains machine-readable".to_owned(),
-        );
+        let err = FcError::Config(m80_firecracker::ConfigError::InvalidValue {
+            field: "json",
+            reason: "m80 quickstart --json requires --no-run so stdout remains machine-readable"
+                .to_owned(),
+        });
         return Ok(errors::render_error(&err, json_output));
     }
 
@@ -65,11 +67,9 @@ fn run_quickstart(
     let temp = TempTree::new()?;
     let tarball = temp.path().join("artifacts.tar.gz");
     let extract_dir = temp.path().join("artifacts");
-    fs::create_dir(&extract_dir).map_err(|e| {
-        FcError::config_other(format!(
-            "creating quickstart extract dir {}: {e}",
-            extract_dir.display()
-        ))
+    fs::create_dir(&extract_dir).map_err(|e| FcError::PathIo {
+        path: extract_dir.clone(),
+        source: e,
     })?;
 
     if !json_output {
@@ -94,9 +94,7 @@ fn run_quickstart(
 
     let sums = extract_dir.join("SHA256SUMS");
     if !sums.is_file() {
-        return Err(FcError::config_other(
-            "artifact tarball is missing SHA256SUMS".to_owned(),
-        ));
+        return Err(FcError::ArtifactMissing { path: sums });
     }
     run_output(
         Command::new("sha256sum")
@@ -110,24 +108,26 @@ fn run_quickstart(
     for file in REQUIRED_ARTIFACTS {
         let path = extract_dir.join(file);
         if !path.is_file() {
-            return Err(FcError::config_other(format!(
-                "artifact tarball is missing {file}"
-            )));
+            return Err(FcError::ArtifactMissing { path });
         }
     }
 
-    fs::create_dir_all(artifact_dir).map_err(|e| {
-        FcError::config_other(format!(
-            "creating artifact dir {}: {e}",
-            artifact_dir.display()
-        ))
+    fs::create_dir_all(artifact_dir).map_err(|e| FcError::PathIo {
+        path: artifact_dir.to_path_buf(),
+        source: e,
     })?;
-    fs::create_dir_all(run_root).map_err(|e| {
-        FcError::config_other(format!("creating run-root {}: {e}", run_root.display()))
+    fs::create_dir_all(run_root).map_err(|e| FcError::PathIo {
+        path: run_root.to_path_buf(),
+        source: e,
     })?;
 
     for file in REQUIRED_ARTIFACTS {
-        copy_artifact(&extract_dir.join(file), &artifact_dir.join(file))?;
+        let src = extract_dir.join(file);
+        let dst = artifact_dir.join(file);
+        fs::copy(&src, &dst).map_err(|e| FcError::PathIo {
+            path: dst,
+            source: e,
+        })?;
     }
     relocate_manifest(artifact_dir)?;
 
@@ -142,39 +142,22 @@ fn run_quickstart(
     })
 }
 
-fn copy_artifact(src: &Path, dst: &Path) -> Result<(), FcError> {
-    fs::copy(src, dst).map_err(|e| {
-        FcError::config_other(format!(
-            "copying artifact {} -> {}: {e}",
-            src.display(),
-            dst.display()
-        ))
-    })?;
-    Ok(())
-}
-
 fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
     let manifest_path = artifact_dir.join("output.ext4.manifest.json");
-    let mut manifest = m80_image_manifest::Manifest::read(&manifest_path)
-        .map_err(|e| FcError::config_other(format!("reading installed manifest: {e}")))?;
+    let mut manifest = m80_image_manifest::Manifest::read(&manifest_path)?;
     manifest.kernel_image = artifact_dir.join("vmlinux");
     manifest.output_rootfs_image = artifact_dir.join("output.ext4");
     manifest.daemon_binary_path = artifact_dir.join("m80-guestd");
     if manifest.source_rootfs_image.is_some() {
         manifest.source_rootfs_image = Some(artifact_dir.join("source.ext4"));
     }
-    manifest
-        .write(&manifest_path)
-        .map_err(|e| FcError::config_other(format!("writing relocated manifest: {e}")))?;
-    manifest
-        .verify(artifact_dir)
-        .map_err(|e| FcError::config_other(format!("verifying relocated manifest: {e}")))?;
+    manifest.write(&manifest_path).map_err(FcError::Manifest)?;
+    manifest.verify(artifact_dir).map_err(FcError::Manifest)?;
     Ok(())
 }
 
 fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {
-    let current = std::env::current_exe()
-        .map_err(|e| FcError::config_other(format!("resolving current m80 binary: {e}")))?;
+    let current = std::env::current_exe().map_err(FcError::Io)?;
     let status = Command::new(current)
         .arg("run")
         .arg("--egress")
@@ -186,48 +169,75 @@ fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {
         .env("M80_ROOTFS_IMAGE", artifact_dir.join("output.ext4"))
         .env("M80_RUN_ROOT", run_root)
         .status()
-        .map_err(|e| FcError::config_other(format!("spawning `m80 run -- echo hello`: {e}")))?;
+        .map_err(|source| FcError::CommandSpawnFailed {
+            command: "m80 run -- echo hello",
+            source,
+        })?;
     if !status.success() {
-        return Err(FcError::config_other(format!(
-            "`m80 run -- echo hello` failed with exit {:?}",
-            status.code()
-        )));
+        return Err(FcError::CommandFailed {
+            command: "m80 run -- echo hello",
+            status,
+            output: String::new(),
+        });
     }
     Ok(())
 }
 
 fn run_status(cmd: &mut Command, label: &str) -> Result<(), FcError> {
-    let status = cmd
-        .status()
-        .map_err(|e| FcError::config_other(format!("spawning {label}: {e}")))?;
+    let status = cmd.status().map_err(|source| FcError::CommandSpawnFailed {
+        command: command_label(label),
+        source,
+    })?;
     if !status.success() {
-        return Err(FcError::config_other(format!(
-            "{label} failed with exit {:?}",
-            status.code()
-        )));
+        return Err(FcError::CommandFailed {
+            command: command_label(label),
+            status,
+            output: String::new(),
+        });
     }
     Ok(())
 }
 
 fn run_output(cmd: &mut Command, label: &str, json_output: bool) -> Result<(), FcError> {
-    let output = cmd
+    let command_output = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| FcError::config_other(format!("spawning {label}: {e}")))?;
+        .map_err(|source| FcError::CommandSpawnFailed {
+            command: command_label(label),
+            source,
+        })?;
     if !json_output {
-        print_command_output(&output.stdout);
-        print_command_output(&output.stderr);
+        print_command_output(&command_output.stdout);
+        print_command_output(&command_output.stderr);
     }
-    if !output.status.success() {
-        return Err(FcError::config_other(format!(
-            "{label} failed with exit {:?}: {}{}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )));
+    if !command_output.status.success() {
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&command_output.stdout),
+            String::from_utf8_lossy(&command_output.stderr)
+        );
+        let output = if combined.is_empty() {
+            String::new()
+        } else {
+            format!(": {combined}")
+        };
+        return Err(FcError::CommandFailed {
+            command: command_label(label),
+            status: command_output.status,
+            output,
+        });
     }
     Ok(())
+}
+
+fn command_label(label: &str) -> &'static str {
+    match label {
+        "curl artifact tarball" => "curl artifact tarball",
+        "extract artifact tarball" => "extract artifact tarball",
+        "verify artifact checksums" => "verify artifact checksums",
+        _ => "quickstart helper",
+    }
 }
 
 fn print_command_output(bytes: &[u8]) {
@@ -292,11 +302,9 @@ struct TempTree {
 impl TempTree {
     fn new() -> Result<Self, FcError> {
         let path = std::env::temp_dir().join(format!("m80-quickstart-{}", ulid::Ulid::new()));
-        fs::create_dir(&path).map_err(|e| {
-            FcError::config_other(format!(
-                "creating quickstart temp dir {}: {e}",
-                path.display()
-            ))
+        fs::create_dir(&path).map_err(|e| FcError::PathIo {
+            path: path.clone(),
+            source: e,
         })?;
         Ok(Self { path })
     }

@@ -11,12 +11,12 @@ use crate::types::{BackendConfig, CgroupMode, ConfigSource, EffectiveConfig, Eff
 
 /// Field names recognized by the loader.
 mod field {
-    pub const DEFAULT_PROFILE: &str = "default_profile";
-    pub const MAX_CONCURRENT_VMS: &str = "max_concurrent_vms";
-    pub const RUN_ROOT: &str = "run_root";
-    pub const JAIL_UID: &str = "jail_uid";
-    pub const JAIL_GID: &str = "jail_gid";
-    pub const CGROUP_MODE: &str = "cgroup_mode";
+    pub(crate) const DEFAULT_PROFILE: &str = "default_profile";
+    pub(crate) const MAX_CONCURRENT_VMS: &str = "max_concurrent_vms";
+    pub(crate) const RUN_ROOT: &str = "run_root";
+    pub(crate) const JAIL_UID: &str = "jail_uid";
+    pub(crate) const JAIL_GID: &str = "jail_gid";
+    pub(crate) const CGROUP_MODE: &str = "cgroup_mode";
 }
 
 /// Built-in defaults for every recognized field.
@@ -102,9 +102,17 @@ pub fn load_from_paths(
     // Layer 2: system config.
     if let Some(system_path) = paths.system {
         if system_path.exists() {
-            let content = std::fs::read_to_string(&system_path)?;
-            apply_toml_layer(&mut fields, &content, ConfigSource::SystemFile)
-                .map_err(|e| FcError::Config(ConfigError::Other(format!("system config: {e}"))))?;
+            let content = std::fs::read_to_string(&system_path).map_err(|e| FcError::PathIo {
+                path: system_path.clone(),
+                source: e,
+            })?;
+            apply_toml_layer(
+                &mut fields,
+                &content,
+                &system_path,
+                "system config",
+                ConfigSource::SystemFile,
+            )?;
         }
     }
 
@@ -121,9 +129,17 @@ pub fn load_from_paths(
     // Layer 4: user config.
     if let Some(user_path) = paths.user {
         if user_path.exists() {
-            let content = std::fs::read_to_string(&user_path)?;
-            apply_toml_layer(&mut fields, &content, ConfigSource::UserFile)
-                .map_err(|e| FcError::Config(ConfigError::Other(format!("user config: {e}"))))?;
+            let content = std::fs::read_to_string(&user_path).map_err(|e| FcError::PathIo {
+                path: user_path.clone(),
+                source: e,
+            })?;
+            apply_toml_layer(
+                &mut fields,
+                &content,
+                &user_path,
+                "user config",
+                ConfigSource::UserFile,
+            )?;
         }
     }
 
@@ -188,7 +204,7 @@ fn apply_drop_in_dir(
     fields: &mut HashMap<String, (String, ConfigSource)>,
     dir: &Path,
     source: ConfigSource,
-    label: &str,
+    label: &'static str,
 ) -> Result<(), FcError> {
     if !dir.exists() {
         return Ok(());
@@ -201,8 +217,14 @@ fn apply_drop_in_dir(
     }
 
     let mut files = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
+    for entry in std::fs::read_dir(dir).map_err(|e| FcError::PathIo {
+        path: dir.to_path_buf(),
+        source: e,
+    })? {
+        let entry = entry.map_err(|e| FcError::PathIo {
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) == Some("toml") && path.is_file() {
             files.push(path);
@@ -211,13 +233,11 @@ fn apply_drop_in_dir(
     files.sort();
 
     for path in files {
-        let content = std::fs::read_to_string(&path)?;
-        apply_toml_layer(fields, &content, source).map_err(|e| {
-            FcError::Config(ConfigError::Other(format!(
-                "{label} {}: {e}",
-                path.display()
-            )))
+        let content = std::fs::read_to_string(&path).map_err(|e| FcError::PathIo {
+            path: path.clone(),
+            source: e,
         })?;
+        apply_toml_layer(fields, &content, &path, label, source)?;
     }
 
     Ok(())
@@ -227,9 +247,17 @@ fn apply_drop_in_dir(
 fn apply_toml_layer(
     fields: &mut HashMap<String, (String, ConfigSource)>,
     toml_text: &str,
+    path: &Path,
+    layer: &'static str,
     source: ConfigSource,
-) -> Result<(), String> {
-    let table: toml::Value = toml::from_str(toml_text).map_err(|e| e.to_string())?;
+) -> Result<(), FcError> {
+    let table: toml::Value = toml::from_str(toml_text).map_err(|source| {
+        FcError::Config(ConfigError::TomlSyntax {
+            layer,
+            path: path.to_path_buf(),
+            source,
+        })
+    })?;
     if let toml::Value::Table(map) = table {
         for (key, val) in map {
             if fields.contains_key(key.as_str()) {
@@ -241,11 +269,17 @@ fn apply_toml_layer(
                 };
                 fields.insert(key, (s, source));
             } else {
-                return Err(format!("unknown config key {key:?}"));
+                return Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "config key",
+                    reason: format!("unknown config key {key:?} in {layer} {}", path.display()),
+                }));
             }
         }
     } else {
-        return Err("config root must be a TOML table".to_owned());
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "config root",
+            reason: format!("{layer} {} must be a TOML table", path.display()),
+        }));
     }
     Ok(())
 }

@@ -1,12 +1,12 @@
 use std::net::Ipv4Addr;
 use std::path::Path;
 
+use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
     build_pid_one_network_cmdline, inject_guest_network_config_with_ops, planned_bridge_state,
     planned_vm_network_state, prepare_pid_one_network_cmdline_with_ops,
     read_vm_network_state_record, DnsCommandOutput, DnsDiscoveryOps, GuestNetworkConfigOps,
-    NetError, OutboundIntent, SetupPhase, VmNetworkStateRecord, M80_NETWORKD_FILE,
-    M80_RESOLVED_FILE,
+    NetError, SetupPhase, VmNetworkStateRecord, NETWORKD_FILE, RESOLVED_FILE,
 };
 
 #[test]
@@ -18,7 +18,7 @@ fn networkd_unit_injected_with_static_ip_and_dns() {
 
     inject_guest_network_config_with_ops(&mut ops, &mut state, &runtime_rootfs).unwrap();
 
-    let networkd = ops.write_content(M80_NETWORKD_FILE);
+    let networkd = ops.write_content(NETWORKD_FILE);
     assert_eq!(
         networkd,
         format!(
@@ -55,7 +55,7 @@ fn resolved_dropin_injected_with_admitted_dns() {
     inject_guest_network_config_with_ops(&mut ops, &mut state, &runtime_rootfs).unwrap();
 
     assert_eq!(
-        ops.write_content(M80_RESOLVED_FILE),
+        ops.write_content(RESOLVED_FILE),
         "[Resolve]\nDNS=9.9.9.9 10.0.0.1 1.1.1.1\nFallbackDNS=\nDomains=~.\n"
     );
     assert!(ops.mkdir_commands().contains(&format!(
@@ -132,9 +132,8 @@ fn ready_state(run_root: &Path) -> VmNetworkStateRecord {
     std::fs::create_dir(&run_dir).unwrap();
     let intent = OutboundIntent {
         exceptions: Vec::new(),
-        gateway_override: None,
     };
-    let bridge = planned_bridge_state(run_root, &intent)
+    let bridge = planned_bridge_state(run_root)
         .unwrap()
         .with_phase(SetupPhase::Ready);
     let mut state = planned_vm_network_state(&intent, "vm-a", run_root, &run_dir, bridge);

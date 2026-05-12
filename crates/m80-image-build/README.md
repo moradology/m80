@@ -42,7 +42,7 @@ gives us:
    phase does not leave a stale host-visible loop mount.
 6. Copy `m80-guestd` into `<rootfs>/m80-guestd`.
 7. Symlink `<rootfs>/init` → `/m80-guestd` and `mkdir` the PID-1 mountpoint
-   dirs (`/workspace`, `/proc`, `/sys`, `/dev`, `/lower`, `/upper`,
+   dirs (`/workspace`, `/proc`, `/sys`, `/dev`, `/etc`, `/lower`, `/upper`,
    `/merged`) inside the rootfs. `/lower`, `/upper`, and `/merged` must
    exist before boot because the initial root is mounted read-only.
 8. Unmount the rootfs.
@@ -73,7 +73,7 @@ scratch. Smaller, faster cold boot, no package manager.
    x86_64-unknown-linux-musl`); a glibc-linked binary will fail at
    runtime under the busybox-only rootfs.
 7. `mkdir` the PID-1 mountpoint dirs (`/workspace`, `/proc`, `/sys`,
-   `/dev`, `/lower`, `/upper`, `/merged`) inside the rootfs. `/lower`,
+   `/dev`, `/etc`, `/lower`, `/upper`, `/merged`) inside the rootfs. `/lower`,
    `/upper`, and `/merged` must exist before boot because the initial
    root is mounted read-only. Also create `/tmp` with mode `1777` for
    normal exec scratch.
@@ -147,6 +147,18 @@ Files:
 - `m80-image-build kernel build [--workspace <path>]` — build the
   stripped kernel via Docker. `--workspace` defaults to `.` (cwd).
 
+### Stdout contract
+
+Human-readable progress and errors go to stderr through phase contexts and
+dry-run step text. Stdout is reserved for final machine-readable-ish result
+lines:
+
+- Ubuntu `run`: `kernel:`, `source_rootfs:`, `output_rootfs:`, `manifest:`.
+- Minimal `run`: `kernel:`, `output_rootfs:`, `manifest:`.
+- `verify`: `verified`.
+- `clean`: no stdout.
+- `kernel build`: `vmlinux:`.
+
 ### Failure modes
 
 - Each phase can fail with a typed error preserved through `anyhow`
@@ -212,9 +224,9 @@ as `v1.15`.
 - `m80-proto` — canonical `GUEST_PORT_DEFAULT` and `READY_MARKER_DEFAULT` constants.
 - `m80-image-manifest` — manifest schema + writer.
 - (no internal m80 privilege deps — the build process holds the required caps directly)
-- `serde`, `serde_json`, `sha2`, `hex`, `toml`.
+- `serde`, `sha2`, `hex`, `toml`.
 - `nix` — mount namespace isolation for the loop-mount phase.
-- `thiserror`, `anyhow`, `tracing`, `tempfile`.
+- `anyhow`, `tempfile`.
 
 ## Tests
 
@@ -230,7 +242,10 @@ as `v1.15`.
 - `tests/write_atomicity_under_signal.rs` — ignored real-host test that
   kills a Minimal build after the loop mount and verifies no manifest exists,
   no mount leaked into the host namespace, and the output directory remains
-  cleanable.
+  cleanable. This test uses the debug-only
+  `M80_TEST_SLEEP_AFTER_IMAGE_BUILD_LOOP_MOUNT=<ready-file>` hook, which
+  writes the ready file after the private loop mount is established and then
+  sleeps long enough for the test harness to send `SIGKILL`.
 
 Real-build smoke tests (network + root + loop device) are run manually
 with `sudo m80-image-build run --config <path>`; CI doesn't have the
