@@ -103,6 +103,19 @@ pub(crate) fn decode_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, ProtoErro
     })
 }
 
+/// Fail-closed check on envelope field numbers.
+///
+/// Prost (the underlying protobuf codec) silently ignores unknown fields by
+/// default, which violates AGENTS.md's "fail closed on unknown fields"
+/// doctrine for internal wire data. This hand-rolled varint scanner runs
+/// before `WireEnvelope::decode` and rejects any field number outside the
+/// envelope's documented set so a wire-level schema drift between host and
+/// guest surfaces as a typed error instead of silently being dropped.
+///
+/// The range is `1..=4 | 10..=52` because: fields 1-4 are the envelope
+/// scalars (`version`, `kind`, `request_id`, `max_duration_ms`) and 10-52
+/// are the payload-oneof tags (one per concrete payload type). Add fields
+/// to either set if `wire.proto` grows.
 fn reject_unknown_envelope_fields(bytes: &[u8]) -> Result<(), ProtoError> {
     let mut offset = 0;
     while offset < bytes.len() {
@@ -120,6 +133,8 @@ fn reject_unknown_envelope_fields(bytes: &[u8]) -> Result<(), ProtoError> {
 }
 
 fn known_envelope_field(field: u64) -> bool {
+    // Fields 1-4: envelope scalars (version, kind, request_id, max_duration_ms).
+    // Fields 10-52: payload oneof tags (one per concrete payload type in wire.proto).
     matches!(field, 1..=4 | 10..=52)
 }
 
