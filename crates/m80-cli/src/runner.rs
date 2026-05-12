@@ -19,12 +19,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
             secret_env,
             stdin,
             egress,
-            allow_host,
-            allow_cidr,
-            mount_config,
             scratch_size,
             writeback,
-            keep_on_failure,
             tty,
             interactive,
             warm,
@@ -37,12 +33,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
             secret_env,
             stdin,
             egress,
-            allow_host,
-            allow_cidr,
-            mount_config,
             scratch_size,
             writeback,
-            keep_on_failure,
             tty,
             interactive,
             warm,
@@ -84,15 +76,6 @@ mod tests {
     use clap::Parser;
 
     use super::*;
-    use crate::errors::EXIT_NOT_IMPLEMENTED;
-
-    #[test]
-    fn dispatches_feature_gap_without_subprocess() {
-        let cli =
-            Cli::try_parse_from(["m80", "warm", "enable", "--system", "--size", "1"]).unwrap();
-        let code = run(cli).unwrap();
-        assert_eq!(code, EXIT_NOT_IMPLEMENTED);
-    }
 
     #[test]
     fn dispatches_warm_status_without_subprocess() {

@@ -199,6 +199,7 @@ impl BootTimer {
         let delta_us = now.duration_since(self.last).as_micros();
         self.last = now;
         let line = format_boot_milestone_line(name, elapsed_us, delta_us);
+        // Best-effort: stderr write failure must not abort boot sequencing.
         let _ = writeln!(std::io::stderr().lock(), "{line}");
     }
 }

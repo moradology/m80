@@ -98,7 +98,6 @@ fn foreground_warm_owner_serves_run_and_drains_without_cold_fallback() {
             .args([
                 "warm",
                 "enable",
-                "--foreground",
                 "--size",
                 "1",
                 "--egress",

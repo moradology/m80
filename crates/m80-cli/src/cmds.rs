@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use m80_firecracker::{
-    backend_config_from_effective, Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy,
-    SandboxConfig, StoppedSandbox, CONSOLE_LOG,
+    Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig, StoppedSandbox,
+    CONSOLE_LOG,
 };
 use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
 
@@ -71,12 +71,8 @@ pub(crate) fn cmd_run(
     secret_env: Vec<String>,
     stdin: bool,
     egress: EgressMode,
-    allow_host: Vec<String>,
-    allow_cidr: Vec<String>,
-    mount_config: Vec<String>,
     scratch_size: Option<u64>,
     writeback: WritebackMode,
-    keep_on_failure: bool,
     tty: bool,
     interactive: bool,
     warm: bool,
@@ -88,24 +84,6 @@ pub(crate) fn cmd_run(
 
     if let Err(e) = validate_run_flags(interactive, tty, stdin, warm, workspace.is_some(), json) {
         return Ok(errors::render_error(&e, json));
-    }
-    if !allow_host.is_empty() || !allow_cidr.is_empty() {
-        return Ok(render_not_implemented(
-            "`m80 run --allow-host` and `--allow-cidr` are reserved for egress allowlists",
-            json,
-        ));
-    }
-    if !mount_config.is_empty() {
-        return Ok(render_not_implemented(
-            "`m80 run --mount-config` is reserved for explicit config-file projection",
-            json,
-        ));
-    }
-    if keep_on_failure {
-        return Ok(render_not_implemented(
-            "`m80 run --keep-on-failure` is reserved for diagnostics retention",
-            json,
-        ));
     }
 
     let Some((program, args)) = argv.split_first() else {
@@ -424,23 +402,11 @@ fn validate_secret_env_key(key: &str) -> Result<(), FcError> {
     Ok(())
 }
 
-pub(super) fn render_not_implemented(message: &str, json: bool) -> i32 {
-    if json {
-        let env = errors::not_implemented_envelope(message);
-        eprintln!("{}", json::to_pretty(&env));
-    } else if let Some(request_id) = crate::request_id::current() {
-        eprintln!("error: [{request_id}] {message}");
-    } else {
-        eprintln!("error: {message}");
-    }
-    errors::EXIT_NOT_IMPLEMENTED
-}
 
-fn render_warning(code: &str, detail: &str, json: bool) {
+fn render_warning(variant: &str, detail: &str, json: bool) {
     if json {
         let obj = serde_json::json!({
-            "level": "warning",
-            "code": code,
+            "variant": variant,
             "detail": detail,
         });
         eprintln!("{}", json::to_pretty(&obj));
@@ -451,19 +417,19 @@ fn render_warning(code: &str, detail: &str, json: bool) {
 
 /// `m80 preflight` — run host capability checks and render a table.
 pub(crate) fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
-    let result = preflight_with_effective_config();
+    let effective = config::load_effective(&std::collections::HashMap::new())?;
+    let result = preflight_with_effective_config(effective);
     Ok(render_preflight_result(result, json))
 }
 
 fn preflight_with_effective_config(
+    effective: EffectiveConfig,
 ) -> Result<m80_preflight::Discovery, m80_preflight::PreflightError> {
-    let effective = config::load_effective(&std::collections::HashMap::new()).ok();
-    let run_root = effective.as_ref().and_then(|eff| {
-        eff.fields
-            .iter()
-            .find(|f| f.name == "run_root")
-            .map(|f| std::path::PathBuf::from(&f.value))
-    });
+    let run_root = effective
+        .fields
+        .iter()
+        .find(|f| f.name == "run_root")
+        .map(|f| std::path::PathBuf::from(&f.value));
     let artifact_config = match run_root {
         Some(run_root) => m80_preflight::ArtifactPreflightConfig {
             run_root,
@@ -474,13 +440,7 @@ fn preflight_with_effective_config(
     m80_preflight::run_with_configs(
         m80_preflight::BinaryDiscoveryConfig::from_env(),
         artifact_config,
-        effective
-            .as_ref()
-            .map(host_feature_config_from_effective)
-            .transpose()?
-            .unwrap_or(HostFeaturePreflightConfig {
-                cgroup_mode: CgroupPreflightMode::UnifiedV2,
-            }),
+        host_feature_config_from_effective(&effective)?,
     )
 }
 

@@ -21,12 +21,8 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             secret_env,
             stdin,
             egress,
-            allow_host,
-            allow_cidr,
-            mount_config,
             scratch_size,
             writeback,
-            keep_on_failure,
             tty,
             interactive,
             warm,
@@ -39,12 +35,8 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             assert!(secret_env.is_empty());
             assert!(!stdin);
             assert_eq!(egress, EgressMode::Outbound);
-            assert!(allow_host.is_empty());
-            assert!(allow_cidr.is_empty());
-            assert!(mount_config.is_empty());
             assert!(scratch_size.is_none());
             assert_eq!(writeback, WritebackMode::Never);
-            assert!(!keep_on_failure);
             assert!(!tty);
             assert!(!interactive);
             assert!(!warm);
@@ -115,38 +107,6 @@ fn parse_run_runtime_profile_shape() {
     }
 }
 
-#[test]
-fn parse_run_egress_allowlist_shape() {
-    let cli = Cli::try_parse_from([
-        "m80",
-        "run",
-        "--allow-host",
-        "api.openai.com",
-        "--allow-cidr",
-        "10.0.0.0/24",
-        "--mount-config",
-        "/home/me/.config/tool:/config/tool:ro",
-        "--",
-        "curl",
-        "https://api.openai.com",
-    ])
-    .unwrap();
-    match cli.subcommand {
-        Cmd::Run {
-            allow_host,
-            allow_cidr,
-            mount_config,
-            argv,
-            ..
-        } => {
-            assert_eq!(allow_host, vec!["api.openai.com"]);
-            assert_eq!(allow_cidr, vec!["10.0.0.0/24"]);
-            assert_eq!(mount_config, vec!["/home/me/.config/tool:/config/tool:ro"]);
-            assert_eq!(argv, vec!["curl", "https://api.openai.com"]);
-        }
-        _ => panic!("expected Run"),
-    }
-}
 
 #[test]
 fn parse_run_pty_flag_shape() {
@@ -179,27 +139,20 @@ fn parse_run_warm_flag_shape() {
 }
 
 #[test]
-fn parse_run_writeback_and_retention_shape() {
+fn parse_run_writeback_shape() {
     let cli = Cli::try_parse_from([
         "m80",
         "run",
         "--writeback",
         "on-success",
-        "--keep-on-failure",
         "--",
         "make",
         "test",
     ])
     .unwrap();
     match cli.subcommand {
-        Cmd::Run {
-            writeback,
-            keep_on_failure,
-            argv,
-            ..
-        } => {
+        Cmd::Run { writeback, argv, .. } => {
             assert_eq!(writeback, WritebackMode::OnSuccess);
-            assert!(keep_on_failure);
             assert_eq!(argv, vec!["make", "test"]);
         }
         _ => panic!("expected Run"),
@@ -426,12 +379,11 @@ fn parse_warm_requires_action() {
 }
 
 #[test]
-fn parse_warm_enable_foreground_shape() {
+fn parse_warm_enable_shape() {
     let cli = Cli::try_parse_from([
         "m80",
         "warm",
         "enable",
-        "--foreground",
         "--size",
         "2",
         "--egress",
@@ -444,8 +396,6 @@ fn parse_warm_enable_foreground_shape() {
         Cmd::Warm {
             action: WarmAction::Enable(args),
         } => {
-            assert!(args.foreground);
-            assert!(!args.system);
             assert_eq!(args.size, 2);
             assert_eq!(args.egress, EgressMode::None);
             assert_eq!(args.profile.as_deref(), Some("minimal"));

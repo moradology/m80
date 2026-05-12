@@ -18,18 +18,7 @@ use control::{WarmControlRequest, WarmControlResponse};
 pub(super) fn cmd_warm(action: WarmAction, json: bool) -> anyhow::Result<i32> {
     let code = match action {
         WarmAction::Enable(args) => {
-            if args.system {
-                super::render_not_implemented(
-                    "`m80 warm enable --system` is reserved for service packaging",
-                    json,
-                )
-            } else if !args.foreground {
-                let e = FcError::UnsupportedOperation {
-                    operation: "m80 warm enable",
-                    reason: "first owner implementation requires --foreground".to_owned(),
-                };
-                errors::render_error(&e, json)
-            } else if args.size == 0 {
+            if args.size == 0 {
                 let e = FcError::Config(ConfigError::InvalidValue {
                     field: "size",
                     reason: "m80 warm enable --size must be greater than zero".to_owned(),
@@ -235,11 +224,17 @@ fn render_warm_run(response: ExecResponseJson, json_mode: bool) -> i32 {
 fn render_owner_error(err: control::WarmErrorResponse, json_mode: bool) -> i32 {
     let exit_code = err.exit_code;
     if json_mode {
+        // Set the request_id scope so json::to_pretty picks it up in the outer
+        // wrapper; do not duplicate it inside ErrorEnvelope.
+        let _scope = err
+            .request_id
+            .as_deref()
+            .map(|id| crate::request_id::set(id.to_owned()));
         let env = errors::ErrorEnvelope {
-            request_id: err.request_id,
             variant: err.variant.as_str(),
             detail: err.detail,
             exit_code,
+            target_ready: err.target_ready,
         };
         eprintln!("{}", json::to_pretty(&env));
     } else if let Some(request_id) = err.request_id {

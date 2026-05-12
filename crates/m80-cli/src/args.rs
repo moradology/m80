@@ -66,18 +66,6 @@ pub enum Cmd {
         #[arg(long, value_enum, default_value = "outbound")]
         egress: EgressMode,
 
-        /// Hostname allowed by the outbound egress policy. Deferred to v0.2.
-        #[arg(long = "allow-host", value_name = "HOST")]
-        allow_host: Vec<String>,
-
-        /// CIDR allowed by the outbound egress policy. Deferred to v0.2.
-        #[arg(long = "allow-cidr", value_name = "CIDR")]
-        allow_cidr: Vec<String>,
-
-        /// Host config file mount. Deferred to v0.2.
-        #[arg(long = "mount-config", value_name = "HOST:GUEST[:ro]")]
-        mount_config: Vec<String>,
-
         /// Scratch overlay size in bytes.
         #[arg(long, value_name = "BYTES")]
         scratch_size: Option<u64>,
@@ -85,10 +73,6 @@ pub enum Cmd {
         /// Workspace writeback policy.
         #[arg(long, value_enum, default_value = "never")]
         writeback: WritebackMode,
-
-        /// Preserve sandbox state after failure. Deferred to v0.2.
-        #[arg(long)]
-        keep_on_failure: bool,
 
         /// Allocate a terminal stream instead of separated stdout/stderr.
         #[arg(short = 't', long = "tty")]
@@ -219,14 +203,6 @@ pub enum WarmAction {
 /// Arguments for `m80 warm enable`.
 #[derive(Debug, Args)]
 pub struct WarmEnableArgs {
-    /// Run the owner in the foreground process.
-    #[arg(long)]
-    pub foreground: bool,
-
-    /// Start/enable the packaged system service. Deferred to a packaging bead.
-    #[arg(long)]
-    pub system: bool,
-
     /// Number of ready slots the owner should keep filled.
     #[arg(long, value_name = "N")]
     pub size: usize,

@@ -103,34 +103,38 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ErrorEnvelope {
-    /// Opaque request id for the current `m80 run` invocation, when present.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) request_id: Option<String>,
     /// Error class / variant name (e.g., `"Preflight"`, `"Config"`).
     pub(crate) variant: &'static str,
     /// Full human-readable description.
     pub(crate) detail: String,
     /// Corresponding CLI exit code.
     pub(crate) exit_code: i32,
+    /// Number of warm slots that will be ready, when the error is `PoolEmpty`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_ready: Option<usize>,
 }
 
 /// Build an [`ErrorEnvelope`] from an [`FcError`].
 pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
+    let target_ready = match err {
+        FcError::PoolEmpty { target_ready } => Some(*target_ready),
+        _ => None,
+    };
     ErrorEnvelope {
-        request_id: request_id::current(),
         variant: variant_name(err),
         detail: err.to_string(),
         exit_code: exit_code_for(err),
+        target_ready,
     }
 }
 
 /// Build an [`ErrorEnvelope`] for an explicit v0.x feature gap.
 pub(crate) fn not_implemented_envelope(message: &str) -> ErrorEnvelope {
     ErrorEnvelope {
-        request_id: request_id::current(),
         variant: "NotImplemented",
         detail: message.to_owned(),
         exit_code: EXIT_NOT_IMPLEMENTED,
+        target_ready: None,
     }
 }
 

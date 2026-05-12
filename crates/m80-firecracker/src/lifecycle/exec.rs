@@ -745,6 +745,10 @@ fn spawn_pty_event_forwarder(
         let _done = ForwarderDone(done_tx);
         let mut input_seq = 0u32;
         let mut control_seq = 0u32;
+        // Send errors on the vsock channel are intentionally ignored: a
+        // channel-closed result means the guest has already disconnected
+        // (normal PTY teardown), and there is no recovery path from within
+        // this fire-and-forget forwarder thread.
         while !stop_for_thread.load(Ordering::Relaxed) {
             match event_rx.recv_timeout(CANCEL_FORWARDER_POLL) {
                 Ok(PtyHostEvent::Input(bytes)) => {

@@ -28,40 +28,16 @@ use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod common;
+
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn end_to_end_real_kvm_boot_exec_stop_delete() {
     // Full preflight discovers the binaries and validates the environment.
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-
-    let run_root = discovery.run_root.clone();
-
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
-
-    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
-
-    let sandbox_config = m80_firecracker::SandboxConfig {
-        vm_id: Some("e2e-test".into()),
-        workspace: None,
-        network: m80_firecracker::NetworkPolicy::NoEgress,
-        vcpu_count: Some(1),
-        mem_size_mib: Some(512),
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
-        daemonize: false,
-        request_id: None,
-        preallocated_drive_slots: 0,
-        one_shot: false,
-    };
+    let backend = common::make_backend(discovery);
+    let sandbox_config = common::sandbox_config_with_id("e2e-test");
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
     let mut running = sandbox.launch().expect("launch");
@@ -92,33 +68,10 @@ fn end_to_end_real_kvm_boot_exec_stop_delete() {
 fn end_to_end_real_kvm_daemonized_boot_exec_stop_delete() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-
-    let run_root = discovery.run_root.clone();
-
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
-
-    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
-
+    let backend = common::make_backend(discovery);
     let sandbox_config = m80_firecracker::SandboxConfig {
-        vm_id: Some("e2e-daemonized-test".into()),
-        workspace: None,
-        network: m80_firecracker::NetworkPolicy::NoEgress,
-        vcpu_count: Some(1),
-        mem_size_mib: Some(512),
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
         daemonize: true,
-        request_id: None,
-        preallocated_drive_slots: 0,
-        one_shot: false,
+        ..common::sandbox_config_with_id("e2e-daemonized-test")
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
@@ -163,32 +116,9 @@ fn end_to_end_real_kvm_daemonized_boot_exec_stop_delete() {
 fn end_to_end_real_kvm_file_ops() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-
-    let run_root = discovery.run_root.clone();
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
-    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
+    let backend = common::make_backend(discovery);
     let vm_id = format!("e2e-file-{:04x}", unique_suffix() % 0x10000);
-    let sandbox_config = m80_firecracker::SandboxConfig {
-        vm_id: Some(vm_id),
-        workspace: None,
-        network: m80_firecracker::NetworkPolicy::NoEgress,
-        vcpu_count: Some(1),
-        mem_size_mib: Some(512),
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
-        daemonize: false,
-        request_id: None,
-        preallocated_drive_slots: 0,
-        one_shot: false,
-    };
+    let sandbox_config = common::sandbox_config_with_id(vm_id);
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
     let mut running = sandbox.launch().expect("launch");
@@ -291,31 +221,8 @@ fn end_to_end_real_kvm_jailer_security_parity() {
     let firecracker_bin = discovery.firecracker_bin.clone();
     let host_mount_ns_before =
         std::fs::read_link("/proc/self/ns/mnt").expect("host mount ns before launch");
-
-    let run_root = discovery.run_root.clone();
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
-    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
-    let sandbox_config = m80_firecracker::SandboxConfig {
-        vm_id: Some("e2e-jailer-security".into()),
-        workspace: None,
-        network: m80_firecracker::NetworkPolicy::NoEgress,
-        vcpu_count: Some(1),
-        mem_size_mib: Some(512),
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
-        daemonize: false,
-        request_id: None,
-        preallocated_drive_slots: 0,
-        one_shot: false,
-    };
+    let backend = common::make_backend(discovery);
+    let sandbox_config = common::sandbox_config_with_id("e2e-jailer-security");
 
     let sandbox = backend.admit(sandbox_config).expect("admit");
     let running = sandbox.launch().expect("launch");
@@ -392,30 +299,10 @@ fn end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace() {
     netns.create_tap("tapm80struct");
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let run_root = discovery.run_root.clone();
-
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
-    let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
+    let backend = common::make_backend(discovery);
     let sandbox_config = m80_firecracker::SandboxConfig {
-        vm_id: Some("e2e-join-netns".into()),
-        workspace: None,
         network: join_netns_policy(&netns.path, "tapm80struct"),
-        vcpu_count: Some(1),
-        mem_size_mib: Some(512),
-        boot_args: None,
-        overlay_size_bytes: 512 * 1024 * 1024,
-        idle_timeout: None,
-        daemonize: false,
-        request_id: None,
-        preallocated_drive_slots: 0,
-        one_shot: false,
+        ..common::sandbox_config_with_id("e2e-join-netns")
     };
 
     let sandbox = backend.admit(sandbox_config).expect("admit");

@@ -15,8 +15,8 @@ use m80_snapshot::{capture, CaptureRequest, SnapshotError, SnapshotKind, Snapsho
 // Happy path — Full snapshot
 // ---------------------------------------------------------------------------
 
-/// `capture` must first issue `PATCH /vm` with `state=Paused`, then
-/// `PUT /snapshot/create` with the correct paths. The VM is left paused.
+/// `capture` must first issue `PATCH /vm`, then `PUT /snapshot/create` — in
+/// that order. The VM is left paused after a successful call.
 #[test]
 fn capture_full_sends_pause_then_create_in_order() {
     // Two responses: one for PATCH /vm, one for PUT /snapshot/create.
@@ -34,24 +34,38 @@ fn capture_full_sends_pause_then_create_in_order() {
 
     let requests = server.join();
     assert_eq!(requests.len(), 2, "exactly two HTTP exchanges expected");
-
-    // First request: PATCH /vm Paused
     assert!(
         requests[0].starts_with("PATCH /vm HTTP/1.1\r\n"),
         "first call must be PATCH /vm, got: {:?}",
         requests[0].lines().next()
     );
     assert!(
-        requests[0].contains("\"state\":\"Paused\""),
-        "PATCH /vm body must carry state=Paused: {}",
-        requests[0]
-    );
-
-    // Second request: PUT /snapshot/create
-    assert!(
         requests[1].starts_with("PUT /snapshot/create HTTP/1.1\r\n"),
         "second call must be PUT /snapshot/create, got: {:?}",
         requests[1].lines().next()
+    );
+}
+
+/// `PATCH /vm` body carries `state=Paused` to freeze the VM before snapshot.
+#[test]
+fn capture_pause_request_carries_paused_state() {
+    let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
+
+    let req = CaptureRequest {
+        api_socket: server.socket_path.clone(),
+        paths: SnapshotPaths {
+            vm_state: PathBuf::from("/run/m80/vms/vm-1/snapshots/vm.snap"),
+            mem: PathBuf::from("/run/m80/vms/vm-1/snapshots/mem.snap"),
+        },
+        kind: SnapshotKind::Full,
+    };
+    capture(req).expect("capture must succeed");
+
+    let requests = server.join();
+    assert!(
+        requests[0].contains("\"state\":\"Paused\""),
+        "PATCH /vm body must carry state=Paused: {}",
+        requests[0]
     );
 }
 

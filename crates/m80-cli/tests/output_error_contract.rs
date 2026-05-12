@@ -6,7 +6,6 @@ use common::m80;
 
 const EXIT_CONFIG: i32 = 6;
 const EXIT_GENERIC: i32 = 1;
-const EXIT_NOT_IMPLEMENTED: i32 = 7;
 
 #[test]
 fn config_wrapper_failure_uses_stderr_exit_code_and_empty_stdout() {
@@ -47,7 +46,7 @@ fn json_wrapper_failure_uses_stderr_envelope_and_empty_stdout() {
         serde_json::from_str(&stderr).expect("stderr should be one JSON envelope");
     assert_eq!(parsed["version"], 1);
     assert!(parsed["request_id"].as_str().unwrap().starts_with("req_"));
-    assert_eq!(parsed["data"]["request_id"], parsed["request_id"]);
+    assert!(parsed["data"].get("request_id").is_none(), "request_id must not be duplicated inside data");
     assert_eq!(parsed["data"]["variant"], "Config");
     assert_eq!(parsed["data"]["exit_code"], EXIT_CONFIG);
     assert!(parsed["data"]["detail"]
@@ -71,18 +70,6 @@ fn writeback_without_workspace_fails_before_backend_work() {
     assert!(stderr.contains("--writeback requires --workspace"));
 }
 
-#[test]
-fn feature_gap_failure_uses_distinct_exit_code() {
-    let output = m80()
-        .args(["run", "--allow-host", "api.openai.com", "--", "bash"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(EXIT_NOT_IMPLEMENTED));
-    assert!(output.stdout.is_empty());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("reserved for egress allowlists"));
-}
 
 #[test]
 fn cli_exit_codes_parse_vs_runtime_distinct() {

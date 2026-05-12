@@ -9,40 +9,6 @@ use common::m80;
 
 const EXIT_CONFIG: i32 = 6;
 const EXIT_GENERIC: i32 = 1;
-const EXIT_NOT_IMPLEMENTED: i32 = 7;
-
-fn assert_feature_gap(args: &[&str], expected_stderr: &str) {
-    let output = m80().args(args).output().unwrap();
-    assert_eq!(output.status.code(), Some(EXIT_NOT_IMPLEMENTED));
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        stderr.contains(expected_stderr),
-        "stderr should explain feature gap `{expected_stderr}`, got: {stderr}"
-    );
-}
-
-#[test]
-fn warm_system_enable_is_explicit_feature_gap() {
-    assert_feature_gap(
-        &["warm", "enable", "--system", "--size", "1"],
-        "`m80 warm enable --system` is reserved",
-    );
-}
-
-#[test]
-fn warm_system_feature_gap_honors_json_mode() {
-    let output = m80()
-        .args(["--json", "warm", "enable", "--system", "--size", "1"])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(EXIT_NOT_IMPLEMENTED));
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stderr).expect("feature-gap JSON should parse");
-    assert_eq!(parsed["version"], 1);
-    assert_eq!(parsed["data"]["variant"], "NotImplemented");
-    assert_eq!(parsed["data"]["exit_code"], EXIT_NOT_IMPLEMENTED);
-}
 
 #[test]
 fn warm_status_without_owner_is_unavailable_without_preflight() {
@@ -110,35 +76,6 @@ fn run_warm_workspace_fails_before_owner_lookup() {
     );
 }
 
-#[test]
-fn run_egress_allowlist_is_explicit_feature_gap() {
-    assert_feature_gap(
-        &["run", "--allow-host", "api.openai.com", "--", "true"],
-        "reserved for egress allowlists",
-    );
-}
-
-#[test]
-fn run_mount_config_is_explicit_feature_gap() {
-    assert_feature_gap(
-        &[
-            "run",
-            "--mount-config",
-            "/home/me/.config/tool:/config/tool:ro",
-            "--",
-            "true",
-        ],
-        "reserved for explicit config-file projection",
-    );
-}
-
-#[test]
-fn run_keep_on_failure_is_explicit_feature_gap() {
-    assert_feature_gap(
-        &["run", "--keep-on-failure", "--", "true"],
-        "reserved for diagnostics retention",
-    );
-}
 
 #[test]
 fn run_tty_json_is_config_error_before_preflight() {
@@ -153,7 +90,7 @@ fn run_tty_json_is_config_error_before_preflight() {
     let parsed: serde_json::Value = serde_json::from_str(&stderr).unwrap();
     assert_eq!(parsed["version"], 1);
     assert!(parsed["request_id"].as_str().unwrap().starts_with("req_"));
-    assert_eq!(parsed["data"]["request_id"], parsed["request_id"]);
+    assert!(parsed["data"].get("request_id").is_none(), "request_id must not be duplicated inside data");
     assert_eq!(parsed["data"]["variant"], "Config");
     assert_eq!(parsed["data"]["exit_code"], EXIT_CONFIG);
     assert!(parsed["data"]["detail"]

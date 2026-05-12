@@ -59,6 +59,26 @@ fn fake_manifest() -> m80_image_manifest::Manifest {
 
 // ── Firecracker-specific fixtures ─────────────────────────────────────────────
 
+/// Build a [`m80_firecracker::Backend`] from a real [`m80_preflight::Discovery`].
+///
+/// Used by end-to-end tests that call `m80_preflight::run()` themselves; the
+/// `run_root` is derived from `discovery.run_root`.
+#[allow(dead_code)]
+pub(crate) fn make_backend(
+    discovery: m80_preflight::Discovery,
+) -> std::sync::Arc<m80_firecracker::Backend> {
+    let run_root = discovery.run_root.clone();
+    let config = m80_firecracker::BackendConfig {
+        discovery,
+        max_concurrent_vms: 1,
+        run_root,
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
+    };
+    std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"))
+}
+
 #[allow(dead_code)]
 pub(crate) const CONFIG_ENV_KEYS: &[&str] = &[
     "HOME",
@@ -75,8 +95,8 @@ pub(crate) fn sandbox_config() -> m80_firecracker::SandboxConfig {
         vm_id: None,
         workspace: None,
         network: m80_firecracker::NetworkPolicy::NoEgress,
-        vcpu_count: None,
-        mem_size_mib: None,
+        vcpu_count: Some(1),
+        mem_size_mib: Some(512),
         boot_args: None,
         overlay_size_bytes: 512 * 1024 * 1024,
         idle_timeout: None,

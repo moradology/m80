@@ -111,8 +111,8 @@ fn help_warm_enable() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
-        stdout.contains("--foreground") && stdout.contains("--size"),
-        "warm enable help should expose foreground owner controls, got: {stdout}"
+        stdout.contains("--size"),
+        "warm enable help should expose --size, got: {stdout}"
     );
 }
 

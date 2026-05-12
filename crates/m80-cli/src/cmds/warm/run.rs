@@ -114,7 +114,9 @@ pub(super) fn handle_run_streaming(
         discard_reason,
         run_dir,
     };
-    let _ = control::write_stream_frame(stream, &frame);
+    if let Err(e) = control::write_stream_frame(stream, &frame) {
+        eprintln!("warning: failed to write exit frame to streaming caller: {e}");
+    }
 }
 
 pub(super) struct StreamingRun {
