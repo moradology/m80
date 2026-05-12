@@ -4,7 +4,6 @@ mod common;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 
@@ -46,7 +45,7 @@ fn launch_malicious(
         })
         .expect("Backend::new"),
     );
-    let vm_id = unique_vm_id(&format!("malicious-{attack}"));
+    let vm_id = common::unique_vm_id(&format!("malicious-{attack}"));
     let sandbox = backend
         .admit(SandboxConfig {
             vm_id: Some(vm_id),
@@ -90,11 +89,3 @@ fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
     .expect("preflight for malicious guestd artifacts")
 }
 
-fn unique_vm_id(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos()
-        % 1_000_000_000;
-    format!("{prefix}-{nanos}")
-}

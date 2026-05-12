@@ -1,9 +1,8 @@
-use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Barrier,
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecRequest, ExecStatus};
@@ -11,25 +10,13 @@ use tempfile::TempDir;
 
 use crate::common;
 
-fn make_backend(run_root: &Path) -> Arc<Backend> {
-    let config = BackendConfig {
-        discovery: common::fake_discovery(run_root),
-        max_concurrent_vms: 8,
-        run_root: run_root.to_path_buf(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
-    Arc::new(Backend::new(config).expect("Backend::new"))
-}
-
 #[test]
 fn no_background_recovery_task_is_spawned_by_backend_new() {
     let dir = TempDir::new().unwrap();
     let orphan = dir.path().join("vm-orphan");
     std::fs::create_dir_all(&orphan).unwrap();
 
-    let _backend = make_backend(dir.path());
+    let _backend = common::make_fake_backend(8, dir.path());
 
     assert!(orphan.exists());
 }
@@ -45,7 +32,7 @@ fn recovery_is_synchronous_explicit_call() {
     let dir = TempDir::new().unwrap();
     let orphan = dir.path().join("vm-orphan");
     std::fs::create_dir_all(&orphan).unwrap();
-    let backend = make_backend(dir.path());
+    let backend = common::make_fake_backend(8, dir.path());
 
     backend.recover_stale_run_root(false).unwrap();
 
@@ -57,7 +44,7 @@ fn startup_recovery_is_caller_driven_before_first_admission() {
     let dir = TempDir::new().unwrap();
     let orphan = dir.path().join("vm-orphan");
     std::fs::create_dir_all(&orphan).unwrap();
-    let backend = make_backend(dir.path());
+    let backend = common::make_fake_backend(8, dir.path());
 
     assert!(orphan.exists());
     backend.recover_stale_run_root(false).unwrap();
@@ -97,16 +84,17 @@ fn recovery_during_launch_preserves_fresh_vms() {
     });
 
     let barrier = Arc::new(Barrier::new(LAUNCHES));
-    let suffix = unique_suffix() % 0x10000;
+    let run_prefix = common::unique_vm_id("rec-race");
     let mut handles = Vec::new();
     for index in 0..LAUNCHES {
         let backend = Arc::clone(&backend);
         let barrier = Arc::clone(&barrier);
+        let run_prefix = run_prefix.clone();
         handles.push(std::thread::spawn(move || {
             barrier.wait();
             let sandbox = backend
                 .admit(SandboxConfig {
-                    vm_id: Some(format!("rec-race-{suffix:04x}-{index}")),
+                    vm_id: Some(format!("{run_prefix}-{index}")),
                     workspace: None,
                     network: NetworkPolicy::NoEgress,
                     vcpu_count: Some(1),
@@ -152,9 +140,3 @@ fn true_request() -> ExecRequest {
     }
 }
 
-fn unique_suffix() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos()
-}

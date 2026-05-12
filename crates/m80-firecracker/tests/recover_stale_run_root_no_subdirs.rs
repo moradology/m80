@@ -2,28 +2,14 @@
 
 mod common;
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::PathBuf;
 
-use m80_firecracker::{Backend, BackendConfig, CgroupMode};
 use tempfile::TempDir;
-
-fn make_backend(run_root: &Path) -> Arc<Backend> {
-    let config = BackendConfig {
-        discovery: common::fake_discovery(run_root),
-        max_concurrent_vms: 8,
-        run_root: run_root.to_path_buf(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
-    Arc::new(Backend::new(config).expect("Backend::new"))
-}
 
 #[test]
 fn empty_run_root_returns_ok() {
     let dir = TempDir::new().expect("tempdir");
-    make_backend(dir.path())
+    common::make_fake_backend(8,dir.path())
         .recover_stale_run_root(false)
         .expect("should succeed on empty run-root");
 }
@@ -31,7 +17,7 @@ fn empty_run_root_returns_ok() {
 #[test]
 fn nonexistent_run_root_returns_ok() {
     let dir = PathBuf::from("/nonexistent/path/xyz/m80-test");
-    make_backend(&dir)
+    common::make_fake_backend(8,&dir)
         .recover_stale_run_root(false)
         .expect("nonexistent run-root should return Ok");
 }
@@ -43,7 +29,7 @@ fn orphan_subdir_without_jail_state_is_reaped() {
     std::fs::create_dir_all(orphan.join("nested")).unwrap();
     std::fs::write(orphan.join("nested/state.txt"), b"state").unwrap();
 
-    make_backend(dir.path())
+    common::make_fake_backend(8,dir.path())
         .recover_stale_run_root(false)
         .expect("orphan run-dir recovery should succeed");
 
@@ -62,7 +48,7 @@ fn live_ownership_lock_preserves_run_dir() {
     )
     .unwrap();
 
-    make_backend(dir.path())
+    common::make_fake_backend(8,dir.path())
         .recover_stale_run_root(false)
         .expect("live run-dir recovery should succeed");
 

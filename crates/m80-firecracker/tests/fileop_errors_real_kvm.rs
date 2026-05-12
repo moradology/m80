@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
 use m80_proto::GUEST_PORT_DEFAULT;
@@ -34,7 +34,7 @@ fn launch_vm() -> (m80_firecracker::RunningSandbox, PathBuf, PathBuf) {
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(SandboxConfig {
-            vm_id: Some(unique_vm_id("fileop-err")),
+            vm_id: Some(common::unique_vm_id("fileop-err")),
             workspace: None,
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
@@ -122,15 +122,6 @@ fn oversized_chunk_request(upload_id: &str) -> Envelope<FileWriteChunkRequest> {
     }
 
     panic!("could not construct oversized file_write_chunk envelope");
-}
-
-fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
 }
 
 #[test]

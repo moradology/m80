@@ -10,6 +10,7 @@
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── Re-exports from m80-test-helpers ─────────────────────────────────────────
 
@@ -58,6 +59,39 @@ fn fake_manifest() -> m80_image_manifest::Manifest {
 }
 
 // ── Firecracker-specific fixtures ─────────────────────────────────────────────
+
+/// Build a [`m80_firecracker::Backend`] backed by [`fake_discovery`].
+///
+/// Use this for unit-style tests that exercise fake (non-KVM) backends with a
+/// configurable admission limit.
+#[allow(dead_code)]
+pub(crate) fn make_fake_backend(
+    max: usize,
+    run_root: &Path,
+) -> std::sync::Arc<m80_firecracker::Backend> {
+    let config = m80_firecracker::BackendConfig {
+        discovery: fake_discovery(run_root),
+        max_concurrent_vms: max as u32,
+        run_root: run_root.to_path_buf(),
+        jail_uid: 3000,
+        jail_gid: 3000,
+        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
+    };
+    std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"))
+}
+
+/// Generate a short, unique VM identifier for use in integration tests.
+///
+/// Uses nanosecond wall-clock time, which is adequate uniqueness for tests
+/// that don't run more than ~10⁹ concurrent invocations.
+#[allow(dead_code)]
+pub(crate) fn unique_vm_id(prefix: &str) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_nanos();
+    format!("{prefix}-{:04x}", nanos % 0x10000)
+}
 
 /// Build a [`m80_firecracker::Backend`] from a real [`m80_preflight::Discovery`].
 ///

@@ -3,7 +3,6 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_image_manifest::ImageKind;
@@ -96,21 +95,12 @@ fn exec_sh(running: &mut m80_firecracker::RunningSandbox, script: &str) -> Strin
     String::from_utf8(response.stdout).expect("probe stdout utf8")
 }
 
-fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
-}
-
 #[test]
 #[ignore = "requires KVM host with real Minimal and Ubuntu Firecracker artifacts"]
 fn image_kind_minimal_boots() {
     let minimal_dir = artifact_dir("M80_MINIMAL_ARTIFACT_DIR", "/tmp/m80-build/minimal");
     let minimal_discovery = discovery_for_artifacts(&minimal_dir);
-    let minimal_id = unique_vm_id("ik-minimal");
+    let minimal_id = common::unique_vm_id("ik-minimal");
     let mut minimal = launch_vm(minimal_discovery, &minimal_id, ImageKind::Minimal);
     let minimal_run_dir = minimal.run_dir().to_owned();
     let _minimal_dump_guard = RunDirDumpGuard::new(minimal_run_dir);
@@ -131,7 +121,7 @@ fn image_kind_minimal_boots() {
 fn image_kind_ubuntu_boots_guestd_as_pid_one() {
     let ubuntu_dir = artifact_dir("M80_UBUNTU_ARTIFACT_DIR", "/tmp/m80-build/ubuntu");
     let ubuntu_discovery = discovery_for_artifacts(&ubuntu_dir);
-    let ubuntu_id = unique_vm_id("ik-ubuntu");
+    let ubuntu_id = common::unique_vm_id("ik-ubuntu");
     let mut ubuntu = launch_vm(ubuntu_discovery, &ubuntu_id, ImageKind::Ubuntu);
     let ubuntu_run_dir = ubuntu.run_dir().to_owned();
     let _ubuntu_dump_guard = RunDirDumpGuard::new(ubuntu_run_dir);
@@ -173,7 +163,7 @@ fn overlay_assembly_per_image_kind() {
     ] {
         let artifact_dir = artifact_dir(env_key, default_path);
         let discovery = discovery_for_artifacts(&artifact_dir);
-        let vm_id = unique_vm_id(&format!("ik-overlay-{label}"));
+        let vm_id = common::unique_vm_id(&format!("ik-overlay-{label}"));
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let mut running = launch_vm_with_workspace(
             discovery,

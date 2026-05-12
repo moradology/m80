@@ -6,22 +6,10 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::Barrier;
 
-use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, Sandbox, SandboxConfig};
+use m80_firecracker::{FcError, Sandbox, SandboxConfig};
 
-fn make_backend(max: u32) -> Arc<Backend> {
-    make_backend_at(max, std::path::Path::new("/tmp/m80-test"))
-}
-
-fn make_backend_at(max: u32, run_root: &std::path::Path) -> Arc<Backend> {
-    let config = BackendConfig {
-        discovery: common::fake_discovery(run_root),
-        max_concurrent_vms: max,
-        run_root: run_root.to_path_buf(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
-    Arc::new(Backend::new(config).expect("Backend::new should not fail"))
+fn make_backend(max: u32) -> std::sync::Arc<m80_firecracker::Backend> {
+    common::make_fake_backend(max as usize, std::path::Path::new("/tmp/m80-test"))
 }
 
 #[test]

@@ -27,7 +27,7 @@ fn api_socket_timeout_cleans_partial_state() {
         m80_preflight::run().expect("preflight must pass on a privileged host with m80 artifacts");
     discovery.firecracker_bin = fake_firecracker;
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
-    let vm_id = unique_vm_id("api-sock-to");
+    let vm_id = common::unique_vm_id("api-sock-to");
     let run_dir = discovery.run_root.join(&vm_id);
 
     let sandbox = backend
@@ -77,7 +77,7 @@ fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
         ))
         .unwrap(),
     );
-    let vm_id = unique_vm_id("cgr-fail");
+    let vm_id = common::unique_vm_id("cgr-fail");
     let run_dir = discovery.run_root.join(&vm_id);
     let _fault = EnvGuard::set("M80_TEST_FAIL_CGROUP_CREATE_FOR_VM", &vm_id);
 
@@ -115,7 +115,7 @@ fn guestd_not_ready_timeout_cleans_partial_state() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
-    let vm_id = unique_vm_id("gnr-cold");
+    let vm_id = common::unique_vm_id("gnr-cold");
     let run_dir = discovery.run_root.join(&vm_id);
 
     let sandbox = backend
@@ -170,7 +170,7 @@ fn restore_guestd_not_ready_timeout_cleans_partial_state() {
         .delete()
         .expect("delete busy-guestd golden");
 
-    let restore_vm_id = unique_vm_id("gnr-rest");
+    let restore_vm_id = common::unique_vm_id("gnr-rest");
     let restore_run_dir = discovery.run_root.join(&restore_vm_id);
     let sandbox = backend
         .admit(default_config(&restore_vm_id))
@@ -238,7 +238,7 @@ fn stalled_guestd_config(vm_id: &str) -> SandboxConfig {
 }
 
 fn launch_healthy(backend: &Arc<Backend>, prefix: &str) -> m80_firecracker::RunningSandbox {
-    let vm_id = unique_vm_id(prefix);
+    let vm_id = common::unique_vm_id(prefix);
     backend
         .admit(default_config(&vm_id))
         .expect("admit healthy launch")
@@ -402,16 +402,6 @@ fn assert_no_process_cmdline_contains(needle: &str) {
 // With run_root=/var/lib/m80-run (16) and fc_basename="firecracker" (11), V<=27;
 // the fake-firecracker cases tighten this further. Prefixes here are kept under
 // ~17 chars and the suffix is 4 hex digits to leave headroom for both.
-fn unique_vm_id(prefix: &str) -> String {
-    format!("{prefix}-{:04x}", unique_suffix() % 0x10000)
-}
-
-fn unique_suffix() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos()
-}
 
 struct EnvGuard {
     key: &'static str,

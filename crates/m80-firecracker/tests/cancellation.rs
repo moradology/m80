@@ -24,7 +24,7 @@
 mod common;
 
 use std::path::PathBuf;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{
@@ -69,7 +69,7 @@ fn launch_vm(
     let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(m80_firecracker::SandboxConfig {
-            vm_id: Some(unique_vm_id("cancel-test")),
+            vm_id: Some(common::unique_vm_id("cancel-test")),
             workspace: None,
             network: m80_firecracker::NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
@@ -86,15 +86,6 @@ fn launch_vm(
     let running = sandbox.launch().expect("launch");
     let run_dir = running.run_dir().to_owned();
     (running, run_dir)
-}
-
-fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
 }
 
 /// Open a raw vsock channel to the running VM, bypassing `RunningSandbox::exec`

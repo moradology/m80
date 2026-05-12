@@ -9,7 +9,6 @@ mod common;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecRequest, ExecResponse, ExecStatus};
@@ -115,7 +114,7 @@ fn launch_no_egress_vm() -> (m80_firecracker::RunningSandbox, PathBuf) {
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(SandboxConfig {
-            vm_id: Some(unique_vm_id("layer1-guest-smoke")),
+            vm_id: Some(common::unique_vm_id("layer1-guest-smoke")),
             workspace: None,
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
@@ -132,15 +131,6 @@ fn launch_no_egress_vm() -> (m80_firecracker::RunningSandbox, PathBuf) {
     let running = sandbox.launch().expect("launch");
     let run_dir = running.run_dir().to_owned();
     (running, run_dir)
-}
-
-fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
 }
 
 fn compile_probe_binary() -> Vec<u8> {

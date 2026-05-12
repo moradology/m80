@@ -30,6 +30,41 @@ pub(crate) fn manifest_path(rootfs: &Path) -> PathBuf {
     name.push(".manifest.json");
     rootfs.with_file_name(name)
 }
+
+/// Construct a [`m80_image_manifest::Manifest`] from the artifacts common to
+/// both build paths. The `image_kind`, `source_rootfs_image`, and
+/// `source_rootfs_sha256` fields differ per path and are supplied by the
+/// caller.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_manifest(
+    daemon_binary_host: std::path::PathBuf,
+    daemon_sha: String,
+    kernel_version: String,
+    image_kind: m80_image_manifest::ImageKind,
+    kernel_path: std::path::PathBuf,
+    kernel_sha: String,
+    output_rootfs: std::path::PathBuf,
+    output_sha: String,
+    source_rootfs: Option<std::path::PathBuf>,
+    source_sha: Option<String>,
+) -> m80_image_manifest::Manifest {
+    m80_image_manifest::Manifest::new(
+        daemon_binary_host,
+        daemon_sha,
+        kernel_version,
+        m80_proto::GUEST_PORT_DEFAULT,
+        image_kind,
+        kernel_path,
+        kernel_sha,
+        m80_image_manifest::KernelKind::Stock,
+        Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
+        output_rootfs,
+        output_sha,
+        m80_proto::READY_MARKER_DEFAULT.to_string(),
+        source_rootfs,
+        source_sha,
+    )
+}
 pub(crate) const FC_CI_BASE: &str = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci";
 const GUEST_DAEMON_PATH: &str = "/m80-guestd";
 pub(crate) const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
@@ -88,47 +123,41 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch, UBUNTU_SQUASHFS
     );
 
-    let steps: Vec<String> = vec![
-        format!(
+    if dry_run {
+        eprintln!(
             "1. Download kernel: curl -fsSL '{}' → {}",
             kernel_url,
             kernel.display()
-        ),
-        format!(
+        );
+        eprintln!(
             "2. Download source rootfs squashfs: curl -fsSL '{}' → {}",
             rootfs_url,
             source_rootfs.display()
-        ),
-        format!("3. Convert squashfs → ext4 in temp dir: unsquashfs + mkfs.ext4"),
-        format!(
+        );
+        eprintln!("3. Convert squashfs → ext4 in temp dir: unsquashfs + mkfs.ext4");
+        eprintln!(
             "4. Resize ext4 to {} bytes: truncate -s {} {}",
             size_bytes,
             size_bytes,
             output_rootfs.display()
-        ),
-        format!("5. Loop-mount {} read-write", output_rootfs.display()),
-        format!(
+        );
+        eprintln!("5. Loop-mount {} read-write", output_rootfs.display());
+        eprintln!(
             "6. Copy {} → <mount>{}",
             cfg.guestd.binary.display(),
             GUEST_DAEMON_PATH
-        ),
-        format!(
+        );
+        eprintln!(
             "7. mkdir {} (PID-1 mount targets) + symlink <mount>/init → /m80-guestd",
             PID_ONE_MOUNTPOINT_DIRS
                 .iter()
                 .map(|d| format!("/{d}"))
                 .collect::<Vec<_>>()
                 .join(" ")
-        ),
-        "8. Unmount".to_string(),
-        "9. Compute sha256 of 4 artifacts".to_string(),
-        format!("10. Write manifest → {}", manifest_path.display()),
-    ];
-
-    if dry_run {
-        for step in &steps {
-            eprintln!("{}", step);
-        }
+        );
+        eprintln!("8. Unmount");
+        eprintln!("9. Compute sha256 of 4 artifacts");
+        eprintln!("10. Write manifest → {}", manifest_path.display());
         return Ok(());
     }
 
@@ -169,7 +198,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     loop_mount(&output_rootfs, mount_dir.path()).context("step 5: loop-mount output rootfs")?;
     maybe_sleep_after_loop_mount(mount_dir.path()).context("test hook after loop mount")?;
 
-    let install_result = install_into_rootfs(mount_dir.path(), &cfg.guestd.binary);
+    let install_result = install_pid_one_artifacts(mount_dir.path(), &cfg.guestd.binary);
 
     // Step 8: unmount before checking install result so we don't leak mounts.
     let umount_result = loop_umount(mount_dir.path()).context("step 8: umount");
@@ -188,19 +217,15 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     let daemon_sha = sha256_file(&cfg.guestd.binary).context("sha256 daemon binary")?;
 
     // Step 10: emit manifest.
-    let manifest = m80_image_manifest::Manifest::new(
+    let manifest = build_manifest(
         daemon_binary_host,
         daemon_sha,
         cfg.kernel.version,
-        m80_proto::GUEST_PORT_DEFAULT,
         m80_image_manifest::ImageKind::Ubuntu,
         paths.kernel.clone(),
         kernel_sha,
-        m80_image_manifest::KernelKind::Stock,
-        Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
         paths.output_rootfs.clone(),
         output_sha,
-        m80_proto::READY_MARKER_DEFAULT.to_string(),
         Some(paths.source_rootfs.clone()),
         Some(source_sha),
     );
@@ -247,7 +272,10 @@ fn squashfs_to_ext4(
 ) -> anyhow::Result<()> {
     let squash_out = work_dir.join("squashfs-root");
     if squash_out.exists() {
-        std::fs::remove_dir_all(&squash_out).context("removing stale squashfs-root")?;
+        anyhow::bail!(
+            "squashfs-root already exists at {} — remove it before building",
+            squash_out.display()
+        );
     }
     let status = Command::new("unsquashfs")
         .args(["-d"])
@@ -352,13 +380,15 @@ pub(crate) fn maybe_sleep_after_loop_mount(_mount_dir: &Path) -> anyhow::Result<
 }
 
 /// Install the daemon binary and PID-1 mountpoint contract into the mounted rootfs.
-fn install_into_rootfs(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
-    // Step 6: copy daemon binary.
+///
+/// Shared by both the ubuntu and minimal build paths. Copies `daemon_binary`
+/// to `<mount>/m80-guestd`, sets it executable, symlinks `/init → /m80-guestd`,
+/// and creates the [`PID_ONE_MOUNTPOINT_DIRS`] inside the mount.
+pub(crate) fn install_pid_one_artifacts(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
     let guest_bin = mount.join("m80-guestd");
     std::fs::copy(daemon_binary, &guest_bin).context("copying m80-guestd into rootfs")?;
     set_executable(&guest_bin).context("chmod +x m80-guestd")?;
 
-    // Step 7: /init plus mountpoint dirs for m80-guestd's PID-1 setup.
     std::os::unix::fs::symlink("/m80-guestd", mount.join("init"))
         .context("symlinking /init → /m80-guestd")?;
 

@@ -4,13 +4,13 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use super::install_into_rootfs;
+use super::install_pid_one_artifacts;
 
 fn install_fixture() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     let daemon = dir.path().join("source-m80-guestd");
     fs::write(&daemon, b"guestd").unwrap();
-    install_into_rootfs(dir.path(), &daemon).unwrap();
+    install_pid_one_artifacts(dir.path(), &daemon).unwrap();
     dir
 }
 

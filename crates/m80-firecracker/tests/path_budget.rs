@@ -9,21 +9,8 @@
 mod common;
 
 use std::path::Path;
-use std::sync::Arc;
 
-use m80_firecracker::{Backend, BackendConfig, CgroupMode, ConfigError, FcError, SandboxConfig};
-
-fn make_backend(run_root: &Path) -> Arc<Backend> {
-    let config = BackendConfig {
-        discovery: common::fake_discovery(run_root),
-        max_concurrent_vms: 4,
-        run_root: run_root.to_path_buf(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
-    Arc::new(Backend::new(config).expect("Backend::new"))
-}
+use m80_firecracker::{ConfigError, FcError, SandboxConfig};
 
 fn config_with_vm_id(vm_id: Option<&str>) -> SandboxConfig {
     SandboxConfig {
@@ -36,7 +23,7 @@ fn config_with_vm_id(vm_id: Option<&str>) -> SandboxConfig {
 fn admit_within_budget_succeeds() {
     // /tmp/m80-test (14) + 2*"persist-fs" (10) + "firecracker" (11) +
     // separators (5) + "root/firecracker.sock" (21) = 71 bytes; fits.
-    let backend = make_backend(Path::new("/tmp/m80-test"));
+    let backend = common::make_fake_backend(4,Path::new("/tmp/m80-test"));
     backend
         .admit(config_with_vm_id(Some("persist-fs")))
         .expect("short vm_id must admit cleanly");
@@ -44,7 +31,7 @@ fn admit_within_budget_succeeds() {
 
 #[test]
 fn admit_over_budget_returns_typed_error() {
-    let backend = make_backend(Path::new("/var/lib/m80-run"));
+    let backend = common::make_fake_backend(4,Path::new("/var/lib/m80-run"));
     // /var/lib/m80-run (16) + firecracker basename (11): 28-char vm_id
     // produces 108 bytes, just over the 107-byte usable cap.
     let err = backend
@@ -67,7 +54,7 @@ fn admit_over_budget_returns_typed_error() {
 
 #[test]
 fn admit_just_under_budget_succeeds() {
-    let backend = make_backend(Path::new("/var/lib/m80-run"));
+    let backend = common::make_fake_backend(4,Path::new("/var/lib/m80-run"));
     // V = 27 produces 106 bytes; fits below the 107 cap. (Each extra vm_id
     // byte costs 2 path bytes because the jail layout uses vm_id twice; no V
     // produces exactly 107 with this run_root.)
@@ -80,7 +67,7 @@ fn admit_just_under_budget_succeeds() {
 fn admit_with_no_vm_id_skips_check() {
     // Auto-generated `vm-{pid}-{ts}` is bounded by construction; admit must
     // succeed without checking the budget.
-    let backend = make_backend(Path::new("/var/lib/m80-run"));
+    let backend = common::make_fake_backend(4,Path::new("/var/lib/m80-run"));
     backend
         .admit(config_with_vm_id(None))
         .expect("None vm_id must admit (auto-generated form is bounded)");
@@ -90,7 +77,7 @@ fn admit_with_no_vm_id_skips_check() {
 fn admit_over_budget_does_not_consume_permit() {
     // The path-budget rejection happens before the semaphore is decremented.
     // After a rejected admit, all permits must still be available.
-    let backend = make_backend(Path::new("/var/lib/m80-run"));
+    let backend = common::make_fake_backend(4,Path::new("/var/lib/m80-run"));
     let _err = backend
         .admit(config_with_vm_id(Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
         .expect_err("over-budget vm_id must be rejected");

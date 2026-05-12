@@ -96,13 +96,13 @@ impl StoppedSandbox {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Condvar, Mutex};
+    use std::sync::{Arc, Mutex};
 
     use crate::runroot::write_ownership_lock;
     use crate::types::{AdmissionPermit, StoppedSandbox};
 
     fn stopped_sandbox(run_root: &std::path::Path, vm_id: &str) -> StoppedSandbox {
-        let semaphore = Arc::new((Mutex::new(0), Condvar::new()));
+        let semaphore = Arc::new(Mutex::new(0u32));
         let run_dir = run_root.join(vm_id);
         std::fs::create_dir_all(&run_dir).unwrap();
         let lease_guard = write_ownership_lock(&run_dir).unwrap();

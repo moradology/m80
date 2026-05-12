@@ -68,7 +68,7 @@ pub const PAYLOAD_KIND_CANCEL_REQUEST: &str = "cancel_request";
 pub const PAYLOAD_KIND_CANCEL_RESPONSE: &str = "cancel_response";
 
 /// Marker trait for types that have a canonical protobuf wire `kind`.
-pub trait Payload: Sized {
+pub trait Payload: Sized + Clone {
     /// Wire `kind` value, stamped into [`Envelope::kind`] by the constructors.
     const KIND: &'static str;
     /// Convert this public payload into the active protobuf payload variant.

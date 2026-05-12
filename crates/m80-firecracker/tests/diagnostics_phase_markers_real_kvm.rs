@@ -2,7 +2,6 @@
 
 mod common;
 
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecRequest, ExecStatus};
@@ -11,15 +10,6 @@ use serde_json::Value;
 use common::RunDirDumpGuard;
 
 const REQUEST_ID: &str = "req-diagnostics-phase-e2e";
-
-fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
-}
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
@@ -37,7 +27,7 @@ fn diagnostics_phase_markers_emitted_on_exec() {
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(SandboxConfig {
-            vm_id: Some(unique_vm_id("diag-e2e")),
+            vm_id: Some(common::unique_vm_id("diag-e2e")),
             workspace: None,
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),

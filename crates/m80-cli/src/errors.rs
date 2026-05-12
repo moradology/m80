@@ -128,15 +128,6 @@ pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
     }
 }
 
-/// Build an [`ErrorEnvelope`] for an explicit v0.x feature gap.
-pub(crate) fn not_implemented_envelope(message: &str) -> ErrorEnvelope {
-    ErrorEnvelope {
-        variant: "NotImplemented",
-        detail: message.to_owned(),
-        exit_code: EXIT_NOT_IMPLEMENTED,
-        target_ready: None,
-    }
-}
 
 /// Return the stable variant name string for an [`FcError`].
 fn variant_name(err: &FcError) -> &'static str {

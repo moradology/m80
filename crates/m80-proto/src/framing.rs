@@ -1,6 +1,6 @@
 //! Length-prefixed protobuf framing.
 
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 
 use crate::error::ProtoError;
 use crate::types::{Envelope, Payload};
@@ -36,12 +36,12 @@ where
     let mut prefix = [0u8; LENGTH_PREFIX_BYTES];
     reader
         .read_exact(&mut prefix)
-        .map_err(map_read_exact_error)?;
+        .map_err(ProtoError::Io)?;
     let size = u32::from_be_bytes(prefix) as usize;
     check_size(size)?;
 
     let mut body = vec![0u8; size];
-    reader.read_exact(&mut body).map_err(map_read_exact_error)?;
+    reader.read_exact(&mut body).map_err(ProtoError::Io)?;
     let raw = decode_raw_envelope(&body)?;
     if raw.version != PROTOCOL_VERSION {
         return Err(ProtoError::IncompatibleVersion {
@@ -56,7 +56,7 @@ where
 pub fn write_frame<W, T>(writer: &mut W, envelope: &Envelope<T>) -> Result<(), ProtoError>
 where
     W: Write,
-    T: Payload + Clone,
+    T: Payload,
 {
     write_raw_frame(writer, RawEnvelope::from_typed(envelope.clone()))
 }
@@ -68,17 +68,9 @@ where
 {
     let body = encode_raw_envelope(envelope)?;
     check_size(body.len())?;
-    let size = u32::try_from(body.len())
-        .map_err(|_| ProtoError::EncodeFailed("frame length does not fit in u32".into()))?;
+    // check_size guarantees body.len() <= MAX_FRAME_BYTES = 4 MiB, well within u32::MAX.
+    let size = body.len() as u32;
     writer.write_all(&size.to_be_bytes())?;
     writer.write_all(&body)?;
     Ok(())
-}
-
-fn map_read_exact_error(err: io::Error) -> ProtoError {
-    if err.kind() == io::ErrorKind::UnexpectedEof {
-        ProtoError::Io(io::Error::from(io::ErrorKind::UnexpectedEof))
-    } else {
-        ProtoError::Io(err)
-    }
 }

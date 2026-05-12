@@ -3,7 +3,6 @@
 mod common;
 
 use std::sync::mpsc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecStatus, PtyControlEvent, PtyRequest, PtySignal, PtySize};
@@ -25,7 +24,7 @@ fn launch_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf) {
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(SandboxConfig {
-            vm_id: Some(unique_vm_id("pty-e2e")),
+            vm_id: Some(common::unique_vm_id("pty-e2e")),
             workspace: None,
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
@@ -42,15 +41,6 @@ fn launch_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf) {
     let running = sandbox.launch().expect("launch");
     let run_dir = running.run_dir().to_owned();
     (running, run_dir)
-}
-
-fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
 }
 
 fn pty_size(rows: u16, cols: u16) -> PtySize {

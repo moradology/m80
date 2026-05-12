@@ -1,22 +1,7 @@
-use std::path::Path;
-use std::sync::Arc;
-
-use m80_firecracker::{Backend, BackendConfig, CgroupMode, OWNERSHIP_LOCK};
+use m80_firecracker::OWNERSHIP_LOCK;
 use tempfile::TempDir;
 
 use crate::common;
-
-fn make_backend(run_root: &Path) -> Arc<Backend> {
-    let config = BackendConfig {
-        discovery: common::fake_discovery(run_root),
-        max_concurrent_vms: 8,
-        run_root: run_root.to_path_buf(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
-    Arc::new(Backend::new(config).expect("Backend::new"))
-}
 
 #[test]
 fn ownership_lock_is_the_marker_file() {
@@ -34,7 +19,7 @@ fn current_process_ownership_lock_preserves_run_dir() {
     )
     .unwrap();
 
-    make_backend(dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
 
     assert!(live.exists());
 }
@@ -47,7 +32,7 @@ fn stale_detection_uses_ownership_and_jailer_state_not_socket_probes() {
     std::fs::write(stale.join("firecracker.sock"), b"not a socket").unwrap();
     std::fs::write(stale.join("vsock.sock"), b"not a socket").unwrap();
 
-    make_backend(dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
 
     assert!(!stale.exists());
 }
@@ -59,7 +44,7 @@ fn preserves_run_dir_when_ownership_lock_is_ambiguous() {
     std::fs::create_dir_all(&ambiguous).unwrap();
     std::fs::write(ambiguous.join(OWNERSHIP_LOCK), b"not-parseable").unwrap();
 
-    make_backend(dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
 
     assert!(ambiguous.exists());
 }

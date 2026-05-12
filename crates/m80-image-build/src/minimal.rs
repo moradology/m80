@@ -21,9 +21,9 @@ use anyhow::Context;
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
 use crate::pipeline::{
-    enter_private_mount_namespace, loop_mount, loop_umount, manifest_path,
-    maybe_sleep_after_loop_mount, run_curl, set_executable, truncate_file, FC_CI_BASE,
-    KERNEL_FILENAME, PID_ONE_MOUNTPOINT_DIRS,
+    build_manifest, enter_private_mount_namespace, install_pid_one_artifacts, loop_mount,
+    loop_umount, manifest_path, maybe_sleep_after_loop_mount, run_curl, set_executable,
+    truncate_file, FC_CI_BASE, KERNEL_FILENAME, PID_ONE_MOUNTPOINT_DIRS,
 };
 
 const HOST_BUSYBOX: &str = "/bin/busybox";
@@ -49,45 +49,39 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch, KERNEL_FILENAME
     );
 
-    let steps: Vec<String> = vec![
-        format!(
+    if dry_run {
+        eprintln!(
             "1. Download kernel: curl -fsSL '{}' → {}",
             kernel_url,
             kernel.display()
-        ),
-        format!(
+        );
+        eprintln!(
             "2. Pre-allocate empty rootfs: truncate -s {} {}",
             size_bytes,
             output_rootfs.display()
-        ),
-        format!("3. mkfs.ext4 -F {}", output_rootfs.display()),
-        format!("4. Loop-mount {}", output_rootfs.display()),
-        format!(
+        );
+        eprintln!("3. mkfs.ext4 -F {}", output_rootfs.display());
+        eprintln!("4. Loop-mount {}", output_rootfs.display());
+        eprintln!(
             "5. Copy {} → <mount>/bin/busybox + symlink applets ({})",
             HOST_BUSYBOX,
             BUSYBOX_APPLETS.join(", ")
-        ),
-        format!(
+        );
+        eprintln!(
             "6. Copy {} → <mount>/m80-guestd + symlink /init → /m80-guestd",
             cfg.guestd.binary.display()
-        ),
-        format!(
+        );
+        eprintln!(
             "7. mkdir {} (PID-1 mount targets)",
             PID_ONE_MOUNTPOINT_DIRS
                 .iter()
                 .map(|d| format!("/{d}"))
                 .collect::<Vec<_>>()
                 .join(" ")
-        ),
-        "8. Unmount".to_string(),
-        "9. Compute sha256 of 3 artifacts (kernel, output_rootfs, daemon_binary)".to_string(),
-        format!("10. Write manifest → {}", manifest_path.display()),
-    ];
-
-    if dry_run {
-        for step in &steps {
-            eprintln!("{}", step);
-        }
+        );
+        eprintln!("8. Unmount");
+        eprintln!("9. Compute sha256 of 3 artifacts (kernel, output_rootfs, daemon_binary)");
+        eprintln!("10. Write manifest → {}", manifest_path.display());
         return Ok(());
     }
 
@@ -143,19 +137,15 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
     let daemon_sha = sha256_file(&cfg.guestd.binary).context("sha256 daemon binary")?;
 
     // Step 10: emit manifest.
-    let manifest = m80_image_manifest::Manifest::new(
+    let manifest = build_manifest(
         daemon_binary_host,
         daemon_sha,
         cfg.kernel.version,
-        m80_proto::GUEST_PORT_DEFAULT,
         m80_image_manifest::ImageKind::Minimal,
         kernel.clone(),
         kernel_sha,
-        m80_image_manifest::KernelKind::Stock,
-        Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
         output_rootfs.clone(),
         output_sha,
-        m80_proto::READY_MARKER_DEFAULT.to_string(),
         None,
         None,
     );
@@ -184,20 +174,9 @@ fn install_minimal(mount: &Path, daemon_binary: &Path) -> anyhow::Result<()> {
             .with_context(|| format!("symlinking /bin/{applet} → busybox"))?;
     }
 
-    // Install m80-guestd at /m80-guestd.
-    let guestd_dest = mount.join("m80-guestd");
-    std::fs::copy(daemon_binary, &guestd_dest).context("copying m80-guestd into rootfs")?;
-    set_executable(&guestd_dest).context("chmod +x m80-guestd")?;
+    // Install m80-guestd, /init symlink, and PID-1 mountpoint dirs.
+    install_pid_one_artifacts(mount, daemon_binary)?;
 
-    // /init → /m80-guestd (kernel's init= target).
-    std::os::unix::fs::symlink("/m80-guestd", mount.join("init"))
-        .context("symlinking /init → /m80-guestd")?;
-
-    // Mountpoint dirs for the PID-1 setup in m80-guestd::pid_one.
-    for d in PID_ONE_MOUNTPOINT_DIRS {
-        std::fs::create_dir_all(mount.join(d))
-            .with_context(|| format!("creating /{d} in rootfs"))?;
-    }
     std::fs::create_dir_all(mount.join("tmp")).context("creating /tmp in rootfs")?;
     std::fs::set_permissions(mount.join("tmp"), std::fs::Permissions::from_mode(0o1777))
         .context("chmod 1777 /tmp")?;

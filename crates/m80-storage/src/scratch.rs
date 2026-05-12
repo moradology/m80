@@ -12,13 +12,10 @@ use tempfile::TempDir;
 use crate::{format_exit, io_err, ChangeSet, Rejection, RejectionReason, StorageError};
 
 /// Minimum scratch image size: 64 MiB.
-#[cfg(test)]
 pub(crate) const MIN_SCRATCH_BYTES: u64 = 64 * 1024 * 1024;
 /// Extra headroom added above the host workspace's current file bytes.
-#[cfg(test)]
 pub(crate) const SCRATCH_PADDING_BYTES: u64 = 32 * 1024 * 1024;
 /// Scratch image sizes are rounded up to a 4 MiB boundary.
-#[cfg(test)]
 pub(crate) const SCRATCH_ALIGNMENT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// A per-VM scratch ext4 image.
@@ -38,8 +35,7 @@ impl Scratch {
     ///
     /// The rule is `max(64 MiB, used_bytes + 32 MiB)`, rounded up to a
     /// 4 MiB boundary.
-    #[cfg(test)]
-    pub(crate) fn recommended_size_for_workspace(workspace: &Path) -> Result<u64, StorageError> {
+    pub fn recommended_size_for_workspace(workspace: &Path) -> Result<u64, StorageError> {
         let used = workspace_used_bytes(workspace)?;
         let padded = used.saturating_add(SCRATCH_PADDING_BYTES);
         Ok(align_scratch_size(padded.max(MIN_SCRATCH_BYTES)))
@@ -115,7 +111,6 @@ impl Scratch {
     }
 }
 
-#[cfg(test)]
 fn align_scratch_size(size: u64) -> u64 {
     let remainder = size % SCRATCH_ALIGNMENT_BYTES;
     if remainder == 0 {
@@ -125,7 +120,6 @@ fn align_scratch_size(size: u64) -> u64 {
     }
 }
 
-#[cfg(test)]
 fn workspace_used_bytes(src: &Path) -> Result<u64, StorageError> {
     let mut used = 0_u64;
     for entry in fs::read_dir(src).map_err(|e| io_err(src, e))? {
@@ -187,7 +181,7 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
     // error wins over the umount error if both fail (the user wants to
     // know what went wrong with their workspace, not that umount also
     // couldn't recover).
-    let copy_result = copy_workspace_into(workspace, mount_dir.path());
+    let copy_result = copy_tree(workspace, workspace, mount_dir.path());
     let umount_result = run_mount(mount_dir.path(), &["umount"], None);
     copy_result?;
     umount_result
@@ -250,14 +244,10 @@ fn run_mount(mount_point: &Path, argv: &[&str], image: Option<&Path>) -> Result<
     Ok(())
 }
 
-/// Recursively copy `workspace` contents into `dest`.
+/// Recursively copy `src` contents relative to `root` into `dst_root`.
 ///
 /// Directories and regular files are copied; symlinks/specials return
 /// [`StorageError::AdmissibilityRefused`].
-fn copy_workspace_into(workspace: &Path, dest: &Path) -> Result<(), StorageError> {
-    copy_tree(workspace, workspace, dest)
-}
-
 fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageError> {
     for entry in fs::read_dir(src).map_err(|e| io_err(src, e))? {
         let entry = entry.map_err(|e| io_err(src, e))?;

@@ -69,48 +69,38 @@ impl RawEnvelope {
     }
 }
 
-impl WireEnvelope {
-    pub(crate) fn from_raw(raw: RawEnvelope) -> Self {
-        Self {
-            version: raw.version,
-            kind: raw.kind,
-            request_id: raw.request_id,
-            max_duration_ms: raw.max_duration_ms,
-            payload: Some(raw.payload),
-        }
-    }
-
-    pub(crate) fn into_raw(self) -> Result<RawEnvelope, ProtoError> {
-        Ok(RawEnvelope {
-            version: self.version,
-            kind: self.kind,
-            request_id: self.request_id,
-            max_duration_ms: self.max_duration_ms,
-            payload: self
-                .payload
-                .ok_or_else(|| ProtoError::MalformedPayload("missing envelope payload".into()))?,
-        })
-    }
-}
-
 /// Encode a raw envelope into a protobuf frame body.
 pub fn encode_raw_envelope(raw: RawEnvelope) -> Result<Vec<u8>, ProtoError> {
-    let wire = WireEnvelope::from_raw(raw);
-    if wire.version != PROTOCOL_VERSION {
+    if raw.version != PROTOCOL_VERSION {
         return Err(ProtoError::IncompatibleVersion {
             expected: PROTOCOL_VERSION,
-            got: wire.version,
+            got: raw.version,
         });
     }
+    let wire = WireEnvelope {
+        version: raw.version,
+        kind: raw.kind,
+        request_id: raw.request_id,
+        max_duration_ms: raw.max_duration_ms,
+        payload: Some(raw.payload),
+    };
     Ok(wire.encode_to_vec())
 }
 
 /// Decode a protobuf frame body into a raw envelope.
 pub(crate) fn decode_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, ProtoError> {
     reject_unknown_envelope_fields(bytes)?;
-    WireEnvelope::decode(bytes)
-        .map_err(|e| ProtoError::MalformedPayload(e.to_string()))?
-        .into_raw()
+    let wire = WireEnvelope::decode(bytes)
+        .map_err(|e| ProtoError::MalformedPayload(e.to_string()))?;
+    Ok(RawEnvelope {
+        version: wire.version,
+        kind: wire.kind,
+        request_id: wire.request_id,
+        max_duration_ms: wire.max_duration_ms,
+        payload: wire
+            .payload
+            .ok_or_else(|| ProtoError::MalformedPayload("missing envelope payload".into()))?,
+    })
 }
 
 fn reject_unknown_envelope_fields(bytes: &[u8]) -> Result<(), ProtoError> {

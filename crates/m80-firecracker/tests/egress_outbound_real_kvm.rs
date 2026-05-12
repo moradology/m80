@@ -2,7 +2,6 @@
 
 mod common;
 
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, ExecChunk, NetworkPolicy, SandboxConfig,
@@ -26,7 +25,7 @@ fn launch_outbound_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf)
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(SandboxConfig {
-            vm_id: Some(unique_vm_id("outbound-egress-e2e")),
+            vm_id: Some(common::unique_vm_id("outbound-egress-e2e")),
             workspace: None,
             network: NetworkPolicy::AllowOutbound {
                 exceptions: Vec::new(),
@@ -45,15 +44,6 @@ fn launch_outbound_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf)
     let running = sandbox.launch().expect("launch outbound");
     let run_dir = running.run_dir().to_owned();
     (running, run_dir)
-}
-
-fn unique_vm_id(prefix: &str) -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_millis()
-        % 1_000_000;
-    format!("{prefix}-{millis}")
 }
 
 fn shell_request(script: &str) -> ExecRequest {

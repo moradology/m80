@@ -1,7 +1,7 @@
 //! [`Backend`] implementation: construction, admission, effective-config query,
 //! and stale run-root recovery.
 
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 
 use std::time::{Duration, Instant};
 
@@ -38,7 +38,7 @@ impl Backend {
         effective: EffectiveConfig,
     ) -> Result<Self, FcError> {
         let permits = config.max_concurrent_vms;
-        let semaphore = Arc::new((Mutex::new(permits), Condvar::new()));
+        let semaphore = Arc::new(Mutex::new(permits));
         Ok(Backend {
             config,
             effective,
@@ -62,8 +62,7 @@ impl Backend {
             check_vm_id_path_budget(&self.config, vm_id)?;
         }
 
-        let (lock, _cvar) = self.semaphore.as_ref();
-        let mut available = lock.lock().unwrap_or_else(|p| p.into_inner());
+        let mut available = self.semaphore.lock().unwrap_or_else(|p| p.into_inner());
 
         if *available == 0 {
             return Err(FcError::AdmissionRefused {
@@ -186,7 +185,12 @@ fn check_vm_id_path_budget(config: &BackendConfig, vm_id: &str) -> Result<(), Fc
         .firecracker_bin
         .file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or("firecracker");
+        .ok_or_else(|| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: "firecracker_bin",
+                reason: "path contains non-UTF-8 characters".into(),
+            })
+        })?;
     let path_len = socket_path_len(&config.run_root, vm_id, fc_basename);
     if path_len > SUN_PATH_BUDGET {
         return Err(FcError::Config(ConfigError::VmIdPathBudgetExceeded {
@@ -208,11 +212,6 @@ fn check_vm_id_path_budget(config: &BackendConfig, vm_id: &str) -> Result<(), Fc
 /// `EffectiveConfig` and can pass it alongside the `BackendConfig`.
 fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
     let fields = vec![
-        EffectiveField {
-            name: "default_profile".into(),
-            value: "env".into(),
-            source: ConfigSource::Default,
-        },
         EffectiveField {
             name: "max_concurrent_vms".into(),
             value: cfg.max_concurrent_vms.to_string(),
@@ -252,9 +251,17 @@ fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
 /// leaf in `/sys/fs/cgroup/m80-firecracker/<vm_id>/` stays around forever.
 fn remove_run_dir(subdir: &std::path::Path) {
     unmount_under(subdir);
-    if let Some(vm_id) = subdir.file_name().and_then(|s| s.to_str()) {
-        if let Err(e) = m80_cgroup::cleanup_orphan_subtree(vm_id) {
-            warn!(vm_id, err = %e, "recover_stale_run_root: cgroup cleanup failed");
+    match subdir.file_name().and_then(|s| s.to_str()) {
+        Some(vm_id) => {
+            if let Err(e) = m80_cgroup::cleanup_orphan_subtree(vm_id) {
+                warn!(vm_id, err = %e, "recover_stale_run_root: cgroup cleanup failed");
+            }
+        }
+        None => {
+            warn!(
+                path = %subdir.display(),
+                "recover_stale_run_root: non-UTF-8 dir name; skipping cgroup cleanup"
+            );
         }
     }
     if let Err(e) = std::fs::remove_dir_all(subdir) {

@@ -7,11 +7,11 @@ use m80_storage::{Rootfs, Scratch};
 
 use crate::diagnostics::phase_event;
 use crate::error::FcError;
-use crate::layout::{preallocated_drive_slot_path, rootfs_overlay_path, scratch_image_path};
+use crate::layout::{
+    preallocated_drive_slot_filename, preallocated_drive_slot_path, rootfs_overlay_path,
+    scratch_image_path,
+};
 use crate::types::{SandboxConfig, StoragePrep};
-
-/// Default scratch size: 64 MiB.
-const SCRATCH_DEFAULT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Small placeholder backing size for pre-created Firecracker drive slots.
 const PREALLOCATED_DRIVE_SLOT_BYTES: u64 = 1024 * 1024;
@@ -31,8 +31,9 @@ pub(crate) fn phase_3_storage_prep(
 
     let scratch = if let Some(workspace) = &config.workspace {
         let scratch_dest = scratch_image_path(run_dir);
+        let size = Scratch::recommended_size_for_workspace(workspace)?;
         let t = Instant::now();
-        let scratch = Scratch::create(workspace, &scratch_dest, SCRATCH_DEFAULT_BYTES)?;
+        let scratch = Scratch::create(workspace, &scratch_dest, size)?;
         phase_event("phase_3c_scratch_create", vm_id, t.elapsed());
         Some(scratch)
     } else {
@@ -49,6 +50,10 @@ pub(crate) fn phase_3_storage_prep(
     })
 }
 
+// The create+truncate+write+set_len pattern appears in scratch.rs (StorageError)
+// and rootfs.rs (custom StorageError variant) as well. All three sites differ in
+// error wrapping and context; there is no useful shared helper across the crate
+// boundary, so the duplication is acceptable.
 fn prepare_preallocated_drive_slots(run_dir: &Path, count: u8) -> Result<Vec<PathBuf>, FcError> {
     let mut slots = Vec::with_capacity(usize::from(count));
     for slot in 0..count {
@@ -69,7 +74,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preallocated_drive_slot_prep_creates_sparse_placeholders() {
+    fn preallocated_drive_slot_prep_returns_canonical_paths() {
         let dir = tempfile::tempdir().unwrap();
 
         let slots = prepare_preallocated_drive_slots(dir.path(), 2).unwrap();
@@ -77,10 +82,18 @@ mod tests {
         assert_eq!(
             slots,
             vec![
-                dir.path().join("hotplug-slot-0.raw"),
-                dir.path().join("hotplug-slot-1.raw")
+                dir.path().join(preallocated_drive_slot_filename(0)),
+                dir.path().join(preallocated_drive_slot_filename(1)),
             ]
         );
+    }
+
+    #[test]
+    fn preallocated_drive_slot_prep_creates_placeholder_sized_files() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let slots = prepare_preallocated_drive_slots(dir.path(), 2).unwrap();
+
         for slot in slots {
             assert_eq!(
                 std::fs::metadata(slot).unwrap().len(),

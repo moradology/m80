@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -25,11 +25,8 @@ pub const FIRST_LINE_MEM_SIZE_MIB: u32 = 1024;
 /// Default count of preallocated hotplug drive slots.
 pub(crate) const DEFAULT_PREALLOCATED_DRIVE_SLOTS: u8 = 0;
 
-/// Inner state of the admission semaphore: `(available_permits, Condvar)`.
-pub(crate) type SemaphoreInner = (Mutex<u32>, Condvar);
-
-/// Shared admission semaphore.
-pub(crate) type Semaphore = Arc<SemaphoreInner>;
+/// Shared admission semaphore (available permit count).
+pub(crate) type Semaphore = Arc<Mutex<u32>>;
 
 /// An acquired admission permit. Releasing it (via Drop) returns one slot to
 /// the semaphore. Held inside `Sandbox` / `RunningSandbox` / `StoppedSandbox`
@@ -51,10 +48,8 @@ impl std::fmt::Debug for AdmissionPermit {
 
 impl Drop for AdmissionPermit {
     fn drop(&mut self) {
-        let (lock, cvar) = self.sem.as_ref();
-        let mut available = lock.lock().unwrap_or_else(|p| p.into_inner());
+        let mut available = self.sem.lock().unwrap_or_else(|p| p.into_inner());
         *available += 1;
-        cvar.notify_one();
     }
 }
 
@@ -69,7 +64,7 @@ pub struct Backend {
     pub(crate) config: BackendConfig,
     /// Effective configuration snapshot (for `show_effective_config`).
     pub(crate) effective: EffectiveConfig,
-    /// Admission semaphore: `(available_permits, Condvar)`.
+    /// Admission semaphore (available permit count).
     pub(crate) semaphore: Semaphore,
 }
 

@@ -4,7 +4,6 @@ mod common;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
@@ -28,7 +27,7 @@ fn malicious_guestd_noop_reaches_ready_signal() {
         })
         .expect("Backend::new"),
     );
-    let vm_id = unique_vm_id("malicious-noop");
+    let vm_id = common::unique_vm_id("malicious-noop");
     let sandbox = backend
         .admit(SandboxConfig {
             vm_id: Some(vm_id),
@@ -79,11 +78,3 @@ fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
     .expect("preflight for malicious guestd artifacts")
 }
 
-fn unique_vm_id(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos()
-        % 1_000_000_000;
-    format!("{prefix}-{nanos}")
-}
