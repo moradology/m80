@@ -15,7 +15,7 @@ mod hash;
 mod minimal;
 mod pipeline;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -71,8 +71,8 @@ enum KernelAction {
     },
 }
 
-fn run_verify(rootfs: PathBuf) -> anyhow::Result<()> {
-    let manifest_path = pipeline::manifest_path(&rootfs);
+fn run_verify(rootfs: &Path) -> anyhow::Result<()> {
+    let manifest_path = pipeline::manifest_path(rootfs);
     let manifest = m80_image_manifest::Manifest::read(&manifest_path)
         .with_context(|| format!("reading manifest at {}", manifest_path.display()))?;
     let root = rootfs
@@ -85,20 +85,20 @@ fn run_verify(rootfs: PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_clean(workdir: PathBuf) -> anyhow::Result<()> {
+fn run_clean(workdir: &Path) -> anyhow::Result<()> {
     if !workdir.exists() {
         return Ok(());
     }
-    std::fs::remove_dir_all(&workdir)
+    std::fs::remove_dir_all(workdir)
         .with_context(|| format!("removing workdir {}", workdir.display()))
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     match args.subcommand {
-        Cmd::Run { config, dry_run } => pipeline::run_build(config, dry_run),
-        Cmd::Verify { rootfs } => run_verify(rootfs),
-        Cmd::Clean { workdir } => run_clean(workdir),
+        Cmd::Run { config, dry_run } => pipeline::run_build(&config, dry_run),
+        Cmd::Verify { rootfs } => run_verify(&rootfs),
+        Cmd::Clean { workdir } => run_clean(&workdir),
         Cmd::Kernel {
             action: KernelAction::Build { workspace },
         } => {

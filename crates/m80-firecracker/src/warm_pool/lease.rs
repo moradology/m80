@@ -202,7 +202,11 @@ fn with_sandbox_request_id<T>(
     f: impl FnOnce(&mut RunningSandbox) -> Result<T, FcError>,
 ) -> Result<T, FcError> {
     let old = sandbox.request_id.replace(request_id);
-    let result = f(sandbox);
+    // catch_unwind ensures `old` is restored even when `f` panics.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(sandbox)));
     sandbox.request_id = old;
-    result
+    match result {
+        Ok(val) => val,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
 }

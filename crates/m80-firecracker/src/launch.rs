@@ -1005,6 +1005,9 @@ fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
                 timeout: API_SOCKET_TIMEOUT,
             });
         }
+        // 50 ms poll interval: short enough that the common case (socket
+        // appears in < 200 ms after jailer exec) doesn't add perceptible
+        // latency; long enough that we aren't spin-burning under API_SOCKET_TIMEOUT.
         std::thread::sleep(Duration::from_millis(50));
     }
 }

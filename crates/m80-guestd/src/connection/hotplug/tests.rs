@@ -185,6 +185,7 @@ fn partial_success_reports_each_device_status() {
     );
 
     assert_eq!(response.statuses.len(), 2);
+
     assert_eq!(response.statuses[0].status, DriveMountStatusKind::Mounted);
     assert_eq!(response.statuses[0].error, None);
     assert_eq!(response.statuses[1].status, DriveMountStatusKind::Failed);

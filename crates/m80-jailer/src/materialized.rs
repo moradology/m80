@@ -215,6 +215,7 @@ impl MaterializedJail {
 
         let state_path = self.plan.config.run_dir.join(JAILER_STATE_FILE);
         let state = JailerState {
+            schema_version: 1,
             jailer_pid: Some(recorded_jailer_pid),
             firecracker_pid: Some(firecracker_pid),
         };

@@ -239,7 +239,8 @@ fn non_cancelled_run_preserves_guest_exit_code_even_if_signal_raced_late() {
 
 #[test]
 fn run_env_parser_keeps_empty_values_and_rejects_invalid_shape() {
-    let parsed = parse_env(vec!["FOO=bar".to_owned(), "EMPTY=".to_owned()]).unwrap();
+    let parsed =
+        parse_env(&["FOO=bar".to_owned(), "EMPTY=".to_owned()]).unwrap();
     assert_eq!(
         parsed,
         Some(vec![
@@ -248,12 +249,12 @@ fn run_env_parser_keeps_empty_values_and_rejects_invalid_shape() {
         ])
     );
 
-    let missing_separator = parse_env(vec!["FOO".to_owned()]).unwrap_err();
+    let missing_separator = parse_env(&["FOO".to_owned()]).unwrap_err();
     assert!(missing_separator
         .to_string()
         .contains("environment override must be KEY=VAL"));
 
-    let empty_key = parse_env(vec!["=value".to_owned()]).unwrap_err();
+    let empty_key = parse_env(&["=value".to_owned()]).unwrap_err();
     assert!(empty_key
         .to_string()
         .contains("environment override key must not be empty"));
@@ -262,12 +263,12 @@ fn run_env_parser_keeps_empty_values_and_rejects_invalid_shape() {
 #[test]
 fn secret_env_requires_named_existing_host_variable() {
     let missing =
-        build_process_env(Vec::new(), vec!["M80_TEST_SECRET_MISSING".to_owned()]).unwrap_err();
+        build_process_env(&Vec::new(), &vec!["M80_TEST_SECRET_MISSING".to_owned()]).unwrap_err();
     assert!(missing
         .to_string()
         .contains("secret env `M80_TEST_SECRET_MISSING` is not set"));
 
-    let bad_key = build_process_env(Vec::new(), vec!["BAD=KEY".to_owned()]).unwrap_err();
+    let bad_key = build_process_env(&Vec::new(), &vec!["BAD=KEY".to_owned()]).unwrap_err();
     assert!(bad_key
         .to_string()
         .contains("secret env key must be a variable name"));

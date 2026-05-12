@@ -219,6 +219,12 @@ pub struct SandboxConfig {
     /// The overlay is allocated as a sparse file at launch time and formatted
     /// with `mkfs.ext4 -F`. Cost at creation is ~0 bytes on disk; it grows
     /// as the guest writes. See `docs/design/storage-overlay.md §5`.
+    ///
+    /// 512 MiB is large enough to hold typical agent workspace output (source
+    /// trees, build artefacts, generated files) without risking "disk full"
+    /// errors during normal use, while remaining a sparse reservation that
+    /// costs nothing until the guest actually writes. Callers with larger or
+    /// smaller needs should override this field explicitly.
     pub overlay_size_bytes: u64,
     /// How long the VM may sit idle (no exec in flight, none pending) before
     /// the host issues a graceful shutdown. `None` opts out of idle shutdown.

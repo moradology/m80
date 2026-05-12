@@ -89,8 +89,8 @@ struct BuildPaths {
 /// `cfg.rootfs.kind`: `"ubuntu"` (default) builds from the firecracker-ci
 /// squashfs; `"minimal"` builds an empty ext4 with busybox + static
 /// guestd as PID 1.
-pub(crate) fn run_build(config_path: PathBuf, dry_run: bool) -> anyhow::Result<()> {
-    let cfg = BuildConfig::from_file(&config_path)?;
+pub(crate) fn run_build(config_path: &Path, dry_run: bool) -> anyhow::Result<()> {
+    let cfg = BuildConfig::from_file(config_path)?;
     match cfg.rootfs.kind.as_deref() {
         Some("minimal") => minimal::run_build_minimal(cfg, dry_run),
         Some("ubuntu") | None => run_build_ubuntu(cfg, dry_run),

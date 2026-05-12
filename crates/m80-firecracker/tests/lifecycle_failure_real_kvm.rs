@@ -346,7 +346,7 @@ fn start_blocking_exec(
     channel
         .send(&Envelope::with_request_id(
             req,
-            "restore-blocking-exec".into(),
+            "restore-blocking-exec",
         ))
         .expect("send blocking exec request");
     channel

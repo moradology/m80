@@ -90,6 +90,20 @@ pub(crate) fn cmd_run(
         let e = FcError::Config(ConfigError::MissingField { field: "argv" });
         return Ok(errors::render_error(&e, json));
     };
+    if program.is_empty() {
+        let e = FcError::Config(ConfigError::InvalidValue {
+            field: "argv",
+            reason: "program name (argv[0]) must not be empty".into(),
+        });
+        return Ok(errors::render_error(&e, json));
+    }
+    if matches!(&cwd, Some(s) if s.is_empty()) {
+        let e = FcError::Config(ConfigError::InvalidValue {
+            field: "cwd",
+            reason: "--cwd must not be empty".into(),
+        });
+        return Ok(errors::render_error(&e, json));
+    }
     if scratch_size == Some(0) {
         let e = FcError::Config(ConfigError::InvalidValue {
             field: "scratch_size",
@@ -106,7 +120,7 @@ pub(crate) fn cmd_run(
     }
     let workspace_for_writeback = workspace.clone();
 
-    let env = match build_process_env(env, secret_env) {
+    let env = match build_process_env(&env, &secret_env) {
         Ok(env) => env,
         Err(e) => return Ok(errors::render_error(&e, json)),
     };
@@ -220,7 +234,10 @@ pub(crate) fn cmd_run(
 }
 
 fn extract_workspace_replacing(stopped: &StoppedSandbox, workspace: &Path) -> Result<(), FcError> {
-    let backup = workspace.exists().then(|| writeback_backup_path(workspace));
+    let backup = workspace
+        .exists()
+        .then(|| writeback_backup_path(workspace))
+        .transpose()?;
 
     if let Some(backup) = &backup {
         fs::rename(workspace, backup)?;
@@ -245,7 +262,7 @@ fn extract_workspace_replacing(stopped: &StoppedSandbox, workspace: &Path) -> Re
     }
 }
 
-fn writeback_backup_path(workspace: &Path) -> PathBuf {
+fn writeback_backup_path(workspace: &Path) -> Result<PathBuf, FcError> {
     let parent = workspace
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -253,12 +270,17 @@ fn writeback_backup_path(workspace: &Path) -> PathBuf {
     let name = workspace
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("workspace");
-    parent.join(format!(
+        .ok_or_else(|| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: "workspace",
+                reason: "workspace path contains non-UTF-8 bytes".into(),
+            })
+        })?;
+    Ok(parent.join(format!(
         ".{name}.m80-writeback-backup-{}-{}",
         std::process::id(),
         ulid::Ulid::new()
-    ))
+    )))
 }
 
 fn remove_path(path: &Path) -> Result<(), std::io::Error> {
@@ -348,7 +370,7 @@ fn sandbox_config_for_run(
     }
 }
 
-fn parse_env(values: Vec<String>) -> Result<Option<Vec<(String, String)>>, FcError> {
+fn parse_env(values: &[String]) -> Result<Option<Vec<(String, String)>>, FcError> {
     let mut pairs = Vec::with_capacity(values.len());
     for value in values {
         let Some((key, val)) = value.split_once('=') else {
@@ -363,25 +385,45 @@ fn parse_env(values: Vec<String>) -> Result<Option<Vec<(String, String)>>, FcErr
                 reason: "environment override key must not be empty".into(),
             }));
         }
+        if key.chars().any(|c| c.is_ascii_control()) {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "env",
+                reason: format!("environment override key contains a control character: `{key}`"),
+            }));
+        }
+        if val.chars().any(|c| c.is_ascii_control()) {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "env",
+                reason: format!(
+                    "environment override value for `{key}` contains a control character"
+                ),
+            }));
+        }
         pairs.push((key.to_owned(), val.to_owned()));
     }
     Ok((!pairs.is_empty()).then_some(pairs))
 }
 
 fn build_process_env(
-    values: Vec<String>,
-    secret_keys: Vec<String>,
+    values: &[String],
+    secret_keys: &[String],
 ) -> Result<Option<Vec<(String, String)>>, FcError> {
     let mut pairs = parse_env(values)?.unwrap_or_default();
     for key in secret_keys {
         validate_secret_env_key(&key)?;
-        let value = std::env::var(&key).map_err(|_| {
+        let os_val = std::env::var_os(&key).ok_or_else(|| {
             FcError::Config(ConfigError::InvalidValue {
                 field: "secret_env",
                 reason: format!("secret env `{key}` is not set"),
             })
         })?;
-        pairs.push((key, value));
+        let value = os_val.into_string().map_err(|_| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: "secret_env",
+                reason: format!("secret env `{key}` contains non-UTF-8 bytes"),
+            })
+        })?;
+        pairs.push((key.clone(), value));
     }
     Ok((!pairs.is_empty()).then_some(pairs))
 }

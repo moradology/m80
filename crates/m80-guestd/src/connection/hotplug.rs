@@ -284,7 +284,7 @@ fn uevent_registry() -> Result<Arc<UeventRegistry>, DriveHotplugError> {
     if let Some(registry) = UEVENT_REGISTRY.get() {
         return Ok(Arc::clone(registry));
     }
-    let registry = Arc::new(UeventRegistry::new());
+    let registry = Arc::new(UeventRegistry::default());
     spawn_netlink_listener(Arc::clone(&registry)).map_err(|_| DriveHotplugError::Io)?;
     let _ = UEVENT_REGISTRY.set(Arc::clone(&registry));
     Ok(Arc::clone(UEVENT_REGISTRY.get().unwrap()))

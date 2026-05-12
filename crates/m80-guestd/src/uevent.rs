@@ -49,9 +49,9 @@ impl BlockDeviceMatcher {
         Self { devname: None }
     }
 
-    pub(crate) fn devname(devname: impl Into<String>) -> Self {
+    pub(crate) fn devname(devname: &str) -> Self {
         Self {
-            devname: Some(devname.into()),
+            devname: Some(devname.to_owned()),
         }
     }
 }
@@ -89,10 +89,6 @@ struct UeventState {
 }
 
 impl UeventRegistry {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
     pub(crate) fn record(&self, event: Uevent) {
         self.record_with_online_writer(event, &SysfsOnlineWriter::default());
     }
@@ -364,7 +360,7 @@ mod tests {
 
     #[test]
     fn online_write_failure_still_caches_event() {
-        let registry = UeventRegistry::new();
+        let registry = UeventRegistry::default();
 
         registry.record_with_online_writer(cpu_add_event(), &RecordingOnlineWriter::failing());
 
@@ -379,7 +375,7 @@ mod tests {
 
     #[test]
     fn wait_for_returns_cached_matching_event() {
-        let registry = UeventRegistry::new();
+        let registry = UeventRegistry::default();
         registry.record(block_event("vdc"));
 
         let event = registry
@@ -391,7 +387,7 @@ mod tests {
 
     #[test]
     fn wait_for_blocks_until_event_arrives_without_polling() {
-        let registry = Arc::new(UeventRegistry::new());
+        let registry = Arc::new(UeventRegistry::default());
         let sender = Arc::clone(&registry);
         thread::spawn(move || {
             thread::sleep(Duration::from_millis(20));
@@ -410,7 +406,7 @@ mod tests {
 
     #[test]
     fn wait_for_times_out_without_matching_event() {
-        let registry = UeventRegistry::new();
+        let registry = UeventRegistry::default();
         registry.record(block_event("vdc"));
 
         let err = registry

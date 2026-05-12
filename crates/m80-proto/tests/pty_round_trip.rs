@@ -34,7 +34,7 @@ fn pty_request_round_trips_with_initial_size() {
                 pixel_height: Some(640),
             },
         },
-        "req-pty-start".into(),
+        "req-pty-start".to_owned(),
     );
 
     let mut buf = Vec::new();
@@ -58,7 +58,7 @@ fn pty_input_round_trips() {
             seq: 0,
             bytes: b"hello\r".to_vec(),
         },
-        "req-pty-stream".into(),
+        "req-pty-stream".to_owned(),
     );
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write input");
@@ -75,7 +75,7 @@ fn pty_output_round_trips() {
             seq: 0,
             bytes: b"hello\r\n".to_vec(),
         },
-        "req-pty-stream".into(),
+        "req-pty-stream".to_owned(),
     );
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write output");
@@ -96,7 +96,7 @@ fn pty_resize_round_trips() {
                 pixel_height: None,
             },
         },
-        "req-pty-stream".into(),
+        "req-pty-stream".to_owned(),
     );
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write resize");
@@ -114,7 +114,7 @@ fn pty_control_round_trips() {
                 signal: PtySignal::Interrupt,
             },
         },
-        "req-pty-stream".into(),
+        "req-pty-stream".to_owned(),
     );
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write control");
@@ -140,7 +140,7 @@ fn pty_exit_round_trips() {
             truncated: false,
             timing: common::sample_timing(),
         },
-        "req-pty-stream".into(),
+        "req-pty-stream".to_owned(),
     );
     let mut buf = Vec::new();
     write_frame(&mut buf, &env).expect("write exit");

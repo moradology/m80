@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::JailerError;
+
 /// Name of the plan JSON file persisted in the run-dir.
 pub const JAILER_PLAN_FILE: &str = "jailer-plan.json";
 /// Name of the state JSON file persisted in the run-dir.
@@ -94,14 +96,31 @@ impl Default for ResourceLimits {
 /// Firecracker's jailer hardcodes the nested layout
 /// `<chroot-base>/<exec-file basename>/<id>/root/`; m80 passes `run_dir` for
 /// `--chroot-base-dir` and `run_dir`'s basename for `--id`.
-#[must_use] pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
-    let exec_basename = firecracker_bin
-        .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("firecracker"));
-    let id_basename = run_dir
-        .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("vm"));
+///
+/// # Panics
+///
+/// Panics if either path lacks a final component. Callers that accept
+/// user-supplied paths should validate first with [`check_plan_basenames`].
+#[must_use]
+pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+    let exec_basename = firecracker_bin.file_name().expect("firecracker_bin has no basename");
+    let id_basename = run_dir.file_name().expect("run_dir has no basename");
     run_dir.join(exec_basename).join(id_basename).join("root")
+}
+
+/// Validate that both paths required by [`jail_root_path`] have a final
+/// component. Returns [`JailerError::NoBasename`] for the first offender.
+pub(crate) fn check_plan_basenames(
+    run_dir: &Path,
+    firecracker_bin: &Path,
+) -> Result<(), JailerError> {
+    if firecracker_bin.file_name().is_none() {
+        return Err(JailerError::NoBasename { path: firecracker_bin.to_path_buf() });
+    }
+    if run_dir.file_name().is_none() {
+        return Err(JailerError::NoBasename { path: run_dir.to_path_buf() });
+    }
+    Ok(())
 }
 
 /// One bind-mount (or in-jail directory) the jailer must materialize.
@@ -157,10 +176,18 @@ impl JailerSocket {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
+    /// Format version. Current: 1. Present so `deny_unknown_fields` does not
+    /// permanently prevent adding fields to the persisted plan.
+    #[serde(default = "plan_version")]
+    pub(crate) schema_version: u32,
     /// The config the plan was derived from.
     pub(crate) config: JailerConfig,
     /// Ordered steps the materializer will execute.
     pub(crate) steps: Vec<PlanStep>,
+}
+
+fn plan_version() -> u32 {
+    1
 }
 
 /// One step in a [`Plan`].
@@ -196,8 +223,16 @@ pub(crate) enum PlanStep {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JailerState {
+    /// Format version. Current: 1. Present so `deny_unknown_fields` does not
+    /// permanently prevent adding fields to persisted state.
+    #[serde(default = "jailer_state_version")]
+    pub(crate) schema_version: u32,
     pub(crate) jailer_pid: Option<u32>,
     pub(crate) firecracker_pid: Option<u32>,
+}
+
+fn jailer_state_version() -> u32 {
+    1
 }
 
 #[cfg(test)]

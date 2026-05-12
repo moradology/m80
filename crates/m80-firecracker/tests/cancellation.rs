@@ -126,7 +126,7 @@ fn cancel_kills_running_process() {
             timeout_ms: Some(30_000),
             streaming: false,
         },
-        "cancel-test-req-1".into(),
+        "cancel-test-req-1".to_owned(),
     );
     channel.send(&exec_env).expect("send exec_request");
 
@@ -412,7 +412,7 @@ fn wrong_request_id_returns_already_exited() {
             timeout_ms: Some(5_000),
             streaming: false,
         },
-        "real-req".into(),
+        "real-req".to_owned(),
     );
     channel.send(&exec_env).expect("send exec_request");
 

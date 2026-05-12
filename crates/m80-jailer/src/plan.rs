@@ -8,8 +8,8 @@ use std::path::{Component, Path, PathBuf};
 use crate::error::JailerError;
 use crate::materialized::MaterializedJail;
 use crate::types::{
-    jail_root_path, BindMode, JailerConfig, JailerState, Plan, PlanStep, JAILER_PLAN_FILE,
-    JAILER_STATE_FILE,
+    check_plan_basenames, jail_root_path, BindMode, JailerConfig, JailerState, Plan, PlanStep,
+    JAILER_PLAN_FILE, JAILER_STATE_FILE,
 };
 
 impl Plan {
@@ -23,6 +23,7 @@ impl Plan {
                 gid: config.gid,
             });
         }
+        check_plan_basenames(&config.run_dir, &config.firecracker_bin)?;
 
         // Reject any destination that can escape the jail root or expose
         // host-kernel virtual filesystems inside the jail.
@@ -69,6 +70,7 @@ impl Plan {
         }
 
         Ok(Plan {
+            schema_version: 1,
             config: config.clone(),
             steps,
         })
@@ -224,6 +226,7 @@ impl Plan {
 
         let state_path = materialized.plan.config.run_dir.join(JAILER_STATE_FILE);
         let state = JailerState {
+            schema_version: 1,
             jailer_pid: None,
             firecracker_pid: None,
         };
@@ -277,8 +280,7 @@ fn is_hidden_kernel_dest(path: &Path) -> bool {
 }
 
 fn bind_remount_flags() -> nix::mount::MsFlags {
-    nix::mount::MsFlags::MS_BIND
-        | nix::mount::MsFlags::MS_REMOUNT
+    nix::mount::MsFlags::MS_REMOUNT
         | nix::mount::MsFlags::MS_NODEV
         | nix::mount::MsFlags::MS_NOEXEC
         | nix::mount::MsFlags::MS_NOSUID

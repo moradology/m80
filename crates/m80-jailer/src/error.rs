@@ -63,4 +63,10 @@ pub enum JailerError {
         /// Filesystem type name returned by `fstatfs`.
         fs_type: String,
     },
+    /// A required path had no basename component (e.g. `/` or an empty path).
+    #[error("path has no basename: {}", path.display())]
+    NoBasename {
+        /// The offending path.
+        path: PathBuf,
+    },
 }

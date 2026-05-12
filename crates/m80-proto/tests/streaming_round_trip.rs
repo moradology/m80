@@ -14,7 +14,7 @@ fn stdout_chunk_round_trips() {
             seq: 7,
             bytes: b"stdout bytes\n".to_vec(),
         },
-        "req-stream-1".into(),
+        "req-stream-1".to_owned(),
     );
 
     let mut buf = Vec::new();
@@ -35,7 +35,7 @@ fn stderr_chunk_round_trips() {
             seq: 3,
             bytes: b"stderr bytes\n".to_vec(),
         },
-        "req-stream-2".into(),
+        "req-stream-2".to_owned(),
     );
 
     let mut buf = Vec::new();
@@ -60,7 +60,7 @@ fn exit_frame_round_trips() {
             truncated: false,
             timing: common::sample_timing(),
         },
-        "req-stream-3".into(),
+        "req-stream-3".to_owned(),
     );
 
     let mut buf = Vec::new();

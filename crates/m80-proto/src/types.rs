@@ -111,11 +111,11 @@ impl<T: Payload> Envelope<T> {
     }
 
     /// Construct a new envelope with a caller-supplied `request_id`.
-    pub fn with_request_id(payload: T, request_id: String) -> Self {
+    pub fn with_request_id(payload: T, request_id: impl Into<String>) -> Self {
         Self {
             version: PROTOCOL_VERSION,
             kind: T::KIND.to_owned(),
-            request_id: Some(request_id),
+            request_id: Some(request_id.into()),
             max_duration_ms: None,
             payload,
         }
@@ -287,7 +287,7 @@ mod tests {
     fn make_request() -> ExecRequest {
         ExecRequest {
             program: "/bin/sh".into(),
-            args: vec!["-c".into(), "echo hi".into()],
+            args: vec!["-c".into(), "echo hi".to_owned()],
             cwd: None,
             env: None,
             stdin: None,
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn envelope_with_request_id_stamps_kind() {
-        let env = Envelope::with_request_id(make_request(), "req-1".into());
+        let env = Envelope::with_request_id(make_request(), "req-1".to_owned());
         assert_eq!(env.version, PROTOCOL_VERSION);
         assert_eq!(env.kind, PAYLOAD_KIND_EXEC_REQUEST);
         assert_eq!(env.request_id, Some("req-1".to_owned()));
@@ -365,7 +365,7 @@ mod tests {
         let req = CancelRequest {
             request_id: "req-42".into(),
         };
-        let env = Envelope::with_request_id(req, "req-42".into());
+        let env = Envelope::with_request_id(req, "req-42");
         assert_eq!(env.kind, PAYLOAD_KIND_CANCEL_REQUEST);
         let mut buf = Vec::new();
         write_frame(&mut buf, &env).unwrap();

@@ -4,6 +4,8 @@
 use std::io;
 use std::path::Path;
 
+use tracing::warn;
+
 use crate::error::JailerError;
 use crate::types::{JailerState, Plan, PlanStep, JAILER_PLAN_FILE, JAILER_STATE_FILE};
 
@@ -44,12 +46,14 @@ pub struct ReapPlan {
 
 impl ReapPlan {
     /// Number of materialization steps captured for reverse-order cleanup.
-    #[must_use] pub fn len(&self) -> usize {
+    #[must_use]
+    pub fn len(&self) -> usize {
         self.steps.len()
     }
 
     /// Whether there are no materialization steps available.
-    #[must_use] pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
         self.steps.is_empty()
     }
 }
@@ -67,7 +71,10 @@ pub fn inspect_run_dir(run_dir: &Path) -> Result<InspectionDecision, JailerError
     let raw = std::fs::read(&state_path).map_err(io_err(state_path))?;
     let state: JailerState = match serde_json::from_slice(&raw) {
         Ok(state) => state,
-        Err(_) => return plan_backed_or_no_jail(run_dir),
+        Err(e) => {
+            warn!(path = %run_dir.display(), error = %e, "jailer-state.json is corrupt; treating as orphan");
+            return plan_backed_or_no_jail(run_dir);
+        }
     };
 
     if let (Some(jailer_pid), Some(firecracker_pid)) = (state.jailer_pid, state.firecracker_pid) {
@@ -123,6 +130,7 @@ mod tests {
     fn reap_plan_reverses_plan_steps() {
         let dir = tempfile::tempdir().unwrap();
         let plan = Plan {
+            schema_version: 1,
             config: crate::types::JailerConfig {
                 jailer_bin: PathBuf::from("/usr/bin/jailer"),
                 jailer_harden_bin: Some(PathBuf::from("/usr/bin/m80-jailer-harden")),

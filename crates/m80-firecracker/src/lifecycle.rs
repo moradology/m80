@@ -27,8 +27,11 @@ use crate::error::{
 use crate::layout::{FIRECRACKER_API_SOCKET, VSOCK_SOCKET};
 use crate::types::{RunningSandbox, StoppedSandbox};
 
-/// Per-attempt deadline for the shutdown vsock round-trip (open UDS,
-/// send request, read response).
+/// Per-attempt deadline for the shutdown vsock round-trip (open UDS, send
+/// request, read response). 5 s is generous relative to the sub-100 ms
+/// empirical round-trip; the headroom covers a loaded host where the guest may
+/// need a moment to drain pending I/O before responding to the shutdown frame.
+/// If the timeout fires the caller falls back to a force-kill.
 const SHUTDOWN_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(debug_assertions)]
 const FORCE_KILL_EPERM_FOR_PID_ENV: &str = "M80_TEST_FORCE_KILL_EPERM_FOR_PID";

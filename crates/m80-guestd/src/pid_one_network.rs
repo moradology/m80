@@ -47,11 +47,13 @@ pub(crate) fn configure_from_proc_cmdline() -> anyhow::Result<()> {
         );
         return Ok(());
     };
-    configure_network(&config, &RealNetworkOps)
+    configure_network(&config)
 }
 
 /// Parse m80 PID-1 outbound networking tokens from a kernel command line.
-pub(crate) fn parse_cmdline_network_config(cmdline: &str) -> anyhow::Result<Option<PidOneNetworkConfig>> {
+pub(crate) fn parse_cmdline_network_config(
+    cmdline: &str,
+) -> anyhow::Result<Option<PidOneNetworkConfig>> {
     if !cmdline
         .split_whitespace()
         .any(|token| token == NET_OUTBOUND || token == NET_JOIN_NETNS)
@@ -79,11 +81,14 @@ pub(crate) fn parse_cmdline_network_config(cmdline: &str) -> anyhow::Result<Opti
 }
 
 fn required_token(cmdline: &str, prefix: &str) -> anyhow::Result<String> {
-    cmdline
+    match cmdline
         .split_whitespace()
         .find_map(|token| token.strip_prefix(prefix).map(str::to_owned))
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing required outbound network token {prefix}<value>"))
+    {
+        None => anyhow::bail!("missing required outbound network token {prefix}<value>"),
+        Some(v) if v.is_empty() => anyhow::bail!("outbound network token {prefix} is empty"),
+        Some(v) => Ok(v),
+    }
 }
 
 fn parse_dns_list(raw: &str) -> anyhow::Result<Vec<Ipv4Addr>> {
@@ -97,7 +102,33 @@ fn parse_dns_list(raw: &str) -> anyhow::Result<Vec<Ipv4Addr>> {
     Ok(dns)
 }
 
-fn configure_network(config: &PidOneNetworkConfig, ops: &impl NetworkOps) -> anyhow::Result<()> {
+fn configure_network(config: &PidOneNetworkConfig) -> anyhow::Result<()> {
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        format!(
+            "configuring outbound network {} {} via {}",
+            config.iface, config.ipv4, config.gateway
+        ),
+    );
+    RtnetlinkConfigurator::new()
+        .context("open rtnetlink")?
+        .configure(config)?;
+    write_resolv_conf(Path::new("/etc/resolv.conf"), &config.dns)?;
+    Ok(())
+}
+
+#[cfg(test)]
+trait NetworkOps {
+    fn configure_link(&self, config: &PidOneNetworkConfig) -> anyhow::Result<()>;
+    fn write_resolv_conf(&self, dns: &[Ipv4Addr]) -> anyhow::Result<()>;
+}
+
+#[cfg(test)]
+fn configure_network_with_ops(
+    config: &PidOneNetworkConfig,
+    ops: &impl NetworkOps,
+) -> anyhow::Result<()> {
     guest_log::info(
         GuestLogPhase::Boot,
         None,
@@ -111,31 +142,19 @@ fn configure_network(config: &PidOneNetworkConfig, ops: &impl NetworkOps) -> any
     Ok(())
 }
 
-trait NetworkOps {
-    fn configure_link(&self, config: &PidOneNetworkConfig) -> anyhow::Result<()>;
-    fn write_resolv_conf(&self, dns: &[Ipv4Addr]) -> anyhow::Result<()>;
-}
-
-struct RealNetworkOps;
-
-impl NetworkOps for RealNetworkOps {
-    fn configure_link(&self, config: &PidOneNetworkConfig) -> anyhow::Result<()> {
-        RtnetlinkConfigurator::new()
-            .context("open rtnetlink")?
-            .configure(config)
-    }
-
-    fn write_resolv_conf(&self, dns: &[Ipv4Addr]) -> anyhow::Result<()> {
-        write_resolv_conf(Path::new("/etc/resolv.conf"), dns)
-    }
-}
-
 fn write_resolv_conf(path: &Path, dns: &[Ipv4Addr]) -> anyhow::Result<()> {
     let mut content = String::new();
     for resolver in dns {
         writeln!(&mut content, "nameserver {resolver}")?;
     }
-    std::fs::write(path, content).with_context(|| format!("write {}", path.display()))
+    let dir = path.parent().context("resolv.conf path has no parent")?;
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)
+        .with_context(|| format!("create temp file in {}", dir.display()))?;
+    std::io::Write::write_all(&mut tmp, content.as_bytes())
+        .with_context(|| "write temp resolv.conf")?;
+    tmp.persist(path)
+        .with_context(|| format!("rename temp resolv.conf to {}", path.display()))?;
+    Ok(())
 }
 
 struct RtnetlinkConfigurator {
@@ -284,6 +303,19 @@ mod tests {
     }
 
     #[test]
+    fn empty_token_value_is_distinct_from_absent_token() {
+        let absent = parse_cmdline_network_config("m80.net=outbound m80.net.iface=eth0")
+            .unwrap_err()
+            .to_string();
+        let empty = parse_cmdline_network_config("m80.net=outbound m80.net.iface=")
+            .unwrap_err()
+            .to_string();
+        assert!(absent.contains("missing"), "absent: {absent}");
+        assert!(empty.contains("is empty"), "empty: {empty}");
+        assert_ne!(absent, empty);
+    }
+
+    #[test]
     fn configure_network_applies_link_then_dns() {
         let config = parse_cmdline_network_config(
             "m80.net=outbound m80.net.iface=eth0 m80.net.ipv4=172.16.4.2/24 \
@@ -294,7 +326,7 @@ mod tests {
         .unwrap();
         let ops = RecordingOps::default();
 
-        configure_network(&config, &ops).unwrap();
+        configure_network_with_ops(&config, &ops).unwrap();
 
         assert_eq!(
             ops.configured.borrow().as_slice(),
