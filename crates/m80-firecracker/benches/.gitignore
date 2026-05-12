@@ -1,1 +1,10 @@
 *.csv
+snapshots/
+cold-launch.csv
+cold-launch-phases.csv
+sweep-*.csv
+concurrent.csv
+throughput.csv
+memory.csv
+teardown.csv
+boot-decomp.txt
