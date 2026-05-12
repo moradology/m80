@@ -88,10 +88,7 @@ pub struct RealizedNetwork {
 }
 
 /// Realize bridge/TAP setup through a supplied link-ops backend.
-///
-/// This function is public so integration tests and future callers can pin the
-/// state-machine contract without requiring `CAP_NET_ADMIN`.
-pub fn realize_bridge_and_tap_with_ops(
+pub(crate) fn realize_bridge_and_tap_with_ops(
     ops: &mut impl LinkOps,
     intent: &OutboundIntent,
     vm_id: &str,

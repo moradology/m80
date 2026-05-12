@@ -788,9 +788,13 @@ fn spawn_pty_event_forwarder(
 }
 
 pub(super) fn request_id_for(vm_id: &str, configured: Option<&str>, kind: &str) -> String {
-    configured
-        .map(str::to_owned)
-        .unwrap_or_else(|| format!("{vm_id}-{kind}-{}", monotonic_ns()))
+    // Each exec gets a unique id even when the caller supplied a base
+    // `request_id`: cancel routing on the guest indexes by this string, so
+    // back-to-back execs on the same RunningSandbox would otherwise collide.
+    match configured {
+        Some(base) => format!("{base}-{kind}-{}", monotonic_ns()),
+        None => format!("{vm_id}-{kind}-{}", monotonic_ns()),
+    }
 }
 
 fn cancelled_exit(started_at_unix_ms: u64, stdout_total: u64, stderr_total: u64) -> ExecExit {
@@ -935,11 +939,14 @@ mod tests {
     }
 
     #[test]
-    fn request_id_uses_caller_value_when_present() {
-        assert_eq!(
-            request_id_for("vm-1", Some("req-cli"), "exec"),
-            "req-cli".to_owned()
-        );
+    fn request_id_uses_caller_value_as_prefix_when_present() {
+        // Caller's request_id is used as a base; a per-exec suffix is appended
+        // so back-to-back execs on the same RunningSandbox don't collide on
+        // the guest's cancel-routing table.
+        let id = request_id_for("vm-1", Some("req-cli"), "exec");
+        assert!(id.starts_with("req-cli-exec-"), "got {id}");
+        let next = request_id_for("vm-1", Some("req-cli"), "exec");
+        assert_ne!(id, next, "consecutive calls must produce distinct ids");
     }
 
     #[test]

@@ -237,10 +237,11 @@ fn ready_probe() -> ExecRequest {
 }
 
 fn unix_ms_now() -> u64 {
-    SystemTime::now()
+    let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64
+        .as_millis();
+    u64::try_from(ms).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

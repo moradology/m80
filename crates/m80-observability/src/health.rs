@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use m80_proto::MetricsResponse;
 
 use crate::probe::{VmHealth, VmProbeRecord};
-use crate::ObservabilityError;
 
 /// Aggregated rollup of probe records.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -33,9 +32,9 @@ pub(crate) struct OpsMetrics {
 }
 
 /// Aggregate probe records into a [`HealthSnapshot`].
-pub(crate) fn aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError> {
+pub(crate) fn aggregate_health(records: &[VmProbeRecord]) -> HealthSnapshot {
     let mut snapshot = HealthSnapshot {
-        total: records.len() as u32,
+        total: u32::try_from(records.len()).expect("record count fits u32"),
         ..HealthSnapshot::default()
     };
     for record in records {
@@ -47,7 +46,7 @@ pub(crate) fn aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapsh
         }
     }
     snapshot.rollout_ready = snapshot.degraded == 0 && snapshot.exited == 0 && snapshot.stuck == 0;
-    Ok(snapshot)
+    snapshot
 }
 
 /// Render a JSON health snapshot.
@@ -81,8 +80,7 @@ mod tests {
             record(VmHealth::Degraded),
             record(VmHealth::Stuck),
             record(VmHealth::Exited),
-        ])
-        .unwrap();
+        ]);
         assert_eq!(snapshot.healthy, 1);
         assert_eq!(snapshot.degraded, 1);
         assert_eq!(snapshot.stuck, 1);

@@ -72,15 +72,6 @@ impl Diagnostics {
     }
 }
 
-impl Drop for Diagnostics {
-    fn drop(&mut self) {
-        if let Some(file) = self.file.as_mut() {
-            let _ = file.flush();
-            let _ = file.sync_all();
-        }
-    }
-}
-
 /// One structured event for the diagnostics log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -255,10 +246,11 @@ pub enum Phase {
 }
 
 fn unix_ms_now() -> u64 {
-    SystemTime::now()
+    let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64
+        .as_millis();
+    u64::try_from(ms).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

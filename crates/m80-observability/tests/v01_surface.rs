@@ -22,7 +22,7 @@ fn probe_empty_missing_run_root_returns_no_records() {
 
 #[test]
 fn aggregate_health_empty_records_is_rollout_ready() {
-    let snapshot = aggregate_health(&[]).unwrap();
+    let snapshot = aggregate_health(&[]);
     assert_eq!(snapshot.total, 0);
     assert!(snapshot.rollout_ready);
 }

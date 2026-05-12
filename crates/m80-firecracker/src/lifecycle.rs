@@ -468,7 +468,7 @@ pub(crate) fn monotonic_ns() -> u64 {
     use std::sync::OnceLock;
     static EPOCH: OnceLock<Instant> = OnceLock::new();
     let epoch = EPOCH.get_or_init(Instant::now);
-    epoch.elapsed().as_nanos() as u64
+    u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 /// Spawn the idle-timeout watcher thread.
@@ -539,7 +539,7 @@ pub(crate) fn idle_watcher_loop(
         let last_ns = context.last_activity_ns.load(Ordering::Relaxed);
         let now_ns = monotonic_ns();
         let idle_ns = now_ns.saturating_sub(last_ns);
-        let timeout_ns = timeout.as_nanos() as u64;
+        let timeout_ns = u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX);
 
         if idle_ns >= timeout_ns {
             tracing::info!(

@@ -8,16 +8,16 @@ use std::path::{Path, PathBuf};
 pub(crate) const SUN_PATH_BUDGET: usize = 107;
 
 /// Firecracker REST API socket filename inside the jail root.
-pub const FIRECRACKER_API_SOCKET: &str = "firecracker.sock";
+pub(crate) const FIRECRACKER_API_SOCKET: &str = "firecracker.sock";
 
 /// Host-side vsock muxer socket filename inside the jail root.
-pub const VSOCK_SOCKET: &str = "vsock.sock";
+pub(crate) const VSOCK_SOCKET: &str = "vsock.sock";
 
 /// Per-VM writable root filesystem overlay filename in the run directory.
 pub const ROOTFS_OVERLAY_IMAGE: &str = "rootfs.overlay.ext4";
 
 /// Per-VM writable workspace scratch image filename in the run directory.
-pub const SCRATCH_IMAGE: &str = "scratch.ext4";
+pub(crate) const SCRATCH_IMAGE: &str = "scratch.ext4";
 
 pub(crate) const PREALLOCATED_DRIVE_SLOT_PREFIX: &str = "hotplug-slot-";
 

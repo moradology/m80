@@ -2,7 +2,7 @@
 
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use m80_proto::{
@@ -21,6 +21,7 @@ const HOTPLUG_WAIT: Duration = Duration::from_millis(250);
 const DEV_PREFIX: &str = "/dev/";
 
 static UEVENT_REGISTRY: OnceLock<Arc<UeventRegistry>> = OnceLock::new();
+static UEVENT_REGISTRY_INIT: Mutex<()> = Mutex::new(());
 
 pub(super) fn is_hotplug_kind(kind: &str) -> bool {
     matches!(
@@ -347,10 +348,14 @@ fn uevent_registry() -> Result<Arc<UeventRegistry>, DriveHotplugError> {
     if let Some(registry) = UEVENT_REGISTRY.get() {
         return Ok(Arc::clone(registry));
     }
+    let _guard = UEVENT_REGISTRY_INIT.lock().unwrap();
+    if let Some(registry) = UEVENT_REGISTRY.get() {
+        return Ok(Arc::clone(registry));
+    }
     let registry = Arc::new(UeventRegistry::new());
     spawn_netlink_listener(Arc::clone(&registry)).map_err(|_| DriveHotplugError::Io)?;
     let _ = UEVENT_REGISTRY.set(Arc::clone(&registry));
-    Ok(Arc::clone(UEVENT_REGISTRY.get().unwrap_or(&registry)))
+    Ok(Arc::clone(UEVENT_REGISTRY.get().unwrap()))
 }
 
 fn mount_source_from_info(input: &str, target: &Path) -> io::Result<Option<PathBuf>> {

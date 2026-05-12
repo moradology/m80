@@ -5,6 +5,84 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Changed — audit-sweep workspace cleanup (m80-nqjm4)
+
+- Ran a ten-iteration audit sweep (~100 parallel agents, ~150 findings). Major
+  outcomes: tightened `[workspace.lints]` to warn on `unreachable_pub`,
+  `map_err_ignore`, `redundant_clone`, `unwrap_used`, `string_slice`,
+  `must_use_candidate`, `manual_let_else`, `wildcard_imports` and deny
+  `dbg_macro`/`todo`/`unimplemented`/`unused_must_use`; applied clippy
+  auto-fixes across 172 test suites (~80 warnings cleared); renamed
+  `Limits::m80_default` → `Limits::preset` in `m80-cgroup`; deleted dead
+  `Phase::Writeback`, `ExitReason::KernelPanic`, `ExitReason::OomKill`
+  variants from `m80-observability`; deduped iptables helpers in
+  `m80-net-outbound`; added `#[serde(deny_unknown_fields)]` to
+  `CreateSnapshotConfig`, `LoadSnapshotConfig`, `JailerSocket`, and
+  `ExecStatusJson`; unpinned `tempfile`/`clap`/`assert_cmd`/`indexmap` from
+  `=X.Y.Z` to `^X`; added `scripts/run-e2e.sh` harness; dropped Drop-side
+  ceremony from `m80-vsock::Channel`; corrected tracing levels across hotplug,
+  warm-pool lease, and exec paths; guestd now sends a `Failed` error frame
+  before disconnect on oversized-payload reads.
+- Added `m80-jailer::JailerError::BindDestRejected` for policy rejections and
+  promoted `JailedFirecracker.jailer_pid`/`firecracker_pid` to accessor methods
+  (previously `pub` fields).
+- Added `docs/behaviors/admission/vm-id-path-budget.md`,
+  `docs/decisions/2026-05-01-validate-af-unix-path-budget-at-admission.md`, and
+  `docs/postmortems/2026-05-08-af-unix-path-budget.md` capturing the AF_UNIX
+  path-length constraint and admission-time validation design.
+
+### Added — JoinNetns network policy mode (m80-a8g4)
+
+- Added `NetworkPolicy::JoinNetns` as an explicit mode that places the
+  Firecracker VMM process into a caller-supplied network namespace rather than
+  inheriting the host default or using an outbound NAT bridge. Resolves the
+  documented compromised-VMM network boundary gap.
+- `m80-jailer` materializes `JoinNetns` binds and passes `--netns` to the
+  Firecracker jailer. `m80-net-mode` exposes `resolve_mode` dispatch and
+  updated tests pin all three policy variants.
+- Added an ignored `join_netns_real_kvm` integration test suite
+  (`crates/m80-firecracker/tests/join_netns_real_kvm.rs`) that boots a VM
+  into a caller-created network namespace and asserts the guest NIC is
+  present and the host default route is not visible.
+- Added an ignored `layer1_guest_smoke_real_kvm` suite with a static C probe
+  (`tests/fixtures/layer1_probe.c`) that runs inside the guest and reports
+  kernel version, PID namespace depth, UID, capability mask, and visible
+  mount points — establishing a Layer 1 guest-side baseline.
+- Added `docs/behaviors/network-join-netns/configuration.md` capturing the
+  JoinNetns policy contract.
+
+### Added — guestd protocol hardening (m80-g0v8.12+)
+
+- Hardened guestd cancellation crash paths: connection teardown and PTY process
+  management now handle SIGKILL races without panicking PID 1.
+- `m80-cgroup` gained explicit error propagation for `probe_mounts`
+  (no longer silently recasts I/O errors as `UnsupportedHostMode`);
+  `cleanup_orphan_subtree` returns `CgroupError::LivePids` for live-process
+  conditions; `apply_limits` skips the `io.weight` write when the value equals
+  the kernel default.
+- `m80-jailer` and `m80-jailer-harden` gained cgroup setup hardening and
+  inherited-limits propagation. Jailer privilege-drop behavior is now
+  documented at `docs/behaviors/jailer/privilege-drop.md`.
+- `m80-guestd` protocol hardening: `m80-proto` fileops wire conversions moved
+  to `wire/conversions/fileops.rs`; `FileError` metadata path added; guestd
+  `guest_log.rs` extracted for structured in-guest logging; pid-one startup
+  hardened against `close().unwrap()` panics in the unwind path.
+- Documented exec-privilege policy, DNS-name allowlist scope, and OOM event
+  surface boundaries at `docs/behaviors/`.
+
+### Added — jailer process-hardening coverage (m80-g0v8.11.x)
+
+- Pinned jailer hardening inheritance coverage: the ignored defense-in-depth
+  suite records that seccomp/no-new-privileges/capability-drop inheritance is
+  verified through the jailer launch path (`crates/m80-jailer/tests/defense_in_depth.rs`).
+
+### Added — prometheus exposition hardening (m80-obs)
+
+- `m80-observability` prometheus exposition now has a dedicated test suite
+  (`tests/guest_metrics_prometheus.rs`) that pins the Prometheus text format
+  contract, label escaping, and counter/gauge/histogram shape for all
+  exposed metric families.
+
 ### Added — OutboundNat launch wiring (m80-mx2t.4)
 
 - `m80-firecracker` now wires `NetworkPolicy::AllowOutbound` through launch:
@@ -483,7 +561,7 @@ elapsed_us=…` line on stderr per phase boundary. No-op when unset
 - prints a `useful_ms` rollup that subtracts `stop_bounded` from the
   per-launch wallclock
 
-### Added
+### Added — minimal image kind (m80-6a0q)
 
 - **Minimal image kind** (m80-6a0q) — alongside the existing
   Ubuntu-with-systemd image, m80 now builds a busybox + statically-
@@ -509,14 +587,14 @@ elapsed_us=…` line on stderr per phase boundary. No-op when unset
   - **`scripts/bench-cold-launch.sh`** + `docs/perf/cold-launch.md`
     capture methodology for ubuntu-vs-minimal P50/P95 measurements.
 
-### Changed
+### Changed — manifest schema v1 → v2 (m80-6a0q.4)
 
 - **Manifest schema bumped 1 → 2** (m80-6a0q.4 prerequisite). No
   conversion code; existing v1 images must be rebuilt. New required
   field `image_kind`. Five fields become `Option<>` with a kind-
   conditional invariant enforced on read/write/verify.
 
-### Performance
+### Performance — ready-probe cadence tightened (m80-bgas.1)
 
 - **`phase_12b_ready_probe` cadence tightened** (m80-bgas.1) —
   `READY_POLL_INTERVAL` 500 ms → 10 ms; `READY_TIMEOUT` 30 s → 60 s.
@@ -527,7 +605,7 @@ elapsed_us=…` line on stderr per phase boundary. No-op when unset
   ready-probe latency above the guest-boot floor from ~250 ms to
   ~5 ms.
 
-### Changed (smoke)
+### Changed — smoke retry loop dropped (m80-bgas.2)
 
 - **`scripts/smoke.sh` retry loop dropped** (m80-bgas.2) — the script
   previously retried `m80 launch` up to 3× to mask a v0.1 vsock-probe

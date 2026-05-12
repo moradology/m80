@@ -227,7 +227,10 @@ fn classify_kvm_access(
                 path: path.to_path_buf(),
             })
         }
-        Err(_) => Ok(()),
+        Err(source) => Err(PreflightError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 
@@ -586,14 +589,17 @@ mod tests {
     }
 
     #[test]
-    fn non_access_kvm_open_errors_do_not_block_preflight() {
+    fn non_access_kvm_open_errors_fail_closed() {
+        // Non-EACCES open errors on /dev/kvm (EBUSY, EIO, etc.) must propagate
+        // — silently passing the check on an unknown device state hides a
+        // misconfiguration that will fail at boot anyway.
         let result = classify_kvm_access(
             PathBuf::from("/dev/kvm").as_path(),
             true,
             Err(io::Error::new(io::ErrorKind::Other, "busy")),
         );
 
-        assert!(result.is_ok());
+        assert!(matches!(result, Err(PreflightError::PathIo { .. })));
     }
 
     #[test]

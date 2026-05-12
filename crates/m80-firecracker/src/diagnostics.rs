@@ -75,7 +75,7 @@ pub(crate) fn record_protocol_error(
     context.insert("error".to_owned(), error.to_string());
     let event = VmEvent::host(
         Phase::Request,
-        format!("protocol error stream_id={stream_id}: {error}"),
+        "protocol_error",
         Some(request_id.to_owned()),
         context,
     );
@@ -138,7 +138,7 @@ where
         phase_name,
         vm_id,
         request_id,
-        elapsed.as_micros() as u64,
+        u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX),
         outcome,
     );
     result
@@ -159,7 +159,7 @@ fn record_phase_started(
     context.insert("phase_name".to_owned(), phase_name.to_owned());
     let event = VmEvent::phase_started(
         phase,
-        format!("{phase_name} started"),
+        "phase_started",
         request_id.map(str::to_owned),
         context,
     );
@@ -185,7 +185,7 @@ fn record_phase_completed(
     context.insert("phase_name".to_owned(), phase_name.to_owned());
     let event = VmEvent::phase_completed(
         phase,
-        format!("{phase_name} completed"),
+        "phase_completed",
         request_id.map(str::to_owned),
         context,
         duration_us,
@@ -330,9 +330,6 @@ mod tests {
             event["context"]["error"],
             "disconnect before terminal frame in streaming exec"
         );
-        assert!(event["message"]
-            .as_str()
-            .unwrap()
-            .contains("protocol error stream_id=exec_exit"));
+        assert_eq!(event["message"], "protocol_error");
     }
 }

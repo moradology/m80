@@ -10,6 +10,10 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+malicious-artifact = []
+
 [lib]
 name = "m80_attack_runner"
 path = "src/lib.rs"
@@ -17,6 +21,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "m80-attack-runner"
 path = "src/main.rs"
+required-features = ["malicious-artifact"]
 
 [dependencies]
 nix.workspace = true

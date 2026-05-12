@@ -72,10 +72,11 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 pub(super) const PROCESS_GROUP_TERM_GRACE: Duration = Duration::from_millis(100);
 
 fn unix_ms_now() -> u64 {
-    SystemTime::now()
+    let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::ZERO)
-        .as_millis() as u64
+        .as_millis();
+    u64::try_from(ms).unwrap_or(u64::MAX)
 }
 
 /// Run one request/response cycle on the provided reader/writer.
