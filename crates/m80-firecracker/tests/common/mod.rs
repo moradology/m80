@@ -39,23 +39,22 @@ pub(crate) fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
 }
 
 fn fake_manifest() -> m80_image_manifest::Manifest {
-    m80_image_manifest::Manifest {
-        daemon_binary_path: "/tmp/m80-guestd".into(),
-        daemon_binary_sha256: "0".repeat(64),
-        expected_firecracker_version: "v1.0.0".to_owned(),
-        guest_port: 52,
-        image_kind: m80_image_manifest::ImageKind::Minimal,
-        kernel_image: "/tmp/vmlinux".into(),
-        kernel_image_sha256: "1".repeat(64),
-        kernel_kind: m80_image_manifest::KernelKind::Stock,
-        no_egress_reason: None,
-        output_rootfs_image: "/tmp/rootfs.ext4".into(),
-        output_rootfs_sha256: "2".repeat(64),
-        ready_marker: "M80_READY".to_owned(),
-        schema_version: m80_image_manifest::SCHEMA_VERSION,
-        source_rootfs_image: None,
-        source_rootfs_sha256: None,
-    }
+    m80_image_manifest::Manifest::new(
+        "/tmp/m80-guestd".into(),
+        "0".repeat(64),
+        "v1.0.0".to_owned(),
+        52,
+        m80_image_manifest::ImageKind::Minimal,
+        "/tmp/vmlinux".into(),
+        "1".repeat(64),
+        m80_image_manifest::KernelKind::Stock,
+        None,
+        "/tmp/rootfs.ext4".into(),
+        "2".repeat(64),
+        "M80_READY".to_owned(),
+        None,
+        None,
+    )
 }
 
 // ── Firecracker-specific fixtures ─────────────────────────────────────────────
@@ -139,11 +138,6 @@ impl RunDirDumpGuard {
         }
     }
 
-    /// Override the default 100-line console tail limit.
-    pub(crate) fn with_tail_lines(mut self, n: usize) -> Self {
-        self.console_tail_lines = n;
-        self
-    }
 }
 
 impl Drop for RunDirDumpGuard {
@@ -170,7 +164,7 @@ impl Drop for RunDirDumpGuard {
 ///
 /// `Drop` calls this with `stderr().lock()`; unit tests call it with a
 /// `Vec<u8>` to capture and assert on the output.
-pub(super) fn dump_run_dir(
+pub(crate) fn dump_run_dir(
     run_dir: &Path,
     console_tail_lines: usize,
     w: &mut dyn Write,
@@ -365,14 +359,6 @@ mod tests {
         let tmp = make_run_dir();
         let _guard = RunDirDumpGuard::new(tmp.path().to_path_buf());
         // Drops here — no panic in flight, so Drop does nothing.
-    }
-
-    /// `with_tail_lines` stores the requested value.
-    #[test]
-    fn guard_with_tail_lines_stores_value() {
-        let tmp = make_run_dir();
-        let guard = RunDirDumpGuard::new(tmp.path().to_path_buf()).with_tail_lines(42);
-        assert_eq!(guard.console_tail_lines, 42);
     }
 
     // ── panic-path via dump_run_dir directly ──────────────────────────────────

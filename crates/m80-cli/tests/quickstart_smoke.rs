@@ -6,7 +6,7 @@ use common::m80;
 
 use std::process::Command as StdCommand;
 
-use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest};
 use serde_json::Value;
 
 fn run_checked(cmd: &mut StdCommand, label: &str) {
@@ -66,23 +66,22 @@ fn write_release_tarball(dir: &tempfile::TempDir) -> std::path::PathBuf {
 
 fn write_manifest_with_stale_paths(src: &std::path::Path) {
     let stale = std::path::PathBuf::from("/tmp/m80-release-artifacts");
-    let manifest = Manifest {
-        daemon_binary_path: stale.join("m80-guestd"),
-        daemon_binary_sha256: sha256_hex(&src.join("m80-guestd")),
-        expected_firecracker_version: "v1.15.1".to_owned(),
-        guest_port: m80_proto::GUEST_PORT_DEFAULT,
-        image_kind: ImageKind::Minimal,
-        kernel_image: stale.join("vmlinux"),
-        kernel_image_sha256: sha256_hex(&src.join("vmlinux")),
-        kernel_kind: KernelKind::Stock,
-        no_egress_reason: Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
-        output_rootfs_image: stale.join("output.ext4"),
-        output_rootfs_sha256: sha256_hex(&src.join("output.ext4")),
-        ready_marker: m80_proto::READY_MARKER_DEFAULT.to_owned(),
-        schema_version: SCHEMA_VERSION,
-        source_rootfs_image: None,
-        source_rootfs_sha256: None,
-    };
+    let manifest = Manifest::new(
+        stale.join("m80-guestd"),
+        sha256_hex(&src.join("m80-guestd")),
+        "v1.15.1".to_owned(),
+        m80_proto::GUEST_PORT_DEFAULT,
+        ImageKind::Minimal,
+        stale.join("vmlinux"),
+        sha256_hex(&src.join("vmlinux")),
+        KernelKind::Stock,
+        Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
+        stale.join("output.ext4"),
+        sha256_hex(&src.join("output.ext4")),
+        m80_proto::READY_MARKER_DEFAULT.to_owned(),
+        None,
+        None,
+    );
     manifest
         .write(&src.join("output.ext4.manifest.json"))
         .unwrap();

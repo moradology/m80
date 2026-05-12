@@ -133,7 +133,7 @@ pub(crate) fn assert_cross_tenant_attack_blocked(name: &str, extra_bindings: Vec
             peer_sentinel: &format!("{peer_in_jail_display}/sentinel"),
             peer_run_dir: &peer_in_jail_display,
             peer_network_state: &format!("{peer_in_jail_display}/network-state.json"),
-            peer_pid: live_b.jailed.firecracker_pid,
+            peer_pid: live_b.jailed.firecracker_pid(),
         },
     )
     .expect("write tenant-a config");
@@ -161,7 +161,7 @@ pub(crate) fn assert_cross_tenant_attack_blocked(name: &str, extra_bindings: Vec
         result_a.exit_code
     );
     assert!(
-        proc_pid_exists(live_b.jailed.firecracker_pid),
+        proc_pid_exists(live_b.jailed.firecracker_pid()),
         "{name} must not kill the peer tenant process"
     );
     let result_b = live_b.wait().expect("wait peer tenant");
@@ -290,14 +290,14 @@ pub(crate) fn launch_attack_in_jailer_with_resource_limits(
 impl LiveAttack {
     pub(crate) fn wait(self) -> Result<AttackRun, Box<dyn std::error::Error>> {
         let cgroup_path = read_cgroup_path_record(self.jail.run_dir())?;
-        let jailed_pid = self.jailed.firecracker_pid.to_string();
+        let jailed_pid = self.jailed.firecracker_pid().to_string();
         let cgroup_contained_pid = cgroup_path.as_ref().is_some_and(|path| {
             match std::fs::read_to_string(path.join("cgroup.procs")) {
                 Ok(procs) => procs.lines().any(|pid| pid == jailed_pid),
                 Err(_) => false,
             }
         });
-        let status = waitpid(Pid::from_raw(self.jailed.firecracker_pid as i32), None)?;
+        let status = waitpid(Pid::from_raw(self.jailed.firecracker_pid() as i32), None)?;
         drop(self.cgroup);
         Ok(AttackRun {
             exit_code: match status {

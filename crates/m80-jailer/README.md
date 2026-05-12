@@ -91,7 +91,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `MaterializedJail::jail_root()`, `MaterializedJail::run_dir()`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `inspect_run_dir`, `InspectionDecision`, `ReapPlan`.
-- `JailerError`: `BindFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
+- `JailerError`: `BindDestRejected` (policy rejection), `BindFailed { source: nix::Error }` (syscall failure), `ChrootFailed`, `FirecrackerPidTimeout`,
   `UidGidInvalid`, `InvalidNetns`, `Io { path, source }`. Privilege is verified once by
   `m80-preflight`; this crate does not run a per-launch sudo probe.
 

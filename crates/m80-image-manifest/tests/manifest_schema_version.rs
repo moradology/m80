@@ -6,7 +6,14 @@ mod common;
 
 use m80_image_manifest::{Manifest, ManifestError, SCHEMA_VERSION};
 
-/// Bead m80-sz1.3.2: the manifest carries `schema_version: 1` and
+fn read_bytes(raw: &[u8]) -> Result<Manifest, ManifestError> {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("manifest.json");
+    std::fs::write(&path, raw).unwrap();
+    Manifest::read(&path)
+}
+
+/// Bead m80-sz1.3.2: the manifest carries the current schema version and
 /// `expected_firecracker_version`.
 #[test]
 fn stamps_schema_and_firecracker_version() {
@@ -16,7 +23,7 @@ fn stamps_schema_and_firecracker_version() {
     m.write(&path).unwrap();
 
     let m2 = Manifest::read(&path).unwrap();
-    assert_eq!(m2.schema_version, SCHEMA_VERSION);
+    assert_eq!(m2.schema_version(), SCHEMA_VERSION);
     assert_eq!(m2.expected_firecracker_version, "v1.15.1");
 }
 
@@ -30,7 +37,7 @@ fn wrong_schema_version_is_rejected() {
     v["schema_version"] = serde_json::json!(99u32);
     let raw = serde_json::to_string_pretty(&v).unwrap();
 
-    let err = Manifest::from_bytes(raw.as_bytes()).unwrap_err();
+    let err = read_bytes(raw.as_bytes()).unwrap_err();
     assert!(
         matches!(err, ManifestError::UnsupportedSchemaVersion(99)),
         "expected UnsupportedSchemaVersion(99), got {err:?}"

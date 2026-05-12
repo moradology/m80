@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use assert_cmd::Command;
-use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
@@ -26,23 +26,22 @@ fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
         std::fs::write(dir.path().join(name), content).unwrap();
     }
 
-    Manifest {
-        daemon_binary_path: dir.path().join("m80-guestd"),
-        daemon_binary_sha256: sha256_of(b"daemon-bytes"),
-        expected_firecracker_version: "v1.15.1".to_string(),
-        guest_port: 9001,
-        image_kind: ImageKind::Ubuntu,
-        kernel_image: dir.path().join("vmlinux"),
-        kernel_image_sha256: sha256_of(b"kernel-bytes"),
-        kernel_kind: KernelKind::Stock,
-        no_egress_reason: None,
-        output_rootfs_image: dir.path().join("output.ext4"),
-        output_rootfs_sha256: sha256_of(b"output-rootfs-bytes"),
-        ready_marker: "GUESTD_READY".to_string(),
-        schema_version: SCHEMA_VERSION,
-        source_rootfs_image: Some(dir.path().join("source.ext4")),
-        source_rootfs_sha256: Some(sha256_of(b"source-rootfs-bytes")),
-    }
+    Manifest::new(
+        dir.path().join("m80-guestd"),
+        sha256_of(b"daemon-bytes"),
+        "v1.15.1".to_string(),
+        9001,
+        ImageKind::Ubuntu,
+        dir.path().join("vmlinux"),
+        sha256_of(b"kernel-bytes"),
+        KernelKind::Stock,
+        None,
+        dir.path().join("output.ext4"),
+        sha256_of(b"output-rootfs-bytes"),
+        "GUESTD_READY".to_string(),
+        Some(dir.path().join("source.ext4")),
+        Some(sha256_of(b"source-rootfs-bytes")),
+    )
 }
 
 #[test]

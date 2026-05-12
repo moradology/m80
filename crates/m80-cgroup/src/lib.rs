@@ -26,7 +26,6 @@ const DEFAULT_CPU_QUOTA_US: u64 = 100_000;
 const DEFAULT_CPU_PERIOD_US: u64 = 100_000;
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 1_610_612_736;
 const DEFAULT_PIDS_MAX: u32 = 128;
-const DEFAULT_IO_WEIGHT: u16 = 100;
 const DEFAULT_OOM_SCORE_ADJ: i16 = 500;
 
 /// One per-VM cgroup v2 subtree under `/sys/fs/cgroup/m80-firecracker/<vm-id>`.
@@ -89,13 +88,13 @@ impl Subtree {
         let subtree = Subtree(leaf.clone());
         subtree.apply_limits(limits)?;
         if let Some(oom_score_adj) = limits.oom_score_adj {
-            for pid in enrolled_pids(jailed.jailer_pid, jailed.firecracker_pid) {
+            for pid in enrolled_pids(jailed.jailer_pid(), jailed.firecracker_pid()) {
                 set_oom_score_adj(pid, oom_score_adj)?;
             }
         }
 
         let procs = leaf.join("cgroup.procs");
-        for pid in enrolled_pids(jailed.jailer_pid, jailed.firecracker_pid) {
+        for pid in enrolled_pids(jailed.jailer_pid(), jailed.firecracker_pid()) {
             write_cgroup_file(&procs, &format!("{pid}\n"))?;
         }
 
@@ -131,7 +130,10 @@ impl Subtree {
 
         if let Some(io_weight) = limits.io_weight {
             validate_io_weight(io_weight)?;
-            write_cgroup_file(&self.0.join("io.weight"), &format!("default {io_weight}\n"))?;
+            // Kernel default is 100; writing it is a no-op syscall, skip it.
+            if io_weight != 100 {
+                write_cgroup_file(&self.0.join("io.weight"), &format!("default {io_weight}\n"))?;
+            }
         }
 
         for io_max in &limits.io_max {
@@ -166,7 +168,7 @@ impl Drop for Subtree {
 /// Best-effort cleanup of a stale subtree from a prior crashed run.
 ///
 /// If the directory does not exist, returns `Ok(())`. If it exists and
-/// `cgroup.procs` is non-empty, logs a warning and returns `Ok(())`.
+/// `cgroup.procs` is non-empty, returns `Err(CgroupError::LivePids)`.
 /// If it exists and is empty, removes it.
 pub fn cleanup_orphan_subtree(vm_id: &str) -> Result<(), CgroupError> {
     let leaf = Subtree::leaf_path(vm_id);
@@ -181,12 +183,10 @@ pub fn cleanup_orphan_subtree(vm_id: &str) -> Result<(), CgroupError> {
     })?;
 
     if !procs.trim().is_empty() {
-        warn!(
-            "cleanup_orphan_subtree: {} still has live pids, leaving in place: {:?}",
-            leaf.display(),
-            procs.trim()
-        );
-        return Ok(());
+        return Err(CgroupError::LivePids {
+            path: leaf.clone(),
+            pids: procs.trim().to_owned(),
+        });
     }
 
     fs::remove_dir(&leaf).map_err(|source| CgroupError::Io {
@@ -230,7 +230,7 @@ impl Limits {
             memory_max: Some(DEFAULT_MEMORY_MAX_BYTES),
             pids_max: Some(DEFAULT_PIDS_MAX),
             io_max: Vec::new(),
-            io_weight: Some(DEFAULT_IO_WEIGHT),
+            io_weight: None,
             oom_score_adj: Some(DEFAULT_OOM_SCORE_ADJ),
         }
     }
@@ -316,6 +316,14 @@ pub enum CgroupError {
         /// Invalid value.
         value: String,
     },
+    /// Subtree still has live PIDs; cannot clean up.
+    #[error("subtree {} still has live pids: {pids}", path.display())]
+    LivePids {
+        /// Subtree path.
+        path: PathBuf,
+        /// Raw content of `cgroup.procs`.
+        pids: String,
+    },
     /// Underlying I/O failure; carries the path so the caller doesn't have
     /// to guess which file failed.
     #[error("i/o on {}: {source}", path.display())]
@@ -341,8 +349,12 @@ fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
         return Err(CgroupError::UnsupportedHostMode);
     }
 
-    fs::read_to_string(Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control"))
-        .map_err(|_| CgroupError::UnsupportedHostMode)?;
+    fs::read_to_string(Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control")).map_err(
+        |source| CgroupError::Io {
+            path: Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control"),
+            source,
+        },
+    )?;
 
     Ok(())
 }
@@ -372,13 +384,12 @@ fn enable_subtree_control_chain(
     controllers: &[&'static str],
 ) -> Result<(), CgroupError> {
     let mut path = base.to_path_buf();
-    write_subtree_control(&path, controllers)?;
-
     let relative = parent.strip_prefix(base).unwrap_or(parent);
     for component in relative.components() {
-        path.push(component.as_os_str());
         write_subtree_control(&path, controllers)?;
+        path.push(component.as_os_str());
     }
+    write_subtree_control(&path, controllers)?;
     Ok(())
 }
 

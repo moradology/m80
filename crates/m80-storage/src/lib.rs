@@ -116,8 +116,12 @@ pub enum StorageError {
         path: PathBuf,
     },
     /// The atomic swap into the destination failed.
-    #[error("atomic swap into destination failed")]
-    SwapFailed,
+    #[error("atomic swap into destination failed: {source}")]
+    SwapFailed {
+        /// Underlying I/O error from the rename.
+        #[source]
+        source: io::Error,
+    },
     /// Underlying I/O failure; carries the path so the caller doesn't have to
     /// guess which file failed.
     #[error("i/o on {}: {source}", path.display())]

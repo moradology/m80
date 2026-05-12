@@ -108,10 +108,11 @@ fn prepare_missing_parent_returns_overlay_template_clone_failed() {
 
     let err = Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).unwrap_err();
     match err {
-        StorageError::OverlayTemplateCloneFailed { dest, .. } => {
-            assert_eq!(dest, overlay, "error must carry the overlay path");
+        StorageError::SubprocessFailed { program, path, .. } => {
+            assert_eq!(program, "cp", "subprocess error must identify cp");
+            assert_eq!(path, overlay, "error must carry the overlay path");
         }
-        other => panic!("expected OverlayTemplateCloneFailed, got {other:?}"),
+        other => panic!("expected SubprocessFailed (cp), got {other:?}"),
     }
 }
 

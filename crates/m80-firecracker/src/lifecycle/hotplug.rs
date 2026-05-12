@@ -265,9 +265,17 @@ fn virtio_blk_suffix(mut index: u16) -> String {
     suffix.iter().rev().collect()
 }
 
-fn discard_after_hotplug_failure(sandbox: RunningSandbox, err: FcError) -> FcError {
+fn discard_after_hotplug_failure(mut sandbox: RunningSandbox, err: FcError) -> FcError {
+    let vm_id = sandbox.vm_id.clone();
+    crate::diagnostics::record_owned(
+        &mut sandbox.diagnostics,
+        m80_observability::Phase::Stop,
+        &vm_id,
+        sandbox.request_id.as_deref(),
+        &format!("hotplug failure - discarding VM (leaked if cleanup fails): {err}"),
+    );
     if let Err(cleanup) = sandbox.force_kill().and_then(|stopped| stopped.delete()) {
-        tracing::warn!(
+        tracing::error!(
             error = %cleanup,
             "failed to discard sandbox after drive hotplug failure"
         );

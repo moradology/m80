@@ -22,7 +22,8 @@ fn memory_and_pids_max() {
 
     assert_eq!(limits.memory_max, Some(1_610_612_736));
     assert_eq!(limits.pids_max, Some(128));
-    assert_eq!(limits.io_weight, Some(100));
+    // preset() leaves io_weight as None (kernel default 100 is implicit).
+    assert_eq!(limits.io_weight, None);
     assert_eq!(limits.oom_score_adj, Some(500));
     assert!(limits.io_max.is_empty());
 }

@@ -351,8 +351,8 @@ impl Sandbox {
 
         let kill_guard = crate::types::ForceKillGuard::new(
             vm_id.clone(),
-            firecracker.firecracker_pid,
-            firecracker.jailer_pid,
+            firecracker.firecracker_pid(),
+            firecracker.jailer_pid(),
             Arc::clone(&watcher_stop),
             None,
         );
@@ -625,8 +625,8 @@ impl Sandbox {
         let snapshot_mount = Some(snapshot_bind.into_mount_path());
         let kill_guard = crate::types::ForceKillGuard::new(
             vm_id.clone(),
-            firecracker.firecracker_pid,
-            firecracker.jailer_pid,
+            firecracker.firecracker_pid(),
+            firecracker.jailer_pid(),
             Arc::clone(&watcher_stop),
             snapshot_mount.clone(),
         );

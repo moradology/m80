@@ -358,9 +358,28 @@ impl Drop for MaterializedJail {
 #[derive(Debug)]
 pub struct JailedFirecracker {
     /// PID of the `jailer` process itself.
-    pub jailer_pid: u32,
+    pub(crate) jailer_pid: u32,
     /// PID of the `firecracker` child the jailer exec'd.
-    pub firecracker_pid: u32,
+    pub(crate) firecracker_pid: u32,
+}
+
+impl JailedFirecracker {
+    /// Construct a `JailedFirecracker` with known PIDs.
+    ///
+    /// Use `0` for `jailer_pid` when the jailer has already exited (daemonized mode).
+    pub fn new(jailer_pid: u32, firecracker_pid: u32) -> Self {
+        Self { jailer_pid, firecracker_pid }
+    }
+
+    /// PID of the `jailer` process (0 when daemonized and already exited).
+    pub fn jailer_pid(&self) -> u32 {
+        self.jailer_pid
+    }
+
+    /// PID of the `firecracker` child the jailer exec'd.
+    pub fn firecracker_pid(&self) -> u32 {
+        self.firecracker_pid
+    }
 }
 
 #[cfg(test)]
@@ -603,7 +622,7 @@ fi
         let jailed = jail
             .launch(Path::new(JailerSocket::Firecracker.jail_path()))
             .unwrap();
-        assert_eq!(jailed.jailer_pid, 0);
+        assert_eq!(jailed.jailer_pid(), 0);
 
         let state = std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&state).unwrap();
@@ -679,19 +698,19 @@ echo $$ > "$jail_root/firecracker.pid"
         let jailed = jail
             .launch(Path::new(JailerSocket::Firecracker.jail_path()))
             .unwrap();
-        assert_eq!(jailed.jailer_pid, 0);
+        assert_eq!(jailed.jailer_pid(), 0);
         assert!(
-            std::path::Path::new(&format!("/proc/{}", jailed.firecracker_pid)).exists(),
+            std::path::Path::new(&format!("/proc/{}", jailed.firecracker_pid())).exists(),
             "daemonized firecracker pid must remain live after jailer parent exits"
         );
 
         let state = std::fs::read_to_string(run_dir.join("jailer-state.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&state).unwrap();
         assert_eq!(parsed["jailer_pid"], 0);
-        assert_eq!(parsed["firecracker_pid"], jailed.firecracker_pid);
+        assert_eq!(parsed["firecracker_pid"], jailed.firecracker_pid());
 
         nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(jailed.firecracker_pid as i32),
+            nix::unistd::Pid::from_raw(jailed.firecracker_pid() as i32),
             nix::sys::signal::Signal::SIGKILL,
         )
         .unwrap();
@@ -769,7 +788,7 @@ echo $$ > "$jail_root/firecracker.pid"
             .launch(Path::new(JailerSocket::Firecracker.jail_path()))
             .unwrap();
         nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(jailed.jailer_pid as i32),
+            nix::unistd::Pid::from_raw(jailed.jailer_pid() as i32),
             nix::sys::signal::Signal::SIGKILL,
         )
         .unwrap();

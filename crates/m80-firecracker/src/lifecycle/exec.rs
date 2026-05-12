@@ -621,7 +621,7 @@ fn join_forwarder_with_timeout(
             Err(panic) => tracing::error!(?panic, "{name} thread panicked"),
         },
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            tracing::warn!("{name} thread did not stop within {timeout:?}; detaching");
+            tracing::error!("{name} thread did not stop within {timeout:?}; detaching");
         }
     }
 }

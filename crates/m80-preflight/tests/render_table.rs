@@ -1,28 +1,27 @@
 //! Verify the Discovery::render_table output contains expected labels and
 //! status markers for each fixture row.
 
-use m80_image_manifest::{ImageKind, KernelKind, Manifest, SCHEMA_VERSION};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest};
 use m80_preflight::{CheckRow, Discovery, PrivilegeStatus};
 use std::path::PathBuf;
 
 fn fixture_manifest() -> Manifest {
-    Manifest {
-        daemon_binary_path: PathBuf::from("/usr/local/bin/guestd"),
-        daemon_binary_sha256: "a".repeat(64),
-        expected_firecracker_version: "v1.15.1".into(),
-        guest_port: 3000,
-        image_kind: ImageKind::Ubuntu,
-        kernel_kind: KernelKind::Stock,
-        kernel_image: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),
-        kernel_image_sha256: "b".repeat(64),
-        no_egress_reason: None,
-        output_rootfs_image: PathBuf::from("/opt/m80/images/rootfs.ext4"),
-        output_rootfs_sha256: "c".repeat(64),
-        ready_marker: "READY".into(),
-        schema_version: SCHEMA_VERSION,
-        source_rootfs_image: Some(PathBuf::from("/opt/m80/images/source.ext4")),
-        source_rootfs_sha256: Some("e".repeat(64)),
-    }
+    Manifest::new(
+        PathBuf::from("/usr/local/bin/guestd"),
+        "a".repeat(64),
+        "v1.15.1".into(),
+        3000,
+        ImageKind::Ubuntu,
+        PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),
+        "b".repeat(64),
+        KernelKind::Stock,
+        None,
+        PathBuf::from("/opt/m80/images/rootfs.ext4"),
+        "c".repeat(64),
+        "READY".into(),
+        Some(PathBuf::from("/opt/m80/images/source.ext4")),
+        Some("e".repeat(64)),
+    )
 }
 
 fn fixture_discovery() -> Discovery {

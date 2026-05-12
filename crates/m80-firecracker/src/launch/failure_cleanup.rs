@@ -33,6 +33,8 @@ impl Drop for LaunchRunDirCleanupGuard {
                     "launch failure cleanup removed partial run-dir"
                 );
             }
+            // Best-effort cleanup in Drop; NotFound is normal when launch failed
+            // before the run-dir was created.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
                 tracing::error!(
@@ -100,7 +102,7 @@ impl Drop for LaunchNetworkCleanupGuard {
 
 impl LaunchProcessCleanupGuard {
     pub(super) fn from_jailed(vm_id: &str, jailed: &m80_jailer::JailedFirecracker) -> Self {
-        Self::new(vm_id, jailed.firecracker_pid, jailed.jailer_pid)
+        Self::new(vm_id, jailed.firecracker_pid(), jailed.jailer_pid())
     }
 
     pub(super) fn new(vm_id: &str, firecracker_pid: u32, jailer_pid: u32) -> Self {

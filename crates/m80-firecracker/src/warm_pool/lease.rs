@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use m80_proto::{ExecExit, ExecRequest, ExecResponse};
 
-use super::{discard_sandbox, WarmPoolInner};
+use super::{discard_sandbox, discard_sandbox_with_diagnostics, WarmPoolInner};
 use crate::error::FcError;
 use crate::hotplug_types::HotplugDriveAttach;
 use crate::types::{ExecChunk, RunningSandbox};
@@ -155,14 +155,14 @@ impl WarmLease {
             return Err(FcError::OneShotConsumed);
         };
         let result = f(&mut sandbox);
-        let discard_result = discard_sandbox(sandbox);
+        let discard_result = discard_sandbox_with_diagnostics(sandbox, result.as_ref().err());
         self.release_and_refill();
         match (result, discard_result) {
             (Ok(value), Ok(())) => Ok(value),
             (Ok(_), Err(cleanup)) => Err(cleanup),
             (Err(err), Ok(())) => Err(err),
             (Err(err), Err(cleanup)) => {
-                tracing::warn!(
+                tracing::error!(
                     error = %cleanup,
                     "failed to discard one-shot warm lease after exec error"
                 );

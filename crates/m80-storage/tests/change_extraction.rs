@@ -30,7 +30,7 @@ fn rollback_on_extract_failure() {
 
     let err = Scratch::extract(&image, &into).unwrap_err();
 
-    assert!(matches!(err, StorageError::SwapFailed));
+    assert!(matches!(err, StorageError::Io { .. }));
     assert_eq!(
         std::fs::read(into.join("original.txt")).unwrap(),
         b"original"

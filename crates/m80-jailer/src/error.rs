@@ -6,13 +6,24 @@ use std::path::PathBuf;
 /// Errors surfaced by jailer operations.
 #[derive(Debug, thiserror::Error)]
 pub enum JailerError {
-    /// A bind-mount failed.
-    #[error("bind-mount failed: src={src} dest={dest}", src = src.display(), dest = dest.display())]
+    /// A bind destination was rejected by policy (invalid path or reserved kernel fs).
+    #[error("bind destination rejected: src={src} dest={dest}", src = src.display(), dest = dest.display())]
+    BindDestRejected {
+        /// Host source path that was rejected.
+        src: PathBuf,
+        /// In-jail destination path that was rejected.
+        dest: PathBuf,
+    },
+    /// A bind-mount syscall failed.
+    #[error("bind-mount failed: src={src} dest={dest}: {source}", src = src.display(), dest = dest.display())]
     BindFailed {
         /// Host source path that failed.
         src: PathBuf,
         /// In-jail destination path that failed.
         dest: PathBuf,
+        /// Underlying OS error.
+        #[source]
+        source: nix::Error,
     },
     /// `chroot` syscall (or jailer's chroot step) failed.
     #[error("chroot failed in {jail_path}", jail_path = jail_path.display())]

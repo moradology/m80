@@ -432,6 +432,9 @@ fn terminate_child_group(child: &mut Child) -> (CancelStatus, Option<ExitStatus>
     let term = signal_process_group(pgid, nix::sys::signal::Signal::SIGTERM);
     thread::sleep(PROCESS_GROUP_TERM_GRACE);
     let kill = signal_process_group(pgid, nix::sys::signal::Signal::SIGKILL);
+    // SIGKILL guarantees the process is dead; wait() can only fail here
+    // with ECHILD if the process was already reaped (e.g. double-wait).
+    // Discarding that error is correct: no zombie is left behind.
     let exit_status = child.wait().ok();
     (cancel_status_from_group_signals(term, kill), exit_status)
 }

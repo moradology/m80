@@ -100,7 +100,9 @@ fn admissibility_refused_displays() {
 
 #[test]
 fn swap_failed_displays() {
-    let e = StorageError::SwapFailed;
+    let e = StorageError::SwapFailed {
+        source: std::io::Error::new(std::io::ErrorKind::Other, "rename failed"),
+    };
     let s = format!("{e}");
     assert!(!s.is_empty());
     assert!(s.contains("swap") || s.contains("atomic"));

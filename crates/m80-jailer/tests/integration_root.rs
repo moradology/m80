@@ -376,16 +376,16 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
         .launch(PathBuf::from("firecracker.sock").as_path())
         .unwrap();
 
-    assert_eq!(jailed.jailer_pid, 0);
+    assert_eq!(jailed.jailer_pid(), 0);
     let state: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(run_dir.path().join("jailer-state.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(state["jailer_pid"], 0);
-    assert_eq!(state["firecracker_pid"], jailed.firecracker_pid);
+    assert_eq!(state["firecracker_pid"], jailed.firecracker_pid());
 
     let status =
-        std::fs::read_to_string(format!("/proc/{}/status", jailed.firecracker_pid)).unwrap();
+        std::fs::read_to_string(format!("/proc/{}/status", jailed.firecracker_pid())).unwrap();
     let nspid = status
         .lines()
         .find(|line| line.starts_with("NSpid:"))
@@ -394,25 +394,25 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
         nspid.split_whitespace().last() == Some("1"),
         "firecracker must be PID 1 in its new PID namespace: {nspid}"
     );
-    assert_limit_contains(jailed.firecracker_pid, "Max open files", "77", "77");
-    assert_status_contains(jailed.firecracker_pid, "Uid:", "3000\t3000\t3000\t3000");
-    assert_status_contains(jailed.firecracker_pid, "Gid:", "3000\t3000\t3000\t3000");
-    assert_status_contains(jailed.firecracker_pid, "NoNewPrivs:", "1");
-    assert_status_contains(jailed.firecracker_pid, "CapPrm:", "0000000000000000");
-    assert_status_contains(jailed.firecracker_pid, "CapEff:", "0000000000000000");
-    assert_status_contains(jailed.firecracker_pid, "CapInh:", "0000000000000000");
-    assert_status_contains(jailed.firecracker_pid, "CapAmb:", "0000000000000000");
-    assert_status_contains(jailed.firecracker_pid, "SigBlk:", "0000000000000000");
-    assert_supplementary_groups_empty(jailed.firecracker_pid);
+    assert_limit_contains(jailed.firecracker_pid(), "Max open files", "77", "77");
+    assert_status_contains(jailed.firecracker_pid(), "Uid:", "3000\t3000\t3000\t3000");
+    assert_status_contains(jailed.firecracker_pid(), "Gid:", "3000\t3000\t3000\t3000");
+    assert_status_contains(jailed.firecracker_pid(), "NoNewPrivs:", "1");
+    assert_status_contains(jailed.firecracker_pid(), "CapPrm:", "0000000000000000");
+    assert_status_contains(jailed.firecracker_pid(), "CapEff:", "0000000000000000");
+    assert_status_contains(jailed.firecracker_pid(), "CapInh:", "0000000000000000");
+    assert_status_contains(jailed.firecracker_pid(), "CapAmb:", "0000000000000000");
+    assert_status_contains(jailed.firecracker_pid(), "SigBlk:", "0000000000000000");
+    assert_supplementary_groups_empty(jailed.firecracker_pid());
     assert_exec_file_is_private_copy(
-        jailed.firecracker_pid,
+        jailed.firecracker_pid(),
         &cfg.firecracker_bin,
         cfg.uid,
         cfg.gid,
     );
 
     kill(
-        Pid::from_raw(jailed.firecracker_pid as i32),
+        Pid::from_raw(jailed.firecracker_pid() as i32),
         Signal::SIGKILL,
     )
     .expect("kill firecracker");

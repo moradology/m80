@@ -29,23 +29,22 @@ fn fixture_manifest(dir: &Path, kernel: &Path) -> (PathBuf, Manifest) {
     write_empty(&rootfs);
     write_empty(&daemon);
 
-    let manifest = Manifest {
-        daemon_binary_path: daemon,
-        daemon_binary_sha256: SHA256_EMPTY.to_string(),
-        expected_firecracker_version: "v1.15.1".to_string(),
-        guest_port: 9001,
-        image_kind: ImageKind::Minimal,
-        kernel_image: kernel.to_path_buf(),
-        kernel_image_sha256: SHA256_EMPTY.to_string(),
-        kernel_kind: KernelKind::Stock,
-        no_egress_reason: None,
-        output_rootfs_image: rootfs.clone(),
-        output_rootfs_sha256: SHA256_EMPTY.to_string(),
-        ready_marker: "M80_READY".to_string(),
-        schema_version: SCHEMA_VERSION,
-        source_rootfs_image: None,
-        source_rootfs_sha256: None,
-    };
+    let manifest = Manifest::new(
+        daemon,
+        SHA256_EMPTY.to_string(),
+        "v1.15.1".to_string(),
+        9001,
+        ImageKind::Minimal,
+        kernel.to_path_buf(),
+        SHA256_EMPTY.to_string(),
+        KernelKind::Stock,
+        None,
+        rootfs.clone(),
+        SHA256_EMPTY.to_string(),
+        "M80_READY".to_string(),
+        None,
+        None,
+    );
     let manifest_path = PathBuf::from(format!("{}.manifest.json", rootfs.display()));
     manifest.write(&manifest_path).unwrap();
     (rootfs, manifest)

@@ -172,16 +172,11 @@ fn mkfs_ext4(path: &Path) -> Result<(), StorageError> {
         })?;
 
     if !out.status.success() {
-        let detail = if out.stderr.is_empty() {
-            String::from_utf8_lossy(&out.stdout).trim().to_owned()
-        } else {
-            String::from_utf8_lossy(&out.stderr).trim().to_owned()
-        };
         return Err(StorageError::SubprocessFailed {
             program: "mkfs.ext4",
             path: path.to_path_buf(),
             status: format_exit(out.status),
-            stderr: detail,
+            stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
         });
     }
     Ok(())
@@ -200,14 +195,11 @@ fn dig_template_holes(path: &Path) -> Result<(), StorageError> {
     if out.status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-    Err(StorageError::OverlayTemplateCreateFailed {
+    Err(StorageError::SubprocessFailed {
+        program: "fallocate",
         path: path.to_path_buf(),
-        err: std::io::Error::other(if stderr.is_empty() {
-            "fallocate -d failed".to_string()
-        } else {
-            stderr
-        }),
+        status: format_exit(out.status),
+        stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
     })
 }
 
@@ -249,15 +241,9 @@ fn validate_template(template: &Path, size_bytes: u64) -> Result<(), StorageErro
     let meta = template_metadata_path(template);
     let mut actual = String::new();
     File::open(&meta)
-        .map_err(|e| StorageError::OverlayTemplateMismatch {
-            path: meta.clone(),
-            reason: format!("metadata open failed: {e}"),
-        })?
+        .map_err(|e| StorageError::Io { path: meta.clone(), source: e })?
         .read_to_string(&mut actual)
-        .map_err(|e| StorageError::OverlayTemplateMismatch {
-            path: meta.clone(),
-            reason: format!("metadata read failed: {e}"),
-        })?;
+        .map_err(|e| StorageError::Io { path: meta.clone(), source: e })?;
     let expected = expected_template_metadata(size_bytes);
     if actual != expected {
         return Err(StorageError::OverlayTemplateMismatch {
@@ -269,17 +255,6 @@ fn validate_template(template: &Path, size_bytes: u64) -> Result<(), StorageErro
 }
 
 fn clone_template(template: &Path, dest: &Path) -> Result<(), StorageError> {
-    if dest.exists() {
-        return Err(StorageError::OverlayTemplateCloneFailed {
-            template: template.to_path_buf(),
-            dest: dest.to_path_buf(),
-            err: std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "overlay destination already exists",
-            ),
-        });
-    }
-
     let out = Command::new("cp")
         .args(TEMPLATE_CLONE_ARGS)
         .arg(template)
@@ -294,15 +269,11 @@ fn clone_template(template: &Path, dest: &Path) -> Result<(), StorageError> {
         return Ok(());
     }
     let _ = std::fs::remove_file(dest);
-    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-    Err(StorageError::OverlayTemplateCloneFailed {
-        template: template.to_path_buf(),
-        dest: dest.to_path_buf(),
-        err: std::io::Error::other(if stderr.is_empty() {
-            "cp --reflink=auto --sparse=always failed".to_string()
-        } else {
-            stderr
-        }),
+    Err(StorageError::SubprocessFailed {
+        program: "cp",
+        path: dest.to_path_buf(),
+        status: format_exit(out.status),
+        stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
     })
 }
 

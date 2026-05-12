@@ -105,16 +105,6 @@ fn io_err(host_uds: &Arc<Path>, source: io::Error) -> VsockError {
     }
 }
 
-/// Emit a drop-teardown warning. Called from both [`Channel`] and
-/// [`ChannelSender`] Drop impls; must not panic.
-fn warn_teardown(host_uds: &Path, context: &str, err: impl std::fmt::Display) {
-    tracing::warn!(
-        path = %host_uds.display(),
-        err = %err,
-        "{context} teardown failed during drop",
-    );
-}
-
 impl Channel {
     /// Connect to `host_uds` and hand-shake to `guest_port`. Readiness is
     /// established by the caller via [`m80_proto::READY_PORT_DEFAULT`]'s
@@ -225,18 +215,12 @@ impl Channel {
         Ok(envelope)
     }
 
-    /// Flush the connection stream. The host-side UDS is owned by Firecracker
-    /// and remains in place for subsequent connections.
-    fn teardown(&mut self) -> Result<(), VsockError> {
-        self.stream.flush().map_err(|e| io_err(&self.host_uds, e))
-    }
 }
 
 impl Drop for Channel {
     fn drop(&mut self) {
-        if let Err(e) = self.teardown() {
-            warn_teardown(&self.host_uds, "vsock connection", e);
-        }
+        // Nothing to flush: stream is a raw UnixStream; the kernel owns the
+        // send buffer. Dropping closes the fd and signals EOF to the peer.
     }
 }
 
@@ -252,9 +236,8 @@ impl ChannelSender {
 
 impl Drop for ChannelSender {
     fn drop(&mut self) {
-        if let Err(e) = self.stream.flush() {
-            warn_teardown(&self.host_uds, "vsock sender", e);
-        }
+        // Nothing to flush: stream is a raw UnixStream clone; dropping closes
+        // the fd. No userspace buffer exists to drain.
     }
 }
 

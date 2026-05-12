@@ -143,23 +143,22 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
     let daemon_sha = sha256_file(&cfg.guestd.binary).context("sha256 daemon binary")?;
 
     // Step 10: emit manifest.
-    let manifest = m80_image_manifest::Manifest {
-        daemon_binary_path: daemon_binary_host,
-        daemon_binary_sha256: daemon_sha,
-        expected_firecracker_version: cfg.kernel.version,
-        guest_port: m80_proto::GUEST_PORT_DEFAULT,
-        image_kind: m80_image_manifest::ImageKind::Minimal,
-        kernel_image: kernel.clone(),
-        kernel_image_sha256: kernel_sha,
-        kernel_kind: m80_image_manifest::KernelKind::Stock,
-        no_egress_reason: Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
-        output_rootfs_image: output_rootfs.clone(),
-        output_rootfs_sha256: output_sha,
-        ready_marker: m80_proto::READY_MARKER_DEFAULT.to_string(),
-        schema_version: m80_image_manifest::SCHEMA_VERSION,
-        source_rootfs_image: None,
-        source_rootfs_sha256: None,
-    };
+    let manifest = m80_image_manifest::Manifest::new(
+        daemon_binary_host,
+        daemon_sha,
+        cfg.kernel.version,
+        m80_proto::GUEST_PORT_DEFAULT,
+        m80_image_manifest::ImageKind::Minimal,
+        kernel.clone(),
+        kernel_sha,
+        m80_image_manifest::KernelKind::Stock,
+        Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
+        output_rootfs.clone(),
+        output_sha,
+        m80_proto::READY_MARKER_DEFAULT.to_string(),
+        None,
+        None,
+    );
     manifest
         .write(&manifest_path)
         .with_context(|| format!("writing manifest to {}", manifest_path.display()))?;

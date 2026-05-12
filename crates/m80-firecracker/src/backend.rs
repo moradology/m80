@@ -132,7 +132,7 @@ impl Backend {
                     // Owner m80 is dead (we passed `run_dir_liveness` above)
                     // but firecracker is still running — orphaned VM.
                     // SIGKILL it, wait for the kernel to reap, then reclaim.
-                    tracing::info!(
+                    tracing::warn!(
                         path = %subdir.display(),
                         jailer_pid,
                         firecracker_pid,

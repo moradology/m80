@@ -351,6 +351,26 @@ fn discard_sandbox(sandbox: RunningSandbox) -> Result<(), FcError> {
     sandbox.force_kill()?.delete()
 }
 
+/// Discard a sandbox, first recording a diagnostics event if `exec_err` is
+/// `Some` (i.e., we are discarding after an exec failure, not normal teardown).
+pub(crate) fn discard_sandbox_with_diagnostics(
+    mut sandbox: RunningSandbox,
+    exec_err: Option<&FcError>,
+) -> Result<(), FcError> {
+    if let Some(err) = exec_err {
+        let vm_id = sandbox.vm_id.clone();
+        let request_id = sandbox.request_id.clone();
+        crate::diagnostics::record_owned(
+            &mut sandbox.diagnostics,
+            m80_observability::Phase::Stop,
+            &vm_id,
+            request_id.as_deref(),
+            &format!("one-shot exec failed; discarding VM: {err}"),
+        );
+    }
+    sandbox.force_kill()?.delete()
+}
+
 fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<(), FcError> {
     let mut last_error = None;
     for _ in 0..5 {

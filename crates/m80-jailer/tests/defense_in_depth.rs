@@ -154,12 +154,12 @@ fn two_tenant_attack_runner_fixture_materializes_distinct_live_jails() {
     assert_ne!(tenant_a.uid, tenant_b.uid, "tenants must use distinct uids");
     assert_ne!(tenant_a.gid, tenant_b.gid, "tenants must use distinct gids");
     assert_ne!(
-        live_a.jailed.firecracker_pid, live_b.jailed.firecracker_pid,
+        live_a.jailed.firecracker_pid(), live_b.jailed.firecracker_pid(),
         "two tenants must be distinct host processes"
     );
     assert!(
-        proc_pid_exists(live_a.jailed.firecracker_pid)
-            && proc_pid_exists(live_b.jailed.firecracker_pid),
+        proc_pid_exists(live_a.jailed.firecracker_pid())
+            && proc_pid_exists(live_b.jailed.firecracker_pid()),
         "both attack-runner processes must be live before cross-tenant tests run"
     );
 

@@ -109,11 +109,13 @@ where
         Err(e) => {
             metrics::record_error();
             protocol_log::warn_proto_error(GuestLogPhase::Exec, None, None, &e);
-            if matches!(e, m80_proto::ProtoError::OversizedPayload { .. }) {
-                return Ok(ConnectionOutcome::Continue);
-            }
-            // Malformed decodable-size frame: try to send a Failed response,
-            // then close this connection.
+            // OversizedPayload fires after reading only the 4-byte length
+            // prefix; the body bytes are still in the stream and the write
+            // side is unaffected. Fall through to send an error frame so the
+            // host sees a Failed response instead of a silent EOF.
+            //
+            // For all other read errors (malformed decodable-size frame,
+            // version mismatch, etc.) the same error-frame path applies.
             let timing = failed_timing(received_at);
             let resp = error_response(format!("{e:#}").into_bytes(), timing);
             let out_env = Envelope::new(resp);

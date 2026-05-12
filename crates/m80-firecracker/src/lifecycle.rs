@@ -131,7 +131,7 @@ impl RunningSandbox {
 
         // Phase 2: bounded_stop.
         let t_bounded = Instant::now();
-        let exit_reason = bounded_stop(self.firecracker.firecracker_pid, &vsock_uds)?;
+        let exit_reason = bounded_stop(self.firecracker.firecracker_pid(), &vsock_uds)?;
 
         // Phase 4: release. Destructure to drop everything except what moves
         // into StoppedSandbox.
@@ -214,13 +214,13 @@ impl RunningSandbox {
 
         match force_kill_disposition() {
             StopDisposition::HostForceKill => {
-                if let Err(err) = kill_and_reap_pid(self.firecracker.firecracker_pid) {
+                if let Err(err) = kill_and_reap_pid(self.firecracker.firecracker_pid()) {
                     self.record_forced_kill_ambiguous(&err);
                     std::mem::forget(self);
                     return Err(err);
                 }
-                if self.firecracker.jailer_pid != self.firecracker.firecracker_pid {
-                    if let Err(err) = kill_and_reap_pid(self.firecracker.jailer_pid) {
+                if self.firecracker.jailer_pid() != self.firecracker.firecracker_pid() {
+                    if let Err(err) = kill_and_reap_pid(self.firecracker.jailer_pid()) {
                         self.record_forced_kill_ambiguous(&err);
                         std::mem::forget(self);
                         return Err(err);
@@ -397,7 +397,10 @@ pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
     };
     use nix::mount::{umount2, MntFlags};
     if let Err(e) = umount2(mount_path, MntFlags::MNT_DETACH) {
-        tracing::warn!(path = %mount_path.display(), err = %e, "snapshot bind unmount failed");
+        // Skip remove_dir: if umount failed the mount is still active and
+        // remove_dir will fail too, producing a confusing second warning.
+        tracing::warn!(path = %mount_path.display(), err = %e, "snapshot bind unmount failed; skipping dir removal");
+        return;
     }
     if let Err(e) = std::fs::remove_dir(mount_path) {
         tracing::warn!(path = %mount_path.display(), err = %e, "snapshot bind mount dir cleanup failed");

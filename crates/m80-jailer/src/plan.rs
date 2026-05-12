@@ -28,7 +28,7 @@ impl Plan {
         // host-kernel virtual filesystems inside the jail.
         for binding in &config.bindings {
             if invalid_dest(&binding.dest) || is_hidden_kernel_dest(&binding.dest) {
-                return Err(JailerError::BindFailed {
+                return Err(JailerError::BindDestRejected {
                     src: binding.source.clone(),
                     dest: binding.dest.clone(),
                 });
@@ -158,9 +158,10 @@ impl Plan {
                         MsFlags::MS_BIND | MsFlags::MS_REC,
                         None::<&str>,
                     )
-                    .map_err(|_e| JailerError::BindFailed {
+                    .map_err(|e| JailerError::BindFailed {
                         src: source.clone(),
                         dest: dest.clone(),
+                        source: e,
                     })?;
                     materialized.bind_mounts.push(dest.clone());
 
@@ -172,9 +173,10 @@ impl Plan {
                             bind_remount_flags() | MsFlags::MS_RDONLY,
                             None::<&str>,
                         )
-                        .map_err(|_e| JailerError::BindFailed {
+                        .map_err(|e| JailerError::BindFailed {
                             src: source.clone(),
                             dest: dest.clone(),
+                            source: e,
                         })?;
                     } else {
                         // Rw bind: chown the source so the jailed firecracker
@@ -187,9 +189,10 @@ impl Plan {
                             Some(Uid::from_raw(materialized.plan.config.uid)),
                             Some(Gid::from_raw(materialized.plan.config.gid)),
                         )
-                        .map_err(|_e| JailerError::BindFailed {
+                        .map_err(|e| JailerError::BindFailed {
                             src: source.clone(),
                             dest: dest.clone(),
+                            source: e,
                         })?;
                         mount(
                             None::<&str>,
@@ -198,9 +201,10 @@ impl Plan {
                             bind_remount_flags(),
                             None::<&str>,
                         )
-                        .map_err(|_e| JailerError::BindFailed {
+                        .map_err(|e| JailerError::BindFailed {
                             src: source.clone(),
                             dest: dest.clone(),
+                            source: e,
                         })?;
                     }
                 }

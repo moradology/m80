@@ -71,8 +71,8 @@ fn scratch_extract_rejects_into_already_exists() {
 
     let err = Scratch::extract(&image, &into).unwrap_err();
     assert!(
-        matches!(err, m80_storage::StorageError::SwapFailed),
-        "expected SwapFailed, got {err:?}"
+        matches!(err, m80_storage::StorageError::Io { .. }),
+        "expected Io(AlreadyExists), got {err:?}"
     );
 }
 

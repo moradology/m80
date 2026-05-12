@@ -78,7 +78,13 @@ impl Scratch {
     /// rejected.
     pub fn extract(image: &Path, into: &Path) -> Result<ChangeSet, StorageError> {
         if into.exists() {
-            return Err(StorageError::SwapFailed);
+            return Err(StorageError::Io {
+                path: into.to_path_buf(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "extract destination already exists",
+                ),
+            });
         }
 
         run_e2fsck(image)?;
@@ -96,7 +102,7 @@ impl Scratch {
 
         // Atomic rename into `into`; fail if it already exists or if the
         // sibling-stage invariant was broken.
-        fs::rename(stage_dir.path(), into).map_err(|_| StorageError::SwapFailed)?;
+        fs::rename(stage_dir.path(), into).map_err(|e| StorageError::SwapFailed { source: e })?;
         // Prevent TempDir from trying to remove the path we just renamed away.
         let _ = stage_dir.keep();
 
@@ -166,16 +172,11 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
         .output()
         .map_err(|e| io_err(image, e))?;
     if !mkfs_out.status.success() {
-        let detail = if mkfs_out.stderr.is_empty() {
-            String::from_utf8_lossy(&mkfs_out.stdout).trim().to_owned()
-        } else {
-            String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned()
-        };
         return Err(StorageError::SubprocessFailed {
             program: "mkfs.ext4",
             path: image.to_path_buf(),
             status: format_exit(mkfs_out.status),
-            stderr: detail,
+            stderr: String::from_utf8_lossy(&mkfs_out.stderr).trim().to_owned(),
         });
     }
 

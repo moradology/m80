@@ -28,9 +28,10 @@ cgroup /sys/fs/cgroup/memory cgroup rw,memory 0 0
 #[test]
 fn required_subtree_control_enables_three_controllers() {
     assert_eq!(Limits::default().required_controllers(), BASE_CONTROLLERS);
+    // preset() does not set io_weight, so io controller is not required by default
     assert_eq!(
         Limits::preset().required_controllers(),
-        vec!["cpu", "memory", "pids", "io"]
+        vec!["cpu", "memory", "pids"]
     );
 }
 
@@ -164,10 +165,7 @@ fn create_applies_limits_before_pid_enrollment() {
         io_weight: Some(200),
         oom_score_adj: None,
     };
-    let jailed = JailedFirecracker {
-        jailer_pid: 11,
-        firecracker_pid: 22,
-    };
+    let jailed = JailedFirecracker::new(11, 22);
 
     let err = Subtree::create_at(&base, &parent, "vm-ordered", dir.path(), &jailed, &limits)
         .expect_err("missing cgroup.procs must fail at enrollment");
@@ -221,10 +219,7 @@ fn sparse_cpuset_without_non_empty_ancestor_fails_typed() {
     }
     fs::write(leaf.join("cpuset.cpus"), "").unwrap();
 
-    let jailed = JailedFirecracker {
-        jailer_pid: 11,
-        firecracker_pid: 22,
-    };
+    let jailed = JailedFirecracker::new(11, 22);
     let err = Subtree::create_at(
         &base,
         &parent,
