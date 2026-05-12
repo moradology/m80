@@ -102,6 +102,80 @@ def _percentile(sorted_vals, pct):
     return sorted_vals[idx]
 
 
+# Per-cell extended percentile set surfaced in JSON snapshots.
+PERCENTILE_KEYS_MS = [("p50", 50), ("p75", 75), ("p90", 90), ("p95", 95),
+                     ("p99", 99), ("p999", 99.9)]
+PERCENTILE_KEYS_US = [("p50_us", 50), ("p75_us", 75), ("p90_us", 90),
+                     ("p95_us", 95), ("p99_us", 99), ("p999_us", 99.9)]
+
+
+def _log_histogram(sorted_vals, bucket_factor=2):
+    """Return list of [low, high, count] buckets on a log-`factor` scale.
+
+    Buckets cover the observed range only — buckets with zero count are
+    omitted to keep snapshots small for N=1000 runs.
+    """
+    if not sorted_vals:
+        return []
+    lo = max(1, sorted_vals[0])
+    hi = sorted_vals[-1]
+    buckets = []
+    cur = lo
+    while cur <= hi:
+        nxt = cur * bucket_factor
+        count = sum(1 for v in sorted_vals if cur <= v < nxt)
+        if count:
+            buckets.append([cur, nxt, count])
+        cur = nxt
+    # Catch the final value (which sits at `hi` ≥ cur).
+    if sorted_vals[-1] >= cur:
+        buckets.append([cur, cur * bucket_factor, 1])
+    return buckets
+
+
+def bootstrap_ci_median(vals, samples=200, seed=0, confidence=0.95):
+    """Bootstrap a confidence interval for the median.
+
+    Returns ``(lower, upper)`` where each bound is an observed value from
+    the original sample. Deterministic given ``seed``.
+    """
+    import random
+    if not vals:
+        return (None, None)
+    rng = random.Random(seed)
+    n = len(vals)
+    medians = []
+    for _ in range(samples):
+        resample = sorted(rng.choices(vals, k=n))
+        medians.append(_percentile(resample, 50))
+    medians.sort()
+    alpha = (1 - confidence) / 2
+    lo_idx = max(0, int(samples * alpha) - 1)
+    hi_idx = min(samples - 1, int(samples * (1 - alpha)) - 1)
+    return (medians[lo_idx], medians[hi_idx])
+
+
+def _count_outliers_2sigma(vals):
+    """Return the number of samples more than 2 standard deviations from the mean."""
+    if len(vals) < 3:
+        return 0
+    mean = sum(vals) / len(vals)
+    var = sum((v - mean) ** 2 for v in vals) / len(vals)
+    sd = var ** 0.5
+    if sd == 0:
+        return 0
+    return sum(1 for v in vals if abs(v - mean) > 2 * sd)
+
+
+def _stats_for(vals_sorted, suffix=""):
+    """Return a dict of pN<suffix> percentile stats for a sorted sample."""
+    keys = PERCENTILE_KEYS_US if suffix == "_us" else PERCENTILE_KEYS_MS
+    out = {f"{name}": _percentile(vals_sorted, pct) for name, pct in keys}
+    out[f"max{suffix}"] = vals_sorted[-1]
+    out["count"] = len(vals_sorted)
+    return out
+
+
 def compute_snapshot(wallclock_file, phase_file):
     """
     Read wallclock_file and phase_file (file-like objects) and return the
@@ -126,20 +200,18 @@ def compute_snapshot(wallclock_file, phase_file):
     wallclock = {}
     for (kind, load), vals in wc_rows.items():
         vals_sorted = sorted(vals)
-        wallclock.setdefault(kind, {})[load] = {
-            "p50": _percentile(vals_sorted, 50),
-            "p95": _percentile(vals_sorted, 95),
-            "max": vals_sorted[-1],
-            "count": len(vals_sorted),
-            "fail_count": wc_fail.get((kind, load), 0),
-        }
+        entry = _stats_for(vals_sorted, suffix="")
+        entry["fail_count"] = wc_fail.get((kind, load), 0)
+        entry["outliers"] = _count_outliers_2sigma(vals)
+        entry["p50_ci95"] = list(bootstrap_ci_median(vals, samples=200, seed=42))
+        wallclock.setdefault(kind, {})[load] = entry
     # Fill in cells with only failures (no successes).
     for (kind, load), fc in wc_fail.items():
         if kind not in wallclock or load not in wallclock.get(kind, {}):
-            wallclock.setdefault(kind, {})[load] = {
-                "p50": None, "p95": None, "max": None,
-                "count": 0, "fail_count": fc,
-            }
+            empty = {name: None for name, _ in PERCENTILE_KEYS_MS}
+            empty.update({"max": None, "count": 0, "fail_count": fc,
+                          "outliers": 0, "p50_ci95": [None, None]})
+            wallclock.setdefault(kind, {})[load] = empty
 
     # --- phases ---
     phase_rows = collections.defaultdict(list)  # (kind, load, phase) -> [us]
@@ -161,12 +233,9 @@ def compute_snapshot(wallclock_file, phase_file):
     phases = {}
     for (kind, load, phase), vals in phase_rows.items():
         vals_sorted = sorted(vals)
-        phases.setdefault(kind, {}).setdefault(load, {})[phase] = {
-            "p50_us": _percentile(vals_sorted, 50),
-            "p95_us": _percentile(vals_sorted, 95),
-            "max_us": vals_sorted[-1],
-            "count": len(vals_sorted),
-        }
+        entry = _stats_for(vals_sorted, suffix="_us")
+        entry["histogram_us"] = _log_histogram(vals_sorted)
+        phases.setdefault(kind, {}).setdefault(load, {})[phase] = entry
 
     useful_ms = {}
     for (kind, load), per_attempt in useful_per_attempt.items():
@@ -178,6 +247,165 @@ def compute_snapshot(wallclock_file, phase_file):
         "phases": phases,
         "useful_ms": useful_ms,
     }
+
+
+# ---------------------------------------------------------------------------
+# Sweep + concurrent aggregators (B0-4, B0-5)
+# ---------------------------------------------------------------------------
+
+def compute_sweep(wallclock_file, sweep_var):
+    """Aggregate a sweep CSV (one row per attempt, with sweep_var + sweep_value).
+
+    Returns ``{sweep_value: {p50, p95, p99, max, count, fail_count}}``.
+    """
+    rows = collections.defaultdict(list)
+    fails = collections.defaultdict(int)
+    for row in csv.DictReader(wallclock_file):
+        if row.get("sweep_var") != sweep_var:
+            continue
+        sval = row.get("sweep_value", "")
+        try:
+            ms = int(row["launch_ms"])
+        except (ValueError, KeyError):
+            continue
+        if row.get("exit", "0") == "0":
+            rows[sval].append(ms)
+        else:
+            fails[sval] += 1
+    out = {}
+    for sval, vals in rows.items():
+        s = sorted(vals)
+        entry = _stats_for(s, suffix="")
+        entry["fail_count"] = fails.get(sval, 0)
+        out[sval] = entry
+    return out
+
+
+def compute_throughput(csv_file):
+    """B2: per-(kind, op) ops/sec + latency from a continuous-run CSV.
+
+    Input columns: timestamp_unix_ms, kind, op, latency_ms, exit.
+    """
+    by_key = collections.defaultdict(list)  # (kind, op) -> [(ts_ms, lat_ms)]
+    fails = collections.defaultdict(int)
+    for row in csv.DictReader(csv_file):
+        try:
+            ts = int(row["timestamp_unix_ms"])
+            lat = int(row["latency_ms"])
+        except (ValueError, KeyError):
+            continue
+        key = (row["kind"], row["op"])
+        if row.get("exit", "0") != "0":
+            fails[key] += 1
+            continue
+        by_key[key].append((ts, lat))
+    out = {}
+    for (kind, op), rows in by_key.items():
+        rows.sort()
+        ts_first, ts_last = rows[0][0], rows[-1][0]
+        window_s = max((ts_last - ts_first) / 1000.0, 0.001)
+        lats = sorted(r[1] for r in rows)
+        out.setdefault(kind, {})[op] = {
+            "count": len(rows),
+            "ops_per_sec": len(rows) / window_s,
+            "p50_ms": _percentile(lats, 50),
+            "p95_ms": _percentile(lats, 95),
+            "p99_ms": _percentile(lats, 99),
+            "fail_count": fails.get((kind, op), 0),
+        }
+    return out
+
+
+def compute_memory(csv_file):
+    """B4: per-VM RSS samples.
+
+    Input columns: timestamp, vm_id, rss_kb, vm_count.
+    Returns aggregate {rss_kb_p50, rss_kb_p95, rss_kb_max, sample_count,
+    vm_count_p50}.
+    """
+    rss = []
+    vm_counts = []
+    for row in csv.DictReader(csv_file):
+        try:
+            rss.append(int(row["rss_kb"]))
+            vm_counts.append(int(row.get("vm_count", "1")))
+        except (ValueError, KeyError):
+            continue
+    if not rss:
+        return {"sample_count": 0}
+    rss_sorted = sorted(rss)
+    vc_sorted = sorted(vm_counts)
+    return {
+        "rss_kb_p50": _percentile(rss_sorted, 50),
+        "rss_kb_p95": _percentile(rss_sorted, 95),
+        "rss_kb_max": rss_sorted[-1],
+        "sample_count": len(rss),
+        "vm_count_p50": _percentile(vc_sorted, 50) if vc_sorted else 0,
+    }
+
+
+def compute_teardown(csv_file):
+    """B8: per-phase teardown latency aggregator.
+
+    Input columns: timestamp, kind, attempt, phase, elapsed_us.
+    Phases of interest: stop_bounded, residue_cleanup, force_kill,
+    release. Returns {kind: {phase: {p50_us, p95_us, max_us, count}}}.
+    """
+    by_key = collections.defaultdict(list)  # (kind, phase) -> [us]
+    for row in csv.DictReader(csv_file):
+        try:
+            us = int(row["elapsed_us"])
+        except (ValueError, KeyError):
+            continue
+        by_key[(row["kind"], row["phase"])].append(us)
+    out = {}
+    for (kind, phase), vals in by_key.items():
+        s = sorted(vals)
+        out.setdefault(kind, {})[phase] = {
+            "p50_us": _percentile(s, 50),
+            "p95_us": _percentile(s, 95),
+            "p99_us": _percentile(s, 99),
+            "max_us": s[-1],
+            "count": len(s),
+        }
+    return out
+
+
+def compute_concurrent(wallclock_file):
+    """Aggregate a concurrent CSV.
+
+    Returns ``{concurrency_str: {wall_time_to_all_ready_p50_ms, per_vm_p95_ms,
+    per_vm_p99_ms, attempts, vm_count}}``. Wall-time-to-all-ready is the
+    per-attempt max launch_ms, then P50 across attempts.
+    """
+    per_attempt_max = collections.defaultdict(dict)  # conc -> attempt -> max_ms
+    per_vm = collections.defaultdict(list)  # conc -> [launch_ms]
+    for row in csv.DictReader(wallclock_file):
+        conc = row.get("concurrency", "")
+        attempt = row.get("attempt", "")
+        try:
+            ms = int(row["launch_ms"])
+        except (ValueError, KeyError):
+            continue
+        if row.get("exit", "0") != "0":
+            continue
+        prev = per_attempt_max[conc].get(attempt, 0)
+        per_attempt_max[conc][attempt] = max(prev, ms)
+        per_vm[conc].append(ms)
+    out = {}
+    for conc, attempt_maxes in per_attempt_max.items():
+        maxes = sorted(attempt_maxes.values())
+        vms = sorted(per_vm[conc])
+        out[conc] = {
+            "wall_time_to_all_ready_p50_ms": _percentile(maxes, 50) if maxes else None,
+            "wall_time_to_all_ready_p95_ms": _percentile(maxes, 95) if maxes else None,
+            "per_vm_p50_ms": _percentile(vms, 50) if vms else None,
+            "per_vm_p95_ms": _percentile(vms, 95) if vms else None,
+            "per_vm_p99_ms": _percentile(vms, 99) if vms else None,
+            "attempts": len(maxes),
+            "vm_count": len(vms),
+        }
+    return out
 
 
 def compute_diff(baseline_data, new_data):
@@ -598,6 +826,196 @@ class TestRegressionThreshold(unittest.TestCase):
         rows, _, _ = compute_diff(baseline, new)
         tripped = [r for r in rows if r["delta_pct"] is not None and r["delta_pct"] > 10.0]
         self.assertEqual(tripped, [])
+
+
+class TestExtendedPercentiles(unittest.TestCase):
+    """B0-1: P50/P75/P90/P95/P99/P99.9/max from large samples."""
+
+    def test_p99_from_1000_sample(self):
+        # values = [1, 2, ..., 1000]; P99 is the 990th value (1-indexed)
+        ph = "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us\n" + "".join(
+            f"2026-05-04T10:00:00+00:00,ubuntu,stock,idle,{i},boot,{i}\n"
+            for i in range(1, 1001)
+        )
+        wc = "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit\n"
+        data = compute_snapshot(io.StringIO(wc), io.StringIO(ph))
+        boot = data["phases"]["ubuntu"]["idle"]["boot"]
+        # _percentile is "rank-1 index" — at N=1000 P99 → idx 989 → value 990
+        self.assertEqual(boot["p99_us"], 990)
+        self.assertEqual(boot["p999_us"], 999)
+
+    def test_p75_p90_present(self):
+        ph = "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us\n" + "".join(
+            f"2026-05-04T10:00:00+00:00,ubuntu,stock,idle,{i},boot,{i * 1000}\n"
+            for i in range(1, 101)
+        )
+        wc = "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit\n"
+        data = compute_snapshot(io.StringIO(wc), io.StringIO(ph))
+        boot = data["phases"]["ubuntu"]["idle"]["boot"]
+        self.assertIn("p75_us", boot)
+        self.assertIn("p90_us", boot)
+
+    def test_extended_percentiles_on_wallclock(self):
+        wc = "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit\n" + "".join(
+            f"2026-05-04T10:00:00+00:00,ubuntu,stock,idle,{i},{i},0\n"
+            for i in range(1, 101)
+        )
+        ph = "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us\n"
+        data = compute_snapshot(io.StringIO(wc), io.StringIO(ph))
+        ui = data["wallclock"]["ubuntu"]["idle"]
+        self.assertIn("p99", ui)
+        self.assertIn("p999", ui)
+        self.assertIn("p75", ui)
+        self.assertIn("p90", ui)
+
+
+class TestHistogramBuckets(unittest.TestCase):
+    """B0-1: log-bucketed histogram per phase."""
+
+    def test_histogram_emits_buckets(self):
+        ph = "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us\n" + "".join(
+            f"2026-05-04T10:00:00+00:00,ubuntu,stock,idle,{i},boot,{10 ** ((i % 6) + 2)}\n"
+            for i in range(1, 101)
+        )
+        wc = "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit\n"
+        data = compute_snapshot(io.StringIO(wc), io.StringIO(ph))
+        boot = data["phases"]["ubuntu"]["idle"]["boot"]
+        self.assertIn("histogram_us", boot)
+        # Each bucket is [low, high, count]; we expect at least 2 non-empty buckets.
+        non_empty = [b for b in boot["histogram_us"] if b[2] > 0]
+        self.assertGreaterEqual(len(non_empty), 2)
+
+
+class TestBootstrapCI(unittest.TestCase):
+    """B0-7: bootstrap 95% confidence interval for the median."""
+
+    def test_bootstrap_ci_brackets_median(self):
+        vals = list(range(1, 101))  # 1..100
+        lo, hi = bootstrap_ci_median(vals, samples=200, seed=42)
+        median = 50
+        self.assertLessEqual(lo, median)
+        self.assertGreaterEqual(hi, median)
+
+    def test_bootstrap_ci_width_widens_with_variance(self):
+        tight = [50] * 50 + [51] * 50
+        spread = list(range(0, 100))
+        lo_t, hi_t = bootstrap_ci_median(tight, samples=200, seed=1)
+        lo_s, hi_s = bootstrap_ci_median(spread, samples=200, seed=1)
+        self.assertLess(hi_t - lo_t, hi_s - lo_s)
+
+    def test_bootstrap_ci_appears_in_snapshot(self):
+        wc = "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit\n" + "".join(
+            f"2026-05-04T10:00:00+00:00,ubuntu,stock,idle,{i},{i + 100},0\n"
+            for i in range(1, 51)
+        )
+        ph = "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us\n"
+        data = compute_snapshot(io.StringIO(wc), io.StringIO(ph))
+        ui = data["wallclock"]["ubuntu"]["idle"]
+        self.assertIn("p50_ci95", ui)
+        lo, hi = ui["p50_ci95"]
+        self.assertLessEqual(lo, ui["p50"])
+        self.assertGreaterEqual(hi, ui["p50"])
+
+
+class TestOutlierDetection(unittest.TestCase):
+    """B0-7: 2σ outlier flagging per cell."""
+
+    def test_outlier_count_zero_when_uniform(self):
+        wc = "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit\n" + "".join(
+            f"2026-05-04T10:00:00+00:00,ubuntu,stock,idle,{i},100,0\n"
+            for i in range(1, 31)
+        )
+        data = compute_snapshot(io.StringIO(wc), io.StringIO("timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us\n"))
+        self.assertEqual(data["wallclock"]["ubuntu"]["idle"]["outliers"], 0)
+
+    def test_outlier_count_flags_extreme(self):
+        rows = "timestamp,kind,kernel_kind,load,attempt,launch_ms,exit\n"
+        for i in range(1, 31):
+            rows += f"2026-05-04T10:00:00+00:00,ubuntu,stock,idle,{i},100,0\n"
+        # Add a single huge outlier
+        rows += "2026-05-04T10:00:01+00:00,ubuntu,stock,idle,99,5000,0\n"
+        data = compute_snapshot(io.StringIO(rows), io.StringIO("timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us\n"))
+        self.assertGreaterEqual(data["wallclock"]["ubuntu"]["idle"]["outliers"], 1)
+
+
+class TestSweepIngest(unittest.TestCase):
+    """B0-4: sweep CSV with per-cell summary."""
+
+    def test_sweep_csv_aggregates_per_value(self):
+        # SWEEP CSV columns add sweep_var + sweep_value:
+        # timestamp,kind,kernel_kind,load,attempt,sweep_var,sweep_value,launch_ms,exit
+        wc = "timestamp,kind,kernel_kind,load,attempt,sweep_var,sweep_value,launch_ms,exit\n"
+        for sval in (1, 2, 4):
+            for i in range(1, 6):
+                wc += f"2026-05-04T10:00:00+00:00,minimal,stock,idle,{i},vcpu,{sval},{500 + sval * 100},0\n"
+        cells = compute_sweep(io.StringIO(wc), sweep_var="vcpu")
+        # 3 sweep values × one cell each
+        keys = sorted(cells.keys())
+        self.assertEqual(keys, ["1", "2", "4"])
+        # p50 increases with sweep value
+        self.assertLess(cells["1"]["p50"], cells["4"]["p50"])
+
+
+class TestConcurrentAggregation(unittest.TestCase):
+    """B0-5: CONCURRENT=N wall-time-to-all-ready + per-VM tail."""
+
+    def test_concurrent_aggregation(self):
+        # Concurrent CSV columns: timestamp,kind,kernel_kind,load,attempt,concurrency,vm_index,launch_ms,exit
+        rows = "timestamp,kind,kernel_kind,load,attempt,concurrency,vm_index,launch_ms,exit\n"
+        # Two attempts of concurrency=4
+        for attempt in (1, 2):
+            for vm in range(4):
+                rows += f"2026-05-04T10:00:00+00:00,minimal,stock,idle,{attempt},4,{vm},{800 + vm * 100},0\n"
+        agg = compute_concurrent(io.StringIO(rows))
+        # wall_time_to_all_ready = max per attempt = 800 + 3*100 = 1100
+        # vm_tail = P95 across all VMs in all attempts
+        self.assertEqual(agg["4"]["wall_time_to_all_ready_p50_ms"], 1100)
+        self.assertIn("per_vm_p95_ms", agg["4"])
+
+
+class TestThroughput(unittest.TestCase):
+    """B2: ops/sec sustained over a window."""
+
+    def test_throughput_ops_per_sec(self):
+        # 100 ops in 10 seconds => 10 ops/sec
+        rows = "timestamp_unix_ms,kind,op,latency_ms,exit\n" + "".join(
+            f"{1700000000000 + i * 100},minimal,exec,5,0\n" for i in range(100)
+        )
+        result = compute_throughput(io.StringIO(rows))
+        self.assertEqual(result["minimal"]["exec"]["count"], 100)
+        # Window is 100 ops × 100 ms = 10 seconds → 10 ops/sec
+        self.assertAlmostEqual(result["minimal"]["exec"]["ops_per_sec"], 10.0, delta=0.5)
+        self.assertEqual(result["minimal"]["exec"]["p50_ms"], 5)
+
+
+class TestMemoryRSS(unittest.TestCase):
+    """B4: per-VM RSS sampling aggregation."""
+
+    def test_memory_rss_p50(self):
+        # rows: timestamp,vm_id,rss_kb,vm_count
+        rows = "timestamp,vm_id,rss_kb,vm_count\n" + "".join(
+            f"{i},vm-{i},{50000 + (i % 10) * 100},1\n" for i in range(20)
+        )
+        result = compute_memory(io.StringIO(rows))
+        self.assertIn("rss_kb_p50", result)
+        self.assertGreater(result["rss_kb_p50"], 50000)
+        self.assertEqual(result["sample_count"], 20)
+
+
+class TestTeardownLatency(unittest.TestCase):
+    """B8: teardown latency aggregation."""
+
+    def test_teardown_p50_p95(self):
+        rows = "timestamp,kind,attempt,phase,elapsed_us\n" + "".join(
+            f"{i},minimal,{i},stop_bounded,{50000 + i * 1000}\n" for i in range(50)
+        ) + "".join(
+            f"{i},minimal,{i},residue_cleanup,{10000 + i * 100}\n" for i in range(50)
+        )
+        result = compute_teardown(io.StringIO(rows))
+        self.assertIn("stop_bounded", result["minimal"])
+        self.assertIn("residue_cleanup", result["minimal"])
+        self.assertGreater(result["minimal"]["stop_bounded"]["p95_us"],
+                           result["minimal"]["stop_bounded"]["p50_us"])
 
 
 class TestColorLogic(unittest.TestCase):
