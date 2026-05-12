@@ -65,7 +65,7 @@ fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
     let fake_dir = tempfile::tempdir().expect("fake firecracker tempdir");
     // fc_basename eats into the 107-byte AF_UNIX path budget alongside vm_id;
     // keep the fake binary name short so the path stays under the cap.
-    let fake_name = format!("fake-fc-cgr-{:04x}", unique_suffix() % 0x10000);
+    let fake_name = format!("fake-fc-cgr-{:04x}", common::unique_suffix() % 0x10000);
     let fake_firecracker = write_fake_firecracker(fake_dir.path(), &fake_name);
     let mut discovery =
         m80_preflight::run().expect("preflight must pass on a privileged host with m80 artifacts");
@@ -154,7 +154,7 @@ fn restore_guestd_not_ready_timeout_cleans_partial_state() {
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
     let snap_dir = discovery
         .run_root
-        .join(format!("gnr-snap-{:04x}", unique_suffix() % 0x10000));
+        .join(format!("gnr-snap-{:04x}", common::unique_suffix() % 0x10000));
     let paths = snapshot_paths(&snap_dir);
 
     let mut golden = launch_healthy(&backend, "gnr-gold");

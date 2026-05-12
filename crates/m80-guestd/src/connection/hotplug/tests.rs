@@ -124,7 +124,7 @@ fn missing_device_waits_for_requested_devname() {
     let ops = FakeOps::default();
     let req = request(vec![spec("hotplug_slot_0", "/dev/vdd", "/tenant", None)]);
 
-    let response = mount_devices(&req, &ops);
+    let response = mount_devices_with_ops(&req, &ops);
 
     assert_eq!(
         response.statuses[0].error,
@@ -138,7 +138,7 @@ fn non_dev_device_path_fails_closed() {
     let ops = FakeOps::default();
     let req = request(vec![spec("hotplug_slot_0", "vdd", "/tenant", None)]);
 
-    let response = mount_devices(&req, &ops);
+    let response = mount_devices_with_ops(&req, &ops);
 
     assert_eq!(
         response.statuses[0].error,
@@ -153,7 +153,7 @@ fn mount_request_returns_mounted_and_identity_bytes() {
         .with_mount("/workspace", "/dev/vdc")
         .with_device("/dev/vdd")
         .with_identity("/tenant.id", b"tenant-a");
-    let response = mount_devices(
+    let response = mount_devices_with_ops(
         &request(vec![spec(
             "hotplug_slot_0",
             "/dev/vdd",
@@ -176,7 +176,7 @@ fn partial_success_reports_each_device_status() {
     let ops = FakeOps::default()
         .with_mount("/workspace", "/dev/vdc")
         .with_device("/dev/vdd");
-    let response = mount_devices(
+    let response = mount_devices_with_ops(
         &request(vec![
             spec("hotplug_slot_0", "/dev/vdd", "/tenant-a", None),
             spec("hotplug_slot_1", "/dev/vde", "/tenant-b", None),
@@ -201,7 +201,7 @@ fn already_mounted_matching_device_is_noop() {
         .with_mount("/workspace", "/dev/vdc")
         .with_device("/dev/vdd")
         .with_mount("/tenant", "/dev/vdd");
-    let response = mount_devices(
+    let response = mount_devices_with_ops(
         &request(vec![spec("hotplug_slot_0", "/dev/vdd", "/tenant", None)]),
         &ops,
     );
@@ -244,7 +244,7 @@ fn handler_decodes_request_and_writes_response() {
 #[test]
 fn detach_unmounts_mounted_path_after_sync() {
     let ops = FakeOps::default().with_mount("/tenant", "/dev/vdd");
-    let response = detach_devices(
+    let response = detach_devices_with_ops(
         &detach_request(vec![detach_spec("hotplug_slot_0", "/tenant")]),
         &ops,
     );
@@ -264,7 +264,7 @@ fn detach_unmounts_mounted_path_after_sync() {
 #[test]
 fn detach_not_mounted_is_idempotent_noop() {
     let ops = FakeOps::default();
-    let response = detach_devices(
+    let response = detach_devices_with_ops(
         &detach_request(vec![detach_spec("hotplug_slot_0", "/tenant")]),
         &ops,
     );

@@ -1,12 +1,13 @@
 use std::io::Write as _;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{mpsc, Arc};
-use std::thread::JoinHandle;
 
 use m80_firecracker::{ExecChunk, FcError, RunningSandbox};
 use m80_proto::{ExecExit, ExecRequest, ExecResponse, ExecStatus};
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
-use signal_hook::iterator::{Handle, Signals};
+use signal_hook::iterator::Signals;
+
+use super::signal_watcher::SignalWatcher;
 
 pub(super) struct RunOutcome<T> {
     pub(super) payload: T,
@@ -17,13 +18,13 @@ pub(super) fn exec_pipe_streaming(
     running: &mut RunningSandbox,
     req: ExecRequest,
 ) -> Result<RunOutcome<ExecExit>, FcError> {
-    let (cancel_rx, signal_guard) = SignalCancellation::install()?;
+    let (cancel_rx, watcher) = SignalCancellation::install()?;
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     let exit = running.exec_streaming_with_cancel(req, cancel_rx, |chunk| {
         copy_guest_chunk(chunk, &mut stdout, &mut stderr).map_err(FcError::Io)
     })?;
-    let signal = signal_guard.observed_signal();
+    let signal = watcher.observed_signal();
     stdout.flush().map_err(FcError::Io)?;
     stderr.flush().map_err(FcError::Io)?;
     Ok(RunOutcome {
@@ -36,11 +37,11 @@ pub(super) fn exec_buffered(
     running: &mut RunningSandbox,
     req: ExecRequest,
 ) -> Result<RunOutcome<ExecResponse>, FcError> {
-    let (cancel_rx, signal_guard) = SignalCancellation::install()?;
+    let (cancel_rx, watcher) = SignalCancellation::install()?;
     let response = running.exec_with_cancel(req, cancel_rx)?;
     Ok(RunOutcome {
         payload: response,
-        signal: signal_guard.observed_signal(),
+        signal: watcher.observed_signal(),
     })
 }
 
@@ -81,11 +82,7 @@ where
     }
 }
 
-struct SignalCancellation {
-    first_signal: Arc<AtomicI32>,
-    handle: Handle,
-    thread: Option<JoinHandle<()>>,
-}
+struct SignalCancellation(SignalWatcher);
 
 impl SignalCancellation {
     fn install() -> Result<(mpsc::Receiver<()>, Self), FcError> {
@@ -106,27 +103,11 @@ impl SignalCancellation {
         });
         Ok((
             cancel_rx,
-            Self {
-                first_signal,
-                handle,
-                thread: Some(thread),
-            },
+            Self(SignalWatcher::new(first_signal, handle, thread)),
         ))
     }
 
     fn observed_signal(&self) -> Option<i32> {
-        match self.first_signal.load(Ordering::SeqCst) {
-            0 => None,
-            signal => Some(signal),
-        }
-    }
-}
-
-impl Drop for SignalCancellation {
-    fn drop(&mut self) {
-        self.handle.close();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        self.0.observed_signal()
     }
 }

@@ -8,10 +8,11 @@ use m80_firecracker::{FcError, PtyHostEvent, PtyOutputChunk, RunningSandbox};
 use m80_proto::{PtyControlEvent, PtyExit, PtyRequest, PtySize};
 use nix::sys::termios::{self, SetArg, Termios};
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM, SIGWINCH};
-use signal_hook::iterator::{Handle, Signals};
+use signal_hook::iterator::Signals;
 use terminal_size::{terminal_size, Height, Width};
 
 use super::run_stream::{process_exit_code, RunOutcome};
+use super::signal_watcher::SignalWatcher;
 
 pub(super) fn exec_pty_streaming(
     running: &mut RunningSandbox,
@@ -164,11 +165,7 @@ impl InputThread {
     }
 }
 
-struct PtySignalForwarder {
-    first_signal: Arc<AtomicI32>,
-    handle: Handle,
-    thread: Option<JoinHandle<()>>,
-}
+struct PtySignalForwarder(SignalWatcher);
 
 impl PtySignalForwarder {
     fn install(event_tx: mpsc::Sender<PtyHostEvent>) -> Result<Self, FcError> {
@@ -186,18 +183,11 @@ impl PtySignalForwarder {
                 );
             }
         });
-        Ok(Self {
-            first_signal,
-            handle,
-            thread: Some(thread),
-        })
+        Ok(Self(SignalWatcher::new(first_signal, handle, thread)))
     }
 
     fn observed_signal(&self) -> Option<i32> {
-        match self.first_signal.load(Ordering::SeqCst) {
-            0 => None,
-            signal => Some(signal),
-        }
+        self.0.observed_signal()
     }
 }
 
@@ -216,15 +206,6 @@ fn forward_signal_event(
         .is_ok()
     {
         let _ = event_tx.send(PtyHostEvent::Cancel);
-    }
-}
-
-impl Drop for PtySignalForwarder {
-    fn drop(&mut self) {
-        self.handle.close();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
     }
 }
 

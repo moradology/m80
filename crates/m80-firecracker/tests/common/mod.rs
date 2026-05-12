@@ -86,11 +86,17 @@ pub(crate) fn make_fake_backend(
 /// that don't run more than ~10⁹ concurrent invocations.
 #[allow(dead_code)]
 pub(crate) fn unique_vm_id(prefix: &str) -> String {
-    let nanos = SystemTime::now()
+    format!("{prefix}-{:04x}", unique_suffix() % 0x10000)
+}
+
+/// Raw nanosecond suffix for callers that need to build their own naming
+/// pattern (e.g. a temp firecracker binary name in a fault-injection test).
+#[allow(dead_code)]
+pub(crate) fn unique_suffix() -> u128 {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before unix epoch")
-        .as_nanos();
-    format!("{prefix}-{:04x}", nanos % 0x10000)
+        .as_nanos()
 }
 
 /// Build a [`m80_firecracker::Backend`] from a real [`m80_preflight::Discovery`].

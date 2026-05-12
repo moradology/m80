@@ -228,8 +228,32 @@ impl WarmPool {
         }
     }
 
+    /// Wait until no fill workers are running (`filling == 0`). Used by the
+    /// drain path so in-flight slot restores complete before the pool is dropped.
+    pub fn wait_for_idle(&self, timeout: Duration) -> Result<(), FcError> {
+        let deadline = Instant::now() + timeout;
+        let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            if state.filling == 0 {
+                return Ok(());
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(FcError::WarmOwnerDrainTimeout { timeout });
+            }
+            let wait = deadline.saturating_duration_since(now);
+            let (next, _) = self
+                .inner
+                .changed
+                .wait_timeout(state, wait)
+                .unwrap_or_else(|p| p.into_inner());
+            state = next;
+        }
+    }
+
     /// Return an observable state snapshot.
-    #[must_use] pub fn snapshot(&self) -> WarmPoolSnapshot {
+    #[must_use]
+    pub fn snapshot(&self) -> WarmPoolSnapshot {
         self.inner.snapshot()
     }
 }
@@ -293,19 +317,42 @@ impl WarmPoolInner {
             }
 
             let inner = Arc::clone(self);
+            // Guard rolls back `filling` if thread::spawn panics (e.g. under
+            // resource exhaustion). The thread closure disarms it immediately
+            // on entry, taking over decrement responsibility via its match arms.
+            struct FillGuard(Option<Arc<WarmPoolInner>>);
+            impl FillGuard {
+                fn disarm(&mut self) {
+                    self.0 = None;
+                }
+            }
+            impl Drop for FillGuard {
+                fn drop(&mut self) {
+                    if let Some(inner) = self.0.take() {
+                        let mut state =
+                            inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                        state.filling = state.filling.saturating_sub(1);
+                        inner.changed.notify_all();
+                    }
+                }
+            }
+            let mut guard = FillGuard(Some(Arc::clone(&inner)));
             std::thread::spawn(move || {
+                guard.disarm();
                 let launched = inner.launch_slot();
                 let backoff = {
                     match launched {
                         Ok(sandbox) if inner.shutdown.load(Ordering::Relaxed) => {
                             let _ = discard_sandbox(sandbox);
-                            let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            let mut state =
+                                inner.state.lock().unwrap_or_else(|p| p.into_inner());
                             state.filling = state.filling.saturating_sub(1);
                             inner.changed.notify_all();
                             return;
                         }
                         Ok(sandbox) => {
-                            let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            let mut state =
+                                inner.state.lock().unwrap_or_else(|p| p.into_inner());
                             state.filling = state.filling.saturating_sub(1);
                             state.ready.push_back(sandbox);
                             state.last_fill_error = None;
@@ -314,7 +361,8 @@ impl WarmPoolInner {
                             None
                         }
                         Err(e) => {
-                            let mut state = inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                            let mut state =
+                                inner.state.lock().unwrap_or_else(|p| p.into_inner());
                             state.filling = state.filling.saturating_sub(1);
                             state.consecutive_fill_errors =
                                 state.consecutive_fill_errors.saturating_add(1);

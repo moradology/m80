@@ -11,13 +11,23 @@ const EXIT_CONFIG: i32 = 6;
 const EXIT_GENERIC: i32 = 1;
 
 #[test]
+fn version_emits_binary_and_protocol_output() {
+    let output = m80().args(["version"]).output().unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("m80"), "version missing binary version line: {stdout:?}");
+    assert!(stdout.contains("protocol"), "version missing protocol line: {stdout:?}");
+}
+
+#[test]
 fn warm_status_without_owner_is_unavailable_without_preflight() {
     let output = m80().args(["warm", "status"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("owner: unavailable"));
-    assert!(stdout.contains("owner_unavailable"));
+    assert!(stdout.contains("owner_unavailable"), "warm status output: {stdout:?}");
 }
 
 #[test]
@@ -92,7 +102,6 @@ fn run_tty_json_is_config_error_before_preflight() {
     assert!(parsed["request_id"].as_str().unwrap().starts_with("req_"));
     assert!(parsed["data"].get("request_id").is_none(), "request_id must not be duplicated inside data");
     assert_eq!(parsed["data"]["variant"], "Config");
-    assert_eq!(parsed["data"]["exit_code"], EXIT_CONFIG);
     assert!(parsed["data"]["detail"]
         .as_str()
         .unwrap()

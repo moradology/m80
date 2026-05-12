@@ -477,49 +477,6 @@ fn workspace_mkfs_allowed_from_cmdline(cmdline: &str) -> anyhow::Result<bool> {
         .any(|token| token == WORKSPACE_MKFS_CMDLINE_FLAG))
 }
 
-fn mount_workspace_device_if_present(
-    boot_timer: &mut BootTimer,
-    device: &str,
-    target: &str,
-    allow_mkfs_fallback: bool,
-) -> anyhow::Result<()> {
-    mount_workspace_device_with_ops(
-        boot_timer,
-        device,
-        target,
-        allow_mkfs_fallback,
-        &RealWorkspaceMountOps,
-    )
-}
-
-trait WorkspaceMountOps {
-    fn device_exists(&self, device: &str) -> bool;
-    fn mount_ext4(&self, device: &str, target: &str) -> io::Result<()>;
-    fn repair_ext4(&self, device: &str) -> io::Result<()>;
-    fn mkfs_ext4(&self, device: &str) -> io::Result<()>;
-}
-
-struct RealWorkspaceMountOps;
-
-impl WorkspaceMountOps for RealWorkspaceMountOps {
-    fn device_exists(&self, device: &str) -> bool {
-        Path::new(device).exists()
-    }
-
-    fn mount_ext4(&self, device: &str, target: &str) -> io::Result<()> {
-        mount_one(device, target, "ext4", MsFlags::empty()).map_err(io::Error::other)
-    }
-
-    fn repair_ext4(&self, device: &str) -> io::Result<()> {
-        run_workspace_command("e2fsck", &["-y", "-f", device])?;
-        run_workspace_command("resize2fs", &[device])
-    }
-
-    fn mkfs_ext4(&self, device: &str) -> io::Result<()> {
-        run_workspace_command("mkfs.ext4", &["-F", device])
-    }
-}
-
 fn run_workspace_command(program: &str, args: &[&str]) -> io::Result<()> {
     let status = Command::new(program).args(args).status()?;
     if status.success() {
@@ -531,7 +488,103 @@ fn run_workspace_command(program: &str, args: &[&str]) -> io::Result<()> {
     }
 }
 
-fn mount_workspace_device_with_ops(
+fn workspace_device_exists(device: &str) -> bool {
+    Path::new(device).exists()
+}
+
+fn workspace_mount_ext4(device: &str, target: &str) -> io::Result<()> {
+    mount_one(device, target, "ext4", MsFlags::empty()).map_err(io::Error::other)
+}
+
+fn workspace_repair_ext4(device: &str) -> io::Result<()> {
+    run_workspace_command("e2fsck", &["-y", "-f", device])?;
+    run_workspace_command("resize2fs", &[device])
+}
+
+fn workspace_mkfs_ext4(device: &str) -> io::Result<()> {
+    run_workspace_command("mkfs.ext4", &["-F", device])
+}
+
+fn mount_workspace_device_if_present(
+    boot_timer: &mut BootTimer,
+    device: &str,
+    target: &str,
+    allow_mkfs_fallback: bool,
+) -> anyhow::Result<()> {
+    if !workspace_device_exists(device) {
+        guest_log::info(
+            GuestLogPhase::Boot,
+            None,
+            format!("no workspace drive ({device}), skipping workspace mount"),
+        );
+        boot_timer.mark("workspace_absent");
+        return Ok(());
+    }
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        format!("step 11: mounting {device} at {target}"),
+    );
+    match workspace_mount_ext4(device, target) {
+        Ok(()) => {
+            boot_timer.mark("workspace_mounted");
+            Ok(())
+        }
+        Err(initial) => {
+            guest_log::warn(
+                GuestLogPhase::Boot,
+                None,
+                format!(
+                    "workspace mount failed: {initial}; running e2fsck/resize2fs on {device}"
+                ),
+            );
+            workspace_repair_ext4(device)
+                .with_context(|| format!("workspace repair failed for {device}"))?;
+            boot_timer.mark("workspace_repaired");
+            match workspace_mount_ext4(device, target) {
+                Ok(()) => {
+                    boot_timer.mark("workspace_mounted_after_repair");
+                    Ok(())
+                }
+                Err(after_repair) if allow_mkfs_fallback => {
+                    guest_log::warn(
+                        GuestLogPhase::Boot,
+                        None,
+                        format!(
+                            "workspace mount still failed after repair: {after_repair}; running mkfs.ext4 -F on {device}"
+                        ),
+                    );
+                    workspace_mkfs_ext4(device)
+                        .with_context(|| format!("workspace mkfs fallback failed for {device}"))?;
+                    boot_timer.mark("workspace_reformatted");
+                    workspace_mount_ext4(device, target).with_context(|| {
+                        format!("workspace mount failed after mkfs fallback for {device}")
+                    })?;
+                    boot_timer.mark("workspace_mounted_after_mkfs");
+                    Ok(())
+                }
+                Err(after_repair) => Err(anyhow::anyhow!(
+                    "workspace mount failed after repair and mkfs fallback is disabled: initial={initial}; after_repair={after_repair}"
+                )),
+            }
+        }
+    }
+}
+
+// ── Test injection: trait + fake impl ────────────────────────────────────────
+
+/// In tests, `WorkspaceMountOps` replaces the prod free functions for
+/// controllable fakes. The prod path calls `workspace_*` free functions directly.
+#[cfg(test)]
+pub(crate) trait WorkspaceMountOps {
+    fn device_exists(&self, device: &str) -> bool;
+    fn mount_ext4(&self, device: &str, target: &str) -> io::Result<()>;
+    fn repair_ext4(&self, device: &str) -> io::Result<()>;
+    fn mkfs_ext4(&self, device: &str) -> io::Result<()>;
+}
+
+#[cfg(test)]
+pub(crate) fn mount_workspace_device_with_ops(
     boot_timer: &mut BootTimer,
     device: &str,
     target: &str,
@@ -557,57 +610,44 @@ fn mount_workspace_device_with_ops(
             boot_timer.mark("workspace_mounted");
             Ok(())
         }
-        Err(initial) => mount_workspace_after_repair(
-            boot_timer,
-            device,
-            target,
-            allow_mkfs_fallback,
-            ops,
-            initial,
-        ),
-    }
-}
-
-fn mount_workspace_after_repair(
-    boot_timer: &mut BootTimer,
-    device: &str,
-    target: &str,
-    allow_mkfs_fallback: bool,
-    ops: &impl WorkspaceMountOps,
-    initial: io::Error,
-) -> anyhow::Result<()> {
-    guest_log::warn(
-        GuestLogPhase::Boot,
-        None,
-        format!("workspace mount failed: {initial}; running e2fsck/resize2fs on {device}"),
-    );
-    ops.repair_ext4(device)
-        .with_context(|| format!("workspace repair failed for {device}"))?;
-    boot_timer.mark("workspace_repaired");
-    match ops.mount_ext4(device, target) {
-        Ok(()) => {
-            boot_timer.mark("workspace_mounted_after_repair");
-            Ok(())
-        }
-        Err(after_repair) if allow_mkfs_fallback => {
+        Err(initial) => {
             guest_log::warn(
                 GuestLogPhase::Boot,
                 None,
                 format!(
-                    "workspace mount still failed after repair: {after_repair}; running mkfs.ext4 -F on {device}"
+                    "workspace mount failed: {initial}; running e2fsck/resize2fs on {device}"
                 ),
             );
-            ops.mkfs_ext4(device)
-                .with_context(|| format!("workspace mkfs fallback failed for {device}"))?;
-            boot_timer.mark("workspace_reformatted");
-            ops.mount_ext4(device, target)
-                .with_context(|| format!("workspace mount failed after mkfs fallback for {device}"))?;
-            boot_timer.mark("workspace_mounted_after_mkfs");
-            Ok(())
+            ops.repair_ext4(device)
+                .with_context(|| format!("workspace repair failed for {device}"))?;
+            boot_timer.mark("workspace_repaired");
+            match ops.mount_ext4(device, target) {
+                Ok(()) => {
+                    boot_timer.mark("workspace_mounted_after_repair");
+                    Ok(())
+                }
+                Err(after_repair) if allow_mkfs_fallback => {
+                    guest_log::warn(
+                        GuestLogPhase::Boot,
+                        None,
+                        format!(
+                            "workspace mount still failed after repair: {after_repair}; running mkfs.ext4 -F on {device}"
+                        ),
+                    );
+                    ops.mkfs_ext4(device)
+                        .with_context(|| format!("workspace mkfs fallback failed for {device}"))?;
+                    boot_timer.mark("workspace_reformatted");
+                    ops.mount_ext4(device, target).with_context(|| {
+                        format!("workspace mount failed after mkfs fallback for {device}")
+                    })?;
+                    boot_timer.mark("workspace_mounted_after_mkfs");
+                    Ok(())
+                }
+                Err(after_repair) => Err(anyhow::anyhow!(
+                    "workspace mount failed after repair and mkfs fallback is disabled: initial={initial}; after_repair={after_repair}"
+                )),
+            }
         }
-        Err(after_repair) => Err(anyhow::anyhow!(
-            "workspace mount failed after repair and mkfs fallback is disabled: initial={initial}; after_repair={after_repair}"
-        )),
     }
 }
 

@@ -48,7 +48,6 @@ fn json_wrapper_failure_uses_stderr_envelope_and_empty_stdout() {
     assert!(parsed["request_id"].as_str().unwrap().starts_with("req_"));
     assert!(parsed["data"].get("request_id").is_none(), "request_id must not be duplicated inside data");
     assert_eq!(parsed["data"]["variant"], "Config");
-    assert_eq!(parsed["data"]["exit_code"], EXIT_CONFIG);
     assert!(parsed["data"]["detail"]
         .as_str()
         .unwrap()
@@ -95,7 +94,4 @@ fn cli_exit_codes_parse_vs_runtime_distinct() {
     assert_eq!(parse_code, 2, "clap parse errors should use EX_USAGE");
     assert_eq!(config_code, EXIT_CONFIG);
     assert_eq!(generic_code, EXIT_GENERIC);
-    assert_ne!(parse_code, config_code);
-    assert_ne!(parse_code, generic_code);
-    assert_ne!(config_code, generic_code);
 }

@@ -159,7 +159,13 @@ impl WarmLease {
         self.release_and_refill();
         match (result, discard_result) {
             (Ok(value), Ok(())) => Ok(value),
-            (Ok(_), Err(cleanup)) => Err(cleanup),
+            (Ok(value), Err(cleanup)) => {
+                tracing::error!(
+                    error = %cleanup,
+                    "failed to discard one-shot warm lease after exec success"
+                );
+                Ok(value)
+            }
             (Err(err), Ok(())) => Err(err),
             (Err(err), Err(cleanup)) => {
                 tracing::error!(

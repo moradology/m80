@@ -1,7 +1,7 @@
 use std::fs;
 use std::os::unix::net::UnixListener;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
     FcError, NetworkPolicy, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig,
@@ -194,14 +194,7 @@ fn drained_snapshot(pool: &WarmPool) -> WarmPoolSnapshot {
 }
 
 fn wait_for_filling_to_settle(pool: &WarmPool, timeout: Duration) -> Result<(), FcError> {
-    let deadline = Instant::now() + timeout;
-    while pool.snapshot().filling > 0 {
-        if Instant::now() >= deadline {
-            return Err(FcError::WarmOwnerDrainTimeout { timeout });
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    Ok(())
+    pool.wait_for_idle(timeout)
 }
 
 fn warm_sandbox_config(vm_id: impl Into<String>, egress: EgressMode) -> SandboxConfig {

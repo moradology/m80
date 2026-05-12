@@ -140,7 +140,7 @@ fn permit_drop_restores_slot() {
 #[test]
 fn failed_launch_returns_admission_slot() {
     let dir = tempfile::tempdir().unwrap();
-    let backend = make_backend_at(1, dir.path());
+    let backend = common::make_fake_backend(1, dir.path());
     let sandbox = backend
         .admit(SandboxConfig {
             vm_id: Some("failed-launch-slot".to_string()),

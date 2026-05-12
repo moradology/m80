@@ -579,6 +579,7 @@ mod pty;
 mod quickstart;
 mod run_request;
 mod run_stream;
+mod signal_watcher;
 mod version;
 mod warm;
 
