@@ -155,7 +155,7 @@ on tag pushes.
 
 ## Workspace
 
-m80 is a Rust workspace split into 19 black-box crates:
+m80 is a Rust workspace split into 20 black-box crates:
 
 **Foundation (10)** — privilege acquired at process startup and verified by
 `m80-preflight`; no per-call privilege shim:

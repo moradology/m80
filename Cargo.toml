@@ -12,15 +12,43 @@ rust-version = "1.82"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+# Stronger surface hygiene — catches "pub items unused outside the crate"
+# (the iter-1/2/3 audits found ~30 of these) and stale lifetimes.
+unreachable_pub = "warn"
+unused_lifetimes = "warn"
+single_use_lifetimes = "warn"
+# Don't let a `Result` slip through unobserved.
+unused_must_use = "deny"
 
 [workspace.lints.clippy]
 needless_borrow = "warn"
 clone_on_ref_ptr = "warn"
+# Pre-1.0 internal: no scratch markers in committed code.
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+# Doctrine: errors stay typed; don't silently drop one.
+map_err_ignore = "warn"
+# Catches `for x in v.clone()` and similar single-use clones the audits
+# kept flagging.
+redundant_clone = "warn"
+# Fail-closed on assumptions about Result/Option that could be wrong.
+unwrap_used = "warn"
+# String-bytes slicing is a UTF-8 footgun.
+string_slice = "warn"
+# These cluster with the "no Other(String) prose errors" doctrine.
+result_large_err = "allow"
+large_enum_variant = "warn"
+# Surface hygiene.
+must_use_candidate = "warn"
+semicolon_if_nothing_returned = "warn"
+manual_let_else = "warn"
+wildcard_imports = "warn"
 
 [workspace.dependencies]
 # External dependencies — pinned at the workspace level so every crate uses
 # the same version. Add to this list before adding to a crate's [dependencies].
-clap = { version = "=4.5.57", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 scopeguard = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -31,18 +59,18 @@ tracing = "0.1"
 hex = "0.4"
 sha2 = "0.10"
 ipnet = "2"
-nix = { version = "0.29", default-features = false, features = ["user", "mount", "fs", "feature", "signal", "process", "poll", "term", "resource", "sched", "socket"] }
+nix = { version = "0.29", default-features = false, features = ["user", "mount", "fs", "feature", "signal", "process", "term", "resource", "sched", "socket"] }
 portable-pty = "0.9"
 terminal_size = "0.4"
 ulid = "1"
-tempfile = "=3.20.0"
+tempfile = "3"
 toml = "0.5"
 prost = "0.13"
 prost-derive = "0.13"
 prost-build = "0.13"
 protoc-bin-vendored = "3"
-indexmap = "=2.7.1"
-assert_cmd = "=2.0.16"
+indexmap = "2"
+assert_cmd = "2"
 caps = "0.5"
 tokio = { version = "1", default-features = false }
 futures-util = "0.3"
