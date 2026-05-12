@@ -50,23 +50,12 @@ pub(crate) fn cmd_inspect(vm_id: &str, json: bool) -> anyhow::Result<i32> {
     };
 
     if json {
-        println!("{}", render_inspect_json(&output));
+        println!("{}", json::to_pretty(&output));
     } else {
         print!("{}", render_inspect_human(&output));
     }
 
     Ok(0)
-}
-
-/// `m80 logs` — print out-of-band VM diagnostics from one run directory.
-pub(crate) fn cmd_logs(
-    vm_id: &str,
-    follow: bool,
-    request_id: Option<&str>,
-    since: Option<&str>,
-    json: bool,
-) -> anyhow::Result<i32> {
-    logs::cmd_logs(vm_id, follow, request_id, since, json)
 }
 
 fn inspect_output(run_root: &Path, vm_id: &str) -> Result<InspectOutput, FcError> {
@@ -97,9 +86,16 @@ fn inspect_output(run_root: &Path, vm_id: &str) -> Result<InspectOutput, FcError
         if path.exists() {
             files.push(name.to_string());
             if name.ends_with(".json") {
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                let text = std::fs::read_to_string(&path).map_err(|e| FcError::PathIo {
+                    path: path.clone(),
+                    source: e,
+                })?;
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(v) => {
                         contents.insert(name.to_string(), v);
+                    }
+                    Err(e) => {
+                        eprintln!("m80 inspect: {name}: malformed JSON ({e}); raw: {text:?}");
                     }
                 }
             }
@@ -112,10 +108,6 @@ fn inspect_output(run_root: &Path, vm_id: &str) -> Result<InspectOutput, FcError
         files,
         contents,
     })
-}
-
-fn render_inspect_json(output: &InspectOutput) -> String {
-    json::to_pretty(output)
 }
 
 fn render_inspect_human(output: &InspectOutput) -> String {
@@ -163,7 +155,7 @@ pub(crate) fn cmd_list(json: bool) -> anyhow::Result<i32> {
     };
 
     if json {
-        println!("{}", render_list_json(&entries));
+        println!("{}", json::to_pretty(&entries));
     } else {
         print!("{}", render_list_human(&run_root, &entries));
     }
@@ -204,10 +196,6 @@ fn list_entries(run_root: &Path) -> Result<Vec<ListEntry>, FcError> {
         });
     }
     Ok(entries)
-}
-
-fn render_list_json(entries: &[ListEntry]) -> String {
-    json::to_pretty(entries)
 }
 
 fn render_list_human(run_root: &Path, entries: &[ListEntry]) -> String {
@@ -303,7 +291,7 @@ mod tests {
         write_vm(temp.path(), "stale-vm", None);
 
         let entries = list_entries(temp.path()).unwrap();
-        let json: serde_json::Value = serde_json::from_str(&render_list_json(&entries)).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&json::to_pretty(&entries)).unwrap();
         assert_eq!(json["version"], 1);
         assert_eq!(json["data"].as_array().unwrap().len(), 2);
 
@@ -324,7 +312,7 @@ mod tests {
         assert!(output.files.contains(&JAILER_PLAN_FILE.to_owned()));
         assert!(output.files.contains(&"cgroup-path.txt".to_owned()));
 
-        let json: serde_json::Value = serde_json::from_str(&render_inspect_json(&output)).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&json::to_pretty(&output)).unwrap();
         assert_eq!(json["version"], 1);
         assert_eq!(json["data"]["vm_id"], "inspect-vm");
         assert_eq!(
@@ -339,4 +327,4 @@ mod tests {
     }
 }
 
-mod logs;
+pub(crate) mod logs;

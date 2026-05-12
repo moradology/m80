@@ -94,7 +94,10 @@ impl Backend {
     ///
     /// Best-effort: individual failure to reap a specific dir is logged but
     /// does not cause this method to return an error.
-    pub fn recover_stale_run_root(&self) -> Result<(), FcError> {
+    ///
+    /// When `force` is true, dirs with ambiguous ownership locks are also
+    /// reaped rather than skipped.
+    pub fn recover_stale_run_root(&self, force: bool) -> Result<(), FcError> {
         let run_root = &self.config.run_root;
         if !run_root.exists() {
             return Ok(());
@@ -115,11 +118,18 @@ impl Backend {
             match run_dir_liveness(&subdir) {
                 RunDirLiveness::Live => continue,
                 RunDirLiveness::Ambiguous => {
-                    warn!(
-                        path = %subdir.display(),
-                        "recover_stale_run_root: ambiguous ownership lock; preserving run-dir"
-                    );
-                    continue;
+                    if force {
+                        warn!(
+                            path = %subdir.display(),
+                            "recover_stale_run_root: ambiguous ownership lock; force-reaping"
+                        );
+                    } else {
+                        warn!(
+                            path = %subdir.display(),
+                            "recover_stale_run_root: ambiguous ownership lock; preserving run-dir"
+                        );
+                        continue;
+                    }
                 }
                 RunDirLiveness::Dead => {}
             }

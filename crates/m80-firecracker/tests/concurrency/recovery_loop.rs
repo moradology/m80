@@ -36,7 +36,8 @@ fn no_background_recovery_task_is_spawned_by_backend_new() {
 
 #[test]
 fn recovery_interval_is_not_an_orchestrator_constant_in_v0_1() {
-    let _: fn(&Backend) -> Result<(), m80_firecracker::FcError> = Backend::recover_stale_run_root;
+    let _: fn(&Backend, bool) -> Result<(), m80_firecracker::FcError> =
+        Backend::recover_stale_run_root;
 }
 
 #[test]
@@ -46,7 +47,7 @@ fn recovery_is_synchronous_explicit_call() {
     std::fs::create_dir_all(&orphan).unwrap();
     let backend = make_backend(dir.path());
 
-    backend.recover_stale_run_root().unwrap();
+    backend.recover_stale_run_root(false).unwrap();
 
     assert!(!orphan.exists());
 }
@@ -59,7 +60,7 @@ fn startup_recovery_is_caller_driven_before_first_admission() {
     let backend = make_backend(dir.path());
 
     assert!(orphan.exists());
-    backend.recover_stale_run_root().unwrap();
+    backend.recover_stale_run_root(false).unwrap();
     assert!(!orphan.exists());
 }
 
@@ -89,7 +90,7 @@ fn recovery_during_launch_preserves_fresh_vms() {
     let recovery = std::thread::spawn(move || {
         while !recovery_stop.load(Ordering::Relaxed) {
             recovery_backend
-                .recover_stale_run_root()
+                .recover_stale_run_root(false)
                 .expect("recover_stale_run_root");
             std::thread::sleep(Duration::from_millis(10));
         }

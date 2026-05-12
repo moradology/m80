@@ -61,7 +61,7 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
             follow,
             ref request_id,
             ref since,
-        } => cmds_walk::cmd_logs(vm_id, follow, request_id.as_deref(), since.as_deref(), json),
+        } => cmds_walk::logs::cmd_logs(vm_id, follow, request_id.as_deref(), since.as_deref(), json),
 
         Cmd::List => cmds_walk::cmd_list(json),
 
@@ -84,7 +84,6 @@ mod tests {
     use clap::Parser;
 
     use super::*;
-    use crate::args::WarmAction;
     use crate::errors::EXIT_NOT_IMPLEMENTED;
 
     #[test]
@@ -98,12 +97,9 @@ mod tests {
     #[test]
     fn dispatches_warm_status_without_subprocess() {
         let cli = Cli::try_parse_from(["m80", "warm", "status"]).unwrap();
-        let Cmd::Warm {
-            action: WarmAction::Status { .. },
-        } = &cli.subcommand
-        else {
-            panic!("expected warm status");
-        };
+        // warm status with no running owner returns 0 (renders "unavailable" status).
+        let code = run(cli).unwrap();
+        assert_eq!(code, 0);
     }
 
     #[test]

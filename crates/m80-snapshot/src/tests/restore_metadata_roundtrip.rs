@@ -65,9 +65,12 @@ fn deny_unknown_fields_rejects_extra_key() {
     std::fs::write(&path, raw.as_bytes()).unwrap();
 
     let err = RestoreMetadata::read(&path).unwrap_err();
+    let SchemaError::Json(ref je) = err else {
+        panic!("expected SchemaError::Json, got {err:?}");
+    };
     assert!(
-        matches!(err, SchemaError::Json(_)),
-        "unknown field must surface as Json error, got {err:?}"
+        je.to_string().contains("unknown field"),
+        "expected 'unknown field' in serde error, got: {je}"
     );
 }
 

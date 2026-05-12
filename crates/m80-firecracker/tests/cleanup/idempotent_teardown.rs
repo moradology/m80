@@ -25,8 +25,8 @@ fn repeat_calls_succeed() {
     std::fs::create_dir_all(orphan.join("nested")).unwrap();
 
     let backend = make_backend(dir.path());
-    backend.recover_stale_run_root().unwrap();
-    backend.recover_stale_run_root().unwrap();
+    backend.recover_stale_run_root(false).unwrap();
+    backend.recover_stale_run_root(false).unwrap();
 
     assert!(!orphan.exists());
 }
@@ -38,7 +38,7 @@ fn leaves_unowned_residue_alone() {
     std::fs::create_dir_all(&preserved).unwrap();
     std::fs::write(preserved.join("console.log"), b"guest stderr").unwrap();
 
-    make_backend(dir.path()).recover_stale_run_root().unwrap();
+    make_backend(dir.path()).recover_stale_run_root(false).unwrap();
 
     assert!(preserved.exists());
     assert_eq!(
@@ -54,7 +54,7 @@ fn startup_scavenge_uses_same_path() {
     std::fs::create_dir_all(orphan.join("nested")).unwrap();
     std::fs::write(orphan.join("nested/state.txt"), b"state").unwrap();
 
-    make_backend(dir.path()).recover_stale_run_root().unwrap();
+    make_backend(dir.path()).recover_stale_run_root(false).unwrap();
 
     assert!(!orphan.exists());
 }

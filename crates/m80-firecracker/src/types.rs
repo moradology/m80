@@ -200,7 +200,11 @@ pub enum ConfigSource {
     Flag,
 }
 
-/// Per-VM configuration. Built once per [`Sandbox`].
+/// Per-VM launch parameters: resource sizing, workspace path, network policy,
+/// idle-timeout deadline, and one-shot mode. Built once per [`Sandbox`] and
+/// cloned into warm-pool slots. `workspace` must be `None` for pool slots.
+/// Fields that accept `None` resolve to their defaults at launch time
+/// (e.g., 1 vCPU, 1024 MiB RAM, 5-minute idle timeout, no preallocated drives).
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
     /// Optional caller-provided VM id; auto-derived when absent.
@@ -267,7 +271,11 @@ impl Default for SandboxConfig {
     }
 }
 
-/// A sandbox in `Created` state — admission permit held, no I/O performed yet.
+/// A sandbox in `Created` state: admission permit acquired from the backend
+/// semaphore, configuration validated, no Firecracker process started yet.
+/// Advancing to `Running` requires calling a launch method (cold-boot or
+/// snapshot restore); if launch fails the permit is released via `Drop`.
+/// Callers cannot construct this directly — use [`Backend::admit`].
 pub struct Sandbox {
     /// Per-VM configuration.
     pub(crate) config: SandboxConfig,

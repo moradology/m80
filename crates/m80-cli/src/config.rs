@@ -16,10 +16,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use m80_firecracker::{
-    backend_config_from_effective, load_config, BackendConfig, EffectiveConfig, FcError,
-};
-use m80_preflight::Discovery;
+use m80_firecracker::{load_config, EffectiveConfig, FcError};
 
 /// Load only the merged effective config.
 ///
@@ -33,14 +30,6 @@ pub(crate) fn load_effective(flag_overrides: &HashMap<&str, String>) -> Result<E
     load_config(owned)
 }
 
-/// Convert an already-loaded effective config into a `BackendConfig`.
-pub(crate) fn backend_config(
-    discovery: Discovery,
-    effective: &EffectiveConfig,
-) -> Result<BackendConfig, FcError> {
-    backend_config_from_effective(effective, discovery)
-}
-
 /// Resolve the effective `run_root` without running preflight.
 ///
 /// Used by the read-only walk commands (`m80 inspect`, `m80 list`) so
@@ -48,11 +37,12 @@ pub(crate) fn backend_config(
 /// paying for a full `m80-preflight::run()`.
 pub(crate) fn resolve_run_root() -> Result<PathBuf, FcError> {
     let effective = load_effective(&HashMap::new())?;
-    let value = effective
+    let field = effective
         .fields
         .iter()
         .find(|f| f.name == "run_root")
-        .map(|f| f.value.as_str())
-        .unwrap_or("/var/run/m80");
-    Ok(PathBuf::from(value))
+        .ok_or(FcError::Config(m80_firecracker::ConfigError::MissingField {
+            field: "run_root",
+        }))?;
+    Ok(PathBuf::from(&field.value))
 }

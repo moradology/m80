@@ -112,7 +112,14 @@ fn dest_with_parent_component_is_rejected() {
     }];
 
     let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
-    assert!(matches!(err, JailerError::BindDestRejected { .. }), "{err:?}");
+    assert!(
+        matches!(
+            &err,
+            JailerError::BindDestRejected { dest, .. }
+                if dest == &PathBuf::from("../rootfs.ext4")
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]
@@ -125,7 +132,14 @@ fn proc_dest_is_rejected() {
     }];
 
     let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
-    assert!(matches!(err, JailerError::BindDestRejected { .. }), "{err:?}");
+    assert!(
+        matches!(
+            &err,
+            JailerError::BindDestRejected { dest, .. }
+                if dest == &PathBuf::from("proc")
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]
@@ -138,7 +152,14 @@ fn sys_dest_is_rejected() {
     }];
 
     let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
-    assert!(matches!(err, JailerError::BindDestRejected { .. }), "{err:?}");
+    assert!(
+        matches!(
+            &err,
+            JailerError::BindDestRejected { dest, .. }
+                if dest == &PathBuf::from("sys/devices")
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]
@@ -151,7 +172,14 @@ fn dev_dest_is_rejected() {
     }];
 
     let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
-    assert!(matches!(err, JailerError::BindDestRejected { .. }), "{err:?}");
+    assert!(
+        matches!(
+            &err,
+            JailerError::BindDestRejected { dest, .. }
+                if dest == &PathBuf::from("dev/kvm")
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]

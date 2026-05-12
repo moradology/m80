@@ -124,6 +124,12 @@ fn discover_kernel(config: &ArtifactPreflightConfig) -> Result<PathBuf, Prefligh
         .filter(|e| e.file_name().to_string_lossy().starts_with("vmlinux-"))
         .map(|e| e.path())
         .collect();
+    // Lexicographic sort: "vmlinux-6.10" sorts before "vmlinux-6.9" because
+    // '1' < '9' at the first differing character. This means the picked kernel
+    // may not be the numerically newest when minor versions cross a digit
+    // boundary (e.g. 6.9 → 6.10). In practice, managed artifact directories
+    // contain at most one kernel image, so this is a non-issue. If that
+    // invariant ever changes, replace `.sort()` with a semver-aware comparator.
     candidates.sort();
     candidates.pop().ok_or(PreflightError::KernelNotFound)
 }

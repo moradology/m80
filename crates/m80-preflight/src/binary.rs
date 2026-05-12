@@ -104,7 +104,29 @@ pub(crate) fn discover_binaries(
 }
 
 fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> {
-    let out = firecracker_version_output(bin)?;
+    // Retry up to 5 times on ETXTBSY (binary still being written to disk).
+    let mut last_text_busy = None;
+    let out = 'retry: {
+        for attempt in 0..5 {
+            match Command::new(bin).arg("--version").output() {
+                Ok(out) => break 'retry out,
+                Err(source) if source.raw_os_error() == Some(nix::libc::ETXTBSY) && attempt < 4 => {
+                    last_text_busy = Some(source);
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(source) => {
+                    return Err(PreflightError::PathIo {
+                        path: bin.to_path_buf(),
+                        source,
+                    });
+                }
+            }
+        }
+        return Err(PreflightError::PathIo {
+            path: bin.to_path_buf(),
+            source: last_text_busy.expect("ETXTBSY retry loop records the last error"),
+        });
+    };
 
     if !out.status.success() {
         return Err(PreflightError::FirecrackerVersionCommandFailed {
@@ -120,32 +142,6 @@ fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> 
         .last()
         .unwrap_or(first_line)
         .to_string())
-}
-
-fn firecracker_version_output(
-    bin: &std::path::Path,
-) -> Result<std::process::Output, PreflightError> {
-    let mut last_text_busy = None;
-    for attempt in 0..5 {
-        match Command::new(bin).arg("--version").output() {
-            Ok(out) => return Ok(out),
-            Err(source) if source.raw_os_error() == Some(nix::libc::ETXTBSY) && attempt < 4 => {
-                last_text_busy = Some(source);
-                thread::sleep(Duration::from_millis(10));
-            }
-            Err(source) => {
-                return Err(PreflightError::PathIo {
-                    path: bin.to_path_buf(),
-                    source,
-                });
-            }
-        }
-    }
-
-    Err(PreflightError::PathIo {
-        path: bin.to_path_buf(),
-        source: last_text_busy.expect("ETXTBSY retry loop records the last error"),
-    })
 }
 
 #[cfg(test)]

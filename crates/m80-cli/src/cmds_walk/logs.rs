@@ -54,7 +54,7 @@ struct FollowCursor {
     console_lines: usize,
 }
 
-pub(super) fn cmd_logs(
+pub(crate) fn cmd_logs(
     vm_id: &str,
     follow: bool,
     request_id: Option<&str>,
@@ -187,7 +187,13 @@ struct DiagnosticsRecord {
 }
 
 fn diagnostics_record(line: &str, filter: LogFilter<'_>) -> Option<LogRecord> {
-    let rec: DiagnosticsRecord = serde_json::from_str(line).ok()?;
+    let rec: DiagnosticsRecord = match serde_json::from_str(line) {
+        Ok(rec) => rec,
+        Err(e) => {
+            eprintln!("m80 logs: malformed JSONL line ({e}); raw: {line:?}");
+            return None;
+        }
+    };
     if !passes_filter(rec.request_id.as_deref(), rec.timestamp_unix_ms, filter) {
         return None;
     }

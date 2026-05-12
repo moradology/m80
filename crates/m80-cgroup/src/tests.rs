@@ -38,10 +38,10 @@ fn required_subtree_control_enables_three_controllers() {
 #[test]
 fn unified_v2_mounts_accepts() {
     let result = probe_mounts(UNIFIED_V2_MOUNTS);
-    match result {
-        Ok(()) | Err(CgroupError::UnsupportedHostMode) => {}
-        Err(e) => panic!("unexpected error from probe_mounts on v2 mounts: {e:?}"),
-    }
+    assert!(
+        result.is_ok(),
+        "probe_mounts must accept a well-formed unified v2 mount table: {result:?}"
+    );
 }
 
 #[test]

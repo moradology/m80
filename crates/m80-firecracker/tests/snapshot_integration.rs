@@ -345,7 +345,7 @@ fn interrupted_snapshot_restore_run_dir_recovery_removes_partial_state() {
     };
     let backend = Backend::new(config).expect("Backend::new");
     backend
-        .recover_stale_run_root()
+        .recover_stale_run_root(false)
         .expect("startup recovery must handle partial restore dir");
 
     assert!(

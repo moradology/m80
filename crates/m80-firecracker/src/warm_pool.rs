@@ -36,7 +36,11 @@ const FILL_BACKOFF: &[Duration] = &[
     Duration::from_secs(10),
 ];
 
-/// Warm-pool configuration.
+/// Parameters that govern a [`WarmPool`]: how many slots to keep ready,
+/// which snapshot pair to restore from, and what probe must pass before a
+/// slot is considered healthy. All fields are required at construction;
+/// `target_ready` must be greater than zero and `sandbox.workspace` must be
+/// `None` — warm slots are stateless and may not carry a workspace.
 #[derive(Debug, Clone)]
 pub struct WarmPoolConfig {
     /// Number of ready slots the pool tries to keep filled.
@@ -67,7 +71,12 @@ pub struct WarmPoolSnapshot {
     pub discarded: usize,
 }
 
-/// Snapshot-backed warm pool.
+/// A pool of pre-restored Firecracker VMs ready to serve exec requests with
+/// minimal latency. Each slot is created by restoring a snapshot and running a
+/// ready-probe; only slots that pass the probe enter the ready queue. Slots are
+/// leased one at a time via [`WarmPool::try_lease`] and are discarded (not
+/// returned) when the lease is dropped. On `Drop`, the pool sets the shutdown
+/// flag and force-kills all remaining ready slots to avoid leaking processes.
 pub struct WarmPool {
     inner: Arc<WarmPoolInner>,
 }

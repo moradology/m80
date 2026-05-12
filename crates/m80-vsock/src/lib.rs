@@ -34,8 +34,13 @@ const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
     3 + (raw % (u32::MAX - 3))
 }
 
-/// One open connection to the in-VM daemon. Created by [`Channel::open_uds_only`];
-/// dropped when the request/response cycle is done.
+/// One open connection to the in-VM guestd, bridged via Firecracker's UDS-to-vsock
+/// proxy. Created by [`Channel::open_uds_only`], which performs the `CONNECT` /
+/// `OK` handshake before returning. Frames are sent with [`Channel::send`] and
+/// received with [`Channel::recv`] / [`Channel::recv_raw`]; both directions carry
+/// a 5-second I/O timeout. An `OversizedPayload` error from `recv` leaves the
+/// internal `BufReader` misaligned — the connection is unrecoverable and must be
+/// dropped.
 pub struct Channel {
     /// The host-side Firecracker UDS path. This is a listener owned by the VM,
     /// so channel teardown must not unlink it.

@@ -1,5 +1,6 @@
 //! The ordered preflight checks that populate a [`Discovery`].
 
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -276,7 +277,7 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
         path: PathBuf::from("/proc/modules"),
         source,
     })?;
-    let loaded: Vec<&str> = content
+    let loaded: HashSet<&str> = content
         .lines()
         .filter_map(|line| line.split_whitespace().next())
         .collect();
@@ -298,36 +299,36 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
 }
 
 fn classify_vsock_availability(
-    loaded_modules: &[&str],
+    loaded_modules: &HashSet<&str>,
     vhost_vsock_device_exists: bool,
 ) -> Result<(), PreflightError> {
-    if loaded_modules.contains(&"vhost_vsock") || vhost_vsock_device_exists {
+    if loaded_modules.contains("vhost_vsock") || vhost_vsock_device_exists {
         return Ok(());
     }
     Err(PreflightError::VsockUnavailable)
 }
 
 fn classify_tun_availability(
-    loaded_modules: &[&str],
+    loaded_modules: &HashSet<&str>,
     tun_device_exists: bool,
 ) -> Result<(), PreflightError> {
-    if loaded_modules.contains(&"tun") || tun_device_exists {
+    if loaded_modules.contains("tun") || tun_device_exists {
         return Ok(());
     }
     Err(PreflightError::TunUnavailable)
 }
 
 fn classify_nf_conntrack_availability(
-    loaded_modules: &[&str],
+    loaded_modules: &HashSet<&str>,
     sys_module_exists: bool,
 ) -> Result<(), PreflightError> {
-    if loaded_modules.contains(&"nf_conntrack") || sys_module_exists {
+    if loaded_modules.contains("nf_conntrack") || sys_module_exists {
         return Ok(());
     }
     Err(PreflightError::NfConntrackUnavailable)
 }
 
-fn classify_required_modules(loaded: &[&str]) -> Result<(), PreflightError> {
+fn classify_required_modules(loaded: &HashSet<&str>) -> Result<(), PreflightError> {
     if REQUIRED_KERNEL_MODULES.iter().any(|m| !loaded.contains(m)) {
         let missing = REQUIRED_KERNEL_MODULES
             .iter()
@@ -492,58 +493,67 @@ mod tests {
 
     #[test]
     fn preflight_missing_vsock_module_typed() {
-        let err = classify_vsock_availability(&["tap", "bridge"], false).unwrap_err();
+        let err =
+            classify_vsock_availability(&HashSet::from(["tap", "bridge"]), false).unwrap_err();
 
         assert!(matches!(err, PreflightError::VsockUnavailable));
     }
 
     #[test]
     fn vhost_vsock_module_satisfies_vsock_preflight() {
-        classify_vsock_availability(&["tap", "bridge", "vhost_vsock"], false).unwrap();
+        classify_vsock_availability(&HashSet::from(["tap", "bridge", "vhost_vsock"]), false)
+            .unwrap();
     }
 
     #[test]
     fn vhost_vsock_device_satisfies_vsock_preflight() {
-        classify_vsock_availability(&["tap", "bridge"], true).unwrap();
+        classify_vsock_availability(&HashSet::from(["tap", "bridge"]), true).unwrap();
     }
 
     #[test]
     fn preflight_missing_tun_module_typed() {
-        let err = classify_tun_availability(&["tap", "bridge"], false).unwrap_err();
+        let err =
+            classify_tun_availability(&HashSet::from(["tap", "bridge"]), false).unwrap_err();
 
         assert!(matches!(err, PreflightError::TunUnavailable));
     }
 
     #[test]
     fn tun_module_satisfies_tun_preflight() {
-        classify_tun_availability(&["tap", "bridge", "tun"], false).unwrap();
+        classify_tun_availability(&HashSet::from(["tap", "bridge", "tun"]), false).unwrap();
     }
 
     #[test]
     fn tun_device_satisfies_tun_preflight() {
-        classify_tun_availability(&["tap", "bridge"], true).unwrap();
+        classify_tun_availability(&HashSet::from(["tap", "bridge"]), true).unwrap();
     }
 
     #[test]
     fn preflight_missing_nf_conntrack_typed() {
-        let err = classify_nf_conntrack_availability(&["tap", "bridge"], false).unwrap_err();
+        let err =
+            classify_nf_conntrack_availability(&HashSet::from(["tap", "bridge"]), false)
+                .unwrap_err();
 
         assert!(matches!(err, PreflightError::NfConntrackUnavailable));
     }
 
     #[test]
     fn nf_conntrack_module_satisfies_nat_preflight() {
-        classify_nf_conntrack_availability(&["tap", "bridge", "nf_conntrack"], false).unwrap();
+        classify_nf_conntrack_availability(
+            &HashSet::from(["tap", "bridge", "nf_conntrack"]),
+            false,
+        )
+        .unwrap();
     }
 
     #[test]
     fn nf_conntrack_sys_module_satisfies_nat_preflight() {
-        classify_nf_conntrack_availability(&["tap", "bridge"], true).unwrap();
+        classify_nf_conntrack_availability(&HashSet::from(["tap", "bridge"]), true).unwrap();
     }
 
     #[test]
     fn required_kernel_modules_report_missing_tap_bridge() {
-        let err = classify_required_modules(&["vhost_vsock"]).unwrap_err();
+        let err = classify_required_modules(&HashSet::from(["vhost_vsock"])).unwrap_err();
 
         match err {
             PreflightError::KernelModulesMissing { missing } => {

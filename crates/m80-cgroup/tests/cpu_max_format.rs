@@ -22,6 +22,6 @@ fn quota_formats_as_two_numbers() {
 }
 
 #[test]
-fn max_variant_formats_as_max_with_period() {
+fn max_variant_formats_as_max_newline() {
     assert_eq!(render_cpu_max(&CpuMax::Max), "max\n");
 }

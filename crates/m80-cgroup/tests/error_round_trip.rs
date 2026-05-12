@@ -26,12 +26,15 @@ fn sparse_inherited_file_display_non_empty() {
 
 #[test]
 fn invalid_limit_display_non_empty() {
-    assert!(!CgroupError::InvalidLimit {
+    let msg = CgroupError::InvalidLimit {
         field: "io_weight",
         value: "0".into(),
     }
-    .to_string()
-    .is_empty());
+    .to_string();
+    assert!(
+        msg.contains("io_weight") && msg.contains('0'),
+        "display must name the field and value, got: {msg}"
+    );
 }
 
 #[test]

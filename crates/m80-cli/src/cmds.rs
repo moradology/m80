@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use m80_firecracker::{
-    Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig, StoppedSandbox,
-    CONSOLE_LOG,
+    backend_config_from_effective, Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy,
+    SandboxConfig, StoppedSandbox, CONSOLE_LOG,
 };
 use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
 
@@ -56,7 +56,7 @@ fn backend_from_effective(
         artifact_config,
         host_feature_config_from_effective(&effective)?,
     )?;
-    let backend_config = config::backend_config(discovery, &effective)?;
+    let backend_config = m80_firecracker::backend_config_from_effective(&effective, discovery)?;
     let backend = Backend::new_with_effective_config(backend_config, effective.clone())?;
     Ok((Arc::new(backend), effective))
 }
@@ -552,13 +552,13 @@ fn emit_guest_boot_trace_if_enabled(run_dir: &Path) {
 }
 
 /// `m80 cleanup` — trigger `recover_stale_run_root()`.
-pub(crate) fn cmd_cleanup(_force: bool, json: bool) -> anyhow::Result<i32> {
+pub(crate) fn cmd_cleanup(force: bool, json: bool) -> anyhow::Result<i32> {
     let (backend, _effective) = match build_backend(&HashMap::new()) {
         Ok(pair) => pair,
         Err(e) => return Ok(errors::render_error(&e, json)),
     };
 
-    if let Err(e) = backend.recover_stale_run_root() {
+    if let Err(e) = backend.recover_stale_run_root(force) {
         return Ok(errors::render_error(&e, json));
     }
 

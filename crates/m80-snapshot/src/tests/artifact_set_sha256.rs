@@ -8,13 +8,21 @@ fn base_artifacts() -> Vec<Artifact> {
     common::five_artifacts(std::path::Path::new("/snap"))
 }
 
-/// Same input always yields the same 32-byte digest.
+/// Digest of the five-artifact base set is pinned to a known value.
+/// A change in serialization format or hashing logic will break this test
+/// visibly rather than silently passing.
 #[test]
 fn artifact_set_sha256_is_deterministic_for_same_input() {
     let arts = base_artifacts();
-    let d1 = artifact_set_sha256(&arts);
-    let d2 = artifact_set_sha256(&arts);
-    assert_eq!(d1, d2, "digest must be deterministic for identical input");
+    let digest = artifact_set_sha256(&arts);
+    // Pin to known expected value (update intentionally if format changes).
+    let expected: [u8; 32] = [
+        0x81, 0xcc, 0x67, 0x56, 0xaf, 0xd1, 0x62, 0xb4,
+        0xda, 0xf9, 0x6c, 0x1b, 0x80, 0x86, 0x54, 0x84,
+        0x3e, 0x64, 0xfc, 0x0a, 0x4a, 0x71, 0xaa, 0x57,
+        0x03, 0x7d, 0x26, 0xd4, 0x09, 0xe5, 0x25, 0xbf,
+    ];
+    assert_eq!(digest, expected, "digest of base_artifacts() must match pinned value");
 }
 
 /// Flipping one byte in one artifact's sha256 field changes the digest.
@@ -53,12 +61,19 @@ fn artifact_set_sha256_changes_when_order_changes() {
     );
 }
 
-/// Empty slice hashes to a fixed SHA-256 of the empty input (all-zero update).
+/// Empty slice produces the SHA-256 of the empty byte sequence. Pinned to the
+/// well-known value so a broken hasher initialization is immediately visible.
 #[test]
 fn artifact_set_sha256_empty_slice_is_stable() {
-    let d1 = artifact_set_sha256(&[]);
-    let d2 = artifact_set_sha256(&[]);
-    assert_eq!(d1, d2);
+    let digest = artifact_set_sha256(&[]);
+    // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    let expected: [u8; 32] = [
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
+        0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
+        0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+    ];
+    assert_eq!(digest, expected, "empty-slice digest must match SHA-256 of empty input");
 }
 
 /// A single-element slice differs from the five-element slice.

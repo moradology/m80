@@ -109,15 +109,12 @@ fn restore_with_resume_sends_load_then_resumed() {
 // Load body shape
 // ---------------------------------------------------------------------------
 
-/// `PUT /snapshot/load` body must carry `snapshot_path`, a `mem_backend` with
-/// `backend_type: "File"`, and the correct `backend_path`.
+/// `PUT /snapshot/load` body carries the `snapshot_path` key with the correct value.
 #[test]
-fn restore_load_body_uses_file_backed_mem_backend() {
+fn restore_load_body_includes_snapshot_path() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
-
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
-
     let req = RestoreRequest {
         api_socket: server.socket_path.clone(),
         paths: SnapshotPaths {
@@ -128,37 +125,75 @@ fn restore_load_body_uses_file_backed_mem_backend() {
         resume: false,
     };
     restore(req).expect("restore must succeed");
-
     let requests = server.join();
     let body = &requests[0];
-    assert!(
-        body.contains("\"snapshot_path\""),
-        "must include snapshot_path: {body}"
-    );
-    assert!(
-        body.contains("vm.snap"),
-        "snapshot_path value must appear: {body}"
-    );
-    assert!(
-        body.contains("\"mem_backend\""),
-        "must include mem_backend: {body}"
-    );
-    assert!(
-        body.contains("\"backend_type\":\"File\""),
-        "backend_type must be File: {body}"
-    );
-    assert!(
-        body.contains("mem.snap"),
-        "backend_path value must appear: {body}"
-    );
-    assert!(
-        !body.contains("\"mem_file_path\""),
-        "deprecated mem_file_path must not appear: {body}"
-    );
-    assert!(
-        !body.contains("\"resume_vm\""),
-        "resume_vm must not appear in load body (resume is separate PATCH): {body}"
-    );
+    assert!(body.contains("\"snapshot_path\""), "must include snapshot_path key: {body}");
+    assert!(body.contains("vm.snap"), "snapshot_path value must appear: {body}");
+}
+
+/// `PUT /snapshot/load` body carries a `mem_backend` object with `backend_type: "File"`.
+#[test]
+fn restore_load_body_uses_file_backed_mem_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
+    let req = RestoreRequest {
+        api_socket: server.socket_path.clone(),
+        paths: SnapshotPaths {
+            vm_state: PathBuf::from("/snap/vm.snap"),
+            mem: PathBuf::from("/snap/mem.snap"),
+        },
+        vsock_uds,
+        resume: false,
+    };
+    restore(req).expect("restore must succeed");
+    let requests = server.join();
+    let body = &requests[0];
+    assert!(body.contains("\"mem_backend\""), "must include mem_backend key: {body}");
+    assert!(body.contains("\"backend_type\":\"File\""), "backend_type must be File: {body}");
+    assert!(body.contains("mem.snap"), "backend_path value must appear: {body}");
+}
+
+/// `PUT /snapshot/load` body must not include the deprecated `mem_file_path` field.
+#[test]
+fn restore_load_body_omits_deprecated_mem_file_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
+    let req = RestoreRequest {
+        api_socket: server.socket_path.clone(),
+        paths: SnapshotPaths {
+            vm_state: PathBuf::from("/snap/vm.snap"),
+            mem: PathBuf::from("/snap/mem.snap"),
+        },
+        vsock_uds,
+        resume: false,
+    };
+    restore(req).expect("restore must succeed");
+    let requests = server.join();
+    let body = &requests[0];
+    assert!(!body.contains("\"mem_file_path\""), "deprecated mem_file_path must not appear: {body}");
+}
+
+/// `PUT /snapshot/load` body must not include `resume_vm`; resume is a separate PATCH.
+#[test]
+fn restore_load_body_omits_resume_vm() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
+    let req = RestoreRequest {
+        api_socket: server.socket_path.clone(),
+        paths: SnapshotPaths {
+            vm_state: PathBuf::from("/snap/vm.snap"),
+            mem: PathBuf::from("/snap/mem.snap"),
+        },
+        vsock_uds,
+        resume: false,
+    };
+    restore(req).expect("restore must succeed");
+    let requests = server.join();
+    let body = &requests[0];
+    assert!(!body.contains("\"resume_vm\""), "resume_vm must not appear in load body: {body}");
 }
 
 // ---------------------------------------------------------------------------

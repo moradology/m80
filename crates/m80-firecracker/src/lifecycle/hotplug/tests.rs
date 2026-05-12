@@ -61,7 +61,15 @@ fn slot_device_path_with_workspace_starts_at_vdd() {
 
 #[test]
 fn slot_device_path_supports_post_z_suffixes() {
+    // bijective base-26 boundaries (with workspace=false baseline index=2):
+    //   slot 24 → index 26 → "aa" (first two-letter suffix)
+    //   slot 25 → index 27 → "ab"
+    //   slot 50 → index 52 → "ba"
+    //   slot 51 → index 53 → "bb"
     assert_eq!(preallocated_drive_device_path(false, 24), "/dev/vdaa");
+    assert_eq!(preallocated_drive_device_path(false, 25), "/dev/vdab");
+    assert_eq!(preallocated_drive_device_path(false, 50), "/dev/vdba");
+    assert_eq!(preallocated_drive_device_path(false, 51), "/dev/vdbb");
 }
 
 #[test]
