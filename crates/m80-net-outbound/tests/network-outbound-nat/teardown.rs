@@ -236,6 +236,40 @@ impl RecordingPolicyOps {
             .iter()
             .any(|rule| rule.table == table && rule.chain == chain && rule.spec.as_slice() == spec)
     }
+
+    fn apply_restore_input(&mut self, input: &str) {
+        let mut table = None::<String>;
+        for line in input.lines().map(str::trim).filter(|line| !line.is_empty()) {
+            if let Some(next_table) = line.strip_prefix('*') {
+                table = Some(next_table.to_owned());
+                continue;
+            }
+            if line == "COMMIT" {
+                table = None;
+                continue;
+            }
+            let Some(current_table) = table.as_ref() else {
+                panic!("restore rule outside table: {line}");
+            };
+            let parts = line
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            match parts.first().map(String::as_str) {
+                Some("-A") => self.rules.push(InstalledRule {
+                    table: current_table.clone(),
+                    chain: parts[1].clone(),
+                    spec: parts[2..].to_vec(),
+                }),
+                Some("-I") => self.rules.push(InstalledRule {
+                    table: current_table.clone(),
+                    chain: parts[1].clone(),
+                    spec: parts[3..].to_vec(),
+                }),
+                other => panic!("unexpected restore operation {other:?} in {line}"),
+            }
+        }
+    }
 }
 
 impl PolicyOps for RecordingPolicyOps {
@@ -316,6 +350,19 @@ impl PolicyOps for RecordingPolicyOps {
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    fn run_command_input(
+        &mut self,
+        program: &str,
+        args: &[String],
+        stdin: &str,
+    ) -> Result<(), NetError> {
+        self.runs.push(format!("{program} {}", args.join(" ")));
+        assert_eq!(program, "iptables-restore");
+        assert_eq!(args, ["-w", "--noflush"]);
+        self.apply_restore_input(stdin);
         Ok(())
     }
 }

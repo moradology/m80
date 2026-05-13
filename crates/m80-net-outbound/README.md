@@ -97,9 +97,11 @@ Sequestering it has three benefits:
   installation begins, and guest network configuration must already have
   recorded at least one DNS resolver. It creates or reuses the
   deterministic per-VM filter chain, rejects foreign rules already present
-  in that chain, sets `net.ipv4.ip_forward=1`, appends the per-VM filter
-  rules, inserts bridge-interface FORWARD entries scoped by the guest `/32`,
-  and appends NAT POSTROUTING masquerade.
+  in that chain, sets `net.ipv4.ip_forward=1`, then lists the per-VM chain,
+  FORWARD, and NAT POSTROUTING for missing-rule detection before installing
+  missing rules through one `iptables-restore -w --noflush` batch. The
+  batch appends per-VM filter rules, inserts bridge-interface FORWARD
+  entries scoped by the guest `/32`, and appends NAT POSTROUTING masquerade.
 - iptables rules are tagged with a per-VM comment prefix (rooted in
   `M80_RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
   never by index — so concurrent rule additions by other tools don't
@@ -169,8 +171,9 @@ Sequestering it has three benefits:
 - `LinkOps` — bridge/TAP setup link-operation seam used by tests and the
   real internal rtnetlink/TUN backend.
 - `PolicyOps` — host policy command seam used by tests and the real
-  `sysctl`/`iptables` backend. Implementors provide `command_output(...)`;
-  the default `run_command(...)` turns non-zero status into `NetError`.
+  `sysctl`/`iptables`/`iptables-restore` backend. Implementors provide
+  `command_output(...)` and `run_command_input(...)`; the default
+  `run_command(...)` turns non-zero status into `NetError`.
 - `PolicyCommandOutput { status_success, stdout, stderr }` with
   `success(...)` and `failure(...)` constructors — captured host policy
   command output.

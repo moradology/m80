@@ -2,9 +2,11 @@
 //! Owns chain creation, DNS-accept/reject sequencing, permanent-deny rules,
 //! FORWARD inserts, NAT masquerade, and comment-tagged teardown.
 
+use std::collections::HashMap;
+use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use ipnet::Ipv4Net;
 use sha2::{Digest, Sha256};
@@ -62,6 +64,14 @@ pub trait PolicyOps {
             stderr: output.stderr,
         })
     }
+
+    /// Run a command with stdin whose non-zero exit aborts policy installation.
+    fn run_command_input(
+        &mut self,
+        program: &str,
+        args: &[String],
+        stdin: &str,
+    ) -> Result<(), NetError>;
 }
 
 pub(crate) struct CommandPolicyOps;
@@ -76,6 +86,32 @@ impl PolicyOps for CommandPolicyOps {
         Ok(PolicyCommandOutput {
             status_success: output.status.success(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    }
+
+    fn run_command_input(
+        &mut self,
+        program: &str,
+        args: &[String],
+        stdin: &str,
+    ) -> Result<(), NetError> {
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let mut child_stdin = child.stdin.take().expect("stdin was piped");
+        let write_result = child_stdin.write_all(stdin.as_bytes());
+        drop(child_stdin);
+        let output = child.wait_with_output()?;
+        if output.status.success() {
+            write_result?;
+            return Ok(());
+        }
+        Err(NetError::NetworkCommandFailed {
+            program: program.to_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         })
     }
@@ -98,22 +134,23 @@ pub fn apply_outbound_nat_policy_with_ops(
     ensure_iptables_chain(ops, "filter", &chain)?;
     reject_foreign_iptables_chain_rules(ops, "filter", &chain, &comment)?;
     ensure_ipv4_forwarding(ops)?;
-    ensure_filter_chain_rules(ops, state, &chain, &comment)?;
-    ensure_forwarding_entry_rules(ops, state, &chain, &comment)?;
-    ensure_nat_masquerade_rule(ops, state, &comment)
+    let expected = expected_policy_rules(state, &chain, &comment);
+    restore_missing_policy_rules(ops, &expected)
 }
 
 /// Return the per-VM filter chain name.
 ///
 /// Format: `tfw` followed by the first 12 hex chars of `sha256(run_dir)`.
-#[must_use] pub fn outbound_nat_filter_chain(state: &VmNetworkStateRecord) -> String {
+#[must_use]
+pub fn outbound_nat_filter_chain(state: &VmNetworkStateRecord) -> String {
     format!("tfw{}", &digest_path(&state.run_dir)[..12])
 }
 
 /// Return the per-VM iptables rule comment.
 ///
 /// Format: `<RULE_COMMENT_PREFIX>:<first 12 hex chars sha256(run_root)>:<tap_name>`.
-#[must_use] pub fn outbound_nat_rule_comment(state: &VmNetworkStateRecord) -> String {
+#[must_use]
+pub fn outbound_nat_rule_comment(state: &VmNetworkStateRecord) -> String {
     format!(
         "{}:{}:{}",
         RULE_COMMENT_PREFIX,
@@ -123,7 +160,8 @@ pub fn apply_outbound_nat_policy_with_ops(
 }
 
 /// Return the permanent-deny IPv4 CIDRs for one VM policy.
-#[must_use] pub fn permanent_deny_cidrs(bridge_cidr: Ipv4Net) -> Vec<Ipv4Net> {
+#[must_use]
+pub fn permanent_deny_cidrs(bridge_cidr: Ipv4Net) -> Vec<Ipv4Net> {
     let mut cidrs = vec![
         "0.0.0.0/8",
         "10.0.0.0/8",
@@ -216,14 +254,13 @@ fn reject_foreign_iptables_chain_rules(
 }
 
 fn ensure_filter_chain_rules(
-    ops: &mut impl PolicyOps,
     state: &VmNetworkStateRecord,
     chain: &str,
     comment: &str,
-) -> Result<(), NetError> {
+) -> Vec<PlannedRule> {
+    let mut rules = Vec::new();
     for resolver in &state.dns_resolvers {
-        ensure_iptables_rule(
-            ops,
+        rules.push(PlannedRule::append(
             "filter",
             chain,
             vec![
@@ -240,10 +277,8 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "ACCEPT".into(),
             ],
-            false,
-        )?;
-        ensure_iptables_rule(
-            ops,
+        ));
+        rules.push(PlannedRule::append(
             "filter",
             chain,
             vec![
@@ -260,13 +295,11 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "ACCEPT".into(),
             ],
-            false,
-        )?;
+        ));
     }
 
     for protocol in ["udp", "tcp"] {
-        ensure_iptables_rule(
-            ops,
+        rules.push(PlannedRule::append(
             "filter",
             chain,
             vec![
@@ -281,13 +314,11 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "REJECT".into(),
             ],
-            false,
-        )?;
+        ));
     }
 
     for exception in &state.private_ipv4_exceptions {
-        ensure_iptables_rule(
-            ops,
+        rules.push(PlannedRule::append(
             "filter",
             chain,
             vec![
@@ -300,13 +331,11 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "ACCEPT".into(),
             ],
-            false,
-        )?;
+        ));
     }
 
     for cidr in permanent_deny_cidrs(state.bridge.cidr) {
-        ensure_iptables_rule(
-            ops,
+        rules.push(PlannedRule::append(
             "filter",
             chain,
             vec![
@@ -319,12 +348,10 @@ fn ensure_filter_chain_rules(
                 "-j".into(),
                 "REJECT".into(),
             ],
-            false,
-        )?;
+        ));
     }
 
-    ensure_iptables_rule(
-        ops,
+    rules.push(PlannedRule::append(
         "filter",
         chain,
         vec![
@@ -335,84 +362,74 @@ fn ensure_filter_chain_rules(
             "-j".into(),
             "ACCEPT".into(),
         ],
-        false,
-    )
+    ));
+    rules
 }
 
 fn ensure_forwarding_entry_rules(
-    ops: &mut impl PolicyOps,
     state: &VmNetworkStateRecord,
     chain: &str,
     comment: &str,
-) -> Result<(), NetError> {
+) -> Vec<PlannedRule> {
     let guest = format!("{}/32", state.guest_ipv4);
-    ensure_iptables_rule(
-        ops,
-        "filter",
-        "FORWARD",
-        vec![
-            "-i".into(),
-            state.bridge.bridge_name.clone(),
-            "-s".into(),
-            guest.clone(),
-            "-m".into(),
-            "comment".into(),
-            "--comment".into(),
-            comment.into(),
-            "-j".into(),
-            chain.into(),
-        ],
-        true,
-    )?;
-    ensure_iptables_rule(
-        ops,
-        "filter",
-        "FORWARD",
-        vec![
-            "-o".into(),
-            state.bridge.bridge_name.clone(),
-            "-d".into(),
-            guest.clone(),
-            "-m".into(),
-            "comment".into(),
-            "--comment".into(),
-            comment.into(),
-            "-j".into(),
-            "REJECT".into(),
-        ],
-        true,
-    )?;
-    ensure_iptables_rule(
-        ops,
-        "filter",
-        "FORWARD",
-        vec![
-            "-o".into(),
-            state.bridge.bridge_name.clone(),
-            "-d".into(),
-            guest,
-            "-m".into(),
-            "conntrack".into(),
-            "--ctstate".into(),
-            "RELATED,ESTABLISHED".into(),
-            "-m".into(),
-            "comment".into(),
-            "--comment".into(),
-            comment.into(),
-            "-j".into(),
-            "ACCEPT".into(),
-        ],
-        true,
-    )
+    vec![
+        PlannedRule::insert(
+            "filter",
+            "FORWARD",
+            vec![
+                "-i".into(),
+                state.bridge.bridge_name.clone(),
+                "-s".into(),
+                guest.clone(),
+                "-m".into(),
+                "comment".into(),
+                "--comment".into(),
+                comment.into(),
+                "-j".into(),
+                chain.into(),
+            ],
+        ),
+        PlannedRule::insert(
+            "filter",
+            "FORWARD",
+            vec![
+                "-o".into(),
+                state.bridge.bridge_name.clone(),
+                "-d".into(),
+                guest.clone(),
+                "-m".into(),
+                "comment".into(),
+                "--comment".into(),
+                comment.into(),
+                "-j".into(),
+                "REJECT".into(),
+            ],
+        ),
+        PlannedRule::insert(
+            "filter",
+            "FORWARD",
+            vec![
+                "-o".into(),
+                state.bridge.bridge_name.clone(),
+                "-d".into(),
+                guest,
+                "-m".into(),
+                "conntrack".into(),
+                "--ctstate".into(),
+                "RELATED,ESTABLISHED".into(),
+                "-m".into(),
+                "comment".into(),
+                "--comment".into(),
+                comment.into(),
+                "-j".into(),
+                "ACCEPT".into(),
+            ],
+        ),
+    ]
 }
 
-fn ensure_nat_masquerade_rule(
-    ops: &mut impl PolicyOps,
-    state: &VmNetworkStateRecord,
-    comment: &str,
-) -> Result<(), NetError> {
-    ensure_iptables_rule(
-        ops,
+fn ensure_nat_masquerade_rule(state: &VmNetworkStateRecord, comment: &str) -> PlannedRule {
+    PlannedRule::append(
         "nat",
         "POSTROUTING",
         vec![
@@ -425,33 +442,155 @@ fn ensure_nat_masquerade_rule(
             "-j".into(),
             "MASQUERADE".into(),
         ],
-        false,
     )
 }
 
-fn ensure_iptables_rule(
-    ops: &mut impl PolicyOps,
-    table: &str,
+fn expected_policy_rules(
+    state: &VmNetworkStateRecord,
     chain: &str,
-    rule: Vec<String>,
-    insert: bool,
+    comment: &str,
+) -> Vec<PlannedRule> {
+    let mut rules = ensure_filter_chain_rules(state, chain, comment);
+    rules.extend(ensure_forwarding_entry_rules(state, chain, comment));
+    rules.push(ensure_nat_masquerade_rule(state, comment));
+    rules
+}
+
+fn restore_missing_policy_rules(
+    ops: &mut impl PolicyOps,
+    expected: &[PlannedRule],
 ) -> Result<(), NetError> {
-    if ops
-        .command_output("iptables", &iptables_args(table, "-C", chain, &rule))?
-        .status_success
-    {
+    let mut installed_by_chain = HashMap::<(&'static str, String), Option<Vec<Vec<String>>>>::new();
+    let mut missing = Vec::new();
+    for rule in expected {
+        let key = (rule.table, rule.chain.clone());
+        let installed = match installed_by_chain.entry(key) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(list_iptables_rule_specs(ops, rule.table, &rule.chain)?)
+            }
+        };
+        if !rule_exists_in_specs(installed.as_ref(), rule) {
+            missing.push(rule.clone());
+        }
+    }
+    if missing.is_empty() {
         return Ok(());
     }
 
-    let mut args = iptables_args(table, if insert { "-I" } else { "-A" }, chain, &[]);
-    if insert {
-        args.push("1".to_owned());
-    }
-    args.extend(rule);
-    ops.run_command("iptables", &args)
+    let restore = build_iptables_restore_input(&missing);
+    ops.run_command_input(
+        "iptables-restore",
+        &["-w".to_owned(), "--noflush".to_owned()],
+        &restore,
+    )
 }
 
-pub(crate) fn iptables_args(table: &str, operation: &str, chain: &str, rest: &[String]) -> Vec<String> {
+fn rule_exists_in_specs(installed: Option<&Vec<Vec<String>>>, rule: &PlannedRule) -> bool {
+    installed.is_some_and(|specs| specs.iter().any(|spec| spec == &rule.spec))
+}
+
+fn list_iptables_rule_specs(
+    ops: &mut impl PolicyOps,
+    table: &str,
+    chain: &str,
+) -> Result<Option<Vec<Vec<String>>>, NetError> {
+    let output = ops.command_output("iptables", &iptables_args(table, "-S", chain, &[]))?;
+    if !output.status_success {
+        return Ok(None);
+    }
+
+    let mut rules = Vec::new();
+    for line in output.stdout.lines().map(str::trim) {
+        if line.is_empty()
+            || line == format!("-N {chain}")
+            || line.starts_with(&format!("-P {chain} "))
+        {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix(&format!("-A {chain} ")) else {
+            return Err(NetError::NetworkAllocationConflict {
+                path: iptables_state_path(table, chain),
+                detail: format!("unexpected iptables-save rule shape {line:?}"),
+            });
+        };
+        rules.push(split_iptables_rule_spec(rest));
+    }
+    Ok(Some(rules))
+}
+
+fn build_iptables_restore_input(rules: &[PlannedRule]) -> String {
+    let mut input = String::new();
+    for table in ["filter", "nat"] {
+        let table_rules = rules
+            .iter()
+            .filter(|rule| rule.table == table)
+            .collect::<Vec<_>>();
+        if table_rules.is_empty() {
+            continue;
+        }
+        input.push('*');
+        input.push_str(table);
+        input.push('\n');
+        for rule in table_rules {
+            input.push_str(&rule.restore_line());
+            input.push('\n');
+        }
+        input.push_str("COMMIT\n");
+    }
+    input
+}
+
+fn split_iptables_rule_spec(rule: &str) -> Vec<String> {
+    rule.split_whitespace()
+        .map(|arg| arg.trim_matches('"').to_owned())
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PlannedRule {
+    table: &'static str,
+    chain: String,
+    spec: Vec<String>,
+    insert: bool,
+}
+
+impl PlannedRule {
+    fn append(table: &'static str, chain: &str, spec: Vec<String>) -> Self {
+        Self {
+            table,
+            chain: chain.to_owned(),
+            spec,
+            insert: false,
+        }
+    }
+
+    fn insert(table: &'static str, chain: &str, spec: Vec<String>) -> Self {
+        Self {
+            table,
+            chain: chain.to_owned(),
+            spec,
+            insert: true,
+        }
+    }
+
+    fn restore_line(&self) -> String {
+        let operation = if self.insert { "-I" } else { "-A" };
+        let mut parts = vec![operation.to_owned(), self.chain.clone()];
+        if self.insert {
+            parts.push("1".to_owned());
+        }
+        parts.extend(self.spec.iter().cloned());
+        parts.join(" ")
+    }
+}
+
+pub(crate) fn iptables_args(
+    table: &str,
+    operation: &str,
+    chain: &str,
+    rest: &[String],
+) -> Vec<String> {
     let mut args = vec![
         "-w".to_owned(),
         "-t".to_owned(),

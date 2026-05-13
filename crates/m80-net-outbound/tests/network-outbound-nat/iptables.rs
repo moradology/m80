@@ -16,10 +16,8 @@ fn sysctl_ip_forward_set_before_rules() {
     apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
 
     let sysctl = ops.run_index("sysctl -w net.ipv4.ip_forward=1");
-    let forward = ops.run_index("iptables -w -t filter -I FORWARD 1");
-    let nat = ops.run_index("iptables -w -t nat -A POSTROUTING");
-    assert!(sysctl < forward);
-    assert!(sysctl < nat);
+    let restore = ops.run_index("iptables-restore -w --noflush");
+    assert!(sysctl < restore);
 }
 
 #[test]
@@ -51,6 +49,41 @@ fn sysctl_failure_aborts_before_rule_install() {
             .count(),
         0
     );
+}
+
+#[test]
+fn policy_rules_install_with_one_iptables_restore_batch() {
+    let state = ready_state();
+    let mut ops = RecordingPolicyOps::default();
+
+    apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    assert_eq!(ops.restore_inputs.len(), 1);
+    assert_eq!(ops.command_outputs_matching("-S").len(), 5);
+    assert!(ops.restore_inputs[0].contains("*filter\n"));
+    assert!(ops.restore_inputs[0].contains("*nat\n"));
+    assert!(!ops
+        .runs
+        .iter()
+        .any(|run| run.starts_with("iptables -w -t filter -A")
+            || run.starts_with("iptables -w -t filter -I")
+            || run.starts_with("iptables -w -t nat -A")));
+}
+
+#[test]
+fn iptables_restore_failure_aborts_policy_install() {
+    let state = ready_state();
+    let mut ops = RecordingPolicyOps {
+        fail_restore: true,
+        ..RecordingPolicyOps::default()
+    };
+
+    let err = apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap_err();
+
+    assert!(
+        matches!(err, NetError::NetworkCommandFailed { program, .. } if program == "iptables-restore")
+    );
+    assert!(ops.rules.is_empty());
 }
 
 #[test]
@@ -267,24 +300,52 @@ fn forward_inserts_route_guest_through_filter_chain() {
 
     apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
 
-    assert!(ops.runs.contains(&format!(
-        "iptables -w -t filter -I FORWARD 1 -i {} -s {} -m comment --comment {} -j {}",
-        state.bridge.bridge_name, guest, comment, chain
-    )));
-    assert!(ops.runs.contains(&format!(
-        "iptables -w -t filter -I FORWARD 1 -o {} -d {} -m comment --comment {} -j REJECT",
-        state.bridge.bridge_name, guest, comment
-    )));
-    assert!(ops.runs.contains(&format!(
-        "iptables -w -t filter -I FORWARD 1 -o {} -d {} -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment {} -j ACCEPT",
-        state.bridge.bridge_name, guest, comment
-    )));
+    let rules = ops.chain_rules("filter", "FORWARD");
+    assert!(rules.contains(&vec![
+        "-i",
+        &state.bridge.bridge_name,
+        "-s",
+        &guest,
+        "-m",
+        "comment",
+        "--comment",
+        &comment,
+        "-j",
+        &chain
+    ]));
+    assert!(rules.contains(&vec![
+        "-o",
+        &state.bridge.bridge_name,
+        "-d",
+        &guest,
+        "-m",
+        "comment",
+        "--comment",
+        &comment,
+        "-j",
+        "REJECT"
+    ]));
+    assert!(rules.contains(&vec![
+        "-o",
+        &state.bridge.bridge_name,
+        "-d",
+        &guest,
+        "-m",
+        "conntrack",
+        "--ctstate",
+        "RELATED,ESTABLISHED",
+        "-m",
+        "comment",
+        "--comment",
+        &comment,
+        "-j",
+        "ACCEPT"
+    ]));
     assert!(
-        !ops.runs
-            .iter()
-            .any(|run| run.starts_with("iptables -w -t filter -I FORWARD 1")
-                && (run.contains(&format!("-i {}", state.tap_name))
-                    || run.contains(&format!("-o {}", state.tap_name)))),
+        !rules.iter().any(
+            |rule| rule.windows(2).any(|pair| pair == ["-i", &state.tap_name])
+                || rule.windows(2).any(|pair| pair == ["-o", &state.tap_name])
+        ),
         "routed bridge traffic must not be keyed by the TAP device"
     );
 }
@@ -297,10 +358,16 @@ fn nat_postrouting_masquerade_for_guest_source() {
 
     apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
 
-    assert!(ops.runs.contains(&format!(
-        "iptables -w -t nat -A POSTROUTING -s {}/32 -m comment --comment {} -j MASQUERADE",
-        state.guest_ipv4, comment
-    )));
+    assert!(ops.chain_rules("nat", "POSTROUTING").contains(&vec![
+        "-s",
+        &format!("{}/32", state.guest_ipv4),
+        "-m",
+        "comment",
+        "--comment",
+        &comment,
+        "-j",
+        "MASQUERADE"
+    ]));
 }
 
 #[test]
@@ -337,10 +404,13 @@ fn ready_state() -> VmNetworkStateRecord {
 
 #[derive(Default)]
 struct RecordingPolicyOps {
+    command_outputs: Vec<String>,
     runs: Vec<String>,
+    restore_inputs: Vec<String>,
     chains: Vec<(String, String)>,
     rules: Vec<InstalledRule>,
     fail_sysctl: bool,
+    fail_restore: bool,
 }
 
 impl RecordingPolicyOps {
@@ -377,6 +447,47 @@ impl RecordingPolicyOps {
             .iter()
             .any(|rule| rule.table == table && rule.chain == chain && rule.spec.as_slice() == spec)
     }
+
+    fn command_outputs_matching(&self, operation: &str) -> Vec<&String> {
+        self.command_outputs
+            .iter()
+            .filter(|command| command.contains(&format!(" {operation} ")))
+            .collect()
+    }
+
+    fn apply_restore_input(&mut self, input: &str) {
+        let mut table = None::<String>;
+        for line in input.lines().map(str::trim).filter(|line| !line.is_empty()) {
+            if let Some(next_table) = line.strip_prefix('*') {
+                table = Some(next_table.to_owned());
+                continue;
+            }
+            if line == "COMMIT" {
+                table = None;
+                continue;
+            }
+            let Some(current_table) = table.as_ref() else {
+                panic!("restore rule outside table: {line}");
+            };
+            let parts = line
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            match parts.first().map(String::as_str) {
+                Some("-A") => self.rules.push(InstalledRule {
+                    table: current_table.clone(),
+                    chain: parts[1].clone(),
+                    spec: parts[2..].to_vec(),
+                }),
+                Some("-I") => self.rules.push(InstalledRule {
+                    table: current_table.clone(),
+                    chain: parts[1].clone(),
+                    spec: parts[3..].to_vec(),
+                }),
+                other => panic!("unexpected restore operation {other:?} in {line}"),
+            }
+        }
+    }
 }
 
 impl PolicyOps for RecordingPolicyOps {
@@ -385,6 +496,8 @@ impl PolicyOps for RecordingPolicyOps {
         program: &str,
         args: &[String],
     ) -> Result<PolicyCommandOutput, NetError> {
+        self.command_outputs
+            .push(format!("{program} {}", args.join(" ")));
         if program != "iptables" {
             return Ok(PolicyCommandOutput::success(""));
         }
@@ -393,12 +506,16 @@ impl PolicyOps for RecordingPolicyOps {
         let chain = &args[4];
         match op.as_str() {
             "-S" => {
-                if !self.has_chain(table, chain) {
+                if !self.has_chain(table, chain) && !is_builtin_chain(table, chain) {
                     return Ok(PolicyCommandOutput::failure(
                         "No chain/target/match by that name",
                     ));
                 }
-                let mut stdout = format!("-N {chain}\n");
+                let mut stdout = if is_builtin_chain(table, chain) {
+                    format!("-P {chain} ACCEPT\n")
+                } else {
+                    format!("-N {chain}\n")
+                };
                 for rule in self
                     .rules
                     .iter()
@@ -449,6 +566,33 @@ impl PolicyOps for RecordingPolicyOps {
         }
         Ok(())
     }
+
+    fn run_command_input(
+        &mut self,
+        program: &str,
+        args: &[String],
+        stdin: &str,
+    ) -> Result<(), NetError> {
+        self.runs.push(format!("{program} {}", args.join(" ")));
+        assert_eq!(program, "iptables-restore");
+        assert_eq!(args, ["-w", "--noflush"]);
+        self.restore_inputs.push(stdin.to_owned());
+        if self.fail_restore {
+            return Err(NetError::NetworkCommandFailed {
+                program: "iptables-restore".to_owned(),
+                stderr: "restore failed".to_owned(),
+            });
+        }
+        self.apply_restore_input(stdin);
+        Ok(())
+    }
+}
+
+fn is_builtin_chain(table: &str, chain: &str) -> bool {
+    matches!(
+        (table, chain),
+        ("filter", "FORWARD") | ("nat", "POSTROUTING")
+    )
 }
 
 #[derive(Debug)]

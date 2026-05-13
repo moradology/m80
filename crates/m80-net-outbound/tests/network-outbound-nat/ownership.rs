@@ -175,6 +175,15 @@ impl PolicyOps for NoopPolicyOps {
     fn run_command(&mut self, _program: &str, _args: &[String]) -> Result<(), NetError> {
         Ok(())
     }
+
+    fn run_command_input(
+        &mut self,
+        _program: &str,
+        _args: &[String],
+        _stdin: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
 }
 
 #[derive(Default)]
