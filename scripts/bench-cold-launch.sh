@@ -56,9 +56,10 @@ KERNEL_KIND="${KERNEL_KIND:-${M80_KERNEL_KIND:-stock}}"
 EGRESS="${EGRESS:-${M80_NETWORK_POLICY:-none}}"
 IMAGE_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-build/ubuntu}"
 IMAGE_MINIMAL="${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}"
-RESULT_CSV="crates/m80-firecracker/benches/cold-launch.csv"
-PHASE_CSV="crates/m80-firecracker/benches/cold-launch-phases.csv"
-SNAPSHOTS_DIR="crates/m80-firecracker/benches/snapshots"
+BENCH_ARTIFACT_DIR="${BENCH_ARTIFACT_DIR:-crates/m80-firecracker/benches}"
+RESULT_CSV="$BENCH_ARTIFACT_DIR/cold-launch.csv"
+PHASE_CSV="$BENCH_ARTIFACT_DIR/cold-launch-phases.csv"
+SNAPSHOTS_DIR="$BENCH_ARTIFACT_DIR/snapshots"
 
 # B0 knobs.
 SWEEP="${SWEEP:-}"
@@ -98,6 +99,8 @@ ENV vars:
     CPU_GOVERNOR  passed to cpupower frequency-set -g (e.g. performance)
     DRY_RUN       set to 1 to print the plan and exit (same as --dry-run)
     PHASE_JSONL   when set, append phase events as JSONL to this path
+    BENCH_ARTIFACT_DIR
+                  directory for CSVs and snapshots (default crates/m80-firecracker/benches)
     M80_BIN       binary path (default ./target/release/m80; override for tests)
 
 FLAGS:
@@ -354,13 +357,15 @@ run_one() {
         name="${line#*name=}"; name="${name%% *}"
         us="${line##*elapsed_us=}"; us="${us%%[!0-9]*}"
         [[ "$name" != "$line" && "$us" =~ ^[0-9]+$ ]] || continue
-        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$PHASE_CSV"
-        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$RUN_PHASE_CSV"
+        if [[ "${RECORD_PHASE:-1}" == "1" ]]; then
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$PHASE_CSV"
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$RUN_PHASE_CSV"
+            emit_phase_event "$kind" "$load" "$attempt" "$name" "$us"
+        fi
         if [[ -n "$SWEEP" && "$RECORD_SWEEP_PHASE" == "1" ]]; then
             echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$SWEEP,$CUR_SWEEP_VAL,$name,$us" \
                 >> "$SWEEP_PHASE_CSV"
         fi
-        emit_phase_event "$kind" "$load" "$attempt" "$name" "$us"
     done < "$stderr_file"
     while IFS= read -r line; do
         case "$line" in
@@ -372,18 +377,20 @@ run_one() {
         elapsed_us="${line#*elapsed_us=}"; elapsed_us="${elapsed_us%% *}"
         delta_us="${line#*delta_us=}"; delta_us="${delta_us%%[!0-9]*}"
         [[ "$name" != "$line" && "$elapsed_us" =~ ^[0-9]+$ && "$delta_us" =~ ^[0-9]+$ ]] || continue
-        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$PHASE_CSV"
-        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$RUN_PHASE_CSV"
-        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$PHASE_CSV"
-        echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$RUN_PHASE_CSV"
+        if [[ "${RECORD_PHASE:-1}" == "1" ]]; then
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$PHASE_CSV"
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$RUN_PHASE_CSV"
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$PHASE_CSV"
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$RUN_PHASE_CSV"
+            emit_phase_event "$kind" "$load" "$attempt" "guest_elapsed_$name" "$elapsed_us"
+            emit_phase_event "$kind" "$load" "$attempt" "guest_delta_$name" "$delta_us"
+        fi
         if [[ -n "$SWEEP" && "$RECORD_SWEEP_PHASE" == "1" ]]; then
             echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$SWEEP,$CUR_SWEEP_VAL,guest_elapsed_$name,$elapsed_us" \
                 >> "$SWEEP_PHASE_CSV"
             echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$SWEEP,$CUR_SWEEP_VAL,guest_delta_$name,$delta_us" \
                 >> "$SWEEP_PHASE_CSV"
         fi
-        emit_phase_event "$kind" "$load" "$attempt" "guest_elapsed_$name" "$elapsed_us"
-        emit_phase_event "$kind" "$load" "$attempt" "guest_delta_$name" "$delta_us"
     done < "$stderr_file"
 
     rm -f "$stderr_file"
@@ -403,7 +410,7 @@ run_concurrent_cell() {
             local out
             out="$(mktemp)"
             outs+=("$out")
-            (RUN_ONE_SKIP_CLEANUP=1 RECORD_SWEEP_PHASE=$((attempt > WARMUP)) run_one "$kind" "$load" "${attempt}_${vm}" "$image_dir" > "$out") &
+            (RUN_ONE_SKIP_CLEANUP=1 RECORD_PHASE=$((attempt > WARMUP)) RECORD_SWEEP_PHASE=$((attempt > WARMUP)) run_one "$kind" "$load" "${attempt}_${vm}" "$image_dir" > "$out") &
             pids+=($!)
         done
         for pid in "${pids[@]}"; do
@@ -451,7 +458,8 @@ run_cell() {
     local total=$((N + WARMUP))
     for i in $(seq 1 "$total"); do
         local row launch_ms exit_code
-        RECORD_SWEEP_PHASE=$((i > WARMUP))
+        RECORD_PHASE=$((i > WARMUP))
+        RECORD_SWEEP_PHASE=$RECORD_PHASE
         row="$(run_one "$kind" "$load" "$i" "$image_dir")"
         launch_ms="${row%,*}"
         exit_code="${row#*,}"

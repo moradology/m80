@@ -53,6 +53,7 @@ TASKSET=0-3 CPU_GOVERNOR=performance ./scripts/bench-cold-launch.sh
 | `TASKSET` | — | passed to `taskset -c` on every m80 invocation. |
 | `CPU_GOVERNOR` | — | passed to `cpupower frequency-set -g` once at start. |
 | `PHASE_JSONL` | — | when set, appends one JSON line per phase event for flamegraphs. |
+| `BENCH_ARTIFACT_DIR` | `crates/m80-firecracker/benches` | directory for CSVs and snapshots; used by harness tests to isolate artifacts. |
 | `M80_BIN` | `./target/release/m80` | binary path. Override for testing. |
 
 ## Flags
@@ -73,9 +74,11 @@ The first 2–3 launches per cell are colder than the steady state because:
   the boot path.
 - The kernel scheduler hasn't yet sized its run-queue for our workload.
 
-If you want to *measure the cold-cold case explicitly* (e.g. you care
-about the very first launch latency after a fresh host boot), use
-`--cold-isolation` and set `WARMUP=0`.
+Warmup attempts are discarded from wallclock rows, per-phase rows, JSONL
+phase events, and computed snapshots. If you want to *measure the
+cold-cold case explicitly* (e.g. you care about the very first launch
+latency after a fresh host boot), use `--cold-isolation` and set
+`WARMUP=0`.
 
 ## Per-phase JSON event stream
 
