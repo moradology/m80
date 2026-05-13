@@ -6,7 +6,6 @@
 //! - No chunked transfer, no connection keep-alive management
 
 use std::io::{self, Read, Write};
-use std::os::unix::net::UnixStream;
 
 /// A parsed HTTP response (status code + raw body bytes).
 #[derive(Debug)]
@@ -16,7 +15,7 @@ pub(crate) struct Response {
 }
 
 pub(crate) fn send_json(
-    stream: &mut UnixStream,
+    stream: &mut impl ReadWrite,
     method: &str,
     path: &str,
     body: &[u8],
@@ -25,18 +24,24 @@ pub(crate) fn send_json(
         "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAccept: application/json\r\nContent-Length: {}\r\n\r\n",
         body.len()
     );
-    stream.write_all(header.as_bytes())?;
-    stream.write_all(body)?;
+    let mut request = Vec::with_capacity(header.len() + body.len());
+    request.extend_from_slice(header.as_bytes());
+    request.extend_from_slice(body);
+    stream.write_all(&request)?;
     stream.flush()?;
     read_response(stream)
 }
+
+pub(crate) trait ReadWrite: Read + Write {}
+
+impl<T: Read + Write> ReadWrite for T {}
 
 /// Read a full HTTP/1.1 response from `stream`.
 ///
 /// Firecracker does not use chunked transfer encoding; all responses carry
 /// either a `Content-Length` header or no body (1xx / 204 / 304). We read
 /// until we have the declared number of body bytes and then stop.
-fn read_response(stream: &mut UnixStream) -> io::Result<Response> {
+fn read_response(stream: &mut impl Read) -> io::Result<Response> {
     let mut buf: Vec<u8> = Vec::with_capacity(512);
     let mut chunk = [0u8; 4096];
 
@@ -159,6 +164,7 @@ fn parse_response(bytes: &[u8]) -> io::Result<Response> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn response_end_returns_none_for_incomplete_headers() {
@@ -204,5 +210,54 @@ mod tests {
     fn parse_response_error_on_missing_header_terminator() {
         let err = parse_response(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n").unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn send_json_writes_header_and_body_in_one_call() {
+        let response = b"HTTP/1.1 204 No Content\r\n\r\n".to_vec();
+        let mut stream = CountingStream {
+            response: Cursor::new(response),
+            writes: Vec::new(),
+            flushes: 0,
+        };
+
+        let result = send_json(
+            &mut stream,
+            "PUT",
+            "/actions",
+            br#"{"action_type":"InstanceStart"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(result.status, 204);
+        assert_eq!(stream.writes.len(), 1);
+        assert_eq!(stream.flushes, 1);
+        let request = std::str::from_utf8(&stream.writes[0]).unwrap();
+        assert!(request.starts_with("PUT /actions HTTP/1.1\r\n"));
+        assert!(request.ends_with("\r\n\r\n{\"action_type\":\"InstanceStart\"}"));
+    }
+
+    struct CountingStream {
+        response: Cursor<Vec<u8>>,
+        writes: Vec<Vec<u8>>,
+        flushes: usize,
+    }
+
+    impl Read for CountingStream {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.response.read(buf)
+        }
+    }
+
+    impl Write for CountingStream {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.writes.push(buf.to_vec());
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
+            Ok(())
+        }
     }
 }

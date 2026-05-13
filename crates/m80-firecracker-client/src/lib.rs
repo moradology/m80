@@ -127,8 +127,7 @@ impl Client {
 
     /// PATCH `/vm` — set the VM running state (`Paused` or `Resumed`).
     pub fn patch_vm_state(&self, state: VmState) -> Result<(), ClientError> {
-        let payload = serde_json::json!({ "state": state });
-        let body = serde_json::to_vec(&payload)?;
+        let body = serde_json::to_vec(&VmStatePayload { state })?;
         let resp = self.patch("/vm", &body)?;
         if ok(resp.status) {
             return Ok(());
@@ -174,11 +173,9 @@ impl Client {
 
     /// PUT `/actions` with the requested action.
     pub fn instance_action(&self, action: InstanceAction) -> Result<(), ClientError> {
-        // Serialize as `{"action_type": "PascalCaseVariant"}`.
-        // `InstanceAction` uses `#[serde(rename_all = "PascalCase")]` so this
-        // round-trip through `serde_json::Value` produces the right key/value.
-        let payload = serde_json::json!({ "action_type": action });
-        let body = serde_json::to_vec(&payload)?;
+        let body = serde_json::to_vec(&InstanceActionPayload {
+            action_type: action,
+        })?;
         let resp = self.put("/actions", &body)?;
         if ok(resp.status) {
             return Ok(());
@@ -217,14 +214,14 @@ impl Client {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         // If the previous call left the stream in a broken state (e.g., the
         // firecracker process restarted), reconnect transparently.
-        let resp = match http::send_json(&mut guard, method, path, body) {
+        let resp = match http::send_json(&mut *guard, method, path, body) {
             Ok(resp) => resp,
             Err(e) if is_broken_pipe(&e) => {
                 // Reconnect once and retry.
                 let new_stream =
                     UnixStream::connect(&self.uds_path).map_err(ClientError::Connect)?;
                 *guard = new_stream;
-                http::send_json(&mut guard, method, path, body).map_err(|e| ClientError::Io {
+                http::send_json(&mut *guard, method, path, body).map_err(|e| ClientError::Io {
                     path: self.uds_path.clone(),
                     source: e,
                 })?
@@ -514,6 +511,16 @@ pub struct LoadSnapshotConfig {
 pub enum InstanceAction {
     /// Boot the VM.
     InstanceStart,
+}
+
+#[derive(Serialize)]
+struct VmStatePayload {
+    state: VmState,
+}
+
+#[derive(Serialize)]
+struct InstanceActionPayload {
+    action_type: InstanceAction,
 }
 
 /// Errors surfaced by the client. Each variant names the resource that failed

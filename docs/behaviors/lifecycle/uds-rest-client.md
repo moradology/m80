@@ -18,6 +18,14 @@ Test: `crates/m80-firecracker-client/tests/put_each_resource.rs` — every
 resource PUT goes through the fixture server on a `UnixStream`; the test
 blocks until the response is received, confirming the blocking contract.
 
+## request-write-shape
+
+Each Firecracker REST request is assembled into one contiguous header-plus-body
+buffer and sent with one `write_all`, followed by one `flush`. The client does
+not write HTTP headers and JSON bodies as separate stream operations.
+
+Test: `crates/m80-firecracker-client/src/http.rs::tests::send_json_writes_header_and_body_in_one_call`.
+
 ## typed-configs
 
 The client carries `BootSourceConfig`, `MachineConfig`, `DriveConfig`,
@@ -42,6 +50,7 @@ VM execution. The `InstanceAction::InstanceStart` variant serializes to
 predecessor source: `client.rs:91-99,163-164` (`InstanceActionType::InstanceStart`).
 
 Test: `crates/m80-firecracker-client/tests/instance_action_serialization.rs::instance_start_serializes_to_pascal_case`.
+Test: `crates/m80-firecracker-client/tests/instance_action_serialization.rs::instance_action_request_uses_typed_payload_shape`.
 
 ## send-ctrl-alt-del
 
