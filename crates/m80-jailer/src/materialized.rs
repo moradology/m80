@@ -207,7 +207,7 @@ impl MaterializedJail {
             jailer_pid: Some(recorded_jailer_pid),
             firecracker_pid: Some(firecracker_pid),
         };
-        let state_json = serde_json::to_vec_pretty(&state).map_err(|e| JailerError::Io {
+        let state_json = serde_json::to_vec(&state).map_err(|e| JailerError::Io {
             path: state_path.clone(),
             source: io::Error::new(io::ErrorKind::Other, e),
         })?;

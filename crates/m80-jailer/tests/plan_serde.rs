@@ -30,12 +30,12 @@ fn sample_plan() -> Plan {
 }
 
 #[test]
-fn plan_round_trips_byte_equal_via_pretty_json() {
+fn plan_round_trips_byte_equal_via_compact_json() {
     let plan = sample_plan();
-    let json1 = serde_json::to_string_pretty(&plan).unwrap();
+    let json1 = serde_json::to_string(&plan).unwrap();
     let plan2: Plan = serde_json::from_str(&json1).unwrap();
-    let json2 = serde_json::to_string_pretty(&plan2).unwrap();
-    assert_eq!(json1, json2, "pretty-print round-trip must be byte-equal");
+    let json2 = serde_json::to_string(&plan2).unwrap();
+    assert_eq!(json1, json2, "compact JSON round-trip must be byte-equal");
 }
 
 #[test]

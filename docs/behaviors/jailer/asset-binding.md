@@ -70,5 +70,5 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/jailer.rs`
 `build_jailer_plan` lines 264-339 and `read_prepared_jailer_plan` lines
 360-373.
 
-Test: `crates/m80-jailer/tests/plan_serde.rs::plan_round_trips_byte_equal_via_pretty_json`.
+Test: `crates/m80-jailer/tests/plan_serde.rs::plan_round_trips_byte_equal_via_compact_json`.
 Test: `crates/m80-jailer/tests/plan_compute.rs::determinism_byte_equal_json`.

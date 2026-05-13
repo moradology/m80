@@ -217,11 +217,10 @@ impl Plan {
         }
 
         let plan_path = materialized.plan.config.run_dir.join(JAILER_PLAN_FILE);
-        let plan_json =
-            serde_json::to_vec_pretty(&materialized.plan).map_err(|e| JailerError::Io {
-                path: plan_path.clone(),
-                source: io::Error::new(io::ErrorKind::Other, e),
-            })?;
+        let plan_json = serde_json::to_vec(&materialized.plan).map_err(|e| JailerError::Io {
+            path: plan_path.clone(),
+            source: io::Error::new(io::ErrorKind::Other, e),
+        })?;
         write_file_no_follow(&plan_path, &plan_json)?;
 
         let state_path = materialized.plan.config.run_dir.join(JAILER_STATE_FILE);
@@ -230,7 +229,7 @@ impl Plan {
             jailer_pid: None,
             firecracker_pid: None,
         };
-        let state_json = serde_json::to_vec_pretty(&state).map_err(|e| JailerError::Io {
+        let state_json = serde_json::to_vec(&state).map_err(|e| JailerError::Io {
             path: state_path.clone(),
             source: io::Error::new(io::ErrorKind::Other, e),
         })?;
