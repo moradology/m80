@@ -7,6 +7,8 @@ use std::time::Duration;
 use m80_proto::READY_PORT_DEFAULT;
 
 use super::ready::accept_ready_signal;
+use super::ready::guest_boot_phase_events_from_console_text;
+use super::ready::kernel_console_timestamp_range_us;
 use super::*;
 use crate::WireProtocolError;
 
@@ -85,4 +87,57 @@ fn ready_signal_rejects_wrong_protocol_version() {
 #[test]
 fn guest_vsock_port_is_9001() {
     assert_eq!(GUEST_PORT_DEFAULT, 9001);
+}
+
+#[test]
+fn console_guest_boot_markers_become_phase_12b_events() {
+    let events = guest_boot_phase_events_from_console_text(
+        "noise\nM80_GUEST_BOOT name=overlayfs_mounted elapsed_us=1234 delta_us=56\n",
+    );
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].phase_name, "phase_12b_guest_overlayfs_mounted");
+    assert_eq!(events[0].elapsed_us, 1234);
+}
+
+#[test]
+fn console_guest_boot_parser_ignores_malformed_lines() {
+    let events = guest_boot_phase_events_from_console_text(
+        "M80_GUEST_BOOT name=missing_elapsed delta_us=5\nM80_GUEST_BOOT elapsed_us=99 delta_us=5\n",
+    );
+
+    assert!(events.is_empty());
+}
+
+#[test]
+fn kernel_console_timestamp_range_uses_first_and_last_stamp() {
+    let range = kernel_console_timestamp_range_us(
+        "[    0.000000] Linux version x\n[    0.120250] Freeing unused kernel image\nnoise\n",
+    );
+
+    assert_eq!(range, Some(120_250));
+}
+
+#[test]
+fn kernel_console_timestamp_range_accepts_prefixed_lines() {
+    let range =
+        kernel_console_timestamp_range_us("earlycon: [    1.500000] boot\n[    2.000001] later\n");
+
+    assert_eq!(range, Some(500_001));
+}
+
+#[test]
+fn proc_io_parser_keeps_kernel_counter_names() {
+    let counters = parse_proc_io_text("rchar: 12\nread_bytes: 4096\ncancelled_write_bytes: 0\n");
+
+    assert_eq!(counters["proc_io_rchar"], "12");
+    assert_eq!(counters["proc_io_read_bytes"], "4096");
+    assert_eq!(counters["proc_io_cancelled_write_bytes"], "0");
+}
+
+#[test]
+fn proc_stat_major_faults_parser_handles_comm_with_spaces() {
+    let stat = "123 (fire cracker) S 1 2 3 4 5 6 7 8 42 10 11";
+
+    assert_eq!(proc_stat_major_faults_from_text(stat), Some(42));
 }

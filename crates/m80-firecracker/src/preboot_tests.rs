@@ -256,6 +256,41 @@ fn vsock_device_put_before_start() {
 }
 
 #[test]
+fn preboot_put_phase_names_include_individual_devices() {
+    let puts = plan_preboot_puts(
+        &SandboxConfig {
+            preallocated_drive_slots: 1,
+            ..SandboxConfig::default()
+        },
+        "vm-alpha",
+        ImageKind::Ubuntu,
+        KernelKind::Stock,
+        true,
+        &RealizedNetwork::OutboundNat {
+            tap_name: "tfc123456789abc".to_owned(),
+            guest_mac: "02:00:00:00:00:02".to_owned(),
+        },
+        &[],
+    );
+
+    let names = puts.iter().map(PrebootPut::phase_name).collect::<Vec<_>>();
+
+    assert_eq!(
+        names,
+        [
+            "phase_11_put_machine_config",
+            "phase_11_put_boot_source",
+            "phase_11_put_drive_rootfs",
+            "phase_11_put_drive_rootfs_overlay",
+            "phase_11_put_drive_workspace",
+            "phase_11_put_drive_hotplug_slot_0",
+            "phase_11_put_network_interface_eth0",
+            "phase_11_put_vsock",
+        ]
+    );
+}
+
+#[test]
 fn boot_args_ubuntu_stock() {
     assert_eq!(
         boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None, false, &[]),
@@ -267,7 +302,7 @@ fn boot_args_ubuntu_stock() {
 fn boot_args_ubuntu_stripped() {
     assert_eq!(
         boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None, false, &[]),
-        "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0",
+        "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 earlycon=uart8250,io,0x3f8,115200n8 printk.time=1 init=/m80-guestd m80.workspace=0",
     );
 }
 
@@ -283,7 +318,7 @@ fn boot_args_minimal_stock() {
 fn boot_args_minimal_stripped() {
     assert_eq!(
         boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None, false, &[]),
-        "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0",
+        "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 earlycon=uart8250,io,0x3f8,115200n8 printk.time=1 init=/m80-guestd m80.workspace=0",
     );
 }
 

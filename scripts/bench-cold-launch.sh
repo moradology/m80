@@ -322,25 +322,35 @@ run_one() {
     local ts
     ts="$(date -Iseconds)"
     while IFS= read -r line; do
+        case "$line" in
+            "M80_PHASE "*) ;;
+            *) continue ;;
+        esac
         local name us
         name="${line#*name=}"; name="${name%% *}"
         us="${line##*elapsed_us=}"; us="${us%%[!0-9]*}"
+        [[ "$name" != "$line" && "$us" =~ ^[0-9]+$ ]] || continue
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$PHASE_CSV"
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$RUN_PHASE_CSV"
         emit_phase_event "$kind" "$load" "$attempt" "$name" "$us"
-    done < <(grep '^M80_PHASE ' "$stderr_file" || true)
+    done < "$stderr_file"
     while IFS= read -r line; do
+        case "$line" in
+            "M80_GUEST_BOOT "*) ;;
+            *) continue ;;
+        esac
         local name elapsed_us delta_us
         name="${line#*name=}"; name="${name%% *}"
         elapsed_us="${line#*elapsed_us=}"; elapsed_us="${elapsed_us%% *}"
         delta_us="${line#*delta_us=}"; delta_us="${delta_us%%[!0-9]*}"
+        [[ "$name" != "$line" && "$elapsed_us" =~ ^[0-9]+$ && "$delta_us" =~ ^[0-9]+$ ]] || continue
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$PHASE_CSV"
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$RUN_PHASE_CSV"
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$PHASE_CSV"
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$RUN_PHASE_CSV"
         emit_phase_event "$kind" "$load" "$attempt" "guest_elapsed_$name" "$elapsed_us"
         emit_phase_event "$kind" "$load" "$attempt" "guest_delta_$name" "$delta_us"
-    done < <(grep '^M80_GUEST_BOOT ' "$stderr_file" || true)
+    done < "$stderr_file"
 
     rm -f "$stderr_file"
     echo "$elapsed_ms,$exit_code"

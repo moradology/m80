@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use m80_proto::READY_PORT_DEFAULT;
 
@@ -72,11 +72,101 @@ pub(super) fn phase_12b_ready_accept(
     ready_listener: &UnixListener,
     ready_path: &Path,
     _vsock_uds: &Path,
+    console_log: &Path,
     vm_id: &str,
 ) -> Result<(), FcError> {
+    let wait_started = Instant::now();
     accept_ready_signal(ready_listener, ready_path, READY_TIMEOUT)?;
+    crate::diagnostics::phase_event(
+        "phase_12b_host_waiting_accept",
+        vm_id,
+        wait_started.elapsed(),
+    );
+    emit_guest_boot_phase_events(console_log, vm_id);
     tracing::info!(vm_id, "ready signal received from guestd");
     Ok(())
+}
+
+fn emit_guest_boot_phase_events(console_log: &Path, vm_id: &str) {
+    let Ok(text) = std::fs::read_to_string(console_log) else {
+        tracing::debug!(
+            vm_id,
+            path = %console_log.display(),
+            "ready accept: console log not readable for guest boot phase parse"
+        );
+        return;
+    };
+    if let Some(range_us) = kernel_console_timestamp_range_us(&text) {
+        crate::diagnostics::phase_event(
+            "phase_12b_kernel_console_range",
+            vm_id,
+            Duration::from_micros(range_us),
+        );
+    }
+    for event in guest_boot_phase_events_from_console_text(&text) {
+        crate::diagnostics::phase_event(
+            &event.phase_name,
+            vm_id,
+            Duration::from_micros(event.elapsed_us),
+        );
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct GuestBootPhaseEvent {
+    pub(super) phase_name: String,
+    pub(super) elapsed_us: u64,
+}
+
+pub(super) fn guest_boot_phase_events_from_console_text(text: &str) -> Vec<GuestBootPhaseEvent> {
+    text.lines()
+        .filter_map(guest_boot_phase_event_from_line)
+        .collect()
+}
+
+pub(super) fn kernel_console_timestamp_range_us(text: &str) -> Option<u64> {
+    let mut first = None;
+    let mut last = None;
+    for us in text
+        .lines()
+        .filter_map(kernel_console_timestamp_us_from_line)
+    {
+        first.get_or_insert(us);
+        last = Some(us);
+    }
+    Some(last?.saturating_sub(first?))
+}
+
+fn kernel_console_timestamp_us_from_line(line: &str) -> Option<u64> {
+    let start = line.find('[')?;
+    let rest = &line[start + 1..];
+    let end = rest.find(']')?;
+    let timestamp = rest[..end].trim();
+    let (seconds, micros) = timestamp.split_once('.')?;
+    let seconds = seconds.trim().parse::<u64>().ok()?;
+    let micros = micros.trim();
+    let mut frac = micros.chars().take(6).collect::<String>();
+    while frac.len() < 6 {
+        frac.push('0');
+    }
+    Some(seconds.saturating_mul(1_000_000) + frac.parse::<u64>().ok()?)
+}
+
+fn guest_boot_phase_event_from_line(line: &str) -> Option<GuestBootPhaseEvent> {
+    let payload = line.strip_prefix("M80_GUEST_BOOT ")?;
+    let mut name = None;
+    let mut elapsed_us = None;
+    for token in payload.split_whitespace() {
+        if let Some(value) = token.strip_prefix("name=") {
+            name = Some(value);
+        } else if let Some(value) = token.strip_prefix("elapsed_us=") {
+            elapsed_us = value.parse::<u64>().ok();
+        }
+    }
+    Some(GuestBootPhaseEvent {
+        phase_name: format!("phase_12b_guest_{}", name?),
+        elapsed_us: elapsed_us?,
+    })
 }
 
 pub(super) fn accept_ready_signal(

@@ -8,6 +8,7 @@
 //!   `<vsock_uds>_<READY_PORT>` (Phase 11b) and `accept()`s. Event-driven,
 //!   no polling, no muxer EAGAIN race.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::Arc;
@@ -323,8 +324,23 @@ impl Sandbox {
             request_id.as_deref(),
             Phase::Ready,
             "phase_12b_ready_accept",
-            { phase_12b_ready_accept(&ready_listener, &ready_uds, &vsock_uds, &vm_id) }
+            {
+                phase_12b_ready_accept(
+                    &ready_listener,
+                    &ready_uds,
+                    &vsock_uds,
+                    &console_log_path(&run_dir),
+                    &vm_id,
+                )
+            }
         )?;
+        record_post_launch_resource_snapshot(
+            &mut diagnostics,
+            &vm_id,
+            request_id.as_deref(),
+            firecracker.firecracker_pid(),
+            cgroup.is_some(),
+        );
         crate::diagnostics::record_owned(
             &mut diagnostics,
             Phase::Ready,
@@ -1036,7 +1052,102 @@ fn phase_11_rest_puts(
         network,
         extra_boot_args,
     );
-    apply_preboot_puts(client, &puts)
+    apply_preboot_puts(client, &puts, vm_id)
+}
+
+fn record_post_launch_resource_snapshot(
+    diagnostics: &mut Option<m80_observability::Diagnostics>,
+    vm_id: &str,
+    request_id: Option<&str>,
+    firecracker_pid: u32,
+    cgroup_enabled: bool,
+) {
+    let mut context = BTreeMap::new();
+    context.insert("firecracker_pid".to_owned(), firecracker_pid.to_string());
+    context.extend(proc_io_snapshot(firecracker_pid));
+    if let Some(major_faults) = proc_stat_major_faults(firecracker_pid) {
+        context.insert(
+            "proc_stat_major_faults".to_owned(),
+            major_faults.to_string(),
+        );
+    }
+    if cgroup_enabled {
+        context.extend(cgroup_cpu_stat_snapshot(vm_id));
+    } else {
+        context.insert("cgroup_cpu_stat_status".to_owned(), "disabled".to_owned());
+    }
+    crate::diagnostics::record_context(
+        diagnostics,
+        Phase::Ready,
+        vm_id,
+        request_id,
+        "post_launch_resource_snapshot",
+        context,
+    );
+}
+
+fn proc_io_snapshot(pid: u32) -> BTreeMap<String, String> {
+    let path = PathBuf::from("/proc").join(pid.to_string()).join("io");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        let mut context = BTreeMap::new();
+        context.insert("proc_io_status".to_owned(), "unreadable".to_owned());
+        context.insert("proc_io_path".to_owned(), path.display().to_string());
+        return context;
+    };
+    parse_proc_io_text(&text)
+}
+
+fn parse_proc_io_text(text: &str) -> BTreeMap<String, String> {
+    let mut context = BTreeMap::new();
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        if !key.is_empty() && !value.is_empty() {
+            context.insert(format!("proc_io_{key}"), value.to_owned());
+        }
+    }
+    context
+}
+
+fn proc_stat_major_faults(pid: u32) -> Option<u64> {
+    let path = PathBuf::from("/proc").join(pid.to_string()).join("stat");
+    let text = std::fs::read_to_string(path).ok()?;
+    proc_stat_major_faults_from_text(&text)
+}
+
+fn proc_stat_major_faults_from_text(text: &str) -> Option<u64> {
+    let after_comm = text.rsplit_once(") ")?.1;
+    let fields_from_state = after_comm.split_whitespace().collect::<Vec<_>>();
+    fields_from_state.get(9)?.parse().ok()
+}
+
+fn cgroup_cpu_stat_snapshot(vm_id: &str) -> BTreeMap<String, String> {
+    let path = m80_cgroup::Subtree::leaf_path(vm_id).join("cpu.stat");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        let mut context = BTreeMap::new();
+        context.insert("cgroup_cpu_stat_status".to_owned(), "unreadable".to_owned());
+        context.insert(
+            "cgroup_cpu_stat_path".to_owned(),
+            path.display().to_string(),
+        );
+        return context;
+    };
+    let mut context = BTreeMap::new();
+    context.insert("cgroup_cpu_stat_status".to_owned(), "ok".to_owned());
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(key) = parts.next() else {
+            continue;
+        };
+        let Some(value) = parts.next() else {
+            continue;
+        };
+        context.insert(format!("cgroup_cpu_stat_{key}"), value.to_owned());
+    }
+    context
 }
 
 #[cfg(test)]

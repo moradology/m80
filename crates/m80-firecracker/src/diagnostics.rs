@@ -58,6 +58,34 @@ pub(crate) fn record_owned(
     }
 }
 
+/// Record one host-side lifecycle event with additional structured context.
+pub(crate) fn record_context(
+    diagnostics: &mut Option<Diagnostics>,
+    phase: Phase,
+    vm_id: &str,
+    request_id: Option<&str>,
+    message: &str,
+    extra: impl IntoIterator<Item = (String, String)>,
+) {
+    let Some(handle) = diagnostics.as_mut() else {
+        return;
+    };
+    let mut context = BTreeMap::new();
+    context.insert("vm_id".to_owned(), vm_id.to_owned());
+    for (key, value) in extra {
+        context.insert(key, value);
+    }
+    let event = VmEvent::host(
+        phase,
+        message.to_owned(),
+        request_id.map(str::to_owned),
+        context,
+    );
+    if let Err(e) = handle.record(&event) {
+        tracing::warn!(vm_id, err = %e, "diagnostics context record failed");
+    }
+}
+
 /// Record one request-scoped host-side wire protocol failure.
 pub(crate) fn record_protocol_error(
     diagnostics: &mut Option<Diagnostics>,

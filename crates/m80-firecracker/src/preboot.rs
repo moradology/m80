@@ -1,6 +1,7 @@
 //! Pre-boot Firecracker REST PUT planning.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use m80_firecracker_client::{
     BootSourceConfig, Client, CpuTemplate, DriveConfig, MachineConfig, NetworkInterfaceConfig,
@@ -31,7 +32,7 @@ const COMMON_BOOT_ARGS: &str = "console=ttyS0 reboot=k panic=-1 pci=off";
 ///   CLAUDE.md "diagnostics before hypotheses": preserving console output is
 ///   worth more than the ~50 ms saving from suppressing it entirely.
 const STRIPPED_BOOT_ARGS: &str =
-    "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1";
+    "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 earlycon=uart8250,io,0x3f8,115200n8 printk.time=1";
 
 /// One planned Firecracker REST PUT before `InstanceStart`.
 pub(crate) enum PrebootPut {
@@ -45,6 +46,20 @@ pub(crate) enum PrebootPut {
     NetworkInterface(NetworkInterfaceConfig),
     /// PUT `/vsock`.
     Vsock(VsockConfig),
+}
+
+impl PrebootPut {
+    fn phase_name(&self) -> String {
+        match self {
+            PrebootPut::MachineConfig(_) => "phase_11_put_machine_config".to_owned(),
+            PrebootPut::BootSource(_) => "phase_11_put_boot_source".to_owned(),
+            PrebootPut::Drive(config) => format!("phase_11_put_drive_{}", config.drive_id),
+            PrebootPut::NetworkInterface(config) => {
+                format!("phase_11_put_network_interface_{}", config.iface_id)
+            }
+            PrebootPut::Vsock(_) => "phase_11_put_vsock".to_owned(),
+        }
+    }
 }
 
 /// Build the ordered Firecracker resource PUTs for a cold boot.
@@ -130,8 +145,14 @@ pub(crate) fn plan_preboot_puts(
 }
 
 /// Apply the ordered preboot PUT plan to Firecracker.
-pub(crate) fn apply_preboot_puts(client: &Client, puts: &[PrebootPut]) -> Result<(), FcError> {
+pub(crate) fn apply_preboot_puts(
+    client: &Client,
+    puts: &[PrebootPut],
+    vm_id: &str,
+) -> Result<(), FcError> {
     for put in puts {
+        let phase_name = put.phase_name();
+        let started = Instant::now();
         match put {
             PrebootPut::MachineConfig(config) => client.put_machine_config(config)?,
             PrebootPut::BootSource(config) => client.put_boot_source(config)?,
@@ -139,6 +160,7 @@ pub(crate) fn apply_preboot_puts(client: &Client, puts: &[PrebootPut]) -> Result
             PrebootPut::NetworkInterface(config) => client.put_network_interface(config)?,
             PrebootPut::Vsock(config) => client.put_vsock(config)?,
         }
+        crate::diagnostics::phase_event(&phase_name, vm_id, started.elapsed());
     }
 
     Ok(())
@@ -180,6 +202,9 @@ fn boot_args_for(
     include_workspace_drive: bool,
     extra_boot_args: &[String],
 ) -> String {
+    let phase_trace_verbose_kernel = config_override.is_none()
+        && kernel_kind == KernelKind::Stripped
+        && std::env::var("M80_PHASE_TRACE").is_ok_and(|value| value == "1");
     let base = match (config_override, kind, kernel_kind) {
         (Some(custom), _, _) => custom.to_owned(),
         (None, ImageKind::Ubuntu | ImageKind::Minimal, KernelKind::Stock) => {
@@ -191,6 +216,9 @@ fn boot_args_for(
     };
     let workspace = u8::from(include_workspace_drive);
     let mut args = format!("{base} m80.workspace={workspace}");
+    if phase_trace_verbose_kernel {
+        args.push_str(" ignore_loglevel loglevel=7");
+    }
     if !extra_boot_args.is_empty() {
         args.push(' ');
         args.push_str(&extra_boot_args.join(" "));
