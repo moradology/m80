@@ -125,6 +125,101 @@ fn stripped_config_disables_smp_for_single_vcpu_shape() {
 }
 
 #[test]
+fn stripped_config_uses_low_tick_idle_timer_policy() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_HZ_100=y"),
+        "stripped kernel must use the 100 Hz timer choice"
+    );
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_HZ=100"),
+        "stripped kernel must pin the numeric HZ value"
+    );
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_NO_HZ_IDLE=y"),
+        "stripped kernel must suppress idle ticks"
+    );
+    assert!(
+        cfg.lines().any(|line| line == "# CONFIG_HZ_250 is not set"),
+        "stripped kernel must not retain the default 250 Hz timer choice"
+    );
+}
+
+#[test]
+fn stripped_config_uses_non_preemptible_kernel_build() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_PREEMPT_NONE=y"),
+        "stripped kernel must use the non-preemptible server-style build"
+    );
+    assert!(
+        cfg.lines()
+            .any(|line| line == "# CONFIG_PREEMPT_VOLUNTARY is not set"),
+        "voluntary preemption must stay disabled"
+    );
+    assert!(
+        cfg.lines().any(|line| line == "# CONFIG_PREEMPT is not set"),
+        "full preemption must stay disabled"
+    );
+}
+
+#[test]
+fn stripped_config_omits_initrd_and_decompressors() {
+    let cfg = committed_config_text();
+    for line in [
+        "# CONFIG_BLK_DEV_INITRD is not set",
+        "# CONFIG_RD_GZIP is not set",
+        "# CONFIG_RD_BZIP2 is not set",
+        "# CONFIG_RD_LZMA is not set",
+        "# CONFIG_RD_XZ is not set",
+        "# CONFIG_RD_LZO is not set",
+        "# CONFIG_RD_LZ4 is not set",
+        "# CONFIG_RD_ZSTD is not set",
+    ] {
+        assert!(
+            cfg.lines().any(|candidate| candidate == line),
+            "stripped kernel must omit unused initrd support: {line}"
+        );
+    }
+}
+
+#[test]
+fn stripped_config_omits_scheduler_debug_stats() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "# CONFIG_SCHED_DEBUG is not set"),
+        "scheduler debug plumbing must stay disabled"
+    );
+    assert!(
+        cfg.lines().any(|line| line == "# CONFIG_SCHEDSTATS is not set"),
+        "scheduler statistics must stay disabled"
+    );
+}
+
+#[test]
+fn stripped_config_omits_debug_info() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "# CONFIG_DEBUG_INFO is not set"),
+        "kernel debug info must stay disabled"
+    );
+    assert!(
+        cfg.lines()
+            .any(|line| line == "# CONFIG_DEBUG_INFO_BTF is not set"),
+        "BTF debug info must stay disabled"
+    );
+}
+
+#[test]
+fn stripped_config_omits_printk_timestamps() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "# CONFIG_PRINTK_TIME is not set"),
+        "printk timestamp formatting must stay disabled"
+    );
+}
+
+#[test]
 fn kernel_build_script_strips_symbol_tables_before_publish() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .expect("CARGO_MANIFEST_DIR not set (run via cargo test)");
