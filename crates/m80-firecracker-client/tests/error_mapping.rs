@@ -107,6 +107,15 @@ fn vsock_400_returns_vsock_write_failed() {
 }
 
 #[test]
+fn entropy_device_400_returns_entropy_device_write_failed() {
+    assert_error(
+        "entropy device already configured",
+        |c| c.put_entropy_device(),
+        |e| matches!(e, ClientError::EntropyDeviceWriteFailed { fault } if fault.contains("already configured")),
+    );
+}
+
+#[test]
 fn instance_action_400_returns_instance_action_failed_with_action() {
     assert_error(
         "cannot start: already running",

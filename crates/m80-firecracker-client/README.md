@@ -24,9 +24,10 @@ without inheriting m80's lifecycle assumptions.
   Concurrency is the caller's job.
 - Every API method maps 1:1 to a Firecracker REST resource:
   `put_boot_source`, `put_machine_config`, `put_drive`,
-  `put_network_interface`, `put_vsock`, `patch_drive`, `instance_action`,
-  `patch_vm_state`, `put_snapshot_create`, `put_snapshot_load`. The method
-  signature mirrors the Firecracker schema exactly.
+  `put_network_interface`, `put_vsock`, `put_entropy_device`, `patch_drive`,
+  `instance_action`, `patch_vm_state`, `put_snapshot_create`,
+  `put_snapshot_load`. The method signature mirrors the Firecracker schema
+  exactly.
 - The client owns no global state. Constructing one is `Client::new(uds_path)`;
   dropping it closes the underlying socket. Multiple clients can target
   the same UDS, but the caller is responsible for serializing concurrent
@@ -35,8 +36,8 @@ without inheriting m80's lifecycle assumptions.
 - HTTP errors translate to typed `ClientError` variants per resource:
   `BootSourceWriteFailed`, `MachineConfigWriteFailed`,
   `DriveWriteFailed`, `NetworkInterfaceWriteFailed`, `VsockWriteFailed`,
-  `InstanceActionFailed`, `VmStateWriteFailed`, `SnapshotCreateFailed`,
-  `SnapshotLoadFailed`.
+  `EntropyDeviceWriteFailed`, `InstanceActionFailed`, `VmStateWriteFailed`,
+  `SnapshotCreateFailed`, `SnapshotLoadFailed`.
   Each carries the Firecracker fault JSON verbatim.
 - Request serialization errors surface as `ClientError::Serialize`; they are
   not collapsed into an I/O error because no socket operation occurred.
@@ -45,6 +46,8 @@ without inheriting m80's lifecycle assumptions.
 - `Client::new(uds_path: &Path) -> Result<Client, ClientError>`.
 - One method per Firecracker resource, taking the resource's config
   struct (re-exported from this crate) and returning `Result<(), ClientError>`.
+  `put_entropy_device` has no config argument because the default virtio-rng
+  body is an empty object.
 - `CpuTemplate { T2, C3 }` — optional CPU template on `MachineConfig`.
 - `InstanceAction { InstanceStart }`.
 - `VmState { Paused, Resumed }` — for `patch_vm_state`.
@@ -98,7 +101,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
   `UnixListener` records the request body and asserts the JSON shape; the
   client returns `Ok(())` on a fixture 204. Drive tests cover preboot
   `PUT /drives/{id}` and post-boot `PATCH /drives/{id}` partial updates.
-  Machine-config tests pin the serialized CPU template field.
+  Machine-config tests pin the serialized CPU template field. Entropy tests
+  pin `PUT /entropy` with `{}`.
 - `tests/error_mapping.rs` — fixture server returns a 400 with a
   Firecracker fault body for each resource; asserts the matching typed
   `ClientError::*WriteFailed` variant fires (and `Connect(io::Error)` on

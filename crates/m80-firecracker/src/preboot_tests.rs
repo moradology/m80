@@ -168,7 +168,11 @@ fn preallocated_drive_slots_are_after_rootfs_overlay_and_before_vsock() {
     assert_eq!(slot1.drive_id, "hotplug_slot_1");
     assert_eq!(slot1.path_on_host, PathBuf::from("/hotplug-slot-1.raw"));
 
-    let PrebootPut::Vsock(_) = &puts[6] else {
+    let PrebootPut::EntropyDevice = &puts[6] else {
+        panic!("entropy device must follow all preboot drive slots");
+    };
+
+    let PrebootPut::Vsock(_) = &puts[7] else {
         panic!("vsock must remain after all preboot drive slots");
     };
 }
@@ -195,7 +199,11 @@ fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
     assert_eq!(nic.host_dev_name, "tfc123456789abc");
     assert_eq!(nic.guest_mac.as_deref(), Some("02:00:00:00:00:02"));
 
-    let PrebootPut::Vsock(_) = &puts[5] else {
+    let PrebootPut::EntropyDevice = &puts[5] else {
+        panic!("entropy device PUT must follow network interface PUT");
+    };
+
+    let PrebootPut::Vsock(_) = &puts[6] else {
         panic!("vsock must follow network interface PUT");
     };
 }
@@ -225,6 +233,7 @@ fn layer_1_preboot_plan_contains_only_documented_devices() {
             PrebootPut::BootSource(_) => "boot",
             PrebootPut::Drive(DriveConfig { drive_id, .. }) => drive_id.as_str(),
             PrebootPut::NetworkInterface(_) => "network-interface",
+            PrebootPut::EntropyDevice => "entropy",
             PrebootPut::Vsock(_) => "vsock",
         })
         .collect::<Vec<_>>();
@@ -239,9 +248,23 @@ fn layer_1_preboot_plan_contains_only_documented_devices() {
             "workspace",
             "hotplug_slot_0",
             "network-interface",
+            "entropy",
             "vsock",
         ]
     );
+}
+
+#[test]
+fn entropy_device_put_before_vsock_and_start() {
+    let puts = plan_without_workspace();
+
+    let PrebootPut::EntropyDevice = &puts[4] else {
+        panic!("entropy device PUT must follow rootfs drives");
+    };
+
+    let PrebootPut::Vsock(_) = &puts[5] else {
+        panic!("vsock must follow entropy device PUT");
+    };
 }
 
 #[test]
@@ -285,6 +308,7 @@ fn preboot_put_phase_names_include_individual_devices() {
             "phase_11_put_drive_workspace",
             "phase_11_put_drive_hotplug_slot_0",
             "phase_11_put_network_interface_eth0",
+            "phase_11_put_entropy",
             "phase_11_put_vsock",
         ]
     );

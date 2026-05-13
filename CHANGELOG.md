@@ -5,6 +5,12 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — virtio-rng preboot device
+
+- Added a `m80-firecracker-client` `PUT /entropy` method and wired
+  `m80-firecracker` to add Firecracker's default virtio-rng entropy device
+  on every cold preboot plan before `InstanceStart`.
+
 ### Added — m80-jailer kernel flag bitset regression test
 
 - Added a private `m80-jailer` unit test to pin the bind-remount flag bitset

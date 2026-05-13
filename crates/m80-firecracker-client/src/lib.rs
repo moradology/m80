@@ -97,6 +97,18 @@ impl Client {
         })
     }
 
+    /// PUT `/entropy` — add one virtio-rng entropy device.
+    pub fn put_entropy_device(&self) -> Result<(), ClientError> {
+        let body = b"{}";
+        let resp = self.put("/entropy", body)?;
+        if ok(resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::EntropyDeviceWriteFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
     /// PUT `/network-interfaces/{iface_id}`. The `iface_id` is taken from the config.
     pub fn put_network_interface(
         &self,
@@ -506,6 +518,12 @@ pub enum ClientError {
     /// `PUT /vsock` failed.
     #[error("vsock write failed: {fault}")]
     VsockWriteFailed {
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PUT /entropy` failed.
+    #[error("entropy device write failed: {fault}")]
+    EntropyDeviceWriteFailed {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },

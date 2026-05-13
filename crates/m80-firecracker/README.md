@@ -296,9 +296,9 @@ workspace drive:
 | `ImageKind` | `KernelKind` | Cmdline |
 |---|---|---|
 | `Ubuntu` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0|1` |
-| `Ubuntu` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0|1` |
+| `Ubuntu` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 earlycon=uart8250,io,0x3f8,115200n8 printk.time=1 init=/m80-guestd m80.workspace=0|1` |
 | `Minimal` | `Stock` | `console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0|1` |
-| `Minimal` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 init=/m80-guestd m80.workspace=0|1` |
+| `Minimal` | `Stripped` | `console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 earlycon=uart8250,io,0x3f8,115200n8 printk.time=1 init=/m80-guestd m80.workspace=0|1` |
 
 Stripped-kernel differences from the Stock baseline:
 - `quiet loglevel=0` added — suppresses per-device init messages while keeping
@@ -349,11 +349,12 @@ slots. It defaults to `false`.
 `InstanceStart`: machine config with a CPU template, boot source, shared read-only rootfs drive,
 per-VM rootfs overlay drive, optional workspace scratch drive, optional
 preallocated hotplug drive slots, optional network interface for an
-OutboundNat TAP, then vsock. Outbound NAT boot-source args append the prepared
-`m80.net.*` PID-1 tokens after the `m80.workspace=<0|1>` marker. After the
-plan succeeds and before `InstanceStart`, the launch path writes
+OutboundNat TAP, virtio-rng entropy device, then vsock. Outbound NAT
+boot-source args append the prepared `m80.net.*` PID-1 tokens after the
+`m80.workspace=<0|1>` marker. After the plan succeeds and before `InstanceStart`, the launch path writes
 `<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
-See `docs/behaviors/lifecycle/preboot-wiring.md`.
+See `docs/behaviors/lifecycle/preboot-wiring.md` and
+`docs/behaviors/lifecycle/virtio-rng.md`.
 
 Preallocated slots are opt-in and default to zero because
 ordinary one-shot launches do not need extra block devices. The slot exists

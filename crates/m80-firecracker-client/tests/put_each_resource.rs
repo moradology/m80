@@ -125,3 +125,13 @@ fn put_vsock_sends_correct_json() {
     assert!(result.request.contains("\"guest_cid\":3"));
     assert!(result.request.contains("/run/fc/vsock.sock"));
 }
+
+#[test]
+fn put_entropy_device_sends_empty_config_json() {
+    let server = FixtureServer::spawn(resp_204()).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+    client.put_entropy_device().unwrap();
+    let result = server.join();
+    assert!(result.request.starts_with("PUT /entropy HTTP/1.1\r\n"));
+    assert!(result.request.ends_with("\r\n\r\n{}"));
+}

@@ -44,6 +44,8 @@ pub(crate) enum PrebootPut {
     Drive(DriveConfig),
     /// PUT `/network-interfaces/{iface_id}`.
     NetworkInterface(NetworkInterfaceConfig),
+    /// PUT `/entropy`.
+    EntropyDevice,
     /// PUT `/vsock`.
     Vsock(VsockConfig),
 }
@@ -57,6 +59,7 @@ impl PrebootPut {
             PrebootPut::NetworkInterface(config) => {
                 format!("phase_11_put_network_interface_{}", config.iface_id)
             }
+            PrebootPut::EntropyDevice => "phase_11_put_entropy".to_owned(),
             PrebootPut::Vsock(_) => "phase_11_put_vsock".to_owned(),
         }
     }
@@ -136,6 +139,8 @@ pub(crate) fn plan_preboot_puts(
         RealizedNetwork::NoEgress => {}
     }
 
+    puts.push(PrebootPut::EntropyDevice);
+
     puts.push(PrebootPut::Vsock(VsockConfig {
         guest_cid: m80_vsock::cid_for_vm_id(vm_id),
         uds_path: PathBuf::from("/vsock.sock"),
@@ -158,6 +163,7 @@ pub(crate) fn apply_preboot_puts(
             PrebootPut::BootSource(config) => client.put_boot_source(config)?,
             PrebootPut::Drive(config) => client.put_drive(config)?,
             PrebootPut::NetworkInterface(config) => client.put_network_interface(config)?,
+            PrebootPut::EntropyDevice => client.put_entropy_device()?,
             PrebootPut::Vsock(config) => client.put_vsock(config)?,
         }
         crate::diagnostics::phase_event(&phase_name, vm_id, started.elapsed());

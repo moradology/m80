@@ -41,7 +41,7 @@ base rootfs shared and writable state in a per-VM overlay.
 ## Scratch Drive
 
 When `SandboxConfig::workspace` is present, m80 PUTs a third drive before the
-vsock device:
+entropy and vsock devices:
 
 - `workspace`: `/scratch.ext4`, non-root, read-write.
 
@@ -60,7 +60,7 @@ current m80 filename `/scratch.ext4` rather than predecessor's older
 When `SandboxConfig::preallocated_drive_slots` is greater than zero, m80
 creates writable placeholder files in the run root and bind-mounts them into
 the jail. The preboot plan PUTs one non-root read-write drive per slot before
-the vsock device:
+the entropy and vsock devices:
 
 - `hotplug_slot_0`: `/hotplug-slot-0.raw`
 - `hotplug_slot_1`: `/hotplug-slot-1.raw`
@@ -73,13 +73,20 @@ instead of trying to create a drive after `InstanceStart`. Firecracker versions
 without drive `PATCH` support surface that failure through the existing typed
 drive-write error path.
 
+## Entropy Device
+
+m80 PUTs `/entropy` after the optional network interface and before `/vsock`.
+The request body is `{}`, selecting Firecracker's default virtio-rng device
+configuration. There is no `SandboxConfig` opt-out: the device is part of the
+preboot baseline so first exec does not depend on slow guest entropy seeding.
+
 ## Vsock Device
 
-m80 PUTs `/vsock` after the drive PUTs and before `InstanceStart`. The guest
-CID is derived from `vm_id`, and the UDS path is `/vsock.sock` inside the
-jailer chroot. This captures the m80 equivalent of predecessor's guestd-vsock
-config at `crates/sandbox/agent-sandbox-firecracker/src/lifecycle.rs:658-661`
-and REST PUT at `client.rs:147`.
+m80 PUTs `/vsock` after the entropy PUT and before `InstanceStart`. The guest
+CID is derived from `vm_id`, and the UDS path is `/vsock.sock` inside the jailer
+chroot. This captures the m80 equivalent of predecessor's guestd-vsock config
+at `crates/sandbox/agent-sandbox-firecracker/src/lifecycle.rs:658-661` and REST
+PUT at `client.rs:147`.
 
 ## Boot Identity
 
