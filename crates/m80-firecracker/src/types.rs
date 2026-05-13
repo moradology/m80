@@ -71,7 +71,8 @@ pub struct Backend {
 impl Backend {
     /// The merged backend configuration (preflight discovery + admission
     /// limits + jail uid/gid + cgroup mode + run_root).
-    #[must_use] pub fn config(&self) -> &BackendConfig {
+    #[must_use]
+    pub fn config(&self) -> &BackendConfig {
         &self.config
     }
 }
@@ -212,6 +213,12 @@ pub struct SandboxConfig {
     pub vcpu_count: Option<u32>,
     /// Memory in MiB (default: 1024).
     pub mem_size_mib: Option<u32>,
+    /// Optional cgroup v2 CPU set for this VM, e.g. `0-3` or `0,2`.
+    ///
+    /// `None` inherits the parent cgroup's effective CPU set. When set and
+    /// cgroup mode is `UnifiedV2`, launch writes the value to the VM leaf
+    /// `cpuset.cpus` before enrolling Firecracker.
+    pub cpuset_cpus: Option<String>,
     /// Optional Firecracker CPU template.
     ///
     /// The default is `None`, which exposes the host CPU surface directly and
@@ -274,6 +281,7 @@ impl Default for SandboxConfig {
             network: NetworkPolicy::NoEgress,
             vcpu_count: None,
             mem_size_mib: None,
+            cpuset_cpus: None,
             cpu_template: None,
             drive_cache_type: None,
             boot_args: None,

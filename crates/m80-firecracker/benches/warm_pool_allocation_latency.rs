@@ -50,6 +50,7 @@ fn main() {
             sandbox: sandbox_config("warm-slot-template"),
             ready_probe: true_request(),
             vm_id_prefix: format!("wp-slot-{}", std::process::id()),
+            cpu_allocator: None,
         },
     )
     .expect("WarmPool::new");
@@ -176,6 +177,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         network: NetworkPolicy::NoEgress,
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,
         boot_args: None,

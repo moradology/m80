@@ -9,12 +9,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, FcError, SandboxConfig, SnapshotPaths, WarmPool,
-    WarmPoolConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+    WarmPoolConfig, WarmPoolCpuAllocator, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 
 fn make_backend_config(
     discovery: m80_preflight::Discovery,
     max_concurrent_vms: u32,
+) -> BackendConfig {
+    make_backend_config_with_cgroup_mode(discovery, max_concurrent_vms, CgroupMode::Disabled)
+}
+
+fn make_backend_config_with_cgroup_mode(
+    discovery: m80_preflight::Discovery,
+    max_concurrent_vms: u32,
+    cgroup_mode: CgroupMode,
 ) -> BackendConfig {
     let run_root = discovery.run_root.clone();
     BackendConfig {
@@ -23,7 +31,7 @@ fn make_backend_config(
         run_root,
         jail_uid: 3000,
         jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
+        cgroup_mode,
     }
 }
 
@@ -31,6 +39,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
     SandboxConfig {
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        cpuset_cpus: None,
         cpu_template: None,
         overlay_size_bytes: 128 * 1024 * 1024,
         ..common::sandbox_config_with_id(vm_id)
@@ -67,6 +76,7 @@ fn empty_pool_returns_pool_empty_without_cold_boot_fallback() {
             sandbox: sandbox_config("template"),
             ready_probe: true_request(),
             vm_id_prefix: "empty".into(),
+            cpu_allocator: None,
         },
     )
     .expect("WarmPool::new");
@@ -97,6 +107,7 @@ fn workspace_backed_pool_config_is_rejected() {
             sandbox,
             ready_probe: true_request(),
             vm_id_prefix: "workspace".into(),
+            cpu_allocator: None,
         },
     ) {
         Ok(_) => panic!("workspace-backed pool config must fail"),
@@ -142,6 +153,7 @@ fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
             sandbox: sandbox_config("warm-template"),
             ready_probe: true_request(),
             vm_id_prefix: "warm-pool-slot".into(),
+            cpu_allocator: None,
         },
     )
     .expect("WarmPool::new");
@@ -208,6 +220,7 @@ fn warm_pool_empty_returns_pool_empty_error() {
             sandbox: sandbox_config(format!("{suffix}-template")),
             ready_probe: true_request(),
             vm_id_prefix: format!("{suffix}-slot"),
+            cpu_allocator: None,
         },
     )
     .expect("WarmPool::new");
@@ -274,6 +287,7 @@ fn warm_pool_simultaneous_lease_and_refill() {
                 sandbox: sandbox_config(format!("{suffix}-template")),
                 ready_probe: true_request(),
                 vm_id_prefix: format!("{suffix}-slot"),
+                cpu_allocator: None,
             },
         )
         .expect("WarmPool::new"),
@@ -332,6 +346,94 @@ fn warm_pool_simultaneous_lease_and_refill() {
     assert_no_run_dirs_with_prefix(&discovery.run_root, &suffix);
 }
 
+#[test]
+#[ignore = "requires root, writable cgroup v2, KVM, and real Firecracker binary"]
+fn warm_pool_cpuset_allocator_assigns_disjoint_concurrent_slots() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let suffix = unique_name("pool-cpuset");
+    let snap_dir = discovery.run_root.join(format!("{suffix}-snapshot"));
+
+    let golden_backend = Arc::new(
+        Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new golden"),
+    );
+    let golden = golden_backend
+        .admit(sandbox_config(format!("{suffix}-golden")))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture golden");
+    running
+        .force_kill()
+        .expect("force-kill golden")
+        .delete()
+        .expect("delete golden");
+
+    let pool_backend = Arc::new(
+        Backend::new(make_backend_config_with_cgroup_mode(
+            discovery.clone(),
+            4,
+            CgroupMode::UnifiedV2,
+        ))
+        .expect("Backend::new pool"),
+    );
+    let pool = Arc::new(
+        WarmPool::new(
+            Arc::clone(&pool_backend),
+            WarmPoolConfig {
+                target_ready: 2,
+                snapshot: paths,
+                sandbox: sandbox_config(format!("{suffix}-template")),
+                ready_probe: true_request(),
+                vm_id_prefix: format!("{suffix}-slot"),
+                cpu_allocator: Some(WarmPoolCpuAllocator {
+                    first_cpu: 0,
+                    cpus_per_slot: 1,
+                }),
+            },
+        )
+        .expect("WarmPool::new"),
+    );
+    pool.fill_to_target_blocking().expect("prefill");
+
+    let start = Arc::new(Barrier::new(3));
+    let (tx, rx) = mpsc::channel();
+    let mut handles = Vec::new();
+    for worker_id in 0..2 {
+        let pool = Arc::clone(&pool);
+        let start = Arc::clone(&start);
+        let tx = tx.clone();
+        handles.push(thread::spawn(move || {
+            start.wait();
+            let lease = pool.try_lease().expect("lease pinned slot");
+            let cpuset = read_lease_cpuset(&lease);
+            tx.send((worker_id, cpuset)).expect("send cpuset");
+            lease.discard().expect("discard pinned lease");
+        }));
+    }
+    drop(tx);
+    start.wait();
+
+    let mut ranges = vec![String::new(), String::new()];
+    for _ in 0..2 {
+        let (worker_id, cpuset) = rx.recv().expect("recv cpuset");
+        ranges[worker_id] = cpuset;
+    }
+    for handle in handles {
+        handle.join().expect("cpuset lease worker panicked");
+    }
+
+    ranges.sort();
+    ranges.dedup();
+    assert_eq!(ranges, vec!["0", "1"]);
+    pool.wait_for_ready(2, std::time::Duration::from_secs(60))
+        .expect("refill after pinned leases");
+    drop(pool);
+    let _ = std::fs::remove_dir_all(&snap_dir);
+    assert_no_run_dirs_with_prefix(&discovery.run_root, &suffix);
+}
+
 fn assert_no_run_dirs_with_prefix(run_root: &std::path::Path, prefix: &str) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
@@ -350,6 +452,15 @@ fn assert_no_run_dirs_with_prefix(run_root: &std::path::Path, prefix: &str) {
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
+}
+
+fn read_lease_cpuset(lease: &m80_firecracker::WarmLease) -> String {
+    let cgroup_path =
+        std::fs::read_to_string(lease.run_dir().join("cgroup-path.txt")).expect("read cgroup path");
+    std::fs::read_to_string(std::path::Path::new(cgroup_path.trim()).join("cpuset.cpus"))
+        .expect("read lease cpuset")
+        .trim()
+        .to_owned()
 }
 
 fn true_request() -> m80_proto::ExecRequest {

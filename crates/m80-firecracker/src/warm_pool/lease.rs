@@ -5,22 +5,22 @@ use std::sync::Arc;
 
 use m80_proto::{ExecExit, ExecRequest, ExecResponse};
 
-use super::{discard_sandbox, discard_sandbox_with_diagnostics, WarmPoolInner};
+use super::{discard_sandbox, discard_sandbox_with_diagnostics, WarmPoolInner, WarmSlot};
 use crate::error::FcError;
 use crate::hotplug_types::HotplugDriveAttach;
 use crate::types::{ExecChunk, RunningSandbox};
 
 /// A leased warm-pool slot.
 pub struct WarmLease {
-    sandbox: Option<RunningSandbox>,
+    slot: Option<WarmSlot>,
     pool: Arc<WarmPoolInner>,
     released: bool,
 }
 
 impl WarmLease {
-    pub(super) fn new(sandbox: RunningSandbox, pool: Arc<WarmPoolInner>) -> Self {
+    pub(super) fn new(slot: WarmSlot, pool: Arc<WarmPoolInner>) -> Self {
         Self {
-            sandbox: Some(sandbox),
+            slot: Some(slot),
             pool,
             released: false,
         }
@@ -91,16 +91,23 @@ impl WarmLease {
     /// by `RunningSandbox::attach_drive_verified`; the lease is released and
     /// the pool starts refilling a replacement.
     pub fn attach_drive_verified(&mut self, request: HotplugDriveAttach) -> Result<(), FcError> {
-        let Some(sandbox) = self.sandbox.take() else {
+        let Some(slot) = self.slot.take() else {
             return Err(FcError::OneShotConsumed);
         };
+        let WarmSlot {
+            sandbox,
+            cpuset_cpus,
+        } = slot;
         match sandbox.attach_drive_verified(request) {
             Ok(sandbox) => {
-                self.sandbox = Some(sandbox);
+                self.slot = Some(WarmSlot {
+                    sandbox,
+                    cpuset_cpus,
+                });
                 Ok(())
             }
             Err(err) => {
-                self.release_and_refill();
+                self.release_and_refill(cpuset_cpus);
                 Err(err)
             }
         }
@@ -108,42 +115,51 @@ impl WarmLease {
 
     /// VM id for the leased slot.
     pub fn vm_id(&self) -> &str {
-        self.sandbox
+        self.slot
             .as_ref()
             .expect("warm lease holds sandbox until discard")
+            .sandbox
             .vm_id()
     }
 
     /// Run directory for the leased slot. Useful for diagnostics before a
     /// failed lease is discarded.
     pub fn run_dir(&self) -> &Path {
-        self.sandbox
+        self.slot
             .as_ref()
             .expect("warm lease holds sandbox until discard")
+            .sandbox
             .run_dir()
     }
 
     /// Consume the lease, force-kill the slot, delete its run-dir, and allow
     /// the pool to refill a replacement.
     pub fn discard(mut self) -> Result<(), FcError> {
-        let sandbox = self.sandbox.take();
-        let result = if let Some(sandbox) = sandbox {
-            discard_sandbox(sandbox)
+        let slot = self.slot.take();
+        let (result, cpuset_cpus) = if let Some(slot) = slot {
+            let WarmSlot {
+                sandbox,
+                cpuset_cpus,
+            } = slot;
+            (discard_sandbox(sandbox), cpuset_cpus)
         } else {
-            Ok(())
+            (Ok(()), None)
         };
-        self.release_and_refill();
+        self.release_and_refill(cpuset_cpus);
         result
     }
 
     fn sandbox_mut(&mut self) -> Result<&mut RunningSandbox, FcError> {
-        self.sandbox.as_mut().ok_or(FcError::OneShotConsumed)
+        self.slot
+            .as_mut()
+            .map(|slot| &mut slot.sandbox)
+            .ok_or(FcError::OneShotConsumed)
     }
 
     fn is_one_shot(&self) -> bool {
-        self.sandbox
+        self.slot
             .as_ref()
-            .map(|sandbox| sandbox.one_shot)
+            .map(|slot| slot.sandbox.one_shot)
             .unwrap_or(false)
     }
 
@@ -151,12 +167,16 @@ impl WarmLease {
         &mut self,
         f: impl FnOnce(&mut RunningSandbox) -> Result<T, FcError>,
     ) -> Result<T, FcError> {
-        let Some(mut sandbox) = self.sandbox.take() else {
+        let Some(slot) = self.slot.take() else {
             return Err(FcError::OneShotConsumed);
         };
+        let WarmSlot {
+            mut sandbox,
+            cpuset_cpus,
+        } = slot;
         let result = f(&mut sandbox);
         let discard_result = discard_sandbox_with_diagnostics(sandbox, result.as_ref().err());
-        self.release_and_refill();
+        self.release_and_refill(cpuset_cpus);
         match (result, discard_result) {
             (Ok(value), Ok(())) => Ok(value),
             (Ok(value), Err(cleanup)) => {
@@ -177,21 +197,25 @@ impl WarmLease {
         }
     }
 
-    fn release_and_refill(&mut self) {
+    fn release_and_refill(&mut self, cpuset_cpus: Option<String>) {
         if self.released {
             return;
         }
         self.released = true;
-        self.pool.lease_finished();
+        self.pool.lease_finished(cpuset_cpus);
         self.pool.start_background_fill();
     }
 }
 
 impl Drop for WarmLease {
     fn drop(&mut self) {
-        if let Some(sandbox) = self.sandbox.take() {
+        if let Some(slot) = self.slot.take() {
+            let WarmSlot {
+                sandbox,
+                cpuset_cpus,
+            } = slot;
             let _ = discard_sandbox(sandbox);
-            self.release_and_refill();
+            self.release_and_refill(cpuset_cpus);
         }
     }
 }

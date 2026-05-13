@@ -239,7 +239,15 @@ impl Sandbox {
             request_id.as_deref(),
             Phase::HostPreflight,
             "phase_5b_cgroup_create",
-            { phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker) }
+            {
+                phase_5b_cgroup_create(
+                    backend_config.cgroup_mode,
+                    &vm_id,
+                    &self.config,
+                    &jail,
+                    &firecracker,
+                )
+            }
         )?;
         let mut process_cleanup = early_process_cleanup
             .take()
@@ -548,7 +556,15 @@ impl Sandbox {
             request_id.as_deref(),
             Phase::HostPreflight,
             "phase_5b_cgroup_create",
-            { phase_5b_cgroup_create(backend_config.cgroup_mode, &vm_id, &jail, &firecracker) }
+            {
+                phase_5b_cgroup_create(
+                    backend_config.cgroup_mode,
+                    &vm_id,
+                    &self.config,
+                    &jail,
+                    &firecracker,
+                )
+            }
         )?;
         let mut process_cleanup = early_process_cleanup
             .take()
@@ -919,6 +935,7 @@ fn phase_5_cgroup_probe(mode: CgroupMode) -> Result<(), FcError> {
 fn phase_5b_cgroup_create(
     mode: CgroupMode,
     vm_id: &str,
+    config: &SandboxConfig,
     jail: &m80_jailer::MaterializedJail,
     jailed: &m80_jailer::JailedFirecracker,
 ) -> Result<Option<Subtree>, FcError> {
@@ -929,7 +946,9 @@ fn phase_5b_cgroup_create(
             // FcError::Cgroup wraps CgroupError via #[from]; `?` does the
             // conversion so we keep the structured cause for the CLI's
             // error → exit-code map.
-            let subtree = Subtree::create(vm_id, jail, jailed, &Limits::preset())?;
+            let mut limits = Limits::preset();
+            limits.cpuset_cpus = config.cpuset_cpus.clone();
+            let subtree = Subtree::create(vm_id, jail, jailed, &limits)?;
             Ok(Some(subtree))
         }
     }

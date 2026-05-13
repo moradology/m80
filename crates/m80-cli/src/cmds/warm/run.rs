@@ -243,6 +243,7 @@ mod tests {
                 sandbox: sandbox_config("fixture"),
                 ready_probe: ready_probe(),
                 vm_id_prefix: "fixture".to_owned(),
+                cpu_allocator: None,
             },
         )
         .expect("warm pool")
@@ -255,6 +256,7 @@ mod tests {
             network: NetworkPolicy::NoEgress,
             vcpu_count: None,
             mem_size_mib: None,
+            cpuset_cpus: None,
             cpu_template: None,
             drive_cache_type: None,
             boot_args: None,

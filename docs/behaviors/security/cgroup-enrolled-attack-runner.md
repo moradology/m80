@@ -8,7 +8,7 @@ official Firecracker jailer path and then enroll that live process in the same
 `CgroupMode::UnifiedV2` is enabled.
 
 The harness uses the `sleep_briefly` control so the payload remains alive long
-enough to call `Subtree::create`. It passes `Limits::m80_default()`, reads the
+enough to call `Subtree::create`. It passes `Limits::preset()`, reads the
 recorded `cgroup-path.txt`, and verifies `cgroup.procs` contains the jailed
 attack-runner PID before waiting for process exit. The existing `echo_zero`
 negative control remains unchanged and continues to prove the harness detects a

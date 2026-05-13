@@ -1,5 +1,7 @@
 //! Warm-pool allocator built on top of snapshot restore.
 
+mod cpu_allocator;
+mod fill_worker;
 mod lease;
 
 use std::collections::VecDeque;
@@ -13,6 +15,9 @@ use m80_snapshot::SnapshotPaths;
 use crate::error::{ConfigError, FcError};
 use crate::types::{Backend, RunningSandbox, SandboxConfig};
 
+use cpu_allocator::build_warm_pool_cpu_ranges;
+pub use cpu_allocator::WarmPoolCpuAllocator;
+use fill_worker::spawn_fill_worker;
 pub use lease::WarmLease;
 
 const RESTORED_SLOT_SETTLE: Duration = Duration::from_secs(1);
@@ -54,6 +59,8 @@ pub struct WarmPoolConfig {
     pub ready_probe: ExecRequest,
     /// Prefix for generated per-slot VM ids.
     pub vm_id_prefix: String,
+    /// Optional CPU range allocator for per-slot cgroup `cpuset.cpus`.
+    pub cpu_allocator: Option<WarmPoolCpuAllocator>,
 }
 
 /// Observable warm-pool state.
@@ -91,10 +98,11 @@ struct WarmPoolInner {
 }
 
 struct WarmPoolState {
-    ready: VecDeque<RunningSandbox>,
+    ready: VecDeque<WarmSlot>,
     filling: usize,
     leased: usize,
     discarded: usize,
+    free_cpuset_cpus: VecDeque<String>,
     /// The most recent slot-fill failure message, or `None` if the last fill
     /// succeeded (or no fill has been attempted).
     ///
@@ -120,6 +128,11 @@ struct WarmPoolState {
     consecutive_fill_errors: u32,
 }
 
+pub(super) struct WarmSlot {
+    sandbox: RunningSandbox,
+    cpuset_cpus: Option<String>,
+}
+
 impl WarmPool {
     /// Create a warm pool. Call [`fill_to_target_blocking`] before allocating
     /// if the first request must be served from a pre-filled slot.
@@ -137,6 +150,10 @@ impl WarmPool {
                     .into(),
             }));
         }
+        let free_cpuset_cpus =
+            build_warm_pool_cpu_ranges(config.target_ready, config.cpu_allocator)?
+                .into_iter()
+                .collect();
         Ok(WarmPool {
             inner: Arc::new(WarmPoolInner {
                 backend,
@@ -146,6 +163,7 @@ impl WarmPool {
                     filling: 0,
                     leased: 0,
                     discarded: 0,
+                    free_cpuset_cpus,
                     last_fill_error: None,
                     consecutive_fill_errors: 0,
                 }),
@@ -168,7 +186,21 @@ impl WarmPool {
                     return Ok(());
                 }
             }
-            let slot = self.inner.launch_slot()?;
+            let cpuset_cpus = {
+                let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                state.reserve_cpuset_cpus()
+            };
+            if self.inner.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
+                return Ok(());
+            }
+            let slot = match self.inner.launch_slot(cpuset_cpus.clone()) {
+                Ok(slot) => slot,
+                Err(err) => {
+                    let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                    state.release_cpuset_cpus(cpuset_cpus);
+                    return Err(err);
+                }
+            };
             let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
             state.ready.push_back(slot);
             state.last_fill_error = None;
@@ -278,23 +310,27 @@ impl Drop for WarmPool {
                 }
                 state.ready.drain(..).collect::<Vec<_>>()
             };
-            for sandbox in ready {
-                let _ = discard_sandbox(sandbox);
+            for slot in ready {
+                let _ = discard_sandbox(slot.sandbox);
             }
         }
     }
 }
 
 impl WarmPoolInner {
-    fn launch_slot(&self) -> Result<RunningSandbox, FcError> {
+    fn launch_slot(&self, cpuset_cpus: Option<String>) -> Result<WarmSlot, FcError> {
         let slot_id = self.next_slot.fetch_add(1, Ordering::Relaxed);
         let mut sandbox_config = self.config.sandbox.clone();
         sandbox_config.vm_id = Some(format!("{}-{slot_id}", self.config.vm_id_prefix));
+        sandbox_config.cpuset_cpus = cpuset_cpus.clone();
         let sandbox = self.backend.admit(sandbox_config)?;
         let mut running = sandbox
             .launch_from_snapshot(self.config.snapshot.clone(), &self.backend.config.discovery)?;
         run_ready_probe(&mut running, &self.config.ready_probe)?;
-        Ok(running)
+        Ok(WarmSlot {
+            sandbox: running,
+            cpuset_cpus,
+        })
     }
 
     fn start_background_fill(self: &Arc<Self>) {
@@ -313,81 +349,25 @@ impl WarmPoolInner {
                 if deficit == 0 || state.filling >= MAX_FILL_THREADS {
                     return;
                 }
+                let cpuset_cpus = state.reserve_cpuset_cpus();
+                if self.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
+                    return;
+                }
                 state.filling += 1;
-            }
+                drop(state);
 
-            let inner = Arc::clone(self);
-            // Guard rolls back `filling` if thread::spawn panics (e.g. under
-            // resource exhaustion). The thread closure disarms it immediately
-            // on entry, taking over decrement responsibility via its match arms.
-            struct FillGuard(Option<Arc<WarmPoolInner>>);
-            impl FillGuard {
-                fn disarm(&mut self) {
-                    self.0 = None;
-                }
+                let inner = Arc::clone(self);
+                spawn_fill_worker(inner, cpuset_cpus);
             }
-            impl Drop for FillGuard {
-                fn drop(&mut self) {
-                    if let Some(inner) = self.0.take() {
-                        let mut state =
-                            inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                        state.filling = state.filling.saturating_sub(1);
-                        inner.changed.notify_all();
-                    }
-                }
-            }
-            let mut guard = FillGuard(Some(Arc::clone(&inner)));
-            std::thread::spawn(move || {
-                guard.disarm();
-                let launched = inner.launch_slot();
-                let backoff = {
-                    match launched {
-                        Ok(sandbox) if inner.shutdown.load(Ordering::Relaxed) => {
-                            let _ = discard_sandbox(sandbox);
-                            let mut state =
-                                inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                            state.filling = state.filling.saturating_sub(1);
-                            inner.changed.notify_all();
-                            return;
-                        }
-                        Ok(sandbox) => {
-                            let mut state =
-                                inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                            state.filling = state.filling.saturating_sub(1);
-                            state.ready.push_back(sandbox);
-                            state.last_fill_error = None;
-                            state.consecutive_fill_errors = 0;
-                            inner.changed.notify_all();
-                            None
-                        }
-                        Err(e) => {
-                            let mut state =
-                                inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                            state.filling = state.filling.saturating_sub(1);
-                            state.consecutive_fill_errors =
-                                state.consecutive_fill_errors.saturating_add(1);
-                            let idx = (state.consecutive_fill_errors as usize - 1)
-                                .min(FILL_BACKOFF.len() - 1);
-                            let delay = FILL_BACKOFF[idx];
-                            state.last_fill_error = Some(e.to_string());
-                            inner.changed.notify_all();
-                            Some(delay)
-                        }
-                    }
-                };
-                if let Some(delay) = backoff {
-                    std::thread::sleep(delay);
-                    inner.start_background_fill();
-                }
-            });
         }
     }
 
-    fn lease_finished(&self) {
+    fn lease_finished(&self, cpuset_cpus: Option<String>) {
         {
             let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
             state.leased = state.leased.saturating_sub(1);
             state.discarded += 1;
+            state.release_cpuset_cpus(cpuset_cpus);
             self.changed.notify_all();
         }
     }
@@ -400,6 +380,18 @@ impl WarmPoolInner {
             filling: state.filling,
             leased: state.leased,
             discarded: state.discarded,
+        }
+    }
+}
+
+impl WarmPoolState {
+    fn reserve_cpuset_cpus(&mut self) -> Option<String> {
+        self.free_cpuset_cpus.pop_front()
+    }
+
+    fn release_cpuset_cpus(&mut self, cpuset_cpus: Option<String>) {
+        if let Some(cpuset_cpus) = cpuset_cpus {
+            self.free_cpuset_cpus.push_back(cpuset_cpus);
         }
     }
 }

@@ -13,10 +13,22 @@ settle delay before publication.
 An empty pool returns `FcError::PoolEmpty`. This is intentional: callers
 must size and prefill the pool, or handle unavailability explicitly.
 
+When `WarmPoolConfig::cpu_allocator` is set, the pool derives exactly
+`target_ready` contiguous CPU ranges from `first_cpu` and `cpus_per_slot`.
+Each filling, ready, or leased slot owns one range and passes it through
+`SandboxConfig::cpuset_cpus`, so unified-v2 launch writes the assigned range to
+that VM's leaf `cpuset.cpus`. Refill waits for a range to be released instead
+of duplicating a range while all configured ranges are leased. If the host does
+not expose enough CPUs for the requested range set, `WarmPool::new` fails with a
+typed config error. With no allocator, warm slots inherit the parent cpuset.
+
 **m80 tests.**
 
 - `crates/m80-firecracker/tests/warm_pool.rs::reset_evidence_requires_every_input`
 - `crates/m80-firecracker/tests/warm_pool.rs::reset_evidence_does_not_infer_from_partial_truth`
+- `crates/m80-firecracker/src/warm_pool/cpu_allocator.rs::tests::builds_disjoint_slot_ranges`
+- `crates/m80-firecracker/src/warm_pool/cpu_allocator.rs::tests::rejects_insufficient_host_cpus`
+- `crates/m80-firecracker/tests/warm_pool.rs::warm_pool_cpuset_allocator_assigns_disjoint_concurrent_slots` (ignored real-KVM/root integration)
 - `crates/m80-firecracker/tests/warm_pool.rs::warm_pool_allocates_pre_restored_slot_and_refills_after_discard` (ignored real-KVM integration)
 
 ## reset-evidence

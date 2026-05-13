@@ -214,9 +214,11 @@ Preboot machine config also sets `smt = false` and omits `cpu_template` by
 default. This is the latency-first same-host shape. Callers that need an AWS
 template-masked CPU surface for snapshot portability can set
 `SandboxConfig::cpu_template` to `CpuTemplate::T2` or `CpuTemplate::C3`.
-Callers may still supply explicit sizing for ordinary launches. Snapshot
-restore and warm-pool timing fixtures use the exported constants so latency
-proofs do not drift to a benchmark-only smaller VM.
+Callers may still supply explicit sizing for ordinary launches.
+`SandboxConfig::cpuset_cpus` optionally writes the VM cgroup leaf
+`cpuset.cpus` during unified-v2 launch; `None` inherits the parent effective
+CPU set. Snapshot restore and warm-pool timing fixtures use the exported
+constants so latency proofs do not drift to a benchmark-only smaller VM.
 
 ### Cleanup contract vocabulary
 
@@ -243,7 +245,8 @@ Public surface:
 
 | Type / method | Description |
 |---|---|
-| `WarmPoolConfig` | Target ready-slot count, snapshot pair, stateless `SandboxConfig`, ready-probe `ExecRequest`, and VM id prefix. |
+| `WarmPoolConfig` | Target ready-slot count, snapshot pair, stateless `SandboxConfig`, ready-probe `ExecRequest`, VM id prefix, and optional `WarmPoolCpuAllocator`. |
+| `WarmPoolCpuAllocator` | Optional slot-aware cgroup pinning policy. It assigns each warm slot a disjoint contiguous `cpuset.cpus` range derived from `first_cpu`, `cpus_per_slot`, and `target_ready`. |
 | `WarmPool::new` | Constructs the pool; rejects `target_ready == 0` and workspace-backed configs. |
 | `WarmPool::fill_to_target_blocking` | Synchronously pre-restores ready slots before serving traffic. |
 | `WarmPool::start_background_fill` | Starts bounded background restore workers until ready plus filling slots cover the target. |
@@ -508,9 +511,11 @@ Core types:
   `new_with_effective_config(BackendConfig, EffectiveConfig)`, `config()`,
   `admit()`, `show_effective_config()`, and `recover_stale_run_root()`.
 - `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
+- `WarmPoolCpuAllocator` — optional disjoint `cpuset.cpus` range allocator for
+  warm-pool slots.
 - `WarmPoolSnapshot` — observable warm-pool counts.
 - `WarmLease` — single exec slot checked out from `WarmPool`.
-- `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, one-shot mode, etc.).
+- `SandboxConfig` — per-VM launch parameters (request id, cpuset pin, overlay size, idle timeout, daemonize, preallocated drive slots, one-shot mode, etc.).
 - `CpuTemplate` — re-exported Firecracker CPU template enum for callers that
   opt into `SandboxConfig::cpu_template`.
 - `CacheType` — re-exported Firecracker drive cache enum for callers that opt
@@ -563,6 +568,7 @@ Cleanup vocabulary (behavior docs + regression tests):
 Warm pool:
 
 - `WarmPoolConfig`.
+- `WarmPoolCpuAllocator`.
 - `WarmPoolSnapshot`.
 
 ## Non-goals

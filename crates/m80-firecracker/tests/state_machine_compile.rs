@@ -14,6 +14,7 @@ fn sandbox_new_returns_deferred_error_in_v0_1() {
         network: NetworkPolicy::NoEgress,
         vcpu_count: None,
         mem_size_mib: None,
+        cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,
         boot_args: None,

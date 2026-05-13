@@ -57,6 +57,7 @@ fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
             sandbox: bestiary_sandbox_config("bestiary-template", true),
             ready_probe: true_request(),
             vm_id_prefix: prefix.into(),
+            cpu_allocator: None,
         },
     )
     .expect("WarmPool::new");
@@ -166,6 +167,7 @@ fn drive_attach_identity_mismatch_kills_vm_and_refills_slot() {
             sandbox: bestiary_sandbox_config("identity-mismatch-template", true),
             ready_probe: true_request(),
             vm_id_prefix: prefix.into(),
+            cpu_allocator: None,
         },
     )
     .expect("WarmPool::new");
@@ -242,6 +244,7 @@ fn bestiary_sandbox_config(vm_id: impl Into<String>, one_shot: bool) -> SandboxC
         network: NetworkPolicy::NoEgress,
         vcpu_count: Some(1),
         mem_size_mib: Some(512),
+        cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,
         boot_args: None,

@@ -43,4 +43,4 @@ pub use types::{
     PtyHostEvent, PtyOutputChunk, RunningSandbox, Sandbox, SandboxConfig, StoppedSandbox,
     FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
-pub use warm_pool::{WarmLease, WarmPool, WarmPoolConfig, WarmPoolSnapshot};
+pub use warm_pool::{WarmLease, WarmPool, WarmPoolConfig, WarmPoolCpuAllocator, WarmPoolSnapshot};

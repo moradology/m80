@@ -360,6 +360,7 @@ fn sandbox_config_for_run(
         network: network_policy_for_egress(egress),
         vcpu_count: None,
         mem_size_mib: None,
+        cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,
         boot_args: None,
@@ -445,7 +446,6 @@ fn validate_secret_env_key(key: &str) -> Result<(), FcError> {
     }
     Ok(())
 }
-
 
 fn render_warning(variant: &str, detail: &str, json: bool) {
     if json {

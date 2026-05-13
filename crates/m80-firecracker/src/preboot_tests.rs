@@ -18,6 +18,7 @@ fn machine_config_put_before_boot() {
     let config = SandboxConfig {
         vcpu_count: Some(2),
         mem_size_mib: Some(2048),
+        cpuset_cpus: None,
         cpu_template: None,
         ..SandboxConfig::default()
     };
@@ -456,6 +457,7 @@ fn machine_config_uses_default_sizing_when_omitted() {
     let config = SandboxConfig {
         vcpu_count: None,
         mem_size_mib: None,
+        cpuset_cpus: None,
         cpu_template: None,
         ..SandboxConfig::default()
     };
@@ -473,6 +475,7 @@ fn machine_config_honors_caller_sizing() {
     let config = SandboxConfig {
         vcpu_count: Some(2),
         mem_size_mib: Some(2048),
+        cpuset_cpus: None,
         cpu_template: None,
         ..SandboxConfig::default()
     };

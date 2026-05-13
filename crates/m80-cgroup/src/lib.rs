@@ -24,6 +24,7 @@ const CGROUP_ROOT: &str = "/sys/fs/cgroup/m80-firecracker";
 const CGROUP_V2_ROOT: &str = "/sys/fs/cgroup";
 
 const BASE_CONTROLLERS: &[&str] = &["cpu", "memory", "pids"];
+const CPUSET_CONTROLLER: &str = "cpuset";
 const IO_CONTROLLER: &str = "io";
 const DEFAULT_CPU_QUOTA_US: u64 = 100_000;
 const DEFAULT_CPU_PERIOD_US: u64 = 100_000;
@@ -129,6 +130,11 @@ impl Subtree {
             write_cgroup_file(&self.0.join("pids.max"), &format!("{pids}\n"))?;
         }
 
+        if let Some(cpuset_cpus) = &limits.cpuset_cpus {
+            validate_cpuset_cpus(cpuset_cpus)?;
+            write_cgroup_file(&self.0.join("cpuset.cpus"), &format!("{cpuset_cpus}\n"))?;
+        }
+
         if let Some(io_weight) = limits.io_weight {
             validate_io_weight(io_weight)?;
             // Kernel default is 100; writing it is a no-op syscall, skip it.
@@ -209,6 +215,8 @@ pub struct Limits {
     pub memory_max: Option<u64>,
     /// `pids.max`. None = leave existing.
     pub pids_max: Option<u32>,
+    /// Leaf `cpuset.cpus`. None = inherit the parent cpuset.
+    pub cpuset_cpus: Option<String>,
     /// `io.max` device throttle lines. Empty = leave existing.
     #[serde(default)]
     pub io_max: Vec<IoMax>,
@@ -232,6 +240,7 @@ impl Limits {
             }),
             memory_max: Some(DEFAULT_MEMORY_MAX_BYTES),
             pids_max: Some(DEFAULT_PIDS_MAX),
+            cpuset_cpus: None,
             io_max: Vec::new(),
             io_weight: None,
             oom_score_adj: Some(DEFAULT_OOM_SCORE_ADJ),
@@ -240,6 +249,9 @@ impl Limits {
 
     fn required_controllers(&self) -> Vec<&'static str> {
         let mut controllers = BASE_CONTROLLERS.to_vec();
+        if self.cpuset_cpus.is_some() {
+            controllers.push(CPUSET_CONTROLLER);
+        }
         if self.io_weight.is_some() || !self.io_max.is_empty() {
             controllers.push(IO_CONTROLLER);
         }
@@ -491,6 +503,22 @@ fn validate_io_weight(value: u16) -> Result<(), CgroupError> {
             value: value.to_string(),
         })
     }
+}
+
+fn validate_cpuset_cpus(value: &str) -> Result<(), CgroupError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed != value
+        || !trimmed
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b',' || byte == b'-')
+    {
+        return Err(CgroupError::InvalidLimit {
+            field: "cpuset_cpus",
+            value: value.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 fn set_oom_score_adj(pid: u32, value: i16) -> Result<(), CgroupError> {

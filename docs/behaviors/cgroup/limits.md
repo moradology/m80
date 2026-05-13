@@ -7,7 +7,7 @@ supplies `CpuMax::Quota { quota_us, period_us }`. When `CpuMax::Max` is
 supplied, the system writes `"max\n"` (no quota).
 
 The predecessor default was `100000 100000` (one full CPU). m80 captures that in
-`Limits::m80_default()`, and `m80-firecracker` applies that profile when
+`Limits::preset()`, and `m80-firecracker` applies that profile when
 `CgroupMode::UnifiedV2` is enabled.
 
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
@@ -20,7 +20,7 @@ Test: `crates/m80-cgroup/tests/cgroup/limits.rs::cpu_max_one_cpu`.
 The system writes `memory.max` as `"<bytes>\n"` and `pids.max` as
 `"<count>\n"` for the corresponding `Limits` fields.
 
-The predecessor defaults are captured in `Limits::m80_default()`: 1 610 612 736
+The predecessor defaults are captured in `Limits::preset()`: 1 610 612 736
 bytes (1.5 GiB) for memory and 128 for pids. `m80-firecracker` applies that
 profile for unified-v2 cgroups.
 
@@ -46,6 +46,14 @@ When the caller configures a leaf `cpuset.cpus`, the kernel constrains enrolled
 process affinity to that CPU set. A process inside the leaf cannot widen its
 effective `Cpus_allowed_list` beyond the cgroup cpuset.
 
+`Limits::preset()` leaves `cpuset_cpus` unset so ordinary launches inherit the
+parent effective CPU set. When `cpuset_cpus` is set, `Subtree::create` requests
+the `cpuset` controller on the shared ancestor chain, writes the explicit leaf
+`cpuset.cpus` value before PID enrolment, and fails closed on empty or
+whitespace-containing values.
+
+Test: `crates/m80-cgroup/src/lib.rs::tests::cpuset_cpus_rejects_empty_or_spaced_values`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
 Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_cpuset_pinning_actually_constrains_affinity`
 (#[ignore]) creates a real cgroup leaf pinned to one effective host CPU,
 enrolls a workload that tries to widen its scheduler affinity, and asserts

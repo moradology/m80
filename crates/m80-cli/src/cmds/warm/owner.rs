@@ -67,6 +67,7 @@ fn run_foreground_inner(
             sandbox: warm_sandbox_config("warm-template", egress),
             ready_probe: ready_probe(),
             vm_id_prefix: "warm-slot".to_owned(),
+            cpu_allocator: None,
         },
     )?;
     pool.fill_to_target_blocking()?;
@@ -207,6 +208,7 @@ fn warm_sandbox_config(vm_id: impl Into<String>, egress: EgressMode) -> SandboxC
         },
         vcpu_count: None,
         mem_size_mib: None,
+        cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,
         boot_args: None,

@@ -198,6 +198,7 @@ fn sandbox_config(vm_id: String) -> SandboxConfig {
         network: NetworkPolicy::NoEgress,
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,
         boot_args: None,

@@ -36,6 +36,14 @@ fn required_subtree_control_enables_three_controllers() {
         Limits::preset().required_controllers(),
         vec!["cpu", "memory", "pids"]
     );
+    let pinned = Limits {
+        cpuset_cpus: Some("0".to_owned()),
+        ..Limits::default()
+    };
+    assert_eq!(
+        pinned.required_controllers(),
+        vec!["cpu", "memory", "pids", "cpuset"]
+    );
 }
 
 #[test]
@@ -220,6 +228,20 @@ fn io_weight_range_is_kernel_bounded() {
 }
 
 #[test]
+fn cpuset_cpus_rejects_empty_or_spaced_values() {
+    for value in ["", " ", "0 1", " 0", "0\n"] {
+        assert!(matches!(
+            validate_cpuset_cpus(value),
+            Err(CgroupError::InvalidLimit {
+                field: "cpuset_cpus",
+                ..
+            })
+        ));
+    }
+    validate_cpuset_cpus("0-1,4").unwrap();
+}
+
+#[test]
 fn create_applies_limits_before_pid_enrollment() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path().join("sys/fs/cgroup");
@@ -227,9 +249,13 @@ fn create_applies_limits_before_pid_enrollment() {
     let leaf = parent.join("vm-ordered");
     fs::create_dir_all(&leaf).unwrap();
     for path in [&base, &parent] {
-        fs::write(path.join("cgroup.controllers"), "cpu memory pids io\n").unwrap();
+        fs::write(
+            path.join("cgroup.controllers"),
+            "cpu memory pids cpuset io\n",
+        )
+        .unwrap();
         fs::write(path.join("cgroup.subtree_control"), "").unwrap();
-        fs::write(path.join("cpuset.cpus"), "0-1\n").unwrap();
+        fs::write(path.join("cpuset.cpus"), "0\n").unwrap();
         fs::write(path.join("cpuset.mems"), "0\n").unwrap();
     }
     for name in [
@@ -248,6 +274,7 @@ fn create_applies_limits_before_pid_enrollment() {
         cpu_max: Some(CpuMax::Max),
         memory_max: Some(1024),
         pids_max: Some(9),
+        cpuset_cpus: Some("0".to_owned()),
         io_max: vec![IoMax {
             major: 8,
             minor: 0,
@@ -271,6 +298,7 @@ fn create_applies_limits_before_pid_enrollment() {
         "1024\n"
     );
     assert_eq!(fs::read_to_string(leaf.join("pids.max")).unwrap(), "9\n");
+    assert_eq!(fs::read_to_string(leaf.join("cpuset.cpus")).unwrap(), "0\n");
     assert_eq!(
         fs::read_to_string(leaf.join("io.weight")).unwrap(),
         "default 200\n"
@@ -278,10 +306,6 @@ fn create_applies_limits_before_pid_enrollment() {
     assert_eq!(
         fs::read_to_string(leaf.join("io.max")).unwrap(),
         "8:0 rbps=1000\n"
-    );
-    assert_eq!(
-        fs::read_to_string(leaf.join("cpuset.cpus")).unwrap(),
-        "0-1\n"
     );
     assert_eq!(fs::read_to_string(leaf.join("cpuset.mems")).unwrap(), "0\n");
     assert_subtree_control_contains_all_requested(&base);
@@ -365,7 +389,7 @@ fn subtree_control_once_gate_does_not_cache_failure() {
 }
 
 fn assert_subtree_control_contains_all_requested(path: &std::path::Path) {
-    assert_subtree_control_contains(path, &["+cpu", "+memory", "+pids", "+io"]);
+    assert_subtree_control_contains(path, &["+cpu", "+memory", "+pids", "+cpuset", "+io"]);
 }
 
 fn assert_subtree_control_contains(path: &std::path::Path, controllers: &[&str]) {

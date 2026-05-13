@@ -152,9 +152,10 @@ fn restore_guestd_not_ready_timeout_cleans_partial_state() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let backend = Arc::new(Backend::new(make_backend_config(discovery.clone())).unwrap());
-    let snap_dir = discovery
-        .run_root
-        .join(format!("gnr-snap-{:04x}", common::unique_suffix() % 0x10000));
+    let snap_dir = discovery.run_root.join(format!(
+        "gnr-snap-{:04x}",
+        common::unique_suffix() % 0x10000
+    ));
     let paths = snapshot_paths(&snap_dir);
 
     let mut golden = launch_healthy(&backend, "gnr-gold");
@@ -226,6 +227,7 @@ fn default_config(vm_id: &str) -> SandboxConfig {
         vm_id: Some(vm_id.to_owned()),
         vcpu_count: Some(m80_firecracker::FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(m80_firecracker::FIRST_LINE_MEM_SIZE_MIB),
+        cpuset_cpus: None,
         cpu_template: None,
         ..common::sandbox_config()
     }
@@ -345,10 +347,7 @@ fn start_blocking_exec(
         streaming: true,
     };
     channel
-        .send(&Envelope::with_request_id(
-            req,
-            "restore-blocking-exec",
-        ))
+        .send(&Envelope::with_request_id(req, "restore-blocking-exec"))
         .expect("send blocking exec request");
     channel
 }

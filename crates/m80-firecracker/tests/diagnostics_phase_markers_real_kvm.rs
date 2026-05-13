@@ -2,7 +2,6 @@
 
 mod common;
 
-
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecRequest, ExecStatus};
 use serde_json::Value;
@@ -32,6 +31,7 @@ fn diagnostics_phase_markers_emitted_on_exec() {
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
             mem_size_mib: Some(512),
+            cpuset_cpus: None,
             cpu_template: None,
             drive_cache_type: None,
             boot_args: None,
