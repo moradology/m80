@@ -35,7 +35,7 @@ contains_token() {
 # --- Help text mentions the new env vars ---
 echo "=== help text ==="
 help_text="$(bash scripts/bench-cold-launch.sh --help 2>&1 || true)"
-for v in N WARMUP KIND SKIP_LOADED KERNEL_KIND SWEEP CONCURRENT TASKSET CPU_GOVERNOR DRY_RUN; do
+for v in N WARMUP KIND SKIP_LOADED KERNEL_KIND EGRESS SWEEP CONCURRENT TASKSET CPU_GOVERNOR DRY_RUN; do
     if contains_token "$v" "$help_text"; then
         note ok "help mentions $v"
     else
@@ -114,6 +114,15 @@ else
     note FAIL "TASKSET not surfaced"
 fi
 
+# --- EGRESS=outbound --dry-run ---
+echo "=== EGRESS=outbound --dry-run ==="
+egress_out="$(EGRESS=outbound bash scripts/bench-cold-launch.sh --dry-run 2>&1 || true)"
+if [[ "$egress_out" == *"EGRESS=outbound"* ]]; then
+    note ok "EGRESS=outbound planned in dry-run"
+else
+    note FAIL "EGRESS plan missing"
+fi
+
 # --- bench-extras.sh modes ---
 echo "=== bench-extras.sh modes ==="
 extras_help="$(bash scripts/bench-extras.sh --help 2>&1)"
@@ -124,6 +133,17 @@ for mode in --throughput --memory --teardown --boot-decomp --long-tail --density
         note FAIL "bench-extras --help missing $mode"
     fi
 done
+
+# --- bench-density-extended.sh dry-run ---
+echo "=== bench-density-extended.sh --dry-run ==="
+density_out="$(bash scripts/bench-density-extended.sh --dry-run 2>&1 || true)"
+if [[ "$density_out" == *"bench-density-extended"* &&
+      "$density_out" == *"no-egress ladder"* &&
+      "$density_out" == *"outbound ladder"* ]]; then
+    note ok "bench-density-extended dry-run prints the sweep plan"
+else
+    note FAIL "bench-density-extended dry-run plan missing"
+fi
 
 # --- shellcheck gate ---
 echo "=== shellcheck ==="

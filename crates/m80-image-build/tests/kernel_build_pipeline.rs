@@ -111,6 +111,23 @@ fn stripped_config_keeps_overlay_xino_auto_built_in() {
 }
 
 #[test]
+fn stripped_config_keeps_virtio_net_reachable() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_NETDEVICES=y"),
+        "virtio-net depends on CONFIG_NETDEVICES; without it olddefconfig drops outbound eth0"
+    );
+    assert!(
+        cfg.lines().any(|line| line == "CONFIG_VIRTIO_NET=y"),
+        "outbound NAT requires a built-in virtio-net guest driver"
+    );
+    assert!(
+        !cfg.lines().any(|line| line == "CONFIG_VIRTIO_NET=m"),
+        "virtio-net must be built in because PID 1 configures eth0 before modules are available"
+    );
+}
+
+#[test]
 fn stripped_config_disables_smp_for_single_vcpu_shape() {
     let cfg = committed_config_text();
     assert!(

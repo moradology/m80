@@ -39,15 +39,14 @@ network setup, cgroup setup, or a non-m80 host limit.
 Invocation:
 
 ```sh
-for c in 1 2 4 8 16 32 48; do
-  CONCURRENT="$c" N=20 KIND=minimal SKIP_LOADED=1 \
-    ./scripts/bench-cold-launch.sh
-done
+N=20 WARMUP=2 KIND=minimal KERNEL_KIND=stripped \
+  ./scripts/bench-density-extended.sh
 ```
 
-Outbound cells use the same ladder up to C=32, with the outbound network mode
-selected by the current bench harness knob for the m80 invocation. C=64 is an
-oversubscription probe on the 48-CPU bench host, not a production target.
+The wrapper runs no-egress C=1,2,4,8,16,32,48,64 and outbound
+C=1,2,4,8,16,32 through `bench-cold-launch.sh` with `CONCURRENT` and `EGRESS`.
+C=64 is an oversubscription probe on the 48-CPU bench host, not a production
+target.
 
 Artifacts:
 

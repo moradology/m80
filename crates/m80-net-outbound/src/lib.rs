@@ -35,8 +35,7 @@ pub use dns::{
 #[cfg(test)]
 pub(crate) use injection::{
     build_pid_one_network_cmdline, inject_guest_network_config_with_ops,
-    prepare_pid_one_network_cmdline_with_ops, GuestNetworkConfigOps, NETWORKD_FILE,
-    RESOLVED_FILE,
+    prepare_pid_one_network_cmdline_with_ops, GuestNetworkConfigOps, NETWORKD_FILE, RESOLVED_FILE,
 };
 pub use injection::{prepare_pid_one_network_cmdline, PidOneNetworkCmdline};
 pub use iptables::{
@@ -132,11 +131,11 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
         Some(&planned_bridge.bridge_name),
         host_routes,
     )?;
+    let allocation_lock = lock_network_allocation(run_root)?;
     ensure_bridge_ready_with_ops(ops, run_root, &planned_bridge)?;
     let bridge = read_bridge_state(run_root)?;
 
     let vm_state = planned_vm_network_state(intent, vm_id, run_root, run_dir, bridge.clone());
-    let allocation_lock = lock_network_allocation(run_root)?;
     reject_guest_ipv4_collision(run_root, vm_id, bridge.cidr, vm_state.guest_ipv4)?;
     write_vm_network_state_record(run_dir, &vm_state)?;
     if let Err(err) = reject_guest_ipv4_collision(run_root, vm_id, bridge.cidr, vm_state.guest_ipv4)
@@ -145,7 +144,6 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
         return Err(err);
     }
     drop(allocation_lock);
-
     let tap_plan = link_ops::TapBridgePlan {
         bridge_name: bridge.bridge_name.clone(),
         tap_name: vm_state.tap_name.clone(),
@@ -156,7 +154,6 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
         rollback_failed_vm_network_setup(ops, run_root, run_dir, &vm_state.tap_name)?;
         return Err(setup_err);
     }
-
     let ready_vm_state = vm_state.with_phase(SetupPhase::Ready);
     write_vm_network_state_record(run_dir, &ready_vm_state)?;
 

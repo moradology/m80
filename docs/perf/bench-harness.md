@@ -26,6 +26,9 @@ SWEEP=vcpu SWEEP_VALUES=1,2,4 ./scripts/bench-cold-launch.sh
 # Concurrent admission probe.
 CONCURRENT=4 ./scripts/bench-cold-launch.sh
 
+# Concurrent outbound admission probe.
+EGRESS=outbound CONCURRENT=4 ./scripts/bench-cold-launch.sh
+
 # Best-effort host isolation.
 TASKSET=0-3 CPU_GOVERNOR=performance ./scripts/bench-cold-launch.sh
 
@@ -41,6 +44,7 @@ TASKSET=0-3 CPU_GOVERNOR=performance ./scripts/bench-cold-launch.sh
 | `WARMUP` | 2 | warmup attempts per cell that are discarded from stats. |
 | `KIND` | both | `ubuntu`, `minimal`, or `both`. |
 | `KERNEL_KIND` | stock | `stock` or `stripped`. |
+| `EGRESS` | none | `none` or `outbound`. Falls back to `M80_NETWORK_POLICY` when set. |
 | `SKIP_LOADED` | 0 | skip the stress-ng cell. |
 | `STRESS_PROCS` | `$(nproc)` | `--cpu N` passed to stress-ng for the loaded cell. |
 | `SWEEP` | — | sweep one of `vcpu`, `mem_mib`, `kernel_kind`, `image_kind`. |
@@ -115,6 +119,13 @@ parallel VMs). Output goes to `concurrent.csv`. The
 - `per_vm_p50_ms` / `per_vm_p95_ms` / `per_vm_p99_ms`: tail of individual
   VM launches under concurrent load
 
+For the extended density experiment, use
+`scripts/bench-density-extended.sh`. It runs the configured no-egress and
+outbound ladders through `bench-cold-launch.sh`, then writes a dedicated
+`crates/m80-firecracker/benches/density-extended.csv` and
+`crates/m80-firecracker/benches/snapshots/density-extended.json` so the
+capacity artifact is not hidden inside the append-only `concurrent.csv`.
+
 ## Confidence intervals + outlier flagging
 
 Every wallclock cell snapshot carries:
@@ -181,6 +192,7 @@ binaries the smoke test uses.
 | `--boot-decomp` | B1 | `boot-decomp.txt` (guest `dmesg`; grep `initcall` for per-call us) |
 | `--long-tail` | B10 | console report of P99/P99.9 from `snapshots/latest.json` |
 | `--density` | B3 | iterates `bench-cold-launch.sh CONCURRENT=$c` over `$LADDER` |
+| `bench-density-extended.sh` | m80-jp6ik.42 | no-egress/outbound C=1..64 density artifact |
 
 Compute helpers in `scripts/bench-summary.py`:
 

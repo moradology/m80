@@ -30,6 +30,7 @@
 #   KIND=minimal ./scripts/bench-cold-launch.sh
 #   SWEEP=vcpu SWEEP_VALUES=1,2,4 ./scripts/bench-cold-launch.sh
 #   CONCURRENT=4 ./scripts/bench-cold-launch.sh
+#   EGRESS=outbound CONCURRENT=4 ./scripts/bench-cold-launch.sh
 #   ./scripts/bench-cold-launch.sh --cold-isolation
 #   TASKSET=0-3 CPU_GOVERNOR=performance ./scripts/bench-cold-launch.sh
 #   WARMUP=5 ./scripts/bench-cold-launch.sh
@@ -52,6 +53,7 @@ KIND="${KIND:-both}"
 SKIP_LOADED="${SKIP_LOADED:-0}"
 STRESS_PROCS="${STRESS_PROCS:-$(nproc)}"
 KERNEL_KIND="${KERNEL_KIND:-${M80_KERNEL_KIND:-stock}}"
+EGRESS="${EGRESS:-${M80_NETWORK_POLICY:-none}}"
 IMAGE_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-build/ubuntu}"
 IMAGE_MINIMAL="${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}"
 RESULT_CSV="crates/m80-firecracker/benches/cold-launch.csv"
@@ -70,6 +72,11 @@ DRY_RUN=0
 # When set, emit a JSONL phase event stream alongside the CSVs.
 PHASE_JSONL="${PHASE_JSONL:-}"
 
+case "$EGRESS" in
+    none|outbound) ;;
+    *) echo "EGRESS must be none|outbound" >&2; exit 1 ;;
+esac
+
 usage() {
     sed -n '2,/^set -euo pipefail/p' "$0" | sed -E 's/^# ?//;/^set -euo pipefail/d'
     cat <<'EOF'
@@ -79,6 +86,7 @@ ENV vars:
     WARMUP        warmup discards per cell (default 2)
     KIND          ubuntu|minimal|both (default both)
     KERNEL_KIND   stock|stripped (default stock)
+    EGRESS        none|outbound (default none; M80_NETWORK_POLICY fallback)
     SKIP_LOADED   set to 1 to skip the stress-ng cell
     SWEEP         vcpu|mem_mib|kernel_kind|image_kind
     SWEEP_VALUES  comma-separated values for the active sweep
@@ -121,7 +129,7 @@ LOADS=("idle")
 # ── Plan summary (always printed; --dry-run exits here) ─────────────────
 plan_summary() {
     echo "=== bench-cold-launch plan ==="
-    echo "  N=$N  WARMUP=$WARMUP  KERNEL_KIND=$KERNEL_KIND"
+    echo "  N=$N  WARMUP=$WARMUP  KERNEL_KIND=$KERNEL_KIND  EGRESS=$EGRESS"
     echo "  kinds=${KINDS[*]}  loads=${LOADS[*]}"
     [[ -n "$SWEEP" ]]      && echo "  SWEEP=$SWEEP  SWEEP_VALUES=${SWEEP_VALUES:-<defaults>}"
     [[ "$CONCURRENT" -gt 0 ]] && echo "  CONCURRENT=$CONCURRENT (N parallel admissions)"
@@ -262,6 +270,22 @@ stop_stress() {
     wait "$pid" 2>/dev/null || true
 }
 
+cleanup_run_root() {
+    local image_dir="$1"
+    sudo IMAGE_BUILD_DIR="$image_dir" \
+         M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
+         M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+         M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
+         M80_KERNEL_IMAGE="$image_dir/vmlinux" \
+         M80_KERNEL_KIND="$KERNEL_KIND" \
+         M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
+         M80_RUN_ROOT=/var/lib/m80-run \
+         M80_FIRECRACKER_VERSION=v1.15.1 \
+         M80_JAIL_UID="$(id -u)" \
+         M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
+         "${TASKSET_PREFIX[@]}" "$M80_BIN" cleanup >/dev/null 2>&1 || true
+}
+
 # Emit a JSONL phase event if PHASE_JSONL is set.
 emit_phase_event() {
     [[ -n "$PHASE_JSONL" ]] || return 0
@@ -284,18 +308,9 @@ run_one() {
     local start_ns end_ns elapsed_ms exit_code
     start_ns=$(date +%s%N)
     # Best-effort cleanup of prior run-dir before each attempt.
-    sudo IMAGE_BUILD_DIR="$image_dir" \
-         M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
-         M80_JAILER_BIN=/opt/firecracker/bin/jailer \
-         M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
-         M80_KERNEL_IMAGE="$image_dir/vmlinux" \
-         M80_KERNEL_KIND="$KERNEL_KIND" \
-         M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
-         M80_RUN_ROOT=/var/lib/m80-run \
-         M80_FIRECRACKER_VERSION=v1.15.1 \
-         M80_JAIL_UID="$(id -u)" \
-         M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
-         "${TASKSET_PREFIX[@]}" "$M80_BIN" cleanup >/dev/null 2>&1 || true
+    if [[ "${RUN_ONE_SKIP_CLEANUP:-0}" != "1" ]]; then
+        cleanup_run_root "$image_dir"
+    fi
 
     if timeout 90 sudo M80_PHASE_TRACE=1 \
             IMAGE_BUILD_DIR="$image_dir" \
@@ -310,7 +325,7 @@ run_one() {
             M80_JAIL_UID="$(id -u)" \
             M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
             "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
-            --egress none -- /bin/echo "bench-$attempt" \
+            --egress "$EGRESS" -- /bin/echo "bench-$attempt" \
             >/dev/null 2>"$stderr_file"; then
         exit_code=0
     else
@@ -363,12 +378,13 @@ run_concurrent_cell() {
     for attempt in $(seq 1 "$total"); do
         local pids=() outs=()
         local launch_start launch_end
+        cleanup_run_root "$image_dir"
         launch_start=$(date +%s%N)
         for vm in $(seq 0 $((CONCURRENT - 1))); do
             local out
             out="$(mktemp)"
             outs+=("$out")
-            (run_one "$kind" "$load" "${attempt}_${vm}" "$image_dir" > "$out") &
+            (RUN_ONE_SKIP_CLEANUP=1 run_one "$kind" "$load" "${attempt}_${vm}" "$image_dir" > "$out") &
             pids+=($!)
         done
         for pid in "${pids[@]}"; do

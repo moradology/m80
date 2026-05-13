@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, Mutex};
+use std::time::Duration;
 
 use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
@@ -317,6 +318,54 @@ fn concurrent_launch_no_ipv4_collision() {
 }
 
 #[test]
+fn concurrent_launch_serializes_run_root_bridge_creation() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_root = temp.path().to_path_buf();
+    let barrier = Arc::new(Barrier::new(2));
+    let shared = Arc::new(Mutex::new(SharedBridgeRaceState::default()));
+
+    let first = {
+        let run_root = run_root.clone();
+        let barrier = Arc::clone(&barrier);
+        let shared = Arc::clone(&shared);
+        std::thread::spawn(move || {
+            let vm_id = "vm-bridge-race-a";
+            let run_dir = run_root.join(vm_id);
+            std::fs::create_dir(&run_dir).unwrap();
+            let mut ops = SharedBridgeRaceOps { shared };
+            let intent = intent_with_exception();
+            barrier.wait();
+            realize_for_test(&mut ops, &intent, vm_id, &run_root, &run_dir)
+        })
+    };
+    let second = {
+        let run_root = run_root.clone();
+        let barrier = Arc::clone(&barrier);
+        let shared = Arc::clone(&shared);
+        std::thread::spawn(move || {
+            let vm_id = "vm-bridge-race-b";
+            let run_dir = run_root.join(vm_id);
+            std::fs::create_dir(&run_dir).unwrap();
+            let mut ops = SharedBridgeRaceOps { shared };
+            let intent = intent_with_exception();
+            barrier.wait();
+            realize_for_test(&mut ops, &intent, vm_id, &run_root, &run_dir)
+        })
+    };
+
+    let outcomes = [first.join().unwrap(), second.join().unwrap()];
+
+    for outcome in outcomes {
+        outcome.expect("both concurrent bridge users should share one ready bridge");
+    }
+    let bridge_creates = shared.lock().unwrap().bridge_creates;
+    assert_eq!(
+        bridge_creates, 1,
+        "run-root bridge creation must be serialized across concurrent launches"
+    );
+}
+
+#[test]
 fn failed_launch_after_bridge_cleans_bridge() {
     let temp = tempfile::tempdir().unwrap();
     let run_dir = temp.path().join("vm-123");
@@ -430,6 +479,83 @@ struct RecordingLinkOps {
     link_exists: bool,
     link_has_ipv4_address: bool,
     fail_create_tap: bool,
+}
+
+#[derive(Default)]
+struct SharedBridgeRaceState {
+    bridge_created: bool,
+    bridge_creates: usize,
+}
+
+struct SharedBridgeRaceOps {
+    shared: Arc<Mutex<SharedBridgeRaceState>>,
+}
+
+impl LinkOps for SharedBridgeRaceOps {
+    fn create_bridge(&mut self, name: &str) -> Result<(), NetError> {
+        let should_pause = {
+            let mut shared = self.shared.lock().unwrap();
+            if shared.bridge_created {
+                return Err(NetError::NetlinkOperationFailed {
+                    operation: "create bridge",
+                    detail: format!("{name} already exists"),
+                });
+            }
+            shared.bridge_created = true;
+            shared.bridge_creates += 1;
+            shared.bridge_creates == 1
+        };
+        if should_pause {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        Ok(())
+    }
+
+    fn add_ipv4_address(
+        &mut self,
+        _link_name: &str,
+        _address: Ipv4Addr,
+        _prefix_len: u8,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn create_tap(&mut self, _name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_mac(&mut self, _name: &str, _mac: [u8; 6]) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn attach_link_to_bridge(
+        &mut self,
+        _link_name: &str,
+        _bridge_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_up(&mut self, _name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn delete_link_if_exists(&mut self, _name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn link_exists(&mut self, _name: &str) -> Result<bool, NetError> {
+        Ok(false)
+    }
+
+    fn link_has_ipv4_address(
+        &mut self,
+        _link_name: &str,
+        _address: Ipv4Addr,
+        _prefix_len: u8,
+    ) -> Result<bool, NetError> {
+        Ok(self.shared.lock().unwrap().bridge_created)
+    }
 }
 
 impl RecordingLinkOps {
