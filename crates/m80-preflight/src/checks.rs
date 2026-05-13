@@ -17,6 +17,7 @@ use crate::{
 
 const KVM_PATH: &str = "/dev/kvm";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
+const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
 const TUN_PATH: &str = "/dev/net/tun";
 const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
 
@@ -105,13 +106,16 @@ pub fn run_with_configs(
     // 4. Kernel modules
     check_kernel_modules(&mut report)?;
 
-    // 5. Cgroup host mode
+    // 5. Host tuning advisories
+    check_thp_policy(&mut report);
+
+    // 6. Cgroup host mode
     check_cgroup_mode(host_feature_config.cgroup_mode, &mut report)?;
 
-    // 6. Privilege
+    // 7. Privilege
     let privilege = check_privilege(&mut report)?;
 
-    // 7-9. Firecracker and jailer binaries
+    // 8-10. Firecracker and jailer binaries
     let binaries = discover_binaries(&binary_config)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
@@ -134,7 +138,7 @@ pub fn run_with_configs(
         detail: binaries.jailer_harden_bin.display().to_string(),
     });
 
-    // 10-13. Kernel/rootfs artifacts, run-root, and storage helpers
+    // 11-14. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config)?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
@@ -296,6 +300,47 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
         detail: "tap, bridge loaded; tun, vhost-vsock, nf_conntrack available".to_string(),
     });
     Ok(())
+}
+
+fn check_thp_policy(report: &mut Vec<CheckRow>) {
+    report.push(classify_thp_policy(fs::read_to_string(THP_ENABLED_PATH)));
+}
+
+fn classify_thp_policy(read_result: Result<String, io::Error>) -> CheckRow {
+    let detail = match read_result {
+        Ok(raw) => match selected_thp_mode(&raw) {
+            Some("always") => {
+                "always selected; THP may back Firecracker guest memory without explicit hugepage reservation".to_string()
+            }
+            Some("madvise") => {
+                "madvise selected; advisory: Firecracker guest memory will not get THP unless explicitly madvised; consider always for latency hosts (docs/ops/host-tuning.md)".to_string()
+            }
+            Some("never") => {
+                "never selected; advisory: THP is disabled for Firecracker guest memory; consider always for latency hosts (docs/ops/host-tuning.md)".to_string()
+            }
+            Some(mode) => format!(
+                "{mode} selected; advisory: unrecognized THP policy value at {THP_ENABLED_PATH}"
+            ),
+            None => format!("unrecognized THP policy format at {THP_ENABLED_PATH}: {raw:?}"),
+        },
+        Err(err) => format!(
+            "unavailable at {THP_ENABLED_PATH}: {err}; advisory could not be evaluated (docs/ops/host-tuning.md)"
+        ),
+    };
+
+    CheckRow {
+        label: "Transparent hugepages".to_string(),
+        passed: true,
+        detail,
+    }
+}
+
+fn selected_thp_mode(raw: &str) -> Option<&str> {
+    raw.split_whitespace().find_map(|token| {
+        token
+            .strip_prefix('[')
+            .and_then(|inner| inner.strip_suffix(']'))
+    })
 }
 
 fn classify_vsock_availability(
@@ -637,6 +682,55 @@ flags\t\t: fpu svm tsc
         let flags = classify_kvm_cpu_flags(cpuinfo).unwrap();
 
         assert_eq!(flags, vec!["vmx", "svm"]);
+    }
+
+    #[test]
+    fn thp_always_policy_reports_clean_row() {
+        let row = classify_thp_policy(Ok("[always] madvise never\n".to_string()));
+
+        assert!(row.passed);
+        assert_eq!(row.label, "Transparent hugepages");
+        assert!(row.detail.contains("always selected"));
+        assert!(!row.detail.contains("advisory:"));
+    }
+
+    #[test]
+    fn thp_madvise_policy_reports_advisory() {
+        let row = classify_thp_policy(Ok("always [madvise] never\n".to_string()));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("madvise selected"));
+        assert!(row.detail.contains("advisory:"));
+        assert!(row.detail.contains("docs/ops/host-tuning.md"));
+    }
+
+    #[test]
+    fn thp_never_policy_reports_advisory() {
+        let row = classify_thp_policy(Ok("always madvise [never]\n".to_string()));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("never selected"));
+        assert!(row.detail.contains("advisory:"));
+    }
+
+    #[test]
+    fn thp_unreadable_policy_is_non_blocking() {
+        let row = classify_thp_policy(Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "missing thp file",
+        )));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("advisory could not be evaluated"));
+        assert!(row.detail.contains("docs/ops/host-tuning.md"));
+    }
+
+    #[test]
+    fn thp_malformed_policy_is_non_blocking() {
+        let row = classify_thp_policy(Ok("always madvise never\n".to_string()));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("unrecognized THP policy format"));
     }
 
     fn err_hint_mentions_kvm_enable(err: &PreflightError) -> bool {
