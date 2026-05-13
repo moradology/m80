@@ -1,0 +1,7 @@
+# m80 shellcheck baseline.
+# Severity: warning + above. Info-level findings are noise for our use.
+# Shell: bash (all scripts/*.sh use bash explicitly).
+shell=bash
+severity=warning
+# Disable globally only when justified:
+# (no global disables — per-line disables only, with justification)

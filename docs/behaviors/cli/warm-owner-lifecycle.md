@@ -103,7 +103,7 @@ Foreground mode:
 System mode:
 
 - owner process is managed by a shipped `m80-warm.service` unit
-- unit must run with the same privilege/capability model as normal m80 launch
+- unit must run with the same privilege/capability model as normal `m80 run`
 - logs go to journald plus the configured owner log path
 - `disable` stops the unit and removes owner-owned state
 

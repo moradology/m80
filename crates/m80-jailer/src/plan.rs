@@ -285,6 +285,7 @@ fn bind_remount_flags() -> nix::mount::MsFlags {
     // mount to target when the path participates in multiple mounts.
     // Dropping MS_BIND causes EBUSY at the second mount() call on the
     // bind dest. The earlier audit (m80-l020n.9) was wrong to remove it.
+    // Pinned by plan::tests::bind_remount_flags_is_exactly_expected_bitset.
     nix::mount::MsFlags::MS_BIND
         | nix::mount::MsFlags::MS_REMOUNT
         | nix::mount::MsFlags::MS_NODEV
@@ -309,4 +310,26 @@ pub(crate) fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), Jail
         path: path.to_path_buf(),
         source,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use nix::mount::MsFlags;
+
+    #[test]
+    fn bind_remount_flags_is_exactly_expected_bitset() {
+        let expected = MsFlags::MS_BIND
+            | MsFlags::MS_REMOUNT
+            | MsFlags::MS_NODEV
+            | MsFlags::MS_NOEXEC
+            | MsFlags::MS_NOSUID;
+
+        assert_eq!(
+            super::bind_remount_flags(),
+            expected,
+            "bind_remount_flags() bitset changed; see crates/m80-jailer/src/plan.rs:282. \
+             MS_BIND is required for remounting a bind mount; the earlier audit \
+             regression m80-l020n.9 was wrong to remove it."
+        );
+    }
 }

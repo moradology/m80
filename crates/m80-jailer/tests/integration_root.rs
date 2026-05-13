@@ -6,6 +6,7 @@
 //! ```sh
 //! sudo cargo test -p m80-jailer -- --ignored
 //! ```
+#![allow(clippy::unwrap_used)]
 
 use m80_jailer::{
     jail_root_path, BindMode, Binding, InspectionDecision, JailerConfig, JailerError, JailerSocket,

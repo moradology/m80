@@ -1,4 +1,5 @@
 //! Recovery tests using fixture run-dirs — no root or CAP_SYS_ADMIN required.
+#![allow(clippy::unwrap_used)]
 
 mod common;
 

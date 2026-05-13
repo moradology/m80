@@ -1,4 +1,5 @@
 //! Pure plan computation tests — no filesystem required.
+#![allow(clippy::unwrap_used)]
 
 mod common;
 

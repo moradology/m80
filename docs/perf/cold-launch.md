@@ -522,7 +522,7 @@ M80_IMAGE_KIND=minimal ./scripts/smoke.sh       # minimal side
 N=10 SKIP_LOADED=1 KIND=minimal ./scripts/bench-cold-launch.sh
 ```
 
-Set `M80_PHASE_TRACE=1` on any single `m80 launch` invocation to get
+Set `M80_PHASE_TRACE=1` on any single `m80 run` invocation to get
 the same per-phase events streamed to stderr (the bench script does
 this automatically).
 
@@ -662,15 +662,14 @@ and Ubuntu/idle from 1108.0 ms to 1006.8 ms p50.
 round-trip passed on 2026-05-05 via
 `crates/m80-firecracker/tests/snapshot_integration.rs`.
 
-### Acceptance criteria (from `docs/planning/perf-roadmap-extended.md §3.3`)
+### Original acceptance criteria (from `docs/planning/perf-roadmap-extended.md §3.3`)
 
 A single round-trip must pass:
 
-1. `m80 launch` (cold) + exec `/bin/echo hello` succeeds.
-2. `m80 snapshot capture <vm-id> --store-root <dir>` writes `vm.snap` and
-   `mem.snap` to the directory.
-3. `m80 launch --from-snapshot <dir> -- /bin/echo restored` exits 0 and
-   stdout contains `"restored"`.
+1. Cold launch + exec `/bin/echo hello` succeeds.
+2. Capture writes `vm.snap` and `mem.snap` to the directory.
+3. Restore from that snapshot and exec `/bin/echo restored`; stdout contains
+   `"restored"`.
 4. `restore useful_ms` < `cold useful_ms` − 500 ms (lower-bound floor; less
    than this triggers diagnostics-first triage before BENCH).
 5. SHA256 of the base file unchanged after the round-trip.
@@ -680,34 +679,26 @@ A single round-trip must pass:
 ### How to run
 
 ```bash
-M80_SMOKE_MODE=snapshot ./scripts/smoke.sh
+sudo cargo test -p m80-firecracker --test snapshot_integration -- --ignored \
+  --nocapture --test-threads=1
 ```
 
 ### v0.1 status
 
-`m80 snapshot capture` is a v0.1 stub (exit 7 = `EXIT_NOT_IMPLEMENTED`).
-The same out-of-process IPC gap that blocks `m80 exec` blocks capture:
-both require a side-channel to a running VM. The CLI parse layer and error
-path are exercised by the smoke script (exit 7 is asserted; a panic or
-unknown-subcommand failure is a bug).
-
-`m80 launch --from-snapshot` is fully wired. The missing-file error path
-(exit 6 = `EXIT_CONFIG`) is exercised by the smoke script when no snapshot
-files are present.
-
-The full capture+restore end-to-end is covered by the in-process
-integration test at `crates/m80-firecracker/tests/snapshot_integration.rs`
-(requires KVM, `#[ignore]` by default; run with
-`cargo test -p m80-firecracker --test snapshot_integration -- --ignored
---nocapture --test-threads=1`).
+The CLI product surface is `m80 run`, not a VM lifecycle manager.
+`m80 launch`, `m80 exec`, `m80 stop`, and `m80 snapshot` were hard-removed
+from the clap surface; they are not compatibility aliases. Snapshot
+capture/restore remains a library-level `m80-firecracker` behavior and is
+covered by the ignored real-KVM integration test above.
 
 ### Design references
 
 - Snapshot file layout (`vm.snap`, `mem.snap`): `docs/design/snapshot-restore.md §2`.
 - Restore path (PUT /snapshot/load, PATCH /vm Resumed, exec-channel probe):
   `docs/design/snapshot-restore.md §4`.
-- CLI surface (`--from-snapshot`, `snapshot capture`):
-  `crates/m80-cli/src/args.rs`, `crates/m80-cli/src/cmds.rs`.
+- CLI hard-cutover record:
+  `docs/behaviors/cli/command-surface.md`,
+  `docs/behaviors/cli/feature-gaps.md`.
 
 **Bench numbers:** captured in `docs/behaviors/snapshot/restore-latency.md`.
 Idle restore-ready N=50 is 274.204 ms p50 / 280.132 ms p95. Loaded restore

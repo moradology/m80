@@ -6,6 +6,9 @@
 # --dry-run plan output, env-var surfacing, and the bench-extras --help
 # mode catalog. Real-data correctness is verified by actually running
 # `./scripts/bench-cold-launch.sh` against a privileged host.
+#
+# Requirements:
+#   - shellcheck on PATH for the local script-lint gate.
 
 set -euo pipefail
 
@@ -24,11 +27,16 @@ note() {
     fi
 }
 
+contains_token() {
+    local token="$1" text="$2"
+    grep -Eq "(^|[^[:alnum:]_])${token}([^[:alnum:]_]|$)" <<<"$text"
+}
+
 # --- Help text mentions the new env vars ---
 echo "=== help text ==="
 help_text="$(bash scripts/bench-cold-launch.sh --help 2>&1 || true)"
 for v in N WARMUP KIND SKIP_LOADED KERNEL_KIND SWEEP CONCURRENT TASKSET CPU_GOVERNOR DRY_RUN; do
-    if grep -q "\b$v\b" <<<"$help_text"; then
+    if contains_token "$v" "$help_text"; then
         note ok "help mentions $v"
     else
         note FAIL "help missing $v"
@@ -116,6 +124,14 @@ for mode in --throughput --memory --teardown --boot-decomp --long-tail --density
         note FAIL "bench-extras --help missing $mode"
     fi
 done
+
+# --- shellcheck gate ---
+echo "=== shellcheck ==="
+if shellcheck -s bash scripts/*.sh; then
+    note ok "shellcheck passes for scripts/*.sh"
+else
+    note FAIL "shellcheck failed for scripts/*.sh"
+fi
 
 echo
 echo "=== summary: $pass pass / $fail fail ==="

@@ -122,6 +122,8 @@ fn load_reap_plan(run_dir: &Path) -> Result<ReapPlan, JailerError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use std::path::PathBuf;
 
     use super::*;

@@ -1,4 +1,5 @@
 //! Shared test fixtures for m80-jailer integration tests.
+#![allow(clippy::unwrap_used)]
 
 use std::path::{Path, PathBuf};
 

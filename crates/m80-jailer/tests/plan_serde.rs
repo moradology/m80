@@ -1,4 +1,5 @@
 //! Plan serde round-trip tests.
+#![allow(clippy::unwrap_used)]
 
 mod common;
 

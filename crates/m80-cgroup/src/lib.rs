@@ -100,8 +100,7 @@ impl Subtree {
 
         let cgroup_path_txt = run_dir.join("cgroup-path.txt");
         let leaf_str = format!("{}\n", leaf.display());
-        fs::write(&cgroup_path_txt, leaf_str.as_bytes())
-            .map_err(io_err(cgroup_path_txt))?;
+        fs::write(&cgroup_path_txt, leaf_str.as_bytes()).map_err(io_err(cgroup_path_txt))?;
 
         Ok(subtree)
     }
@@ -144,7 +143,8 @@ impl Subtree {
     }
 
     /// Compute the absolute cgroup v2 leaf path for `vm_id`.
-    #[must_use] pub fn leaf_path(vm_id: &str) -> PathBuf {
+    #[must_use]
+    pub fn leaf_path(vm_id: &str) -> PathBuf {
         PathBuf::from(CGROUP_ROOT).join(vm_id)
     }
 }
@@ -184,15 +184,12 @@ pub fn cleanup_orphan_subtree(vm_id: &str) -> Result<(), CgroupError> {
 
     if !procs.trim().is_empty() {
         return Err(CgroupError::LivePids {
-            path: leaf.clone(),
+            path: leaf,
             pids: procs.trim().to_owned(),
         });
     }
 
-    fs::remove_dir(&leaf).map_err(|source| CgroupError::Io {
-        path: leaf.clone(),
-        source,
-    })?;
+    fs::remove_dir(&leaf).map_err(|source| CgroupError::Io { path: leaf, source })?;
 
     Ok(())
 }
@@ -221,7 +218,8 @@ impl Limits {
     ///
     /// CPU is one full 100 ms CPU period, memory is 1.5 GiB, and pids are
     /// capped at 128.
-    #[must_use] pub fn preset() -> Self {
+    #[must_use]
+    pub fn preset() -> Self {
         Self {
             cpu_max: Some(CpuMax::Quota {
                 quota_us: DEFAULT_CPU_QUOTA_US,

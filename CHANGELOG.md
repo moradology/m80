@@ -5,6 +5,53 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — m80-jailer kernel flag bitset regression test
+
+- Added a private `m80-jailer` unit test to pin the bind-remount flag bitset
+  that regressed in `m80-l020n.9`; the test would fail immediately if
+  `MS_BIND` is removed again without widening the crate's public surface.
+
+### Changed — kernel-touching diff smoke evidence rule
+
+- Added the real-KVM smoke-evidence rule to `AGENTS.md`/`CLAUDE.md` and
+  captured `docs/postmortems/2026-05-12-ms-bind-and-sudo-escape.md`,
+  motivated by the `MS_BIND`, `m80_invoke`-after-`sudo`, and stale image
+  dir regressions from the perf-bench push.
+
+### Changed — measurement bead closure discipline
+
+- Added the `requires-verified-close` closure rule and
+  `docs/decisions/0002-bead-closure-scaffolded-vs-verified.md` so
+  measurement-shaped beads close on real-substrate artifacts, not scaffolded
+  harnesses or mock data.
+- Added `.beads/bead-template-measurement.md` and the observable-shaped
+  acceptance rule for measurement beads, so acceptance names an artifact,
+  field, substrate, and value instead of an action like "harness runs".
+
+### Added — shellcheck gate for scripts
+
+- Added `.shellcheckrc`, a CI shellcheck step, and a local
+  `scripts/test-bench-harness.sh` shellcheck self-check, motivated by the
+  `m80_invoke`-after-`sudo` regression in the bench harness.
+
+### Fixed — smoke script stale image cache detection
+
+- `scripts/smoke.sh` full mode now rebuilds the guest image when the cached
+  manifest is missing, malformed, or not schema version 4, instead of treating
+  an older schema-versioned image as launch-ready and failing later in
+  preflight.
+- Updated the default smoke command from the removed VM-lifecycle CLI
+  (`m80 launch --network noegress`) to the current process facade
+  (`m80 run --egress none`) and removed the stale `M80_SMOKE_MODE` snapshot
+  branch/knob; snapshot capture/restore is now documented as a library-level
+  real-KVM integration test rather than a CLI smoke path.
+
+### Changed — audit-sweep eligibility classifier
+
+- Added the audit-sweep eligibility rule and
+  `docs/decisions/0003-audit-sweep-eligibility.md`, classifying
+  kernel/cgroup/seccomp/capability/`sudo` wrapper hunks as sweep-ineligible.
+
 ### Added — cold-cold baseline + density ladder (m80-ekbk B0 follow-on)
 
 - Cold-cold N=200 minimal/idle (--cold-isolation): uniformly **+108 ms**

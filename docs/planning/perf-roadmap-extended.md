@@ -232,7 +232,9 @@ Lock the snapshot architecture decisions in one written design at `docs/design/s
 3. **Vsock semantics across snapshot.** Pre-load this from the research leaf (`m80-rrp.3.0`). If the answer is "vsock state is captured but UDS is not", the host pre-create + guestd redial pattern works (already in `.8` and `.9`). If the answer is something else, this DESIGN must encode the new pattern.
 4. **Storage interaction with overlay rootfs.** Per R3: snapshot artifact set includes the overlay disk file by reference (sha + path); restore re-attaches a `*.ext4` of identical state. Decide: do we keep an `overlay-template.ext4` per snapshot, or do we mkfs.ext4 a fresh sparse one at restore time? **Recommendation:** mkfs fresh; the overlay's *contents* should be empty at capture time anyway (capture is taken right after a clean boot, before any exec).
 5. **Snapshot REST API stability.** Firecracker docs say snapshot APIs are version-pinned, not stable. Pin a specific firecracker version + capture in `Cargo.toml` workspace.
-6. **CLI ergonomics.** Final answer to the `Cmd::Launch --from-snapshot` vs `SandboxConfig.from_snapshot` question per `m80-rrp.3.4` description.
+6. **CLI ergonomics.** Final answer: snapshot capture/restore is a
+   library-level `m80-firecracker` lifecycle surface, not a `m80 launch`
+   compatibility command. The CLI facade remains `m80 run`.
 
 **Acceptance:** doc landed at `docs/design/snapshot-restore.md`; READMEs of `m80-snapshot`, `m80-firecracker-client`, `m80-firecracker`, `m80-cli` reconciled against it.
 
@@ -288,9 +290,12 @@ Today the schemas + persistence-path helpers are active in v0.1; this leaf wires
 
 #### `m80-rrp.3.5b` — SMOKE: snapshot capture + restore round-trip
 
-Between `.4` (orchestrator) / `.5` (CLI) and `.6` (BENCH). Single round-trip:
-1. `m80 launch` a minimal/idle VM, exec `/bin/echo hello`, capture snapshot.
-2. `m80 launch --from-snapshot <path>`, exec `/bin/echo hello-from-restore`.
+Between `.4` (orchestrator) / `.5` (caller integration) and `.6` (BENCH).
+Single round-trip:
+1. Launch a minimal/idle VM through `m80-firecracker`, exec `/bin/echo hello`,
+   capture snapshot.
+2. Restore with `Sandbox::launch_from_snapshot`, exec
+   `/bin/echo hello-from-restore`.
 3. Both execs return success; restore launch's `useful_ms` < cold launch's `useful_ms` − 500 ms (lower bound of expected save; if it's not at least this much, triage before BENCH).
 4. Capture base file sha256 unchanged (cross-check with storage pivot smoke).
 5. Capture overlay disk size at restore stays small (R3 mitigation: fresh mkfs, not stale).
@@ -323,7 +328,7 @@ br create "RESEARCH: vsock state survival across firecracker snapshot/restore" \
 br create "DESIGN: snapshot-restore architecture (preconditions, compat, vsock semantics, overlay interaction)" \
   --type task --priority P1 --parent m80-rrp.3 \
   --labels active,design,snapshot,v02 \
-  -d "Lock decisions in docs/design/snapshot-restore.md: (1) capture preconditions (Paused before CreateSnapshot; in-flight exec policy); (2) restore compat-check minimum (firecracker_version, kernel_sha256, mem_size_mib, vcpu_count) and which checks are advisory; (3) vsock semantics (pre-load from research leaf); (4) overlay interaction — fresh mkfs at restore, NOT stale overlay-template; (5) firecracker version pin in workspace Cargo.toml; (6) CLI ergonomics — Launch --from-snapshot vs SandboxConfig.from_snapshot. Acceptance: doc landed; m80-snapshot, m80-firecracker-client, m80-firecracker, m80-cli READMEs reconciled. Effort: M-L (1-3 d). Deps: research leaf above. See perf-roadmap-extended.md §3.3."
+  -d "Lock decisions in docs/design/snapshot-restore.md: (1) capture preconditions (Paused before CreateSnapshot; in-flight exec policy); (2) restore compat-check minimum (firecracker_version, kernel_sha256, mem_size_mib, vcpu_count) and which checks are advisory; (3) vsock semantics (pre-load from research leaf); (4) overlay interaction — fresh mkfs at restore, NOT stale overlay-template; (5) firecracker version pin in workspace Cargo.toml; (6) CLI ergonomics — snapshot capture/restore remains library-level; no m80 launch compatibility command. Acceptance: doc landed; m80-snapshot, m80-firecracker-client, m80-firecracker, m80-cli READMEs reconciled. Effort: M-L (1-3 d). Deps: research leaf above. See perf-roadmap-extended.md §3.3."
 
 # 3. m80-firecracker-client REST methods.
 br create "IMPL m80-firecracker-client: put_snapshot_create + put_snapshot_load REST methods + config types" \
@@ -346,7 +351,7 @@ br update m80-rrp.3.7 --notes "EXTEND: explicit known-limitation entries for R4 
 br create "SMOKE: snapshot capture + restore round-trip probe (cold-vs-restore delta floor, base sha, overlay size)" \
   --type task --priority P1 --parent m80-rrp.3 \
   --labels active,snapshot,smoke,v02 \
-  -d "Single round-trip gating m80-rrp.3.6 BENCH. Asserts: (1) m80 launch + capture succeeds; (2) m80 launch --from-snapshot + exec succeeds; (3) restore useful_ms < cold useful_ms - 500 ms (lower-bound floor; <500 ms delta triggers diagnostics-first triage); (4) base file sha256 unchanged; (5) overlay disk size remains small (R3 mitigation: fresh mkfs, not stale). Effort: S (1-2 h). Deps: m80-rrp.3.4, .3.5. See perf-roadmap-extended.md §3.3."
+  -d "Single round-trip gating m80-rrp.3.6 BENCH. Asserts: (1) m80-firecracker cold launch + capture succeeds; (2) Sandbox::launch_from_snapshot + exec succeeds; (3) restore useful_ms < cold useful_ms - 500 ms (lower-bound floor; <500 ms delta triggers diagnostics-first triage); (4) base file sha256 unchanged; (5) overlay disk size remains small (R3 mitigation: fresh mkfs, not stale). Effort: S (1-2 h). Deps: m80-rrp.3.4, .3.5. See perf-roadmap-extended.md §3.3."
 ```
 
 Note on IDs: the `br create` calls above will get auto-generated suffixes like `m80-rrp.3.10`, `.3.11`, etc. The numbers don't matter; the parent linkage and dep chain do.

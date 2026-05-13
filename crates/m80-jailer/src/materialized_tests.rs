@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 use super::*;
 use crate::types::{JailerConfig, JailerSocket, Plan};
 use std::os::unix::fs::PermissionsExt;

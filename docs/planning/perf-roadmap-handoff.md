@@ -18,7 +18,7 @@ Five waves of parallel sonnet dispatches landed structurally over commits `33d72
 |---|---|---|
 | Storage pivot | `m80-f2zc` | Sparse overlay + in-guest overlayfs + `pivot_root` (kata lift) |
 | Stripped kernel | `m80-ci9i` | Kernel-builder Dockerfile, schema v3, two-axis boot_args |
-| Snapshot/restore | `m80-rrp.3` | REST surface, capture/restore primitives, `--from-snapshot` CLI |
+| Snapshot/restore | `m80-rrp.3` | REST surface, capture/restore primitives, library-level restore |
 | Persistent VM | `m80-qokt.2` | `&mut self` exec, Cancel envelope, idle-timeout watcher |
 
 **Workspace:** `cargo test --workspace` 93 pass / 0 fail / 4 ignored (KVM-gated); `cargo clippy --workspace --all-targets -- -D warnings` clean.
@@ -69,7 +69,10 @@ Each bench leaf wants P50 numbers in `docs/perf/cold-launch.md` and a brief CHAN
 - **Cancel envelope is shared** between `m80-qokt.2.4` (landed) and `m80-5vha` (streaming exec, separate epic, NOT landed). The proto types in `m80-proto::types::{CancelRequest, CancelAck, CancelStatus}` are stable; m80-5vha will reuse them unchanged.
 - **vsock survival across snapshot**: connections die (TRANSPORT_RESET); LISTEN sockets survive. The restore path uses `phase_restore_probe_exec_channel` (in `crates/m80-firecracker/src/launch.rs`), NOT the cold-boot inverted-readiness pattern. Don't get confused if you read the m80-7tpy code and wonder why restore doesn't use it. See `docs/exploration/firecracker-vsock-snapshot.md` for the empirical evidence.
 - **Idle timeout signals via flag, not direct shutdown**: the watcher sets `Arc<AtomicBool>` `idle_timed_out`; the next `exec` call observes it and returns `FcError::IdleTimedOut`; caller drops to trigger Drop-shutdown. Watcher does NOT call `stop()` directly (no shared mutable access). See `crates/m80-firecracker/src/lifecycle.rs`.
-- **`m80 snapshot capture` CLI is a v0.1 stub** (exits 7 with an explanation) — the live capture path needs host IPC plumbing that isn't there yet. The library API (`RunningSandbox::capture`) works; only the standalone CLI flow is stubbed. For benching, drive capture from a Rust test, not the CLI.
+- **Snapshot capture/restore is not a CLI lifecycle surface.** The CLI facade is
+  `m80 run`; `m80 launch` and `m80 snapshot` are hard-removed. The library API
+  (`RunningSandbox::capture`, `Sandbox::launch_from_snapshot`) is the supported
+  snapshot path. For benching, drive capture from a Rust test, not the CLI.
 - **No worktree isolation in this env**: previous parallel dispatches used `CARGO_TARGET_DIR=/tmp/m80-build/target-w<N>-<lane>` to avoid cargo-build-lock contention. If you dispatch more sonnets in parallel, do the same.
 
 ## What the user wants

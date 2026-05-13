@@ -139,7 +139,7 @@ mode_teardown() {
     for i in $(seq 1 "$n"); do
         local stderr_file
         stderr_file="$(mktemp)"
-        m80_run /bin/echo teardown-$i >/dev/null 2>"$stderr_file" || true
+        m80_run /bin/echo teardown-"$i" >/dev/null 2>"$stderr_file" || true
         # Pull the relevant teardown phases from the M80_PHASE stream.
         grep -E 'stop_bounded|residue_cleanup|force_kill|release|stop_release' \
             "$stderr_file" 2>/dev/null | while IFS= read -r line; do

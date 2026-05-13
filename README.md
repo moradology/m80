@@ -85,16 +85,14 @@ m80 run -it --workspace . --egress outbound --secret-env ANTHROPIC_API_KEY -- cl
 - `--tty -i` gives the process an interactive terminal for TUIs.
 - `--warm` leases from an explicit resident warm owner; it never silently falls
   back to cold boot.
-- `--persist` keeps a single VM alive across multiple `m80 run` invocations
-  for sequential exec workflows.
-- `--from-snapshot <path>` boots from a previously captured snapshot for fast
-  warm-start.
 
 See [examples](examples/) for copy-paste workloads.
 
 ## Lifecycles
 
-m80 supports three lifecycle modes; the adapter or caller chooses by request:
+m80 supports three lifecycle modes; the adapter or caller chooses by request.
+The CLI facade is `m80 run`; direct snapshot restore and persistent-VM control
+are library/warm-owner surfaces, not `m80 run` compatibility flags:
 
 - **Cold run** — clean state, highest latency, simplest isolation. ~1.1 s P50
   on minimal stripped images (kernel boot dominates; perf attack tracked in

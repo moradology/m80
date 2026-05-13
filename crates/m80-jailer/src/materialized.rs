@@ -34,12 +34,14 @@ pub struct MaterializedJail {
 
 impl MaterializedJail {
     /// Path to the actual chroot root created for this jail.
-    #[must_use] pub fn jail_root(&self) -> &Path {
+    #[must_use]
+    pub fn jail_root(&self) -> &Path {
         &self.jail_path
     }
 
     /// Per-VM run directory that owns the persisted jailer plan and state.
-    #[must_use] pub fn run_dir(&self) -> &Path {
+    #[must_use]
+    pub fn run_dir(&self) -> &Path {
         &self.plan.config.run_dir
     }
 
@@ -368,16 +370,22 @@ impl JailedFirecracker {
     /// Construct a `JailedFirecracker` with known PIDs.
     ///
     /// Use `0` for `jailer_pid` when the jailer has already exited (daemonized mode).
+    #[must_use]
     pub fn new(jailer_pid: u32, firecracker_pid: u32) -> Self {
-        Self { jailer_pid, firecracker_pid }
+        Self {
+            jailer_pid,
+            firecracker_pid,
+        }
     }
 
     /// PID of the `jailer` process (0 when daemonized and already exited).
+    #[must_use]
     pub fn jailer_pid(&self) -> u32 {
         self.jailer_pid
     }
 
     /// PID of the `firecracker` child the jailer exec'd.
+    #[must_use]
     pub fn firecracker_pid(&self) -> u32 {
         self.firecracker_pid
     }
@@ -386,4 +394,3 @@ impl JailedFirecracker {
 #[cfg(test)]
 #[path = "materialized_tests.rs"]
 mod tests;
-

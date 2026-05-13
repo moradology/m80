@@ -103,7 +103,9 @@ impl Default for ResourceLimits {
 /// user-supplied paths should validate first with [`check_plan_basenames`].
 #[must_use]
 pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
-    let exec_basename = firecracker_bin.file_name().expect("firecracker_bin has no basename");
+    let exec_basename = firecracker_bin
+        .file_name()
+        .expect("firecracker_bin has no basename");
     let id_basename = run_dir.file_name().expect("run_dir has no basename");
     run_dir.join(exec_basename).join(id_basename).join("root")
 }
@@ -115,10 +117,14 @@ pub(crate) fn check_plan_basenames(
     firecracker_bin: &Path,
 ) -> Result<(), JailerError> {
     if firecracker_bin.file_name().is_none() {
-        return Err(JailerError::NoBasename { path: firecracker_bin.to_path_buf() });
+        return Err(JailerError::NoBasename {
+            path: firecracker_bin.to_path_buf(),
+        });
     }
     if run_dir.file_name().is_none() {
-        return Err(JailerError::NoBasename { path: run_dir.to_path_buf() });
+        return Err(JailerError::NoBasename {
+            path: run_dir.to_path_buf(),
+        });
     }
     Ok(())
 }

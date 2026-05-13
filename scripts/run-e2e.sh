@@ -8,7 +8,7 @@
 
 set -u -o pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 
 json=0
 list_only=0

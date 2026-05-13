@@ -30,6 +30,8 @@ Test: if a behavior is "what the system does for the agent", it's not m80's. If 
 - Workspace deps in the root `Cargo.toml`; members use `xxx.workspace = true`. No version pins in member manifests.
 - A change to a crate's public surface updates that crate's README in the same diff. Drift is a bug.
 - Each closed bead leaf needs **both** a doc at `docs/behaviors/<area>/<topic>.md` AND a test at `crates/<crate>/tests/<area>/<topic>.rs`.
+- **Measurement-shaped beads carry the `requires-verified-close` label.** Their close requires a `verified: <artifact-path> @ <commit>` reason citing the file that contains the real-substrate measurement. Agents may scaffold; only a human (or an agent with explicit operator confirmation of a real-substrate run) closes. Parent epics inherit the label transitively. See [decision 0002](docs/decisions/0002-bead-closure-scaffolded-vs-verified.md). Motivated by the m80-ekbk false close (2026-05-12).
+- **Measurement-shaped beads name an observable, not an action.** Acceptance must read "`<file/artifact>` contains `<named numeric>` <=/>=/=/within `<bound>` on `<substrate>`" or "`<command>` on `<substrate>` exits 0 and emits `<observable>`". NOT "harness runs", "compute layer green", or "tests pass". The observable is what the future verifier checks; the action is what the agent did. See [`.beads/bead-template-measurement.md`](.beads/bead-template-measurement.md). Motivated by m80-ekbk false close (2026-05-12).
 
 ## Rust expectations
 
@@ -46,6 +48,68 @@ Avoid Rust files larger than 500 lines. **Hard limit: 1000 lines** — files cro
 
 - Smallest surface that satisfies the bead.
 - Touch a non-trivial invariant → write a regression test that pins it.
+- Touch a kernel-facing primitive (mount/ns/caps/signal/seccomp/cgroup/sudo
+  wrapping) → PR must include a real-KVM smoke paste. See
+  [`AGENTS.md`](AGENTS.md) → "Kernel-touching diffs require smoke evidence".
+
+## Kernel-touching diffs require smoke evidence
+
+If a diff touches any of:
+
+- mount flags / `MsFlags` / `mount(2)` call sites
+- namespace flags / `CloneFlags` / `unshare(2)` / `setns(2)`
+- capability sets (`caps::Capability`, `prctl(PR_CAPBSET_DROP)`)
+- signal masks / `sigprocmask` / `SigSet`
+- seccomp filters / BPF programs
+- cgroup v2 controller writes (`cgroup.subtree_control`, `cpu.max`,
+  `memory.max`, etc.)
+- `sudo` invocation wrappers in `scripts/`
+- `scripts/smoke.sh`, `scripts/bench-*.sh`, `scripts/test-bench-harness.sh`
+
+...then the PR description **must** include a paste of a green run of the
+relevant smoke (`./scripts/smoke.sh` for jailer/firecracker primitives;
+`./scripts/bench-cold-launch.sh N=10 --dry-run` is NOT sufficient; a real
+N>=10 run is) from a host with `/dev/kvm` accessible.
+
+This rule exists because on 2026-05-12 three regressions in this exact class
+(`MS_BIND` removal, `m80_invoke`-after-`sudo`, stale image dir default) all
+passed `cargo test`, shellcheck-class linters, and mock "e2e" coverage. Only
+a real-KVM smoke surfaced them. See
+[`docs/postmortems/2026-05-12-ms-bind-and-sudo-escape.md`](docs/postmortems/2026-05-12-ms-bind-and-sudo-escape.md).
+
+For audit-sweep work specifically: a sweep that touches the categories above
+is **not** an eligible sweep; it is a kernel-behavior change in sweep clothing.
+Split it out and ship as a normal diff with the smoke.
+
+Mock-based "e2e" tests do not satisfy this rule. The mock was the proximate
+cause of the false-green window.
+
+## Audit-sweep eligibility
+
+Audit-sweep methodology (an agent making mechanical, doctrine-driven changes
+across many files) is net-positive on statically-verifiable code and
+net-negative on kernel-behavior-determining code. Sweep PRs touching the
+**sweep-ineligible** patterns below must split those hunks out and ship them as
+single-purpose diffs with full smoke evidence per the "Kernel-touching diffs
+require smoke evidence" rule.
+
+**Sweep-ineligible patterns** (non-exhaustive; see
+[decision 0003](docs/decisions/0003-audit-sweep-eligibility.md)):
+
+- `nix::mount::*`, `nix::sched::CloneFlags`, `nix::sys::signal::SigSet`
+- `caps::Capability`, capability-set construction
+- seccomp filter / BPF construction
+- cgroup v2 controller writes
+- `mount(2)`, `umount2(2)`, `pivot_root(2)`, `chroot(2)`
+- `clone(2)`, `unshare(2)`, `setns(2)`
+- `sudo` wrappers in `scripts/`
+- `scripts/smoke.sh`, `scripts/bench-*.sh`
+- `crates/m80-jailer/src/plan.rs`, `crates/m80-jailer-harden/src/`,
+  `crates/m80-firecracker/src/lifecycle/exec.rs`
+
+Sweep agents must read this list before claiming a sweep bead. If the sweep
+would touch any ineligible pattern, the agent must report the candidates
+without modifying them, and a human must drive the single-purpose diff.
 
 ## When debugging — diagnostics before hypotheses
 
@@ -69,6 +133,9 @@ m80 is a v0.x internal crate set with a closed call graph — we own every consu
 - **No premature abstraction.** Three near-identical lines beat a generic helper. A `Vec::push` loop beats a builder pattern.
 - **No bundling failure scenarios into one test fn.** Each scenario is its own `#[test]`; first failure must not mask the rest.
 - **No tamper-and-restore disk patterns** when clone-and-mutate-the-struct gets equal coverage without coupling test order to filesystem state.
+- Audit-sweep agents must follow the sweep-ineligible classifier in
+  `AGENTS.md` before modifying kernel, cgroup, seccomp, capability, or `sudo`
+  wrapper code.
 
 If you're writing one of these because "what if someone…", stop. We are the someone. Change the code, not the assumption.
 
