@@ -9,6 +9,12 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/nathanp/m80"
 rust-version = "1.82"
 
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"

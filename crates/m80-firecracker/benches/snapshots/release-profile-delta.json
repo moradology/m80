@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "bench": "release_profile_delta",
+  "bead": "m80-jp6ik.18",
+  "unit": {
+    "binary_size": "bytes",
+    "wallclock": "ms",
+    "phases": "us"
+  },
+  "command": "N=50 KIND=minimal SKIP_LOADED=1 KERNEL_KIND=stripped IMAGE_BUILD_DIR_MINIMAL=/tmp/m80-build/minimal-jp6ik42 M80_BIN=./target/release/m80 ./scripts/bench-cold-launch.sh",
+  "baseline": {
+    "cargo_profile": "default release profile",
+    "snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-13T19:02:01+00:00.json",
+    "binary_size": 6780216,
+    "wallclock": {
+      "p50": 1689,
+      "p95": 1694,
+      "p99": 1696,
+      "max": 1697
+    },
+    "phase_1_run_root_prep": {
+      "p50": 73,
+      "p95": 78,
+      "p99": 79,
+      "max": 82
+    },
+    "phase_12b_ready_accept": {
+      "p50": 1023051,
+      "p95": 1033544,
+      "p99": 1034191,
+      "max": 1036721
+    }
+  },
+  "release_profile": {
+    "cargo_profile": "lto=thin, codegen-units=1, strip=symbols, panic=abort",
+    "snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-13T19:05:09+00:00.json",
+    "binary_size": 4415472,
+    "wallclock": {
+      "p50": 1595,
+      "p95": 1695,
+      "p99": 1695,
+      "max": 1697
+    },
+    "phase_1_run_root_prep": {
+      "p50": 72,
+      "p95": 79,
+      "p99": 90,
+      "max": 92
+    },
+    "phase_12b_ready_accept": {
+      "p50": 1024638,
+      "p95": 1034643,
+      "p99": 1036268,
+      "max": 1036780
+    }
+  },
+  "delta": {
+    "binary_size": -2364744,
+    "binary_size_percent": -34.88,
+    "wallclock_p50": -94,
+    "wallclock_p95": 1,
+    "wallclock_p99": -1,
+    "phase_1_run_root_prep_p50": -1,
+    "phase_1_run_root_prep_p95": 1,
+    "phase_12b_ready_accept_p50": 1587,
+    "phase_12b_ready_accept_p95": 1099
+  },
+  "acceptance": {
+    "release_build_succeeded": true,
+    "test_profile_panic": "unwind",
+    "size_target_bytes": 4000000,
+    "size_target_met": false,
+    "runtime_regression_observed": false
+  }
+}
