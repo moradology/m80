@@ -4,9 +4,9 @@ use std::path::Path;
 use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
     apply_outbound_nat_policy_with_ops, cleanup_outbound_nat_policy_with_ops, cleanup_vm_with_ops,
-    outbound_nat_filter_chain, outbound_nat_rule_comment, planned_bridge_state,
-    planned_vm_network_state, write_vm_network_state_record, LinkOps, NetError,
-    PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
+    guest_ipv4_claim_path, outbound_nat_filter_chain, outbound_nat_rule_comment,
+    planned_bridge_state, planned_vm_network_state, write_vm_network_state_record, LinkOps,
+    NetError, PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
 };
 
 #[test]
@@ -172,6 +172,24 @@ fn repeated_cleanup_calls_are_safe() {
         [format!("delete_link_if_exists {}", state.tap_name)]
     );
     assert!(!state.run_dir.join("network-state.json").exists());
+}
+
+#[test]
+fn cleanup_removes_guest_ip_claim() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_root = temp.path();
+    let state = ready_state(run_root, "vm-a");
+    write_vm_network_state_record(&state.run_dir, &state).unwrap();
+    let claim_path = guest_ipv4_claim_path(run_root, state.guest_ipv4);
+    std::fs::create_dir(claim_path.parent().unwrap()).unwrap();
+    std::fs::write(&claim_path, "vm-a\n").unwrap();
+    let mut policy_ops = RecordingPolicyOps::default();
+    apply_outbound_nat_policy_with_ops(&mut policy_ops, &state).unwrap();
+    let mut link_ops = RecordingLinkOps::with_existing(&state.tap_name);
+
+    cleanup_vm_with_ops(&mut link_ops, &mut policy_ops, "vm-a", run_root).unwrap();
+
+    assert!(!claim_path.exists());
 }
 
 #[test]

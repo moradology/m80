@@ -5,10 +5,11 @@ use std::time::Duration;
 
 use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
-    bridge_state_path, derive_guest_addressing, planned_bridge_state, planned_vm_network_state,
-    read_bridge_state, read_vm_network_state_record, realize_bridge_and_tap_with_ops_for_routes,
-    vm_network_state_path, write_bridge_state, write_vm_network_state_record, LinkOps, NetError,
-    RealizedNetwork, SetupPhase, BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
+    bridge_state_path, derive_guest_addressing, guest_ipv4_claim_path, planned_bridge_state,
+    planned_vm_network_state, read_bridge_state, read_vm_network_state_record,
+    realize_bridge_and_tap_with_ops_for_routes, vm_network_state_path, write_bridge_state,
+    write_vm_network_state_record, LinkOps, NetError, RealizedNetwork, SetupPhase,
+    BRIDGE_STATE_FILE, NETWORK_STATE_FILE,
 };
 
 const DEFAULT_ONLY_ROUTES: &str = "\
@@ -117,6 +118,23 @@ fn vm_network_state_is_atomic_with_phase_transition() {
     write_vm_network_state_record(&run_dir, &ready).unwrap();
     assert_eq!(read_json(&path)["setup_phase"], "ready");
     assert_eq!(read_vm_network_state_record(&run_dir).unwrap(), ready);
+}
+
+#[test]
+fn vm_network_setup_writes_guest_ip_claim() {
+    let temp = tempfile::tempdir().unwrap();
+    let run_dir = temp.path().join("vm-123");
+    std::fs::create_dir(&run_dir).unwrap();
+    let intent = intent_with_exception();
+    let mut ops = RecordingLinkOps::with_link_address(true);
+
+    realize_for_test(&mut ops, &intent, "vm-123", temp.path(), &run_dir).unwrap();
+    let state = read_vm_network_state_record(&run_dir).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(guest_ipv4_claim_path(temp.path(), state.guest_ipv4)).unwrap(),
+        "vm-123\n"
+    );
 }
 
 #[test]
@@ -259,6 +277,8 @@ fn host_route_collision_returns_typed_error_pre_mutation() {
     assert!(ops.operations.is_empty());
     assert!(!bridge_state_path(temp.path()).exists());
     assert!(!vm_network_state_path(&run_dir).exists());
+    let (guest_ipv4, _) = derive_guest_addressing(temp.path(), "vm-123");
+    assert!(!guest_ipv4_claim_path(temp.path(), guest_ipv4).exists());
 }
 
 #[test]

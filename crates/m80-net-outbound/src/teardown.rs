@@ -28,6 +28,8 @@ pub fn cleanup_vm_with_ops(
     let state_path = vm_network_state_path(&run_dir);
     if !state_path.exists() {
         link_ops::teardown_tap(links, &derive_tap_name(run_root, vm_id))?;
+        let (guest_ipv4, _) = crate::derive_guest_addressing(run_root, vm_id);
+        crate::remove_guest_ipv4_claim(run_root, vm_id, guest_ipv4)?;
         return cleanup_orphan_bridge_with_ops(links, run_root);
     }
 
@@ -40,6 +42,7 @@ pub fn cleanup_vm_with_ops(
         link_ops::teardown_tap(links, &state.bridge.bridge_name)?;
         remove_file_if_present(&bridge_state_path(&state.bridge.run_root))?;
     }
+    crate::remove_guest_ipv4_claim(run_root, vm_id, state.guest_ipv4)?;
     remove_file_if_present(&state_path)
 }
 
@@ -377,4 +380,3 @@ fn validate_bridge_owner_record_for_cleanup(state: &VmNetworkStateRecord) -> Res
         detail: "bridge owner record does not match cleanup VM bridge identity".to_owned(),
     })
 }
-

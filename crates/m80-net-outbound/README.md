@@ -67,9 +67,11 @@ Sequestering it has three benefits:
   instead of trying to recreate the bridge.
 - Per-VM state is written at `<run_dir>/network-state.json` in a Planned
   phase before TAP mutation and in a Ready phase after TAP creation, MAC
-  assignment, bridge attach, and link-up succeed. Setup rejects a planned
-  guest IPv4 collision both before and after writing Planned state, so a racy
-  sibling setup cannot silently leave two VM states with the same guest IP.
+  assignment, bridge attach, and link-up succeed. Setup rejects existing
+  planned guest IPv4 collisions before taking the allocation lock, then records
+  a per-IP claim under that lock before writing Planned state. Concurrent
+  same-IP launches fail closed without falling back to random addressing or
+  scanning all sibling state files while the lock is held.
 - If TAP setup fails after bridge creation, m80 deletes the partial TAP if
   present, removes the per-VM Planned state file, and scavenges the unused
   run-root bridge so failed launches do not strand owned network residue.
@@ -122,10 +124,11 @@ Sequestering it has three benefits:
 - `cleanup_vm(vm_id: &str, run_root: &Path) -> Result<(), NetError>`
   removes only owned residue for that VM: exact comment-tagged FORWARD and
   NAT rules, comment-owned rules in the per-VM filter chain, the empty
-  per-VM chain, the TAP link, and the VM network state file. Repeated calls
-  tolerate missing state and missing links. If the state file is missing,
-  cleanup derives the TAP name from `(run_root, vm_id)` and deletes it before
-  orphan bridge recovery.
+  per-VM chain, the TAP link, the guest-IP claim, and the VM network state
+  file. Repeated calls tolerate missing state and missing links. If the state
+  file is missing, cleanup derives the TAP name and guest IP from
+  `(run_root, vm_id)`, deletes owned residue, and then runs orphan bridge
+  recovery.
 - Cleanup aborts on foreign rules inside an owned per-VM filter chain. It
   never deletes unowned rules by index or broad match.
 - `cleanup_orphan_bridge(run_root: &Path) -> Result<(), NetError>` is
@@ -214,7 +217,7 @@ Sequestering it has three benefits:
   setup/policy helpers; `m80-net-outbound` does not re-export it.
 - `sha2`, `hex`, `ipnet` — derivation math.
 - `serde`, `serde_json` — state files.
-- `nix` — process/file locking around guest-IP allocation.
+- `nix` — process/file locking around guest-IP claim creation.
 - `rtnetlink`, `futures-util`, `tokio` — direct netlink control for
   bridge/address/link operations.
 - `tun` — safe TAP creation over the Linux TUN/TAP driver.
@@ -228,7 +231,8 @@ Sequestering it has three benefits:
   a known set of bridge/tap/IP/MAC outputs. Pinned in JSON.
 - Collision detection: a fixture with two VMs claiming the same guest IP
   produces `GuestIpv4Collision`; a barrier-synchronized setup test pins that
-  concurrent colliding VM ids cannot both remain ready.
+  concurrent colliding VM ids cannot both remain ready, and setup/cleanup tests
+  pin guest-IP claim creation and removal.
 - Host route collision: a fixture route overlapping the planned bridge CIDR
   produces `HostRouteCollision` before any link operation runs.
 - Bridge/TAP setup: matching Ready bridge ownership skips bridge mutation,

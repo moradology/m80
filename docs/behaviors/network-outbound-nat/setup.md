@@ -41,9 +41,12 @@ checks whether the corresponding kernel bridge still exists. Missing links are
 recreated from the planned state before the ready state is written.
 
 Per-VM setup checks sibling VM state files for the planned guest IPv4 before
-and after writing its own Planned state. The second check closes the
-state-file race where two concurrent launches derive the same guest address:
-at most one colliding VM state can remain ready.
+taking the allocation lock. Under the lock, setup records a per-IP claim under
+`<run_root>/.network-guest-ip-claims/<guest_ipv4>` before writing its own
+Planned state. The claim closes the state-file race where two concurrent
+launches derive the same guest address without walking every sibling VM
+directory while the allocation lock is held: at most one colliding VM state can
+remain ready.
 
 ## Tap Creation
 
@@ -58,9 +61,9 @@ The realized TAP name and guest MAC become the Firecracker
 `NetworkInterfaceConfig` for `eth0`.
 
 If TAP setup fails after the run-root bridge has been created, setup rolls back
-the VM network state file, deletes the TAP if it was partially created, and
-scavenges the now-unused run-root bridge state. A failed VM launch must not
-leave a bridge or per-VM state orphan behind.
+the guest-IP claim and VM network state file, deletes the TAP if it was
+partially created, and scavenges the now-unused run-root bridge state. A failed
+VM launch must not leave a bridge or per-VM state orphan behind.
 
 This is a deliberate correction from the inherited predecessor `ip tuntap` path.
 Kata's runtime validates the no-shellout posture for host link management, but
@@ -103,6 +106,11 @@ The planned phase is written before per-VM TAP mutation. The ready phase is
 written only after TAP creation, MAC assignment, bridge attach, and link-up
 succeed.
 
+The guest-IP claim is hidden run-root state owned by the same VM id. Normal
+cleanup removes the claim before removing the VM network state. If cleanup is
+called after the state file is already gone, it derives the guest IP from
+`(run_root, vm_id)` and removes that claim opportunistically.
+
 ## Verification
 
 `crates/m80-net-outbound/tests/network-outbound-nat/setup.rs` pins the
@@ -116,7 +124,9 @@ Relevant setup tests:
 `bridge_setup_is_idempotent_with_matching_state`,
 `planned_bridge_state_recovers_existing_kernel_bridge_without_recreate`, and
 `planned_bridge_state_recreates_kernel_dropped_bridge`. Failed setup cleanup is
-pinned by `failed_launch_after_bridge_cleans_bridge`. Concurrent guest-IP
-collision handling is pinned by `concurrent_launch_no_ipv4_collision`.
+pinned by `failed_launch_after_bridge_cleans_bridge`. Guest-IP claim ownership
+is pinned by `vm_network_setup_writes_guest_ip_claim` and
+`cleanup_removes_guest_ip_claim`. Concurrent guest-IP collision handling is
+pinned by `concurrent_launch_no_ipv4_collision`.
 Host-route pre-mutation rejection is pinned by
 `host_route_collision_returns_typed_error_pre_mutation`.

@@ -68,6 +68,8 @@ pub const RULE_COMMENT_PREFIX: &str = "m80";
 /// Per-VM network state filename under each VM run directory.
 pub const NETWORK_STATE_FILE: &str = "network-state.json";
 
+const GUEST_IP_CLAIM_DIR: &str = ".network-guest-ip-claims";
+
 /// What the realizer materialized for one VM. Caller-observable handles for
 /// diagnostics and downstream config (e.g., the orchestrator's
 /// `NetworkInterfaceConfig` build).
@@ -131,16 +133,20 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
         Some(&planned_bridge.bridge_name),
         host_routes,
     )?;
+    reject_guest_ipv4_collision(
+        run_root,
+        vm_id,
+        planned_bridge.cidr,
+        derive_guest_addressing(run_root, vm_id).0,
+    )?;
     let allocation_lock = lock_network_allocation(run_root)?;
     ensure_bridge_ready_with_ops(ops, run_root, &planned_bridge)?;
     let bridge = read_bridge_state(run_root)?;
 
     let vm_state = planned_vm_network_state(intent, vm_id, run_root, run_dir, bridge.clone());
-    reject_guest_ipv4_collision(run_root, vm_id, bridge.cidr, vm_state.guest_ipv4)?;
-    write_vm_network_state_record(run_dir, &vm_state)?;
-    if let Err(err) = reject_guest_ipv4_collision(run_root, vm_id, bridge.cidr, vm_state.guest_ipv4)
-    {
-        remove_file_if_present_local(&vm_network_state_path(run_dir))?;
+    claim_guest_ipv4(run_root, vm_id, vm_state.guest_ipv4)?;
+    if let Err(err) = write_vm_network_state_record(run_dir, &vm_state) {
+        remove_guest_ipv4_claim(run_root, vm_id, vm_state.guest_ipv4)?;
         return Err(err);
     }
     drop(allocation_lock);
@@ -155,7 +161,10 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
         return Err(setup_err);
     }
     let ready_vm_state = vm_state.with_phase(SetupPhase::Ready);
-    write_vm_network_state_record(run_dir, &ready_vm_state)?;
+    if let Err(err) = write_vm_network_state_record(run_dir, &ready_vm_state) {
+        rollback_failed_vm_network_setup(ops, run_root, run_dir, &ready_vm_state.tap_name)?;
+        return Err(err);
+    }
 
     Ok(RealizedNetwork {
         bridge_name: bridge.bridge_name,
@@ -205,6 +214,9 @@ fn rollback_failed_vm_network_setup(
     tap_name: &str,
 ) -> Result<(), NetError> {
     link_ops::teardown_tap(ops, tap_name)?;
+    if let Ok(state) = read_vm_network_state_record(run_dir) {
+        remove_guest_ipv4_claim(run_root, &state.vm_id, state.guest_ipv4)?;
+    }
     remove_file_if_present_local(&vm_network_state_path(run_dir))?;
     teardown::cleanup_orphan_bridge_with_ops(ops, run_root)
 }
@@ -296,6 +308,83 @@ pub(crate) fn reject_guest_ipv4_collision(
     }
 
     Ok(())
+}
+
+pub(crate) fn guest_ipv4_claim_path(run_root: &Path, guest_ipv4: Ipv4Addr) -> PathBuf {
+    run_root
+        .join(GUEST_IP_CLAIM_DIR)
+        .join(guest_ipv4.to_string())
+}
+
+pub(crate) fn remove_guest_ipv4_claim(
+    run_root: &Path,
+    vm_id: &str,
+    guest_ipv4: Ipv4Addr,
+) -> Result<(), NetError> {
+    let path = guest_ipv4_claim_path(run_root, guest_ipv4);
+    match fs::read_to_string(&path) {
+        Ok(owner) if owner.trim_end() == vm_id => {
+            remove_file_if_present_local(&path)?;
+            remove_empty_guest_ipv4_claim_dir(run_root)
+        }
+        Ok(_) => Ok(()),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(NetError::PathIo { path, source }),
+    }
+}
+
+fn claim_guest_ipv4(run_root: &Path, vm_id: &str, guest_ipv4: Ipv4Addr) -> Result<(), NetError> {
+    let claim_dir = run_root.join(GUEST_IP_CLAIM_DIR);
+    fs::create_dir_all(&claim_dir).map_err(|source| NetError::PathIo {
+        path: claim_dir.clone(),
+        source,
+    })?;
+    let path = guest_ipv4_claim_path(run_root, guest_ipv4);
+    match fs::read_to_string(&path) {
+        Ok(owner) if owner.trim_end() == vm_id => return Ok(()),
+        Ok(owner) => {
+            let owner = owner.trim_end().to_owned();
+            if guest_claim_owner_still_holds_ip(run_root, &owner, guest_ipv4)? {
+                return Err(NetError::GuestIpv4Collision { peer_vm_id: owner });
+            }
+            remove_file_if_present_local(&path)?;
+        }
+        Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(NetError::PathIo {
+                path: path.clone(),
+                source,
+            });
+        }
+    }
+    fs::write(&path, format!("{vm_id}\n")).map_err(|source| NetError::PathIo { path, source })
+}
+
+fn remove_empty_guest_ipv4_claim_dir(run_root: &Path) -> Result<(), NetError> {
+    let path = run_root.join(GUEST_IP_CLAIM_DIR);
+    match fs::remove_dir(&path) {
+        Ok(()) => Ok(()),
+        Err(source)
+            if source.kind() == io::ErrorKind::NotFound
+                || source.raw_os_error() == Some(nix::errno::Errno::ENOTEMPTY as i32) =>
+        {
+            Ok(())
+        }
+        Err(source) => Err(NetError::PathIo { path, source }),
+    }
+}
+
+fn guest_claim_owner_still_holds_ip(
+    run_root: &Path,
+    owner_vm_id: &str,
+    guest_ipv4: Ipv4Addr,
+) -> Result<bool, NetError> {
+    let owner_state_path = vm_network_state_path(&run_root.join(owner_vm_id));
+    if !owner_state_path.exists() {
+        return Ok(false);
+    }
+    let owner_state = state::read_vm_network_state_minimal(&owner_state_path)?;
+    Ok(owner_state.vm_id == owner_vm_id && owner_state.guest_ipv4 == guest_ipv4)
 }
 
 /// Reject a planned bridge CIDR against supplied `/proc/net/route` text.
