@@ -157,6 +157,9 @@ fn enrolled_pids(jailer_pid: u32, firecracker_pid: u32) -> Vec<u32> {
 
 impl Drop for Subtree {
     fn drop(&mut self) {
+        if let Err(e) = kill_cgroup(&self.0) {
+            warn!("drop: cgroup.kill({}) failed: {e}", self.0.display());
+        }
         if let Err(e) = fs::remove_dir(&self.0) {
             warn!("drop: rmdir({}) failed: {e}", self.0.display());
         }
@@ -351,22 +354,34 @@ fn write_cgroup_file(path: &Path, value: &str) -> Result<(), CgroupError> {
     Ok(())
 }
 
+fn kill_cgroup(path: &Path) -> Result<(), CgroupError> {
+    let kill_path = path.join("cgroup.kill");
+    if !kill_path.exists() {
+        return Ok(());
+    }
+    write_cgroup_file(&kill_path, "1\n")
+}
+
 fn enable_subtree_control_chain(
     base: &Path,
     parent: &Path,
     controllers: &[&'static str],
 ) -> Result<(), CgroupError> {
     let mut path = base.to_path_buf();
+    write_subtree_control_checked(&path, controllers)?;
+
     let relative = parent.strip_prefix(base).unwrap_or(parent);
     for component in relative.components() {
-        write_subtree_control(&path, controllers)?;
         path.push(component.as_os_str());
+        write_subtree_control_unchecked(&path, controllers)?;
     }
-    write_subtree_control(&path, controllers)?;
     Ok(())
 }
 
-fn write_subtree_control(path: &Path, controllers: &[&'static str]) -> Result<(), CgroupError> {
+fn write_subtree_control_checked(
+    path: &Path,
+    controllers: &[&'static str],
+) -> Result<(), CgroupError> {
     let controllers_path = path.join("cgroup.controllers");
     let available = fs::read_to_string(&controllers_path).map_err(|source| CgroupError::Io {
         path: controllers_path.clone(),
@@ -378,6 +393,13 @@ fn write_subtree_control(path: &Path, controllers: &[&'static str]) -> Result<()
         }
     }
 
+    write_subtree_control_unchecked(path, controllers)
+}
+
+fn write_subtree_control_unchecked(
+    path: &Path,
+    controllers: &[&'static str],
+) -> Result<(), CgroupError> {
     let value = controllers
         .iter()
         .map(|controller| format!("+{controller}"))

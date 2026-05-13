@@ -36,10 +36,11 @@ Test: `crates/m80-cgroup/src/lib.rs::tests::io_weight_range_is_kernel_bounded`.
 
 ## cleanup-idempotent
 
-The system removes the per-VM leaf cgroup with `fs::remove_dir`. Drop on
-`Subtree` calls this in best-effort mode: if `rmdir` fails (e.g., `EBUSY`
-because processes remain, or `ENOENT` because the directory was already
-removed), a `tracing::warn!` is emitted and the error is swallowed. No panic.
+Drop on `Subtree` writes `1` to leaf `cgroup.kill` when that file is present,
+then removes the per-VM leaf cgroup with `fs::remove_dir`. Both steps are
+best-effort: if the kill write fails, or if `rmdir` still fails (e.g.,
+`ENOENT` because the directory was already removed), a `tracing::warn!` is
+emitted and the error is swallowed. No panic.
 
 `cleanup_orphan_subtree(vm_id)` implements the same idempotent pattern for
 recovery at startup:

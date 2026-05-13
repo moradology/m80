@@ -288,11 +288,47 @@ fn create_applies_limits_before_pid_enrollment() {
     assert_subtree_control_contains_all_requested(&parent);
 }
 
+#[test]
+fn subtree_control_chain_checks_only_root_controller_availability() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("sys/fs/cgroup");
+    let parent = base.join("m80-firecracker");
+    fs::create_dir_all(&parent).unwrap();
+    fs::write(base.join("cgroup.controllers"), "cpu memory pids\n").unwrap();
+    fs::write(base.join("cgroup.subtree_control"), "").unwrap();
+    fs::write(parent.join("cgroup.subtree_control"), "").unwrap();
+
+    enable_subtree_control_chain(&base, &parent, &["cpu", "memory", "pids"]).unwrap();
+
+    assert_subtree_control_contains(&base, &["+cpu", "+memory", "+pids"]);
+    assert_subtree_control_contains(&parent, &["+cpu", "+memory", "+pids"]);
+}
+
+#[test]
+fn subtree_control_chain_still_rejects_missing_root_controller() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("sys/fs/cgroup");
+    let parent = base.join("m80-firecracker");
+    fs::create_dir_all(&parent).unwrap();
+    fs::write(base.join("cgroup.controllers"), "cpu pids\n").unwrap();
+    fs::write(base.join("cgroup.subtree_control"), "").unwrap();
+    fs::write(parent.join("cgroup.subtree_control"), "").unwrap();
+
+    let err = enable_subtree_control_chain(&base, &parent, &["cpu", "memory", "pids"])
+        .expect_err("missing root memory controller must fail typed");
+
+    assert!(matches!(err, CgroupError::ControllerNotEnabled("memory")));
+}
+
 fn assert_subtree_control_contains_all_requested(path: &std::path::Path) {
+    assert_subtree_control_contains(path, &["+cpu", "+memory", "+pids", "+io"]);
+}
+
+fn assert_subtree_control_contains(path: &std::path::Path, controllers: &[&str]) {
     let content = fs::read_to_string(path.join("cgroup.subtree_control")).unwrap();
-    for controller in ["+cpu", "+memory", "+pids", "+io"] {
+    for controller in controllers {
         assert!(
-            content.split_whitespace().any(|entry| entry == controller),
+            content.split_whitespace().any(|entry| entry == *controller),
             "{} missing {controller}: {content:?}",
             path.display()
         );
@@ -342,8 +378,31 @@ fn oom_score_adj_range_is_kernel_bounded() {
 }
 
 #[test]
+fn kill_cgroup_writes_kernel_kill_file_when_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = dir.path().join("leaf");
+    fs::create_dir(&leaf).unwrap();
+    fs::write(leaf.join("cgroup.kill"), "").unwrap();
+
+    kill_cgroup(&leaf).unwrap();
+
+    assert_eq!(fs::read_to_string(leaf.join("cgroup.kill")).unwrap(), "1\n");
+}
+
+#[test]
+fn drop_without_cgroup_kill_removes_empty_temp_leaf() {
+    let dir = tempfile::tempdir().unwrap();
+    let leaf = dir.path().join("leaf");
+    fs::create_dir(&leaf).unwrap();
+
+    drop(Subtree(leaf.clone()));
+
+    assert!(!leaf.exists(), "empty temp leaf must be removed on Drop");
+}
+
+#[test]
 #[ignore = "requires root and a writable cgroup v2 hierarchy"]
-fn cgroup_drop_with_live_procs_does_not_rmdir() {
+fn cgroup_drop_with_live_procs_uses_cgroup_kill_then_rmdir() {
     Subtree::probe().expect("probe() must return Ok on a unified-v2 host");
 
     let vm_id = format!("m80-drop-live-{}", std::process::id());
@@ -371,21 +430,14 @@ fn cgroup_drop_with_live_procs_does_not_rmdir() {
     drop(Subtree(leaf.clone()));
 
     assert!(
-        leaf.exists(),
-        "Subtree::Drop must not rmdir a cgroup with live procs"
-    );
-    assert!(
-        !fs::read_to_string(leaf.join("cgroup.procs"))
-            .expect("read cgroup.procs")
-            .trim()
-            .is_empty(),
-        "live process must still be enrolled after failed Drop rmdir"
+        !leaf.exists(),
+        "Subtree::Drop must kill live procs and remove the cgroup leaf"
     );
 
     guard.cleanup();
     assert!(
         !leaf.exists(),
-        "manual cleanup after killing live procs must remove the cgroup leaf"
+        "cleanup guard must leave killed cgroup leaf absent"
     );
 }
 

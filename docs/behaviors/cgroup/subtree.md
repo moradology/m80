@@ -34,11 +34,15 @@ Test: `crates/m80-cgroup/src/tests.rs::public_probe_reads_host_once_from_fresh_p
 
 Before enrolling any process, the system recursively writes the needed
 controllers to `cgroup.subtree_control` from `/sys/fs/cgroup` through
-`/sys/fs/cgroup/m80-firecracker`. The default profile needs `cpu`, `memory`,
-`pids`, and `io`; a custom profile without any `io.*` setting only needs
-`cpu`, `memory`, and `pids`. If a controller is not listed in an ancestor's
-`cgroup.controllers`, the write fails and
-`CgroupError::ControllerNotEnabled("<name>")` is returned.
+`/sys/fs/cgroup/m80-firecracker`. The preset profile needs `cpu`, `memory`,
+and `pids`; a custom profile with any `io.*` setting also needs `io`.
+
+The root controller list is checked once before the chain write. If a
+required controller is not listed in root `cgroup.controllers`, creation fails
+with `CgroupError::ControllerNotEnabled("<name>")`. Descendant availability is
+not re-read: once the parent write succeeds, the child inherits the controller,
+and the kernel remains authoritative for the actual `cgroup.subtree_control`
+write.
 
 The controller writes and cgroup limit writes happen before PID enrolment.
 This keeps controller properties visible and configured before
@@ -49,6 +53,8 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 
 Test: `crates/m80-cgroup/src/lib.rs::tests::required_subtree_control_enables_three_controllers`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::subtree_control_chain_checks_only_root_controller_availability`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::subtree_control_chain_still_rejects_missing_root_controller`.
 The latter asserts `+cpu`, `+memory`, `+pids`, and `+io` are present on both
 ancestor levels in the synthetic hierarchy before process enrollment.
 
@@ -92,10 +98,13 @@ Test: `crates/m80-cgroup/tests/integration_root.rs::subtree_creation_places_leaf
 
 ## live-proc-drop
 
-If a `Subtree` is dropped while the leaf still has live processes, the cgroup
-leaf remains in place because the kernel rejects `rmdir` on a busy cgroup. The
-drop path logs the failed `rmdir` and does not panic; after the live processes
-are killed, normal cleanup can remove the leaf.
+If a `Subtree` is dropped while the leaf still has live processes, Drop writes
+`1` to leaf `cgroup.kill` when that kernel file is present, then removes the
+leaf with `rmdir`. This asks the kernel to empty the cgroup atomically before
+directory removal. If `cgroup.kill` is absent or either write/rmdir operation
+fails, Drop logs the failure and does not panic.
 
-Test: `crates/m80-cgroup/src/lib.rs::tests::cgroup_drop_with_live_procs_does_not_rmdir`
+Test: `crates/m80-cgroup/src/lib.rs::tests::kill_cgroup_writes_kernel_kill_file_when_present`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::drop_without_cgroup_kill_removes_empty_temp_leaf`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::cgroup_drop_with_live_procs_uses_cgroup_kill_then_rmdir`
 (#[ignore]).
