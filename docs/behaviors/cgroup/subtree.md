@@ -17,6 +17,19 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 
 Test: `crates/m80-cgroup/tests/cgroup/subtree.rs::leaf_under_renamed_root`.
 
+## probe-cache
+
+`Subtree::probe()` treats the cgroup mount layout as host-static for the life
+of the process. The first call reads `/proc/mounts`, verifies a cgroup v2
+mount at `/sys/fs/cgroup`, and reads root `cgroup.subtree_control` to prove the
+root interface is visible. The result, including typed failure, is cached
+process-wide. Later calls replay the cached result instead of re-reading
+`/proc/mounts` or root cgroup files.
+
+Test: `crates/m80-cgroup/src/tests.rs::probe_cache_reuses_successful_result`.
+Test: `crates/m80-cgroup/src/tests.rs::probe_cache_replays_first_error`.
+Test: `crates/m80-cgroup/src/tests.rs::public_probe_reads_host_once_from_fresh_process`.
+
 ## subtree-control
 
 Before enrolling any process, the system recursively writes the needed

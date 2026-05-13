@@ -1,6 +1,9 @@
 use super::*;
 
+use std::env;
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -37,7 +40,7 @@ fn required_subtree_control_enables_three_controllers() {
 
 #[test]
 fn unified_v2_mounts_accepts() {
-    let result = probe_mounts(UNIFIED_V2_MOUNTS);
+    let result = probe::probe_mounts(UNIFIED_V2_MOUNTS);
     assert!(
         result.is_ok(),
         "probe_mounts must accept a well-formed unified v2 mount table: {result:?}"
@@ -46,7 +49,7 @@ fn unified_v2_mounts_accepts() {
 
 #[test]
 fn v1_mounts_returns_unsupported() {
-    let result = probe_mounts(V1_MOUNTS);
+    let result = probe::probe_mounts(V1_MOUNTS);
     assert!(
         matches!(result, Err(CgroupError::UnsupportedHostMode)),
         "v1 mounts must return UnsupportedHostMode, got {result:?}"
@@ -55,7 +58,7 @@ fn v1_mounts_returns_unsupported() {
 
 #[test]
 fn hybrid_wrong_root_returns_unsupported() {
-    let result = probe_mounts(HYBRID_WRONG_MOUNT_MOUNTS);
+    let result = probe::probe_mounts(HYBRID_WRONG_MOUNT_MOUNTS);
     assert!(
         matches!(result, Err(CgroupError::UnsupportedHostMode)),
         "cgroup2 at wrong mount point must return UnsupportedHostMode, got {result:?}"
@@ -64,7 +67,7 @@ fn hybrid_wrong_root_returns_unsupported() {
 
 #[test]
 fn empty_mounts_returns_unsupported() {
-    let result = probe_mounts("");
+    let result = probe::probe_mounts("");
     assert!(
         matches!(result, Err(CgroupError::UnsupportedHostMode)),
         "empty mounts must return UnsupportedHostMode, got {result:?}"
@@ -74,11 +77,102 @@ fn empty_mounts_returns_unsupported() {
 #[test]
 fn cgroup2_at_exact_root_is_required() {
     let mounts = "cgroup2 /sys/fs/cgroup/foo cgroup2 rw 0 0\n";
-    let result = probe_mounts(mounts);
+    let result = probe::probe_mounts(mounts);
     assert!(
         matches!(result, Err(CgroupError::UnsupportedHostMode)),
         "cgroup2 at subpath must not be accepted: {result:?}"
     );
+}
+
+#[test]
+fn probe_cache_reuses_successful_result() {
+    let cache = OnceLock::new();
+    let calls = AtomicUsize::new(0);
+
+    probe::probe_with_cache(&cache, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok(UNIFIED_V2_MOUNTS.to_string())
+    })
+    .expect("first probe must accept unified v2");
+
+    probe::probe_with_cache(&cache, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Err(CgroupError::UnsupportedHostMode)
+    })
+    .expect("second probe must replay the cached success");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn probe_cache_replays_first_error() {
+    let cache = OnceLock::new();
+    let calls = AtomicUsize::new(0);
+    let path = PathBuf::from("/proc/mounts");
+
+    let first = probe::probe_with_cache(&cache, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Err(CgroupError::Io {
+            path: path.clone(),
+            source: io::Error::new(io::ErrorKind::PermissionDenied, "synthetic denial"),
+        })
+    });
+    assert!(matches!(first, Err(CgroupError::Io { path: p, .. }) if p == path));
+
+    let second = probe::probe_with_cache(&cache, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok(UNIFIED_V2_MOUNTS.to_string())
+    });
+    assert!(matches!(second, Err(CgroupError::Io { path: p, .. }) if p == path));
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn public_probe_reads_host_once_from_fresh_process() {
+    if env::var_os("M80_CGROUP_PROBE_CHILD").is_some() {
+        return;
+    }
+
+    let status = Command::new(env::current_exe().expect("current test binary"))
+        .env("M80_CGROUP_PROBE_CHILD", "1")
+        .arg("--exact")
+        .arg("tests::public_probe_child_reads_once")
+        .arg("--nocapture")
+        .status()
+        .expect("spawn public probe child test");
+
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "child public probe cache test must pass"
+    );
+}
+
+#[test]
+fn public_probe_child_reads_once() {
+    if env::var_os("M80_CGROUP_PROBE_CHILD").is_none() {
+        return;
+    }
+
+    assert_eq!(probe::host_probe_read_count(), 0);
+    let first = Subtree::probe();
+    assert_eq!(probe::host_probe_read_count(), 1);
+    let second = Subtree::probe();
+    assert_eq!(probe::host_probe_read_count(), 1);
+    assert_eq!(probe_result_kind(&first), probe_result_kind(&second));
+}
+
+fn probe_result_kind(result: &Result<(), CgroupError>) -> &'static str {
+    match result {
+        Ok(()) => "ok",
+        Err(CgroupError::UnsupportedHostMode) => "unsupported",
+        Err(CgroupError::ControllerNotEnabled(_)) => "controller",
+        Err(CgroupError::SparseInheritedFile(_)) => "cpuset",
+        Err(CgroupError::InvalidLimit { .. }) => "limit",
+        Err(CgroupError::LivePids { .. }) => "live-pids",
+        Err(CgroupError::Io { .. }) => "io",
+    }
 }
 
 #[test]

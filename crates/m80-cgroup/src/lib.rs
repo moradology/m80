@@ -14,6 +14,8 @@ use tracing::warn;
 
 use m80_jailer::{JailedFirecracker, MaterializedJail};
 
+mod probe;
+
 /// Root cgroup directory for all m80 VMs.
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/m80-firecracker";
 
@@ -36,11 +38,7 @@ impl Subtree {
     /// Probe whether this host has unified cgroup v2 — call from preflight
     /// before any [`Subtree::create`].
     pub fn probe() -> Result<(), CgroupError> {
-        let mounts = fs::read_to_string("/proc/mounts").map_err(|source| CgroupError::Io {
-            path: PathBuf::from("/proc/mounts"),
-            source,
-        })?;
-        probe_mounts(&mounts)
+        probe::probe()
     }
 
     /// Create the per-VM subtree under `m80-firecracker/<vm_id>/`, enable
@@ -332,29 +330,6 @@ pub enum CgroupError {
         #[source]
         source: io::Error,
     },
-}
-
-fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
-    let has_v2 = mounts.lines().any(|line| {
-        let mut cols = line.split_whitespace();
-        let _dev = cols.next();
-        let mount_point = cols.next().unwrap_or("");
-        let fs_type = cols.next().unwrap_or("");
-        fs_type == "cgroup2" && mount_point == CGROUP_V2_ROOT
-    });
-
-    if !has_v2 {
-        return Err(CgroupError::UnsupportedHostMode);
-    }
-
-    fs::read_to_string(Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control")).map_err(
-        |source| CgroupError::Io {
-            path: Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control"),
-            source,
-        },
-    )?;
-
-    Ok(())
 }
 
 /// Write `value` to a cgroup virtual file. Bare write-only open without

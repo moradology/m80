@@ -19,7 +19,7 @@ See rustdoc for full signatures.
 
 | Public item | Contract |
 | --- | --- |
-| `Subtree::probe()` | Confirms the host runs cgroup v2 unified hierarchy and returns `CgroupError::UnsupportedHostMode` on hybrid or v1-only hosts. This is a precondition check; callers gate cgroup usage on a single probe result. |
+| `Subtree::probe()` | Confirms the host runs cgroup v2 unified hierarchy and returns `CgroupError::UnsupportedHostMode` on hybrid or v1-only hosts. The first process-local call reads `/proc/mounts` and root `cgroup.subtree_control`; later calls replay the cached result. This is a precondition check; callers gate cgroup usage on a single probe result. |
 | `Subtree::create(vm_id, &MaterializedJail, &JailedFirecracker, &Limits)` | Materializes `/sys/fs/cgroup/m80-firecracker/<vm_id>/`, recursively enables `cpu`, `memory`, `pids`, and requested `io` controllers, applies limits, tunes OOM score, and only then enrols the deduped jailer/firecracker pid set. `jailer_pid = 0` is skipped as the `new_pid_ns` sentinel. Sparse `cpuset.cpus` and `cpuset.mems` leaf files inherit the nearest non-empty ancestor value before PID enrolment or return `SparseInheritedFile`. |
 | `Subtree::leaf_path(vm_id)` | Pure no-I/O helper returning the expected public leaf path for triage and inspection. |
 | `Subtree::Drop` | Removes the leaf cgroup directory with `rmdir`; if live processes or another kernel condition prevents removal, logs through `tracing` and never panics. |
@@ -53,7 +53,7 @@ See rustdoc for full signatures.
 
 ## Tests
 
-- Unit (in-crate): mounts-string parsing, `Limits`/`CpuMax`/`IoMax` JSON round-trip, error `Display` shape, two-phase limit-before-enrolment ordering, recursive subtree-control writes, sparse cpuset inheritance, and an ignored real-host Drop-with-live-procs regression.
+- Unit (in-crate): mounts-string parsing, process-local probe caching, `Limits`/`CpuMax`/`IoMax` JSON round-trip, error `Display` shape, two-phase limit-before-enrolment ordering, recursive subtree-control writes, sparse cpuset inheritance, and an ignored real-host Drop-with-live-procs regression.
 - `tests/integration_root.rs` — `#[ignore]` real-host probe, pids.max
   enforcement, cpuset affinity enforcement, and io.max throughput enforcement;
   `sudo cargo test -p m80-cgroup -- --ignored`.
