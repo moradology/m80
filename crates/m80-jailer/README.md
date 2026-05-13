@@ -128,6 +128,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `new_pid_ns` `jailer_pid = 0` sentinel.
 - `tests/jailer/jail_root_layout.rs` — `jail_root_path` output matches the
   expected jailer-hardcoded layout for several input combinations.
+- `tests/jailer/pid_file_backoff.rs` — launch observes a delayed
+  `firecracker.pid` without paying the old fixed 25 ms wait floor.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,
   netns validation, `new_pid_ns` parent reaping, and daemonized parent reaping.

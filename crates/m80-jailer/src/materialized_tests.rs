@@ -28,6 +28,51 @@ impl Drop for EnvGuard {
 }
 
 #[test]
+fn firecracker_pid_poll_backoff_starts_at_one_ms_and_caps_at_twenty_five_ms() {
+    let mut delay = FIRECRACKER_PID_INITIAL_POLL;
+    let mut delays = Vec::new();
+    for _ in 0..8 {
+        delays.push(delay);
+        delay = next_firecracker_pid_poll_delay(delay);
+    }
+
+    assert_eq!(
+        delays,
+        vec![
+            Duration::from_millis(1),
+            Duration::from_millis(2),
+            Duration::from_millis(4),
+            Duration::from_millis(8),
+            Duration::from_millis(16),
+            Duration::from_millis(25),
+            Duration::from_millis(25),
+            Duration::from_millis(25),
+        ]
+    );
+}
+
+#[test]
+fn firecracker_pid_wait_rechecks_after_one_ms_poll() {
+    let dir = tempfile::tempdir().unwrap();
+    let pid_file = dir.path().join("firecracker.pid");
+    let mut sleeps = Vec::new();
+
+    let pid = wait_for_firecracker_pid_file_with_sleep(
+        &pid_file,
+        Instant::now() + Duration::from_secs(1),
+        |delay| {
+            sleeps.push(delay);
+            std::fs::write(&pid_file, b"4242\n").unwrap();
+        },
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(pid, 4242);
+    assert_eq!(sleeps, vec![Duration::from_millis(1)]);
+}
+
+#[test]
 fn launch_redirects_stdio_and_passes_hardening_args() {
     let dir = tempfile::tempdir().unwrap();
     let run_dir = dir.path().join("vm-stdio");

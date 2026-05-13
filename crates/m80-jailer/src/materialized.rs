@@ -15,6 +15,10 @@ use crate::error::JailerError;
 use crate::plan::write_file_no_follow;
 use crate::types::{JailerState, Plan, JAILER_STATE_FILE};
 
+const FIRECRACKER_PID_TIMEOUT: Duration = Duration::from_secs(1);
+const FIRECRACKER_PID_INITIAL_POLL: Duration = Duration::from_millis(1);
+const FIRECRACKER_PID_MAX_POLL: Duration = Duration::from_millis(25);
+
 /// A materialized chroot. Drop tears it down.
 #[derive(Debug)]
 pub struct MaterializedJail {
@@ -169,35 +173,17 @@ impl MaterializedJail {
 
         let jailer_pid = child.id();
 
-        // Wait up to 1 s for firecracker.pid to appear.
         let pid_file = self.jail_path.join("firecracker.pid");
-        let deadline = Instant::now() + Duration::from_secs(1);
-        let firecracker_pid = loop {
-            if pid_file.exists() {
-                let raw = std::fs::read_to_string(&pid_file).map_err(|source| JailerError::Io {
-                    path: pid_file.clone(),
-                    source,
-                })?;
-                let pid: u32 = raw.trim().parse().map_err(|e| JailerError::Io {
-                    path: pid_file.clone(),
-                    source: io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("firecracker.pid not a u32: {e}"),
-                    ),
-                })?;
-                break pid;
-            }
-            if Instant::now() >= deadline {
-                // Timeout: firecracker.pid never appeared. Kill the child
-                // (which may be jailer pre-exec or firecracker post-exec)
-                // and reap it before bailing.
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(JailerError::FirecrackerPidTimeout {
-                    jail_path: self.jail_path.clone(),
-                });
-            }
-            thread::sleep(Duration::from_millis(25));
+        let deadline = Instant::now() + FIRECRACKER_PID_TIMEOUT;
+        let Some(firecracker_pid) = wait_for_firecracker_pid_file(&pid_file, deadline)? else {
+            // Timeout: firecracker.pid never appeared. Kill the child
+            // (which may be jailer pre-exec or firecracker post-exec)
+            // and reap it before bailing.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(JailerError::FirecrackerPidTimeout {
+                jail_path: self.jail_path.clone(),
+            });
         };
 
         let recorded_jailer_pid = if self.plan.config.daemonize {
@@ -232,6 +218,62 @@ impl MaterializedJail {
             firecracker_pid,
         })
     }
+}
+
+fn wait_for_firecracker_pid_file(
+    pid_file: &Path,
+    deadline: Instant,
+) -> Result<Option<u32>, JailerError> {
+    wait_for_firecracker_pid_file_with_sleep(pid_file, deadline, thread::sleep)
+}
+
+fn wait_for_firecracker_pid_file_with_sleep<F>(
+    pid_file: &Path,
+    deadline: Instant,
+    mut sleep: F,
+) -> Result<Option<u32>, JailerError>
+where
+    F: FnMut(Duration),
+{
+    let mut poll_delay = FIRECRACKER_PID_INITIAL_POLL;
+    loop {
+        match read_firecracker_pid_file(pid_file)? {
+            Some(pid) => return Ok(Some(pid)),
+            None => {
+                let now = Instant::now();
+                if now >= deadline {
+                    return Ok(None);
+                }
+                sleep(poll_delay.min(deadline.duration_since(now)));
+                poll_delay = next_firecracker_pid_poll_delay(poll_delay);
+            }
+        }
+    }
+}
+
+fn read_firecracker_pid_file(pid_file: &Path) -> Result<Option<u32>, JailerError> {
+    let raw = match std::fs::read_to_string(pid_file) {
+        Ok(raw) => raw,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(JailerError::Io {
+                path: pid_file.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let pid = raw.trim().parse().map_err(|e| JailerError::Io {
+        path: pid_file.to_path_buf(),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("firecracker.pid not a u32: {e}"),
+        ),
+    })?;
+    Ok(Some(pid))
+}
+
+fn next_firecracker_pid_poll_delay(current: Duration) -> Duration {
+    (current * 2).min(FIRECRACKER_PID_MAX_POLL)
 }
 
 fn push_extended_resource_limits(command: &mut Command, limits: &crate::types::ResourceLimits) {
