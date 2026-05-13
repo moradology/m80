@@ -16,6 +16,7 @@ use m80_image_manifest::{Manifest, ManifestError};
 
 mod artifacts;
 mod binary;
+mod cache;
 mod checks;
 mod cve_floor;
 mod table;
@@ -103,7 +104,8 @@ pub struct Discovery {
 
 impl Discovery {
     /// Render `report` as a fixed-width table for human consumption.
-    #[must_use] pub fn render_table(&self) -> String {
+    #[must_use]
+    pub fn render_table(&self) -> String {
         table::render(&self.report)
     }
 }
@@ -305,7 +307,8 @@ impl PreflightError {
     /// Rendered by the CLI in non-JSON mode as a `hint:` line after the error
     /// message; omitted from the JSON `detail` field so machine readers see a
     /// clean error string.
-    #[must_use] pub fn hint(&self) -> &'static str {
+    #[must_use]
+    pub fn hint(&self) -> &'static str {
         match self {
             Self::UnsupportedHostPlatform { .. } => {
                 "m80 requires a Linux host; macOS and Windows are not supported"

@@ -11,6 +11,7 @@ use nix::unistd::geteuid;
 
 use crate::artifacts::{verify_artifacts, ArtifactPreflightConfig};
 use crate::binary::{discover_binaries, BinaryDiscoveryConfig};
+use crate::cache::PreflightCache;
 use crate::{
     classify_privilege, CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES,
 };
@@ -125,8 +126,13 @@ pub fn run_with_configs(
     // 9. Privilege
     let privilege = check_privilege(&mut report)?;
 
+    let cache = PreflightCache::load(&binary_config, &artifact_config);
+
     // 10-12. Firecracker and jailer binaries
-    let binaries = discover_binaries(&binary_config)?;
+    let binaries = discover_binaries(
+        &binary_config,
+        cache.hit().map(|hit| hit.firecracker_version.as_str()),
+    )?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
         passed: true,
@@ -149,7 +155,7 @@ pub fn run_with_configs(
     });
 
     // 13-16. Kernel/rootfs artifacts, run-root, and storage helpers
-    let artifacts = verify_artifacts(&artifact_config)?;
+    let artifacts = verify_artifacts(&artifact_config, cache.hit().map(|hit| &hit.manifest))?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
         passed: true,
@@ -179,6 +185,8 @@ pub fn run_with_configs(
         passed: true,
         detail: artifacts.storage_helpers.join(", "),
     });
+
+    cache.store(&binaries.firecracker_version, &artifacts.manifest);
 
     Ok(Discovery {
         firecracker_bin: binaries.firecracker_bin,

@@ -78,10 +78,18 @@ which is the right place for a security review to start.
      unsupported reflinks mean launch falls back through `cp --reflink=auto`.
   17. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
+- A boot-scoped sentinel under `/run/m80-preflight-ok-<sha256>` caches only
+  the two expensive immutable-artifact checks: `firecracker --version` and
+  `m80-image-manifest::verify`. The key includes the kernel boot id, configured
+  Firecracker version pin, kernel kind override, and metadata for the
+  Firecracker, jailer, hardening wrapper, kernel, rootfs, and manifest files.
+  Corrupt or mismatched sentinels are ignored and rewritten after a successful
+  full check. `M80_FORCE_PREFLIGHT=1` disables the cache for that invocation.
 - Env keys are exact and case-sensitive. Preflight recognizes
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
   `M80_JAILER_HARDEN_BIN`, `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`,
-  `M80_ROOTFS_IMAGE`, `M80_KERNEL_KIND`, and `M80_RUN_ROOT`. The full schema is captured in
+  `M80_ROOTFS_IMAGE`, `M80_KERNEL_KIND`, `M80_RUN_ROOT`, and
+  `M80_FORCE_PREFLIGHT`. The full schema is captured in
   `docs/behaviors/configuration/env-schema.md`.
 - Each check produces a row in the `Discovery::report` field. The same
   data is rendered as a fixed-width table for human consumption via
@@ -159,7 +167,7 @@ which is the right place for a security review to start.
 - `m80-cgroup` — for cgroup v2 mode probing.
 - `m80-image-manifest` — for manifest validation.
 - `caps` — for reading the process's effective Linux capability set.
-- `serde`, `thiserror`, `tracing`, `nix`.
+- `hex`, `serde`, `sha2`, `thiserror`, `tracing`, `nix`.
 
 ## Tests
 
@@ -170,3 +178,5 @@ which is the right place for a security review to start.
 - Report determinism: same host state produces the same `report` rows
   in the same order.
 - Hint coverage: every error variant carries a non-empty hint string.
+- Sentinel cache: corrupt sentinel rewrite, boot-id invalidation, and rootfs
+  metadata invalidation.

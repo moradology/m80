@@ -113,9 +113,10 @@ impl RunRootReflink {
 /// Validate boot artifacts, run-root, and required storage helper binaries.
 pub(crate) fn verify_artifacts(
     config: &ArtifactPreflightConfig,
+    cached_manifest: Option<&Manifest>,
 ) -> Result<ArtifactPreflight, PreflightError> {
     let kernel = discover_kernel(config)?;
-    let (rootfs, manifest) = verify_rootfs_and_manifest(config)?;
+    let (rootfs, manifest) = verify_rootfs_and_manifest(config, cached_manifest)?;
     let run_root = verify_run_root(&config.run_root)?;
     let storage_helpers = verify_storage_helpers(config.helper_search_path.as_ref())?;
     let run_root_reflink = probe_run_root_reflink(&run_root, config.helper_search_path.as_ref());
@@ -130,7 +131,7 @@ pub(crate) fn verify_artifacts(
     })
 }
 
-fn discover_kernel(config: &ArtifactPreflightConfig) -> Result<PathBuf, PreflightError> {
+pub(crate) fn discover_kernel(config: &ArtifactPreflightConfig) -> Result<PathBuf, PreflightError> {
     if let Some(path) = &config.kernel_image {
         if !path.is_absolute() {
             return Err(PreflightError::NonAbsolutePath {
@@ -165,6 +166,7 @@ fn discover_kernel(config: &ArtifactPreflightConfig) -> Result<PathBuf, Prefligh
 
 fn verify_rootfs_and_manifest(
     config: &ArtifactPreflightConfig,
+    cached_manifest: Option<&Manifest>,
 ) -> Result<(PathBuf, Manifest), PreflightError> {
     let rootfs = config
         .rootfs_image
@@ -182,16 +184,25 @@ fn verify_rootfs_and_manifest(
         return Err(PreflightError::RootfsNotFound);
     }
 
-    let manifest_path = PathBuf::from(format!("{}.manifest.json", rootfs.display()));
-    let mut manifest = Manifest::read(&manifest_path)?;
-    if let Some(kind) = &config.kernel_kind {
-        manifest.kernel_kind = parse_kernel_kind(kind)?;
-    }
+    let manifest_path = manifest_path_for_rootfs(&rootfs);
+    let manifest = if let Some(manifest) = cached_manifest {
+        manifest.clone()
+    } else {
+        let mut manifest = Manifest::read(&manifest_path)?;
+        if let Some(kind) = &config.kernel_kind {
+            manifest.kernel_kind = parse_kernel_kind(kind)?;
+        }
 
-    let parent = rootfs.parent().unwrap_or_else(|| Path::new("/"));
-    manifest.verify(parent)?;
+        let parent = rootfs.parent().unwrap_or_else(|| Path::new("/"));
+        manifest.verify(parent)?;
+        manifest
+    };
 
     Ok((rootfs, manifest))
+}
+
+pub(crate) fn manifest_path_for_rootfs(rootfs: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.manifest.json", rootfs.display()))
 }
 
 fn parse_kernel_kind(raw: &str) -> Result<KernelKind, PreflightError> {

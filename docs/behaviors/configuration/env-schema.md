@@ -27,6 +27,7 @@ All keys are exact and case-sensitive. Legacy predecessor-style names such as
 | `M80_ROOTFS_IMAGE` | Host path to the built ext4 rootfs image. | none; missing rootfs fails preflight |
 | `M80_KERNEL_KIND` | `stock` or `stripped`; overrides the manifest kernel-kind discriminator after reading the rootfs manifest. | manifest value |
 | `M80_RUN_ROOT` | Host run-root directory used for VM state. | `/var/run/m80` |
+| `M80_FORCE_PREFLIGHT` | When set to any value, bypasses the boot-scoped preflight sentinel cache and reruns Firecracker version probing plus manifest SHA verification. | cache enabled |
 
 Preflight does not create missing directories, install binaries, download
 artifacts, or fall back to a different image after a bad env value. The first
@@ -64,3 +65,5 @@ backend config shown by `m80 config show`.
   covers `M80_KERNEL_KIND`.
 - `crates/m80-preflight/src/checks.rs::tests::invalid_kernel_kind_env_fails_closed`
   covers invalid kernel-kind rejection.
+- `crates/m80-preflight/src/cache.rs::tests::force_preflight_env_disables_cache_reads_and_writes`
+  covers the `M80_FORCE_PREFLIGHT` cache bypass.

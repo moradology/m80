@@ -90,7 +90,7 @@ fn manifest_path(config: &ArtifactPreflightConfig) -> PathBuf {
 fn kernel_auto_discovery_picks_latest_vmlinux_entry() {
     let (_artifact_dir, _helper_dir, config) = fixture_config();
 
-    let verified = verify_artifacts(&config).unwrap();
+    let verified = verify_artifacts(&config, None).unwrap();
 
     assert_eq!(
         verified.kernel.file_name().unwrap(),
@@ -103,7 +103,7 @@ fn kernel_must_be_absolute() {
     let (_artifact_dir, _helper_dir, mut config) = fixture_config();
     config.kernel_image = Some(PathBuf::from("relative-vmlinux"));
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::NonAbsolutePath { kind, path } => {
@@ -119,7 +119,7 @@ fn rootfs_must_be_absolute() {
     let (_artifact_dir, _helper_dir, mut config) = fixture_config();
     config.rootfs_image = Some(PathBuf::from("relative-rootfs.ext4"));
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::NonAbsolutePath { kind, path } => {
@@ -144,7 +144,7 @@ fn manifest_schema_version_must_match_current_schema() {
     )
     .unwrap();
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::Manifest(ManifestError::UnsupportedSchemaVersion(2)) => {}
@@ -166,7 +166,7 @@ fn manifest_future_schema_version_returns_typed_error() {
     )
     .unwrap();
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::Manifest(ManifestError::UnsupportedSchemaVersion(99)) => {}
@@ -182,7 +182,7 @@ fn manifest_unknown_field_rejected_at_preflight() {
     let mutated = raw.replace("\n}", ",\n  \"future_field\": \"surprise\"\n}");
     fs::write(&manifest_path, mutated).unwrap();
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::Manifest(ManifestError::Json(_)) => {}
@@ -195,7 +195,7 @@ fn manifest_sha256_mismatch_fails_closed() {
     let (_artifact_dir, _helper_dir, config) = fixture_config();
     fs::write(config.artifact_dir.join("vmlinux-2027"), b"tampered").unwrap();
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::Manifest(ManifestError::Sha256Mismatch { field, .. }) => {
@@ -210,7 +210,7 @@ fn manifest_sha_mismatch_fails_preflight() {
     let (_artifact_dir, _helper_dir, config) = fixture_config();
     fs::write(config.rootfs_image.as_ref().unwrap(), b"tampered rootfs").unwrap();
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::Manifest(ManifestError::Sha256Mismatch {
@@ -227,12 +227,23 @@ fn manifest_sha_mismatch_fails_preflight() {
 }
 
 #[test]
+fn cached_manifest_skips_sha256_verification() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let manifest = Manifest::read(&manifest_path(&config)).unwrap();
+    fs::write(config.rootfs_image.as_ref().unwrap(), b"tampered rootfs").unwrap();
+
+    let verified = verify_artifacts(&config, Some(&manifest)).unwrap();
+
+    assert_eq!(verified.manifest.output_rootfs_sha256, SHA256_EMPTY);
+}
+
+#[test]
 fn missing_manifest_returns_typed_io_error() {
     let (_artifact_dir, _helper_dir, config) = fixture_config();
     let manifest_path = manifest_path(&config);
     fs::remove_file(&manifest_path).unwrap();
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::Manifest(ManifestError::Io { path, source }) => {
@@ -248,7 +259,7 @@ fn run_root_must_already_exist() {
     let (_artifact_dir, _helper_dir, mut config) = fixture_config();
     config.run_root = config.artifact_dir.join("missing-run-root");
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     match err {
         PreflightError::RunRootUnavailable { reason } => {
@@ -335,7 +346,7 @@ fn storage_helpers_are_required_on_path() {
     let (_artifact_dir, _helper_dir, mut config) = fixture_config();
     config.helper_search_path = Some(OsString::from(""));
 
-    let err = verify_artifacts(&config).unwrap_err();
+    let err = verify_artifacts(&config, None).unwrap_err();
 
     assert!(matches!(err, PreflightError::StorageHelperMissing(_)));
 }
@@ -345,7 +356,7 @@ fn kernel_kind_override_updates_verified_manifest() {
     let (_artifact_dir, _helper_dir, mut config) = fixture_config();
     config.kernel_kind = Some("stripped".to_string());
 
-    let verified = verify_artifacts(&config).unwrap();
+    let verified = verify_artifacts(&config, None).unwrap();
 
     assert_eq!(verified.manifest.kernel_kind, KernelKind::Stripped);
 }

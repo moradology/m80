@@ -14,10 +14,13 @@ workspace = true
 m80-cgroup.workspace = true
 m80-image-manifest.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 nix.workspace = true
 caps.workspace = true
+hex.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

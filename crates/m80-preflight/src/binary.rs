@@ -72,12 +72,16 @@ pub(crate) struct BinaryDiscovery {
 /// Resolve Firecracker and jailer binaries and fail closed on version mismatch.
 pub(crate) fn discover_binaries(
     config: &BinaryDiscoveryConfig,
+    cached_firecracker_version: Option<&str>,
 ) -> Result<BinaryDiscovery, PreflightError> {
     if !config.firecracker_bin.exists() {
         return Err(PreflightError::FirecrackerBinaryNotFound);
     }
 
-    let actual_version = firecracker_version(&config.firecracker_bin)?;
+    let actual_version = match cached_firecracker_version {
+        Some(version) => version.to_owned(),
+        None => firecracker_version(&config.firecracker_bin)?,
+    };
     verify_firecracker_cve_floor(&actual_version)?;
     if let Some(expected) = &config.expected_firecracker_version {
         if &actual_version != expected {
