@@ -146,7 +146,9 @@ Invocation:
 PERF_STAT=1 N=20 KIND=minimal SKIP_LOADED=1 ./scripts/bench-cold-launch.sh
 ```
 
-Host prerequisites: `perf` installed and `kernel.perf_event_paranoid <= 1`.
+Host prerequisites: `perf` installed and `sudo perf stat` permitted. On hosts
+with `kernel.perf_event_paranoid > 1`, the harness still works when sudo grants
+the needed perf capability.
 
 Artifacts:
 

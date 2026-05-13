@@ -53,6 +53,8 @@ TASKSET=0-3 CPU_GOVERNOR=performance ./scripts/bench-cold-launch.sh
 | `TASKSET` | — | passed to `taskset -c` on every m80 invocation. |
 | `CPU_GOVERNOR` | — | passed to `cpupower frequency-set -g` once at start. |
 | `PHASE_JSONL` | — | when set, appends one JSON line per phase event for flamegraphs. |
+| `PERF_STAT` | 0 | set to `1` to attach `sudo perf stat` to each measured Firecracker PID and emit `perf-counters.csv`. |
+| `PERF_STAT_SECONDS` | 2 | attach duration per measured launch when `PERF_STAT=1`. |
 | `BENCH_ARTIFACT_DIR` | `crates/m80-firecracker/benches` | directory for CSVs and snapshots; used by harness tests to isolate artifacts. |
 | `M80_BIN` | `./target/release/m80` | binary path. Override for testing. |
 
@@ -94,6 +96,27 @@ visualization, or processed line-by-line by `jq` for ad-hoc analysis:
 ```sh
 jq -s 'group_by(.phase) | map({phase: .[0].phase, p99_us: (sort_by(.elapsed_us) | .[(length*99/100|floor)].elapsed_us)})' < events.jsonl
 ```
+
+## Perf Counter Mode
+
+`PERF_STAT=1` is sequential-only and rejects `CONCURRENT>0`. It polls the
+per-VM `jailer-state.json` for the live Firecracker PID, then runs:
+
+```sh
+sudo perf stat -x, -I 100 \
+  -e dTLB-load-misses:u,iTLB-load-misses:u,cache-misses:u \
+  -p <firecracker-pid> -o <tmp> -- sleep "$PERF_STAT_SECONDS"
+```
+
+Rows are appended to `crates/m80-firecracker/benches/perf-counters.csv` in
+long format:
+
+```csv
+timestamp,kind,kernel_kind,load,attempt,vm_id,firecracker_pid,interval_s,event,count,enabled,running
+```
+
+As with phase rows, warmup attempts are excluded. Empty `count` means perf
+reported the interval as not counted.
 
 ## Sweep mode
 

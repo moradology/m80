@@ -48,7 +48,7 @@ contains_regex() {
 # --- Help text mentions the new env vars ---
 echo "=== help text ==="
 help_text="$(bash scripts/bench-cold-launch.sh --help 2>&1 || true)"
-for v in N WARMUP KIND SKIP_LOADED KERNEL_KIND EGRESS SWEEP CONCURRENT TASKSET CPU_GOVERNOR DRY_RUN BENCH_ARTIFACT_DIR; do
+for v in N WARMUP KIND SKIP_LOADED KERNEL_KIND EGRESS SWEEP CONCURRENT TASKSET CPU_GOVERNOR DRY_RUN PERF_STAT PERF_STAT_SECONDS BENCH_ARTIFACT_DIR; do
     if contains_token "$v" "$help_text"; then
         note ok "help mentions $v"
     else
@@ -136,6 +136,22 @@ else
     note FAIL "EGRESS plan missing"
 fi
 
+# --- PERF_STAT env in dry-run ---
+echo "=== PERF_STAT=1 --dry-run ==="
+perf_plan="$(PERF_STAT=1 PERF_STAT_SECONDS=3 bash scripts/bench-cold-launch.sh --dry-run 2>&1 || true)"
+if [[ "$perf_plan" == *"PERF_STAT=1"* && "$perf_plan" == *"PERF_STAT_SECONDS=3"* ]]; then
+    note ok "PERF_STAT plan visible in dry-run"
+else
+    note FAIL "PERF_STAT plan missing"
+fi
+
+perf_concurrent_out="$(PERF_STAT=1 CONCURRENT=2 bash scripts/bench-cold-launch.sh --dry-run 2>&1 || true)"
+if [[ "$perf_concurrent_out" == *"PERF_STAT=1 does not support CONCURRENT>0"* ]]; then
+    note ok "PERF_STAT rejects concurrent launches"
+else
+    note FAIL "PERF_STAT concurrent guard missing"
+fi
+
 # --- bench-extras.sh modes ---
 echo "=== bench-extras.sh modes ==="
 extras_help="$(bash scripts/bench-extras.sh --help 2>&1)"
@@ -169,16 +185,53 @@ exec "$@"
 EOF
 chmod +x "$fake_bin/sudo"
 
+cat > "$fake_bin/perf" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o)
+            out="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+if [[ -z "$out" ]]; then
+    exit 2
+fi
+cat > "$out" <<'RAW'
+# started on fixture
+0.100000000,10,,dTLB-load-misses,100,100.00,,
+0.100000000,20,,iTLB-load-misses,100,100.00,,
+0.100000000,30,,cache-misses:u,100,100.00,,
+RAW
+EOF
+chmod +x "$fake_bin/perf"
+
 cat > "$fake_bin/m80" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
     cleanup)
+        if [[ -n "${M80_RUN_ROOT:-}" && "$M80_RUN_ROOT" == /tmp/* ]]; then
+            rm -rf "$M80_RUN_ROOT"/*
+        fi
         exit 0
         ;;
     run)
         last="${*: -1}"
         attempt="${last#bench-}"
+        vm_id="mock-$attempt"
+        if [[ -n "${M80_RUN_ROOT:-}" ]]; then
+            mkdir -p "$M80_RUN_ROOT/$vm_id"
+            printf '{"schema_version":1,"jailer_pid":%s,"firecracker_pid":%s}\n' "$$" "$$" \
+                > "$M80_RUN_ROOT/$vm_id/jailer-state.json"
+        fi
+        sleep 0.05
         echo "M80_PHASE name=phase_12b_ready_accept elapsed_us=$((1000 + attempt))" >&2
         exit 0
         ;;
@@ -193,6 +246,7 @@ mock_out="$(
     PATH="$fake_bin:$PATH" \
     BENCH_ARTIFACT_DIR="$fake_artifacts" \
     IMAGE_BUILD_DIR_MINIMAL="$fake_image" \
+    M80_RUN_ROOT="$tmp_root/run-root" \
     M80_BIN="$fake_bin/m80" \
     N=2 WARMUP=1 KIND=minimal SKIP_LOADED=1 \
     bash scripts/bench-cold-launch.sh 2>&1
@@ -228,6 +282,39 @@ if rg -q ',1,phase_12b_ready_accept,' "$phase_rows"; then
     note FAIL "warmup attempt 1 was recorded as a phase sample"
 else
     note ok "warmup attempt 1 absent from phase samples"
+fi
+
+# --- PERF_STAT captures only post-warmup attempts ---
+echo "=== PERF_STAT mock run ==="
+perf_artifacts="$tmp_root/perf-artifacts"
+mkdir -p "$perf_artifacts"
+perf_out="$(
+    PATH="$fake_bin:$PATH" \
+    BENCH_ARTIFACT_DIR="$perf_artifacts" \
+    IMAGE_BUILD_DIR_MINIMAL="$fake_image" \
+    M80_RUN_ROOT="$tmp_root/perf-run-root" \
+    M80_BIN="$fake_bin/m80" \
+    PERF_STAT=1 PERF_STAT_SECONDS=1 \
+    N=2 WARMUP=1 KIND=minimal SKIP_LOADED=1 \
+    bash scripts/bench-cold-launch.sh 2>&1
+)" || {
+    printf '%s\n' "$perf_out" >&2
+    note FAIL "PERF_STAT mock bench run failed"
+}
+perf_counts="$(
+    python3 - "$perf_artifacts/perf-counters.csv" <<'PY'
+import csv
+import sys
+from collections import Counter
+with open(sys.argv[1]) as f:
+    rows = list(csv.DictReader(f))
+print(len(rows), sorted(Counter(row["attempt"] for row in rows)), sorted(row["event"] for row in rows[:3]))
+PY
+)"
+if [[ "$perf_counts" == "6 ['2', '3'] ['cache-misses', 'dTLB-load-misses', 'iTLB-load-misses']" ]]; then
+    note ok "PERF_STAT rows captured for measured attempts only"
+else
+    note FAIL "PERF_STAT rows wrong: $perf_counts"
 fi
 
 # --- bench-density-extended.sh dry-run ---

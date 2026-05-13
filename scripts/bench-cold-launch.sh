@@ -15,6 +15,7 @@
 #   - WARMUP=N               configurable warmup discard
 #   - --dry-run              print the plan without running
 #   - per-phase JSON event stream alongside CSV
+#   - PERF_STAT=1            attach perf stat to Firecracker during boot
 #
 # Requirements (only when actually running launches):
 #   - KVM host, sudo NOPASSWD, /opt/firecracker/bin/{firecracker,jailer},
@@ -56,10 +57,12 @@ KERNEL_KIND="${KERNEL_KIND:-${M80_KERNEL_KIND:-stock}}"
 EGRESS="${EGRESS:-${M80_NETWORK_POLICY:-none}}"
 IMAGE_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-build/ubuntu}"
 IMAGE_MINIMAL="${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}"
+RUN_ROOT="${M80_RUN_ROOT:-/var/lib/m80-run}"
 BENCH_ARTIFACT_DIR="${BENCH_ARTIFACT_DIR:-crates/m80-firecracker/benches}"
 RESULT_CSV="$BENCH_ARTIFACT_DIR/cold-launch.csv"
 PHASE_CSV="$BENCH_ARTIFACT_DIR/cold-launch-phases.csv"
 SNAPSHOTS_DIR="$BENCH_ARTIFACT_DIR/snapshots"
+PERF_CSV="$BENCH_ARTIFACT_DIR/perf-counters.csv"
 
 # B0 knobs.
 SWEEP="${SWEEP:-}"
@@ -74,6 +77,8 @@ COLD_ISOLATION=0
 DRY_RUN=0
 # When set, emit a JSONL phase event stream alongside the CSVs.
 PHASE_JSONL="${PHASE_JSONL:-}"
+PERF_STAT="${PERF_STAT:-0}"
+PERF_STAT_SECONDS="${PERF_STAT_SECONDS:-2}"
 
 case "$EGRESS" in
     none|outbound) ;;
@@ -99,6 +104,9 @@ ENV vars:
     CPU_GOVERNOR  passed to cpupower frequency-set -g (e.g. performance)
     DRY_RUN       set to 1 to print the plan and exit (same as --dry-run)
     PHASE_JSONL   when set, append phase events as JSONL to this path
+    PERF_STAT     set to 1 to attach perf stat to Firecracker during boot
+    PERF_STAT_SECONDS
+                  perf attach duration per measured launch (default 2)
     BENCH_ARTIFACT_DIR
                   directory for CSVs and snapshots (default crates/m80-firecracker/benches)
     M80_BIN       binary path (default ./target/release/m80; override for tests)
@@ -132,6 +140,11 @@ esac
 LOADS=("idle")
 [[ "$SKIP_LOADED" != "1" ]] && LOADS+=("loaded")
 
+if [[ "$PERF_STAT" == "1" && "$CONCURRENT" -gt 0 ]]; then
+    echo "PERF_STAT=1 does not support CONCURRENT>0; run sequential launches for perf counters" >&2
+    exit 1
+fi
+
 # ── Plan summary (always printed; --dry-run exits here) ─────────────────
 plan_summary() {
     echo "=== bench-cold-launch plan ==="
@@ -141,9 +154,13 @@ plan_summary() {
     [[ "$CONCURRENT" -gt 0 ]] && echo "  CONCURRENT=$CONCURRENT (N parallel admissions)"
     [[ -n "$TASKSET" ]]    && echo "  TASKSET=$TASKSET (taskset -c)"
     [[ -n "$CPU_GOVERNOR" ]] && echo "  CPU_GOVERNOR=$CPU_GOVERNOR (cpupower frequency-set -g)"
+    [[ "$PERF_STAT" == "1" ]] && echo "  PERF_STAT=1  PERF_STAT_SECONDS=$PERF_STAT_SECONDS"
     [[ "$COLD_ISOLATION" -eq 1 ]] && echo "  --cold-isolation: echo 3 > /proc/sys/vm/drop_caches between runs"
     [[ -n "$PHASE_JSONL" ]] && echo "  PHASE_JSONL=$PHASE_JSONL"
     echo "  output: $RESULT_CSV, $PHASE_CSV, $SNAPSHOTS_DIR/latest.json"
+    if [[ "$PERF_STAT" == "1" ]]; then
+        echo "  perf output: $PERF_CSV"
+    fi
 }
 
 plan_summary
@@ -155,7 +172,7 @@ fi
 
 # ── From here on we actually run launches ───────────────────────────────
 
-mkdir -p "$(dirname "$RESULT_CSV")"
+mkdir -p "$BENCH_ARTIFACT_DIR"
 
 # Best-effort CPU governor pin (root-only; warn but continue).
 if [[ -n "$CPU_GOVERNOR" ]]; then
@@ -220,6 +237,15 @@ ensure_phase_csv() {
 
 ensure_wallclock_csv
 ensure_phase_csv
+
+ensure_perf_csv() {
+    [[ "$PERF_STAT" == "1" ]] || return 0
+    if [[ ! -f "$PERF_CSV" ]]; then
+        echo "timestamp,kind,kernel_kind,load,attempt,vm_id,firecracker_pid,interval_s,event,count,enabled,running" > "$PERF_CSV"
+    fi
+}
+
+ensure_perf_csv
 
 # Per-run temp dir scopes a clean CSV pair to this invocation.
 RUN_TEMP_DIR=$(mktemp -d)
@@ -290,11 +316,113 @@ cleanup_run_root() {
          M80_KERNEL_IMAGE="$image_dir/vmlinux" \
          M80_KERNEL_KIND="$KERNEL_KIND" \
          M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
-         M80_RUN_ROOT=/var/lib/m80-run \
+         M80_RUN_ROOT="$RUN_ROOT" \
          M80_FIRECRACKER_VERSION=v1.15.1 \
          M80_JAIL_UID="$(id -u)" \
          M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
          "${TASKSET_PREFIX[@]}" "$M80_BIN" cleanup >/dev/null 2>&1 || true
+}
+
+find_new_firecracker_pid() {
+    local marker="$1"
+    python3 - "$RUN_ROOT" "$marker" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+run_root = Path(sys.argv[1])
+marker_ns = os.stat(sys.argv[2]).st_mtime_ns
+best = None
+for path in run_root.glob("*/jailer-state.json"):
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        continue
+    if stat.st_mtime_ns < marker_ns:
+        continue
+    try:
+        state = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        continue
+    pid = state.get("firecracker_pid")
+    if not isinstance(pid, int) or pid <= 0:
+        continue
+    item = (stat.st_mtime_ns, path.parent.name, pid)
+    if best is None or item > best:
+        best = item
+if best is not None:
+    _, vm_id, pid = best
+    print(f"{vm_id},{pid}")
+PY
+}
+
+start_perf_counter() {
+    local marker="$1" raw_file="$2"
+    local deadline now found vm_id pid
+    deadline=$(( $(date +%s%N) + 5000000000 ))
+    while true; do
+        found="$(find_new_firecracker_pid "$marker" || true)"
+        if [[ -n "$found" ]]; then
+            vm_id="${found%,*}"
+            pid="${found#*,}"
+            sudo perf stat -x, -I 100 \
+                -e dTLB-load-misses:u,iTLB-load-misses:u,cache-misses:u \
+                -p "$pid" -o "$raw_file" -- sleep "$PERF_STAT_SECONDS" &
+            perf_pid="$!"
+            perf_vm_id="$vm_id"
+            perf_fc_pid="$pid"
+            return 0
+        fi
+        now=$(date +%s%N)
+        if (( now >= deadline )); then
+            echo "warning: PERF_STAT could not find new jailer-state.json under $RUN_ROOT" >&2
+            return 1
+        fi
+        sleep 0.01
+    done
+}
+
+append_perf_rows() {
+    local raw_file="$1" ts="$2" kind="$3" load="$4" attempt="$5" vm_id="$6" pid="$7"
+    [[ -s "$raw_file" ]] || return 0
+    python3 - "$raw_file" "$PERF_CSV" "$ts" "$kind" "$KERNEL_KIND" "$load" "$attempt" "$vm_id" "$pid" <<'PY'
+import csv
+import sys
+
+raw, out, ts, kind, kernel_kind, load, attempt, vm_id, pid = sys.argv[1:]
+rows = []
+with open(raw, newline="") as f:
+    for line in f:
+        if not line.strip() or line.startswith("#"):
+            continue
+        cols = next(csv.reader([line]))
+        if len(cols) < 6:
+            continue
+        interval_s, count, _unit, event, enabled, running = cols[:6]
+        event = event.removesuffix(":u")
+        rows.append({
+            "timestamp": ts,
+            "kind": kind,
+            "kernel_kind": kernel_kind,
+            "load": load,
+            "attempt": attempt,
+            "vm_id": vm_id,
+            "firecracker_pid": pid,
+            "interval_s": interval_s,
+            "event": event,
+            "count": "" if count.startswith("<") else count,
+            "enabled": enabled,
+            "running": running,
+        })
+if rows:
+    with open(out, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            "timestamp", "kind", "kernel_kind", "load", "attempt", "vm_id",
+            "firecracker_pid", "interval_s", "event", "count", "enabled", "running",
+        ], lineterminator="\n")
+        writer.writerows(rows)
+PY
 }
 
 # Emit a JSONL phase event if PHASE_JSONL is set.
@@ -313,6 +441,11 @@ run_one() {
     local kind="$1" load="$2" attempt="$3" image_dir="$4"
     local stderr_file
     stderr_file="$(mktemp)"
+    local perf_marker=""
+    local perf_raw=""
+    local perf_pid=""
+    local perf_vm_id=""
+    local perf_fc_pid=""
 
     drop_caches
 
@@ -323,7 +456,14 @@ run_one() {
         cleanup_run_root "$image_dir"
     fi
 
-    if timeout 90 sudo M80_PHASE_TRACE=1 \
+    if [[ "$PERF_STAT" == "1" && "${RECORD_PHASE:-1}" == "1" ]]; then
+        perf_marker="$(mktemp)"
+        touch "$perf_marker"
+        perf_raw="/tmp/m80-perf-${kind}-${load}-${attempt}-$$.csv"
+        rm -f "$perf_raw"
+    fi
+
+    timeout 90 sudo M80_PHASE_TRACE=1 \
             IMAGE_BUILD_DIR="$image_dir" \
             M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
             M80_JAILER_BIN=/opt/firecracker/bin/jailer \
@@ -331,20 +471,34 @@ run_one() {
             M80_KERNEL_IMAGE="$image_dir/vmlinux" \
             M80_KERNEL_KIND="$KERNEL_KIND" \
             M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
-            M80_RUN_ROOT=/var/lib/m80-run \
+            M80_RUN_ROOT="$RUN_ROOT" \
             M80_FIRECRACKER_VERSION=v1.15.1 \
             M80_JAIL_UID="$(id -u)" \
             M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
             "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
             "${SWEEP_RUN_ARGS[@]}" \
             --egress "$EGRESS" -- /bin/echo "bench-$attempt" \
-            >/dev/null 2>"$stderr_file"; then
+            >/dev/null 2>"$stderr_file" &
+    local run_pid=$!
+
+    if [[ -n "$perf_marker" ]]; then
+        start_perf_counter "$perf_marker" "$perf_raw" || true
+    fi
+
+    if wait "$run_pid"; then
         exit_code=0
     else
         exit_code=$?
     fi
     end_ns=$(date +%s%N)
     elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+
+    if [[ -n "$perf_pid" ]]; then
+        wait "$perf_pid" || echo "warning: perf stat failed for attempt $attempt" >&2
+        append_perf_rows "$perf_raw" "$(date -Iseconds)" "$kind" "$load" "$attempt" "$perf_vm_id" "$perf_fc_pid"
+    fi
+    rm -f "$perf_marker"
+    sudo rm -f "$perf_raw" 2>/dev/null || rm -f "$perf_raw"
 
     local ts
     ts="$(date -Iseconds)"
