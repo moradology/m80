@@ -5,6 +5,8 @@ use std::io;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 
+use nix::sys::stat::umask;
+
 use crate::error::JailerError;
 use crate::materialized::MaterializedJail;
 use crate::types::{
@@ -83,10 +85,11 @@ impl Plan {
     /// returned [`MaterializedJail`] tears down the chroot.
     pub fn materialize(self) -> Result<MaterializedJail, JailerError> {
         use nix::mount::{mount, MsFlags};
-        use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
+        use nix::sys::stat::Mode;
         use nix::unistd::{chown, mkdir, Gid, Uid};
 
         let jail_root = jail_root_path(&self.config.run_dir, &self.config.firecracker_bin);
+        let _umask_guard = UmaskGuard::zero();
 
         // Pre-create the two intermediate dirs jailer expects to exist
         // (`<run_dir>/<exec basename>/` and `<run_dir>/<exec basename>/<id>/`)
@@ -116,16 +119,6 @@ impl Plan {
             match step {
                 PlanStep::CreateDir { path, mode } => {
                     mkdir(path, Mode::from_bits_truncate(*mode)).map_err(|e| JailerError::Io {
-                        path: path.clone(),
-                        source: io::Error::from_raw_os_error(e as i32),
-                    })?;
-                    fchmodat(
-                        None,
-                        path,
-                        Mode::from_bits_truncate(*mode),
-                        FchmodatFlags::NoFollowSymlink,
-                    )
-                    .map_err(|e| JailerError::Io {
                         path: path.clone(),
                         source: io::Error::from_raw_os_error(e as i32),
                     })?;
@@ -300,6 +293,20 @@ fn bind_mount_flags(source_is_dir: bool, dest_is_dir: bool) -> nix::mount::MsFla
         flags |= nix::mount::MsFlags::MS_REC;
     }
     flags
+}
+
+struct UmaskGuard(nix::sys::stat::Mode);
+
+impl UmaskGuard {
+    fn zero() -> Self {
+        Self(umask(nix::sys::stat::Mode::empty()))
+    }
+}
+
+impl Drop for UmaskGuard {
+    fn drop(&mut self) {
+        umask(self.0);
+    }
 }
 
 pub(crate) fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
