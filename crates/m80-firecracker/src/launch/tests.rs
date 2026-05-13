@@ -191,3 +191,33 @@ fn proc_stat_major_faults_parser_handles_comm_with_spaces() {
 
     assert_eq!(proc_stat_major_faults_from_text(stat), Some(42));
 }
+
+#[test]
+fn snapshot_file_prime_accepts_existing_snapshot_pair() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = SnapshotPaths {
+        vm_state: dir.path().join("vm.snap"),
+        mem: dir.path().join("mem.snap"),
+    };
+    std::fs::write(&paths.vm_state, b"vm-state").unwrap();
+    std::fs::write(&paths.mem, b"memory").unwrap();
+
+    prime_snapshot_files(&paths).expect("existing snapshot files should prime");
+}
+
+#[test]
+fn snapshot_file_prime_fails_with_path_for_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = SnapshotPaths {
+        vm_state: dir.path().join("vm.snap"),
+        mem: dir.path().join("missing-mem.snap"),
+    };
+    std::fs::write(&paths.vm_state, b"vm-state").unwrap();
+
+    let err = prime_snapshot_files(&paths).unwrap_err();
+
+    assert!(
+        matches!(err, FcError::PathIo { ref path, .. } if path == &paths.mem),
+        "missing snapshot file should surface as PathIo for mem path, got {err:?}"
+    );
+}

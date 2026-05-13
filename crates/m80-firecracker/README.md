@@ -36,12 +36,14 @@ events carry that opaque id in `<run_dir>/diagnostics.jsonl`.
 
 `Sandbox::launch_from_snapshot` is an alternative Created → Running
 transition for the warm-pool restore path. It skips the full cold-boot
-pipeline and instead loads a snapshot pair into a new Firecracker process.
-The VM is left Running after a successful restore; the exec channel readiness
-is confirmed by sending an internal lightweight exec request over the restored
-vsock UDS and waiting for guestd's terminal response (retry loop, 50 ms sleep,
-5 s cap). A bare `CONNECT 9001` is not sufficient on restore because the guest
-kernel can accept the socket while guestd itself is stopped.
+pipeline and instead primes the host page cache for the snapshot pair, binds
+the snapshot directory into the jail, and loads that pair into a new
+Firecracker process. The VM is left Running after a successful restore; the
+exec channel readiness is confirmed by sending an internal lightweight exec
+request over the restored vsock UDS and waiting for guestd's terminal response
+(retry loop, 50 ms sleep, 5 s cap). A bare `CONNECT 9001` is not sufficient on
+restore because the guest kernel can accept the socket while guestd itself is
+stopped.
 
 `RunningSandbox::capture` pauses the live VM and writes a Full snapshot pair
 to caller-supplied paths. The VM is left in the Paused state after a

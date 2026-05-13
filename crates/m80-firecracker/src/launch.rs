@@ -48,11 +48,13 @@ use crate::types::{
 
 mod failure_cleanup;
 mod ready;
+mod snapshot_prime;
 
 use failure_cleanup::{
     LaunchNetworkCleanupGuard, LaunchProcessCleanupGuard, LaunchRunDirCleanupGuard,
 };
 use ready::{phase_11b_bind_ready_listener, phase_12b_ready_accept, ready_listener_path};
+use snapshot_prime::prime_snapshot_files;
 
 /// Record a diagnostics-annotated phase result.
 ///
@@ -562,6 +564,17 @@ impl Sandbox {
             Phase::Boot,
             "phase_10_open_uds",
             { phase_10_open_uds(&host_api_socket) }
+        )?;
+
+        // Phase restore-prime: queue host readahead on the real snapshot
+        // files before translating them into jail-visible /snapshot paths.
+        diag_phase!(
+            &mut diagnostics,
+            &vm_id,
+            request_id.as_deref(),
+            Phase::Boot,
+            "phase_restore_snapshot_prime",
+            { prime_snapshot_files(&snapshot) }
         )?;
 
         // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +

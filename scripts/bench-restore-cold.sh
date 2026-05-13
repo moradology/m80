@@ -15,7 +15,7 @@ KIND="${KIND:-minimal}"
 KERNEL_KIND="${KERNEL_KIND:-${M80_KERNEL_KIND:-stripped}}"
 IMAGE_DIR="${IMAGE_BUILD_DIR:-${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}}"
 OUTDIR="crates/m80-firecracker/benches"
-SNAPSHOT_OUT="$OUTDIR/snapshots/cold-restore-N${N}.json"
+SNAPSHOT_OUT="${SNAPSHOT_OUT:-$OUTDIR/snapshots/cold-restore-N${N}.json}"
 DRY_RUN=0
 
 usage() {
@@ -32,9 +32,10 @@ Env vars:
   KERNEL_KIND=stripped
   IMAGE_BUILD_DIR=/tmp/m80-build/minimal
   IMAGE_BUILD_DIR_MINIMAL=/tmp/m80-build/minimal
+  SNAPSHOT_OUT=crates/m80-firecracker/benches/snapshots/cold-restore-N50.json
 
 Output:
-  crates/m80-firecracker/benches/snapshots/cold-restore-N${N}.json
+  $SNAPSHOT_OUT
 EOF
 }
 
@@ -69,9 +70,13 @@ mkdir -p "$(dirname "$SNAPSHOT_OUT")"
 cargo build --release -p m80-jailer-harden
 cargo build --release -p m80-firecracker --bench snapshot_restore_latency
 
-bench_bin="$(find target/release/deps -maxdepth 1 -type f -executable -name 'snapshot_restore_latency-*' \
-    | sort \
-    | tail -n 1)"
+bench_bin=""
+for candidate in target/release/deps/snapshot_restore_latency-*; do
+    [[ -e "$candidate" ]] || continue
+    if [[ -f "$candidate" && -x "$candidate" && ( -z "$bench_bin" || "$candidate" -nt "$bench_bin" ) ]]; then
+        bench_bin="$candidate"
+    fi
+done
 if [[ -z "$bench_bin" ]]; then
     echo "snapshot_restore_latency bench binary not found" >&2
     exit 1

@@ -1,0 +1,398 @@
+{
+  "bench": "snapshot_restore_cold_baseline",
+  "cold_warm_delta_p50_us": {
+    "direct_snapshot_file_reads": 653307,
+    "residual_other": 0,
+    "restore_total": 39782
+  },
+  "file_read_samples": 10,
+  "load": "idle",
+  "n": 50,
+  "restore_modes": [
+    {
+      "cache_mode": "warm",
+      "max_us": 76862,
+      "mean_us": 56618,
+      "p50_us": 54776,
+      "p95_us": 69505,
+      "p99_us": 71484,
+      "phases": {
+        "phase_10_open_uds": {
+          "count": 50,
+          "max_us": 40,
+          "mean_us": 27,
+          "p50_us": 28,
+          "p95_us": 34,
+          "p99_us": 35
+        },
+        "phase_3_storage_prep": {
+          "count": 50,
+          "max_us": 10063,
+          "mean_us": 8325,
+          "p50_us": 8237,
+          "p95_us": 9510,
+          "p99_us": 9800
+        },
+        "phase_4_jailer_materialize": {
+          "count": 50,
+          "max_us": 5857,
+          "mean_us": 2415,
+          "p50_us": 2611,
+          "p95_us": 4015,
+          "p99_us": 4061
+        },
+        "phase_5_cgroup_probe": {
+          "count": 50,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_5b_cgroup_create": {
+          "count": 50,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "count": 50,
+          "max_us": 31868,
+          "mean_us": 17905,
+          "p50_us": 15640,
+          "p95_us": 31782,
+          "p99_us": 31849
+        },
+        "phase_restore_load": {
+          "count": 50,
+          "max_us": 4381,
+          "mean_us": 2700,
+          "p50_us": 2660,
+          "p95_us": 3032,
+          "p99_us": 3472
+        },
+        "phase_restore_probe_exec_channel": {
+          "count": 50,
+          "max_us": 18705,
+          "mean_us": 18193,
+          "p50_us": 18182,
+          "p95_us": 18589,
+          "p99_us": 18688
+        },
+        "phase_restore_snapshot_bind": {
+          "count": 50,
+          "max_us": 3539,
+          "mean_us": 476,
+          "p50_us": 149,
+          "p95_us": 2034,
+          "p99_us": 2440
+        },
+        "phase_restore_snapshot_prime": {
+          "count": 50,
+          "max_us": 29,
+          "mean_us": 19,
+          "p50_us": 20,
+          "p95_us": 24,
+          "p99_us": 28
+        }
+      },
+      "samples_us": [
+        68850,
+        58835,
+        54555,
+        55848,
+        50133,
+        69505,
+        57107,
+        53259,
+        53016,
+        56655,
+        52015,
+        53096,
+        51524,
+        50249,
+        54494,
+        53393,
+        53197,
+        54448,
+        56214,
+        52460,
+        54615,
+        55400,
+        55715,
+        53911,
+        56330,
+        71484,
+        56967,
+        53642,
+        71030,
+        68568,
+        56116,
+        53934,
+        56251,
+        76862,
+        55612,
+        50085,
+        57070,
+        51240,
+        51770,
+        56718,
+        52641,
+        67506,
+        56012,
+        54776,
+        56316,
+        55986,
+        54638,
+        54803,
+        51989,
+        54092
+      ]
+    },
+    {
+      "cache_mode": "cold",
+      "max_us": 101438,
+      "mean_us": 94600,
+      "p50_us": 94558,
+      "p95_us": 97969,
+      "p99_us": 99744,
+      "phases": {
+        "phase_10_open_uds": {
+          "count": 50,
+          "max_us": 45,
+          "mean_us": 32,
+          "p50_us": 33,
+          "p95_us": 43,
+          "p99_us": 44
+        },
+        "phase_3_storage_prep": {
+          "count": 50,
+          "max_us": 17759,
+          "mean_us": 12834,
+          "p50_us": 12627,
+          "p95_us": 14837,
+          "p99_us": 17222
+        },
+        "phase_4_jailer_materialize": {
+          "count": 50,
+          "max_us": 4603,
+          "mean_us": 1470,
+          "p50_us": 1092,
+          "p95_us": 4315,
+          "p99_us": 4476
+        },
+        "phase_5_cgroup_probe": {
+          "count": 50,
+          "max_us": 11,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_5b_cgroup_create": {
+          "count": 50,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "count": 50,
+          "max_us": 32203,
+          "mean_us": 31897,
+          "p50_us": 31916,
+          "p95_us": 32072,
+          "p99_us": 32094
+        },
+        "phase_restore_load": {
+          "count": 50,
+          "max_us": 5011,
+          "mean_us": 3175,
+          "p50_us": 3064,
+          "p95_us": 3888,
+          "p99_us": 4804
+        },
+        "phase_restore_probe_exec_channel": {
+          "count": 50,
+          "max_us": 38339,
+          "mean_us": 37760,
+          "p50_us": 37776,
+          "p95_us": 38189,
+          "p99_us": 38334
+        },
+        "phase_restore_snapshot_bind": {
+          "count": 50,
+          "max_us": 214,
+          "mean_us": 155,
+          "p50_us": 159,
+          "p95_us": 176,
+          "p99_us": 184
+        },
+        "phase_restore_snapshot_prime": {
+          "count": 50,
+          "max_us": 463,
+          "mean_us": 312,
+          "p50_us": 317,
+          "p95_us": 338,
+          "p99_us": 363
+        }
+      },
+      "samples_us": [
+        99744,
+        97336,
+        101438,
+        90701,
+        96123,
+        95110,
+        94558,
+        93930,
+        92730,
+        92812,
+        94223,
+        96332,
+        94947,
+        93024,
+        98291,
+        90637,
+        96356,
+        95366,
+        95279,
+        95306,
+        87981,
+        95946,
+        97969,
+        93464,
+        92605,
+        92338,
+        95670,
+        97268,
+        95345,
+        93968,
+        94405,
+        93019,
+        88510,
+        95510,
+        94508,
+        92713,
+        94529,
+        89945,
+        95781,
+        95286,
+        92431,
+        94105,
+        94004,
+        96638,
+        95538,
+        96383,
+        95504,
+        94121,
+        96969,
+        93353
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "snapshot_file_reads": [
+    {
+      "bytes": 14271,
+      "cold": {
+        "max_us": 1961,
+        "mean_us": 708,
+        "p50_us": 308,
+        "p95_us": 1602,
+        "p99_us": 1602
+      },
+      "cold_samples_us": [
+        209,
+        1602,
+        710,
+        700,
+        738,
+        286,
+        295,
+        308,
+        1961,
+        278
+      ],
+      "cold_warm_delta_p50_us": 300,
+      "file": "vm.snap",
+      "warm": {
+        "max_us": 10,
+        "mean_us": 8,
+        "p50_us": 8,
+        "p95_us": 9,
+        "p99_us": 9
+      },
+      "warm_samples_us": [
+        10,
+        8,
+        8,
+        9,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8
+      ]
+    },
+    {
+      "bytes": 1073741824,
+      "cold": {
+        "max_us": 846298,
+        "mean_us": 840637,
+        "p50_us": 840813,
+        "p95_us": 845992,
+        "p99_us": 845992
+      },
+      "cold_samples_us": [
+        829685,
+        839179,
+        837261,
+        837049,
+        846298,
+        840813,
+        844971,
+        843042,
+        845992,
+        842088
+      ],
+      "cold_warm_delta_p50_us": 653007,
+      "file": "mem.snap",
+      "warm": {
+        "max_us": 189286,
+        "mean_us": 187994,
+        "p50_us": 187806,
+        "p95_us": 189259,
+        "p99_us": 189259
+      },
+      "warm_samples_us": [
+        188074,
+        187093,
+        186669,
+        187806,
+        187817,
+        189286,
+        187682,
+        189259,
+        188785,
+        187478
+      ]
+    }
+  ],
+  "snapshot_files": {
+    "mem_snap": {
+      "bytes": 1073741824,
+      "path": "/var/lib/m80-run/snapshot-restore-bench-1520486/mem.snap"
+    },
+    "vm_snap": {
+      "bytes": 14271,
+      "path": "/var/lib/m80-run/snapshot-restore-bench-1520486/vm.snap"
+    }
+  },
+  "started_at_unix": 1778701679,
+  "unit": "us"
+}
