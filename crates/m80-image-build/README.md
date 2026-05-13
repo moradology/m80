@@ -132,7 +132,7 @@ Files:
   cgroup/tmpfs/event primitives required for Ubuntu systemd to mount its API
   filesystems.
 - `kernel-builder/build.sh` — copies config, runs `olddefconfig`, builds
-  vmlinux, prints config sha, copies output to `/out`.
+  vmlinux, strips symbol tables, prints config sha, copies output to `/out`.
 - `kernels/` — gitignored binary output directory.
 
 ### CLI surface

@@ -110,6 +110,40 @@ fn stripped_config_keeps_overlay_xino_auto_built_in() {
     );
 }
 
+#[test]
+fn stripped_config_disables_smp_for_single_vcpu_shape() {
+    let cfg = committed_config_text();
+    assert!(
+        cfg.lines().any(|line| line == "# CONFIG_SMP is not set"),
+        "stripped kernel must compile out SMP instead of relying on runtime nosmp"
+    );
+    assert!(
+        !cfg.lines()
+            .any(|line| line == "CONFIG_SMP=y" || line == "CONFIG_SMP=m"),
+        "SMP must not be built into the stripped kernel"
+    );
+}
+
+#[test]
+fn kernel_build_script_strips_symbol_tables_before_publish() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("CARGO_MANIFEST_DIR not set (run via cargo test)");
+    let build_script = PathBuf::from(manifest_dir)
+        .join("kernel-builder")
+        .join("build.sh");
+    let script = std::fs::read_to_string(build_script).unwrap();
+    let strip_idx = script
+        .find("strip --strip-all vmlinux")
+        .expect("build.sh must strip symbol tables from vmlinux");
+    let copy_idx = script
+        .find("cp vmlinux")
+        .expect("build.sh must copy vmlinux to /out");
+    assert!(
+        strip_idx < copy_idx,
+        "symbol tables must be stripped before publishing vmlinux"
+    );
+}
+
 /// `build_stripped_kernel` is ignored in CI (Docker + network required).
 /// Run manually with `cargo test -- --ignored` or `--include-ignored`.
 #[test]

@@ -32,6 +32,10 @@ echo "config-sha256: ${CONFIG_SHA}"
 # (Firecracker loads vmlinux directly). Use all available CPUs.
 make vmlinux -j"$(nproc)"
 
+# Firecracker's ELF loader consumes the program image, not symbol tables.
+# Publish a stripped artifact so the boot path does not pay to read them.
+strip --strip-all vmlinux
+
 # Copy to output directory with the config-sha filename.
 cp vmlinux "/out/vmlinux-m80-${CONFIG_SHA}.bin"
 echo "output: /out/vmlinux-m80-${CONFIG_SHA}.bin"
