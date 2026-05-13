@@ -55,6 +55,9 @@ Subcommands:
                   }
                 }
 
+  sweep       Read sweep wallclock and phase CSVs and emit a structured JSON
+              snapshot keyed by sweep value.
+
   diff        Compare two snapshot JSONs and print a per-phase delta
               table sorted by abs(delta_us) descending.
 
@@ -278,6 +281,29 @@ def compute_sweep(wallclock_file, sweep_var):
         entry = _stats_for(s, suffix="")
         entry["fail_count"] = fails.get(sval, 0)
         out[sval] = entry
+    return out
+
+
+def compute_sweep_phases(phase_file, sweep_var):
+    """Aggregate a sweep phase CSV by sweep value, kind, load, and phase."""
+    rows = collections.defaultdict(list)
+    for row in csv.DictReader(phase_file):
+        if row.get("sweep_var") != sweep_var:
+            continue
+        sval = row.get("sweep_value", "")
+        try:
+            us = int(row["elapsed_us"])
+        except (ValueError, KeyError):
+            continue
+        key = (sval, row.get("kind", ""), row.get("load", ""), row.get("phase", ""))
+        rows[key].append(us)
+
+    out = {}
+    for (sval, kind, load, phase), vals in rows.items():
+        s = sorted(vals)
+        entry = _stats_for(s, suffix="_us")
+        entry["histogram_us"] = _log_histogram(s)
+        out.setdefault(sval, {}).setdefault(kind, {}).setdefault(load, {})[phase] = entry
     return out
 
 
@@ -518,6 +544,36 @@ def cmd_compute(args):
         data = compute_snapshot(wf, pf)
 
     data["meta"] = {"generated_at": datetime.now(timezone.utc).isoformat()}
+    envelope = {"version": 1, "data": data}
+    out = json.dumps(envelope, indent=2)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(out)
+            f.write("\n")
+    else:
+        print(out)
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: sweep
+# ---------------------------------------------------------------------------
+
+def cmd_sweep(args):
+    with open(args.csv_sweep) as wf:
+        wallclock = compute_sweep(wf, args.sweep_var)
+
+    phases = {}
+    if args.csv_sweep_phase:
+        with open(args.csv_sweep_phase) as pf:
+            phases = compute_sweep_phases(pf, args.sweep_var)
+
+    data = {
+        "sweep_var": args.sweep_var,
+        "wallclock": wallclock,
+        "phases": phases,
+        "meta": {"generated_at": datetime.now(timezone.utc).isoformat()},
+    }
     envelope = {"version": 1, "data": data}
     out = json.dumps(envelope, indent=2)
 
@@ -955,6 +1011,24 @@ class TestSweepIngest(unittest.TestCase):
         # p50 increases with sweep value
         self.assertLess(cells["1"]["p50"], cells["4"]["p50"])
 
+    def test_sweep_phase_csv_aggregates_per_value_and_phase(self):
+        rows = "timestamp,kind,kernel_kind,load,attempt,sweep_var,sweep_value,phase,elapsed_us\n"
+        for sval in (512, 1024):
+            for i in range(1, 6):
+                rows += (
+                    "2026-05-04T10:00:00+00:00,minimal,stock,idle,"
+                    f"{i},mem_mib,{sval},phase_12b_ready_accept,{sval + i}\n"
+                )
+        phases = compute_sweep_phases(io.StringIO(rows), sweep_var="mem_mib")
+        self.assertEqual(
+            phases["512"]["minimal"]["idle"]["phase_12b_ready_accept"]["count"],
+            5,
+        )
+        self.assertLess(
+            phases["512"]["minimal"]["idle"]["phase_12b_ready_accept"]["p50_us"],
+            phases["1024"]["minimal"]["idle"]["phase_12b_ready_accept"]["p50_us"],
+        )
+
 
 class TestConcurrentAggregation(unittest.TestCase):
     """B0-5: CONCURRENT=N wall-time-to-all-ready + per-VM tail."""
@@ -1168,6 +1242,34 @@ def build_parser():
         help="Write JSON to FILE instead of stdout.",
     )
 
+    # sweep
+    p_sweep = sub.add_parser(
+        "sweep",
+        help="Emit a structured JSON snapshot from sweep CSVs.",
+    )
+    p_sweep.add_argument(
+        "--sweep-var",
+        required=True,
+        metavar="NAME",
+        help="Sweep variable to aggregate, e.g. mem_mib.",
+    )
+    p_sweep.add_argument(
+        "--csv-sweep",
+        required=True,
+        metavar="PATH",
+        help="Sweep wallclock CSV path.",
+    )
+    p_sweep.add_argument(
+        "--csv-sweep-phase",
+        metavar="PATH",
+        help="Sweep phase CSV path.",
+    )
+    p_sweep.add_argument(
+        "--output",
+        metavar="FILE",
+        help="Write JSON to FILE instead of stdout.",
+    )
+
     # diff
     p_diff = sub.add_parser(
         "diff",
@@ -1203,6 +1305,8 @@ def main():
         cmd_summarize(args)
     elif args.command == "compute":
         cmd_compute(args)
+    elif args.command == "sweep":
+        cmd_sweep(args)
     elif args.command == "diff":
         cmd_diff(args)
     else:

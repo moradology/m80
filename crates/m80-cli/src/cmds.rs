@@ -72,6 +72,8 @@ pub(crate) fn cmd_run(
     stdin: bool,
     egress: EgressMode,
     scratch_size: Option<u64>,
+    vcpu_count: Option<u32>,
+    mem_size_mib: Option<u32>,
     writeback: WritebackMode,
     tty: bool,
     interactive: bool,
@@ -82,7 +84,16 @@ pub(crate) fn cmd_run(
     let request_id = crate::request_id::new();
     let _request_id_scope = crate::request_id::set(request_id.clone());
 
-    if let Err(e) = validate_run_flags(interactive, tty, stdin, warm, workspace.is_some(), json) {
+    if let Err(e) = validate_run_flags(
+        interactive,
+        tty,
+        stdin,
+        warm,
+        workspace.is_some(),
+        vcpu_count.is_some(),
+        mem_size_mib.is_some(),
+        json,
+    ) {
         return Ok(errors::render_error(&e, json));
     }
 
@@ -108,6 +119,20 @@ pub(crate) fn cmd_run(
         let e = FcError::Config(ConfigError::InvalidValue {
             field: "scratch_size",
             reason: "--scratch-size must be greater than zero".into(),
+        });
+        return Ok(errors::render_error(&e, json));
+    }
+    if vcpu_count == Some(0) {
+        let e = FcError::Config(ConfigError::InvalidValue {
+            field: "vcpu_count",
+            reason: "--vcpu-count must be greater than zero".into(),
+        });
+        return Ok(errors::render_error(&e, json));
+    }
+    if mem_size_mib == Some(0) {
+        let e = FcError::Config(ConfigError::InvalidValue {
+            field: "mem_size_mib",
+            reason: "--mem-size-mib must be greater than zero".into(),
         });
         return Ok(errors::render_error(&e, json));
     }
@@ -145,7 +170,14 @@ pub(crate) fn cmd_run(
         Err(e) => return Ok(errors::render_error(&e, json)),
     };
 
-    let sandbox_config = sandbox_config_for_run(workspace, egress, scratch_size, request_id);
+    let sandbox_config = sandbox_config_for_run(
+        workspace,
+        egress,
+        scratch_size,
+        vcpu_count,
+        mem_size_mib,
+        request_id,
+    );
 
     let sandbox = match backend.admit(sandbox_config) {
         Ok(s) => s,
@@ -298,6 +330,8 @@ fn validate_run_flags(
     stdin: bool,
     warm: bool,
     has_workspace: bool,
+    has_vcpu_count: bool,
+    has_mem_size_mib: bool,
     json: bool,
 ) -> Result<(), FcError> {
     if interactive && !tty {
@@ -330,6 +364,22 @@ fn validate_run_flags(
             reason: "--warm is incompatible with --tty until warm terminal leases land".into(),
         }));
     }
+    if warm && has_vcpu_count {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "vcpu_count",
+            reason:
+                "--warm is incompatible with --vcpu-count; warm slot sizing is fixed by the owner"
+                    .into(),
+        }));
+    }
+    if warm && has_mem_size_mib {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "mem_size_mib",
+            reason:
+                "--warm is incompatible with --mem-size-mib; warm slot sizing is fixed by the owner"
+                    .into(),
+        }));
+    }
     Ok(())
 }
 
@@ -352,14 +402,16 @@ fn sandbox_config_for_run(
     workspace: Option<PathBuf>,
     egress: EgressMode,
     scratch_size: Option<u64>,
+    vcpu_count: Option<u32>,
+    mem_size_mib: Option<u32>,
     request_id: String,
 ) -> SandboxConfig {
     SandboxConfig {
         vm_id: None,
         workspace,
         network: network_policy_for_egress(egress),
-        vcpu_count: None,
-        mem_size_mib: None,
+        vcpu_count,
+        mem_size_mib,
         cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,

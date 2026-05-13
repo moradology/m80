@@ -22,6 +22,8 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             stdin,
             egress,
             scratch_size,
+            vcpu_count,
+            mem_size_mib,
             writeback,
             tty,
             interactive,
@@ -36,6 +38,8 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             assert!(!stdin);
             assert_eq!(egress, EgressMode::Outbound);
             assert!(scratch_size.is_none());
+            assert!(vcpu_count.is_none());
+            assert!(mem_size_mib.is_none());
             assert_eq!(writeback, WritebackMode::Never);
             assert!(!tty);
             assert!(!interactive);
@@ -66,6 +70,10 @@ fn parse_run_visibility_and_exec_options() {
         "none",
         "--scratch-size",
         "1048576",
+        "--vcpu-count",
+        "2",
+        "--mem-size-mib",
+        "512",
         "--",
         "/usr/bin/env",
     ])
@@ -79,6 +87,8 @@ fn parse_run_visibility_and_exec_options() {
             stdin,
             egress,
             scratch_size,
+            vcpu_count,
+            mem_size_mib,
             argv,
             ..
         } => {
@@ -89,6 +99,8 @@ fn parse_run_visibility_and_exec_options() {
             assert!(stdin);
             assert_eq!(egress, EgressMode::None);
             assert_eq!(scratch_size, Some(1_048_576));
+            assert_eq!(vcpu_count, Some(2));
+            assert_eq!(mem_size_mib, Some(512));
             assert_eq!(argv, vec!["/usr/bin/env"]);
         }
         _ => panic!("expected Run"),

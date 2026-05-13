@@ -20,6 +20,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
             stdin,
             egress,
             scratch_size,
+            vcpu_count,
+            mem_size_mib,
             writeback,
             tty,
             interactive,
@@ -34,6 +36,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
             stdin,
             egress,
             scratch_size,
+            vcpu_count,
+            mem_size_mib,
             writeback,
             tty,
             interactive,
@@ -53,7 +57,9 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
             follow,
             ref request_id,
             ref since,
-        } => cmds_walk::logs::cmd_logs(vm_id, follow, request_id.as_deref(), since.as_deref(), json),
+        } => {
+            cmds_walk::logs::cmd_logs(vm_id, follow, request_id.as_deref(), since.as_deref(), json)
+        }
 
         Cmd::List => cmds_walk::cmd_list(json),
 

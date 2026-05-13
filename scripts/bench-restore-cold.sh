@@ -13,6 +13,8 @@ N="${N:-50}"
 FILE_READ_SAMPLES="${FILE_READ_SAMPLES:-10}"
 KIND="${KIND:-minimal}"
 KERNEL_KIND="${KERNEL_KIND:-${M80_KERNEL_KIND:-stripped}}"
+VCPU_COUNT="${VCPU_COUNT:-}"
+MEM_SIZE_MIB="${MEM_SIZE_MIB:-}"
 IMAGE_DIR="${IMAGE_BUILD_DIR:-${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}}"
 OUTDIR="crates/m80-firecracker/benches"
 SNAPSHOT_OUT="${SNAPSHOT_OUT:-$OUTDIR/snapshots/cold-restore-N${N}.json}"
@@ -30,6 +32,8 @@ Env vars:
   FILE_READ_SAMPLES=10
   KIND=minimal
   KERNEL_KIND=stripped
+  VCPU_COUNT=1
+  MEM_SIZE_MIB=1024
   IMAGE_BUILD_DIR=/tmp/m80-build/minimal
   IMAGE_BUILD_DIR_MINIMAL=/tmp/m80-build/minimal
   SNAPSHOT_OUT=crates/m80-firecracker/benches/snapshots/cold-restore-N50.json
@@ -56,6 +60,8 @@ plan() {
     echo "=== bench-restore-cold plan ==="
     echo "  N=$N  FILE_READ_SAMPLES=$FILE_READ_SAMPLES"
     echo "  KIND=$KIND  KERNEL_KIND=$KERNEL_KIND"
+    [[ -n "$VCPU_COUNT" ]] && echo "  VCPU_COUNT=$VCPU_COUNT"
+    [[ -n "$MEM_SIZE_MIB" ]] && echo "  MEM_SIZE_MIB=$MEM_SIZE_MIB"
     echo "  image_dir=$IMAGE_DIR"
     echo "  output: $SNAPSHOT_OUT"
 }
@@ -82,10 +88,15 @@ if [[ -z "$bench_bin" ]]; then
     exit 1
 fi
 
+BENCH_ENV=()
+[[ -n "$VCPU_COUNT" ]] && BENCH_ENV+=(M80_SNAPSHOT_BENCH_VCPU_COUNT="$VCPU_COUNT")
+[[ -n "$MEM_SIZE_MIB" ]] && BENCH_ENV+=(M80_SNAPSHOT_BENCH_MEM_SIZE_MIB="$MEM_SIZE_MIB")
+
 sudo env \
     N="$N" \
     M80_RESTORE_FILE_READ_SAMPLES="$FILE_READ_SAMPLES" \
     M80_SNAPSHOT_BENCH_OUTPUT="$SNAPSHOT_OUT" \
+    "${BENCH_ENV[@]}" \
     IMAGE_BUILD_DIR="$IMAGE_DIR" \
     M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
     M80_JAILER_BIN=/opt/firecracker/bin/jailer \

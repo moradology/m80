@@ -63,6 +63,8 @@ SNAPSHOTS_DIR="crates/m80-firecracker/benches/snapshots"
 # B0 knobs.
 SWEEP="${SWEEP:-}"
 SWEEP_VALUES="${SWEEP_VALUES:-}"
+SWEEP_RUN_ARGS=()
+RECORD_SWEEP_PHASE=0
 CONCURRENT="${CONCURRENT:-0}"
 TASKSET="${TASKSET:-}"
 CPU_GOVERNOR="${CPU_GOVERNOR:-}"
@@ -89,7 +91,8 @@ ENV vars:
     EGRESS        none|outbound (default none; M80_NETWORK_POLICY fallback)
     SKIP_LOADED   set to 1 to skip the stress-ng cell
     SWEEP         vcpu|mem_mib|kernel_kind|image_kind
-    SWEEP_VALUES  comma-separated values for the active sweep
+    SWEEP_VALUES  comma-separated values for the active sweep; vcpu/mem_mib
+                  are passed through to m80 run
     CONCURRENT    N parallel admissions per attempt; 0 = sequential (default)
     TASKSET       cpu-list passed to taskset -c (e.g. 0-3)
     CPU_GOVERNOR  passed to cpupower frequency-set -g (e.g. performance)
@@ -225,10 +228,15 @@ echo "timestamp,kind,kernel_kind,load,attempt,phase,elapsed_us" > "$RUN_PHASE_CS
 
 # Sweep CSV (only populated when SWEEP=<var> is set).
 SWEEP_CSV=""
+SWEEP_PHASE_CSV=""
 if [[ -n "$SWEEP" ]]; then
     SWEEP_CSV="crates/m80-firecracker/benches/sweep-${SWEEP}.csv"
+    SWEEP_PHASE_CSV="crates/m80-firecracker/benches/sweep-${SWEEP}-phases.csv"
     if [[ ! -f "$SWEEP_CSV" ]]; then
         echo "timestamp,kind,kernel_kind,load,attempt,sweep_var,sweep_value,launch_ms,exit" > "$SWEEP_CSV"
+    fi
+    if [[ ! -f "$SWEEP_PHASE_CSV" ]]; then
+        echo "timestamp,kind,kernel_kind,load,attempt,sweep_var,sweep_value,phase,elapsed_us" > "$SWEEP_PHASE_CSV"
     fi
 fi
 
@@ -325,6 +333,7 @@ run_one() {
             M80_JAIL_UID="$(id -u)" \
             M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
             "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
+            "${SWEEP_RUN_ARGS[@]}" \
             --egress "$EGRESS" -- /bin/echo "bench-$attempt" \
             >/dev/null 2>"$stderr_file"; then
         exit_code=0
@@ -347,6 +356,10 @@ run_one() {
         [[ "$name" != "$line" && "$us" =~ ^[0-9]+$ ]] || continue
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$PHASE_CSV"
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$name,$us" >> "$RUN_PHASE_CSV"
+        if [[ -n "$SWEEP" && "$RECORD_SWEEP_PHASE" == "1" ]]; then
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$SWEEP,$CUR_SWEEP_VAL,$name,$us" \
+                >> "$SWEEP_PHASE_CSV"
+        fi
         emit_phase_event "$kind" "$load" "$attempt" "$name" "$us"
     done < "$stderr_file"
     while IFS= read -r line; do
@@ -363,6 +376,12 @@ run_one() {
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_elapsed_$name,$elapsed_us" >> "$RUN_PHASE_CSV"
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$PHASE_CSV"
         echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,guest_delta_$name,$delta_us" >> "$RUN_PHASE_CSV"
+        if [[ -n "$SWEEP" && "$RECORD_SWEEP_PHASE" == "1" ]]; then
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$SWEEP,$CUR_SWEEP_VAL,guest_elapsed_$name,$elapsed_us" \
+                >> "$SWEEP_PHASE_CSV"
+            echo "$ts,$kind,$KERNEL_KIND,$load,$attempt,$SWEEP,$CUR_SWEEP_VAL,guest_delta_$name,$delta_us" \
+                >> "$SWEEP_PHASE_CSV"
+        fi
         emit_phase_event "$kind" "$load" "$attempt" "guest_elapsed_$name" "$elapsed_us"
         emit_phase_event "$kind" "$load" "$attempt" "guest_delta_$name" "$delta_us"
     done < "$stderr_file"
@@ -384,7 +403,7 @@ run_concurrent_cell() {
             local out
             out="$(mktemp)"
             outs+=("$out")
-            (RUN_ONE_SKIP_CLEANUP=1 run_one "$kind" "$load" "${attempt}_${vm}" "$image_dir" > "$out") &
+            (RUN_ONE_SKIP_CLEANUP=1 RECORD_SWEEP_PHASE=$((attempt > WARMUP)) run_one "$kind" "$load" "${attempt}_${vm}" "$image_dir" > "$out") &
             pids+=($!)
         done
         for pid in "${pids[@]}"; do
@@ -432,6 +451,7 @@ run_cell() {
     local total=$((N + WARMUP))
     for i in $(seq 1 "$total"); do
         local row launch_ms exit_code
+        RECORD_SWEEP_PHASE=$((i > WARMUP))
         row="$(run_one "$kind" "$load" "$i" "$image_dir")"
         launch_ms="${row%,*}"
         exit_code="${row#*,}"
@@ -510,16 +530,31 @@ resolve_sweep_values() {
     esac
 }
 
+require_positive_integer_sweep_value() {
+    local name="$1" value="$2"
+    if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+        echo "SWEEP=$name requires positive integer values, got '$value'" >&2
+        exit 1
+    fi
+}
+
 if [[ -n "$SWEEP" ]]; then
     echo "=== sweep: $SWEEP ==="
     while IFS= read -r CUR_SWEEP_VAL; do
         echo "--- $SWEEP=$CUR_SWEEP_VAL ---"
+        SWEEP_RUN_ARGS=()
         # Sweep variables that affect kernel kind or image kind handled below.
         case "$SWEEP" in
             kernel_kind) KERNEL_KIND="$CUR_SWEEP_VAL" ;;
             image_kind)  KINDS=("$CUR_SWEEP_VAL") ;;
-            # vcpu / mem_mib are not yet plumbed through m80 run flags;
-            # the sweep CSV records what was requested for observability.
+            vcpu)
+                require_positive_integer_sweep_value "$SWEEP" "$CUR_SWEEP_VAL"
+                SWEEP_RUN_ARGS=(--vcpu-count "$CUR_SWEEP_VAL")
+                ;;
+            mem_mib)
+                require_positive_integer_sweep_value "$SWEEP" "$CUR_SWEEP_VAL"
+                SWEEP_RUN_ARGS=(--mem-size-mib "$CUR_SWEEP_VAL")
+                ;;
         esac
         for k in "${KINDS[@]}"; do
             case "$k" in
@@ -567,6 +602,7 @@ echo
 echo "wallclock CSV:  $RESULT_CSV"
 echo "per-phase CSV:  $PHASE_CSV"
 [[ -n "$SWEEP_CSV" ]]      && echo "sweep CSV:      $SWEEP_CSV"
+[[ -n "$SWEEP_PHASE_CSV" ]] && echo "sweep phases:   $SWEEP_PHASE_CSV"
 [[ -n "$CONCURRENT_CSV" ]] && echo "concurrent CSV: $CONCURRENT_CSV"
 [[ -n "$PHASE_JSONL" ]]    && echo "phase JSONL:    $PHASE_JSONL"
 echo "snapshot saved: $SNAPSHOT_OUT"

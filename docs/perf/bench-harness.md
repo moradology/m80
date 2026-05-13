@@ -95,18 +95,18 @@ jq -s 'group_by(.phase) | map({phase: .[0].phase, p99_us: (sort_by(.elapsed_us) 
 ## Sweep mode
 
 `SWEEP=<var>` produces `crates/m80-firecracker/benches/sweep-<var>.csv`
-with one row per attempt × sweep value. Currently supported variables:
+with one wallclock row per attempt × sweep value, and
+`crates/m80-firecracker/benches/sweep-<var>-phases.csv` with the same
+`sweep_var` / `sweep_value` attribution for per-phase rows. Currently
+supported variables:
 
-- `vcpu` — sweep is observational only (`m80 run` doesn't yet take a
-  vcpu flag; the bench just records the requested value alongside the
-  measured wallclock).
-- `mem_mib` — same observational behavior.
+- `vcpu` — passes `--vcpu-count <value>` to `m80 run`.
+- `mem_mib` — passes `--mem-size-mib <value>` to `m80 run`.
 - `kernel_kind` — switches the boot kernel between `stock` and `stripped`.
 - `image_kind` — switches between `ubuntu` and `minimal`.
 
-`scripts/bench-summary.py compute_sweep` (function) aggregates the CSV
-into per-cell percentiles. Future: add `bench-summary.py sweep` as a CLI
-subcommand once a consumer needs it.
+`scripts/bench-summary.py sweep` aggregates those CSVs into per-value
+wallclock and phase percentiles.
 
 ## Concurrent mode
 

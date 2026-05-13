@@ -70,6 +70,14 @@ pub enum Cmd {
         #[arg(long, value_name = "BYTES")]
         scratch_size: Option<u64>,
 
+        /// Number of vCPUs assigned to the cold-booted VM.
+        #[arg(long, value_name = "N")]
+        vcpu_count: Option<u32>,
+
+        /// Guest memory assigned to the cold-booted VM, in MiB.
+        #[arg(long, value_name = "MIB")]
+        mem_size_mib: Option<u32>,
+
         /// Workspace writeback policy.
         #[arg(long, value_enum, default_value = "never")]
         writeback: WritebackMode,

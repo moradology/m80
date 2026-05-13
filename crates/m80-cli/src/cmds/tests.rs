@@ -1,7 +1,7 @@
 use super::{
     build_process_env, format_config_json, format_config_table, host_feature_config_from_effective,
     network_policy_for_egress, parse_env, render_preflight_result, run_request, run_stream,
-    sandbox_config_for_run, should_writeback,
+    sandbox_config_for_run, should_writeback, validate_run_flags,
 };
 use crate::args::{EgressMode, WritebackMode};
 use crate::errors::EXIT_PREFLIGHT;
@@ -111,6 +111,8 @@ fn run_workspace_and_scratch_map_to_sandbox_config() {
         Some("/tmp/m80-ws".into()),
         EgressMode::None,
         Some(64 * 1024 * 1024),
+        Some(2),
+        Some(768),
         "req-test".to_owned(),
     );
 
@@ -120,13 +122,22 @@ fn run_workspace_and_scratch_map_to_sandbox_config() {
     );
     assert_eq!(config.network, NetworkPolicy::NoEgress);
     assert_eq!(config.overlay_size_bytes, 64 * 1024 * 1024);
+    assert_eq!(config.vcpu_count, Some(2));
+    assert_eq!(config.mem_size_mib, Some(768));
     assert!(config.idle_timeout.is_none());
     assert_eq!(config.request_id.as_deref(), Some("req-test"));
 }
 
 #[test]
 fn run_defaults_to_no_workspace_and_default_overlay_size() {
-    let config = sandbox_config_for_run(None, EgressMode::Outbound, None, "req-default".to_owned());
+    let config = sandbox_config_for_run(
+        None,
+        EgressMode::Outbound,
+        None,
+        None,
+        None,
+        "req-default".to_owned(),
+    );
 
     assert!(config.workspace.is_none());
     assert_eq!(
@@ -134,7 +145,30 @@ fn run_defaults_to_no_workspace_and_default_overlay_size() {
         NetworkPolicy::AllowOutbound { exceptions: vec![] }
     );
     assert_eq!(config.overlay_size_bytes, 512 * 1024 * 1024);
+    assert!(config.vcpu_count.is_none());
+    assert!(config.mem_size_mib.is_none());
     assert_eq!(config.request_id.as_deref(), Some("req-default"));
+}
+
+#[test]
+fn warm_run_rejects_cold_boot_resource_sizing_flags() {
+    let vcpu_err = validate_run_flags(false, false, false, true, false, true, false, false)
+        .expect_err("--warm --vcpu-count must fail");
+    assert!(
+        vcpu_err
+            .to_string()
+            .contains("--warm is incompatible with --vcpu-count"),
+        "unexpected error: {vcpu_err}"
+    );
+
+    let mem_err = validate_run_flags(false, false, false, true, false, false, true, false)
+        .expect_err("--warm --mem-size-mib must fail");
+    assert!(
+        mem_err
+            .to_string()
+            .contains("--warm is incompatible with --mem-size-mib"),
+        "unexpected error: {mem_err}"
+    );
 }
 
 #[test]
@@ -164,12 +198,8 @@ fn run_cwd_env_and_stdin_map_to_exec_request() {
 fn run_cwd_env_and_terminal_size_map_to_pty_request() {
     let args = vec!["one".to_owned(), "two".to_owned()];
     let env = Some(vec![("TERM".to_owned(), "xterm-256color".to_owned())]);
-    let request = run_request::pty_request_for_run(
-        "/usr/bin/vim",
-        &args,
-        env,
-        Some("/workspace".to_owned()),
-    );
+    let request =
+        run_request::pty_request_for_run("/usr/bin/vim", &args, env, Some("/workspace".to_owned()));
 
     assert_eq!(request.program, "/usr/bin/vim");
     assert_eq!(request.args, args);
@@ -239,8 +269,7 @@ fn non_cancelled_run_preserves_guest_exit_code_even_if_signal_raced_late() {
 
 #[test]
 fn run_env_parser_keeps_empty_values_and_rejects_invalid_shape() {
-    let parsed =
-        parse_env(&["FOO=bar".to_owned(), "EMPTY=".to_owned()]).unwrap();
+    let parsed = parse_env(&["FOO=bar".to_owned(), "EMPTY=".to_owned()]).unwrap();
     assert_eq!(
         parsed,
         Some(vec![

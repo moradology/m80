@@ -126,6 +126,12 @@ The diagnostic environment dump is captured in
   Until the egress allowlist behavior lands, using either exits 7.
 - `--scratch-size <bytes>` - overrides scratch overlay size in bytes. Zero is
   rejected.
+- `--vcpu-count <n>` - overrides the cold-booted VM vCPU count. Zero is
+  rejected. This is incompatible with `--warm` because warm slot sizing is
+  fixed by the owner.
+- `--mem-size-mib <mib>` - overrides the cold-booted VM memory size in MiB.
+  Zero is rejected. This is incompatible with `--warm` because warm slot sizing
+  is fixed by the owner.
 - `--writeback never|on-success|always` - controls workspace writeback.
   `never` is the default. `on-success` extracts workspace changes only after a
   zero guest exit; `always` extracts after zero or non-zero guest exits while

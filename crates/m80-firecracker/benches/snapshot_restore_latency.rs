@@ -19,18 +19,23 @@ fn main() {
     let n = env_nonzero_usize("N", 50);
     let file_read_samples =
         env_nonzero_usize("M80_RESTORE_FILE_READ_SAMPLES", DEFAULT_FILE_READ_SAMPLES);
+    let vcpu_count = env_nonzero_u32("M80_SNAPSHOT_BENCH_VCPU_COUNT", FIRST_LINE_VCPU_COUNT);
+    let mem_size_mib = env_nonzero_u32("M80_SNAPSHOT_BENCH_MEM_SIZE_MIB", FIRST_LINE_MEM_SIZE_MIB);
     let load = std::env::var("M80_SNAPSHOT_BENCH_LOAD").unwrap_or_else(|_| "idle".into());
     let output = std::env::var_os("M80_SNAPSHOT_BENCH_OUTPUT").map(PathBuf::from);
     let started_at = unix_timestamp();
     let discovery = m80_preflight::run().expect("preflight");
-    let snapshot_dir = discovery
-        .run_root
-        .join(format!("snapshot-restore-bench-{}", std::process::id()));
+    let snapshot_dir =
+        std::env::temp_dir().join(format!("m80-snapshot-restore-bench-{}", std::process::id()));
     let paths = snapshot_paths(&snapshot_dir);
 
     let golden_backend = make_backend(discovery.clone(), 1);
     let golden = golden_backend
-        .admit(sandbox_config(format!("sbg-{}", std::process::id())))
+        .admit(sandbox_config(
+            format!("sbg-{}", std::process::id()),
+            vcpu_count,
+            mem_size_mib,
+        ))
         .expect("admit golden");
     let mut running = golden.launch().expect("launch golden");
     running.capture(paths.clone()).expect("capture golden");
@@ -47,8 +52,24 @@ fn main() {
     };
 
     let restore_backend = make_backend(discovery.clone(), 1);
-    let warm = run_restore_mode(&restore_backend, &discovery, &paths, n, CacheMode::Warm);
-    let cold = run_restore_mode(&restore_backend, &discovery, &paths, n, CacheMode::Cold);
+    let warm = run_restore_mode(
+        &restore_backend,
+        &discovery,
+        &paths,
+        n,
+        CacheMode::Warm,
+        vcpu_count,
+        mem_size_mib,
+    );
+    let cold = run_restore_mode(
+        &restore_backend,
+        &discovery,
+        &paths,
+        n,
+        CacheMode::Cold,
+        vcpu_count,
+        mem_size_mib,
+    );
 
     if let Some(child) = stress.as_mut() {
         stop_stress(child);
@@ -60,6 +81,8 @@ fn main() {
         load: &load,
         n,
         file_read_samples,
+        vcpu_count,
+        mem_size_mib,
         snapshot_paths: &paths,
         warm,
         cold,
@@ -87,6 +110,8 @@ fn run_restore_mode(
     paths: &SnapshotPaths,
     n: usize,
     mode: CacheMode,
+    vcpu_count: u32,
+    mem_size_mib: u32,
 ) -> ModeResult {
     let mut samples_us = Vec::with_capacity(n);
     let mut phases = PhaseSamples::default();
@@ -95,11 +120,11 @@ fn run_restore_mode(
             drop_page_cache();
         }
         let sandbox = backend
-            .admit(sandbox_config(format!(
-                "sbr-{}-{}-{i}",
-                mode.name(),
-                std::process::id()
-            )))
+            .admit(sandbox_config(
+                format!("sbr-{}-{}-{i}", mode.name(), std::process::id()),
+                vcpu_count,
+                mem_size_mib,
+            ))
             .expect("admit restore");
         let t = Instant::now();
         let restored = sandbox
@@ -191,13 +216,13 @@ fn make_backend(discovery: m80_preflight::Discovery, max_concurrent_vms: u32) ->
     )
 }
 
-fn sandbox_config(vm_id: String) -> SandboxConfig {
+fn sandbox_config(vm_id: String, vcpu_count: u32, mem_size_mib: u32) -> SandboxConfig {
     SandboxConfig {
         vm_id: Some(vm_id),
         workspace: None,
         network: NetworkPolicy::NoEgress,
-        vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
-        mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        vcpu_count: Some(vcpu_count),
+        mem_size_mib: Some(mem_size_mib),
         cpuset_cpus: None,
         cpu_template: None,
         drive_cache_type: None,
@@ -239,6 +264,8 @@ struct BenchReport<'a> {
     load: &'a str,
     n: usize,
     file_read_samples: usize,
+    vcpu_count: u32,
+    mem_size_mib: u32,
     snapshot_paths: &'a SnapshotPaths,
     warm: ModeResult,
     cold: ModeResult,
@@ -346,6 +373,8 @@ fn render_json(report: &BenchReport<'_>) -> String {
         "started_at_unix": report.started_at_unix,
         "n": report.n,
         "file_read_samples": report.file_read_samples,
+        "vcpu_count": report.vcpu_count,
+        "mem_size_mib": report.mem_size_mib,
         "unit": "us",
         "snapshot_files": {
             "vm_snap": {
@@ -465,6 +494,15 @@ fn env_u32(name: &str, default: u32) -> u32 {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
+}
+
+fn env_nonzero_u32(name: &str, default: u32) -> u32 {
+    let value = std::env::var(name).map_or(default, |raw| {
+        raw.parse()
+            .unwrap_or_else(|_| panic!("{name} must be a positive integer, got {raw:?}"))
+    });
+    assert!(value > 0, "{name} must be greater than zero");
+    value
 }
 
 fn unix_timestamp() -> u64 {

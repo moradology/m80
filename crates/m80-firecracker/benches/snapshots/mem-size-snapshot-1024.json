@@ -1,0 +1,266 @@
+{
+  "bench": "snapshot_restore_cold_baseline",
+  "cold_warm_delta_p50_us": {
+    "direct_snapshot_file_reads": 22846,
+    "residual_other": 0,
+    "restore_total": 20783
+  },
+  "file_read_samples": 1,
+  "load": "idle",
+  "mem_size_mib": 1024,
+  "n": 1,
+  "restore_modes": [
+    {
+      "cache_mode": "warm",
+      "max_us": 77388,
+      "mean_us": 77388,
+      "p50_us": 77388,
+      "p95_us": 77388,
+      "p99_us": 77388,
+      "phases": {
+        "phase_10_open_uds": {
+          "count": 1,
+          "max_us": 31,
+          "mean_us": 31,
+          "p50_us": 31,
+          "p95_us": 31,
+          "p99_us": 31
+        },
+        "phase_3_storage_prep": {
+          "count": 1,
+          "max_us": 9918,
+          "mean_us": 9918,
+          "p50_us": 9918,
+          "p95_us": 9918,
+          "p99_us": 9918
+        },
+        "phase_4_jailer_materialize": {
+          "count": 1,
+          "max_us": 2416,
+          "mean_us": 2416,
+          "p50_us": 2416,
+          "p95_us": 2416,
+          "p99_us": 2416
+        },
+        "phase_5_cgroup_probe": {
+          "count": 1,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_5b_cgroup_create": {
+          "count": 1,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "count": 1,
+          "max_us": 15631,
+          "mean_us": 15631,
+          "p50_us": 15631,
+          "p95_us": 15631,
+          "p99_us": 15631
+        },
+        "phase_restore_load": {
+          "count": 1,
+          "max_us": 3625,
+          "mean_us": 3625,
+          "p50_us": 3625,
+          "p95_us": 3625,
+          "p99_us": 3625
+        },
+        "phase_restore_probe_exec_channel": {
+          "count": 1,
+          "max_us": 36732,
+          "mean_us": 36732,
+          "p50_us": 36732,
+          "p95_us": 36732,
+          "p99_us": 36732
+        },
+        "phase_restore_snapshot_bind": {
+          "count": 1,
+          "max_us": 203,
+          "mean_us": 203,
+          "p50_us": 203,
+          "p95_us": 203,
+          "p99_us": 203
+        },
+        "phase_restore_snapshot_prime": {
+          "count": 1,
+          "max_us": 1466,
+          "mean_us": 1466,
+          "p50_us": 1466,
+          "p95_us": 1466,
+          "p99_us": 1466
+        }
+      },
+      "samples_us": [
+        77388
+      ]
+    },
+    {
+      "cache_mode": "cold",
+      "max_us": 98171,
+      "mean_us": 98171,
+      "p50_us": 98171,
+      "p95_us": 98171,
+      "p99_us": 98171,
+      "phases": {
+        "phase_10_open_uds": {
+          "count": 1,
+          "max_us": 35,
+          "mean_us": 35,
+          "p50_us": 35,
+          "p95_us": 35,
+          "p99_us": 35
+        },
+        "phase_3_storage_prep": {
+          "count": 1,
+          "max_us": 13823,
+          "mean_us": 13823,
+          "p50_us": 13823,
+          "p95_us": 13823,
+          "p99_us": 13823
+        },
+        "phase_4_jailer_materialize": {
+          "count": 1,
+          "max_us": 3068,
+          "mean_us": 3068,
+          "p50_us": 3068,
+          "p95_us": 3068,
+          "p99_us": 3068
+        },
+        "phase_5_cgroup_probe": {
+          "count": 1,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_5b_cgroup_create": {
+          "count": 1,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "count": 1,
+          "max_us": 31970,
+          "mean_us": 31970,
+          "p50_us": 31970,
+          "p95_us": 31970,
+          "p99_us": 31970
+        },
+        "phase_restore_load": {
+          "count": 1,
+          "max_us": 2934,
+          "mean_us": 2934,
+          "p50_us": 2934,
+          "p95_us": 2934,
+          "p99_us": 2934
+        },
+        "phase_restore_probe_exec_channel": {
+          "count": 1,
+          "max_us": 36924,
+          "mean_us": 36924,
+          "p50_us": 36924,
+          "p95_us": 36924,
+          "p99_us": 36924
+        },
+        "phase_restore_snapshot_bind": {
+          "count": 1,
+          "max_us": 449,
+          "mean_us": 449,
+          "p50_us": 449,
+          "p95_us": 449,
+          "p99_us": 449
+        },
+        "phase_restore_snapshot_prime": {
+          "count": 1,
+          "max_us": 1652,
+          "mean_us": 1652,
+          "p50_us": 1652,
+          "p95_us": 1652,
+          "p99_us": 1652
+        }
+      },
+      "samples_us": [
+        98171
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "snapshot_file_reads": [
+    {
+      "bytes": 14188,
+      "cold": {
+        "max_us": 213,
+        "mean_us": 213,
+        "p50_us": 213,
+        "p95_us": 213,
+        "p99_us": 213
+      },
+      "cold_samples_us": [
+        213
+      ],
+      "cold_warm_delta_p50_us": 188,
+      "file": "vm.snap",
+      "warm": {
+        "max_us": 25,
+        "mean_us": 25,
+        "p50_us": 25,
+        "p95_us": 25,
+        "p99_us": 25
+      },
+      "warm_samples_us": [
+        25
+      ]
+    },
+    {
+      "bytes": 1073741824,
+      "cold": {
+        "max_us": 2233031,
+        "mean_us": 2233031,
+        "p50_us": 2233031,
+        "p95_us": 2233031,
+        "p99_us": 2233031
+      },
+      "cold_samples_us": [
+        2233031
+      ],
+      "cold_warm_delta_p50_us": 22658,
+      "file": "mem.snap",
+      "warm": {
+        "max_us": 2210373,
+        "mean_us": 2210373,
+        "p50_us": 2210373,
+        "p95_us": 2210373,
+        "p99_us": 2210373
+      },
+      "warm_samples_us": [
+        2210373
+      ]
+    }
+  ],
+  "snapshot_files": {
+    "mem_snap": {
+      "bytes": 1073741824,
+      "path": "/tank/tmp/m80-snapshot-restore-bench-2171400/mem.snap"
+    },
+    "vm_snap": {
+      "bytes": 14188,
+      "path": "/tank/tmp/m80-snapshot-restore-bench-2171400/vm.snap"
+    }
+  },
+  "started_at_unix": 1778712574,
+  "unit": "us",
+  "vcpu_count": 1
+}
