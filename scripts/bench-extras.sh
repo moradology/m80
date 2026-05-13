@@ -206,8 +206,6 @@ mode_density() {
         M80_BIN="$M80_BIN" \
             CONCURRENT="$c" N="$N" WARMUP="$WARMUP" \
             KIND="$KIND" SKIP_LOADED=1 \
-            IMAGE_BUILD_DIR_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-bench-test/ubuntu}" \
-            IMAGE_BUILD_DIR_MINIMAL="${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-bench-test/minimal}" \
             bash scripts/bench-cold-launch.sh \
             | grep -E 'wall_time_to_all_ready' || true
     done

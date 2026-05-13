@@ -436,6 +436,78 @@ running — the dominant cold-launch cost and the explicit target of
 This snapshot is checked in at `crates/m80-firecracker/benches/baseline.json`
 and is the reference for `--fail-on-regress` gating going forward.
 
+## Cold-cold baseline (N=200, minimal/idle, --cold-isolation, 2026-05-13)
+
+Same N=200 minimal/idle methodology with `--cold-isolation` between
+every attempt:
+
+```bash
+N=200 WARMUP=2 KIND=minimal SKIP_LOADED=1 \
+  ./scripts/bench-cold-launch.sh --cold-isolation
+```
+
+The flag invokes `sync && echo 3 > /proc/sys/vm/drop_caches` between
+each launch, forcing every attempt to fault firecracker, the jailer,
+the kernel image, and the rootfs back into page cache from disk. This
+is the relevant number for "what does a launch cost on a freshly booted
+host" — the warm number is what users see in steady state.
+
+Wallclock, minimal/idle, N=200, 0 failures, 1 outlier:
+
+| metric | warm | cold-cold | Δ |
+|---|---:|---:|---:|
+| P50 | 1728 ms | 1837 ms | **+109 ms** |
+| P75 | 1730 ms | 1838 ms | +108 ms |
+| P90 | 1732 ms | 1839 ms | +107 ms |
+| P95 | 1733 ms | 1840 ms | +107 ms |
+| P99 | 1736 ms | 1843 ms | +107 ms |
+| P99.9 | 1736 ms | 1846 ms | +110 ms |
+| max | 1744 ms | 1849 ms | +105 ms |
+| P50 95% CI | [1728, 1729] | [1836, 1837] | |
+
+Cold-cold is uniformly **~108 ms slower than warm** across the entire
+distribution. The tail is actually *tighter* in cold-cold (P99−P50 =
+6 ms cold vs 8 ms warm) because every attempt starts from the same
+empty-page-cache state — the variance source that drives the warm
+tail (page-cache age across attempts) is now constant.
+
+The +108 ms cold penalty is the budget for: faulting `/opt/firecracker/bin/firecracker`
+into page cache, faulting the kernel image (~40 MB), faulting the
+rootfs metadata + first pages, and reading the m80 binary itself.
+
+## Density ladder (concurrent launches, minimal/idle, 2026-05-13)
+
+```bash
+LADDER=1,2,4,8 N=20 WARMUP=2 KIND=minimal \
+  ./scripts/bench-extras.sh --density
+```
+
+Each step launches `concurrency` VMs in parallel per attempt and
+measures wall-time-to-all-ready (the per-attempt max launch_ms across
+the parallel VMs), aggregated over 20 attempts post-warmup. All 300
+VM launches succeeded across the ladder (0 failures).
+
+| concurrency | wall-time-to-all-ready P50 | per-VM P95 | total VMs |
+|---:|---:|---:|---:|
+| 1 | 1726 ms | 1728 ms | 20 |
+| 2 | 1738 ms | 1741 ms | 40 |
+| 4 | 1747 ms | 1750 ms | 80 |
+| 8 | 1754 ms | 1763 ms | 160 |
+
+**Scaling is essentially flat — going from 1 to 8 concurrent VMs adds
+only 28 ms to wall-time-to-all-ready** (and only 35 ms to per-VM P95).
+At C=8 on a 48-CPU host the bench is nowhere near a saturation point;
+the per-VM cost is still dominated by the kernel-boot + guestd-ready
+window, which scales freely until the host runs out of cores or memory
+bandwidth.
+
+This is the headline number that **gates the conveyor-belt density
+claim** (`m80-ekbk` B3): at C=8, the host can keep 8 cold launches
+in flight with effectively the same per-launch wall time as one. The
+ladder doesn't yet probe the saturation point — that needs C=16, 32,
+64, or a hostile-load comparison cell. The harness supports those via
+`LADDER=16,32` etc; just needs the runtime budget.
+
 ## How to re-run
 
 ```bash

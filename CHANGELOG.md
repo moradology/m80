@@ -5,6 +5,35 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — cold-cold baseline + density ladder (m80-ekbk B0 follow-on)
+
+- Cold-cold N=200 minimal/idle (--cold-isolation): uniformly **+108 ms**
+  over warm baseline across the entire distribution. P50 1837 ms,
+  P95 1840 ms, P99 1843 ms, P99.9 1846 ms, max 1849 ms. P50 95% CI
+  [1836, 1837] ms. Tail tightens vs warm (P99−P50 = 6 ms cold vs 8 ms
+  warm) because every attempt starts from a uniformly empty page
+  cache.
+- Density ladder L=1,2,4,8 × N=22, minimal/idle, 300/300 launches
+  succeeded. Wall-time-to-all-ready P50: 1726 (C=1) → 1738 (C=2) →
+  1747 (C=4) → 1754 (C=8) ms. **+28 ms total going from 1 to 8
+  concurrent VMs** on a 48-CPU host. Per-VM P95 tracks similarly:
+  1728 → 1763 ms. This is the data backing the conveyor-belt density
+  claim that gated `m80-ekbk` B3.
+- Both runs written up in `docs/perf/cold-launch.md` with full tables;
+  the latter cell of the ladder hits no saturation, so the harness
+  can probe higher concurrencies (LADDER=16,32) when needed.
+
+### Fixed — `scripts/bench-extras.sh` --density default IMAGE dir
+
+- The `--density` mode-handler defaulted `IMAGE_BUILD_DIR_MINIMAL` to
+  `/tmp/m80-bench-test/minimal` (a leftover from the removed mock).
+  That dir still contained the empty `vmlinux` / manifest stubs from
+  the mock-testing phase, so the existence check passed but `m80 run`
+  exited with clap parse error 2 on every launch (300/300 fails).
+  Removed the bogus default; `--density` now inherits whatever
+  `IMAGE_BUILD_DIR_*` the user has set (and `bench-cold-launch.sh`
+  falls back to `/tmp/m80-build/*`).
+
 ### Fixed — `m80-jailer` bind-remount regression (caught running the new bench)
 
 - `crates/m80-jailer/src/plan.rs`: restored `MS_BIND` in
