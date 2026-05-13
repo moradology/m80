@@ -20,7 +20,7 @@ pub const FIRST_LINE_VCPU_COUNT: u32 = 1;
 
 /// First-line Firecracker memory size, in MiB, used by default and by snapshot
 /// timing proofs.
-pub const FIRST_LINE_MEM_SIZE_MIB: u32 = 1024;
+pub const FIRST_LINE_MEM_SIZE_MIB: u32 = 512;
 
 /// Default count of preallocated hotplug drive slots.
 pub(crate) const DEFAULT_PREALLOCATED_DRIVE_SLOTS: u8 = 0;
@@ -200,7 +200,7 @@ pub enum ConfigSource {
 /// idle-timeout deadline, and one-shot mode. Built once per [`Sandbox`] and
 /// cloned into warm-pool slots. `workspace` must be `None` for pool slots.
 /// Fields that accept `None` resolve to their defaults at launch time
-/// (e.g., 1 vCPU, 1024 MiB RAM, 5-minute idle timeout, no preallocated drives).
+/// (e.g., 1 vCPU, 512 MiB RAM, 5-minute idle timeout, no preallocated drives).
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
     /// Optional caller-provided VM id; auto-derived when absent.
@@ -211,7 +211,7 @@ pub struct SandboxConfig {
     pub network: NetworkPolicy,
     /// Number of vCPUs (default: 1).
     pub vcpu_count: Option<u32>,
-    /// Memory in MiB (default: 1024).
+    /// Memory in MiB (default: 512).
     pub mem_size_mib: Option<u32>,
     /// Optional cgroup v2 CPU set for this VM, e.g. `0-3` or `0,2`.
     ///

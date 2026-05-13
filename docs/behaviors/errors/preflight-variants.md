@@ -87,7 +87,7 @@ Test: `crates/m80-preflight/tests/error_hints.rs::unsupported_host_platform_has_
 
 m80 does not carry predecessor's fixed first-line sizing gate. `SandboxConfig`
 keeps `vcpu_count` and `mem_size_mib` as caller-configurable lifecycle inputs,
-with defaults of 1 vCPU and 1024 MiB when omitted. Invalid machine sizing is
+with defaults of 1 vCPU and 512 MiB when omitted. Invalid machine sizing is
 therefore surfaced by the Firecracker client/resource call that rejects it, not
 by a preflight-only `UnsupportedFirstLineVmSizing` compatibility variant.
 

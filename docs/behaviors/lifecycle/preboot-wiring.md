@@ -4,7 +4,7 @@
 
 Before `InstanceStart`, m80 first PUTs `/machine-config` with the sandbox's
 vCPU count, memory size, and `smt=false`. Omitted sizing uses the m80 defaults:
-1 vCPU and 1024 MiB. This is the m80 form of the predecessor behavior recorded at
+1 vCPU and 512 MiB. This is the m80 form of the predecessor behavior recorded at
 `crates/sandbox/agent-sandbox-firecracker/src/boot.rs:374` and
 `crates/sandbox/agent-sandbox-firecracker/src/client.rs:134`.
 

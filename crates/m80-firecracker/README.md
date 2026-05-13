@@ -208,7 +208,7 @@ no-live-jailer-parent sentinel.
 ### First-line machine shape
 
 `FIRST_LINE_VCPU_COUNT` and `FIRST_LINE_MEM_SIZE_MIB` name the default
-Firecracker shape: 1 vCPU and 1024 MiB. Omitted `SandboxConfig::vcpu_count`
+Firecracker shape: 1 vCPU and 512 MiB. Omitted `SandboxConfig::vcpu_count`
 and `SandboxConfig::mem_size_mib` resolve to those values during preboot.
 Preboot machine config also sets `smt = false` and omits `cpu_template` by
 default. This is the latency-first same-host shape. Callers that need an AWS

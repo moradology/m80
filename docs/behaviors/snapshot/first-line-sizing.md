@@ -2,13 +2,14 @@
 
 **Bead:** `m80-0tf.4.1`
 **Date:** 2026-05-06
+**Updated:** 2026-05-13 (`m80-jp6ik.29` changed default memory to 512 MiB)
 **Test:** `crates/m80-firecracker/tests/snapshot/first_line_sizing.rs`
 **Raw data:** `docs/behaviors/snapshot/first-line-sizing-latency.json`
 
-## 1-vcpu-1024-mib
+## 1-vcpu-512-mib
 
 Snapshot timing proofs use m80's first-line Firecracker shape: 1 vCPU and
-1024 MiB memory. The values are exposed by `m80-firecracker` as
+512 MiB memory. The values are exposed by `m80-firecracker` as
 `FIRST_LINE_VCPU_COUNT` and `FIRST_LINE_MEM_SIZE_MIB`, and omitted
 `SandboxConfig::vcpu_count` / `SandboxConfig::mem_size_mib` resolve to those
 same values during the preboot `/machine-config` PUT.
@@ -16,7 +17,8 @@ same values during the preboot `/machine-config` PUT.
 This does not reintroduce predecessor's old fixed-sizing preflight gate.
 `SandboxConfig` still accepts caller-provided sizing for general VM launches.
 The narrower rule here is that snapshot restore and warm-pool latency evidence
-must not use a smaller benchmark-only machine shape such as 1 vCPU / 512 MiB.
+must use the exported first-line constants rather than a hard-coded
+benchmark-only shape.
 
 predecessor source: `docs/gates/stage-g-firecracker-snapshot-restore-contract.md`
 §Contract rule 11.
@@ -24,7 +26,8 @@ predecessor source: `docs/gates/stage-g-firecracker-snapshot-restore-contract.md
 ## measured-idle-sample
 
 On 2026-05-06, `snapshot_restore_latency` was run with `N=10` against the
-first-line shape above and the existing minimal artifact pair at
+then-current 1 vCPU / 1024 MiB first-line shape and the existing minimal
+artifact pair at
 `/tmp/m80-build/minimal-perf-20260505d/`. The host run-root was
 `/var/lib/m80-run`.
 

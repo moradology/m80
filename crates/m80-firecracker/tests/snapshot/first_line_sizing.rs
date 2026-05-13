@@ -6,7 +6,7 @@ use m80_firecracker::{SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_CO
 #[test]
 fn v0_2_first_line_shape() {
     assert_eq!(FIRST_LINE_VCPU_COUNT, 1);
-    assert_eq!(FIRST_LINE_MEM_SIZE_MIB, 1024);
+    assert_eq!(FIRST_LINE_MEM_SIZE_MIB, 512);
 
     let config = SandboxConfig::default();
     assert!(
@@ -40,7 +40,7 @@ fn snapshot_timing_fixtures_use_first_line_shape() {
         );
         assert!(
             !source.contains("mem_size_mib: Some(512)"),
-            "{relative} must not use a benchmark-only 512 MiB memory shape"
+            "{relative} must use the first-line memory constant, not a hard-coded 512 MiB shape"
         );
     }
 }

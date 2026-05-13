@@ -46,4 +46,4 @@ the first-line default from 1024 MiB to 512 MiB cuts guest RAM commitment from
 8 GiB to 4 GiB and cuts full `mem.snap` size from 1 GiB to 512 MiB. 256 MiB has
 the best commitment profile, but it is below the current safe workload envelope
 for an agent-capable process wrapper. The data supports using 512 MiB as the
-lower safe default when `.29` makes the default-memory decision.
+lower safe default. Bead `m80-jp6ik.29` applies that default-memory decision.
