@@ -226,6 +226,7 @@ fn default_config(vm_id: &str) -> SandboxConfig {
         vm_id: Some(vm_id.to_owned()),
         vcpu_count: Some(m80_firecracker::FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(m80_firecracker::FIRST_LINE_MEM_SIZE_MIB),
+        cpu_template: None,
         ..common::sandbox_config()
     }
 }

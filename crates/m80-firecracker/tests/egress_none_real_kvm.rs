@@ -28,6 +28,7 @@ fn launch_no_egress_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf
             network: NetworkPolicy::NoEgress,
             vcpu_count: Some(1),
             mem_size_mib: Some(512),
+            cpu_template: None,
             boot_args: None,
             overlay_size_bytes: 256 * 1024 * 1024,
             idle_timeout: None,

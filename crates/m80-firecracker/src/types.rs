@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use m80_firecracker_client::Client;
+use m80_firecracker_client::{Client, CpuTemplate};
 use m80_jailer::{JailedFirecracker, MaterializedJail};
 use m80_net_mode::NetworkPolicy;
 use m80_storage::{Rootfs, Scratch};
@@ -212,6 +212,12 @@ pub struct SandboxConfig {
     pub vcpu_count: Option<u32>,
     /// Memory in MiB (default: 1024).
     pub mem_size_mib: Option<u32>,
+    /// Optional Firecracker CPU template.
+    ///
+    /// The default is `None`, which exposes the host CPU surface directly and
+    /// optimizes same-host launch/restore latency. Callers that need AWS
+    /// template masking for cross-host snapshot portability must opt in.
+    pub cpu_template: Option<CpuTemplate>,
     /// Boot args appended to the kernel command line.
     pub boot_args: Option<String>,
     /// Sparse overlay size in bytes (default: 512 MiB).
@@ -261,6 +267,7 @@ impl Default for SandboxConfig {
             network: NetworkPolicy::NoEgress,
             vcpu_count: None,
             mem_size_mib: None,
+            cpu_template: None,
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
             idle_timeout: Some(Duration::from_secs(300)),

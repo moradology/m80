@@ -1,0 +1,99 @@
+{
+  "bead": "m80-jp6ik.27",
+  "generated_at": "2026-05-13T19:36:37+00:00",
+  "protocol": "docs/perf/measurement-playbook.md#e12-cpu-template-delta",
+  "baseline_artifact": "crates/m80-firecracker/benches/snapshots/2026-05-13T19:31:03+00:00.json",
+  "after_artifact": "crates/m80-firecracker/benches/snapshots/2026-05-13T19:36:37+00:00.json",
+  "host": {
+    "uname": "Linux vulcan 6.17.0-22-generic #22-Ubuntu SMP PREEMPT_DYNAMIC Fri Mar 13 12:04:44 UTC 2026 x86_64 GNU/Linux",
+    "firecracker": "Firecracker v1.15.1",
+    "cpu_driver": "acpi-cpufreq",
+    "cpu_governor": "schedutil",
+    "image_kind": "minimal",
+    "kernel_kind": "stock",
+    "run_root": "/var/lib/m80-run",
+    "kernel_image": "/tmp/m80-build/minimal/vmlinux",
+    "rootfs_image": "/tmp/m80-build/minimal/output.ext4"
+  },
+  "baseline": {
+    "cpu_template_default": "T2 on Intel",
+    "phase_12a_instance_start": {
+      "p50_us": 18393,
+      "p75_us": 19208,
+      "p90_us": 19839,
+      "p95_us": 20364,
+      "p99_us": 20759,
+      "p999_us": 20759,
+      "max_us": 21074,
+      "count": 52,
+      "histogram_us": [
+        [
+          13462,
+          26924,
+          52
+        ]
+      ]
+    },
+    "wallclock": {
+      "p50": 1728,
+      "p75": 1729,
+      "p90": 1732,
+      "p95": 1732,
+      "p99": 1736,
+      "p999": 1736,
+      "max": 1738,
+      "count": 50,
+      "fail_count": 0,
+      "outliers": 4,
+      "p50_ci95": [
+        1728,
+        1729
+      ]
+    }
+  },
+  "after": {
+    "cpu_template_default": null,
+    "phase_12a_instance_start": {
+      "p50_us": 18591,
+      "p75_us": 19339,
+      "p90_us": 19945,
+      "p95_us": 20063,
+      "p99_us": 20141,
+      "p999_us": 20141,
+      "max_us": 20194,
+      "count": 51,
+      "histogram_us": [
+        [
+          13741,
+          27482,
+          51
+        ]
+      ]
+    },
+    "wallclock": {
+      "p50": 1729,
+      "p75": 1730,
+      "p90": 1731,
+      "p95": 1732,
+      "p99": 1732,
+      "p999": 1732,
+      "max": 1732,
+      "count": 50,
+      "fail_count": 0,
+      "outliers": 5,
+      "p50_ci95": [
+        1728,
+        1730
+      ]
+    }
+  },
+  "delta": {
+    "phase_12a_p50_us": 198,
+    "phase_12a_target_met": false,
+    "wallclock_p50_ms": 1
+  },
+  "verification": {
+    "default_omission": "cargo test -p m80-firecracker preboot --lib",
+    "same_host_snapshot_restore": "sudo env ... cargo test -p m80-firecracker --test snapshot_integration capture_then_restore_round_trip -- --ignored --nocapture"
+  }
+}

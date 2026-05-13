@@ -208,12 +208,13 @@ no-live-jailer-parent sentinel.
 `FIRST_LINE_VCPU_COUNT` and `FIRST_LINE_MEM_SIZE_MIB` name the default
 Firecracker shape: 1 vCPU and 1024 MiB. Omitted `SandboxConfig::vcpu_count`
 and `SandboxConfig::mem_size_mib` resolve to those values during preboot.
-Preboot machine config also sets `smt = false` and applies the `T2` CPU
-template on Intel hosts. On non-Intel hosts it omits `cpu_template` because
-Firecracker rejects Intel templates when the host CPU vendor is AMD. Callers may
-still supply explicit sizing for ordinary launches. Snapshot restore and
-warm-pool timing fixtures use the exported constants so latency proofs do not
-drift to a benchmark-only smaller VM.
+Preboot machine config also sets `smt = false` and omits `cpu_template` by
+default. This is the latency-first same-host shape. Callers that need an AWS
+template-masked CPU surface for snapshot portability can set
+`SandboxConfig::cpu_template` to `CpuTemplate::T2` or `CpuTemplate::C3`.
+Callers may still supply explicit sizing for ordinary launches. Snapshot
+restore and warm-pool timing fixtures use the exported constants so latency
+proofs do not drift to a benchmark-only smaller VM.
 
 ### Cleanup contract vocabulary
 
@@ -346,14 +347,15 @@ slots. It defaults to `false`.
 ### Preboot REST wiring
 
 `m80-firecracker` builds a pure ordered preboot PUT plan and applies it before
-`InstanceStart`: machine config with a CPU template, boot source, shared read-only rootfs drive,
-per-VM rootfs overlay drive, optional workspace scratch drive, optional
-preallocated hotplug drive slots, optional network interface for an
-OutboundNat TAP, virtio-rng entropy device, then vsock. Before the first REST
-PUT, launch opens the Firecracker API socket by watching the run directory for
-socket creation rather than polling on a fixed interval. Outbound NAT
-boot-source args append the prepared `m80.net.*` PID-1 tokens after the
-`m80.workspace=<0|1>` marker. After the plan succeeds and before `InstanceStart`, the launch path writes
+`InstanceStart`: machine config with an optional caller-selected CPU template,
+boot source, shared read-only rootfs drive, per-VM rootfs overlay drive,
+optional workspace scratch drive, optional preallocated hotplug drive slots,
+optional network interface for an OutboundNat TAP, virtio-rng entropy device,
+then vsock. Before the first REST PUT, launch opens the Firecracker API socket
+by watching the run directory for socket creation rather than polling on a
+fixed interval. Outbound NAT boot-source args append the prepared `m80.net.*`
+PID-1 tokens after the `m80.workspace=<0|1>` marker. After the plan succeeds
+and before `InstanceStart`, the launch path writes
 `<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
 See `docs/behaviors/lifecycle/preboot-wiring.md` and
 `docs/behaviors/lifecycle/virtio-rng.md`.
@@ -500,6 +502,8 @@ Core types:
 - `WarmPoolSnapshot` — observable warm-pool counts.
 - `WarmLease` — single exec slot checked out from `WarmPool`.
 - `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, one-shot mode, etc.).
+- `CpuTemplate` — re-exported Firecracker CPU template enum for callers that
+  opt into `SandboxConfig::cpu_template`.
 - `HotplugDriveAttach` — host-side request to attach and verify one preallocated drive slot.
 - `HotplugDriveDetach` — host-side request to detach one preallocated drive slot.
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
@@ -535,6 +539,7 @@ Layout helpers:
 Config defaults:
 
 - `FIRST_LINE_VCPU_COUNT`, `FIRST_LINE_MEM_SIZE_MIB`.
+- `SandboxConfig::cpu_template = None`.
 
 Cleanup vocabulary (behavior docs + regression tests):
 
@@ -594,7 +599,9 @@ Usage rules (identical in both crates):
 
 ## Tests
 
-- `src/preboot.rs` tests — preboot PUT order, boot-source cmdline behavior, drive order, and network-interface placement.
+- `src/preboot.rs` tests — preboot PUT order, boot-source cmdline behavior,
+  drive order, default CPU-template omission, explicit CPU-template opt-in,
+  and network-interface placement.
 - `tests/config_loading.rs` — precedence chain, drop-in ordering, unknown-key rejection, and env-override isolation using `load_config_from_paths` and in-memory fixtures.
 - `tests/cleanup_vocabulary.rs` — `CleanupPhase`, `StopDisposition`, `CleanupReleaseBlocker`, `CleanupAuthority`, and `LifecycleFailureKind::ALL` are exhaustive and match behavior docs.
 - `tests/layout.rs` — pure path helpers produce expected strings given fixed run-root + vm-id inputs.

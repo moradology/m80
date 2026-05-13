@@ -255,6 +255,7 @@ mod tests {
             network: NetworkPolicy::NoEgress,
             vcpu_count: None,
             mem_size_mib: None,
+            cpu_template: None,
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
             idle_timeout: None,

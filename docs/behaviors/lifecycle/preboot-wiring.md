@@ -8,6 +8,11 @@ vCPU count, memory size, and `smt=false`. Omitted sizing uses the m80 defaults:
 `crates/sandbox/agent-sandbox-firecracker/src/boot.rs:374` and
 `crates/sandbox/agent-sandbox-firecracker/src/client.rs:134`.
 
+`SandboxConfig::cpu_template` is optional and defaults to `None`. The default
+machine-config JSON omits `cpu_template`; callers that need a template-masked
+CPU surface for snapshot portability opt in explicitly with `CpuTemplate::T2`
+or `CpuTemplate::C3`. m80 does not auto-select T2 from `/proc/cpuinfo`.
+
 `m80-firecracker` builds this as the first entry in its preboot PUT plan, and
 `phase_11_rest_puts` applies that plan before the launch path issues
 `InstanceStart`.

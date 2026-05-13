@@ -360,6 +360,7 @@ fn sandbox_config_for_run(
         network: network_policy_for_egress(egress),
         vcpu_count: None,
         mem_size_mib: None,
+        cpu_template: None,
         boot_args: None,
         overlay_size_bytes: scratch_size.unwrap_or(512 * 1024 * 1024),
         idle_timeout: None,

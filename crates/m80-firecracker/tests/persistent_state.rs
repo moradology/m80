@@ -44,6 +44,7 @@ fn sandbox_config(vm_id: &str) -> m80_firecracker::SandboxConfig {
     m80_firecracker::SandboxConfig {
         vcpu_count: Some(1),
         mem_size_mib: Some(512),
+        cpu_template: None,
         overlay_size_bytes: 128 * 1024 * 1024,
         ..common::sandbox_config_with_id(vm_id)
     }

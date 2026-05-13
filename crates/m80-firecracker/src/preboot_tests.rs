@@ -1,4 +1,5 @@
 use super::*;
+use m80_firecracker_client::CpuTemplate;
 
 fn plan_without_workspace() -> Vec<PrebootPut> {
     plan_preboot_puts(
@@ -17,6 +18,7 @@ fn machine_config_put_before_boot() {
     let config = SandboxConfig {
         vcpu_count: Some(2),
         mem_size_mib: Some(2048),
+        cpu_template: None,
         ..SandboxConfig::default()
     };
 
@@ -36,29 +38,42 @@ fn machine_config_put_before_boot() {
     assert_eq!(machine.vcpu_count, 2);
     assert_eq!(machine.mem_size_mib, 2048);
     assert!(!machine.smt);
-    assert_eq!(machine.cpu_template, host_cpu_template());
+    assert_eq!(machine.cpu_template, None);
 }
 
 #[test]
-fn layer_1_machine_config_uses_narrow_cpu_surface() {
+fn layer_1_machine_config_omits_cpu_template_by_default() {
     let puts = plan_without_workspace();
 
     let PrebootPut::MachineConfig(machine) = &puts[0] else {
         panic!("first preboot PUT must be machine config");
     };
-    assert_eq!(machine.cpu_template, host_cpu_template());
+    assert_eq!(machine.cpu_template, None);
     assert!(!machine.smt);
 }
 
 #[test]
-fn cpu_template_uses_t2_only_on_intel_hosts() {
+fn default_machine_config_serialization_omits_cpu_template() {
+    let machine = machine_config_for(&SandboxConfig::default());
+    let json = serde_json::to_value(&machine).expect("machine config serializes");
+
+    assert_eq!(json.get("cpu_template"), None);
+}
+
+#[test]
+fn machine_config_honors_explicit_cpu_template() {
+    let config = SandboxConfig {
+        cpu_template: Some(CpuTemplate::T2),
+        ..SandboxConfig::default()
+    };
+
+    let machine = machine_config_for(&config);
+    let json = serde_json::to_value(&machine).expect("machine config serializes");
+
+    assert_eq!(machine.cpu_template, Some(CpuTemplate::T2));
     assert_eq!(
-        cpu_template_for_cpuinfo("vendor_id\t: GenuineIntel\n"),
-        Some(CpuTemplate::T2)
-    );
-    assert_eq!(
-        cpu_template_for_cpuinfo("vendor_id\t: AuthenticAMD\n"),
-        None
+        json.get("cpu_template").and_then(|value| value.as_str()),
+        Some("T2")
     );
 }
 
@@ -402,6 +417,7 @@ fn machine_config_uses_default_sizing_when_omitted() {
     let config = SandboxConfig {
         vcpu_count: None,
         mem_size_mib: None,
+        cpu_template: None,
         ..SandboxConfig::default()
     };
 
@@ -410,6 +426,7 @@ fn machine_config_uses_default_sizing_when_omitted() {
     assert_eq!(machine.vcpu_count, FIRST_LINE_VCPU_COUNT);
     assert_eq!(machine.mem_size_mib, FIRST_LINE_MEM_SIZE_MIB);
     assert!(!machine.smt);
+    assert_eq!(machine.cpu_template, None);
 }
 
 #[test]
@@ -417,6 +434,7 @@ fn machine_config_honors_caller_sizing() {
     let config = SandboxConfig {
         vcpu_count: Some(2),
         mem_size_mib: Some(2048),
+        cpu_template: None,
         ..SandboxConfig::default()
     };
 
@@ -425,4 +443,5 @@ fn machine_config_honors_caller_sizing() {
     assert_eq!(machine.vcpu_count, 2);
     assert_eq!(machine.mem_size_mib, 2048);
     assert!(!machine.smt);
+    assert_eq!(machine.cpu_template, None);
 }

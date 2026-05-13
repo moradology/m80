@@ -4,8 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, CpuTemplate, DriveConfig, MachineConfig, NetworkInterfaceConfig,
-    VsockConfig,
+    BootSourceConfig, Client, DriveConfig, MachineConfig, NetworkInterfaceConfig, VsockConfig,
 };
 use m80_image_manifest::{ImageKind, KernelKind};
 
@@ -181,21 +180,7 @@ fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
         vcpu_count: config.vcpu_count.unwrap_or(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: config.mem_size_mib.unwrap_or(FIRST_LINE_MEM_SIZE_MIB),
         smt: false,
-        cpu_template: host_cpu_template(),
-    }
-}
-
-fn host_cpu_template() -> Option<CpuTemplate> {
-    std::fs::read_to_string("/proc/cpuinfo")
-        .ok()
-        .and_then(|cpuinfo| cpu_template_for_cpuinfo(&cpuinfo))
-}
-
-fn cpu_template_for_cpuinfo(cpuinfo: &str) -> Option<CpuTemplate> {
-    if cpuinfo.contains("GenuineIntel") {
-        Some(CpuTemplate::T2)
-    } else {
-        None
+        cpu_template: config.cpu_template,
     }
 }
 

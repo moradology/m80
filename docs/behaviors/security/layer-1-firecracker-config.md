@@ -6,9 +6,10 @@ hypervisor, but it owns the Firecracker configuration it sends before
 
 Pinned configuration:
 
-- `PUT /machine-config` includes `smt = false`. On Intel hosts it also includes
-  `cpu_template = "T2"`; on AMD hosts m80 omits `cpu_template` because
-  Firecracker rejects Intel templates with a CPU-vendor mismatch before boot.
+- `PUT /machine-config` includes `smt = false`.
+- By default, `PUT /machine-config` omits `cpu_template`. This is the
+  latency-first same-host shape. Callers that need AWS template masking for
+  cross-host snapshot portability opt in through `SandboxConfig::cpu_template`.
 - The preboot PUT plan contains only documented devices: machine config, boot
   source, rootfs drive, rootfs overlay drive, optional workspace drive,
   optional preallocated hotplug drive slots, optional outbound NAT NIC, and
@@ -21,7 +22,8 @@ Pinned configuration:
 
 Verification:
 
-- `crates/m80-firecracker/src/preboot.rs::tests::layer_1_machine_config_uses_narrow_cpu_surface`
+- `crates/m80-firecracker/src/preboot.rs::tests::layer_1_machine_config_omits_cpu_template_by_default`
+- `crates/m80-firecracker/src/preboot.rs::tests::machine_config_honors_explicit_cpu_template`
 - `crates/m80-firecracker/src/preboot.rs::tests::layer_1_preboot_plan_contains_only_documented_devices`
 - `crates/m80-firecracker-client/tests/put_each_resource.rs::put_machine_config_sends_correct_json`
 - `crates/m80-firecracker/tests/lifecycle/run_dir_layout.rs::api_socket_path_is_inside_jailer_root`

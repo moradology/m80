@@ -40,6 +40,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
     SandboxConfig {
         vcpu_count: Some(FIRST_LINE_VCPU_COUNT),
         mem_size_mib: Some(FIRST_LINE_MEM_SIZE_MIB),
+        cpu_template: None,
         ..common::sandbox_config_with_id(vm_id)
     }
 }
