@@ -665,6 +665,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "m80-close-range"
+version = "0.0.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "m80-firecracker"
 version = "0.0.0"
 dependencies = [
@@ -781,6 +788,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "caps",
+ "m80-close-range",
  "nix 0.29.0",
  "tempfile",
  "thiserror 2.0.18",

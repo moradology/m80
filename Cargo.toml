@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+exclude = ["support/m80-close-range"]
 
 [workspace.package]
 version = "0.0.0"
@@ -100,3 +101,4 @@ m80-snapshot = { path = "crates/m80-snapshot" }
 m80-observability = { path = "crates/m80-observability" }
 m80-firecracker = { path = "crates/m80-firecracker" }
 m80-test-helpers = { path = "crates/m80-test-helpers" }
+m80-close-range = { path = "support/m80-close-range" }

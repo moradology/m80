@@ -6,13 +6,12 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use caps::CapSet;
-use nix::errno::Errno;
 use nix::sched::{unshare, CloneFlags};
 use nix::sys::prctl;
 use nix::sys::resource::{setrlimit, Resource};
 use nix::sys::signal::{SigSet, SigmaskHow, Signal};
 use nix::sys::stat::{umask, Mode};
-use nix::unistd::{close, setgroups};
+use nix::unistd::setgroups;
 
 /// Parsed command-line input for `m80-jailer-harden`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,7 +77,9 @@ pub enum HardenError {
     /// Argument value could not be parsed.
     #[error("invalid {field}: {value}")]
     InvalidValue {
+        /// Argument or field name.
         field: &'static str,
+        /// Rejected value.
         value: String,
     },
     /// The `--` separator before jailer args was absent.
@@ -118,17 +119,9 @@ pub enum HardenError {
     /// Signal mask reset failed.
     #[error("reset signal mask: {0}")]
     SignalMask(#[source] nix::Error),
-    /// Inherited file descriptors could not be enumerated.
-    #[error("enumerate inherited fds: {0}")]
-    EnumerateFds(#[source] std::io::Error),
-    /// Inherited file descriptor could not be closed.
-    #[error("close inherited fd {fd}: {source}")]
-    CloseFd {
-        /// File descriptor number.
-        fd: i32,
-        /// Source error.
-        source: nix::Error,
-    },
+    /// Inherited file descriptors could not be closed.
+    #[error("close inherited file descriptors: {0}")]
+    CloseRange(#[source] std::io::Error),
     /// Final exec failed.
     #[error("exec {}: {source}", path.display())]
     Exec {
@@ -310,29 +303,7 @@ impl ResourceLimitKind {
 }
 
 fn close_inherited_fds() -> Result<(), HardenError> {
-    let mut fds = Vec::new();
-    for entry in std::fs::read_dir("/proc/self/fd").map_err(HardenError::EnumerateFds)? {
-        let entry = entry.map_err(HardenError::EnumerateFds)?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        let Ok(fd) = name.parse::<i32>() else {
-            continue;
-        };
-        if fd > 2 {
-            fds.push(fd);
-        }
-    }
-
-    for fd in fds {
-        match close(fd) {
-            Ok(()) | Err(Errno::EBADF) => {}
-            Err(source) => return Err(HardenError::CloseFd { fd, source }),
-        }
-    }
-
-    Ok(())
+    m80_close_range::close_from(3).map_err(HardenError::CloseRange)
 }
 
 /// Replace this process with the official jailer.

@@ -1,0 +1,11 @@
+[package]
+name = "m80-close-range"
+description = "Safe Linux close_range wrapper for m80 process hardening"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/nathanp/m80"
+rust-version = "1.82"
+
+[dependencies]
+libc = "0.2"

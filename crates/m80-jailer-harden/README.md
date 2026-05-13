@@ -25,7 +25,7 @@ does this, in order:
 6. Set `PR_SET_PDEATHSIG` to `SIGKILL`.
 7. Set umask to `0077`.
 8. Reset the thread signal mask to empty.
-9. Close inherited file descriptors above stdio.
+9. Close inherited file descriptors above stdio with `close_range(3, UINT_MAX, 0)`.
 10. Clear its environment and `exec` the official jailer with the remaining args.
 
 The wrapper does not perform chroot, pivot_root, mknod, cgroup placement, setuid,
@@ -45,7 +45,7 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 | `HardenArgs::new_cgroup_ns()` | Parsed `--new-cgroup-ns` flag for `apply_process_hardening`. |
 | `ResourceLimit { kind, value }` | Public parsed resource-limit row used by tests and callers that inspect parse output. |
 | `ResourceLimitKind` | Supported resource limit names: `NoFile`, `FSize`, `NProc`, `MemLock`, `AddressSpace`, `Core`, and `Stack`. |
-| `HardenError` | Typed pre-exec failure surface: `MissingArgument`, `InvalidValue`, `MissingSeparator`, `MissingJailerArgs`, `SetGroups`, `ClearCaps`, `NoNewPrivs`, `ParentDeathSignal`, `CgroupNamespace`, `SetResourceLimit`, `SignalMask`, `EnumerateFds`, `CloseFd`, and `Exec`. |
+| `HardenError` | Typed pre-exec failure surface: `MissingArgument`, `InvalidValue`, `MissingSeparator`, `MissingJailerArgs`, `SetGroups`, `ClearCaps`, `NoNewPrivs`, `ParentDeathSignal`, `CgroupNamespace`, `SetResourceLimit`, `SignalMask`, `CloseRange`, and `Exec`. |
 | `parse_args(args)` | Parses wrapper args from an iterator that starts after argv[0]; validates required `--jailer-bin`, `--uid`, `--gid`, separator, and forwarded jailer args. |
 | `apply_process_hardening(resource_limits, new_cgroup_ns)` | Applies the inheritable hardening sequence without execing. |
 | `exec_jailer(args)` | Clears the environment and replaces the current process with the official jailer. Returns only if `exec` fails. |
@@ -58,7 +58,7 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 
 ## Dependencies
 
-`anyhow`, `caps`, `nix`, `thiserror`.
+`anyhow`, `caps`, `m80-close-range`, `nix`, `thiserror`.
 
 ## Tests
 

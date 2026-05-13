@@ -24,9 +24,9 @@ engine can set up its rings under the host operator's locked-memory policy.
 m80 launches the official jailer through `m80-jailer-harden`. The wrapper drops
 supplementary groups, clears inheritable and ambient capabilities, sets
 `PR_SET_NO_NEW_PRIVS`, sets `PR_SET_PDEATHSIG` to `SIGKILL`, resets the signal
-mask, sets umask `0077`, closes inherited fds above stdio, clears its
-environment, and then execs the official jailer. m80 also pins stdio: stdin is
-`/dev/null`; stdout/stderr are the
+mask, sets umask `0077`, closes inherited fds above stdio with
+`close_range(3, UINT_MAX, 0)`, clears its environment, and then execs the
+official jailer. m80 also pins stdio: stdin is `/dev/null`; stdout/stderr are the
 configured console log when present and `/dev/null` otherwise.
 
 `JailerConfig::new_pid_ns` maps directly to Firecracker-jailer
