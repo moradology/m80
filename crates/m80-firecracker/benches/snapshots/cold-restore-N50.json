@@ -1,0 +1,382 @@
+{
+  "bench": "snapshot_restore_cold_baseline",
+  "cold_warm_delta_p50_us": {
+    "direct_snapshot_file_reads": 615741,
+    "residual_other": 0,
+    "restore_total": 38629
+  },
+  "file_read_samples": 10,
+  "load": "idle",
+  "n": 50,
+  "restore_modes": [
+    {
+      "cache_mode": "warm",
+      "max_us": 75322,
+      "mean_us": 59040,
+      "p50_us": 55316,
+      "p95_us": 70884,
+      "p99_us": 71876,
+      "phases": {
+        "phase_10_open_uds": {
+          "count": 50,
+          "max_us": 47,
+          "mean_us": 29,
+          "p50_us": 29,
+          "p95_us": 33,
+          "p99_us": 40
+        },
+        "phase_3_storage_prep": {
+          "count": 50,
+          "max_us": 13309,
+          "mean_us": 8884,
+          "p50_us": 8756,
+          "p95_us": 9992,
+          "p99_us": 11009
+        },
+        "phase_4_jailer_materialize": {
+          "count": 50,
+          "max_us": 4129,
+          "mean_us": 1979,
+          "p50_us": 1807,
+          "p95_us": 3794,
+          "p99_us": 4072
+        },
+        "phase_5_cgroup_probe": {
+          "count": 50,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_5b_cgroup_create": {
+          "count": 50,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "count": 50,
+          "max_us": 31932,
+          "mean_us": 20179,
+          "p50_us": 15722,
+          "p95_us": 31854,
+          "p99_us": 31924
+        },
+        "phase_restore_load": {
+          "count": 50,
+          "max_us": 3594,
+          "mean_us": 2709,
+          "p50_us": 2650,
+          "p95_us": 3156,
+          "p99_us": 3553
+        },
+        "phase_restore_probe_exec_channel": {
+          "count": 50,
+          "max_us": 18888,
+          "mean_us": 18403,
+          "p50_us": 18408,
+          "p95_us": 18634,
+          "p99_us": 18886
+        },
+        "phase_restore_snapshot_bind": {
+          "count": 50,
+          "max_us": 2780,
+          "mean_us": 616,
+          "p50_us": 161,
+          "p95_us": 2687,
+          "p99_us": 2737
+        }
+      },
+      "samples_us": [
+        52473,
+        55237,
+        51855,
+        70455,
+        54777,
+        56452,
+        53835,
+        54613,
+        70038,
+        54982,
+        70571,
+        70884,
+        71064,
+        53470,
+        55084,
+        54633,
+        70287,
+        70315,
+        57777,
+        70440,
+        55150,
+        52635,
+        56402,
+        52334,
+        54310,
+        56448,
+        75322,
+        56575,
+        69717,
+        54824,
+        49279,
+        57183,
+        54311,
+        53524,
+        52573,
+        67720,
+        58895,
+        50666,
+        52332,
+        55767,
+        54413,
+        56658,
+        56602,
+        70036,
+        52596,
+        53217,
+        55316,
+        70547,
+        71876,
+        55545
+      ]
+    },
+    {
+      "cache_mode": "cold",
+      "max_us": 107082,
+      "mean_us": 94166,
+      "p50_us": 93945,
+      "p95_us": 97654,
+      "p99_us": 98395,
+      "phases": {
+        "phase_10_open_uds": {
+          "count": 50,
+          "max_us": 40,
+          "mean_us": 33,
+          "p50_us": 35,
+          "p95_us": 37,
+          "p99_us": 39
+        },
+        "phase_3_storage_prep": {
+          "count": 50,
+          "max_us": 15627,
+          "mean_us": 12085,
+          "p50_us": 11537,
+          "p95_us": 14025,
+          "p99_us": 14334
+        },
+        "phase_4_jailer_materialize": {
+          "count": 50,
+          "max_us": 4473,
+          "mean_us": 1906,
+          "p50_us": 1141,
+          "p95_us": 4419,
+          "p99_us": 4454
+        },
+        "phase_5_cgroup_probe": {
+          "count": 50,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_5b_cgroup_create": {
+          "count": 50,
+          "max_us": 0,
+          "mean_us": 0,
+          "p50_us": 0,
+          "p95_us": 0,
+          "p99_us": 0
+        },
+        "phase_9_jailer_launch": {
+          "count": 50,
+          "max_us": 32174,
+          "mean_us": 31899,
+          "p50_us": 31899,
+          "p95_us": 32055,
+          "p99_us": 32078
+        },
+        "phase_restore_load": {
+          "count": 50,
+          "max_us": 4090,
+          "mean_us": 3299,
+          "p50_us": 3252,
+          "p95_us": 3790,
+          "p99_us": 4035
+        },
+        "phase_restore_probe_exec_channel": {
+          "count": 50,
+          "max_us": 47711,
+          "mean_us": 38162,
+          "p50_us": 37984,
+          "p95_us": 38475,
+          "p99_us": 38544
+        },
+        "phase_restore_snapshot_bind": {
+          "count": 50,
+          "max_us": 195,
+          "mean_us": 166,
+          "p50_us": 167,
+          "p95_us": 187,
+          "p99_us": 192
+        }
+      },
+      "samples_us": [
+        94472,
+        89654,
+        95439,
+        96450,
+        95121,
+        92181,
+        95703,
+        93941,
+        88779,
+        98395,
+        92073,
+        92829,
+        92249,
+        95566,
+        93272,
+        96943,
+        97931,
+        94147,
+        92686,
+        92261,
+        88378,
+        96938,
+        97039,
+        97384,
+        92902,
+        92662,
+        94789,
+        93945,
+        94871,
+        94227,
+        93214,
+        96176,
+        90529,
+        91164,
+        97654,
+        94549,
+        89931,
+        96731,
+        92610,
+        95180,
+        95837,
+        94042,
+        91989,
+        93405,
+        91978,
+        93808,
+        96486,
+        92683,
+        90033,
+        107082
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "snapshot_file_reads": [
+    {
+      "bytes": 14271,
+      "cold": {
+        "max_us": 1992,
+        "mean_us": 972,
+        "p50_us": 642,
+        "p95_us": 1984,
+        "p99_us": 1984
+      },
+      "cold_samples_us": [
+        1976,
+        1984,
+        291,
+        650,
+        274,
+        242,
+        642,
+        275,
+        1397,
+        1992
+      ],
+      "cold_warm_delta_p50_us": 633,
+      "file": "vm.snap",
+      "warm": {
+        "max_us": 11,
+        "mean_us": 9,
+        "p50_us": 9,
+        "p95_us": 11,
+        "p99_us": 11
+      },
+      "warm_samples_us": [
+        11,
+        11,
+        11,
+        10,
+        11,
+        9,
+        8,
+        8,
+        8,
+        8
+      ]
+    },
+    {
+      "bytes": 1073741824,
+      "cold": {
+        "max_us": 825909,
+        "mean_us": 810018,
+        "p50_us": 806347,
+        "p95_us": 822237,
+        "p99_us": 822237
+      },
+      "cold_samples_us": [
+        799908,
+        805345,
+        805778,
+        825909,
+        806305,
+        809171,
+        806992,
+        806347,
+        812195,
+        822237
+      ],
+      "cold_warm_delta_p50_us": 615108,
+      "file": "mem.snap",
+      "warm": {
+        "max_us": 210478,
+        "mean_us": 192991,
+        "p50_us": 191239,
+        "p95_us": 192425,
+        "p99_us": 192425
+      },
+      "warm_samples_us": [
+        189779,
+        190093,
+        191802,
+        190765,
+        189970,
+        191239,
+        192425,
+        210478,
+        192065,
+        191300
+      ]
+    }
+  ],
+  "snapshot_files": {
+    "mem_snap": {
+      "bytes": 1073741824,
+      "path": "/var/lib/m80-run/snapshot-restore-bench-1228575/mem.snap"
+    },
+    "vm_snap": {
+      "bytes": 14271,
+      "path": "/var/lib/m80-run/snapshot-restore-bench-1228575/vm.snap"
+    }
+  },
+  "started_at_unix": 1778698451,
+  "unit": "us"
+}

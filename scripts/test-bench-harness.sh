@@ -145,6 +145,17 @@ else
     note FAIL "bench-density-extended dry-run plan missing"
 fi
 
+# --- bench-restore-cold.sh dry-run ---
+echo "=== bench-restore-cold.sh --dry-run ==="
+restore_out="$(bash scripts/bench-restore-cold.sh --dry-run 2>&1 || true)"
+if [[ "$restore_out" == *"bench-restore-cold"* &&
+      "$restore_out" == *"FILE_READ_SAMPLES"* &&
+      "$restore_out" == *"cold-restore-N"* ]]; then
+    note ok "bench-restore-cold dry-run prints the restore plan"
+else
+    note FAIL "bench-restore-cold dry-run plan missing"
+fi
+
 # --- shellcheck gate ---
 echo "=== shellcheck ==="
 if shellcheck -s bash scripts/*.sh; then

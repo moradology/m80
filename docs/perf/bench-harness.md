@@ -126,6 +126,12 @@ outbound ladders through `bench-cold-launch.sh`, then writes a dedicated
 `crates/m80-firecracker/benches/snapshots/density-extended.json` so the
 capacity artifact is not hidden inside the append-only `concurrent.csv`.
 
+For the cold-cold snapshot restore experiment, use
+`scripts/bench-restore-cold.sh`. It builds the real-KVM restore bench, runs
+N warm-cache restores and N dropped-cache restores, then writes
+`crates/m80-firecracker/benches/snapshots/cold-restore-N${N}.json` with
+restore phase percentiles and direct `vm.snap` / `mem.snap` file-read timing.
+
 ## Confidence intervals + outlier flagging
 
 Every wallclock cell snapshot carries:
@@ -172,6 +178,7 @@ git add ... && git commit -m "perf: snapshot new baseline (<reason>)"
 | tail-latency | `N=1000` | extended percentiles, histograms |
 | sweep | `SWEEP=vcpu` | `sweep-<var>.csv`, `compute_sweep` |
 | concurrent | `CONCURRENT=N` | `concurrent.csv`, `compute_concurrent` |
+| restore cold-cold | `bench-restore-cold.sh` | restore warm/cold JSON artifact |
 | cold-cold | `--cold-isolation` | drop_caches per run |
 | isolated | `TASKSET=` + `CPU_GOVERNOR=` | best-effort host pinning |
 | trace | `PHASE_JSONL=` | flamegraph-ready event stream |
@@ -193,6 +200,7 @@ binaries the smoke test uses.
 | `--long-tail` | B10 | console report of P99/P99.9 from `snapshots/latest.json` |
 | `--density` | B3 | iterates `bench-cold-launch.sh CONCURRENT=$c` over `$LADDER` |
 | `bench-density-extended.sh` | m80-jp6ik.42 | no-egress/outbound C=1..64 density artifact |
+| `bench-restore-cold.sh` | m80-jp6ik.43 | warm-cache and cold-cache snapshot restore artifact |
 
 Compute helpers in `scripts/bench-summary.py`:
 
@@ -207,7 +215,7 @@ All three are unit-tested via `python3 scripts/bench-summary.py --test`.
 | Layer | Test | Verifies |
 |---|---|---|
 | compute logic | `python3 scripts/bench-summary.py --test` | 46 unit tests on percentiles, histograms, CIs, outliers, sweep, concurrent, throughput, memory, teardown, diff |
-| shell orchestration | `bash scripts/test-bench-harness.sh` | 29 e2e: help flags, --dry-run, all env vars, --cold-isolation, bench-extras modes |
+| shell orchestration | `bash scripts/test-bench-harness.sh` | 30 e2e: help flags, --dry-run, all env vars, --cold-isolation, bench-extras modes |
 | harness real-KVM | `N=200 SKIP_LOADED=1 ./scripts/bench-cold-launch.sh` on a privileged host | full e2e: launches, CSVs, snapshot compute, diff with --fail-on-regress |
 | bench-extras real-KVM | `./scripts/bench-extras.sh --MODE` on a privileged host | each B1-B10 sub-epic mode end-to-end |
 
