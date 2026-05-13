@@ -4,6 +4,8 @@ use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_image_manifest::{KernelKind, Manifest};
 use nix::sys::statvfs::statvfs;
@@ -79,8 +81,33 @@ pub(crate) struct ArtifactPreflight {
     pub(crate) manifest: Manifest,
     /// Validated run-root path.
     pub(crate) run_root: PathBuf,
+    /// Non-blocking run-root reflink capability advisory.
+    pub(crate) run_root_reflink: RunRootReflink,
     /// Required storage helpers that were found on PATH.
     pub(crate) storage_helpers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RunRootReflink {
+    Supported,
+    Unsupported { reason: String },
+    ProbeFailed { reason: String },
+}
+
+impl RunRootReflink {
+    pub(crate) fn detail(&self) -> String {
+        match self {
+            Self::Supported => {
+                "reflink supported; overlay template clone can use metadata-only CoW".to_string()
+            }
+            Self::Unsupported { reason } => format!(
+                "reflink unavailable: {reason}; overlay clone will use full byte copy with cp --reflink=auto (docs/ops/host-tuning.md)"
+            ),
+            Self::ProbeFailed { reason } => format!(
+                "reflink probe inconclusive: {reason}; overlay clone may fall back to full byte copy (docs/ops/host-tuning.md)"
+            ),
+        }
+    }
 }
 
 /// Validate boot artifacts, run-root, and required storage helper binaries.
@@ -91,12 +118,14 @@ pub(crate) fn verify_artifacts(
     let (rootfs, manifest) = verify_rootfs_and_manifest(config)?;
     let run_root = verify_run_root(&config.run_root)?;
     let storage_helpers = verify_storage_helpers(config.helper_search_path.as_ref())?;
+    let run_root_reflink = probe_run_root_reflink(&run_root, config.helper_search_path.as_ref());
 
     Ok(ArtifactPreflight {
         kernel,
         rootfs,
         manifest,
         run_root,
+        run_root_reflink,
         storage_helpers,
     })
 }
@@ -216,6 +245,62 @@ fn verify_run_root(run_root: &Path) -> Result<PathBuf, PreflightError> {
     }
 
     Ok(run_root.to_path_buf())
+}
+
+fn probe_run_root_reflink(run_root: &Path, search_path: Option<&OsString>) -> RunRootReflink {
+    let Some(cp) = find_in_path("cp", search_path) else {
+        return RunRootReflink::ProbeFailed {
+            reason: "cp not found on PATH".to_string(),
+        };
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let prefix = format!(".m80-reflink-probe-{}-{stamp}", std::process::id());
+    let source = run_root.join(format!("{prefix}.src"));
+    let dest = run_root.join(format!("{prefix}.dst"));
+
+    let result = probe_run_root_reflink_at_with_cp(&cp, &source, &dest);
+
+    let _ = fs::remove_file(&source);
+    let _ = fs::remove_file(&dest);
+
+    result
+}
+
+#[cfg(test)]
+fn probe_run_root_reflink_at(source: &Path, dest: &Path) -> RunRootReflink {
+    probe_run_root_reflink_at_with_cp(Path::new("cp"), source, dest)
+}
+
+fn probe_run_root_reflink_at_with_cp(cp: &Path, source: &Path, dest: &Path) -> RunRootReflink {
+    if let Err(err) = fs::write(source, b"m80 reflink probe\n") {
+        return RunRootReflink::ProbeFailed {
+            reason: format!("write {} failed: {err}", source.display()),
+        };
+    }
+
+    match Command::new(cp)
+        .arg("--reflink=always")
+        .arg(source)
+        .arg(dest)
+        .output()
+    {
+        Ok(output) if output.status.success() => RunRootReflink::Supported,
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            let reason = if stderr.is_empty() {
+                format!("cp --reflink=always exited with {}", output.status)
+            } else {
+                stderr
+            };
+            RunRootReflink::Unsupported { reason }
+        }
+        Err(err) => RunRootReflink::ProbeFailed {
+            reason: format!("failed to run {} --reflink=always: {err}", cp.display()),
+        },
+    }
 }
 
 fn verify_storage_helpers(search_path: Option<&OsString>) -> Result<Vec<String>, PreflightError> {

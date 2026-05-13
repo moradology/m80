@@ -45,6 +45,7 @@ fn run_on_kvm_host() {
                     "Kernel image",
                     "Rootfs + manifest",
                     "Run-root",
+                    "Run-root filesystem",
                     "Storage helpers",
                 ]
             );

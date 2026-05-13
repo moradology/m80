@@ -106,3 +106,35 @@ preflight row as visibility, not a launch precondition.
 The bench harness may set `CPU_GOVERNOR=performance` for a controlled
 measurement run. That knob is for before/after data collection and is not a
 production recommendation by itself.
+
+## Run-Root Filesystem
+
+m80 keeps per-VM state, overlay clones, sockets, and diagnostic files under the
+configured run-root. The default is `/var/run/m80`; on systemd hosts,
+`/var/run` is normally a symlink to `/run`, which is tmpfs.
+
+tmpfs has fast metadata operations but no reflink support. When the run-root
+does not support reflinks, the overlay template clone path still works because
+storage uses:
+
+```sh
+cp --reflink=auto --sparse=always
+```
+
+`--reflink=auto` silently falls back to a full byte copy. That is correct for
+compatibility, but it can hide avoidable launch-path cost.
+
+Preflight reports a non-blocking `Run-root filesystem` row by creating a small
+probe file under the run-root and running:
+
+```sh
+cp --reflink=always <probe-src> <probe-dst>
+```
+
+For latency-priority cold-launch hosts, prefer a persistent Linux filesystem
+with reflinks enabled, such as XFS with reflink support or btrfs. For
+short-lived local development, tmpfs may still be a reasonable choice if RAM
+pressure and full-copy fallback are acceptable.
+
+Do not put the run-root on a mount that blocks device nodes. Preflight rejects
+`nodev` mounts because Firecracker needs device files inside the per-VM chroot.

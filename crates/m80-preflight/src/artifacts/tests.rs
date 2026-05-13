@@ -1,8 +1,13 @@
 use std::ffi::OsString;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use super::{verify_artifacts, ArtifactPreflightConfig, REQUIRED_STORAGE_HELPERS};
+use super::{
+    probe_run_root_reflink_at, verify_artifacts, ArtifactPreflightConfig, RunRootReflink,
+    REQUIRED_STORAGE_HELPERS,
+};
 use crate::PreflightError;
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, ManifestError, SCHEMA_VERSION};
 
@@ -251,6 +256,78 @@ fn run_root_must_already_exist() {
         }
         other => panic!("expected run-root rejection, got {other:?}"),
     }
+}
+
+#[test]
+fn run_root_reflink_probe_reports_supported_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let dest = dir.path().join("dest");
+
+    let result = probe_run_root_reflink_at(&source, &dest);
+
+    if matches!(result, RunRootReflink::ProbeFailed { .. }) {
+        panic!("probe should be conclusive when cp is available: {result:?}");
+    }
+    assert!(
+        dest.exists() || matches!(result, RunRootReflink::Unsupported { .. }),
+        "supported clone must create destination, unsupported clone must report fallback"
+    );
+    assert!(result.detail().contains("reflink") || result.detail().contains("overlay clone"));
+}
+
+#[test]
+fn run_root_reflink_probe_failures_are_non_blocking() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("missing-parent").join("source");
+    let dest = dir.path().join("dest");
+
+    let result = probe_run_root_reflink_at(&source, &dest);
+
+    assert!(matches!(result, RunRootReflink::ProbeFailed { .. }));
+    assert!(result.detail().contains("probe inconclusive"));
+}
+
+#[test]
+#[cfg(unix)]
+fn run_root_reflink_probe_reports_full_copy_fallback_on_unsupported_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let cp = dir.path().join("cp");
+    fs::write(
+        &cp,
+        b"#!/bin/sh\nprintf 'Operation not supported' >&2\nexit 1\n",
+    )
+    .unwrap();
+    let mut perms = fs::metadata(&cp).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&cp, perms).unwrap();
+
+    let source = dir.path().join("source");
+    let dest = dir.path().join("dest");
+    let result = super::probe_run_root_reflink_at_with_cp(&cp, &source, &dest);
+
+    assert!(
+        matches!(result, RunRootReflink::Unsupported { .. }),
+        "failed reflink command should report full-copy fallback, got {result:?}"
+    );
+    assert!(result.detail().contains("full byte copy"));
+}
+
+#[test]
+#[cfg(unix)]
+fn run_root_reflink_probe_uses_configured_cp_path() {
+    let run_root = tempfile::tempdir().unwrap();
+    let helper_dir = tempfile::tempdir().unwrap();
+    let cp = helper_dir.path().join("cp");
+    fs::write(&cp, b"#!/bin/sh\nprintf configured-cp > \"$3\"\nexit 0\n").unwrap();
+    let mut perms = fs::metadata(&cp).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&cp, perms).unwrap();
+
+    let helper_path = helper_dir.path().as_os_str().to_owned();
+    let result = super::probe_run_root_reflink(run_root.path(), Some(&helper_path));
+
+    assert_eq!(result, RunRootReflink::Supported);
 }
 
 #[test]

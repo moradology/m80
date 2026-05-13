@@ -72,7 +72,11 @@ which is the right place for a security review to start.
      not rehash these artifacts again for every VM.
   15. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  16. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  16. **Run-root filesystem** — creates a short-lived probe file under the
+     run-root and runs `cp --reflink=always` to report whether the filesystem
+     supports metadata-only CoW clones. This advisory is non-blocking:
+     unsupported reflinks mean launch falls back through `cp --reflink=auto`.
+  17. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - Env keys are exact and case-sensitive. Preflight recognizes
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,

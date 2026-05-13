@@ -169,6 +169,12 @@ pub fn run_with_configs(
     });
 
     report.push(CheckRow {
+        label: "Run-root filesystem".to_string(),
+        passed: true,
+        detail: artifacts.run_root_reflink.detail(),
+    });
+
+    report.push(CheckRow {
         label: "Storage helpers".to_string(),
         passed: true,
         detail: artifacts.storage_helpers.join(", "),
