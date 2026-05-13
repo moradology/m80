@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, DriveConfig, IoEngine, MachineConfig, NetworkInterfaceConfig,
-    VsockConfig,
+    BootSourceConfig, CacheType, Client, DriveConfig, IoEngine, MachineConfig,
+    NetworkInterfaceConfig, VsockConfig,
 };
 use m80_image_manifest::{ImageKind, KernelKind};
 
@@ -94,6 +94,7 @@ pub(crate) fn plan_preboot_puts(
             is_root_device: true,
             is_read_only: true,
             io_engine: None,
+            cache_type: None,
         }),
         PrebootPut::Drive(DriveConfig {
             drive_id: "rootfs_overlay".into(),
@@ -101,6 +102,7 @@ pub(crate) fn plan_preboot_puts(
             is_root_device: false,
             is_read_only: false,
             io_engine: Some(IoEngine::Async),
+            cache_type: Some(writable_drive_cache_type(config)),
         }),
     ];
 
@@ -111,6 +113,7 @@ pub(crate) fn plan_preboot_puts(
             is_root_device: false,
             is_read_only: false,
             io_engine: Some(IoEngine::Async),
+            cache_type: Some(writable_drive_cache_type(config)),
         }));
     }
 
@@ -121,6 +124,7 @@ pub(crate) fn plan_preboot_puts(
             is_root_device: false,
             is_read_only: false,
             io_engine: None,
+            cache_type: None,
         }));
     }
 
@@ -187,6 +191,10 @@ fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
         smt: false,
         cpu_template: config.cpu_template,
     }
+}
+
+fn writable_drive_cache_type(config: &SandboxConfig) -> CacheType {
+    config.drive_cache_type.unwrap_or(CacheType::Unsafe)
 }
 
 /// Build kernel boot args for the given `(image_kind, kernel_kind)` pair,

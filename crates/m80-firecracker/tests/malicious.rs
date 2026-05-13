@@ -54,6 +54,7 @@ fn launch_malicious(
             vcpu_count: Some(1),
             mem_size_mib: Some(512),
             cpu_template: None,
+            drive_cache_type: None,
             boot_args: Some(format!(
                 "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd \
                  m80.malicious_attack={attack}"
@@ -89,4 +90,3 @@ fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
     )
     .expect("preflight for malicious guestd artifacts")
 }
-

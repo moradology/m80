@@ -42,7 +42,8 @@ equivalent of predecessor's `BootSourceConfig` construction at
 m80 PUTs two root-filesystem-related drives in order:
 
 1. `rootfs`: `/rootfs.ext4`, root device, read-only.
-2. `rootfs_overlay`: `/rootfs.overlay.ext4`, non-root, read-write.
+2. `rootfs_overlay`: `/rootfs.overlay.ext4`, non-root, read-write,
+   `io_engine=Async`, `cache_type=Unsafe` by default.
 
 The first drive is the shared immutable base ext4 and becomes `/dev/vda`. The
 second is the per-VM sparse overlay and becomes `/dev/vdb`; guestd uses it as
@@ -56,7 +57,8 @@ base rootfs shared and writable state in a per-VM overlay.
 When `SandboxConfig::workspace` is present, m80 PUTs a third drive before the
 entropy and vsock devices:
 
-- `workspace`: `/scratch.ext4`, non-root, read-write.
+- `workspace`: `/scratch.ext4`, non-root, read-write, `io_engine=Async`,
+  `cache_type=Unsafe` by default.
 
 The scratch image becomes `/dev/vdc` and is mounted by guestd at `/workspace`.
 When no workspace is configured, this drive is omitted. The boot cmdline always

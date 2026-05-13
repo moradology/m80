@@ -347,6 +347,16 @@ pub enum IoEngine {
     Async,
 }
 
+/// Firecracker block-device host cache policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum CacheType {
+    /// Conservative host writeback cache with durability barriers.
+    Writeback,
+    /// Skip host-side sync/barrier work. Suitable only for ephemeral writes.
+    Unsafe,
+}
+
 /// One drive slot. `drive_id == "rootfs"` is the conventional root drive id.
 #[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -362,6 +372,9 @@ pub struct DriveConfig {
     /// Optional Firecracker block-device I/O engine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub io_engine: Option<IoEngine>,
+    /// Optional Firecracker block-device host cache policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_type: Option<CacheType>,
 }
 
 /// Post-boot update for an existing drive slot.

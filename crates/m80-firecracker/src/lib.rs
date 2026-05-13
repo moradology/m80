@@ -33,7 +33,7 @@ pub use layout::{
     run_dir_path, scratch_image_path, vsock_socket_path, BOOT_IDENTITY_FILE, CONSOLE_LOG,
     ROOTFS_OVERLAY_IMAGE,
 };
-pub use m80_firecracker_client::CpuTemplate;
+pub use m80_firecracker_client::{CacheType, CpuTemplate};
 pub use m80_net_mode::{NetnsSpec, NetworkPolicy};
 pub use m80_snapshot::SnapshotPaths;
 pub use m80_storage::ChangeSet;

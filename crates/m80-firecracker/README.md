@@ -320,12 +320,12 @@ not caller policy.
 Firecracker assigns block-device names in PUT order: first PUT becomes
 `/dev/vda`, second `/dev/vdb`, etc. m80 PUTs in this order:
 
-| Position | drive_id          | Host file                                | RO/RW   | I/O engine | Guest path | Purpose |
-|---------:|-------------------|------------------------------------------|---------|------------|------------|---------|
-|        1 | `rootfs`          | `<image>/output.ext4` (shared base)      | **RO**  | default    | `/dev/vda` | Read-only base ext4. Bind-mounted into the jail at `/rootfs.ext4`. Same host file for every VM that uses this image — host page cache deduplicates. |
-|        2 | `rootfs_overlay`  | `<run_dir>/rootfs.overlay.ext4`          | RW      | `Async`    | `/dev/vdb` | Per-VM sparse ext4. m80-guestd's PID-1 setup mounts `/dev/vda` as the lowerdir, this as the upperdir, overlayfs on `/`. |
-|        3 | `workspace`       | `<run_dir>/scratch.ext4` (if requested)  | RW      | `Async`    | `/dev/vdc` | Per-VM workspace ext4. Mounted at `/workspace`. Subject to opt-in `Scratch::extract` after stop. Only present when `SandboxConfig::workspace.is_some()`. |
-|     3+N | `hotplug_slot_N`  | `<run_dir>/hotplug-slot-N.raw`           | RW      | default    | next block device | Optional placeholder drive slots. Created when `SandboxConfig::preallocated_drive_slots > 0`; later callers retarget an existing slot with Firecracker `PATCH /drives/{id}`. |
+| Position | drive_id          | Host file                                | RO/RW   | I/O engine | Cache type | Guest path | Purpose |
+|---------:|-------------------|------------------------------------------|---------|------------|------------|------------|---------|
+|        1 | `rootfs`          | `<image>/output.ext4` (shared base)      | **RO**  | default    | default    | `/dev/vda` | Read-only base ext4. Bind-mounted into the jail at `/rootfs.ext4`. Same host file for every VM that uses this image — host page cache deduplicates. |
+|        2 | `rootfs_overlay`  | `<run_dir>/rootfs.overlay.ext4`          | RW      | `Async`    | `Unsafe`   | `/dev/vdb` | Per-VM sparse ext4. m80-guestd's PID-1 setup mounts `/dev/vda` as the lowerdir, this as the upperdir, overlayfs on `/`. |
+|        3 | `workspace`       | `<run_dir>/scratch.ext4` (if requested)  | RW      | `Async`    | `Unsafe`   | `/dev/vdc` | Per-VM workspace ext4. Mounted at `/workspace`. Subject to opt-in `Scratch::extract` after stop. Only present when `SandboxConfig::workspace.is_some()`. |
+|     3+N | `hotplug_slot_N`  | `<run_dir>/hotplug-slot-N.raw`           | RW      | default    | default    | next block device | Optional placeholder drive slots. Created when `SandboxConfig::preallocated_drive_slots > 0`; later callers retarget an existing slot with Firecracker `PATCH /drives/{id}`. |
 
 The base + overlay split is what `m80-storage::Rootfs` produces;
 `m80-storage::Scratch` is the workspace. Per-VM sparse files cost ~10 ms
@@ -339,6 +339,11 @@ from already-admitted artifacts.
 `SandboxConfig::overlay_size_bytes` controls the sparse overlay size
 (default: 512 MiB). The overlay grows as the guest writes; the sparse
 allocation costs zero disk bytes at creation.
+
+`SandboxConfig::drive_cache_type` overrides the writable preboot drive cache
+policy. `None` uses the m80 default, `CacheType::Unsafe`, for the ephemeral
+overlay and workspace drives. Set `Some(CacheType::Writeback)` when a caller
+needs Firecracker's conservative host sync behavior.
 
 `SandboxConfig::idle_timeout` controls the idle-shutdown timer (default:
 `Some(300s)`). See "Idle timeout" below.
@@ -508,6 +513,8 @@ Core types:
 - `SandboxConfig` — per-VM launch parameters (request id, overlay size, idle timeout, daemonize, preallocated drive slots, one-shot mode, etc.).
 - `CpuTemplate` — re-exported Firecracker CPU template enum for callers that
   opt into `SandboxConfig::cpu_template`.
+- `CacheType` — re-exported Firecracker drive cache enum for callers that opt
+  into `SandboxConfig::drive_cache_type`.
 - `HotplugDriveAttach` — host-side request to attach and verify one preallocated drive slot.
 - `HotplugDriveDetach` — host-side request to detach one preallocated drive slot.
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).

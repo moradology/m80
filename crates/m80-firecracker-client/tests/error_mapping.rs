@@ -73,6 +73,7 @@ fn drive_400_returns_drive_write_failed() {
                 is_root_device: true,
                 is_read_only: false,
                 io_engine: None,
+                cache_type: None,
             })
         },
         |e| matches!(e, ClientError::DriveWriteFailed { fault } if fault.contains("drive not found")),

@@ -1,5 +1,5 @@
 use super::*;
-use m80_firecracker_client::{CpuTemplate, IoEngine};
+use m80_firecracker_client::{CacheType, CpuTemplate, IoEngine};
 
 fn plan_without_workspace() -> Vec<PrebootPut> {
     plan_preboot_puts(
@@ -104,6 +104,7 @@ fn root_drive_put_with_is_root_device() {
     assert!(root.is_root_device);
     assert!(root.is_read_only);
     assert_eq!(root.io_engine, None);
+    assert_eq!(root.cache_type, None);
 }
 
 #[test]
@@ -118,6 +119,38 @@ fn rootfs_overlay_drive_put_after_shared_rootfs() {
     assert!(!overlay.is_root_device);
     assert!(!overlay.is_read_only);
     assert_eq!(overlay.io_engine, Some(IoEngine::Async));
+    assert_eq!(overlay.cache_type, Some(CacheType::Unsafe));
+}
+
+#[test]
+fn writable_drive_cache_type_override_preserves_writeback() {
+    let config = SandboxConfig {
+        drive_cache_type: Some(CacheType::Writeback),
+        ..SandboxConfig::default()
+    };
+    let puts = plan_preboot_puts(
+        &config,
+        "vm-alpha",
+        ImageKind::Ubuntu,
+        KernelKind::Stock,
+        true,
+        &RealizedNetwork::NoEgress,
+        &[],
+    );
+
+    let PrebootPut::Drive(root) = &puts[2] else {
+        panic!("third preboot PUT must be rootfs drive");
+    };
+    let PrebootPut::Drive(overlay) = &puts[3] else {
+        panic!("fourth preboot PUT must be rootfs overlay drive");
+    };
+    let PrebootPut::Drive(workspace) = &puts[4] else {
+        panic!("workspace drive must follow overlay drive");
+    };
+
+    assert_eq!(root.cache_type, None);
+    assert_eq!(overlay.cache_type, Some(CacheType::Writeback));
+    assert_eq!(workspace.cache_type, Some(CacheType::Writeback));
 }
 
 #[test]
@@ -140,6 +173,7 @@ fn scratch_drive_put_with_workspace_id() {
     assert!(!workspace.is_root_device);
     assert!(!workspace.is_read_only);
     assert_eq!(workspace.io_engine, Some(IoEngine::Async));
+    assert_eq!(workspace.cache_type, Some(CacheType::Unsafe));
 }
 
 #[test]
@@ -183,8 +217,10 @@ fn preallocated_drive_slots_are_after_rootfs_overlay_and_before_vsock() {
     assert_eq!(slot0.path_on_host, PathBuf::from("/hotplug-slot-0.raw"));
     assert!(!slot0.is_root_device);
     assert!(!slot0.is_read_only);
+    assert_eq!(slot0.cache_type, None);
     assert_eq!(slot1.drive_id, "hotplug_slot_1");
     assert_eq!(slot1.path_on_host, PathBuf::from("/hotplug-slot-1.raw"));
+    assert_eq!(slot1.cache_type, None);
 
     let PrebootPut::EntropyDevice = &puts[6] else {
         panic!("entropy device must follow all preboot drive slots");

@@ -36,6 +36,7 @@ fn malicious_guestd_noop_reaches_ready_signal() {
             vcpu_count: Some(1),
             mem_size_mib: Some(512),
             cpu_template: None,
+            drive_cache_type: None,
             boot_args: Some(
                 "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd \
                  m80.malicious_attack=noop"
@@ -78,4 +79,3 @@ fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
     )
     .expect("preflight for malicious guestd artifacts")
 }
-

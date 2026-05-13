@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use m80_firecracker_client::{Client, CpuTemplate};
+use m80_firecracker_client::{CacheType, Client, CpuTemplate};
 use m80_jailer::{JailedFirecracker, MaterializedJail};
 use m80_net_mode::NetworkPolicy;
 use m80_storage::{Rootfs, Scratch};
@@ -218,6 +218,13 @@ pub struct SandboxConfig {
     /// optimizes same-host launch/restore latency. Callers that need AWS
     /// template masking for cross-host snapshot portability must opt in.
     pub cpu_template: Option<CpuTemplate>,
+    /// Optional host-cache policy override for writable preboot drives.
+    ///
+    /// `None` uses m80's ephemeral default: `CacheType::Unsafe` for the
+    /// rootfs overlay and workspace scratch drives. Set `Some(Writeback)` only
+    /// when guest writes must retain Firecracker's conservative host sync
+    /// behavior.
+    pub drive_cache_type: Option<CacheType>,
     /// Boot args appended to the kernel command line.
     pub boot_args: Option<String>,
     /// Sparse overlay size in bytes (default: 512 MiB).
@@ -268,6 +275,7 @@ impl Default for SandboxConfig {
             vcpu_count: None,
             mem_size_mib: None,
             cpu_template: None,
+            drive_cache_type: None,
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
             idle_timeout: Some(Duration::from_secs(300)),

@@ -51,6 +51,8 @@ without inheriting m80's lifecycle assumptions.
 - `CpuTemplate { T2, C3 }` — optional CPU template on `MachineConfig`.
 - `IoEngine { Sync, Async }` — optional Firecracker block-device I/O engine
   on `DriveConfig`.
+- `CacheType { Writeback, Unsafe }` — optional Firecracker block-device host
+  cache policy on `DriveConfig`.
 - `InstanceAction { InstanceStart }`.
 - `VmState { Paused, Resumed }` — for `patch_vm_state`.
 - `SnapshotType { Full, Diff }` — for `CreateSnapshotConfig`.
