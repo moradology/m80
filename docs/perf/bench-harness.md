@@ -6,6 +6,11 @@ and per-phase timings, emits a JSON snapshot, and feeds
 `scripts/bench-summary.py` for percentiles, histograms, confidence
 intervals, sweeps, concurrent aggregation, and regression-gating diffs.
 
+Experiment-specific protocols live in
+[`docs/perf/measurement-playbook.md`](measurement-playbook.md). Use that file
+when a bead needs a real-substrate close gate rather than just harness plumbing
+coverage.
+
 ## Quick start
 
 ```sh
@@ -13,7 +18,7 @@ intervals, sweeps, concurrent aggregation, and regression-gating diffs.
 ./scripts/bench-cold-launch.sh
 
 # Tail latency: N=1000 with cache drops + idle-only.
-./scripts/bench-cold-launch.sh N=1000 SKIP_LOADED=1 --cold-isolation
+N=1000 SKIP_LOADED=1 ./scripts/bench-cold-launch.sh --cold-isolation
 
 # Sweep a single variable.
 SWEEP=vcpu SWEEP_VALUES=1,2,4 ./scripts/bench-cold-launch.sh
@@ -131,7 +136,7 @@ exits non-zero if any phase's `delta_pct > 10%`. CI integration:
 
 ```yaml
 - name: bench
-  run: ./scripts/bench-cold-launch.sh N=200 SKIP_LOADED=1
+  run: N=200 SKIP_LOADED=1 ./scripts/bench-cold-launch.sh
 - name: regression-gate
   run: |
     python3 scripts/bench-summary.py diff \
@@ -191,7 +196,7 @@ All three are unit-tested via `python3 scripts/bench-summary.py --test`.
 |---|---|---|
 | compute logic | `python3 scripts/bench-summary.py --test` | 46 unit tests on percentiles, histograms, CIs, outliers, sweep, concurrent, throughput, memory, teardown, diff |
 | shell orchestration | `bash scripts/test-bench-harness.sh` | 29 e2e: help flags, --dry-run, all env vars, --cold-isolation, bench-extras modes |
-| harness real-KVM | `./scripts/bench-cold-launch.sh N=200 SKIP_LOADED=1` on a privileged host | full e2e: launches, CSVs, snapshot compute, diff with --fail-on-regress |
+| harness real-KVM | `N=200 SKIP_LOADED=1 ./scripts/bench-cold-launch.sh` on a privileged host | full e2e: launches, CSVs, snapshot compute, diff with --fail-on-regress |
 | bench-extras real-KVM | `./scripts/bench-extras.sh --MODE` on a privileged host | each B1-B10 sub-epic mode end-to-end |
 
 ## What remains for the privileged runner (m80-16hx7)
@@ -201,7 +206,7 @@ Code in this directory is exercised against real KVM via
 data for capacity claims and regression gates:
 
 1. Provision the privileged runner per `m80-16hx7` (artifact cache + KVM).
-2. Run `./scripts/bench-cold-launch.sh N=1000 SKIP_LOADED=1 --cold-isolation`
+2. Run `N=1000 SKIP_LOADED=1 ./scripts/bench-cold-launch.sh --cold-isolation`
    to seed `baseline.json` with real measurements.
 3. Cycle through `scripts/bench-extras.sh --MODE` for each sub-epic and
    commit the resulting snapshots to `docs/perf/<area>.md` as the

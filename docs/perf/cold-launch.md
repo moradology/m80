@@ -10,6 +10,11 @@ launch + per-phase timings via `M80_PHASE_TRACE=1`, drops the first 2
 launches per cell as warmup, computes P50/P95/max from successful runs
 only.
 
+For new measurement-track perf beads, use
+[`docs/perf/measurement-playbook.md`](measurement-playbook.md) as the protocol
+index. It defines the real-substrate artifact, sample-count, and close-reason
+rules used by the `m80-jp6ik` gated measurements.
+
 Cells (4 total):
 
 | kind    | load   | Notes                                           |

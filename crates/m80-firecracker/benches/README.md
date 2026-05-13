@@ -54,14 +54,14 @@ inside are observational.
 
 ```sh
 # 1. Establish a baseline (run on the privileged-runner host once):
-./scripts/bench-cold-launch.sh N=1000 SKIP_LOADED=1 --cold-isolation
+N=1000 SKIP_LOADED=1 ./scripts/bench-cold-launch.sh --cold-isolation
 cp crates/m80-firecracker/benches/snapshots/latest.json \
    crates/m80-firecracker/benches/baseline.json
 git add crates/m80-firecracker/benches/baseline.json
 git commit -m "perf: snapshot new baseline (<reason>)"
 
 # 2. After a candidate change:
-./scripts/bench-cold-launch.sh N=200 SKIP_LOADED=1
+N=200 SKIP_LOADED=1 ./scripts/bench-cold-launch.sh
 python3 scripts/bench-summary.py diff \
     crates/m80-firecracker/benches/baseline.json \
     crates/m80-firecracker/benches/snapshots/latest.json \
