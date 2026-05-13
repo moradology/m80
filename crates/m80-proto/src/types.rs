@@ -73,6 +73,10 @@ pub trait Payload: Sized + Clone {
     const KIND: &'static str;
     /// Convert this public payload into the active protobuf payload variant.
     fn into_wire(self) -> crate::wire::WirePayload;
+    /// Convert this public payload reference into the active protobuf payload variant.
+    fn to_wire(&self) -> crate::wire::WirePayload {
+        self.clone().into_wire()
+    }
     /// Convert a protobuf payload variant into this public payload.
     fn from_wire(payload: crate::wire::WirePayload) -> Result<Self, crate::ProtoError>;
 }

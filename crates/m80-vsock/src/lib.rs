@@ -26,7 +26,8 @@ const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
 /// same CID; different `vm_id`s get distinct CIDs (modulo the 32-bit space).
 /// CID is always in the range `3..=u32::MAX - 1`; Firecracker reserves
 /// 0, 1, 2, and `u32::MAX`.
-#[must_use] pub fn cid_for_vm_id(vm_id: &str) -> u32 {
+#[must_use]
+pub fn cid_for_vm_id(vm_id: &str) -> u32 {
     let mut hasher = sha2::Sha256::new();
     hasher.update(vm_id.as_bytes());
     let bytes = hasher.finalize();
@@ -86,7 +87,7 @@ where
     W: Write,
     T: Payload + Clone,
 {
-    let raw = RawEnvelope::from_typed(envelope.clone());
+    let raw = RawEnvelope::from_typed(envelope);
     if debug_wire::is_enabled("vsock") {
         let bytes = encode_raw_envelope(raw.clone())?;
         tracing::trace!(
@@ -219,7 +220,6 @@ impl Channel {
         }
         Ok(envelope)
     }
-
 }
 
 impl Drop for Channel {

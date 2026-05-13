@@ -57,6 +57,8 @@ the write timeout on every Firecracker UDS stream opened by
   `Channel::recv() -> Envelope<U>`, `Channel::recv_raw() -> RawEnvelope`,
   and `Channel::try_clone_sender()`.
 - `ChannelSender::send(&mut Envelope<T>)` for same-connection control frames.
+  Send paths borrow the caller's envelope through `RawEnvelope::from_typed`
+  and leave frame coalescing to `m80-proto`.
 - `cid_for_vm_id(vm_id: &str) -> u32`.
 - `VsockError`: `HandshakeFailed`, `Io { path: PathBuf, source: io::Error }`,
   `Proto(m80_proto::ProtoError)`.

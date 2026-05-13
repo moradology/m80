@@ -95,7 +95,7 @@ fn encoded_body_len<T>(envelope: &Envelope<T>) -> usize
 where
     T: m80_proto::Payload + Clone,
 {
-    encode_raw_envelope(RawEnvelope::from_typed(envelope.clone()))
+    encode_raw_envelope(RawEnvelope::from_typed(envelope))
         .expect("encode raw envelope")
         .len()
 }
@@ -261,7 +261,7 @@ fn chunked_write_oversized_frame_drops_channel() {
     let vm_id = running.vm_id().to_owned();
 
     let request = oversized_chunk_request("oversized-upload");
-    let body = encode_raw_envelope(RawEnvelope::from_typed(request)).expect("encode oversized");
+    let body = encode_raw_envelope(RawEnvelope::from_typed(&request)).expect("encode oversized");
     assert_eq!(body.len(), MAX_FRAME_BYTES + 1);
 
     let mut raw = open_raw_stream(&run_dir, &firecracker_bin, &vm_id);

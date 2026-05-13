@@ -93,7 +93,7 @@ fn encoded_body_len<T>(envelope: &Envelope<T>) -> usize
 where
     T: m80_proto::Payload + Clone,
 {
-    encode_raw_envelope(RawEnvelope::from_typed(envelope.clone()))
+    encode_raw_envelope(RawEnvelope::from_typed(envelope))
         .expect("encode raw envelope")
         .len()
 }
@@ -303,8 +303,9 @@ fn protocol_version_mismatch_returns_failed_response_and_fresh_channel_survives(
     let vm_id = running.vm_id().to_owned();
 
     let mut raw = open_raw_stream(&run_dir, &discovery.firecracker_bin, &vm_id);
-    let mut body = encode_raw_envelope(RawEnvelope::from_typed(Envelope::new(PingRequest {})))
-        .expect("encode current-version ping");
+    let ping = Envelope::new(PingRequest {});
+    let mut body =
+        encode_raw_envelope(RawEnvelope::from_typed(&ping)).expect("encode current-version ping");
     assert_eq!(body[0], 0x08, "protobuf field 1 must be version");
     assert_eq!(body[1], PROTOCOL_VERSION as u8);
     body[1] = (PROTOCOL_VERSION + 1) as u8;

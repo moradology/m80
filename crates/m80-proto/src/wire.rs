@@ -15,7 +15,19 @@ pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/m80.wire.rs"));
 }
 
-use generated::{WireCancelAck, WireCancelRequest, WireDirEntry, WireEnvVar, WireEnvelope, WireExecExit, WireExecRequest, WireExecResponse, WireExecStreamChunk, WireExecTiming, WireFileListRequest, WireFileListResponse, WireFileMkdirRequest, WireFileMkdirResponse, WireFileReadChunk, WireFileReadRequest, WireFileReadResponse, WireFileRemoveRequest, WireFileRemoveResponse, WireFileStat, WireFileStatRequest, WireFileStatResponse, WireFileWriteBeginRequest, WireFileWriteBeginResponse, WireFileWriteChunkRequest, WireFileWriteChunkResponse, WireFileWriteCommitRequest, WireFileWriteCommitResponse, WireFileWriteRequest, WireFileWriteResponse, WireGuestCpuMetrics, WireGuestMemMetrics, WireHandshakeMessage, WireMetricsRequest, WireMetricsResponse, WirePingRequest, WirePongResponse, WirePtyBytes, WirePtyControl, WirePtyExit, WirePtyRequest, WirePtyResize, WirePtySize, WireShutdownRequest, WireShutdownResponse};
+use generated::{
+    WireCancelAck, WireCancelRequest, WireDirEntry, WireEnvVar, WireEnvelope, WireExecExit,
+    WireExecRequest, WireExecResponse, WireExecStreamChunk, WireExecTiming, WireFileListRequest,
+    WireFileListResponse, WireFileMkdirRequest, WireFileMkdirResponse, WireFileReadChunk,
+    WireFileReadRequest, WireFileReadResponse, WireFileRemoveRequest, WireFileRemoveResponse,
+    WireFileStat, WireFileStatRequest, WireFileStatResponse, WireFileWriteBeginRequest,
+    WireFileWriteBeginResponse, WireFileWriteChunkRequest, WireFileWriteChunkResponse,
+    WireFileWriteCommitRequest, WireFileWriteCommitResponse, WireFileWriteRequest,
+    WireFileWriteResponse, WireGuestCpuMetrics, WireGuestMemMetrics, WireHandshakeMessage,
+    WireMetricsRequest, WireMetricsResponse, WirePingRequest, WirePongResponse, WirePtyBytes,
+    WirePtyControl, WirePtyExit, WirePtyRequest, WirePtyResize, WirePtySize, WireShutdownRequest,
+    WireShutdownResponse,
+};
 
 /// Active protobuf payload variants.
 pub use generated::wire_envelope::Payload as WirePayload;
@@ -39,13 +51,13 @@ pub struct RawEnvelope {
 
 impl RawEnvelope {
     /// Construct a raw envelope from a typed payload.
-    pub fn from_typed<T: Payload>(envelope: crate::types::Envelope<T>) -> Self {
+    pub fn from_typed<T: Payload>(envelope: &crate::types::Envelope<T>) -> Self {
         Self {
             version: envelope.version,
-            kind: envelope.kind,
-            request_id: envelope.request_id,
+            kind: envelope.kind.clone(),
+            request_id: envelope.request_id.clone(),
             max_duration_ms: envelope.max_duration_ms,
-            payload: envelope.payload.into_wire(),
+            payload: envelope.payload.to_wire(),
         }
     }
 
@@ -90,8 +102,8 @@ pub fn encode_raw_envelope(raw: RawEnvelope) -> Result<Vec<u8>, ProtoError> {
 /// Decode a protobuf frame body into a raw envelope.
 pub(crate) fn decode_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, ProtoError> {
     reject_unknown_envelope_fields(bytes)?;
-    let wire = WireEnvelope::decode(bytes)
-        .map_err(|e| ProtoError::MalformedPayload(e.to_string()))?;
+    let wire =
+        WireEnvelope::decode(bytes).map_err(|e| ProtoError::MalformedPayload(e.to_string()))?;
     Ok(RawEnvelope {
         version: wire.version,
         kind: wire.kind,

@@ -145,13 +145,14 @@ fn stream_sequence_duplicate_returns_protocol_error() {
 
 #[test]
 fn response_frame_rejects_stale_request_id() {
-    let frame = RawEnvelope::from_typed(Envelope::with_request_id(
+    let envelope = Envelope::with_request_id(
         ExecStdout {
             seq: 0,
             bytes: b"wrong request".to_vec(),
         },
         "stale-req".to_owned(),
-    ));
+    );
+    let frame = RawEnvelope::from_typed(&envelope);
 
     let err =
         decode_frame_for_request::<ExecStdout>(frame, "active-req", "exec stdout").unwrap_err();
@@ -168,7 +169,7 @@ fn response_frame_rejects_stale_request_id() {
 
 #[test]
 fn response_frame_rejects_missing_request_id() {
-    let frame = RawEnvelope::from_typed(Envelope::new(ExecExit {
+    let envelope = Envelope::new(ExecExit {
         status: ExecStatus::Completed,
         exit_code: Some(0),
         total_stdout_bytes: 0,
@@ -180,10 +181,10 @@ fn response_frame_rejects_missing_request_id() {
             spawn_ms: 0,
             run_ms: 1,
         },
-    }));
+    });
+    let frame = RawEnvelope::from_typed(&envelope);
 
-    let err =
-        decode_frame_for_request::<ExecExit>(frame, "active-req", "exec exit").unwrap_err();
+    let err = decode_frame_for_request::<ExecExit>(frame, "active-req", "exec exit").unwrap_err();
 
     assert!(matches!(
         err,
@@ -197,10 +198,11 @@ fn response_frame_rejects_missing_request_id() {
 
 #[test]
 fn cancel_ack_rejects_stale_request_id() {
-    let frame = RawEnvelope::from_typed(Envelope::new(CancelResponse {
+    let envelope = Envelope::new(CancelResponse {
         request_id: "stale-req".to_owned(),
         status: CancelStatus::Cancelled,
-    }));
+    });
+    let frame = RawEnvelope::from_typed(&envelope);
 
     let err = decode_cancel_ack(frame, "exec", "active-req").unwrap_err();
 
@@ -258,8 +260,7 @@ fn cancel_ack_failed_records_request_diagnostics() {
     drop(diagnostics);
 
     let text =
-        std::fs::read_to_string(dir.path().join(m80_observability::DIAGNOSTICS_FILE_NAME))
-            .unwrap();
+        std::fs::read_to_string(dir.path().join(m80_observability::DIAGNOSTICS_FILE_NAME)).unwrap();
     assert!(text.contains("\"phase\":\"Request\""));
     assert!(text.contains("\"request_id\":\"req-cancel\""));
     assert!(text.contains("guest failed to cancel exec request req-cancel"));

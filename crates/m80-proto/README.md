@@ -100,7 +100,10 @@ The load-bearing wire invariants — the things consumers cannot derive from
 ## Public surface
 
 Frame I/O: `read_frame`, `write_frame`, `read_raw_frame`, `write_raw_frame`.
-Raw protobuf helpers: `RawEnvelope`, `encode_raw_envelope`.
+`write_raw_frame` emits each length-prefixed frame with one `write_all` over
+the coalesced prefix+body buffer.
+Raw protobuf helpers: `RawEnvelope`, `RawEnvelope::from_typed(&Envelope<T>)`,
+`encode_raw_envelope`.
 Frame sizing and ports: `MAX_FRAME_BYTES`, `PROTOCOL_VERSION`,
 `GUEST_PORT_DEFAULT`, `READY_PORT_DEFAULT`, `READY_MARKER_DEFAULT`.
 

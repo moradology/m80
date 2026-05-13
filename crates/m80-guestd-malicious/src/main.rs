@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn response_type_mismatch_echoes_request_id_with_wrong_payload_shape() {
-        let request = RawEnvelope::from_typed(m80_proto::Envelope::with_request_id(
+        let typed = m80_proto::Envelope::with_request_id(
             m80_proto::ExecRequest {
                 program: "/bin/true".into(),
                 args: Vec::new(),
@@ -466,7 +466,8 @@ mod tests {
                 streaming: true,
             },
             "req-response-mismatch".into(),
-        ));
+        );
+        let request = RawEnvelope::from_typed(&typed);
         let mut frame = Vec::new();
         write_response_type_mismatch(&mut frame, request).unwrap();
 

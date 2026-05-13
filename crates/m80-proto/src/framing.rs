@@ -34,9 +34,7 @@ where
     R: Read,
 {
     let mut prefix = [0u8; LENGTH_PREFIX_BYTES];
-    reader
-        .read_exact(&mut prefix)
-        .map_err(ProtoError::Io)?;
+    reader.read_exact(&mut prefix).map_err(ProtoError::Io)?;
     let size = u32::from_be_bytes(prefix) as usize;
     check_size(size)?;
 
@@ -58,7 +56,7 @@ where
     W: Write,
     T: Payload,
 {
-    write_raw_frame(writer, RawEnvelope::from_typed(envelope.clone()))
+    write_raw_frame(writer, RawEnvelope::from_typed(envelope))
 }
 
 /// Write one protobuf frame to `writer` without choosing a payload type.
@@ -70,7 +68,61 @@ where
     check_size(body.len())?;
     // check_size guarantees body.len() <= MAX_FRAME_BYTES = 4 MiB, well within u32::MAX.
     let size = body.len() as u32;
-    writer.write_all(&size.to_be_bytes())?;
-    writer.write_all(&body)?;
+    let mut frame = Vec::with_capacity(LENGTH_PREFIX_BYTES + body.len());
+    frame.extend_from_slice(&size.to_be_bytes());
+    frame.extend_from_slice(&body);
+    writer.write_all(&frame)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::types::{Envelope, ExecRequest};
+
+    struct CountingWriter {
+        writes: usize,
+        bytes: Vec<u8>,
+    }
+
+    impl Write for CountingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.writes += 1;
+            self.bytes.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn sample_request() -> ExecRequest {
+        ExecRequest {
+            program: "/bin/echo".into(),
+            args: vec!["hello".into()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(1_000),
+            streaming: false,
+        }
+    }
+
+    #[test]
+    fn write_raw_frame_coalesces_prefix_and_body() {
+        let envelope = RawEnvelope::from_typed(&Envelope::new(sample_request()));
+        let mut writer = CountingWriter {
+            writes: 0,
+            bytes: Vec::new(),
+        };
+
+        write_raw_frame(&mut writer, envelope).unwrap();
+
+        assert_eq!(writer.writes, 1);
+        let decoded: Envelope<ExecRequest> =
+            read_frame(&mut writer.bytes.as_slice()).expect("coalesced frame remains decodable");
+        assert_eq!(decoded.payload.program, "/bin/echo");
+    }
 }
