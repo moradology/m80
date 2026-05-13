@@ -159,14 +159,14 @@ if [[ -n "$CPU_GOVERNOR" ]]; then
     fi
 fi
 
-# Wrap m80 invocations with optional taskset.
-m80_invoke() {
-    if [[ -n "$TASKSET" ]]; then
-        taskset -c "$TASKSET" "$@"
-    else
-        "$@"
-    fi
-}
+# Optional `taskset -c <cpus>` prefix. Built as a list so it expands
+# correctly under `sudo ENV=VAL ${TASKSET_PREFIX[@]} cmd`; sudo can't
+# see shell functions, so a function wrapper here would break under sudo.
+if [[ -n "$TASKSET" ]]; then
+    TASKSET_PREFIX=(taskset -c "$TASKSET")
+else
+    TASKSET_PREFIX=()
+fi
 
 # Drop page caches between runs (root only).
 drop_caches() {
@@ -291,7 +291,7 @@ run_one() {
     start_ns=$(date +%s%N)
     if [[ "$TEST_MODE" == "1" ]]; then
         # Mock path: no sudo, no env wrapping.
-        if M80_PHASE_TRACE=1 m80_invoke "$M80_BIN" run \
+        if M80_PHASE_TRACE=1 "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
                 --egress none -- /bin/echo "bench-$attempt" \
                 >/dev/null 2>"$stderr_file"; then
             exit_code=0
@@ -303,6 +303,7 @@ run_one() {
         sudo IMAGE_BUILD_DIR="$image_dir" \
              M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
              M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+             M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
              M80_KERNEL_IMAGE="$image_dir/vmlinux" \
              M80_KERNEL_KIND="$KERNEL_KIND" \
              M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
@@ -310,7 +311,7 @@ run_one() {
              M80_FIRECRACKER_VERSION=v1.15.1 \
              M80_JAIL_UID="$(id -u)" \
              M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
-             m80_invoke "$M80_BIN" cleanup >/dev/null 2>&1 || true
+             "${TASKSET_PREFIX[@]}" "$M80_BIN" cleanup >/dev/null 2>&1 || true
 
         if timeout 90 sudo M80_PHASE_TRACE=1 \
                 IMAGE_BUILD_DIR="$image_dir" \
@@ -323,7 +324,7 @@ run_one() {
                 M80_FIRECRACKER_VERSION=v1.15.1 \
                 M80_JAIL_UID="$(id -u)" \
                 M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
-                m80_invoke "$M80_BIN" run \
+                "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
                 --egress none -- /bin/echo "bench-$attempt" \
                 >/dev/null 2>"$stderr_file"; then
             exit_code=0

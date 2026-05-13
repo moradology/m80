@@ -280,7 +280,13 @@ fn is_hidden_kernel_dest(path: &Path) -> bool {
 }
 
 fn bind_remount_flags() -> nix::mount::MsFlags {
-    nix::mount::MsFlags::MS_REMOUNT
+    // MS_BIND is REQUIRED alongside MS_REMOUNT when remounting a bind-
+    // mount: the kernel uses (MS_BIND|MS_REMOUNT) to disambiguate which
+    // mount to target when the path participates in multiple mounts.
+    // Dropping MS_BIND causes EBUSY at the second mount() call on the
+    // bind dest. The earlier audit (m80-l020n.9) was wrong to remove it.
+    nix::mount::MsFlags::MS_BIND
+        | nix::mount::MsFlags::MS_REMOUNT
         | nix::mount::MsFlags::MS_NODEV
         | nix::mount::MsFlags::MS_NOEXEC
         | nix::mount::MsFlags::MS_NOSUID
