@@ -49,6 +49,8 @@ without inheriting m80's lifecycle assumptions.
   `put_entropy_device` has no config argument because the default virtio-rng
   body is an empty object.
 - `CpuTemplate { T2, C3 }` — optional CPU template on `MachineConfig`.
+- `IoEngine { Sync, Async }` — optional Firecracker block-device I/O engine
+  on `DriveConfig`.
 - `InstanceAction { InstanceStart }`.
 - `VmState { Paused, Resumed }` — for `patch_vm_state`.
 - `SnapshotType { Full, Diff }` — for `CreateSnapshotConfig`.

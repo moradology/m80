@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, DriveConfig, MachineConfig, NetworkInterfaceConfig, VsockConfig,
+    BootSourceConfig, Client, DriveConfig, IoEngine, MachineConfig, NetworkInterfaceConfig,
+    VsockConfig,
 };
 use m80_image_manifest::{ImageKind, KernelKind};
 
@@ -92,12 +93,14 @@ pub(crate) fn plan_preboot_puts(
             path_on_host: PathBuf::from("/rootfs.ext4"),
             is_root_device: true,
             is_read_only: true,
+            io_engine: None,
         }),
         PrebootPut::Drive(DriveConfig {
             drive_id: "rootfs_overlay".into(),
             path_on_host: PathBuf::from("/rootfs.overlay.ext4"),
             is_root_device: false,
             is_read_only: false,
+            io_engine: Some(IoEngine::Async),
         }),
     ];
 
@@ -107,6 +110,7 @@ pub(crate) fn plan_preboot_puts(
             path_on_host: PathBuf::from("/scratch.ext4"),
             is_root_device: false,
             is_read_only: false,
+            io_engine: Some(IoEngine::Async),
         }));
     }
 
@@ -116,6 +120,7 @@ pub(crate) fn plan_preboot_puts(
             path_on_host: preallocated_drive_slot_jail_path(slot),
             is_root_device: false,
             is_read_only: false,
+            io_engine: None,
         }));
     }
 

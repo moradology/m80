@@ -1,5 +1,5 @@
 use super::*;
-use m80_firecracker_client::CpuTemplate;
+use m80_firecracker_client::{CpuTemplate, IoEngine};
 
 fn plan_without_workspace() -> Vec<PrebootPut> {
     plan_preboot_puts(
@@ -103,6 +103,7 @@ fn root_drive_put_with_is_root_device() {
     assert_eq!(root.path_on_host, PathBuf::from("/rootfs.ext4"));
     assert!(root.is_root_device);
     assert!(root.is_read_only);
+    assert_eq!(root.io_engine, None);
 }
 
 #[test]
@@ -116,6 +117,7 @@ fn rootfs_overlay_drive_put_after_shared_rootfs() {
     assert_eq!(overlay.path_on_host, PathBuf::from("/rootfs.overlay.ext4"));
     assert!(!overlay.is_root_device);
     assert!(!overlay.is_read_only);
+    assert_eq!(overlay.io_engine, Some(IoEngine::Async));
 }
 
 #[test]
@@ -137,6 +139,7 @@ fn scratch_drive_put_with_workspace_id() {
     assert_eq!(workspace.path_on_host, PathBuf::from("/scratch.ext4"));
     assert!(!workspace.is_root_device);
     assert!(!workspace.is_read_only);
+    assert_eq!(workspace.io_engine, Some(IoEngine::Async));
 }
 
 #[test]

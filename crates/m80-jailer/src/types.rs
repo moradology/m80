@@ -83,7 +83,7 @@ impl Default for ResourceLimits {
             no_file: 2048,
             fsize: None,
             nproc: None,
-            memlock: Some(0),
+            memlock: None,
             address_space: None,
             core: Some(0),
             stack: Some(8 * 1024 * 1024),
@@ -248,5 +248,10 @@ mod tests {
     #[test]
     fn default_resource_limits_do_not_set_host_wide_nproc() {
         assert_eq!(ResourceLimits::default().nproc, None);
+    }
+
+    #[test]
+    fn default_resource_limits_leave_memlock_inherited() {
+        assert_eq!(ResourceLimits::default().memlock, None);
     }
 }

@@ -83,7 +83,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
   names for the replayable plan and live pid state.
 - `ResourceLimits { no_file, fsize, nproc, memlock, address_space, core, stack }`;
   defaults are `no_file = 2048`, `fsize = None`, `nproc = None`,
-  `memlock = Some(0)`, `address_space = None`, `core = Some(0)`, and
+  `memlock = None`, `address_space = None`, `core = Some(0)`, and
   `stack = Some(8 MiB)`.
   Only `no_file` and `fsize` are forwarded to Firecracker's official jailer;
   the rest are applied by `m80-jailer-harden` before exec.

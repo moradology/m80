@@ -72,6 +72,7 @@ fn drive_400_returns_drive_write_failed() {
                 path_on_host: PathBuf::from("/missing.ext4"),
                 is_root_device: true,
                 is_read_only: false,
+                io_engine: None,
             })
         },
         |e| matches!(e, ClientError::DriveWriteFailed { fault } if fault.contains("drive not found")),

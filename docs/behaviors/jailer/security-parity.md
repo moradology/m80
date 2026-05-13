@@ -19,6 +19,8 @@ state-file writes use `O_NOFOLLOW`, binds are recursive, and bind remounts add
 `JailerConfig::resource_limits` is persisted in `jailer-plan.json` and passed
 as Firecracker-jailer `--resource-limit` arguments. The default is
 `no-file=2048`, matching Firecracker's jailer default, with optional `fsize`.
+`memlock` is inherited by default so Firecracker's io_uring-backed async block
+engine can set up its rings under the host operator's locked-memory policy.
 m80 launches the official jailer through `m80-jailer-harden`. The wrapper drops
 supplementary groups, clears inheritable and ambient capabilities, sets
 `PR_SET_NO_NEW_PRIVS`, sets `PR_SET_PDEATHSIG` to `SIGKILL`, resets the signal

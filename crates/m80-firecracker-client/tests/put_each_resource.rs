@@ -5,8 +5,8 @@ mod fixture_server;
 use fixture_server::{resp_204, FixtureServer};
 
 use m80_firecracker_client::{
-    BootSourceConfig, Client, CpuTemplate, DriveConfig, MachineConfig, PartialDriveConfig,
-    VsockConfig,
+    BootSourceConfig, Client, CpuTemplate, DriveConfig, IoEngine, MachineConfig,
+    PartialDriveConfig, VsockConfig,
 };
 use std::path::PathBuf;
 
@@ -66,6 +66,7 @@ fn put_drive_sends_correct_json_and_url() {
             path_on_host: PathBuf::from("/var/fc/rootfs.ext4"),
             is_root_device: true,
             is_read_only: false,
+            io_engine: Some(IoEngine::Async),
         })
         .unwrap();
     let result = server.join();
@@ -78,6 +79,35 @@ fn put_drive_sends_correct_json_and_url() {
     );
     assert!(result.request.contains("\"drive_id\":\"rootfs\""));
     assert!(result.request.contains("\"is_root_device\":true"));
+    assert!(result.request.contains("\"io_engine\":\"Async\""));
+}
+
+#[test]
+fn put_drive_omits_io_engine_when_unspecified() {
+    let server = FixtureServer::spawn(resp_204()).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+    client
+        .put_drive(&DriveConfig {
+            drive_id: "rootfs".to_owned(),
+            path_on_host: PathBuf::from("/var/fc/rootfs.ext4"),
+            is_root_device: true,
+            is_read_only: true,
+            io_engine: None,
+        })
+        .unwrap();
+    let result = server.join();
+    assert!(
+        !result.request.contains("\"io_engine\""),
+        "None io_engine must be omitted"
+    );
+}
+
+#[test]
+fn io_engine_uses_firecracker_pascal_case() {
+    let json = serde_json::to_string(&IoEngine::Async).unwrap();
+    assert_eq!(json, "\"Async\"");
+    let parsed: IoEngine = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, IoEngine::Async);
 }
 
 #[test]

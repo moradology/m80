@@ -337,6 +337,16 @@ pub struct MachineConfig {
     pub cpu_template: Option<CpuTemplate>,
 }
 
+/// Firecracker block-device I/O engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum IoEngine {
+    /// Synchronous file I/O.
+    Sync,
+    /// io_uring-backed asynchronous file I/O.
+    Async,
+}
+
 /// One drive slot. `drive_id == "rootfs"` is the conventional root drive id.
 #[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -349,6 +359,9 @@ pub struct DriveConfig {
     pub is_root_device: bool,
     /// Whether this drive is mounted read-only.
     pub is_read_only: bool,
+    /// Optional Firecracker block-device I/O engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub io_engine: Option<IoEngine>,
 }
 
 /// Post-boot update for an existing drive slot.
