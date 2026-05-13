@@ -4,6 +4,7 @@ use std::fmt::Write as _;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
+use std::time::Instant;
 
 use anyhow::Context as _;
 use futures_util::stream::TryStreamExt;
@@ -164,7 +165,15 @@ struct RtnetlinkConfigurator {
 
 impl RtnetlinkConfigurator {
     fn new() -> anyhow::Result<Self> {
+        let runtime_started = Instant::now();
         let runtime = Builder::new_current_thread().enable_io().build()?;
+        let runtime_build_us = runtime_started.elapsed().as_micros();
+        let line = guest_log::format_boot_milestone_line(
+            "tokio_runtime_build_guestd_network",
+            runtime_build_us,
+            runtime_build_us,
+        );
+        eprintln!("{line}");
         let _runtime_guard = runtime.enter();
         let (connection, handle, _) = new_connection()?;
         let _connection_task = runtime.spawn(connection);

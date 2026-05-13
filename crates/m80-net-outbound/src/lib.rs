@@ -20,6 +20,7 @@ use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::time::Duration;
 
 use ipnet::Ipv4Net;
 use nix::fcntl::{Flock, FlockArg};
@@ -112,7 +113,24 @@ pub fn realize_bridge_and_tap(
     run_dir: &Path,
 ) -> Result<RealizedNetwork, NetError> {
     let mut ops = NetlinkLinkOps::new()?;
+    emit_phase_event(
+        "phase_6_net_outbound_tokio_runtime_build",
+        vm_id,
+        ops.runtime_build_elapsed(),
+    );
     realize_bridge_and_tap_with_ops(&mut ops, intent, vm_id, run_root, run_dir)
+}
+
+fn emit_phase_event(name: &str, vm_id: &str, elapsed: Duration) {
+    if !std::env::var("M80_PHASE_TRACE").is_ok_and(|value| value == "1") {
+        return;
+    }
+    eprintln!(
+        "M80_PHASE name={} vm_id={} elapsed_us={}",
+        name,
+        vm_id,
+        elapsed.as_micros()
+    );
 }
 
 /// Realize bridge/TAP setup with supplied `/proc/net/route` contents.

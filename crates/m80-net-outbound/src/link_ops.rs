@@ -4,6 +4,7 @@
 
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
+use std::time::{Duration, Instant};
 
 use futures_util::stream::TryStreamExt;
 use ipnet::Ipv4Net;
@@ -100,12 +101,15 @@ pub(crate) struct NetlinkLinkOps {
     runtime: Runtime,
     handle: Handle,
     tap_devices: Vec<(String, tun::Device)>,
+    runtime_build_elapsed: Duration,
 }
 
 impl NetlinkLinkOps {
     /// Open an rtnetlink connection and return a backend ready for link operations.
     pub(crate) fn new() -> Result<Self, NetError> {
+        let runtime_started = Instant::now();
         let runtime = Builder::new_current_thread().enable_io().build()?;
+        let runtime_build_elapsed = runtime_started.elapsed();
         let _runtime_guard = runtime.enter();
         let (connection, handle, _) =
             new_connection().map_err(|source| NetError::NetlinkOperationFailed {
@@ -117,7 +121,12 @@ impl NetlinkLinkOps {
             runtime,
             handle,
             tap_devices: Vec::new(),
+            runtime_build_elapsed,
         })
+    }
+
+    pub(crate) fn runtime_build_elapsed(&self) -> Duration {
+        self.runtime_build_elapsed
     }
 
     fn block_on<F, T>(&self, operation: &'static str, future: F) -> Result<T, NetError>

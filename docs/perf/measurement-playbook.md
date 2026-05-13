@@ -224,7 +224,7 @@ Invocation:
 
 ```sh
 PHASE_JSONL=crates/m80-firecracker/benches/tokio-runtime-cost.jsonl \
-  N=20 KIND=minimal SKIP_LOADED=1 ./scripts/bench-cold-launch.sh
+  EGRESS=outbound N=20 KIND=minimal SKIP_LOADED=1 ./scripts/bench-cold-launch.sh
 ```
 
 This requires temporary instrumentation in:
