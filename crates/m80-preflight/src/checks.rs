@@ -16,6 +16,12 @@ use crate::{
 };
 
 const KVM_PATH: &str = "/dev/kvm";
+const KVM_HALT_POLL_NS_PATH: &str = "/sys/module/kvm/parameters/halt_poll_ns";
+const KVM_HALT_POLL_NS_GROW_PATH: &str = "/sys/module/kvm/parameters/halt_poll_ns_grow";
+const KVM_HALT_POLL_NS_SHRINK_PATH: &str = "/sys/module/kvm/parameters/halt_poll_ns_shrink";
+const KVM_LAPIC_TIMER_ADVANCE_PATH: &str = "/sys/module/kvm/parameters/lapic_timer_advance";
+const KVM_INTEL_PREEMPTION_TIMER_PATH: &str =
+    "/sys/module/kvm_intel/parameters/enable_preemption_timer";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
 const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
 const TUN_PATH: &str = "/dev/net/tun";
@@ -108,14 +114,15 @@ pub fn run_with_configs(
 
     // 5. Host tuning advisories
     check_thp_policy(&mut report);
+    check_kvm_halt_poll(&mut report);
 
-    // 6. Cgroup host mode
+    // 7. Cgroup host mode
     check_cgroup_mode(host_feature_config.cgroup_mode, &mut report)?;
 
-    // 7. Privilege
+    // 8. Privilege
     let privilege = check_privilege(&mut report)?;
 
-    // 8-10. Firecracker and jailer binaries
+    // 9-11. Firecracker and jailer binaries
     let binaries = discover_binaries(&binary_config)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
@@ -138,7 +145,7 @@ pub fn run_with_configs(
         detail: binaries.jailer_harden_bin.display().to_string(),
     });
 
-    // 11-14. Kernel/rootfs artifacts, run-root, and storage helpers
+    // 12-15. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config)?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
@@ -341,6 +348,67 @@ fn selected_thp_mode(raw: &str) -> Option<&str> {
             .strip_prefix('[')
             .and_then(|inner| inner.strip_suffix(']'))
     })
+}
+
+fn check_kvm_halt_poll(report: &mut Vec<CheckRow>) {
+    report.push(classify_kvm_halt_poll(
+        read_trimmed_sysfs(KVM_HALT_POLL_NS_PATH).as_deref(),
+        read_trimmed_sysfs(KVM_HALT_POLL_NS_GROW_PATH).as_deref(),
+        read_trimmed_sysfs(KVM_HALT_POLL_NS_SHRINK_PATH).as_deref(),
+        read_trimmed_sysfs(KVM_LAPIC_TIMER_ADVANCE_PATH).as_deref(),
+        read_trimmed_sysfs(KVM_INTEL_PREEMPTION_TIMER_PATH).as_deref(),
+    ));
+}
+
+fn classify_kvm_halt_poll(
+    halt_poll_ns: Option<&str>,
+    grow: Option<&str>,
+    shrink: Option<&str>,
+    lapic_timer_advance: Option<&str>,
+    intel_preemption_timer: Option<&str>,
+) -> CheckRow {
+    let mut parts = Vec::new();
+    match halt_poll_ns {
+        Some(value) => parts.push(format!("halt_poll_ns={value}")),
+        None => parts.push("halt_poll_ns=unavailable".to_string()),
+    }
+    if let Some(value) = grow {
+        parts.push(format!("grow={value}"));
+    }
+    if let Some(value) = shrink {
+        parts.push(format!("shrink={value}"));
+    }
+    if let Some(value) = lapic_timer_advance {
+        parts.push(format!("lapic_timer_advance={value}"));
+    }
+    if let Some(value) = intel_preemption_timer {
+        parts.push(format!("enable_preemption_timer={value}"));
+    }
+
+    let detail = if halt_poll_ns.is_some() {
+        format!(
+            "{}; advisory: latency-priority hosts may evaluate halt_poll_ns=400000; density-priority hosts may keep or lower the default (docs/ops/host-tuning.md)",
+            parts.join(", ")
+        )
+    } else {
+        format!(
+            "{}; advisory could not be evaluated (docs/ops/host-tuning.md)",
+            parts.join(", ")
+        )
+    };
+
+    CheckRow {
+        label: "KVM halt polling".to_string(),
+        passed: true,
+        detail,
+    }
+}
+
+fn read_trimmed_sysfs(path: &str) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()
+        .map(|raw| raw.trim().to_string())
+        .filter(|raw| !raw.is_empty())
 }
 
 fn classify_vsock_availability(
@@ -731,6 +799,46 @@ flags\t\t: fpu svm tsc
 
         assert!(row.passed);
         assert!(row.detail.contains("unrecognized THP policy format"));
+    }
+
+    #[test]
+    fn kvm_halt_poll_reports_current_value_as_advisory() {
+        let row = classify_kvm_halt_poll(Some("200000"), Some("2"), Some("2"), None, None);
+
+        assert!(row.passed);
+        assert_eq!(row.label, "KVM halt polling");
+        assert!(row.detail.contains("halt_poll_ns=200000"));
+        assert!(row.detail.contains("grow=2"));
+        assert!(row.detail.contains("shrink=2"));
+        assert!(row.detail.contains("halt_poll_ns=400000"));
+        assert!(row.detail.contains("docs/ops/host-tuning.md"));
+    }
+
+    #[test]
+    fn kvm_halt_poll_reports_timer_interaction_when_available() {
+        let row = classify_kvm_halt_poll(
+            Some("400000"),
+            Some("2"),
+            Some("2"),
+            Some("1000"),
+            Some("Y"),
+        );
+
+        assert!(row.detail.contains("lapic_timer_advance=1000"));
+        assert!(row.detail.contains("enable_preemption_timer=Y"));
+    }
+
+    #[test]
+    fn kvm_halt_poll_unavailable_is_non_blocking() {
+        let row = classify_kvm_halt_poll(None, Some("2"), Some("2"), Some("1000"), Some("Y"));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("halt_poll_ns=unavailable"));
+        assert!(row.detail.contains("grow=2"));
+        assert!(row.detail.contains("shrink=2"));
+        assert!(row.detail.contains("lapic_timer_advance=1000"));
+        assert!(row.detail.contains("enable_preemption_timer=Y"));
+        assert!(row.detail.contains("advisory could not be evaluated"));
     }
 
     fn err_hint_mentions_kvm_enable(err: &PreflightError) -> bool {

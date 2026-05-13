@@ -40,3 +40,40 @@ promote Firecracker's anonymous guest-memory pages when conditions allow it.
 Explicit Firecracker `huge_pages` is the guaranteed path: it requires reserving
 host hugepages with settings such as `vm.nr_hugepages=N`, and that reservation
 reduces the flexibility of host memory allocation.
+
+## KVM Halt Polling
+
+KVM exposes halt-poll settings through module parameters:
+
+```sh
+cat /sys/module/kvm/parameters/halt_poll_ns
+cat /sys/module/kvm/parameters/halt_poll_ns_grow
+cat /sys/module/kvm/parameters/halt_poll_ns_shrink
+cat /sys/module/kvm/parameters/lapic_timer_advance
+cat /sys/module/kvm_intel/parameters/enable_preemption_timer
+```
+
+`halt_poll_ns` is the maximum time KVM will busy-poll before parking a vCPU
+after guest `HLT`. A larger value can reduce wakeup latency during boot and
+short command bursts, but it burns more host CPU while the vCPU is otherwise
+idle. The `grow` and `shrink` parameters control KVM's adaptive halt-poll
+window.
+
+Latency-priority hosts can evaluate:
+
+```sh
+echo 400000 | sudo tee /sys/module/kvm/parameters/halt_poll_ns
+```
+
+Density-priority hosts should keep the distro default or lower it if idle CPU
+burn matters more than a few milliseconds of wakeup latency. m80 reports the
+current value but does not enforce it.
+
+Timer behavior is also affected by LAPIC timer settings. On hosts exposing
+`/sys/module/kvm/parameters/lapic_timer_advance`, m80 reports the current
+advance value in the same preflight row. Some Intel kernels also expose
+`/sys/module/kvm_intel/parameters/enable_preemption_timer`; when present, that
+value is reported because it affects whether LAPIC timer advance is relevant.
+
+This is visibility only. Do not claim a latency win from changing these values
+without a before/after cold-launch artifact.

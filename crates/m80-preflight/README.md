@@ -38,32 +38,35 @@ which is the right place for a security review to start.
      informational row. `[always]` is a clean row. `[madvise]`, `[never]`,
      unreadable, or unrecognized policy text still pass preflight but carry an
      advisory detail pointing operators at host tuning docs.
-  6. **Cgroup mode** — when effective `cgroup_mode` is `unified-v2`,
+  6. **KVM halt polling** — reads `/sys/module/kvm/parameters/halt_poll_ns`
+     and related KVM timer knobs, then emits a non-blocking informational row
+     pointing operators at latency-priority versus density-priority guidance.
+  7. **Cgroup mode** — when effective `cgroup_mode` is `unified-v2`,
      `m80-cgroup::Subtree::probe()` must confirm a unified cgroup v2 hierarchy
      before launch work begins. `cgroup_mode = "disabled"` skips this check.
-  7. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
+  8. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
      `CAP_FOWNER`, `CAP_KILL`). Probed via the `caps` crate against the
      process's effective set. Returns `PrivilegeStatus::Root` or
      `PrivilegeStatus::CapabilityBearing`.
-  8. **Firecracker binary** — discovered via env override or default,
+  9. **Firecracker binary** — discovered via env override or default,
      `--version` must clear the documented CVE floor before any configured
      exact version pin is accepted.
-  9. **Jailer binary** — same protocol.
-  10. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
+  10. **Jailer binary** — same protocol.
+  11. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
-  11. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
+  12. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  12. **Rootfs + manifest** — manifest schema validates,
+  13. **Rootfs + manifest** — manifest schema validates,
      `m80-image-manifest::verify` recomputes every sha256. This is the
      boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
      not rehash these artifacts again for every VM.
-  13. **Run-root** — absolute, must already exist, >= 100 MiB free
+  14. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  14. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  15. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - Env keys are exact and case-sensitive. Preflight recognizes
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
