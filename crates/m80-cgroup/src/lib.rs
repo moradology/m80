@@ -8,6 +8,7 @@
 use std::fs;
 use std::io::{self, Write as IoWrite};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -29,6 +30,9 @@ const DEFAULT_CPU_PERIOD_US: u64 = 100_000;
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 1_610_612_736;
 const DEFAULT_PIDS_MAX: u32 = 128;
 const DEFAULT_OOM_SCORE_ADJ: i16 = 500;
+
+static SUBTREE_CONTROL_PRIMED: OnceLock<()> = OnceLock::new();
+static SUBTREE_CONTROL_PRIME_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// One per-VM cgroup v2 subtree under `/sys/fs/cgroup/m80-firecracker/<vm-id>`.
 #[derive(Debug)]
@@ -76,7 +80,7 @@ impl Subtree {
 
         // create_dir_all is race-safe against concurrent sandboxes.
         fs::create_dir_all(parent).map_err(io_err(parent.to_path_buf()))?;
-        enable_subtree_control_chain(base, parent, &limits.required_controllers())?;
+        enable_subtree_control_for_create(base, parent, &limits.required_controllers())?;
 
         let leaf = parent.join(vm_id);
         fs::create_dir_all(&leaf).map_err(io_err(leaf.clone()))?;
@@ -375,6 +379,41 @@ fn enable_subtree_control_chain(
         path.push(component.as_os_str());
         write_subtree_control_unchecked(&path, controllers)?;
     }
+    Ok(())
+}
+
+fn enable_subtree_control_for_create(
+    base: &Path,
+    parent: &Path,
+    controllers: &[&'static str],
+) -> Result<(), CgroupError> {
+    if base == Path::new(CGROUP_V2_ROOT) && parent == Path::new(CGROUP_ROOT) {
+        enable_subtree_control_chain_once(&SUBTREE_CONTROL_PRIMED, || {
+            enable_subtree_control_chain(base, parent, controllers)
+        })
+    } else {
+        enable_subtree_control_chain(base, parent, controllers)
+    }
+}
+
+fn enable_subtree_control_chain_once<F>(primed: &OnceLock<()>, enable: F) -> Result<(), CgroupError>
+where
+    F: FnOnce() -> Result<(), CgroupError>,
+{
+    if primed.get().is_some() {
+        return Ok(());
+    }
+
+    let prime_lock = SUBTREE_CONTROL_PRIME_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = prime_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if primed.get().is_some() {
+        return Ok(());
+    }
+
+    enable()?;
+    let _ = primed.set(());
     Ok(())
 }
 

@@ -48,6 +48,14 @@ The controller writes and cgroup limit writes happen before PID enrolment.
 This keeps controller properties visible and configured before
 `cgroup.procs` is mutated.
 
+On the live `/sys/fs/cgroup` hierarchy, the shared ancestor chain is primed at
+most once per m80 process. The first successful `Subtree::create` performs the
+root availability check and ancestor writes; later creates skip those shared
+writes and continue with per-leaf creation, sparse cpuset inheritance, limits,
+OOM tuning, and PID enrolment. Failed priming attempts are not cached, so a
+transient I/O or controller-availability failure can be retried by a later
+create.
+
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `materialize_jailed_cgroup` lines 84–93; `REQUIRED_CONTROLLERS` line 16.
 
@@ -55,6 +63,8 @@ Test: `crates/m80-cgroup/src/lib.rs::tests::required_subtree_control_enables_thr
 Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::subtree_control_chain_checks_only_root_controller_availability`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::subtree_control_chain_still_rejects_missing_root_controller`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::subtree_control_once_gate_runs_initializer_once_across_threads`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::subtree_control_once_gate_does_not_cache_failure`.
 The latter asserts `+cpu`, `+memory`, `+pids`, and `+io` are present on both
 ancestor levels in the synthetic hierarchy before process enrollment.
 

@@ -320,6 +320,50 @@ fn subtree_control_chain_still_rejects_missing_root_controller() {
     assert!(matches!(err, CgroupError::ControllerNotEnabled("memory")));
 }
 
+#[test]
+fn subtree_control_once_gate_runs_initializer_once_across_threads() {
+    let primed = OnceLock::new();
+    let calls = AtomicUsize::new(0);
+
+    thread::scope(|scope| {
+        for _ in 0..8 {
+            scope.spawn(|| {
+                enable_subtree_control_chain_once(&primed, || {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(5));
+                    Ok(())
+                })
+                .unwrap();
+            });
+        }
+    });
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn subtree_control_once_gate_does_not_cache_failure() {
+    let primed = OnceLock::new();
+    let calls = AtomicUsize::new(0);
+
+    let first = enable_subtree_control_chain_once(&primed, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Err(CgroupError::ControllerNotEnabled("cpu"))
+    });
+    assert!(matches!(
+        first,
+        Err(CgroupError::ControllerNotEnabled("cpu"))
+    ));
+
+    enable_subtree_control_chain_once(&primed, || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    })
+    .unwrap();
+
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
 fn assert_subtree_control_contains_all_requested(path: &std::path::Path) {
     assert_subtree_control_contains(path, &["+cpu", "+memory", "+pids", "+io"]);
 }
