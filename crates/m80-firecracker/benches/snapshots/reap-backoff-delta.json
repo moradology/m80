@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "bench": "reap_backoff_delta",
+  "bead": "m80-jp6ik.16",
+  "unit": {
+    "wallclock": "ms",
+    "phases": "us"
+  },
+  "command": "N=50 KIND=minimal SKIP_LOADED=1 KERNEL_KIND=stripped IMAGE_BUILD_DIR_MINIMAL=/tmp/m80-build/minimal-jp6ik42 M80_BIN=./target/release/m80 ./scripts/bench-cold-launch.sh",
+  "baseline": {
+    "snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-13T19:05:09+00:00.json",
+    "wallclock": {
+      "p50": 1595,
+      "p95": 1695,
+      "p99": 1695,
+      "max": 1697
+    },
+    "stop_bounded": {
+      "p50": 65785,
+      "p95": 71629,
+      "p99": 76982,
+      "max": 81698
+    }
+  },
+  "reap_backoff": {
+    "snapshot": "crates/m80-firecracker/benches/snapshots/2026-05-13T19:11:59+00:00.json",
+    "wallclock": {
+      "p50": 1598,
+      "p95": 1697,
+      "p99": 1698,
+      "max": 1713
+    },
+    "stop_bounded": {
+      "p50": 56669,
+      "p95": 67906,
+      "p99": 69296,
+      "max": 70763
+    }
+  },
+  "delta": {
+    "wallclock_p50": 3,
+    "wallclock_p95": 2,
+    "wallclock_p99": 3,
+    "stop_bounded_p50": -9116,
+    "stop_bounded_p50_percent": -13.86,
+    "stop_bounded_p95": -3723,
+    "stop_bounded_p99": -7686,
+    "stop_bounded_max": -10935
+  },
+  "acceptance": {
+    "unit_tests_passed": true,
+    "two_second_bound_preserved": true,
+    "stop_bounded_p50_improved": true,
+    "estimated_15ms_target_met": false
+  }
+}

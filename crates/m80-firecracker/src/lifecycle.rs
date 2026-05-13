@@ -33,6 +33,9 @@ use crate::types::{RunningSandbox, StoppedSandbox};
 /// need a moment to drain pending I/O before responding to the shutdown frame.
 /// If the timeout fires the caller falls back to a force-kill.
 const SHUTDOWN_RPC_TIMEOUT: Duration = Duration::from_secs(5);
+const REAP_TIMEOUT: Duration = Duration::from_secs(2);
+const REAP_INITIAL_POLL_DELAY: Duration = Duration::from_millis(1);
+const REAP_MAX_POLL_DELAY: Duration = Duration::from_millis(20);
 #[cfg(debug_assertions)]
 const FORCE_KILL_EPERM_FOR_PID_ENV: &str = "M80_TEST_FORCE_KILL_EPERM_FOR_PID";
 
@@ -613,8 +616,9 @@ pub(crate) fn kill_and_reap_pid(pid: u32) -> Result<(), FcError> {
     }
 
     let reap_pid = Pid::from_raw(pid as i32);
-    let timeout = Duration::from_secs(2);
+    let timeout = REAP_TIMEOUT;
     let deadline = Instant::now() + timeout;
+    let mut backoff = ReapPollBackoff::new();
     loop {
         match waitpid(reap_pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::Exited(_, _))
@@ -625,7 +629,7 @@ pub(crate) fn kill_and_reap_pid(pid: u32) -> Result<(), FcError> {
                 if Instant::now() >= deadline {
                     return Err(FcError::ReapTimeout { pid, timeout });
                 }
-                std::thread::sleep(Duration::from_millis(20));
+                std::thread::sleep(reap_sleep_duration(&mut backoff, deadline));
             }
             Ok(_) => return Ok(()),
             Err(e) => {
@@ -636,6 +640,29 @@ pub(crate) fn kill_and_reap_pid(pid: u32) -> Result<(), FcError> {
             }
         }
     }
+}
+
+struct ReapPollBackoff {
+    next: Duration,
+}
+
+impl ReapPollBackoff {
+    fn new() -> Self {
+        Self {
+            next: REAP_INITIAL_POLL_DELAY,
+        }
+    }
+
+    fn next_delay(&mut self) -> Duration {
+        let delay = self.next;
+        self.next = self.next.saturating_mul(2).min(REAP_MAX_POLL_DELAY);
+        delay
+    }
+}
+
+fn reap_sleep_duration(backoff: &mut ReapPollBackoff, deadline: Instant) -> Duration {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    backoff.next_delay().min(remaining)
 }
 
 #[cfg(test)]
@@ -659,6 +686,78 @@ mod tests {
     #[test]
     fn kill_pid_zero_is_no_live_jailer_sentinel() {
         kill_pid(0).expect("pid zero sentinel is a no-op");
+    }
+
+    #[test]
+    fn reap_poll_backoff_starts_fast_and_caps_at_twenty_ms() {
+        let mut backoff = ReapPollBackoff::new();
+        let delays = (0..8).map(|_| backoff.next_delay()).collect::<Vec<_>>();
+
+        assert_eq!(
+            delays,
+            vec![
+                Duration::from_millis(1),
+                Duration::from_millis(2),
+                Duration::from_millis(4),
+                Duration::from_millis(8),
+                Duration::from_millis(16),
+                Duration::from_millis(20),
+                Duration::from_millis(20),
+                Duration::from_millis(20),
+            ]
+        );
+    }
+
+    #[test]
+    fn reap_sleep_never_exceeds_remaining_deadline() {
+        let mut backoff = ReapPollBackoff {
+            next: Duration::from_millis(20),
+        };
+        let deadline = Instant::now() + Duration::from_millis(3);
+
+        assert!(reap_sleep_duration(&mut backoff, deadline) <= Duration::from_millis(3));
+    }
+
+    #[test]
+    fn reap_poll_schedule_observes_exit_within_next_backoff_slot() {
+        for exit_after in [
+            Duration::ZERO,
+            Duration::from_millis(1),
+            Duration::from_millis(3),
+            Duration::from_millis(5),
+            Duration::from_millis(9),
+            Duration::from_millis(17),
+            Duration::from_millis(37),
+        ] {
+            let observed_at = simulated_reap_observation_delay(exit_after);
+            let bound = exit_after + first_backoff_delay_at_least(exit_after);
+
+            assert!(
+                observed_at <= bound,
+                "exit_after={exit_after:?} observed_at={observed_at:?} bound={bound:?}"
+            );
+        }
+    }
+
+    fn simulated_reap_observation_delay(exit_after: Duration) -> Duration {
+        let mut elapsed = Duration::ZERO;
+        let mut backoff = ReapPollBackoff::new();
+        loop {
+            if elapsed >= exit_after {
+                return elapsed;
+            }
+            elapsed += backoff.next_delay();
+        }
+    }
+
+    fn first_backoff_delay_at_least(delay: Duration) -> Duration {
+        let mut backoff = ReapPollBackoff::new();
+        loop {
+            let next = backoff.next_delay();
+            if next >= delay || next == REAP_MAX_POLL_DELAY {
+                return next;
+            }
+        }
     }
 
     #[test]
