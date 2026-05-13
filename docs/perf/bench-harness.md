@@ -45,7 +45,6 @@ TASKSET=0-3 CPU_GOVERNOR=performance ./scripts/bench-cold-launch.sh
 | `CPU_GOVERNOR` | — | passed to `cpupower frequency-set -g` once at start. |
 | `PHASE_JSONL` | — | when set, appends one JSON line per phase event for flamegraphs. |
 | `M80_BIN` | `./target/release/m80` | binary path. Override for testing. |
-| `TEST_MODE` | 0 | when 1, skip sudo + cargo + image checks. Used by `scripts/test-bench-harness.sh`. |
 
 ## Flags
 
@@ -149,22 +148,6 @@ cp crates/m80-firecracker/benches/snapshots/latest.json \
 git add ... && git commit -m "perf: snapshot new baseline (<reason>)"
 ```
 
-## Test mode
-
-`scripts/test-bench-harness.sh` exercises every flag/env-var combination
-against `scripts/mock-m80.sh` (which simulates `M80_PHASE` events without
-needing real KVM):
-
-```sh
-TEST_MODE=1 M80_BIN=./scripts/mock-m80.sh \
-    IMAGE_BUILD_DIR_UBUNTU=/tmp/m80-bench-test/ubuntu \
-    IMAGE_BUILD_DIR_MINIMAL=/tmp/m80-bench-test/minimal \
-    bash scripts/bench-cold-launch.sh
-
-bash scripts/test-bench-harness.sh   # shell-level integration tests
-python3 scripts/bench-summary.py --test   # compute-logic unit tests
-```
-
 ## Inline reference
 
 | Run mode | Knob | Exercises |
@@ -177,14 +160,13 @@ python3 scripts/bench-summary.py --test   # compute-logic unit tests
 | isolated | `TASKSET=` + `CPU_GOVERNOR=` | best-effort host pinning |
 | trace | `PHASE_JSONL=` | flamegraph-ready event stream |
 | dry-run | `--dry-run` | plan-only |
-| test | `TEST_MODE=1` + mock | full e2e without KVM |
 
 ## bench-extras.sh sub-modes (B1-B10)
 
 `scripts/bench-extras.sh --MODE` orchestrates the later perf sub-epics
 against the same harness. Each mode emits a CSV + prints a one-line
-summary; all run cleanly under `TEST_MODE=1 M80_BIN=./scripts/mock-m80.sh`
-for orchestration-only testing without real KVM.
+summary. Each mode requires sudo and the same `/opt/firecracker/bin/`
+binaries the smoke test uses.
 
 | Mode | Sub-epic | What it produces |
 |---|---|---|
@@ -209,13 +191,14 @@ All three are unit-tested via `python3 scripts/bench-summary.py --test`.
 |---|---|---|
 | compute logic | `python3 scripts/bench-summary.py --test` | 46 unit tests on percentiles, histograms, CIs, outliers, sweep, concurrent, throughput, memory, teardown, diff |
 | shell orchestration | `bash scripts/test-bench-harness.sh` | 29 e2e: help flags, --dry-run, all env vars, --cold-isolation, bench-extras modes |
-| harness e2e | `TEST_MODE=1 M80_BIN=./scripts/mock-m80.sh bash scripts/bench-cold-launch.sh` | every CSV emission, snapshot compute, diff with --fail-on-regress |
-| bench-extras e2e | `TEST_MODE=1 M80_BIN=./scripts/mock-m80.sh bash scripts/bench-extras.sh --MODE` | each B1-B10 sub-epic mode end-to-end |
+| harness real-KVM | `./scripts/bench-cold-launch.sh N=200 SKIP_LOADED=1` on a privileged host | full e2e: launches, CSVs, snapshot compute, diff with --fail-on-regress |
+| bench-extras real-KVM | `./scripts/bench-extras.sh --MODE` on a privileged host | each B1-B10 sub-epic mode end-to-end |
 
 ## What remains for the privileged runner (m80-16hx7)
 
-Code in this directory is fully exercised end-to-end via the mock m80;
-the values produced are mock numbers. To populate real perf data:
+Code in this directory is exercised against real KVM via
+`./scripts/bench-cold-launch.sh` on a privileged host. To produce
+data for capacity claims and regression gates:
 
 1. Provision the privileged runner per `m80-16hx7` (artifact cache + KVM).
 2. Run `./scripts/bench-cold-launch.sh N=1000 SKIP_LOADED=1 --cold-isolation`

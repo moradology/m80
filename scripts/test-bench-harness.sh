@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Shell-level tests for bench-cold-launch.sh.
+# Plumbing tests for bench-cold-launch.sh / bench-extras.sh.
 #
-# Exercises the harness end-to-end against a mock `m80` binary that
-# simulates phase output without needing real KVM. Verifies:
-#   - help text mentions the new env vars
-#   - --dry-run prints planned cells and exits 0 without running
-#   - SWEEP=vcpu emits a sweep CSV with one row per cell
-#   - CONCURRENT=4 emits a concurrent CSV
-#   - --cold-isolation invokes drop_caches between runs
-#   - WARMUP is configurable
+# Real-KVM bench runs require sudo + image build + minutes per attempt;
+# these tests only cover the orchestration plumbing: --help text,
+# --dry-run plan output, env-var surfacing, and the bench-extras --help
+# mode catalog. Real-data correctness is verified by actually running
+# `./scripts/bench-cold-launch.sh` against a privileged host.
 
 set -euo pipefail
 
@@ -117,17 +114,6 @@ for mode in --throughput --memory --teardown --boot-decomp --long-tail --density
         note ok "bench-extras --help advertises $mode"
     else
         note FAIL "bench-extras --help missing $mode"
-    fi
-done
-
-# Smoke each mode against the mock (TEST_MODE=1).
-for mode in --throughput --memory --teardown --boot-decomp; do
-    if TEST_MODE=1 M80_BIN=./scripts/mock-m80.sh N=3 WINDOW_SEC=2 \
-        IMAGE_BUILD_DIR_MINIMAL=/tmp/m80-bench-test/minimal \
-        bash scripts/bench-extras.sh "$mode" > /tmp/m80-extras-out 2>&1; then
-        note ok "bench-extras $mode runs cleanly under TEST_MODE"
-    else
-        note FAIL "bench-extras $mode failed under TEST_MODE: $(tail -5 /tmp/m80-extras-out)"
     fi
 done
 

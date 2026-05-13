@@ -5,6 +5,63 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Fixed — `m80-jailer` bind-remount regression (caught running the new bench)
+
+- `crates/m80-jailer/src/plan.rs`: restored `MS_BIND` in
+  `bind_remount_flags()`. An earlier audit pass (`m80-l020n.9`) removed
+  it based on the claim that "the kernel ignores `MS_BIND` on remount" —
+  wrong. For a bind-mount, `MS_BIND|MS_REMOUNT` is required to
+  disambiguate which mount the remount targets; without it the second
+  `mount()` call fails with `EBUSY` after the initial bind succeeds.
+  Every `m80 run` had been broken between the audit-sweep landing and
+  this fix. Caught only when actually running the new bench against
+  real KVM (no unit/mock test could see this — it's a kernel state
+  issue).
+
+### Added — perf bench harness foundation (m80-ekbk, B0 + B1-B10 scaffolds)
+
+- `scripts/bench-cold-launch.sh`: extended percentiles (P50/P75/P90/P95/
+  P99/P99.9/max), histograms, bootstrap-95% CI on the median, 2σ outlier
+  flagging; new env vars `WARMUP`, `SWEEP`/`SWEEP_VALUES`, `CONCURRENT`,
+  `TASKSET`, `CPU_GOVERNOR`, `PHASE_JSONL`; flags `--cold-isolation`,
+  `--dry-run`, `--help`.
+- `scripts/bench-extras.sh` (NEW): per-sub-epic orchestrators
+  (`--throughput` B2, `--memory` B4, `--teardown` B8, `--boot-decomp`
+  B1, `--long-tail` B10, `--density` B3).
+- `scripts/bench-summary.py`: added `compute_throughput`,
+  `compute_memory`, `compute_teardown`, `compute_sweep`,
+  `compute_concurrent`, `bootstrap_ci_median`, `_log_histogram`,
+  `_count_outliers_2sigma`. 46 inline unit tests.
+- `scripts/test-bench-harness.sh` (NEW): 25 plumbing tests on help text,
+  `--dry-run`, env-var surfacing, bench-extras mode catalog.
+- `docs/perf/bench-harness.md` (NEW): full knob/flag/sub-mode reference.
+- `crates/m80-firecracker/benches/baseline.json`: real-KVM baseline from
+  N=200 minimal/idle run on 2026-05-13 — P50=1728ms, P95=1733ms,
+  P99=1736ms, P99.9=1736ms, max=1744ms, outliers=2, P50 CI95=[1728,1729].
+- `docs/perf/cold-launch.md`: added "Tail-latency baseline" section with
+  the N=200 numbers + per-phase tail table + guest-side boot milestones.
+
+### Fixed — `scripts/bench-cold-launch.sh` sudo escape
+
+- The `m80_invoke` shell function (added for optional `TASKSET`
+  wrapping) was placed after `sudo` in the launch command. sudo can't
+  see shell functions, so every launch errored with `m80_invoke:
+  command not found`. Replaced with a `TASKSET_PREFIX` array that
+  expands correctly under `sudo ENV=VAL ${TASKSET_PREFIX[@]} cmd`.
+  Found by stracing the bench against the host's real m80 binary —
+  the prior mock-based "e2e" had never invoked the sudo branch and
+  silently masked this bug.
+
+### Removed — mock m80 bench harness (`scripts/mock-m80.sh` + `TEST_MODE`)
+
+- The mock binary and the `TEST_MODE` shell branches in
+  `bench-cold-launch.sh` / `bench-extras.sh` are gone. They produced a
+  comforting "162 closed beads + e2e all green" picture that missed
+  exactly the two bugs above (kernel mount flags, sudo escape).
+  Bench tests now require sudo + KVM + pre-built images; the python
+  unit tests + `--help` / `--dry-run` plumbing tests are the only
+  parts that run without privilege.
+
 ### Changed — audit-sweep workspace cleanup (m80-nqjm4)
 
 - Ran a ten-iteration audit sweep (~100 parallel agents, ~150 findings). Major

@@ -352,6 +352,90 @@ Loaded N=5 after the change still had 0/5 successful launches under
 phase-bearing failed attempts did show the expected storage shape:
 `phase_3_storage_prep` 15.6 ms P50, with no `phase_3a_manifest_verify` row.
 
+## Tail-latency baseline (N=200, minimal/idle, 2026-05-13)
+
+First N>30 run produced by the post-m80-ekbk-B0 harness on a 48-CPU host,
+after the MS_BIND remount fix in `m80-jailer/src/plan.rs` and the sudo
+escape fix in `bench-cold-launch.sh` (commit `1d7c521`). Captures
+extended percentiles + per-phase bootstrap-stable values that the prior
+N=30 numbers could not surface.
+
+Wallclock, minimal/idle, N=200, 0 failures, 2 outliers (>2σ):
+
+| metric | value |
+|---|---|
+| P50 | 1728 ms |
+| P75 | 1730 ms |
+| P90 | 1732 ms |
+| P95 | 1733 ms |
+| P99 | 1736 ms |
+| P99.9 | 1736 ms |
+| max | 1744 ms |
+| P50 95% CI | [1728, 1729] ms |
+
+**The tail is tight: P99 − P50 = 8 ms (0.5%).** This is the steady-state
+shape after page caches and TLB are warm. Cold-cold numbers (with
+`--cold-isolation`) would shift the entire distribution right; the
+shape is unmeasured.
+
+Phase tail breakdown (P50 → P99 → max, µs):
+
+| phase | P50 | P99 | max | notes |
+|---|---:|---:|---:|---|
+| `phase_12b_ready_accept` | 1,016,758 | 1,037,121 | 1,047,369 | **59% of total**; kernel boot + guestd-ready bound by VM cold start |
+| `stop_bounded` | 76,634 | 86,898 | 96,366 | graceful-stop RPC + SIGKILL; subtracted from useful_ms |
+| `phase_9_jailer_launch` | 25,417 | 25,612 | 25,851 | tight: firecracker jailer exec is deterministic |
+| `phase_12a_instance_start` | 18,688 | 23,129 | 24,314 | InstanceStart REST call |
+| `phase_5b_cgroup_create` | 18,650 | 26,732 | 41,758 | wider tail; cgroup write path |
+| `exec_recv` | 12,047 | 12,857 | 12,998 | guestd response after exec |
+| `phase_3_storage_prep` | 11,727 | 14,325 | 17,155 | overlay clone + mkfs |
+| `phase_3b_rootfs_prepare` | 11,719 | 14,317 | 17,145 | (same path; dual-tagged) |
+| `phase_4_jailer_materialize` | 733 | 3,355 | 3,930 | bind-mount plan execution |
+| `phase_5_cgroup_probe` | 2,041 | 2,506 | 2,845 | one-time check |
+| `phase_11_rest_puts` | 1,760 | 2,246 | 3,011 | machine + boot config |
+| `phase_1_run_root_prep` | 81 | 92 | 155 | filesystem setup |
+| `phase_11b_ready_listener_bind` | 47 | 82 | 98 | vsock host bind |
+| `phase_11c_boot_identity_record` | 46 | 73 | 370 | jailed identity write; the 370µs max is the only mildly anomalous tail in this run |
+| `phase_10_open_uds` | 34 | 52 | 65 | unix domain socket open |
+| `phase_2_lease` | 27 | 48 | 94 | admission permit |
+| `phase_6_network_realize` | 6 | 8 | 12 | NoEgress: nothing to do |
+| `phase_7_outbound_guest_config` | 0 | 5 | 7 | NoEgress: skipped |
+| `stop_release` | 16 | 27 | 29 | drop run-dir |
+
+Guest-side boot milestones (µs since guest start, P50 → P99 → max):
+
+| milestone | P50 | P99 | max |
+|---|---:|---:|---:|
+| `process_start` | 2 | 2 | 2 |
+| `panic_hook_installed` | 3,308 | 3,504 | 3,889 |
+| `stdio_redirected` | 1,620 | 1,783 | 1,906 |
+| `pseudo_fs_mounted` | 13,799 | 15,082 | 16,159 |
+| `mount_namespace_private` | 20,079 | 21,328 | 25,453 |
+| `base_mounted` | 25,870 | 27,467 | 33,249 |
+| `overlay_disk_mounted` | 33,097 | 35,077 | 40,647 |
+| `overlay_dirs_ready` | 38,490 | 41,191 | 45,198 |
+| `merged_mountpoint_ready` | 41,345 | 44,333 | 48,527 |
+| `overlayfs_mounted` | 44,682 | 48,300 | 52,571 |
+| `pseudo_fs_bound_into_merged` | 48,149 | 51,732 | 57,306 |
+| `merged_self_bound` | 51,539 | 55,058 | 60,857 |
+| `pivot_rootfs_done` | 53,319 | 56,801 | 62,689 |
+| `overlay_pivot_complete` | 55,245 | 58,675 | 64,634 |
+| `network_configured` | 57,127 | 60,532 | 66,573 |
+| `workspace_absent` | 59,141 | 62,552 | 68,707 |
+| `pid1_setup_complete` | 60,001 | 63,391 | 69,568 |
+| `guestd_starting_log` | 61,655 | 65,008 | 71,248 |
+| `exec_listener_bound` | 62,702 | 66,001 | 72,375 |
+| `ready_signal_sent` | 64,842 | 68,094 | 74,270 |
+
+Guest-side total: ~65 ms P50 from `process_start` to `ready_signal_sent`. The
+~950 ms gap between **guest** `ready_signal_sent` and **host**
+`phase_12b_ready_accept` is the kernel boot itself before guestd starts
+running — the dominant cold-launch cost and the explicit target of
+`m80-av33` (Attack the 785 ms `phase_12b_ready_accept`).
+
+This snapshot is checked in at `crates/m80-firecracker/benches/baseline.json`
+and is the reference for `--fail-on-regress` gating going forward.
+
 ## How to re-run
 
 ```bash

@@ -12,9 +12,6 @@
 #   --long-tail     B10: N=1000+ histogram report from existing snapshot
 #   --density       B3: concurrent-ladder sweep (1, 2, 4, 8, 16, 32)
 #
-# All modes honour TEST_MODE=1 + M80_BIN= for non-privileged invocation
-# against scripts/mock-m80.sh.
-#
 # Each mode runs to completion, writes its CSV, and prints a one-line
 # summary. The real-KVM data gathering happens on the privileged runner
 # (m80-16hx7); the mock path verifies the orchestration end-to-end.
@@ -23,7 +20,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TEST_MODE="${TEST_MODE:-0}"
 M80_BIN="${M80_BIN:-./target/release/m80}"
 KIND="${KIND:-minimal}"
 N="${N:-50}"
@@ -50,7 +46,6 @@ Modes:
   --help           show this message
 
 Env vars (with their defaults):
-  TEST_MODE=0        when 1: skip sudo, use M80_BIN as a mock
   M80_BIN=./target/release/m80
   KIND=minimal       ubuntu | minimal
   N=50               total attempts per mode (where applicable)
@@ -59,24 +54,21 @@ Env vars (with their defaults):
   LADDER=1,2,4,8,16  concurrency steps for --density
 
 Example:
-  TEST_MODE=1 M80_BIN=./scripts/mock-m80.sh ./scripts/bench-extras.sh --throughput
+  N=20 ./scripts/bench-extras.sh --throughput
 EOF
 }
 
 # Invoke the m80 binary the same way bench-cold-launch.sh does.
 m80_run() {
-    if [[ "$TEST_MODE" == "1" ]]; then
-        M80_PHASE_TRACE=1 "$M80_BIN" run --egress none -- "$@"
-    else
-        sudo M80_PHASE_TRACE=1 \
-            M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
-            M80_JAILER_BIN=/opt/firecracker/bin/jailer \
-            M80_RUN_ROOT=/var/lib/m80-run \
-            M80_FIRECRACKER_VERSION=v1.15.1 \
-            M80_JAIL_UID="$(id -u)" \
-            M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
-            "$M80_BIN" run --egress none -- "$@"
-    fi
+    sudo M80_PHASE_TRACE=1 \
+        M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
+        M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+        M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
+        M80_RUN_ROOT=/var/lib/m80-run \
+        M80_FIRECRACKER_VERSION=v1.15.1 \
+        M80_JAIL_UID="$(id -u)" \
+        M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
+        "$M80_BIN" run --egress none -- "$@"
 }
 
 mode_throughput() {
@@ -114,30 +106,20 @@ print('  result:', r)
 mode_memory() {
     local out="$OUTDIR/memory.csv"
     echo "timestamp,vm_id,rss_kb,vm_count" > "$out"
-    # In TEST_MODE we sample our own process RSS as a stand-in (the mock
-    # doesn't launch a firecracker child). On the real host this samples
-    # the firecracker children under /var/lib/m80-run.
+    # Sample firecracker children under /var/lib/m80-run. Run with a
+    # launch in flight in another shell for non-zero samples.
     local samples="${MEMORY_SAMPLES:-5}"
     for i in $(seq 1 "$samples"); do
-        local rss vm_count vm_id
-        if [[ "$TEST_MODE" == "1" ]]; then
-            rss=$(awk '/^VmRSS:/{print $2}' /proc/self/status)
-            vm_count=1
-            vm_id="mock-$i"
-        else
-            # Real path: find firecracker processes under m80's run root.
-            local pids
-            pids="$(pgrep -f 'firecracker.*--api-sock' || true)"
-            vm_count=$(echo "$pids" | grep -c . || true)
-            for pid in $pids; do
-                rss=$(awk '/^VmRSS:/{print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
-                echo "$(date +%s),vm-$pid,$rss,$vm_count" >> "$out"
-            done
-            sleep 1
-            continue
-        fi
-        echo "$(date +%s),$vm_id,$rss,$vm_count" >> "$out"
-        sleep 0.2
+        local pids
+        pids="$(pgrep -f 'firecracker.*--api-sock' || true)"
+        local vm_count
+        vm_count=$(echo "$pids" | grep -c . || echo 0)
+        for pid in $pids; do
+            local rss
+            rss=$(awk '/^VmRSS:/{print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
+            echo "$(date +%s),vm-$pid,$rss,$vm_count" >> "$out"
+        done
+        sleep 1
     done
     echo "memory: $samples samples written to $out"
     python3 -c "
@@ -185,13 +167,7 @@ mode_boot_decomp() {
     # for human review; structured parsing is left for a follow-up.
     local out="$OUTDIR/boot-decomp.txt"
     echo "# m80 boot decomposition $(date -Iseconds)" > "$out"
-    if [[ "$TEST_MODE" == "1" ]]; then
-        echo "[mock] [    0.000001] Linux version mock" >> "$out"
-        echo "[mock] [    0.014523] initcall vsock_init returned 0 after 8 usecs" >> "$out"
-        echo "[mock] [    0.021110] initcall virtio_blk_init returned 0 after 12 usecs" >> "$out"
-    else
-        m80_run /bin/dmesg >> "$out" 2>&1 || true
-    fi
+    m80_run /bin/dmesg >> "$out" 2>&1 || true
     echo "boot-decomp: written to $out (parse with 'grep initcall' for per-call us)"
 }
 
@@ -227,7 +203,7 @@ mode_density() {
     IFS=',' read -r -a steps <<<"$LADDER"
     for c in "${steps[@]}"; do
         echo "--- density step: CONCURRENT=$c ---"
-        TEST_MODE="$TEST_MODE" M80_BIN="$M80_BIN" \
+        M80_BIN="$M80_BIN" \
             CONCURRENT="$c" N="$N" WARMUP="$WARMUP" \
             KIND="$KIND" SKIP_LOADED=1 \
             IMAGE_BUILD_DIR_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-bench-test/ubuntu}" \

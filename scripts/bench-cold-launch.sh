@@ -34,7 +34,6 @@
 #   TASKSET=0-3 CPU_GOVERNOR=performance ./scripts/bench-cold-launch.sh
 #   WARMUP=5 ./scripts/bench-cold-launch.sh
 #   ./scripts/bench-cold-launch.sh --dry-run
-#   M80_BIN=/path/to/mock-m80 ./scripts/bench-cold-launch.sh   # test mode
 #
 # Why warmup matters: the first 2-3 launches per cell are colder than
 # the steady state because page caches, TLB entries, and the host
@@ -66,11 +65,6 @@ CONCURRENT="${CONCURRENT:-0}"
 TASKSET="${TASKSET:-}"
 CPU_GOVERNOR="${CPU_GOVERNOR:-}"
 M80_BIN="${M80_BIN:-./target/release/m80}"
-# TEST_MODE=1 skips sudo + cargo + image-dir checks. Used by
-# scripts/test-bench-harness.sh against scripts/mock-m80.sh so the full
-# end-to-end harness (CSV + JSON snapshot + sweep + concurrent) is
-# exercised without a real KVM host.
-TEST_MODE="${TEST_MODE:-0}"
 COLD_ISOLATION=0
 DRY_RUN=0
 # When set, emit a JSONL phase event stream alongside the CSVs.
@@ -239,14 +233,14 @@ if [[ "$CONCURRENT" -gt 0 ]]; then
     fi
 fi
 
-if [[ "$TEST_MODE" != "1" && "$SKIP_LOADED" != "1" ]] && ! command -v stress-ng >/dev/null 2>&1; then
+if [[ "$SKIP_LOADED" != "1" ]] && ! command -v stress-ng >/dev/null 2>&1; then
     echo "stress-ng required for loaded cells; install or run with SKIP_LOADED=1" >&2
     exit 1
 fi
 
 # Build the CLI once (skip if M80_BIN already points at a built binary —
 # e.g., the test harness pointing at a mock).
-if [[ "$TEST_MODE" != "1" && "$M80_BIN" == "./target/release/m80" && ! -x "$M80_BIN" ]]; then
+if [[ "$M80_BIN" == "./target/release/m80" && ! -x "$M80_BIN" ]]; then
     cargo build --release -p m80-cli >/dev/null
 fi
 
@@ -289,48 +283,38 @@ run_one() {
 
     local start_ns end_ns elapsed_ms exit_code
     start_ns=$(date +%s%N)
-    if [[ "$TEST_MODE" == "1" ]]; then
-        # Mock path: no sudo, no env wrapping.
-        if M80_PHASE_TRACE=1 "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
-                --egress none -- /bin/echo "bench-$attempt" \
-                >/dev/null 2>"$stderr_file"; then
-            exit_code=0
-        else
-            exit_code=$?
-        fi
-    else
-        # Best-effort cleanup of prior run-dir before each attempt.
-        sudo IMAGE_BUILD_DIR="$image_dir" \
-             M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
-             M80_JAILER_BIN=/opt/firecracker/bin/jailer \
-             M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
-             M80_KERNEL_IMAGE="$image_dir/vmlinux" \
-             M80_KERNEL_KIND="$KERNEL_KIND" \
-             M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
-             M80_RUN_ROOT=/var/lib/m80-run \
-             M80_FIRECRACKER_VERSION=v1.15.1 \
-             M80_JAIL_UID="$(id -u)" \
-             M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
-             "${TASKSET_PREFIX[@]}" "$M80_BIN" cleanup >/dev/null 2>&1 || true
+    # Best-effort cleanup of prior run-dir before each attempt.
+    sudo IMAGE_BUILD_DIR="$image_dir" \
+         M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
+         M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+         M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
+         M80_KERNEL_IMAGE="$image_dir/vmlinux" \
+         M80_KERNEL_KIND="$KERNEL_KIND" \
+         M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
+         M80_RUN_ROOT=/var/lib/m80-run \
+         M80_FIRECRACKER_VERSION=v1.15.1 \
+         M80_JAIL_UID="$(id -u)" \
+         M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
+         "${TASKSET_PREFIX[@]}" "$M80_BIN" cleanup >/dev/null 2>&1 || true
 
-        if timeout 90 sudo M80_PHASE_TRACE=1 \
-                IMAGE_BUILD_DIR="$image_dir" \
-                M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
-                M80_JAILER_BIN=/opt/firecracker/bin/jailer \
-                M80_KERNEL_IMAGE="$image_dir/vmlinux" \
-                M80_KERNEL_KIND="$KERNEL_KIND" \
-                M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
-                M80_RUN_ROOT=/var/lib/m80-run \
-                M80_FIRECRACKER_VERSION=v1.15.1 \
-                M80_JAIL_UID="$(id -u)" \
-                M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
-                "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
-                --egress none -- /bin/echo "bench-$attempt" \
-                >/dev/null 2>"$stderr_file"; then
-            exit_code=0
-        else
-            exit_code=$?
-        fi
+    if timeout 90 sudo M80_PHASE_TRACE=1 \
+            IMAGE_BUILD_DIR="$image_dir" \
+            M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
+            M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+            M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
+            M80_KERNEL_IMAGE="$image_dir/vmlinux" \
+            M80_KERNEL_KIND="$KERNEL_KIND" \
+            M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
+            M80_RUN_ROOT=/var/lib/m80-run \
+            M80_FIRECRACKER_VERSION=v1.15.1 \
+            M80_JAIL_UID="$(id -u)" \
+            M80_JAIL_GID="$(getent group kvm | cut -d: -f3 || id -g)" \
+            "${TASKSET_PREFIX[@]}" "$M80_BIN" run \
+            --egress none -- /bin/echo "bench-$attempt" \
+            >/dev/null 2>"$stderr_file"; then
+        exit_code=0
+    else
+        exit_code=$?
     fi
     end_ns=$(date +%s%N)
     elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
@@ -516,7 +500,7 @@ if [[ -n "$SWEEP" ]]; then
                 ubuntu)  dir="$IMAGE_UBUNTU" ;;
                 minimal) dir="$IMAGE_MINIMAL" ;;
             esac
-            if [[ "$TEST_MODE" != "1" && ( ! -f "$dir/vmlinux" || ! -f "$dir/output.ext4.manifest.json" ) ]]; then
+            if [[ ! -f "$dir/vmlinux" || ! -f "$dir/output.ext4.manifest.json" ]]; then
                 echo "skip $k: missing $dir/vmlinux or manifest. Build first."
                 continue
             fi

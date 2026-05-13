@@ -75,6 +75,6 @@ python3 scripts/bench-summary.py diff \
 
 - [`docs/perf/bench-harness.md`](../../../docs/perf/bench-harness.md) — full
   knob reference (N, WARMUP, SWEEP, CONCURRENT, TASKSET, CPU_GOVERNOR,
-  --cold-isolation, --dry-run, PHASE_JSONL, M80_BIN, TEST_MODE).
+  --cold-isolation, --dry-run, PHASE_JSONL, M80_BIN).
 - [`docs/perf/cold-launch.md`](../../../docs/perf/cold-launch.md) — the
   perf story (numbers + roadmap).

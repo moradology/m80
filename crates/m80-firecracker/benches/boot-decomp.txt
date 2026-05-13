@@ -1,4 +1,4 @@
-# m80 boot decomposition 2026-05-12T22:31:21+00:00
+# m80 boot decomposition 2026-05-12T22:33:59+00:00
 [mock] [    0.000001] Linux version mock
 [mock] [    0.014523] initcall vsock_init returned 0 after 8 usecs
 [mock] [    0.021110] initcall virtio_blk_init returned 0 after 12 usecs
