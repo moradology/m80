@@ -22,6 +22,8 @@ const KVM_HALT_POLL_NS_SHRINK_PATH: &str = "/sys/module/kvm/parameters/halt_poll
 const KVM_LAPIC_TIMER_ADVANCE_PATH: &str = "/sys/module/kvm/parameters/lapic_timer_advance";
 const KVM_INTEL_PREEMPTION_TIMER_PATH: &str =
     "/sys/module/kvm_intel/parameters/enable_preemption_timer";
+const CPUFREQ_SCALING_DRIVER_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver";
+const CPUFREQ_SCALING_GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
 const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
 const TUN_PATH: &str = "/dev/net/tun";
@@ -115,14 +117,15 @@ pub fn run_with_configs(
     // 5. Host tuning advisories
     check_thp_policy(&mut report);
     check_kvm_halt_poll(&mut report);
+    check_cpu_governor(&mut report);
 
-    // 7. Cgroup host mode
+    // 8. Cgroup host mode
     check_cgroup_mode(host_feature_config.cgroup_mode, &mut report)?;
 
-    // 8. Privilege
+    // 9. Privilege
     let privilege = check_privilege(&mut report)?;
 
-    // 9-11. Firecracker and jailer binaries
+    // 10-12. Firecracker and jailer binaries
     let binaries = discover_binaries(&binary_config)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
@@ -145,7 +148,7 @@ pub fn run_with_configs(
         detail: binaries.jailer_harden_bin.display().to_string(),
     });
 
-    // 12-15. Kernel/rootfs artifacts, run-root, and storage helpers
+    // 13-16. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config)?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
@@ -404,6 +407,48 @@ fn classify_kvm_halt_poll(
     }
 }
 
+fn check_cpu_governor(report: &mut Vec<CheckRow>) {
+    let driver = read_trimmed_sysfs(CPUFREQ_SCALING_DRIVER_PATH);
+    let governor = read_trimmed_sysfs(CPUFREQ_SCALING_GOVERNOR_PATH);
+    report.push(classify_cpu_governor(
+        driver.as_deref(),
+        governor.as_deref(),
+    ));
+}
+
+fn classify_cpu_governor(driver: Option<&str>, governor: Option<&str>) -> CheckRow {
+    let detail = match (driver, governor) {
+        (Some(driver @ ("intel_pstate" | "amd_pstate")), Some(governor)) => format!(
+            "driver={driver}, governor={governor}; hardware-managed pstate handles ramp; no m80 change recommended"
+        ),
+        (Some("acpi-cpufreq"), Some("performance")) => {
+            "driver=acpi-cpufreq, governor=performance; software governor already performance"
+                .to_string()
+        }
+        (Some("acpi-cpufreq"), Some(governor)) => format!(
+            "driver=acpi-cpufreq, governor={governor}; advisory: consider `cpupower frequency-set -g performance` for tighter launch tail (docs/ops/host-tuning.md)"
+        ),
+        (Some(driver), Some(governor)) => format!(
+            "driver={driver}, governor={governor}; unclassified cpufreq driver; no m80 change recommended"
+        ),
+        (Some(driver), None) => format!(
+            "driver={driver}, governor=unavailable; CPU governor check not evaluated (docs/ops/host-tuning.md)"
+        ),
+        (None, Some(governor)) => format!(
+            "driver=unavailable, governor={governor}; CPU governor check not evaluated (docs/ops/host-tuning.md)"
+        ),
+        (None, None) => {
+            "driver=unavailable, governor=unavailable; CPU governor check not evaluated (docs/ops/host-tuning.md)".to_string()
+        }
+    };
+
+    CheckRow {
+        label: "CPU governor".to_string(),
+        passed: true,
+        detail,
+    }
+}
+
 fn read_trimmed_sysfs(path: &str) -> Option<String> {
     fs::read_to_string(path)
         .ok()
@@ -625,8 +670,7 @@ mod tests {
 
     #[test]
     fn preflight_missing_tun_module_typed() {
-        let err =
-            classify_tun_availability(&HashSet::from(["tap", "bridge"]), false).unwrap_err();
+        let err = classify_tun_availability(&HashSet::from(["tap", "bridge"]), false).unwrap_err();
 
         assert!(matches!(err, PreflightError::TunUnavailable));
     }
@@ -643,9 +687,8 @@ mod tests {
 
     #[test]
     fn preflight_missing_nf_conntrack_typed() {
-        let err =
-            classify_nf_conntrack_availability(&HashSet::from(["tap", "bridge"]), false)
-                .unwrap_err();
+        let err = classify_nf_conntrack_availability(&HashSet::from(["tap", "bridge"]), false)
+            .unwrap_err();
 
         assert!(matches!(err, PreflightError::NfConntrackUnavailable));
     }
@@ -839,6 +882,55 @@ flags\t\t: fpu svm tsc
         assert!(row.detail.contains("lapic_timer_advance=1000"));
         assert!(row.detail.contains("enable_preemption_timer=Y"));
         assert!(row.detail.contains("advisory could not be evaluated"));
+    }
+
+    #[test]
+    fn cpu_governor_acpi_non_performance_reports_advisory() {
+        let row = classify_cpu_governor(Some("acpi-cpufreq"), Some("ondemand"));
+
+        assert!(row.passed);
+        assert_eq!(row.label, "CPU governor");
+        assert!(row.detail.contains("driver=acpi-cpufreq"));
+        assert!(row.detail.contains("governor=ondemand"));
+        assert!(row.detail.contains("advisory:"));
+        assert!(row.detail.contains("cpupower frequency-set -g performance"));
+        assert!(row.detail.contains("docs/ops/host-tuning.md"));
+    }
+
+    #[test]
+    fn cpu_governor_acpi_performance_is_clean() {
+        let row = classify_cpu_governor(Some("acpi-cpufreq"), Some("performance"));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("governor=performance"));
+        assert!(!row.detail.contains("advisory:"));
+    }
+
+    #[test]
+    fn cpu_governor_intel_pstate_powersave_is_clean() {
+        let row = classify_cpu_governor(Some("intel_pstate"), Some("powersave"));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("hardware-managed pstate"));
+        assert!(!row.detail.contains("advisory:"));
+    }
+
+    #[test]
+    fn cpu_governor_amd_pstate_powersave_is_clean() {
+        let row = classify_cpu_governor(Some("amd_pstate"), Some("powersave"));
+
+        assert!(row.passed);
+        assert!(row.detail.contains("hardware-managed pstate"));
+        assert!(!row.detail.contains("advisory:"));
+    }
+
+    #[test]
+    fn cpu_governor_unavailable_is_non_blocking() {
+        let row = classify_cpu_governor(None, None);
+
+        assert!(row.passed);
+        assert!(row.detail.contains("CPU governor check not evaluated"));
+        assert!(!row.detail.contains("advisory:"));
     }
 
     fn err_hint_mentions_kvm_enable(err: &PreflightError) -> bool {

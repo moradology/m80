@@ -77,3 +77,32 @@ value is reported because it affects whether LAPIC timer advance is relevant.
 
 This is visibility only. Do not claim a latency win from changing these values
 without a before/after cold-launch artifact.
+
+## CPU Governor
+
+Linux exposes the CPU frequency driver and governor for CPU 0 at:
+
+```sh
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_driver
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+```
+
+Driver type matters. With `intel_pstate` or `amd_pstate`, a `powersave`
+governor is typically a hardware-managed policy: the processor can ramp quickly
+through HWP/CPPC, so m80 does not emit an advisory for that combination.
+
+With `acpi-cpufreq`, governor policy is software-managed. A non-`performance`
+governor can leave CPUs at a lower frequency until launch work begins, adding
+ramp-up latency to boot tail measurements. On latency-priority hosts using
+`acpi-cpufreq`, evaluate:
+
+```sh
+sudo cpupower frequency-set -g performance
+```
+
+Density- or power-priority hosts may keep their distro governor. Treat the
+preflight row as visibility, not a launch precondition.
+
+The bench harness may set `CPU_GOVERNOR=performance` for a controlled
+measurement run. That knob is for before/after data collection and is not a
+production recommendation by itself.
