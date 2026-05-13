@@ -17,6 +17,10 @@ Every `Backend::admit` call on the same backend shares that admission semaphore
 and the same resolved discovery paths. Per-request VM details are carried only
 by `SandboxConfig`; they do not trigger binary/artifact rediscovery.
 
+`Backend::new` performs one synchronous best-effort stale run-root recovery pass
+after constructing the backend state. It does not rerun preflight, spawn a
+background task, or repeat recovery on every admission.
+
 ## Reuse
 
 Services and CLI flows should build a backend once per process or command

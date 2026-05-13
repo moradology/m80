@@ -95,6 +95,15 @@ phase-6 realization. If any later launch phase fails, the guard calls
 `preserve_for_triage` reap owned network residue before releasing the VM
 lifetime.
 
+Stale run-root recovery also calls `cleanup_vm` before deleting a run directory
+when `<run_dir>/network-state.json` still exists. This preserves the only
+durable breadcrumb needed to identify the owned TAP and iptables comment before
+`remove_dir_all` removes it.
+
+Verification:
+`crates/m80-firecracker/src/backend.rs::tests::remove_run_dir_cleans_network_before_deleting_state`
+and `::remove_run_dir_still_reaps_when_network_cleanup_fails`.
+
 ## Foreign Rule Rejection
 
 Before installing into a pre-existing per-VM filter chain, m80 lists the

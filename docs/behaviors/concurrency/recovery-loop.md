@@ -3,16 +3,17 @@
 ## Spawn
 
 `m80-firecracker` v0.1 does not spawn a background run-root recovery task from
-`Backend::new`, `Backend::admit`, or `Sandbox::launch`. Recovery is an explicit
-synchronous API: callers invoke `Backend::recover_stale_run_root()` at the
-orchestration boundary they control.
+`Backend::new`, `Backend::admit`, or `Sandbox::launch`. `Backend::new` runs one
+synchronous startup recovery pass, and callers may still invoke
+`Backend::recover_stale_run_root()` explicitly at later orchestration
+boundaries.
 
-This intentionally differs from predecessor's service-owned periodic loop. m80 is a
-generic library/CLI surface; hidden background recovery would make ownership
-and timing harder for embedders to reason about.
+This intentionally differs from predecessor's service-owned periodic loop. m80
+is a generic library/CLI surface; hidden background recovery would make
+ownership and timing harder for embedders to reason about.
 
 Test:
-- `crates/m80-firecracker/tests/concurrency/recovery_loop.rs::no_background_recovery_task_is_spawned_by_backend_new`
+- `crates/m80-firecracker/tests/concurrency/recovery_loop.rs::backend_new_runs_one_startup_recovery_pass`
 
 ## Interval
 
@@ -34,12 +35,13 @@ Test:
 
 ## Startup Pass
 
-Startup recovery is caller-driven. A CLI/admin command or resident owner can run
-`Backend::recover_stale_run_root()` before first admission; `Backend::new` does
-not do it implicitly.
+Startup recovery runs once during `Backend::new`. This pass is synchronous and
+best-effort: individual run-dir cleanup failures are logged and construction
+continues. A CLI/admin command or resident owner can still run
+`Backend::recover_stale_run_root()` later.
 
 Test:
-- `crates/m80-firecracker/tests/concurrency/recovery_loop.rs::startup_recovery_is_caller_driven_before_first_admission`
+- `crates/m80-firecracker/tests/concurrency/recovery_loop.rs::explicit_recovery_api_remains_available_after_startup_pass`
 
 ## Mid-Launch Race
 

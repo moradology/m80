@@ -16,8 +16,8 @@ recovery won the race.
 
 Socket files, jailer state files, bind-mounted jail contents, and storage
 artifacts are therefore removed as part of the whole run directory. Network TAP
-cleanup is only relevant for outbound NAT; v0.1 rejects outbound NAT before VM
-launch, so clean delete has no TAP to tear down in the no-egress path.
+cleanup is only relevant for outbound NAT; no-egress VMs have no TAP to tear
+down.
 
 This is the m80 form of the older predecessor cleanup behavior recorded at
 `crates/sandbox/agent-sandbox-firecracker/src/lifecycle.rs:1308-1381`, but m80
@@ -25,10 +25,10 @@ uses Rust type-state boundaries rather than one large cleanup function.
 
 ## Recovery On Startup
 
-`Backend::recover_stale_run_root()` is an explicit one-shot recovery pass over
-the backend run-root. It is not hidden inside every `Sandbox::launch` call and
-there is no background loop in `m80-firecracker` v0.1. CLI/admin surfaces call
-it when cleanup is requested.
+`Backend::new()` runs one best-effort recovery pass over the backend run-root.
+`Backend::recover_stale_run_root()` remains an explicit one-shot recovery pass
+callers can run later. Recovery is not hidden inside every `Sandbox::launch`
+call and there is no background loop in `m80-firecracker` v0.1.
 
 For each run-root child directory:
 
@@ -43,6 +43,7 @@ For each run-root child directory:
 6. Ambiguous or unreadable jailer recovery state is logged and preserved.
 
 Removal first detaches any mountpoints under the run directory using
-`/proc/self/mountinfo`, then removes the orphan cgroup leaf, then removes the
-directory tree. This keeps stale bind mounts and cgroups from leaking after a
-crash.
+`/proc/self/mountinfo`, then cleans owned outbound-network state when
+`network-state.json` is still present, then removes the orphan cgroup leaf,
+then removes the directory tree. This keeps stale bind mounts, TAP/iptables
+state, and cgroups from leaking after a crash.

@@ -39,11 +39,15 @@ impl Backend {
     ) -> Result<Self, FcError> {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new(Mutex::new(permits));
-        Ok(Backend {
+        let backend = Backend {
             config,
             effective,
             semaphore,
-        })
+        };
+        if let Err(e) = backend.recover_stale_run_root(false) {
+            warn!(err = %e, "Backend::new: stale run-root recovery failed");
+        }
+        Ok(backend)
     }
 
     /// Acquire one admission permit and return a [`Sandbox`] in Created state.
@@ -85,7 +89,8 @@ impl Backend {
     }
 
     /// Return the merged effective configuration for diagnostics.
-    #[must_use] pub fn show_effective_config(&self) -> EffectiveConfig {
+    #[must_use]
+    pub fn show_effective_config(&self) -> EffectiveConfig {
         self.effective.clone()
     }
 
@@ -148,7 +153,7 @@ impl Backend {
                         "recover_stale_run_root: killing orphaned firecracker"
                     );
                     kill_orphan_pids(jailer_pid, firecracker_pid);
-                    remove_run_dir(&subdir);
+                    remove_run_dir(run_root, &subdir);
                 }
                 Ok(m80_jailer::InspectionDecision::OrphanJail { .. }) => {
                     // `reap_plan` from the plan file is ignored —
@@ -156,10 +161,10 @@ impl Backend {
                     // authoritative mount list, which covers cases the
                     // persisted plan doesn't (partial materialize, older
                     // binary, etc.).
-                    remove_run_dir(&subdir);
+                    remove_run_dir(run_root, &subdir);
                 }
                 Ok(m80_jailer::InspectionDecision::NoJail) => {
-                    remove_run_dir(&subdir);
+                    remove_run_dir(run_root, &subdir);
                 }
                 Err(e) => {
                     warn!(
@@ -245,14 +250,31 @@ fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
 }
 
 /// Unmount everything under `subdir` (using mountinfo as ground truth),
-/// remove the cgroup leaf, then `remove_dir_all`. Without the umount pass,
-/// a SIGKILL'd m80 leaves bind-mounted kernel + rootfs.ext4 inside the
-/// chroot and the rm fails with EBUSY; without the cgroup rm, the empty
-/// leaf in `/sys/fs/cgroup/m80-firecracker/<vm_id>/` stays around forever.
-fn remove_run_dir(subdir: &std::path::Path) {
+/// remove owned network state, remove the cgroup leaf, then `remove_dir_all`.
+/// Without the umount pass, a SIGKILL'd m80 leaves bind-mounted kernel +
+/// rootfs.ext4 inside the chroot and the rm fails with EBUSY; without network
+/// cleanup, the TAP and iptables state outlive the run-dir evidence needed to
+/// remove them; without the cgroup rm, the empty leaf in
+/// `/sys/fs/cgroup/m80-firecracker/<vm_id>/` stays around forever.
+fn remove_run_dir(run_root: &std::path::Path, subdir: &std::path::Path) {
+    remove_run_dir_with_network_cleanup(run_root, subdir, m80_net_outbound::cleanup_vm);
+}
+
+fn remove_run_dir_with_network_cleanup<F>(
+    run_root: &std::path::Path,
+    subdir: &std::path::Path,
+    mut cleanup_network: F,
+) where
+    F: FnMut(&str, &std::path::Path) -> Result<(), m80_net_outbound::NetError>,
+{
     unmount_under(subdir);
     match subdir.file_name().and_then(|s| s.to_str()) {
         Some(vm_id) => {
+            if subdir.join(m80_net_outbound::NETWORK_STATE_FILE).exists() {
+                if let Err(e) = cleanup_network(vm_id, run_root) {
+                    warn!(vm_id, err = %e, "recover_stale_run_root: network cleanup failed");
+                }
+            }
             if let Err(e) = m80_cgroup::cleanup_orphan_subtree(vm_id) {
                 warn!(vm_id, err = %e, "recover_stale_run_root: cgroup cleanup failed");
             }
@@ -310,6 +332,55 @@ fn kill_orphan_pids(jailer_pid: u32, firecracker_pid: u32) {
                 "recover_stale_run_root: pid still present after 2s SIGKILL wait"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    #[test]
+    fn remove_run_dir_cleans_network_before_deleting_state() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let subdir = run_root.path().join("vm-net");
+        std::fs::create_dir_all(&subdir).expect("run dir");
+        let state_path = subdir.join(m80_net_outbound::NETWORK_STATE_FILE);
+        std::fs::write(&state_path, b"{}").expect("network state");
+
+        let calls = RefCell::new(Vec::new());
+        remove_run_dir_with_network_cleanup(run_root.path(), &subdir, |vm_id, cleanup_root| {
+            assert_eq!(vm_id, "vm-net");
+            assert_eq!(cleanup_root, run_root.path());
+            assert!(
+                state_path.exists(),
+                "network cleanup must run before run-dir deletion removes network-state.json"
+            );
+            calls.borrow_mut().push(vm_id.to_owned());
+            Ok(())
+        });
+
+        assert_eq!(calls.into_inner(), vec!["vm-net"]);
+        assert!(!subdir.exists());
+    }
+
+    #[test]
+    fn remove_run_dir_still_reaps_when_network_cleanup_fails() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let subdir = run_root.path().join("vm-net-fail");
+        std::fs::create_dir_all(&subdir).expect("run dir");
+        std::fs::write(subdir.join(m80_net_outbound::NETWORK_STATE_FILE), b"{}")
+            .expect("network state");
+
+        remove_run_dir_with_network_cleanup(run_root.path(), &subdir, |_vm_id, _cleanup_root| {
+            Err(m80_net_outbound::NetError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "synthetic cleanup failure",
+            )))
+        });
+
+        assert!(!subdir.exists());
     }
 }
 

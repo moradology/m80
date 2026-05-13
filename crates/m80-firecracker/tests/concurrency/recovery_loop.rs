@@ -11,14 +11,14 @@ use tempfile::TempDir;
 use crate::common;
 
 #[test]
-fn no_background_recovery_task_is_spawned_by_backend_new() {
+fn backend_new_runs_one_startup_recovery_pass() {
     let dir = TempDir::new().unwrap();
     let orphan = dir.path().join("vm-orphan");
     std::fs::create_dir_all(&orphan).unwrap();
 
     let _backend = common::make_fake_backend(8, dir.path());
 
-    assert!(orphan.exists());
+    assert!(!orphan.exists());
 }
 
 #[test]
@@ -40,11 +40,11 @@ fn recovery_is_synchronous_explicit_call() {
 }
 
 #[test]
-fn startup_recovery_is_caller_driven_before_first_admission() {
+fn explicit_recovery_api_remains_available_after_startup_pass() {
     let dir = TempDir::new().unwrap();
-    let orphan = dir.path().join("vm-orphan");
-    std::fs::create_dir_all(&orphan).unwrap();
     let backend = common::make_fake_backend(8, dir.path());
+    let orphan = dir.path().join("vm-orphan-after-startup");
+    std::fs::create_dir_all(&orphan).unwrap();
 
     assert!(orphan.exists());
     backend.recover_stale_run_root(false).unwrap();
@@ -140,4 +140,3 @@ fn true_request() -> ExecRequest {
         streaming: false,
     }
 }
-

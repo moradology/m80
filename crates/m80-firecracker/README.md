@@ -285,9 +285,10 @@ Host lifecycle diagnostics are appended to `<run_root>/<vm_id>/diagnostics.jsonl
 with schema version 2. The diagnostics writer is optional: if opening or
 writing it fails, boot and teardown continue and the failure is logged through
 `tracing`. See `docs/behaviors/observability/diagnostics-log.md`.
-`Backend::recover_stale_run_root()` is a one-shot orchestrator-driven
-scan; v0.1 has no background recovery thread. Cross-process collision
-avoidance: distinct `<run_root>` paths.
+`Backend::new()` runs one synchronous best-effort stale run-root recovery pass.
+`Backend::recover_stale_run_root()` remains available as an explicit one-shot
+orchestrator-driven scan; v0.1 has no background recovery thread.
+Cross-process collision avoidance: distinct `<run_root>` paths.
 
 ### Boot cmdline behavior
 
@@ -393,11 +394,12 @@ as a runtime retry. See `docs/behaviors/lifecycle/graceful-stop.md`.
 ### Delete and recovery
 
 `StoppedSandbox::delete` removes the entire per-VM run directory and treats an
-already-missing run-dir as clean. Recovery is the explicit
-`Backend::recover_stale_run_root()` pass: live `ownership.lock` directories are
-skipped, `.preserved/` triage archives are skipped, clear orphan directories
-are reaped, orphaned live jail pids are killed before removal, and ambiguous
-jailer or ownership-lock state is preserved. See
+already-missing run-dir as clean. Recovery runs once during `Backend::new()` and
+remains available through the explicit `Backend::recover_stale_run_root()` pass:
+live `ownership.lock` directories are skipped, `.preserved/` triage archives are
+skipped, clear orphan directories are reaped, orphaned live jail pids are killed
+before removal, owned network state is cleaned before `network-state.json` is
+deleted, and ambiguous jailer or ownership-lock state is preserved. See
 `docs/behaviors/lifecycle/delete-and-recovery.md`,
 `docs/behaviors/cleanup/idempotent-teardown.md`, and
 `docs/behaviors/concurrency/stale-detection.md`.

@@ -33,11 +33,12 @@ Tests:
 
 ## Startup Scavenge Reuse
 
-Startup scavenging is explicit: callers invoke
-`Backend::recover_stale_run_root`. It uses the same run-dir removal primitive as
-orphan recovery after a dead owner: unmount anything below the run-dir, cleanup
-the cgroup leaf, then remove the directory. Ambiguous jailer recovery state is
-logged and preserved.
+Startup scavenging runs once during `Backend::new`; callers can also invoke
+`Backend::recover_stale_run_root` explicitly later. It uses the same run-dir
+removal primitive as orphan recovery after a dead owner: unmount anything below
+the run-dir, cleanup owned network state when the state file is still present,
+cleanup the cgroup leaf, then remove the directory. Ambiguous jailer recovery
+state is logged and preserved.
 
 Test:
 - `crates/m80-firecracker/tests/cleanup/idempotent_teardown.rs::startup_scavenge_uses_same_path`
