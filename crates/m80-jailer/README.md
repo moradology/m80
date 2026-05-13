@@ -21,8 +21,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
   recorded to `jailer-state.json`; `Drop` tears the chroot down. Jail-root
   and in-jail directories are created `0700` and chowned to the configured
   jail uid/gid. Bind sources are canonicalized before use; file creation
-  uses `O_NOFOLLOW`; bind mounts use `MS_BIND|MS_REC` and are remounted with
-  `MS_NODEV|MS_NOEXEC|MS_NOSUID` (`MS_RDONLY` for read-only binds).
+  uses `O_NOFOLLOW`; file bind mounts use `MS_BIND`, directory bind mounts use
+  `MS_BIND|MS_REC`, and both are remounted with `MS_NODEV|MS_NOEXEC|MS_NOSUID`
+  (`MS_RDONLY` for read-only binds).
   Bind destinations under `dev`, `proc`, or `sys` are rejected: device nodes
   and virtual kernel filesystems are the official jailer's responsibility,
   not caller-provided host binds.

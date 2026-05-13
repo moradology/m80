@@ -12,6 +12,9 @@ copied in-jail binary for the final exec. Under m80's hardening wrapper umask,
 the live copy is owner-only (`0700`). m80 does not bind-mount the Firecracker
 executable.
 
+Flat-file binds use `MS_BIND` without `MS_REC`; recursive bind is kept only for
+directory-shaped binds.
+
 This is a hard cutover from predecessor's older in-jail names
 `bin/firecracker` and `kernel/vmlinux`.
 
@@ -20,6 +23,8 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/jailer.rs`
 `build_jailer_plan` lines 288-296.
 
 Test: `crates/m80-jailer/tests/jailer/asset_binding.rs::binds_kernel_and_rootfs_ro`.
+Test: `crates/m80-jailer/src/plan.rs::tests::file_bind_mount_flags_omit_recursive_bind`.
+Test: `crates/m80-jailer/src/plan.rs::tests::directory_bind_mount_flags_keep_recursive_bind`.
 Test: `crates/m80-firecracker/tests/end_to_end_real_kvm.rs::end_to_end_real_kvm_jailer_security_parity`.
 
 ## drives-rw

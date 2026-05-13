@@ -146,8 +146,10 @@ impl Plan {
                             path: source.clone(),
                             source: io_source,
                         })?;
+                    let source_is_dir = canonical_source.is_dir();
+                    let dest_is_dir = dest.is_dir();
 
-                    if !dest.is_dir() && !canonical_source.is_dir() {
+                    if !dest_is_dir && !source_is_dir {
                         // dest dir was already created or is the jail root
                         write_file_no_follow(dest, b"")?;
                         materialized.placeholder_files.push(dest.clone());
@@ -157,7 +159,7 @@ impl Plan {
                         Some(canonical_source.as_path()),
                         dest.as_path(),
                         None::<&str>,
-                        MsFlags::MS_BIND | MsFlags::MS_REC,
+                        bind_mount_flags(source_is_dir, dest_is_dir),
                         None::<&str>,
                     )
                     .map_err(|e| JailerError::BindFailed {
@@ -292,6 +294,14 @@ fn bind_remount_flags() -> nix::mount::MsFlags {
         | nix::mount::MsFlags::MS_NOSUID
 }
 
+fn bind_mount_flags(source_is_dir: bool, dest_is_dir: bool) -> nix::mount::MsFlags {
+    let mut flags = nix::mount::MsFlags::MS_BIND;
+    if source_is_dir || dest_is_dir {
+        flags |= nix::mount::MsFlags::MS_REC;
+    }
+    flags
+}
+
 pub(crate) fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), JailerError> {
     use std::io::Write;
 
@@ -330,5 +340,22 @@ mod tests {
              MS_BIND is required for remounting a bind mount; the earlier audit \
              regression m80-l020n.9 was wrong to remove it."
         );
+    }
+
+    #[test]
+    fn file_bind_mount_flags_omit_recursive_bind() {
+        assert_eq!(
+            super::bind_mount_flags(false, false),
+            MsFlags::MS_BIND,
+            "file-to-file bind mounts must not carry MS_REC"
+        );
+    }
+
+    #[test]
+    fn directory_bind_mount_flags_keep_recursive_bind() {
+        let expected = MsFlags::MS_BIND | MsFlags::MS_REC;
+        assert_eq!(super::bind_mount_flags(true, false), expected);
+        assert_eq!(super::bind_mount_flags(false, true), expected);
+        assert_eq!(super::bind_mount_flags(true, true), expected);
     }
 }
