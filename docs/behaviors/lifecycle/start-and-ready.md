@@ -16,7 +16,11 @@ output in `<run_dir>/console.log`, not the readiness synchronization channel.
 
 ## Ready Timeout
 
-The ready accept loop is bounded by `READY_TIMEOUT` (60 seconds in production).
+The ready accept wait is event-driven: m80 waits for listener readability with
+`poll(2)` and then accepts the guestd connection. There is no fixed host sleep
+between guestd connecting and the host noticing readiness.
+
+The wait is bounded by `READY_TIMEOUT` (60 seconds in production).
 If no guestd ready connection arrives before the deadline, m80 returns
 `FcError::GuestdReadyTimeout { path, timeout }` carrying the ready-listener path
 and timeout. This is the m80 equivalent of predecessor's fail-closed

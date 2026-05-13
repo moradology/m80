@@ -2,9 +2,9 @@ use std::io::Write;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use m80_proto::READY_PORT_DEFAULT;
+use m80_proto::{GUEST_PORT_DEFAULT, READY_PORT_DEFAULT};
 
 use super::ready::accept_ready_signal;
 use super::ready::guest_boot_phase_events_from_console_text;
@@ -41,6 +41,32 @@ fn ready_signal_accepts_protocol_version_byte() {
     accept_ready_signal(&listener, &ready_path, Duration::from_secs(1)).unwrap();
 
     client.join().unwrap();
+}
+
+#[test]
+fn ready_signal_wakes_without_fixed_ten_ms_poll_floor() {
+    let dir = tempfile::tempdir().unwrap();
+    let ready_path = dir.path().join("ready.sock");
+    let listener = UnixListener::bind(&ready_path).unwrap();
+    let client_path = ready_path.clone();
+    let delay = Duration::from_millis(41);
+    let client = std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        let mut stream = UnixStream::connect(client_path).unwrap();
+        stream
+            .write_all(&[m80_proto::PROTOCOL_VERSION as u8])
+            .unwrap();
+    });
+
+    let started = Instant::now();
+    accept_ready_signal(&listener, &ready_path, Duration::from_secs(1)).unwrap();
+    let elapsed = started.elapsed();
+
+    client.join().unwrap();
+    assert!(
+        elapsed < delay + Duration::from_millis(8),
+        "ready accept should wake on fd readiness, not the old 10ms poll; elapsed={elapsed:?}"
+    );
 }
 
 #[test]
@@ -82,6 +108,30 @@ fn ready_signal_rejects_wrong_protocol_version() {
         "unexpected error: {err:?}"
     );
     client.join().unwrap();
+}
+
+#[test]
+fn phase_10_open_uds_wakes_on_socket_create_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let api_socket = dir.path().join("firecracker.sock");
+    let server_path = api_socket.clone();
+    let delay = Duration::from_millis(20);
+    let server = std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        let listener = UnixListener::bind(server_path).unwrap();
+        let _conn = listener.accept().unwrap();
+    });
+
+    let started = Instant::now();
+    let client = phase_10_open_uds(&api_socket).unwrap();
+    let elapsed = started.elapsed();
+    drop(client);
+    server.join().unwrap();
+
+    assert!(
+        elapsed < delay + Duration::from_millis(25),
+        "phase 10 should wake from the socket create event, not the old 50ms poll; elapsed={elapsed:?}"
+    );
 }
 
 #[test]

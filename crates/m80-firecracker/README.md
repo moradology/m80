@@ -349,7 +349,9 @@ slots. It defaults to `false`.
 `InstanceStart`: machine config with a CPU template, boot source, shared read-only rootfs drive,
 per-VM rootfs overlay drive, optional workspace scratch drive, optional
 preallocated hotplug drive slots, optional network interface for an
-OutboundNat TAP, virtio-rng entropy device, then vsock. Outbound NAT
+OutboundNat TAP, virtio-rng entropy device, then vsock. Before the first REST
+PUT, launch opens the Firecracker API socket by watching the run directory for
+socket creation rather than polling on a fixed interval. Outbound NAT
 boot-source args append the prepared `m80.net.*` PID-1 tokens after the
 `m80.workspace=<0|1>` marker. After the plan succeeds and before `InstanceStart`, the launch path writes
 `<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
@@ -369,8 +371,10 @@ Cold launch starts Firecracker with `InstanceAction::InstanceStart` and waits
 for guestd readiness through an inverted host listener at
 `<vsock.sock>_<READY_PORT_DEFAULT>`, not by tailing the serial console. Guestd
 connects to that listener and writes the m80 protocol-version byte; the host
-then opens the normal exec channel on guest port 9001 before returning
-`RunningSandbox`. Timeout maps to `FcError::GuestdReadyTimeout`. See
+accepts that connection through `poll(2)` readiness instead of a host-side
+sleep loop. The launch path then returns `RunningSandbox`; the caller's first
+operation opens the normal exec channel on guest port 9001. Timeout maps to
+`FcError::GuestdReadyTimeout`. See
 `docs/behaviors/lifecycle/start-and-ready.md`.
 
 ### Stop

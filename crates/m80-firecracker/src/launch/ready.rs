@@ -1,9 +1,12 @@
 use std::io::Read;
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::prelude::AsFd;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use m80_proto::READY_PORT_DEFAULT;
+use nix::errno::Errno;
+use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 
 use crate::error::{FcError, WireProtocolError};
 
@@ -14,11 +17,6 @@ use crate::error::{FcError, WireProtocolError};
 /// ubuntu) systemd reaching multi-user.target, with comfortable margin
 /// for stress-loaded hosts.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// Accept-loop sleep when the listener is non-blocking and no connection
-/// has arrived yet. This is host-local (m80 polling its own UnixListener),
-/// not interaction with Firecracker's muxer; no EAGAIN race possible.
-const READY_ACCEPT_POLL: Duration = Duration::from_millis(10);
 
 /// Read-deadline for the proto-version byte after `accept()`.
 const READY_VERSION_READ_TIMEOUT: Duration = Duration::from_secs(2);
@@ -175,26 +173,10 @@ pub(super) fn accept_ready_signal(
     timeout: Duration,
 ) -> Result<(), FcError> {
     ready_listener.set_nonblocking(true).map_err(FcError::Io)?;
-    let deadline = std::time::Instant::now() + timeout;
+    let deadline = Instant::now() + timeout;
+    let mut stream = accept_ready_connection(ready_listener, ready_path, deadline, timeout)?;
 
-    let mut stream = loop {
-        // Check deadline before sleeping to avoid overshooting by one poll interval.
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            return Err(FcError::GuestdReadyTimeout {
-                path: ready_path.to_path_buf(),
-                timeout,
-            });
-        }
-        match ready_listener.accept() {
-            Ok((s, _)) => break s,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(remaining.min(READY_ACCEPT_POLL));
-            }
-            Err(e) => return Err(FcError::Io(e)),
-        }
-    };
-
+    stream.set_nonblocking(false).map_err(FcError::Io)?;
     stream
         .set_read_timeout(Some(READY_VERSION_READ_TIMEOUT))
         .map_err(FcError::Io)?;
@@ -208,4 +190,49 @@ pub(super) fn accept_ready_signal(
     }
     drop(stream);
     Ok(())
+}
+
+fn accept_ready_connection(
+    ready_listener: &UnixListener,
+    ready_path: &Path,
+    deadline: Instant,
+    timeout: Duration,
+) -> Result<UnixStream, FcError> {
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FcError::GuestdReadyTimeout {
+                path: ready_path.to_path_buf(),
+                timeout,
+            });
+        }
+
+        let mut fds = [PollFd::new(ready_listener.as_fd(), PollFlags::POLLIN)];
+        match poll(&mut fds, poll_timeout_for_duration(remaining)?) {
+            Ok(0) => {
+                return Err(FcError::GuestdReadyTimeout {
+                    path: ready_path.to_path_buf(),
+                    timeout,
+                });
+            }
+            Ok(_) => match ready_listener.accept() {
+                Ok((stream, _)) => return Ok(stream),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(FcError::Io(e)),
+            },
+            Err(Errno::EINTR) => continue,
+            Err(errno) => {
+                return Err(FcError::Io(std::io::Error::from_raw_os_error(errno as i32)));
+            }
+        }
+    }
+}
+
+fn poll_timeout_for_duration(duration: Duration) -> Result<PollTimeout, FcError> {
+    PollTimeout::try_from(duration).map_err(|e| {
+        FcError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("poll timeout out of range: {e}"),
+        ))
+    })
 }

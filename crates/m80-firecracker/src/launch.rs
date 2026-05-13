@@ -9,6 +9,8 @@
 //!   no polling, no muxer EAGAIN race.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
+use std::os::unix::prelude::AsFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::Arc;
@@ -27,6 +29,8 @@ use m80_proto::{
 };
 use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
 use m80_vsock::{Channel, VsockError};
+use nix::errno::Errno;
+use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 
 use crate::diagnostics::phase;
 use crate::error::{ConfigError, FcError, WireProtocolError};
@@ -1001,31 +1005,154 @@ fn phase_7_outbound_guest_config(
 
 /// Phase 10: open the Firecracker UDS REST client.
 ///
-/// Retries for up to 5 s to allow Firecracker to create the socket after
-/// jailer exec.
+/// Waits for the API socket creation event instead of sleeping on a fixed
+/// interval. A short capped backoff is used only when inotify is unavailable
+/// or a created socket is not accepting connections yet.
 fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
     let deadline = Instant::now() + API_SOCKET_TIMEOUT;
+    let mut fallback_delay = Duration::from_millis(1);
     loop {
-        if api_socket.exists() {
-            match Client::new(api_socket) {
-                Ok(client) => return Ok(client),
-                Err(e) if Instant::now() < deadline => {
-                    tracing::debug!(err = %e, "phase_10_open_uds: Client::new failed, retrying");
+        match Client::new(api_socket) {
+            Ok(client) => return Ok(client),
+            Err(e) if api_socket.exists() && Instant::now() >= deadline => {
+                return Err(FcError::Client(e));
+            }
+            Err(e) if api_socket.exists() => {
+                tracing::debug!(err = %e, "phase_10_open_uds: Client::new failed, retrying");
+                sleep_api_socket_backoff(&mut fallback_delay, deadline);
+            }
+            Err(_) if Instant::now() >= deadline => {
+                return Err(FcError::ApiSocketTimeout {
+                    path: api_socket.to_path_buf(),
+                    timeout: API_SOCKET_TIMEOUT,
+                });
+            }
+            Err(e) => {
+                tracing::debug!(err = %e, "phase_10_open_uds: API socket missing, waiting for create event");
+                if let Err(err) = wait_for_api_socket_create(api_socket, deadline) {
+                    tracing::debug!(err = %err, "phase_10_open_uds: event wait failed, using short fallback backoff");
+                    sleep_api_socket_backoff(&mut fallback_delay, deadline);
                 }
-                Err(e) => return Err(FcError::Client(e)),
             }
         }
+
         if Instant::now() >= deadline {
             return Err(FcError::ApiSocketTimeout {
                 path: api_socket.to_path_buf(),
                 timeout: API_SOCKET_TIMEOUT,
             });
         }
-        // 50 ms poll interval: short enough that the common case (socket
-        // appears in < 200 ms after jailer exec) doesn't add perceptible
-        // latency; long enough that we aren't spin-burning under API_SOCKET_TIMEOUT.
-        std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+fn sleep_api_socket_backoff(delay: &mut Duration, deadline: Instant) {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return;
+    }
+    std::thread::sleep(remaining.min(*delay));
+    *delay = (*delay * 2).min(Duration::from_millis(25));
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_api_socket_create(api_socket: &Path, deadline: Instant) -> Result<(), FcError> {
+    use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
+
+    let parent = api_socket.parent().ok_or_else(|| {
+        FcError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("api socket has no parent: {}", api_socket.display()),
+        ))
+    })?;
+    let filename = api_socket.file_name().ok_or_else(|| {
+        FcError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("api socket has no filename: {}", api_socket.display()),
+        ))
+    })?;
+
+    let inotify =
+        Inotify::init(InitFlags::IN_NONBLOCK | InitFlags::IN_CLOEXEC).map_err(errno_to_io_error)?;
+    inotify
+        .add_watch(
+            parent,
+            AddWatchFlags::IN_CREATE | AddWatchFlags::IN_MOVED_TO | AddWatchFlags::IN_ATTRIB,
+        )
+        .map_err(errno_to_io_error)?;
+
+    if api_socket.exists() {
+        return Ok(());
+    }
+
+    loop {
+        wait_for_fd_readable(inotify.as_fd(), api_socket, deadline)?;
+        match inotify.read_events() {
+            Ok(events) => {
+                if events
+                    .iter()
+                    .any(|event| event_name_matches(event.name.as_deref(), filename))
+                    || api_socket.exists()
+                {
+                    return Ok(());
+                }
+            }
+            Err(Errno::EAGAIN) | Err(Errno::EINTR) => continue,
+            Err(errno) => return Err(errno_to_io_error(errno)),
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn wait_for_api_socket_create(_api_socket: &Path, _deadline: Instant) -> Result<(), FcError> {
+    Err(FcError::Io(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "inotify is only available on Linux",
+    )))
+}
+
+fn event_name_matches(event_name: Option<&OsStr>, filename: &OsStr) -> bool {
+    event_name.is_some_and(|name| name == filename)
+}
+
+fn wait_for_fd_readable(
+    fd: std::os::unix::prelude::BorrowedFd<'_>,
+    path: &Path,
+    deadline: Instant,
+) -> Result<(), FcError> {
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FcError::ApiSocketTimeout {
+                path: path.to_path_buf(),
+                timeout: API_SOCKET_TIMEOUT,
+            });
+        }
+        let mut fds = [PollFd::new(fd, PollFlags::POLLIN)];
+        match poll(&mut fds, poll_timeout_for_duration(remaining)?) {
+            Ok(0) => {
+                return Err(FcError::ApiSocketTimeout {
+                    path: path.to_path_buf(),
+                    timeout: API_SOCKET_TIMEOUT,
+                });
+            }
+            Ok(_) => return Ok(()),
+            Err(Errno::EINTR) => continue,
+            Err(errno) => return Err(errno_to_io_error(errno)),
+        }
+    }
+}
+
+fn poll_timeout_for_duration(duration: Duration) -> Result<PollTimeout, FcError> {
+    PollTimeout::try_from(duration).map_err(|e| {
+        FcError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("poll timeout out of range: {e}"),
+        ))
+    })
+}
+
+fn errno_to_io_error(errno: Errno) -> FcError {
+    FcError::Io(std::io::Error::from_raw_os_error(errno as i32))
 }
 
 /// Phase 11: PUT all Firecracker resources in the documented order.

@@ -12,6 +12,14 @@ vCPU count, memory size, and `smt=false`. Omitted sizing uses the m80 defaults:
 `phase_11_rest_puts` applies that plan before the launch path issues
 `InstanceStart`.
 
+Before applying the preboot plan, `phase_10_open_uds` opens Firecracker's API
+UDS client. When the socket is not present yet, m80 watches the socket's parent
+directory for a matching create/move/attribute event and wakes immediately when
+Firecracker creates the path. The old fixed 50 ms host sleep is not part of the
+normal launch path. If inotify is unavailable, or if the socket path exists but
+is not accepting connections yet, m80 uses a short capped 1/2/4/8/16/25 ms
+backoff until `API_SOCKET_TIMEOUT`.
+
 ## Boot Source
 
 m80 PUTs `/boot-source` after machine config and before any drives. The kernel
