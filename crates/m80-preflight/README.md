@@ -116,6 +116,9 @@ which is the right place for a security review to start.
   includes the suggestion to add the user to the `kvm` group, and
   `FirecrackerVersionMismatch` includes both the expected and actual versions
   plus the env var to override.
+- Firecracker CVE floor maintenance is documented in
+  `docs/security/firecracker-cve-floor.md` and
+  `docs/decisions/0004-firecracker-cve-floor-bump-process.md`.
 
 ## Public surface
 
