@@ -140,12 +140,19 @@ impl Plan {
                         mount_propagation_private = true;
                     }
 
-                    let canonical_source =
-                        std::fs::canonicalize(source).map_err(|io_source| JailerError::Io {
+                    let mount_source =
+                        bind_mount_source(source).map_err(|io_source| JailerError::Io {
                             path: source.clone(),
                             source: io_source,
                         })?;
-                    let source_is_dir = canonical_source.is_dir();
+                    let source_meta =
+                        std::fs::metadata(mount_source.as_path()).map_err(|io_source| {
+                            JailerError::Io {
+                                path: source.clone(),
+                                source: io_source,
+                            }
+                        })?;
+                    let source_is_dir = source_meta.is_dir();
                     let dest_is_dir = dest.is_dir();
 
                     if !dest_is_dir && !source_is_dir {
@@ -155,7 +162,7 @@ impl Plan {
                     }
 
                     mount(
-                        Some(canonical_source.as_path()),
+                        Some(mount_source.as_path()),
                         dest.as_path(),
                         None::<&str>,
                         bind_mount_flags(source_is_dir, dest_is_dir),
@@ -188,7 +195,7 @@ impl Plan {
                         // chown of the source path is what the in-chroot
                         // firecracker actually sees.
                         chown(
-                            canonical_source.as_path(),
+                            mount_source.as_path(),
                             Some(Uid::from_raw(materialized.plan.config.uid)),
                             Some(Gid::from_raw(materialized.plan.config.gid)),
                         )
@@ -293,6 +300,23 @@ fn bind_remount_flags() -> nix::mount::MsFlags {
         | nix::mount::MsFlags::MS_NOSUID
 }
 
+fn bind_mount_source(source: &Path) -> Result<PathBuf, io::Error> {
+    if is_proc_fd_path(source) {
+        return Ok(source.to_path_buf());
+    }
+    std::fs::canonicalize(source)
+}
+
+fn is_proc_fd_path(source: &Path) -> bool {
+    let mut components = source.components();
+    matches!(components.next(), Some(Component::RootDir))
+        && matches!(components.next(), Some(Component::Normal(proc)) if proc == "proc")
+        && matches!(components.next(), Some(Component::Normal(_pid)))
+        && matches!(components.next(), Some(Component::Normal(fd)) if fd == "fd")
+        && components.next().is_some()
+        && components.next().is_none()
+}
+
 fn bind_mount_flags(source_is_dir: bool, dest_is_dir: bool) -> nix::mount::MsFlags {
     let mut flags = nix::mount::MsFlags::MS_BIND;
     if source_is_dir || dest_is_dir {
@@ -351,6 +375,8 @@ pub(crate) fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), Jail
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use nix::mount::MsFlags;
 
     #[test]
@@ -391,5 +417,12 @@ mod tests {
     fn private_mount_flags_make_recursive_private() {
         let expected = MsFlags::MS_PRIVATE | MsFlags::MS_REC;
         assert_eq!(super::private_mount_flags(), expected);
+    }
+
+    #[test]
+    fn proc_fd_bind_sources_are_not_canonicalized() {
+        let source = Path::new("/proc/123/fd/9");
+
+        assert_eq!(super::bind_mount_source(source).unwrap(), source);
     }
 }

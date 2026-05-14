@@ -3,14 +3,21 @@
 use std::env;
 use std::ffi::OsString;
 use std::fs;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::{Read as _, Seek as _, SeekFrom};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use m80_image_manifest::ManifestError;
 use m80_image_manifest::{KernelKind, Manifest};
+use nix::libc::O_NOFOLLOW;
 use nix::sys::statvfs::statvfs;
+use sha2::{Digest, Sha256};
 
-use crate::PreflightError;
+use crate::{PinnedRootfs, PreflightError};
 
 /// Environment key for overriding the kernel image path.
 pub const ENV_KERNEL_IMAGE: &str = "M80_KERNEL_IMAGE";
@@ -77,6 +84,8 @@ pub(crate) struct ArtifactPreflight {
     pub(crate) kernel: PathBuf,
     /// Resolved rootfs image path.
     pub(crate) rootfs: PathBuf,
+    /// Open rootfs descriptor whose contents matched the manifest.
+    pub(crate) pinned_rootfs: PinnedRootfs,
     /// Validated provenance manifest.
     pub(crate) manifest: Manifest,
     /// Validated run-root path.
@@ -116,14 +125,19 @@ pub(crate) fn verify_artifacts(
     cached_manifest: Option<&Manifest>,
 ) -> Result<ArtifactPreflight, PreflightError> {
     let kernel = discover_kernel(config)?;
-    let (rootfs, manifest) = verify_rootfs_and_manifest(config, cached_manifest)?;
+    if config.kernel_image.is_none() {
+        verify_artifact_dir_permissions(&config.artifact_dir)?;
+    }
+    let (pinned_rootfs, manifest) = verify_rootfs_and_manifest(config, cached_manifest)?;
+    verify_rootfs_parent_permissions(pinned_rootfs.path())?;
     let run_root = verify_run_root(&config.run_root)?;
     let storage_helpers = verify_storage_helpers(config.helper_search_path.as_ref())?;
     let run_root_reflink = probe_run_root_reflink(&run_root, config.helper_search_path.as_ref());
 
     Ok(ArtifactPreflight {
         kernel,
-        rootfs,
+        rootfs: pinned_rootfs.path().to_path_buf(),
+        pinned_rootfs,
         manifest,
         run_root,
         run_root_reflink,
@@ -167,7 +181,7 @@ pub(crate) fn discover_kernel(config: &ArtifactPreflightConfig) -> Result<PathBu
 fn verify_rootfs_and_manifest(
     config: &ArtifactPreflightConfig,
     cached_manifest: Option<&Manifest>,
-) -> Result<(PathBuf, Manifest), PreflightError> {
+) -> Result<(PinnedRootfs, Manifest), PreflightError> {
     let rootfs = config
         .rootfs_image
         .clone()
@@ -180,9 +194,8 @@ fn verify_rootfs_and_manifest(
         });
     }
 
-    if !rootfs.exists() {
-        return Err(PreflightError::RootfsNotFound);
-    }
+    let mut rootfs_file = open_rootfs_no_follow(&rootfs)?;
+    verify_artifact_file_permissions(&rootfs)?;
 
     let manifest_path = manifest_path_for_rootfs(&rootfs);
     let manifest = if let Some(manifest) = cached_manifest {
@@ -197,8 +210,9 @@ fn verify_rootfs_and_manifest(
         manifest.verify(parent)?;
         manifest
     };
+    verify_rootfs_fd_sha256(&mut rootfs_file, &rootfs, &manifest.output_rootfs_sha256)?;
 
-    Ok((rootfs, manifest))
+    Ok((PinnedRootfs::from_file(rootfs, rootfs_file), manifest))
 }
 
 pub(crate) fn manifest_path_for_rootfs(rootfs: &Path) -> PathBuf {
@@ -213,6 +227,97 @@ fn parse_kernel_kind(raw: &str) -> Result<KernelKind, PreflightError> {
             actual: other.to_owned(),
         }),
     }
+}
+
+fn open_rootfs_no_follow(rootfs: &Path) -> Result<File, PreflightError> {
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(rootfs)
+        .map_err(|source| {
+            if source.kind() == std::io::ErrorKind::NotFound {
+                PreflightError::RootfsNotFound
+            } else {
+                PreflightError::PathIo {
+                    path: rootfs.to_path_buf(),
+                    source,
+                }
+            }
+        })
+}
+
+fn verify_rootfs_fd_sha256(
+    file: &mut File,
+    rootfs: &Path,
+    expected: &str,
+) -> Result<(), PreflightError> {
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|source| PreflightError::PathIo {
+                path: rootfs.to_path_buf(),
+                source,
+            })?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let actual = hex::encode(hasher.finalize());
+    file.seek(SeekFrom::Start(0))
+        .map_err(|source| PreflightError::PathIo {
+            path: rootfs.to_path_buf(),
+            source,
+        })?;
+    if expected != actual {
+        return Err(PreflightError::Manifest(ManifestError::Sha256Mismatch {
+            field: "output_rootfs_image".to_string(),
+            expected: expected.to_string(),
+            actual,
+        }));
+    }
+    Ok(())
+}
+
+fn verify_artifact_dir_permissions(path: &Path) -> Result<(), PreflightError> {
+    verify_not_group_or_world_writable(path)
+}
+
+fn verify_rootfs_parent_permissions(rootfs: &Path) -> Result<(), PreflightError> {
+    let parent = rootfs.parent().unwrap_or_else(|| Path::new("/"));
+    verify_not_group_or_world_writable(parent)
+}
+
+fn verify_artifact_file_permissions(path: &Path) -> Result<(), PreflightError> {
+    let metadata = fs::metadata(path).map_err(|source| PreflightError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode & 0o022 != 0 {
+        return Err(PreflightError::ArtifactFileWritable {
+            path: path.to_path_buf(),
+            mode,
+        });
+    }
+    Ok(())
+}
+
+fn verify_not_group_or_world_writable(path: &Path) -> Result<(), PreflightError> {
+    let metadata = fs::metadata(path).map_err(|source| PreflightError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode & 0o022 != 0 {
+        return Err(PreflightError::ArtifactDirectoryWritable {
+            path: path.to_path_buf(),
+            mode,
+        });
+    }
+    Ok(())
 }
 
 fn verify_run_root(run_root: &Path) -> Result<PathBuf, PreflightError> {

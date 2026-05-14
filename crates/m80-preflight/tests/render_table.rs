@@ -2,7 +2,7 @@
 //! status markers for each fixture row.
 
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
-use m80_preflight::{CheckRow, Discovery, PrivilegeStatus};
+use m80_preflight::{CheckRow, Discovery, PinnedRootfs, PrivilegeStatus};
 use std::path::PathBuf;
 
 fn fixture_manifest() -> Manifest {
@@ -26,6 +26,9 @@ fn fixture_manifest() -> Manifest {
 }
 
 fn fixture_discovery() -> Discovery {
+    let rootfs = tempfile::NamedTempFile::new().unwrap();
+    let rootfs_path = rootfs.path().to_path_buf();
+    let rootfs_file = rootfs.reopen().unwrap();
     let rows = vec![
         CheckRow {
             label: "OS gate".into(),
@@ -49,6 +52,7 @@ fn fixture_discovery() -> Discovery {
         jailer_harden_bin: PathBuf::from("/opt/m80/bin/m80-jailer-harden"),
         kernel: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),
         rootfs: PathBuf::from("/opt/m80/images/rootfs.ext4"),
+        pinned_rootfs: PinnedRootfs::from_file(rootfs_path, rootfs_file),
         manifest: fixture_manifest(),
         run_root: PathBuf::from("/var/run/m80"),
         privilege: PrivilegeStatus::Root,

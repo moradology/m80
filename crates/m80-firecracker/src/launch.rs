@@ -130,7 +130,7 @@ impl Sandbox {
             {
                 phase_3_storage_prep(
                     &vm_id,
-                    &backend_config.discovery.rootfs,
+                    &backend_config.discovery.pinned_rootfs.proc_fd_path(),
                     &self.config,
                     &run_dir,
                 )
@@ -491,7 +491,7 @@ impl Sandbox {
             {
                 phase_3_storage_prep(
                     &vm_id,
-                    &backend_config.discovery.rootfs,
+                    &backend_config.discovery.pinned_rootfs.proc_fd_path(),
                     &self.config,
                     &run_dir,
                 )

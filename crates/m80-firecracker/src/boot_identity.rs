@@ -96,12 +96,16 @@ mod tests {
     use super::*;
 
     fn discovery() -> Discovery {
+        let rootfs = tempfile::NamedTempFile::new().unwrap();
+        let rootfs_path = rootfs.path().to_path_buf();
+        let rootfs_file = rootfs.reopen().unwrap();
         Discovery {
             firecracker_bin: PathBuf::from("/bin/firecracker"),
             jailer_bin: PathBuf::from("/bin/jailer"),
             jailer_harden_bin: PathBuf::from("/bin/m80-jailer-harden"),
             kernel: PathBuf::from("/artifacts/vmlinux"),
             rootfs: PathBuf::from("/artifacts/output.ext4"),
+            pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
             manifest: Manifest::new(
                 PathBuf::from("m80-guestd"),
                 "c".repeat(64),

@@ -395,12 +395,16 @@ mod tests {
     use super::*;
 
     fn fake_discovery(run_root: &std::path::Path) -> m80_preflight::Discovery {
+        let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
+        let rootfs_path = rootfs.path().to_path_buf();
+        let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
         m80_preflight::Discovery {
             firecracker_bin: PathBuf::from("/tmp/firecracker"),
             jailer_bin: PathBuf::from("/tmp/jailer"),
             jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
             kernel: PathBuf::from("/tmp/vmlinux"),
             rootfs: PathBuf::from("/tmp/rootfs.ext4"),
+            pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
             manifest: m80_image_manifest::Manifest::new(
                 "/tmp/m80-guestd".into(),
                 "0".repeat(64),

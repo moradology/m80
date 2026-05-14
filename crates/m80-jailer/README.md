@@ -20,9 +20,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   relying on the m80 process's already-verified privilege. Steps are
   recorded to `jailer-state.json`; `Drop` tears the chroot down. Jail-root
   and in-jail directories are created `0700` and chowned to the configured
-  jail uid/gid. Bind sources are canonicalized before use; file creation
-  uses `O_NOFOLLOW`; before the first bind, the process marks `/` recursively
-  private with `MS_PRIVATE|MS_REC` so m80's pre-jailer bind plan cannot
+  jail uid/gid. Bind sources are canonicalized before use except
+  `/proc/<pid>/fd/<fd>` sources, which are mounted as-is so preflight-pinned
+  artifact descriptors are not resolved back through swappable pathnames; file
+  creation uses `O_NOFOLLOW`; before the first bind, the process marks `/`
+  recursively private with `MS_PRIVATE|MS_REC` so m80's pre-jailer bind plan cannot
   propagate through a shared host mount namespace. File bind mounts use
   `MS_BIND`, directory bind mounts use `MS_BIND|MS_REC`, and both are remounted
   with `MS_NODEV|MS_NOEXEC|MS_NOSUID` (`MS_RDONLY` for read-only binds).

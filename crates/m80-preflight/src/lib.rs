@@ -5,8 +5,12 @@
 
 #![deny(missing_docs)]
 
+use std::fs::File;
 use std::io;
+use std::os::fd::AsRawFd;
+use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use caps::Capability;
 use caps::CapsHashSet;
@@ -95,6 +99,9 @@ pub struct Discovery {
     pub kernel: PathBuf,
     /// Resolved rootfs image path.
     pub rootfs: PathBuf,
+    /// Open rootfs file descriptor whose bytes matched the manifest during
+    /// preflight.
+    pub pinned_rootfs: PinnedRootfs,
     /// Validated provenance manifest.
     pub manifest: Manifest,
     /// Resolved run-root path.
@@ -110,6 +117,48 @@ impl Discovery {
     #[must_use]
     pub fn render_table(&self) -> String {
         table::render(&self.report)
+    }
+}
+
+/// Rootfs artifact opened and held by preflight after sha256 verification.
+#[derive(Debug, Clone)]
+pub struct PinnedRootfs {
+    path: PathBuf,
+    file: Arc<File>,
+}
+
+impl PinnedRootfs {
+    /// Build a pinned rootfs handle from an already-open file.
+    ///
+    /// The caller is responsible for verifying the file contents before
+    /// placing this handle in a [`Discovery`].
+    #[must_use]
+    pub fn from_file(path: PathBuf, file: File) -> Self {
+        Self {
+            path,
+            file: Arc::new(file),
+        }
+    }
+
+    /// Original resolved rootfs path used for diagnostics and identity files.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Process-qualified procfs path for this pinned rootfs descriptor.
+    ///
+    /// The path uses `/proc/<pid>/fd/<fd>` rather than `/proc/self/fd/<fd>`
+    /// because launch passes it through subprocess and mount-planning
+    /// boundaries. Consumers can open or bind this path while this handle is
+    /// alive without re-resolving the original rootfs pathname.
+    #[must_use]
+    pub fn proc_fd_path(&self) -> PathBuf {
+        PathBuf::from(format!(
+            "/proc/{}/fd/{}",
+            std::process::id(),
+            self.file.as_raw_fd()
+        ))
     }
 }
 
@@ -296,6 +345,26 @@ pub enum PreflightError {
     #[error("rootfs image not found")]
     RootfsNotFound,
 
+    /// Artifact directory permissions allow an untrusted group/world writer to
+    /// swap boot artifacts between verification and launch.
+    #[error("artifact directory is group/world-writable: {} mode {mode:o}", path.display())]
+    ArtifactDirectoryWritable {
+        /// Directory whose mode was unsafe.
+        path: PathBuf,
+        /// Unix permission bits observed on the directory.
+        mode: u32,
+    },
+
+    /// Rootfs artifact permissions allow an untrusted group/world writer to
+    /// mutate the same inode after verification.
+    #[error("artifact file is group/world-writable: {} mode {mode:o}", path.display())]
+    ArtifactFileWritable {
+        /// File whose mode was unsafe.
+        path: PathBuf,
+        /// Unix permission bits observed on the file.
+        mode: u32,
+    },
+
     /// Manifest read/validate failed.
     #[error("manifest: {0}")]
     Manifest(#[from] ManifestError),
@@ -424,6 +493,12 @@ impl PreflightError {
             }
             Self::RootfsNotFound => {
                 "set M80_ROOTFS_IMAGE to the absolute path of a built m80 rootfs image"
+            }
+            Self::ArtifactDirectoryWritable { .. } => {
+                "remove group/world write permission from the artifact directory before running m80"
+            }
+            Self::ArtifactFileWritable { .. } => {
+                "remove group/world write permission from the artifact file before running m80"
             }
             Self::Manifest(_) => {
                 "rebuild the guest image with `m80-image-build` to regenerate a valid manifest"

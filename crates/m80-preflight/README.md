@@ -85,9 +85,12 @@ which is the right place for a security review to start.
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
   18. **Rootfs + manifest** — manifest schema validates, including
-     `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256. This is the
-     boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
-     not rehash these artifacts again for every VM.
+     `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256.
+     The rootfs itself is opened with `O_RDONLY | O_NOFOLLOW`, hashed from
+     that descriptor, rewound, and kept in `Discovery` for launch to bind via
+     procfs. This is the boot-artifact trust boundary for `m80-firecracker`;
+     launch phase 3 does not re-open the original rootfs path.
+     Group/world-writable rootfs files and artifact directories fail closed.
   19. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
   20. **Run-root filesystem** — creates a short-lived probe file under the
@@ -144,8 +147,12 @@ which is the right place for a security review to start.
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
 - `Discovery { firecracker_bin, jailer_bin, jailer_harden_bin, kernel: PathBuf,
-  rootfs: PathBuf, manifest: m80_image_manifest::Manifest, run_root: PathBuf,
+  rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
+  manifest: m80_image_manifest::Manifest, run_root: PathBuf,
   privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
+- `PinnedRootfs::from_file(path, file) -> PinnedRootfs`,
+  `PinnedRootfs::path() -> &Path`, and
+  `PinnedRootfs::proc_fd_path() -> PathBuf`.
 - `Discovery::render_table()` → `String`.
 - `CheckRow { label, passed, detail }`.
 - `PrivilegeStatus { Root, CapabilityBearing }`.
@@ -174,7 +181,10 @@ which is the right place for a security review to start.
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
   effective capability set),
   `JailerBinaryNotFound`, `JailerHardenBinaryNotFound`, `NonAbsolutePath { kind, path }`,
-  `KernelNotFound`, `RootfsNotFound`, `Manifest(m80_image_manifest::ManifestError)`,
+  `KernelNotFound`, `RootfsNotFound`,
+  `ArtifactDirectoryWritable { path, mode }`,
+  `ArtifactFileWritable { path, mode }`,
+  `Manifest(m80_image_manifest::ManifestError)`,
   `RunRootUnavailable { reason: String }` (covers both missing-dir and
   insufficient-space), `StorageHelperMissing(String)`, `PathIo { path, source }`,
   and `SystemIo { operation, source }`.
@@ -208,3 +218,5 @@ which is the right place for a security review to start.
 - Hint coverage: every error variant carries a non-empty hint string.
 - Sentinel cache: corrupt sentinel rewrite, boot-id invalidation, and rootfs
   metadata invalidation.
+- `tests/security/rootfs_fd_pinning.rs` — proc-fd handle continues to read the
+  verified rootfs bytes after the original path is replaced.

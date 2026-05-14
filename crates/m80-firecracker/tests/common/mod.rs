@@ -26,12 +26,16 @@ pub(crate) use m80_test_helpers::env::{env_lock, EnvRestore};
 /// Thin wrapper so call sites keep the `common::fake_discovery(dir)` spelling.
 #[allow(dead_code)]
 pub(crate) fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
+    let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
+    let rootfs_path = rootfs.path().to_path_buf();
+    let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
     m80_preflight::Discovery {
         firecracker_bin: PathBuf::from("/tmp/firecracker"),
         jailer_bin: PathBuf::from("/tmp/jailer"),
         jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
         kernel: PathBuf::from("/tmp/vmlinux"),
         rootfs: PathBuf::from("/tmp/rootfs.ext4"),
+        pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
         manifest: fake_manifest(),
         run_root: run_root.to_path_buf(),
         privilege: m80_preflight::PrivilegeStatus::Root,

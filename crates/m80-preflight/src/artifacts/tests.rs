@@ -1,6 +1,8 @@
 use std::ffi::OsString;
 use std::fs;
 #[cfg(unix)]
+use std::os::unix::fs::symlink;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -17,6 +19,8 @@ const SHA256_EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495
 
 fn write_empty(path: &Path) {
     fs::write(path, b"").unwrap();
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
 }
 
 fn write_helpers(dir: &Path) -> OsString {
@@ -65,6 +69,11 @@ fn fixture_config() -> (
 ) {
     let artifact_dir = tempfile::tempdir().unwrap();
     let helper_dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        fs::set_permissions(artifact_dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(helper_dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    }
     let older_kernel = artifact_dir.path().join("vmlinux-2026");
     let newer_kernel = artifact_dir.path().join("vmlinux-2027");
     write_empty(&older_kernel);
@@ -230,14 +239,88 @@ fn manifest_sha_mismatch_fails_preflight() {
 }
 
 #[test]
-fn cached_manifest_skips_sha256_verification() {
+fn cached_manifest_still_verifies_pinned_rootfs_sha256() {
     let (_artifact_dir, _helper_dir, config) = fixture_config();
     let manifest = Manifest::read(&manifest_path(&config)).unwrap();
     fs::write(config.rootfs_image.as_ref().unwrap(), b"tampered rootfs").unwrap();
 
-    let verified = verify_artifacts(&config, Some(&manifest)).unwrap();
+    let err = verify_artifacts(&config, Some(&manifest)).unwrap_err();
 
-    assert_eq!(verified.manifest.output_rootfs_sha256, SHA256_EMPTY);
+    match err {
+        PreflightError::Manifest(ManifestError::Sha256Mismatch { field, .. }) => {
+            assert_eq!(field, "output_rootfs_image");
+        }
+        other => panic!("expected rootfs sha mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn pinned_rootfs_fd_survives_path_replacement_after_preflight() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let verified = verify_artifacts(&config, None).unwrap();
+
+    let replacement = config.artifact_dir.join("replacement-rootfs.ext4");
+    fs::write(&replacement, b"replacement rootfs").unwrap();
+    fs::rename(&replacement, config.rootfs_image.as_ref().unwrap()).unwrap();
+
+    let pinned_bytes = fs::read(verified.pinned_rootfs.proc_fd_path()).unwrap();
+    assert_eq!(pinned_bytes, b"");
+}
+
+#[cfg(unix)]
+#[test]
+fn rootfs_symlink_is_rejected_before_manifest_verification() {
+    let (_artifact_dir, _helper_dir, mut config) = fixture_config();
+    let link = config.artifact_dir.join("rootfs-link.ext4");
+    symlink(config.rootfs_image.as_ref().unwrap(), &link).unwrap();
+    config.rootfs_image = Some(link);
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::PathIo { source, .. } => {
+            assert_eq!(source.raw_os_error(), Some(nix::libc::ELOOP));
+        }
+        other => panic!("expected rootfs symlink rejection, got {other:?}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn group_writable_artifact_dir_fails_closed() {
+    let (artifact_dir, _helper_dir, config) = fixture_config();
+    fs::set_permissions(artifact_dir.path(), fs::Permissions::from_mode(0o775)).unwrap();
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::ArtifactDirectoryWritable { path, mode } => {
+            assert_eq!(path, artifact_dir.path());
+            assert_eq!(mode, 0o775);
+        }
+        other => panic!("expected writable artifact dir rejection, got {other:?}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn group_writable_rootfs_file_fails_closed() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    fs::set_permissions(
+        config.rootfs_image.as_ref().unwrap(),
+        fs::Permissions::from_mode(0o664),
+    )
+    .unwrap();
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::ArtifactFileWritable { path, mode } => {
+            assert_eq!(path, *config.rootfs_image.as_ref().unwrap());
+            assert_eq!(mode, 0o664);
+        }
+        other => panic!("expected writable artifact file rejection, got {other:?}"),
+    }
 }
 
 #[test]

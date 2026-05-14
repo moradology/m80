@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -116,6 +117,12 @@ fn run_quickstart(
         path: artifact_dir.to_path_buf(),
         source: e,
     })?;
+    fs::set_permissions(artifact_dir, fs::Permissions::from_mode(0o755)).map_err(|e| {
+        FcError::PathIo {
+            path: artifact_dir.to_path_buf(),
+            source: e,
+        }
+    })?;
     fs::create_dir_all(run_root).map_err(|e| FcError::PathIo {
         path: run_root.to_path_buf(),
         source: e,
@@ -125,8 +132,14 @@ fn run_quickstart(
         let src = extract_dir.join(file);
         let dst = artifact_dir.join(file);
         fs::copy(&src, &dst).map_err(|e| FcError::PathIo {
-            path: dst,
+            path: dst.clone(),
             source: e,
+        })?;
+        fs::set_permissions(&dst, fs::Permissions::from_mode(0o644)).map_err(|e| {
+            FcError::PathIo {
+                path: dst,
+                source: e,
+            }
         })?;
     }
     relocate_manifest(artifact_dir)?;

@@ -378,7 +378,9 @@ Firecracker block-device surface for the VM lifetime.
 Boot artifact identity is verified before backend construction by
 `m80-preflight` (`Rootfs + manifest`). `Sandbox::launch` does not recompute
 kernel/rootfs/guestd sha256s in phase 3; phase 3 only prepares per-VM storage
-from already-admitted artifacts.
+from already-admitted artifacts. The rootfs bind source is
+`Discovery::pinned_rootfs.proc_fd_path()`, so launch does not re-open the
+original rootfs pathname after preflight.
 
 `SandboxConfig::overlay_size_bytes` controls the sparse overlay size
 (default: 512 MiB). The overlay grows as the guest writes; the sparse

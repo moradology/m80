@@ -286,6 +286,7 @@ pub fn run_with_configs(
         jailer_harden_bin: binaries.jailer_harden_bin,
         kernel: artifacts.kernel,
         rootfs: artifacts.rootfs,
+        pinned_rootfs: artifacts.pinned_rootfs,
         manifest: artifacts.manifest,
         run_root: artifacts.run_root,
         privilege,

@@ -187,6 +187,22 @@ fn rootfs_not_found_has_hint() {
 }
 
 #[test]
+fn artifact_directory_writable_has_hint() {
+    assert_hint(&PreflightError::ArtifactDirectoryWritable {
+        path: "/opt/m80/artifacts".into(),
+        mode: 0o777,
+    });
+}
+
+#[test]
+fn artifact_file_writable_has_hint() {
+    assert_hint(&PreflightError::ArtifactFileWritable {
+        path: "/opt/m80/artifacts/rootfs.ext4".into(),
+        mode: 0o666,
+    });
+}
+
+#[test]
 fn manifest_error_has_hint() {
     let inner = ManifestError::UnsupportedSchemaVersion(99);
     assert_hint(&PreflightError::Manifest(inner));

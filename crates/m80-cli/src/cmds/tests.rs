@@ -11,12 +11,16 @@ use m80_preflight::{CgroupPreflightMode, CheckRow, Discovery, PreflightError};
 use m80_proto::ExecStatus;
 
 fn fake_discovery() -> Discovery {
+    let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
+    let rootfs_path = rootfs.path().to_path_buf();
+    let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
     let mut d = Discovery {
         firecracker_bin: "/tmp/firecracker".into(),
         jailer_bin: "/tmp/jailer".into(),
         jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
         kernel: "/tmp/vmlinux".into(),
         rootfs: "/tmp/rootfs.ext4".into(),
+        pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
         manifest: fake_manifest(),
         run_root: "/tmp/m80-run".into(),
         privilege: m80_preflight::PrivilegeStatus::Root,
