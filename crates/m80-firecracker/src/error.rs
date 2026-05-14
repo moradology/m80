@@ -232,6 +232,13 @@ pub enum FcError {
     /// Host-side protocol failure after a vsock channel was established.
     #[error("protocol: {0}")]
     Protocol(WireProtocolError),
+    /// Guestd did not produce a terminal exec frame within the host-enforced
+    /// call-wide budget.
+    #[error("host exec deadline expired after {timeout:?}")]
+    ExecTimeoutHost {
+        /// Call-wide host budget that expired.
+        timeout: Duration,
+    },
     /// Snapshot capture or restore failed.
     #[error("snapshot: {0}")]
     Snapshot(#[from] SnapshotError),

@@ -7,11 +7,11 @@
 
 mod debug_wire;
 
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sha2::Digest;
 
@@ -219,6 +219,75 @@ impl Channel {
         }
         Ok(envelope)
     }
+
+    /// Receive one protobuf frame before `deadline`.
+    ///
+    /// Returns `Ok(None)` when the deadline expires before the full frame is
+    /// read. The method checks the deadline before each underlying socket read,
+    /// so a peer cannot hold the call open indefinitely by dripping bytes just
+    /// under [`BRIDGE_IO_TIMEOUT`].
+    ///
+    /// `Ok(None)` is terminal for this channel: partial frame bytes may already
+    /// have been consumed into the frame decoder. Drop the channel instead of
+    /// attempting another receive.
+    pub fn recv_raw_with_deadline(
+        &mut self,
+        deadline: Instant,
+    ) -> Result<Option<RawEnvelope>, VsockError> {
+        let mut reader = DeadlineReader {
+            inner: &mut self.buf_reader,
+            deadline,
+        };
+        match m80_proto::read_raw_frame(&mut reader) {
+            Ok(envelope) => {
+                if debug_wire::is_enabled("vsock") {
+                    tracing::trace!(direction = "in", kind = %envelope.kind, "vsock frame");
+                }
+                Ok(Some(envelope))
+            }
+            Err(ProtoError::Io(err))
+                if is_read_timeout(err.kind()) && Instant::now() >= deadline =>
+            {
+                Ok(None)
+            }
+            Err(err) => Err(VsockError::Proto(err)),
+        }
+    }
+}
+
+struct DeadlineReader<'a> {
+    inner: &'a mut BufReader<UnixStream>,
+    deadline: Instant,
+}
+
+impl Read for DeadlineReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let Some(timeout) = read_timeout_before(self.deadline) else {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "vsock receive deadline expired",
+            ));
+        };
+        self.inner.get_ref().set_read_timeout(Some(timeout))?;
+        match self.inner.read(buf) {
+            Ok(read) => Ok(read),
+            Err(err) if is_read_timeout(err.kind()) && Instant::now() >= self.deadline => Err(
+                io::Error::new(io::ErrorKind::TimedOut, "vsock receive deadline expired"),
+            ),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+fn read_timeout_before(deadline: Instant) -> Option<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .map(|remaining| remaining.min(BRIDGE_IO_TIMEOUT))
+}
+
+fn is_read_timeout(kind: io::ErrorKind) -> bool {
+    matches!(kind, io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock)
 }
 
 impl Drop for Channel {

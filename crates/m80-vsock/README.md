@@ -51,11 +51,19 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
 the write timeout on every Firecracker UDS stream opened by
 `Channel::open_uds_only`.
 
+`Channel::recv_raw_with_deadline(deadline)` lets callers impose a call-wide
+receive deadline in addition to the no-progress timeout. It returns `Ok(None)`
+when the deadline expires before a complete frame arrives, including when the
+peer keeps sending partial bytes just under the normal bridge timeout. `None`
+is terminal for that channel because partial frame bytes may already have been
+consumed.
+
 ## Public surface
 
 - `Channel::open_uds_only(...)`, `Channel::send(&mut Envelope<T>)`,
   `Channel::recv() -> Envelope<U>`, `Channel::recv_raw() -> RawEnvelope`,
-  and `Channel::try_clone_sender()`.
+  `Channel::recv_raw_with_deadline(...) -> Option<RawEnvelope>`, and
+  `Channel::try_clone_sender()`.
 - `ChannelSender::send(&mut Envelope<T>)` for same-connection control frames.
   Send paths borrow the caller's envelope through `RawEnvelope::from_typed`
   and leave frame coalescing to `m80-proto`.
@@ -112,7 +120,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
 - `tests/handshake.rs` checks successful handshake, bad ack to
   `HandshakeFailed`, and missing UDS to `Io`.
 - `tests/frame_round_trip.rs` checks envelope round trips and cloned-sender
-  same-connection control frames.
+  same-connection control frames, including deadline expiry during a slow-drip
+  partial frame.
 - `tests/debug_wire_redaction.rs` checks that `M80_DEBUG_WIRE=vsock` does not
   log `ExecRequest.env` values while preserving the frame sent to the peer.
 - `tests/drop_cleanup.rs` checks that dropping a `Channel` leaves the

@@ -330,6 +330,7 @@ impl RunningSandbox {
         if let Some(max_duration_ms) = max_duration_ms {
             envelope = envelope.with_max_duration_ms(max_duration_ms);
         }
+        let host_deadline = max_duration_ms.map(host_exec_deadline);
         let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
         let started_at_unix_ms = unix_ms_now();
         // NOTE — BufReader + cloned-stream concurrency model
@@ -392,18 +393,17 @@ impl RunningSandbox {
         let mut expected_stderr_seq = 0u32;
 
         loop {
-            let frame = match channel.recv_raw() {
+            let frame = match recv_raw_for_exec(&mut channel, host_deadline) {
                 Ok(frame) => frame,
                 Err(e) => {
-                    let err = super::protocol::recv_error(e, "streaming exec");
                     crate::diagnostics::record_protocol_error(
                         &mut self.diagnostics,
                         &self.vm_id,
                         &request_id,
                         "exec_exit",
-                        &err,
+                        &e,
                     );
-                    return Err(err);
+                    return Err(e);
                 }
             };
             let kind = frame.kind.clone();
@@ -548,6 +548,38 @@ impl Drop for ExecActivityGuard {
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
         self.active_execs.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct HostExecDeadline {
+    deadline: Instant,
+    timeout: Duration,
+}
+
+fn host_exec_deadline(max_duration_ms: u64) -> HostExecDeadline {
+    let timeout = Duration::from_millis(max_duration_ms);
+    HostExecDeadline {
+        deadline: Instant::now() + timeout,
+        timeout,
+    }
+}
+
+fn recv_raw_for_exec(
+    channel: &mut Channel,
+    host_deadline: Option<HostExecDeadline>,
+) -> Result<RawEnvelope, FcError> {
+    let Some(host_deadline) = host_deadline else {
+        return channel
+            .recv_raw()
+            .map_err(|err| super::protocol::recv_error(err, "streaming exec"));
+    };
+    match channel.recv_raw_with_deadline(host_deadline.deadline) {
+        Ok(Some(frame)) => Ok(frame),
+        Ok(None) => Err(FcError::ExecTimeoutHost {
+            timeout: host_deadline.timeout,
+        }),
+        Err(err) => Err(super::protocol::recv_error(err, "streaming exec")),
     }
 }
 

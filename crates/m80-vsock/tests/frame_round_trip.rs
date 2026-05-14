@@ -7,6 +7,7 @@ mod common;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
+use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
@@ -120,6 +121,34 @@ fn send_recv_envelope_round_trips() {
     assert_eq!(response.payload.status, ExecStatus::Completed);
     assert_eq!(response.payload.stdout, b"hello\n");
     assert_eq!(response.payload.exit_code, Some(0));
+
+    drop(channel);
+    server.join().unwrap();
+}
+
+#[test]
+fn recv_raw_with_deadline_expires_during_slow_drip_frame() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vsock.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+
+    let server = std::thread::spawn(move || {
+        let mut reader = accept_and_handshake(&listener, 22222);
+        for byte in [0, 0, 0, 8, b's', b'l', b'o', b'w'] {
+            let _ = reader.get_mut().write_all(&[byte]);
+            let _ = reader.get_mut().flush();
+            std::thread::sleep(Duration::from_millis(30));
+        }
+    });
+
+    let mut channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
+    let started = Instant::now();
+    let frame = channel
+        .recv_raw_with_deadline(Instant::now() + Duration::from_millis(50))
+        .unwrap();
+
+    assert!(frame.is_none());
+    assert!(started.elapsed() < Duration::from_secs(1));
 
     drop(channel);
     server.join().unwrap();

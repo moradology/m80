@@ -56,6 +56,10 @@ Firecracker cannot see arbitrary host paths outside the chroot.
 same VM. Each call opens a fresh vsock connection to guestd, performs exactly
 one request/response exchange, and closes that connection; the VM and its
 writable overlay remain alive for the next call.
+`exec_with_max_duration` and `exec_streaming_with_max_duration` enforce that
+budget on the host receive loop as well as forwarding it to guestd, so a
+malicious guest daemon cannot keep an exec call alive indefinitely by dripping
+partial response bytes.
 
 `SandboxConfig::one_shot = true` changes that reuse contract. The first user
 exec or PTY request marks the running VM consumed before the guest request is
