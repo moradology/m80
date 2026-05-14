@@ -41,6 +41,9 @@ pub struct JailerConfig {
     /// Ask the official jailer to launch firecracker as PID 1 in a new PID
     /// namespace.
     pub new_pid_ns: bool,
+    /// Ask `m80-jailer-harden` to enter a private network namespace before
+    /// execing the official jailer.
+    pub new_net_ns: bool,
     /// Ask the official jailer to double-fork before exec'ing Firecracker.
     /// When set, `jailer_pid` is recorded as `0` because no live jailer parent
     /// remains for m80 to signal.

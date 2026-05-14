@@ -267,6 +267,7 @@ pub(crate) fn launch_attack_in_jailer_with_resource_limits(
         sockets: vec![JailerSocket::Firecracker],
         resource_limits,
         new_pid_ns: false,
+        new_net_ns: false,
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,

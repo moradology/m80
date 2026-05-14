@@ -34,6 +34,7 @@ fn launch_observes_pid_file_without_fixed_twenty_five_ms_floor() {
         sockets: Vec::new(),
         resource_limits: ResourceLimits::default(),
         new_pid_ns: false,
+        new_net_ns: false,
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,

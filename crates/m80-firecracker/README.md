@@ -199,18 +199,18 @@ wire-frame pairing only, not an agent semantic identifier.
 peer bytes from transport failures.
 
 `SandboxConfig::network` supports three caller intents. `NoEgress` launches with
-no guest NIC and no host iptables changes. `AllowOutbound` resolves to
-OutboundNat: launch realizes the run-root bridge and per-VM TAP, prepares the
-PID-1 `m80.net.*` boot tokens, installs the host NAT/filter policy, emits a
-Firecracker `NetworkInterface` PUT for `eth0`, and records ownership state for
-failure/delete cleanup. `JoinNetns { spec: NetnsSpec }` delegates namespace,
+no guest NIC, no host iptables changes, and a private empty network namespace
+for the Firecracker VMM process. `AllowOutbound` resolves to OutboundNat: launch
+realizes the run-root bridge and per-VM TAP, prepares the PID-1 `m80.net.*`
+boot tokens, installs the host NAT/filter policy, emits a Firecracker
+`NetworkInterface` PUT for `eth0`, and records ownership state for
+failure/delete cleanup. `AllowOutbound` is still guest egress policy in the host
+VMM network namespace; placing that VMM into a private namespace requires a
+cross-namespace data path. `JoinNetns { spec: NetnsSpec }` delegates namespace,
 TAP, routing, and firewall ownership to the caller: m80 validates the namespace
 path, passes it to Firecracker's official jailer as `--netns`, emits the
 Firecracker `NetworkInterface` PUT for the caller-created TAP, and passes
 static PID-1 guest network tokens for `eth0`.
-`NoEgress` and `AllowOutbound` are guest networking policies, not private
-network namespaces for the Firecracker VMM process; the only current VMM netns
-placement promise is `JoinNetns`.
 
 Cold and restored launches ask the official Firecracker jailer for a private
 PID namespace, so Firecracker is PID 1 in that namespace and m80 records

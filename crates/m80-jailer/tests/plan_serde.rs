@@ -79,6 +79,7 @@ fn resource_limits_pid_namespace_daemonize_and_netns_persist_in_plan_json() {
         stack: Some(8 * 1024 * 1024),
     };
     cfg.new_pid_ns = true;
+    cfg.new_net_ns = true;
     cfg.daemonize = true;
     cfg.new_cgroup_ns = true;
     cfg.netns_path = Some(PathBuf::from("/var/run/netns/m80-test"));
@@ -97,6 +98,7 @@ fn resource_limits_pid_namespace_daemonize_and_netns_persist_in_plan_json() {
     assert_eq!(v["config"]["resource_limits"]["core"], 0);
     assert_eq!(v["config"]["resource_limits"]["stack"], 8 * 1024 * 1024);
     assert_eq!(v["config"]["new_pid_ns"], true);
+    assert_eq!(v["config"]["new_net_ns"], true);
     assert_eq!(v["config"]["daemonize"], true);
     assert_eq!(v["config"]["new_cgroup_ns"], true);
     assert_eq!(v["config"]["netns_path"], "/var/run/netns/m80-test");

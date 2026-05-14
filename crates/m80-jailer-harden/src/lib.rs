@@ -34,6 +34,8 @@ pub struct HardenArgs {
     pub(crate) resource_limits: Vec<ResourceLimit>,
     /// Enter a private cgroup namespace before execing the official jailer.
     pub(crate) new_cgroup_ns: bool,
+    /// Enter a private network namespace before execing the official jailer.
+    pub(crate) new_net_ns: bool,
 }
 
 impl HardenArgs {
@@ -47,6 +49,12 @@ impl HardenArgs {
     #[must_use]
     pub fn new_cgroup_ns(&self) -> bool {
         self.new_cgroup_ns
+    }
+
+    /// Whether the wrapper should enter a new network namespace before exec.
+    #[must_use]
+    pub fn new_net_ns(&self) -> bool {
+        self.new_net_ns
     }
 }
 
@@ -118,6 +126,9 @@ pub enum HardenError {
     /// `unshare(CLONE_NEWCGROUP)` failed.
     #[error("unshare cgroup namespace: {0}")]
     CgroupNamespace(#[source] nix::Error),
+    /// `unshare(CLONE_NEWNET)` failed.
+    #[error("unshare network namespace: {0}")]
+    NetworkNamespace(#[source] nix::Error),
     /// `setrlimit` failed.
     #[error("setrlimit {kind}: {source}")]
     SetResourceLimit {
@@ -155,6 +166,7 @@ where
     let mut gid = None;
     let mut resource_limits = Vec::new();
     let mut new_cgroup_ns = false;
+    let mut new_net_ns = false;
 
     while let Some(arg) = iter.next() {
         if arg == OsStr::new("--") {
@@ -169,6 +181,7 @@ where
                 jailer_args,
                 resource_limits,
                 new_cgroup_ns,
+                new_net_ns,
             });
         }
 
@@ -199,6 +212,9 @@ where
             }
             "--new-cgroup-ns" => {
                 new_cgroup_ns = true;
+            }
+            "--new-net-ns" => {
+                new_net_ns = true;
             }
             other => {
                 return Err(HardenError::InvalidValue {
@@ -253,9 +269,13 @@ fn parse_resource_limit(value: OsString) -> Result<ResourceLimit, HardenError> {
 pub fn apply_process_hardening(
     resource_limits: &[ResourceLimit],
     new_cgroup_ns: bool,
+    new_net_ns: bool,
 ) -> Result<(), HardenError> {
     if new_cgroup_ns {
         unshare(CloneFlags::CLONE_NEWCGROUP).map_err(HardenError::CgroupNamespace)?;
+    }
+    if new_net_ns {
+        unshare(CloneFlags::CLONE_NEWNET).map_err(HardenError::NetworkNamespace)?;
     }
     apply_resource_limits(resource_limits)?;
     setgroups(&[]).map_err(HardenError::SetGroups)?;

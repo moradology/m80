@@ -54,12 +54,14 @@ fn launch_jailer_config_enables_pid_namespace() {
             run_dir: &run_dir,
             daemonize: false,
             netns_path: None,
+            private_netns: true,
         },
         Vec::new(),
         vec![JailerSocket::Firecracker, JailerSocket::Vsock],
     );
 
     assert!(config.new_pid_ns);
+    assert!(config.new_net_ns);
     assert_eq!(config.daemonize, false);
     assert_eq!(
         config.seccomp_filter_path.as_deref(),

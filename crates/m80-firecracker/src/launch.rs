@@ -170,6 +170,7 @@ impl Sandbox {
                     storage: &storage,
                     daemonize: self.config.daemonize,
                     netns_path: join_netns_path(&self.config.network),
+                    private_netns: private_vmm_netns(&self.config.network),
                     snapshot_parent: None,
                     snapshot_bind_mode: BindMode::Rw,
                 })
@@ -537,6 +538,7 @@ impl Sandbox {
                     storage: &storage,
                     daemonize: self.config.daemonize,
                     netns_path: join_netns_path(&self.config.network),
+                    private_netns: private_vmm_netns(&self.config.network),
                     snapshot_parent: Some(snapshot_plan.host_parent.as_path()),
                     snapshot_bind_mode: BindMode::Ro,
                 })
@@ -852,6 +854,7 @@ struct JailerMaterializeInput<'a> {
     storage: &'a StoragePrep,
     daemonize: bool,
     netns_path: Option<&'a Path>,
+    private_netns: bool,
     snapshot_parent: Option<&'a Path>,
     snapshot_bind_mode: BindMode,
 }
@@ -865,6 +868,7 @@ struct JailerLaunchConfigInput<'a> {
     run_dir: &'a Path,
     daemonize: bool,
     netns_path: Option<&'a Path>,
+    private_netns: bool,
 }
 
 fn phase_4_jailer_materialize(
@@ -937,6 +941,7 @@ fn phase_4_jailer_materialize(
             run_dir: input.run_dir,
             daemonize: input.daemonize,
             netns_path: input.netns_path,
+            private_netns: input.private_netns,
         },
         bindings,
         sockets,
@@ -975,6 +980,7 @@ fn build_jailer_launch_config(
         sockets,
         resource_limits: m80_jailer::ResourceLimits::default(),
         new_pid_ns: true,
+        new_net_ns: input.private_netns,
         daemonize: input.daemonize,
         new_cgroup_ns: false,
         netns_path: input.netns_path.map(Path::to_path_buf),
@@ -988,6 +994,10 @@ fn join_netns_path(policy: &crate::NetworkPolicy) -> Option<&Path> {
         crate::NetworkPolicy::JoinNetns { spec } => Some(spec.netns_path.as_path()),
         crate::NetworkPolicy::NoEgress | crate::NetworkPolicy::AllowOutbound { .. } => None,
     }
+}
+
+fn private_vmm_netns(policy: &crate::NetworkPolicy) -> bool {
+    matches!(policy, crate::NetworkPolicy::NoEgress)
 }
 
 /// Phase 5: probe that cgroup v2 is available when `UnifiedV2` mode is

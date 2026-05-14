@@ -144,6 +144,7 @@ mod tests {
                 sockets: Vec::new(),
                 resource_limits: crate::types::ResourceLimits::default(),
                 new_pid_ns: false,
+                new_net_ns: false,
                 daemonize: false,
                 new_cgroup_ns: false,
                 netns_path: None,

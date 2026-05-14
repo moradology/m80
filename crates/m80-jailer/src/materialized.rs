@@ -102,6 +102,9 @@ impl MaterializedJail {
                 if self.plan.config.new_cgroup_ns {
                     command.arg("--new-cgroup-ns");
                 }
+                if self.plan.config.new_net_ns {
+                    command.arg("--new-net-ns");
+                }
                 command.arg("--");
                 (jailer_harden_bin, command)
             } else {

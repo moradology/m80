@@ -57,6 +57,26 @@ fn shell_request(script: &str) -> ExecRequest {
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
+fn no_egress_firecracker_runs_in_private_netns() {
+    let (running, run_dir) = launch_no_egress_vm();
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+    let firecracker_pid = firecracker_pid(&run_dir);
+
+    let host_netns = std::fs::read_link("/proc/self/ns/net").expect("host netns");
+    let firecracker_netns =
+        std::fs::read_link(format!("/proc/{firecracker_pid}/ns/net")).expect("firecracker netns");
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+
+    assert_ne!(
+        firecracker_netns, host_netns,
+        "NoEgress Firecracker must not run in the host network namespace"
+    );
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
 fn no_egress_blocks_external_ip_traffic() {
     let (mut running, run_dir) = launch_no_egress_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
@@ -76,6 +96,19 @@ fn no_egress_blocks_external_ip_traffic() {
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
+}
+
+fn firecracker_pid(run_dir: &std::path::Path) -> u32 {
+    let state_path = run_dir.join("jailer-state.json");
+    let state: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&state_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", state_path.display())),
+    )
+    .expect("jailer-state.json parses");
+    state["firecracker_pid"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("firecracker_pid missing from {}", state_path.display()))
+        as u32
 }
 
 #[test]

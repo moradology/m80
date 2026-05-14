@@ -43,6 +43,7 @@ fn parse_captures_official_jailer_and_forwarded_args() {
         "--rlimit",
         "memlock=0",
         "--new-cgroup-ns",
+        "--new-net-ns",
         "--",
         "--uid",
         "3000",
@@ -88,6 +89,7 @@ fn parse_captures_official_jailer_and_forwarded_args() {
         ]
     );
     assert!(parsed.new_cgroup_ns());
+    assert!(parsed.new_net_ns());
 }
 
 #[test]

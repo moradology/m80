@@ -178,6 +178,7 @@ echo fake-firecracker-stderr >&2
             stack: Some(8 * 1024 * 1024),
         },
         new_pid_ns: false,
+        new_net_ns: true,
         daemonize: false,
         new_cgroup_ns: true,
         netns_path: None,
@@ -244,6 +245,7 @@ echo fake-firecracker-stderr >&2
         "{harden_args}"
     );
     assert!(harden_args.contains("--new-cgroup-ns"), "{harden_args}");
+    assert!(harden_args.contains("--new-net-ns"), "{harden_args}");
 }
 
 #[test]
@@ -334,6 +336,7 @@ fi
         sockets: Vec::new(),
         resource_limits: crate::types::ResourceLimits::default(),
         new_pid_ns: true,
+        new_net_ns: false,
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
@@ -411,6 +414,7 @@ echo $$ > "$jail_root/firecracker.pid"
         sockets: Vec::new(),
         resource_limits: crate::types::ResourceLimits::default(),
         new_pid_ns: false,
+        new_net_ns: false,
         daemonize: true,
         new_cgroup_ns: false,
         netns_path: None,
@@ -498,6 +502,7 @@ echo $$ > "$jail_root/firecracker.pid"
         sockets: Vec::new(),
         resource_limits: crate::types::ResourceLimits::default(),
         new_pid_ns: false,
+        new_net_ns: false,
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
