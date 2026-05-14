@@ -351,8 +351,8 @@ fn jailer_dir_perms_enforced_against_non_owner() {
         .materialize()
         .expect("materialize must succeed as root");
     let meta = std::fs::metadata(jail.jail_root()).expect("jail root metadata");
-    assert_eq!(meta.mode() & 0o777, 0o700);
-    assert_eq!(meta.uid(), 3000);
+    assert_eq!(meta.mode() & 0o777, 0o730);
+    assert_eq!(meta.uid(), 0);
     assert_eq!(meta.gid(), 3000);
 
     let output = Command::new("setpriv")
@@ -462,7 +462,7 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
     assert_status_contains(jailed.firecracker_pid(), "CapEff:", "0000000000000000");
     assert_status_contains(jailed.firecracker_pid(), "CapInh:", "0000000000000000");
     assert_status_contains(jailed.firecracker_pid(), "CapAmb:", "0000000000000000");
-    assert_status_contains(jailed.firecracker_pid(), "CapBnd:", "0000000000000000");
+    assert_cap_bounding_set_is_official_jailer_minimum(jailed.firecracker_pid());
     assert_status_contains(jailed.firecracker_pid(), "SigBlk:", "0000000000000000");
     assert_supplementary_groups_empty(jailed.firecracker_pid());
     assert_exec_file_is_private_copy(
@@ -513,6 +513,30 @@ fn assert_status_contains(pid: u32, label: &str, expected: &str) {
         line.contains(expected),
         "{label} line does not contain {expected:?}: {line}"
     );
+}
+
+fn assert_cap_bounding_set_is_official_jailer_minimum(pid: u32) {
+    let mask = status_hex_value(pid, "CapBnd");
+    assert_eq!(
+        mask,
+        cap_mask(&[0, 1, 6, 7, 18, 21, 27]),
+        "CapBnd must retain only the official jailer setup capabilities"
+    );
+}
+
+fn status_hex_value(pid: u32, label: &str) -> u64 {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).expect("status");
+    let prefix = format!("{label}:\t");
+    let line = status
+        .lines()
+        .find(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("missing {label} in status:\n{status}"));
+    u64::from_str_radix(line[prefix.len()..].trim(), 16)
+        .unwrap_or_else(|err| panic!("parse {label} from {line:?}: {err}"))
+}
+
+fn cap_mask(indices: &[u8]) -> u64 {
+    indices.iter().fold(0, |mask, index| mask | (1u64 << index))
 }
 
 fn assert_supplementary_groups_empty(pid: u32) {

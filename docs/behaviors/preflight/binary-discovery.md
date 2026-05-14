@@ -19,7 +19,7 @@ keys:
 
 When no path override is present, Firecracker defaults to
 `/opt/firecracker/bin/firecracker`, Firecracker's advanced seccomp filter
-defaults to `/opt/firecracker/bin/firecracker-seccomp-filter.json`, jailer
+defaults to `/opt/firecracker/bin/firecracker-seccomp-filter.bin`, jailer
 defaults to `/opt/firecracker/bin/jailer`, and the m80 hardening wrapper
 defaults to `/opt/m80/bin/m80-jailer-harden`. There are no legacy aliases
 without the `M80_` prefix. All four resolved paths must be absolute; an empty env var is

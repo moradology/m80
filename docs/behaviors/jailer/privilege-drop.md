@@ -56,17 +56,22 @@ leaf and asserts the exec target sees `/proc/self/cgroup` as `0::/`.
 
 `m80-jailer-harden` narrows the capability surface before it execs
 Firecracker's official jailer. The bounding set is pruned to the official jailer
-minimum: `CAP_SYS_CHROOT`, `CAP_MKNOD`, `CAP_SETUID`, `CAP_SETGID`, and
-`CAP_SYS_ADMIN`. The effective and permitted sets are then retained to only the
-currently-held members of that same allowlist.
+minimum: `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_SYS_CHROOT`, `CAP_MKNOD`,
+`CAP_SETUID`, `CAP_SETGID`, and `CAP_SYS_ADMIN`. The effective and permitted
+sets are then retained to only the currently-held members of that same
+allowlist.
 
 Host capabilities needed before the wrapper boundary do not survive into the
 official jailer. In particular, `CAP_NET_ADMIN`, `CAP_KILL`, `CAP_FOWNER`,
-`CAP_CHOWN`, `CAP_SYS_PTRACE`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, and
-`CAP_SETPCAP` are removed from the official jailer execution window. The wrapper
-needs `CAP_SETPCAP` only long enough to call `PR_CAPBSET_DROP`; preflight
-requires it for non-root capability-bearing launches and the wrapper removes it
-before exec.
+`CAP_SYS_PTRACE`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, and `CAP_SETPCAP` are
+removed from the official jailer execution window. The wrapper needs
+`CAP_SETPCAP` only long enough to call `PR_CAPBSET_DROP`; preflight requires it
+for non-root capability-bearing launches and the wrapper removes it before
+exec. `CAP_CHOWN` remains in the official jailer window because the jailer
+creates a private Firecracker executable copy and changes that copy to the
+configured jail uid/gid before the final Firecracker exec. `CAP_DAC_OVERRIDE`
+remains because the official jailer continues root-owned setup work after it
+has changed parts of the jail tree to the configured jail uid/gid.
 
 Test: `crates/m80-jailer-harden/src/lib.rs::tests::official_jailer_capability_allowlist_is_pinned`.
 Test: `crates/m80-jailer-harden/src/lib.rs::tests::pre_jailer_dangerous_caps_are_not_allowed`.

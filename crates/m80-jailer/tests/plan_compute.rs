@@ -83,6 +83,7 @@ fn step_ordering_jail_root_first() {
         first["kind"] == "create_dir" && first["path"] == "/tmp/run/vm-1/firecracker/vm-1/root",
         "first step must be CreateDir for jail root, got {first:?}"
     );
+    assert_eq!(first["mode"], 0o730);
 }
 
 #[test]
@@ -96,7 +97,11 @@ fn jail_internal_dirs_are_private() {
 
     let plan = m80_jailer::Plan::compute(&cfg).unwrap();
 
-    for step in common::steps(&plan) {
+    let steps = common::steps(&plan);
+    let root = steps.first().expect("jail root step");
+    assert_eq!(root["mode"], 0o730);
+
+    for step in steps.iter().skip(1) {
         if step["kind"] == "create_dir" {
             assert_eq!(step["mode"], 0o700);
         }

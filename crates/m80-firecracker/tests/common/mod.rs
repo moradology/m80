@@ -31,7 +31,7 @@ pub(crate) fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
     let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
     m80_preflight::Discovery {
         firecracker_bin: PathBuf::from("/tmp/firecracker"),
-        firecracker_seccomp_filter: PathBuf::from("/tmp/firecracker-seccomp-filter.json"),
+        firecracker_seccomp_filter: PathBuf::from("/tmp/firecracker-seccomp-filter.bin"),
         jailer_bin: PathBuf::from("/tmp/jailer"),
         jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
         kernel: PathBuf::from("/tmp/vmlinux"),

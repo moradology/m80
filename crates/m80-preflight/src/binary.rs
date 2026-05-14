@@ -30,7 +30,7 @@ pub(crate) const ENV_JAILER_HARDEN_BIN: &str = "M80_JAILER_HARDEN_BIN";
 pub const DEFAULT_FIRECRACKER_BIN: &str = "/opt/firecracker/bin/firecracker";
 /// Default Firecracker advanced seccomp filter location.
 pub const DEFAULT_FIRECRACKER_SECCOMP_FILTER: &str =
-    "/opt/firecracker/bin/firecracker-seccomp-filter.json";
+    "/opt/firecracker/bin/firecracker-seccomp-filter.bin";
 /// Default jailer binary location when no env override is present.
 pub(crate) const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
 /// Default m80 jailer hardening wrapper location when no env override is present.

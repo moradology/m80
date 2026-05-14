@@ -14,6 +14,8 @@ use nix::sys::stat::{umask, Mode};
 use nix::unistd::setgroups;
 
 const OFFICIAL_JAILER_CAPABILITIES: &[Capability] = &[
+    Capability::CAP_CHOWN,
+    Capability::CAP_DAC_OVERRIDE,
     Capability::CAP_SYS_CHROOT,
     Capability::CAP_MKNOD,
     Capability::CAP_SETUID,
@@ -541,7 +543,9 @@ mod tests {
     fn official_jailer_capability_allowlist_is_pinned() {
         let allowed = official_jailer_capability_set();
 
-        assert_eq!(allowed.len(), 5);
+        assert_eq!(allowed.len(), 7);
+        assert!(allowed.contains(&Capability::CAP_CHOWN));
+        assert!(allowed.contains(&Capability::CAP_DAC_OVERRIDE));
         assert!(allowed.contains(&Capability::CAP_SYS_CHROOT));
         assert!(allowed.contains(&Capability::CAP_MKNOD));
         assert!(allowed.contains(&Capability::CAP_SETUID));
@@ -557,7 +561,6 @@ mod tests {
             Capability::CAP_NET_ADMIN,
             Capability::CAP_KILL,
             Capability::CAP_FOWNER,
-            Capability::CAP_CHOWN,
             Capability::CAP_SYS_PTRACE,
             Capability::CAP_SYS_MODULE,
             Capability::CAP_SYS_RAWIO,

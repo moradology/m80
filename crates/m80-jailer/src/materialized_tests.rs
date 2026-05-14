@@ -181,7 +181,7 @@ echo fake-firecracker-stderr >&2
         daemonize: false,
         new_cgroup_ns: true,
         netns_path: None,
-        seccomp_filter_path: Some(PathBuf::from("firecracker-seccomp-filter.json")),
+        seccomp_filter_path: Some(PathBuf::from("firecracker-seccomp-filter.bin")),
         stdio_log: Some(stdio_log.clone()),
     };
     let plan = Plan::compute(&cfg).unwrap();
@@ -219,7 +219,7 @@ echo fake-firecracker-stderr >&2
     assert!(args.contains("--resource-limit fsize=4096"), "{args}");
     assert!(
         args.contains(
-            "-- --api-sock firecracker.sock --seccomp-filter firecracker-seccomp-filter.json"
+            "-- --api-sock firecracker.sock --seccomp-filter firecracker-seccomp-filter.bin"
         ),
         "{args}"
     );

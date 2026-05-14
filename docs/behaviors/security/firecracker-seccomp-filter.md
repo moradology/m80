@@ -1,16 +1,18 @@
 # Firecracker Seccomp Filter
 
 `m80-preflight` requires a Firecracker advanced seccomp filter before VM launch.
-The default host path is `/opt/firecracker/bin/firecracker-seccomp-filter.json`;
-operators can override it with `M80_FIRECRACKER_SECCOMP_FILTER`.
+The filter is the compiled bitcode output produced by Firecracker's matching
+`seccompiler-bin`, not the source JSON policy. The default host path is
+`/opt/firecracker/bin/firecracker-seccomp-filter.bin`; operators can override
+it with `M80_FIRECRACKER_SECCOMP_FILTER`.
 
 The path must be absolute. Discovery opens it with `O_NOFOLLOW`, rejects
 missing paths, non-regular files, and empty files, and records the resolved path
 in `Discovery::firecracker_seccomp_filter`.
 
 `m80-firecracker` treats that path as launch material. Phase 4 binds it
-read-only into the jail as `firecracker-seccomp-filter.json`, and
-`m80-jailer` passes `--seccomp-filter firecracker-seccomp-filter.json` after
+read-only into the jail as `firecracker-seccomp-filter.bin`, and
+`m80-jailer` passes `--seccomp-filter firecracker-seccomp-filter.bin` after
 the jailer `--` separator so the argument reaches Firecracker, not the jailer.
 
 The boot-scoped preflight cache includes the filter file identity and still

@@ -288,7 +288,7 @@ mod tests {
         let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
         m80_preflight::Discovery {
             firecracker_bin: "/tmp/firecracker".into(),
-            firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.json".into(),
+            firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.bin".into(),
             jailer_bin: "/tmp/jailer".into(),
             jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
             kernel: "/tmp/vmlinux".into(),

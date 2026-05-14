@@ -59,7 +59,7 @@ use ready::{phase_11b_bind_ready_listener, phase_12b_ready_accept, ready_listene
 use snapshot_prime::prime_snapshot_files;
 
 const RUN_DIR_MODE: u32 = 0o700;
-const FIRECRACKER_SECCOMP_FILTER_JAIL_PATH: &str = "firecracker-seccomp-filter.json";
+const FIRECRACKER_SECCOMP_FILTER_JAIL_PATH: &str = "firecracker-seccomp-filter.bin";
 
 /// Record a diagnostics-annotated phase result.
 ///

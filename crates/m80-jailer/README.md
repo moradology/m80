@@ -18,9 +18,12 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `Plan::materialize(&self) -> Result<MaterializedJail, JailerError>`
   performs the filesystem mutations directly via syscalls + `Command::new`,
   relying on the m80 process's already-verified privilege. Steps are
-  recorded to `jailer-state.json`; `Drop` tears the chroot down. Jail-root
-  and in-jail directories are created `0700` and chowned to the configured
-  jail uid/gid. Bind sources are canonicalized before use except
+  recorded to `jailer-state.json`; `Drop` tears the chroot down. The jail root
+  is created `0730` as `root:<jail gid>` so the capability-pruned official
+  jailer can copy the Firecracker executable before dropping privilege while
+  the jailed process can still create its sockets after the drop. Additional
+  in-jail directories are created `0700` and chowned to the configured jail
+  uid/gid. Bind sources are canonicalized before use except
   `/proc/<pid>/fd/<fd>` sources, which are mounted as-is so preflight-pinned
   artifact descriptors are not resolved back through swappable pathnames; file
   creation uses `O_NOFOLLOW`; before the first bind, the process marks `/`

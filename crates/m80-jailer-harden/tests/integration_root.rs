@@ -104,11 +104,11 @@ fn status_hex_value(stdout: &str, label: &str) -> u64 {
 }
 
 fn official_jailer_cap_mask() -> u64 {
-    cap_mask(&[6, 7, 18, 21, 27])
+    cap_mask(&[0, 1, 6, 7, 18, 21, 27])
 }
 
 fn forbidden_pre_jailer_cap_mask() -> u64 {
-    cap_mask(&[0, 3, 5, 8, 12, 16, 17, 19])
+    cap_mask(&[3, 5, 8, 12, 16, 17, 19])
 }
 
 fn cap_mask(indices: &[u8]) -> u64 {

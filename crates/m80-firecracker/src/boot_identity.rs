@@ -101,7 +101,7 @@ mod tests {
         let rootfs_file = rootfs.reopen().unwrap();
         Discovery {
             firecracker_bin: PathBuf::from("/bin/firecracker"),
-            firecracker_seccomp_filter: PathBuf::from("/bin/firecracker-seccomp-filter.json"),
+            firecracker_seccomp_filter: PathBuf::from("/bin/firecracker-seccomp-filter.bin"),
             jailer_bin: PathBuf::from("/bin/jailer"),
             jailer_harden_bin: PathBuf::from("/bin/m80-jailer-harden"),
             kernel: PathBuf::from("/artifacts/vmlinux"),

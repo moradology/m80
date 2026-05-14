@@ -49,7 +49,7 @@ fn fixture_discovery() -> Discovery {
     Discovery {
         firecracker_bin: PathBuf::from("/opt/firecracker/bin/firecracker"),
         firecracker_seccomp_filter: PathBuf::from(
-            "/opt/firecracker/bin/firecracker-seccomp-filter.json",
+            "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
         ),
         jailer_bin: PathBuf::from("/opt/firecracker/bin/jailer"),
         jailer_harden_bin: PathBuf::from("/opt/m80/bin/m80-jailer-harden"),

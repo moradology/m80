@@ -11,8 +11,11 @@ Firecracker is exec'd.
 `Plan::materialize()` does not call `unshare()` or `pivot_root()`: it runs in
 the host orchestrator process, so doing that there would isolate m80 itself
 rather than the Firecracker process. The m80-owned hardening surface is the
-materialized bind plan: jail-internal directories are `0700` and chowned to
-the jail uid/gid, bind sources are canonicalized before use, placeholder and
+materialized bind plan: the jail root is `0730` and owned by `root:<jail gid>`
+so the capability-pruned official jailer can copy the Firecracker executable
+before dropping privilege while the jailed process can still create its
+sockets afterward; additional jail-internal directories are `0700` and chowned
+to the jail uid/gid. Bind sources are canonicalized before use, placeholder and
 state-file writes use `O_NOFOLLOW`, `/` is marked recursively private with
 `MS_PRIVATE|MS_REC` before the first m80-owned bind, binds are recursive, and
 bind remounts add `MS_NODEV`, `MS_NOEXEC`, and `MS_NOSUID` with `MS_RDONLY` for
@@ -52,12 +55,12 @@ Runtime evidence:
 - `crates/m80-firecracker/tests/end_to_end_real_kvm.rs::end_to_end_real_kvm_jailer_security_parity`
   boots a real VM, then inspects the live Firecracker process for a distinct
   mount namespace, `RLIMIT_NOFILE`, jail uid/gid, empty supplementary groups,
-  `NoNewPrivs: 1`, zero permitted/effective/inheritable/ambient caps, empty
-  signal mask, hardened bind mount flags, read-only rootfs binding, and
-  jailer-created `/dev/kvm`, `/dev/net/tun`, and `/dev/urandom` character
-  devices. It also proves `/firecracker` inside the jail is a private copy,
-  not a bind mount or hard link, with `nlink == 1`, owner-only mode, and jail
-  uid/gid ownership.
+  `NoNewPrivs: 1`, zero permitted/effective/inheritable/ambient caps, a
+  bounding set narrowed to the official-jailer setup minimum, empty signal
+  mask, hardened bind mount flags, read-only rootfs binding, and jailer-created
+  `/dev/kvm`, `/dev/net/tun`, and `/dev/urandom` character devices. It also
+  proves `/firecracker` inside the jail is a private copy, not a bind mount or
+  hard link, with `nlink == 1`, owner-only mode, and jail uid/gid ownership.
 - `crates/m80-jailer/tests/integration_root.rs::launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one`
   launches real Firecracker through the official jailer with `--new-pid-ns`,
   then asserts `jailer_pid = 0`, Firecracker's `NSpid` ends in `1`, and the

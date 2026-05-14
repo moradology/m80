@@ -687,10 +687,10 @@ impl PreflightError {
                 "upgrade firecracker to a version fixed for every advisory tracked by m80-preflight"
             }
             Self::FirecrackerSeccompFilterNotFound { .. } => {
-                "install the Firecracker advanced seccomp filter JSON or set M80_FIRECRACKER_SECCOMP_FILTER to its absolute path"
+                "install the Firecracker advanced seccomp filter bitcode or set M80_FIRECRACKER_SECCOMP_FILTER to its absolute path"
             }
             Self::FirecrackerSeccompFilterEmpty { .. } => {
-                "replace the Firecracker advanced seccomp filter with a non-empty JSON filter file"
+                "replace the Firecracker advanced seccomp filter with a non-empty compiled bitcode filter"
             }
             Self::JailerBinaryNotFound => {
                 "install jailer to /opt/firecracker/bin/jailer (it ships alongside firecracker) or set M80_JAILER_BIN to the binary path"

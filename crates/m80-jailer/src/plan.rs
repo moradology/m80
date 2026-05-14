@@ -14,6 +14,9 @@ use crate::types::{
     JAILER_PLAN_FILE, JAILER_STATE_FILE,
 };
 
+const JAIL_ROOT_MODE: u32 = 0o730;
+const JAIL_INTERNAL_DIR_MODE: u32 = 0o700;
+
 impl Plan {
     /// Compute a plan from a config without touching the filesystem. Steps
     /// are emitted in a canonical order so the persisted plan replays
@@ -42,8 +45,17 @@ impl Plan {
         let mut steps = Vec::new();
         let mut created_dirs = BTreeSet::new();
 
-        // Step 1: create the jail root.
-        push_create_dir(&mut steps, &mut created_dirs, jail_root.clone());
+        // Step 1: create the jail root. The official jailer runs as root
+        // after m80-jailer-harden has removed CAP_DAC_OVERRIDE, so the root
+        // itself must remain root-owned at materialization time. The jailed
+        // gid still needs write+search permission after the jailer drops
+        // privilege so Firecracker can create its API/vsock sockets.
+        push_create_dir_with_mode(
+            &mut steps,
+            &mut created_dirs,
+            jail_root.clone(),
+            JAIL_ROOT_MODE,
+        );
 
         // Step 2: CreateInsideJail entries and bind parent directories.
         for binding in &config.bindings {
@@ -123,9 +135,14 @@ impl Plan {
                         path: path.clone(),
                         source: io::Error::from_raw_os_error(e as i32),
                     })?;
+                    let uid = if path == &materialized.jail_path {
+                        Uid::from_raw(0)
+                    } else {
+                        Uid::from_raw(materialized.plan.config.uid)
+                    };
                     chown(
                         path,
-                        Some(Uid::from_raw(materialized.plan.config.uid)),
+                        Some(uid),
                         Some(Gid::from_raw(materialized.plan.config.gid)),
                     )
                     .map_err(|e| JailerError::Io {
@@ -274,8 +291,17 @@ fn push_parent_dirs(
 }
 
 fn push_create_dir(steps: &mut Vec<PlanStep>, created_dirs: &mut BTreeSet<PathBuf>, path: PathBuf) {
+    push_create_dir_with_mode(steps, created_dirs, path, JAIL_INTERNAL_DIR_MODE);
+}
+
+fn push_create_dir_with_mode(
+    steps: &mut Vec<PlanStep>,
+    created_dirs: &mut BTreeSet<PathBuf>,
+    path: PathBuf,
+    mode: u32,
+) {
     if created_dirs.insert(path.clone()) {
-        steps.push(PlanStep::CreateDir { path, mode: 0o700 });
+        steps.push(PlanStep::CreateDir { path, mode });
     }
 }
 

@@ -22,13 +22,13 @@ does this, in order:
 3. Drop supplementary groups with `setgroups([])`.
 4. Clear inheritable and ambient Linux capabilities.
 5. Prune the bounding capability set to the official jailer minimum:
-   `CAP_SYS_CHROOT`, `CAP_MKNOD`, `CAP_SETUID`, `CAP_SETGID`, and
-   `CAP_SYS_ADMIN`.
+   `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_SYS_CHROOT`, `CAP_MKNOD`,
+   `CAP_SETUID`, `CAP_SETGID`, and `CAP_SYS_ADMIN`.
 6. Prune the effective and permitted capability sets so only currently-held
    members of that same official jailer minimum remain. Pre-jailer host caps
-   such as `CAP_NET_ADMIN`, `CAP_KILL`, `CAP_FOWNER`, `CAP_CHOWN`,
-   `CAP_SYS_PTRACE`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, and `CAP_SETPCAP` do
-   not survive into the official jailer exec.
+   such as `CAP_NET_ADMIN`, `CAP_KILL`, `CAP_FOWNER`, `CAP_SYS_PTRACE`,
+   `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, and `CAP_SETPCAP` do not survive into
+   the official jailer exec.
 7. Set `PR_SET_NO_NEW_PRIVS`.
 8. Set `PR_SET_PDEATHSIG` to `SIGKILL`.
 9. Set umask to `0077`.

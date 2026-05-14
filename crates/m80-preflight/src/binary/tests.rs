@@ -94,7 +94,7 @@ fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
     let firecracker = dir.path().join("firecracker");
     let jailer = dir.path().join("jailer");
     let jailer_harden = dir.path().join("m80-jailer-harden");
-    let firecracker_seccomp_filter = dir.path().join("firecracker-seccomp-filter.json");
+    let firecracker_seccomp_filter = dir.path().join("firecracker-seccomp-filter.bin");
 
     write_executable(
         &firecracker,
@@ -119,7 +119,7 @@ fn env_config_uses_exact_m80_keys_and_defaults() {
     let _lock = ENV_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let firecracker = dir.path().join("firecracker");
-    let seccomp_filter = dir.path().join("firecracker-seccomp-filter.json");
+    let seccomp_filter = dir.path().join("firecracker-seccomp-filter.bin");
     let jailer = dir.path().join("jailer");
     let jailer_harden = dir.path().join("m80-jailer-harden");
     let _firecracker = EnvGuard::set(ENV_FIRECRACKER_BIN, &firecracker);
@@ -199,7 +199,7 @@ fn missing_firecracker_binary_fails_closed() {
     let dir = tempfile::tempdir().unwrap();
     let config = BinaryDiscoveryConfig {
         firecracker_bin: dir.path().join("missing-firecracker"),
-        firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.json"),
+        firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.bin"),
         jailer_bin: dir.path().join("jailer"),
         jailer_harden_bin: dir.path().join("m80-jailer-harden"),
         expected_firecracker_version: Some("v1.15.1".to_owned()),
@@ -216,7 +216,7 @@ fn relative_firecracker_binary_path_fails_closed() {
     let dir = tempfile::tempdir().unwrap();
     let config = BinaryDiscoveryConfig {
         firecracker_bin: Path::new("firecracker").to_path_buf(),
-        firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.json"),
+        firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.bin"),
         jailer_bin: dir.path().join("jailer"),
         jailer_harden_bin: dir.path().join("m80-jailer-harden"),
         expected_firecracker_version: Some("v1.15.1".to_owned()),
@@ -268,14 +268,14 @@ fn empty_firecracker_seccomp_filter_fails_closed() {
 #[test]
 fn relative_firecracker_seccomp_filter_path_fails_closed() {
     let (_dir, mut config) = fixture_config("v1.15.1");
-    config.firecracker_seccomp_filter = Path::new("firecracker-seccomp-filter.json").to_path_buf();
+    config.firecracker_seccomp_filter = Path::new("firecracker-seccomp-filter.bin").to_path_buf();
 
     let err = discover_binaries(&config, None).unwrap_err();
 
     match err {
         PreflightError::NonAbsolutePath { kind, path } => {
             assert_eq!(kind, "firecracker seccomp filter");
-            assert_eq!(path, Path::new("firecracker-seccomp-filter.json"));
+            assert_eq!(path, Path::new("firecracker-seccomp-filter.bin"));
         }
         other => panic!("expected non-absolute seccomp filter path, got {other:?}"),
     }
@@ -356,7 +356,7 @@ fn host_binary_manifest_hash_mismatch_fails_closed() {
     manifest.write(&manifest_path).unwrap();
     let config = BinaryDiscoveryConfig {
         firecracker_bin: system_binary.to_path_buf(),
-        firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.json"),
+        firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.bin"),
         jailer_bin: system_binary.to_path_buf(),
         jailer_harden_bin: system_binary.to_path_buf(),
         expected_firecracker_version: None,
