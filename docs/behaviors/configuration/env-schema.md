@@ -30,6 +30,7 @@ All keys are exact and case-sensitive. Legacy predecessor-style names such as
 | `M80_JAIL_UID` | UID that must exist for the jailed Firecracker process. Shared with orchestrator config. | `3000` |
 | `M80_JAIL_GID` | GID that must exist for the jailed Firecracker process. Shared with orchestrator config. | `3000` |
 | `M80_CGROUP_MODE` | `unified-v2` or `disabled`. Shared with orchestrator config. | `unified-v2` |
+| `M80_MAX_CONCURRENT_VMS` | Expected concurrent VM count used to size `net.netfilter.nf_conntrack_max`; also the orchestrator admission semaphore size. | `8` |
 | `M80_FORCE_PREFLIGHT` | When set to any value, bypasses the boot-scoped preflight sentinel cache and reruns Firecracker version probing plus manifest SHA verification. | cache enabled |
 | `M80_SKIP_CHECK_VULNERABILITIES` | When set exactly to `1`, skips hard failure for CPU vulnerability sysfs rows such as `mds` and `l1tf`. | vulnerability gate enabled |
 

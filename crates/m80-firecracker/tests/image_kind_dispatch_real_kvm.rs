@@ -47,6 +47,7 @@ fn discovery_for_artifacts_with_rootfs_and_kernel(
             cgroup_mode: m80_preflight::CgroupPreflightMode::Disabled,
             jail_uid: 3000,
             jail_gid: 3000,
+            expected_concurrent_vms: 1,
         },
     )
     .expect("preflight for explicit image-kind artifacts")

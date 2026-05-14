@@ -551,6 +551,7 @@ fn host_feature_config_from_effective(
         .unwrap_or("unified-v2");
     let jail_uid = effective_jail_id(effective, "jail_uid", 3000)?;
     let jail_gid = effective_jail_id(effective, "jail_gid", 3000)?;
+    let expected_concurrent_vms = effective_expected_concurrent_vms(effective)?;
     Ok(HostFeaturePreflightConfig {
         cgroup_mode: match cgroup_mode {
             "disabled" => CgroupPreflightMode::Disabled,
@@ -563,7 +564,26 @@ fn host_feature_config_from_effective(
         },
         jail_uid,
         jail_gid,
+        expected_concurrent_vms,
     })
+}
+
+fn effective_expected_concurrent_vms(effective: &EffectiveConfig) -> Result<u32, PreflightError> {
+    let Some(value) = effective
+        .fields
+        .iter()
+        .find(|candidate| candidate.name == "max_concurrent_vms")
+        .map(|candidate| candidate.value.as_str())
+    else {
+        return Ok(8);
+    };
+
+    match value.parse::<u32>() {
+        Ok(0) | Err(_) => Err(PreflightError::InvalidExpectedConcurrentVms {
+            actual: value.to_owned(),
+        }),
+        Ok(parsed) => Ok(parsed),
+    }
 }
 
 fn effective_jail_id(

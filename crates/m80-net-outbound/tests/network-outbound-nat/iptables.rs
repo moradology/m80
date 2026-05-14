@@ -384,6 +384,27 @@ fn forward_inserts_route_guest_through_filter_chain() {
         "-j",
         "ACCEPT"
     ]));
+    assert!(rules.contains(&vec![
+        "-i",
+        &state.tap_name,
+        "-s",
+        &guest,
+        "-p",
+        "tcp",
+        "--syn",
+        "-m",
+        "connlimit",
+        "--connlimit-above",
+        "256",
+        "--connlimit-mask",
+        "32",
+        "-m",
+        "comment",
+        "--comment",
+        &comment,
+        "-j",
+        "REJECT"
+    ]));
     assert!(
         !rules.iter().any(|rule| rule
             .windows(2)

@@ -104,7 +104,8 @@ Sequestering it has three benefits:
   POSTROUTING for missing-rule detection before installing missing rules
   through one `iptables-restore -w --noflush` batch. The batch appends per-VM
   filter rules, inserts TAP-ingress FORWARD entries scoped by the guest `/32`,
-  and appends NAT POSTROUTING masquerade.
+  inserts a per-VM TCP SYN connlimit reject at 256 concurrent connections from
+  the guest `/32`, and appends NAT POSTROUTING masquerade.
 - iptables rules are tagged with a per-VM comment prefix (rooted in
   `M80_RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
   never by index — so concurrent rule additions by other tools don't

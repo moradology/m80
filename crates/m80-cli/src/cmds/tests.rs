@@ -104,6 +104,21 @@ fn effective_jail_identity_maps_to_preflight_config() {
 }
 
 #[test]
+fn effective_max_concurrent_vms_maps_to_preflight_conntrack_sizing() {
+    let config = EffectiveConfig {
+        fields: vec![EffectiveField {
+            name: "max_concurrent_vms".to_owned(),
+            value: "12".to_owned(),
+            source: ConfigSource::Env,
+        }],
+    };
+
+    let host_features = host_feature_config_from_effective(&config).unwrap();
+
+    assert_eq!(host_features.expected_concurrent_vms, 12);
+}
+
+#[test]
 fn invalid_effective_jail_identity_stays_typed_preflight_error() {
     let config = EffectiveConfig {
         fields: vec![EffectiveField {

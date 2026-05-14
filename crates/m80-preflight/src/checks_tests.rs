@@ -213,6 +213,39 @@ fn nf_conntrack_sys_module_satisfies_nat_preflight() {
 }
 
 #[test]
+fn nf_conntrack_capacity_requires_expected_vm_headroom() {
+    let err = classify_nf_conntrack_capacity("15000\n", 8).unwrap_err();
+
+    match err {
+        PreflightError::NfConntrackCapacityTooLow {
+            actual,
+            minimum,
+            expected_concurrent_vms,
+        } => {
+            assert_eq!(actual, 15_000);
+            assert_eq!(minimum, 16_000);
+            assert_eq!(expected_concurrent_vms, 8);
+        }
+        other => panic!("expected conntrack capacity failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn nf_conntrack_capacity_accepts_expected_vm_headroom() {
+    assert_eq!(
+        classify_nf_conntrack_capacity("16000\n", 8).unwrap(),
+        16_000
+    );
+}
+
+#[test]
+fn nf_conntrack_capacity_rejects_unparseable_sysctl() {
+    let err = classify_nf_conntrack_capacity("not-a-number\n", 8).unwrap_err();
+
+    assert!(matches!(err, PreflightError::InvalidNfConntrackMax { .. }));
+}
+
+#[test]
 fn required_kernel_modules_report_missing_tap_bridge() {
     let err = classify_required_modules(&HashSet::from(["vhost_vsock"])).unwrap_err();
 

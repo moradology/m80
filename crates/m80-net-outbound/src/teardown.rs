@@ -8,6 +8,8 @@ use crate::{
     VmNetworkStateRecord,
 };
 
+const TCP_SYN_CONN_LIMIT_PER_VM: &str = "256";
+
 /// Tear down network state owned by `vm_id` through real host backends.
 ///
 /// Requires `CAP_NET_ADMIN` or root when owned links or iptables rules exist.
@@ -152,6 +154,32 @@ fn delete_forwarding_entry_rules(
             comment,
             "-j",
             "ACCEPT",
+        ],
+    )?;
+    delete_iptables_rule_if_present(
+        ops,
+        "filter",
+        "FORWARD",
+        &[
+            "-i",
+            &state.tap_name,
+            "-s",
+            &guest,
+            "-p",
+            "tcp",
+            "--syn",
+            "-m",
+            "connlimit",
+            "--connlimit-above",
+            TCP_SYN_CONN_LIMIT_PER_VM,
+            "--connlimit-mask",
+            "32",
+            "-m",
+            "comment",
+            "--comment",
+            comment,
+            "-j",
+            "REJECT",
         ],
     )
 }

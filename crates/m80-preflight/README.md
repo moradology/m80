@@ -35,6 +35,10 @@ which is the right place for a security review to start.
      module or `/dev/vhost-vsock`, and `nf_conntrack` available for outbound
      NAT. v0.1 does not attempt to load missing modules; the operator must
      `modprobe` them before running preflight.
+  5b. **Conntrack capacity** — reads
+     `/proc/sys/net/netfilter/nf_conntrack_max` and fails if the host-global
+     conntrack table is below `2 * M80_MAX_CONCURRENT_VMS * 1000` entries.
+     `M80_MAX_CONCURRENT_VMS` defaults to `8`.
   6. **Transparent hugepages** — reads
      `/sys/kernel/mm/transparent_hugepage/enabled` and emits a non-blocking
      informational row. `[always]` is a clean row. `[madvise]`, `[never]`,
@@ -110,7 +114,8 @@ which is the right place for a security review to start.
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
   `M80_JAILER_HARDEN_BIN`, `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`,
   `M80_ROOTFS_IMAGE`, `M80_KERNEL_KIND`, `M80_RUN_ROOT`, `M80_JAIL_UID`,
-  `M80_JAIL_GID`, `M80_CGROUP_MODE`, and `M80_FORCE_PREFLIGHT`.
+  `M80_JAIL_GID`, `M80_CGROUP_MODE`, `M80_MAX_CONCURRENT_VMS`, and
+  `M80_FORCE_PREFLIGHT`.
   `M80_SKIP_CHECK_VULNERABILITIES=1` is a documented
   escape hatch for the CPU vulnerability hard gate. The full schema is captured
   in `docs/behaviors/configuration/env-schema.md`.
@@ -140,6 +145,7 @@ which is the right place for a security review to start.
   callers. There is no `Default`; callers must use `from_env()` or construct
   the full effective config.
 - `HostFeaturePreflightConfig { cgroup_mode, jail_uid, jail_gid }` and
+  `expected_concurrent_vms }` and
   `HostFeaturePreflightConfig::from_env() -> Result<Self, PreflightError>`,
   plus `CgroupPreflightMode { UnifiedV2, Disabled }`, for checks whose
   required host features depend on effective config.
@@ -173,6 +179,9 @@ which is the right place for a security review to start.
   `CpuVulnerabilityDetected { id, detail }`,
   `CgroupV2Unavailable`, `VsockUnavailable`, `TunUnavailable`,
   `NfConntrackUnavailable`,
+  `NfConntrackCapacityTooLow { actual, minimum, expected_concurrent_vms }`,
+  `InvalidNfConntrackMax { actual }`,
+  `InvalidExpectedConcurrentVms { actual }`,
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
   `FirecrackerBinaryNotFound`,

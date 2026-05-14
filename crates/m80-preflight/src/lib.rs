@@ -267,6 +267,34 @@ pub enum PreflightError {
     #[error("nf_conntrack unavailable")]
     NfConntrackUnavailable,
 
+    /// `net.netfilter.nf_conntrack_max` was below m80's expected concurrency
+    /// floor.
+    #[error(
+        "nf_conntrack_max too low: actual {actual}, minimum {minimum} for {expected_concurrent_vms} expected concurrent VMs"
+    )]
+    NfConntrackCapacityTooLow {
+        /// Current host sysctl value.
+        actual: u64,
+        /// Required floor for the configured concurrency.
+        minimum: u64,
+        /// Expected concurrent VMs used to compute the floor.
+        expected_concurrent_vms: u32,
+    },
+
+    /// The host's `nf_conntrack_max` sysctl did not parse as an integer.
+    #[error("invalid nf_conntrack_max: {actual:?}")]
+    InvalidNfConntrackMax {
+        /// Observed sysctl text.
+        actual: String,
+    },
+
+    /// `M80_MAX_CONCURRENT_VMS` was not a positive u32 for preflight sizing.
+    #[error("invalid expected concurrent VM count: {actual:?}")]
+    InvalidExpectedConcurrentVms {
+        /// Observed value.
+        actual: String,
+    },
+
     /// Required kernel modules are not loaded/loadable.
     #[error("kernel modules missing: {missing:?}")]
     KernelModulesMissing {
@@ -460,6 +488,15 @@ impl PreflightError {
             }
             Self::NfConntrackUnavailable => {
                 "load nf_conntrack with `sudo modprobe nf_conntrack` before enabling outbound NAT"
+            }
+            Self::NfConntrackCapacityTooLow { .. } => {
+                "raise net.netfilter.nf_conntrack_max with sysctl or lower M80_MAX_CONCURRENT_VMS"
+            }
+            Self::InvalidNfConntrackMax { .. } => {
+                "inspect /proc/sys/net/netfilter/nf_conntrack_max; it must contain a decimal integer"
+            }
+            Self::InvalidExpectedConcurrentVms { .. } => {
+                "set M80_MAX_CONCURRENT_VMS to a positive decimal u32"
             }
             Self::KernelModulesMissing { .. } => {
                 "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"

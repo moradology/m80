@@ -90,6 +90,19 @@ Test:
 and
 `crates/m80-preflight/tests/error_hints.rs::nf_conntrack_unavailable_has_hint`.
 
+## nf-conntrack-capacity-too-low
+
+`m80-preflight` reads `/proc/sys/net/netfilter/nf_conntrack_max` and rejects
+hosts whose global conntrack table is below
+`2 * M80_MAX_CONCURRENT_VMS * 1000` entries. The default expected concurrency is
+8 VMs, matching the backend admission default. Operators either raise
+`net.netfilter.nf_conntrack_max` with sysctl or lower `M80_MAX_CONCURRENT_VMS`.
+
+Test:
+`crates/m80-preflight/src/checks_tests.rs::nf_conntrack_capacity_requires_expected_vm_headroom`
+and
+`crates/m80-preflight/tests/error_hints.rs::nf_conntrack_capacity_too_low_has_hint`.
+
 ## unsupported-host
 
 `m80-preflight` rejects non-Linux hosts with

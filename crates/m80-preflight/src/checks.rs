@@ -29,14 +29,19 @@ const CPU_MICROCODE_VERSION_PATH: &str = "/sys/devices/system/cpu/cpu0/microcode
 const CPU_MICROCODE_FLAGS_PATH: &str = "/sys/devices/system/cpu/cpu0/microcode/processor_flags";
 const CPU_VULNERABILITY_DIR: &str = "/sys/devices/system/cpu/vulnerabilities";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
+const NF_CONNTRACK_MAX_PATH: &str = "/proc/sys/net/netfilter/nf_conntrack_max";
 const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
 const TUN_PATH: &str = "/dev/net/tun";
 const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
 const ENV_SKIP_CPU_VULNERABILITIES: &str = "M80_SKIP_CHECK_VULNERABILITIES";
 const ENV_JAIL_UID: &str = "M80_JAIL_UID";
 const ENV_JAIL_GID: &str = "M80_JAIL_GID";
+const ENV_MAX_CONCURRENT_VMS: &str = "M80_MAX_CONCURRENT_VMS";
 const DEFAULT_JAIL_UID: u32 = 3000;
 const DEFAULT_JAIL_GID: u32 = 3000;
+const DEFAULT_EXPECTED_CONCURRENT_VMS: u32 = 8;
+const NF_CONNTRACK_ENTRIES_PER_VM: u64 = 1_000;
+const NF_CONNTRACK_HEADROOM_MULTIPLIER: u64 = 2;
 const MIN_HOST_KERNEL_MAJOR: u64 = 6;
 const MIN_HOST_KERNEL_MINOR: u64 = 1;
 
@@ -100,6 +105,9 @@ pub struct HostFeaturePreflightConfig {
     pub jail_uid: u32,
     /// GID that the official jailer will switch Firecracker to.
     pub jail_gid: u32,
+    /// Expected concurrent VM count used to size host-global conntrack
+    /// capacity.
+    pub expected_concurrent_vms: u32,
 }
 
 impl HostFeaturePreflightConfig {
@@ -117,11 +125,34 @@ impl HostFeaturePreflightConfig {
         };
         let jail_uid = parse_jail_id_env(ENV_JAIL_UID, DEFAULT_JAIL_UID)?;
         let jail_gid = parse_jail_id_env(ENV_JAIL_GID, DEFAULT_JAIL_GID)?;
+        let expected_concurrent_vms = parse_expected_concurrent_vms_env()?;
         Ok(Self {
             cgroup_mode,
             jail_uid,
             jail_gid,
+            expected_concurrent_vms,
         })
+    }
+}
+
+fn parse_expected_concurrent_vms_env() -> Result<u32, PreflightError> {
+    match std::env::var(ENV_MAX_CONCURRENT_VMS) {
+        Ok(value) => parse_expected_concurrent_vms(&value),
+        Err(std::env::VarError::NotPresent) => Ok(DEFAULT_EXPECTED_CONCURRENT_VMS),
+        Err(std::env::VarError::NotUnicode(value)) => {
+            Err(PreflightError::InvalidExpectedConcurrentVms {
+                actual: value.to_string_lossy().into_owned(),
+            })
+        }
+    }
+}
+
+fn parse_expected_concurrent_vms(value: &str) -> Result<u32, PreflightError> {
+    match value.parse::<u32>() {
+        Ok(0) | Err(_) => Err(PreflightError::InvalidExpectedConcurrentVms {
+            actual: value.to_owned(),
+        }),
+        Ok(parsed) => Ok(parsed),
     }
 }
 
@@ -204,6 +235,7 @@ pub fn run_with_configs(
     check_cpu_governor(&mut report);
     check_cpu_microcode(&mut report);
     check_cpu_vulnerabilities(&mut report)?;
+    check_nf_conntrack_capacity(host_feature_config.expected_concurrent_vms, &mut report)?;
 
     // 11. Cgroup host mode
     check_cgroup_mode(host_feature_config.cgroup_mode, &mut report)?;
@@ -462,6 +494,54 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
 
 fn check_thp_policy(report: &mut Vec<CheckRow>) {
     report.push(classify_thp_policy(fs::read_to_string(THP_ENABLED_PATH)));
+}
+
+fn check_nf_conntrack_capacity(
+    expected_concurrent_vms: u32,
+    report: &mut Vec<CheckRow>,
+) -> Result<(), PreflightError> {
+    let raw =
+        fs::read_to_string(NF_CONNTRACK_MAX_PATH).map_err(|source| PreflightError::PathIo {
+            path: PathBuf::from(NF_CONNTRACK_MAX_PATH),
+            source,
+        })?;
+    let actual = classify_nf_conntrack_capacity(&raw, expected_concurrent_vms)?;
+    let minimum = minimum_nf_conntrack_entries(expected_concurrent_vms);
+    report.push(CheckRow {
+        label: "Conntrack capacity".to_string(),
+        passed: true,
+        detail: format!(
+            "nf_conntrack_max={actual} >= {minimum} for {expected_concurrent_vms} expected concurrent VMs"
+        ),
+    });
+    Ok(())
+}
+
+fn classify_nf_conntrack_capacity(
+    raw: &str,
+    expected_concurrent_vms: u32,
+) -> Result<u64, PreflightError> {
+    let actual = raw
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| PreflightError::InvalidNfConntrackMax {
+            actual: raw.trim().to_owned(),
+        })?;
+    let minimum = minimum_nf_conntrack_entries(expected_concurrent_vms);
+    if actual < minimum {
+        return Err(PreflightError::NfConntrackCapacityTooLow {
+            actual,
+            minimum,
+            expected_concurrent_vms,
+        });
+    }
+    Ok(actual)
+}
+
+fn minimum_nf_conntrack_entries(expected_concurrent_vms: u32) -> u64 {
+    u64::from(expected_concurrent_vms)
+        * NF_CONNTRACK_ENTRIES_PER_VM
+        * NF_CONNTRACK_HEADROOM_MULTIPLIER
 }
 
 fn classify_thp_policy(read_result: Result<String, io::Error>) -> CheckRow {

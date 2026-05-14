@@ -123,6 +123,29 @@ fn nf_conntrack_unavailable_has_hint() {
 }
 
 #[test]
+fn nf_conntrack_capacity_too_low_has_hint() {
+    assert_hint(&PreflightError::NfConntrackCapacityTooLow {
+        actual: 10_000,
+        minimum: 16_000,
+        expected_concurrent_vms: 8,
+    });
+}
+
+#[test]
+fn invalid_nf_conntrack_max_has_hint() {
+    assert_hint(&PreflightError::InvalidNfConntrackMax {
+        actual: "invalid".to_owned(),
+    });
+}
+
+#[test]
+fn invalid_expected_concurrent_vms_has_hint() {
+    assert_hint(&PreflightError::InvalidExpectedConcurrentVms {
+        actual: "0".to_owned(),
+    });
+}
+
+#[test]
 fn kernel_modules_missing_has_hint() {
     assert_hint(&PreflightError::KernelModulesMissing {
         missing: vec!["tap".into()],

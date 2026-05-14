@@ -13,6 +13,8 @@ use sha2::{Digest, Sha256};
 
 use crate::{NetError, SetupPhase, VmNetworkStateRecord, RULE_COMMENT_PREFIX};
 
+const TCP_SYN_CONN_LIMIT_PER_VM: u16 = 256;
+
 /// Output returned by a host network policy command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyCommandOutput {
@@ -446,7 +448,7 @@ fn ensure_forwarding_entry_rules(
                 "-o".into(),
                 state.bridge.bridge_name.clone(),
                 "-d".into(),
-                guest,
+                guest.clone(),
                 "-m".into(),
                 "conntrack".into(),
                 "--ctstate".into(),
@@ -457,6 +459,31 @@ fn ensure_forwarding_entry_rules(
                 comment.into(),
                 "-j".into(),
                 "ACCEPT".into(),
+            ],
+        ),
+        PlannedRule::insert(
+            "filter",
+            "FORWARD",
+            vec![
+                "-i".into(),
+                state.tap_name.clone(),
+                "-s".into(),
+                guest,
+                "-p".into(),
+                "tcp".into(),
+                "--syn".into(),
+                "-m".into(),
+                "connlimit".into(),
+                "--connlimit-above".into(),
+                TCP_SYN_CONN_LIMIT_PER_VM.to_string(),
+                "--connlimit-mask".into(),
+                "32".into(),
+                "-m".into(),
+                "comment".into(),
+                "--comment".into(),
+                comment.into(),
+                "-j".into(),
+                "REJECT".into(),
             ],
         ),
     ]

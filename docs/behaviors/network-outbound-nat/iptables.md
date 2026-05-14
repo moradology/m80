@@ -107,13 +107,17 @@ Verification:
 
 ## Forward Entries
 
-The policy phase inserts three filter/FORWARD rules at index 1:
+The policy phase inserts four filter/FORWARD rules at index 1:
 `-i <tap> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
 per-VM filter chain, `-o <bridge> -d <guest_ipv4>/32 -j REJECT` blocks new
 inbound traffic, and
 `-o <bridge> -d <guest_ipv4>/32 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`
-permits replies. Because all three use `-I ... 1`, the final effective order
-keeps RELATED/ESTABLISHED above the inbound reject.
+permits replies. A TAP-scoped
+`-p tcp --syn -m connlimit --connlimit-above 256 --connlimit-mask 32 -j REJECT`
+caps one guest's concurrent TCP connection pressure before it can consume the
+host-global conntrack table. Because all four use `-I ... 1`, the final
+effective order keeps the connlimit and RELATED/ESTABLISHED rules above the
+inbound reject.
 
 Outbound ingress keys on the VM's TAP interface, not the shared bridge. The
 guest `/32` remains in the rule, but the TAP match prevents a sibling guest

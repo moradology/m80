@@ -87,6 +87,7 @@ fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
             cgroup_mode: m80_preflight::CgroupPreflightMode::Disabled,
             jail_uid: 3000,
             jail_gid: 3000,
+            expected_concurrent_vms: 1,
         },
     )
     .expect("preflight for malicious guestd artifacts")
