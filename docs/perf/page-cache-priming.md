@@ -1,5 +1,38 @@
 # Page-Cache Priming
 
+## Launch Artifacts
+
+`m80-jp6ik.4` tested `posix_fadvise(POSIX_FADV_WILLNEED)` for the cold-launch
+artifact set: Firecracker, jailer, `m80-jailer-harden`, the kernel, and the
+rootfs. The trial implementation was backed out because it did not reduce the
+cold-isolated launch tax.
+
+Commands and verification from the trial:
+
+```sh
+cargo test -p m80-preflight
+cargo test -p m80-storage
+cargo build --release -p m80-cli -p m80-jailer-harden
+N=50 KIND=minimal KERNEL_KIND=stripped ./scripts/bench-cold-launch.sh --cold-isolation
+```
+
+Results:
+
+| Cell | Snapshot | Result |
+|---|---|---:|
+| warm-cache reference | `crates/m80-firecracker/benches/snapshots/2026-05-13T16:34:08+00:00.json` | wall P50 1728 ms |
+| cold-isolated baseline | `crates/m80-firecracker/benches/snapshots/2026-05-13T05:55:03+00:00.json` | wall P50 1837 ms |
+| cold-isolated with artifact priming | `crates/m80-firecracker/benches/snapshots/2026-05-13T16:48:57+00:00.json` | wall P50 1846 ms, 1 failure |
+| cold-isolated with harden plus pre-verify rootfs priming | `crates/m80-firecracker/benches/snapshots/2026-05-13T16:53:23+00:00.json` | wall P50 1848 ms |
+
+The target was to reduce the cold-cold penalty from roughly 108 ms to 30 ms or
+less. The measured cold-isolated runs stayed roughly 110-120 ms slower than the
+warm-cache reference and slightly worse than the prior cold-isolated baseline.
+On this host, `WILLNEED` is not sufficient to make cold launch behave like
+warm-cache launch. Future work should start from a different mechanism, such as
+preflight sentinel/cache placement or a dedicated artifact warming service, not
+another inline fadvise call.
+
 ## Snapshot Files
 
 `m80-jp6ik.34` adds `posix_fadvise(POSIX_FADV_WILLNEED)` for snapshot restore
