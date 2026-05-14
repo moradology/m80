@@ -52,8 +52,14 @@ the `cpuset` controller on the shared ancestor chain, writes the explicit leaf
 `cpuset.cpus` value before PID enrolment, and fails closed on empty or
 whitespace-containing values.
 
+An explicit `cpuset_cpus` value does not depend on a non-empty configured
+ancestor `cpuset.cpus` file. This matters on cgroup-v2 hosts where the
+configured file is empty and the concrete inherited CPU range is exposed only
+through `cpuset.cpus.effective`.
+
 Test: `crates/m80-cgroup/src/lib.rs::tests::cpuset_cpus_rejects_empty_or_spaced_values`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::explicit_cpuset_cpus_skips_sparse_cpu_inheritance_and_uses_effective_mems`.
 Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_cpuset_pinning_actually_constrains_affinity`
 (#[ignore]) creates a real cgroup leaf pinned to one effective host CPU,
 enrolls a workload that tries to widen its scheduler affinity, and asserts

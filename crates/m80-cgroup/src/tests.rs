@@ -313,6 +313,45 @@ fn create_applies_limits_before_pid_enrollment() {
 }
 
 #[test]
+fn explicit_cpuset_cpus_skips_sparse_cpu_inheritance_and_uses_effective_mems() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("sys/fs/cgroup");
+    let parent = base.join("m80-firecracker");
+    let leaf = parent.join("vm-explicit-cpuset");
+    fs::create_dir_all(&leaf).unwrap();
+    for path in [&base, &parent] {
+        fs::write(path.join("cgroup.controllers"), "cpu memory pids cpuset\n").unwrap();
+        fs::write(path.join("cgroup.subtree_control"), "").unwrap();
+        fs::write(path.join("cpuset.cpus"), "\n").unwrap();
+        fs::write(path.join("cpuset.cpus.effective"), "0-3\n").unwrap();
+        fs::write(path.join("cpuset.mems"), "\n").unwrap();
+        fs::write(path.join("cpuset.mems.effective"), "0\n").unwrap();
+    }
+    fs::write(leaf.join("cpuset.cpus"), "").unwrap();
+    fs::write(leaf.join("cpuset.mems"), "").unwrap();
+
+    let limits = Limits {
+        cpuset_cpus: Some("1".to_owned()),
+        ..Limits::default()
+    };
+    let jailed = JailedFirecracker::new(11, 22);
+
+    let err = Subtree::create_at(
+        &base,
+        &parent,
+        "vm-explicit-cpuset",
+        dir.path(),
+        &jailed,
+        &limits,
+    )
+    .expect_err("missing cgroup.procs must fail at enrollment");
+
+    assert!(matches!(err, CgroupError::Io { path, .. } if path == leaf.join("cgroup.procs")));
+    assert_eq!(fs::read_to_string(leaf.join("cpuset.cpus")).unwrap(), "1\n");
+    assert_eq!(fs::read_to_string(leaf.join("cpuset.mems")).unwrap(), "0\n");
+}
+
+#[test]
 fn subtree_control_chain_checks_only_root_controller_availability() {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path().join("sys/fs/cgroup");

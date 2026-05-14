@@ -89,7 +89,9 @@ impl Subtree {
 
         let leaf = parent.join(vm_id);
         fs::create_dir_all(&leaf).map_err(io_err(leaf.clone()))?;
-        inherit_sparse_cpuset_file(parent, &leaf, "cpuset.cpus")?;
+        if limits.cpuset_cpus.is_none() {
+            inherit_sparse_cpuset_file(parent, &leaf, "cpuset.cpus")?;
+        }
         inherit_sparse_cpuset_file(parent, &leaf, "cpuset.mems")?;
 
         let subtree = Subtree(leaf.clone());
@@ -512,14 +514,19 @@ fn inherit_sparse_cpuset_file(
 
     let mut cursor = Some(parent);
     while let Some(path) = cursor {
-        let candidate = path.join(filename);
-        if candidate.exists() {
-            let inherited = fs::read_to_string(&candidate).map_err(|source| CgroupError::Io {
-                path: candidate.clone(),
-                source,
-            })?;
-            if !inherited.trim().is_empty() {
-                return write_cgroup_file(&leaf_file, &inherited);
+        for candidate in [
+            path.join(filename),
+            path.join(format!("{filename}.effective")),
+        ] {
+            if candidate.exists() {
+                let inherited =
+                    fs::read_to_string(&candidate).map_err(|source| CgroupError::Io {
+                        path: candidate.clone(),
+                        source,
+                    })?;
+                if !inherited.trim().is_empty() {
+                    return write_cgroup_file(&leaf_file, &inherited);
+                }
             }
         }
         cursor = path.parent();

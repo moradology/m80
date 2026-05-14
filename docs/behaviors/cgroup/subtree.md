@@ -71,12 +71,21 @@ ancestor levels in the synthetic hierarchy before process enrollment.
 ## sparse-cpuset-inheritance
 
 If the leaf exposes `cpuset.cpus` or `cpuset.mems` and either file is empty,
-m80 copies the nearest non-empty ancestor value before PID enrolment. If the
-file exists but no ancestor supplies a value, creation fails with
+m80 copies the nearest non-empty ancestor value before PID enrolment. On
+cgroup-v2 hosts where the configured ancestor value is empty because the kernel
+is representing inheritance, m80 falls back to the ancestor
+`cpuset.<name>.effective` file and writes that concrete value to the leaf. If
+the file exists but no ancestor supplies a configured or effective value,
+creation fails with
 `CgroupError::SparseInheritedFile` rather than enrolling the VM into an
 ambiguous cpuset.
 
+When `Limits::cpuset_cpus` is explicit, `Subtree::create` does not require a
+non-empty inherited `cpuset.cpus`; it writes the caller's requested CPU range to
+the leaf after sparse `cpuset.mems` inheritance and before PID enrolment.
+
 Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::explicit_cpuset_cpus_skips_sparse_cpu_inheritance_and_uses_effective_mems`.
 
 ## pid-assign
 
