@@ -15,20 +15,24 @@ Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 
 Test: `crates/m80-cgroup/tests/cgroup/limits.rs::cpu_max_one_cpu`.
 
-## memory-pids-max
+## memory-swap-pids-max
 
-The system writes `memory.max` as `"<bytes>\n"` and `pids.max` as
-`"<count>\n"` for the corresponding `Limits` fields.
+The system writes `memory.max` as `"<bytes>\n"`, `memory.swap.max` as
+`"<bytes>\n"`, and `pids.max` as `"<count>\n"` for the corresponding `Limits`
+fields.
 
 The predecessor defaults are captured in `Limits::preset()`: 1 610 612 736
-bytes (1.5 GiB) for memory and 128 for pids. `m80-firecracker` applies that
-profile for unified-v2 cgroups.
+bytes (1.5 GiB) for memory, `0` bytes for swap, and 128 for pids.
+`m80-firecracker` applies that profile for unified-v2 cgroups. The swap default
+prevents a guest memory-thrash workload from spilling host pressure into global
+swap.
 
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/cgroup.rs`
 `MEMORY_MAX_VALUE_BYTES` (line 18), `PIDS_MAX_VALUE` (line 19);
 `materialize_jailed_cgroup` (lines 95–99).
 
 Test: `crates/m80-cgroup/tests/cgroup/limits.rs::memory_and_pids_max`.
+Test: `crates/m80-cgroup/src/lib.rs::tests::create_applies_limits_before_pid_enrollment`.
 Test: `crates/m80-cgroup/tests/integration_root.rs::cgroup_pids_max_enforced_against_fork_bomb`
 (#[ignore]) creates a real cgroup leaf with `pids.max = 128`, enrolls a
 waiting fork workload, and asserts the kernel rejects the next fork with

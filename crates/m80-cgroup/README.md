@@ -24,8 +24,8 @@ See rustdoc for full signatures.
 | `Subtree::leaf_path(vm_id)` | Pure no-I/O helper returning the expected public leaf path for triage and inspection. |
 | `Subtree::Drop` | Writes `1` to leaf `cgroup.kill` when that kernel file is present, waits briefly for `cgroup.procs` to drain, then removes the leaf cgroup directory with `rmdir`; if any best-effort teardown step fails, logs through `tracing` and never panics. |
 | `cleanup_orphan_subtree(vm_id)` | Startup helper for stale leaves from prior crashed runs. Missing leaves are accepted; non-empty `cgroup.procs` leaves are logged and preserved; empty leaves are removed. |
-| `Limits { cpu_max, memory_max, pids_max, cpuset_cpus, io_max, io_weight, oom_score_adj }` | Caller-provided limit profile. `None` fields leave existing controller values alone; empty `io_max` leaves device throttles alone. Setting `cpuset_cpus` writes the leaf `cpuset.cpus` before PID enrolment. |
-| `Limits::preset()` | One full CPU, 1.5 GiB memory, 128 pids, no explicit cpuset pin, and `/proc/<pid>/oom_score_adj = 500`. Device-specific `io.max` rows remain caller-provided. |
+| `Limits { cpu_max, memory_max, memory_swap_max, pids_max, cpuset_cpus, io_max, io_weight, oom_score_adj }` | Caller-provided limit profile. `None` fields leave existing controller values alone; empty `io_max` leaves device throttles alone. Setting `cpuset_cpus` writes the leaf `cpuset.cpus` before PID enrolment. |
+| `Limits::preset()` | One full CPU, 1.5 GiB memory, `memory.swap.max = 0`, 128 pids, no explicit cpuset pin, `io.weight = 100`, and `/proc/<pid>/oom_score_adj = 500`. Device-specific `io.max` rows remain caller-provided. |
 | `CpuMax` | Field type for `Limits::cpu_max`; either a concrete `(quota_us, period_us)` pair or `Max`. |
 | `IoMax { major, minor, rbps, wbps, riops, wiops }` | Field type for `Limits::io_max`; one cgroup v2 `io.max` throttle row for a host-specific block device. Its `Display` implementation renders the kernel file row. |
 | `CgroupError` | `UnsupportedHostMode`, `ControllerNotEnabled(&'static str)`, `SparseInheritedFile(&'static str)`, `InvalidLimit { field, value }`, and `Io { path, source }`. |
@@ -53,7 +53,7 @@ See rustdoc for full signatures.
 
 ## Tests
 
-- Unit (in-crate): mounts-string parsing, process-local probe caching, `Limits`/`CpuMax`/`IoMax` JSON round-trip, error `Display` shape, cpuset override validation, two-phase limit-before-enrolment ordering, recursive subtree-control writes without repeated descendant controller reads, process-local subtree-control priming, sparse cpuset inheritance, and an ignored real-host Drop-with-live-procs kill regression.
+- Unit (in-crate): mounts-string parsing, process-local probe caching, `Limits`/`CpuMax`/`IoMax` JSON round-trip, error `Display` shape, cpuset override validation, default swap disablement and io-controller activation, two-phase limit-before-enrolment ordering, recursive subtree-control writes without repeated descendant controller reads, process-local subtree-control priming, sparse cpuset inheritance, and an ignored real-host Drop-with-live-procs kill regression.
 - `tests/integration_root.rs` — `#[ignore]` real-host probe, pids.max
   enforcement, cpuset affinity enforcement, and io.max throughput enforcement;
   `sudo cargo test -p m80-cgroup -- --ignored`.

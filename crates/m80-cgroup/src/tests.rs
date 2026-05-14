@@ -31,10 +31,9 @@ cgroup /sys/fs/cgroup/memory cgroup rw,memory 0 0
 #[test]
 fn required_subtree_control_enables_three_controllers() {
     assert_eq!(Limits::default().required_controllers(), BASE_CONTROLLERS);
-    // preset() does not set io_weight, so io controller is not required by default
     assert_eq!(
         Limits::preset().required_controllers(),
-        vec!["cpu", "memory", "pids"]
+        vec!["cpu", "memory", "pids", "io"]
     );
     let pinned = Limits {
         cpuset_cpus: Some("0".to_owned()),
@@ -261,6 +260,7 @@ fn create_applies_limits_before_pid_enrollment() {
     for name in [
         "cpu.max",
         "memory.max",
+        "memory.swap.max",
         "pids.max",
         "io.weight",
         "io.max",
@@ -273,6 +273,7 @@ fn create_applies_limits_before_pid_enrollment() {
     let limits = Limits {
         cpu_max: Some(CpuMax::Max),
         memory_max: Some(1024),
+        memory_swap_max: Some(0),
         pids_max: Some(9),
         cpuset_cpus: Some("0".to_owned()),
         io_max: vec![IoMax {
@@ -296,6 +297,10 @@ fn create_applies_limits_before_pid_enrollment() {
     assert_eq!(
         fs::read_to_string(leaf.join("memory.max")).unwrap(),
         "1024\n"
+    );
+    assert_eq!(
+        fs::read_to_string(leaf.join("memory.swap.max")).unwrap(),
+        "0\n"
     );
     assert_eq!(fs::read_to_string(leaf.join("pids.max")).unwrap(), "9\n");
     assert_eq!(fs::read_to_string(leaf.join("cpuset.cpus")).unwrap(), "0\n");

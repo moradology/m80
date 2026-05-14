@@ -21,9 +21,9 @@ fn memory_and_pids_max() {
     let limits = Limits::preset();
 
     assert_eq!(limits.memory_max, Some(1_610_612_736));
+    assert_eq!(limits.memory_swap_max, Some(0));
     assert_eq!(limits.pids_max, Some(128));
-    // preset() leaves io_weight as None (kernel default 100 is implicit).
-    assert_eq!(limits.io_weight, None);
+    assert_eq!(limits.io_weight, Some(100));
     assert_eq!(limits.oom_score_adj, Some(500));
     assert!(limits.io_max.is_empty());
 }
@@ -34,6 +34,7 @@ fn disabled_mode_skips() {
 
     assert!(no_limits.cpu_max.is_none());
     assert!(no_limits.memory_max.is_none());
+    assert!(no_limits.memory_swap_max.is_none());
     assert!(no_limits.pids_max.is_none());
     assert!(no_limits.io_max.is_empty());
     assert!(no_limits.io_weight.is_none());

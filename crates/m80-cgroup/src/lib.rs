@@ -31,7 +31,9 @@ const IO_CONTROLLER: &str = "io";
 const DEFAULT_CPU_QUOTA_US: u64 = 100_000;
 const DEFAULT_CPU_PERIOD_US: u64 = 100_000;
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 1_610_612_736;
+const DEFAULT_MEMORY_SWAP_MAX_BYTES: u64 = 0;
 const DEFAULT_PIDS_MAX: u32 = 128;
+const DEFAULT_IO_WEIGHT: u16 = 100;
 const DEFAULT_OOM_SCORE_ADJ: i16 = 500;
 const CGROUP_KILL_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const CGROUP_KILL_DRAIN_POLL: Duration = Duration::from_millis(20);
@@ -132,6 +134,10 @@ impl Subtree {
             write_cgroup_file(&self.0.join("memory.max"), &format!("{mem}\n"))?;
         }
 
+        if let Some(mem_swap) = limits.memory_swap_max {
+            write_cgroup_file(&self.0.join("memory.swap.max"), &format!("{mem_swap}\n"))?;
+        }
+
         if let Some(pids) = limits.pids_max {
             write_cgroup_file(&self.0.join("pids.max"), &format!("{pids}\n"))?;
         }
@@ -143,10 +149,7 @@ impl Subtree {
 
         if let Some(io_weight) = limits.io_weight {
             validate_io_weight(io_weight)?;
-            // Kernel default is 100; writing it is a no-op syscall, skip it.
-            if io_weight != 100 {
-                write_cgroup_file(&self.0.join("io.weight"), &format!("default {io_weight}\n"))?;
-            }
+            write_cgroup_file(&self.0.join("io.weight"), &format!("default {io_weight}\n"))?;
         }
 
         for io_max in &limits.io_max {
@@ -219,6 +222,8 @@ pub struct Limits {
     pub cpu_max: Option<CpuMax>,
     /// `memory.max` in bytes. None = leave existing.
     pub memory_max: Option<u64>,
+    /// `memory.swap.max` in bytes. `Some(0)` disables swap for the leaf.
+    pub memory_swap_max: Option<u64>,
     /// `pids.max`. None = leave existing.
     pub pids_max: Option<u32>,
     /// Leaf `cpuset.cpus`. None = inherit the parent cpuset.
@@ -235,8 +240,9 @@ pub struct Limits {
 impl Limits {
     /// m80's default VM resource limit profile.
     ///
-    /// CPU is one full 100 ms CPU period, memory is 1.5 GiB, and pids are
-    /// capped at 128.
+    /// CPU is one full 100 ms CPU period, memory is 1.5 GiB with no swap,
+    /// pids are capped at 128, and the io controller is enabled at kernel
+    /// default weight 100.
     #[must_use]
     pub fn preset() -> Self {
         Self {
@@ -245,10 +251,11 @@ impl Limits {
                 period_us: DEFAULT_CPU_PERIOD_US,
             }),
             memory_max: Some(DEFAULT_MEMORY_MAX_BYTES),
+            memory_swap_max: Some(DEFAULT_MEMORY_SWAP_MAX_BYTES),
             pids_max: Some(DEFAULT_PIDS_MAX),
             cpuset_cpus: None,
             io_max: Vec::new(),
-            io_weight: None,
+            io_weight: Some(DEFAULT_IO_WEIGHT),
             oom_score_adj: Some(DEFAULT_OOM_SCORE_ADJ),
         }
     }
