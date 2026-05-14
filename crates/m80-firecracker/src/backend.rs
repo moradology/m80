@@ -11,6 +11,7 @@ use m80_jailer::inspect_run_dir;
 
 use crate::error::{ConfigError, FcError};
 use crate::layout::{socket_path_len, SUN_PATH_BUDGET};
+use crate::network_helper::NetworkHelperClient;
 use crate::preboot::validate_caller_boot_args_if_present;
 use crate::runroot::{run_dir_liveness, RunDirLiveness};
 use crate::types::{
@@ -40,10 +41,14 @@ impl Backend {
     ) -> Result<Self, FcError> {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new(Mutex::new(permits));
+        let network_helper = Arc::new(NetworkHelperClient::new(
+            config.discovery.net_helper_bin.clone(),
+        ));
         let backend = Backend {
             config,
             effective,
             semaphore,
+            network_helper,
         };
         if let Err(e) = backend.recover_stale_run_root(false) {
             warn!(err = %e, "Backend::new: stale run-root recovery failed");
@@ -177,7 +182,7 @@ impl Backend {
                         "recover_stale_run_root: killing orphaned firecracker"
                     );
                     kill_orphan_pids(jailer_pid, firecracker_pid);
-                    remove_run_dir(run_root, &subdir);
+                    self.remove_run_dir(&subdir);
                 }
                 Ok(m80_jailer::InspectionDecision::OrphanJail { .. }) => {
                     // `reap_plan` from the plan file is ignored —
@@ -185,10 +190,10 @@ impl Backend {
                     // authoritative mount list, which covers cases the
                     // persisted plan doesn't (partial materialize, older
                     // binary, etc.).
-                    remove_run_dir(run_root, &subdir);
+                    self.remove_run_dir(&subdir);
                 }
                 Ok(m80_jailer::InspectionDecision::NoJail) => {
-                    remove_run_dir(run_root, &subdir);
+                    self.remove_run_dir(&subdir);
                 }
                 Err(e) => {
                     warn!(
@@ -201,6 +206,12 @@ impl Backend {
         }
 
         Ok(())
+    }
+
+    fn remove_run_dir(&self, subdir: &std::path::Path) {
+        remove_run_dir_with_network_cleanup(&self.config.run_root, subdir, |vm_id, run_root| {
+            self.network_helper.cleanup_vm(vm_id, run_root)
+        });
     }
 }
 
@@ -353,16 +364,12 @@ fn build_effective_config(cfg: &BackendConfig) -> EffectiveConfig {
 /// cleanup, the TAP and iptables state outlive the run-dir evidence needed to
 /// remove them; without the cgroup rm, the empty leaf in
 /// `/sys/fs/cgroup/m80-firecracker/<vm_id>/` stays around forever.
-fn remove_run_dir(run_root: &std::path::Path, subdir: &std::path::Path) {
-    remove_run_dir_with_network_cleanup(run_root, subdir, m80_net_outbound::cleanup_vm);
-}
-
 fn remove_run_dir_with_network_cleanup<F>(
     run_root: &std::path::Path,
     subdir: &std::path::Path,
     mut cleanup_network: F,
 ) where
-    F: FnMut(&str, &std::path::Path) -> Result<(), m80_net_outbound::NetError>,
+    F: FnMut(&str, &std::path::Path) -> Result<(), crate::NetworkHelperError>,
 {
     unmount_under(subdir);
     match subdir.file_name().and_then(|s| s.to_str()) {
@@ -596,7 +603,7 @@ mod tests {
                 "network cleanup must run before run-dir deletion removes network-state.json"
             );
             calls.borrow_mut().push(vm_id.to_owned());
-            Ok(())
+            Ok::<(), crate::NetworkHelperError>(())
         });
 
         assert_eq!(calls.into_inner(), vec!["vm-net"]);
@@ -612,10 +619,11 @@ mod tests {
             .expect("network state");
 
         remove_run_dir_with_network_cleanup(run_root.path(), &subdir, |_vm_id, _cleanup_root| {
-            Err(m80_net_outbound::NetError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "synthetic cleanup failure",
-            )))
+            Err(crate::NetworkHelperError::OperationFailed {
+                operation: crate::NetworkHelperOperation::CleanupVm,
+                kind: m80_net_outbound::NetworkHelperFailureKind::OperationFailed,
+                detail: "synthetic cleanup failure".to_owned(),
+            })
         });
 
         assert!(!subdir.exists());

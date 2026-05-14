@@ -10,6 +10,7 @@ use m80_firecracker_client::ClientError;
 use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
 use m80_net_outbound::NetError;
+use m80_net_outbound::NetworkHelperFailureKind;
 use m80_preflight::PreflightError;
 use m80_proto::{DriveHotplugError, ExecStatus, FileError};
 use m80_snapshot::SnapshotError;
@@ -104,6 +105,108 @@ pub enum WireProtocolError {
         context: &'static str,
         /// Missing field name.
         field: &'static str,
+    },
+}
+
+/// Finite network-helper operation names used in typed diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkHelperOperation {
+    /// Realize bridge/veth/TAP topology for one outbound VM.
+    RealizeBridgeAndTap,
+    /// Apply outbound NAT sysctl/iptables policy after guest tokens are ready.
+    ApplyOutboundNatPolicy,
+    /// Clean one VM's outbound network residue.
+    CleanupVm,
+    /// Clean an orphan run-root bridge.
+    CleanupOrphanBridge,
+}
+
+impl std::fmt::Display for NetworkHelperOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::RealizeBridgeAndTap => "realize_bridge_and_tap",
+            Self::ApplyOutboundNatPolicy => "apply_outbound_nat_policy",
+            Self::CleanupVm => "cleanup_vm",
+            Self::CleanupOrphanBridge => "cleanup_orphan_bridge",
+        })
+    }
+}
+
+/// Failure while talking to the privileged m80 network helper.
+#[derive(Debug, thiserror::Error)]
+pub enum NetworkHelperError {
+    /// Helper process could not be spawned.
+    #[error("network helper {} spawn failed: {source}", path.display())]
+    Spawn {
+        /// Helper executable path from preflight discovery.
+        path: PathBuf,
+        /// Spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// Spawned helper did not expose a required stdio pipe.
+    #[error("network helper {} missing {pipe} pipe", path.display())]
+    MissingPipe {
+        /// Helper executable path from preflight discovery.
+        path: PathBuf,
+        /// Pipe name.
+        pipe: &'static str,
+    },
+    /// Request serialization failed before the helper saw it.
+    #[error("network helper {operation} request encode failed: {detail}")]
+    RequestEncode {
+        /// Operation being encoded.
+        operation: NetworkHelperOperation,
+        /// Encoder diagnostic.
+        detail: String,
+    },
+    /// I/O failed while sending or receiving a helper frame.
+    #[error("network helper {operation} I/O failed: {source}")]
+    Io {
+        /// Operation in progress.
+        operation: NetworkHelperOperation,
+        /// I/O failure.
+        #[source]
+        source: io::Error,
+    },
+    /// Helper response frame exceeded the host-side cap.
+    #[error("network helper {operation} response exceeds {limit} bytes")]
+    OversizedResponse {
+        /// Operation in progress.
+        operation: NetworkHelperOperation,
+        /// Configured response cap.
+        limit: usize,
+    },
+    /// Helper closed stdout before returning one response frame.
+    #[error("network helper {operation} closed stdout before response")]
+    Eof {
+        /// Operation in progress.
+        operation: NetworkHelperOperation,
+    },
+    /// Response could not be decoded as a finite helper response.
+    #[error("network helper {operation} response decode failed: {source}")]
+    ResponseDecode {
+        /// Operation in progress.
+        operation: NetworkHelperOperation,
+        /// JSON decode failure.
+        #[source]
+        source: serde_json::Error,
+    },
+    /// Helper returned a typed operation failure.
+    #[error("network helper {operation} failed ({kind:?}): {detail}")]
+    OperationFailed {
+        /// Operation that failed.
+        operation: NetworkHelperOperation,
+        /// Helper failure class.
+        kind: NetworkHelperFailureKind,
+        /// Helper diagnostic detail.
+        detail: String,
+    },
+    /// Helper returned a success payload that does not match the request.
+    #[error("network helper {operation} returned unexpected success kind")]
+    UnexpectedSuccess {
+        /// Operation in progress.
+        operation: NetworkHelperOperation,
     },
 }
 
@@ -220,6 +323,9 @@ pub enum FcError {
     /// Network realization or cleanup failed.
     #[error("network: {0}")]
     Network(#[from] NetError),
+    /// Privileged network-helper protocol or operation failed.
+    #[error("network helper: {0}")]
+    NetworkHelper(#[from] NetworkHelperError),
     /// Firecracker REST API call failed.
     #[error("client: {0}")]
     Client(#[from] ClientError),

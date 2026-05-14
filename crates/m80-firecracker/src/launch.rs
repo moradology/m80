@@ -196,12 +196,22 @@ impl Sandbox {
             request_id.as_deref(),
             Phase::NetworkPrepare,
             "phase_6_network_realize",
-            { phase_6_network_realize(&self.config, &vm_id, run_root, &run_dir) }
+            {
+                phase_6_network_realize(
+                    &self.backend.network_helper,
+                    &self.config,
+                    &vm_id,
+                    run_root,
+                    &run_dir,
+                )
+            }
         )?;
         let mut network_cleanup = match &net {
-            RealizedNetwork::OutboundNat { .. } => {
-                Some(LaunchNetworkCleanupGuard::new(&vm_id, run_root.clone()))
-            }
+            RealizedNetwork::OutboundNat { .. } => Some(LaunchNetworkCleanupGuard::new(
+                &self.backend.network_helper,
+                &vm_id,
+                run_root.clone(),
+            )),
             RealizedNetwork::NoEgress | RealizedNetwork::JoinNetns { .. } => None,
         };
         let network_message = match &net {
@@ -236,7 +246,7 @@ impl Sandbox {
             request_id.as_deref(),
             Phase::NetworkPrepare,
             "phase_7_outbound_guest_config",
-            { phase_7_outbound_guest_config(&net, &run_dir) }
+            { phase_7_outbound_guest_config(&self.backend.network_helper, &net, &run_dir) }
         )?;
 
         // Phase 8: compute the API socket path (inside the jail root).
@@ -1093,6 +1103,7 @@ fn fail_cgroup_create_if_requested(_vm_id: &str) -> Result<(), FcError> {
 
 /// Phase 6: resolve the network mode and realize any m80-owned host links.
 fn phase_6_network_realize(
+    network_helper: &crate::network_helper::NetworkHelperClient,
     config: &SandboxConfig,
     vm_id: &str,
     run_root: &Path,
@@ -1113,8 +1124,7 @@ fn phase_6_network_realize(
                 .collect(),
         }),
         VmNetworkMode::OutboundNat { plan } => {
-            let realized =
-                m80_net_outbound::realize_bridge_and_tap(&plan, vm_id, run_root, run_dir)?;
+            let realized = network_helper.realize_bridge_and_tap(plan, vm_id, run_root, run_dir)?;
             Ok(RealizedNetwork::OutboundNat {
                 tap_name: realized.tap_name,
                 vmm_netns_path: realized.vmm_netns_path,
@@ -1126,6 +1136,7 @@ fn phase_6_network_realize(
 
 /// Phase 7: finalize OutboundNat guest boot tokens and host firewall policy.
 fn phase_7_outbound_guest_config(
+    network_helper: &crate::network_helper::NetworkHelperClient,
     network: &RealizedNetwork,
     run_dir: &Path,
 ) -> Result<Vec<String>, FcError> {
@@ -1133,7 +1144,7 @@ fn phase_7_outbound_guest_config(
         RealizedNetwork::OutboundNat { .. } => {
             let mut state = m80_net_outbound::read_vm_network_state_record(run_dir)?;
             let cmdline = m80_net_outbound::prepare_pid_one_network_cmdline(&mut state)?;
-            m80_net_outbound::apply_outbound_nat_policy(&state)?;
+            network_helper.apply_outbound_nat_policy(run_dir)?;
             Ok(cmdline.args)
         }
         RealizedNetwork::JoinNetns {

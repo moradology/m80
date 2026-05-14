@@ -201,11 +201,12 @@ peer bytes from transport failures.
 `SandboxConfig::network` supports three caller intents. `NoEgress` launches with
 no guest NIC, no host iptables changes, and a private empty network namespace
 for the Firecracker VMM process. `AllowOutbound` resolves to OutboundNat: launch
-realizes the run-root bridge, an m80-owned VMM network namespace, a host/vmm
-veth pair, and a VMM-local TAP/bridge, prepares the PID-1 `m80.net.*` boot
-tokens, installs host NAT/filter policy on the host veth, emits a Firecracker
+routes privileged bridge/veth/TAP/namespace setup through the pinned
+`m80-net-helper`, prepares the PID-1 `m80.net.*` boot tokens, asks that helper
+to install host NAT/filter policy on the host veth, emits a Firecracker
 `NetworkInterface` PUT for `eth0`, passes the m80-owned namespace to jailer as
-`--netns`, and records ownership state for failure/delete cleanup.
+`--netns`, and records ownership state for helper-backed failure/delete/stale
+run-root cleanup.
 `JoinNetns { spec: NetnsSpec }` delegates namespace, TAP, routing, and firewall
 ownership to the caller: m80 validates the namespace path, passes it to
 Firecracker's official jailer as `--netns`, emits the Firecracker
@@ -552,6 +553,9 @@ an invariant fails closed.
 - `FcError::PathIo`, `Json`, `CommandSpawnFailed`, `CommandFailed`, and
   `ArtifactMissing` preserve concrete host paths, serialization contexts, and
   helper-command status instead of collapsing them into config strings.
+- `FcError::NetworkHelper(NetworkHelperError)` preserves helper spawn,
+  protocol, bounded-frame, and typed operation failures for privileged outbound
+  network setup and cleanup. There is no parent-side direct mutation fallback.
 - `FcError::UnsupportedOperation` names an unavailable v0.x API surface without
   pretending the caller supplied bad configuration.
 - Warm-pool/owner failures use typed variants (`WarmPoolFillFailed`,
@@ -590,6 +594,8 @@ Core types:
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
 - `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.
 - `FcError` — exhaustive typed error for all phases.
+- `NetworkHelperError` and `NetworkHelperOperation` — typed diagnostics for the
+  privileged outbound-network helper boundary.
 
 Re-exports for callers:
 

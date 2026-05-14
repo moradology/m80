@@ -7,14 +7,15 @@ Behavior beads: `m80-8emae.30`, `m80-8emae.34`, `m80-8emae.14`.
 The remaining `m80-8emae` hardening items are process-boundary problems, not
 single-flag launch changes. This document records the safe split so follow-up
 work does not reintroduce the rejected shortcuts. The `AllowOutbound` topology
-below has been implemented; the CAP_NET_ADMIN and guestd seccomp boundaries
-remain split follow-up work:
+below has been implemented; the network-helper protocol and helper-backed
+OutboundNat call routing are implemented; the parent CAP_NET_ADMIN drop and
+guestd seccomp boundaries remain split follow-up work:
 
 - moving an `AllowOutbound` TAP out of the host namespace without replacing the
   data path; implemented with an m80-owned namespace, private bridge, and veth
   pair;
-- dropping `CAP_NET_ADMIN` from the long-lived m80 process while later launches
-  and cleanup still call host network operations in-process;
+- dropping `CAP_NET_ADMIN` from the long-lived m80 process after helper-backed
+  launches and cleanup are live;
 - installing seccomp in long-lived `m80-guestd` while workload `fork`/`exec`
   still inherits the daemon filter.
 
@@ -67,12 +68,15 @@ The safe hard-cutover design is a narrow network-ops helper boundary:
    setup, iptables/sysctl policy application, per-VM cleanup, and orphan
    bridge cleanup.
 3. Move existing `m80-net-outbound` operations behind a finite request/response
-   protocol with typed failure variants, request/response size caps, unknown
-   operation rejection, and bounded stderr capture for helper diagnostics.
+   protocol with typed failure variants, request/response size caps, and
+   unknown operation rejection. This protocol and the parent-side client are
+   implemented.
 4. After helper startup, the parent drops `CAP_NET_ADMIN` from effective,
    permitted, inheritable, ambient, and bounding sets.
 5. Parent launch and cleanup paths call the helper instead of running rtnetlink
-   or iptables directly.
+   or iptables directly. Phase 6 realization, phase 7 policy application,
+   launch rollback, stopped-sandbox delete/preserve cleanup, and stale run-root
+   recovery are helper-backed.
 6. Helper lifetime is bound to the backend owner; helper exit poisons new
    outbound launches and triggers explicit cleanup diagnostics.
 
@@ -143,9 +147,10 @@ The implementation should land as small leaves:
 4. `SMOKE AllowOutbound private netns with live outbound`
 5. `DESIGN CAP_NET_ADMIN helper boundary`
 6. `IMPL network-ops helper protocol`
-7. `IMPL parent CAP_NET_ADMIN drop plus helper-backed launch/cleanup`
-8. `SMOKE OutboundNat after parent capability drop`
-9. `DESIGN guestd seccomp broker boundary`
-10. `IMPL shared guestd workload broker for exec/streaming/PTY`
-11. `IMPL guestd daemon seccomp and fixed workload seccomp profile`
-12. `SMOKE guestd seccomp with arbitrary workload exec preserved`
+7. `IMPL helper-backed launch/cleanup`
+8. `IMPL parent CAP_NET_ADMIN drop after helper startup`
+9. `SMOKE OutboundNat after parent capability drop`
+10. `DESIGN guestd seccomp broker boundary`
+11. `IMPL shared guestd workload broker for exec/streaming/PTY`
+12. `IMPL guestd daemon seccomp and fixed workload seccomp profile`
+13. `SMOKE guestd seccomp with arbitrary workload exec preserved`

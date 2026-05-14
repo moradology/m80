@@ -90,7 +90,8 @@ impl StoppedSandbox {
             self.request_id.as_deref(),
             "outbound network cleanup started",
         );
-        m80_net_outbound::cleanup_vm(&self.vm_id, &self.run_root)?;
+        self.network_helper
+            .cleanup_vm(&self.vm_id, &self.run_root)?;
         self.network_cleanup = false;
         crate::diagnostics::record_owned(
             &mut self.diagnostics,
@@ -105,8 +106,11 @@ impl StoppedSandbox {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
     use std::sync::{Arc, Mutex};
 
+    use crate::network_helper::NetworkHelperClient;
     use crate::runroot::write_ownership_lock;
     use crate::types::{AdmissionPermit, StoppedSandbox};
 
@@ -128,7 +132,18 @@ mod tests {
             run_root: run_root.to_path_buf(),
             diagnostics: None,
             network_cleanup: false,
+            network_helper: Arc::new(NetworkHelperClient::new("/tmp/m80-net-helper".into())),
         }
+    }
+
+    fn write_executable(path: &std::path::Path, content: &str) {
+        let mut file = std::fs::File::create(path).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        let mut perms = std::fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms).unwrap();
     }
 
     #[test]
@@ -153,6 +168,40 @@ mod tests {
         std::fs::remove_dir_all(sandbox.run_dir()).unwrap();
 
         sandbox.delete().unwrap();
+    }
+
+    #[test]
+    fn delete_routes_outbound_cleanup_through_network_helper() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_root = dir.path();
+        let log = run_root.join("requests.log");
+        let helper_path = run_root.join("helper.sh");
+        write_executable(
+            &helper_path,
+            &format!(
+                r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "{}"
+  printf '%s\n' '{{"status":"ok","success":{{"kind":"empty"}}}}'
+done
+"#,
+                log.display()
+            ),
+        );
+        let mut sandbox = stopped_sandbox(run_root, "vm-delete-net");
+        std::fs::write(
+            sandbox.run_dir().join(m80_net_outbound::NETWORK_STATE_FILE),
+            b"{}",
+        )
+        .unwrap();
+        sandbox.network_cleanup = true;
+        sandbox.network_helper = Arc::new(NetworkHelperClient::new(helper_path));
+
+        sandbox.delete().unwrap();
+
+        let requests = std::fs::read_to_string(log).unwrap();
+        assert!(requests.contains(r#""op":"cleanup_vm""#));
+        assert!(requests.contains(r#""vm_id":"vm-delete-net""#));
     }
 
     #[test]

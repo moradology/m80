@@ -13,6 +13,7 @@ use m80_jailer::{JailedFirecracker, MaterializedJail};
 use m80_net_mode::NetworkPolicy;
 use m80_storage::{Rootfs, Scratch};
 
+use crate::network_helper::NetworkHelperClient;
 use crate::runroot::LeaseGuard;
 
 /// First-line Firecracker shape used by default and by snapshot timing proofs.
@@ -66,6 +67,8 @@ pub struct Backend {
     pub(crate) effective: EffectiveConfig,
     /// Admission semaphore (available permit count).
     pub(crate) semaphore: Semaphore,
+    /// Privileged outbound-network helper client.
+    pub(crate) network_helper: Arc<NetworkHelperClient>,
 }
 
 impl Backend {
@@ -624,6 +627,8 @@ pub struct StoppedSandbox {
     pub(crate) diagnostics: Option<m80_observability::Diagnostics>,
     /// Whether delete must reap outbound-network residue before run-dir removal.
     pub(crate) network_cleanup: bool,
+    /// Privileged outbound-network helper used after the backend handle is gone.
+    pub(crate) network_helper: Arc<NetworkHelperClient>,
 }
 
 impl std::fmt::Debug for StoppedSandbox {

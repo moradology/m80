@@ -13,6 +13,16 @@ use super::ready::kernel_console_timestamp_range_us;
 use super::*;
 use crate::WireProtocolError;
 
+fn write_executable(path: &Path, content: &str) {
+    let mut file = std::fs::File::create(path).unwrap();
+    file.write_all(content.as_bytes()).unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+    let mut perms = std::fs::metadata(path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms).unwrap();
+}
+
 #[test]
 fn ready_listener_path_uses_muxer_port_suffix() {
     let vsock = Path::new("/run/m80/vm/firecracker/vm/root/vsock.sock");
@@ -84,6 +94,80 @@ fn allow_outbound_cold_launch_uses_planned_private_netns_path() {
         path,
         m80_net_outbound::planned_vmm_netns_path(&run_root, vm_id)
     );
+}
+
+#[test]
+fn phase_6_outbound_nat_realization_uses_network_helper() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("requests.log");
+    let helper_path = dir.path().join("helper.sh");
+    write_executable(
+        &helper_path,
+        &format!(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "{}"
+  printf '%s\n' '{{"status":"ok","success":{{"kind":"realized_network","realized":{{"bridge_name":"br-test","tap_name":"tap-test","vmm_netns_path":"/run/netns/m80-test","guest_ipv4":"172.16.0.2","guest_mac":"02:00:00:00:00:01","bridge_cidr":"172.16.0.0/24"}}}}}}'
+done
+"#,
+            log.display()
+        ),
+    );
+    let helper = crate::network_helper::NetworkHelperClient::new(helper_path);
+    let run_root = dir.path().join("run-root");
+    let run_dir = run_root.join("vm-helper");
+    let mut config = SandboxConfig::default();
+    config.network = crate::NetworkPolicy::AllowOutbound {
+        exceptions: Vec::new(),
+    };
+
+    let realized =
+        phase_6_network_realize(&helper, &config, "vm-helper", &run_root, &run_dir).unwrap();
+
+    assert!(matches!(
+        realized,
+        RealizedNetwork::OutboundNat {
+            ref tap_name,
+            ref guest_mac,
+            ..
+        } if tap_name == "tap-test" && guest_mac == "02:00:00:00:00:01"
+    ));
+    let requests = std::fs::read_to_string(log).unwrap();
+    assert!(requests.contains(r#""op":"realize_bridge_and_tap""#));
+    assert!(requests.contains(r#""vm_id":"vm-helper""#));
+}
+
+#[test]
+fn phase_6_helper_failure_is_typed() {
+    let dir = tempfile::tempdir().unwrap();
+    let helper_path = dir.path().join("helper.sh");
+    write_executable(
+        &helper_path,
+        r#"#!/bin/sh
+while IFS= read -r _line; do
+  printf '%s\n' '{"status":"err","failure":{"kind":"operation_failed","detail":"synthetic launch denial"}}'
+done
+"#,
+    );
+    let helper = crate::network_helper::NetworkHelperClient::new(helper_path);
+    let run_root = dir.path().join("run-root");
+    let run_dir = run_root.join("vm-helper-fail");
+    let mut config = SandboxConfig::default();
+    config.network = crate::NetworkPolicy::AllowOutbound {
+        exceptions: Vec::new(),
+    };
+
+    let err = phase_6_network_realize(&helper, &config, "vm-helper-fail", &run_root, &run_dir)
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        FcError::NetworkHelper(crate::NetworkHelperError::OperationFailed {
+            operation: crate::NetworkHelperOperation::RealizeBridgeAndTap,
+            kind: m80_net_outbound::NetworkHelperFailureKind::OperationFailed,
+            ref detail,
+        }) if detail == "synthetic launch denial"
+    ));
 }
 
 #[test]

@@ -1,4 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::network_helper::NetworkHelperClient;
 
 pub(super) struct LaunchRunDirCleanupGuard {
     vm_id: String,
@@ -58,14 +61,20 @@ pub(super) struct LaunchProcessCleanupGuard {
 pub(super) struct LaunchNetworkCleanupGuard {
     vm_id: String,
     run_root: PathBuf,
+    network_helper: Arc<NetworkHelperClient>,
     armed: bool,
 }
 
 impl LaunchNetworkCleanupGuard {
-    pub(super) fn new(vm_id: &str, run_root: PathBuf) -> Self {
+    pub(super) fn new(
+        network_helper: &Arc<NetworkHelperClient>,
+        vm_id: &str,
+        run_root: PathBuf,
+    ) -> Self {
         Self {
             vm_id: vm_id.to_owned(),
             run_root,
+            network_helper: Arc::clone(network_helper),
             armed: true,
         }
     }
@@ -80,7 +89,7 @@ impl Drop for LaunchNetworkCleanupGuard {
         if !self.armed {
             return;
         }
-        match m80_net_outbound::cleanup_vm(&self.vm_id, &self.run_root) {
+        match self.network_helper.cleanup_vm(&self.vm_id, &self.run_root) {
             Ok(()) => {
                 tracing::warn!(
                     vm_id = %self.vm_id,

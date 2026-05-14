@@ -12,6 +12,7 @@ mod hotplug_types;
 mod launch;
 mod layout;
 mod lifecycle;
+mod network_helper;
 mod preboot;
 mod runroot;
 mod storage_prep;
@@ -24,8 +25,9 @@ pub use config::{
 };
 pub use error::{
     CleanupAuthority, CleanupPhase, CleanupReleaseBlocker, ConfigError, FcError,
-    LifecycleFailureKind, StopDisposition, WireProtocolError, CLEANUP_AUTHORITY,
-    CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS, STOP_DISPOSITIONS,
+    LifecycleFailureKind, NetworkHelperError, NetworkHelperOperation, StopDisposition,
+    WireProtocolError, CLEANUP_AUTHORITY, CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS,
+    STOP_DISPOSITIONS,
 };
 pub use hotplug_types::{HotplugDriveAttach, HotplugDriveDetach};
 pub use layout::{

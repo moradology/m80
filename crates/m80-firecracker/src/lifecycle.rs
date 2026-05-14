@@ -154,6 +154,7 @@ impl RunningSandbox {
         // Phase 4: release. Destructure to drop everything except what moves
         // into StoppedSandbox.
         let t_release = Instant::now();
+        let network_helper = Arc::clone(&self.backend.network_helper);
         let RunningSandbox {
             vm_id,
             request_id,
@@ -208,6 +209,7 @@ impl RunningSandbox {
             run_root,
             diagnostics,
             network_cleanup,
+            network_helper,
         })
     }
 
@@ -250,6 +252,7 @@ impl RunningSandbox {
             }
         }
 
+        let network_helper = Arc::clone(&self.backend.network_helper);
         let RunningSandbox {
             vm_id,
             request_id,
@@ -300,6 +303,7 @@ impl RunningSandbox {
             run_root,
             diagnostics,
             network_cleanup,
+            network_helper,
         })
     }
 

@@ -67,11 +67,13 @@ distinct from the guest MAC so gateway replies addressed to the guest MAC are
 forwarded to the Firecracker TAP path rather than consumed by a host-side link
 device.
 
-`m80-firecracker` calls this setup from launch phase 6 when
-`NetworkPolicy::AllowOutbound` resolves to `VmNetworkMode::OutboundNat`.
-The realized TAP name and guest MAC become the Firecracker
-`NetworkInterfaceConfig` for `eth0`, and the planned namespace path is passed
-to the official jailer as `--netns`.
+`m80-firecracker` calls this setup through the pinned `m80-net-helper` from
+launch phase 6 when `NetworkPolicy::AllowOutbound` resolves to
+`VmNetworkMode::OutboundNat`. The realized TAP name and guest MAC become the
+Firecracker `NetworkInterfaceConfig` for `eth0`, and the planned namespace path
+is passed to the official jailer as `--netns`. Launch failure cleanup,
+`StoppedSandbox::delete`, `StoppedSandbox::preserve_for_triage`, and stale
+run-root recovery route outbound cleanup through the same helper boundary.
 
 If TAP setup fails after the run-root bridge has been created, setup rolls back
 the guest-IP claim and VM network state file, deletes the host veth and
@@ -87,13 +89,15 @@ Linux accepts TUN/TAP creation through `/dev/net/tun`, not as an rtnetlink
 - TAP creation: Linux TUN/TAP driver inside the VMM namespace.
 - Bridge/address/veth/link mutation, namespace link moves, and deletion:
   rtnetlink.
-- Firewall policy: iptables/sysctl policy work, outside this setup leaf.
+- Firewall policy: iptables/sysctl policy work, applied through
+  `m80-net-helper` after PID-1 guest network tokens are prepared.
 
 ## No IP Shellout
 
 Bridge/tap setup has no `ip link`, `ip addr`, `ip tuntap`, `ip link delete`,
-or `/sbin/ip` command path. Privilege is held by the m80 process at startup
-and consumed through direct kernel APIs: rtnetlink for link mutation/deletion
+or `/sbin/ip` command path. Privilege is held by the network helper process
+after startup and consumed through direct kernel APIs: rtnetlink for link
+mutation/deletion
 and the TUN/TAP driver for TAP creation.
 
 The no-shellout contract applies to bridge/tap setup only. iptables policy and

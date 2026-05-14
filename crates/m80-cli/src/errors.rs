@@ -72,6 +72,7 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Jailer(_)
         | FcError::Cgroup(_)
         | FcError::Network(_)
+        | FcError::NetworkHelper(_)
         | FcError::Client(_)
         | FcError::Vsock(_)
         | FcError::Protocol(_)
@@ -147,6 +148,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Jailer(_) => "Jailer",
         FcError::Cgroup(_) => "Cgroup",
         FcError::Network(_) => "Network",
+        FcError::NetworkHelper(_) => "NetworkHelper",
         FcError::Client(_) => "Client",
         FcError::Vsock(_) => "Vsock",
         FcError::Protocol(_) => "Protocol",
