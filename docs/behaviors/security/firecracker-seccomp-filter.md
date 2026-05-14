@@ -21,7 +21,8 @@ the filter therefore invalidates cached discovery rather than letting an older
 successful preflight authorize a different filter.
 
 This behavior covers the VMM process. Guest workload seccomp is a separate
-guestd/exec-shim hardening surface.
+guestd/exec-shim hardening surface. The required broker split is captured in
+`docs/design/security-hardening-boundary-splits.md`.
 
 ## Evidence
 

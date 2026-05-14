@@ -24,6 +24,8 @@ private network namespace for the Firecracker VMM process.
 This remains narrower than "a compromised VMM has no network" for all modes.
 `AllowOutbound` still needs a cross-namespace data path before m80 can put the
 VMM into a private namespace while preserving the owned bridge/TAP/NAT path.
+The required topology is captured in
+`docs/design/security-hardening-boundary-splits.md`.
 
 ## Evidence
 

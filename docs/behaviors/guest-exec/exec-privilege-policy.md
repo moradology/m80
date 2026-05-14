@@ -54,3 +54,6 @@ a small safe wrapper crate that owns:
 
 Only after that crate exists should `m80-proto` add the fields and bump
 `PROTOCOL_VERSION`.
+
+For the fixed guestd/workload seccomp split, see
+`docs/design/security-hardening-boundary-splits.md`.

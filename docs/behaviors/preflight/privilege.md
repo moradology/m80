@@ -36,6 +36,9 @@ effective set. Missing any one of them returns
 `CAP_SETPCAP` is consumed at the hardening-wrapper boundary: it lets
 `m80-jailer-harden` drop unneeded capabilities from the bounding set, and it is
 not retained in the official jailer's effective/permitted sets.
+Dropping `CAP_NET_ADMIN` from the long-lived parent requires a helper boundary
+because outbound launch and cleanup still need host network mutation; that
+split is tracked in `docs/design/security-hardening-boundary-splits.md`.
 
 ### Privileged container capability set
 
