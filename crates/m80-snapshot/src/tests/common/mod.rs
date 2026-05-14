@@ -15,16 +15,10 @@ use crate::{
     SCHEMA_VERSION,
 };
 
-/// Return the five required artifacts pointing at `dir`-relative paths.
+/// Return the required snapshot artifacts pointing at `dir`-relative paths.
 /// All sha256 and size values are fixed constants — no real files needed.
-pub(crate) fn five_artifacts(dir: &Path) -> Vec<Artifact> {
+pub(crate) fn snapshot_artifacts(dir: &Path) -> Vec<Artifact> {
     vec![
-        Artifact {
-            kind: ArtifactKind::BootIdentity,
-            path: dir.join("boot-identity.bin"),
-            sha256: "a".repeat(64),
-            size: 512,
-        },
         Artifact {
             kind: ArtifactKind::Memory,
             path: dir.join("snapshot-memory.bin"),
@@ -32,22 +26,10 @@ pub(crate) fn five_artifacts(dir: &Path) -> Vec<Artifact> {
             size: 134217728,
         },
         Artifact {
-            kind: ArtifactKind::RuntimeRootfs,
-            path: dir.join("runtime-rootfs.ext4"),
-            sha256: "c".repeat(64),
-            size: 536870912,
-        },
-        Artifact {
             kind: ArtifactKind::VmState,
             path: dir.join("snapshot-vmstate.bin"),
             sha256: "d".repeat(64),
             size: 4096,
-        },
-        Artifact {
-            kind: ArtifactKind::WorkspaceScratch,
-            path: dir.join("workspace-scratch.ext4"),
-            sha256: "e".repeat(64),
-            size: 1073741824,
         },
     ]
 }
@@ -55,19 +37,14 @@ pub(crate) fn five_artifacts(dir: &Path) -> Vec<Artifact> {
 /// Build a minimal valid `SnapshotManifest` whose artifact paths sit under
 /// `dir`. Tests that only care about round-trip behavior use this.
 pub(crate) fn sample_manifest(dir: &Path) -> SnapshotManifest {
-    let arts = five_artifacts(dir);
+    let arts = snapshot_artifacts(dir);
     let sha = hex::encode(artifact_set_sha256(&arts));
     SnapshotManifest {
         artifact_set_sha256: sha,
         artifacts: arts,
         created_at_unix_ms: 1_700_000_000_000,
-        diagnostics_bundle: None,
         expected_firecracker_version: "v1.15.1".into(),
-        metrics_snapshot: None,
         schema_version: SCHEMA_VERSION,
-        source_run_id: "run-abc".into(),
-        source_vm_id: "vm-xyz".into(),
-        source_workspace_id: "ws-123".into(),
     }
 }
 

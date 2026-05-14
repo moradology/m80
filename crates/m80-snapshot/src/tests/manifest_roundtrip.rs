@@ -140,20 +140,20 @@ fn read_missing_file_surfaces_io_error_with_path() {
     }
 }
 
-/// The five required artifact kinds survive a round-trip.
+/// The required snapshot artifact kinds survive a round-trip.
 #[test]
-fn five_required_artifact_kinds_round_trip() {
+fn required_artifact_kinds_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     let m = common::sample_manifest(dir.path());
     assert_eq!(
         m.artifacts.len(),
-        5,
-        "sample must contain exactly 5 artifacts"
+        2,
+        "sample must contain exactly 2 artifacts"
     );
     let path = dir.path().join(SNAPSHOT_MANIFEST_FILE);
     m.write(&path).unwrap();
     let m2 = SnapshotManifest::read(&path).unwrap();
-    assert_eq!(m2.artifacts.len(), 5);
+    assert_eq!(m2.artifacts.len(), 2);
     for (a, b) in m.artifacts.iter().zip(m2.artifacts.iter()) {
         assert_eq!(a.kind, b.kind);
         assert_eq!(a.sha256, b.sha256);

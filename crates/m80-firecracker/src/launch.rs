@@ -626,6 +626,11 @@ impl Sandbox {
                 snapshot_restore(RestoreRequest {
                     api_socket: host_api_socket.clone(),
                     paths: snapshot_bind.paths.clone(),
+                    host_paths: snapshot.clone(),
+                    expected_firecracker_version: discovery
+                        .manifest
+                        .expected_firecracker_version
+                        .clone(),
                     vsock_uds: vsock_uds.clone(),
                     resume: true,
                 })
@@ -657,9 +662,6 @@ impl Sandbox {
             request_id.as_deref(),
             "restored guestd ready",
         );
-
-        let _ = discovery; // Discovery is passed for API symmetry; not needed beyond the phases above.
-
         let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
         let active_execs = Arc::new(AtomicUsize::new(0));
         let idle_timed_out = Arc::new(AtomicBool::new(false));

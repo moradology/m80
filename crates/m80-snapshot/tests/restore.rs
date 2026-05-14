@@ -12,16 +12,41 @@ use fixture_server::{resp_204, resp_400, FixtureServer};
 
 use std::path::PathBuf;
 
-use m80_snapshot::{restore, RestoreRequest, SnapshotError, SnapshotPaths};
+use m80_snapshot::{
+    restore, write_snapshot_manifest, RestoreRequest, SnapshotError, SnapshotPaths,
+};
+
+const FC_VERSION: &str = "v1.15.1";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn paths() -> SnapshotPaths {
-    SnapshotPaths {
-        vm_state: PathBuf::from("/run/m80/vms/vm-1/snapshots/vm.snap"),
-        mem: PathBuf::from("/run/m80/vms/vm-1/snapshots/mem.snap"),
+fn prepared_paths() -> (tempfile::TempDir, SnapshotPaths) {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = SnapshotPaths {
+        vm_state: dir.path().join("vm.snap"),
+        mem: dir.path().join("mem.snap"),
+    };
+    std::fs::write(&paths.vm_state, b"vm-state").unwrap();
+    std::fs::write(&paths.mem, b"memory").unwrap();
+    write_snapshot_manifest(&paths, FC_VERSION).unwrap();
+    (dir, paths)
+}
+
+fn request(
+    api_socket: PathBuf,
+    paths: SnapshotPaths,
+    vsock_uds: PathBuf,
+    resume: bool,
+) -> RestoreRequest {
+    RestoreRequest {
+        api_socket,
+        paths: paths.clone(),
+        host_paths: paths,
+        expected_firecracker_version: FC_VERSION.to_owned(),
+        vsock_uds,
+        resume,
     }
 }
 
@@ -33,18 +58,14 @@ fn paths() -> SnapshotPaths {
 #[test]
 fn restore_no_resume_sends_load_only() {
     let dir = tempfile::tempdir().unwrap();
+    let (_snap_dir, paths) = prepared_paths();
     // vsock_uds does not exist — that's fine (NotFound is silently ignored).
     let vsock_uds = dir.path().join("vsock.sock");
 
     // Only one response needed: PUT /snapshot/load.
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
 
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: paths(),
-        vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     restore(req).expect("restore must succeed");
 
     let requests = server.join();
@@ -69,16 +90,12 @@ fn restore_no_resume_sends_load_only() {
 #[test]
 fn restore_with_resume_sends_load_then_resumed() {
     let dir = tempfile::tempdir().unwrap();
+    let (_snap_dir, paths) = prepared_paths();
     let vsock_uds = dir.path().join("vsock.sock");
 
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
 
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: paths(),
-        vsock_uds,
-        resume: true,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, true);
     restore(req).expect("restore must succeed");
 
     let requests = server.join();
@@ -114,21 +131,20 @@ fn restore_with_resume_sends_load_then_resumed() {
 fn restore_load_body_includes_snapshot_path() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     restore(req).expect("restore must succeed");
     let requests = server.join();
     let body = &requests[0];
-    assert!(body.contains("\"snapshot_path\""), "must include snapshot_path key: {body}");
-    assert!(body.contains("vm.snap"), "snapshot_path value must appear: {body}");
+    assert!(
+        body.contains("\"snapshot_path\""),
+        "must include snapshot_path key: {body}"
+    );
+    assert!(
+        body.contains("vm.snap"),
+        "snapshot_path value must appear: {body}"
+    );
 }
 
 /// `PUT /snapshot/load` body carries a `mem_backend` object with `backend_type: "File"`.
@@ -136,22 +152,24 @@ fn restore_load_body_includes_snapshot_path() {
 fn restore_load_body_uses_file_backed_mem_backend() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     restore(req).expect("restore must succeed");
     let requests = server.join();
     let body = &requests[0];
-    assert!(body.contains("\"mem_backend\""), "must include mem_backend key: {body}");
-    assert!(body.contains("\"backend_type\":\"File\""), "backend_type must be File: {body}");
-    assert!(body.contains("mem.snap"), "backend_path value must appear: {body}");
+    assert!(
+        body.contains("\"mem_backend\""),
+        "must include mem_backend key: {body}"
+    );
+    assert!(
+        body.contains("\"backend_type\":\"File\""),
+        "backend_type must be File: {body}"
+    );
+    assert!(
+        body.contains("mem.snap"),
+        "backend_path value must appear: {body}"
+    );
 }
 
 /// `PUT /snapshot/load` body must not include the deprecated `mem_file_path` field.
@@ -159,20 +177,16 @@ fn restore_load_body_uses_file_backed_mem_backend() {
 fn restore_load_body_omits_deprecated_mem_file_path() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     restore(req).expect("restore must succeed");
     let requests = server.join();
     let body = &requests[0];
-    assert!(!body.contains("\"mem_file_path\""), "deprecated mem_file_path must not appear: {body}");
+    assert!(
+        !body.contains("\"mem_file_path\""),
+        "deprecated mem_file_path must not appear: {body}"
+    );
 }
 
 /// `PUT /snapshot/load` body must not include `resume_vm`; resume is a separate PATCH.
@@ -180,20 +194,16 @@ fn restore_load_body_omits_deprecated_mem_file_path() {
 fn restore_load_body_omits_resume_vm() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     restore(req).expect("restore must succeed");
     let requests = server.join();
     let body = &requests[0];
-    assert!(!body.contains("\"resume_vm\""), "resume_vm must not appear in load body: {body}");
+    assert!(
+        !body.contains("\"resume_vm\""),
+        "resume_vm must not appear in load body: {body}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -205,15 +215,11 @@ fn restore_load_body_omits_resume_vm() {
 fn restore_absent_vsock_uds_is_not_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("does-not-exist.sock");
+    let (_snap_dir, paths) = prepared_paths();
 
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
 
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: paths(),
-        vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     restore(req).expect("absent vsock UDS must not be an error");
     server.join();
 }
@@ -223,24 +229,69 @@ fn restore_absent_vsock_uds_is_not_an_error() {
 fn restore_removes_existing_vsock_uds_before_load() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
     // Create a regular file to stand in for the socket file.
     std::fs::write(&vsock_uds, b"stale").unwrap();
     assert!(vsock_uds.exists());
 
     let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
 
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: paths(),
-        vsock_uds: vsock_uds.clone(),
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds.clone(), false);
     restore(req).expect("restore must succeed");
     server.join();
 
     assert!(
         !vsock_uds.exists(),
         "vsock UDS must have been removed by restore"
+    );
+}
+
+#[test]
+fn restore_rejects_tampered_memory_before_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
+    std::fs::write(&paths.mem, b"tampered").unwrap();
+    let server = FixtureServer::spawn(vec![]).unwrap();
+
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
+    let err = restore(req).unwrap_err();
+
+    let requests = server.join();
+    assert_eq!(
+        requests.len(),
+        0,
+        "tamper rejection must happen before HTTP"
+    );
+    assert!(
+        matches!(
+            err,
+            SnapshotError::ArtifactMismatch { .. } | SnapshotError::ArtifactSetMismatch { .. }
+        ),
+        "tampered memory must surface as an integrity error, got {err:?}"
+    );
+}
+
+#[test]
+fn restore_rejects_firecracker_version_mismatch_before_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
+    let server = FixtureServer::spawn(vec![]).unwrap();
+
+    let mut req = request(server.socket_path.clone(), paths, vsock_uds, false);
+    req.expected_firecracker_version = "v9.99.0".to_owned();
+    let err = restore(req).unwrap_err();
+
+    let requests = server.join();
+    assert_eq!(
+        requests.len(),
+        0,
+        "version mismatch must happen before HTTP"
+    );
+    assert!(
+        matches!(err, SnapshotError::FirecrackerVersionMismatch { .. }),
+        "version mismatch must surface as typed mismatch, got {err:?}"
     );
 }
 
@@ -253,17 +304,13 @@ fn restore_vsock_uds_unlink_failure_surfaces_error() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
     std::fs::create_dir(&vsock_uds).unwrap();
+    let (_snap_dir, paths) = prepared_paths();
 
     // The server does not need to be set up because the error should happen
     // before the client is opened.
     let server = FixtureServer::spawn(vec![]).unwrap();
 
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: paths(),
-        vsock_uds: vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     let err = restore(req).unwrap_err();
 
     // Drain the server (no requests were sent).
@@ -286,16 +333,12 @@ fn restore_vsock_uds_unlink_failure_surfaces_error() {
 fn restore_load_failure_returns_client_error() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
 
     let fault = r#"{"fault_message":"vsock uds path already in use"}"#;
     let server = FixtureServer::spawn(vec![resp_400(fault)]).unwrap();
 
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: paths(),
-        vsock_uds,
-        resume: false,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
     let err = restore(req).unwrap_err();
 
     server.join();
@@ -311,17 +354,13 @@ fn restore_load_failure_returns_client_error() {
 fn restore_resume_failure_returns_client_error() {
     let dir = tempfile::tempdir().unwrap();
     let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
 
     let fault = r#"{"fault_message":"cannot resume from this state"}"#;
     // Load succeeds, resume fails.
     let server = FixtureServer::spawn(vec![resp_204(), resp_400(fault)]).unwrap();
 
-    let req = RestoreRequest {
-        api_socket: server.socket_path.clone(),
-        paths: paths(),
-        vsock_uds,
-        resume: true,
-    };
+    let req = request(server.socket_path.clone(), paths, vsock_uds, true);
     let err = restore(req).unwrap_err();
 
     server.join();

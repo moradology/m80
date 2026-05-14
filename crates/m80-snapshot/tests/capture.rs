@@ -9,7 +9,32 @@ use fixture_server::{resp_204, resp_400, FixtureServer};
 
 use std::path::PathBuf;
 
-use m80_snapshot::{capture, CaptureRequest, SnapshotError, SnapshotKind, SnapshotPaths};
+use m80_snapshot::{
+    capture, CaptureRequest, SnapshotError, SnapshotKind, SnapshotPaths, SNAPSHOT_MANIFEST_FILE,
+};
+
+const FC_VERSION: &str = "v1.15.1";
+
+fn prepared_paths() -> (tempfile::TempDir, SnapshotPaths) {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = SnapshotPaths {
+        vm_state: dir.path().join("vm.snap"),
+        mem: dir.path().join("mem.snap"),
+    };
+    std::fs::write(&paths.vm_state, b"vm-state").unwrap();
+    std::fs::write(&paths.mem, b"memory").unwrap();
+    (dir, paths)
+}
+
+fn request(api_socket: PathBuf, paths: SnapshotPaths, kind: SnapshotKind) -> CaptureRequest {
+    CaptureRequest {
+        api_socket,
+        paths: paths.clone(),
+        host_paths: paths,
+        expected_firecracker_version: FC_VERSION.to_owned(),
+        kind,
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Happy path — Full snapshot
@@ -21,15 +46,9 @@ use m80_snapshot::{capture, CaptureRequest, SnapshotError, SnapshotKind, Snapsho
 fn capture_full_sends_pause_then_create_in_order() {
     // Two responses: one for PATCH /vm, one for PUT /snapshot/create.
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
+    let (_dir, paths) = prepared_paths();
 
-    let req = CaptureRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/run/m80/vms/vm-1/snapshots/vm.snap"),
-            mem: PathBuf::from("/run/m80/vms/vm-1/snapshots/mem.snap"),
-        },
-        kind: SnapshotKind::Full,
-    };
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Full);
     capture(req).expect("capture must succeed");
 
     let requests = server.join();
@@ -50,15 +69,9 @@ fn capture_full_sends_pause_then_create_in_order() {
 #[test]
 fn capture_pause_request_carries_paused_state() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
+    let (_dir, paths) = prepared_paths();
 
-    let req = CaptureRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/run/m80/vms/vm-1/snapshots/vm.snap"),
-            mem: PathBuf::from("/run/m80/vms/vm-1/snapshots/mem.snap"),
-        },
-        kind: SnapshotKind::Full,
-    };
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Full);
     capture(req).expect("capture must succeed");
 
     let requests = server.join();
@@ -74,15 +87,9 @@ fn capture_pause_request_carries_paused_state() {
 #[test]
 fn capture_full_kind_serializes_snapshot_type_full() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
+    let (_dir, paths) = prepared_paths();
 
-    let req = CaptureRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        kind: SnapshotKind::Full,
-    };
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Full);
     capture(req).expect("capture must succeed");
 
     let requests = server.join();
@@ -98,15 +105,9 @@ fn capture_full_kind_serializes_snapshot_type_full() {
 #[test]
 fn capture_diff_kind_serializes_snapshot_type_diff() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
+    let (_dir, paths) = prepared_paths();
 
-    let req = CaptureRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        kind: SnapshotKind::Diff,
-    };
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Diff);
     capture(req).expect("capture must succeed");
 
     let requests = server.join();
@@ -122,27 +123,37 @@ fn capture_diff_kind_serializes_snapshot_type_diff() {
 #[test]
 fn capture_sends_correct_paths_in_create_body() {
     let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
+    let (_dir, paths) = prepared_paths();
 
-    let req = CaptureRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/run/fc/snap-state.bin"),
-            mem: PathBuf::from("/run/fc/snap-mem.bin"),
-        },
-        kind: SnapshotKind::Full,
-    };
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Full);
     capture(req).expect("capture must succeed");
 
     let requests = server.join();
     let create_body = &requests[1];
     assert!(
-        create_body.contains("snap-state.bin"),
+        create_body.contains("vm.snap"),
         "create body must contain vm_state path: {create_body}"
     );
     assert!(
-        create_body.contains("snap-mem.bin"),
+        create_body.contains("mem.snap"),
         "create body must contain mem path: {create_body}"
     );
+}
+
+#[test]
+fn capture_writes_manifest_after_snapshot_create() {
+    let server = FixtureServer::spawn(vec![resp_204(), resp_204()]).unwrap();
+    let (dir, paths) = prepared_paths();
+
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Full);
+    capture(req).expect("capture must succeed");
+
+    server.join();
+    let manifest_path = dir.path().join(SNAPSHOT_MANIFEST_FILE);
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+    assert!(manifest.contains("\"expected_firecracker_version\": \"v1.15.1\""));
+    assert!(manifest.contains("\"kind\": \"memory\""));
+    assert!(manifest.contains("\"kind\": \"vm_state\""));
 }
 
 // ---------------------------------------------------------------------------
@@ -156,15 +167,9 @@ fn capture_pause_failure_returns_client_error() {
     let fault = r#"{"fault_message":"vm not in a pausable state"}"#;
     // Only one response — pause fails, create must not be sent.
     let server = FixtureServer::spawn(vec![resp_400(fault)]).unwrap();
+    let (_dir, paths) = prepared_paths();
 
-    let req = CaptureRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        kind: SnapshotKind::Full,
-    };
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Full);
     let err = capture(req).unwrap_err();
 
     server.join();
@@ -180,15 +185,9 @@ fn capture_pause_failure_returns_client_error() {
 fn capture_create_failure_returns_client_error() {
     let fault = r#"{"fault_message":"vm must be paused before snapshot"}"#;
     let server = FixtureServer::spawn(vec![resp_204(), resp_400(fault)]).unwrap();
+    let (_dir, paths) = prepared_paths();
 
-    let req = CaptureRequest {
-        api_socket: server.socket_path.clone(),
-        paths: SnapshotPaths {
-            vm_state: PathBuf::from("/snap/vm.snap"),
-            mem: PathBuf::from("/snap/mem.snap"),
-        },
-        kind: SnapshotKind::Full,
-    };
+    let req = request(server.socket_path.clone(), paths, SnapshotKind::Full);
     let err = capture(req).unwrap_err();
 
     server.join();

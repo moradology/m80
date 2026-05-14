@@ -97,6 +97,14 @@ impl RunningSandbox {
         snapshot_capture(CaptureRequest {
             api_socket,
             paths: snapshot_bind.paths.clone(),
+            host_paths: paths,
+            expected_firecracker_version: self
+                .backend
+                .config
+                .discovery
+                .manifest
+                .expected_firecracker_version
+                .clone(),
             kind: SnapshotKind::Full,
         })
         .map_err(FcError::Snapshot)?;

@@ -46,11 +46,15 @@ restore because the guest kernel can accept the socket while guestd itself is
 stopped.
 
 `RunningSandbox::capture` pauses the live VM and writes a Full snapshot pair
-to caller-supplied paths. The VM is left in the Paused state after a
-successful call; the caller must then `stop()` or resume the VM. Snapshot
-paths are host paths. `m80-firecracker` bind-mounts their parent directory
-into the jail at `/snapshot` before calling Firecracker, because jailed
-Firecracker cannot see arbitrary host paths outside the chroot.
+to caller-supplied paths, then writes `snapshot-manifest.json` beside the pair
+with sha256s and the Firecracker version pin admitted by preflight. The VM is
+left in the Paused state after a successful call; the caller must then `stop()`
+or resume the VM. Snapshot paths are host paths. `m80-firecracker` bind-mounts
+their parent directory into the jail at `/snapshot` before calling
+Firecracker, because jailed Firecracker cannot see arbitrary host paths outside
+the chroot. Restore verifies that manifest against the host-readable snapshot
+pair and the current preflight Firecracker version before Firecracker receives
+`PUT /snapshot/load`.
 
 `RunningSandbox::exec(&mut self, ...)` supports sequential multi-exec on the
 same VM. Each call opens a fresh vsock connection to guestd, performs exactly

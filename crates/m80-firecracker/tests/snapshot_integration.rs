@@ -434,6 +434,11 @@ fn missing_snapshot_error_is_classified_without_kvm() {
             vm_state: PathBuf::from("/tmp/m80-no-such-vm.snap"),
             mem: PathBuf::from("/tmp/m80-no-such-mem.snap"),
         },
+        host_paths: SnapshotPaths {
+            vm_state: PathBuf::from("/tmp/m80-no-such-vm.snap"),
+            mem: PathBuf::from("/tmp/m80-no-such-mem.snap"),
+        },
+        expected_firecracker_version: "v1.15.1".to_owned(),
         vsock_uds: PathBuf::from("/tmp/m80-no-such-vsock.sock"),
         resume: false,
     });
@@ -445,8 +450,8 @@ fn missing_snapshot_error_is_classified_without_kvm() {
     assert!(!display.is_empty(), "error display must not be empty");
     // Must be the public REST/UDS snapshot error surface, not an opaque error.
     assert!(
-        display.contains("firecracker client") || display.contains("vsock UDS"),
-        "error must be clearly classified as client or vsock-uds, got: {display}"
+        display.contains("snapshot manifest") || display.contains("snapshot artifact"),
+        "error must be clearly classified as snapshot integrity/setup, got: {display}"
     );
 }
 

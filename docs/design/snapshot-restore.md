@@ -231,14 +231,13 @@ host environment is compatible with the snapshot. The following checks apply:
 
 | Check | Required | Notes |
 |---|---|---|
-| Firecracker version | Advisory | Snapshots are versioned; FC warns on minor-version mismatch but loads anyway. Major-version mismatch may abort. |
+| Firecracker version | Hard | m80 records the capture-time Firecracker version pin in `snapshot-manifest.json` and rejects a restore-time mismatch before `PUT /snapshot/load`. |
 | Kernel image SHA | Advisory | The snapshot saves CPU state; a different kernel image on restore is undefined behavior, but FC does not verify this. |
 | `mem_size_mib` | Hard | FC verifies the mem file size matches the snapshot's recorded memory size; mismatch → load error. |
 | `vcpu_count` | Hard | vCPU register state is per-vCPU; count mismatch → load error. |
 | KVM version / host CPU | Hard | Snapshots are not portable across microarchitectures; FC returns an error if the host CPU cannot replay the saved state. |
 
-Advisory checks are logged as warnings; hard checks abort the restore with an
-appropriate error variant.
+Hard checks abort the restore with an appropriate error variant.
 
 ---
 

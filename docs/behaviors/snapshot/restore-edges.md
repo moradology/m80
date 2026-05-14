@@ -5,14 +5,27 @@ Behaviors captured by `m80-5vlb.2`.
 ## Corrupted Snapshot Files
 
 A captured snapshot pair is not trusted just because the files exist. If either
-snapshot file is truncated or otherwise rejected by Firecracker during
-`launch_from_snapshot`, m80 surfaces a finite typed restore error instead of
+snapshot file is truncated or otherwise changed after capture,
+`m80-snapshot::restore` rejects it by recomputing the manifest sha256s before
+Firecracker sees `PUT /snapshot/load`. If Firecracker still rejects a snapshot
+after the manifest check, m80 surfaces a finite typed restore error instead of
 panicking or treating the VM as usable.
 
-Test: `crates/m80-firecracker/tests/snapshot_integration.rs::corrupted_snapshot_file_fails_clearly`
+Tests:
+`crates/m80-snapshot/tests/restore.rs::restore_rejects_tampered_memory_before_load`;
+`crates/m80-firecracker/tests/snapshot_integration.rs::corrupted_snapshot_file_fails_clearly`
 (#[ignore]) captures a real VM, truncates the memory snapshot file, attempts a
 restore, and asserts the error display is classified as snapshot, client, or
 I/O restore failure.
+
+## Firecracker Version Pin
+
+The snapshot manifest records the capture-time Firecracker version pin. Restore
+compares that value with the restore environment's expected Firecracker version
+and fails before vsock unlink or REST calls when they differ. Snapshot restore
+does not rely on Firecracker's own compatibility warning/error behavior.
+
+Test: `crates/m80-snapshot/tests/restore.rs::restore_rejects_firecracker_version_mismatch_before_load`.
 
 ## Post-Capture Mutation
 

@@ -9,10 +9,9 @@
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(test)]
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-#[cfg(test)]
 use sha2::{Digest, Sha256};
 
 // Re-export the client types callers need to construct requests.
@@ -23,12 +22,10 @@ use m80_firecracker_client::{
 
 /// Manifest schema version. m80 v0.1 ships `1`; future versions are new code,
 /// not migrations.
-#[cfg(test)]
-pub(crate) const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 1;
 
 /// File name for the snapshot manifest in the snapshot directory.
-#[cfg(test)]
-pub(crate) const SNAPSHOT_MANIFEST_FILE: &str = "snapshot-manifest.json";
+pub const SNAPSHOT_MANIFEST_FILE: &str = "snapshot-manifest.json";
 
 /// File name for the restore metadata in the snapshot directory.
 #[cfg(test)]
@@ -47,33 +44,19 @@ pub(crate) const RESTORE_METADATA_FILE: &str = "restore-metadata.json";
 /// The schema is stable and serializes to the canonical JSON shape read by
 /// the active capture/restore path. Future schema versions are new code, not
 /// tolerant migrations.
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SnapshotManifest {
+pub struct SnapshotManifest {
     /// sha256 over the artifact set in declared order.
     pub artifact_set_sha256: String,
-    /// Ordered artifact set: 5 required entries, up to 2 optional appended
-    /// (diagnostics, metrics).
+    /// Ordered artifact set: memory image then VM state file.
     pub artifacts: Vec<Artifact>,
     /// Unix epoch milliseconds at capture time.
     pub created_at_unix_ms: u64,
-    /// Optional diagnostics bundle artifact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub diagnostics_bundle: Option<Artifact>,
     /// Firecracker version pin.
     pub expected_firecracker_version: String,
-    /// Optional metrics snapshot artifact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metrics_snapshot: Option<Artifact>,
     /// Schema version. v0.1 = `1`.
     pub schema_version: u32,
-    /// Source run identifier (caller-supplied opaque string).
-    pub source_run_id: String,
-    /// Source VM identifier (caller-supplied opaque string).
-    pub source_vm_id: String,
-    /// Source workspace identifier (caller-supplied opaque string).
-    pub source_workspace_id: String,
 }
 
 /// Restore metadata persisted alongside the manifest.
@@ -102,10 +85,9 @@ pub(crate) struct RestoreMetadata {
 ///
 /// Field declaration order is alphabetical so JSON serialization is stable
 /// without a canonicalization pass.
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Artifact {
+pub struct Artifact {
     /// Kind of artifact.
     pub kind: ArtifactKind,
     /// Path on the host (or jail) at capture time.
@@ -116,21 +98,14 @@ pub(crate) struct Artifact {
     pub size: u64,
 }
 
-/// The five required artifact kinds.
-#[cfg(test)]
+/// Required artifact kinds for the active Firecracker snapshot pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub(crate) enum ArtifactKind {
-    /// Boot identity record.
-    BootIdentity,
+pub enum ArtifactKind {
     /// Memory image.
     Memory,
-    /// Runtime rootfs clone.
-    RuntimeRootfs,
     /// VM state file produced by Firecracker's `CreateSnapshot`.
     VmState,
-    /// Workspace scratch image.
-    WorkspaceScratch,
 }
 
 // ---------------------------------------------------------------------------
@@ -170,8 +145,12 @@ pub enum SnapshotKind {
 pub struct CaptureRequest {
     /// Path to the Firecracker API socket.
     pub api_socket: PathBuf,
-    /// On-disk paths for the snapshot artifact pair.
+    /// Firecracker-visible paths for the snapshot artifact pair.
     pub paths: SnapshotPaths,
+    /// Host-readable paths for hashing and manifest persistence.
+    pub host_paths: SnapshotPaths,
+    /// Firecracker version this snapshot is pinned to.
+    pub expected_firecracker_version: String,
     /// Full or Diff snapshot.
     pub kind: SnapshotKind,
 }
@@ -181,8 +160,12 @@ pub struct CaptureRequest {
 pub struct RestoreRequest {
     /// Path to the Firecracker API socket for the **new** (restore-target) process.
     pub api_socket: PathBuf,
-    /// On-disk paths for the snapshot artifact pair.
+    /// Firecracker-visible paths for the snapshot artifact pair.
     pub paths: SnapshotPaths,
+    /// Host-readable paths for manifest verification.
+    pub host_paths: SnapshotPaths,
+    /// Firecracker version expected by the restore environment.
+    pub expected_firecracker_version: String,
     /// Path to the vsock UDS file from the **previous** VM that must be
     /// removed before Firecracker can rebind it. Removal is skipped only
     /// if the file is absent (`ENOENT`). Any other error is surfaced.
@@ -201,6 +184,7 @@ pub struct RestoreRequest {
 /// Steps:
 /// 1. PATCH `/vm` to `Paused`.
 /// 2. PUT `/snapshot/create` with the configured paths and kind.
+/// 3. Hash the host-visible snapshot pair and write `snapshot-manifest.json`.
 ///
 /// The VM is left in the `Paused` state after a successful call. The caller
 /// decides whether to resume or kill the Firecracker process.
@@ -208,6 +192,8 @@ pub struct RestoreRequest {
 /// # Errors
 ///
 /// Returns [`SnapshotError::Client`] if either REST call fails.
+/// Returns a typed manifest or artifact error if the snapshot pair cannot be
+/// hashed or the manifest cannot be written after Firecracker reports success.
 pub fn capture(req: CaptureRequest) -> Result<(), SnapshotError> {
     let client = FirecrackerClient::new(&req.api_socket).map_err(SnapshotError::Client)?;
 
@@ -228,16 +214,20 @@ pub fn capture(req: CaptureRequest) -> Result<(), SnapshotError> {
         })
         .map_err(SnapshotError::Client)?;
 
+    write_snapshot_manifest(&req.host_paths, &req.expected_firecracker_version)?;
+
     Ok(())
 }
 
 /// Load a snapshot into a new Firecracker process, optionally resuming it.
 ///
 /// Steps:
-/// 1. Remove `req.vsock_uds` if present (`ENOENT` is silently ignored;
+/// 1. Read `snapshot-manifest.json`, verify snapshot pair sha256s, and reject
+///    Firecracker version mismatch.
+/// 2. Remove `req.vsock_uds` if present (`ENOENT` is silently ignored;
 ///    any other error is returned as [`SnapshotError::VsockUdsUnlink`]).
-/// 2. PUT `/snapshot/load` with File-backed memory.
-/// 3. If `req.resume`: PATCH `/vm` to `Resumed`.
+/// 3. PUT `/snapshot/load` with File-backed memory.
+/// 4. If `req.resume`: PATCH `/vm` to `Resumed`.
 ///
 /// # Errors
 ///
@@ -245,6 +235,8 @@ pub fn capture(req: CaptureRequest) -> Result<(), SnapshotError> {
 /// removed for a reason other than `NotFound`.
 /// Returns [`SnapshotError::Client`] if a REST call fails.
 pub fn restore(req: RestoreRequest) -> Result<(), SnapshotError> {
+    verify_snapshot_manifest(&req.host_paths, &req.expected_firecracker_version)?;
+
     match std::fs::remove_file(&req.vsock_uds) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -281,6 +273,160 @@ pub fn restore(req: RestoreRequest) -> Result<(), SnapshotError> {
     Ok(())
 }
 
+/// Hash the host-readable snapshot pair and write `snapshot-manifest.json`
+/// beside it.
+///
+/// This is exposed for tests and for orchestrator paths that need to materialize
+/// a manifest around an already-created snapshot pair.
+///
+/// # Errors
+///
+/// Returns a typed [`SnapshotError`] if the paths are not one snapshot pair,
+/// either artifact cannot be read, or the manifest cannot be written.
+pub fn write_snapshot_manifest(
+    paths: &SnapshotPaths,
+    expected_firecracker_version: &str,
+) -> Result<(), SnapshotError> {
+    let manifest = build_manifest(paths, expected_firecracker_version)?;
+    manifest.write(&manifest_path(paths)?)?;
+    Ok(())
+}
+
+/// Read `snapshot-manifest.json` beside the host-readable snapshot pair and
+/// verify the artifact sha256s and Firecracker version pin.
+///
+/// # Errors
+///
+/// Returns a typed [`SnapshotError`] for schema errors, missing/mismatched
+/// artifacts, artifact-set mismatch, or Firecracker version mismatch.
+pub fn verify_snapshot_manifest(
+    paths: &SnapshotPaths,
+    expected_firecracker_version: &str,
+) -> Result<SnapshotManifest, SnapshotError> {
+    let path = manifest_path(paths)?;
+    let manifest = SnapshotManifest::read(&path).map_err(SnapshotError::Schema)?;
+    if manifest.expected_firecracker_version != expected_firecracker_version {
+        return Err(SnapshotError::FirecrackerVersionMismatch {
+            expected: expected_firecracker_version.to_owned(),
+            recorded: manifest.expected_firecracker_version,
+        });
+    }
+
+    let expected_artifacts = snapshot_artifacts(paths)?;
+    if manifest.artifacts.len() != expected_artifacts.len() {
+        return Err(SnapshotError::ManifestArtifactSetInvalid {
+            detail: format!(
+                "expected {} artifacts, got {}",
+                expected_artifacts.len(),
+                manifest.artifacts.len()
+            ),
+        });
+    }
+    for expected in &expected_artifacts {
+        let Some(recorded) = manifest
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == expected.kind)
+        else {
+            return Err(SnapshotError::ManifestMissingArtifact {
+                kind: expected.kind,
+            });
+        };
+        if recorded.path != expected.path
+            || recorded.size != expected.size
+            || recorded.sha256 != expected.sha256
+        {
+            return Err(SnapshotError::ArtifactMismatch {
+                kind: expected.kind,
+                path: expected.path.clone(),
+                expected_sha256: recorded.sha256.clone(),
+                actual_sha256: expected.sha256.clone(),
+            });
+        }
+    }
+
+    let actual_set_sha256 = hex::encode(artifact_set_sha256(&expected_artifacts));
+    if manifest.artifact_set_sha256 != actual_set_sha256 {
+        return Err(SnapshotError::ArtifactSetMismatch {
+            expected_sha256: manifest.artifact_set_sha256,
+            actual_sha256: actual_set_sha256,
+        });
+    }
+    Ok(manifest)
+}
+
+fn build_manifest(
+    paths: &SnapshotPaths,
+    expected_firecracker_version: &str,
+) -> Result<SnapshotManifest, SnapshotError> {
+    let artifacts = snapshot_artifacts(paths)?;
+    Ok(SnapshotManifest {
+        artifact_set_sha256: hex::encode(artifact_set_sha256(&artifacts)),
+        artifacts,
+        created_at_unix_ms: unix_time_ms()?,
+        expected_firecracker_version: expected_firecracker_version.to_owned(),
+        schema_version: SCHEMA_VERSION,
+    })
+}
+
+fn snapshot_artifacts(paths: &SnapshotPaths) -> Result<Vec<Artifact>, SnapshotError> {
+    ensure_same_snapshot_parent(paths)?;
+    Ok(vec![
+        artifact_for_path(ArtifactKind::Memory, &paths.mem)?,
+        artifact_for_path(ArtifactKind::VmState, &paths.vm_state)?,
+    ])
+}
+
+fn artifact_for_path(kind: ArtifactKind, path: &Path) -> Result<Artifact, SnapshotError> {
+    let bytes = std::fs::read(path).map_err(|source| SnapshotError::ArtifactIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(Artifact {
+        kind,
+        path: path.to_path_buf(),
+        sha256: hex::encode(hasher.finalize()),
+        size: bytes.len() as u64,
+    })
+}
+
+fn manifest_path(paths: &SnapshotPaths) -> Result<PathBuf, SnapshotError> {
+    let parent = ensure_same_snapshot_parent(paths)?;
+    Ok(parent.join(SNAPSHOT_MANIFEST_FILE))
+}
+
+fn ensure_same_snapshot_parent(paths: &SnapshotPaths) -> Result<PathBuf, SnapshotError> {
+    let vm_parent = paths
+        .vm_state
+        .parent()
+        .ok_or_else(|| SnapshotError::InvalidSnapshotPaths {
+            detail: "vm_state path must have a parent directory".to_owned(),
+        })?;
+    let mem_parent = paths
+        .mem
+        .parent()
+        .ok_or_else(|| SnapshotError::InvalidSnapshotPaths {
+            detail: "mem path must have a parent directory".to_owned(),
+        })?;
+    if vm_parent != mem_parent {
+        return Err(SnapshotError::InvalidSnapshotPaths {
+            detail: "vm_state and mem paths must live in the same directory".to_owned(),
+        });
+    }
+    Ok(vm_parent.to_path_buf())
+}
+
+fn unix_time_ms() -> Result<u64, SnapshotError> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|source| SnapshotError::Clock {
+            detail: source.to_string(),
+        })?;
+    Ok(elapsed.as_millis() as u64)
+}
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -291,6 +437,75 @@ pub enum SnapshotError {
     /// A Firecracker REST call failed.
     #[error("firecracker client: {0}")]
     Client(#[from] m80_firecracker_client::ClientError),
+    /// Snapshot manifest schema failed to read or parse.
+    #[error("snapshot manifest: {0}")]
+    Schema(#[from] SchemaError),
+    /// Snapshot artifact file could not be read for hashing.
+    #[error("snapshot artifact I/O at {}: {source}", path.display())]
+    ArtifactIo {
+        /// Path that could not be read.
+        path: PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
+    /// Snapshot artifact bytes or metadata did not match the manifest.
+    #[error(
+        "snapshot artifact {kind:?} at {} mismatch: expected sha256 {expected_sha256}, got {actual_sha256}",
+        path.display()
+    )]
+    ArtifactMismatch {
+        /// Artifact kind that mismatched.
+        kind: ArtifactKind,
+        /// Artifact path.
+        path: PathBuf,
+        /// Manifest sha256.
+        expected_sha256: String,
+        /// Recomputed sha256.
+        actual_sha256: String,
+    },
+    /// Snapshot artifact set digest did not match the manifest.
+    #[error(
+        "snapshot artifact set mismatch: expected sha256 {expected_sha256}, got {actual_sha256}"
+    )]
+    ArtifactSetMismatch {
+        /// Manifest artifact-set sha256.
+        expected_sha256: String,
+        /// Recomputed artifact-set sha256.
+        actual_sha256: String,
+    },
+    /// The manifest omitted a required artifact kind.
+    #[error("snapshot manifest missing required artifact {kind:?}")]
+    ManifestMissingArtifact {
+        /// Missing artifact kind.
+        kind: ArtifactKind,
+    },
+    /// The manifest artifact set has the wrong cardinality or shape.
+    #[error("invalid snapshot manifest artifact set: {detail}")]
+    ManifestArtifactSetInvalid {
+        /// Rejection detail.
+        detail: String,
+    },
+    /// The snapshot was captured against a different Firecracker version.
+    #[error("snapshot Firecracker version mismatch: expected {expected}, recorded {recorded}")]
+    FirecrackerVersionMismatch {
+        /// Restore environment expected version.
+        expected: String,
+        /// Manifest-recorded capture version.
+        recorded: String,
+    },
+    /// Snapshot paths were not a usable two-file pair.
+    #[error("invalid snapshot paths: {detail}")]
+    InvalidSnapshotPaths {
+        /// Rejection detail.
+        detail: String,
+    },
+    /// System clock could not produce a Unix timestamp for manifest creation.
+    #[error("snapshot manifest clock error: {detail}")]
+    Clock {
+        /// Clock error detail.
+        detail: String,
+    },
     /// The vsock UDS file could not be removed before restore. `ENOENT` is
     /// never returned here — only errors other than `NotFound`.
     #[error("vsock UDS unlink failed at {}: {source}", path.display())]
@@ -312,10 +527,9 @@ pub enum SnapshotError {
     },
 }
 
-/// Errors surfaced by private snapshot schema helpers.
-#[cfg(test)]
+/// Errors surfaced by snapshot schema helpers.
 #[derive(Debug, thiserror::Error)]
-enum SchemaError {
+pub enum SchemaError {
     /// `schema_version` in the file did not match [`SCHEMA_VERSION`].
     #[error("unsupported snapshot schema version: got {0}, expected {SCHEMA_VERSION}")]
     UnsupportedSchemaVersion(u32),
@@ -344,13 +558,11 @@ enum SchemaError {
 /// `schema_version: 2` plus a new field surfaces as a
 /// `Json("unknown field …")` (because the structs carry
 /// `#[serde(deny_unknown_fields)]`) instead of `UnsupportedSchemaVersion(2)`.
-#[cfg(test)]
 #[derive(Deserialize)]
 struct SchemaVersionProbe {
     schema_version: u32,
 }
 
-#[cfg(test)]
 fn wrap_io_err(path: &Path) -> impl Fn(io::Error) -> SchemaError + '_ {
     |source| SchemaError::Io {
         path: path.to_path_buf(),
@@ -359,7 +571,6 @@ fn wrap_io_err(path: &Path) -> impl Fn(io::Error) -> SchemaError + '_ {
 }
 
 /// Write `value` to `path` as pretty JSON + trailing newline + mode 0644.
-#[cfg(test)]
 fn write_pretty_json_0644<T: Serialize>(value: &T, path: &Path) -> Result<(), SchemaError> {
     let mut json = serde_json::to_string_pretty(value).map_err(SchemaError::Json)?;
     json.push('\n');
@@ -376,7 +587,6 @@ fn write_pretty_json_0644<T: Serialize>(value: &T, path: &Path) -> Result<(), Sc
 /// Probe `schema_version` before full parse so a v0.2 file reports
 /// `UnsupportedSchemaVersion(2)` instead of leaking the unrelated
 /// `Json("unknown field …")` from `deny_unknown_fields`.
-#[cfg(test)]
 fn parse_with_schema_probe<T: DeserializeOwned>(raw: &[u8]) -> Result<T, SchemaError> {
     let probe: SchemaVersionProbe = serde_json::from_slice(raw).map_err(SchemaError::Json)?;
     if probe.schema_version != SCHEMA_VERSION {
@@ -385,16 +595,14 @@ fn parse_with_schema_probe<T: DeserializeOwned>(raw: &[u8]) -> Result<T, SchemaE
     serde_json::from_slice(raw).map_err(SchemaError::Json)
 }
 
-#[cfg(test)]
 fn read_with_schema_probe<T: DeserializeOwned>(path: &Path) -> Result<T, SchemaError> {
     let raw = std::fs::read(path).map_err(wrap_io_err(path))?;
     parse_with_schema_probe(&raw)
 }
 
-#[cfg(test)]
 impl SnapshotManifest {
     /// Write to `path` as pretty JSON + trailing newline + mode 0644 (Unix).
-    fn write(&self, path: &Path) -> Result<(), SchemaError> {
+    pub fn write(&self, path: &Path) -> Result<(), SchemaError> {
         write_pretty_json_0644(self, path)
     }
 
@@ -402,13 +610,13 @@ impl SnapshotManifest {
     /// `schema_version` before full parse so future-version payloads report
     /// `UnsupportedSchemaVersion` instead of leaking `Json("unknown field …")`
     /// from `deny_unknown_fields`. sha256s are NOT checked here.
-    fn from_bytes(raw: &[u8]) -> Result<SnapshotManifest, SchemaError> {
+    pub fn from_bytes(raw: &[u8]) -> Result<SnapshotManifest, SchemaError> {
         parse_with_schema_probe(raw)
     }
 
     /// Read and structurally validate a manifest at `path`. Probes
     /// `schema_version` before full parse; sha256s are NOT checked here.
-    fn read(path: &Path) -> Result<SnapshotManifest, SchemaError> {
+    pub fn read(path: &Path) -> Result<SnapshotManifest, SchemaError> {
         read_with_schema_probe(path)
     }
 }
@@ -492,7 +700,6 @@ fn validate_persistence_id(field: &'static str, value: &str) -> Result<(), Snaps
 /// Note: `path` fields use [`std::path::Path::to_string_lossy`] internally
 /// through serde's `PathBuf` serialization, which is platform-specific.
 /// Snapshots are not portable across host platforms.
-#[cfg(test)]
 pub(crate) fn artifact_set_sha256(artifacts: &[Artifact]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for artifact in artifacts {
