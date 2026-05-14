@@ -9,6 +9,8 @@ fn host_setup_doc_pins_security_sections() {
         "Docker daemon access as host root",
         "## Artifact Ownership And Modes",
         "/opt/m80/artifacts",
+        "host-binaries.manifest.json",
+        "docs/ops/binary-installation.md",
         "## Cargo And Rust Supply Chain",
         "replace-with = \"hostile\"",
         "cargo build --locked --offline --release",

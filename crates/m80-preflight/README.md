@@ -81,12 +81,19 @@ which is the right place for a security review to start.
      surface. Probed via the `caps` crate against the process's effective set.
      Returns `PrivilegeStatus::Root` or
      `PrivilegeStatus::CapabilityBearing`.
-  14. **Firecracker binary** — discovered via env override or default,
-     `--version` must clear the documented CVE floor before any configured
-     exact version pin is accepted.
-  15. **Jailer binary** — same protocol.
+  14. **Firecracker binary** — discovered via env override or default. The
+     path must be absolute, and `--version` must clear the documented CVE floor
+     before any configured exact version pin is accepted.
+  15. **Jailer binary** — absolute path, discovered via env override or
+      default.
   16. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
+  16b. **Host binary manifest** — reads
+      `<artifact_dir>/host-binaries.manifest.json`, requires entries for
+      `firecracker`, `jailer`, `m80`, `m80_cli`, and `m80_jailer_harden`,
+      checks the configured paths for the three runtime-selected binaries,
+      opens every recorded path with `O_NOFOLLOW`, hashes the opened file
+      descriptor, and rejects non-root-owned or group/world-writable binaries.
   17. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
@@ -108,7 +115,8 @@ which is the right place for a security review to start.
       `e2fsck` on PATH.
 - A boot-scoped sentinel under `/run/m80-preflight-ok-<sha256>` caches only
   the two expensive immutable-artifact checks: `firecracker --version` and
-  `m80-image-manifest::verify`. The key includes the kernel boot id, configured
+  `m80-image-manifest::verify`. Host binary sha256 verification still runs on
+  every preflight invocation. The key includes the kernel boot id, configured
   Firecracker version pin, kernel kind override, and metadata for the
   Firecracker, jailer, hardening wrapper, kernel, rootfs, and manifest files.
   Corrupt or mismatched sentinels are ignored and rewritten after a successful
@@ -192,7 +200,13 @@ which is the right place for a security review to start.
   `FirecrackerCveFloorViolation { cve_id, actual, fixed_versions }`,
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
   effective capability set),
-  `JailerBinaryNotFound`, `JailerHardenBinaryNotFound`, `NonAbsolutePath { kind, path }`,
+  `JailerBinaryNotFound`, `JailerHardenBinaryNotFound`,
+  `HostBinaryManifest(m80_image_manifest::ManifestError)`,
+  `HostBinaryMissing { name }`, `HostBinaryDuplicate { name }`,
+  `HostBinaryPathMismatch { name, expected, actual }`,
+  `BinaryHashMismatch { name, path, expected, actual }`,
+  `HostBinaryPermission { name, path, reason }`,
+  `NonAbsolutePath { kind, path }`,
   `KernelNotFound`, `RootfsNotFound`,
   `ArtifactDirectoryWritable { path, mode }`,
   `ArtifactFileWritable { path, mode }`,
@@ -232,3 +246,6 @@ which is the right place for a security review to start.
   metadata invalidation.
 - `tests/security/rootfs_fd_pinning.rs` — proc-fd handle continues to read the
   verified rootfs bytes after the original path is replaced.
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_hash_mismatch_fails_closed`.
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`.
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`.

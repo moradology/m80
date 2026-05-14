@@ -1,4 +1,4 @@
-//! Schema and verification for the m80 guest-image provenance manifest.
+//! Schema and verification for m80 provenance manifests.
 //!
 //! See `README.md` for the black-box contract.
 //! Behavior captures: beads `m80-sz1.3`, `m80-sz1.4` (`br show m80-sz1.3`).
@@ -30,6 +30,9 @@ use sha2::{Digest, Sha256};
 /// No 1↔2↔3↔4↔5 conversion code: per CLAUDE.md, future versions are new code,
 /// not migrations. Existing older images must be rebuilt.
 pub const SCHEMA_VERSION: u32 = 5;
+
+/// Schema version for `host-binaries.manifest.json`.
+pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 1;
 
 /// Human-readable audit reason recorded in m80-built images that do not bake
 /// an outbound network posture into the image itself.
@@ -68,6 +71,126 @@ pub enum RootfsFormat {
     Ext4,
     /// erofs base rootfs.
     Erofs,
+}
+
+/// Host-side binary names covered by `host-binaries.manifest.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum HostBinaryName {
+    /// Firecracker VMM executable.
+    Firecracker,
+    /// Official Firecracker jailer executable.
+    Jailer,
+    /// Installed m80 CLI executable.
+    M80,
+    /// Installed m80-cli release artifact.
+    M80Cli,
+    /// m80 hardening wrapper that execs the official jailer.
+    M80JailerHarden,
+}
+
+impl HostBinaryName {
+    /// Stable manifest spelling for diagnostics.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Firecracker => "firecracker",
+            Self::Jailer => "jailer",
+            Self::M80 => "m80",
+            Self::M80Cli => "m80_cli",
+            Self::M80JailerHarden => "m80_jailer_harden",
+        }
+    }
+}
+
+/// One host-side TCB binary recorded at install time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostBinaryEntry {
+    /// Logical binary name.
+    pub name: HostBinaryName,
+    /// Absolute installed path.
+    pub path: PathBuf,
+    /// sha256 hex digest of the installed binary bytes.
+    pub sha256: String,
+}
+
+/// Install-time manifest for host-side TCB binaries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostBinariesManifest {
+    /// Host TCB binaries covered by this manifest.
+    pub binaries: Vec<HostBinaryEntry>,
+    /// Always [`HOST_BINARIES_SCHEMA_VERSION`].
+    schema_version: u32,
+}
+
+/// Probes only `schema_version` for `host-binaries.manifest.json`.
+#[derive(Deserialize)]
+struct HostBinariesSchemaVersionProbe {
+    schema_version: u32,
+}
+
+impl HostBinariesManifest {
+    /// Construct a host-binaries manifest with the current schema version.
+    #[must_use]
+    pub fn new(binaries: Vec<HostBinaryEntry>) -> Self {
+        Self {
+            binaries,
+            schema_version: HOST_BINARIES_SCHEMA_VERSION,
+        }
+    }
+
+    /// Returns the host-binaries schema version.
+    #[must_use]
+    pub fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    /// Parse a host-binaries manifest from raw bytes.
+    pub fn from_bytes(raw: &[u8]) -> Result<Self, ManifestError> {
+        let probe: HostBinariesSchemaVersionProbe = serde_json::from_slice(raw)?;
+        if probe.schema_version != HOST_BINARIES_SCHEMA_VERSION {
+            return Err(ManifestError::UnsupportedHostBinariesSchemaVersion(
+                probe.schema_version,
+            ));
+        }
+        Ok(serde_json::from_slice(raw)?)
+    }
+
+    /// Read and structurally validate a host-binaries manifest.
+    pub fn read(path: &Path) -> Result<Self, ManifestError> {
+        let raw = std::fs::read(path).map_err(|source| ManifestError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Self::from_bytes(&raw)
+    }
+
+    /// Write this host-binaries manifest as pretty JSON with mode 0644.
+    pub fn write(&self, path: &Path) -> Result<(), ManifestError> {
+        if self.schema_version != HOST_BINARIES_SCHEMA_VERSION {
+            return Err(ManifestError::UnsupportedHostBinariesSchemaVersion(
+                self.schema_version,
+            ));
+        }
+        let mut json = serde_json::to_string_pretty(self)?;
+        json.push('\n');
+        std::fs::write(path, json.as_bytes()).map_err(|source| ManifestError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o644);
+            std::fs::set_permissions(path, perms).map_err(|source| ManifestError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        Ok(())
+    }
 }
 
 /// The provenance manifest for a built guest image. Single source of truth
@@ -348,6 +471,11 @@ pub enum ManifestError {
     /// errors fire.
     #[error("unsupported manifest schema version: got {0}, expected {SCHEMA_VERSION}")]
     UnsupportedSchemaVersion(u32),
+    /// `host-binaries.manifest.json` carried an unsupported schema version.
+    #[error(
+        "unsupported host-binaries manifest schema version: got {0}, expected {HOST_BINARIES_SCHEMA_VERSION}"
+    )]
+    UnsupportedHostBinariesSchemaVersion(u32),
     /// A recomputed sha256 did not match the recorded value.
     #[error("sha256 mismatch on {field}: expected {expected}, got {actual}")]
     Sha256Mismatch {

@@ -3,17 +3,85 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use super::{
-    discover_binaries, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN, DEFAULT_JAILER_BIN,
-    DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN,
-    ENV_JAILER_HARDEN_BIN,
+    discover_binaries, verify_host_binaries, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN,
+    DEFAULT_JAILER_BIN, DEFAULT_JAILER_HARDEN_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
+    ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN,
 };
 use crate::PreflightError;
+use m80_image_manifest::{HostBinariesManifest, HostBinaryEntry, HostBinaryName};
 
 fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
     let mut permissions = fs::metadata(path).unwrap().permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(path, permissions).unwrap();
+}
+
+fn sha256_file(path: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let bytes = fs::read(path).unwrap();
+    hex::encode(Sha256::digest(bytes))
+}
+
+#[cfg(target_os = "linux")]
+fn system_root_owned_executable() -> &'static Path {
+    for candidate in [
+        "/usr/bin/dash",
+        "/bin/dash",
+        "/usr/bin/true",
+        "/bin/true",
+        "/usr/bin/env",
+    ] {
+        let path = Path::new(candidate);
+        let Ok(meta) = fs::symlink_metadata(path) else {
+            continue;
+        };
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let mode = meta.permissions().mode() & 0o7777;
+        if meta.is_file() && meta.uid() == 0 && meta.gid() == 0 && mode <= 0o755 {
+            return path;
+        }
+    }
+    panic!("expected a root-owned system executable for host-binary tests");
+}
+
+fn write_host_binary_manifest(
+    path: &Path,
+    firecracker: &Path,
+    jailer: &Path,
+    jailer_harden: &Path,
+    m80: &Path,
+    m80_cli: &Path,
+) {
+    HostBinariesManifest::new(vec![
+        HostBinaryEntry {
+            name: HostBinaryName::Firecracker,
+            path: firecracker.to_path_buf(),
+            sha256: sha256_file(firecracker),
+        },
+        HostBinaryEntry {
+            name: HostBinaryName::Jailer,
+            path: jailer.to_path_buf(),
+            sha256: sha256_file(jailer),
+        },
+        HostBinaryEntry {
+            name: HostBinaryName::M80,
+            path: m80.to_path_buf(),
+            sha256: sha256_file(m80),
+        },
+        HostBinaryEntry {
+            name: HostBinaryName::M80Cli,
+            path: m80_cli.to_path_buf(),
+            sha256: sha256_file(m80_cli),
+        },
+        HostBinaryEntry {
+            name: HostBinaryName::M80JailerHarden,
+            path: jailer_harden.to_path_buf(),
+            sha256: sha256_file(jailer_harden),
+        },
+    ])
+    .write(path)
+    .unwrap();
 }
 
 fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
@@ -122,6 +190,27 @@ fn missing_firecracker_binary_fails_closed() {
 }
 
 #[test]
+fn relative_firecracker_binary_path_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: Path::new("firecracker").to_path_buf(),
+        jailer_bin: dir.path().join("jailer"),
+        jailer_harden_bin: dir.path().join("m80-jailer-harden"),
+        expected_firecracker_version: Some("v1.15.1".to_owned()),
+    };
+
+    let err = discover_binaries(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::NonAbsolutePath { kind, path } => {
+            assert_eq!(kind, "firecracker");
+            assert_eq!(path, Path::new("firecracker"));
+        }
+        other => panic!("expected non-absolute firecracker path, got {other:?}"),
+    }
+}
+
+#[test]
 fn missing_jailer_binary_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.jailer_bin = dir.path().join("missing-jailer");
@@ -174,6 +263,96 @@ fn firecracker_cve_floor_rejects_known_affected_version() {
             assert_eq!(fixed_versions, "v1.14.4 or v1.15.1");
         }
         other => panic!("expected CVE floor violation, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_binary_manifest_hash_mismatch_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    manifest.binaries[0].sha256 = "0".repeat(64);
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::BinaryHashMismatch { name, path, .. } => {
+            assert_eq!(name, "firecracker");
+            assert_eq!(path, system_binary);
+        }
+        other => panic!("expected binary hash mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn host_binary_manifest_rejects_path_mismatch() {
+    let (dir, config) = fixture_config("v1.15.1");
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    let other_firecracker = dir.path().join("other-firecracker");
+    write_executable(&other_firecracker, "#!/bin/sh\nexit 0\n");
+    write_host_binary_manifest(
+        &manifest_path,
+        &other_firecracker,
+        &config.jailer_bin,
+        &config.jailer_harden_bin,
+        &config.firecracker_bin,
+        &config.firecracker_bin,
+    );
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostBinaryPathMismatch {
+            name,
+            expected,
+            actual,
+        } => {
+            assert_eq!(name, "firecracker");
+            assert_eq!(expected, config.firecracker_bin);
+            assert_eq!(actual, dir.path().join("other-firecracker"));
+        }
+        other => panic!("expected host binary path mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn host_binary_manifest_rejects_unsafe_permissions() {
+    let (dir, config) = fixture_config("v1.15.1");
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        &config.firecracker_bin,
+        &config.jailer_bin,
+        &config.jailer_harden_bin,
+        &config.firecracker_bin,
+        &config.firecracker_bin,
+    );
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostBinaryPermission { name, path, .. } => {
+            assert_eq!(name, "firecracker");
+            assert_eq!(path, config.firecracker_bin);
+        }
+        other => panic!("expected host binary permission rejection, got {other:?}"),
     }
 }
 

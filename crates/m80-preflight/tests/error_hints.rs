@@ -204,6 +204,52 @@ fn jailer_harden_binary_not_found_has_hint() {
 }
 
 #[test]
+fn host_binary_manifest_has_hint() {
+    let inner = ManifestError::UnsupportedHostBinariesSchemaVersion(99);
+    assert_hint(&PreflightError::HostBinaryManifest(inner));
+}
+
+#[test]
+fn host_binary_missing_has_hint() {
+    assert_hint(&PreflightError::HostBinaryMissing {
+        name: "firecracker",
+    });
+}
+
+#[test]
+fn host_binary_duplicate_has_hint() {
+    assert_hint(&PreflightError::HostBinaryDuplicate { name: "jailer" });
+}
+
+#[test]
+fn host_binary_path_mismatch_has_hint() {
+    assert_hint(&PreflightError::HostBinaryPathMismatch {
+        name: "firecracker",
+        expected: "/opt/firecracker/bin/firecracker".into(),
+        actual: "/tmp/firecracker".into(),
+    });
+}
+
+#[test]
+fn binary_hash_mismatch_has_hint() {
+    assert_hint(&PreflightError::BinaryHashMismatch {
+        name: "m80",
+        path: "/opt/m80/bin/m80".into(),
+        expected: "a".repeat(64),
+        actual: "b".repeat(64),
+    });
+}
+
+#[test]
+fn host_binary_permission_has_hint() {
+    assert_hint(&PreflightError::HostBinaryPermission {
+        name: "m80-cli",
+        path: "/opt/m80/bin/m80-cli".into(),
+        reason: "owner is not root:root",
+    });
+}
+
+#[test]
 fn non_absolute_path_has_hint() {
     assert_hint(&PreflightError::NonAbsolutePath {
         kind: "rootfs".into(),

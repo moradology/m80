@@ -369,6 +369,66 @@ pub enum PreflightError {
     #[error("jailer hardening wrapper not found")]
     JailerHardenBinaryNotFound,
 
+    /// Host TCB binary manifest read/validate failed.
+    #[error("host binary manifest: {0}")]
+    HostBinaryManifest(#[source] ManifestError),
+
+    /// A required host TCB binary is absent from `host-binaries.manifest.json`.
+    #[error("host binary manifest missing required entry: {name}")]
+    HostBinaryMissing {
+        /// Required logical binary name.
+        name: &'static str,
+    },
+
+    /// `host-binaries.manifest.json` contains a duplicate logical binary.
+    #[error("host binary manifest duplicate entry: {name}")]
+    HostBinaryDuplicate {
+        /// Duplicated logical binary name.
+        name: &'static str,
+    },
+
+    /// A configured host binary path differs from the install-time manifest.
+    #[error(
+        "host binary path mismatch for {name}: expected {}, got {}",
+        expected.display(),
+        actual.display()
+    )]
+    HostBinaryPathMismatch {
+        /// Logical binary name.
+        name: &'static str,
+        /// Runtime-configured path.
+        expected: PathBuf,
+        /// Manifest-recorded path.
+        actual: PathBuf,
+    },
+
+    /// A host binary digest changed after install-time recording.
+    #[error(
+        "host binary sha256 mismatch for {name} at {}: expected {expected}, got {actual}",
+        path.display()
+    )]
+    BinaryHashMismatch {
+        /// Logical binary name.
+        name: &'static str,
+        /// Manifest-recorded path.
+        path: PathBuf,
+        /// Manifest-recorded digest.
+        expected: String,
+        /// Recomputed digest.
+        actual: String,
+    },
+
+    /// A host binary's ownership or mode is unsafe.
+    #[error("host binary permission rejected for {name} at {}: {reason}", path.display())]
+    HostBinaryPermission {
+        /// Logical binary name.
+        name: &'static str,
+        /// Manifest-recorded path.
+        path: PathBuf,
+        /// Rejection reason.
+        reason: &'static str,
+    },
+
     /// A host artifact path was present but was not absolute.
     #[error("{kind} path is not absolute: {}", path.display())]
     NonAbsolutePath {
@@ -540,6 +600,24 @@ impl PreflightError {
             }
             Self::JailerHardenBinaryNotFound => {
                 "install m80-jailer-harden to /opt/m80/bin/m80-jailer-harden or set M80_JAILER_HARDEN_BIN to the binary path"
+            }
+            Self::HostBinaryManifest(_) => {
+                "install /opt/m80/artifacts/host-binaries.manifest.json from the deploy step"
+            }
+            Self::HostBinaryMissing { .. } => {
+                "regenerate host-binaries.manifest.json so it covers every required TCB binary"
+            }
+            Self::HostBinaryDuplicate { .. } => {
+                "remove duplicate entries from host-binaries.manifest.json and reinstall it"
+            }
+            Self::HostBinaryPathMismatch { .. } => {
+                "make the configured binary path match host-binaries.manifest.json or regenerate the manifest after reinstalling binaries"
+            }
+            Self::BinaryHashMismatch { .. } => {
+                "reinstall the host binary from a trusted release bundle and regenerate host-binaries.manifest.json"
+            }
+            Self::HostBinaryPermission { .. } => {
+                "install host binaries as root:root with mode no broader than 0755 and no group/world write bits"
             }
             Self::NonAbsolutePath { .. } => {
                 "set the corresponding M80_* path env var to an absolute host path"

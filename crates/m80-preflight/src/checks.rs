@@ -10,7 +10,7 @@ use nix::sys::utsname::uname;
 use nix::unistd::{geteuid, Gid, Group, Uid, User};
 
 use crate::artifacts::{verify_artifacts, ArtifactPreflightConfig};
-use crate::binary::{discover_binaries, BinaryDiscoveryConfig};
+use crate::binary::{discover_binaries, verify_host_binaries, BinaryDiscoveryConfig};
 use crate::cache::PreflightCache;
 use crate::{
     classify_privilege, CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES,
@@ -259,6 +259,10 @@ pub fn run_with_configs(
         &binary_config,
         cache.hit().map(|hit| hit.firecracker_version.as_str()),
     )?;
+    let host_binary_manifest = artifact_config
+        .artifact_dir
+        .join("host-binaries.manifest.json");
+    verify_host_binaries(&binary_config, &host_binary_manifest)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
         passed: true,
@@ -278,6 +282,11 @@ pub fn run_with_configs(
         label: "Jailer hardening wrapper".to_string(),
         passed: true,
         detail: binaries.jailer_harden_bin.display().to_string(),
+    });
+    report.push(CheckRow {
+        label: "Host binary manifest".to_string(),
+        passed: true,
+        detail: format!("{} (sha256 ok)", host_binary_manifest.display()),
     });
 
     // 14-18. Kernel/rootfs artifacts, run-root, and storage helpers

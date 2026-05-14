@@ -35,8 +35,10 @@ All keys are exact and case-sensitive. Legacy predecessor-style names such as
 | `M80_SKIP_CHECK_VULNERABILITIES` | When set exactly to `1`, skips hard failure for CPU vulnerability sysfs rows such as `mds` and `l1tf`. | vulnerability gate enabled |
 
 Preflight does not create missing directories, install binaries, download
-artifacts, or fall back to a different image after a bad env value. The first
-failed check returns a typed `PreflightError`.
+artifacts, or fall back to a different image after a bad env value. Binary path
+env vars must resolve to absolute paths; an empty path is invalid rather than a
+request to use the default. The first failed check returns a typed
+`PreflightError`.
 
 ## Orchestrator Config
 
@@ -74,3 +76,5 @@ backend config shown by `m80 config show`.
   covers the `M80_FORCE_PREFLIGHT` cache bypass.
 - `crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_scan_can_be_explicitly_skipped`
   covers the `M80_SKIP_CHECK_VULNERABILITIES=1` escape hatch.
+- `crates/m80-preflight/src/binary.rs::tests::relative_firecracker_binary_path_fails_closed`
+  covers fail-closed absolute path validation for binary env/config inputs.

@@ -42,6 +42,7 @@ fn run_on_kvm_host() {
                     "Firecracker binary",
                     "Jailer binary",
                     "Jailer hardening wrapper",
+                    "Host binary manifest",
                     "Kernel image",
                     "Rootfs + manifest",
                     "Run-root",

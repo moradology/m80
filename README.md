@@ -45,9 +45,10 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/m80/main/scripts/quickstart
 ```
 
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
-Linux/KVM host, `/dev/kvm` access, the Firecracker and jailer binaries, m80
-artifacts, and startup privilege through root, file capabilities, or a
-privileged container.
+Linux/KVM host, `/dev/kvm` access, the Firecracker and jailer binaries,
+`host-binaries.manifest.json` for the installed host-side TCB, m80 artifacts,
+and startup privilege through root, file capabilities, or a privileged
+container.
 
 Production operators should read [`docs/ops/host-setup.md`](docs/ops/host-setup.md)
 before trusting a host. It covers identity separation, Docker socket risk,

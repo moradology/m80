@@ -43,12 +43,20 @@ Required runtime artifacts:
 - `/opt/firecracker/bin/firecracker`
 - `/opt/firecracker/bin/jailer`
 - `/opt/m80/bin/m80-jailer-harden`
+- `/opt/m80/bin/m80`
+- `/opt/m80/bin/m80-cli`
+- `/opt/m80/artifacts/host-binaries.manifest.json`
 - kernel/rootfs/manifest artifacts under `/opt/m80/artifacts`
 
 `/opt/m80/artifacts` is the boot-artifact trust boundary. Do not allow the run
 identity or untrusted build jobs to replace files there after preflight has
 accepted them. The run root must not be world-writable; it holds VM sockets,
 diagnostics, overlays, and stopped-VM residue.
+
+Host binaries are also part of the launch TCB. Install them as `root:root`,
+mode `0755` or narrower, then generate
+`/opt/m80/artifacts/host-binaries.manifest.json` from the installed bytes. The
+exact manifest schema and install commands are in `docs/ops/binary-installation.md`.
 
 ## Cargo And Rust Supply Chain
 

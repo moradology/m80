@@ -1,13 +1,19 @@
 //! Firecracker and jailer binary discovery.
 
 use std::env;
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::{Read as _, Seek as _, SeekFrom};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
 use crate::cve_floor::verify_firecracker_cve_floor;
 use crate::PreflightError;
+use m80_image_manifest::{HostBinariesManifest, HostBinaryEntry, HostBinaryName};
+use nix::libc::O_NOFOLLOW;
+use sha2::{Digest, Sha256};
 
 /// Environment key for overriding the Firecracker binary path.
 pub const ENV_FIRECRACKER_BIN: &str = "M80_FIRECRACKER_BIN";
@@ -74,6 +80,10 @@ pub(crate) fn discover_binaries(
     config: &BinaryDiscoveryConfig,
     cached_firecracker_version: Option<&str>,
 ) -> Result<BinaryDiscovery, PreflightError> {
+    require_absolute_binary("firecracker", &config.firecracker_bin)?;
+    require_absolute_binary("jailer", &config.jailer_bin)?;
+    require_absolute_binary("m80-jailer-harden", &config.jailer_harden_bin)?;
+
     if !config.firecracker_bin.exists() {
         return Err(PreflightError::FirecrackerBinaryNotFound);
     }
@@ -105,6 +115,155 @@ pub(crate) fn discover_binaries(
         jailer_bin: config.jailer_bin.clone(),
         jailer_harden_bin: config.jailer_harden_bin.clone(),
     })
+}
+
+pub(crate) fn verify_host_binaries(
+    config: &BinaryDiscoveryConfig,
+    manifest_path: &Path,
+) -> Result<(), PreflightError> {
+    let manifest =
+        HostBinariesManifest::read(manifest_path).map_err(PreflightError::HostBinaryManifest)?;
+    for (name, configured_path) in [
+        (
+            HostBinaryName::Firecracker,
+            Some(config.firecracker_bin.as_path()),
+        ),
+        (HostBinaryName::Jailer, Some(config.jailer_bin.as_path())),
+        (
+            HostBinaryName::M80JailerHarden,
+            Some(config.jailer_harden_bin.as_path()),
+        ),
+        (HostBinaryName::M80, None),
+        (HostBinaryName::M80Cli, None),
+    ] {
+        let entry = one_host_binary_entry(&manifest, name)?;
+        if let Some(expected_path) = configured_path {
+            if entry.path != expected_path {
+                return Err(PreflightError::HostBinaryPathMismatch {
+                    name: name.as_str(),
+                    expected: expected_path.to_path_buf(),
+                    actual: entry.path.clone(),
+                });
+            }
+        }
+        verify_host_binary_entry(entry)?;
+    }
+    Ok(())
+}
+
+fn one_host_binary_entry(
+    manifest: &HostBinariesManifest,
+    name: HostBinaryName,
+) -> Result<&HostBinaryEntry, PreflightError> {
+    let mut matches = manifest.binaries.iter().filter(|entry| entry.name == name);
+    let Some(entry) = matches.next() else {
+        return Err(PreflightError::HostBinaryMissing {
+            name: name.as_str(),
+        });
+    };
+    if matches.next().is_some() {
+        return Err(PreflightError::HostBinaryDuplicate {
+            name: name.as_str(),
+        });
+    }
+    Ok(entry)
+}
+
+fn verify_host_binary_entry(entry: &HostBinaryEntry) -> Result<(), PreflightError> {
+    if !entry.path.is_absolute() {
+        return Err(PreflightError::NonAbsolutePath {
+            kind: format!("host binary {}", entry.name.as_str()),
+            path: entry.path.clone(),
+        });
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(&entry.path)
+        .map_err(|source| PreflightError::PathIo {
+            path: entry.path.clone(),
+            source,
+        })?;
+    verify_host_binary_permissions(entry, &file)?;
+    verify_host_binary_sha256(entry, &mut file)
+}
+
+fn verify_host_binary_permissions(
+    entry: &HostBinaryEntry,
+    file: &File,
+) -> Result<(), PreflightError> {
+    let metadata = file.metadata().map_err(|source| PreflightError::PathIo {
+        path: entry.path.clone(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(PreflightError::HostBinaryPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "not a regular file",
+        });
+    }
+    if metadata.uid() != 0 || metadata.gid() != 0 {
+        return Err(PreflightError::HostBinaryPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "owner is not root:root",
+        });
+    }
+    let mode = metadata.permissions().mode() & 0o7777;
+    if mode > 0o755 || mode & 0o022 != 0 {
+        return Err(PreflightError::HostBinaryPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "mode is broader than 0755 or group/world-writable",
+        });
+    }
+    Ok(())
+}
+
+fn verify_host_binary_sha256(
+    entry: &HostBinaryEntry,
+    file: &mut File,
+) -> Result<(), PreflightError> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|source| PreflightError::PathIo {
+            path: entry.path.clone(),
+            source,
+        })?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|source| PreflightError::PathIo {
+                path: entry.path.clone(),
+                source,
+            })?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let actual = hex::encode(hasher.finalize());
+    if actual != entry.sha256 {
+        return Err(PreflightError::BinaryHashMismatch {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            expected: entry.sha256.clone(),
+            actual,
+        });
+    }
+    Ok(())
+}
+
+fn require_absolute_binary(kind: &str, path: &Path) -> Result<(), PreflightError> {
+    if !path.is_absolute() {
+        return Err(PreflightError::NonAbsolutePath {
+            kind: kind.to_owned(),
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
 }
 
 fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> {

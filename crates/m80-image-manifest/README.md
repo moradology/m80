@@ -1,14 +1,16 @@
 # `m80-image-manifest`
 
-The schema, validator, and sha256 verifier for `<rootfs>.manifest.json`
-and `<rootfs>.manifest.json.sha256` — the provenance record that travels
-beside every m80 guest image.
+The schema, validator, and sha256 verifier for m80 provenance records:
+`<rootfs>.manifest.json` travels beside every guest image, and
+`host-binaries.manifest.json` records the installed host-side TCB binaries.
 
 ## Reason for being
 
-Single source of truth shared by `m80-image-build` (writer) and
-`m80-preflight` (reader/verifier) so the schema cannot drift. Validation
-logic (sha256 recompute, schema-version probe) lives here once.
+Single source of truth shared by writers (`m80-image-build` for guest images,
+the deploy/install step for host binaries) and `m80-preflight`
+(reader/verifier) so the schema cannot drift. Validation logic
+(schema-version probe, JSON shape, guest-artifact sha256 recompute) lives here
+once.
 
 ## Black-box contract
 
@@ -45,8 +47,19 @@ logic (sha256 recompute, schema-version probe) lives here once.
   `m80-preflight`). This crate has no `FirecrackerVersionMismatch` variant.
 - The manifest is **side-by-side** with the rootfs (`<rootfs>.manifest.json`).
   This crate does not look up a manifest by some registry or env var.
+- `host-binaries.manifest.json` is a separate install-time manifest with
+  `schema_version: 1`. It records logical binary names, absolute paths, and
+  sha256 digests for `firecracker`, `jailer`, `m80`, `m80_cli`, and
+  `m80_jailer_harden`. `m80-preflight` owns live path matching, open-by-fd
+  hashing, and root-owned/mode checks because those are host state, not guest
+  image state.
 
 ## Schema
+
+### host-binaries v1
+
+`schema_version: 1`. Records `binaries: Vec<HostBinaryEntry>`, where each entry
+has `name`, `path`, and `sha256`. Unknown fields fail closed.
 
 ### v5 (current)
 
@@ -91,6 +104,10 @@ artifacts.
   `Default = Stock`. Serializes as `"stock"` / `"stripped"`.
 - `RootfsFormat { Ext4, Erofs }` — read-only base rootfs filesystem
   discriminator. Serializes as `"ext4"` / `"erofs"`.
+- `HostBinariesManifest::new(Vec<HostBinaryEntry>)`, `read`, `write`,
+  `from_bytes`, and `schema_version`.
+- `HostBinaryEntry { name, path, sha256 }`.
+- `HostBinaryName { Firecracker, Jailer, M80, M80Cli, M80JailerHarden }`.
 - `Manifest::read(path: &Path) -> Result<Manifest, ManifestError>` — peek
   `schema_version` first via a probe struct, then deserialize the full
   struct, then enforce the kind/field invariant.
@@ -101,9 +118,11 @@ artifacts.
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
 - `SCHEMA_VERSION: u32 = 5`.
+- `HOST_BINARIES_SCHEMA_VERSION: u32 = 1`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for
   m80-built network-neutral images.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
+  `UnsupportedHostBinariesSchemaVersion(u32)`,
   `Sha256Mismatch { field, expected, actual }`,
   `InconsistentKind { kind, field, expected }`,
   `Io { path, source }`, `Json(serde_json::Error)`. The `Io` variant
@@ -142,3 +161,5 @@ artifacts.
 - Schema v3: `KernelKind::Stripped` roundtrips through write → read.
 - `KernelKind::default()` is `Stock` (Rust Default trait check).
 - Schema v5: `RootfsFormat::Erofs` roundtrips through write → read.
+- Host-binaries v1: read/write roundtrip, unknown schema rejection, and
+  unknown-field rejection.
