@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "bench": "drive_sync_latency",
+  "started_at_unix": 1778723634,
+  "n": 10,
+  "syncs_per_sample": 100,
+  "cache_type": "Writeback",
+  "launch_ms": 1104,
+  "unit": "ms",
+  "p50_ms": 2082,
+  "p95_ms": 2088,
+  "max_ms": 2090,
+  "mean_ms": 2080,
+  "samples_ms": [2080,2087,2087,2082,2090,2088,2073,2082,2062,2072]
+}

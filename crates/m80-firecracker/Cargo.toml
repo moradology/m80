@@ -48,3 +48,7 @@ harness = false
 [[bench]]
 name = "warm_pool_allocation_latency"
 harness = false
+
+[[bench]]
+name = "drive_sync_latency"
+harness = false
