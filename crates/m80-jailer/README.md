@@ -58,7 +58,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
   process; doing so would isolate the orchestrator instead of the Firecracker
   process.
 - If `JailerConfig::stdio_log` is `Some(path)`, `launch` appends the
-  jailed process stdout and stderr to that host file. m80-firecracker
+  jailed process stdout and stderr to that host file with mode `0600`.
+  m80-firecracker
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
   guest serial console survive launch failures and stopped-VM triage.
 - `inspect_run_dir` reads any prior plan + state and returns

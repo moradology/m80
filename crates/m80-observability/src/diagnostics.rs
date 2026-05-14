@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, Permissions};
 use std::io::Write as _;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +14,7 @@ pub(crate) const DIAGNOSTICS_SCHEMA_VERSION: u16 = 2;
 
 /// File name used inside each per-VM run directory.
 pub const DIAGNOSTICS_FILE_NAME: &str = "diagnostics.jsonl";
+const DIAGNOSTICS_FILE_MODE: u32 = 0o600;
 
 /// A handle to per-VM diagnostics. Created by [`Diagnostics::disabled`] in
 /// no-op mode, or [`Diagnostics::open`] to append structured VM-lifecycle
@@ -25,7 +27,8 @@ pub struct Diagnostics {
 
 impl Diagnostics {
     /// Return a no-op [`Diagnostics`] handle.
-    #[must_use] pub fn disabled() -> Self {
+    #[must_use]
+    pub fn disabled() -> Self {
         Self {
             file: None,
             path: None,
@@ -38,7 +41,13 @@ impl Diagnostics {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
+            .mode(DIAGNOSTICS_FILE_MODE)
             .open(&path)
+            .map_err(|source| ObservabilityError::PathIo {
+                path: path.clone(),
+                source,
+            })?;
+        file.set_permissions(Permissions::from_mode(DIAGNOSTICS_FILE_MODE))
             .map_err(|source| ObservabilityError::PathIo {
                 path: path.clone(),
                 source,
@@ -160,7 +169,8 @@ impl VmEvent {
     }
 
     /// Attach typed stop/capture evidence.
-    #[must_use] pub fn with_exit_reason(mut self, reason: ExitReason) -> Self {
+    #[must_use]
+    pub fn with_exit_reason(mut self, reason: ExitReason) -> Self {
         self.exit_reason = Some(reason);
         self
     }
@@ -283,6 +293,30 @@ mod tests {
         assert_eq!(parsed["message"], "exec started");
         assert_eq!(parsed["request_id"], "req-01");
         assert_eq!(parsed["context"]["vm_id"], "vm-test");
+    }
+
+    #[test]
+    fn diagnostics_log_is_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let _diagnostics = Diagnostics::open(dir.path()).unwrap();
+
+        let path = dir.path().join(DIAGNOSTICS_FILE_NAME);
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, DIAGNOSTICS_FILE_MODE);
+    }
+
+    #[test]
+    fn diagnostics_log_corrects_existing_permissive_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DIAGNOSTICS_FILE_NAME);
+        std::fs::write(&path, b"old\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let _diagnostics = Diagnostics::open(dir.path()).unwrap();
+
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, DIAGNOSTICS_FILE_MODE);
     }
 
     #[test]

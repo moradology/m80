@@ -1,5 +1,7 @@
 //! Boot artifact identity record written after preboot wiring succeeds.
 
+use std::io::Write as _;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -12,6 +14,7 @@ use crate::error::FcError;
 
 /// Current `boot-identity.json` schema version.
 const BOOT_IDENTITY_SCHEMA_VERSION: u32 = 1;
+const BOOT_IDENTITY_FILE_MODE: u32 = 0o600;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,7 +41,22 @@ pub(crate) fn record(run_dir: &Path, discovery: &Discovery) -> Result<(), FcErro
         context: "serialize boot identity",
         source,
     })?;
-    std::fs::write(&path, bytes).map_err(|source| FcError::PathIo {
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(BOOT_IDENTITY_FILE_MODE)
+        .open(&path)
+        .map_err(|source| FcError::PathIo {
+            path: path.clone(),
+            source,
+        })?;
+    file.set_permissions(std::fs::Permissions::from_mode(BOOT_IDENTITY_FILE_MODE))
+        .map_err(|source| FcError::PathIo {
+            path: path.clone(),
+            source,
+        })?;
+    file.write_all(&bytes).map_err(|source| FcError::PathIo {
         path: path.clone(),
         source,
     })?;
@@ -140,5 +158,31 @@ mod tests {
         assert_eq!(identity.kernel, PathBuf::from("/artifacts/vmlinux"));
         assert_eq!(identity.rootfs, PathBuf::from("/artifacts/output.ext4"));
         assert_eq!(identity.ready_marker, "GUESTD_READY");
+    }
+
+    #[test]
+    fn record_writes_owner_only_boot_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let discovery = discovery();
+
+        record(dir.path(), &discovery).unwrap();
+
+        let path = crate::layout::boot_identity_path(dir.path());
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, BOOT_IDENTITY_FILE_MODE);
+    }
+
+    #[test]
+    fn record_corrects_existing_permissive_boot_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = crate::layout::boot_identity_path(dir.path());
+        std::fs::write(&path, b"old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let discovery = discovery();
+
+        record(dir.path(), &discovery).unwrap();
+
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, BOOT_IDENTITY_FILE_MODE);
     }
 }

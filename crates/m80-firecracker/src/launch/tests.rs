@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -23,6 +24,16 @@ fn ready_listener_path_uses_muxer_port_suffix() {
             READY_PORT_DEFAULT
         ))
     );
+}
+
+#[test]
+fn phase_1_run_root_prep_creates_owner_only_run_dir() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let run_dir = phase_1_run_root_prep(dir.path(), "vm-mode").unwrap();
+
+    let mode = std::fs::metadata(run_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, RUN_DIR_MODE);
 }
 
 #[test]

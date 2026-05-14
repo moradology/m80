@@ -3,7 +3,7 @@
 //! and `JailedFirecracker` (live pids).
 
 use std::io;
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -18,6 +18,7 @@ use crate::types::{JailerState, Plan, JAILER_STATE_FILE};
 const FIRECRACKER_PID_TIMEOUT: Duration = Duration::from_secs(1);
 const FIRECRACKER_PID_INITIAL_POLL: Duration = Duration::from_millis(1);
 const FIRECRACKER_PID_MAX_POLL: Duration = Duration::from_millis(25);
+const STDIO_LOG_FILE_MODE: u32 = 0o600;
 
 /// A materialized chroot. Drop tears it down.
 #[derive(Debug)]
@@ -153,7 +154,13 @@ impl MaterializedJail {
             let file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
+                .mode(STDIO_LOG_FILE_MODE)
                 .open(stdio_log)
+                .map_err(|source| JailerError::Io {
+                    path: stdio_log.clone(),
+                    source,
+                })?;
+            file.set_permissions(std::fs::Permissions::from_mode(STDIO_LOG_FILE_MODE))
                 .map_err(|source| JailerError::Io {
                     path: stdio_log.clone(),
                     source,

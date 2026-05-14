@@ -142,6 +142,8 @@ echo fake-firecracker-stderr >&2
     std::fs::set_permissions(&jailer_harden_bin, perms).unwrap();
 
     let stdio_log = run_dir.join("console.log");
+    std::fs::write(&stdio_log, b"old\n").unwrap();
+    std::fs::set_permissions(&stdio_log, std::fs::Permissions::from_mode(0o644)).unwrap();
     let cfg = JailerConfig {
         jailer_bin,
         jailer_harden_bin: Some(jailer_harden_bin),
@@ -185,6 +187,9 @@ echo fake-firecracker-stderr >&2
         nix::sys::signal::Signal::SIGKILL,
     )
     .unwrap();
+
+    let log_mode = std::fs::metadata(&stdio_log).unwrap().permissions().mode() & 0o777;
+    assert_eq!(log_mode, STDIO_LOG_FILE_MODE);
 
     let log = std::fs::read_to_string(stdio_log).unwrap();
     assert!(log.contains("fake-firecracker-stdout"), "{log}");

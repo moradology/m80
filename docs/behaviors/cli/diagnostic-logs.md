@@ -24,6 +24,10 @@ reads:
 - `<run_dir>/console.log` for guest console and guestd stderr capture
 - `<run_dir>/diagnostics.jsonl` for host VM-lifecycle diagnostics
 
+Both files are created owner-only (`0600`) inside an owner-only run directory
+(`0700`). `m80 logs` reads them as the same local owner that runs m80; it does
+not widen file permissions for group or world readers.
+
 Missing log files are treated as empty. A missing run directory is a config
 error.
 

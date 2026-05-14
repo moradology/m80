@@ -10,6 +10,8 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
+use std::fs;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::prelude::AsFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
@@ -55,6 +57,8 @@ use failure_cleanup::{
 };
 use ready::{phase_11b_bind_ready_listener, phase_12b_ready_accept, ready_listener_path};
 use snapshot_prime::prime_snapshot_files;
+
+const RUN_DIR_MODE: u32 = 0o700;
 
 /// Record a diagnostics-annotated phase result.
 ///
@@ -817,7 +821,11 @@ fn check_restore_probe_request_id(frame: &RawEnvelope, request_id: &str) -> Resu
 /// silent recovery of existing state.
 fn phase_1_run_root_prep(run_root: &Path, vm_id: &str) -> Result<PathBuf, FcError> {
     let run_dir = run_dir_path(run_root, vm_id);
-    std::fs::create_dir_all(&run_dir)?;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(RUN_DIR_MODE)
+        .create(&run_dir)?;
+    fs::set_permissions(&run_dir, fs::Permissions::from_mode(RUN_DIR_MODE))?;
     Ok(run_dir)
 }
 

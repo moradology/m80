@@ -27,7 +27,8 @@ adapter, not below.
 
 ### Diagnostics event log
 
-- Every VM gets a `<run_dir>/diagnostics.jsonl` of structured events.
+- Every VM gets a `<run_dir>/diagnostics.jsonl` of structured events. The file
+  is created with mode `0600`.
   Phases: `StartupScavenge`, `HostPreflight`, `StoragePrepare`, `Boot`,
   `NetworkPrepare`, `Ready`, `Request`, `Stop`, `Writeback`, and `Delete`.
 - Each line carries `schema_version: 2`, `timestamp_unix_ms`, `event_kind`,

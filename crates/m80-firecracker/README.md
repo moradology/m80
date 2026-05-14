@@ -290,6 +290,10 @@ run-root names, and fit the AF_UNIX socket path budget.
 All per-VM state lives under `<run_root>/<vm_id>/`. The actual jailer
 chroot is at `<run_root>/<vm_id>/<exec basename>/<vm_id>/root/` (jailer's
 hardcoded layout — see `m80-jailer`).
+The per-VM run directory is created owner-only (`0700`). `console.log`,
+`diagnostics.jsonl`, and `boot-identity.json` are created owner-only (`0600`)
+so host-local users outside the m80 owner cannot read guest console output,
+artifact paths, or lifecycle diagnostics by default.
 The public pure helpers `run_dir_path`, `firecracker_api_socket_path`,
 `vsock_socket_path`, `rootfs_overlay_path`, `scratch_image_path`,
 `console_log_path`, and `boot_identity_path` expose this layout for callers
