@@ -7,7 +7,6 @@
 #![deny(missing_docs)]
 
 use std::io;
-#[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -302,6 +301,15 @@ pub enum SnapshotError {
         #[source]
         source: io::Error,
     },
+    /// Caller-supplied identifier would escape or hide inside the persistence
+    /// path layout.
+    #[error("invalid snapshot persistence id for {field}: {value:?}")]
+    InvalidId {
+        /// Field whose value was rejected.
+        field: &'static str,
+        /// Rejected identifier.
+        value: String,
+    },
 }
 
 /// Errors surfaced by private snapshot schema helpers.
@@ -432,25 +440,43 @@ impl RestoreMetadata {
 /// The `<store_root>` must be a host-local filesystem path. m80 ships no
 /// remote-store support; adding S3/GCS/generic stores is a v0.2+ epic.
 ///
-/// **Caller responsibility — no path-component sanitization.** Both
-/// `workspace_id` and `run_id` are joined with `Path::join` directly, so a
-/// value containing `/` or `..` *will* produce out-of-tree paths
-/// (e.g., `workspace_id = "../../etc"`). Callers handling untrusted IDs
-/// must reject those characters at the API boundary before calling.
-/// (The unit test `workspace_id_is_not_sanitised` documents this contract.)
+/// `workspace_id` and `run_id` are single path components. Empty values,
+/// hidden-dot values, path separators, NUL bytes, and `..` traversal markers
+/// are rejected before any [`Path::join`] call.
 ///
-#[cfg(test)]
-pub(crate) fn persistence_path(
+/// # Errors
+///
+/// Returns [`SnapshotError::InvalidId`] when either caller-supplied id is not
+/// one safe path component.
+pub fn persistence_path(
     store_root: &Path,
     workspace_id: &str,
     run_id: &str,
     created_at_unix_ms: u64,
     artifact_set_sha256: &str,
-) -> PathBuf {
-    store_root
+) -> Result<PathBuf, SnapshotError> {
+    validate_persistence_id("workspace_id", workspace_id)?;
+    validate_persistence_id("run_id", run_id)?;
+    Ok(store_root
         .join(workspace_id)
         .join(run_id)
-        .join(format!("{created_at_unix_ms}-{artifact_set_sha256}"))
+        .join(format!("{created_at_unix_ms}-{artifact_set_sha256}")))
+}
+
+fn validate_persistence_id(field: &'static str, value: &str) -> Result<(), SnapshotError> {
+    if value.is_empty()
+        || value.starts_with('.')
+        || value.contains('/')
+        || value.contains('\\')
+        || value.contains('\0')
+        || value.contains("..")
+    {
+        return Err(SnapshotError::InvalidId {
+            field,
+            value: value.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 /// Compute the canonical sha256 over an artifact set in declared order.

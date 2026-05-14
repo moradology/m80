@@ -16,7 +16,8 @@ fn exact_output_matches_documented_template() {
         "run-def",
         1_700_000_000_000,
         "aabbccdd",
-    );
+    )
+    .unwrap();
     assert_eq!(
         result,
         Path::new("/snapshots/ws-abc/run-def/1700000000000-aabbccdd"),
@@ -28,17 +29,22 @@ fn exact_output_matches_documented_template() {
 /// unchanged (the caller is responsible for sane inputs).
 #[test]
 fn no_io_performed_on_nonexistent_root() {
-    let result = persistence_path(Path::new("/does/not/exist"), "ws", "run", 42, "deadbeef");
+    let result =
+        persistence_path(Path::new("/does/not/exist"), "ws", "run", 42, "deadbeef").unwrap();
     // If any I/O were performed this would panic or error on a missing dir.
     assert_eq!(result, Path::new("/does/not/exist/ws/run/42-deadbeef"),);
 }
 
-/// Workspace IDs with path-separator characters are NOT sanitised — that is
-/// the caller's responsibility. This test documents the current (pass-through)
-/// behavior to catch accidental changes.
+/// Workspace IDs with path-separator characters are rejected before any
+/// Path::join call can interpret them as additional components.
 #[test]
-fn workspace_id_is_not_sanitised() {
-    let result = persistence_path(Path::new("/s"), "a/b", "r", 1, "ff");
-    // "a/b" becomes an additional path component.
-    assert_eq!(result, Path::new("/s/a/b/r/1-ff"));
+fn workspace_id_path_separator_is_rejected() {
+    let err = persistence_path(Path::new("/s"), "a/b", "r", 1, "ff").unwrap_err();
+    assert!(matches!(
+        err,
+        crate::SnapshotError::InvalidId {
+            field: "workspace_id",
+            ..
+        }
+    ));
 }

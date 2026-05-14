@@ -10,11 +10,11 @@ The system lays out persisted snapshot sets at
 `<store-root>/<workspace_id>/<run_id>/<created_at_unix_ms>-<artifact_set_sha256>/`.
 
 **Present-tense statement.** `persistence_path(store_root, workspace_id, run_id, created_at_unix_ms, artifact_set_sha256)`
-returns a `PathBuf` equal to
+returns a `Result<PathBuf, SnapshotError>` whose success value is equal to
 `store_root.join(workspace_id).join(run_id).join("{created_at_unix_ms}-{artifact_set_sha256}")`.
-This is pure path construction — no I/O is performed.  The caller is responsible
-for providing values that produce a valid path component (e.g., no embedded `/`
-in IDs unless intentional nesting is desired).
+This is pure path construction — no I/O is performed. `workspace_id` and
+`run_id` must be single visible path components; invalid IDs fail with
+`SnapshotError::InvalidId`.
 
 Tools that walk the snapshot store rely on this template; it must not change
 without a major version bump.
@@ -53,7 +53,7 @@ explicitly does not introduce S3, GCS, Azure, `object_store`, or any generic
 storage trait.
 
 **Present-tense statement.** `persistence_path` takes a `&Path` for the store
-root and returns a `PathBuf`.  There is no storage-backend trait, no `object_store`
+root and returns a `Result<PathBuf, SnapshotError>`.  There is no storage-backend trait, no `object_store`
 dependency, no URL scheme handling.  Adding remote stores is a v0.2+ epic;
 m80 ships no seam for it.  The `m80-snapshot` dependency list contains only
 `m80-firecracker-client`, `serde`, `serde_json`, `sha2`, `hex`, and `thiserror`.

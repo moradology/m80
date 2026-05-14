@@ -3,9 +3,10 @@
 Snapshot **capture/restore primitives** plus private manifest-schema helpers
 for Firecracker microVM snapshots.
 
-Capture and restore primitives are active. Manifest schemas and persistence
-path helpers are pinned internally, but they are not public API until
-`m80-firecracker` actually writes/reads persisted snapshot manifests.
+Capture and restore primitives are active. Manifest schemas are pinned
+internally until `m80-firecracker` actually writes/reads persisted snapshot
+manifests. The persistence path helper is public so future callers get the
+same path-component validation instead of reimplementing the layout.
 `m80-snapshot` owns Firecracker REST calls; `m80-firecracker` owns lifecycle
 state and jail path translation.
 
@@ -30,7 +31,9 @@ The crate serves two purposes:
 
 - Snapshots persist at:
   `<store-root>/<workspace_id>/<run_id>/<created_at_unix_ms>-<artifact_set_sha256>/`.
-  This template is pinned by private tests, not exposed as public API yet.
+  `workspace_id` and `run_id` must each be a single non-hidden path component:
+  empty strings, `/`, `\`, NUL bytes, `..`, and leading `.` are rejected as
+  `SnapshotError::InvalidId`.
 - `<store-root>` is host-local filesystem only. No S3/GCS/remote-store
   support. Adding remote stores is a v0.2+ epic.
 
@@ -89,6 +92,7 @@ passing in-jail `/snapshot/...` paths to this crate.
 
 - `capture(req: CaptureRequest) -> Result<(), SnapshotError>`.
 - `restore(req: RestoreRequest) -> Result<(), SnapshotError>`.
+- `persistence_path(store_root, workspace_id, run_id, created_at_unix_ms, artifact_set_sha256) -> Result<PathBuf, SnapshotError>`.
 
 ### Errors
 
@@ -96,6 +100,8 @@ passing in-jail `/snapshot/...` paths to this crate.
 - `Client(m80_firecracker_client::ClientError)` — Firecracker REST failure.
 - `VsockUdsUnlink { path: PathBuf, source: io::Error }` — vsock UDS
   removal failed for a reason other than `NotFound`.
+- `InvalidId { field: &'static str, value: String }` — persistence helper
+  rejected a caller-supplied path component.
 
 ## Non-goals
 
@@ -103,9 +109,9 @@ passing in-jail `/snapshot/...` paths to this crate.
   to an already-running Firecracker process via its API socket.
 - **No run-dir management.** Creating/destroying run directories is
   `m80-firecracker`'s job.
-- **No public manifest persistence API yet.** Schema structs and path helpers
-  remain crate-private until the orchestrator has production manifest
-  write/read integration.
+- **No public manifest persistence API yet.** Schema structs remain
+  crate-private until the orchestrator has production manifest write/read
+  integration.
 - **No lifecycle state machine.** The orchestrator (`m80-firecracker`)
   composes `capture` and `restore` within its state machine.
 - **No vm-id → CID mapping.** That belongs to `m80-vsock`.
@@ -122,8 +128,8 @@ passing in-jail `/snapshot/...` paths to this crate.
 
 Tests:
 
-- `src/tests/persistence_path.rs` — exact-output test for the private
-  persistence path helper.
+- `src/tests/persistence_path.rs` and `tests/persistence_path_validation.rs` —
+  exact-output and invalid-id tests for the persistence path helper.
 - `src/tests/artifact_set_sha256.rs` — determinism, sensitivity to per-field and
   order changes.
 - `src/tests/manifest_roundtrip.rs` — private `SnapshotManifest::write` then `read`
