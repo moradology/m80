@@ -33,8 +33,20 @@ fn kernel_builder_config() -> PathBuf {
         .join("m80-stripped.config")
 }
 
+fn kernel_builder_dockerfile() -> PathBuf {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("CARGO_MANIFEST_DIR not set (run via cargo test)");
+    PathBuf::from(manifest_dir)
+        .join("kernel-builder")
+        .join("Dockerfile")
+}
+
 fn committed_config_text() -> String {
     std::fs::read_to_string(kernel_builder_config()).expect("m80-stripped.config must be readable")
+}
+
+fn committed_dockerfile_text() -> String {
+    std::fs::read_to_string(kernel_builder_dockerfile()).expect("Dockerfile must be readable")
 }
 
 /// The committed m80-stripped.config must exist and produce a 64-hex-char sha256.
@@ -254,6 +266,40 @@ fn stripped_config_omits_printk_timestamps() {
         cfg.lines()
             .any(|line| line == "# CONFIG_PRINTK_TIME is not set"),
         "printk timestamp formatting must stay disabled"
+    );
+}
+
+#[test]
+fn kernel_builder_fetches_pinned_commit_not_mutable_tag() {
+    let dockerfile = committed_dockerfile_text();
+    assert!(
+        dockerfile.contains("ARG KERNEL_COMMIT=420102835862f49ec15c545594278dc5d2712f42"),
+        "kernel builder must pin the peeled v6.1.134 commit"
+    );
+    assert!(
+        dockerfile.contains("fetch --depth 1 origin ${KERNEL_COMMIT}"),
+        "kernel builder must fetch the immutable commit directly"
+    );
+    assert!(
+        !dockerfile.contains("--branch ${KERNEL_TAG}"),
+        "kernel builder must not trust mutable tag checkout"
+    );
+}
+
+#[test]
+fn kernel_builder_uses_snapshot_apt_sources() {
+    let dockerfile = committed_dockerfile_text();
+    assert!(
+        dockerfile.contains("ARG UBUNTU_SNAPSHOT=20260505T000000Z"),
+        "kernel builder must pin the Ubuntu package snapshot date"
+    );
+    assert!(
+        dockerfile.contains("https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}/"),
+        "kernel builder must install packages from the pinned snapshot mirror"
+    );
+    assert!(
+        !dockerfile.contains("archive.ubuntu.com"),
+        "kernel builder must not fetch from live Ubuntu mirrors"
     );
 }
 

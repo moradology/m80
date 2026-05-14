@@ -41,8 +41,9 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 run [OPTIONS] -- <program> [args...]` - primary process-wrapper command.
 - `m80 preflight` - runs `m80-preflight::run()` and renders the host capability
   table. Exit 0 on full pass, 2 on any check failed.
-- `m80 quickstart --artifact-url <url>` - downloads a release artifact tarball,
-  verifies `SHA256SUMS`, installs the kernel/rootfs/manifest/guestd artifacts,
+- `m80 quickstart --artifact-url <url>` - downloads a release artifact tarball
+  plus `<url>.sha256`, verifies the tarball before extraction, verifies the
+  extracted `SHA256SUMS`, installs the kernel/rootfs/manifest/guestd artifacts,
   and runs `m80 run -- echo hello` unless `--no-run` is set. `--json` requires
   `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
 - `m80 config show` - prints the merged effective config and labels each field's
@@ -297,8 +298,9 @@ Stable surfaces:
   JSON envelope shape, request-id filtering, timestamp filtering, and bug-report
   dump sections without KVM.
 - Quickstart: `m80 quickstart --no-run` is covered with a local
-  release-shaped tarball, checksum verification, artifact install, and run-root
-  creation.
+  release-shaped tarball, external `.sha256` verification before extraction,
+  extracted checksum verification, artifact install, run-root creation, and
+  mismatch rejection.
 - Image/profile selection: local profile resolution, fail-closed profile
   parsing, and artifact env overlay are covered without KVM.
 - Feature gaps: reserved `run` flags and `m80 warm enable --system` exit 7

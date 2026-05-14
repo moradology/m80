@@ -31,6 +31,10 @@ m80 quickstart \
   --artifact-url https://github.com/<owner>/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
 ```
 
+The release must also publish the sibling
+`m80-linux-x86_64-minimal-artifacts.tar.gz.sha256`; quickstart verifies that
+outer checksum before extracting the tarball.
+
 For a clean host that does not yet have the repo checkout, the same artifact
 flow is available as a shell script:
 

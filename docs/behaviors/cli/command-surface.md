@@ -100,10 +100,11 @@ Implemented warm flag:
 ## `m80 quickstart`
 
 `m80 quickstart --artifact-url <url>` is the binary equivalent of
-`scripts/quickstart.sh`. It downloads a release artifact tarball, verifies the
-included `SHA256SUMS`, installs `vmlinux`, `output.ext4`,
-`output.ext4.manifest.json`, and `m80-guestd`, creates the run-root, and runs
-`m80 run -- echo hello` unless `--no-run` is set.
+`scripts/quickstart.sh`. It downloads a release artifact tarball and the sibling
+`<url>.sha256`, verifies the tarball before extraction, verifies the extracted
+`SHA256SUMS`, installs `vmlinux`, `output.ext4`, `output.ext4.manifest.json`,
+and `m80-guestd`, creates the run-root, and runs `m80 run -- echo hello` unless
+`--no-run` is set.
 Global `--json` requires `--no-run` because the successful probe writes guest
 stdout; the install-only JSON path emits a machine-readable artifact summary.
 

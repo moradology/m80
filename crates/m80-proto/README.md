@@ -180,8 +180,10 @@ should use typed payloads through `Envelope<T>`.
 ## Dependencies
 
 `prost`, `prost-derive`, `thiserror`. Build-only dependencies are
-`prost-build`, `protoc-bin-vendored`, and `indexmap` pinned for the workspace
-Rust toolchain. None of the other m80 crates.
+`prost-build`, `protoc-bin-vendored`, `sha2`, `hex`, and `indexmap` pinned for
+the workspace Rust toolchain. The build script prefers a caller-supplied
+`PROTOC`; when it falls back to the vendored Linux x86_64 binary, it verifies
+that binary's sha256 before executing it. None of the other m80 crates.
 
 ## Tests
 

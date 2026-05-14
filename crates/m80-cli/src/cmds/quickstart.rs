@@ -67,6 +67,7 @@ fn run_quickstart(
 ) -> Result<QuickstartSummary, FcError> {
     let temp = TempTree::new()?;
     let tarball = temp.path().join("artifacts.tar.gz");
+    let tarball_checksum = temp.path().join("artifacts.tar.gz.sha256");
     let extract_dir = temp.path().join("artifacts");
     fs::create_dir(&extract_dir).map_err(|e| FcError::PathIo {
         path: extract_dir.clone(),
@@ -84,6 +85,20 @@ fn run_quickstart(
             .arg(&tarball),
         "curl artifact tarball",
     )?;
+    let checksum_url = artifact_checksum_url(artifact_url);
+    if !json_output {
+        eprintln!("downloading m80 artifact checksum: {checksum_url}");
+    }
+    run_status(
+        Command::new("curl")
+            .arg("-fsSL")
+            .arg(&checksum_url)
+            .arg("-o")
+            .arg(&tarball_checksum),
+        "curl artifact checksum",
+    )?;
+    verify_tarball_checksum(&tarball, &tarball_checksum, json_output)?;
+
     run_status(
         Command::new("tar")
             .arg("-xzf")
@@ -155,6 +170,85 @@ fn run_quickstart(
     })
 }
 
+fn artifact_checksum_url(artifact_url: &str) -> String {
+    format!("{artifact_url}.sha256")
+}
+
+fn verify_tarball_checksum(
+    tarball: &Path,
+    checksum_file: &Path,
+    json_output: bool,
+) -> Result<(), FcError> {
+    let expected = read_expected_sha256(checksum_file)?;
+    let output = run_output_capture(
+        Command::new("sha256sum").arg(tarball),
+        "compute artifact tarball checksum",
+    )?;
+    if !json_output {
+        print_command_output(&output.stderr);
+    }
+    if !output.status.success() {
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output_text = if combined.is_empty() {
+            String::new()
+        } else {
+            format!(": {combined}")
+        };
+        return Err(FcError::CommandFailed {
+            command: command_label("compute artifact tarball checksum"),
+            status: output.status,
+            output: output_text,
+        });
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let actual = stdout.split_whitespace().next().ok_or_else(|| {
+        FcError::Config(m80_firecracker::ConfigError::InvalidValue {
+            field: "artifact_url.sha256",
+            reason: "sha256sum produced no digest for artifact tarball".to_owned(),
+        })
+    })?;
+    if actual != expected {
+        return Err(FcError::Config(
+            m80_firecracker::ConfigError::InvalidValue {
+                field: "artifact_url.sha256",
+                reason: format!(
+                    "artifact tarball sha256 mismatch: expected {expected}, got {actual}"
+                ),
+            },
+        ));
+    }
+    Ok(())
+}
+
+fn read_expected_sha256(checksum_file: &Path) -> Result<String, FcError> {
+    let text = fs::read_to_string(checksum_file).map_err(|e| FcError::PathIo {
+        path: checksum_file.to_path_buf(),
+        source: e,
+    })?;
+    let expected = text.split_whitespace().next().ok_or_else(|| {
+        FcError::Config(m80_firecracker::ConfigError::InvalidValue {
+            field: "artifact_url.sha256",
+            reason: format!("checksum file {} is empty", checksum_file.display()),
+        })
+    })?;
+    if expected.len() != 64 || !expected.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(FcError::Config(
+            m80_firecracker::ConfigError::InvalidValue {
+                field: "artifact_url.sha256",
+                reason: format!(
+                    "checksum file {} must start with a 64-hex sha256 digest",
+                    checksum_file.display()
+                ),
+            },
+        ));
+    }
+    Ok(expected.to_ascii_lowercase())
+}
+
 fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
     let manifest_path = artifact_dir.join("output.ext4.manifest.json");
     let mut manifest = m80_image_manifest::Manifest::read(&manifest_path)?;
@@ -212,14 +306,7 @@ fn run_status(cmd: &mut Command, label: &str) -> Result<(), FcError> {
 }
 
 fn run_output(cmd: &mut Command, label: &str, json_output: bool) -> Result<(), FcError> {
-    let command_output = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|source| FcError::CommandSpawnFailed {
-            command: command_label(label),
-            source,
-        })?;
+    let command_output = run_output_capture(cmd, label)?;
     if !json_output {
         print_command_output(&command_output.stdout);
         print_command_output(&command_output.stderr);
@@ -244,9 +331,21 @@ fn run_output(cmd: &mut Command, label: &str, json_output: bool) -> Result<(), F
     Ok(())
 }
 
+fn run_output_capture(cmd: &mut Command, label: &str) -> Result<std::process::Output, FcError> {
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|source| FcError::CommandSpawnFailed {
+            command: command_label(label),
+            source,
+        })
+}
+
 fn command_label(label: &str) -> &'static str {
     match label {
         "curl artifact tarball" => "curl artifact tarball",
+        "curl artifact checksum" => "curl artifact checksum",
+        "compute artifact tarball checksum" => "compute artifact tarball checksum",
         "extract artifact tarball" => "extract artifact tarball",
         "verify artifact checksums" => "verify artifact checksums",
         _ => "quickstart helper",

@@ -857,10 +857,12 @@ dependencies = [
 name = "m80-proto"
 version = "0.0.0"
 dependencies = [
+ "hex",
  "prost",
  "prost-build",
  "prost-derive",
  "protoc-bin-vendored",
+ "sha2",
  "thiserror 2.0.18",
 ]
 

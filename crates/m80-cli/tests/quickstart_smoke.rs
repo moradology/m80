@@ -61,6 +61,15 @@ fn write_release_tarball(dir: &tempfile::TempDir) -> std::path::PathBuf {
             .arg("."),
         "tar",
     );
+    let tarball_sha = sha256_hex(&tarball);
+    std::fs::write(
+        format!("{}.sha256", tarball.display()),
+        format!(
+            "{tarball_sha}  {}\n",
+            tarball.file_name().unwrap().to_string_lossy()
+        ),
+    )
+    .unwrap();
     tarball
 }
 
@@ -173,6 +182,44 @@ fn quickstart_json_no_run_keeps_stdout_machine_readable() {
     assert_eq!(
         value["data"]["artifact_dir"].as_str(),
         Some(dst.to_str().unwrap())
+    );
+}
+
+#[test]
+fn quickstart_rejects_tarball_when_external_checksum_mismatches() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball(&dir);
+    std::fs::write(
+        format!("{}.sha256", tarball.display()),
+        "0000000000000000000000000000000000000000000000000000000000000000  m80-artifacts.tar.gz\n",
+    )
+    .unwrap();
+    let dst = dir.path().join("mismatch-dst");
+    let run_root = dir.path().join("mismatch-run");
+
+    let output = m80()
+        .args([
+            "quickstart",
+            "--artifact-url",
+            &format!("file://{}", tarball.display()),
+            "--artifact-dir",
+            dst.to_str().unwrap(),
+            "--run-root",
+            run_root.to_str().unwrap(),
+            "--no-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("artifact tarball sha256 mismatch"),
+        "quickstart must fail before extraction on external checksum mismatch; stderr={stderr}"
+    );
+    assert!(
+        !dst.exists(),
+        "quickstart must not install artifacts after checksum mismatch"
     );
 }
 

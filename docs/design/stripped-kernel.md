@@ -27,10 +27,12 @@ Rationale:
 - `CONFIG_OVERLAY_FS_XINO_AUTO` was introduced in 5.15; both 6.1 and 5.15
   carry it. 5.10 does not; this alone disqualifies 5.10 without a patch.
 
-The exact commit is pinned by the Dockerfile via `KERNEL_TAG` build-arg
-(default `v6.1.134`). Changing the pin requires bumping `KERNEL_TAG` in the
-Dockerfile and re-running the build pipeline; the resulting kernel sha is
-captured in the manifest.
+The exact commit is pinned by the Dockerfile via the `KERNEL_COMMIT` build-arg
+(default `420102835862f49ec15c545594278dc5d2712f42`, the peeled `v6.1.134`
+commit). Changing the pin requires bumping `KERNEL_COMMIT` in the Dockerfile
+and re-running the build pipeline; the resulting kernel sha is captured in the
+manifest. The builder also installs its toolchain from a dated Ubuntu snapshot
+instead of live package mirrors.
 
 ---
 
