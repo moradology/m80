@@ -1,0 +1,217 @@
+{
+  "bench": {
+    "command_template": "CPU_GOVERNOR=<governor> N=50 KIND=minimal SKIP_LOADED=1 ./scripts/bench-cold-launch.sh",
+    "egress": "none",
+    "kernel_kind": "stock",
+    "kind": "minimal",
+    "load": "idle",
+    "runs_per_governor": 50
+  },
+  "comparison": {
+    "interpretation": "On this acpi-cpufreq host, performance governor improved wallclock P50 by 115ms versus ondemand; phase_12b_ready_accept moved only 4.0ms P50, so much of the wallclock win is outside the kernel-ready phase bucket.",
+    "performance_vs_ondemand_phase_12b_ready_accept_p50_delta_us": -3998,
+    "performance_vs_ondemand_wallclock_p50_delta_ms": -115,
+    "performance_vs_ondemand_wallclock_p95_delta_ms": -116
+  },
+  "date": "2026-05-14",
+  "governors": {
+    "ondemand": {
+      "phases_us": {
+        "phase_11_rest_puts": {
+          "count": 50,
+          "max_us": 2025,
+          "p50_us": 1762,
+          "p75_us": 1812,
+          "p90_us": 1863,
+          "p95_us": 1908,
+          "p999_us": 1983,
+          "p99_us": 1983
+        },
+        "phase_12a_instance_start": {
+          "count": 50,
+          "max_us": 18169,
+          "p50_us": 15345,
+          "p75_us": 15796,
+          "p90_us": 16301,
+          "p95_us": 16454,
+          "p999_us": 17062,
+          "p99_us": 17062
+        },
+        "phase_12b_host_waiting_accept": {
+          "count": 50,
+          "max_us": 996930,
+          "p50_us": 991216,
+          "p75_us": 993470,
+          "p90_us": 995234,
+          "p95_us": 995832,
+          "p999_us": 996919,
+          "p99_us": 996919
+        },
+        "phase_12b_kernel_console_range": {
+          "count": 50,
+          "max_us": 931580,
+          "p50_us": 925645,
+          "p75_us": 928173,
+          "p90_us": 930215,
+          "p95_us": 930294,
+          "p999_us": 931222,
+          "p99_us": 931222
+        },
+        "phase_12b_ready_accept": {
+          "count": 50,
+          "max_us": 999241,
+          "p50_us": 993573,
+          "p75_us": 995710,
+          "p90_us": 997573,
+          "p95_us": 997887,
+          "p999_us": 999238,
+          "p99_us": 999238
+        },
+        "phase_5b_cgroup_create": {
+          "count": 50,
+          "max_us": 26237,
+          "p50_us": 19310,
+          "p75_us": 21717,
+          "p90_us": 22297,
+          "p95_us": 23419,
+          "p999_us": 25282,
+          "p99_us": 25282
+        },
+        "phase_9_jailer_launch": {
+          "count": 50,
+          "max_us": 31962,
+          "p50_us": 31685,
+          "p75_us": 31763,
+          "p90_us": 31823,
+          "p95_us": 31836,
+          "p999_us": 31912,
+          "p99_us": 31912
+        }
+      },
+      "wallclock_ms": {
+        "count": 50,
+        "fail_count": 0,
+        "max": 1356,
+        "outliers": 0,
+        "p50": 1351,
+        "p50_ci95": [
+          1349,
+          1352
+        ],
+        "p75": 1352,
+        "p90": 1353,
+        "p95": 1353,
+        "p99": 1354,
+        "p999": 1354
+      }
+    },
+    "performance": {
+      "phases_us": {
+        "phase_11_rest_puts": {
+          "count": 50,
+          "max_us": 1227,
+          "p50_us": 1075,
+          "p75_us": 1115,
+          "p90_us": 1171,
+          "p95_us": 1175,
+          "p999_us": 1227,
+          "p99_us": 1227
+        },
+        "phase_12a_instance_start": {
+          "count": 50,
+          "max_us": 16797,
+          "p50_us": 13936,
+          "p75_us": 14149,
+          "p90_us": 14291,
+          "p95_us": 14341,
+          "p999_us": 14437,
+          "p99_us": 14437
+        },
+        "phase_12b_host_waiting_accept": {
+          "count": 50,
+          "max_us": 997883,
+          "p50_us": 988185,
+          "p75_us": 989693,
+          "p90_us": 990822,
+          "p95_us": 991102,
+          "p999_us": 992401,
+          "p99_us": 992401
+        },
+        "phase_12b_kernel_console_range": {
+          "count": 50,
+          "max_us": 930933,
+          "p50_us": 924036,
+          "p75_us": 924412,
+          "p90_us": 925843,
+          "p95_us": 926027,
+          "p999_us": 927245,
+          "p99_us": 927245
+        },
+        "phase_12b_ready_accept": {
+          "count": 50,
+          "max_us": 999068,
+          "p50_us": 989575,
+          "p75_us": 990978,
+          "p90_us": 992045,
+          "p95_us": 992335,
+          "p999_us": 993696,
+          "p99_us": 993696
+        },
+        "phase_5b_cgroup_create": {
+          "count": 50,
+          "max_us": 37870,
+          "p50_us": 20306,
+          "p75_us": 23994,
+          "p90_us": 25847,
+          "p95_us": 26315,
+          "p999_us": 30452,
+          "p99_us": 30452
+        },
+        "phase_9_jailer_launch": {
+          "count": 50,
+          "max_us": 31783,
+          "p50_us": 15497,
+          "p75_us": 15529,
+          "p90_us": 31541,
+          "p95_us": 31562,
+          "p999_us": 31602,
+          "p99_us": 31602
+        }
+      },
+      "wallclock_ms": {
+        "count": 50,
+        "fail_count": 0,
+        "max": 1238,
+        "outliers": 2,
+        "p50": 1236,
+        "p50_ci95": [
+          1236,
+          1236
+        ],
+        "p75": 1236,
+        "p90": 1237,
+        "p95": 1237,
+        "p99": 1238,
+        "p999": 1238
+      }
+    }
+  },
+  "host": {
+    "available_governors": [
+      "conservative",
+      "ondemand",
+      "userspace",
+      "powersave",
+      "performance",
+      "schedutil"
+    ],
+    "kernel": "Linux 6.17.0-22-generic",
+    "original_governor": "schedutil",
+    "scaling_driver": "acpi-cpufreq"
+  },
+  "source_artifacts": {
+    "ondemand_snapshot": "/tmp/m80-governor-sweep/ondemand.json",
+    "performance_snapshot": "/tmp/m80-governor-sweep/performance.json"
+  },
+  "version": 1
+}
