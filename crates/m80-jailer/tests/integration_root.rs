@@ -403,6 +403,7 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
     assert_status_contains(jailed.firecracker_pid(), "CapEff:", "0000000000000000");
     assert_status_contains(jailed.firecracker_pid(), "CapInh:", "0000000000000000");
     assert_status_contains(jailed.firecracker_pid(), "CapAmb:", "0000000000000000");
+    assert_status_contains(jailed.firecracker_pid(), "CapBnd:", "0000000000000000");
     assert_status_contains(jailed.firecracker_pid(), "SigBlk:", "0000000000000000");
     assert_supplementary_groups_empty(jailed.firecracker_pid());
     assert_exec_file_is_private_copy(

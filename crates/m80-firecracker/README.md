@@ -359,6 +359,12 @@ The base + overlay split is what `m80-storage::Rootfs` produces;
 `m80-storage::Scratch` is the workspace. Per-VM sparse files cost ~10 ms
 each at most to allocate + format; there is no full-rootfs copy.
 
+Preallocated hotplug slots are a latency/security trade-off. Each slot is a
+live writable virtio-blk device attached before `InstanceStart`, even while it
+points at an empty placeholder image. The default is zero; callers that set a
+larger value get faster later tenant-drive attach at the cost of extra
+Firecracker block-device surface for the VM lifetime.
+
 Boot artifact identity is verified before backend construction by
 `m80-preflight` (`Rootfs + manifest`). `Sandbox::launch` does not recompute
 kernel/rootfs/guestd sha256s in phase 3; phase 3 only prepares per-VM storage

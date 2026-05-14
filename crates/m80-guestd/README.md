@@ -23,6 +23,22 @@ Keeping the guest small has direct benefits:
 - The attack surface is smaller (one operation, one envelope shape).
 - The cross-compile target is simpler (statically-linkable, musl-friendly).
 
+## Trust model
+
+m80 treats `m80-guestd` as part of the guest image TCB selected by the operator.
+The host ready path checks the m80 wire protocol version, not a cryptographic
+attestation of the guestd binary. Artifact identity is enforced at the image
+manifest/preflight boundary; once a VM is running, any binary inside the guest
+that can speak the protocol can emit syntactically valid ready and response
+frames.
+
+Exec, PTY, file-op, metrics, ping, and drive responses are therefore guest
+statements, not host-attested facts. A compromised guestd can forge an
+`ExecResponse` or hide guest-side state. Adapter consumers that need result
+integrity must verify it outside m80's generic VM mechanics, for example by
+checking signed artifacts, reproducible output, or another application-level
+proof.
+
 ## Black-box contract
 
 ### Lifecycle

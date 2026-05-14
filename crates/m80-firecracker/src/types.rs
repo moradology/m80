@@ -313,6 +313,10 @@ pub enum ConfigSource {
 /// cloned into warm-pool slots. `workspace` must be `None` for pool slots.
 /// Fields that accept `None` resolve to their defaults at launch time
 /// (e.g., 1 vCPU, 512 MiB RAM, 5-minute idle timeout, no preallocated drives).
+///
+/// Current cold launches do not ask Firecracker's official jailer for a new PID
+/// namespace; a compromised VMM that forks a child before host teardown is
+/// contained by cgroup/process cleanup rather than PID-namespace lifetime.
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
     /// Optional caller-provided VM id; auto-derived when absent.
@@ -379,6 +383,10 @@ pub struct SandboxConfig {
     pub request_id: Option<String>,
     /// Number of writable placeholder drive slots created before
     /// `InstanceStart` so later attachment can use `PATCH /drives/{id}`.
+    ///
+    /// Values above zero keep additional live virtio-blk devices attached for
+    /// the VM lifetime. That removes hotplug latency for later tenant-drive
+    /// attach, but each idle slot is still Firecracker block-device surface.
     pub preallocated_drive_slots: u8,
     /// Destroy-after-use mode for conveyor-belt callers. The first user exec
     /// consumes the VM for reuse; later exec attempts fail typed.
