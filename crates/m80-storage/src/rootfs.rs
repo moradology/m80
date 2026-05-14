@@ -56,7 +56,8 @@ impl Rootfs {
     ///
     /// Intended for tests and recovery scenarios where both files are already
     /// in place.
-    #[must_use] pub fn new_at(base: &Path, overlay: &Path) -> Self {
+    #[must_use]
+    pub fn new_at(base: &Path, overlay: &Path) -> Self {
         Self {
             base: base.to_path_buf(),
             overlay: overlay.to_path_buf(),
@@ -65,12 +66,14 @@ impl Rootfs {
 
     /// The shared, read-only base ext4.  Same host file across all VMs from
     /// this image; host page cache deduplicates.
-    #[must_use] pub fn base_path(&self) -> &Path {
+    #[must_use]
+    pub fn base_path(&self) -> &Path {
         &self.base
     }
 
     /// The per-VM writable overlay ext4 produced by [`Rootfs::prepare`].
-    #[must_use] pub fn overlay_path(&self) -> &Path {
+    #[must_use]
+    pub fn overlay_path(&self) -> &Path {
         &self.overlay
     }
 }
@@ -241,9 +244,15 @@ fn validate_template(template: &Path, size_bytes: u64) -> Result<(), StorageErro
     let meta = template_metadata_path(template);
     let mut actual = String::new();
     File::open(&meta)
-        .map_err(|e| StorageError::Io { path: meta.clone(), source: e })?
+        .map_err(|e| StorageError::Io {
+            path: meta.clone(),
+            source: e,
+        })?
         .read_to_string(&mut actual)
-        .map_err(|e| StorageError::Io { path: meta.clone(), source: e })?;
+        .map_err(|e| StorageError::Io {
+            path: meta.clone(),
+            source: e,
+        })?;
     let expected = expected_template_metadata(size_bytes);
     if actual != expected {
         return Err(StorageError::OverlayTemplateMismatch {

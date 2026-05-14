@@ -93,7 +93,8 @@ pub fn discover_dns_resolvers_with_ops(
 }
 
 /// Return true when an IPv4 address is admissible as an upstream DNS resolver.
-#[must_use] pub fn is_admitted_dns_resolver(address: Ipv4Addr) -> bool {
+#[must_use]
+pub fn is_admitted_dns_resolver(address: Ipv4Addr) -> bool {
     let octets = address.octets();
     if address.is_unspecified()
         || address.is_loopback()

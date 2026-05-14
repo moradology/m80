@@ -9,7 +9,7 @@ use tempfile::TempDir;
 #[test]
 fn empty_run_root_returns_ok() {
     let dir = TempDir::new().expect("tempdir");
-    common::make_fake_backend(8,dir.path())
+    common::make_fake_backend(8, dir.path())
         .recover_stale_run_root(false)
         .expect("should succeed on empty run-root");
 }
@@ -17,7 +17,7 @@ fn empty_run_root_returns_ok() {
 #[test]
 fn nonexistent_run_root_returns_ok() {
     let dir = PathBuf::from("/nonexistent/path/xyz/m80-test");
-    common::make_fake_backend(8,&dir)
+    common::make_fake_backend(8, &dir)
         .recover_stale_run_root(false)
         .expect("nonexistent run-root should return Ok");
 }
@@ -29,7 +29,7 @@ fn orphan_subdir_without_jail_state_is_reaped() {
     std::fs::create_dir_all(orphan.join("nested")).unwrap();
     std::fs::write(orphan.join("nested/state.txt"), b"state").unwrap();
 
-    common::make_fake_backend(8,dir.path())
+    common::make_fake_backend(8, dir.path())
         .recover_stale_run_root(false)
         .expect("orphan run-dir recovery should succeed");
 
@@ -48,7 +48,7 @@ fn live_ownership_lock_preserves_run_dir() {
     )
     .unwrap();
 
-    common::make_fake_backend(8,dir.path())
+    common::make_fake_backend(8, dir.path())
         .recover_stale_run_root(false)
         .expect("live run-dir recovery should succeed");
 

@@ -22,7 +22,9 @@ fn leaves_unowned_residue_alone() {
     std::fs::create_dir_all(&preserved).unwrap();
     std::fs::write(preserved.join("console.log"), b"guest stderr").unwrap();
 
-    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path())
+        .recover_stale_run_root(false)
+        .unwrap();
 
     assert!(preserved.exists());
     assert_eq!(
@@ -38,7 +40,9 @@ fn startup_scavenge_uses_same_path() {
     std::fs::create_dir_all(orphan.join("nested")).unwrap();
     std::fs::write(orphan.join("nested/state.txt"), b"state").unwrap();
 
-    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path())
+        .recover_stale_run_root(false)
+        .unwrap();
 
     assert!(!orphan.exists());
 }

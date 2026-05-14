@@ -60,7 +60,8 @@ impl GuestLogLevel {
 ///
 /// Shape:
 /// `[<RFC3339-timestamp>] [<phase>] [<request_id-or-boot>] <level> <message>`
-#[must_use] pub fn format_line(
+#[must_use]
+pub fn format_line(
     timestamp: &str,
     phase: GuestLogPhase,
     request_id: Option<&str>,
@@ -184,7 +185,8 @@ pub(crate) struct BootTimer {
 
 impl BootTimer {
     /// Start a new boot timer at the current monotonic instant.
-    #[must_use] pub(crate) fn start() -> Self {
+    #[must_use]
+    pub(crate) fn start() -> Self {
         let now = Instant::now();
         Self {
             start: now,

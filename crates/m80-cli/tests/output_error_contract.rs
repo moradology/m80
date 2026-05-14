@@ -46,7 +46,10 @@ fn json_wrapper_failure_uses_stderr_envelope_and_empty_stdout() {
         serde_json::from_str(&stderr).expect("stderr should be one JSON envelope");
     assert_eq!(parsed["version"], 1);
     assert!(parsed["request_id"].as_str().unwrap().starts_with("req_"));
-    assert!(parsed["data"].get("request_id").is_none(), "request_id must not be duplicated inside data");
+    assert!(
+        parsed["data"].get("request_id").is_none(),
+        "request_id must not be duplicated inside data"
+    );
     assert_eq!(parsed["data"]["variant"], "Config");
     assert!(parsed["data"]["detail"]
         .as_str()
@@ -68,7 +71,6 @@ fn writeback_without_workspace_fails_before_backend_work() {
     assert!(stderr.contains("config:"));
     assert!(stderr.contains("--writeback requires --workspace"));
 }
-
 
 #[test]
 fn cli_exit_codes_parse_vs_runtime_distinct() {

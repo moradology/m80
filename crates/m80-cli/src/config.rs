@@ -22,7 +22,9 @@ use m80_firecracker::{load_config, EffectiveConfig, FcError};
 ///
 /// This path is used before preflight when CLI behavior (for example runtime
 /// profile selection) must be known before boot artifacts are discovered.
-pub(crate) fn load_effective(flag_overrides: &HashMap<&str, String>) -> Result<EffectiveConfig, FcError> {
+pub(crate) fn load_effective(
+    flag_overrides: &HashMap<&str, String>,
+) -> Result<EffectiveConfig, FcError> {
     let owned: HashMap<String, String> = flag_overrides
         .iter()
         .map(|(k, v)| ((*k).to_string(), v.clone()))
@@ -41,8 +43,8 @@ pub(crate) fn resolve_run_root() -> Result<PathBuf, FcError> {
         .fields
         .iter()
         .find(|f| f.name == "run_root")
-        .ok_or(FcError::Config(m80_firecracker::ConfigError::MissingField {
-            field: "run_root",
-        }))?;
+        .ok_or(FcError::Config(
+            m80_firecracker::ConfigError::MissingField { field: "run_root" },
+        ))?;
     Ok(PathBuf::from(&field.value))
 }

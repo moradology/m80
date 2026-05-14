@@ -229,12 +229,14 @@ const ATTACKS: &[Attack] = &[
 ];
 
 /// Return all stable attack names, excluding harness controls.
-#[must_use] pub fn attack_names() -> Vec<&'static str> {
+#[must_use]
+pub fn attack_names() -> Vec<&'static str> {
     ATTACKS.iter().map(|attack| attack.name).collect()
 }
 
 /// Return attacks grouped by category.
-#[must_use] pub fn attacks_by_category() -> Vec<(AttackCategory, Vec<&'static str>)> {
+#[must_use]
+pub fn attacks_by_category() -> Vec<(AttackCategory, Vec<&'static str>)> {
     let mut grouped = Vec::new();
     for category in [
         AttackCategory::Filesystem,

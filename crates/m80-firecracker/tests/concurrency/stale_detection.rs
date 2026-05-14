@@ -19,7 +19,9 @@ fn current_process_ownership_lock_preserves_run_dir() {
     )
     .unwrap();
 
-    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path())
+        .recover_stale_run_root(false)
+        .unwrap();
 
     assert!(live.exists());
 }
@@ -32,7 +34,9 @@ fn stale_detection_uses_ownership_and_jailer_state_not_socket_probes() {
     std::fs::write(stale.join("firecracker.sock"), b"not a socket").unwrap();
     std::fs::write(stale.join("vsock.sock"), b"not a socket").unwrap();
 
-    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path())
+        .recover_stale_run_root(false)
+        .unwrap();
 
     assert!(!stale.exists());
 }
@@ -44,7 +48,9 @@ fn preserves_run_dir_when_ownership_lock_is_ambiguous() {
     std::fs::create_dir_all(&ambiguous).unwrap();
     std::fs::write(ambiguous.join(OWNERSHIP_LOCK), b"not-parseable").unwrap();
 
-    common::make_fake_backend(8, dir.path()).recover_stale_run_root(false).unwrap();
+    common::make_fake_backend(8, dir.path())
+        .recover_stale_run_root(false)
+        .unwrap();
 
     assert!(ambiguous.exists());
 }

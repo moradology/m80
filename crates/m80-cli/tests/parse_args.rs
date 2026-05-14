@@ -119,7 +119,6 @@ fn parse_run_runtime_profile_shape() {
     }
 }
 
-
 #[test]
 fn parse_run_pty_flag_shape() {
     let cli = Cli::try_parse_from(["m80", "run", "-t", "-i", "--", "bash"]).unwrap();
@@ -163,7 +162,9 @@ fn parse_run_writeback_shape() {
     ])
     .unwrap();
     match cli.subcommand {
-        Cmd::Run { writeback, argv, .. } => {
+        Cmd::Run {
+            writeback, argv, ..
+        } => {
             assert_eq!(writeback, WritebackMode::OnSuccess);
             assert_eq!(argv, vec!["make", "test"]);
         }

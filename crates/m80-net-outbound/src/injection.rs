@@ -276,4 +276,3 @@ fn write_ext4_file(
         ],
     )
 }
-

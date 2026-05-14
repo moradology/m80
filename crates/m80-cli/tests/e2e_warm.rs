@@ -95,14 +95,7 @@ fn foreground_warm_owner_serves_run_and_drains_without_cold_fallback() {
     let owner = ChildGuard::new(
         fixture
             .std_m80()
-            .args([
-                "warm",
-                "enable",
-                "--size",
-                "1",
-                "--egress",
-                "none",
-            ])
+            .args(["warm", "enable", "--size", "1", "--egress", "none"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

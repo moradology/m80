@@ -28,7 +28,8 @@ pub const CONSOLE_LOG: &str = "console.log";
 pub const BOOT_IDENTITY_FILE: &str = "boot-identity.json";
 
 /// Compute the per-VM run directory under the backend run root.
-#[must_use] pub fn run_dir_path(run_root: &Path, vm_id: &str) -> PathBuf {
+#[must_use]
+pub fn run_dir_path(run_root: &Path, vm_id: &str) -> PathBuf {
     run_root.join(vm_id)
 }
 
@@ -56,7 +57,8 @@ pub(crate) fn socket_path_len(run_root: &Path, vm_id: &str, fc_basename: &str) -
 ///
 /// The socket is created inside the jailer root, not directly in the run
 /// directory.
-#[must_use] pub fn firecracker_api_socket_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+#[must_use]
+pub fn firecracker_api_socket_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
     m80_jailer::jail_root_path(run_dir, firecracker_bin).join(FIRECRACKER_API_SOCKET)
 }
 
@@ -64,17 +66,20 @@ pub(crate) fn socket_path_len(run_root: &Path, vm_id: &str, fc_basename: &str) -
 ///
 /// The socket is created inside the jailer root, not directly in the run
 /// directory.
-#[must_use] pub fn vsock_socket_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
+#[must_use]
+pub fn vsock_socket_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
     m80_jailer::jail_root_path(run_dir, firecracker_bin).join(VSOCK_SOCKET)
 }
 
 /// Compute the per-VM writable root filesystem overlay path.
-#[must_use] pub fn rootfs_overlay_path(run_dir: &Path) -> PathBuf {
+#[must_use]
+pub fn rootfs_overlay_path(run_dir: &Path) -> PathBuf {
     run_dir.join(ROOTFS_OVERLAY_IMAGE)
 }
 
 /// Compute the per-VM writable workspace scratch image path.
-#[must_use] pub fn scratch_image_path(run_dir: &Path) -> PathBuf {
+#[must_use]
+pub fn scratch_image_path(run_dir: &Path) -> PathBuf {
     run_dir.join(SCRATCH_IMAGE)
 }
 
@@ -91,12 +96,14 @@ pub(crate) fn preallocated_drive_slot_jail_path(slot: u8) -> PathBuf {
 }
 
 /// Compute the console log path for the VM.
-#[must_use] pub fn console_log_path(run_dir: &Path) -> PathBuf {
+#[must_use]
+pub fn console_log_path(run_dir: &Path) -> PathBuf {
     run_dir.join(CONSOLE_LOG)
 }
 
 /// Compute the boot identity record path for the VM.
-#[must_use] pub fn boot_identity_path(run_dir: &Path) -> PathBuf {
+#[must_use]
+pub fn boot_identity_path(run_dir: &Path) -> PathBuf {
     run_dir.join(BOOT_IDENTITY_FILE)
 }
 

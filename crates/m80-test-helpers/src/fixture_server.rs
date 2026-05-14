@@ -160,12 +160,14 @@ fn read_full_request(stream: &mut UnixStream) -> String {
 // ── Common response builders ─────────────────────────────────────────────────
 
 /// Build a `204 No Content` response.
-#[must_use] pub fn resp_204() -> Vec<u8> {
+#[must_use]
+pub fn resp_204() -> Vec<u8> {
     b"HTTP/1.1 204 No Content\r\n\r\n".to_vec()
 }
 
 /// Build a `400 Bad Request` response with a JSON body.
-#[must_use] pub fn resp_400(body: &str) -> Vec<u8> {
+#[must_use]
+pub fn resp_400(body: &str) -> Vec<u8> {
     format!(
         "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{}",
         body.len(),

@@ -129,8 +129,7 @@ fn netlink_mutation(message_type: u16, payload: Vec<u8>, label: &'static str) ->
 }
 
 fn netlink_request(message_type: u16, payload: Vec<u8>) -> Vec<u8> {
-    let len = u32::try_from(NETLINK_HEADER_LEN + payload.len())
-        .expect("netlink payload fits u32");
+    let len = u32::try_from(NETLINK_HEADER_LEN + payload.len()).expect("netlink payload fits u32");
     let flags =
         (libc::NLM_F_REQUEST | libc::NLM_F_ACK | libc::NLM_F_CREATE | libc::NLM_F_EXCL) as u16;
     let mut request = Vec::with_capacity(len as usize);
