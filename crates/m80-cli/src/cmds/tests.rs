@@ -77,6 +77,50 @@ fn effective_cgroup_mode_maps_to_preflight_config() {
 }
 
 #[test]
+fn effective_jail_identity_maps_to_preflight_config() {
+    let config = EffectiveConfig {
+        fields: vec![
+            EffectiveField {
+                name: "jail_uid".to_owned(),
+                value: "3100".to_owned(),
+                source: ConfigSource::Env,
+            },
+            EffectiveField {
+                name: "jail_gid".to_owned(),
+                value: "3200".to_owned(),
+                source: ConfigSource::Env,
+            },
+        ],
+    };
+
+    let host_features = host_feature_config_from_effective(&config).unwrap();
+
+    assert_eq!(host_features.jail_uid, 3100);
+    assert_eq!(host_features.jail_gid, 3200);
+}
+
+#[test]
+fn invalid_effective_jail_identity_stays_typed_preflight_error() {
+    let config = EffectiveConfig {
+        fields: vec![EffectiveField {
+            name: "jail_uid".to_owned(),
+            value: "not-a-uid".to_owned(),
+            source: ConfigSource::Env,
+        }],
+    };
+
+    let err = host_feature_config_from_effective(&config).unwrap_err();
+
+    match err {
+        PreflightError::InvalidJailIdentity { field, value } => {
+            assert_eq!(field, "jail_uid");
+            assert_eq!(value, "not-a-uid");
+        }
+        other => panic!("expected InvalidJailIdentity, got {other:?}"),
+    }
+}
+
+#[test]
 fn invalid_effective_cgroup_mode_stays_typed_preflight_error() {
     let config = EffectiveConfig {
         fields: vec![EffectiveField {

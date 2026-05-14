@@ -127,6 +127,15 @@ pub enum PreflightError {
         actual: String,
     },
 
+    /// Host Linux kernel is older than m80's supported floor.
+    #[error("host kernel unsupported: actual {actual}, minimum {minimum}")]
+    HostKernelUnsupported {
+        /// Kernel release reported by `uname -r`.
+        actual: String,
+        /// Minimum supported `major.minor` release.
+        minimum: String,
+    },
+
     /// `/dev/kvm` is missing.
     #[error("kvm device unavailable at {}", path.display())]
     KvmUnavailable {
@@ -150,6 +159,24 @@ pub enum PreflightError {
     InvalidCgroupMode {
         /// Observed value.
         actual: String,
+    },
+
+    /// A configured jailer UID/GID env or config value was not a valid u32.
+    #[error("invalid jail identity {field}: {value:?}")]
+    InvalidJailIdentity {
+        /// Field or env key carrying the invalid value.
+        field: &'static str,
+        /// Observed value.
+        value: String,
+    },
+
+    /// Configured jailer UID/GID is not present in host identity databases.
+    #[error("jail identity unavailable: {field} id {id} not found")]
+    JailIdentityUnavailable {
+        /// Identity field that failed (`jail_uid` or `jail_gid`).
+        field: &'static str,
+        /// Missing numeric id.
+        id: u32,
     },
 
     /// A high-impact CPU vulnerability sysfs row reports `Vulnerable` and
@@ -323,6 +350,9 @@ impl PreflightError {
             Self::UnsupportedHostPlatform { .. } => {
                 "m80 requires a Linux host; macOS and Windows are not supported"
             }
+            Self::HostKernelUnsupported { .. } => {
+                "run m80 on a Linux host with kernel 6.1 or newer"
+            }
             Self::KvmUnavailable { .. } => {
                 "ensure KVM is enabled in the host kernel and /dev/kvm exists"
             }
@@ -334,6 +364,12 @@ impl PreflightError {
             }
             Self::InvalidCgroupMode { .. } => {
                 "set M80_CGROUP_MODE to either `unified-v2` or `disabled`"
+            }
+            Self::InvalidJailIdentity { .. } => {
+                "set M80_JAIL_UID and M80_JAIL_GID to decimal u32 ids"
+            }
+            Self::JailIdentityUnavailable { .. } => {
+                "create the configured jail user/group on the host or set M80_JAIL_UID/M80_JAIL_GID to existing ids"
             }
             Self::CpuVulnerabilityDetected { .. } => {
                 "apply CPU microcode/kernel mitigations or set M80_SKIP_CHECK_VULNERABILITIES=1 only after accepting the side-channel risk"

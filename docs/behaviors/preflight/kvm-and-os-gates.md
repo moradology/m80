@@ -9,6 +9,12 @@ fails closed on the first missing capability.
 The OS gate reads `uname -s` and accepts only `Linux`. macOS, Windows, and other
 hosts return `PreflightError::UnsupportedHostPlatform`.
 
+## Host Kernel Floor
+
+The host kernel release from `uname -r` must parse as Linux 6.1 or newer. Older
+or unparseable releases return `PreflightError::HostKernelUnsupported` before
+KVM, binary, or artifact checks run.
+
 ## KVM Device
 
 `/dev/kvm` must exist and be writable by the current process. A missing device
@@ -51,6 +57,24 @@ and defaults to `unified-v2`, matching `m80-firecracker` config defaults.
 Callers that already loaded effective config pass
 `HostFeaturePreflightConfig` to `run_with_configs`.
 
+## Jailer Identity Gate
+
+The effective `jail_uid` and `jail_gid` must resolve through host passwd and
+group lookup before launch work begins. The standalone `run()` path reads
+`M80_JAIL_UID` and `M80_JAIL_GID`, defaulting both to `3000`; callers with
+already-loaded config pass those fields through `HostFeaturePreflightConfig`.
+
+Invalid numeric values return `PreflightError::InvalidJailIdentity`. Missing
+host user or group entries return `PreflightError::JailIdentityUnavailable`.
+Preflight does not create the user/group and does not fall back to another id.
+
+## CPU Microcode Reporting
+
+Preflight reads CPU0 microcode `version` and `processor_flags` from sysfs when
+available and emits a non-blocking `CPU microcode` row. Missing sysfs rows are
+reported as `unavailable`; m80 does not infer microcode level from vulnerability
+status text.
+
 ## CPU Vulnerability Gate
 
 Preflight reads selected files under
@@ -88,9 +112,12 @@ capabilities through the container runtime.
 - `crates/m80-preflight/src/checks.rs`
 - `crates/m80-preflight/src/lib.rs::classify_privilege`
 - `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs`
-- `crates/m80-preflight/src/checks.rs::tests::preflight_missing_vsock_module_typed`
-- `crates/m80-preflight/src/checks.rs::tests::preflight_missing_tun_module_typed`
-- `crates/m80-preflight/src/checks.rs::tests::preflight_missing_nf_conntrack_typed`
-- `crates/m80-preflight/src/checks.rs::tests::preflight_cgroup_v2_unavailability_typed`
-- `crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_mds_vulnerable_fails_closed`
-- `crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_scan_reports_all_configured_files`
+- `crates/m80-preflight/src/checks_tests.rs::host_kernel_floor_rejects_old_release`
+- `crates/m80-preflight/src/checks_tests.rs::jailer_identity_requires_existing_user`
+- `crates/m80-preflight/src/checks_tests.rs::cpu_microcode_reports_version_and_flags`
+- `crates/m80-preflight/src/checks_tests.rs::preflight_missing_vsock_module_typed`
+- `crates/m80-preflight/src/checks_tests.rs::preflight_missing_tun_module_typed`
+- `crates/m80-preflight/src/checks_tests.rs::preflight_missing_nf_conntrack_typed`
+- `crates/m80-preflight/src/checks_tests.rs::preflight_cgroup_v2_unavailability_typed`
+- `crates/m80-preflight/src/checks_tests.rs::cpu_vulnerability_mds_vulnerable_fails_closed`
+- `crates/m80-preflight/src/checks_tests.rs::cpu_vulnerability_scan_reports_all_configured_files`

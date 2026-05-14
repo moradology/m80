@@ -27,6 +27,17 @@ fn unsupported_host_platform_has_hint() {
 }
 
 #[test]
+fn host_kernel_unsupported_has_hint() {
+    let err = PreflightError::HostKernelUnsupported {
+        actual: "5.15.0".into(),
+        minimum: "6.1".into(),
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("5.15.0"));
+    assert!(err.to_string().contains("6.1"));
+}
+
+#[test]
 fn kvm_unavailable_has_hint() {
     let err = PreflightError::KvmUnavailable {
         path: "/dev/kvm".into(),
@@ -56,6 +67,28 @@ fn invalid_cgroup_mode_has_hint() {
     };
     assert_hint(&err);
     assert!(err.to_string().contains("legacy"));
+}
+
+#[test]
+fn invalid_jail_identity_has_hint() {
+    let err = PreflightError::InvalidJailIdentity {
+        field: "jail_uid",
+        value: "not-a-uid".into(),
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("jail_uid"));
+    assert!(err.to_string().contains("not-a-uid"));
+}
+
+#[test]
+fn jail_identity_unavailable_has_hint() {
+    let err = PreflightError::JailIdentityUnavailable {
+        field: "jail_gid",
+        id: 3000,
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("jail_gid"));
+    assert!(err.to_string().contains("3000"));
 }
 
 #[test]

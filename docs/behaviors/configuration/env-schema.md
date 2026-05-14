@@ -27,6 +27,9 @@ All keys are exact and case-sensitive. Legacy predecessor-style names such as
 | `M80_ROOTFS_IMAGE` | Host path to the built ext4 rootfs image. | none; missing rootfs fails preflight |
 | `M80_KERNEL_KIND` | `stock` or `stripped`; overrides the manifest kernel-kind discriminator after reading the rootfs manifest. | manifest value |
 | `M80_RUN_ROOT` | Host run-root directory used for VM state. | `/var/run/m80` |
+| `M80_JAIL_UID` | UID that must exist for the jailed Firecracker process. Shared with orchestrator config. | `3000` |
+| `M80_JAIL_GID` | GID that must exist for the jailed Firecracker process. Shared with orchestrator config. | `3000` |
+| `M80_CGROUP_MODE` | `unified-v2` or `disabled`. Shared with orchestrator config. | `unified-v2` |
 | `M80_FORCE_PREFLIGHT` | When set to any value, bypasses the boot-scoped preflight sentinel cache and reruns Firecracker version probing plus manifest SHA verification. | cache enabled |
 | `M80_SKIP_CHECK_VULNERABILITIES` | When set exactly to `1`, skips hard failure for CPU vulnerability sysfs rows such as `mds` and `l1tf`. | vulnerability gate enabled |
 

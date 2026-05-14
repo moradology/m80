@@ -100,6 +100,19 @@ predecessor source: `crates/sandbox/agent-sandbox-firecracker/src/errors.rs:204`
 
 Test: `crates/m80-preflight/tests/error_hints.rs::unsupported_host_platform_has_hint`.
 
+## host-kernel-unsupported
+
+`m80-preflight` rejects Linux kernels older than 6.1, and rejects unparseable
+`uname -r` releases, with
+`PreflightError::HostKernelUnsupported { actual, minimum }`. This is a host
+floor gate, not a Firecracker launch error, so it runs before KVM and artifact
+validation.
+
+Test:
+`crates/m80-preflight/src/checks_tests.rs::host_kernel_floor_rejects_old_release`,
+`crates/m80-preflight/src/checks_tests.rs::host_kernel_floor_rejects_unparseable_release`,
+and `crates/m80-preflight/tests/error_hints.rs::host_kernel_unsupported_has_hint`.
+
 ## first-line-sizing
 
 m80 does not carry predecessor's fixed first-line sizing gate. `SandboxConfig`
@@ -115,6 +128,24 @@ Test:
 `crates/m80-firecracker/src/preboot.rs::tests::machine_config_honors_caller_sizing`
 and
 `crates/m80-firecracker/src/preboot.rs::tests::machine_config_uses_default_sizing_when_omitted`.
+
+## jail-identity
+
+The effective jailer identity must be explicit and resolvable on the host.
+Invalid numeric `jail_uid`/`jail_gid` input returns
+`PreflightError::InvalidJailIdentity { field, value }`. Numeric ids that do not
+resolve through passwd or group lookup return
+`PreflightError::JailIdentityUnavailable { field, id }`.
+
+Preflight does not create missing identities and does not fall back to root or
+the current user.
+
+Test:
+`crates/m80-preflight/src/checks_tests.rs::jail_id_parser_rejects_non_u32`,
+`crates/m80-preflight/src/checks_tests.rs::jailer_identity_requires_existing_user`,
+`crates/m80-preflight/src/checks_tests.rs::jailer_identity_requires_existing_group`,
+`crates/m80-preflight/tests/error_hints.rs::invalid_jail_identity_has_hint`, and
+`crates/m80-preflight/tests/error_hints.rs::jail_identity_unavailable_has_hint`.
 
 ## priv-jailer-unavail
 

@@ -549,6 +549,8 @@ fn host_feature_config_from_effective(
         .find(|f| f.name == "cgroup_mode")
         .map(|f| f.value.as_str())
         .unwrap_or("unified-v2");
+    let jail_uid = effective_jail_id(effective, "jail_uid", 3000)?;
+    let jail_gid = effective_jail_id(effective, "jail_gid", 3000)?;
     Ok(HostFeaturePreflightConfig {
         cgroup_mode: match cgroup_mode {
             "disabled" => CgroupPreflightMode::Disabled,
@@ -559,7 +561,31 @@ fn host_feature_config_from_effective(
                 });
             }
         },
+        jail_uid,
+        jail_gid,
     })
+}
+
+fn effective_jail_id(
+    effective: &EffectiveConfig,
+    field: &'static str,
+    default: u32,
+) -> Result<u32, PreflightError> {
+    let Some(value) = effective
+        .fields
+        .iter()
+        .find(|candidate| candidate.name == field)
+        .map(|candidate| candidate.value.as_str())
+    else {
+        return Ok(default);
+    };
+
+    value
+        .parse()
+        .map_err(|_| PreflightError::InvalidJailIdentity {
+            field,
+            value: value.to_owned(),
+        })
 }
 
 fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool) -> i32 {
