@@ -214,7 +214,7 @@ fn ensure_host_network_sysctls(
 ) -> Result<(), NetError> {
     ensure_ipv4_forwarding(ops)?;
     disable_ipv6_on_link(ops, &state.bridge.bridge_name)?;
-    disable_ipv6_on_link(ops, &state.tap_name)
+    disable_ipv6_on_link(ops, &state.host_veth_name)
 }
 
 fn ensure_ipv4_forwarding(ops: &mut impl PolicyOps) -> Result<(), NetError> {
@@ -414,7 +414,7 @@ fn ensure_forwarding_entry_rules(
             "FORWARD",
             vec![
                 "-i".into(),
-                state.tap_name.clone(),
+                state.bridge.bridge_name.clone(),
                 "-s".into(),
                 guest.clone(),
                 "-m".into(),
@@ -466,7 +466,7 @@ fn ensure_forwarding_entry_rules(
             "FORWARD",
             vec![
                 "-i".into(),
-                state.tap_name.clone(),
+                state.bridge.bridge_name.clone(),
                 "-s".into(),
                 guest,
                 "-p".into(),

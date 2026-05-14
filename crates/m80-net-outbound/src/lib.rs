@@ -70,6 +70,7 @@ pub const RULE_COMMENT_PREFIX: &str = "m80";
 pub const NETWORK_STATE_FILE: &str = "network-state.json";
 
 const GUEST_IP_CLAIM_DIR: &str = ".network-guest-ip-claims";
+const OUTBOUND_NETNS_DIR: &str = "/run/netns";
 
 /// What the realizer materialized for one VM. Caller-observable handles for
 /// diagnostics and downstream config (e.g., the orchestrator's
@@ -81,6 +82,8 @@ pub struct RealizedNetwork {
     pub bridge_name: String,
     /// Tap interface name (e.g., `tfc<12hex>`).
     pub tap_name: String,
+    /// Host path to the m80-owned VMM network namespace.
+    pub vmm_netns_path: PathBuf,
     /// Guest IPv4 address (deterministic per `(run_root, vm_id)`).
     pub guest_ipv4: Ipv4Addr,
     /// Guest MAC address (locally-administered, deterministic).
@@ -168,25 +171,32 @@ pub fn realize_bridge_and_tap_with_ops_for_routes(
         return Err(err);
     }
     drop(allocation_lock);
-    let tap_plan = link_ops::TapBridgePlan {
+    let tap_plan = link_ops::PrivateNetnsTapPlan {
         bridge_name: bridge.bridge_name.clone(),
         tap_name: vm_state.tap_name.clone(),
+        vmm_netns_name: vm_state.vmm_netns_name.clone(),
+        vmm_netns_path: vm_state.vmm_netns_path.clone(),
+        host_veth_name: vm_state.host_veth_name.clone(),
+        vmm_veth_name: vm_state.vmm_veth_name.clone(),
+        vmm_bridge_name: vm_state.vmm_bridge_name.clone(),
+        vmm_bridge_mac: derive_vmm_bridge_mac_bytes(run_root, vm_id),
         bridge_cidr: bridge.cidr,
-        guest_mac: derive_guest_mac_bytes(run_root, vm_id),
+        tap_link_mac: derive_tap_link_mac_bytes(run_root, vm_id),
     };
-    if let Err(setup_err) = link_ops::create_tap_on_bridge(ops, &tap_plan) {
-        rollback_failed_vm_network_setup(ops, run_root, run_dir, &vm_state.tap_name)?;
+    if let Err(setup_err) = link_ops::create_private_netns_tap_topology(ops, &tap_plan) {
+        rollback_failed_vm_network_setup(ops, run_root, run_dir, &vm_state)?;
         return Err(setup_err);
     }
     let ready_vm_state = vm_state.with_phase(SetupPhase::Ready);
     if let Err(err) = write_vm_network_state_record(run_dir, &ready_vm_state) {
-        rollback_failed_vm_network_setup(ops, run_root, run_dir, &ready_vm_state.tap_name)?;
+        rollback_failed_vm_network_setup(ops, run_root, run_dir, &ready_vm_state)?;
         return Err(err);
     }
 
     Ok(RealizedNetwork {
         bridge_name: bridge.bridge_name,
         tap_name: ready_vm_state.tap_name,
+        vmm_netns_path: ready_vm_state.vmm_netns_path,
         guest_ipv4: ready_vm_state.guest_ipv4,
         guest_mac: ready_vm_state.guest_mac,
         bridge_cidr: ready_vm_state.bridge.cidr,
@@ -229,9 +239,9 @@ fn rollback_failed_vm_network_setup(
     ops: &mut impl LinkOps,
     run_root: &Path,
     run_dir: &Path,
-    tap_name: &str,
+    state: &VmNetworkStateRecord,
 ) -> Result<(), NetError> {
-    link_ops::teardown_tap(ops, tap_name)?;
+    link_ops::teardown_private_netns_tap_topology(ops, state)?;
     if let Ok(state) = read_vm_network_state_record(run_dir) {
         remove_guest_ipv4_claim(run_root, &state.vm_id, state.guest_ipv4)?;
     }
@@ -265,6 +275,32 @@ pub(crate) fn derive_bridge_name(run_root: &Path) -> String {
 pub(crate) fn derive_tap_name(run_root: &Path, vm_id: &str) -> String {
     let digest = vm_digest(run_root, vm_id);
     format!("tfc{}", &hex::encode(digest)[..12])
+}
+
+/// Return the planned named network namespace path for an OutboundNat VM.
+#[must_use]
+pub fn planned_vmm_netns_path(run_root: &Path, vm_id: &str) -> PathBuf {
+    derive_vmm_netns_path(run_root, vm_id)
+}
+
+pub(crate) fn derive_vmm_netns_path(run_root: &Path, vm_id: &str) -> PathBuf {
+    PathBuf::from(OUTBOUND_NETNS_DIR).join(derive_vmm_netns_name(run_root, vm_id))
+}
+
+pub(crate) fn derive_vmm_netns_name(run_root: &Path, vm_id: &str) -> String {
+    format!("m80n{}", &hex::encode(vm_digest(run_root, vm_id))[..12])
+}
+
+pub(crate) fn derive_host_veth_name(run_root: &Path, vm_id: &str) -> String {
+    format!("vh{}", &hex::encode(vm_digest(run_root, vm_id))[..13])
+}
+
+pub(crate) fn derive_vmm_veth_name(run_root: &Path, vm_id: &str) -> String {
+    format!("vv{}", &hex::encode(vm_digest(run_root, vm_id))[..13])
+}
+
+pub(crate) fn derive_vmm_bridge_name(run_root: &Path, vm_id: &str) -> String {
+    format!("bfc{}", &hex::encode(vm_digest(run_root, vm_id))[..12])
 }
 
 /// Derive the guest IPv4 + MAC for a VM. Pure: no I/O.
@@ -440,9 +476,28 @@ fn vm_digest(run_root: &Path, vm_id: &str) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn derive_guest_mac_bytes(run_root: &Path, vm_id: &str) -> [u8; 6] {
+fn derive_vmm_bridge_mac_bytes(run_root: &Path, vm_id: &str) -> [u8; 6] {
     let digest = vm_digest(run_root, vm_id);
-    [0x02, digest[0], digest[1], digest[2], digest[3], digest[4]]
+    [
+        0x02,
+        digest[0] ^ 0x80,
+        digest[1],
+        digest[2],
+        digest[3],
+        digest[4],
+    ]
+}
+
+fn derive_tap_link_mac_bytes(run_root: &Path, vm_id: &str) -> [u8; 6] {
+    let digest = vm_digest(run_root, vm_id);
+    [
+        0x02,
+        digest[0] ^ 0x40,
+        digest[1],
+        digest[2],
+        digest[3],
+        digest[4],
+    ]
 }
 
 fn ensure_bridge_ready_with_ops(

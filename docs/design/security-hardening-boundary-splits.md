@@ -6,10 +6,13 @@ Behavior beads: `m80-8emae.30`, `m80-8emae.34`, `m80-8emae.14`.
 
 The remaining `m80-8emae` hardening items are process-boundary problems, not
 single-flag launch changes. This document records the safe split so follow-up
-work does not reintroduce the rejected shortcuts:
+work does not reintroduce the rejected shortcuts. The `AllowOutbound` topology
+below has been implemented; the CAP_NET_ADMIN and guestd seccomp boundaries
+remain split follow-up work:
 
 - moving an `AllowOutbound` TAP out of the host namespace without replacing the
-  data path;
+  data path; implemented with an m80-owned namespace, private bridge, and veth
+  pair;
 - dropping `CAP_NET_ADMIN` from the long-lived m80 process while later launches
   and cleanup still call host network operations in-process;
 - installing seccomp in long-lived `m80-guestd` while workload `fork`/`exec`
@@ -22,13 +25,11 @@ adapter tool catalogs, semantic IDs, or product policy.
 
 `NoEgress` uses `m80-jailer-harden --new-net-ns`, so the Firecracker VMM gets a
 fresh empty network namespace. `AllowOutbound` cannot reuse that shape directly:
-the current outbound path creates one host bridge plus one host TAP, enslaves
-the TAP to the host bridge, and asks Firecracker to open that TAP by name. A TAP
-cannot both remain a bridge port in the host namespace and be opened from a
-private VMM namespace.
+the owned outbound path needs a data path from a VMM-private TAP back to the
+host bridge and NAT policy.
 
-The safe hard-cutover design is an m80-owned named namespace for each outbound
-VM:
+The implemented hard-cutover design is an m80-owned named namespace for each
+outbound VM:
 
 1. Create and persist a namespace handle before Firecracker launch.
 2. In the host namespace, keep the run-root bridge, host NAT, and iptables
@@ -40,7 +41,7 @@ VM:
 6. Tear down the per-VM namespace, private bridge, TAP, veth pair, iptables
    rules, and per-VM state from one recorded ownership state.
 
-Required evidence:
+Evidence to keep current:
 
 - unit tests pin link-operation order and rollback for the namespace topology;
 - real-KVM `AllowOutbound` test proves Firecracker's `/proc/<pid>/ns/net`

@@ -256,6 +256,7 @@ fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
         false,
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
+            vmm_netns_path: "/run/netns/m80n123456789abc".into(),
             guest_mac: "02:00:00:00:00:02".to_owned(),
         },
         &[],
@@ -292,6 +293,7 @@ fn layer_1_preboot_plan_contains_only_documented_devices() {
         true,
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
+            vmm_netns_path: "/run/netns/m80n123456789abc".into(),
             guest_mac: "02:00:00:00:00:02".to_owned(),
         },
         &[],
@@ -364,6 +366,7 @@ fn preboot_put_phase_names_include_individual_devices() {
         true,
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
+            vmm_netns_path: "/run/netns/m80n123456789abc".into(),
             guest_mac: "02:00:00:00:00:02".to_owned(),
         },
         &[],

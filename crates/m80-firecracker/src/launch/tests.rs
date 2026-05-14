@@ -70,6 +70,34 @@ fn launch_jailer_config_enables_pid_namespace() {
 }
 
 #[test]
+fn allow_outbound_cold_launch_uses_planned_private_netns_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_root = dir.path().join("run-root");
+    let vm_id = "vm-outbound";
+    let policy = crate::NetworkPolicy::AllowOutbound {
+        exceptions: Vec::new(),
+    };
+
+    let path = cold_launch_netns_path(&policy, &run_root, vm_id).unwrap();
+
+    assert_eq!(
+        path,
+        m80_net_outbound::planned_vmm_netns_path(&run_root, vm_id)
+    );
+}
+
+#[test]
+fn no_egress_cold_launch_still_uses_hardener_private_netns() {
+    let dir = tempfile::tempdir().unwrap();
+
+    assert!(
+        cold_launch_netns_path(&crate::NetworkPolicy::NoEgress, dir.path(), "vm-no-egress")
+            .is_none()
+    );
+    assert!(private_vmm_netns(&crate::NetworkPolicy::NoEgress));
+}
+
+#[test]
 fn snapshot_binding_creates_jail_destination_before_bind() {
     let mut bindings = Vec::new();
 

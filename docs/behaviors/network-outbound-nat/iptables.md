@@ -4,10 +4,10 @@
 
 The host policy phase invokes `sysctl -w net.ipv4.ip_forward=1`,
 `sysctl -w net.ipv6.conf.<bridge>.disable_ipv6=1`, and
-`sysctl -w net.ipv6.conf.<tap>.disable_ipv6=1` before any guest FORWARD or NAT
-POSTROUTING rule is installed. If a sysctl command fails, policy installation
-aborts and no per-VM filter, FORWARD, or NAT rules are appended after that
-failure.
+`sysctl -w net.ipv6.conf.<host-veth>.disable_ipv6=1` before any guest FORWARD
+or NAT POSTROUTING rule is installed. If a sysctl command fails, policy
+installation aborts and no per-VM filter, FORWARD, or NAT rules are appended
+after that failure.
 
 After those sysctls succeed, missing policy rules are installed through one
 `iptables-restore -w --noflush` batch. The apply path still creates or reuses the
@@ -108,20 +108,21 @@ Verification:
 ## Forward Entries
 
 The policy phase inserts four filter/FORWARD rules at index 1:
-`-i <tap> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
-per-VM filter chain, `-o <bridge> -d <guest_ipv4>/32 -j REJECT` blocks new
-inbound traffic, and
+`-i <bridge> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
+per-VM filter chain,
+`-o <bridge> -d <guest_ipv4>/32 -j REJECT` blocks new inbound traffic, and
 `-o <bridge> -d <guest_ipv4>/32 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`
-permits replies. A TAP-scoped
-`-p tcp --syn -m connlimit --connlimit-above 256 --connlimit-mask 32 -j REJECT`
+permits replies. A guest-source-scoped
+`-i <bridge> -s <guest_ipv4>/32 -p tcp --syn -m connlimit --connlimit-above 256 --connlimit-mask 32 -j REJECT`
 caps one guest's concurrent TCP connection pressure before it can consume the
 host-global conntrack table. Because all four use `-I ... 1`, the final
 effective order keeps the connlimit and RELATED/ESTABLISHED rules above the
 inbound reject.
 
-Outbound ingress keys on the VM's TAP interface, not the shared bridge. The
-guest `/32` remains in the rule, but the TAP match prevents a sibling guest
-from spoofing another VM's source IP and entering that VM's filter chain.
+Outbound entry rules match the m80 bridge plus guest `/32`. The L2 sibling
+boundary is enforced before routing by bridge-port isolation on each host-side
+veth; FORWARD rules then apply the per-VM routed egress policy by bridge ingress
+and source address.
 
 Source: predecessor `ensure_forwarding_entry_rules` lines 1630-1695.
 

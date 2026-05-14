@@ -2,16 +2,23 @@
 //! driver. The [`LinkOps`] trait is the test seam; [`NetlinkLinkOps`] is the
 //! real host backend. The `ip` binary is not used at runtime.
 
+use std::fs::File;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use futures_util::stream::TryStreamExt;
 use ipnet::Ipv4Net;
-use rtnetlink::{new_connection, Handle, LinkBridge, LinkBridgePort, LinkUnspec};
+use nix::sched::CloneFlags;
+use rtnetlink::{
+    new_connection, packet_route::link::BridgeStpState, Handle, LinkBridge, LinkBridgePort,
+    LinkUnspec, LinkVeth, NetworkNamespace,
+};
 use tokio::runtime::{Builder, Runtime};
 
-use crate::NetError;
+use crate::{NetError, VmNetworkStateRecord};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct TapBridgePlan {
@@ -19,6 +26,20 @@ pub(crate) struct TapBridgePlan {
     pub(crate) tap_name: String,
     pub(crate) bridge_cidr: Ipv4Net,
     pub(crate) guest_mac: [u8; 6],
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct PrivateNetnsTapPlan {
+    pub(crate) bridge_name: String,
+    pub(crate) tap_name: String,
+    pub(crate) vmm_netns_name: String,
+    pub(crate) vmm_netns_path: PathBuf,
+    pub(crate) host_veth_name: String,
+    pub(crate) vmm_veth_name: String,
+    pub(crate) vmm_bridge_name: String,
+    pub(crate) vmm_bridge_mac: [u8; 6],
+    pub(crate) bridge_cidr: Ipv4Net,
+    pub(crate) tap_link_mac: [u8; 6],
 }
 
 /// Host link operations needed by bridge/TAP setup.
@@ -48,6 +69,50 @@ pub trait LinkOps {
     fn set_link_up(&mut self, name: &str) -> Result<(), NetError>;
     /// Delete a link when it exists.
     fn delete_link_if_exists(&mut self, name: &str) -> Result<(), NetError>;
+    /// Create a persistent named network namespace.
+    fn create_network_namespace(&mut self, name: &str) -> Result<(), NetError>;
+    /// Delete a persistent named network namespace when present.
+    fn delete_network_namespace_if_exists(&mut self, name: &str) -> Result<(), NetError>;
+    /// Create a veth pair in the host namespace.
+    fn create_veth_pair(&mut self, host_name: &str, peer_name: &str) -> Result<(), NetError>;
+    /// Move a link into the namespace identified by `netns_path`.
+    fn move_link_to_namespace(
+        &mut self,
+        link_name: &str,
+        netns_path: &Path,
+    ) -> Result<(), NetError>;
+    /// Create a bridge inside the namespace identified by `netns_path`.
+    fn create_bridge_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        bridge_name: &str,
+    ) -> Result<(), NetError>;
+    /// Create a TAP inside the namespace identified by `netns_path`.
+    fn create_tap_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        tap_name: &str,
+    ) -> Result<(), NetError>;
+    /// Set a link MAC inside the namespace identified by `netns_path`.
+    fn set_link_mac_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+        mac: [u8; 6],
+    ) -> Result<(), NetError>;
+    /// Attach a link to a bridge inside the namespace identified by `netns_path`.
+    fn attach_link_to_bridge_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+        bridge_name: &str,
+    ) -> Result<(), NetError>;
+    /// Bring a link up inside the namespace identified by `netns_path`.
+    fn set_link_up_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+    ) -> Result<(), NetError>;
     /// Return whether a link exists.
     fn link_exists(&mut self, name: &str) -> Result<bool, NetError>;
     /// Return whether a link has the given IPv4 address and prefix length.
@@ -89,15 +154,45 @@ pub(crate) fn teardown_tap(ops: &mut impl LinkOps, tap_name: &str) -> Result<(),
     ops.delete_link_if_exists(tap_name)
 }
 
-pub(crate) fn create_tap_on_bridge(
+pub(crate) fn create_private_netns_tap_topology(
     ops: &mut impl LinkOps,
-    plan: &TapBridgePlan,
+    plan: &PrivateNetnsTapPlan,
 ) -> Result<(), NetError> {
-    ops.create_tap(&plan.tap_name)?;
-    ops.set_link_mac(&plan.tap_name, plan.guest_mac)?;
-    ops.attach_link_to_bridge(&plan.tap_name, &plan.bridge_name)?;
-    ops.set_bridge_port_isolated(&plan.tap_name)?;
-    ops.set_link_up(&plan.tap_name)
+    ops.create_network_namespace(&plan.vmm_netns_name)?;
+    ops.create_veth_pair(&plan.host_veth_name, &plan.vmm_veth_name)?;
+    ops.attach_link_to_bridge(&plan.host_veth_name, &plan.bridge_name)?;
+    ops.set_link_up(&plan.host_veth_name)?;
+    ops.move_link_to_namespace(&plan.vmm_veth_name, &plan.vmm_netns_path)?;
+    ops.create_bridge_in_namespace(&plan.vmm_netns_path, &plan.vmm_bridge_name)?;
+    ops.set_link_mac_in_namespace(
+        &plan.vmm_netns_path,
+        &plan.vmm_bridge_name,
+        plan.vmm_bridge_mac,
+    )?;
+    ops.create_tap_in_namespace(&plan.vmm_netns_path, &plan.tap_name)?;
+    ops.set_link_mac_in_namespace(&plan.vmm_netns_path, &plan.tap_name, plan.tap_link_mac)?;
+    ops.attach_link_to_bridge_in_namespace(
+        &plan.vmm_netns_path,
+        &plan.tap_name,
+        &plan.vmm_bridge_name,
+    )?;
+    ops.attach_link_to_bridge_in_namespace(
+        &plan.vmm_netns_path,
+        &plan.vmm_veth_name,
+        &plan.vmm_bridge_name,
+    )?;
+    ops.set_bridge_port_isolated(&plan.host_veth_name)?;
+    ops.set_link_up_in_namespace(&plan.vmm_netns_path, &plan.vmm_bridge_name)?;
+    ops.set_link_up_in_namespace(&plan.vmm_netns_path, &plan.tap_name)?;
+    ops.set_link_up_in_namespace(&plan.vmm_netns_path, &plan.vmm_veth_name)
+}
+
+pub(crate) fn teardown_private_netns_tap_topology(
+    ops: &mut impl LinkOps,
+    state: &VmNetworkStateRecord,
+) -> Result<(), NetError> {
+    ops.delete_link_if_exists(&state.host_veth_name)?;
+    ops.delete_network_namespace_if_exists(&state.vmm_netns_name)
 }
 
 /// Real host backend for bridge and TAP link operations via rtnetlink and the TUN/TAP driver.
@@ -176,6 +271,42 @@ impl NetlinkLinkOps {
         self.tap_devices
             .retain(|(tap_name, _device)| tap_name != name);
     }
+
+    fn run_in_namespace<F>(
+        &self,
+        netns_path: &Path,
+        operation: &'static str,
+        f: F,
+    ) -> Result<(), NetError>
+    where
+        F: FnOnce(&mut NetlinkLinkOps) -> Result<(), NetError>,
+    {
+        let original = File::open("/proc/self/ns/net").map_err(|source| NetError::PathIo {
+            path: PathBuf::from("/proc/self/ns/net"),
+            source,
+        })?;
+        let target = File::open(netns_path).map_err(|source| NetError::PathIo {
+            path: netns_path.to_path_buf(),
+            source,
+        })?;
+        nix::sched::setns(&target, CloneFlags::CLONE_NEWNET).map_err(|source| {
+            NetError::NetlinkOperationFailed {
+                operation,
+                detail: source.to_string(),
+            }
+        })?;
+        let result = (|| {
+            let mut namespaced = NetlinkLinkOps::new()?;
+            f(&mut namespaced)
+        })();
+        let restore = nix::sched::setns(&original, CloneFlags::CLONE_NEWNET).map_err(|source| {
+            NetError::NetlinkOperationFailed {
+                operation: "restore host network namespace",
+                detail: source.to_string(),
+            }
+        });
+        result.and(restore)
+    }
 }
 
 impl LinkOps for NetlinkLinkOps {
@@ -184,7 +315,12 @@ impl LinkOps for NetlinkLinkOps {
             "create bridge",
             self.handle
                 .link()
-                .add(LinkBridge::new(name).build())
+                .add(
+                    LinkBridge::new(name)
+                        .stp_state(BridgeStpState::Disabled)
+                        .forward_delay(0)
+                        .build(),
+                )
                 .execute(),
         )
     }
@@ -287,6 +423,108 @@ impl LinkOps for NetlinkLinkOps {
             self.block_on("delete link", self.handle.link().del(index).execute())?;
         }
         Ok(())
+    }
+
+    fn create_network_namespace(&mut self, name: &str) -> Result<(), NetError> {
+        self.block_on(
+            "create network namespace",
+            NetworkNamespace::add(name.to_owned()),
+        )
+    }
+
+    fn delete_network_namespace_if_exists(&mut self, name: &str) -> Result<(), NetError> {
+        let path = PathBuf::from(crate::OUTBOUND_NETNS_DIR).join(name);
+        if !path.exists() {
+            return Ok(());
+        }
+        self.block_on(
+            "delete network namespace",
+            NetworkNamespace::del(name.to_owned()),
+        )
+    }
+
+    fn create_veth_pair(&mut self, host_name: &str, peer_name: &str) -> Result<(), NetError> {
+        self.block_on(
+            "create veth pair",
+            self.handle
+                .link()
+                .add(LinkVeth::new(host_name, peer_name).build())
+                .execute(),
+        )
+    }
+
+    fn move_link_to_namespace(
+        &mut self,
+        link_name: &str,
+        netns_path: &Path,
+    ) -> Result<(), NetError> {
+        let netns = File::open(netns_path).map_err(|source| NetError::PathIo {
+            path: netns_path.to_path_buf(),
+            source,
+        })?;
+        self.block_on(
+            "move link to namespace",
+            self.handle
+                .link()
+                .set(
+                    LinkUnspec::new_with_name(link_name)
+                        .setns_by_fd(netns.as_raw_fd())
+                        .build(),
+                )
+                .execute(),
+        )
+    }
+
+    fn create_bridge_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        bridge_name: &str,
+    ) -> Result<(), NetError> {
+        self.run_in_namespace(netns_path, "create bridge in namespace", |ops| {
+            ops.create_bridge(bridge_name)
+        })
+    }
+
+    fn create_tap_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        tap_name: &str,
+    ) -> Result<(), NetError> {
+        self.run_in_namespace(netns_path, "create tap in namespace", |ops| {
+            ops.create_tap(tap_name)
+        })
+    }
+
+    fn set_link_mac_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+        mac: [u8; 6],
+    ) -> Result<(), NetError> {
+        self.run_in_namespace(netns_path, "set link MAC in namespace", |ops| {
+            ops.set_link_mac(link_name, mac)
+        })
+    }
+
+    fn attach_link_to_bridge_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+        bridge_name: &str,
+    ) -> Result<(), NetError> {
+        self.run_in_namespace(netns_path, "attach link to bridge in namespace", |ops| {
+            ops.attach_link_to_bridge(link_name, bridge_name)
+        })
+    }
+
+    fn set_link_up_in_namespace(
+        &mut self,
+        netns_path: &Path,
+        link_name: &str,
+    ) -> Result<(), NetError> {
+        self.run_in_namespace(netns_path, "set link up in namespace", |ops| {
+            ops.set_link_up(link_name)
+        })
     }
 
     fn link_exists(&mut self, name: &str) -> Result<bool, NetError> {
@@ -442,6 +680,104 @@ mod tests {
         fn delete_link_if_exists(&mut self, name: &str) -> Result<(), NetError> {
             self.operations
                 .push(format!("delete_link_if_exists {name}"));
+            Ok(())
+        }
+
+        fn create_network_namespace(&mut self, name: &str) -> Result<(), NetError> {
+            self.operations
+                .push(format!("create_network_namespace {name}"));
+            Ok(())
+        }
+
+        fn delete_network_namespace_if_exists(&mut self, name: &str) -> Result<(), NetError> {
+            self.operations
+                .push(format!("delete_network_namespace_if_exists {name}"));
+            Ok(())
+        }
+
+        fn create_veth_pair(&mut self, host_name: &str, peer_name: &str) -> Result<(), NetError> {
+            self.operations
+                .push(format!("create_veth_pair {host_name} {peer_name}"));
+            Ok(())
+        }
+
+        fn move_link_to_namespace(
+            &mut self,
+            link_name: &str,
+            netns_path: &Path,
+        ) -> Result<(), NetError> {
+            self.operations.push(format!(
+                "move_link_to_namespace {link_name} {}",
+                netns_path.display()
+            ));
+            Ok(())
+        }
+
+        fn create_bridge_in_namespace(
+            &mut self,
+            netns_path: &Path,
+            bridge_name: &str,
+        ) -> Result<(), NetError> {
+            self.operations.push(format!(
+                "create_bridge_in_namespace {} {bridge_name}",
+                netns_path.display()
+            ));
+            Ok(())
+        }
+
+        fn create_tap_in_namespace(
+            &mut self,
+            netns_path: &Path,
+            tap_name: &str,
+        ) -> Result<(), NetError> {
+            self.operations.push(format!(
+                "create_tap_in_namespace {} {tap_name}",
+                netns_path.display()
+            ));
+            Ok(())
+        }
+
+        fn set_link_mac_in_namespace(
+            &mut self,
+            netns_path: &Path,
+            link_name: &str,
+            mac: [u8; 6],
+        ) -> Result<(), NetError> {
+            self.operations.push(format!(
+                "set_link_mac_in_namespace {} {link_name} {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                netns_path.display(),
+                mac[0],
+                mac[1],
+                mac[2],
+                mac[3],
+                mac[4],
+                mac[5]
+            ));
+            Ok(())
+        }
+
+        fn attach_link_to_bridge_in_namespace(
+            &mut self,
+            netns_path: &Path,
+            link_name: &str,
+            bridge_name: &str,
+        ) -> Result<(), NetError> {
+            self.operations.push(format!(
+                "attach_link_to_bridge_in_namespace {} {link_name} {bridge_name}",
+                netns_path.display()
+            ));
+            Ok(())
+        }
+
+        fn set_link_up_in_namespace(
+            &mut self,
+            netns_path: &Path,
+            link_name: &str,
+        ) -> Result<(), NetError> {
+            self.operations.push(format!(
+                "set_link_up_in_namespace {} {link_name}",
+                netns_path.display()
+            ));
             Ok(())
         }
 

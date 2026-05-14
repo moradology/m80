@@ -10,22 +10,20 @@ private network namespace for the Firecracker VMM process.
   `m80-jailer-harden --new-net-ns`. If the VMM process is compromised, ordinary
   host-namespace TCP/UDP access is outside the `NoEgress` boundary because the
   VMM is not in the host network namespace.
-- `AllowOutbound` is guest egress policy: m80 realizes a TAP/bridge/NAT path
-  for guest packets and admits destinations through `m80-net-outbound`. It does
-  not currently promise that a compromised VMM process is confined to a
-  process-private network namespace. Ordinary host-namespace TCP/UDP operations
-  are not a valid failure assertion for the defense-in-depth battery.
+- `AllowOutbound` is guest egress policy: m80 realizes a run-root bridge,
+  host/vmm veth pair, and VMM-local TAP/bridge path for guest packets and admits
+  destinations through `m80-net-outbound`. The Firecracker VMM process joins the
+  m80-owned network namespace through jailer `--netns`; host firewall rules key
+  on the host-side veth, not on a host-visible TAP.
 - `JoinNetns` is the explicit VMM network namespace boundary. The caller owns
   namespace creation, interfaces, routes, firewall policy, and teardown; m80
   validates the namespace path and passes it to the official Firecracker jailer
   as `--netns`. Defense tests for this mode should assert placement in the
   requested namespace, not assume a particular egress policy inside it.
 
-This remains narrower than "a compromised VMM has no network" for all modes.
-`AllowOutbound` still needs a cross-namespace data path before m80 can put the
-VMM into a private namespace while preserving the owned bridge/TAP/NAT path.
-The required topology is captured in
-`docs/design/security-hardening-boundary-splits.md`.
+This remains narrower than "a compromised VMM has no network" for all modes:
+`AllowOutbound` intentionally gives the guest an egress data path, but the VMM
+process is no longer left in the host network namespace for that owned path.
 
 ## Evidence
 
@@ -38,6 +36,9 @@ The required topology is captured in
 - `crates/m80-firecracker/tests/egress_none_real_kvm.rs::no_egress_firecracker_runs_in_private_netns`
   proves the real-KVM `NoEgress` launch path places Firecracker outside the
   host network namespace.
+- `crates/m80-firecracker/tests/egress_outbound_real_kvm.rs` covers the
+  `AllowOutbound` guest egress and peer-rejection battery; the private VMM
+  namespace placement is part of the OutboundNat launch plan.
 - `crates/m80-firecracker/tests/egress_none_real_kvm.rs` proves the guest
   `NoEgress` promise by checking direct IP and DNS failure from inside the
   guest.
@@ -52,7 +53,7 @@ The Layer 2 network battery should assert:
 - binding or addressing a non-existent jailed interface fails with a local
   kernel error.
 
-The battery can assert host-namespace TCP/UDP isolation for `NoEgress` through
-network namespace placement. It should not assert that plain TCP listen/connect
-operations fail in `AllowOutbound` until m80 implements a private VMM netns
-policy for the owned outbound path.
+The battery can assert host-namespace TCP/UDP isolation for `NoEgress` and
+`AllowOutbound` through network namespace placement. For `AllowOutbound`, guest
+egress must still be tested separately because the namespace contains the
+guest-facing TAP and veth data path.

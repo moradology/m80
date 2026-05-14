@@ -3,6 +3,7 @@
 use std::fmt::Write as _;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::Instant;
 
@@ -153,6 +154,9 @@ fn write_resolv_conf(path: &Path, dns: &[Ipv4Addr]) -> anyhow::Result<()> {
         .with_context(|| format!("create temp file in {}", dir.display()))?;
     std::io::Write::write_all(&mut tmp, content.as_bytes())
         .with_context(|| "write temp resolv.conf")?;
+    tmp.as_file()
+        .set_permissions(std::fs::Permissions::from_mode(0o644))
+        .with_context(|| "set resolv.conf permissions")?;
     tmp.persist(path)
         .with_context(|| format!("rename temp resolv.conf to {}", path.display()))?;
     Ok(())
@@ -362,5 +366,16 @@ mod tests {
             std::fs::read_to_string(path).unwrap(),
             "nameserver 1.1.1.1\nnameserver 8.8.8.8\n"
         );
+    }
+
+    #[test]
+    fn writes_resolv_conf_world_readable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("resolv.conf");
+
+        write_resolv_conf(&path, &[Ipv4Addr::new(1, 1, 1, 1)]).unwrap();
+
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
     }
 }

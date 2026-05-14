@@ -20,11 +20,18 @@ fn outbound_backend(max_concurrent_vms: u32) -> std::sync::Arc<Backend> {
     let config = BackendConfig::builder(discovery)
         .max_concurrent_vms(max_concurrent_vms)
         .run_root(run_root)
-        .jail_uid(3000)
-        .jail_gid(3000)
+        .jail_uid(env_u32("M80_JAIL_UID", 3000))
+        .jail_gid(env_u32("M80_JAIL_GID", 3000))
         .cgroup_mode(CgroupMode::Disabled)
         .build();
     std::sync::Arc::new(Backend::new(config).expect("Backend::new"))
+}
+
+fn env_u32(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(default)
 }
 
 fn launch_outbound_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf) {
@@ -145,6 +152,60 @@ fn guest_ipv4_from_network_state(run_dir: &Path) -> Ipv4Addr {
         .guest_ipv4
 }
 
+fn firecracker_pid(run_dir: &Path) -> u32 {
+    let state_path = run_dir.join("jailer-state.json");
+    let state: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&state_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", state_path.display())),
+    )
+    .expect("jailer-state.json parses");
+    state["firecracker_pid"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("firecracker_pid missing from {}", state_path.display()))
+        as u32
+}
+
+#[test]
+#[ignore = "requires KVM host and CAP_NET_ADMIN"]
+fn allow_outbound_firecracker_runs_in_private_netns() {
+    let (running, run_dir) = launch_outbound_vm();
+    let _dump_guard = RunDirDumpGuard::new(run_dir.clone());
+    let firecracker_pid = firecracker_pid(&run_dir);
+
+    let host_netns = std::fs::read_link("/proc/self/ns/net").expect("host netns");
+    let firecracker_netns =
+        std::fs::read_link(format!("/proc/{firecracker_pid}/ns/net")).expect("firecracker netns");
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+
+    assert_ne!(
+        firecracker_netns, host_netns,
+        "AllowOutbound Firecracker must not run in the host network namespace"
+    );
+}
+
+#[test]
+#[ignore = "requires KVM host, CAP_NET_ADMIN, and opt-in external network"]
+fn allow_outbound_reaches_external_http_by_ip() {
+    if !external_network_enabled() {
+        eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");
+        return;
+    }
+
+    let response =
+        run_outbound_probe("/bin/busybox wget -T 4 -O /tmp/m80-http-ip.out http://146.190.62.39");
+
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "AllowOutbound must reach external HTTP by IP; stdout={:?}; stderr={:?}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+}
+
 #[test]
 #[ignore = "requires KVM host and CAP_NET_ADMIN"]
 fn allow_outbound_rejects_peer_guest_ipv4_on_shared_bridge() {
@@ -186,7 +247,7 @@ fn allow_outbound_resolves_external_dns() {
         return;
     }
 
-    let response = run_outbound_probe("/bin/busybox timeout 4 /bin/busybox nslookup example.com");
+    let response = run_outbound_probe("/bin/busybox timeout 8 /bin/busybox nslookup example.com");
 
     assert_eq!(response.status, ExecStatus::Completed);
     assert_eq!(

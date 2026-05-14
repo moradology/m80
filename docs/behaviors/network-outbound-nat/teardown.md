@@ -32,10 +32,11 @@ and `::cleanup_foreign_rule_in_owned_chain_aborts`.
 ## Host Sysctls
 
 Policy setup enables IPv4 forwarding with `sysctl -w net.ipv4.ip_forward=1`
-and disables IPv6 on the owned bridge/TAP interfaces before installing FORWARD
-or NAT rules. Teardown does not revert those host sysctls. m80 owns the per-VM
-rules it stamped with the m80 comment; it does not try to infer whether some
-other host workload still needs forwarding or interface IPv6.
+and disables IPv6 on the owned bridge and host-veth interfaces before
+installing FORWARD or NAT rules. Teardown does not revert those host sysctls.
+m80 owns the per-VM rules it stamped with the m80 comment; it does not try to
+infer whether some other host workload still needs forwarding or interface
+IPv6.
 
 Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::sysctls_set_ip_forward_and_disable_ipv6_before_rules`
@@ -69,17 +70,19 @@ Source: predecessor `delete_iptables_chain_if_empty` lines 1842-1880.
 Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::chain_deleted_only_when_empty`.
 
-## Tap Delete Tolerant
+## Private Topology Delete Tolerant
 
-VM cleanup deletes the TAP through the link-operation seam's
-`delete_link_if_exists`. The operation is idempotent: repeated cleanup calls
-after the VM network state file is removed do not surface a missing-device
-error and do not attempt a second TAP deletion.
+VM cleanup deletes the host-side veth through the link-operation seam's
+`delete_link_if_exists` and deletes the m80-owned namespace through
+`delete_network_namespace_if_exists`. The operations are idempotent: repeated
+cleanup calls after the VM network state file is removed do not surface missing
+resource errors and do not attempt a second deletion for resources that are
+already gone.
 
-When the per-VM network state file is missing, cleanup still derives the TAP
-name from `(run_root, vm_id)` and deletes that link before running orphan bridge
-scavenging. This catches interrupted setups where a TAP survived but
-`network-state.json` did not.
+When the per-VM network state file is missing, cleanup still derives the
+host-side veth and namespace names from `(run_root, vm_id)` and deletes those
+resources before running orphan bridge scavenging. This catches interrupted
+setups where private topology survived but `network-state.json` did not.
 
 Source: predecessor `delete_interface_if_present` lines 1301-1318 and
 `cleanup_vm_network_with_host` lines 1101-1121. m80 uses rtnetlink through
@@ -87,7 +90,7 @@ Source: predecessor `delete_interface_if_present` lines 1301-1318 and
 
 Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::repeated_cleanup_calls_are_safe`
-and `crates/m80-net-outbound/tests/network-outbound-nat/ownership.rs::orphan_tap_detected_and_cleaned`.
+and `crates/m80-net-outbound/tests/network-outbound-nat/ownership.rs::orphan_veth_and_netns_detected_and_cleaned`.
 
 `m80-firecracker` arms an outbound-network cleanup guard after successful
 phase-6 realization. If any later launch phase fails, the guard calls

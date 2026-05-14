@@ -48,36 +48,45 @@ launches derive the same guest address without walking every sibling VM
 directory while the allocation lock is held: at most one colliding VM state can
 remain ready.
 
-## Tap Creation
+## Private Namespace Tap Creation
 
 The system creates each per-VM TAP interface without invoking `ip` or
-`/sbin/ip`. TAP creation goes through the Linux TUN/TAP driver, then the
-resulting interface is managed through rtnetlink: set the guest MAC, attach
-the TAP to the run-root bridge, enable bridge-port isolation, and bring the
-TAP link up.
+`/sbin/ip`. For `AllowOutbound`, m80 creates a named VMM network namespace, a
+host/vmm veth pair, a private bridge inside that namespace, and the TAP inside
+that namespace. TAP creation goes through the Linux TUN/TAP driver after m80
+enters the VMM namespace; bridge, veth, attach, isolation, link-up, and cleanup
+operations use rtnetlink.
 
-Bridge-port isolation is part of the per-VM isolation boundary. TAP ports on
-the same run-root bridge must not be able to exchange L2 traffic directly
-through the bridge; routed egress is controlled later by the per-VM TAP-scoped
-FORWARD rules and NAT policy.
+Bridge-port isolation is part of the per-VM isolation boundary. Host-side veth
+ports on the same run-root bridge must not be able to exchange L2 traffic
+directly through the bridge; routed egress is controlled later by the per-VM
+bridge-and-guest-IPv4-scoped FORWARD rules and NAT policy. The VMM-local bridge
+is not port-isolated because it must carry traffic between the guest TAP and the
+veth peer. m80 assigns deterministic VMM-local bridge and TAP link MACs that are
+distinct from the guest MAC so gateway replies addressed to the guest MAC are
+forwarded to the Firecracker TAP path rather than consumed by a host-side link
+device.
 
 `m80-firecracker` calls this setup from launch phase 6 when
 `NetworkPolicy::AllowOutbound` resolves to `VmNetworkMode::OutboundNat`.
 The realized TAP name and guest MAC become the Firecracker
-`NetworkInterfaceConfig` for `eth0`.
+`NetworkInterfaceConfig` for `eth0`, and the planned namespace path is passed
+to the official jailer as `--netns`.
 
 If TAP setup fails after the run-root bridge has been created, setup rolls back
-the guest-IP claim and VM network state file, deletes the TAP if it was
-partially created, and scavenges the now-unused run-root bridge state. A failed
-VM launch must not leave a bridge or per-VM state orphan behind.
+the guest-IP claim and VM network state file, deletes the host veth and
+m80-owned namespace if they were partially created, and scavenges the now-unused
+run-root bridge state. A failed VM launch must not leave a bridge, veth,
+namespace, or per-VM state orphan behind.
 
 This is a deliberate correction from the inherited predecessor `ip tuntap` path.
 Kata's runtime validates the no-shellout posture for host link management, but
 Linux accepts TUN/TAP creation through `/dev/net/tun`, not as an rtnetlink
 `RTM_NEWLINK` create operation. The m80 split is therefore:
 
-- TAP creation: Linux TUN/TAP driver.
-- Bridge/address/link mutation and deletion: rtnetlink.
+- TAP creation: Linux TUN/TAP driver inside the VMM namespace.
+- Bridge/address/veth/link mutation, namespace link moves, and deletion:
+  rtnetlink.
 - Firewall policy: iptables/sysctl policy work, outside this setup leaf.
 
 ## No IP Shellout

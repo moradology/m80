@@ -3,9 +3,10 @@ use std::path::Path;
 
 use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
-    cleanup_vm_with_ops, derive_tap_name, planned_bridge_state, planned_vm_network_state,
-    realize_bridge_and_tap_with_ops_for_routes, write_bridge_state, write_vm_network_state_record,
-    LinkOps, NetError, PolicyCommandOutput, PolicyOps, SetupPhase, VmNetworkStateRecord,
+    cleanup_vm_with_ops, derive_host_veth_name, derive_vmm_netns_name, planned_bridge_state,
+    planned_vm_network_state, realize_bridge_and_tap_with_ops_for_routes, write_bridge_state,
+    write_vm_network_state_record, LinkOps, NetError, PolicyCommandOutput, PolicyOps, SetupPhase,
+    VmNetworkStateRecord,
 };
 
 const DEFAULT_ONLY_ROUTES: &str = "\
@@ -22,8 +23,8 @@ fn bridge_removed_only_when_no_peer_references() {
     write_vm_network_state_record(&first.run_dir, &first).unwrap();
     write_vm_network_state_record(&second.run_dir, &second).unwrap();
     let mut links = RecordingLinkOps::with_existing(&[
-        &first.tap_name,
-        &second.tap_name,
+        &first.host_veth_name,
+        &second.host_veth_name,
         &second.bridge.bridge_name,
     ]);
     let mut policy = NoopPolicyOps;
@@ -56,19 +57,22 @@ fn startup_scavenges_orphan_bridge_when_unused() {
 }
 
 #[test]
-fn orphan_tap_detected_and_cleaned() {
+fn orphan_veth_and_netns_detected_and_cleaned() {
     let temp = tempfile::tempdir().unwrap();
     let bridge = planned_bridge_state(temp.path())
         .unwrap()
         .with_phase(SetupPhase::Ready);
-    let tap_name = derive_tap_name(temp.path(), "missing-vm");
+    let host_veth_name = derive_host_veth_name(temp.path(), "missing-vm");
+    let netns_name = derive_vmm_netns_name(temp.path(), "missing-vm");
     write_bridge_state(temp.path(), &bridge).unwrap();
-    let mut links = RecordingLinkOps::with_existing(&[&bridge.bridge_name, &tap_name]);
+    let mut links =
+        RecordingLinkOps::with_existing(&[&bridge.bridge_name, &host_veth_name, &netns_name]);
     let mut policy = NoopPolicyOps;
 
     cleanup_vm_with_ops(&mut links, &mut policy, "missing-vm", temp.path()).unwrap();
 
-    assert!(links.deleted(&tap_name));
+    assert!(links.deleted(&host_veth_name));
+    assert!(links.deleted_netns(&netns_name));
     assert!(links.deleted(&bridge.bridge_name));
     assert!(!temp.path().join("outbound-bridge-state.json").exists());
 }
@@ -82,7 +86,8 @@ fn malformed_peer_state_surfaces_error() {
     let peer = temp.path().join("vm-b");
     std::fs::create_dir(&peer).unwrap();
     std::fs::write(peer.join("network-state.json"), b"{not-json").unwrap();
-    let mut links = RecordingLinkOps::with_existing(&[&state.tap_name, &state.bridge.bridge_name]);
+    let mut links =
+        RecordingLinkOps::with_existing(&[&state.host_veth_name, &state.bridge.bridge_name]);
     let mut policy = NoopPolicyOps;
 
     let err = cleanup_vm_with_ops(&mut links, &mut policy, "vm-a", temp.path()).unwrap_err();
@@ -99,7 +104,8 @@ fn bridge_owner_mismatch_blocks_bridge_delete() {
     foreign_bridge.bridge_name = "brfcforeign01".to_owned();
     write_bridge_state(temp.path(), &foreign_bridge).unwrap();
     write_vm_network_state_record(&state.run_dir, &state).unwrap();
-    let mut links = RecordingLinkOps::with_existing(&[&state.tap_name, &state.bridge.bridge_name]);
+    let mut links =
+        RecordingLinkOps::with_existing(&[&state.host_veth_name, &state.bridge.bridge_name]);
     let mut policy = NoopPolicyOps;
 
     let err = cleanup_vm_with_ops(&mut links, &mut policy, "vm-a", temp.path()).unwrap_err();
@@ -205,6 +211,12 @@ impl RecordingLinkOps {
             .iter()
             .any(|op| op == &format!("delete_link_if_exists {name}"))
     }
+
+    fn deleted_netns(&self, name: &str) -> bool {
+        self.operations
+            .iter()
+            .any(|op| op == &format!("delete_network_namespace_if_exists {name}"))
+    }
 }
 
 impl LinkOps for RecordingLinkOps {
@@ -267,6 +279,108 @@ impl LinkOps for RecordingLinkOps {
                 .push(format!("delete_link_if_exists {name}"));
             self.existing.retain(|existing| existing != name);
         }
+        Ok(())
+    }
+
+    fn create_network_namespace(&mut self, name: &str) -> Result<(), NetError> {
+        self.operations
+            .push(format!("create_network_namespace {name}"));
+        Ok(())
+    }
+
+    fn delete_network_namespace_if_exists(&mut self, name: &str) -> Result<(), NetError> {
+        if self.existing.iter().any(|existing| existing == name) {
+            self.operations
+                .push(format!("delete_network_namespace_if_exists {name}"));
+            self.existing.retain(|existing| existing != name);
+        }
+        Ok(())
+    }
+
+    fn create_veth_pair(&mut self, host_name: &str, peer_name: &str) -> Result<(), NetError> {
+        self.operations
+            .push(format!("create_veth_pair {host_name} {peer_name}"));
+        self.existing.push(host_name.to_owned());
+        Ok(())
+    }
+
+    fn move_link_to_namespace(
+        &mut self,
+        link_name: &str,
+        netns_path: &std::path::Path,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "move_link_to_namespace {link_name} {}",
+            netns_path.display()
+        ));
+        Ok(())
+    }
+
+    fn create_bridge_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        bridge_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "create_bridge_in_namespace {} {bridge_name}",
+            netns_path.display()
+        ));
+        Ok(())
+    }
+
+    fn create_tap_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        tap_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "create_tap_in_namespace {} {tap_name}",
+            netns_path.display()
+        ));
+        Ok(())
+    }
+
+    fn set_link_mac_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        link_name: &str,
+        mac: [u8; 6],
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "set_link_mac_in_namespace {} {link_name} {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            netns_path.display(),
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
+        ));
+        Ok(())
+    }
+
+    fn attach_link_to_bridge_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        link_name: &str,
+        bridge_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "attach_link_to_bridge_in_namespace {} {link_name} {bridge_name}",
+            netns_path.display()
+        ));
+        Ok(())
+    }
+
+    fn set_link_up_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        link_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "set_link_up_in_namespace {} {link_name}",
+            netns_path.display()
+        ));
         Ok(())
     }
 

@@ -663,10 +663,12 @@ impl std::fmt::Debug for StoragePrep {
 pub(crate) enum RealizedNetwork {
     /// No NIC configured; iptables untouched.
     NoEgress,
-    /// Firecracker will attach a host TAP to a guest virtio-net device.
+    /// Firecracker will attach a TAP in an m80-owned VMM namespace.
     OutboundNat {
-        /// Host TAP device name.
+        /// TAP device name visible inside the VMM namespace.
         tap_name: String,
+        /// Host path to the m80-owned VMM network namespace.
+        vmm_netns_path: PathBuf,
         /// Guest MAC address assigned during network planning.
         guest_mac: String,
     },

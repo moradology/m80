@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    derive_bridge_cidr, derive_guest_addressing, derive_tap_name, NetError, OutboundIntent,
+    derive_bridge_cidr, derive_guest_addressing, derive_host_veth_name, derive_tap_name,
+    derive_vmm_bridge_name, derive_vmm_netns_name, derive_vmm_netns_path, derive_vmm_veth_name,
+    NetError, OutboundIntent,
 };
 
 /// Run-root-level bridge ownership state filename.
@@ -73,6 +75,16 @@ pub struct VmNetworkStateRecord {
     pub(crate) bridge: BridgeState,
     /// Derived host TAP interface name.
     pub(crate) tap_name: String,
+    /// m80-owned named network namespace for the Firecracker VMM.
+    pub(crate) vmm_netns_name: String,
+    /// Path to the m80-owned network namespace passed to jailer `--netns`.
+    pub(crate) vmm_netns_path: PathBuf,
+    /// Host-side veth interface attached to the run-root bridge.
+    pub(crate) host_veth_name: String,
+    /// VMM namespace veth peer attached to the private bridge.
+    pub(crate) vmm_veth_name: String,
+    /// Private bridge inside the VMM namespace between TAP and veth peer.
+    pub(crate) vmm_bridge_name: String,
     /// Guest MAC address.
     pub(crate) guest_mac: String,
     /// Guest IPv4 address.
@@ -141,6 +153,11 @@ pub(crate) fn planned_vm_network_state(
         run_dir: run_dir.to_path_buf(),
         bridge,
         tap_name: derive_tap_name(run_root, vm_id),
+        vmm_netns_name: derive_vmm_netns_name(run_root, vm_id),
+        vmm_netns_path: derive_vmm_netns_path(run_root, vm_id),
+        host_veth_name: derive_host_veth_name(run_root, vm_id),
+        vmm_veth_name: derive_vmm_veth_name(run_root, vm_id),
+        vmm_bridge_name: derive_vmm_bridge_name(run_root, vm_id),
         guest_mac,
         guest_ipv4,
         private_ipv4_exceptions: intent.exceptions.clone(),

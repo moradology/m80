@@ -20,14 +20,14 @@ fn sysctls_set_ip_forward_and_disable_ipv6_before_rules() {
         "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
         state.bridge.bridge_name
     ));
-    let tap_ipv6 = ops.run_index(&format!(
+    let host_veth_ipv6 = ops.run_index(&format!(
         "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
-        state.tap_name
+        state.host_veth_name
     ));
     let restore = ops.run_index("iptables-restore -w --noflush");
     assert!(ip_forward < restore);
     assert!(bridge_ipv6 < restore);
-    assert!(tap_ipv6 < restore);
+    assert!(host_veth_ipv6 < restore);
 }
 
 #[test]
@@ -346,7 +346,7 @@ fn forward_inserts_route_guest_through_filter_chain() {
     let rules = ops.chain_rules("filter", "FORWARD");
     assert!(rules.contains(&vec![
         "-i",
-        &state.tap_name,
+        &state.bridge.bridge_name,
         "-s",
         &guest,
         "-m",
@@ -386,7 +386,7 @@ fn forward_inserts_route_guest_through_filter_chain() {
     ]));
     assert!(rules.contains(&vec![
         "-i",
-        &state.tap_name,
+        &state.bridge.bridge_name,
         "-s",
         &guest,
         "-p",
@@ -405,12 +405,22 @@ fn forward_inserts_route_guest_through_filter_chain() {
         "-j",
         "REJECT"
     ]));
-    assert!(
-        !rules.iter().any(|rule| rule
-            .windows(2)
-            .any(|pair| pair == ["-i", &state.bridge.bridge_name])),
-        "outbound ingress must be keyed by the VM TAP, not the shared bridge"
-    );
+    for rule in rules.iter().filter(|rule| {
+        rule.windows(2).any(|pair| pair == ["-j", &chain])
+            || rule
+                .windows(2)
+                .any(|pair| pair == ["--connlimit-above", "256"])
+    }) {
+        assert!(
+            rule.windows(2).any(|pair| pair == ["-s", &guest]),
+            "outbound entry rules must remain scoped to the guest /32"
+        );
+        assert!(
+            rule.windows(2)
+                .any(|pair| pair == ["-i", &state.bridge.bridge_name]),
+            "outbound entry rules must remain scoped to the m80 bridge"
+        );
+    }
 }
 
 #[test]
@@ -449,7 +459,10 @@ fn policy_reapply_skips_existing_chain_and_rules() {
             "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
             state.bridge.bridge_name
         ),
-        format!("sysctl -w net.ipv6.conf.{}.disable_ipv6=1", state.tap_name),
+        format!(
+            "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
+            state.host_veth_name
+        ),
     ];
     assert_eq!(&ops.runs[first_run_count..], expected.as_slice());
 }

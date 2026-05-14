@@ -138,6 +138,7 @@ pub(crate) fn plan_preboot_puts(
         RealizedNetwork::OutboundNat {
             tap_name,
             guest_mac,
+            ..
         }
         | RealizedNetwork::JoinNetns {
             tap_name,

@@ -155,6 +155,9 @@ fn bridge_setup_is_idempotent_with_matching_state() {
     assert_eq!(realized.bridge_name, ready_bridge.bridge_name);
     assert_eq!(realized.bridge_cidr, ready_bridge.cidr);
     assert_eq!(read_bridge_state(temp.path()).unwrap(), ready_bridge);
+    let vm_state = read_vm_network_state_record(&run_dir).unwrap();
+    let vmm_bridge_mac = vmm_bridge_mac_from_guest_mac(&realized.guest_mac);
+    let tap_link_mac = tap_link_mac_from_guest_mac(&realized.guest_mac);
     assert_eq!(
         ops.operations,
         [
@@ -164,20 +167,96 @@ fn bridge_setup_is_idempotent_with_matching_state() {
                 ready_bridge.gateway_ipv4,
                 ready_bridge.cidr.prefix_len()
             ),
-            format!("create_tap {}", realized.tap_name),
-            format!("set_link_mac {} {}", realized.tap_name, realized.guest_mac),
+            format!("create_network_namespace {}", vm_state.vmm_netns_name),
+            format!(
+                "create_veth_pair {} {}",
+                vm_state.host_veth_name, vm_state.vmm_veth_name
+            ),
             format!(
                 "attach_link_to_bridge {} {}",
-                realized.tap_name, ready_bridge.bridge_name
+                vm_state.host_veth_name, ready_bridge.bridge_name
             ),
-            format!("set_bridge_port_isolated {}", realized.tap_name),
-            format!("set_link_up {}", realized.tap_name),
+            format!("set_link_up {}", vm_state.host_veth_name),
+            format!(
+                "move_link_to_namespace {} {}",
+                vm_state.vmm_veth_name,
+                vm_state.vmm_netns_path.display()
+            ),
+            format!(
+                "create_bridge_in_namespace {} {}",
+                vm_state.vmm_netns_path.display(),
+                vm_state.vmm_bridge_name
+            ),
+            format!(
+                "set_link_mac_in_namespace {} {} {}",
+                vm_state.vmm_netns_path.display(),
+                vm_state.vmm_bridge_name,
+                vmm_bridge_mac
+            ),
+            format!(
+                "create_tap_in_namespace {} {}",
+                vm_state.vmm_netns_path.display(),
+                realized.tap_name
+            ),
+            format!(
+                "set_link_mac_in_namespace {} {} {}",
+                vm_state.vmm_netns_path.display(),
+                realized.tap_name,
+                tap_link_mac
+            ),
+            format!(
+                "attach_link_to_bridge_in_namespace {} {} {}",
+                vm_state.vmm_netns_path.display(),
+                realized.tap_name,
+                vm_state.vmm_bridge_name
+            ),
+            format!(
+                "attach_link_to_bridge_in_namespace {} {} {}",
+                vm_state.vmm_netns_path.display(),
+                vm_state.vmm_veth_name,
+                vm_state.vmm_bridge_name
+            ),
+            format!("set_bridge_port_isolated {}", vm_state.host_veth_name),
+            format!(
+                "set_link_up_in_namespace {} {}",
+                vm_state.vmm_netns_path.display(),
+                vm_state.vmm_bridge_name
+            ),
+            format!(
+                "set_link_up_in_namespace {} {}",
+                vm_state.vmm_netns_path.display(),
+                realized.tap_name
+            ),
+            format!(
+                "set_link_up_in_namespace {} {}",
+                vm_state.vmm_netns_path.display(),
+                vm_state.vmm_veth_name
+            ),
         ]
     );
-    let vm_state = read_vm_network_state_record(&run_dir).unwrap();
     assert_eq!(vm_state.setup_phase, SetupPhase::Ready);
     assert_eq!(vm_state.bridge.setup_phase, SetupPhase::Ready);
     assert_eq!(vm_state.tap_name, realized.tap_name);
+}
+
+fn vmm_bridge_mac_from_guest_mac(guest_mac: &str) -> String {
+    derived_mac_from_guest_mac(guest_mac, 0x80)
+}
+
+fn tap_link_mac_from_guest_mac(guest_mac: &str) -> String {
+    derived_mac_from_guest_mac(guest_mac, 0x40)
+}
+
+fn derived_mac_from_guest_mac(guest_mac: &str, xor: u8) -> String {
+    let mut octets = guest_mac
+        .split(':')
+        .map(|octet| u8::from_str_radix(octet, 16).unwrap())
+        .collect::<Vec<_>>();
+    octets[1] ^= xor;
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        octets[0], octets[1], octets[2], octets[3], octets[4], octets[5]
+    )
 }
 
 #[test]
@@ -570,6 +649,68 @@ impl LinkOps for SharedBridgeRaceOps {
         Ok(())
     }
 
+    fn create_network_namespace(&mut self, _name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn delete_network_namespace_if_exists(&mut self, _name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn create_veth_pair(&mut self, _host_name: &str, _peer_name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn move_link_to_namespace(
+        &mut self,
+        _link_name: &str,
+        _netns_path: &std::path::Path,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn create_bridge_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _bridge_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn create_tap_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _tap_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_mac_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+        _mac: [u8; 6],
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn attach_link_to_bridge_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+        _bridge_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_up_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
     fn link_exists(&mut self, _name: &str) -> Result<bool, NetError> {
         Ok(false)
     }
@@ -665,6 +806,110 @@ impl LinkOps for RecordingLinkOps {
     fn delete_link_if_exists(&mut self, name: &str) -> Result<(), NetError> {
         self.operations
             .push(format!("delete_link_if_exists {name}"));
+        Ok(())
+    }
+
+    fn create_network_namespace(&mut self, name: &str) -> Result<(), NetError> {
+        self.operations
+            .push(format!("create_network_namespace {name}"));
+        Ok(())
+    }
+
+    fn delete_network_namespace_if_exists(&mut self, name: &str) -> Result<(), NetError> {
+        self.operations
+            .push(format!("delete_network_namespace_if_exists {name}"));
+        Ok(())
+    }
+
+    fn create_veth_pair(&mut self, host_name: &str, peer_name: &str) -> Result<(), NetError> {
+        self.operations
+            .push(format!("create_veth_pair {host_name} {peer_name}"));
+        Ok(())
+    }
+
+    fn move_link_to_namespace(
+        &mut self,
+        link_name: &str,
+        netns_path: &std::path::Path,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "move_link_to_namespace {link_name} {}",
+            netns_path.display()
+        ));
+        Ok(())
+    }
+
+    fn create_bridge_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        bridge_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "create_bridge_in_namespace {} {bridge_name}",
+            netns_path.display()
+        ));
+        Ok(())
+    }
+
+    fn create_tap_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        tap_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "create_tap_in_namespace {} {tap_name}",
+            netns_path.display()
+        ));
+        if self.fail_create_tap {
+            return Err(NetError::TapOperationFailed {
+                operation: "create tap",
+                source: std::io::Error::other("injected tap failure"),
+            });
+        }
+        Ok(())
+    }
+
+    fn set_link_mac_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        link_name: &str,
+        mac: [u8; 6],
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "set_link_mac_in_namespace {} {link_name} {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            netns_path.display(),
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
+        ));
+        Ok(())
+    }
+
+    fn attach_link_to_bridge_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        link_name: &str,
+        bridge_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "attach_link_to_bridge_in_namespace {} {link_name} {bridge_name}",
+            netns_path.display()
+        ));
+        Ok(())
+    }
+
+    fn set_link_up_in_namespace(
+        &mut self,
+        netns_path: &std::path::Path,
+        link_name: &str,
+    ) -> Result<(), NetError> {
+        self.operations.push(format!(
+            "set_link_up_in_namespace {} {link_name}",
+            netns_path.display()
+        ));
         Ok(())
     }
 

@@ -148,6 +148,8 @@ impl Sandbox {
             "storage prepared",
         );
 
+        let cold_launch_netns_path = cold_launch_netns_path(&self.config.network, run_root, &vm_id);
+
         // Phase 4: jailer materialize.
         let jail = diag_phase!(
             &mut diagnostics,
@@ -169,7 +171,7 @@ impl Sandbox {
                     kernel: &backend_config.discovery.kernel,
                     storage: &storage,
                     daemonize: self.config.daemonize,
-                    netns_path: join_netns_path(&self.config.network),
+                    netns_path: cold_launch_netns_path.as_deref(),
                     private_netns: private_vmm_netns(&self.config.network),
                     snapshot_parent: None,
                     snapshot_bind_mode: BindMode::Rw,
@@ -204,8 +206,15 @@ impl Sandbox {
         };
         let network_message = match &net {
             RealizedNetwork::NoEgress => "network prepared".to_owned(),
-            RealizedNetwork::OutboundNat { tap_name, .. } => {
-                format!("network prepared: outbound_nat tap {tap_name}")
+            RealizedNetwork::OutboundNat {
+                tap_name,
+                vmm_netns_path,
+                ..
+            } => {
+                format!(
+                    "network prepared: outbound_nat tap {tap_name} netns {}",
+                    vmm_netns_path.display()
+                )
             }
             RealizedNetwork::JoinNetns { netns_path, .. } => {
                 format!("network prepared: join_netns {}", netns_path.display())
@@ -989,6 +998,20 @@ fn build_jailer_launch_config(
     }
 }
 
+fn cold_launch_netns_path(
+    policy: &crate::NetworkPolicy,
+    run_root: &Path,
+    vm_id: &str,
+) -> Option<PathBuf> {
+    match policy {
+        crate::NetworkPolicy::JoinNetns { spec } => Some(spec.netns_path.clone()),
+        crate::NetworkPolicy::AllowOutbound { .. } => {
+            Some(m80_net_outbound::planned_vmm_netns_path(run_root, vm_id))
+        }
+        crate::NetworkPolicy::NoEgress => None,
+    }
+}
+
 fn join_netns_path(policy: &crate::NetworkPolicy) -> Option<&Path> {
     match policy {
         crate::NetworkPolicy::JoinNetns { spec } => Some(spec.netns_path.as_path()),
@@ -1094,6 +1117,7 @@ fn phase_6_network_realize(
                 m80_net_outbound::realize_bridge_and_tap(&plan, vm_id, run_root, run_dir)?;
             Ok(RealizedNetwork::OutboundNat {
                 tap_name: realized.tap_name,
+                vmm_netns_path: realized.vmm_netns_path,
                 guest_mac: realized.guest_mac,
             })
         }

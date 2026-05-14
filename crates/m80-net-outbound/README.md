@@ -1,7 +1,7 @@
 # `m80-net-outbound`
 
-The whole `OutboundNat` story: deterministic addressing, bridge + tap
-setup, guest network injection, default-deny iptables policy with
+The whole `OutboundNat` story: deterministic addressing, bridge + veth +
+private-netns TAP setup, guest network injection, default-deny iptables policy with
 admitted DNS resolvers, ownership-aware idempotent cleanup. The largest
 crate in the workspace (~3,500 LOC) and the one with the highest
 operational risk.
@@ -48,7 +48,7 @@ Sequestering it has three benefits:
 ### Realization
 
 - `realize_bridge_and_tap(intent, vm_id, run_root, run_dir)` performs only
-  the bridge/TAP setup phase. It writes bridge and per-VM network state
+  the bridge/veth/private-TAP setup phase. It writes bridge and per-VM network state
   atomically and uses the real link backend. Callers own parent directory
   creation; this function surfaces missing parents as I/O errors.
 - The bridge is owned by the run-root, not by any single VM. Repeated
@@ -56,7 +56,7 @@ Sequestering it has three benefits:
   recorded ownership matches; otherwise they fail closed with
   `BridgeOwnershipMismatch`. State lives in
   `<run_root>/outbound-bridge-state.json`.
-- Before bridge/TAP mutation, setup rejects a planned bridge CIDR that overlaps
+- Before bridge/topology mutation, setup rejects a planned bridge CIDR that overlaps
   a non-default host route, except for the route already owned by the same
   derived bridge interface.
 - Bridge state is written in a Planned phase before host link mutation and
@@ -66,20 +66,28 @@ Sequestering it has three benefits:
   already exists, m80 completes address/up and promotes the state to Ready
   instead of trying to recreate the bridge.
 - Per-VM state is written at `<run_dir>/network-state.json` in a Planned
-  phase before TAP mutation and in a Ready phase after TAP creation, MAC
-  assignment, bridge attach, and link-up succeed. Setup rejects existing
+  phase before per-VM topology mutation and in a Ready phase after namespace
+  creation, veth creation, host bridge attach/isolation, VMM-local bridge/TAP
+  creation, deterministic namespace-bridge/TAP MAC assignment, namespace bridge
+  attach, and link-up succeed. The namespace bridge and TAP link MACs are
+  deliberately distinct from the guest MAC so replies addressed to the guest are
+  forwarded to the Firecracker TAP path instead of being consumed by a host-side
+  link device. Setup rejects existing
   planned guest IPv4 collisions before taking the allocation lock, then records
   a per-IP claim under that lock before writing Planned state. Concurrent
   same-IP launches fail closed without falling back to random addressing or
   scanning all sibling state files while the lock is held.
-- If TAP setup fails after bridge creation, m80 deletes the partial TAP if
-  present, removes the per-VM Planned state file, and scavenges the unused
-  run-root bridge so failed launches do not strand owned network residue.
-- Bridge creation, bridge address assignment, link MAC assignment, bridge
-  attach/detach, bridge-port isolation, link up/down, and link deletion use
-  rtnetlink. The `ip` binary is not a runtime dependency for these operations.
+- If private topology setup fails after bridge creation, m80 deletes the
+  host-side veth and named namespace if present, removes the per-VM Planned
+  state file, and scavenges the unused run-root bridge so failed launches do
+  not strand owned network residue.
+- Bridge creation, bridge address assignment, veth creation, namespace link
+  moves, link MAC assignment, bridge attach/detach, bridge-port isolation, link
+  up/down, and link deletion use rtnetlink. The `ip` binary is not a runtime
+  dependency for these operations.
 - TAP creation uses the Linux TUN/TAP driver through a safe wrapper over
-  `/dev/net/tun`; m80 then manages the resulting link through rtnetlink.
+  `/dev/net/tun` inside the VMM namespace; m80 then manages the resulting link
+  through rtnetlink.
   This split is intentional: Linux `tun.c` allows rtnetlink deletion and
   introspection for TUN/TAP links, but not creation.
 - `prepare_pid_one_network_cmdline(state)` is the current Ubuntu/Minimal
@@ -100,12 +108,13 @@ Sequestering it has three benefits:
   recorded at least one DNS resolver. It creates or reuses the
   deterministic per-VM filter chain, rejects foreign rules already present
   in that chain, sets `net.ipv4.ip_forward=1`, disables IPv6 on the derived
-  bridge and TAP interfaces, then lists the per-VM chain, FORWARD, and NAT
+  bridge and host-veth interfaces, then lists the per-VM chain, FORWARD, and NAT
   POSTROUTING for missing-rule detection before installing missing rules
   through one `iptables-restore -w --noflush` batch. The batch appends per-VM
-  filter rules, inserts TAP-ingress FORWARD entries scoped by the guest `/32`,
-  inserts a per-VM TCP SYN connlimit reject at 256 concurrent connections from
-  the guest `/32`, and appends NAT POSTROUTING masquerade.
+  filter rules, inserts FORWARD entries scoped by the m80 bridge plus guest
+  `/32`, inserts a per-VM TCP SYN connlimit reject at 256 concurrent
+  connections from the m80 bridge plus guest `/32`, and appends NAT POSTROUTING
+  masquerade.
 - iptables rules are tagged with a per-VM comment prefix (rooted in
   `M80_RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
   never by index — so concurrent rule additions by other tools don't
@@ -127,11 +136,11 @@ Sequestering it has three benefits:
 - `cleanup_vm(vm_id: &str, run_root: &Path) -> Result<(), NetError>`
   removes only owned residue for that VM: exact comment-tagged FORWARD and
   NAT rules, comment-owned rules in the per-VM filter chain, the empty
-  per-VM chain, the TAP link, the guest-IP claim, and the VM network state
-  file. Repeated calls tolerate missing state and missing links. If the state
-  file is missing, cleanup derives the TAP name and guest IP from
-  `(run_root, vm_id)`, deletes owned residue, and then runs orphan bridge
-  recovery.
+  per-VM chain, the host-side veth, the m80-owned VMM namespace, the guest-IP
+  claim, and the VM network state file. Repeated calls tolerate missing state
+  and missing links. If the state file is missing, cleanup derives the
+  host-side veth name, namespace name, and guest IP from `(run_root, vm_id)`,
+  deletes owned residue, and then runs orphan bridge recovery.
 - Cleanup aborts on foreign rules inside an owned per-VM filter chain. It
   never deletes unowned rules by index or broad match.
 - `cleanup_orphan_bridge(run_root: &Path) -> Result<(), NetError>` is
@@ -168,14 +177,14 @@ Sequestering it has three benefits:
   public deterministic helpers for policy identity and tests.
 - `NETWORK_STATE_FILE` — per-VM network state filename under each VM run
   directory.
-- `RealizedNetwork { bridge_name, tap_name, guest_ipv4, guest_mac,
-  bridge_cidr }` — observable handles for diagnostics.
+- `RealizedNetwork { bridge_name, tap_name, vmm_netns_path, guest_ipv4,
+  guest_mac, bridge_cidr }` — observable handles for diagnostics.
 - `VmNetworkStateRecord` — opaque per-VM network state record returned by
   `read_vm_network_state_record(...)` and accepted by cmdline/policy helpers.
 - `read_vm_network_state_record(...)` — read the opaque per-VM network state
   record from a VM run directory.
-- `LinkOps` — bridge/TAP setup link-operation seam used by tests and the
-  real internal rtnetlink/TUN backend.
+- `LinkOps` — bridge/veth/private-TAP setup link-operation seam used by tests
+  and the real internal rtnetlink/TUN backend.
 - `PolicyOps` — host policy command seam used by tests and the real
   `sysctl`/`iptables`/`iptables-restore` backend. Implementors provide
   `command_output(...)` and `run_command_input(...)`; the default
@@ -238,11 +247,11 @@ Sequestering it has three benefits:
   pin guest-IP claim creation and removal.
 - Host route collision: a fixture route overlapping the planned bridge CIDR
   produces `HostRouteCollision` before any link operation runs.
-- Bridge/TAP setup: matching Ready bridge ownership skips bridge mutation,
+- Bridge/veth/private-TAP setup: matching Ready bridge ownership skips bridge mutation,
   bridge and per-VM state files are written atomically with Planned/Ready
-  phase transitions, ownership mismatch fails before link mutation, and a TAP
-  setup failure after bridge creation rolls back bridge/VM state.
-- Link-ops seam: tap/bridge lifecycle ordering is pinned without an `ip`
+  phase transitions, ownership mismatch fails before link mutation, and a
+  private topology setup failure after bridge creation rolls back bridge/VM state.
+- Link-ops seam: veth/private-TAP/bridge lifecycle ordering is pinned without an `ip`
   shellout, and an ignored root/CAP_NET_ADMIN probe exercises real TAP
   create/delete through the no-`/sbin/ip` path.
 - DNS discovery: tests pin `resolvectl dns` before `/etc/resolv.conf`
@@ -259,11 +268,11 @@ Sequestering it has three benefits:
   masquerade, and idempotent reapply behavior.
 - Bridge ownership/recovery: cleanup removes the shared bridge only after
   the last peer state is gone, startup scavenges orphan bridge state, malformed
-  peer state preserves ambiguous residue, missing-state TAP orphans are deleted,
+  peer state preserves ambiguous residue, missing-state veth/netns orphans are deleted,
   and crash-mid-VM startup recovery is pinned.
 - Teardown: command-recording tests pin per-VM comments on all owned rules,
   deletion by exact comment-owned rule specs, chain deletion only after
-  empty, foreign-rule rejection, and repeated cleanup safety for missing TAP
+  empty, foreign-rule rejection, and repeated cleanup safety for missing private topology
   state.
 - Idempotent realize: calling `realize` twice with the same input
   produces the same iptables rule set (verified by `iptables-save`).

@@ -127,7 +127,10 @@ fn cleanup_does_not_revert_host_ip_forward_sysctl() {
                 "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
                 state.bridge.bridge_name
             ),
-            format!("sysctl -w net.ipv6.conf.{}.disable_ipv6=1", state.tap_name),
+            format!(
+                "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
+                state.host_veth_name
+            ),
         ]
     );
 }
@@ -172,14 +175,23 @@ fn repeated_cleanup_calls_are_safe() {
     write_vm_network_state_record(&state.run_dir, &state).unwrap();
     let mut policy_ops = RecordingPolicyOps::default();
     apply_outbound_nat_policy_with_ops(&mut policy_ops, &state).unwrap();
-    let mut link_ops = RecordingLinkOps::with_existing(&state.tap_name);
+    let mut link_ops = RecordingLinkOps {
+        operations: Vec::new(),
+        existing: vec![state.host_veth_name.clone(), state.vmm_netns_name.clone()],
+    };
 
     cleanup_vm_with_ops(&mut link_ops, &mut policy_ops, "vm-a", run_root).unwrap();
     cleanup_vm_with_ops(&mut link_ops, &mut policy_ops, "vm-a", run_root).unwrap();
 
     assert_eq!(
         link_ops.operations,
-        [format!("delete_link_if_exists {}", state.tap_name)]
+        [
+            format!("delete_link_if_exists {}", state.host_veth_name),
+            format!(
+                "delete_network_namespace_if_exists {}",
+                state.vmm_netns_name
+            )
+        ]
     );
     assert!(!state.run_dir.join("network-state.json").exists());
 }
@@ -195,7 +207,10 @@ fn cleanup_removes_guest_ip_claim() {
     std::fs::write(&claim_path, "vm-a\n").unwrap();
     let mut policy_ops = RecordingPolicyOps::default();
     apply_outbound_nat_policy_with_ops(&mut policy_ops, &state).unwrap();
-    let mut link_ops = RecordingLinkOps::with_existing(&state.tap_name);
+    let mut link_ops = RecordingLinkOps {
+        operations: Vec::new(),
+        existing: vec![state.host_veth_name.clone(), state.vmm_netns_name.clone()],
+    };
 
     cleanup_vm_with_ops(&mut link_ops, &mut policy_ops, "vm-a", run_root).unwrap();
 
@@ -415,15 +430,6 @@ struct RecordingLinkOps {
     existing: Vec<String>,
 }
 
-impl RecordingLinkOps {
-    fn with_existing(name: &str) -> Self {
-        Self {
-            operations: Vec::new(),
-            existing: vec![name.to_owned()],
-        }
-    }
-}
-
 impl LinkOps for RecordingLinkOps {
     fn create_bridge(&mut self, _name: &str) -> Result<(), NetError> {
         Ok(())
@@ -468,6 +474,73 @@ impl LinkOps for RecordingLinkOps {
                 .push(format!("delete_link_if_exists {name}"));
             self.existing.retain(|existing| existing != name);
         }
+        Ok(())
+    }
+
+    fn create_network_namespace(&mut self, _name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn delete_network_namespace_if_exists(&mut self, name: &str) -> Result<(), NetError> {
+        if self.existing.iter().any(|existing| existing == name) {
+            self.operations
+                .push(format!("delete_network_namespace_if_exists {name}"));
+            self.existing.retain(|existing| existing != name);
+        }
+        Ok(())
+    }
+
+    fn create_veth_pair(&mut self, _host_name: &str, _peer_name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn move_link_to_namespace(
+        &mut self,
+        _link_name: &str,
+        _netns_path: &std::path::Path,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn create_bridge_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _bridge_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn create_tap_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _tap_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_mac_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+        _mac: [u8; 6],
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn attach_link_to_bridge_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+        _bridge_name: &str,
+    ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_link_up_in_namespace(
+        &mut self,
+        _netns_path: &std::path::Path,
+        _link_name: &str,
+    ) -> Result<(), NetError> {
         Ok(())
     }
 

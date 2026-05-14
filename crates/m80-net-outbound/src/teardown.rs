@@ -2,10 +2,10 @@ use std::fs;
 use std::path::Path;
 
 use crate::{
-    bridge_state_path, derive_tap_name, iptables::iptables_args, iptables::iptables_state_path,
-    link_ops, outbound_nat_filter_chain, outbound_nat_rule_comment, read_bridge_state,
-    read_vm_network_state_record, vm_network_state_path, LinkOps, NetError, PolicyOps,
-    VmNetworkStateRecord,
+    bridge_state_path, derive_host_veth_name, derive_vmm_netns_name, iptables::iptables_args,
+    iptables::iptables_state_path, link_ops, outbound_nat_filter_chain, outbound_nat_rule_comment,
+    read_bridge_state, read_vm_network_state_record, vm_network_state_path, LinkOps, NetError,
+    PolicyOps, VmNetworkStateRecord,
 };
 
 const TCP_SYN_CONN_LIMIT_PER_VM: &str = "256";
@@ -29,7 +29,8 @@ pub fn cleanup_vm_with_ops(
     let run_dir = run_root.join(vm_id);
     let state_path = vm_network_state_path(&run_dir);
     if !state_path.exists() {
-        link_ops::teardown_tap(links, &derive_tap_name(run_root, vm_id))?;
+        links.delete_link_if_exists(&derive_host_veth_name(run_root, vm_id))?;
+        links.delete_network_namespace_if_exists(&derive_vmm_netns_name(run_root, vm_id))?;
         let (guest_ipv4, _) = crate::derive_guest_addressing(run_root, vm_id);
         crate::remove_guest_ipv4_claim(run_root, vm_id, guest_ipv4)?;
         return cleanup_orphan_bridge_with_ops(links, run_root);
@@ -38,7 +39,7 @@ pub fn cleanup_vm_with_ops(
     let state = read_vm_network_state_record(&run_dir)?;
     validate_cleanup_network_state(&run_dir, run_root, &state)?;
     cleanup_outbound_nat_policy_with_ops(policy_ops, &state)?;
-    link_ops::teardown_tap(links, &state.tap_name)?;
+    link_ops::teardown_private_netns_tap_topology(links, &state)?;
     if !other_bridge_users_exist(&state)? {
         validate_bridge_owner_record_for_cleanup(&state)?;
         link_ops::teardown_tap(links, &state.bridge.bridge_name)?;
@@ -107,7 +108,7 @@ fn delete_forwarding_entry_rules(
         "FORWARD",
         &[
             "-i",
-            &state.tap_name,
+            &state.bridge.bridge_name,
             "-s",
             &guest,
             "-m",
@@ -162,7 +163,7 @@ fn delete_forwarding_entry_rules(
         "FORWARD",
         &[
             "-i",
-            &state.tap_name,
+            &state.bridge.bridge_name,
             "-s",
             &guest,
             "-p",
