@@ -39,7 +39,8 @@ re-provisioned, not inherited. Drive and network device state is also restored
 from the snapshot; the host does not need to re-issue PUT /drives or PUT
 /network-interfaces on the restore path.
 
-The snapshot pair is written to a caller-chosen directory. m80 uses:
+The snapshot pair is written to a caller-chosen directory below the backend
+`run_root`. m80 uses:
 
 ```
 {snapshot_dir}/vm.snap
@@ -48,9 +49,11 @@ The snapshot pair is written to a caller-chosen directory. m80 uses:
 
 The snapshot directory must be accessible (and writable at capture time) by
 the Firecracker process inside the jail. `m80-firecracker` implements this by
-bind-mounting the caller's host snapshot directory into the jail at
-`/snapshot` and translating the API payload to `/snapshot/vm.snap` and
-`/snapshot/mem.snap`.
+requiring the canonical snapshot parent to stay below the canonical `run_root`,
+bind-mounting that host snapshot directory into the jail at `/snapshot`, and
+translating the API payload to `/snapshot/vm.snap` and `/snapshot/mem.snap`.
+The `run_root` itself, directories outside it, and symlink escapes from beneath
+it are rejected before ownership changes or bind mounts.
 
 ---
 

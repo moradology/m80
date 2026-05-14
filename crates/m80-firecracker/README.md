@@ -187,8 +187,11 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 
 `SnapshotPaths` is re-exported from `m80-snapshot` for caller convenience
 because snapshot capture/restore methods are first-class `m80-firecracker`
-lifecycle methods. `ChangeSet` is likewise re-exported from `m80-storage`
-because `StoppedSandbox::extract_changes` returns it directly.
+lifecycle methods. Snapshot parents must canonicalize below the backend
+`run_root`; capture and restore reject outside directories and symlink escapes
+before changing ownership or bind-mounting the parent into the jail.
+`ChangeSet` is likewise re-exported from `m80-storage` because
+`StoppedSandbox::extract_changes` returns it directly.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and
 wire-frame pairing only, not an agent semantic identifier.
 `WireProtocolError` is re-exported for callers that need to distinguish broken

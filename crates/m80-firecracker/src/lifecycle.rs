@@ -90,6 +90,7 @@ impl RunningSandbox {
         let snapshot_bind = bind_snapshot_parent_into_jail(
             self.jail.jail_root(),
             &paths,
+            &self.backend.config.run_root,
             self.backend.config.jail_uid,
             self.backend.config.jail_gid,
         )?;
@@ -337,6 +338,7 @@ impl Drop for SnapshotBind {
 pub(crate) fn bind_snapshot_parent_into_jail(
     jail_path: &Path,
     paths: &SnapshotPaths,
+    snapshot_root: &Path,
     jail_uid: u32,
     jail_gid: u32,
 ) -> Result<SnapshotBind, FcError> {
@@ -372,6 +374,7 @@ pub(crate) fn bind_snapshot_parent_into_jail(
     })?;
 
     std::fs::create_dir_all(host_parent)?;
+    let host_parent = validate_snapshot_parent_scope(snapshot_root, host_parent)?;
     let mount_path = jail_path.join(SNAPSHOT_BIND_DEST);
     std::fs::create_dir_all(&mount_path)?;
 
@@ -379,14 +382,14 @@ pub(crate) fn bind_snapshot_parent_into_jail(
     use nix::unistd::{chown, Gid, Uid};
 
     chown(
-        host_parent,
+        host_parent.as_path(),
         Some(Uid::from_raw(jail_uid)),
         Some(Gid::from_raw(jail_gid)),
     )
     .map_err(|e| FcError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
 
     mount(
-        Some(host_parent),
+        Some(host_parent.as_path()),
         mount_path.as_path(),
         None::<&str>,
         MsFlags::MS_BIND,
@@ -403,6 +406,35 @@ pub(crate) fn bind_snapshot_parent_into_jail(
         mount_path,
         active: true,
     })
+}
+
+fn validate_snapshot_parent_scope(
+    snapshot_root: &Path,
+    host_parent: &Path,
+) -> Result<PathBuf, FcError> {
+    let canonical_root =
+        std::fs::canonicalize(snapshot_root).map_err(|source| FcError::PathIo {
+            path: snapshot_root.to_path_buf(),
+            source,
+        })?;
+    let canonical_parent =
+        std::fs::canonicalize(host_parent).map_err(|source| FcError::PathIo {
+            path: host_parent.to_path_buf(),
+            source,
+        })?;
+
+    if canonical_parent == canonical_root || !canonical_parent.starts_with(&canonical_root) {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "snapshot",
+            reason: format!(
+                "snapshot directory {} must be a descendant of run_root {}",
+                canonical_parent.display(),
+                canonical_root.display()
+            ),
+        }));
+    }
+
+    Ok(canonical_parent)
 }
 
 pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
@@ -694,6 +726,70 @@ mod tests {
     #[test]
     fn kill_pid_zero_is_no_live_jailer_sentinel() {
         kill_pid(0).expect("pid zero sentinel is a no-op");
+    }
+
+    #[test]
+    fn snapshot_parent_scope_accepts_directory_under_run_root() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let snapshot_parent = run_root.path().join("warm/snapshot");
+        std::fs::create_dir_all(&snapshot_parent).expect("snapshot parent");
+
+        let scoped =
+            validate_snapshot_parent_scope(run_root.path(), &snapshot_parent).expect("scope");
+
+        assert_eq!(
+            scoped,
+            snapshot_parent
+                .canonicalize()
+                .expect("canonical snapshot parent")
+        );
+    }
+
+    #[test]
+    fn snapshot_parent_scope_rejects_directory_outside_run_root() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let outside = tempfile::tempdir().expect("outside snapshot parent");
+
+        let err = validate_snapshot_parent_scope(run_root.path(), outside.path())
+            .expect_err("outside snapshot parent must be rejected");
+
+        assert_invalid_snapshot_scope(err);
+    }
+
+    #[test]
+    fn snapshot_parent_scope_rejects_run_root_itself() {
+        let run_root = tempfile::tempdir().expect("run root");
+
+        let err = validate_snapshot_parent_scope(run_root.path(), run_root.path())
+            .expect_err("run root itself must not be a snapshot parent");
+
+        assert_invalid_snapshot_scope(err);
+    }
+
+    #[test]
+    fn snapshot_parent_scope_rejects_symlink_escape_from_run_root() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let outside = tempfile::tempdir().expect("outside snapshot parent");
+        let link = run_root.path().join("snapshot-link");
+        std::os::unix::fs::symlink(outside.path(), &link).expect("symlink");
+
+        let err = validate_snapshot_parent_scope(run_root.path(), &link)
+            .expect_err("symlink escape must be rejected");
+
+        assert_invalid_snapshot_scope(err);
+    }
+
+    fn assert_invalid_snapshot_scope(err: FcError) {
+        assert!(
+            matches!(
+                err,
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "snapshot",
+                    ..
+                })
+            ),
+            "expected invalid snapshot scope error, got {err:?}"
+        );
     }
 
     #[test]

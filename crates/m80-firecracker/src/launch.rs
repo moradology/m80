@@ -611,6 +611,7 @@ impl Sandbox {
                 bind_snapshot_parent_into_jail(
                     jail.jail_root(),
                     &snapshot,
+                    &backend_config.run_root,
                     backend_config.jail_uid,
                     backend_config.jail_gid,
                 )
