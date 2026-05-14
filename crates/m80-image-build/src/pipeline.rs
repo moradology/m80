@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use anyhow::Context;
+use m80_image_manifest::{BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind};
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 
@@ -28,6 +29,14 @@ pub(crate) const UBUNTU_SQUASHFS: &str = "ubuntu-24.04.squashfs";
 pub(crate) fn manifest_path(rootfs: &Path) -> PathBuf {
     let mut name = rootfs.file_name().unwrap_or_default().to_owned();
     name.push(".manifest.json");
+    rootfs.with_file_name(name)
+}
+
+/// Return the build receipt path for a rootfs image:
+/// `<rootfs>.build-receipt.json`.
+pub(crate) fn build_receipt_path(rootfs: &Path) -> PathBuf {
+    let mut name = rootfs.file_name().unwrap_or_default().to_owned();
+    name.push(".build-receipt.json");
     rootfs.with_file_name(name)
 }
 
@@ -119,6 +128,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     // constant (`GUEST_DAEMON_PATH`) and not the manifest's concern.
     let daemon_binary_host = cfg.output.dir.join("m80-guestd");
     let manifest_path = manifest_path(&output_rootfs);
+    let build_receipt_path = build_receipt_path(&output_rootfs);
 
     let kernel_url = format!(
         "{}/{}/{}/{}",
@@ -166,6 +176,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         eprintln!("8. Unmount");
         eprintln!("9. Compute sha256 of 4 artifacts");
         eprintln!("10. Write manifest → {}", manifest_path.display());
+        eprintln!("11. Write build receipt → {}", build_receipt_path.display());
         return Ok(());
     }
 
@@ -241,12 +252,54 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     manifest
         .write(&manifest_path)
         .with_context(|| format!("writing manifest to {}", manifest_path.display()))?;
+    emit_build_receipt(
+        &build_receipt_path,
+        &manifest_path,
+        vec![
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::KernelImage,
+                path: paths.kernel.clone(),
+                sha256: manifest.kernel_image_sha256.clone(),
+            },
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::SourceRootfsImage,
+                path: paths.source_rootfs.clone(),
+                sha256: manifest
+                    .source_rootfs_sha256
+                    .clone()
+                    .expect("Ubuntu source sha"),
+            },
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::OutputRootfsImage,
+                path: paths.output_rootfs.clone(),
+                sha256: manifest.output_rootfs_sha256.clone(),
+            },
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::DaemonBinaryPath,
+                path: manifest.daemon_binary_path.clone(),
+                sha256: manifest.daemon_binary_sha256.clone(),
+            },
+        ],
+    )?;
 
     println!("kernel:        {}", paths.kernel.display());
     println!("source_rootfs: {}", paths.source_rootfs.display());
     println!("output_rootfs: {}", paths.output_rootfs.display());
     println!("manifest:      {}", manifest_path.display());
+    println!("receipt:       {}", build_receipt_path.display());
     Ok(())
+}
+
+pub(crate) fn emit_build_receipt(
+    receipt_path: &Path,
+    manifest_path: &Path,
+    artifacts: Vec<BuildReceiptArtifact>,
+) -> anyhow::Result<()> {
+    let manifest_sha = sha256_file(manifest_path).context("sha256 manifest")?;
+    let receipt = BuildReceipt::new(manifest_path.to_path_buf(), manifest_sha, artifacts);
+    receipt
+        .write(receipt_path)
+        .with_context(|| format!("writing build receipt to {}", receipt_path.display()))
 }
 
 /// Run `curl -fsSL -o <dest> <url>`.

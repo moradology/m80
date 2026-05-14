@@ -12,7 +12,8 @@ use super::{
 };
 use crate::PreflightError;
 use m80_image_manifest::{
-    ImageKind, KernelKind, Manifest, ManifestError, RootfsFormat, SCHEMA_VERSION,
+    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, ImageKind, KernelKind, Manifest,
+    ManifestError, RootfsFormat, SCHEMA_VERSION,
 };
 
 const SHA256_EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -59,7 +60,40 @@ fn fixture_manifest(dir: &Path, kernel: &Path) -> (PathBuf, Manifest) {
     );
     let manifest_path = PathBuf::from(format!("{}.manifest.json", rootfs.display()));
     manifest.write(&manifest_path).unwrap();
+    write_build_receipt(&rootfs, &manifest_path, &manifest);
     (rootfs, manifest)
+}
+
+fn sha256_file(path: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(fs::read(path).unwrap()))
+}
+
+fn write_build_receipt(rootfs: &Path, manifest_path: &Path, manifest: &Manifest) {
+    let receipt_path = PathBuf::from(format!("{}.build-receipt.json", rootfs.display()));
+    BuildReceipt::new(
+        manifest_path.to_path_buf(),
+        sha256_file(manifest_path),
+        vec![
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::KernelImage,
+                path: manifest.kernel_image.clone(),
+                sha256: manifest.kernel_image_sha256.clone(),
+            },
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::OutputRootfsImage,
+                path: manifest.output_rootfs_image.clone(),
+                sha256: manifest.output_rootfs_sha256.clone(),
+            },
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::DaemonBinaryPath,
+                path: manifest.daemon_binary_path.clone(),
+                sha256: manifest.daemon_binary_sha256.clone(),
+            },
+        ],
+    )
+    .write(&receipt_path)
+    .unwrap();
 }
 
 fn fixture_config() -> (
@@ -94,6 +128,13 @@ fn fixture_config() -> (
 fn manifest_path(config: &ArtifactPreflightConfig) -> PathBuf {
     PathBuf::from(format!(
         "{}.manifest.json",
+        config.rootfs_image.as_ref().unwrap().display()
+    ))
+}
+
+fn build_receipt_path(config: &ArtifactPreflightConfig) -> PathBuf {
+    PathBuf::from(format!(
+        "{}.build-receipt.json",
         config.rootfs_image.as_ref().unwrap().display()
     ))
 }
@@ -337,6 +378,61 @@ fn missing_manifest_returns_typed_io_error() {
             assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
         }
         other => panic!("expected missing manifest IO error, got {other:?}"),
+    }
+}
+
+#[test]
+fn missing_build_receipt_returns_typed_io_error() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let receipt_path = build_receipt_path(&config);
+    fs::remove_file(&receipt_path).unwrap();
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::BuildReceipt(ManifestError::Io { path, source }) => {
+            assert_eq!(path, receipt_path);
+            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+        }
+        other => panic!("expected missing receipt IO error, got {other:?}"),
+    }
+}
+
+#[test]
+fn build_receipt_manifest_sha_mismatch_fails_preflight() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let receipt_path = build_receipt_path(&config);
+    let mut receipt = BuildReceipt::read(&receipt_path).unwrap();
+    receipt.manifest_sha256 = "0".repeat(64);
+    receipt.write(&receipt_path).unwrap();
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::BuildReceiptManifestMismatch { path, expected, .. } => {
+            assert_eq!(path, manifest_path(&config));
+            assert_eq!(expected, "0".repeat(64));
+        }
+        other => panic!("expected receipt manifest sha mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn build_receipt_artifact_hash_must_match_manifest() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let receipt_path = build_receipt_path(&config);
+    let mut receipt = BuildReceipt::read(&receipt_path).unwrap();
+    receipt.artifacts[0].sha256 = "1".repeat(64);
+    receipt.write(&receipt_path).unwrap();
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::BuildReceiptArtifactHashMismatch { kind, actual, .. } => {
+            assert_eq!(kind, BuildReceiptArtifactKind::KernelImage);
+            assert_eq!(actual, "1".repeat(64));
+        }
+        other => panic!("expected receipt artifact hash mismatch, got {other:?}"),
     }
 }
 

@@ -9,6 +9,11 @@ The build writes `<output_rootfs>.manifest.json` beside the output rootfs at
 the end of a successful build. `Manifest::write(path)` writes pretty JSON with
 a trailing newline and sets POSIX mode `0644` on Unix.
 
+The build also writes `<output_rootfs>.build-receipt.json` after the manifest is
+on disk. The receipt records the sha256 of the manifest bytes plus the
+hash-bearing artifact path/hash set. `m80-preflight` requires the receipt to
+match the manifest it just read.
+
 Test: `m80-image-manifest/tests/manifest_emit.rs::emits_manifest_beside_rootfs`.
 
 ## schema-version {#schema-version}
@@ -23,9 +28,13 @@ The manifest also records `expected_firecracker_version` from the build config.
 `m80-image-manifest` records the value; live binary-version enforcement belongs
 to the caller, such as preflight.
 
+Every current build receipt carries `schema_version: 1`, the crate constant
+`BUILD_RECEIPT_SCHEMA_VERSION`. Unknown receipt fields fail closed.
+
 Tests:
 `m80-image-manifest/tests/manifest_schema_version.rs::stamps_schema_and_firecracker_version`
-and `wrong_schema_version_is_rejected`.
+and `wrong_schema_version_is_rejected`, plus
+`m80-image-manifest/tests/build_receipt.rs`.
 
 ## sha256-coverage {#sha256-coverage}
 

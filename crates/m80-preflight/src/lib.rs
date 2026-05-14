@@ -16,7 +16,7 @@ use caps::Capability;
 use caps::CapsHashSet;
 use serde::{Deserialize, Serialize};
 
-use m80_image_manifest::{Manifest, ManifestError};
+use m80_image_manifest::{BuildReceiptArtifactKind, Manifest, ManifestError};
 
 mod artifacts;
 mod binary;
@@ -470,6 +470,79 @@ pub enum PreflightError {
     #[error("manifest: {0}")]
     Manifest(#[from] ManifestError),
 
+    /// Build receipt read/validate failed.
+    #[error("build receipt: {0}")]
+    BuildReceipt(#[source] ManifestError),
+
+    /// Build receipt points at a different guest manifest than preflight read.
+    #[error(
+        "build receipt manifest path mismatch: expected {}, got {}",
+        expected.display(),
+        actual.display()
+    )]
+    BuildReceiptPathMismatch {
+        /// Preflight-selected manifest path.
+        expected: PathBuf,
+        /// Receipt-recorded manifest path after root-relative resolution.
+        actual: PathBuf,
+    },
+
+    /// Build receipt's manifest digest does not match the manifest bytes.
+    #[error(
+        "build receipt manifest sha256 mismatch at {}: expected {expected}, got {actual}",
+        path.display()
+    )]
+    BuildReceiptManifestMismatch {
+        /// Manifest path read by preflight.
+        path: PathBuf,
+        /// Receipt-recorded manifest digest.
+        expected: String,
+        /// Recomputed manifest digest.
+        actual: String,
+    },
+
+    /// Build receipt omitted a required artifact kind.
+    #[error("build receipt missing artifact: {kind:?}")]
+    BuildReceiptArtifactMissing {
+        /// Missing artifact kind.
+        kind: BuildReceiptArtifactKind,
+    },
+
+    /// Build receipt duplicated an artifact kind.
+    #[error("build receipt duplicate artifact: {kind:?}")]
+    BuildReceiptArtifactDuplicate {
+        /// Duplicated artifact kind.
+        kind: BuildReceiptArtifactKind,
+    },
+
+    /// Build receipt artifact path differs from the guest manifest.
+    #[error(
+        "build receipt artifact path mismatch for {kind:?}: expected {}, got {}",
+        expected.display(),
+        actual.display()
+    )]
+    BuildReceiptArtifactPathMismatch {
+        /// Artifact kind.
+        kind: BuildReceiptArtifactKind,
+        /// Guest manifest artifact path.
+        expected: PathBuf,
+        /// Receipt artifact path.
+        actual: PathBuf,
+    },
+
+    /// Build receipt artifact digest differs from the guest manifest.
+    #[error(
+        "build receipt artifact sha256 mismatch for {kind:?}: expected {expected}, got {actual}"
+    )]
+    BuildReceiptArtifactHashMismatch {
+        /// Artifact kind.
+        kind: BuildReceiptArtifactKind,
+        /// Guest manifest artifact digest.
+        expected: String,
+        /// Receipt artifact digest.
+        actual: String,
+    },
+
     /// Run-root directory is absent or has insufficient free capacity
     /// (< 100 MiB). This variant covers both "directory does not exist" and
     /// "not enough space" so a single variant name handles both conditions.
@@ -636,6 +709,15 @@ impl PreflightError {
             }
             Self::Manifest(_) => {
                 "rebuild the guest image with `m80-image-build` to regenerate a valid manifest"
+            }
+            Self::BuildReceipt(_)
+            | Self::BuildReceiptPathMismatch { .. }
+            | Self::BuildReceiptManifestMismatch { .. }
+            | Self::BuildReceiptArtifactMissing { .. }
+            | Self::BuildReceiptArtifactDuplicate { .. }
+            | Self::BuildReceiptArtifactPathMismatch { .. }
+            | Self::BuildReceiptArtifactHashMismatch { .. } => {
+                "rebuild or reinstall the guest artifacts and deploy the matching build receipt"
             }
             Self::RunRootUnavailable { .. } => {
                 "create the directory (`sudo mkdir -p /var/run/m80`) and ensure at least 100 MiB of free space is available, or set M80_RUN_ROOT to a different path"

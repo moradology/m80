@@ -46,7 +46,7 @@ Required runtime artifacts:
 - `/opt/m80/bin/m80`
 - `/opt/m80/bin/m80-cli`
 - `/opt/m80/artifacts/host-binaries.manifest.json`
-- kernel/rootfs/manifest artifacts under `/opt/m80/artifacts`
+- kernel/rootfs/manifest/build-receipt artifacts under `/opt/m80/artifacts`
 
 `/opt/m80/artifacts` is the boot-artifact trust boundary. Do not allow the run
 identity or untrusted build jobs to replace files there after preflight has
@@ -57,6 +57,11 @@ Host binaries are also part of the launch TCB. Install them as `root:root`,
 mode `0755` or narrower, then generate
 `/opt/m80/artifacts/host-binaries.manifest.json` from the installed bytes. The
 exact manifest schema and install commands are in `docs/ops/binary-installation.md`.
+
+Each built rootfs must travel with `<rootfs>.manifest.json` and
+`<rootfs>.build-receipt.json`. The receipt pins the manifest sha256; it is only
+strong against co-replacement when the build/deploy process prevents the run
+identity from rewriting the receipt after promotion.
 
 ## Cargo And Rust Supply Chain
 

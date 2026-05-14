@@ -98,13 +98,13 @@ fn dry_run_prints_steps_to_stderr_and_creates_no_output_files() {
     );
 
     // Capture each "<n>." prefix at the start of a line; assert the sequence
-    // is exactly 1..=10 in order. Using `contains` would pass even if labels
+    // is exactly 1..=11 in order. Using `contains` would pass even if labels
     // were duplicated or out of order.
     let observed = observed_step_numbers(&stderr);
     assert_eq!(
         observed,
-        (1..=10).collect::<Vec<_>>(),
-        "expected step numbers 1..=10 in order; got {observed:?}\nstderr:\n{stderr}"
+        (1..=11).collect::<Vec<_>>(),
+        "expected step numbers 1..=11 in order; got {observed:?}\nstderr:\n{stderr}"
     );
 
     // The output directory must not have been created.
@@ -130,8 +130,8 @@ fn minimal_dry_run_prints_release_artifact_steps_and_creates_no_output_files() {
     let observed = observed_step_numbers(&stderr);
     assert_eq!(
         observed,
-        (1..=10).collect::<Vec<_>>(),
-        "expected minimal step numbers 1..=10 in order; got {observed:?}\nstderr:\n{stderr}"
+        (1..=11).collect::<Vec<_>>(),
+        "expected minimal step numbers 1..=11 in order; got {observed:?}\nstderr:\n{stderr}"
     );
     assert!(
         stderr.contains("Compute sha256 of 3 artifacts"),
@@ -163,8 +163,8 @@ fn minimal_erofs_dry_run_prints_erofs_steps_and_creates_no_output_files() {
     let observed = observed_step_numbers(&stderr);
     assert_eq!(
         observed,
-        (1..=8).collect::<Vec<_>>(),
-        "expected minimal-erofs step numbers 1..=8 in order; got {observed:?}\nstderr:\n{stderr}"
+        (1..=9).collect::<Vec<_>>(),
+        "expected minimal-erofs step numbers 1..=9 in order; got {observed:?}\nstderr:\n{stderr}"
     );
     assert!(
         stderr.contains("mkfs.erofs -zlz4hc"),

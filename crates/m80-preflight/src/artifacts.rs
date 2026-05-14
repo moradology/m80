@@ -12,6 +12,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_image_manifest::ManifestError;
+use m80_image_manifest::{BuildReceipt, BuildReceiptArtifactKind};
 use m80_image_manifest::{KernelKind, Manifest};
 use nix::libc::O_NOFOLLOW;
 use nix::sys::statvfs::statvfs;
@@ -210,6 +211,8 @@ fn verify_rootfs_and_manifest(
         manifest.verify(parent)?;
         manifest
     };
+    let parent = rootfs.parent().unwrap_or_else(|| Path::new("/"));
+    verify_build_receipt(&rootfs, &manifest_path, parent, &manifest)?;
     verify_rootfs_fd_sha256(&mut rootfs_file, &rootfs, &manifest.output_rootfs_sha256)?;
 
     Ok((PinnedRootfs::from_file(rootfs, rootfs_file), manifest))
@@ -217,6 +220,10 @@ fn verify_rootfs_and_manifest(
 
 pub(crate) fn manifest_path_for_rootfs(rootfs: &Path) -> PathBuf {
     PathBuf::from(format!("{}.manifest.json", rootfs.display()))
+}
+
+pub(crate) fn build_receipt_path_for_rootfs(rootfs: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.build-receipt.json", rootfs.display()))
 }
 
 fn parse_kernel_kind(raw: &str) -> Result<KernelKind, PreflightError> {
@@ -279,6 +286,120 @@ fn verify_rootfs_fd_sha256(
         }));
     }
     Ok(())
+}
+
+fn verify_build_receipt(
+    rootfs: &Path,
+    manifest_path: &Path,
+    root: &Path,
+    manifest: &Manifest,
+) -> Result<(), PreflightError> {
+    let receipt_path = build_receipt_path_for_rootfs(rootfs);
+    let receipt = BuildReceipt::read(&receipt_path).map_err(PreflightError::BuildReceipt)?;
+    let resolved_manifest_path = resolve_receipt_path(root, &receipt.manifest_path);
+    if resolved_manifest_path != manifest_path {
+        return Err(PreflightError::BuildReceiptPathMismatch {
+            expected: manifest_path.to_path_buf(),
+            actual: resolved_manifest_path,
+        });
+    }
+    let actual_manifest_sha =
+        sha256_path(manifest_path).map_err(|source| PreflightError::PathIo {
+            path: manifest_path.to_path_buf(),
+            source,
+        })?;
+    if actual_manifest_sha != receipt.manifest_sha256 {
+        return Err(PreflightError::BuildReceiptManifestMismatch {
+            path: manifest_path.to_path_buf(),
+            expected: receipt.manifest_sha256,
+            actual: actual_manifest_sha,
+        });
+    }
+    verify_receipt_artifact(
+        &receipt,
+        BuildReceiptArtifactKind::KernelImage,
+        &manifest.kernel_image,
+        &manifest.kernel_image_sha256,
+    )?;
+    if let (Some(path), Some(sha256)) = (
+        &manifest.source_rootfs_image,
+        &manifest.source_rootfs_sha256,
+    ) {
+        verify_receipt_artifact(
+            &receipt,
+            BuildReceiptArtifactKind::SourceRootfsImage,
+            path,
+            sha256,
+        )?;
+    }
+    verify_receipt_artifact(
+        &receipt,
+        BuildReceiptArtifactKind::OutputRootfsImage,
+        &manifest.output_rootfs_image,
+        &manifest.output_rootfs_sha256,
+    )?;
+    verify_receipt_artifact(
+        &receipt,
+        BuildReceiptArtifactKind::DaemonBinaryPath,
+        &manifest.daemon_binary_path,
+        &manifest.daemon_binary_sha256,
+    )?;
+    Ok(())
+}
+
+fn verify_receipt_artifact(
+    receipt: &BuildReceipt,
+    kind: BuildReceiptArtifactKind,
+    path: &Path,
+    sha256: &str,
+) -> Result<(), PreflightError> {
+    let mut matches = receipt
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.kind == kind);
+    let Some(artifact) = matches.next() else {
+        return Err(PreflightError::BuildReceiptArtifactMissing { kind });
+    };
+    if matches.next().is_some() {
+        return Err(PreflightError::BuildReceiptArtifactDuplicate { kind });
+    }
+    if artifact.path != path {
+        return Err(PreflightError::BuildReceiptArtifactPathMismatch {
+            kind,
+            expected: path.to_path_buf(),
+            actual: artifact.path.clone(),
+        });
+    }
+    if artifact.sha256 != sha256 {
+        return Err(PreflightError::BuildReceiptArtifactHashMismatch {
+            kind,
+            expected: sha256.to_owned(),
+            actual: artifact.sha256.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn resolve_receipt_path(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
+}
+
+fn sha256_path(path: &Path) -> Result<String, std::io::Error> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn verify_artifact_dir_permissions(path: &Path) -> Result<(), PreflightError> {

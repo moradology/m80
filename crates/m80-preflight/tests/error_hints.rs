@@ -1,7 +1,7 @@
 //! Each PreflightError variant must expose a non-empty hint via `hint()`.
 
 use caps::Capability;
-use m80_image_manifest::ManifestError;
+use m80_image_manifest::{BuildReceiptArtifactKind, ManifestError};
 use m80_preflight::PreflightError;
 
 fn assert_hint(err: &PreflightError) {
@@ -287,6 +287,49 @@ fn artifact_file_writable_has_hint() {
 fn manifest_error_has_hint() {
     let inner = ManifestError::UnsupportedSchemaVersion(99);
     assert_hint(&PreflightError::Manifest(inner));
+}
+
+#[test]
+fn build_receipt_error_has_hint() {
+    let inner = ManifestError::UnsupportedBuildReceiptSchemaVersion(99);
+    assert_hint(&PreflightError::BuildReceipt(inner));
+}
+
+#[test]
+fn build_receipt_path_mismatch_has_hint() {
+    assert_hint(&PreflightError::BuildReceiptPathMismatch {
+        expected: "/opt/m80/artifacts/output.ext4.manifest.json".into(),
+        actual: "/tmp/output.ext4.manifest.json".into(),
+    });
+}
+
+#[test]
+fn build_receipt_manifest_mismatch_has_hint() {
+    assert_hint(&PreflightError::BuildReceiptManifestMismatch {
+        path: "/opt/m80/artifacts/output.ext4.manifest.json".into(),
+        expected: "a".repeat(64),
+        actual: "b".repeat(64),
+    });
+}
+
+#[test]
+fn build_receipt_artifact_errors_have_hints() {
+    assert_hint(&PreflightError::BuildReceiptArtifactMissing {
+        kind: BuildReceiptArtifactKind::KernelImage,
+    });
+    assert_hint(&PreflightError::BuildReceiptArtifactDuplicate {
+        kind: BuildReceiptArtifactKind::KernelImage,
+    });
+    assert_hint(&PreflightError::BuildReceiptArtifactPathMismatch {
+        kind: BuildReceiptArtifactKind::KernelImage,
+        expected: "/opt/m80/artifacts/vmlinux".into(),
+        actual: "/tmp/vmlinux".into(),
+    });
+    assert_hint(&PreflightError::BuildReceiptArtifactHashMismatch {
+        kind: BuildReceiptArtifactKind::KernelImage,
+        expected: "a".repeat(64),
+        actual: "b".repeat(64),
+    });
 }
 
 #[test]

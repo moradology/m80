@@ -53,10 +53,12 @@ gives us:
     `m80-image-manifest::Manifest::write`. The manifest records
     `no_egress_reason` with the shared m80 audit string because the image is
     network-neutral; runtime egress is selected at launch.
+11. Emit `<rootfs>.build-receipt.json` with the sha256 of the manifest itself
+    plus the artifact path/hash set.
 
 #### Minimal (`kind = "minimal"`)
 
-10 numbered steps. No upstream squashfs; the rootfs is built from
+11 numbered steps. No upstream squashfs; the rootfs is built from
 scratch. Smaller, faster cold boot, no package manager.
 
 1. Download kernel (same as Ubuntu).
@@ -86,10 +88,12 @@ scratch. Smaller, faster cold boot, no package manager.
     `rootfs_format=Ext4`. The manifest records `no_egress_reason` with the
     shared m80 audit string because the image is network-neutral; runtime
     egress is selected at launch.
+11. Emit `<rootfs>.build-receipt.json` with the sha256 of the manifest itself
+    plus the artifact path/hash set.
 
 #### Minimal erofs (`kind = "minimal-erofs"`)
 
-8 numbered steps. Same busybox + static `m80-guestd` userland as Minimal,
+9 numbered steps. Same busybox + static `m80-guestd` userland as Minimal,
 but the base rootfs is a compressed read-only erofs image rather than ext4.
 `rootfs.size` is parsed for config hygiene but does not size the erofs output;
 the filesystem is sized from the populated tree.
@@ -109,6 +113,8 @@ the filesystem is sized from the populated tree.
 8. Emit `<rootfs>.manifest.json` with `image_kind=Minimal`,
    `rootfs_format=Erofs`, and the Ubuntu-only `source_rootfs_*` fields as
    `null`.
+9. Emit `<rootfs>.build-receipt.json` with the sha256 of the manifest itself
+   plus the artifact path/hash set.
 
 Runtime launch requires a kernel with built-in erofs support. The stripped
 kernel config provides that support; the stock Firecracker kernel in the
@@ -191,8 +197,9 @@ Human-readable progress and errors go to stderr through phase contexts and
 dry-run step text. Stdout is reserved for final machine-readable-ish result
 lines:
 
-- Ubuntu `run`: `kernel:`, `source_rootfs:`, `output_rootfs:`, `manifest:`.
-- Minimal `run`: `kernel:`, `output_rootfs:`, `manifest:`.
+- Ubuntu `run`: `kernel:`, `source_rootfs:`, `output_rootfs:`, `manifest:`,
+  `receipt:`.
+- Minimal `run`: `kernel:`, `output_rootfs:`, `manifest:`, `receipt:`.
 - `verify`: `verified`.
 - `clean`: no stdout.
 - `kernel build`: `vmlinux:`.
@@ -205,6 +212,8 @@ lines:
   marked `.tainted` and refused.
 - The manifest is emitted only after the mount/install phase has completed,
   the rootfs has been unmounted, and all artifact hashes have been computed.
+  The matching build receipt is emitted after the manifest is on disk and
+  records the manifest's own sha256.
   The loop-mount phase runs in a private mount namespace so a `SIGKILL` before
   success leaves no partial manifest and no host-visible loop mount.
 

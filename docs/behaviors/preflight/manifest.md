@@ -20,6 +20,11 @@ When `kernel_image` is set, it must be an absolute existing host path.
 schema and recomputes every recorded sha256. A schema mismatch or digest
 mismatch fails closed before any VM launch work begins.
 
+Preflight also reads `<rootfs>.build-receipt.json`. The receipt must point at
+the same manifest, its manifest sha256 must match the manifest bytes, and each
+receipt artifact path/hash tuple must match the manifest. A missing or
+mismatched receipt fails closed before launch.
+
 `M80_KERNEL_KIND=stock|stripped` can override the verified manifest's
 `kernel_kind` to match the selected kernel artifact. Other values fail closed.
 
@@ -38,4 +43,6 @@ configured PATH. The first missing helper returns
 ## Evidence
 
 - `crates/m80-preflight/src/artifacts.rs`
-- `crates/m80-preflight/tests/preflight/manifest.rs`
+- `crates/m80-preflight/src/artifacts.rs::tests::missing_build_receipt_returns_typed_io_error`
+- `crates/m80-preflight/src/artifacts.rs::tests::build_receipt_manifest_sha_mismatch_fails_preflight`
+- `crates/m80-preflight/src/artifacts.rs::tests::build_receipt_artifact_hash_must_match_manifest`

@@ -34,6 +34,9 @@ pub const SCHEMA_VERSION: u32 = 5;
 /// Schema version for `host-binaries.manifest.json`.
 pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 1;
 
+/// Schema version for m80 build receipts.
+pub const BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1;
+
 /// Human-readable audit reason recorded in m80-built images that do not bake
 /// an outbound network posture into the image itself.
 pub const DEFAULT_NO_EGRESS_REASON: &str =
@@ -171,6 +174,120 @@ impl HostBinariesManifest {
     pub fn write(&self, path: &Path) -> Result<(), ManifestError> {
         if self.schema_version != HOST_BINARIES_SCHEMA_VERSION {
             return Err(ManifestError::UnsupportedHostBinariesSchemaVersion(
+                self.schema_version,
+            ));
+        }
+        let mut json = serde_json::to_string_pretty(self)?;
+        json.push('\n');
+        std::fs::write(path, json.as_bytes()).map_err(|source| ManifestError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o644);
+            std::fs::set_permissions(path, perms).map_err(|source| ManifestError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// Artifact names recorded in a build receipt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum BuildReceiptArtifactKind {
+    /// Guest kernel image.
+    KernelImage,
+    /// Upstream/source rootfs image.
+    SourceRootfsImage,
+    /// Built rootfs image.
+    OutputRootfsImage,
+    /// Host-side audit copy of m80-guestd.
+    DaemonBinaryPath,
+}
+
+/// One build artifact recorded by a build receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildReceiptArtifact {
+    /// Artifact kind.
+    pub kind: BuildReceiptArtifactKind,
+    /// Artifact path at receipt emission time.
+    pub path: PathBuf,
+    /// sha256 hex digest of the artifact bytes.
+    pub sha256: String,
+}
+
+/// Deploy-time receipt pinning the guest manifest and artifact set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildReceipt {
+    /// Hash-bearing artifacts described by the guest manifest.
+    pub artifacts: Vec<BuildReceiptArtifact>,
+    /// Path to the guest-image manifest this receipt pins.
+    pub manifest_path: PathBuf,
+    /// sha256 hex digest of the manifest JSON bytes.
+    pub manifest_sha256: String,
+    /// Always [`BUILD_RECEIPT_SCHEMA_VERSION`].
+    schema_version: u32,
+}
+
+/// Probes only `schema_version` for a build receipt.
+#[derive(Deserialize)]
+struct BuildReceiptSchemaVersionProbe {
+    schema_version: u32,
+}
+
+impl BuildReceipt {
+    /// Construct a build receipt with the current schema version.
+    #[must_use]
+    pub fn new(
+        manifest_path: PathBuf,
+        manifest_sha256: String,
+        artifacts: Vec<BuildReceiptArtifact>,
+    ) -> Self {
+        Self {
+            artifacts,
+            manifest_path,
+            manifest_sha256,
+            schema_version: BUILD_RECEIPT_SCHEMA_VERSION,
+        }
+    }
+
+    /// Returns the build receipt schema version.
+    #[must_use]
+    pub fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    /// Parse a build receipt from raw bytes.
+    pub fn from_bytes(raw: &[u8]) -> Result<Self, ManifestError> {
+        let probe: BuildReceiptSchemaVersionProbe = serde_json::from_slice(raw)?;
+        if probe.schema_version != BUILD_RECEIPT_SCHEMA_VERSION {
+            return Err(ManifestError::UnsupportedBuildReceiptSchemaVersion(
+                probe.schema_version,
+            ));
+        }
+        Ok(serde_json::from_slice(raw)?)
+    }
+
+    /// Read and structurally validate a build receipt.
+    pub fn read(path: &Path) -> Result<Self, ManifestError> {
+        let raw = std::fs::read(path).map_err(|source| ManifestError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Self::from_bytes(&raw)
+    }
+
+    /// Write this build receipt as pretty JSON with mode 0644.
+    pub fn write(&self, path: &Path) -> Result<(), ManifestError> {
+        if self.schema_version != BUILD_RECEIPT_SCHEMA_VERSION {
+            return Err(ManifestError::UnsupportedBuildReceiptSchemaVersion(
                 self.schema_version,
             ));
         }
@@ -476,6 +593,11 @@ pub enum ManifestError {
         "unsupported host-binaries manifest schema version: got {0}, expected {HOST_BINARIES_SCHEMA_VERSION}"
     )]
     UnsupportedHostBinariesSchemaVersion(u32),
+    /// A build receipt carried an unsupported schema version.
+    #[error(
+        "unsupported build receipt schema version: got {0}, expected {BUILD_RECEIPT_SCHEMA_VERSION}"
+    )]
+    UnsupportedBuildReceiptSchemaVersion(u32),
     /// A recomputed sha256 did not match the recorded value.
     #[error("sha256 mismatch on {field}: expected {expected}, got {actual}")]
     Sha256Mismatch {

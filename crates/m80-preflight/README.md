@@ -98,8 +98,11 @@ which is the right place for a security review to start.
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  18. **Rootfs + manifest** — manifest schema validates, including
-     `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256.
+  18. **Rootfs + manifest + build receipt** — manifest schema validates,
+     including `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256.
+     `<rootfs>.build-receipt.json` must point at the same manifest, its
+     manifest sha256 must match the manifest bytes, and its artifact path/hash
+     tuples must match the manifest.
      The rootfs itself is opened with `O_RDONLY | O_NOFOLLOW`, hashed from
      that descriptor, rewound, and kept in `Discovery` for launch to bind via
      procfs. This is the boot-artifact trust boundary for `m80-firecracker`;
@@ -211,6 +214,13 @@ which is the right place for a security review to start.
   `ArtifactDirectoryWritable { path, mode }`,
   `ArtifactFileWritable { path, mode }`,
   `Manifest(m80_image_manifest::ManifestError)`,
+  `BuildReceipt(m80_image_manifest::ManifestError)`,
+  `BuildReceiptPathMismatch { expected, actual }`,
+  `BuildReceiptManifestMismatch { path, expected, actual }`,
+  `BuildReceiptArtifactMissing { kind }`,
+  `BuildReceiptArtifactDuplicate { kind }`,
+  `BuildReceiptArtifactPathMismatch { kind, expected, actual }`,
+  `BuildReceiptArtifactHashMismatch { kind, expected, actual }`,
   `RunRootUnavailable { reason: String }` (covers both missing-dir and
   insufficient-space), `StorageHelperMissing(String)`, `PathIo { path, source }`,
   and `SystemIo { operation, source }`.
@@ -246,6 +256,9 @@ which is the right place for a security review to start.
   metadata invalidation.
 - `tests/security/rootfs_fd_pinning.rs` — proc-fd handle continues to read the
   verified rootfs bytes after the original path is replaced.
+- `crates/m80-preflight/src/artifacts.rs::tests::missing_build_receipt_returns_typed_io_error`.
+- `crates/m80-preflight/src/artifacts.rs::tests::build_receipt_manifest_sha_mismatch_fails_preflight`.
+- `crates/m80-preflight/src/artifacts.rs::tests::build_receipt_artifact_hash_must_match_manifest`.
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_hash_mismatch_fails_closed`.
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`.
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`.

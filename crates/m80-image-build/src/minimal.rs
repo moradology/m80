@@ -17,13 +17,15 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Context;
+use m80_image_manifest::{BuildReceiptArtifact, BuildReceiptArtifactKind};
 
 use crate::config::{parse_size, BuildConfig};
 use crate::hash::sha256_file;
 use crate::pipeline::{
-    build_manifest, enter_private_mount_namespace, install_pid_one_artifacts, loop_mount,
-    loop_umount, manifest_path, maybe_sleep_after_loop_mount, run_curl, set_executable,
-    truncate_file, FC_CI_BASE, KERNEL_FILENAME, PID_ONE_MOUNTPOINT_DIRS,
+    build_manifest, build_receipt_path, emit_build_receipt, enter_private_mount_namespace,
+    install_pid_one_artifacts, loop_mount, loop_umount, manifest_path,
+    maybe_sleep_after_loop_mount, run_curl, set_executable, truncate_file, FC_CI_BASE,
+    KERNEL_FILENAME, PID_ONE_MOUNTPOINT_DIRS,
 };
 
 const HOST_BUSYBOX: &str = "/bin/busybox";
@@ -42,6 +44,7 @@ pub(crate) fn run_build_minimal_erofs(cfg: BuildConfig, dry_run: bool) -> anyhow
     let output_rootfs = cfg.output.dir.join("output.erofs");
     let daemon_binary_host = cfg.output.dir.join("m80-guestd");
     let manifest_path = manifest_path(&output_rootfs);
+    let build_receipt_path = build_receipt_path(&output_rootfs);
 
     let kernel_url = format!(
         "{}/{}/{}/{}",
@@ -78,6 +81,7 @@ pub(crate) fn run_build_minimal_erofs(cfg: BuildConfig, dry_run: bool) -> anyhow
         );
         eprintln!("7. Compute sha256 of 3 artifacts (kernel, output_rootfs, daemon_binary)");
         eprintln!("8. Write manifest → {}", manifest_path.display());
+        eprintln!("9. Write build receipt → {}", build_receipt_path.display());
         return Ok(());
     }
 
@@ -119,10 +123,12 @@ pub(crate) fn run_build_minimal_erofs(cfg: BuildConfig, dry_run: bool) -> anyhow
     manifest
         .write(&manifest_path)
         .with_context(|| format!("writing manifest to {}", manifest_path.display()))?;
+    emit_minimal_build_receipt(&build_receipt_path, &manifest_path, &manifest)?;
 
     println!("kernel:        {}", kernel.display());
     println!("output_rootfs: {}", output_rootfs.display());
     println!("manifest:      {}", manifest_path.display());
+    println!("receipt:       {}", build_receipt_path.display());
     Ok(())
 }
 
@@ -134,6 +140,7 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
     let output_rootfs = cfg.output.dir.join("output.ext4");
     let daemon_binary_host = cfg.output.dir.join("m80-guestd");
     let manifest_path = manifest_path(&output_rootfs);
+    let build_receipt_path = build_receipt_path(&output_rootfs);
 
     let kernel_url = format!(
         "{}/{}/{}/{}",
@@ -173,6 +180,7 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         eprintln!("8. Unmount");
         eprintln!("9. Compute sha256 of 3 artifacts (kernel, output_rootfs, daemon_binary)");
         eprintln!("10. Write manifest → {}", manifest_path.display());
+        eprintln!("11. Write build receipt → {}", build_receipt_path.display());
         return Ok(());
     }
 
@@ -237,11 +245,41 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
     manifest
         .write(&manifest_path)
         .with_context(|| format!("writing manifest to {}", manifest_path.display()))?;
+    emit_minimal_build_receipt(&build_receipt_path, &manifest_path, &manifest)?;
 
     println!("kernel:        {}", kernel.display());
     println!("output_rootfs: {}", output_rootfs.display());
     println!("manifest:      {}", manifest_path.display());
+    println!("receipt:       {}", build_receipt_path.display());
     Ok(())
+}
+
+fn emit_minimal_build_receipt(
+    receipt_path: &Path,
+    manifest_path: &Path,
+    manifest: &m80_image_manifest::Manifest,
+) -> anyhow::Result<()> {
+    emit_build_receipt(
+        receipt_path,
+        manifest_path,
+        vec![
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::KernelImage,
+                path: manifest.kernel_image.clone(),
+                sha256: manifest.kernel_image_sha256.clone(),
+            },
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::OutputRootfsImage,
+                path: manifest.output_rootfs_image.clone(),
+                sha256: manifest.output_rootfs_sha256.clone(),
+            },
+            BuildReceiptArtifact {
+                kind: BuildReceiptArtifactKind::DaemonBinaryPath,
+                path: manifest.daemon_binary_path.clone(),
+                sha256: manifest.daemon_binary_sha256.clone(),
+            },
+        ],
+    )
 }
 
 fn require_host_busybox() -> anyhow::Result<()> {

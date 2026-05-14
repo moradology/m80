@@ -2,6 +2,7 @@
 
 The schema, validator, and sha256 verifier for m80 provenance records:
 `<rootfs>.manifest.json` travels beside every guest image, and
+`<rootfs>.build-receipt.json` pins the manifest itself. Separately,
 `host-binaries.manifest.json` records the installed host-side TCB binaries.
 
 ## Reason for being
@@ -53,6 +54,9 @@ once.
   `m80_jailer_harden`. `m80-preflight` owns live path matching, open-by-fd
   hashing, and root-owned/mode checks because those are host state, not guest
   image state.
+- `<rootfs>.build-receipt.json` is a deploy-time receipt with
+  `schema_version: 1`. It records the sha256 of `<rootfs>.manifest.json` plus
+  the artifact path/hash tuples that the manifest described.
 
 ## Schema
 
@@ -60,6 +64,11 @@ once.
 
 `schema_version: 1`. Records `binaries: Vec<HostBinaryEntry>`, where each entry
 has `name`, `path`, and `sha256`. Unknown fields fail closed.
+
+### build-receipt v1
+
+`schema_version: 1`. Records `manifest_path`, `manifest_sha256`, and
+`artifacts: Vec<BuildReceiptArtifact>`. Unknown fields fail closed.
 
 ### v5 (current)
 
@@ -108,6 +117,10 @@ artifacts.
   `from_bytes`, and `schema_version`.
 - `HostBinaryEntry { name, path, sha256 }`.
 - `HostBinaryName { Firecracker, Jailer, M80, M80Cli, M80JailerHarden }`.
+- `BuildReceipt::new(manifest_path, manifest_sha256, artifacts)`, `read`,
+  `write`, `from_bytes`, and `schema_version`.
+- `BuildReceiptArtifact { kind, path, sha256 }`.
+- `BuildReceiptArtifactKind { KernelImage, SourceRootfsImage, OutputRootfsImage, DaemonBinaryPath }`.
 - `Manifest::read(path: &Path) -> Result<Manifest, ManifestError>` — peek
   `schema_version` first via a probe struct, then deserialize the full
   struct, then enforce the kind/field invariant.
@@ -119,10 +132,12 @@ artifacts.
   `None`-valued fields.
 - `SCHEMA_VERSION: u32 = 5`.
 - `HOST_BINARIES_SCHEMA_VERSION: u32 = 1`.
+- `BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for
   m80-built network-neutral images.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
   `UnsupportedHostBinariesSchemaVersion(u32)`,
+  `UnsupportedBuildReceiptSchemaVersion(u32)`,
   `Sha256Mismatch { field, expected, actual }`,
   `InconsistentKind { kind, field, expected }`,
   `Io { path, source }`, `Json(serde_json::Error)`. The `Io` variant
@@ -162,4 +177,6 @@ artifacts.
 - `KernelKind::default()` is `Stock` (Rust Default trait check).
 - Schema v5: `RootfsFormat::Erofs` roundtrips through write → read.
 - Host-binaries v1: read/write roundtrip, unknown schema rejection, and
+  unknown-field rejection.
+- Build-receipt v1: read/write roundtrip, unknown schema rejection, and
   unknown-field rejection.
