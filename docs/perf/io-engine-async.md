@@ -37,7 +37,31 @@ The cutover therefore leaves `RLIMIT_MEMLOCK` inherited by default.
 
 ## Close Gate
 
-The functional cutover is verified. The performance gate remains open until an
-exec-with-I/O benchmark compares `Async` against the prior sync default for a
-large guest write and records the expected 10-30 ms improvement or documents a
-miss.
+The functional cutover is verified. The exec-with-I/O gate was measured on
+2026-05-14 with a temporary legacy-compatible version of
+`drive_sync_latency.rs`, because the historical before/after commits predate
+the later `drive_cache_type` field.
+
+Raw artifacts:
+
+- `crates/m80-firecracker/benches/snapshots/io-engine-sync-N10.json`
+- `crates/m80-firecracker/benches/snapshots/io-engine-async-N10.json`
+
+Comparison:
+
+- before tree: `5f2f281^` (`aef48f8`), Firecracker default synchronous drive
+  engine;
+- after tree: `5f2f281`, writable drives set `io_engine = Async`;
+- image: schema-4 minimal bundle `/tmp/m80-build/minimal-jp6ik42`;
+- workload: one real-KVM VM, `N=10`, each exec sample performs 100
+  `dd bs=4096 count=1 conv=fsync` writes followed by `sync`.
+
+| tree | launch | sync-heavy exec P50 | P95 | max | mean |
+|---|---:|---:|---:|---:|---:|
+| Sync/default | 924 ms | 60 ms | 79 ms | 79 ms | 67 ms |
+| Async | 937 ms | 60 ms | 80 ms | 80 ms | 69 ms |
+
+Result: no observed exec-with-I/O win on this host. The implementation remains
+functionally correct and keeps the Firecracker field available, but the
+expected 10-30 ms improvement did not reproduce in this workload. No density
+variance win is claimed from this result.

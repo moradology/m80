@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "bench": "drive_io_legacy",
+  "started_at_unix": 1778723840,
+  "n": 10,
+  "syncs_per_sample": 100,
+  "label": "Async",
+  "launch_ms": 937,
+  "unit": "ms",
+  "p50_ms": 60,
+  "p95_ms": 80,
+  "max_ms": 80,
+  "mean_ms": 69,
+  "samples_ms": [79,80,79,80,79,60,60,59,60,59]
+}
