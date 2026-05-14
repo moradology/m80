@@ -12,6 +12,9 @@ fn matches_declared_set_in_order() {
         Capability::CAP_CHOWN,
         Capability::CAP_FOWNER,
         Capability::CAP_KILL,
+        Capability::CAP_SETUID,
+        Capability::CAP_SETGID,
+        Capability::CAP_SETPCAP,
     ];
     assert_eq!(
         REQUIRED_CAPABILITIES, expected,

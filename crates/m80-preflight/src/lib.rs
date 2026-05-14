@@ -32,6 +32,9 @@ pub const REQUIRED_CAPABILITIES: &[Capability] = &[
     Capability::CAP_CHOWN,
     Capability::CAP_FOWNER,
     Capability::CAP_KILL,
+    Capability::CAP_SETUID,
+    Capability::CAP_SETGID,
+    Capability::CAP_SETPCAP,
 ];
 
 /// Classify process privilege from euid and effective Linux capabilities.
@@ -393,7 +396,7 @@ impl PreflightError {
                 "load the missing modules with `sudo modprobe <name>` or add them to /etc/modules to persist across reboots"
             }
             Self::PrivilegeUnavailable { .. } => {
-                "run as root, use `setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill+ep <binary>`, or set securityContext.capabilities.add in your pod spec"
+                "run as root, use `setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill,cap_setuid,cap_setgid,cap_setpcap+ep <binary>`, or set securityContext.capabilities.add in your pod spec"
             }
             Self::FirecrackerBinaryNotFound => {
                 "install firecracker to /opt/firecracker/bin/firecracker or set M80_FIRECRACKER_BIN to the binary path"

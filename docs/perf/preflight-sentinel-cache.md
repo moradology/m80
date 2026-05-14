@@ -33,7 +33,7 @@ The non-root invocation fails on the expected privilege gate:
 
 ```text
 preflight: insufficient privilege; missing capabilities:
-[CAP_NET_ADMIN, CAP_SYS_ADMIN, CAP_MKNOD, CAP_CHOWN, CAP_FOWNER, CAP_KILL]
+[CAP_NET_ADMIN, CAP_SYS_ADMIN, CAP_MKNOD, CAP_CHOWN, CAP_FOWNER, CAP_KILL, CAP_SETUID, CAP_SETGID, CAP_SETPCAP]
 ```
 
 The timing runs therefore used `sudo env ...` so preflight could run through the

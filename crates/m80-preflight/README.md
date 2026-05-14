@@ -68,8 +68,11 @@ which is the right place for a security review to start.
   13. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
-     `CAP_FOWNER`, `CAP_KILL`). Probed via the `caps` crate against the
-     process's effective set. Returns `PrivilegeStatus::Root` or
+     `CAP_FOWNER`, `CAP_KILL`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`).
+     `CAP_SETPCAP` is required so `m80-jailer-harden` can prune the official
+     jailer's bounding set before dropping its own effective/permitted cap
+     surface. Probed via the `caps` crate against the process's effective set.
+     Returns `PrivilegeStatus::Root` or
      `PrivilegeStatus::CapabilityBearing`.
   14. **Firecracker binary** — discovered via env override or default,
      `--version` must clear the documented CVE floor before any configured
@@ -148,7 +151,7 @@ which is the right place for a security review to start.
 - `PrivilegeStatus { Root, CapabilityBearing }`.
 - `REQUIRED_CAPABILITIES: &[caps::Capability]` — the per-call cap list
   (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
-  `CAP_FOWNER`, `CAP_KILL`).
+  `CAP_FOWNER`, `CAP_KILL`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`).
 - `ENV_FIRECRACKER_BIN`, `ENV_FIRECRACKER_VERSION`,
   `DEFAULT_FIRECRACKER_BIN`, `ENV_KERNEL_IMAGE`, `ENV_KERNEL_KIND`, and
   `ENV_ROOTFS_IMAGE` — shared keys/default used by the CLI when it displays or

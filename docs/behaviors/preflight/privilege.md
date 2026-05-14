@@ -25,13 +25,17 @@ capabilities:
 
 ```text
 sudo install -m 0755 target/release/m80 /usr/local/bin/m80
-sudo setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill+ep /usr/local/bin/m80
+sudo setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill,cap_setuid,cap_setgid,cap_setpcap+ep /usr/local/bin/m80
 getcap /usr/local/bin/m80
 ```
 
 The process must observe every capability in `REQUIRED_CAPABILITIES` in its
 effective set. Missing any one of them returns
 `PreflightError::PrivilegeUnavailable`.
+
+`CAP_SETPCAP` is consumed at the hardening-wrapper boundary: it lets
+`m80-jailer-harden` drop unneeded capabilities from the bounding set, and it is
+not retained in the official jailer's effective/permitted sets.
 
 ### Privileged container capability set
 
@@ -48,6 +52,9 @@ securityContext:
       - CHOWN
       - FOWNER
       - KILL
+      - SETUID
+      - SETGID
+      - SETPCAP
 ```
 
 The container also needs the host resources that m80 uses, including `/dev/kvm`

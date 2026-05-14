@@ -5,13 +5,21 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
-use caps::CapSet;
+use caps::{CapSet, Capability, CapsHashSet};
 use nix::sched::{unshare, CloneFlags};
 use nix::sys::prctl;
 use nix::sys::resource::{setrlimit, Resource};
 use nix::sys::signal::{SigSet, SigmaskHow, Signal};
 use nix::sys::stat::{umask, Mode};
 use nix::unistd::setgroups;
+
+const OFFICIAL_JAILER_CAPABILITIES: &[Capability] = &[
+    Capability::CAP_SYS_CHROOT,
+    Capability::CAP_MKNOD,
+    Capability::CAP_SETUID,
+    Capability::CAP_SETGID,
+    Capability::CAP_SYS_ADMIN,
+];
 
 /// Parsed command-line input for `m80-jailer-harden`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,7 +100,7 @@ pub enum HardenError {
     #[error("setgroups([]): {0}")]
     SetGroups(#[source] nix::Error),
     /// Capability set could not be cleared.
-    #[error("clear {set} capabilities: {source}")]
+    #[error("prune {set} capabilities: {source}")]
     ClearCaps {
         /// Capability set name.
         set: &'static str,
@@ -257,6 +265,9 @@ pub fn apply_process_hardening(
         set: "ambient",
         source,
     })?;
+    prune_bounding_capabilities()?;
+    retain_official_jailer_capabilities(CapSet::Effective, "effective")?;
+    retain_official_jailer_capabilities(CapSet::Permitted, "permitted")?;
     prctl::set_no_new_privs().map_err(HardenError::NoNewPrivs)?;
     prctl::set_pdeathsig(Signal::SIGKILL).map_err(HardenError::ParentDeathSignal)?;
     umask(Mode::from_bits_truncate(0o077));
@@ -265,6 +276,43 @@ pub fn apply_process_hardening(
         .map_err(HardenError::SignalMask)?;
     close_inherited_fds()?;
     Ok(())
+}
+
+fn official_jailer_capability_set() -> CapsHashSet {
+    OFFICIAL_JAILER_CAPABILITIES.iter().copied().collect()
+}
+
+fn prune_bounding_capabilities() -> Result<(), HardenError> {
+    let allowed = official_jailer_capability_set();
+    let current = caps::read(None, CapSet::Bounding).map_err(|source| HardenError::ClearCaps {
+        set: "bounding",
+        source,
+    })?;
+    for cap in current {
+        if !allowed.contains(&cap) {
+            caps::drop(None, CapSet::Bounding, cap).map_err(|source| HardenError::ClearCaps {
+                set: "bounding",
+                source,
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn retain_official_jailer_capabilities(
+    cap_set: CapSet,
+    set_name: &'static str,
+) -> Result<(), HardenError> {
+    let allowed = official_jailer_capability_set();
+    let mut current = caps::read(None, cap_set).map_err(|source| HardenError::ClearCaps {
+        set: set_name,
+        source,
+    })?;
+    current.retain(|cap| allowed.contains(cap));
+    caps::set(None, cap_set, &current).map_err(|source| HardenError::ClearCaps {
+        set: set_name,
+        source,
+    })
 }
 
 fn apply_resource_limits(resource_limits: &[ResourceLimit]) -> Result<(), HardenError> {
@@ -487,5 +535,35 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn official_jailer_capability_allowlist_is_pinned() {
+        let allowed = official_jailer_capability_set();
+
+        assert_eq!(allowed.len(), 5);
+        assert!(allowed.contains(&Capability::CAP_SYS_CHROOT));
+        assert!(allowed.contains(&Capability::CAP_MKNOD));
+        assert!(allowed.contains(&Capability::CAP_SETUID));
+        assert!(allowed.contains(&Capability::CAP_SETGID));
+        assert!(allowed.contains(&Capability::CAP_SYS_ADMIN));
+    }
+
+    #[test]
+    fn pre_jailer_dangerous_caps_are_not_allowed() {
+        let allowed = official_jailer_capability_set();
+
+        for cap in [
+            Capability::CAP_NET_ADMIN,
+            Capability::CAP_KILL,
+            Capability::CAP_FOWNER,
+            Capability::CAP_CHOWN,
+            Capability::CAP_SYS_PTRACE,
+            Capability::CAP_SYS_MODULE,
+            Capability::CAP_SYS_RAWIO,
+            Capability::CAP_SETPCAP,
+        ] {
+            assert!(!allowed.contains(&cap), "{cap} must be pruned");
+        }
     }
 }

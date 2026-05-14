@@ -52,6 +52,28 @@ Test: `crates/m80-jailer-harden/tests/integration_root.rs::wrapper_new_cgroup_ns
 (#[ignore]) starts the wrapper from inside a real `/sys/fs/cgroup/m80-firecracker/<id>`
 leaf and asserts the exec target sees `/proc/self/cgroup` as `0::/`.
 
+## pre-jailer-capability-pruning
+
+`m80-jailer-harden` narrows the capability surface before it execs
+Firecracker's official jailer. The bounding set is pruned to the official jailer
+minimum: `CAP_SYS_CHROOT`, `CAP_MKNOD`, `CAP_SETUID`, `CAP_SETGID`, and
+`CAP_SYS_ADMIN`. The effective and permitted sets are then retained to only the
+currently-held members of that same allowlist.
+
+Host capabilities needed before the wrapper boundary do not survive into the
+official jailer. In particular, `CAP_NET_ADMIN`, `CAP_KILL`, `CAP_FOWNER`,
+`CAP_CHOWN`, `CAP_SYS_PTRACE`, `CAP_SYS_MODULE`, `CAP_SYS_RAWIO`, and
+`CAP_SETPCAP` are removed from the official jailer execution window. The wrapper
+needs `CAP_SETPCAP` only long enough to call `PR_CAPBSET_DROP`; preflight
+requires it for non-root capability-bearing launches and the wrapper removes it
+before exec.
+
+Test: `crates/m80-jailer-harden/src/lib.rs::tests::official_jailer_capability_allowlist_is_pinned`.
+Test: `crates/m80-jailer-harden/src/lib.rs::tests::pre_jailer_dangerous_caps_are_not_allowed`.
+Test: `crates/m80-jailer-harden/tests/integration_root.rs::wrapper_applies_inherited_hardening_before_exec`
+(#[ignore]) asserts `CapBnd`, `CapPrm`, and `CapEff` after the wrapper exec
+boundary.
+
 ## startup-check
 
 m80 verifies jailer launch privilege once during process preflight, before
@@ -62,11 +84,16 @@ The accepted privilege states are effective root or the required Linux
 capability set in the process effective set. Missing privilege is reported by
 `m80-preflight` as `PreflightError::PrivilegeUnavailable`.
 
+The non-root capability-bearing path includes `CAP_SETPCAP` because the
+hardening wrapper must prune the bounding set before it drops that capability
+from the official jailer exec surface.
+
 Source: predecessor `crates/sandbox/agent-sandbox-firecracker/src/foundation.rs`
 `verify_jailer_launch_privilege` lines 847-853. m80 hard-cuts to the
 centralized `m80-preflight` contract.
 
 Test: `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs::privilege_gate_rejects_missing_capabilities`.
+Test: `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs::privilege_gate_rejects_missing_setpcap_for_jailer_wrapper_pruning`.
 
 ## typed-error
 

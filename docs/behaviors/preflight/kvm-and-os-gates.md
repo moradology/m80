@@ -100,7 +100,10 @@ m80 accepts exactly two startup privilege shapes:
   effective Linux capability set
 
 `REQUIRED_CAPABILITIES` is `CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`,
-`CAP_CHOWN`, `CAP_FOWNER`, and `CAP_KILL`. Missing capabilities return
+`CAP_CHOWN`, `CAP_FOWNER`, `CAP_KILL`, `CAP_SETUID`, `CAP_SETGID`, and
+`CAP_SETPCAP`. `CAP_SETPCAP` is required only before the jailer hardening
+wrapper boundary so it can prune the official jailer's bounding set; the wrapper
+removes it before exec. Missing capabilities return
 `PreflightError::PrivilegeUnavailable`.
 
 There is no passwordless-sudo fallback and no per-call privilege shim in m80.
@@ -121,3 +124,4 @@ capabilities through the container runtime.
 - `crates/m80-preflight/src/checks_tests.rs::preflight_cgroup_v2_unavailability_typed`
 - `crates/m80-preflight/src/checks_tests.rs::cpu_vulnerability_mds_vulnerable_fails_closed`
 - `crates/m80-preflight/src/checks_tests.rs::cpu_vulnerability_scan_reports_all_configured_files`
+- `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs::privilege_gate_rejects_missing_setpcap_for_jailer_wrapper_pruning`

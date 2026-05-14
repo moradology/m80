@@ -49,7 +49,7 @@ fn wrapper_applies_inherited_hardening_before_exec() {
                 r#"if [ -n "$M80_SECRET_SHOULD_NOT_LEAK" ]; then echo env-leaked; exit 44; fi
 if target=$(readlink /proc/self/fd/{inherited_fd} 2>/dev/null) && [ "$target" = "{inherited_path}" ]; then echo fd-leaked; exit 45; fi
 printf 'UMASK=%s\n' "$(umask)"
-grep -E '^(Groups|NoNewPrivs|CapInh|CapAmb|SigBlk):' /proc/self/status
+grep -E '^(Groups|NoNewPrivs|CapInh|CapAmb|CapBnd|CapPrm|CapEff|SigBlk):' /proc/self/status
 "#,
                 inherited_fd = inherited_fd,
                 inherited_path = inherited_path
@@ -72,12 +72,47 @@ grep -E '^(Groups|NoNewPrivs|CapInh|CapAmb|SigBlk):' /proc/self/status
     assert!(stdout.contains("CapInh:\t0000000000000000"), "{stdout}");
     assert!(stdout.contains("CapAmb:\t0000000000000000"), "{stdout}");
     assert!(stdout.contains("SigBlk:\t0000000000000000"), "{stdout}");
+    for label in ["CapBnd", "CapPrm", "CapEff"] {
+        let mask = status_hex_value(&stdout, label);
+        assert_eq!(
+            mask & official_jailer_cap_mask(),
+            official_jailer_cap_mask(),
+            "{label} missing official jailer caps:\n{stdout}"
+        );
+        assert_eq!(
+            mask & forbidden_pre_jailer_cap_mask(),
+            0,
+            "{label} retained forbidden pre-jailer caps:\n{stdout}"
+        );
+    }
 
     let groups = stdout
         .lines()
         .find(|line| line.starts_with("Groups:"))
         .unwrap_or_else(|| panic!("missing Groups line:\n{stdout}"));
     assert_eq!(groups.trim(), "Groups:", "{stdout}");
+}
+
+fn status_hex_value(stdout: &str, label: &str) -> u64 {
+    let prefix = format!("{label}:\t");
+    let line = stdout
+        .lines()
+        .find(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("missing {label} line:\n{stdout}"));
+    u64::from_str_radix(line[prefix.len()..].trim(), 16)
+        .unwrap_or_else(|err| panic!("parse {label} from {line:?}: {err}"))
+}
+
+fn official_jailer_cap_mask() -> u64 {
+    cap_mask(&[6, 7, 18, 21, 27])
+}
+
+fn forbidden_pre_jailer_cap_mask() -> u64 {
+    cap_mask(&[0, 3, 5, 8, 12, 16, 17, 19])
+}
+
+fn cap_mask(indices: &[u8]) -> u64 {
+    indices.iter().fold(0, |mask, index| mask | (1u64 << index))
 }
 
 #[test]
