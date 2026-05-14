@@ -38,7 +38,8 @@ fn join_netns_routes_guest_traffic_through_caller_namespace() {
                 spec: m80_firecracker::NetnsSpec {
                     netns_path: topology.join.path.clone(),
                     tap_name: topology.tap_name.clone(),
-                    guest_mac: "02:00:00:00:80:02".to_owned(),
+                    guest_mac: m80_firecracker::MacAddr::parse("02:00:00:00:80:02")
+                        .expect("valid guest MAC"),
                     guest_ipv4: topology.guest_ipv4,
                     gateway_ipv4: topology.peer_ipv4,
                     dns_resolvers: vec![topology.peer_ipv4],

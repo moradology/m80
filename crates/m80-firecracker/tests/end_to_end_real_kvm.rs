@@ -435,7 +435,8 @@ fn join_netns_policy(
         spec: m80_firecracker::NetnsSpec {
             netns_path: netns_path.to_path_buf(),
             tap_name: tap_name.to_owned(),
-            guest_mac: "02:00:00:00:80:01".to_owned(),
+            guest_mac: m80_firecracker::MacAddr::parse("02:00:00:00:80:01")
+                .expect("valid guest MAC"),
             guest_ipv4: "10.80.0.2/24".parse().unwrap(),
             gateway_ipv4: std::net::Ipv4Addr::new(10, 80, 0, 1),
             dns_resolvers: vec![std::net::Ipv4Addr::new(10, 80, 0, 1)],

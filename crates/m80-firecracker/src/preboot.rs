@@ -9,7 +9,7 @@ use m80_firecracker_client::{
 };
 use m80_image_manifest::{ImageKind, KernelKind, RootfsFormat};
 
-use crate::error::FcError;
+use crate::error::{ConfigError, FcError};
 use crate::layout::preallocated_drive_slot_jail_path;
 use crate::types::{
     RealizedNetwork, SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
@@ -66,6 +66,7 @@ impl PrebootPut {
 }
 
 /// Build the ordered Firecracker resource PUTs for a cold boot.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn plan_preboot_puts(
     config: &SandboxConfig,
     vm_id: &str,
@@ -75,7 +76,10 @@ pub(crate) fn plan_preboot_puts(
     include_workspace_drive: bool,
     network: &RealizedNetwork,
     extra_boot_args: &[String],
-) -> Vec<PrebootPut> {
+) -> Result<Vec<PrebootPut>, FcError> {
+    validate_caller_boot_args_if_present(config.boot_args.as_deref())?;
+    validate_cmdline_tokens("extra_boot_args", extra_boot_args)?;
+
     let mut puts = vec![
         PrebootPut::MachineConfig(machine_config_for(config)),
         PrebootPut::BootSource(BootSourceConfig {
@@ -87,7 +91,7 @@ pub(crate) fn plan_preboot_puts(
                 config.boot_args.as_deref(),
                 include_workspace_drive,
                 extra_boot_args,
-            )),
+            )?),
             initrd_path: None,
         }),
         PrebootPut::Drive(DriveConfig {
@@ -156,7 +160,7 @@ pub(crate) fn plan_preboot_puts(
         uds_path: PathBuf::from("/vsock.sock"),
     }));
 
-    puts
+    Ok(puts)
 }
 
 /// Apply the ordered preboot PUT plan to Firecracker.
@@ -199,8 +203,53 @@ fn writable_drive_cache_type(config: &SandboxConfig) -> CacheType {
     config.drive_cache_type.unwrap_or(CacheType::Unsafe)
 }
 
-/// Build kernel boot args for the given `(image_kind, kernel_kind)` pair,
-/// honoring any caller override on `SandboxConfig::boot_args`.
+/// Validate caller-supplied boot args before admission consumes a permit.
+pub(crate) fn validate_caller_boot_args_if_present(boot_args: Option<&str>) -> Result<(), FcError> {
+    if let Some(boot_args) = boot_args {
+        validate_caller_boot_args(boot_args)?;
+    }
+    Ok(())
+}
+
+fn validate_caller_boot_args(boot_args: &str) -> Result<(), FcError> {
+    if boot_args.chars().any(|ch| ch.is_control() && ch != ' ') {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "boot_args",
+            reason: "kernel cmdline extras must be printable space-separated tokens".to_owned(),
+        }));
+    }
+
+    for token in boot_args.split_whitespace() {
+        if caller_token_is_reserved(token) {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "boot_args",
+                reason: format!("reserved kernel cmdline token {token:?} is owned by m80"),
+            }));
+        }
+    }
+    Ok(())
+}
+
+fn caller_token_is_reserved(token: &str) -> bool {
+    token.starts_with("init=")
+        || token.starts_with("m80.workspace=")
+        || token.starts_with("m80.rootfs=")
+        || token.starts_with("rootfstype=")
+}
+
+fn validate_cmdline_tokens(field: &'static str, tokens: &[String]) -> Result<(), FcError> {
+    for token in tokens {
+        if token.is_empty() || token.chars().any(char::is_whitespace) {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field,
+                reason: format!("cmdline token {token:?} is empty or contains whitespace"),
+            }));
+        }
+    }
+    Ok(())
+}
+
+/// Build kernel boot args for the given `(image_kind, kernel_kind)` pair.
 fn boot_args_for(
     kind: ImageKind,
     kernel_kind: KernelKind,
@@ -208,16 +257,17 @@ fn boot_args_for(
     config_override: Option<&str>,
     include_workspace_drive: bool,
     extra_boot_args: &[String],
-) -> String {
-    let phase_trace_verbose_kernel = config_override.is_none()
-        && kernel_kind == KernelKind::Stripped
+) -> Result<String, FcError> {
+    validate_caller_boot_args_if_present(config_override)?;
+    validate_cmdline_tokens("extra_boot_args", extra_boot_args)?;
+
+    let phase_trace_verbose_kernel = kernel_kind == KernelKind::Stripped
         && std::env::var("M80_PHASE_TRACE").is_ok_and(|value| value == "1");
-    let base = match (config_override, kind, kernel_kind) {
-        (Some(custom), _, _) => custom.to_owned(),
-        (None, ImageKind::Ubuntu | ImageKind::Minimal, KernelKind::Stock) => {
+    let base = match (kind, kernel_kind) {
+        (ImageKind::Ubuntu | ImageKind::Minimal, KernelKind::Stock) => {
             format!("{COMMON_BOOT_ARGS} init=/m80-guestd")
         }
-        (None, ImageKind::Ubuntu | ImageKind::Minimal, KernelKind::Stripped) => {
+        (ImageKind::Ubuntu | ImageKind::Minimal, KernelKind::Stripped) => {
             format!("{STRIPPED_BOOT_ARGS} init=/m80-guestd")
         }
     };
@@ -234,7 +284,13 @@ fn boot_args_for(
         args.push(' ');
         args.push_str(&extra_boot_args.join(" "));
     }
-    args
+    if let Some(custom) = config_override {
+        if !custom.trim().is_empty() {
+            args.push(' ');
+            args.push_str(custom.trim());
+        }
+    }
+    Ok(args)
 }
 
 #[cfg(test)]

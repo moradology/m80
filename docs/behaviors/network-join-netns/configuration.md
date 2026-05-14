@@ -2,10 +2,12 @@
 
 `NetworkPolicy::JoinNetns { spec: NetnsSpec }` launches Firecracker inside a
 caller-provided network namespace and attaches a caller-created TAP to the
-guest. `NetnsSpec` carries the namespace path, TAP name, guest MAC, guest
-IPv4/prefix, gateway, and DNS resolvers. m80 does not create the namespace, add
-links, configure routes, or install firewall rules for this mode. The caller
-owns that setup and teardown.
+guest. `NetnsSpec` carries the namespace path, TAP name, typed guest MAC, guest
+IPv4/prefix, gateway, and DNS resolvers. The MAC is a strict
+`HH:HH:HH:HH:HH:HH` value, so it cannot inject additional kernel-cmdline
+tokens when m80 builds the static PID-1 network arguments. m80 does not create
+the namespace, add links, configure routes, or install firewall rules for this
+mode. The caller owns that setup and teardown.
 
 During launch, `m80-net-mode::resolve` carries the `NetnsSpec` through as
 `VmNetworkMode::JoinNetns`. `m80-firecracker` copies the namespace path into
@@ -25,6 +27,7 @@ namespace with the desired TAP, routes, and network policy.
 
 Tests:
 - `crates/m80-net-mode/tests/resolve.rs::join_netns_carries_path_through_resolver`
+- `crates/m80-net-mode/tests/resolve.rs::netns_spec_rejects_guest_mac_with_whitespace`
 - `crates/m80-jailer/src/materialized.rs::tests::validate_netns_path_rejects_regular_file`
 - `crates/m80-jailer/src/materialized.rs::tests::validate_netns_path_rejects_symlink`
 - `crates/m80-firecracker/tests/end_to_end_real_kvm.rs::end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace`

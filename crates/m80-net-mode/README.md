@@ -40,7 +40,7 @@ It's small. It earns its keep by being the API border between
   a future `NetworkPolicy::parse_from_strings(...)` entrypoint would be
   the place to surface those errors.
 - `JoinNetns` carries a `NetnsSpec`: namespace fd path, caller-created TAP
-  name, guest MAC, guest IPv4/prefix, gateway, and DNS resolvers. The caller owns namespace
+  name, strict `HH:HH:HH:HH:HH:HH` guest MAC, guest IPv4/prefix, gateway, and DNS resolvers. The caller owns namespace
   creation, TAP/link setup, routing, firewall rules, and teardown. m80 validates
   and joins the namespace downstream in `m80-jailer`, emits the Firecracker
   network-interface PUT, and passes the static guest network tokens to PID 1.
@@ -55,7 +55,8 @@ It's small. It earns its keep by being the API border between
 ## Public surface
 
 - `NetworkPolicy` — caller-facing intent enum: `NoEgress` | `AllowOutbound { exceptions: Vec<Ipv4Net> }` | `JoinNetns { spec: NetnsSpec }`.
-- `NetnsSpec` — caller-owned namespace path, TAP name, guest MAC, guest IPv4/prefix, gateway, and DNS resolvers.
+- `NetnsSpec` — caller-owned namespace path, TAP name, typed guest MAC, guest IPv4/prefix, gateway, and DNS resolvers.
+- `MacAddr` — strict six-octet colon-separated MAC address newtype used by `NetnsSpec`.
 - `OutboundIntent` — pre-validated outbound NAT payload: `{ exceptions: Vec<Ipv4Net> }`.
 - `VmNetworkMode` — resolved in-process implementation mode: `NoEgress` | `OutboundNat { plan: OutboundIntent }` | `JoinNetns { spec: NetnsSpec }`. This is not a serialized config format.
 - `resolve(policy: &NetworkPolicy) -> VmNetworkMode` — pure, infallible resolution.
@@ -85,6 +86,6 @@ It's small. It earns its keep by being the API border between
 - `resolve(JoinNetns { ... })` carries the namespace path and static guest NIC
   contract through unchanged.
 - `NetworkPolicy`, `NetnsSpec`, and `OutboundIntent` reject unknown serialized
-  fields.
+  fields; `NetnsSpec` also rejects malformed or whitespace-bearing guest MACs.
 - `compromised_vmm_network_boundary_is_explicit_join_netns_only` pins that only
   `JoinNetns` carries a VMM network namespace path.

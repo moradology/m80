@@ -314,9 +314,12 @@ Stripped-kernel differences from the Stock baseline:
   UARTs. Locked at `=1` (not `=0`): preserving console output for boot-stage
   diagnostics is non-negotiable per CLAUDE.md "diagnostics before hypotheses".
 
-`SandboxConfig::boot_args` overrides the base cmdline when set; m80 still
-appends `m80.workspace=0|1` because it is an internal guestd/layout contract,
-not caller policy.
+`SandboxConfig::boot_args` is append-only. m80 always emits the selected base
+cmdline, `init=/m80-guestd`, `m80.workspace=0|1`, and `m80.rootfs=<format>`
+first; caller extras are appended only after those m80-owned tokens. Caller
+extras that try to set m80-owned boot tokens such as `init=`,
+`m80.workspace=`, `m80.rootfs=`, or `rootfstype=` fail admission with
+`ConfigError::InvalidValue`.
 
 ### Drive layout
 

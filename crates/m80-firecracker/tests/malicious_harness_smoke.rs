@@ -38,11 +38,7 @@ fn malicious_guestd_noop_reaches_ready_signal() {
             cpuset_cpus: None,
             cpu_template: None,
             drive_cache_type: None,
-            boot_args: Some(
-                "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd \
-                 m80.malicious_attack=noop"
-                    .into(),
-            ),
+            boot_args: Some("m80.malicious_attack=noop".into()),
             overlay_size_bytes: 512 * 1024 * 1024,
             idle_timeout: None,
             daemonize: false,

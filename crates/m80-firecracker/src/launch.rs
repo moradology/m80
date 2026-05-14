@@ -986,7 +986,7 @@ fn phase_6_network_realize(
         VmNetworkMode::JoinNetns { spec } => Ok(RealizedNetwork::JoinNetns {
             netns_path: spec.netns_path,
             tap_name: spec.tap_name,
-            guest_mac: spec.guest_mac,
+            guest_mac: spec.guest_mac.to_string(),
             guest_ipv4: spec.guest_ipv4.to_string(),
             gateway_ipv4: spec.gateway_ipv4.to_string(),
             dns_resolvers: spec
@@ -1213,7 +1213,7 @@ fn phase_11_rest_puts(
         storage.scratch.is_some(),
         network,
         extra_boot_args,
-    );
+    )?;
     apply_preboot_puts(client, &puts, vm_id)
 }
 

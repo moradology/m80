@@ -3,7 +3,7 @@
 //! Beads: m80-xbn.1.* (resolver semantics), m80-xbn.2.* (single-seam decision).
 
 use ipnet::Ipv4Net;
-use m80_net_mode::{resolve, NetnsSpec, NetworkPolicy, OutboundIntent, VmNetworkMode};
+use m80_net_mode::{resolve, MacAddr, NetnsSpec, NetworkPolicy, OutboundIntent, VmNetworkMode};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 
@@ -78,7 +78,7 @@ fn netns_spec(netns_path: &str) -> NetnsSpec {
     NetnsSpec {
         netns_path: PathBuf::from(netns_path),
         tap_name: "tapm80test".to_owned(),
-        guest_mac: "02:00:00:00:80:01".to_owned(),
+        guest_mac: MacAddr::parse("02:00:00:00:80:01").expect("valid guest MAC"),
         guest_ipv4: "10.80.0.2/24".parse().unwrap(),
         gateway_ipv4: Ipv4Addr::new(10, 80, 0, 1),
         dns_resolvers: vec![Ipv4Addr::new(10, 80, 0, 1)],
@@ -154,6 +154,25 @@ fn netns_spec_rejects_unknown_fields() {
     .unwrap_err();
     assert!(
         err.to_string().contains("unknown field"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn netns_spec_rejects_guest_mac_with_whitespace() {
+    let err = serde_json::from_str::<NetnsSpec>(
+        r#"{
+            "netns_path":"/var/run/netns/m80-test",
+            "tap_name":"tapm80test",
+            "guest_mac":"02:00:00:00:80:01 init=/bin/sh",
+            "guest_ipv4":"10.80.0.2/24",
+            "gateway_ipv4":"10.80.0.1",
+            "dns_resolvers":["10.80.0.1"]
+        }"#,
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("invalid MAC address"),
         "unexpected error: {err}"
     );
 }

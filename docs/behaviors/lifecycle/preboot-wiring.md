@@ -30,12 +30,14 @@ backoff until `API_SOCKET_TIMEOUT`.
 m80 PUTs `/boot-source` after machine config and before any drives. The kernel
 is bind-mounted into the jailer chroot at `/kernel`, so Firecracker receives
 `kernel_image_path=/kernel`. Boot args are selected from the image kind and
-kernel kind, unless `SandboxConfig::boot_args` overrides the base command line.
-Both Ubuntu and Minimal image kinds receive `init=/m80-guestd`; the image kind
-selects userland, not a different startup model. This captures the m80
+kernel kind. Both Ubuntu and Minimal image kinds receive `init=/m80-guestd`;
+the image kind selects userland, not a different startup model.
+`SandboxConfig::boot_args` is append-only caller input: m80-owned tokens are
+emitted first, and caller extras that try to set `init=`, `m80.workspace=`,
+`m80.rootfs=`, or `rootfstype=` fail admission. This captures the m80
 equivalent of predecessor's `BootSourceConfig` construction at
 `crates/sandbox/agent-sandbox-firecracker/src/boot.rs:115-122` and REST PUT at
-`client.rs:138`.
+`client.rs:138`, with the hard cutover that callers cannot replace PID 1.
 
 ## Root Drive
 

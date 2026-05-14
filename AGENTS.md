@@ -48,6 +48,9 @@ Avoid Rust files larger than 500 lines. **Hard limit: 1000 lines** — files cro
 
 - Smallest surface that satisfies the bead.
 - Touch a non-trivial invariant → write a regression test that pins it.
+- Kernel cmdline construction is security-critical: caller boot args are
+  append-only extras, never a full override, and m80-owned tokens such as
+  `init=` stay fail-closed.
 - Touch a kernel-facing primitive (mount/ns/caps/signal/seccomp/cgroup/sudo
   wrapping) → PR must include a real-KVM smoke paste. See
   [`AGENTS.md`](AGENTS.md) → "Kernel-touching diffs require smoke evidence".

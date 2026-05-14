@@ -34,7 +34,7 @@ pub use layout::{
     ROOTFS_OVERLAY_IMAGE,
 };
 pub use m80_firecracker_client::{CacheType, CpuTemplate};
-pub use m80_net_mode::{NetnsSpec, NetworkPolicy};
+pub use m80_net_mode::{MacAddr, NetnsSpec, NetworkPolicy};
 pub use m80_snapshot::SnapshotPaths;
 pub use m80_storage::ChangeSet;
 pub use runroot::OWNERSHIP_LOCK;

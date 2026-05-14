@@ -11,6 +11,7 @@ use m80_jailer::inspect_run_dir;
 
 use crate::error::{ConfigError, FcError};
 use crate::layout::{socket_path_len, SUN_PATH_BUDGET};
+use crate::preboot::validate_caller_boot_args_if_present;
 use crate::runroot::{run_dir_liveness, RunDirLiveness};
 use crate::types::{
     AdmissionPermit, Backend, BackendConfig, CgroupMode, ConfigSource, EffectiveConfig,
@@ -57,6 +58,8 @@ impl Backend {
     /// caller-supplied `vm_id` would overflow the AF_UNIX `sun_path` cap.
     /// Does not block.
     pub fn admit(self: &Arc<Self>, config: SandboxConfig) -> Result<Sandbox, FcError> {
+        validate_caller_boot_args_if_present(config.boot_args.as_deref())?;
+
         // Caller-supplied vm_ids are validated up front so the failure
         // surfaces as a typed config error rather than as an opaque
         // `bind() AF_UNIX path too long` deep inside launch. The

@@ -15,6 +15,7 @@ fn plan_without_workspace() -> Vec<PrebootPut> {
         &RealizedNetwork::NoEgress,
         &[],
     )
+    .unwrap()
 }
 
 #[test]
@@ -36,7 +37,8 @@ fn machine_config_put_before_boot() {
         false,
         &RealizedNetwork::NoEgress,
         &[],
-    );
+    )
+    .unwrap();
 
     let PrebootPut::MachineConfig(machine) = &puts[0] else {
         panic!("first preboot PUT must be machine config");
@@ -143,7 +145,8 @@ fn writable_drive_cache_type_override_preserves_writeback() {
         true,
         &RealizedNetwork::NoEgress,
         &[],
-    );
+    )
+    .unwrap();
 
     let PrebootPut::Drive(root) = &puts[2] else {
         panic!("third preboot PUT must be rootfs drive");
@@ -171,7 +174,8 @@ fn scratch_drive_put_with_workspace_id() {
         true,
         &RealizedNetwork::NoEgress,
         &[],
-    );
+    )
+    .unwrap();
 
     let PrebootPut::Drive(workspace) = &puts[4] else {
         panic!("workspace drive must be inserted before vsock");
@@ -214,7 +218,8 @@ fn preallocated_drive_slots_are_after_rootfs_overlay_and_before_vsock() {
         false,
         &RealizedNetwork::NoEgress,
         &[],
-    );
+    )
+    .unwrap();
 
     let PrebootPut::Drive(slot0) = &puts[4] else {
         panic!("first hotplug slot must follow rootfs overlay");
@@ -254,7 +259,8 @@ fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
             guest_mac: "02:00:00:00:00:02".to_owned(),
         },
         &[],
-    );
+    )
+    .unwrap();
 
     let PrebootPut::NetworkInterface(nic) = &puts[4] else {
         panic!("network interface PUT must follow rootfs overlay drives");
@@ -289,7 +295,8 @@ fn layer_1_preboot_plan_contains_only_documented_devices() {
             guest_mac: "02:00:00:00:00:02".to_owned(),
         },
         &[],
-    );
+    )
+    .unwrap();
 
     let kinds = puts
         .iter()
@@ -360,7 +367,8 @@ fn preboot_put_phase_names_include_individual_devices() {
             guest_mac: "02:00:00:00:00:02".to_owned(),
         },
         &[],
-    );
+    )
+    .unwrap();
 
     let names = puts.iter().map(PrebootPut::phase_name).collect::<Vec<_>>();
 
