@@ -37,6 +37,37 @@ fn phase_1_run_root_prep_creates_owner_only_run_dir() {
 }
 
 #[test]
+fn launch_jailer_config_enables_pid_namespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let jailer_bin = dir.path().join("jailer");
+    let jailer_harden_bin = dir.path().join("m80-jailer-harden");
+    let firecracker_bin = dir.path().join("firecracker");
+    let run_dir = dir.path().join("vm-newpid");
+
+    let config = build_jailer_launch_config(
+        JailerLaunchConfigInput {
+            jailer_bin: &jailer_bin,
+            jailer_harden_bin: &jailer_harden_bin,
+            firecracker_bin: &firecracker_bin,
+            uid: 3000,
+            gid: 3000,
+            run_dir: &run_dir,
+            daemonize: false,
+            netns_path: None,
+        },
+        Vec::new(),
+        vec![JailerSocket::Firecracker, JailerSocket::Vsock],
+    );
+
+    assert!(config.new_pid_ns);
+    assert_eq!(config.daemonize, false);
+    assert_eq!(
+        config.seccomp_filter_path.as_deref(),
+        Some(Path::new(FIRECRACKER_SECCOMP_FILTER_JAIL_PATH))
+    );
+}
+
+#[test]
 fn ready_signal_accepts_protocol_version_byte() {
     let dir = tempfile::tempdir().unwrap();
     let ready_path = dir.path().join("ready.sock");

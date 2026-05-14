@@ -211,6 +211,12 @@ static PID-1 guest network tokens for `eth0`.
 network namespaces for the Firecracker VMM process; the only current VMM netns
 placement promise is `JoinNetns`.
 
+Cold and restored launches ask the official Firecracker jailer for a private
+PID namespace, so Firecracker is PID 1 in that namespace and m80 records
+`jailer_pid = 0` as the no-live-jailer-parent sentinel while tracking the
+host-visible Firecracker PID normally. This keeps VMM descendants scoped to the
+namespace the jailer owns.
+
 `SandboxConfig::daemonize` asks the official Firecracker jailer to double-fork
 before exec'ing Firecracker. The Firecracker API socket remains the management
 surface; m80 records the daemon Firecracker PID and uses `jailer_pid = 0` as the

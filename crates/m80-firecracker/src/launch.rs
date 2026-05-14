@@ -854,6 +854,17 @@ struct JailerMaterializeInput<'a> {
     netns_path: Option<&'a Path>,
 }
 
+struct JailerLaunchConfigInput<'a> {
+    jailer_bin: &'a Path,
+    jailer_harden_bin: &'a Path,
+    firecracker_bin: &'a Path,
+    uid: u32,
+    gid: u32,
+    run_dir: &'a Path,
+    daemonize: bool,
+    netns_path: Option<&'a Path>,
+}
+
 fn phase_4_jailer_materialize(
     input: JailerMaterializeInput<'_>,
 ) -> Result<m80_jailer::MaterializedJail, FcError> {
@@ -902,7 +913,31 @@ fn phase_4_jailer_materialize(
 
     let sockets = vec![JailerSocket::Firecracker, JailerSocket::Vsock];
 
-    let jailer_config = JailerConfig {
+    let jailer_config = build_jailer_launch_config(
+        JailerLaunchConfigInput {
+            jailer_bin: input.jailer_bin,
+            jailer_harden_bin: input.jailer_harden_bin,
+            firecracker_bin: input.firecracker_bin,
+            uid: input.uid,
+            gid: input.gid,
+            run_dir: input.run_dir,
+            daemonize: input.daemonize,
+            netns_path: input.netns_path,
+        },
+        bindings,
+        sockets,
+    );
+
+    let plan = Plan::compute(&jailer_config)?;
+    plan.materialize().map_err(FcError::Jailer)
+}
+
+fn build_jailer_launch_config(
+    input: JailerLaunchConfigInput<'_>,
+    bindings: Vec<Binding>,
+    sockets: Vec<JailerSocket>,
+) -> JailerConfig {
+    JailerConfig {
         jailer_bin: input.jailer_bin.to_path_buf(),
         jailer_harden_bin: Some(input.jailer_harden_bin.to_path_buf()),
         firecracker_bin: input.firecracker_bin.to_path_buf(),
@@ -912,16 +947,13 @@ fn phase_4_jailer_materialize(
         bindings,
         sockets,
         resource_limits: m80_jailer::ResourceLimits::default(),
-        new_pid_ns: false,
+        new_pid_ns: true,
         daemonize: input.daemonize,
         new_cgroup_ns: false,
         netns_path: input.netns_path.map(Path::to_path_buf),
         seccomp_filter_path: Some(PathBuf::from(FIRECRACKER_SECCOMP_FILTER_JAIL_PATH)),
         stdio_log: Some(console_log_path(input.run_dir)),
-    };
-
-    let plan = Plan::compute(&jailer_config)?;
-    plan.materialize().map_err(FcError::Jailer)
+    }
 }
 
 fn join_netns_path(policy: &crate::NetworkPolicy) -> Option<&Path> {

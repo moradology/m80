@@ -38,6 +38,7 @@ configured console log when present and `/dev/null` otherwise.
 `jailer_pid == firecracker_pid`. When enabled, the jailer parent writes
 `firecracker.pid`, exits, and m80 records `jailer_pid = 0` as the
 no-live-jailer sentinel while tracking the live Firecracker PID normally.
+`m80-firecracker` enables this flag for its launch path by default.
 
 m80 rejects bind destinations that are absolute, empty, contain `..`, or start
 with `dev`, `proc`, or `sys`; the jail must not expose host device nodes,
@@ -45,6 +46,9 @@ with `dev`, `proc`, or `sys`; the jail must not expose host device nodes,
 
 Runtime evidence:
 
+- `crates/m80-firecracker/src/launch.rs::tests::launch_jailer_config_enables_pid_namespace`
+  pins the orchestrator-to-jailer launch plan so Firecracker launches request
+  `--new-pid-ns` by default.
 - `crates/m80-firecracker/tests/end_to_end_real_kvm.rs::end_to_end_real_kvm_jailer_security_parity`
   boots a real VM, then inspects the live Firecracker process for a distinct
   mount namespace, `RLIMIT_NOFILE`, jail uid/gid, empty supplementary groups,
