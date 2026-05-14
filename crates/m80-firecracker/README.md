@@ -369,8 +369,11 @@ Firecracker assigns block-device names in PUT order: first PUT becomes
 |     3+N | `hotplug_slot_N`  | `<run_dir>/hotplug-slot-N.raw`           | RW      | default    | default    | next block device | Optional placeholder drive slots. Created when `SandboxConfig::preallocated_drive_slots > 0`; later callers retarget an existing slot with Firecracker `PATCH /drives/{id}`. |
 
 The base + overlay split is what `m80-storage::Rootfs` produces;
-`m80-storage::Scratch` is the workspace. Per-VM sparse files cost ~10 ms
-each at most to allocate + format; there is no full-rootfs copy.
+`m80-storage::Scratch` is the workspace. Backend admission canonicalizes a
+configured workspace root, rejects a symlink root, and passes the canonical path
+to storage; storage still rejects symlinks inside the admitted tree. Per-VM
+sparse files cost ~10 ms each at most to allocate + format; there is no
+full-rootfs copy.
 
 Preallocated hotplug slots are a latency/security trade-off. Each slot is a
 live writable virtio-blk device attached before `InstanceStart`, even while it

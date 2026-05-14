@@ -20,6 +20,12 @@ before execing Firecracker. After the Firecracker API socket is ready,
 namespace, the TAP name is resolved there. PID 1 configures `eth0` from the static
 `m80.net=join_netns` boot tokens.
 
+Backend admission applies the same DNS resolver admissibility predicate used by
+OutboundNat to `NetnsSpec::dns_resolvers`. Public IPv4 and private LAN
+resolvers are admitted; documentation, benchmark, loopback, link-local,
+multicast, CGNAT, and other reserved resolver addresses are rejected before an
+admission permit is consumed.
+
 This mode is separate from `NoEgress` and `AllowOutbound`. `NoEgress` still
 creates no NIC. `AllowOutbound` still resolves to m80-owned OutboundNat.
 `JoinNetns` is the explicit escape hatch for callers that already have a
@@ -28,6 +34,8 @@ namespace with the desired TAP, routes, and network policy.
 Tests:
 - `crates/m80-net-mode/tests/resolve.rs::join_netns_carries_path_through_resolver`
 - `crates/m80-net-mode/tests/resolve.rs::netns_spec_rejects_guest_mac_with_whitespace`
+- `crates/m80-firecracker/src/backend.rs::tests::admit_rejects_join_netns_unadmitted_dns_resolver`
+- `crates/m80-firecracker/src/backend.rs::tests::admit_accepts_join_netns_admitted_dns_resolver`
 - `crates/m80-jailer/src/materialized.rs::tests::validate_netns_path_rejects_regular_file`
 - `crates/m80-jailer/src/materialized.rs::tests::validate_netns_path_rejects_symlink`
 - `crates/m80-firecracker/tests/end_to_end_real_kvm.rs::end_to_end_real_kvm_join_netns_places_firecracker_in_requested_namespace`

@@ -1,8 +1,8 @@
 //! [`Backend`] implementation: construction, admission, effective-config query,
 //! and stale run-root recovery.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-
 use std::time::{Duration, Instant};
 
 use tracing::warn;
@@ -57,8 +57,12 @@ impl Backend {
     /// available, or with [`ConfigError::VmIdPathBudgetExceeded`] when a
     /// caller-supplied `vm_id` would overflow the AF_UNIX `sun_path` cap.
     /// Does not block.
-    pub fn admit(self: &Arc<Self>, config: SandboxConfig) -> Result<Sandbox, FcError> {
+    pub fn admit(self: &Arc<Self>, mut config: SandboxConfig) -> Result<Sandbox, FcError> {
         validate_caller_boot_args_if_present(config.boot_args.as_deref())?;
+        if let Some(workspace) = config.workspace.as_ref() {
+            config.workspace = Some(canonicalize_workspace_root(workspace)?);
+        }
+        validate_network_policy(&config.network)?;
 
         // Caller-supplied vm_ids are validated up front so the failure
         // surfaces as a typed config error rather than as an opaque
@@ -253,6 +257,47 @@ fn check_vm_id_reserved_name(vm_id: &str) -> Result<(), FcError> {
             field: "vm_id",
             reason: format!("{vm_id:?} is reserved under run_root"),
         }));
+    }
+    Ok(())
+}
+
+fn canonicalize_workspace_root(workspace: &std::path::Path) -> Result<PathBuf, FcError> {
+    let metadata = std::fs::symlink_metadata(workspace).map_err(|source| FcError::PathIo {
+        path: workspace.to_path_buf(),
+        source,
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "workspace",
+            reason: format!(
+                "workspace root {} must not be a symlink",
+                workspace.display()
+            ),
+        }));
+    }
+    if !metadata.is_dir() {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "workspace",
+            reason: format!("workspace root {} must be a directory", workspace.display()),
+        }));
+    }
+    std::fs::canonicalize(workspace).map_err(|source| FcError::PathIo {
+        path: workspace.to_path_buf(),
+        source,
+    })
+}
+
+fn validate_network_policy(policy: &crate::NetworkPolicy) -> Result<(), FcError> {
+    let crate::NetworkPolicy::JoinNetns { spec } = policy else {
+        return Ok(());
+    };
+    for resolver in &spec.dns_resolvers {
+        if !m80_net_outbound::is_admitted_dns_resolver(*resolver) {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "network.join_netns.dns_resolvers",
+                reason: format!("resolver {resolver} is not admitted"),
+            }));
+        }
     }
     Ok(())
 }
@@ -452,6 +497,87 @@ mod tests {
     }
 
     #[test]
+    fn admit_canonicalizes_workspace_root_before_sandbox_creation() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let workspace = tempfile::tempdir().expect("workspace");
+        let backend = test_backend(run_root.path());
+        let mut config = SandboxConfig::default();
+        config.workspace = Some(workspace.path().join("."));
+
+        let sandbox = backend.admit(config).expect("admit sandbox");
+
+        assert_eq!(
+            sandbox.config.workspace.as_deref(),
+            Some(
+                workspace
+                    .path()
+                    .canonicalize()
+                    .expect("canonical workspace")
+                    .as_path()
+            )
+        );
+    }
+
+    #[test]
+    fn admit_rejects_symlink_workspace_root() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let target = tempfile::tempdir().expect("target");
+        let backend = test_backend(run_root.path());
+        let link = run_root.path().join("workspace-link");
+        std::os::unix::fs::symlink(target.path(), &link).expect("workspace symlink");
+        let mut config = SandboxConfig::default();
+        config.workspace = Some(link);
+
+        let err = backend
+            .admit(config)
+            .expect_err("symlink workspace root must be rejected");
+
+        assert!(
+            matches!(
+                err,
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "workspace",
+                    ..
+                })
+            ),
+            "expected workspace config rejection, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn admit_rejects_join_netns_unadmitted_dns_resolver() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let backend = test_backend(run_root.path());
+        let mut config = SandboxConfig::default();
+        config.network = join_netns_policy(std::net::Ipv4Addr::new(203, 0, 113, 1));
+
+        let err = backend
+            .admit(config)
+            .expect_err("unadmitted JoinNetns resolver must fail admission");
+
+        assert!(
+            matches!(
+                err,
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "network.join_netns.dns_resolvers",
+                    ..
+                })
+            ),
+            "expected dns resolver config rejection, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn admit_accepts_join_netns_admitted_dns_resolver() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let backend = test_backend(run_root.path());
+        let mut config = SandboxConfig::default();
+        config.network = join_netns_policy(std::net::Ipv4Addr::new(1, 1, 1, 1));
+
+        backend.admit(config).expect("admitted resolver");
+    }
+
+    #[test]
     fn remove_run_dir_cleans_network_before_deleting_state() {
         let run_root = tempfile::tempdir().expect("run root");
         let subdir = run_root.path().join("vm-net");
@@ -491,6 +617,34 @@ mod tests {
         });
 
         assert!(!subdir.exists());
+    }
+
+    fn test_backend(run_root: &std::path::Path) -> Arc<Backend> {
+        Arc::new(
+            Backend::new(
+                BackendConfig::builder(fake_discovery(run_root))
+                    .max_concurrent_vms(1)
+                    .run_root(run_root)
+                    .jail_uid(3000)
+                    .jail_gid(3000)
+                    .cgroup_mode(CgroupMode::Disabled)
+                    .build(),
+            )
+            .expect("backend"),
+        )
+    }
+
+    fn join_netns_policy(resolver: std::net::Ipv4Addr) -> crate::NetworkPolicy {
+        crate::NetworkPolicy::JoinNetns {
+            spec: crate::NetnsSpec {
+                netns_path: "/proc/self/ns/net".into(),
+                tap_name: "tap0".to_owned(),
+                guest_mac: crate::MacAddr::parse("02:00:00:00:00:01").expect("mac"),
+                guest_ipv4: "10.80.0.2/24".parse().expect("guest ipv4"),
+                gateway_ipv4: "10.80.0.1".parse().expect("gateway"),
+                dns_resolvers: vec![resolver],
+            },
+        }
     }
 }
 

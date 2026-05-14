@@ -7,6 +7,11 @@ files. Symlinks are refused as `RejectionReason::Symlink`; fifos, sockets,
 block devices, character devices, and any other non-regular entry type are
 refused as `RejectionReason::SpecialFile`.
 
+Before scratch hydration, `m80-firecracker` admission canonicalizes a configured
+workspace root and rejects the root itself when it is a symlink. This keeps a
+caller-provided path such as `/tmp/ws -> /etc` from being silently treated as an
+ordinary workspace. The canonical admitted path is what storage receives.
+
 Hydration fails the operation with `StorageError::AdmissibilityRefused { path }`.
 Extraction records rejected entries in `ChangeSet::rejected` and does not copy
 them into the staged tree.
@@ -18,6 +23,8 @@ scratch image.
 
 Test: `crates/m80-storage/tests/scratch_admissibility.rs`.
 Test: `crates/m80-storage/src/scratch.rs::tests::copy_regular_file_no_follow_rejects_symlink_at_open`.
+Test: `crates/m80-firecracker/src/backend.rs::tests::admit_rejects_symlink_workspace_root`.
+Test: `crates/m80-firecracker/src/backend.rs::tests::admit_canonicalizes_workspace_root_before_sandbox_creation`.
 
 ## atomic-swap
 
