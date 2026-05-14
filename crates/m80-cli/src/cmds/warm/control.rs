@@ -130,6 +130,7 @@ pub(super) enum WarmErrorKind {
     IdleTimedOut,
     OneShotConsumed,
     Protocol,
+    ExecTimeoutHost,
 }
 
 impl WarmErrorKind {
@@ -177,6 +178,7 @@ impl WarmErrorKind {
             FcError::Config(_) => Self::Config,
             FcError::IdleTimedOut => Self::IdleTimedOut,
             FcError::OneShotConsumed => Self::OneShotConsumed,
+            FcError::ExecTimeoutHost { .. } => Self::ExecTimeoutHost,
         }
     }
 
@@ -224,6 +226,7 @@ impl WarmErrorKind {
             Self::IdleTimedOut => "IdleTimedOut",
             Self::OneShotConsumed => "OneShotConsumed",
             Self::Protocol => "Protocol",
+            Self::ExecTimeoutHost => "ExecTimeoutHost",
         }
     }
 }
@@ -387,6 +390,18 @@ mod tests {
         assert_eq!(err.variant, WarmErrorKind::Preflight);
         assert_eq!(err.variant.as_str(), "Preflight");
         assert_eq!(err.exit_code, errors::EXIT_PREFLIGHT);
+        assert_eq!(err.target_ready, None);
+    }
+
+    #[test]
+    fn host_exec_timeout_owner_error_maps_to_timeout() {
+        let err = WarmErrorResponse::from_error(&FcError::ExecTimeoutHost {
+            timeout: std::time::Duration::from_secs(5),
+        });
+
+        assert_eq!(err.variant, WarmErrorKind::ExecTimeoutHost);
+        assert_eq!(err.variant.as_str(), "ExecTimeoutHost");
+        assert_eq!(err.exit_code, errors::EXIT_TIMEOUT);
         assert_eq!(err.target_ready, None);
     }
 

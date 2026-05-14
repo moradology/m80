@@ -57,7 +57,9 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         FcError::InvalidState { .. } => EXIT_INVALID_STATE,
         FcError::Config(_) => EXIT_CONFIG,
         FcError::UnsupportedOperation { .. } => EXIT_NOT_IMPLEMENTED,
-        FcError::ApiSocketTimeout { .. } | FcError::GuestdReadyTimeout { .. } => EXIT_TIMEOUT,
+        FcError::ApiSocketTimeout { .. }
+        | FcError::GuestdReadyTimeout { .. }
+        | FcError::ExecTimeoutHost { .. } => EXIT_TIMEOUT,
         FcError::RunDirOwnershipAmbiguous { .. }
         | FcError::RunDirAlreadyOwned { .. }
         | FcError::RunDirNotFound { .. } => EXIT_RUN_DIR_OWNERSHIP,
@@ -136,7 +138,6 @@ pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
     }
 }
 
-
 /// Return the stable variant name string for an [`FcError`].
 fn variant_name(err: &FcError) -> &'static str {
     match err {
@@ -149,6 +150,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Client(_) => "Client",
         FcError::Vsock(_) => "Vsock",
         FcError::Protocol(_) => "Protocol",
+        FcError::ExecTimeoutHost { .. } => "ExecTimeoutHost",
         FcError::AdmissionRefused { .. } => "AdmissionRefused",
         FcError::PoolEmpty { .. } => "PoolEmpty",
         FcError::InvalidState { .. } => "InvalidState",
@@ -376,20 +378,37 @@ mod tests {
     }
 
     #[test]
+    fn host_exec_timeout_is_9() {
+        let err = FcError::ExecTimeoutHost {
+            timeout: std::time::Duration::from_secs(5),
+        };
+        assert_eq!(exit_code_for(&err), EXIT_TIMEOUT);
+        assert_eq!(envelope(&err).variant, "ExecTimeoutHost");
+    }
+
+    #[test]
     fn run_dir_already_owned_is_10() {
-        let err = FcError::RunDirAlreadyOwned { run_dir: "/run/m80/x".into(), pid: 1234 };
+        let err = FcError::RunDirAlreadyOwned {
+            run_dir: "/run/m80/x".into(),
+            pid: 1234,
+        };
         assert_eq!(exit_code_for(&err), EXIT_RUN_DIR_OWNERSHIP);
     }
 
     #[test]
     fn run_dir_ownership_ambiguous_is_10() {
-        let err = FcError::RunDirOwnershipAmbiguous { run_dir: "/run/m80/x".into() };
+        let err = FcError::RunDirOwnershipAmbiguous {
+            run_dir: "/run/m80/x".into(),
+        };
         assert_eq!(exit_code_for(&err), EXIT_RUN_DIR_OWNERSHIP);
     }
 
     #[test]
     fn run_dir_not_found_is_10() {
-        let err = FcError::RunDirNotFound { vm_id: "vm0".into(), run_dir: "/run/m80/x".into() };
+        let err = FcError::RunDirNotFound {
+            vm_id: "vm0".into(),
+            run_dir: "/run/m80/x".into(),
+        };
         assert_eq!(exit_code_for(&err), EXIT_RUN_DIR_OWNERSHIP);
     }
 
@@ -400,7 +419,10 @@ mod tests {
 
     #[test]
     fn one_shot_consumed_is_12() {
-        assert_eq!(exit_code_for(&FcError::OneShotConsumed), EXIT_ONE_SHOT_CONSUMED);
+        assert_eq!(
+            exit_code_for(&FcError::OneShotConsumed),
+            EXIT_ONE_SHOT_CONSUMED
+        );
     }
 
     #[test]

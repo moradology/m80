@@ -25,6 +25,7 @@ m80-jailer.workspace = true
 m80-observability.workspace = true
 m80-preflight.workspace = true
 m80-proto.workspace = true
+m80-snapshot.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -10,7 +10,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use m80_proto::{ExecRequest, ExecStatus};
-use m80_snapshot::SnapshotPaths;
+use m80_snapshot::{verify_snapshot_manifest, SnapshotPaths};
 
 use crate::error::{ConfigError, FcError};
 use crate::types::{Backend, RunningSandbox, SandboxConfig};
@@ -319,6 +319,15 @@ impl Drop for WarmPool {
 
 impl WarmPoolInner {
     fn launch_slot(&self, cpuset_cpus: Option<String>) -> Result<WarmSlot, FcError> {
+        verify_warm_snapshot(
+            &self.config.snapshot,
+            &self
+                .backend
+                .config
+                .discovery
+                .manifest
+                .expected_firecracker_version,
+        )?;
         let slot_id = self.next_slot.fetch_add(1, Ordering::Relaxed);
         let mut sandbox_config = self.config.sandbox.clone();
         sandbox_config.vm_id = Some(format!("{}-{slot_id}", self.config.vm_id_prefix));
@@ -400,6 +409,15 @@ fn discard_sandbox(sandbox: RunningSandbox) -> Result<(), FcError> {
     sandbox.force_kill()?.delete()
 }
 
+fn verify_warm_snapshot(
+    paths: &SnapshotPaths,
+    expected_firecracker_version: &str,
+) -> Result<(), FcError> {
+    verify_snapshot_manifest(paths, expected_firecracker_version)
+        .map(|_| ())
+        .map_err(FcError::Snapshot)
+}
+
 /// Discard a sandbox, first recording a diagnostics event if `exec_err` is
 /// `Some` (i.e., we are discarding after an exec failure, not normal teardown).
 pub(crate) fn discard_sandbox_with_diagnostics(
@@ -441,4 +459,147 @@ fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<()
         }
     }
     Err(last_error.unwrap_or(FcError::WarmReadyProbeNoResult))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{BackendConfig, CgroupMode};
+
+    const FC_VERSION: &str = "v1.15.1";
+
+    #[test]
+    fn warm_snapshot_verify_accepts_matching_manifest() {
+        let dir = tempfile::tempdir().expect("snapshot dir");
+        let paths = write_snapshot_pair(dir.path());
+        m80_snapshot::write_snapshot_manifest(&paths, FC_VERSION).expect("write manifest");
+
+        verify_warm_snapshot(&paths, FC_VERSION).expect("matching warm snapshot");
+    }
+
+    #[test]
+    fn warm_snapshot_verify_rejects_tampered_memory_before_slot_launch() {
+        let dir = tempfile::tempdir().expect("snapshot dir");
+        let paths = write_snapshot_pair(dir.path());
+        m80_snapshot::write_snapshot_manifest(&paths, FC_VERSION).expect("write manifest");
+        std::fs::write(&paths.mem, b"tampered-memory").expect("tamper memory");
+
+        let err = verify_warm_snapshot(&paths, FC_VERSION)
+            .expect_err("tampered warm snapshot must be rejected");
+
+        assert!(
+            matches!(
+                err,
+                FcError::Snapshot(m80_snapshot::SnapshotError::ArtifactMismatch {
+                    kind: m80_snapshot::ArtifactKind::Memory,
+                    ..
+                })
+            ),
+            "expected memory artifact mismatch, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn warm_pool_fill_rejects_tampered_snapshot_before_admission() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let snapshot_dir = run_root.path().join("warm/snapshot");
+        std::fs::create_dir_all(&snapshot_dir).expect("snapshot dir");
+        let paths = write_snapshot_pair(&snapshot_dir);
+        let discovery = fake_discovery(run_root.path());
+        let expected_firecracker_version = discovery.manifest.expected_firecracker_version.clone();
+        m80_snapshot::write_snapshot_manifest(&paths, &expected_firecracker_version)
+            .expect("write manifest");
+        std::fs::write(&paths.mem, b"tampered-memory").expect("tamper memory");
+
+        let backend = Arc::new(
+            Backend::new(
+                BackendConfig::builder(discovery)
+                    .max_concurrent_vms(1)
+                    .run_root(run_root.path())
+                    .cgroup_mode(CgroupMode::Disabled)
+                    .build(),
+            )
+            .expect("backend"),
+        );
+        let pool = WarmPool::new(
+            backend,
+            WarmPoolConfig {
+                target_ready: 1,
+                snapshot: paths,
+                sandbox: SandboxConfig::default(),
+                ready_probe: ExecRequest {
+                    program: "/bin/true".to_owned(),
+                    args: Vec::new(),
+                    cwd: None,
+                    env: None,
+                    stdin: None,
+                    timeout_ms: Some(5_000),
+                    streaming: false,
+                },
+                vm_id_prefix: "tampered-warm".to_owned(),
+                cpu_allocator: None,
+            },
+        )
+        .expect("warm pool");
+
+        let err = pool
+            .fill_to_target_blocking()
+            .expect_err("tampered snapshot must fail before launch");
+
+        assert!(
+            matches!(
+                err,
+                FcError::Snapshot(m80_snapshot::SnapshotError::ArtifactMismatch {
+                    kind: m80_snapshot::ArtifactKind::Memory,
+                    ..
+                })
+            ),
+            "expected memory artifact mismatch, got {err:?}"
+        );
+        assert_eq!(pool.snapshot().ready, 0);
+    }
+
+    fn write_snapshot_pair(dir: &std::path::Path) -> SnapshotPaths {
+        let paths = SnapshotPaths {
+            vm_state: dir.join("vm.snap"),
+            mem: dir.join("mem.snap"),
+        };
+        std::fs::write(&paths.vm_state, b"vm-state").expect("write vm snapshot");
+        std::fs::write(&paths.mem, b"memory").expect("write memory snapshot");
+        paths
+    }
+
+    fn fake_discovery(run_root: &std::path::Path) -> m80_preflight::Discovery {
+        let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
+        let rootfs_path = rootfs.path().to_path_buf();
+        let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
+        m80_preflight::Discovery {
+            firecracker_bin: "/tmp/firecracker".into(),
+            jailer_bin: "/tmp/jailer".into(),
+            jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
+            kernel: "/tmp/vmlinux".into(),
+            rootfs: "/tmp/rootfs.ext4".into(),
+            pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
+            manifest: m80_image_manifest::Manifest::new(
+                "/tmp/m80-guestd".into(),
+                "0".repeat(64),
+                "v1.0.0".to_owned(),
+                52,
+                m80_image_manifest::ImageKind::Minimal,
+                "/tmp/vmlinux".into(),
+                "1".repeat(64),
+                m80_image_manifest::KernelKind::Stock,
+                None,
+                "/tmp/rootfs.ext4".into(),
+                "2".repeat(64),
+                "M80_READY".to_owned(),
+                m80_image_manifest::RootfsFormat::Ext4,
+                None,
+                None,
+            ),
+            run_root: run_root.to_path_buf(),
+            privilege: m80_preflight::PrivilegeStatus::Root,
+            report: Vec::new(),
+        }
+    }
 }

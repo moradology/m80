@@ -24,6 +24,7 @@ use super::status::{self, WarmOwnerIdentity};
 
 const OWNER_SOCKET_MODE: u32 = 0o600;
 const OWNER_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const WARM_SNAPSHOT_FILE_MODE: u32 = 0o444;
 
 pub(super) fn run_foreground(
     profile: Option<String>,
@@ -66,7 +67,10 @@ fn run_foreground_inner(
     let golden = backend.admit(sandbox)?;
     let mut running = golden.launch()?;
     running.capture(snapshot.clone())?;
-    running.force_kill()?.delete()?;
+    let lock_result = lock_warm_snapshot_files(&snapshot);
+    let stop_result = running.force_kill().and_then(|stopped| stopped.delete());
+    lock_result?;
+    stop_result?;
 
     let pool = WarmPool::new(
         Arc::clone(&backend),
@@ -268,6 +272,32 @@ fn remove_file_if_present(path: &Path) {
     }
 }
 
+fn lock_warm_snapshot_files(paths: &SnapshotPaths) -> Result<(), FcError> {
+    set_readonly_file(&paths.vm_state)?;
+    set_readonly_file(&paths.mem)?;
+    set_readonly_file(&snapshot_manifest_path(paths)?)?;
+    Ok(())
+}
+
+fn snapshot_manifest_path(paths: &SnapshotPaths) -> Result<PathBuf, FcError> {
+    let Some(parent) = paths.vm_state.parent() else {
+        return Err(FcError::Io(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "snapshot vm_state path must have a parent directory",
+        )));
+    };
+    Ok(parent.join(m80_snapshot::SNAPSHOT_MANIFEST_FILE))
+}
+
+fn set_readonly_file(path: &Path) -> Result<(), FcError> {
+    fs::set_permissions(path, fs::Permissions::from_mode(WARM_SNAPSHOT_FILE_MODE)).map_err(
+        |source| FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        },
+    )
+}
+
 fn drained_snapshot(pool: &WarmPool) -> WarmPoolSnapshot {
     let mut snapshot = pool.snapshot();
     snapshot.ready = 0;
@@ -349,6 +379,31 @@ mod tests {
     }
 
     #[test]
+    fn lock_warm_snapshot_files_marks_pair_and_manifest_readonly() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let paths = SnapshotPaths {
+            vm_state: dir.path().join("vm.snap"),
+            mem: dir.path().join("mem.snap"),
+        };
+        fs::write(&paths.vm_state, b"vm-state").expect("write vm snapshot");
+        fs::write(&paths.mem, b"memory").expect("write memory snapshot");
+        fs::write(
+            dir.path().join(m80_snapshot::SNAPSHOT_MANIFEST_FILE),
+            b"manifest",
+        )
+        .expect("write manifest");
+
+        lock_warm_snapshot_files(&paths).expect("lock warm snapshot");
+
+        assert_eq!(file_mode(&paths.vm_state), WARM_SNAPSHOT_FILE_MODE);
+        assert_eq!(file_mode(&paths.mem), WARM_SNAPSHOT_FILE_MODE);
+        assert_eq!(
+            file_mode(&dir.path().join(m80_snapshot::SNAPSHOT_MANIFEST_FILE)),
+            WARM_SNAPSHOT_FILE_MODE
+        );
+    }
+
+    #[test]
     fn owner_socket_is_restricted_to_owner_uid() {
         let dir = tempfile::tempdir().expect("create tempdir");
         let socket_path = dir.path().join("owner.sock");
@@ -403,5 +458,9 @@ mod tests {
 
         assert!(!socket_path.exists());
         assert!(!identity_path.exists());
+    }
+
+    fn file_mode(path: &Path) -> u32 {
+        fs::metadata(path).expect("stat path").permissions().mode() & 0o777
     }
 }
