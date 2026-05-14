@@ -70,6 +70,57 @@ fn materialize_creates_jail_root_and_persists_plan() {
 
 #[test]
 #[ignore = "requires CAP_SYS_ADMIN / root"]
+fn materialize_binds_proc_fd_source_without_reopening_original_path() {
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+
+    let run_dir = tempfile::tempdir().unwrap();
+    let mut source = tempfile::NamedTempFile::new().unwrap();
+    source.write_all(b"verified-rootfs").unwrap();
+    let held = source.reopen().unwrap();
+    let proc_fd = PathBuf::from(format!("/proc/self/fd/{}", held.as_raw_fd()));
+    let original_path = source.path().to_path_buf();
+    let swapped_path = run_dir.path().join("renamed-verified-rootfs");
+    std::fs::rename(&original_path, &swapped_path).unwrap();
+    std::fs::write(&original_path, b"attacker-rootfs").unwrap();
+
+    let cfg = JailerConfig {
+        jailer_bin: PathBuf::from("/usr/bin/jailer"),
+        jailer_harden_bin: Some(PathBuf::from("/usr/bin/m80-jailer-harden")),
+        firecracker_bin: PathBuf::from("/usr/bin/firecracker"),
+        run_dir: run_dir.path().to_path_buf(),
+        uid: 3000,
+        gid: 3000,
+        bindings: vec![Binding {
+            source: proc_fd,
+            dest: PathBuf::from("rootfs.ext4"),
+            mode: BindMode::Ro,
+        }],
+        sockets: Vec::new(),
+        resource_limits: m80_jailer::ResourceLimits::default(),
+        new_pid_ns: false,
+        daemonize: false,
+        new_cgroup_ns: false,
+        netns_path: None,
+        stdio_log: None,
+    };
+
+    let jail = Plan::compute(&cfg)
+        .unwrap()
+        .materialize()
+        .expect("proc-fd bind must materialize as root");
+
+    let mounted = jail.jail_root().join("rootfs.ext4");
+    assert_eq!(
+        std::fs::read_to_string(&mounted).unwrap(),
+        "verified-rootfs",
+        "bind mount must read from held fd, not from the swapped original path"
+    );
+    assert_mount_private(&mounted);
+}
+
+#[test]
+#[ignore = "requires CAP_SYS_ADMIN / root"]
 fn jailer_placeholder_cleanup_on_partial_bind_failure() {
     let run_dir = tempfile::tempdir().unwrap();
     let first_file = tempfile::NamedTempFile::new().unwrap();
