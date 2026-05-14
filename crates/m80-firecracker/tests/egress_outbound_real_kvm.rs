@@ -13,6 +13,8 @@ use serde::Deserialize;
 
 use common::RunDirDumpGuard;
 
+const CAP_NET_ADMIN_MASK: u64 = 1u64 << 12;
+
 fn outbound_backend(max_concurrent_vms: u32) -> std::sync::Arc<Backend> {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -83,6 +85,27 @@ fn shell_request(script: &str) -> ExecRequest {
 
 fn external_network_enabled() -> bool {
     std::env::var_os("M80_RUN_EXTERNAL_NETWORK_E2E").is_some()
+}
+
+fn assert_backend_thread_lacks_cap_net_admin() {
+    let status = std::fs::read_to_string("/proc/thread-self/status").expect("status");
+    for field in ["CapEff", "CapPrm", "CapBnd"] {
+        let value = status_hex_value(&status, field);
+        assert_eq!(
+            value & CAP_NET_ADMIN_MASK,
+            0,
+            "{field} still contains CAP_NET_ADMIN"
+        );
+    }
+}
+
+fn status_hex_value(status: &str, field: &str) -> u64 {
+    let prefix = format!("{field}:\t");
+    let raw = status
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("{field} missing from /proc/thread-self/status"));
+    u64::from_str_radix(raw.trim(), 16).expect("hex capability field")
 }
 
 fn run_outbound_probe(script: &str) -> m80_proto::ExecResponse {
@@ -237,6 +260,56 @@ fn allow_outbound_rejects_peer_guest_ipv4_on_shared_bridge() {
         String::from_utf8_lossy(&response.stdout),
         String::from_utf8_lossy(&response.stderr)
     );
+}
+
+#[test]
+#[ignore = "requires KVM host, CAP_NET_ADMIN at process start, and opt-in external network"]
+fn allow_outbound_survives_parent_cap_net_admin_drop() {
+    if !external_network_enabled() {
+        eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");
+        return;
+    }
+
+    let backend = outbound_backend(1);
+    assert_backend_thread_lacks_cap_net_admin();
+
+    let (mut running, run_dir) = launch_outbound_vm_on_backend(backend.clone(), "capdel");
+    let _delete_dump = RunDirDumpGuard::new(run_dir.clone());
+    let response = running
+        .exec(shell_request(
+            "/bin/busybox timeout 8 /bin/busybox nslookup example.com >/tmp/m80-dns.out && /bin/busybox wget -T 4 -O /tmp/m80-http-ip.out http://146.190.62.39",
+        ))
+        .expect("exec external DNS and HTTP probe");
+    let stopped = running.stop().expect("stop delete probe");
+    stopped.delete().expect("delete outbound VM");
+
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "AllowOutbound must keep DNS and HTTP-by-IP working after backend-thread CAP_NET_ADMIN drop; stdout={:?}; stderr={:?}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+    assert!(
+        !run_dir.exists(),
+        "delete must remove outbound run-dir {}",
+        run_dir.display()
+    );
+
+    let (running, stale_run_dir) = launch_outbound_vm_on_backend(backend.clone(), "capstale");
+    let _stale_dump = RunDirDumpGuard::new(stale_run_dir.clone());
+    let stopped = running.stop().expect("stop stale probe");
+    drop(stopped);
+    backend
+        .recover_stale_run_root(true)
+        .expect("recover stale outbound run-dir after parent cap drop");
+    assert!(
+        !stale_run_dir.exists(),
+        "stale recovery must remove outbound run-dir {}",
+        stale_run_dir.display()
+    );
+    assert_backend_thread_lacks_cap_net_admin();
 }
 
 #[test]

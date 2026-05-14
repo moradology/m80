@@ -78,7 +78,7 @@ which is the right place for a security review to start.
      `CAP_FOWNER`, `CAP_KILL`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`).
      `CAP_SETPCAP` is required so `m80-jailer-harden` can prune the official
      jailer's bounding set and so `m80-firecracker` can drop `CAP_NET_ADMIN`
-     from the long-lived parent after `m80-net-helper` starts. Probed via the
+     from the backend thread after `m80-net-helper` starts. Probed via the
      `caps` crate against the process's effective set. Returns
      `PrivilegeStatus::Root` or `PrivilegeStatus::CapabilityBearing`.
   14. **Firecracker binary** — discovered via env override or default. The

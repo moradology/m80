@@ -1,4 +1,4 @@
-//! Real-host proof that backend init drops CAP_NET_ADMIN from the parent.
+//! Real-host proof that backend init drops CAP_NET_ADMIN from the backend thread.
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode};
 
@@ -16,7 +16,7 @@ fn backend_init_drops_parent_cap_net_admin() {
     .expect("Backend::new");
     drop(backend);
 
-    let status = std::fs::read_to_string("/proc/self/status").expect("status");
+    let status = std::fs::read_to_string("/proc/thread-self/status").expect("status");
     for field in ["CapEff", "CapPrm", "CapBnd"] {
         let value = status_hex_value(&status, field);
         assert_eq!(
@@ -32,6 +32,6 @@ fn status_hex_value(status: &str, field: &str) -> u64 {
     let raw = status
         .lines()
         .find_map(|line| line.strip_prefix(&prefix))
-        .unwrap_or_else(|| panic!("{field} missing from /proc/self/status"));
+        .unwrap_or_else(|| panic!("{field} missing from /proc/thread-self/status"));
     u64::from_str_radix(raw.trim(), 16).expect("hex capability field")
 }

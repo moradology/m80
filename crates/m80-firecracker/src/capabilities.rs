@@ -16,7 +16,7 @@ static CAP_NET_ADMIN_DROPPED: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
 static CAP_NET_ADMIN_DROP_LOCK: Mutex<()> = Mutex::new(());
 
-/// Drop `CAP_NET_ADMIN` from the parent process once per process.
+/// Drop `CAP_NET_ADMIN` from the backend thread once per process.
 #[cfg(not(test))]
 pub(crate) fn drop_parent_cap_net_admin() -> Result<(), CapabilityDropError> {
     if CAP_NET_ADMIN_DROPPED.load(Ordering::Acquire) {
@@ -76,7 +76,8 @@ fn drop_cap_from_set(set: CapSet, set_name: &'static str) -> Result<(), Capabili
     Ok(())
 }
 
-/// Parsed `/proc/self/status` capability fields used by tests and verification.
+/// Parsed `/proc/thread-self/status` capability fields used by tests and
+/// verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ParentCapabilityStatus {
     cap_eff: u64,
@@ -107,7 +108,7 @@ impl ParentCapabilityStatus {
 
 #[cfg(not(test))]
 fn read_parent_capability_status() -> Result<ParentCapabilityStatus, CapabilityDropError> {
-    let text = std::fs::read_to_string("/proc/self/status")
+    let text = std::fs::read_to_string("/proc/thread-self/status")
         .map_err(|source| CapabilityDropError::StatusRead { source })?;
     parse_parent_capability_status(&text)
 }

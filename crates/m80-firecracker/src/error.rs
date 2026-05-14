@@ -223,7 +223,7 @@ pub enum NetworkHelperError {
     },
 }
 
-/// Failure while dropping `CAP_NET_ADMIN` from the long-lived parent process.
+/// Failure while dropping `CAP_NET_ADMIN` from the backend thread.
 #[derive(Debug, thiserror::Error)]
 pub enum CapabilityDropError {
     /// Reading a Linux capability set failed.
@@ -251,15 +251,15 @@ pub enum CapabilityDropError {
         #[source]
         source: caps::errors::CapsError,
     },
-    /// `/proc/self/status` could not be read for post-drop verification.
-    #[error("failed to read /proc/self/status after CAP_NET_ADMIN drop: {source}")]
+    /// `/proc/thread-self/status` could not be read for post-drop verification.
+    #[error("failed to read /proc/thread-self/status after CAP_NET_ADMIN drop: {source}")]
     StatusRead {
         /// I/O failure.
         #[source]
         source: io::Error,
     },
-    /// A capability line in `/proc/self/status` was malformed.
-    #[error("failed to parse {field} from /proc/self/status: {value}")]
+    /// A capability line in `/proc/thread-self/status` was malformed.
+    #[error("failed to parse {field} from /proc/thread-self/status: {value}")]
     StatusParse {
         /// Status field name.
         field: &'static str,
@@ -267,7 +267,7 @@ pub enum CapabilityDropError {
         value: String,
     },
     /// Post-drop verification still observed `CAP_NET_ADMIN`.
-    #[error("CAP_NET_ADMIN still present in {field} after parent drop")]
+    #[error("CAP_NET_ADMIN still present in {field} after backend-thread drop")]
     Verification {
         /// Status field name.
         field: &'static str,
