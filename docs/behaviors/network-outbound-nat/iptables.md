@@ -1,25 +1,22 @@
 # Outbound NAT Iptables Policy
 
-## IP Forward
+## Host Sysctls
 
-The host policy phase invokes `sysctl -w net.ipv4.ip_forward=1` before any
-guest FORWARD or NAT POSTROUTING rule is installed. If the sysctl command
-fails, policy installation aborts and no per-VM filter, FORWARD, or NAT rules
-are appended after that failure.
+The host policy phase invokes `sysctl -w net.ipv4.ip_forward=1`,
+`sysctl -w net.ipv6.conf.<bridge>.disable_ipv6=1`, and
+`sysctl -w net.ipv6.conf.<tap>.disable_ipv6=1` before any guest FORWARD or NAT
+POSTROUTING rule is installed. If a sysctl command fails, policy installation
+aborts and no per-VM filter, FORWARD, or NAT rules are appended after that
+failure.
 
-After the sysctl succeeds, missing policy rules are installed through one
+After those sysctls succeed, missing policy rules are installed through one
 `iptables-restore -w --noflush` batch. The apply path still creates or reuses the
 per-VM chain first, rejects foreign rules in that owned chain, and lists the
 per-VM chain, FORWARD, and NAT POSTROUTING for missing-rule detection so
 reapplying the same policy does not duplicate existing rules.
 
-Source: predecessor
-`crates/sandbox/agent-sandbox-firecracker/src/network.rs::ensure_ipv4_forwarding`
-lines 1491-1497, called from `apply_outbound_nat_policy_with_host` around
-line 1091.
-
 Verification:
-`crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::sysctl_ip_forward_set_before_rules`
+`crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::sysctls_set_ip_forward_and_disable_ipv6_before_rules`
 and `::sysctl_failure_aborts_before_rule_install`.
 `crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::policy_rules_install_with_one_iptables_restore_batch`
 and `::iptables_restore_failure_aborts_policy_install`.
@@ -111,17 +108,16 @@ Verification:
 ## Forward Entries
 
 The policy phase inserts three filter/FORWARD rules at index 1:
-`-i <bridge> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
+`-i <tap> -s <guest_ipv4>/32 -j <chain>` routes guest egress through the
 per-VM filter chain, `-o <bridge> -d <guest_ipv4>/32 -j REJECT` blocks new
 inbound traffic, and
 `-o <bridge> -d <guest_ipv4>/32 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT`
 permits replies. Because all three use `-I ... 1`, the final effective order
 keeps RELATED/ESTABLISHED above the inbound reject.
 
-The FORWARD entries key on the Linux bridge interface, not the TAP device.
-Once the TAP is enslaved to the bridge, routed guest traffic reaches the host
-FORWARD chain as bridge ingress/egress; the guest `/32` keeps the rule scoped
-to one VM.
+Outbound ingress keys on the VM's TAP interface, not the shared bridge. The
+guest `/32` remains in the rule, but the TAP match prevents a sibling guest
+from spoofing another VM's source IP and entering that VM's filter chain.
 
 Source: predecessor `ensure_forwarding_entry_rules` lines 1630-1695.
 

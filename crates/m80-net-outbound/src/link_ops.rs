@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use futures_util::stream::TryStreamExt;
 use ipnet::Ipv4Net;
-use rtnetlink::{new_connection, Handle, LinkBridge, LinkUnspec};
+use rtnetlink::{new_connection, Handle, LinkBridge, LinkBridgePort, LinkUnspec};
 use tokio::runtime::{Builder, Runtime};
 
 use crate::NetError;
@@ -42,6 +42,8 @@ pub trait LinkOps {
     /// Attach a link to a bridge.
     fn attach_link_to_bridge(&mut self, link_name: &str, bridge_name: &str)
         -> Result<(), NetError>;
+    /// Enable bridge-port isolation on a link already attached to a bridge.
+    fn set_bridge_port_isolated(&mut self, link_name: &str) -> Result<(), NetError>;
     /// Bring a link up.
     fn set_link_up(&mut self, name: &str) -> Result<(), NetError>;
     /// Delete a link when it exists.
@@ -79,6 +81,7 @@ pub(crate) fn create_tap_bridge(
     ops.create_tap(&plan.tap_name)?;
     ops.set_link_mac(&plan.tap_name, plan.guest_mac)?;
     ops.attach_link_to_bridge(&plan.tap_name, &plan.bridge_name)?;
+    ops.set_bridge_port_isolated(&plan.tap_name)?;
     ops.set_link_up(&plan.tap_name)
 }
 
@@ -93,6 +96,7 @@ pub(crate) fn create_tap_on_bridge(
     ops.create_tap(&plan.tap_name)?;
     ops.set_link_mac(&plan.tap_name, plan.guest_mac)?;
     ops.attach_link_to_bridge(&plan.tap_name, &plan.bridge_name)?;
+    ops.set_bridge_port_isolated(&plan.tap_name)?;
     ops.set_link_up(&plan.tap_name)
 }
 
@@ -256,6 +260,17 @@ impl LinkOps for NetlinkLinkOps {
         )
     }
 
+    fn set_bridge_port_isolated(&mut self, link_name: &str) -> Result<(), NetError> {
+        let port_index = self.require_link_index(link_name, "set bridge port isolation")?;
+        self.block_on(
+            "set bridge port isolation",
+            self.handle
+                .link()
+                .set_port(LinkBridgePort::new(port_index).isolated(true).build())
+                .execute(),
+        )
+    }
+
     fn set_link_up(&mut self, name: &str) -> Result<(), NetError> {
         self.block_on(
             "set link up",
@@ -332,6 +347,7 @@ mod tests {
                 "create_tap tfc123456789012",
                 "set_link_mac tfc123456789012 02:8d:9d:42:db:fd",
                 "attach_link_to_bridge tfc123456789012 brfc12345678901",
+                "set_bridge_port_isolated tfc123456789012",
                 "set_link_up tfc123456789012",
                 "delete_link_if_exists tfc123456789012",
             ]
@@ -409,6 +425,12 @@ mod tests {
         ) -> Result<(), NetError> {
             self.operations
                 .push(format!("attach_link_to_bridge {link_name} {bridge_name}"));
+            Ok(())
+        }
+
+        fn set_bridge_port_isolated(&mut self, link_name: &str) -> Result<(), NetError> {
+            self.operations
+                .push(format!("set_bridge_port_isolated {link_name}"));
             Ok(())
         }
 

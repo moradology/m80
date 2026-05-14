@@ -53,7 +53,13 @@ remain ready.
 The system creates each per-VM TAP interface without invoking `ip` or
 `/sbin/ip`. TAP creation goes through the Linux TUN/TAP driver, then the
 resulting interface is managed through rtnetlink: set the guest MAC, attach
-the TAP to the run-root bridge, and bring the TAP link up.
+the TAP to the run-root bridge, enable bridge-port isolation, and bring the
+TAP link up.
+
+Bridge-port isolation is part of the per-VM isolation boundary. TAP ports on
+the same run-root bridge must not be able to exchange L2 traffic directly
+through the bridge; routed egress is controlled later by the per-VM TAP-scoped
+FORWARD rules and NAT policy.
 
 `m80-firecracker` calls this setup from launch phase 6 when
 `NetworkPolicy::AllowOutbound` resolves to `VmNetworkMode::OutboundNat`.
@@ -114,11 +120,11 @@ called after the state file is already gone, it derives the guest IP from
 ## Verification
 
 `crates/m80-net-outbound/tests/network-outbound-nat/setup.rs` pins the
-bridge idempotency, atomic bridge state file, atomic per-VM state file, and
-source-level no-`ip` contract for the link-ops implementation. The crate also
-keeps unit coverage in `src/link_ops.rs` for TAP/bridge lifecycle ordering and
-an ignored root/CAP_NET_ADMIN probe that creates and deletes a real TAP through
-the no-`/sbin/ip` path.
+bridge idempotency, atomic bridge state file, atomic per-VM state file, TAP
+bridge-port isolation, and source-level no-`ip` contract for the link-ops
+implementation. The crate also keeps unit coverage in `src/link_ops.rs` for
+TAP/bridge lifecycle ordering and an ignored root/CAP_NET_ADMIN probe that
+creates and deletes a real TAP through the no-`/sbin/ip` path.
 
 Relevant setup tests:
 `bridge_setup_is_idempotent_with_matching_state`,

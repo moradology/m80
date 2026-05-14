@@ -76,8 +76,8 @@ Sequestering it has three benefits:
   present, removes the per-VM Planned state file, and scavenges the unused
   run-root bridge so failed launches do not strand owned network residue.
 - Bridge creation, bridge address assignment, link MAC assignment, bridge
-  attach/detach, link up/down, and link deletion use rtnetlink. The `ip`
-  binary is not a runtime dependency for these operations.
+  attach/detach, bridge-port isolation, link up/down, and link deletion use
+  rtnetlink. The `ip` binary is not a runtime dependency for these operations.
 - TAP creation uses the Linux TUN/TAP driver through a safe wrapper over
   `/dev/net/tun`; m80 then manages the resulting link through rtnetlink.
   This split is intentional: Linux `tun.c` allows rtnetlink deletion and
@@ -99,11 +99,12 @@ Sequestering it has three benefits:
   installation begins, and guest network configuration must already have
   recorded at least one DNS resolver. It creates or reuses the
   deterministic per-VM filter chain, rejects foreign rules already present
-  in that chain, sets `net.ipv4.ip_forward=1`, then lists the per-VM chain,
-  FORWARD, and NAT POSTROUTING for missing-rule detection before installing
-  missing rules through one `iptables-restore -w --noflush` batch. The
-  batch appends per-VM filter rules, inserts bridge-interface FORWARD
-  entries scoped by the guest `/32`, and appends NAT POSTROUTING masquerade.
+  in that chain, sets `net.ipv4.ip_forward=1`, disables IPv6 on the derived
+  bridge and TAP interfaces, then lists the per-VM chain, FORWARD, and NAT
+  POSTROUTING for missing-rule detection before installing missing rules
+  through one `iptables-restore -w --noflush` batch. The batch appends per-VM
+  filter rules, inserts TAP-ingress FORWARD entries scoped by the guest `/32`,
+  and appends NAT POSTROUTING masquerade.
 - iptables rules are tagged with a per-VM comment prefix (rooted in
   `M80_RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
   never by index — so concurrent rule additions by other tools don't

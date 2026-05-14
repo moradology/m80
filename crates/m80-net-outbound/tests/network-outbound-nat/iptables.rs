@@ -9,15 +9,25 @@ use m80_net_outbound::{
 };
 
 #[test]
-fn sysctl_ip_forward_set_before_rules() {
+fn sysctls_set_ip_forward_and_disable_ipv6_before_rules() {
     let state = ready_state();
     let mut ops = RecordingPolicyOps::default();
 
     apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
 
-    let sysctl = ops.run_index("sysctl -w net.ipv4.ip_forward=1");
+    let ip_forward = ops.run_index("sysctl -w net.ipv4.ip_forward=1");
+    let bridge_ipv6 = ops.run_index(&format!(
+        "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
+        state.bridge.bridge_name
+    ));
+    let tap_ipv6 = ops.run_index(&format!(
+        "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
+        state.tap_name
+    ));
     let restore = ops.run_index("iptables-restore -w --noflush");
-    assert!(sysctl < restore);
+    assert!(ip_forward < restore);
+    assert!(bridge_ipv6 < restore);
+    assert!(tap_ipv6 < restore);
 }
 
 #[test]
@@ -336,7 +346,7 @@ fn forward_inserts_route_guest_through_filter_chain() {
     let rules = ops.chain_rules("filter", "FORWARD");
     assert!(rules.contains(&vec![
         "-i",
-        &state.bridge.bridge_name,
+        &state.tap_name,
         "-s",
         &guest,
         "-m",
@@ -375,11 +385,10 @@ fn forward_inserts_route_guest_through_filter_chain() {
         "ACCEPT"
     ]));
     assert!(
-        !rules.iter().any(
-            |rule| rule.windows(2).any(|pair| pair == ["-i", &state.tap_name])
-                || rule.windows(2).any(|pair| pair == ["-o", &state.tap_name])
-        ),
-        "routed bridge traffic must not be keyed by the TAP device"
+        !rules.iter().any(|rule| rule
+            .windows(2)
+            .any(|pair| pair == ["-i", &state.bridge.bridge_name])),
+        "outbound ingress must be keyed by the VM TAP, not the shared bridge"
     );
 }
 
@@ -412,8 +421,16 @@ fn policy_reapply_skips_existing_chain_and_rules() {
     let first_run_count = ops.runs.len();
     apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
 
-    assert_eq!(ops.runs.len(), first_run_count + 1);
-    assert_eq!(ops.runs.last().unwrap(), "sysctl -w net.ipv4.ip_forward=1");
+    assert_eq!(ops.runs.len(), first_run_count + 3);
+    let expected = vec![
+        "sysctl -w net.ipv4.ip_forward=1".to_owned(),
+        format!(
+            "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
+            state.bridge.bridge_name
+        ),
+        format!("sysctl -w net.ipv6.conf.{}.disable_ipv6=1", state.tap_name),
+    ];
+    assert_eq!(&ops.runs[first_run_count..], expected.as_slice());
 }
 
 fn ready_state() -> VmNetworkStateRecord {

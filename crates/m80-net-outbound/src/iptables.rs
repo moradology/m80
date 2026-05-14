@@ -133,7 +133,7 @@ pub fn apply_outbound_nat_policy_with_ops(
     let comment = outbound_nat_rule_comment(state);
     ensure_iptables_chain(ops, "filter", &chain)?;
     reject_foreign_iptables_chain_rules(ops, "filter", &chain, &comment)?;
-    ensure_ipv4_forwarding(ops)?;
+    ensure_host_network_sysctls(ops, state)?;
     let expected = expected_policy_rules(state, &chain, &comment);
     restore_missing_policy_rules(ops, &expected)
 }
@@ -206,10 +206,29 @@ fn validate_ready_state(state: &VmNetworkStateRecord) -> Result<(), NetError> {
     Ok(())
 }
 
+fn ensure_host_network_sysctls(
+    ops: &mut impl PolicyOps,
+    state: &VmNetworkStateRecord,
+) -> Result<(), NetError> {
+    ensure_ipv4_forwarding(ops)?;
+    disable_ipv6_on_link(ops, &state.bridge.bridge_name)?;
+    disable_ipv6_on_link(ops, &state.tap_name)
+}
+
 fn ensure_ipv4_forwarding(ops: &mut impl PolicyOps) -> Result<(), NetError> {
     ops.run_command(
         "sysctl",
         &["-w".to_owned(), "net.ipv4.ip_forward=1".to_owned()],
+    )
+}
+
+fn disable_ipv6_on_link(ops: &mut impl PolicyOps, link_name: &str) -> Result<(), NetError> {
+    ops.run_command(
+        "sysctl",
+        &[
+            "-w".to_owned(),
+            format!("net.ipv6.conf.{link_name}.disable_ipv6=1"),
+        ],
     )
 }
 
@@ -393,7 +412,7 @@ fn ensure_forwarding_entry_rules(
             "FORWARD",
             vec![
                 "-i".into(),
-                state.bridge.bridge_name.clone(),
+                state.tap_name.clone(),
                 "-s".into(),
                 guest.clone(),
                 "-m".into(),

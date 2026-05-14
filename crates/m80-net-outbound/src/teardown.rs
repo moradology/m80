@@ -105,7 +105,7 @@ fn delete_forwarding_entry_rules(
         "FORWARD",
         &[
             "-i",
-            &state.bridge.bridge_name,
+            &state.tap_name,
             "-s",
             &guest,
             "-m",

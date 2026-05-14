@@ -250,6 +250,12 @@ impl LinkOps for RecordingLinkOps {
         Ok(())
     }
 
+    fn set_bridge_port_isolated(&mut self, link_name: &str) -> Result<(), NetError> {
+        self.operations
+            .push(format!("set_bridge_port_isolated {link_name}"));
+        Ok(())
+    }
+
     fn set_link_up(&mut self, name: &str) -> Result<(), NetError> {
         self.operations.push(format!("set_link_up {name}"));
         Ok(())

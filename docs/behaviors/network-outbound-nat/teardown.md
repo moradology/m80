@@ -29,15 +29,16 @@ Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::cleanup_deletes_only_rules_with_owned_comment`
 and `::cleanup_foreign_rule_in_owned_chain_aborts`.
 
-## Host Forwarding Sysctl
+## Host Sysctls
 
 Policy setup enables IPv4 forwarding with `sysctl -w net.ipv4.ip_forward=1`
-before installing FORWARD or NAT rules. Teardown does not revert that host-wide
-sysctl. m80 owns the per-VM rules it stamped with the m80 comment; it does not
-try to infer whether some other host workload still needs forwarding.
+and disables IPv6 on the owned bridge/TAP interfaces before installing FORWARD
+or NAT rules. Teardown does not revert those host sysctls. m80 owns the per-VM
+rules it stamped with the m80 comment; it does not try to infer whether some
+other host workload still needs forwarding or interface IPv6.
 
 Verification:
-`crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::sysctl_ip_forward_set_before_rules`
+`crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::sysctls_set_ip_forward_and_disable_ipv6_before_rules`
 and `crates/m80-net-outbound/tests/network-outbound-nat/teardown.rs::cleanup_does_not_revert_host_ip_forward_sysctl`.
 
 ## NAT Masquerade Lifecycle

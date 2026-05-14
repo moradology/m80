@@ -116,10 +116,20 @@ fn cleanup_does_not_revert_host_ip_forward_sysctl() {
     let sysctl_runs = ops
         .runs
         .iter()
-        .map(String::as_str)
         .filter(|command| command.starts_with("sysctl "))
+        .cloned()
         .collect::<Vec<_>>();
-    assert_eq!(sysctl_runs, vec!["sysctl -w net.ipv4.ip_forward=1"]);
+    assert_eq!(
+        sysctl_runs,
+        vec![
+            "sysctl -w net.ipv4.ip_forward=1".to_owned(),
+            format!(
+                "sysctl -w net.ipv6.conf.{}.disable_ipv6=1",
+                state.bridge.bridge_name
+            ),
+            format!("sysctl -w net.ipv6.conf.{}.disable_ipv6=1", state.tap_name),
+        ]
+    );
 }
 
 #[test]
@@ -441,6 +451,10 @@ impl LinkOps for RecordingLinkOps {
         _link_name: &str,
         _bridge_name: &str,
     ) -> Result<(), NetError> {
+        Ok(())
+    }
+
+    fn set_bridge_port_isolated(&mut self, _link_name: &str) -> Result<(), NetError> {
         Ok(())
     }
 

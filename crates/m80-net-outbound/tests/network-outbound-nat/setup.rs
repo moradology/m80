@@ -24,6 +24,7 @@ fn tap_creation_without_ip_binary_then_rtnetlink_attach() {
     assert_contains(source, "tun::create");
     assert_contains(source, "set_link_mac");
     assert_contains(source, "attach_link_to_bridge");
+    assert_contains(source, "set_bridge_port_isolated");
     assert_contains(source, "set_link_up");
     assert_contains(source, "rtnetlink");
 }
@@ -169,6 +170,7 @@ fn bridge_setup_is_idempotent_with_matching_state() {
                 "attach_link_to_bridge {} {}",
                 realized.tap_name, ready_bridge.bridge_name
             ),
+            format!("set_bridge_port_isolated {}", realized.tap_name),
             format!("set_link_up {}", realized.tap_name),
         ]
     );
@@ -556,6 +558,10 @@ impl LinkOps for SharedBridgeRaceOps {
         Ok(())
     }
 
+    fn set_bridge_port_isolated(&mut self, _link_name: &str) -> Result<(), NetError> {
+        Ok(())
+    }
+
     fn set_link_up(&mut self, _name: &str) -> Result<(), NetError> {
         Ok(())
     }
@@ -642,6 +648,12 @@ impl LinkOps for RecordingLinkOps {
     ) -> Result<(), NetError> {
         self.operations
             .push(format!("attach_link_to_bridge {link_name} {bridge_name}"));
+        Ok(())
+    }
+
+    fn set_bridge_port_isolated(&mut self, link_name: &str) -> Result<(), NetError> {
+        self.operations
+            .push(format!("set_bridge_port_isolated {link_name}"));
         Ok(())
     }
 
