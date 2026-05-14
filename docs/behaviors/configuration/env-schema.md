@@ -28,6 +28,7 @@ All keys are exact and case-sensitive. Legacy predecessor-style names such as
 | `M80_KERNEL_KIND` | `stock` or `stripped`; overrides the manifest kernel-kind discriminator after reading the rootfs manifest. | manifest value |
 | `M80_RUN_ROOT` | Host run-root directory used for VM state. | `/var/run/m80` |
 | `M80_FORCE_PREFLIGHT` | When set to any value, bypasses the boot-scoped preflight sentinel cache and reruns Firecracker version probing plus manifest SHA verification. | cache enabled |
+| `M80_SKIP_CHECK_VULNERABILITIES` | When set exactly to `1`, skips hard failure for CPU vulnerability sysfs rows such as `mds` and `l1tf`. | vulnerability gate enabled |
 
 Preflight does not create missing directories, install binaries, download
 artifacts, or fall back to a different image after a bad env value. The first
@@ -67,3 +68,5 @@ backend config shown by `m80 config show`.
   covers invalid kernel-kind rejection.
 - `crates/m80-preflight/src/cache.rs::tests::force_preflight_env_disables_cache_reads_and_writes`
   covers the `M80_FORCE_PREFLIGHT` cache bypass.
+- `crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_scan_can_be_explicitly_skipped`
+  covers the `M80_SKIP_CHECK_VULNERABILITIES=1` escape hatch.

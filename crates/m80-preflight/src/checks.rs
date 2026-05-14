@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use caps::CapSet;
 use nix::sys::utsname::uname;
@@ -25,12 +25,54 @@ const KVM_INTEL_PREEMPTION_TIMER_PATH: &str =
     "/sys/module/kvm_intel/parameters/enable_preemption_timer";
 const CPUFREQ_SCALING_DRIVER_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver";
 const CPUFREQ_SCALING_GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
+const CPU_VULNERABILITY_DIR: &str = "/sys/devices/system/cpu/vulnerabilities";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
 const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
 const TUN_PATH: &str = "/dev/net/tun";
 const VHOST_VSOCK_PATH: &str = "/dev/vhost-vsock";
+const ENV_SKIP_CPU_VULNERABILITIES: &str = "M80_SKIP_CHECK_VULNERABILITIES";
 
 const REQUIRED_KERNEL_MODULES: &[&str] = &["tap", "bridge"];
+const CPU_VULNERABILITY_CHECKS: &[CpuVulnerabilityCheck] = &[
+    CpuVulnerabilityCheck {
+        id: "mds",
+        hard_fail_on_vulnerable: true,
+    },
+    CpuVulnerabilityCheck {
+        id: "l1tf",
+        hard_fail_on_vulnerable: true,
+    },
+    CpuVulnerabilityCheck {
+        id: "spectre_v2",
+        hard_fail_on_vulnerable: false,
+    },
+    CpuVulnerabilityCheck {
+        id: "retbleed",
+        hard_fail_on_vulnerable: false,
+    },
+    CpuVulnerabilityCheck {
+        id: "tsx_async_abort",
+        hard_fail_on_vulnerable: false,
+    },
+    CpuVulnerabilityCheck {
+        id: "srbds",
+        hard_fail_on_vulnerable: false,
+    },
+    CpuVulnerabilityCheck {
+        id: "mmio_stale_data",
+        hard_fail_on_vulnerable: false,
+    },
+    CpuVulnerabilityCheck {
+        id: "gather_data_sampling",
+        hard_fail_on_vulnerable: false,
+    },
+];
+
+#[derive(Debug, Clone, Copy)]
+struct CpuVulnerabilityCheck {
+    id: &'static str,
+    hard_fail_on_vulnerable: bool,
+}
 
 /// Cgroup mode preflight should validate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,16 +161,18 @@ pub fn run_with_configs(
     check_thp_policy(&mut report);
     check_kvm_halt_poll(&mut report);
     check_cpu_governor(&mut report);
+    check_cpu_vulnerabilities(&mut report)?;
 
-    // 8. Cgroup host mode
+    // 8. CPU vulnerabilities
+    // 9. Cgroup host mode
     check_cgroup_mode(host_feature_config.cgroup_mode, &mut report)?;
 
-    // 9. Privilege
+    // 10. Privilege
     let privilege = check_privilege(&mut report)?;
 
     let cache = PreflightCache::load(&binary_config, &artifact_config);
 
-    // 10-12. Firecracker and jailer binaries
+    // 11-13. Firecracker and jailer binaries
     let binaries = discover_binaries(
         &binary_config,
         cache.hit().map(|hit| hit.firecracker_version.as_str()),
@@ -154,7 +198,7 @@ pub fn run_with_configs(
         detail: binaries.jailer_harden_bin.display().to_string(),
     });
 
-    // 13-16. Kernel/rootfs artifacts, run-root, and storage helpers
+    // 14-18. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config, cache.hit().map(|hit| &hit.manifest))?;
     report.push(CheckRow {
         label: "Kernel image".to_string(),
@@ -461,6 +505,77 @@ fn classify_cpu_governor(driver: Option<&str>, governor: Option<&str>) -> CheckR
         passed: true,
         detail,
     }
+}
+
+fn check_cpu_vulnerabilities(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
+    check_cpu_vulnerabilities_in_dir(
+        Path::new(CPU_VULNERABILITY_DIR),
+        cpu_vulnerability_skip_enabled(),
+        report,
+    )
+}
+
+fn cpu_vulnerability_skip_enabled() -> bool {
+    std::env::var(ENV_SKIP_CPU_VULNERABILITIES).as_deref() == Ok("1")
+}
+
+fn check_cpu_vulnerabilities_in_dir(
+    root: &Path,
+    skip: bool,
+    report: &mut Vec<CheckRow>,
+) -> Result<(), PreflightError> {
+    if skip {
+        report.push(CheckRow {
+            label: "CPU vulnerabilities".to_string(),
+            passed: true,
+            detail: format!("skipped by {ENV_SKIP_CPU_VULNERABILITIES}=1"),
+        });
+        return Ok(());
+    }
+
+    let mut observations = Vec::new();
+    for check in CPU_VULNERABILITY_CHECKS {
+        let path = root.join(check.id);
+        observations.push(match fs::read_to_string(&path) {
+            Ok(raw) => classify_cpu_vulnerability(*check, &raw)?,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                format!("{}=unavailable", check.id)
+            }
+            Err(err) => format!("{}=unreadable: {err}", check.id),
+        });
+    }
+
+    report.push(CheckRow {
+        label: "CPU vulnerabilities".to_string(),
+        passed: true,
+        detail: observations.join("; "),
+    });
+    Ok(())
+}
+
+fn classify_cpu_vulnerability(
+    check: CpuVulnerabilityCheck,
+    raw: &str,
+) -> Result<String, PreflightError> {
+    let detail = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if detail.starts_with("Vulnerable") {
+        if check.hard_fail_on_vulnerable {
+            return Err(PreflightError::CpuVulnerabilityDetected {
+                id: check.id.to_owned(),
+                detail,
+            });
+        }
+        return Ok(format!("{}=vulnerable advisory: {detail}", check.id));
+    }
+
+    if detail.starts_with("Mitigation") || detail.starts_with("Not affected") {
+        return Ok(format!("{}={detail}", check.id));
+    }
+
+    if detail.is_empty() {
+        return Ok(format!("{}=unclassified advisory: empty status", check.id));
+    }
+    Ok(format!("{}=unclassified advisory: {detail}", check.id))
 }
 
 fn read_trimmed_sysfs(path: &str) -> Option<String> {
@@ -945,6 +1060,109 @@ flags\t\t: fpu svm tsc
         assert!(row.passed);
         assert!(row.detail.contains("CPU governor check not evaluated"));
         assert!(!row.detail.contains("advisory:"));
+    }
+
+    #[test]
+    fn cpu_vulnerability_mds_vulnerable_fails_closed() {
+        let check = CpuVulnerabilityCheck {
+            id: "mds",
+            hard_fail_on_vulnerable: true,
+        };
+
+        let err = classify_cpu_vulnerability(
+            check,
+            "Vulnerable: Clear CPU buffers attempted, no microcode\n",
+        )
+        .expect_err("mds vulnerable status must fail");
+
+        match err {
+            PreflightError::CpuVulnerabilityDetected { id, detail } => {
+                assert_eq!(id, "mds");
+                assert_eq!(
+                    detail,
+                    "Vulnerable: Clear CPU buffers attempted, no microcode"
+                );
+            }
+            other => panic!("expected CpuVulnerabilityDetected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cpu_vulnerability_medium_vulnerable_is_advisory_row() {
+        let check = CpuVulnerabilityCheck {
+            id: "spectre_v2",
+            hard_fail_on_vulnerable: false,
+        };
+
+        let row =
+            classify_cpu_vulnerability(check, "Vulnerable: Retpoline without IBPB\n").unwrap();
+
+        assert_eq!(
+            row,
+            "spectre_v2=vulnerable advisory: Vulnerable: Retpoline without IBPB"
+        );
+    }
+
+    #[test]
+    fn cpu_vulnerability_mitigated_status_is_clean_row_detail() {
+        let check = CpuVulnerabilityCheck {
+            id: "retbleed",
+            hard_fail_on_vulnerable: false,
+        };
+
+        let row =
+            classify_cpu_vulnerability(check, "Mitigation: untrained return thunk\n").unwrap();
+
+        assert_eq!(row, "retbleed=Mitigation: untrained return thunk");
+    }
+
+    #[test]
+    fn cpu_vulnerability_unclassified_status_is_advisory() {
+        let check = CpuVulnerabilityCheck {
+            id: "srbds",
+            hard_fail_on_vulnerable: false,
+        };
+
+        let row = classify_cpu_vulnerability(check, "Unknown: vendor-specific status\n").unwrap();
+
+        assert_eq!(
+            row,
+            "srbds=unclassified advisory: Unknown: vendor-specific status"
+        );
+    }
+
+    #[test]
+    fn cpu_vulnerability_scan_reports_all_configured_files() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        for check in CPU_VULNERABILITY_CHECKS {
+            fs::write(dir.path().join(check.id), "Not affected\n").expect("write status");
+        }
+        let mut report = Vec::new();
+
+        check_cpu_vulnerabilities_in_dir(dir.path(), false, &mut report)
+            .expect("all not affected statuses pass");
+
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].label, "CPU vulnerabilities");
+        assert!(report[0].passed);
+        for check in CPU_VULNERABILITY_CHECKS {
+            assert!(report[0].detail.contains(check.id), "missing {}", check.id);
+        }
+    }
+
+    #[test]
+    fn cpu_vulnerability_scan_can_be_explicitly_skipped() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let mut report = Vec::new();
+
+        check_cpu_vulnerabilities_in_dir(dir.path(), true, &mut report).unwrap();
+
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].label, "CPU vulnerabilities");
+        assert_eq!(
+            report[0].detail,
+            "skipped by M80_SKIP_CHECK_VULNERABILITIES=1"
+        );
     }
 
     fn err_hint_mentions_kvm_enable(err: &PreflightError) -> bool {

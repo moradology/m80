@@ -51,6 +51,22 @@ and defaults to `unified-v2`, matching `m80-firecracker` config defaults.
 Callers that already loaded effective config pass
 `HostFeaturePreflightConfig` to `run_with_configs`.
 
+## CPU Vulnerability Gate
+
+Preflight reads selected files under
+`/sys/devices/system/cpu/vulnerabilities/`. `mds` and `l1tf` are hard gates:
+when the kernel reports `Vulnerable`, preflight returns
+`PreflightError::CpuVulnerabilityDetected` before launch work begins.
+
+The remaining tracked files (`spectre_v2`, `retbleed`, `tsx_async_abort`,
+`srbds`, `mmio_stale_data`, and `gather_data_sampling`) are advisory rows.
+`Vulnerable`, unreadable, unavailable, and unclassified statuses are preserved
+in the report detail so operators can make the host-placement decision with the
+kernel's actual text visible.
+
+Operators may set `M80_SKIP_CHECK_VULNERABILITIES=1` to bypass the hard gate
+after accepting the side-channel risk. Other values do not disable the gate.
+
 ## Privilege Gate
 
 m80 accepts exactly two startup privilege shapes:
@@ -76,3 +92,5 @@ capabilities through the container runtime.
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_tun_module_typed`
 - `crates/m80-preflight/src/checks.rs::tests::preflight_missing_nf_conntrack_typed`
 - `crates/m80-preflight/src/checks.rs::tests::preflight_cgroup_v2_unavailability_typed`
+- `crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_mds_vulnerable_fails_closed`
+- `crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_scan_reports_all_configured_files`

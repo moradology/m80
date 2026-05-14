@@ -38,6 +38,23 @@ Test:
 `crates/m80-preflight/tests/error_hints.rs::cgroup_v2_unavailable_has_hint`, and
 `crates/m80-preflight/tests/error_hints.rs::invalid_cgroup_mode_has_hint`.
 
+## cpu-vulnerability-detected
+
+`m80-preflight` rejects hosts where high-impact CPU side-channel sysfs status
+files report `Vulnerable`. The first hard-gated vulnerable row returns
+`PreflightError::CpuVulnerabilityDetected { id, detail }`, preserving the
+kernel's exact status text in `detail`. The hard-gated files are `mds` and
+`l1tf`; other tracked vulnerability files remain advisory report rows.
+
+Operators may bypass the hard gate with `M80_SKIP_CHECK_VULNERABILITIES=1`
+after accepting the host side-channel risk.
+
+Test:
+`crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_mds_vulnerable_fails_closed`,
+`crates/m80-preflight/src/checks.rs::tests::cpu_vulnerability_medium_vulnerable_is_advisory_row`,
+and
+`crates/m80-preflight/tests/error_hints.rs::cpu_vulnerability_detected_has_hint`.
+
 ## vsock-unavailable
 
 `m80-preflight` rejects a host without vhost-vsock support with

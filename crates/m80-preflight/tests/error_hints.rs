@@ -59,6 +59,17 @@ fn invalid_cgroup_mode_has_hint() {
 }
 
 #[test]
+fn cpu_vulnerability_detected_has_hint() {
+    let err = PreflightError::CpuVulnerabilityDetected {
+        id: "mds".into(),
+        detail: "Vulnerable: no microcode".into(),
+    };
+    assert_hint(&err);
+    assert!(err.to_string().contains("mds"));
+    assert!(err.to_string().contains("Vulnerable"));
+}
+
+#[test]
 fn cgroup_v2_unavailable_has_hint() {
     assert_hint(&PreflightError::CgroupV2Unavailable);
 }

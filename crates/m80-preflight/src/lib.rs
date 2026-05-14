@@ -152,6 +152,16 @@ pub enum PreflightError {
         actual: String,
     },
 
+    /// A high-impact CPU vulnerability sysfs row reports `Vulnerable` and
+    /// m80 has not been explicitly told to skip this host gate.
+    #[error("cpu vulnerability {id} is unmitigated: {detail}")]
+    CpuVulnerabilityDetected {
+        /// Vulnerability file name under `/sys/devices/system/cpu/vulnerabilities`.
+        id: String,
+        /// Kernel-provided status text.
+        detail: String,
+    },
+
     /// `M80_KERNEL_KIND` carried a value preflight does not understand.
     #[error("invalid kernel kind: {actual:?}")]
     InvalidKernelKind {
@@ -324,6 +334,9 @@ impl PreflightError {
             }
             Self::InvalidCgroupMode { .. } => {
                 "set M80_CGROUP_MODE to either `unified-v2` or `disabled`"
+            }
+            Self::CpuVulnerabilityDetected { .. } => {
+                "apply CPU microcode/kernel mitigations or set M80_SKIP_CHECK_VULNERABILITIES=1 only after accepting the side-channel risk"
             }
             Self::InvalidKernelKind { .. } => {
                 "set M80_KERNEL_KIND to either `stock` or `stripped`"

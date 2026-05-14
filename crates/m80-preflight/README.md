@@ -47,36 +47,42 @@ which is the right place for a security review to start.
      non-`performance` governor carries an advisory; `intel_pstate` and
      `amd_pstate` stay clean because their hardware-managed ramp behavior is
      different.
-  8. **Cgroup mode** — when effective `cgroup_mode` is `unified-v2`,
+  8. **CPU vulnerabilities** — reads selected files under
+     `/sys/devices/system/cpu/vulnerabilities`. `mds` and `l1tf` reporting
+     `Vulnerable` fail preflight unless
+     `M80_SKIP_CHECK_VULNERABILITIES=1` is set. Other vulnerability files emit
+     advisory report detail when the kernel reports `Vulnerable` or an
+     unclassified status.
+  9. **Cgroup mode** — when effective `cgroup_mode` is `unified-v2`,
      `m80-cgroup::Subtree::probe()` must confirm a unified cgroup v2 hierarchy
      before launch work begins. `cgroup_mode = "disabled"` skips this check.
-  9. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
+  10. **Privilege** — `geteuid() == 0` OR the effective Linux capability set
      contains every entry in `REQUIRED_CAPABILITIES`
      (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
      `CAP_FOWNER`, `CAP_KILL`). Probed via the `caps` crate against the
      process's effective set. Returns `PrivilegeStatus::Root` or
      `PrivilegeStatus::CapabilityBearing`.
-  10. **Firecracker binary** — discovered via env override or default,
+  11. **Firecracker binary** — discovered via env override or default,
      `--version` must clear the documented CVE floor before any configured
      exact version pin is accepted.
-  11. **Jailer binary** — same protocol.
-  12. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
+  12. **Jailer binary** — same protocol.
+  13. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
-  13. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
+  14. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  14. **Rootfs + manifest** — manifest schema validates, including
+  15. **Rootfs + manifest** — manifest schema validates, including
      `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256. This is the
      boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
      not rehash these artifacts again for every VM.
-  15. **Run-root** — absolute, must already exist, >= 100 MiB free
+  16. **Run-root** — absolute, must already exist, >= 100 MiB free
      (no silent creation; caller must ensure the directory is present).
-  16. **Run-root filesystem** — creates a short-lived probe file under the
+  17. **Run-root filesystem** — creates a short-lived probe file under the
      run-root and runs `cp --reflink=always` to report whether the filesystem
      supports metadata-only CoW clones. This advisory is non-blocking:
      unsupported reflinks mean launch falls back through `cp --reflink=auto`.
-  17. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
+  18. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - A boot-scoped sentinel under `/run/m80-preflight-ok-<sha256>` caches only
   the two expensive immutable-artifact checks: `firecracker --version` and
@@ -89,8 +95,9 @@ which is the right place for a security review to start.
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
   `M80_JAILER_HARDEN_BIN`, `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`,
   `M80_ROOTFS_IMAGE`, `M80_KERNEL_KIND`, `M80_RUN_ROOT`, and
-  `M80_FORCE_PREFLIGHT`. The full schema is captured in
-  `docs/behaviors/configuration/env-schema.md`.
+  `M80_FORCE_PREFLIGHT`. `M80_SKIP_CHECK_VULNERABILITIES=1` is a documented
+  escape hatch for the CPU vulnerability hard gate. The full schema is captured
+  in `docs/behaviors/configuration/env-schema.md`.
 - Each check produces a row in the `Discovery::report` field. The same
   data is rendered as a fixed-width table for human consumption via
   `Discovery::render_table()`.
@@ -137,6 +144,7 @@ which is the right place for a security review to start.
 - `PreflightError`: `UnsupportedHostPlatform { actual }`,
   `KvmUnavailable { path }`, `KvmNotWritable { path }`,
   `KvmCpuExtensionMissing`, `InvalidCgroupMode { actual }`,
+  `CpuVulnerabilityDetected { id, detail }`,
   `CgroupV2Unavailable`, `VsockUnavailable`, `TunUnavailable`,
   `NfConntrackUnavailable`,
   `KernelModulesMissing { missing: Vec<String> }`,
