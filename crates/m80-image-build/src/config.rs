@@ -35,10 +35,14 @@ pub(crate) struct KernelConfig {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RootfsConfig {
     /// Target ext4 size, e.g. `"1GiB"`, `"512MiB"`, `"100KiB"`.
+    /// Ignored by `kind = "minimal-erofs"` because erofs is sized from
+    /// its source tree.
     pub size: String,
     /// Image kind. `"ubuntu"` (default) builds from the firecracker-ci
-    /// squashfs with systemd. `"minimal"` builds an empty ext4 with
-    /// busybox + statically-linked m80-guestd as PID 1, no systemd.
+    /// squashfs. `"minimal"` builds an empty ext4 with busybox +
+    /// statically-linked m80-guestd as PID 1, no systemd.
+    /// `"minimal-erofs"` builds that same minimal userland as a compressed
+    /// read-only erofs base image.
     /// Required for `"minimal"`; defaults to `"ubuntu"` when absent.
     #[serde(default)]
     pub kind: Option<String>,
@@ -172,6 +176,28 @@ dir = "/opt/m80/artifacts"
 "#;
         let cfg: BuildConfig = toml::from_str(raw).expect("TOML parse failed");
         assert_eq!(cfg.rootfs.kind.as_deref(), Some("minimal"));
+    }
+
+    #[test]
+    fn rootfs_kind_minimal_erofs_parses() {
+        let raw = r#"
+[kernel]
+version = "v1.15.1"
+artifact_track = "v1.15"
+arch = "x86_64"
+
+[rootfs]
+size = "256MiB"
+kind = "minimal-erofs"
+
+[guestd]
+binary = "/tmp/m80-guestd"
+
+[output]
+dir = "/opt/m80/artifacts"
+"#;
+        let cfg: BuildConfig = toml::from_str(raw).expect("TOML parse failed");
+        assert_eq!(cfg.rootfs.kind.as_deref(), Some("minimal-erofs"));
     }
 
     #[test]

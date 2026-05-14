@@ -119,7 +119,7 @@ try:
     data = json.loads(path.read_text())
 except Exception:
     raise SystemExit(1)
-raise SystemExit(0 if data.get("schema_version") == 4 else 1)
+raise SystemExit(0 if data.get("schema_version") == 5 else 1)
 PY
 }
 

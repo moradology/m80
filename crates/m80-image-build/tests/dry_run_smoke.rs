@@ -50,6 +50,14 @@ size = "256MiB""#,
     )
 }
 
+fn write_minimal_erofs_fixture_config(dir: &TempDir) -> PathBuf {
+    write_fixture_config(
+        dir,
+        r#"kind = "minimal-erofs"
+size = "256MiB""#,
+    )
+}
+
 fn dry_run_steps(config_path: &Path) -> (std::process::ExitStatus, String) {
     let mut cmd = Command::cargo_bin("m80-image-build").unwrap();
     cmd.args([
@@ -136,6 +144,39 @@ fn minimal_dry_run_prints_release_artifact_steps_and_creates_no_output_files() {
     assert!(
         !out_dir.exists(),
         "minimal dry-run must not create output directory"
+    );
+}
+
+#[test]
+fn minimal_erofs_dry_run_prints_erofs_steps_and_creates_no_output_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = write_minimal_erofs_fixture_config(&dir);
+    let out_dir = dir.path().join("out");
+
+    let (status, stderr) = dry_run_steps(&config_path);
+
+    assert!(
+        status.success(),
+        "minimal-erofs dry-run should exit 0; stderr: {stderr}"
+    );
+
+    let observed = observed_step_numbers(&stderr);
+    assert_eq!(
+        observed,
+        (1..=8).collect::<Vec<_>>(),
+        "expected minimal-erofs step numbers 1..=8 in order; got {observed:?}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("mkfs.erofs -zlz4hc"),
+        "minimal-erofs dry-run should describe the erofs builder; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("output.erofs"),
+        "minimal-erofs dry-run should target output.erofs; stderr:\n{stderr}"
+    );
+    assert!(
+        !out_dir.exists(),
+        "minimal-erofs dry-run must not create output directory"
     );
 }
 

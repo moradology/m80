@@ -185,7 +185,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use m80_image_manifest::{ImageKind, KernelKind, Manifest};
+    use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
 
     use super::{PreflightCache, PreflightSentinel, ENV_FORCE_PREFLIGHT};
     use crate::artifacts::ArtifactPreflightConfig;
@@ -215,6 +215,7 @@ mod tests {
             rootfs.clone(),
             SHA256_EMPTY.to_string(),
             "M80_READY".to_string(),
+            RootfsFormat::Ext4,
             None,
             None,
         );

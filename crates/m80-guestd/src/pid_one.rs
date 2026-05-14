@@ -174,23 +174,32 @@ fn mount_overlay_and_pivot(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
     boot_timer.mark("mount_namespace_private");
 
     // ── Phase 2: mount layer disks ────────────────────────────────────────
-    // Step 2. Mount the shared read-only base ext4 (vda) at /lower.
+    // Step 2. Mount the shared read-only base rootfs (vda) at /lower.
     // / is already read-only, so these mountpoints are an image-build
     // contract, not something PID 1 can create at runtime.
+    let base_rootfs_format = base_rootfs_format_from_cmdline()?;
     guest_log::info(
         GuestLogPhase::Boot,
         None,
-        "step 2: mounting /dev/vda at /lower",
+        format!(
+            "step 2: mounting /dev/vda at /lower ({})",
+            base_rootfs_format.fstype()
+        ),
     );
     ensure_precreated_mountpoint("/lower").context("step 2: /lower mountpoint")?;
     mount(
         Some("/dev/vda"),
         "/lower",
-        Some("ext4"),
+        Some(base_rootfs_format.fstype()),
         MsFlags::MS_RDONLY,
         None::<&str>,
     )
-    .context("step 2: mount /dev/vda -> /lower (ext4, rdonly)")?;
+    .with_context(|| {
+        format!(
+            "step 2: mount /dev/vda -> /lower ({}, rdonly)",
+            base_rootfs_format.fstype()
+        )
+    })?;
     boot_timer.mark("base_mounted");
 
     // Step 3. Mount the per-VM writable ext4 (vdb) at /upper.
@@ -384,9 +393,9 @@ fn pivot_root<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(
 /// Lift verbatim from kata-containers/src/agent/rustjail/src/mount.rs:523-559.
 pub(crate) fn pivot_rootfs<P: ?Sized + NixPath + std::fmt::Debug>(path: &P) -> anyhow::Result<()> {
     let oldroot = fcntl::open("/", OFlag::O_DIRECTORY | OFlag::O_RDONLY, Mode::empty())?;
-    defer!{ if let Err(e) = unistd::close(oldroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(oldroot): {e}")); } }
+    defer! { if let Err(e) = unistd::close(oldroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(oldroot): {e}")); } }
     let newroot = fcntl::open(path, OFlag::O_DIRECTORY | OFlag::O_RDONLY, Mode::empty())?;
-    defer!{ if let Err(e) = unistd::close(newroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(newroot): {e}")); } }
+    defer! { if let Err(e) = unistd::close(newroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(newroot): {e}")); } }
 
     // Change to the new root so that the pivot_root actually acts on it.
     unistd::fchdir(newroot)?;
@@ -430,6 +439,40 @@ const DEV_SHM_MOUNT_DATA: &str = "mode=1777";
 const DEV_PTS_MOUNT_DATA: &str = "gid=5,mode=620,ptmxmode=666";
 const WORKSPACE_CMDLINE_FLAG: &str = "m80.workspace=1";
 const WORKSPACE_MKFS_CMDLINE_FLAG: &str = "m80.workspace.mkfs=1";
+const ROOTFS_CMDLINE_PREFIX: &str = "m80.rootfs=";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BaseRootfsFormat {
+    Ext4,
+    Erofs,
+}
+
+impl BaseRootfsFormat {
+    fn fstype(self) -> &'static str {
+        match self {
+            Self::Ext4 => "ext4",
+            Self::Erofs => "erofs",
+        }
+    }
+}
+
+fn base_rootfs_format_from_cmdline() -> anyhow::Result<BaseRootfsFormat> {
+    base_rootfs_format_from_cmdline_text(&std::fs::read_to_string("/proc/cmdline")?)
+}
+
+fn base_rootfs_format_from_cmdline_text(cmdline: &str) -> anyhow::Result<BaseRootfsFormat> {
+    for token in cmdline.split_whitespace() {
+        let Some(raw) = token.strip_prefix(ROOTFS_CMDLINE_PREFIX) else {
+            continue;
+        };
+        return match raw {
+            "ext4" => Ok(BaseRootfsFormat::Ext4),
+            "erofs" => Ok(BaseRootfsFormat::Erofs),
+            other => anyhow::bail!("invalid {ROOTFS_CMDLINE_PREFIX}{other}"),
+        };
+    }
+    anyhow::bail!("missing {ROOTFS_CMDLINE_PREFIX}<ext4|erofs> kernel cmdline token")
+}
 
 /// Mount the workspace drive at `/workspace` if attached. The workspace
 /// is optional (a Sandbox without `workspace_dir` produces no
@@ -534,9 +577,7 @@ fn mount_workspace_device_if_present(
             guest_log::warn(
                 GuestLogPhase::Boot,
                 None,
-                format!(
-                    "workspace mount failed: {initial}; running e2fsck/resize2fs on {device}"
-                ),
+                format!("workspace mount failed: {initial}; running e2fsck/resize2fs on {device}"),
             );
             workspace_repair_ext4(device)
                 .with_context(|| format!("workspace repair failed for {device}"))?;
@@ -614,9 +655,7 @@ pub(crate) fn mount_workspace_device_with_ops(
             guest_log::warn(
                 GuestLogPhase::Boot,
                 None,
-                format!(
-                    "workspace mount failed: {initial}; running e2fsck/resize2fs on {device}"
-                ),
+                format!("workspace mount failed: {initial}; running e2fsck/resize2fs on {device}"),
             );
             ops.repair_ext4(device)
                 .with_context(|| format!("workspace repair failed for {device}"))?;

@@ -23,9 +23,13 @@ use sha2::{Digest, Sha256};
 /// image kinds now boot m80-guestd as PID 1; `Ubuntu` records only its
 /// source rootfs provenance in addition to the common artifacts.
 ///
-/// No 1↔2↔3↔4 conversion code: per CLAUDE.md, future versions are new code,
+/// `5` — added `rootfs_format: RootfsFormat` so host launch planning and
+/// PID-1 guest setup agree on whether the read-only base drive is ext4 or
+/// erofs.
+///
+/// No 1↔2↔3↔4↔5 conversion code: per CLAUDE.md, future versions are new code,
 /// not migrations. Existing older images must be rebuilt.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// Human-readable audit reason recorded in m80-built images that do not bake
 /// an outbound network posture into the image itself.
@@ -54,6 +58,16 @@ pub enum ImageKind {
     /// Minimal rootfs with busybox userland. m80-guestd runs as PID 1
     /// (`init=/m80-guestd`).
     Minimal,
+}
+
+/// Filesystem format of the read-only base rootfs drive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum RootfsFormat {
+    /// ext4 base rootfs.
+    Ext4,
+    /// erofs base rootfs.
+    Erofs,
 }
 
 /// The provenance manifest for a built guest image. Single source of truth
@@ -91,6 +105,8 @@ pub struct Manifest {
     pub output_rootfs_sha256: String,
     /// Serial-console marker the guest emits when the daemon is ready.
     pub ready_marker: String,
+    /// Filesystem format of the read-only base rootfs drive.
+    pub rootfs_format: RootfsFormat,
     /// Always [`SCHEMA_VERSION`]. Private so callers cannot supply an
     /// arbitrary version; use [`Manifest::new`] to construct and
     /// [`Manifest::schema_version`] to read.
@@ -129,6 +145,7 @@ impl Manifest {
         output_rootfs_image: PathBuf,
         output_rootfs_sha256: String,
         ready_marker: String,
+        rootfs_format: RootfsFormat,
         source_rootfs_image: Option<PathBuf>,
         source_rootfs_sha256: Option<String>,
     ) -> Manifest {
@@ -145,6 +162,7 @@ impl Manifest {
             output_rootfs_image,
             output_rootfs_sha256,
             ready_marker,
+            rootfs_format,
             schema_version: SCHEMA_VERSION,
             source_rootfs_image,
             source_rootfs_sha256,

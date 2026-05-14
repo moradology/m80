@@ -35,6 +35,97 @@ const BUSYBOX_APPLETS: &[&str] = &[
     "sh", "echo", "cat", "ls", "mkdir", "mount", "umount", "stat", "ln", "touch", "true", "false",
 ];
 
+pub(crate) fn run_build_minimal_erofs(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
+    let _size_bytes = parse_size(&cfg.rootfs.size)
+        .with_context(|| format!("parsing rootfs.size '{}'", cfg.rootfs.size))?;
+    let kernel = cfg.output.dir.join("vmlinux");
+    let output_rootfs = cfg.output.dir.join("output.erofs");
+    let daemon_binary_host = cfg.output.dir.join("m80-guestd");
+    let manifest_path = manifest_path(&output_rootfs);
+
+    let kernel_url = format!(
+        "{}/{}/{}/{}",
+        FC_CI_BASE, cfg.kernel.artifact_track, cfg.kernel.arch, KERNEL_FILENAME
+    );
+
+    if dry_run {
+        eprintln!(
+            "1. Download kernel: curl -fsSL '{}' → {}",
+            kernel_url,
+            kernel.display()
+        );
+        eprintln!("2. Create temporary minimal rootfs tree");
+        eprintln!(
+            "3. Copy {} → <tree>/bin/busybox + symlink applets ({})",
+            HOST_BUSYBOX,
+            BUSYBOX_APPLETS.join(", ")
+        );
+        eprintln!(
+            "4. Copy {} → <tree>/m80-guestd + symlink /init → /m80-guestd",
+            cfg.guestd.binary.display()
+        );
+        eprintln!(
+            "5. mkdir {} (PID-1 mount targets)",
+            PID_ONE_MOUNTPOINT_DIRS
+                .iter()
+                .map(|d| format!("/{d}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        eprintln!(
+            "6. Build read-only rootfs: mkfs.erofs -zlz4hc {} <tree>",
+            output_rootfs.display()
+        );
+        eprintln!("7. Compute sha256 of 3 artifacts (kernel, output_rootfs, daemon_binary)");
+        eprintln!("8. Write manifest → {}", manifest_path.display());
+        return Ok(());
+    }
+
+    require_host_busybox()?;
+
+    std::fs::create_dir_all(&cfg.output.dir)
+        .with_context(|| format!("creating output dir {}", cfg.output.dir.display()))?;
+
+    run_curl(&kernel_url, &kernel).context("step 1: download kernel")?;
+
+    let tree = tempfile::Builder::new()
+        .prefix("m80-erofs-tree-")
+        .tempdir()
+        .context("step 2: creating temporary rootfs tree")?;
+    install_minimal(tree.path(), &cfg.guestd.binary).context("steps 3-5: minimal install")?;
+
+    run_mkfs_erofs(&output_rootfs, tree.path()).context("step 6: mkfs.erofs")?;
+
+    std::fs::copy(&cfg.guestd.binary, &daemon_binary_host)
+        .context("copying m80-guestd to output dir")?;
+
+    let kernel_sha = sha256_file(&kernel).context("sha256 kernel")?;
+    let output_sha = sha256_file(&output_rootfs).context("sha256 output rootfs")?;
+    let daemon_sha = sha256_file(&cfg.guestd.binary).context("sha256 daemon binary")?;
+
+    let manifest = build_manifest(
+        daemon_binary_host,
+        daemon_sha,
+        cfg.kernel.version,
+        m80_image_manifest::ImageKind::Minimal,
+        kernel.clone(),
+        kernel_sha,
+        output_rootfs.clone(),
+        output_sha,
+        m80_image_manifest::RootfsFormat::Erofs,
+        None,
+        None,
+    );
+    manifest
+        .write(&manifest_path)
+        .with_context(|| format!("writing manifest to {}", manifest_path.display()))?;
+
+    println!("kernel:        {}", kernel.display());
+    println!("output_rootfs: {}", output_rootfs.display());
+    println!("manifest:      {}", manifest_path.display());
+    Ok(())
+}
+
 pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     let size_bytes = parse_size(&cfg.rootfs.size)
         .with_context(|| format!("parsing rootfs.size '{}'", cfg.rootfs.size))?;
@@ -85,14 +176,7 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         return Ok(());
     }
 
-    if !Path::new(HOST_BUSYBOX).exists() {
-        anyhow::bail!(
-            "host {} not found — install busybox-static (Debian/Ubuntu: \
-             `apt install busybox-static`) or place a static busybox at {}",
-            HOST_BUSYBOX,
-            HOST_BUSYBOX
-        );
-    }
+    require_host_busybox()?;
 
     std::fs::create_dir_all(&cfg.output.dir)
         .with_context(|| format!("creating output dir {}", cfg.output.dir.display()))?;
@@ -146,6 +230,7 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
         kernel_sha,
         output_rootfs.clone(),
         output_sha,
+        m80_image_manifest::RootfsFormat::Ext4,
         None,
         None,
     );
@@ -156,6 +241,31 @@ pub(crate) fn run_build_minimal(cfg: BuildConfig, dry_run: bool) -> anyhow::Resu
     println!("kernel:        {}", kernel.display());
     println!("output_rootfs: {}", output_rootfs.display());
     println!("manifest:      {}", manifest_path.display());
+    Ok(())
+}
+
+fn require_host_busybox() -> anyhow::Result<()> {
+    if Path::new(HOST_BUSYBOX).exists() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "host {} not found — install busybox-static (Debian/Ubuntu: \
+         `apt install busybox-static`) or place a static busybox at {}",
+        HOST_BUSYBOX,
+        HOST_BUSYBOX
+    );
+}
+
+fn run_mkfs_erofs(output_rootfs: &Path, source_tree: &Path) -> anyhow::Result<()> {
+    let status = Command::new("mkfs.erofs")
+        .arg("-zlz4hc")
+        .arg(output_rootfs)
+        .arg(source_tree)
+        .status()
+        .context("spawning mkfs.erofs")?;
+    if !status.success() {
+        anyhow::bail!("mkfs.erofs failed (exit {:?})", status.code());
+    }
     Ok(())
 }
 

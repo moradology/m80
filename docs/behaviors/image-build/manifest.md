@@ -13,7 +13,7 @@ Test: `m80-image-manifest/tests/manifest_emit.rs::emits_manifest_beside_rootfs`.
 
 ## schema-version {#schema-version}
 
-Every current manifest carries `schema_version: 4`, the crate constant
+Every current manifest carries `schema_version: 5`, the crate constant
 `SCHEMA_VERSION`. `Manifest::read` probes this field before full
 deserialization and returns `ManifestError::UnsupportedSchemaVersion(v)` for
 any unsupported value. There is no migration path inside the crate; older
@@ -36,7 +36,7 @@ image kind:
 |---|---|---|
 | `kernel_image` | `kernel_image_sha256` | kernel image |
 | `source_rootfs_image` | `source_rootfs_sha256` | upstream/source rootfs, Ubuntu only |
-| `output_rootfs_image` | `output_rootfs_sha256` | built ext4 rootfs |
+| `output_rootfs_image` | `output_rootfs_sha256` | built rootfs |
 | `daemon_binary_path` | `daemon_binary_sha256` | host-side audit copy of `m80-guestd` |
 
 `ImageKind::Ubuntu` requires the source-rootfs fields to be populated.
@@ -56,6 +56,7 @@ The manifest records boot-adjacent fields:
 | `ready_marker` | legacy guest log/manifest marker string; not the load-bearing host readiness mechanism |
 | `image_kind` | userland family: Ubuntu rootfs or Minimal busybox rootfs; both boot PID-1 guestd |
 | `kernel_kind` | kernel provenance: stock Firecracker CI kernel or stripped m80 kernel |
+| `rootfs_format` | read-only base rootfs filesystem: `ext4` or `erofs` |
 | `no_egress_reason` | operator audit note for network-neutral images |
 
 Runtime launch readiness uses the inverted-ready vsock port and protocol byte;
@@ -63,5 +64,6 @@ it does not serial-probe `ready_marker`.
 
 Tests:
 `m80-image-manifest/tests/manifest_boot_fields.rs::records_port_marker`,
+`records_rootfs_format`,
 `manifest_kind_invariants.rs`, `schema_v3_kernel_kind.rs`, and
 `no_egress_reason.rs`.

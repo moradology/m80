@@ -66,8 +66,8 @@ which is the right place for a security review to start.
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
      `kernel_kind` is overridden to match the selected kernel artifact.
-  14. **Rootfs + manifest** — manifest schema validates,
-     `m80-image-manifest::verify` recomputes every sha256. This is the
+  14. **Rootfs + manifest** — manifest schema validates, including
+     `rootfs_format`, and `m80-image-manifest::verify` recomputes every sha256. This is the
      boot-artifact trust boundary for `m80-firecracker`; launch phase 3 does
      not rehash these artifacts again for every VM.
   15. **Run-root** — absolute, must already exist, >= 100 MiB free

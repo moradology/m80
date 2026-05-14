@@ -5,7 +5,7 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
-use m80_image_manifest::ImageKind;
+use m80_image_manifest::{ImageKind, RootfsFormat};
 use m80_proto::{ExecRequest, ExecStatus};
 
 use common::RunDirDumpGuard;
@@ -17,11 +17,27 @@ fn artifact_dir(env_key: &str, default_path: &str) -> PathBuf {
 }
 
 fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
+    discovery_for_artifacts_with_rootfs(dir, dir.join("output.ext4"))
+}
+
+fn discovery_for_artifacts_with_rootfs(
+    dir: &Path,
+    rootfs_image: PathBuf,
+) -> m80_preflight::Discovery {
+    discovery_for_artifacts_with_rootfs_and_kernel(dir, rootfs_image, dir.join("vmlinux"), None)
+}
+
+fn discovery_for_artifacts_with_rootfs_and_kernel(
+    dir: &Path,
+    rootfs_image: PathBuf,
+    kernel_image: PathBuf,
+    kernel_kind: Option<String>,
+) -> m80_preflight::Discovery {
     let artifact_config = m80_preflight::ArtifactPreflightConfig {
-        kernel_image: Some(dir.join("vmlinux")),
+        kernel_image: Some(kernel_image),
         artifact_dir: dir.to_owned(),
-        rootfs_image: Some(dir.join("output.ext4")),
-        kernel_kind: None,
+        rootfs_image: Some(rootfs_image),
+        kernel_kind,
         ..m80_preflight::ArtifactPreflightConfig::from_env()
     };
     m80_preflight::run_with_configs(
@@ -32,6 +48,34 @@ fn discovery_for_artifacts(dir: &Path) -> m80_preflight::Discovery {
         },
     )
     .expect("preflight for explicit image-kind artifacts")
+}
+
+fn stripped_erofs_kernel_image() -> PathBuf {
+    if let Some(path) = std::env::var_os("M80_MINIMAL_EROFS_KERNEL") {
+        return PathBuf::from(path);
+    }
+    if let Some(path) = std::env::var_os("M80_STRIPPED_KERNEL_PATH") {
+        return PathBuf::from(path);
+    }
+    let kernel_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("m80-firecracker lives under <repo>/crates/m80-firecracker")
+        .join("crates/m80-image-build/kernels");
+    let mut candidates: Vec<PathBuf> = std::fs::read_dir(&kernel_dir)
+        .expect("read stripped kernel directory")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("vmlinux-m80-") && name.ends_with(".bin"))
+        })
+        .collect();
+    candidates.sort_by_key(|path| path.metadata().and_then(|meta| meta.modified()).ok());
+    candidates
+        .pop()
+        .expect("minimal-erofs real-KVM test requires a built stripped kernel")
 }
 
 fn launch_vm(
@@ -117,6 +161,41 @@ fn image_kind_minimal_boots() {
     );
     let minimal_stopped = minimal.stop().expect("stop minimal");
     minimal_stopped.delete().expect("delete minimal");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Minimal erofs Firecracker artifacts"]
+fn image_kind_minimal_erofs_boots() {
+    let erofs_dir = artifact_dir(
+        "M80_MINIMAL_EROFS_ARTIFACT_DIR",
+        "/tmp/m80-build/minimal-erofs",
+    );
+    let erofs_discovery = discovery_for_artifacts_with_rootfs_and_kernel(
+        &erofs_dir,
+        erofs_dir.join("output.erofs"),
+        stripped_erofs_kernel_image(),
+        Some("stripped".to_owned()),
+    );
+    assert_eq!(erofs_discovery.manifest.rootfs_format, RootfsFormat::Erofs);
+    let erofs_id = common::unique_vm_id("ik-min-erofs");
+    let mut erofs = launch_vm(erofs_discovery, &erofs_id, ImageKind::Minimal);
+    let erofs_run_dir = erofs.run_dir().to_owned();
+    let _erofs_dump_guard = RunDirDumpGuard::new(erofs_run_dir);
+    let erofs_stdout = exec_sh(
+        &mut erofs,
+        "printf 'minimal-erofs:'; cat /proc/1/comm; \
+         awk '$2 == \"/lower\" { print $3 }' /proc/mounts",
+    );
+    assert!(
+        erofs_stdout.contains("minimal-erofs:m80-guestd"),
+        "minimal-erofs image must run m80-guestd as PID 1, got {erofs_stdout:?}"
+    );
+    assert!(
+        erofs_stdout.contains("erofs"),
+        "minimal-erofs lower mount must use erofs, got {erofs_stdout:?}"
+    );
+    let erofs_stopped = erofs.stop().expect("stop minimal erofs");
+    erofs_stopped.delete().expect("delete minimal erofs");
 }
 
 #[test]

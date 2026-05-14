@@ -147,6 +147,10 @@ EOF
 sudo target/release/m80-image-build run --config /tmp/m80-image-build.toml
 ```
 
+Use `kind = "minimal-erofs"` to build the same busybox + static-guestd
+minimal image as a compressed read-only erofs base (`output.erofs`) when the
+selected kernel has built-in erofs support.
+
 Release artifacts are produced by
 [`.github/workflows/release-artifacts.yml`](.github/workflows/release-artifacts.yml)
 on tag pushes.

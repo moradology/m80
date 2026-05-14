@@ -4,7 +4,7 @@
 
 mod common;
 
-use m80_image_manifest::Manifest;
+use m80_image_manifest::{Manifest, RootfsFormat};
 
 /// Bead m80-sz1.3.4: guest_port and ready_marker survive the write → read
 /// round-trip so the host can derive vsock and serial-probe parameters without
@@ -22,4 +22,18 @@ fn records_port_marker() {
 
     assert_eq!(m2.guest_port, 52000);
     assert_eq!(m2.ready_marker, "AGENT_DAEMON_READY");
+}
+
+#[test]
+fn records_rootfs_format() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut m = common::make_minimal_artifacts(dir.path());
+    m.rootfs_format = RootfsFormat::Erofs;
+
+    let path = dir.path().join("rootfs.erofs.manifest.json");
+    m.write(&path).unwrap();
+    let m2 = Manifest::read(&path).unwrap();
+
+    assert_eq!(m2.image_kind, m80_image_manifest::ImageKind::Minimal);
+    assert_eq!(m2.rootfs_format, RootfsFormat::Erofs);
 }

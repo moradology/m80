@@ -273,7 +273,9 @@ Executed in order during `enter_pid_one_mode()` before the vsock listener binds:
 
 1. Mount pseudo-filesystems: `/proc` (procfs), `/sys` (sysfs), `/dev` (devtmpfs), `/dev/shm` (tmpfs `mode=1777`), and `/dev/pts` (devpts `gid=5,mode=620,ptmxmode=666`, no `MS_NODEV` so `/dev/pts/ptmx` can be opened). `EBUSY` (kernel pre-mounted) is accepted as success, and `/dev/ptmx` is normalized to `pts/ptmx`.
 2. Make mount namespace fully private (`MS_REC | MS_PRIVATE` on `/`) so `pivot_root(2)` does not propagate to the host.
-3. Verify the image-built `/lower` mountpoint exists, then mount `/dev/vda` (shared read-only base ext4) there (`MS_RDONLY`).
+3. Read `m80.rootfs=<ext4|erofs>` from the kernel command line, fail closed
+   if it is missing or unknown, then mount `/dev/vda` (shared read-only base)
+   at `/lower` with the declared filesystem and `MS_RDONLY`.
 4. Verify the image-built `/upper` mountpoint exists, then mount `/dev/vdb` (per-VM writable overlay ext4) there.
 5. `mkdir /upper/root` and `mkdir /upper/.work` (idempotent — first boot creates, later boots already have them from a prior VM that used the overlay).
 6. Verify the image-built `/merged` mountpoint exists.
@@ -299,7 +301,10 @@ failure point.
 
 The base root is already mounted read-only when PID 1 starts, so
 `/lower`, `/upper`, and `/merged` are part of the minimal image-build
-contract. `m80-guestd` checks them rather than creating them at boot.
+contract. `m80-guestd` checks them rather than creating them at boot. Host
+launch planning derives `m80.rootfs` from the admitted manifest's
+`rootfs_format`; erofs images also receive `rootfstype=erofs` for the kernel's
+initial root mount.
 
 ### Workspace mount
 

@@ -81,25 +81,55 @@ scratch. Smaller, faster cold boot, no package manager.
 9. sha256 the three artifacts that exist for Minimal kind (kernel,
    output rootfs, daemon binary).
 10. Emit `<rootfs>.manifest.json` with `image_kind=Minimal` and the
-    Ubuntu-only `source_rootfs_*` fields as `null`. The manifest records
-    `no_egress_reason` with the shared m80 audit string because the image is
-    network-neutral; runtime egress is selected at launch.
+    Ubuntu-only `source_rootfs_*` fields as `null`, plus
+    `rootfs_format=Ext4`. The manifest records `no_egress_reason` with the
+    shared m80 audit string because the image is network-neutral; runtime
+    egress is selected at launch.
+
+#### Minimal erofs (`kind = "minimal-erofs"`)
+
+8 numbered steps. Same busybox + static `m80-guestd` userland as Minimal,
+but the base rootfs is a compressed read-only erofs image rather than ext4.
+`rootfs.size` is parsed for config hygiene but does not size the erofs output;
+the filesystem is sized from the populated tree.
+
+1. Download kernel (same as Ubuntu).
+2. Create a temporary rootfs tree.
+3. Copy `/bin/busybox` from the host into `<tree>/bin/busybox` and symlink
+   the same common applets as Minimal.
+4. Copy the configured `m80-guestd` binary into `<tree>/m80-guestd` and
+   symlink `<tree>/init` → `/m80-guestd`.
+5. `mkdir` the PID-1 mountpoint dirs (`/workspace`, `/proc`, `/sys`,
+   `/dev`, `/etc`, `/lower`, `/upper`, `/merged`) and `/tmp` inside the
+   tree.
+6. Build `output.erofs` with `mkfs.erofs -zlz4hc <output> <tree>`.
+7. sha256 the three artifacts that exist for Minimal erofs kind (kernel,
+   output rootfs, daemon binary).
+8. Emit `<rootfs>.manifest.json` with `image_kind=Minimal`,
+   `rootfs_format=Erofs`, and the Ubuntu-only `source_rootfs_*` fields as
+   `null`.
+
+Runtime launch requires a kernel with built-in erofs support. The stripped
+kernel config provides that support; the stock Firecracker kernel in the
+current smoke environment does not.
 
 Final step: print resulting paths to stdout. **No package-manager
 invocations** — `apt`/`dnf`/`pacman` are never spawned.
 
 ### Choosing an image kind
 
-| Property                | Ubuntu                              | Minimal                             |
-|-------------------------|-------------------------------------|-------------------------------------|
-| Init                    | m80-guestd as PID 1                 | m80-guestd as PID 1                 |
-| Userland                | Ubuntu 24.04 (full)                 | busybox + a few applets             |
-| Rootfs default size     | 1 GiB                               | 256 MiB (fits in much less)         |
-| Source                  | firecracker-ci squashfs             | built from scratch                  |
-| Package manager         | apt available inside guest          | none                                |
-| Cold boot               | slower (larger rootfs/userland)     | faster (smaller rootfs/userland)    |
-| Build network deps      | curl + S3 squashfs                  | curl only (kernel only)             |
-| Static guestd required? | no (glibc dynamic OK)               | yes (musl-static; see config example)|
+| Property                | Ubuntu                              | Minimal                             | Minimal erofs                       |
+|-------------------------|-------------------------------------|-------------------------------------|-------------------------------------|
+| Init                    | m80-guestd as PID 1                 | m80-guestd as PID 1                 | m80-guestd as PID 1                 |
+| Userland                | Ubuntu 24.04 (full)                 | busybox + a few applets             | busybox + a few applets             |
+| Rootfs default size     | 1 GiB                               | 256 MiB (fits in much less)         | tree-sized compressed erofs         |
+| Rootfs format           | ext4                                | ext4                                | erofs                               |
+| Source                  | firecracker-ci squashfs             | built from scratch                  | built from scratch                  |
+| Package manager         | apt available inside guest          | none                                | none                                |
+| Cold boot               | slower (larger rootfs/userland)     | faster (smaller rootfs/userland)    | smaller base; latency win unproven  |
+| Build network deps      | curl + S3 squashfs                  | curl only (kernel only)             | curl only (kernel only)             |
+| Static guestd required? | no (glibc dynamic OK)               | yes (musl-static; see config example)| yes (musl-static; see config example)|
+| Extra host tools        | unsquashfs + mkfs.ext4              | mkfs.ext4 + busybox-static          | mkfs.erofs + busybox-static         |
 
 Pick **Ubuntu** when:
 - the workload needs a familiar userspace (apt-installable tools, shared
@@ -110,6 +140,11 @@ Pick **Minimal** when:
 - launch latency matters (warm pools, agentic loops, CI burst workloads)
 - you control the workload binary and can ship it self-contained
 - `busybox` applets cover the inside-VM scripting needs
+
+Pick **Minimal erofs** when:
+- the workload fits the Minimal userland
+- read-only base image size and base mount latency are being optimized
+- the selected kernel has built-in erofs support
 
 ### Stripped kernel build
 
@@ -128,9 +163,9 @@ Files:
   pins (`KBUILD_BUILD_TIMESTAMP=0`, `SOURCE_DATE_EPOCH=0`).
 - `kernel-builder/m80-stripped.config` — canonical keep/drop config per
   `docs/design/stripped-kernel.md`. Contains `CONFIG_OVERLAY_FS=y` and
-  `CONFIG_OVERLAY_FS_XINO_AUTO=y` (required by m80-f2zc.5), plus the
-  cgroup/tmpfs/event primitives required for Ubuntu systemd to mount its API
-  filesystems.
+  `CONFIG_OVERLAY_FS_XINO_AUTO=y` (required by m80-f2zc.5), built-in erofs
+  support for `minimal-erofs`, plus the cgroup/tmpfs/event primitives required
+  for Ubuntu systemd to mount its API filesystems.
 - `kernel-builder/build.sh` — copies config, runs `olddefconfig`, builds
   vmlinux, strips symbol tables, prints config sha, copies output to `/out`.
 - `kernels/` — gitignored binary output directory.
@@ -192,7 +227,7 @@ arch = "x86_64"
 
 [rootfs]
 size = "1GiB"
-# kind = "minimal"   # uncomment to build the busybox + static-guestd image
+# kind = "minimal"   # or "minimal-erofs" for a compressed read-only base
 
 [guestd]
 binary = "../../target/release/m80-guestd"
@@ -227,6 +262,13 @@ as `v1.15`.
 - `serde`, `sha2`, `hex`, `toml`.
 - `nix` — mount namespace isolation for the loop-mount phase.
 - `anyhow`, `tempfile`.
+
+Host tools:
+- Ubuntu path: `curl`, `unsquashfs`, `mkfs.ext4`, `truncate`, `mount`,
+  `umount`.
+- Minimal ext4 path: `curl`, `mkfs.ext4`, `truncate`, `mount`, `umount`,
+  `/bin/busybox`.
+- Minimal erofs path: `curl`, `mkfs.erofs`, `/bin/busybox`.
 
 ## Tests
 

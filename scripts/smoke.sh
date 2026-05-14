@@ -7,7 +7,9 @@
 #   - Firecracker + jailer at /opt/firecracker/bin/{firecracker,jailer}
 #     (override with FIRECRACKER_BIN / JAILER_BIN env vars)
 #   - mkfs.ext4, e2fsck, debugfs (e2fsprogs), cp, fallocate on PATH
+#   - mkfs.erofs on PATH for M80_IMAGE_KIND=minimal-erofs
 #   - unsquashfs + mount/umount + truncate + curl + python3 on PATH
+#   - rg on PATH for portable output matching
 #   - For minimal kind: rustup target x86_64-unknown-linux-musl + /bin/busybox
 #     (apt install busybox-static)
 #
@@ -15,6 +17,7 @@
 #   ./scripts/smoke.sh                              # ubuntu image, full pipeline
 #   ./scripts/smoke.sh launch-only                  # skip image build
 #   M80_IMAGE_KIND=minimal ./scripts/smoke.sh       # minimal image, full pipeline
+#   M80_IMAGE_KIND=minimal-erofs ./scripts/smoke.sh # minimal erofs image; defaults to stripped kernel
 #   M80_KERNEL_KIND=stripped ./scripts/smoke.sh     # stripped kernel smoke (m80-ci9i.6)
 #
 # Knobs (env vars):
@@ -23,7 +26,7 @@
 #   JAILER_BIN                (default /opt/firecracker/bin/jailer)
 #   M80_JAIL_UID              (default = current user uid)
 #   M80_JAIL_GID              (default = `kvm` group gid, falls back to user gid)
-#   M80_IMAGE_KIND            (default ubuntu; or "minimal")
+#   M80_IMAGE_KIND            (default ubuntu; "minimal" or "minimal-erofs")
 #   IMAGE_BUILD_DIR           (default /tmp/m80-build/<kind>)
 #   M80_KERNEL_KIND           (default stock; or "stripped")
 #   M80_STRIPPED_KERNEL_PATH  (default: first glob match of
@@ -36,11 +39,15 @@ cd "$(dirname "$0")/.."
 # --- knobs ---
 IMAGE_KIND="${M80_IMAGE_KIND:-ubuntu}"
 case "$IMAGE_KIND" in
-    ubuntu|minimal) ;;
-    *) echo "M80_IMAGE_KIND must be ubuntu|minimal, got: $IMAGE_KIND" >&2; exit 1 ;;
+    ubuntu|minimal|minimal-erofs) ;;
+    *) echo "M80_IMAGE_KIND must be ubuntu|minimal|minimal-erofs, got: $IMAGE_KIND" >&2; exit 1 ;;
 esac
 
-KERNEL_KIND="${M80_KERNEL_KIND:-stock}"
+if [[ "$IMAGE_KIND" == "minimal-erofs" && -z "${M80_KERNEL_KIND:-}" ]]; then
+    KERNEL_KIND="stripped"
+else
+    KERNEL_KIND="${M80_KERNEL_KIND:-stock}"
+fi
 case "$KERNEL_KIND" in
     stock|stripped) ;;
     *) echo "M80_KERNEL_KIND must be stock|stripped, got: $KERNEL_KIND" >&2; exit 1 ;;
@@ -71,7 +78,7 @@ try:
     data = json.loads(path.read_text())
 except Exception:
     raise SystemExit(1)
-raise SystemExit(0 if data.get("schema_version") == 4 else 1)
+raise SystemExit(0 if data.get("schema_version") == 5 else 1)
 PY
 }
 
@@ -104,7 +111,10 @@ else
     KERNEL_IMAGE="${IMAGE_BUILD_DIR}/vmlinux"
 fi
 
-ROOTFS_IMAGE="${IMAGE_BUILD_DIR}/output.ext4"
+case "$IMAGE_KIND" in
+    minimal-erofs) ROOTFS_IMAGE="${IMAGE_BUILD_DIR}/output.erofs" ;;
+    *)             ROOTFS_IMAGE="${IMAGE_BUILD_DIR}/output.ext4" ;;
+esac
 
 echo "=== smoke config ==="
 echo "  image-kind:  $IMAGE_KIND"
@@ -121,9 +131,9 @@ echo
 echo "=== build ==="
 cargo build --release -p m80-cli -p m80-image-build -p m80-guestd
 
-# For minimal kind, additionally build a static (musl) m80-guestd.
-if [[ "$IMAGE_KIND" == "minimal" ]]; then
-    if ! rustup target list --installed | grep -q '^x86_64-unknown-linux-musl$'; then
+# For minimal kinds, additionally build a static (musl) m80-guestd.
+if [[ "$IMAGE_KIND" == "minimal" || "$IMAGE_KIND" == "minimal-erofs" ]]; then
+    if ! rustup target list --installed | rg -q '^x86_64-unknown-linux-musl$'; then
         echo "=== adding rustup target x86_64-unknown-linux-musl ==="
         rustup target add x86_64-unknown-linux-musl
     fi
@@ -156,7 +166,7 @@ binary = "$guestd_bin"
 dir = "$IMAGE_BUILD_DIR"
 EOF
             ;;
-        minimal)
+        minimal|minimal-erofs)
             guestd_bin="$(pwd)/target/x86_64-unknown-linux-musl/release/m80-guestd"
             if [[ ! -x "$guestd_bin" ]]; then
                 echo "missing static guestd at $guestd_bin" >&2
@@ -174,7 +184,7 @@ arch = "x86_64"
 
 [rootfs]
 size = "256MiB"
-kind = "minimal"
+kind = "$IMAGE_KIND"
 
 [guestd]
 binary = "$guestd_bin"
@@ -225,9 +235,9 @@ echo "=== launch ==="
 if timeout 90 sudo env "${M80_ENV[@]}" ./target/release/m80 run \
         --egress none -- /bin/echo smoke-passes \
         > "$out_file" 2>&1 \
-        && grep -q "^smoke-passes$" "$out_file"; then
+        && rg -q "^smoke-passes$" "$out_file"; then
     echo "=== SMOKE PASSED ==="
-    grep -E "^smoke-passes$|exit_code=0|Firecracker exiting" "$out_file"
+    rg "^smoke-passes$|exit_code=0|Firecracker exiting" "$out_file"
     exit 0
 fi
 

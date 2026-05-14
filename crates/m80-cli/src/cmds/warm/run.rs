@@ -309,6 +309,7 @@ mod tests {
             "/tmp/rootfs.ext4".into(),
             "2".repeat(64),
             "M80_READY".to_owned(),
+            m80_image_manifest::RootfsFormat::Ext4,
             None,
             None,
         )

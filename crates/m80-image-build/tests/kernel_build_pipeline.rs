@@ -111,6 +111,22 @@ fn stripped_config_keeps_overlay_xino_auto_built_in() {
 }
 
 #[test]
+fn stripped_config_keeps_erofs_built_in() {
+    let cfg = committed_config_text();
+    for symbol in [
+        "CONFIG_EROFS_FS=y",
+        "CONFIG_EROFS_FS_ZIP=y",
+        "CONFIG_EROFS_FS_ZIP_LZ4=y",
+        "CONFIG_EROFS_FS_ZIP_LZ4HC=y",
+    ] {
+        assert!(
+            cfg.lines().any(|line| line == symbol),
+            "{symbol} must be built in for minimal-erofs base images"
+        );
+    }
+}
+
+#[test]
 fn stripped_config_keeps_virtio_net_reachable() {
     let cfg = committed_config_text();
     assert!(
@@ -175,7 +191,8 @@ fn stripped_config_uses_non_preemptible_kernel_build() {
         "voluntary preemption must stay disabled"
     );
     assert!(
-        cfg.lines().any(|line| line == "# CONFIG_PREEMPT is not set"),
+        cfg.lines()
+            .any(|line| line == "# CONFIG_PREEMPT is not set"),
         "full preemption must stay disabled"
     );
 }
@@ -204,11 +221,13 @@ fn stripped_config_omits_initrd_and_decompressors() {
 fn stripped_config_omits_scheduler_debug_stats() {
     let cfg = committed_config_text();
     assert!(
-        cfg.lines().any(|line| line == "# CONFIG_SCHED_DEBUG is not set"),
+        cfg.lines()
+            .any(|line| line == "# CONFIG_SCHED_DEBUG is not set"),
         "scheduler debug plumbing must stay disabled"
     );
     assert!(
-        cfg.lines().any(|line| line == "# CONFIG_SCHEDSTATS is not set"),
+        cfg.lines()
+            .any(|line| line == "# CONFIG_SCHEDSTATS is not set"),
         "scheduler statistics must stay disabled"
     );
 }
@@ -217,7 +236,8 @@ fn stripped_config_omits_scheduler_debug_stats() {
 fn stripped_config_omits_debug_info() {
     let cfg = committed_config_text();
     assert!(
-        cfg.lines().any(|line| line == "# CONFIG_DEBUG_INFO is not set"),
+        cfg.lines()
+            .any(|line| line == "# CONFIG_DEBUG_INFO is not set"),
         "kernel debug info must stay disabled"
     );
     assert!(
@@ -231,7 +251,8 @@ fn stripped_config_omits_debug_info() {
 fn stripped_config_omits_printk_timestamps() {
     let cfg = committed_config_text();
     assert!(
-        cfg.lines().any(|line| line == "# CONFIG_PRINTK_TIME is not set"),
+        cfg.lines()
+            .any(|line| line == "# CONFIG_PRINTK_TIME is not set"),
         "printk timestamp formatting must stay disabled"
     );
 }

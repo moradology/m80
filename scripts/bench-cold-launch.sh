@@ -20,8 +20,10 @@
 # Requirements (only when actually running launches):
 #   - KVM host, sudo NOPASSWD, /opt/firecracker/bin/{firecracker,jailer},
 #     mkfs.ext4, unsquashfs, busybox-static (minimal kind), curl.
+#   - mkfs.erofs for building minimal-erofs images.
 #   - stress-ng installed (apt install stress-ng) unless SKIP_LOADED=1.
-#   - Both images pre-built into IMAGE_BUILD_DIR_UBUNTU/IMAGE_BUILD_DIR_MINIMAL.
+#   - Images pre-built into IMAGE_BUILD_DIR_UBUNTU/IMAGE_BUILD_DIR_MINIMAL
+#     and IMAGE_BUILD_DIR_MINIMAL_EROFS when that kind is selected.
 #
 # Usage:
 #   ./scripts/bench-cold-launch.sh
@@ -57,6 +59,8 @@ KERNEL_KIND="${KERNEL_KIND:-${M80_KERNEL_KIND:-stock}}"
 EGRESS="${EGRESS:-${M80_NETWORK_POLICY:-none}}"
 IMAGE_UBUNTU="${IMAGE_BUILD_DIR_UBUNTU:-/tmp/m80-build/ubuntu}"
 IMAGE_MINIMAL="${IMAGE_BUILD_DIR_MINIMAL:-/tmp/m80-build/minimal}"
+IMAGE_MINIMAL_EROFS="${IMAGE_BUILD_DIR_MINIMAL_EROFS:-/tmp/m80-build/minimal-erofs}"
+STRIPPED_KERNEL_IMAGE="${M80_STRIPPED_KERNEL_PATH:-}"
 RUN_ROOT="${M80_RUN_ROOT:-/var/lib/m80-run}"
 BENCH_ARTIFACT_DIR="${BENCH_ARTIFACT_DIR:-crates/m80-firecracker/benches}"
 RESULT_CSV="$BENCH_ARTIFACT_DIR/cold-launch.csv"
@@ -92,7 +96,7 @@ usage() {
 ENV vars:
     N             samples per cell (default 30; 1000 for tail latency)
     WARMUP        warmup discards per cell (default 2)
-    KIND          ubuntu|minimal|both (default both)
+    KIND          ubuntu|minimal|minimal-erofs|both (default both)
     KERNEL_KIND   stock|stripped (default stock)
     EGRESS        none|outbound (default none; M80_NETWORK_POLICY fallback)
     SKIP_LOADED   set to 1 to skip the stress-ng cell
@@ -131,14 +135,64 @@ done
 # Resolve KIND list once.
 KINDS=()
 case "$KIND" in
-    ubuntu)  KINDS=("ubuntu") ;;
-    minimal) KINDS=("minimal") ;;
-    both)    KINDS=("ubuntu" "minimal") ;;
-    *)       echo "KIND must be ubuntu|minimal|both" >&2; exit 1 ;;
+    ubuntu)        KINDS=("ubuntu") ;;
+    minimal)       KINDS=("minimal") ;;
+    minimal-erofs) KINDS=("minimal-erofs") ;;
+    both)          KINDS=("ubuntu" "minimal") ;;
+    *)             echo "KIND must be ubuntu|minimal|minimal-erofs|both" >&2; exit 1 ;;
 esac
 
 LOADS=("idle")
 [[ "$SKIP_LOADED" != "1" ]] && LOADS+=("loaded")
+
+if [[ "$KERNEL_KIND" == "stripped" ]]; then
+    if [[ -z "$STRIPPED_KERNEL_IMAGE" ]]; then
+        shopt -s nullglob
+        stripped_hits=(crates/m80-image-build/kernels/vmlinux-m80-*.bin)
+        shopt -u nullglob
+        if [[ "${#stripped_hits[@]}" -eq 0 ]]; then
+            echo "KERNEL_KIND=stripped requires M80_STRIPPED_KERNEL_PATH or a built crates/m80-image-build/kernels/vmlinux-m80-*.bin" >&2
+            exit 1
+        fi
+        STRIPPED_KERNEL_IMAGE="${stripped_hits[0]}"
+        for candidate in "${stripped_hits[@]}"; do
+            if [[ "$candidate" -nt "$STRIPPED_KERNEL_IMAGE" ]]; then
+                STRIPPED_KERNEL_IMAGE="$candidate"
+            fi
+        done
+    fi
+    if [[ ! -f "$STRIPPED_KERNEL_IMAGE" ]]; then
+        echo "stripped kernel not found: $STRIPPED_KERNEL_IMAGE" >&2
+        exit 1
+    fi
+    STRIPPED_KERNEL_IMAGE="$(realpath "$STRIPPED_KERNEL_IMAGE")"
+fi
+
+image_dir_for_kind() {
+    case "$1" in
+        ubuntu)        printf '%s\n' "$IMAGE_UBUNTU" ;;
+        minimal)       printf '%s\n' "$IMAGE_MINIMAL" ;;
+        minimal-erofs) printf '%s\n' "$IMAGE_MINIMAL_EROFS" ;;
+        *)             echo "unknown image kind: $1" >&2; exit 1 ;;
+    esac
+}
+
+rootfs_image_for_kind() {
+    local kind="$1" image_dir="$2"
+    case "$kind" in
+        minimal-erofs) printf '%s\n' "$image_dir/output.erofs" ;;
+        *)             printf '%s\n' "$image_dir/output.ext4" ;;
+    esac
+}
+
+kernel_image_for_kind() {
+    local image_dir="$1"
+    if [[ "$KERNEL_KIND" == "stripped" ]]; then
+        printf '%s\n' "$STRIPPED_KERNEL_IMAGE"
+    else
+        printf '%s\n' "$image_dir/vmlinux"
+    fi
+}
 
 if [[ "$PERF_STAT" == "1" && "$CONCURRENT" -gt 0 ]]; then
     echo "PERF_STAT=1 does not support CONCURRENT>0; run sequential launches for perf counters" >&2
@@ -149,6 +203,7 @@ fi
 plan_summary() {
     echo "=== bench-cold-launch plan ==="
     echo "  N=$N  WARMUP=$WARMUP  KERNEL_KIND=$KERNEL_KIND  EGRESS=$EGRESS"
+    [[ "$KERNEL_KIND" == "stripped" ]] && echo "  stripped_kernel=$STRIPPED_KERNEL_IMAGE"
     echo "  kinds=${KINDS[*]}  loads=${LOADS[*]}"
     [[ -n "$SWEEP" ]]      && echo "  SWEEP=$SWEEP  SWEEP_VALUES=${SWEEP_VALUES:-<defaults>}"
     [[ "$CONCURRENT" -gt 0 ]] && echo "  CONCURRENT=$CONCURRENT (N parallel admissions)"
@@ -308,14 +363,17 @@ stop_stress() {
 }
 
 cleanup_run_root() {
-    local image_dir="$1"
+    local kind="$1" image_dir="$2"
+    local kernel_image rootfs_image
+    kernel_image="$(kernel_image_for_kind "$image_dir")"
+    rootfs_image="$(rootfs_image_for_kind "$kind" "$image_dir")"
     sudo IMAGE_BUILD_DIR="$image_dir" \
          M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
          M80_JAILER_BIN=/opt/firecracker/bin/jailer \
          M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
-         M80_KERNEL_IMAGE="$image_dir/vmlinux" \
+         M80_KERNEL_IMAGE="$kernel_image" \
          M80_KERNEL_KIND="$KERNEL_KIND" \
-         M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
+         M80_ROOTFS_IMAGE="$rootfs_image" \
          M80_RUN_ROOT="$RUN_ROOT" \
          M80_FIRECRACKER_VERSION=v1.15.1 \
          M80_JAIL_UID="$(id -u)" \
@@ -439,6 +497,9 @@ emit_phase_event() {
 # Run one launch. Echoes "<launch_ms>,<exit_code>".
 run_one() {
     local kind="$1" load="$2" attempt="$3" image_dir="$4"
+    local kernel_image rootfs_image
+    kernel_image="$(kernel_image_for_kind "$image_dir")"
+    rootfs_image="$(rootfs_image_for_kind "$kind" "$image_dir")"
     local stderr_file
     stderr_file="$(mktemp)"
     local perf_marker=""
@@ -453,7 +514,7 @@ run_one() {
     start_ns=$(date +%s%N)
     # Best-effort cleanup of prior run-dir before each attempt.
     if [[ "${RUN_ONE_SKIP_CLEANUP:-0}" != "1" ]]; then
-        cleanup_run_root "$image_dir"
+        cleanup_run_root "$kind" "$image_dir"
     fi
 
     if [[ "$PERF_STAT" == "1" && "${RECORD_PHASE:-1}" == "1" ]]; then
@@ -468,9 +529,9 @@ run_one() {
             M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
             M80_JAILER_BIN=/opt/firecracker/bin/jailer \
             M80_JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-$PWD/target/release/m80-jailer-harden}" \
-            M80_KERNEL_IMAGE="$image_dir/vmlinux" \
+            M80_KERNEL_IMAGE="$kernel_image" \
             M80_KERNEL_KIND="$KERNEL_KIND" \
-            M80_ROOTFS_IMAGE="$image_dir/output.ext4" \
+            M80_ROOTFS_IMAGE="$rootfs_image" \
             M80_RUN_ROOT="$RUN_ROOT" \
             M80_FIRECRACKER_VERSION=v1.15.1 \
             M80_JAIL_UID="$(id -u)" \
@@ -558,7 +619,7 @@ run_concurrent_cell() {
     for attempt in $(seq 1 "$total"); do
         local pids=() outs=()
         local launch_start launch_end
-        cleanup_run_root "$image_dir"
+        cleanup_run_root "$kind" "$image_dir"
         launch_start=$(date +%s%N)
         for vm in $(seq 0 $((CONCURRENT - 1))); do
             local out
@@ -687,7 +748,7 @@ resolve_sweep_values() {
         vcpu)         printf '%s\n' 1 2 4 ;;
         mem_mib)      printf '%s\n' 256 512 1024 ;;
         kernel_kind)  printf '%s\n' stock stripped ;;
-        image_kind)   printf '%s\n' minimal ubuntu ;;
+        image_kind)   printf '%s\n' minimal minimal-erofs ubuntu ;;
         *)            echo "unknown SWEEP=$SWEEP (vcpu|mem_mib|kernel_kind|image_kind)" >&2; exit 1 ;;
     esac
 }
@@ -719,12 +780,11 @@ if [[ -n "$SWEEP" ]]; then
                 ;;
         esac
         for k in "${KINDS[@]}"; do
-            case "$k" in
-                ubuntu)  dir="$IMAGE_UBUNTU" ;;
-                minimal) dir="$IMAGE_MINIMAL" ;;
-            esac
-            if [[ ! -f "$dir/vmlinux" || ! -f "$dir/output.ext4.manifest.json" ]]; then
-                echo "skip $k: missing $dir/vmlinux or manifest. Build first."
+            dir="$(image_dir_for_kind "$k")"
+            kernel_image="$(kernel_image_for_kind "$dir")"
+            rootfs_image="$(rootfs_image_for_kind "$k" "$dir")"
+            if [[ ! -f "$kernel_image" || ! -f "${rootfs_image}.manifest.json" ]]; then
+                echo "skip $k: missing $kernel_image or manifest. Build first."
                 continue
             fi
             for l in "${LOADS[@]}"; do
@@ -735,12 +795,11 @@ if [[ -n "$SWEEP" ]]; then
 else
     echo "=== bench-cold-launch (N=$N per cell, warmup=$WARMUP) ==="
     for k in "${KINDS[@]}"; do
-        case "$k" in
-            ubuntu)  dir="$IMAGE_UBUNTU" ;;
-            minimal) dir="$IMAGE_MINIMAL" ;;
-        esac
-        if [[ ! -f "$dir/vmlinux" || ! -f "$dir/output.ext4.manifest.json" ]]; then
-            echo "skip $k: missing $dir/vmlinux or manifest. Build first."
+        dir="$(image_dir_for_kind "$k")"
+        kernel_image="$(kernel_image_for_kind "$dir")"
+        rootfs_image="$(rootfs_image_for_kind "$k" "$dir")"
+        if [[ ! -f "$kernel_image" || ! -f "${rootfs_image}.manifest.json" ]]; then
+            echo "skip $k: missing $kernel_image or manifest. Build first."
             continue
         fi
         for l in "${LOADS[@]}"; do

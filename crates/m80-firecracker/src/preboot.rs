@@ -7,7 +7,7 @@ use m80_firecracker_client::{
     BootSourceConfig, CacheType, Client, DriveConfig, IoEngine, MachineConfig,
     NetworkInterfaceConfig, VsockConfig,
 };
-use m80_image_manifest::{ImageKind, KernelKind};
+use m80_image_manifest::{ImageKind, KernelKind, RootfsFormat};
 
 use crate::error::FcError;
 use crate::layout::preallocated_drive_slot_jail_path;
@@ -71,6 +71,7 @@ pub(crate) fn plan_preboot_puts(
     vm_id: &str,
     image_kind: ImageKind,
     kernel_kind: KernelKind,
+    rootfs_format: RootfsFormat,
     include_workspace_drive: bool,
     network: &RealizedNetwork,
     extra_boot_args: &[String],
@@ -82,6 +83,7 @@ pub(crate) fn plan_preboot_puts(
             boot_args: Some(boot_args_for(
                 image_kind,
                 kernel_kind,
+                rootfs_format,
                 config.boot_args.as_deref(),
                 include_workspace_drive,
                 extra_boot_args,
@@ -202,6 +204,7 @@ fn writable_drive_cache_type(config: &SandboxConfig) -> CacheType {
 fn boot_args_for(
     kind: ImageKind,
     kernel_kind: KernelKind,
+    rootfs_format: RootfsFormat,
     config_override: Option<&str>,
     include_workspace_drive: bool,
     extra_boot_args: &[String],
@@ -220,6 +223,10 @@ fn boot_args_for(
     };
     let workspace = u8::from(include_workspace_drive);
     let mut args = format!("{base} m80.workspace={workspace}");
+    match rootfs_format {
+        RootfsFormat::Ext4 => args.push_str(" m80.rootfs=ext4"),
+        RootfsFormat::Erofs => args.push_str(" m80.rootfs=erofs rootfstype=erofs"),
+    }
     if phase_trace_verbose_kernel {
         args.push_str(" ignore_loglevel loglevel=7");
     }

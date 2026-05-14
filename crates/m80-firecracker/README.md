@@ -325,7 +325,7 @@ Firecracker assigns block-device names in PUT order: first PUT becomes
 
 | Position | drive_id          | Host file                                | RO/RW   | I/O engine | Cache type | Guest path | Purpose |
 |---------:|-------------------|------------------------------------------|---------|------------|------------|------------|---------|
-|        1 | `rootfs`          | `<image>/output.ext4` (shared base)      | **RO**  | default    | default    | `/dev/vda` | Read-only base ext4. Bind-mounted into the jail at `/rootfs.ext4`. Same host file for every VM that uses this image — host page cache deduplicates. |
+|        1 | `rootfs`          | `<image>/output.ext4` or `output.erofs` (shared base) | **RO**  | default    | default    | `/dev/vda` | Read-only base rootfs. Bind-mounted into the jail as the admitted artifact. Same host file for every VM that uses this image — host page cache deduplicates. |
 |        2 | `rootfs_overlay`  | `<run_dir>/rootfs.overlay.ext4`          | RW      | `Async`    | `Unsafe`   | `/dev/vdb` | Per-VM sparse ext4. m80-guestd's PID-1 setup mounts `/dev/vda` as the lowerdir, this as the upperdir, overlayfs on `/`. |
 |        3 | `workspace`       | `<run_dir>/scratch.ext4` (if requested)  | RW      | `Async`    | `Unsafe`   | `/dev/vdc` | Per-VM workspace ext4. Mounted at `/workspace`. Subject to opt-in `Scratch::extract` after stop. Only present when `SandboxConfig::workspace.is_some()`. |
 |     3+N | `hotplug_slot_N`  | `<run_dir>/hotplug-slot-N.raw`           | RW      | default    | default    | next block device | Optional placeholder drive slots. Created when `SandboxConfig::preallocated_drive_slots > 0`; later callers retarget an existing slot with Firecracker `PATCH /drives/{id}`. |
@@ -364,9 +364,11 @@ optional workspace scratch drive, optional preallocated hotplug drive slots,
 optional network interface for an OutboundNat TAP, virtio-rng entropy device,
 then vsock. Before the first REST PUT, launch opens the Firecracker API socket
 by watching the run directory for socket creation rather than polling on a
-fixed interval. Outbound NAT boot-source args append the prepared `m80.net.*`
-PID-1 tokens after the `m80.workspace=<0|1>` marker. After the plan succeeds
-and before `InstanceStart`, the launch path writes
+fixed interval. Boot-source args append `m80.workspace=<0|1>` and
+`m80.rootfs=<ext4|erofs>` from the admitted manifest; erofs also adds
+`rootfstype=erofs` for the kernel's initial root mount. Outbound NAT
+boot-source args append the prepared `m80.net.*` PID-1 tokens after those m80
+markers. After the plan succeeds and before `InstanceStart`, the launch path writes
 `<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
 See `docs/behaviors/lifecycle/preboot-wiring.md` and
 `docs/behaviors/lifecycle/virtio-rng.md`.

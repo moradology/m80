@@ -12,7 +12,7 @@ logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Black-box contract
 
-- `schema_version` is the integer **4**. `read` rejects any other value with
+- `schema_version` is the integer **5**. `read` rejects any other value with
   `ManifestError::UnsupportedSchemaVersion` before unknown-field detection,
   so an unknown future version is reported as a version error, not a parse
   error. `write` enforces the same invariant before creating the file. There
@@ -21,6 +21,10 @@ logic (sha256 recompute, schema-version probe) lives here once.
   built for: `Ubuntu` (Ubuntu userland from the Firecracker CI squashfs)
   or `Minimal` (busybox userland built from scratch). Both kinds boot
   m80-guestd as PID 1 and share the same overlay/workspace drive contract.
+- `rootfs_format: RootfsFormat` declares the filesystem on the read-only
+  base rootfs drive: `Ext4` or `Erofs`. The host launch path passes this to
+  PID-1 guestd through a kernel cmdline token; the guest mounts `/dev/vda`
+  with the declared filesystem and fails closed on missing or unknown values.
 - `kernel_kind: KernelKind` declares which kernel was used: `Stock`
   (upstream Firecracker CI kernel from S3) or `Stripped` (purpose-built
   via the m80-ci9i.2 pipeline). Defaults to `Stock` when absent in JSON.
@@ -44,7 +48,14 @@ logic (sha256 recompute, schema-version probe) lives here once.
 
 ## Schema
 
-### v4 (current)
+### v5 (current)
+
+`schema_version: 5`. Added `rootfs_format: RootfsFormat` so build,
+preflight, host launch planning, and PID-1 overlay assembly agree on whether
+the read-only base rootfs is ext4 or erofs. Existing v4 manifests must be
+rebuilt.
+
+### v4
 
 `schema_version: 4`. Removed the systemd service and workspace-mount unit
 artifact fields. Both image kinds now boot m80-guestd as PID 1; `Ubuntu`
@@ -71,13 +82,15 @@ artifacts.
   `expected_firecracker_version`, `guest_port`, `image_kind`,
   `kernel_image`, `kernel_image_sha256`, `kernel_kind`,
   `no_egress_reason`, `output_rootfs_image`, `output_rootfs_sha256`,
-  `ready_marker`, `schema_version`, `source_rootfs_image`, and
-  `source_rootfs_sha256`. Paired `<artifact>_path` / `<artifact>_sha256`
+  `ready_marker`, `rootfs_format`, `schema_version`, `source_rootfs_image`,
+  and `source_rootfs_sha256`. Paired `<artifact>_path` / `<artifact>_sha256`
   fields cover each hash-bearing artifact. The Ubuntu-only source-rootfs
   fields are `Option<>`. Field declaration order is alphabetical.
 - `ImageKind { Ubuntu, Minimal }` — discriminator on `Manifest`.
 - `KernelKind { Stock, Stripped }` — kernel provenance discriminator.
   `Default = Stock`. Serializes as `"stock"` / `"stripped"`.
+- `RootfsFormat { Ext4, Erofs }` — read-only base rootfs filesystem
+  discriminator. Serializes as `"ext4"` / `"erofs"`.
 - `Manifest::read(path: &Path) -> Result<Manifest, ManifestError>` — peek
   `schema_version` first via a probe struct, then deserialize the full
   struct, then enforce the kind/field invariant.
@@ -87,7 +100,7 @@ artifacts.
 - `Manifest::verify(&self, root: &Path) -> Result<(), ManifestError>` —
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
-- `SCHEMA_VERSION: u32 = 4`.
+- `SCHEMA_VERSION: u32 = 5`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for
   m80-built network-neutral images.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
@@ -128,3 +141,4 @@ artifacts.
 - Schema v3: `kernel_kind` absent from JSON deserializes as `KernelKind::Stock`.
 - Schema v3: `KernelKind::Stripped` roundtrips through write → read.
 - `KernelKind::default()` is `Stock` (Rust Default trait check).
+- Schema v5: `RootfsFormat::Erofs` roundtrips through write → read.

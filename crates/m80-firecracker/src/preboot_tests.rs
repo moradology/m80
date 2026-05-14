@@ -1,12 +1,16 @@
 use super::*;
 use m80_firecracker_client::{CacheType, CpuTemplate, IoEngine};
 
+#[path = "preboot_boot_arg_tests.rs"]
+mod boot_arg_tests;
+
 fn plan_without_workspace() -> Vec<PrebootPut> {
     plan_preboot_puts(
         &SandboxConfig::default(),
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         false,
         &RealizedNetwork::NoEgress,
         &[],
@@ -28,6 +32,7 @@ fn machine_config_put_before_boot() {
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         false,
         &RealizedNetwork::NoEgress,
         &[],
@@ -88,7 +93,7 @@ fn boot_source_put_before_instance_start() {
     assert_eq!(boot.kernel_image_path, PathBuf::from("/kernel"));
     assert_eq!(
         boot.boot_args.as_deref(),
-        Some("console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0")
+        Some("console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0 m80.rootfs=ext4")
     );
     assert!(boot.initrd_path.is_none());
 }
@@ -134,6 +139,7 @@ fn writable_drive_cache_type_override_preserves_writeback() {
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         true,
         &RealizedNetwork::NoEgress,
         &[],
@@ -161,6 +167,7 @@ fn scratch_drive_put_with_workspace_id() {
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         true,
         &RealizedNetwork::NoEgress,
         &[],
@@ -203,6 +210,7 @@ fn preallocated_drive_slots_are_after_rootfs_overlay_and_before_vsock() {
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         false,
         &RealizedNetwork::NoEgress,
         &[],
@@ -239,6 +247,7 @@ fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         false,
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
@@ -273,6 +282,7 @@ fn layer_1_preboot_plan_contains_only_documented_devices() {
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         true,
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
@@ -343,6 +353,7 @@ fn preboot_put_phase_names_include_individual_devices() {
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
+        RootfsFormat::Ext4,
         true,
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
@@ -366,89 +377,6 @@ fn preboot_put_phase_names_include_individual_devices() {
             "phase_11_put_entropy",
             "phase_11_put_vsock",
         ]
-    );
-}
-
-#[test]
-fn boot_args_ubuntu_stock() {
-    assert_eq!(
-        boot_args_for(ImageKind::Ubuntu, KernelKind::Stock, None, false, &[]),
-        "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0",
-    );
-}
-
-#[test]
-fn boot_args_ubuntu_stripped() {
-    assert_eq!(
-        boot_args_for(ImageKind::Ubuntu, KernelKind::Stripped, None, false, &[]),
-        "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 earlycon=uart8250,io,0x3f8,115200n8 printk.time=1 init=/m80-guestd m80.workspace=0",
-    );
-}
-
-#[test]
-fn boot_args_minimal_stock() {
-    assert_eq!(
-        boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, false, &[]),
-        "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0",
-    );
-}
-
-#[test]
-fn boot_args_minimal_stripped() {
-    assert_eq!(
-        boot_args_for(ImageKind::Minimal, KernelKind::Stripped, None, false, &[]),
-        "console=ttyS0 reboot=k panic=-1 pci=off quiet loglevel=0 8250.nr_uarts=1 earlycon=uart8250,io,0x3f8,115200n8 printk.time=1 init=/m80-guestd m80.workspace=0",
-    );
-}
-
-#[test]
-fn boot_args_mark_workspace_when_drive_is_present() {
-    assert_eq!(
-        boot_args_for(ImageKind::Minimal, KernelKind::Stock, None, true, &[]),
-        "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=1",
-    );
-}
-
-#[test]
-fn boot_args_append_pid_one_network_tokens_after_workspace_marker() {
-    assert_eq!(
-        boot_args_for(
-            ImageKind::Minimal,
-            KernelKind::Stock,
-            None,
-            false,
-            &[
-                "m80.net=outbound".to_owned(),
-                "m80.net.iface=eth0".to_owned(),
-            ],
-        ),
-        "console=ttyS0 reboot=k panic=-1 pci=off init=/m80-guestd m80.workspace=0 m80.net=outbound m80.net.iface=eth0",
-    );
-}
-
-#[test]
-fn boot_args_override_wins_over_kind_default() {
-    let custom = "console=ttyS0 my=custom args";
-    assert_eq!(
-        boot_args_for(
-            ImageKind::Minimal,
-            KernelKind::Stripped,
-            Some(custom),
-            false,
-            &[],
-        ),
-        "console=ttyS0 my=custom args m80.workspace=0",
-        "explicit override must take precedence regardless of kind and kernel_kind"
-    );
-    assert_eq!(
-        boot_args_for(
-            ImageKind::Ubuntu,
-            KernelKind::Stock,
-            Some(custom),
-            true,
-            &[]
-        ),
-        "console=ttyS0 my=custom args m80.workspace=1",
     );
 }
 

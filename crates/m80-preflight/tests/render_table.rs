@@ -1,7 +1,7 @@
 //! Verify the Discovery::render_table output contains expected labels and
 //! status markers for each fixture row.
 
-use m80_image_manifest::{ImageKind, KernelKind, Manifest};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
 use m80_preflight::{CheckRow, Discovery, PrivilegeStatus};
 use std::path::PathBuf;
 
@@ -19,6 +19,7 @@ fn fixture_manifest() -> Manifest {
         PathBuf::from("/opt/m80/images/rootfs.ext4"),
         "c".repeat(64),
         "READY".into(),
+        RootfsFormat::Ext4,
         Some(PathBuf::from("/opt/m80/images/source.ext4")),
         Some("e".repeat(64)),
     )

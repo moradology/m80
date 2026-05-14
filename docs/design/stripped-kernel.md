@@ -71,7 +71,11 @@ the guest rootfs.
 
 | Symbol | Purpose |
 |---|---|
-| `CONFIG_EXT4_FS` | ext4 rootfs and overlay disk |
+| `CONFIG_EXT4_FS` | ext4 base rootfs, overlay disk, workspace, and scratch disks |
+| `CONFIG_EROFS_FS` | erofs read-only base rootfs |
+| `CONFIG_EROFS_FS_ZIP` | compressed erofs base rootfs support |
+| `CONFIG_EROFS_FS_ZIP_LZ4` | LZ4-compressed erofs base rootfs support |
+| `CONFIG_EROFS_FS_ZIP_LZ4HC` | LZ4HC-compressed erofs base rootfs support |
 | `CONFIG_OVERLAY_FS` | overlayfs for storage-pivot (m80-f2zc) |
 | `CONFIG_OVERLAY_FS_XINO_AUTO` | auto inode number remapping; required by m80-f2zc.5 — non-negotiable |
 

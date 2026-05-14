@@ -119,6 +119,30 @@ fn workspace_cmdline_flag_controls_pid1_workspace_mount() {
 }
 
 #[test]
+fn rootfs_cmdline_token_selects_base_mount_fstype() {
+    assert_eq!(
+        base_rootfs_format_from_cmdline_text("init=/m80-guestd m80.rootfs=ext4")
+            .unwrap()
+            .fstype(),
+        "ext4"
+    );
+    assert_eq!(
+        base_rootfs_format_from_cmdline_text(
+            "init=/m80-guestd m80.workspace=0 m80.rootfs=erofs rootfstype=erofs"
+        )
+        .unwrap()
+        .fstype(),
+        "erofs"
+    );
+}
+
+#[test]
+fn rootfs_cmdline_token_fails_closed() {
+    assert!(base_rootfs_format_from_cmdline_text("init=/m80-guestd").is_err());
+    assert!(base_rootfs_format_from_cmdline_text("m80.rootfs=squashfs").is_err());
+}
+
+#[test]
 fn workspace_mkfs_cmdline_flag_controls_destructive_fallback() {
     assert!(workspace_mkfs_allowed_from_cmdline("m80.workspace=1 m80.workspace.mkfs=1").unwrap());
     assert!(!workspace_mkfs_allowed_from_cmdline("m80.workspace=1").unwrap());

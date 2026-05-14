@@ -9,7 +9,9 @@ use super::{
     REQUIRED_STORAGE_HELPERS,
 };
 use crate::PreflightError;
-use m80_image_manifest::{ImageKind, KernelKind, Manifest, ManifestError, SCHEMA_VERSION};
+use m80_image_manifest::{
+    ImageKind, KernelKind, Manifest, ManifestError, RootfsFormat, SCHEMA_VERSION,
+};
 
 const SHA256_EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
@@ -47,6 +49,7 @@ fn fixture_manifest(dir: &Path, kernel: &Path) -> (PathBuf, Manifest) {
         rootfs.clone(),
         SHA256_EMPTY.to_string(),
         "M80_READY".to_string(),
+        RootfsFormat::Ext4,
         None,
         None,
     );

@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use m80_image_manifest::{ImageKind, KernelKind, Manifest};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
 use sha2::{Digest, Sha256};
 
 /// Write four dummy artifact files into `dir` and return a `Manifest` whose
@@ -28,6 +28,7 @@ pub(crate) fn make_artifacts(dir: &Path) -> Manifest {
         dir.join("output.ext4"),
         hex::encode(Sha256::digest(b"output.ext4")),
         "READY".into(),
+        RootfsFormat::Ext4,
         Some(dir.join("source.ext4")),
         Some(hex::encode(Sha256::digest(b"source.ext4"))),
     )
@@ -58,6 +59,7 @@ pub(crate) fn make_minimal_artifacts(dir: &Path) -> Manifest {
         dir.join("output.ext4"),
         hex::encode(Sha256::digest(b"output.ext4")),
         "READY".into(),
+        RootfsFormat::Ext4,
         None,
         None,
     )

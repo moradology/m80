@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use m80_image_manifest::{ImageKind, KernelKind, Manifest};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
 use m80_preflight::Discovery;
 
 use crate::error::FcError;
@@ -21,6 +21,7 @@ struct BootIdentity {
     kernel_kind: KernelKind,
     kernel_sha256: String,
     rootfs: PathBuf,
+    rootfs_format: RootfsFormat,
     rootfs_sha256: String,
     manifest_sha256: String,
     image_kind: ImageKind,
@@ -53,6 +54,7 @@ impl BootIdentity {
             kernel_kind: manifest.kernel_kind,
             kernel_sha256: manifest.kernel_image_sha256.clone(),
             rootfs: discovery.rootfs.clone(),
+            rootfs_format: manifest.rootfs_format,
             rootfs_sha256: manifest.output_rootfs_sha256.clone(),
             manifest_sha256: manifest_sha256(manifest)?,
             image_kind: manifest.image_kind,
@@ -95,6 +97,7 @@ mod tests {
                 PathBuf::from("output.ext4"),
                 "b".repeat(64),
                 "GUESTD_READY".into(),
+                RootfsFormat::Ext4,
                 None,
                 None,
             ),
@@ -115,6 +118,7 @@ mod tests {
         assert_eq!(identity.kernel_kind, KernelKind::Stripped);
         assert_eq!(identity.kernel_sha256, "a".repeat(64));
         assert_eq!(identity.rootfs, PathBuf::from("/artifacts/output.ext4"));
+        assert_eq!(identity.rootfs_format, RootfsFormat::Ext4);
         assert_eq!(identity.rootfs_sha256, "b".repeat(64));
         assert_eq!(identity.image_kind, ImageKind::Minimal);
         assert_eq!(identity.expected_firecracker_version, "v1.10.0");

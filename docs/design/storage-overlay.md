@@ -42,8 +42,9 @@ pub fn Rootfs::prepare(
 /// For tests and recovery scenarios.
 pub fn Rootfs::new_at(base: &Path, overlay: &Path) -> Rootfs;
 
-/// The shared, read-only base ext4.  Same host file across all VMs from
-/// this image; host page cache deduplicates.
+/// The shared, read-only base rootfs.  Same host file across all VMs from
+/// this image; host page cache deduplicates. The manifest's `rootfs_format`
+/// declares whether it is ext4 or erofs.
 pub fn Rootfs::base_path(&self) -> &Path;
 
 /// The per-VM writable overlay ext4 produced by `prepare`.
@@ -76,7 +77,7 @@ Firecracker assigns `/dev/vdN` names in drive-PUT order, with the root device (`
 
 | Position | `drive_id`         | Host file                                    | `is_read_only` | `is_root_device` | Guest path   | Purpose |
 |---------:|--------------------|----------------------------------------------|:--------------:|:----------------:|:------------:|---------|
-| 1        | `rootfs`           | `<image>/output.ext4` (shared base)          | **true**       | **true**         | `/dev/vda`   | Read-only base ext4. Same host file across all VMs from this image. Bind-mounted into jailer chroot. Host page cache deduplicates. |
+| 1        | `rootfs`           | `<image>/output.ext4` or `output.erofs` (shared base) | **true** | **true** | `/dev/vda` | Read-only base rootfs. Same host file across all VMs from this image. Bind-mounted into jailer chroot. Host page cache deduplicates. Filesystem is declared by manifest `rootfs_format`. |
 | 2        | `rootfs_overlay`   | `<run_dir>/rootfs.overlay.ext4`              | false          | false            | `/dev/vdb`   | Per-VM sparse ext4. m80-guestd's PID-1 mounts this as the overlayfs upper layer. Grows with guest writes. |
 | 3        | `workspace`        | `<run_dir>/scratch.ext4` *(when requested)*  | false          | false            | `/dev/vdc`   | Per-VM workspace ext4. Mounted at `/workspace` inside the pivoted root. Only present when `SandboxConfig::workspace_dir.is_some()`. |
 
@@ -84,7 +85,7 @@ Firecracker assigns `/dev/vdN` names in drive-PUT order, with the root device (`
 
 **Workspace target update:** Before this design the workspace was `/dev/vdb`. After the overlay pivot it is `/dev/vdc`. The mount must occur _inside the pivoted root_, after `pivot_root`, not before. See `m80-ovrl.4a` for the corresponding update to the PID-1 mount step.
 
-**`/workspace` directory availability:** `/workspace` must exist in the merged (overlayfs) view at the time the workspace mount is attempted. It is created at image-build time on the base ext4 and surfaces in the overlayfs merged view via the lowerdir — no post-pivot creation is needed.
+**`/workspace` directory availability:** `/workspace` must exist in the merged (overlayfs) view at the time the workspace mount is attempted. It is created at image-build time on the base rootfs and surfaces in the overlayfs merged view via the lowerdir — no post-pivot creation is needed.
 
 ---
 
@@ -103,11 +104,12 @@ The following block is the authoritative pseudocode for `m80-ovrl.4`. IMPL leave
 mount(None, "/", None, MS_REC | MS_PRIVATE, None)?;
 
 // ── Phase 2: mount layer disks ────────────────────────────────────────────
-// Step 2. Verify the image-built /lower mountpoint exists, then mount the
-//         shared read-only base ext4 (vda) there. The initial root is already
+// Step 2. Verify the image-built /lower mountpoint exists, read
+//         m80.rootfs=<ext4|erofs>, then mount the shared read-only base
+//         (vda) with the declared filesystem. The initial root is already
 //         read-only, so PID 1 must not create this at runtime.
 ensure_precreated_mountpoint("/lower")?;
-mount("/dev/vda", "/lower", "ext4", MS_RDONLY, None)?;
+mount("/dev/vda", "/lower", declared_rootfs_format, MS_RDONLY, None)?;
 
 // Step 3. Verify the image-built /upper mountpoint exists, then mount the
 //         per-VM writable ext4 (vdb) there.

@@ -280,6 +280,7 @@ impl Sandbox {
                     &vm_id,
                     backend_config.discovery.manifest.image_kind,
                     backend_config.discovery.manifest.kernel_kind,
+                    backend_config.discovery.manifest.rootfs_format,
                     &net,
                     &network_boot_args,
                 )
@@ -1199,6 +1200,7 @@ fn phase_11_rest_puts(
     vm_id: &str,
     image_kind: m80_image_manifest::ImageKind,
     kernel_kind: m80_image_manifest::KernelKind,
+    rootfs_format: m80_image_manifest::RootfsFormat,
     network: &RealizedNetwork,
     extra_boot_args: &[String],
 ) -> Result<(), FcError> {
@@ -1207,6 +1209,7 @@ fn phase_11_rest_puts(
         vm_id,
         image_kind,
         kernel_kind,
+        rootfs_format,
         storage.scratch.is_some(),
         network,
         extra_boot_args,

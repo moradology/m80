@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use assert_cmd::Command;
-use m80_image_manifest::{ImageKind, KernelKind, Manifest};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
@@ -39,6 +39,7 @@ fn write_fixture_artifacts(dir: &TempDir) -> Manifest {
         dir.path().join("output.ext4"),
         sha256_of(b"output-rootfs-bytes"),
         "GUESTD_READY".to_string(),
+        RootfsFormat::Ext4,
         Some(dir.path().join("source.ext4")),
         Some(sha256_of(b"source-rootfs-bytes")),
     )

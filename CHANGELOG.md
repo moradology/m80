@@ -43,7 +43,7 @@ All notable changes to m80 are documented here. Format roughly follows
 ### Fixed — smoke script stale image cache detection
 
 - `scripts/smoke.sh` full mode now rebuilds the guest image when the cached
-  manifest is missing, malformed, or not schema version 4, instead of treating
+  manifest is missing, malformed, or not schema version 5, instead of treating
   an older schema-versioned image as launch-ready and failing later in
   preflight.
 - Updated the default smoke command from the removed VM-lifecycle CLI

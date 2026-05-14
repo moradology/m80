@@ -3,9 +3,10 @@
 //! See `README.md` for the contract.
 //! Behavior captures: bead epic `m80-sz1` (`br show m80-sz1`).
 //!
-//! Downloads the kernel and source rootfs from firecracker-ci S3, converts
-//! the squashfs to ext4, loop-mounts it, installs m80-guestd + systemd units,
-//! unmounts, hashes all six artifacts, and emits `<rootfs>.manifest.json`.
+//! Dispatches by `[rootfs] kind`: Ubuntu converts the Firecracker CI squashfs
+//! to ext4, Minimal builds a busybox ext4 image, and Minimal erofs builds the
+//! same busybox tree into a read-only erofs image. Each path hashes its
+//! artifacts and emits `<rootfs>.manifest.json`.
 //!
 //! Downloads use `curl`; mounts use system `mount`/`umount`. No new HTTP
 //! client dependency.
@@ -42,7 +43,7 @@ enum Cmd {
     },
     /// Re-verify an already-built rootfs against its manifest.
     Verify {
-        /// Path to the output ext4 rootfs image.
+        /// Path to the output rootfs image.
         #[arg(long)]
         rootfs: PathBuf,
     },

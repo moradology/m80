@@ -45,6 +45,7 @@ pub(crate) fn build_manifest(
     kernel_sha: String,
     output_rootfs: std::path::PathBuf,
     output_sha: String,
+    rootfs_format: m80_image_manifest::RootfsFormat,
     source_rootfs: Option<std::path::PathBuf>,
     source_sha: Option<String>,
 ) -> m80_image_manifest::Manifest {
@@ -61,6 +62,7 @@ pub(crate) fn build_manifest(
         output_rootfs,
         output_sha,
         m80_proto::READY_MARKER_DEFAULT.to_string(),
+        rootfs_format,
         source_rootfs,
         source_sha,
     )
@@ -88,14 +90,18 @@ struct BuildPaths {
 /// Run the full build pipeline or print a dry-run plan. Dispatches on
 /// `cfg.rootfs.kind`: `"ubuntu"` (default) builds from the firecracker-ci
 /// squashfs; `"minimal"` builds an empty ext4 with busybox + static
-/// guestd as PID 1.
+/// guestd as PID 1; `"minimal-erofs"` builds the same userland as a
+/// compressed read-only erofs image.
 pub(crate) fn run_build(config_path: &Path, dry_run: bool) -> anyhow::Result<()> {
     let cfg = BuildConfig::from_file(config_path)?;
     match cfg.rootfs.kind.as_deref() {
         Some("minimal") => minimal::run_build_minimal(cfg, dry_run),
+        Some("minimal-erofs") => minimal::run_build_minimal_erofs(cfg, dry_run),
         Some("ubuntu") | None => run_build_ubuntu(cfg, dry_run),
         Some(other) => {
-            anyhow::bail!("unknown rootfs.kind '{other}': expected \"ubuntu\" or \"minimal\"")
+            anyhow::bail!(
+                "unknown rootfs.kind '{other}': expected \"ubuntu\", \"minimal\", or \"minimal-erofs\""
+            )
         }
     }
 }
@@ -226,6 +232,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         kernel_sha,
         paths.output_rootfs.clone(),
         output_sha,
+        m80_image_manifest::RootfsFormat::Ext4,
         Some(paths.source_rootfs.clone()),
         Some(source_sha),
     );

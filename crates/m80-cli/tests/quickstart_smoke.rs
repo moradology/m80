@@ -6,7 +6,7 @@ use common::m80;
 
 use std::process::Command as StdCommand;
 
-use m80_image_manifest::{ImageKind, KernelKind, Manifest};
+use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
 use serde_json::Value;
 
 fn run_checked(cmd: &mut StdCommand, label: &str) {
@@ -79,6 +79,7 @@ fn write_manifest_with_stale_paths(src: &std::path::Path) {
         stale.join("output.ext4"),
         sha256_hex(&src.join("output.ext4")),
         m80_proto::READY_MARKER_DEFAULT.to_owned(),
+        RootfsFormat::Ext4,
         None,
         None,
     );
