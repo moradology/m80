@@ -13,6 +13,7 @@ mod liveness;
 mod pid_one;
 mod pid_one_network;
 mod uevent;
+mod workload_broker;
 
 use guest_log::{BootTimer, GuestLogPhase};
 

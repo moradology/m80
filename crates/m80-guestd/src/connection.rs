@@ -29,8 +29,6 @@ mod pty;
 mod streaming;
 
 use std::io::{BufRead, Read, Write};
-use std::os::unix::process::CommandExt;
-use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -44,8 +42,8 @@ use m80_proto::{
 };
 
 use crate::{
-    exec_sandbox,
     guest_log::{self, GuestLogPhase},
+    workload_broker::{self, WorkloadKind},
 };
 
 /// Outcome of handling one connection. The main accept loop checks for
@@ -182,32 +180,6 @@ fn handle_ping<W: Write>(raw: RawEnvelope, writer: &mut W) -> anyhow::Result<Con
         },
     )?;
     Ok(ConnectionOutcome::Continue)
-}
-
-/// Build a `Command` for `req` with stdout/stderr/stdin piped and process
-/// group set to 0. Shared by the buffered and streaming exec paths.
-fn build_child_command(req: &ExecRequest) -> Command {
-    let (program, args) = exec_sandbox::command_program_and_args(&req.program, &req.args);
-    let mut cmd = Command::new(program);
-    cmd.args(args);
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-    cmd.process_group(0);
-    if let Some(cwd) = &req.cwd {
-        cmd.current_dir(cwd);
-    }
-    if let Some(env_pairs) = &req.env {
-        cmd.env_clear();
-        for (k, v) in env_pairs {
-            cmd.env(k, v);
-        }
-    }
-    if req.stdin.is_some() {
-        cmd.stdin(Stdio::piped());
-    } else {
-        cmd.stdin(Stdio::null());
-    }
-    cmd
 }
 
 pub(super) fn validate_exec_stdin(req: &ExecRequest) -> anyhow::Result<()> {
@@ -662,7 +634,7 @@ fn exec_request_with_cancel(
 ) -> anyhow::Result<ExecResponse> {
     validate_exec_stdin(req)?;
 
-    let mut child = build_child_command(req)
+    let mut child = workload_broker::exec_command(req, WorkloadKind::BufferedExec)?
         .spawn()
         .map_err(|e| anyhow::anyhow!("spawn failed: {e}"))?;
 

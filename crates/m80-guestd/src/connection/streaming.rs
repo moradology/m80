@@ -12,12 +12,12 @@ use m80_proto::{
 };
 
 use crate::guest_log::{self, GuestLogPhase};
+use crate::workload_broker::{self, WorkloadKind};
 
 use super::{
-    build_child_command, cancel_status_from_group_signals, drain_cancel_acks_after_exit,
-    failed_timing, protocol_log, signal_process_group, timeout_deadline, unix_ms_now,
-    validate_exec_stdin, write_cancel_ack, write_payload_frame, ConnectionOutcome, POLL_INTERVAL,
-    PROCESS_GROUP_TERM_GRACE,
+    cancel_status_from_group_signals, drain_cancel_acks_after_exit, failed_timing, protocol_log,
+    signal_process_group, timeout_deadline, unix_ms_now, validate_exec_stdin, write_cancel_ack,
+    write_payload_frame, ConnectionOutcome, POLL_INTERVAL, PROCESS_GROUP_TERM_GRACE,
 };
 const STREAM_CHANNEL_BOUND: usize = 1;
 
@@ -78,7 +78,9 @@ where
         return Ok(ConnectionOutcome::Continue);
     }
 
-    let mut child = match build_child_command(&req).spawn() {
+    let mut child = match workload_broker::exec_command(&req, WorkloadKind::StreamingExec)
+        .and_then(|mut cmd| cmd.spawn().map_err(anyhow::Error::from))
+    {
         Ok(child) => child,
         Err(e) => {
             write_spawn_failed(

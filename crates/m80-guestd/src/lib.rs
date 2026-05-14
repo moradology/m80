@@ -6,3 +6,4 @@ pub mod connection;
 mod exec_sandbox;
 pub mod guest_log;
 pub(crate) mod uevent;
+mod workload_broker;

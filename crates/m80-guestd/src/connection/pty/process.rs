@@ -1,10 +1,8 @@
 //! PTY process and output-thread helpers.
 
-use std::ffi::OsString;
 use std::io::Read;
 use std::sync::mpsc::SyncSender;
 use std::thread::{self, JoinHandle};
-
 
 use m80_proto::{CancelStatus, ExecStatus, PtyRequest, PtySignal as ProtoPtySignal, PtySize};
 use portable_pty::{
@@ -13,12 +11,14 @@ use portable_pty::{
 };
 
 use crate::{
-    exec_sandbox,
     guest_log::{self, GuestLogPhase},
+    workload_broker,
 };
 
-use super::super::{cancel_status_from_group_signals, signal_process_group, PROCESS_GROUP_TERM_GRACE};
 pub(super) use super::super::timeout_deadline;
+use super::super::{
+    cancel_status_from_group_signals, signal_process_group, PROCESS_GROUP_TERM_GRACE,
+};
 
 const OUTPUT_CHUNK_BYTES: usize = 4096;
 
@@ -27,27 +27,7 @@ pub(super) enum PtyFrame {
 }
 
 pub(super) fn command_builder(req: &PtyRequest) -> anyhow::Result<CommandBuilder> {
-    let (program, args) = exec_sandbox::command_program_and_args(&req.program, &req.args);
-    let mut cmd = CommandBuilder::new(program);
-    cmd.args(args);
-    cmd.env_clear();
-
-    if let Some(env_pairs) = &req.env {
-        for (k, v) in env_pairs {
-            cmd.env(k, v);
-        }
-    } else {
-        for (k, v) in std::env::vars_os() {
-            cmd.env(k, v);
-        }
-    }
-
-    let cwd: OsString = match &req.cwd {
-        Some(cwd) => cwd.into(),
-        None => std::env::current_dir()?.into_os_string(),
-    };
-    cmd.cwd(cwd);
-    Ok(cmd)
+    workload_broker::pty_command(req)
 }
 
 pub(super) fn spawn_output_thread(

@@ -65,13 +65,14 @@ proof.
   1. Read one
      `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | PingRequest | DriveMountRequest | DriveDetachRequest | ShutdownRequest>`
      (fail closed on version mismatch).
-  2. For `ExecRequest` / `PtyRequest`, spawn the child process per the request
-     (argv + optional cwd + optional env). When guestd is running as root, the
-     child runs through the built-in exec shim: UID/GID 1000, supplemental
-     group list `[1000]`, `PR_SET_NO_NEW_PRIVS`, and empty effective,
-     permitted, inheritable, ambient, and bounding capability sets. Non-root
-     developer/test launches spawn directly because they already lack guest
-     root privilege.
+  2. For `ExecRequest` / `PtyRequest`, route workload command construction
+     through guestd's shared workload broker seam, then spawn the child process
+     per the request (argv + optional cwd + optional env). When guestd is
+     running as root, the child runs through the built-in exec shim: UID/GID
+     1000, supplemental group list `[1000]`, `PR_SET_NO_NEW_PRIVS`, and empty
+     effective, permitted, inheritable, ambient, and bounding capability sets.
+     Non-root developer/test launches spawn directly because they already lack
+     guest root privilege.
   3. If `ExecRequest::streaming == false`, capture stdout/stderr to
      per-stream 1 MiB buffers; if either cap is hit, the response's
      `truncated` field is set to `Some(true)`.
