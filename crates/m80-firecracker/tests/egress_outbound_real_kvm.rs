@@ -2,28 +2,43 @@
 
 mod common;
 
+use std::net::Ipv4Addr;
+use std::path::Path;
+
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, ExecChunk, NetworkPolicy, SandboxConfig,
 };
 use m80_proto::{ExecRequest, ExecStatus};
+use serde::Deserialize;
 
 use common::RunDirDumpGuard;
 
-fn launch_outbound_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf) {
+fn outbound_backend(max_concurrent_vms: u32) -> std::sync::Arc<Backend> {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
     let config = BackendConfig::builder(discovery)
-        .max_concurrent_vms(1)
+        .max_concurrent_vms(max_concurrent_vms)
         .run_root(run_root)
         .jail_uid(3000)
         .jail_gid(3000)
         .cgroup_mode(CgroupMode::Disabled)
         .build();
-    let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
+    std::sync::Arc::new(Backend::new(config).expect("Backend::new"))
+}
+
+fn launch_outbound_vm() -> (m80_firecracker::RunningSandbox, std::path::PathBuf) {
+    let backend = outbound_backend(1);
+    launch_outbound_vm_on_backend(backend, "outbound-egress-e2e")
+}
+
+fn launch_outbound_vm_on_backend(
+    backend: std::sync::Arc<Backend>,
+    vm_id_prefix: &str,
+) -> (m80_firecracker::RunningSandbox, std::path::PathBuf) {
     let sandbox = backend
         .admit(SandboxConfig {
-            vm_id: Some(common::unique_vm_id("outbound-egress-e2e")),
+            vm_id: Some(common::unique_vm_id(vm_id_prefix)),
             workspace: None,
             network: NetworkPolicy::AllowOutbound {
                 exceptions: Vec::new(),
@@ -115,6 +130,52 @@ fn run_outbound_probe_response(script: &str) -> m80_proto::ExecResponse {
             );
         }
     }
+}
+
+#[derive(Deserialize)]
+struct GuestIpNetworkState {
+    guest_ipv4: Ipv4Addr,
+}
+
+fn guest_ipv4_from_network_state(run_dir: &Path) -> Ipv4Addr {
+    let path = run_dir.join(m80_net_outbound::NETWORK_STATE_FILE);
+    let raw = std::fs::read_to_string(&path).expect("read network-state.json");
+    serde_json::from_str::<GuestIpNetworkState>(&raw)
+        .expect("parse network-state.json")
+        .guest_ipv4
+}
+
+#[test]
+#[ignore = "requires KVM host and CAP_NET_ADMIN"]
+fn allow_outbound_rejects_peer_guest_ipv4_on_shared_bridge() {
+    let backend = outbound_backend(2);
+    let (mut first, first_run_dir) =
+        launch_outbound_vm_on_backend(backend.clone(), "outbound-peer-a");
+    let (second, second_run_dir) = launch_outbound_vm_on_backend(backend, "outbound-peer-b");
+    let _first_dump = RunDirDumpGuard::new(first_run_dir.clone());
+    let _second_dump = RunDirDumpGuard::new(second_run_dir.clone());
+    let second_guest_ipv4 = guest_ipv4_from_network_state(&second_run_dir);
+
+    let response = first
+        .exec(shell_request(&format!(
+            "/bin/busybox timeout 4 /bin/busybox ping -c 1 -W 2 {}",
+            second_guest_ipv4
+        )))
+        .expect("exec peer ping probe");
+
+    let first_stopped = first.stop().expect("stop first");
+    let second_stopped = second.stop().expect("stop second");
+    first_stopped.delete().expect("delete first");
+    second_stopped.delete().expect("delete second");
+
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_ne!(
+        response.exit_code,
+        Some(0),
+        "AllowOutbound must reject direct guest-to-guest IPv4 on the shared bridge; stdout={:?}; stderr={:?}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
 }
 
 #[test]
