@@ -60,6 +60,10 @@ m80 logs <vm-id>
 m80 --json logs <vm-id> --request-id req_...
 ```
 
+`console.log` includes guest-influenced serial-console output and is capped at
+2 MiB per VM. Review [`docs/ops/logging.md`](docs/ops/logging.md) before
+shipping run-directory logs outside the host.
+
 For bug reports, include a diagnostic environment dump:
 
 ```sh

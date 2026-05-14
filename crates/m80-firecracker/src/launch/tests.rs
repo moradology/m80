@@ -171,6 +171,18 @@ fn console_guest_boot_parser_ignores_malformed_lines() {
 }
 
 #[test]
+fn console_guest_boot_parser_rejects_injected_phase_names() {
+    let events = guest_boot_phase_events_from_console_text(
+        "M80_GUEST_BOOT name=ok_phase elapsed_us=1\n\
+         M80_GUEST_BOOT name=BadPhase elapsed_us=2\n\
+         M80_GUEST_BOOT name=evil:admin elapsed_us=3\n",
+    );
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].phase_name, "phase_12b_guest_ok_phase");
+}
+
+#[test]
 fn kernel_console_timestamp_range_uses_first_and_last_stamp() {
     let range = kernel_console_timestamp_range_us(
         "[    0.000000] Linux version x\n[    0.120250] Freeing unused kernel image\nnoise\n",

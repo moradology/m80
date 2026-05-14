@@ -302,7 +302,9 @@ The Firecracker API socket and vsock muxer socket are inside the jailer
 chroot, not directly in `<run_root>/<vm_id>/`.
 Firecracker/jailer stdout and stderr are appended to
 `<run_root>/<vm_id>/console.log`; with `console=ttyS0` this is also the
-guest serial console, including m80-guestd's structured stderr lines.
+guest serial console, including m80-guestd's structured stderr lines. The file
+is guest-influenced output, capped at 2 MiB per VM by `m80-jailer`; operators
+should read `docs/ops/logging.md` before shipping it outside the host.
 Host lifecycle diagnostics are appended to `<run_root>/<vm_id>/diagnostics.jsonl`
 with schema version 2. The diagnostics writer is optional: if opening or
 writing it fails, boot and teardown continue and the failure is logged through

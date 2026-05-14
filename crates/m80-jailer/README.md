@@ -60,7 +60,9 @@ hands a config in and gets back a launchable chroot — or a typed error.
   process; doing so would isolate the orchestrator instead of the Firecracker
   process.
 - If `JailerConfig::stdio_log` is `Some(path)`, `launch` appends the
-  jailed process stdout and stderr to that host file with mode `0600`.
+  jailed process stdout and stderr to that host file with mode `0600`, capped
+  at 2 MiB. Bytes beyond the cap are drained from the child pipe and discarded
+  so a noisy guest cannot block Firecracker by filling stdout/stderr.
   m80-firecracker
   sets this to `<run_dir>/console.log` so Firecracker VMM output and the
   guest serial console survive launch failures and stopped-VM triage.
@@ -136,7 +138,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `firecracker.pid` without paying the old fixed 25 ms wait floor.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,
-  netns validation, `new_pid_ns` parent reaping, and daemonized parent reaping.
+  stdio log size capping, netns validation, `new_pid_ns` parent reaping, and
+  daemonized parent reaping.
 - `tests/integration_root.rs` — ignored root-only smoke for real
   materialization, private mount propagation on m80's bind targets, and real
   Firecracker-jailer `--new-pid-ns` launch state (`jailer_pid = 0`,

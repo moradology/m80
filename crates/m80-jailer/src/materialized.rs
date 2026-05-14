@@ -2,10 +2,11 @@
 //! `MaterializedJail::launch` (jailer exec), `Drop` (chroot teardown),
 //! and `JailedFirecracker` (live pids).
 
-use std::io;
+use std::io::{self, Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,7 @@ const FIRECRACKER_PID_TIMEOUT: Duration = Duration::from_secs(1);
 const FIRECRACKER_PID_INITIAL_POLL: Duration = Duration::from_millis(1);
 const FIRECRACKER_PID_MAX_POLL: Duration = Duration::from_millis(25);
 const STDIO_LOG_FILE_MODE: u32 = 0o600;
+const STDIO_LOG_MAX_BYTES: u64 = 2 * 1024 * 1024;
 
 /// A materialized chroot. Drop tears it down.
 #[derive(Debug)]
@@ -150,7 +152,9 @@ impl MaterializedJail {
 
         command.stdin(Stdio::null());
 
-        if let Some(stdio_log) = &self.plan.config.stdio_log {
+        let stdio_log = self.plan.config.stdio_log.clone();
+        let mut stdio_log_written = None;
+        if let Some(stdio_log) = &stdio_log {
             let file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -165,18 +169,36 @@ impl MaterializedJail {
                     path: stdio_log.clone(),
                     source,
                 })?;
-            let stderr = file.try_clone().map_err(|source| JailerError::Io {
-                path: stdio_log.clone(),
-                source,
-            })?;
-            command
-                .stdout(Stdio::from(file))
-                .stderr(Stdio::from(stderr));
+            stdio_log_written = Some(Arc::new(Mutex::new(
+                file.metadata()
+                    .map_err(|source| JailerError::Io {
+                        path: stdio_log.clone(),
+                        source,
+                    })?
+                    .len()
+                    .min(STDIO_LOG_MAX_BYTES),
+            )));
+            drop(file);
+            command.stdout(Stdio::piped()).stderr(Stdio::piped());
         } else {
             command.stdout(Stdio::null()).stderr(Stdio::null());
         }
 
         let mut child = spawn_jailer_command(command_path, &mut command)?;
+        if let Some(stdio_log) = stdio_log {
+            let stdio_log_written = stdio_log_written.expect("stdio log counter initialized");
+            if let Some(stdout) = child.stdout.take() {
+                spawn_limited_stdio_log_copier(
+                    "stdout",
+                    stdout,
+                    stdio_log.clone(),
+                    Arc::clone(&stdio_log_written),
+                );
+            }
+            if let Some(stderr) = child.stderr.take() {
+                spawn_limited_stdio_log_copier("stderr", stderr, stdio_log, stdio_log_written);
+            }
+        }
 
         let jailer_pid = child.id();
 
@@ -295,6 +317,71 @@ fn push_extended_resource_limits(command: &mut Command, limits: &crate::types::R
     ] {
         if let Some(value) = value {
             command.arg("--rlimit").arg(format!("{name}={value}"));
+        }
+    }
+}
+
+fn spawn_limited_stdio_log_copier<R>(
+    label: &'static str,
+    reader: R,
+    path: PathBuf,
+    written: Arc<Mutex<u64>>,
+) where
+    R: Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        if let Err(err) =
+            copy_limited_stdio_to_log_with_counter(reader, &path, STDIO_LOG_MAX_BYTES, written)
+        {
+            warn!(
+                label,
+                path = %path.display(),
+                "stdio log copier failed: {err}"
+            );
+        }
+    });
+}
+
+#[cfg(test)]
+fn copy_limited_stdio_to_log<R>(reader: R, path: &Path, limit: u64) -> io::Result<()>
+where
+    R: Read,
+{
+    let existing = std::fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
+        .min(limit);
+    copy_limited_stdio_to_log_with_counter(reader, path, limit, Arc::new(Mutex::new(existing)))
+}
+
+fn copy_limited_stdio_to_log_with_counter<R>(
+    mut reader: R,
+    path: &Path,
+    limit: u64,
+    written: Arc<Mutex<u64>>,
+) -> io::Result<()>
+where
+    R: Read,
+{
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(STDIO_LOG_FILE_MODE)
+        .open(path)?;
+    file.set_permissions(std::fs::Permissions::from_mode(STDIO_LOG_FILE_MODE))?;
+
+    let mut buf = [0u8; 8192];
+    loop {
+        let read = reader.read(&mut buf)?;
+        if read == 0 {
+            return Ok(());
+        }
+        let mut written = written.lock().expect("stdio log byte counter poisoned");
+        if *written < limit {
+            let remaining = (limit - *written) as usize;
+            let to_write = read.min(remaining);
+            file.write_all(&buf[..to_write])?;
+            *written += to_write as u64;
         }
     }
 }

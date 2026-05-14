@@ -161,10 +161,21 @@ fn guest_boot_phase_event_from_line(line: &str) -> Option<GuestBootPhaseEvent> {
             elapsed_us = value.parse::<u64>().ok();
         }
     }
+    let name = name?;
+    if !valid_guest_boot_phase_name(name) {
+        return None;
+    }
     Some(GuestBootPhaseEvent {
-        phase_name: format!("phase_12b_guest_{}", name?),
+        phase_name: format!("phase_12b_guest_{name}"),
         elapsed_us: elapsed_us?,
     })
+}
+
+fn valid_guest_boot_phase_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 pub(super) fn accept_ready_signal(

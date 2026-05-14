@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::types::{JailerConfig, JailerSocket, Plan};
+use std::io::Cursor;
 use std::os::unix::fs::PermissionsExt;
 
 struct EnvGuard {
@@ -24,6 +25,20 @@ impl Drop for EnvGuard {
         } else {
             std::env::remove_var(self.key);
         }
+    }
+}
+
+fn wait_for_log_contains(path: &Path, needles: &[&str]) -> String {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        let log = std::fs::read_to_string(path).unwrap_or_default();
+        if needles.iter().all(|needle| log.contains(needle)) {
+            return log;
+        }
+        if Instant::now() >= deadline {
+            panic!("timed out waiting for {needles:?} in {}", path.display());
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -191,7 +206,10 @@ echo fake-firecracker-stderr >&2
     let log_mode = std::fs::metadata(&stdio_log).unwrap().permissions().mode() & 0o777;
     assert_eq!(log_mode, STDIO_LOG_FILE_MODE);
 
-    let log = std::fs::read_to_string(stdio_log).unwrap();
+    let log = wait_for_log_contains(
+        &stdio_log,
+        &["fake-firecracker-stdout", "fake-firecracker-stderr"],
+    );
     assert!(log.contains("fake-firecracker-stdout"), "{log}");
     assert!(log.contains("fake-firecracker-stderr"), "{log}");
 
@@ -219,6 +237,45 @@ echo fake-firecracker-stderr >&2
         "{harden_args}"
     );
     assert!(harden_args.contains("--new-cgroup-ns"), "{harden_args}");
+}
+
+#[test]
+fn stdio_log_copier_caps_persisted_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_path = dir.path().join("console.log");
+
+    copy_limited_stdio_to_log(Cursor::new(b"abcdef"), &log_path, 4).unwrap();
+
+    assert_eq!(std::fs::read(&log_path).unwrap(), b"abcd");
+}
+
+#[test]
+fn stdio_log_copier_respects_existing_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_path = dir.path().join("console.log");
+    std::fs::write(&log_path, b"old").unwrap();
+
+    copy_limited_stdio_to_log(Cursor::new(b"abcdef"), &log_path, 5).unwrap();
+
+    assert_eq!(std::fs::read(&log_path).unwrap(), b"oldab");
+}
+
+#[test]
+fn stdio_log_copiers_share_one_byte_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_path = dir.path().join("console.log");
+    let written = Arc::new(Mutex::new(0));
+
+    copy_limited_stdio_to_log_with_counter(
+        Cursor::new(b"abcd"),
+        &log_path,
+        6,
+        Arc::clone(&written),
+    )
+    .unwrap();
+    copy_limited_stdio_to_log_with_counter(Cursor::new(b"efgh"), &log_path, 6, written).unwrap();
+
+    assert_eq!(std::fs::read(&log_path).unwrap(), b"abcdef");
 }
 
 #[test]
