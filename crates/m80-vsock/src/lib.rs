@@ -85,7 +85,7 @@ impl std::fmt::Debug for ChannelSender {
 fn send_envelope<W, T>(stream: &mut W, envelope: &Envelope<T>) -> Result<(), VsockError>
 where
     W: Write,
-    T: Payload + Clone,
+    T: Payload,
 {
     let raw = RawEnvelope::from_typed(envelope);
     if debug_wire::is_enabled("vsock") {

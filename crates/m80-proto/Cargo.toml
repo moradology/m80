@@ -18,3 +18,7 @@ thiserror.workspace = true
 [build-dependencies]
 prost-build.workspace = true
 protoc-bin-vendored.workspace = true
+
+[[bench]]
+name = "vsock_proto_microcuts"
+harness = false
