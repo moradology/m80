@@ -213,6 +213,52 @@ fn nf_conntrack_sys_module_satisfies_nat_preflight() {
 }
 
 #[test]
+fn preflight_missing_br_netfilter_typed() {
+    let err =
+        classify_br_netfilter_availability(&HashSet::from(["tap", "bridge"]), false).unwrap_err();
+
+    assert!(matches!(err, PreflightError::BridgeNetfilterUnavailable));
+}
+
+#[test]
+fn br_netfilter_module_satisfies_bridge_preflight() {
+    classify_br_netfilter_availability(&HashSet::from(["tap", "bridge", "br_netfilter"]), false)
+        .unwrap();
+}
+
+#[test]
+fn br_netfilter_sys_module_satisfies_bridge_preflight() {
+    classify_br_netfilter_availability(&HashSet::from(["tap", "bridge"]), true).unwrap();
+}
+
+#[test]
+fn bridge_nf_call_iptables_requires_enabled_sysctl() {
+    let err = classify_bridge_nf_call_iptables("0\n").unwrap_err();
+
+    match err {
+        PreflightError::BridgeNfCallIptablesDisabled { actual } => assert_eq!(actual, "0"),
+        other => panic!("expected BridgeNfCallIptablesDisabled, got {other:?}"),
+    }
+}
+
+#[test]
+fn bridge_nf_call_iptables_accepts_enabled_sysctl() {
+    classify_bridge_nf_call_iptables("1\n").unwrap();
+}
+
+#[test]
+fn bridge_nf_call_iptables_rejects_unparseable_sysctl() {
+    let err = classify_bridge_nf_call_iptables("not-a-number\n").unwrap_err();
+
+    match err {
+        PreflightError::BridgeNfCallIptablesDisabled { actual } => {
+            assert_eq!(actual, "not-a-number");
+        }
+        other => panic!("expected BridgeNfCallIptablesDisabled, got {other:?}"),
+    }
+}
+
+#[test]
 fn nf_conntrack_capacity_requires_expected_vm_headroom() {
     let err = classify_nf_conntrack_capacity("15000\n", 8).unwrap_err();
 

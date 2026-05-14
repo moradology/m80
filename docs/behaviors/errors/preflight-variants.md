@@ -90,6 +90,29 @@ Test:
 and
 `crates/m80-preflight/tests/error_hints.rs::nf_conntrack_unavailable_has_hint`.
 
+## bridge-netfilter-unavailable
+
+`m80-preflight` rejects a host without `br_netfilter` support with
+`PreflightError::BridgeNetfilterUnavailable`. OutboundNat depends on bridge
+traffic traversing iptables, otherwise TAP-scoped FORWARD rules do not cover
+intra-bridge paths.
+
+Test:
+`crates/m80-preflight/src/checks_tests.rs::preflight_missing_br_netfilter_typed`
+and
+`crates/m80-preflight/tests/error_hints.rs::bridge_netfilter_unavailable_has_hint`.
+
+## bridge-nf-call-iptables-disabled
+
+`m80-preflight` rejects a host where
+`/proc/sys/net/bridge/bridge-nf-call-iptables` is not `1` with
+`PreflightError::BridgeNfCallIptablesDisabled`.
+
+Test:
+`crates/m80-preflight/src/checks_tests.rs::bridge_nf_call_iptables_requires_enabled_sysctl`
+and
+`crates/m80-preflight/tests/error_hints.rs::bridge_nf_call_iptables_disabled_has_hint`.
+
 ## nf-conntrack-capacity-too-low
 
 `m80-preflight` reads `/proc/sys/net/netfilter/nf_conntrack_max` and rejects

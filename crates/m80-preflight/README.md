@@ -33,8 +33,11 @@ which is the right place for a security review to start.
      `/proc/modules`), TUN available through either the `tun` module or
      `/dev/net/tun`, vhost-vsock available through either the `vhost_vsock`
      module or `/dev/vhost-vsock`, and `nf_conntrack` available for outbound
-     NAT. v0.1 does not attempt to load missing modules; the operator must
-     `modprobe` them before running preflight.
+     NAT. `br_netfilter` must also be available and
+     `/proc/sys/net/bridge/bridge-nf-call-iptables` must be `1`, so bridged
+     TAP traffic traverses the TAP-scoped iptables rules. v0.1 does not
+     attempt to load missing modules or change sysctls; the operator must do
+     that before running preflight.
   5b. **Conntrack capacity** — reads
      `/proc/sys/net/netfilter/nf_conntrack_max` and fails if the host-global
      conntrack table is below `2 * M80_MAX_CONCURRENT_VMS * 1000` entries.

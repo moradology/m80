@@ -267,6 +267,19 @@ pub enum PreflightError {
     #[error("nf_conntrack unavailable")]
     NfConntrackUnavailable,
 
+    /// Host br_netfilter support is absent. Outbound NAT needs bridge packets
+    /// to traverse iptables so TAP-scoped rules are enforceable.
+    #[error("br_netfilter unavailable")]
+    BridgeNetfilterUnavailable,
+
+    /// Bridge netfilter is present but bridge packets are not routed through
+    /// iptables.
+    #[error("bridge-nf-call-iptables disabled: actual {actual:?}")]
+    BridgeNfCallIptablesDisabled {
+        /// Observed sysctl value.
+        actual: String,
+    },
+
     /// `net.netfilter.nf_conntrack_max` was below m80's expected concurrency
     /// floor.
     #[error(
@@ -488,6 +501,12 @@ impl PreflightError {
             }
             Self::NfConntrackUnavailable => {
                 "load nf_conntrack with `sudo modprobe nf_conntrack` before enabling outbound NAT"
+            }
+            Self::BridgeNetfilterUnavailable => {
+                "load br_netfilter with `sudo modprobe br_netfilter` before enabling outbound NAT"
+            }
+            Self::BridgeNfCallIptablesDisabled { .. } => {
+                "set net.bridge.bridge-nf-call-iptables=1 with sysctl before enabling outbound NAT"
             }
             Self::NfConntrackCapacityTooLow { .. } => {
                 "raise net.netfilter.nf_conntrack_max with sysctl or lower M80_MAX_CONCURRENT_VMS"

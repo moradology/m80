@@ -28,6 +28,8 @@ const CPUFREQ_SCALING_GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufre
 const CPU_MICROCODE_VERSION_PATH: &str = "/sys/devices/system/cpu/cpu0/microcode/version";
 const CPU_MICROCODE_FLAGS_PATH: &str = "/sys/devices/system/cpu/cpu0/microcode/processor_flags";
 const CPU_VULNERABILITY_DIR: &str = "/sys/devices/system/cpu/vulnerabilities";
+const BR_NETFILTER_MODULE_PATH: &str = "/sys/module/br_netfilter";
+const BRIDGE_NF_CALL_IPTABLES_PATH: &str = "/proc/sys/net/bridge/bridge-nf-call-iptables";
 const NF_CONNTRACK_MODULE_PATH: &str = "/sys/module/nf_conntrack";
 const NF_CONNTRACK_MAX_PATH: &str = "/proc/sys/net/netfilter/nf_conntrack_max";
 const THP_ENABLED_PATH: &str = "/sys/kernel/mm/transparent_hugepage/enabled";
@@ -482,12 +484,17 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
         &loaded,
         std::path::Path::new(NF_CONNTRACK_MODULE_PATH).exists(),
     )?;
+    classify_br_netfilter_availability(
+        &loaded,
+        std::path::Path::new(BR_NETFILTER_MODULE_PATH).exists(),
+    )?;
+    check_bridge_nf_call_iptables()?;
     classify_required_modules(&loaded)?;
 
     report.push(CheckRow {
         label: "Kernel modules".to_string(),
         passed: true,
-        detail: "tap, bridge loaded; tun, vhost-vsock, nf_conntrack available".to_string(),
+        detail: "tap, bridge, br_netfilter loaded; tun, vhost-vsock, nf_conntrack available; bridge-nf-call-iptables=1".to_string(),
     });
     Ok(())
 }
@@ -807,6 +814,36 @@ fn classify_nf_conntrack_availability(
         return Ok(());
     }
     Err(PreflightError::NfConntrackUnavailable)
+}
+
+fn classify_br_netfilter_availability(
+    loaded_modules: &HashSet<&str>,
+    sys_module_exists: bool,
+) -> Result<(), PreflightError> {
+    if loaded_modules.contains("br_netfilter") || sys_module_exists {
+        return Ok(());
+    }
+    Err(PreflightError::BridgeNetfilterUnavailable)
+}
+
+fn check_bridge_nf_call_iptables() -> Result<(), PreflightError> {
+    let raw = fs::read_to_string(BRIDGE_NF_CALL_IPTABLES_PATH).map_err(|source| {
+        PreflightError::PathIo {
+            path: PathBuf::from(BRIDGE_NF_CALL_IPTABLES_PATH),
+            source,
+        }
+    })?;
+    classify_bridge_nf_call_iptables(&raw)
+}
+
+fn classify_bridge_nf_call_iptables(raw: &str) -> Result<(), PreflightError> {
+    let actual = raw.trim();
+    if actual == "1" {
+        return Ok(());
+    }
+    Err(PreflightError::BridgeNfCallIptablesDisabled {
+        actual: actual.to_owned(),
+    })
 }
 
 fn classify_required_modules(loaded: &HashSet<&str>) -> Result<(), PreflightError> {

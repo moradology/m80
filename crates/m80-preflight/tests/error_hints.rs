@@ -123,6 +123,18 @@ fn nf_conntrack_unavailable_has_hint() {
 }
 
 #[test]
+fn bridge_netfilter_unavailable_has_hint() {
+    assert_hint(&PreflightError::BridgeNetfilterUnavailable);
+}
+
+#[test]
+fn bridge_nf_call_iptables_disabled_has_hint() {
+    assert_hint(&PreflightError::BridgeNfCallIptablesDisabled {
+        actual: "0".to_owned(),
+    });
+}
+
+#[test]
 fn nf_conntrack_capacity_too_low_has_hint() {
     assert_hint(&PreflightError::NfConntrackCapacityTooLow {
         actual: 10_000,

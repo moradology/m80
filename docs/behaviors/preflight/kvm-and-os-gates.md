@@ -44,6 +44,13 @@ which covers kernels that expose the module state outside the loaded-module
 text file. If neither signal is present, preflight returns
 `PreflightError::NfConntrackUnavailable`.
 
+The host must expose `br_netfilter` and set
+`net.bridge.bridge-nf-call-iptables=1` before OutboundNat is accepted. The
+module makes Linux bridge traffic visible to iptables, and the sysctl enables
+that path. If the module is absent, preflight returns
+`PreflightError::BridgeNetfilterUnavailable`; if the sysctl is not `1`,
+preflight returns `PreflightError::BridgeNfCallIptablesDisabled`.
+
 ## Cgroup Mode
 
 When effective config requests `cgroup_mode = "unified-v2"`, preflight calls
@@ -121,6 +128,8 @@ capabilities through the container runtime.
 - `crates/m80-preflight/src/checks_tests.rs::preflight_missing_vsock_module_typed`
 - `crates/m80-preflight/src/checks_tests.rs::preflight_missing_tun_module_typed`
 - `crates/m80-preflight/src/checks_tests.rs::preflight_missing_nf_conntrack_typed`
+- `crates/m80-preflight/src/checks_tests.rs::preflight_missing_br_netfilter_typed`
+- `crates/m80-preflight/src/checks_tests.rs::bridge_nf_call_iptables_requires_enabled_sysctl`
 - `crates/m80-preflight/src/checks_tests.rs::preflight_cgroup_v2_unavailability_typed`
 - `crates/m80-preflight/src/checks_tests.rs::cpu_vulnerability_mds_vulnerable_fails_closed`
 - `crates/m80-preflight/src/checks_tests.rs::cpu_vulnerability_scan_reports_all_configured_files`
