@@ -1,5 +1,8 @@
 use std::fs;
-use std::os::unix::net::UnixListener;
+use std::io;
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -8,6 +11,8 @@ use m80_firecracker::{
     WarmPoolSnapshot,
 };
 use m80_proto::ExecRequest;
+use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
+use nix::unistd::Uid;
 
 use crate::args::EgressMode;
 use crate::errors;
@@ -16,6 +21,9 @@ use crate::json;
 use super::control::{self, WarmControlRequest, WarmControlResponse, WarmErrorResponse};
 use super::run;
 use super::status::{self, WarmOwnerIdentity};
+
+const OWNER_SOCKET_MODE: u32 = 0o600;
+const OWNER_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(super) fn run_foreground(
     profile: Option<String>,
@@ -41,6 +49,7 @@ fn run_foreground_inner(
         return Err(FcError::WarmOwnerSocketExists { socket_path });
     }
     fs::create_dir_all(&warm_root).map_err(FcError::Io)?;
+    let identity_path = status::identity_path()?;
 
     let (backend, _effective) = super::super::build_run_backend(profile.clone())?;
     let snapshot_dir = status::snapshot_dir()?;
@@ -73,6 +82,8 @@ fn run_foreground_inner(
     pool.fill_to_target_blocking()?;
 
     let listener = UnixListener::bind(&socket_path).map_err(FcError::Io)?;
+    let mut owner_state_guard = WarmOwnerStateGuard::new(socket_path.clone(), identity_path);
+    restrict_owner_socket(&socket_path)?;
     let identity = WarmOwnerIdentity {
         binary_version: env!("CARGO_PKG_VERSION").to_owned(),
         profile: status::requested_profile(profile),
@@ -101,7 +112,9 @@ fn run_foreground_inner(
 
     for incoming in listener.incoming() {
         let mut stream = incoming.map_err(FcError::Io)?;
-        let response = match control::read_request(&mut stream) {
+        let request =
+            prepare_owner_stream(&stream).and_then(|()| control::read_request(&mut stream));
+        let response = match request {
             Ok(WarmControlRequest::Status { profile }) => {
                 WarmControlResponse::Status(status::available(
                     &identity,
@@ -183,8 +196,76 @@ fn run_foreground_inner(
 
     drop(pool);
     status::remove_owner_state()?;
+    owner_state_guard.disarm();
     let _ = fs::remove_dir_all(status::snapshot_dir()?);
     Ok(())
+}
+
+fn restrict_owner_socket(socket_path: &Path) -> Result<(), FcError> {
+    fs::set_permissions(socket_path, fs::Permissions::from_mode(OWNER_SOCKET_MODE))
+        .map_err(FcError::Io)
+}
+
+fn prepare_owner_stream(stream: &UnixStream) -> Result<(), FcError> {
+    authorize_owner_peer(stream)?;
+    stream
+        .set_read_timeout(Some(OWNER_REQUEST_READ_TIMEOUT))
+        .map_err(FcError::Io)
+}
+
+fn authorize_owner_peer(stream: &UnixStream) -> Result<(), FcError> {
+    let peer = getsockopt(stream, PeerCredentials).map_err(nix_to_io)?;
+    let owner_uid = Uid::effective().as_raw();
+    let peer_uid = peer.uid();
+    if peer_uid != owner_uid {
+        return Err(FcError::Io(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("warm owner peer uid {peer_uid} does not match owner uid {owner_uid}"),
+        )));
+    }
+    Ok(())
+}
+
+fn nix_to_io(err: nix::errno::Errno) -> FcError {
+    FcError::Io(io::Error::from_raw_os_error(err as i32))
+}
+
+#[derive(Debug)]
+struct WarmOwnerStateGuard {
+    socket_path: PathBuf,
+    identity_path: PathBuf,
+    armed: bool,
+}
+
+impl WarmOwnerStateGuard {
+    fn new(socket_path: PathBuf, identity_path: PathBuf) -> Self {
+        Self {
+            socket_path,
+            identity_path,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for WarmOwnerStateGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            remove_file_if_present(&self.socket_path);
+            remove_file_if_present(&self.identity_path);
+        }
+    }
+}
+
+fn remove_file_if_present(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => {}
+    }
 }
 
 fn drained_snapshot(pool: &WarmPool) -> WarmPoolSnapshot {
@@ -265,5 +346,62 @@ mod tests {
 
         assert_eq!(req.program, "/bin/true");
         assert_eq!(req.timeout_ms, Some(5_000));
+    }
+
+    #[test]
+    fn owner_socket_is_restricted_to_owner_uid() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let socket_path = dir.path().join("owner.sock");
+        let _listener = UnixListener::bind(&socket_path).expect("bind socket");
+
+        restrict_owner_socket(&socket_path).expect("restrict socket");
+
+        let mode = fs::metadata(&socket_path)
+            .expect("stat socket")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, OWNER_SOCKET_MODE);
+    }
+
+    #[test]
+    fn same_uid_peer_is_authorized() {
+        let (_client, server) = UnixStream::pair().expect("create socket pair");
+
+        authorize_owner_peer(&server).expect("same uid peer is authorized");
+    }
+
+    #[test]
+    fn owner_state_guard_unlinks_socket_and_identity() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let socket_path = dir.path().join("owner.sock");
+        let identity_path = dir.path().join("owner.json");
+        fs::write(&socket_path, b"socket placeholder").expect("write socket placeholder");
+        fs::write(&identity_path, b"identity").expect("write identity");
+
+        {
+            let _guard = WarmOwnerStateGuard::new(socket_path.clone(), identity_path.clone());
+        }
+
+        assert!(!socket_path.exists());
+        assert!(!identity_path.exists());
+    }
+
+    #[test]
+    fn disarmed_owner_state_guard_preserves_cleanly_removed_paths() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let socket_path = dir.path().join("owner.sock");
+        let identity_path = dir.path().join("owner.json");
+        fs::write(&socket_path, b"socket placeholder").expect("write socket placeholder");
+        fs::write(&identity_path, b"identity").expect("write identity");
+
+        let mut guard = WarmOwnerStateGuard::new(socket_path.clone(), identity_path.clone());
+        fs::remove_file(&socket_path).expect("remove socket");
+        fs::remove_file(&identity_path).expect("remove identity");
+        guard.disarm();
+        drop(guard);
+
+        assert!(!socket_path.exists());
+        assert!(!identity_path.exists());
     }
 }

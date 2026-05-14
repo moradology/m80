@@ -10,11 +10,16 @@ starts a visible long-running owner process, creates a clean snapshot, fills a
 `m80 warm status`, `drain`, `disable`, and `m80 run --warm` talk to that owner.
 No hidden warm owner, pool daemon, or cold fallback exists behind `run --warm`.
 `m80 warm enable --system` remains a feature gap until service packaging lands.
+The owner socket is same-user only: the socket file is restricted to `0600`,
+accepted peers must have the owner UID, and request bodies are size- and
+timeout-bounded before JSON parsing.
 
 Verification:
 `crates/m80-cli/tests/feature_gap_smoke.rs::warm_status_without_owner_is_unavailable_without_preflight`,
 `crates/m80-cli/tests/feature_gap_smoke.rs::run_warm_without_owner_fails_without_cold_booting`,
 `crates/m80-cli/src/cmds/warm/run.rs::tests::run_request_empty_pool_returns_pool_empty_without_cold_boot`,
+`crates/m80-cli/src/cmds/warm/owner.rs::tests::owner_socket_is_restricted_to_owner_uid`,
+`crates/m80-cli/src/cmds/warm/control.rs::tests::oversized_owner_request_is_protocol_failure`,
 and `crates/m80-cli/tests/e2e_warm.rs::foreground_warm_owner_serves_run_and_drains_without_cold_fallback`.
 
 ## What A Warm VM Is Doing

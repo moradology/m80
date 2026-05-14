@@ -82,6 +82,8 @@ Warm lifetime semantics are captured in
 `docs/behaviors/cli/warm-lifetime.md`.
 Warm owner lifecycle/package semantics are captured in
 `docs/behaviors/cli/warm-owner-lifecycle.md`.
+Warm owner socket authorization and request bounds are captured in
+`docs/behaviors/security/warm-owner-socket.md`.
 Workspace visibility and process inputs are captured in
 `docs/behaviors/cli/workspace-visibility.md` and
 `docs/behaviors/cli/process-inputs.md`.

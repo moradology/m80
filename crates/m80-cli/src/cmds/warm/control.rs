@@ -12,6 +12,8 @@ use crate::errors;
 
 use super::status;
 
+const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "type", rename_all = "snake_case")]
 pub(super) enum WarmControlRequest {
@@ -285,7 +287,14 @@ fn write_request(stream: &mut UnixStream, req: &WarmControlRequest) -> Result<()
 
 pub(super) fn read_request(stream: &mut UnixStream) -> Result<WarmControlRequest, FcError> {
     let mut bytes = Vec::new();
-    stream.read_to_end(&mut bytes).map_err(FcError::Io)?;
+    let mut limited = stream.take((MAX_REQUEST_BYTES + 1) as u64);
+    limited.read_to_end(&mut bytes).map_err(FcError::Io)?;
+    if bytes.len() > MAX_REQUEST_BYTES {
+        return Err(FcError::Protocol(WireProtocolError::OversizedFrame {
+            size: bytes.len(),
+            limit: MAX_REQUEST_BYTES,
+        }));
+    }
     serde_json::from_slice(&bytes).map_err(|e| malformed_peer("parse warm control request", e))
 }
 
@@ -444,5 +453,28 @@ mod tests {
                 context: "warm stream"
             })
         ));
+    }
+
+    #[test]
+    fn oversized_owner_request_is_protocol_failure() {
+        let (mut writer, mut reader) = UnixStream::pair().expect("create socket pair");
+        let payload = vec![b'x'; MAX_REQUEST_BYTES + 1];
+        let writer_thread = std::thread::spawn(move || {
+            writer.write_all(&payload).expect("write request");
+            writer.shutdown(Shutdown::Write).expect("close write half");
+        });
+
+        let err = read_request(&mut reader).expect_err("oversized request must fail");
+        writer_thread.join().expect("writer exits");
+
+        assert!(matches!(
+            err,
+            FcError::Protocol(WireProtocolError::OversizedFrame {
+                size,
+                limit: MAX_REQUEST_BYTES
+            }) if size == MAX_REQUEST_BYTES + 1
+        ));
+        let envelope = WarmErrorResponse::from_error(&err);
+        assert_eq!(envelope.variant, WarmErrorKind::Protocol);
     }
 }
