@@ -84,8 +84,15 @@ the write timeout on every Firecracker UDS stream opened by
 ## Debug instrumentation
 
 Set `M80_DEBUG_WIRE=vsock` or `M80_DEBUG_WIRE=all` to enable wire-level logging
-via `tracing::trace!`. When enabled, every vsock handshake line and every frame
-sent or received is logged with a hex+ASCII preview of up to 1024 bytes.
+via `tracing::trace!`. When enabled, every vsock handshake line is logged,
+outbound frames are logged with a hex+ASCII preview of up to 1024 bytes, and
+inbound frames log their payload kind.
+
+Outbound `exec_request` previews are generated from a redacted copy of the
+frame: `ExecRequest.env` entries are removed before formatting, and the trace
+adds `env=[N entries redacted]`. The original frame sent to the guest is not
+modified. Other frame kinds preview their encoded bytes as-is, so callers must
+still avoid enabling wire debug around payloads they consider sensitive.
 
 - Matching is exact (`==`): `M80_DEBUG_WIRE= vsock` with a leading space does
   not match; `M80_DEBUG_WIRE=vsock` does.
@@ -106,6 +113,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
   `HandshakeFailed`, and missing UDS to `Io`.
 - `tests/frame_round_trip.rs` checks envelope round trips and cloned-sender
   same-connection control frames.
+- `tests/debug_wire_redaction.rs` checks that `M80_DEBUG_WIRE=vsock` does not
+  log `ExecRequest.env` values while preserving the frame sent to the peer.
 - `tests/drop_cleanup.rs` checks that dropping a `Channel` leaves the
   Firecracker UDS listener in place for future connections.
 - `crates/m80-firecracker/src/launch.rs` owns the inverted-readiness tests:

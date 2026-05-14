@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use sha2::Digest;
 
-use m80_proto::{encode_raw_envelope, Envelope, Payload, ProtoError, RawEnvelope};
+use m80_proto::{Envelope, Payload, ProtoError, RawEnvelope};
 
 /// Read/write timeout applied to every vsock bridge stream.
 const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
@@ -89,10 +89,9 @@ where
 {
     let raw = RawEnvelope::from_typed(envelope);
     if debug_wire::is_enabled("vsock") {
-        let bytes = encode_raw_envelope(raw.clone())?;
         tracing::trace!(
             direction = "out",
-            preview = %debug_wire::format_wire_preview(&bytes),
+            preview = %debug_wire::format_envelope_preview(&raw)?,
             "vsock frame"
         );
     }

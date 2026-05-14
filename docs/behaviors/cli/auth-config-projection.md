@@ -17,6 +17,11 @@ view of the host, not a best-effort clone of the user's login session.
 guest child environment. The key must be present on the host. The key must be a
 plain variable name, not `KEY=VAL`.
 
+The value crosses the host/guest vsock channel inside `ExecRequest.env`.
+`M80_DEBUG_WIRE=vsock` redacts that field in trace previews; other diagnostic
+targets and ordinary application output are still caller/operator
+responsibility.
+
 This is the preferred current path for token-style credentials:
 
 ```text

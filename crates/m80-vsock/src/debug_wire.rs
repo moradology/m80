@@ -14,6 +14,8 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+use m80_proto::{encode_raw_envelope, wire::WirePayload, RawEnvelope, PAYLOAD_KIND_EXEC_REQUEST};
+
 static ENABLED_TARGETS: OnceLock<HashSet<String>> = OnceLock::new();
 
 /// Parse the comma-separated `M80_DEBUG_WIRE` value into enabled targets.
@@ -67,9 +69,39 @@ pub(crate) fn format_wire_preview(bytes: &[u8]) -> String {
     out
 }
 
+/// Format a raw envelope preview without exposing `ExecRequest.env` values.
+///
+/// The caller still sends the original envelope. This function clones only
+/// the debug copy, clears env entries on exec requests, and appends a stable
+/// redaction marker with the number of removed entries.
+pub(crate) fn format_envelope_preview(raw: &RawEnvelope) -> Result<String, m80_proto::ProtoError> {
+    let mut redacted = raw.clone();
+    let env_count = redact_exec_request_env(&mut redacted);
+    let bytes = encode_raw_envelope(redacted)?;
+    let mut preview = format_wire_preview(&bytes);
+    if let Some(count) = env_count {
+        use std::fmt::Write as _;
+        write!(preview, " env=[{count} entries redacted]").unwrap();
+    }
+    Ok(preview)
+}
+
+fn redact_exec_request_env(raw: &mut RawEnvelope) -> Option<usize> {
+    if raw.kind != PAYLOAD_KIND_EXEC_REQUEST {
+        return None;
+    }
+    let WirePayload::ExecRequest(request) = &mut raw.payload else {
+        return None;
+    };
+    let count = request.env.len();
+    request.env.clear();
+    Some(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use m80_proto::{Envelope, ExecRequest};
 
     // --- parser tests ---
 
@@ -145,5 +177,27 @@ mod tests {
         let out = format_wire_preview(&bytes);
         assert!(out.starts_with("len=1025 "));
         assert!(out.contains("(truncated)"));
+    }
+
+    #[test]
+    fn exec_request_preview_redacts_env_values() {
+        let envelope = Envelope::new(ExecRequest {
+            program: "/bin/sh".to_owned(),
+            args: vec!["-lc".to_owned(), "true".to_owned()],
+            cwd: None,
+            env: Some(vec![(
+                "API_KEY".to_owned(),
+                "sentinel-secret-for-debug-preview".to_owned(),
+            )]),
+            stdin: None,
+            timeout_ms: None,
+            streaming: false,
+        });
+
+        let preview =
+            format_envelope_preview(&RawEnvelope::from_typed(&envelope)).expect("format preview");
+
+        assert!(!preview.contains("sentinel-secret-for-debug-preview"));
+        assert!(preview.contains("env=[1 entries redacted]"));
     }
 }

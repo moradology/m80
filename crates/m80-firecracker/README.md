@@ -612,7 +612,7 @@ recognized across the workspace:
 
 | Target | Crate that honors it | What it traces |
 |--------|----------------------|----------------|
-| `vsock` | `m80-vsock` | vsock handshake lines and every frame sent/received, with hex+ASCII preview up to 1024 bytes |
+| `vsock` | `m80-vsock` | vsock handshake lines, outbound frame previews up to 1024 bytes, and inbound frame kinds; `exec_request` env entries are redacted before preview formatting |
 | `fcrest` | `m80-firecracker-client` | Firecracker REST PUT request (method, path, body) and response (status, body), with hex+ASCII preview up to 1024 bytes |
 | `all` | both | enables all targets |
 
@@ -622,6 +622,9 @@ Usage rules (identical in both crates):
 - Multiple targets are comma-separated: `M80_DEBUG_WIRE=vsock,fcrest`.
 - Unknown tokens are silently ignored.
 - The gate is a single atomic load on the hot path; no serialization occurs unless it fires.
+- `vsock` redacts `ExecRequest.env` values in debug previews. `fcrest` is a raw
+  Firecracker REST dump and should only be enabled when those request and
+  response bodies are safe to log.
 
 ## Tests
 
