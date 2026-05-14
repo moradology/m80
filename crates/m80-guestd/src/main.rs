@@ -9,6 +9,7 @@ use vsock::{VsockListener, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST};
 mod connection;
 mod exec_sandbox;
 mod guest_log;
+mod guest_seccomp;
 mod liveness;
 mod pid_one;
 mod pid_one_network;
@@ -26,6 +27,8 @@ pub(crate) struct Args {
     pub(crate) print_version: bool,
     /// Hidden self-exec shim used to drop privilege before running workload.
     pub(crate) exec_shim: Option<exec_sandbox::ExecShimRequest>,
+    /// Hidden seccomp probe used by tests and guest smoke checks.
+    pub(crate) seccomp_probe: Option<guest_seccomp::SeccompProbe>,
 }
 
 /// Hand-rolled argv parser. Walks `std::env::args()` without pulling in clap.
@@ -34,6 +37,7 @@ pub(crate) fn parse_args() -> anyhow::Result<Args> {
         port: None,
         print_version: false,
         exec_shim: None,
+        seccomp_probe: None,
     };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
@@ -45,6 +49,10 @@ pub(crate) fn parse_args() -> anyhow::Result<Args> {
                 args.exec_shim = Some(exec_sandbox::parse_exec_shim_args(
                     std::iter::once(program).chain(iter),
                 ));
+                break;
+            }
+            guest_seccomp::SECCOMP_PROBE_ARG => {
+                args.seccomp_probe = Some(guest_seccomp::parse_seccomp_probe_args(iter)?);
                 break;
             }
             "--port" => {
@@ -67,6 +75,9 @@ pub(crate) fn parse_args() -> anyhow::Result<Args> {
 pub(crate) fn run(args: Args) -> anyhow::Result<()> {
     if let Some(req) = args.exec_shim {
         return exec_sandbox::run_exec_shim(req);
+    }
+    if let Some(probe) = args.seccomp_probe {
+        return guest_seccomp::run_seccomp_probe(probe);
     }
 
     let mut boot_timer = BootTimer::start();
@@ -124,6 +135,13 @@ pub(crate) fn run(args: Args) -> anyhow::Result<()> {
     drop(ready);
     boot_timer.mark("ready_signal_sent");
     guest_log::info(GuestLogPhase::Ready, None, "ready signal sent to host");
+    guest_seccomp::install_daemon_filter().context("install guestd daemon seccomp profile")?;
+    boot_timer.mark("daemon_seccomp_installed");
+    guest_log::info(
+        GuestLogPhase::Boot,
+        None,
+        "guestd daemon seccomp profile installed",
+    );
 
     loop {
         let (stream, _addr) = listener.accept().context("vsock accept failed")?;

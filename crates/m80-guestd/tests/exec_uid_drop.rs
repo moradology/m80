@@ -7,7 +7,7 @@ fn exec_shim_runs_workload_non_root_with_no_new_privs_and_empty_caps() {
 set -eu
 printf 'uid=%s\n' "$(id -u)"
 printf 'gid=%s\n' "$(id -g)"
-awk '/^(NoNewPrivs|CapEff|CapPrm|CapInh|CapBnd):/ { print }' /proc/self/status
+awk '/^(NoNewPrivs|Seccomp|CapEff|CapPrm|CapInh|CapBnd):/ { print }' /proc/self/status
 "#;
 
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_m80-guestd"))
@@ -27,6 +27,7 @@ awk '/^(NoNewPrivs|CapEff|CapPrm|CapInh|CapBnd):/ { print }' /proc/self/status
     assert!(stdout.contains("uid=1000\n"), "stdout:\n{stdout}");
     assert!(stdout.contains("gid=1000\n"), "stdout:\n{stdout}");
     assert!(stdout.contains("NoNewPrivs:\t1\n"), "stdout:\n{stdout}");
+    assert!(stdout.contains("Seccomp:\t2\n"), "stdout:\n{stdout}");
     assert!(
         stdout.contains("CapEff:\t0000000000000000\n"),
         "stdout:\n{stdout}"

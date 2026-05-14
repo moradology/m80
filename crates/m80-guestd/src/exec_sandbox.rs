@@ -53,6 +53,8 @@ pub(crate) fn parse_exec_shim_args(mut args: impl Iterator<Item = String>) -> Ex
 /// guestd. Any failure exits that child and is reported as an exec failure.
 pub(crate) fn run_exec_shim(req: ExecShimRequest) -> anyhow::Result<()> {
     apply_exec_privilege_drop().context("failed to apply guest exec privilege drop")?;
+    crate::guest_seccomp::install_workload_filter()
+        .context("failed to install guest exec seccomp profile")?;
     let err = Command::new(&req.program).args(&req.args).exec();
     Err(err).with_context(|| format!("failed to exec workload program {}", req.program))
 }

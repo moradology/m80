@@ -70,9 +70,11 @@ proof.
      per the request (argv + optional cwd + optional env). When guestd is
      running as root, the child runs through the built-in exec shim: UID/GID
      1000, supplemental group list `[1000]`, `PR_SET_NO_NEW_PRIVS`, and empty
-     effective, permitted, inheritable, ambient, and bounding capability sets.
+     effective, permitted, inheritable, ambient, and bounding capability sets,
+     then stacks the fixed workload seccomp profile before `exec`.
      Non-root developer/test launches spawn directly because they already lack
-     guest root privilege.
+     guest root privilege, but still use the same broker command-construction
+     seam.
   3. If `ExecRequest::streaming == false`, capture stdout/stderr to
      per-stream 1 MiB buffers; if either cap is hit, the response's
      `truncated` field is set to `Some(true)`.
@@ -110,6 +112,9 @@ proof.
 - Concurrent connections per VM are **not supported in v0.1**. The
   daemon serializes (`accept()` returns one at a time, processes,
   closes, accepts again).
+- After PID-1 setup, listener bind, and ready signaling, long-lived guestd
+  installs a fixed daemon seccomp profile. Neither the host caller nor the
+  guest can select or extend syscall policy through the wire protocol.
 - On host disconnect mid-exec: terminate the child process group immediately.
   Partial output may or may not have been flushed; the response is whatever
   state we observed.
