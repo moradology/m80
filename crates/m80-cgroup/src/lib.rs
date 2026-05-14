@@ -9,6 +9,8 @@ use std::fs;
 use std::io::{self, Write as IoWrite};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -31,6 +33,8 @@ const DEFAULT_CPU_PERIOD_US: u64 = 100_000;
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 1_610_612_736;
 const DEFAULT_PIDS_MAX: u32 = 128;
 const DEFAULT_OOM_SCORE_ADJ: i16 = 500;
+const CGROUP_KILL_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const CGROUP_KILL_DRAIN_POLL: Duration = Duration::from_millis(20);
 
 static SUBTREE_CONTROL_PRIMED: OnceLock<()> = OnceLock::new();
 static SUBTREE_CONTROL_PRIME_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -375,7 +379,37 @@ fn kill_cgroup(path: &Path) -> Result<(), CgroupError> {
     if !kill_path.exists() {
         return Ok(());
     }
-    write_cgroup_file(&kill_path, "1\n")
+    write_cgroup_file(&kill_path, "1\n")?;
+    wait_for_empty_cgroup(path)
+}
+
+fn wait_for_empty_cgroup(path: &Path) -> Result<(), CgroupError> {
+    let started = Instant::now();
+    loop {
+        let procs = cgroup_procs(path)?;
+        if procs.trim().is_empty() {
+            return Ok(());
+        }
+        if started.elapsed() >= CGROUP_KILL_DRAIN_TIMEOUT {
+            return Err(CgroupError::LivePids {
+                path: path.to_path_buf(),
+                pids: procs.trim().to_owned(),
+            });
+        }
+        thread::sleep(CGROUP_KILL_DRAIN_POLL);
+    }
+}
+
+fn cgroup_procs(path: &Path) -> Result<String, CgroupError> {
+    let procs_path = path.join("cgroup.procs");
+    match fs::read_to_string(&procs_path) {
+        Ok(procs) => Ok(procs),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        Err(source) => Err(CgroupError::Io {
+            path: procs_path,
+            source,
+        }),
+    }
 }
 
 fn enable_subtree_control_chain(

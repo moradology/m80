@@ -109,10 +109,12 @@ Test: `crates/m80-cgroup/tests/integration_root.rs::subtree_creation_places_leaf
 ## live-proc-drop
 
 If a `Subtree` is dropped while the leaf still has live processes, Drop writes
-`1` to leaf `cgroup.kill` when that kernel file is present, then removes the
-leaf with `rmdir`. This asks the kernel to empty the cgroup atomically before
-directory removal. If `cgroup.kill` is absent or either write/rmdir operation
-fails, Drop logs the failure and does not panic.
+`1` to leaf `cgroup.kill` when that kernel file is present, waits briefly for
+`cgroup.procs` to drain, then removes the leaf with `rmdir`. This asks the
+kernel to empty the cgroup atomically before directory removal while still
+accounting for the kernel's asynchronous process reaping. If `cgroup.kill` is
+absent or either kill/drain/rmdir operation fails, Drop logs the failure and
+does not panic.
 
 Test: `crates/m80-cgroup/src/lib.rs::tests::kill_cgroup_writes_kernel_kill_file_when_present`.
 Test: `crates/m80-cgroup/src/lib.rs::tests::drop_without_cgroup_kill_removes_empty_temp_leaf`.

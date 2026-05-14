@@ -7,10 +7,7 @@ use m80_storage::{Rootfs, Scratch};
 
 use crate::diagnostics::phase_event;
 use crate::error::FcError;
-use crate::layout::{
-    preallocated_drive_slot_filename, preallocated_drive_slot_path, rootfs_overlay_path,
-    scratch_image_path,
-};
+use crate::layout::{preallocated_drive_slot_path, rootfs_overlay_path, scratch_image_path};
 use crate::types::{SandboxConfig, StoragePrep};
 
 /// Small placeholder backing size for pre-created Firecracker drive slots.
@@ -72,6 +69,7 @@ fn prepare_preallocated_drive_slots(run_dir: &Path, count: u8) -> Result<Vec<Pat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::preallocated_drive_slot_filename;
 
     #[test]
     fn preallocated_drive_slot_prep_returns_canonical_paths() {
