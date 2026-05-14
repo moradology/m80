@@ -7,6 +7,7 @@ use anyhow::Context as _;
 use vsock::{VsockListener, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST};
 
 mod connection;
+mod exec_sandbox;
 mod guest_log;
 mod liveness;
 mod pid_one;
@@ -22,6 +23,8 @@ pub(crate) struct Args {
     pub(crate) port: Option<u32>,
     /// Print version and exit.
     pub(crate) print_version: bool,
+    /// Hidden self-exec shim used to drop privilege before running workload.
+    pub(crate) exec_shim: Option<exec_sandbox::ExecShimRequest>,
 }
 
 /// Hand-rolled argv parser. Walks `std::env::args()` without pulling in clap.
@@ -29,10 +32,20 @@ pub(crate) fn parse_args() -> anyhow::Result<Args> {
     let mut args = Args {
         port: None,
         print_version: false,
+        exec_shim: None,
     };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
+            exec_sandbox::EXEC_SHIM_ARG => {
+                let Some(program) = iter.next() else {
+                    anyhow::bail!("{} requires a target program", exec_sandbox::EXEC_SHIM_ARG);
+                };
+                args.exec_shim = Some(exec_sandbox::parse_exec_shim_args(
+                    std::iter::once(program).chain(iter),
+                ));
+                break;
+            }
             "--port" => {
                 let val = iter.next().context("--port requires a value")?;
                 let n: u32 = val
@@ -51,6 +64,10 @@ pub(crate) fn parse_args() -> anyhow::Result<Args> {
 
 /// Main run loop. Prints version and returns, or binds vsock and serves.
 pub(crate) fn run(args: Args) -> anyhow::Result<()> {
+    if let Some(req) = args.exec_shim {
+        return exec_sandbox::run_exec_shim(req);
+    }
+
     let mut boot_timer = BootTimer::start();
     boot_timer.mark("process_start");
 

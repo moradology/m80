@@ -43,7 +43,10 @@ use m80_proto::{
     PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
 
-use crate::guest_log::{self, GuestLogPhase};
+use crate::{
+    exec_sandbox,
+    guest_log::{self, GuestLogPhase},
+};
 
 /// Outcome of handling one connection. The main accept loop checks for
 /// [`ConnectionOutcome::Shutdown`] and exits the daemon (or invokes
@@ -184,8 +187,9 @@ fn handle_ping<W: Write>(raw: RawEnvelope, writer: &mut W) -> anyhow::Result<Con
 /// Build a `Command` for `req` with stdout/stderr/stdin piped and process
 /// group set to 0. Shared by the buffered and streaming exec paths.
 fn build_child_command(req: &ExecRequest) -> Command {
-    let mut cmd = Command::new(&req.program);
-    cmd.args(&req.args);
+    let (program, args) = exec_sandbox::command_program_and_args(&req.program, &req.args);
+    let mut cmd = Command::new(program);
+    cmd.args(args);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.process_group(0);

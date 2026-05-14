@@ -12,7 +12,10 @@ use portable_pty::{
     PtySize as PortablePtySize,
 };
 
-use crate::guest_log::{self, GuestLogPhase};
+use crate::{
+    exec_sandbox,
+    guest_log::{self, GuestLogPhase},
+};
 
 use super::super::{cancel_status_from_group_signals, signal_process_group, PROCESS_GROUP_TERM_GRACE};
 pub(super) use super::super::timeout_deadline;
@@ -24,8 +27,9 @@ pub(super) enum PtyFrame {
 }
 
 pub(super) fn command_builder(req: &PtyRequest) -> anyhow::Result<CommandBuilder> {
-    let mut cmd = CommandBuilder::new(&req.program);
-    cmd.args(&req.args);
+    let (program, args) = exec_sandbox::command_program_and_args(&req.program, &req.args);
+    let mut cmd = CommandBuilder::new(program);
+    cmd.args(args);
     cmd.env_clear();
 
     if let Some(env_pairs) = &req.env {

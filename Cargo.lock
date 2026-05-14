@@ -718,6 +718,7 @@ name = "m80-guestd"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "caps",
  "futures-util",
  "ipnet",
  "m80-proto",

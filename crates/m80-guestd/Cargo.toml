@@ -21,6 +21,7 @@ path = "src/lib.rs"
 [dependencies]
 m80-proto.workspace = true
 anyhow.workspace = true
+caps.workspace = true
 nix.workspace = true
 portable-pty.workspace = true
 scopeguard.workspace = true

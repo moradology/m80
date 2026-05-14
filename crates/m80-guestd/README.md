@@ -66,7 +66,12 @@ proof.
      `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | PingRequest | DriveMountRequest | DriveDetachRequest | ShutdownRequest>`
      (fail closed on version mismatch).
   2. For `ExecRequest` / `PtyRequest`, spawn the child process per the request
-     (argv + optional cwd + optional env).
+     (argv + optional cwd + optional env). When guestd is running as root, the
+     child runs through the built-in exec shim: UID/GID 1000, supplemental
+     group list `[1000]`, `PR_SET_NO_NEW_PRIVS`, and empty effective,
+     permitted, inheritable, ambient, and bounding capability sets. Non-root
+     developer/test launches spawn directly because they already lack guest
+     root privilege.
   3. If `ExecRequest::streaming == false`, capture stdout/stderr to
      per-stream 1 MiB buffers; if either cap is hit, the response's
      `truncated` field is set to `Some(true)`.
@@ -172,9 +177,9 @@ bounded frames until EOF, disconnect, cancellation, timeout, or write failure.
 `ExecExit::truncated` is therefore `false` unless a future explicit streaming
 cap is added.
 
-`ExecRequest` does not carry capability, `no_new_privs`, or seccomp policy in
-the current protocol. Per-workload privilege policy is deferred until m80 has a
-dedicated safe syscall/seccomp boundary. See
+`ExecRequest` does not carry caller-selected UID/GID, capability, or seccomp
+policy in the current protocol. The default root-guestd workload boundary is a
+hard-coded non-root exec profile. See
 `docs/behaviors/guest-exec/exec-privilege-policy.md`.
 
 Behavior details:
