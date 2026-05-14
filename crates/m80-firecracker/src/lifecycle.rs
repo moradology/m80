@@ -17,7 +17,10 @@ use std::time::{Duration, Instant};
 use m80_observability::{ExitReason, Phase};
 use m80_proto::GUEST_PORT_DEFAULT;
 use m80_proto::{Envelope, ShutdownAction, ShutdownRequest, ShutdownResponse};
-use m80_snapshot::{capture as snapshot_capture, CaptureRequest, SnapshotKind, SnapshotPaths};
+use m80_snapshot::{
+    capture as snapshot_capture, write_snapshot_manifest, CaptureRequest, SnapshotKind,
+    SnapshotPaths, SNAPSHOT_MANIFEST_FILE,
+};
 use m80_vsock::Channel;
 
 use crate::diagnostics::phase_event;
@@ -39,7 +42,7 @@ const REAP_MAX_POLL_DELAY: Duration = Duration::from_millis(20);
 #[cfg(debug_assertions)]
 const FORCE_KILL_EPERM_FOR_PID_ENV: &str = "M80_TEST_FORCE_KILL_EPERM_FOR_PID";
 
-const SNAPSHOT_BIND_DEST: &str = "snapshot";
+pub(crate) const SNAPSHOT_BIND_DEST: &str = "snapshot";
 
 fn normal_stop_disposition() -> StopDisposition {
     StopDisposition::GuestdShutdownThenFirecrackerKill
@@ -87,28 +90,28 @@ impl RunningSandbox {
     /// should treat any error as the VM being in an unknown state and call
     /// `force_kill()`.
     pub fn capture(&mut self, paths: SnapshotPaths) -> Result<(), FcError> {
-        let snapshot_bind = bind_snapshot_parent_into_jail(
-            self.jail.jail_root(),
-            &paths,
-            &self.backend.config.run_root,
-            self.backend.config.jail_uid,
-            self.backend.config.jail_gid,
-        )?;
+        let snapshot_plan = prepare_snapshot_paths(&paths, &self.backend.config.run_root, true)?;
+        let stage_paths = snapshot_plan.stage_paths(&self.run_dir);
+        clean_snapshot_stage_files(&stage_paths)?;
         let api_socket = self.jail.jail_root().join(FIRECRACKER_API_SOCKET);
+        let expected_firecracker_version = self
+            .backend
+            .config
+            .discovery
+            .manifest
+            .expected_firecracker_version
+            .clone();
         snapshot_capture(CaptureRequest {
             api_socket,
-            paths: snapshot_bind.paths.clone(),
-            host_paths: paths,
-            expected_firecracker_version: self
-                .backend
-                .config
-                .discovery
-                .manifest
-                .expected_firecracker_version
-                .clone(),
+            paths: snapshot_plan.jail_paths.clone(),
+            host_paths: stage_paths.clone(),
+            expected_firecracker_version: expected_firecracker_version.clone(),
             kind: SnapshotKind::Full,
         })
         .map_err(FcError::Snapshot)?;
+        move_captured_snapshot_from_stage(&stage_paths, &paths)?;
+        write_snapshot_manifest(&paths, &expected_firecracker_version)
+            .map_err(FcError::Snapshot)?;
         crate::diagnostics::record_stop_reason(
             &mut self.diagnostics,
             &self.vm_id,
@@ -314,34 +317,41 @@ impl RunningSandbox {
     }
 }
 
-pub(crate) struct SnapshotBind {
-    pub(crate) paths: SnapshotPaths,
-    mount_path: PathBuf,
-    active: bool,
+#[derive(Debug, Clone)]
+pub(crate) struct PreparedSnapshotPaths {
+    pub(crate) host_parent: PathBuf,
+    pub(crate) jail_paths: SnapshotPaths,
 }
 
-impl SnapshotBind {
-    pub(crate) fn into_mount_path(mut self) -> PathBuf {
-        self.active = false;
-        self.mount_path.clone()
-    }
-}
-
-impl Drop for SnapshotBind {
-    fn drop(&mut self) {
-        if self.active {
-            unmount_snapshot_bind(Some(&self.mount_path));
+impl PreparedSnapshotPaths {
+    pub(crate) fn stage_paths(&self, run_dir: &Path) -> SnapshotPaths {
+        let stage_parent = snapshot_stage_parent(run_dir);
+        SnapshotPaths {
+            vm_state: stage_parent.join(
+                self.jail_paths
+                    .vm_state
+                    .file_name()
+                    .expect("prepared jail vm_state has a file name"),
+            ),
+            mem: stage_parent.join(
+                self.jail_paths
+                    .mem
+                    .file_name()
+                    .expect("prepared jail mem has a file name"),
+            ),
         }
     }
 }
 
-pub(crate) fn bind_snapshot_parent_into_jail(
-    jail_path: &Path,
+pub(crate) fn snapshot_stage_parent(run_dir: &Path) -> PathBuf {
+    run_dir.join(SNAPSHOT_BIND_DEST)
+}
+
+pub(crate) fn prepare_snapshot_paths(
     paths: &SnapshotPaths,
     snapshot_root: &Path,
-    jail_uid: u32,
-    jail_gid: u32,
-) -> Result<SnapshotBind, FcError> {
+    create_parent: bool,
+) -> Result<PreparedSnapshotPaths, FcError> {
     let host_parent = paths.vm_state.parent().ok_or_else(|| {
         FcError::Config(ConfigError::InvalidValue {
             field: "snapshot.vm_state",
@@ -373,39 +383,70 @@ pub(crate) fn bind_snapshot_parent_into_jail(
         })
     })?;
 
-    std::fs::create_dir_all(host_parent)?;
+    if create_parent {
+        std::fs::create_dir_all(host_parent).map_err(|source| FcError::PathIo {
+            path: host_parent.to_path_buf(),
+            source,
+        })?;
+    }
     let host_parent = validate_snapshot_parent_scope(snapshot_root, host_parent)?;
-    let mount_path = jail_path.join(SNAPSHOT_BIND_DEST);
-    std::fs::create_dir_all(&mount_path)?;
-
-    use nix::mount::{mount, MsFlags};
-    use nix::unistd::{chown, Gid, Uid};
-
-    chown(
-        host_parent.as_path(),
-        Some(Uid::from_raw(jail_uid)),
-        Some(Gid::from_raw(jail_gid)),
-    )
-    .map_err(|e| FcError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
-
-    mount(
-        Some(host_parent.as_path()),
-        mount_path.as_path(),
-        None::<&str>,
-        MsFlags::MS_BIND,
-        None::<&str>,
-    )
-    .map_err(|e| FcError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
-
     let in_jail_parent = PathBuf::from("/").join(SNAPSHOT_BIND_DEST);
-    Ok(SnapshotBind {
-        paths: SnapshotPaths {
+
+    Ok(PreparedSnapshotPaths {
+        host_parent,
+        jail_paths: SnapshotPaths {
             vm_state: in_jail_parent.join(vm_name),
             mem: in_jail_parent.join(mem_name),
         },
-        mount_path,
-        active: true,
     })
+}
+
+fn clean_snapshot_stage_files(paths: &SnapshotPaths) -> Result<(), FcError> {
+    remove_file_if_exists(&paths.vm_state)?;
+    remove_file_if_exists(&paths.mem)?;
+    remove_file_if_exists(&snapshot_manifest_path(paths)?)
+}
+
+fn move_captured_snapshot_from_stage(
+    stage_paths: &SnapshotPaths,
+    target_paths: &SnapshotPaths,
+) -> Result<(), FcError> {
+    if stage_paths.vm_state != target_paths.vm_state {
+        std::fs::rename(&stage_paths.vm_state, &target_paths.vm_state).map_err(|source| {
+            FcError::PathIo {
+                path: target_paths.vm_state.clone(),
+                source,
+            }
+        })?;
+    }
+    if stage_paths.mem != target_paths.mem {
+        std::fs::rename(&stage_paths.mem, &target_paths.mem).map_err(|source| FcError::PathIo {
+            path: target_paths.mem.clone(),
+            source,
+        })?;
+    }
+    remove_file_if_exists(&snapshot_manifest_path(stage_paths)?)
+}
+
+fn snapshot_manifest_path(paths: &SnapshotPaths) -> Result<PathBuf, FcError> {
+    let parent = paths.vm_state.parent().ok_or_else(|| {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "snapshot.vm_state",
+            reason: "path must have a parent directory".into(),
+        })
+    })?;
+    Ok(parent.join(SNAPSHOT_MANIFEST_FILE))
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), FcError> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 fn validate_snapshot_parent_scope(

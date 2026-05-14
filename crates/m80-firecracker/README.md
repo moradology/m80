@@ -36,8 +36,9 @@ events carry that opaque id in `<run_dir>/diagnostics.jsonl`.
 
 `Sandbox::launch_from_snapshot` is an alternative Created → Running
 transition for the warm-pool restore path. It skips the full cold-boot
-pipeline and instead primes the host page cache for the snapshot pair, binds
-the snapshot directory into the jail, and loads that pair into a new
+pipeline and instead validates the snapshot parent below `run_root`, primes the
+host page cache for the snapshot pair, pre-binds that parent read-only at
+`/snapshot` during jailer materialization, and loads that pair into a new
 Firecracker process. The VM is left Running after a successful restore; the
 exec channel readiness is confirmed by sending an internal lightweight exec
 request over the restored vsock UDS and waiting for guestd's terminal response
@@ -49,12 +50,12 @@ stopped.
 to caller-supplied paths, then writes `snapshot-manifest.json` beside the pair
 with sha256s and the Firecracker version pin admitted by preflight. The VM is
 left in the Paused state after a successful call; the caller must then `stop()`
-or resume the VM. Snapshot paths are host paths. `m80-firecracker` bind-mounts
-their parent directory into the jail at `/snapshot` before calling
-Firecracker, because jailed Firecracker cannot see arbitrary host paths outside
-the chroot. Restore verifies that manifest against the host-readable snapshot
-pair and the current preflight Firecracker version before Firecracker receives
-`PUT /snapshot/load`.
+or resume the VM. Snapshot paths are host paths. Cold launches pre-bind a
+per-run staging directory read-write at `/snapshot`; capture asks Firecracker to
+write there, then moves the pair to the validated caller path and rewrites the
+manifest beside that caller-visible pair. Restore verifies that manifest against
+the host-readable snapshot pair and the current preflight Firecracker version
+before Firecracker receives `PUT /snapshot/load`.
 
 `RunningSandbox::exec(&mut self, ...)` supports sequential multi-exec on the
 same VM. Each call opens a fresh vsock connection to guestd, performs exactly
@@ -189,7 +190,7 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 because snapshot capture/restore methods are first-class `m80-firecracker`
 lifecycle methods. Snapshot parents must canonicalize below the backend
 `run_root`; capture and restore reject outside directories and symlink escapes
-before changing ownership or bind-mounting the parent into the jail.
+before exposing snapshot files to jailed Firecracker through `/snapshot`.
 `ChangeSet` is likewise re-exported from `m80-storage` because
 `StoppedSandbox::extract_changes` returns it directly.
 `SandboxConfig::request_id` is optional and opaque; it is for diagnostics and

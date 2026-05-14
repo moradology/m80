@@ -40,7 +40,10 @@ use crate::layout::{
     console_log_path, firecracker_api_socket_path, preallocated_drive_slot_filename, run_dir_path,
     vsock_socket_path,
 };
-use crate::lifecycle::{bind_snapshot_parent_into_jail, monotonic_ns, spawn_idle_watcher};
+use crate::lifecycle::{
+    monotonic_ns, prepare_snapshot_paths, snapshot_stage_parent, spawn_idle_watcher,
+    SNAPSHOT_BIND_DEST,
+};
 use crate::preboot::{apply_preboot_puts, plan_preboot_puts};
 use crate::runroot::write_ownership_lock;
 use crate::storage_prep::phase_3_storage_prep;
@@ -167,6 +170,8 @@ impl Sandbox {
                     storage: &storage,
                     daemonize: self.config.daemonize,
                     netns_path: join_netns_path(&self.config.network),
+                    snapshot_parent: None,
+                    snapshot_bind_mode: BindMode::Rw,
                 })
             }
         )?;
@@ -472,6 +477,7 @@ impl Sandbox {
         let vm_id = self.resolve_vm_id();
         let backend_config = &self.backend.config;
         let run_root = &backend_config.run_root;
+        let snapshot_plan = prepare_snapshot_paths(&snapshot, run_root, false)?;
 
         // Phase 1: run-root prep.
         let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
@@ -531,6 +537,8 @@ impl Sandbox {
                     storage: &storage,
                     daemonize: self.config.daemonize,
                     netns_path: join_netns_path(&self.config.network),
+                    snapshot_parent: Some(snapshot_plan.host_parent.as_path()),
+                    snapshot_bind_mode: BindMode::Ro,
                 })
             }
         )?;
@@ -614,15 +622,7 @@ impl Sandbox {
             request_id.as_deref(),
             Phase::Boot,
             "phase_restore_snapshot_bind",
-            {
-                bind_snapshot_parent_into_jail(
-                    jail.jail_root(),
-                    &snapshot,
-                    &backend_config.run_root,
-                    backend_config.jail_uid,
-                    backend_config.jail_gid,
-                )
-            }
+            { Ok::<_, FcError>(snapshot_plan.clone()) }
         )?;
         diag_phase!(
             &mut diagnostics,
@@ -633,7 +633,7 @@ impl Sandbox {
             {
                 snapshot_restore(RestoreRequest {
                     api_socket: host_api_socket.clone(),
-                    paths: snapshot_bind.paths.clone(),
+                    paths: snapshot_bind.jail_paths.clone(),
                     host_paths: snapshot.clone(),
                     expected_firecracker_version: discovery
                         .manifest
@@ -686,7 +686,7 @@ impl Sandbox {
             )
         });
 
-        let snapshot_mount = Some(snapshot_bind.into_mount_path());
+        let snapshot_mount = None;
         let kill_guard = crate::types::ForceKillGuard::new(
             vm_id.clone(),
             firecracker.firecracker_pid(),
@@ -852,6 +852,8 @@ struct JailerMaterializeInput<'a> {
     storage: &'a StoragePrep,
     daemonize: bool,
     netns_path: Option<&'a Path>,
+    snapshot_parent: Option<&'a Path>,
+    snapshot_bind_mode: BindMode,
 }
 
 struct JailerLaunchConfigInput<'a> {
@@ -894,6 +896,18 @@ fn phase_4_jailer_materialize(
             mode: BindMode::Ro,
         },
     ];
+    let snapshot_parent = match input.snapshot_parent {
+        Some(parent) => parent.to_path_buf(),
+        None => {
+            let stage_parent = snapshot_stage_parent(input.run_dir);
+            fs::create_dir_all(&stage_parent).map_err(|source| FcError::PathIo {
+                path: stage_parent.clone(),
+                source,
+            })?;
+            stage_parent
+        }
+    };
+    push_snapshot_bindings(&mut bindings, snapshot_parent, input.snapshot_bind_mode);
 
     if let Some(scratch) = &input.storage.scratch {
         bindings.push(Binding {
@@ -930,6 +944,19 @@ fn phase_4_jailer_materialize(
 
     let plan = Plan::compute(&jailer_config)?;
     plan.materialize().map_err(FcError::Jailer)
+}
+
+fn push_snapshot_bindings(bindings: &mut Vec<Binding>, source: PathBuf, mode: BindMode) {
+    bindings.push(Binding {
+        source: PathBuf::new(),
+        dest: PathBuf::from(SNAPSHOT_BIND_DEST),
+        mode: BindMode::CreateInsideJail,
+    });
+    bindings.push(Binding {
+        source,
+        dest: PathBuf::from(SNAPSHOT_BIND_DEST),
+        mode,
+    });
 }
 
 fn build_jailer_launch_config(

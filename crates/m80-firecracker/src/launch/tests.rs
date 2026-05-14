@@ -68,6 +68,27 @@ fn launch_jailer_config_enables_pid_namespace() {
 }
 
 #[test]
+fn snapshot_binding_creates_jail_destination_before_bind() {
+    let mut bindings = Vec::new();
+
+    push_snapshot_bindings(
+        &mut bindings,
+        PathBuf::from("/var/lib/m80-run/snapshots/source"),
+        BindMode::Ro,
+    );
+
+    assert_eq!(bindings.len(), 2);
+    assert_eq!(bindings[0].dest, PathBuf::from(SNAPSHOT_BIND_DEST));
+    assert_eq!(bindings[0].mode, BindMode::CreateInsideJail);
+    assert_eq!(
+        bindings[1].source,
+        PathBuf::from("/var/lib/m80-run/snapshots/source")
+    );
+    assert_eq!(bindings[1].dest, PathBuf::from(SNAPSHOT_BIND_DEST));
+    assert_eq!(bindings[1].mode, BindMode::Ro);
+}
+
+#[test]
 fn ready_signal_accepts_protocol_version_byte() {
     let dir = tempfile::tempdir().unwrap();
     let ready_path = dir.path().join("ready.sock");
