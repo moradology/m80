@@ -11,19 +11,20 @@ fn backend_reused_across_admissions_shares_admission_state() {
     let dir = tempfile::tempdir().unwrap();
     let discovery = common::fake_discovery(dir.path());
     let backend = Arc::new(
-        Backend::new(BackendConfig {
-            discovery,
-            max_concurrent_vms: 1,
-            run_root: dir.path().to_path_buf(),
-            jail_uid: 3000,
-            jail_gid: 3000,
-            cgroup_mode: CgroupMode::Disabled,
-        })
+        Backend::new(
+            BackendConfig::builder(discovery)
+                .max_concurrent_vms(1)
+                .run_root(dir.path())
+                .jail_uid(3000)
+                .jail_gid(3000)
+                .cgroup_mode(CgroupMode::Disabled)
+                .build(),
+        )
         .expect("Backend::new"),
     );
 
-    assert_eq!(backend.config().run_root, dir.path());
-    assert_eq!(backend.config().discovery.run_root, dir.path());
+    assert_eq!(backend.config().run_root(), dir.path());
+    assert_eq!(backend.config().discovery().run_root, dir.path());
 
     let first = backend
         .admit(common::sandbox_config())

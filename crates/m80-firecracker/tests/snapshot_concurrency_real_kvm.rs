@@ -114,14 +114,13 @@ fn snapshot_concurrent_capture_and_restore() {
 
 fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
     let run_root = discovery.run_root.clone();
-    BackendConfig {
-        discovery,
-        max_concurrent_vms: 4,
-        run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    }
+    BackendConfig::builder(discovery)
+        .max_concurrent_vms(4)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(CgroupMode::Disabled)
+        .build()
 }
 
 fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {

@@ -21,14 +21,13 @@ fn run_dir_invariants_post_boot() {
     let firecracker_bin = discovery.firecracker_bin.clone();
     let run_root = discovery.run_root.clone();
 
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
+    let config = m80_firecracker::BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(m80_firecracker::CgroupMode::Disabled)
+        .build();
     let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
 
     let vm_id = format!("e2e-run-dir-{}", unix_ms_now());

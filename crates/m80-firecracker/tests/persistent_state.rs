@@ -28,14 +28,13 @@ fn make_backend() -> (std::sync::Arc<m80_firecracker::Backend>, std::path::PathB
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 4,
-        run_root: run_root.clone(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
+    let config = m80_firecracker::BackendConfig::builder(discovery)
+        .max_concurrent_vms(4)
+        .run_root(run_root.clone())
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(m80_firecracker::CgroupMode::Disabled)
+        .build();
     let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
     (backend, run_root)
 }

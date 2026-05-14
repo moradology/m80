@@ -66,6 +66,7 @@ impl Backend {
         // auto-generated `vm-{pid}-{ts}` form (resolve_vm_id) is bounded by
         // construction and does not need a check here.
         if let Some(vm_id) = config.vm_id.as_deref() {
+            check_vm_id_name(vm_id)?;
             check_vm_id_reserved_name(vm_id)?;
             check_vm_id_path_budget(&self.config, vm_id)?;
         }
@@ -113,11 +114,26 @@ impl Backend {
 
         let entries = std::fs::read_dir(run_root)?;
         for entry in entries.flatten() {
+            let file_name = entry.file_name();
             let subdir = entry.path();
             if !subdir.is_dir() {
                 continue;
             }
-            if is_reserved_run_root_child(&entry.file_name()) {
+            if is_reserved_run_root_child(&file_name) {
+                continue;
+            }
+            let Some(name) = file_name.to_str() else {
+                warn!(
+                    path = %subdir.display(),
+                    "recover_stale_run_root: non-UTF-8 run-dir name; preserving"
+                );
+                continue;
+            };
+            if !is_valid_vm_id_name(name) {
+                warn!(
+                    path = %subdir.display(),
+                    "recover_stale_run_root: invalid run-dir name; preserving"
+                );
                 continue;
             }
 
@@ -211,6 +227,24 @@ fn check_vm_id_path_budget(config: &BackendConfig, vm_id: &str) -> Result<(), Fc
         }));
     }
     Ok(())
+}
+
+fn check_vm_id_name(vm_id: &str) -> Result<(), FcError> {
+    if is_valid_vm_id_name(vm_id) {
+        return Ok(());
+    }
+    Err(FcError::Config(ConfigError::InvalidValue {
+        field: "vm_id",
+        reason: "must be 1..=64 ASCII alphanumeric, '.', '_', or '-' characters".into(),
+    }))
+}
+
+fn is_valid_vm_id_name(vm_id: &str) -> bool {
+    !vm_id.is_empty()
+        && vm_id.len() <= 64
+        && vm_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 fn check_vm_id_reserved_name(vm_id: &str) -> Result<(), FcError> {
@@ -398,14 +432,13 @@ mod tests {
         let marker = snapshot_dir.join("vm.snap");
         std::fs::write(&marker, b"snapshot").expect("snapshot marker");
 
-        let config = BackendConfig {
-            discovery: fake_discovery(run_root.path()),
-            max_concurrent_vms: 1,
-            run_root: run_root.path().to_path_buf(),
-            jail_uid: 3000,
-            jail_gid: 3000,
-            cgroup_mode: CgroupMode::Disabled,
-        };
+        let config = BackendConfig::builder(fake_discovery(run_root.path()))
+            .max_concurrent_vms(1)
+            .run_root(run_root.path())
+            .jail_uid(3000)
+            .jail_gid(3000)
+            .cgroup_mode(CgroupMode::Disabled)
+            .build();
         let _backend = Backend::new(config).expect("Backend::new");
 
         assert!(

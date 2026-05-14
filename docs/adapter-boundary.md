@@ -8,6 +8,20 @@ applies to any product-specific facade.
 
 m80 stays generic. The adapter translates product semantics into m80 mechanics.
 
+## Security Boundary
+
+In-process embedding requires a trusted caller. m80's library API protects
+against malformed VM-mechanics inputs, but it does not isolate itself from code
+running in the same process and address space. A compromised adapter can inspect
+heap state, call public m80 methods directly, retain `RunningSandbox` handles,
+or use documented run-root paths for diagnostics.
+
+Meaningful isolation from an untrusted adapter requires a process boundary:
+invoke the CLI, fork a narrow helper, or run m80 behind a separate service that
+owns preflight discovery, admission, lifecycle, and warm-pool state. In that
+shape, the adapter speaks a smaller authenticated protocol instead of sharing
+m80's heap.
+
 ## Ownership Table
 
 | Concern | Owner | Notes |

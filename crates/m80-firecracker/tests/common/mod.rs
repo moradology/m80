@@ -70,14 +70,13 @@ pub(crate) fn make_fake_backend(
     max: usize,
     run_root: &Path,
 ) -> std::sync::Arc<m80_firecracker::Backend> {
-    let config = m80_firecracker::BackendConfig {
-        discovery: fake_discovery(run_root),
-        max_concurrent_vms: max as u32,
-        run_root: run_root.to_path_buf(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
+    let config = m80_firecracker::BackendConfig::builder(fake_discovery(run_root))
+        .max_concurrent_vms(max as u32)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(m80_firecracker::CgroupMode::Disabled)
+        .build();
     std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"))
 }
 
@@ -109,14 +108,13 @@ pub(crate) fn make_backend(
     discovery: m80_preflight::Discovery,
 ) -> std::sync::Arc<m80_firecracker::Backend> {
     let run_root = discovery.run_root.clone();
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
+    let config = m80_firecracker::BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(m80_firecracker::CgroupMode::Disabled)
+        .build();
     std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"))
 }
 

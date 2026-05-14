@@ -347,12 +347,11 @@ pub fn backend_config_from_effective(
         }
     };
 
-    Ok(BackendConfig {
-        discovery,
-        max_concurrent_vms,
-        run_root,
-        jail_uid,
-        jail_gid,
-        cgroup_mode,
-    })
+    Ok(BackendConfig::builder(discovery)
+        .max_concurrent_vms(max_concurrent_vms)
+        .run_root(run_root)
+        .jail_uid(jail_uid)
+        .jail_gid(jail_gid)
+        .cgroup_mode(cgroup_mode)
+        .build())
 }

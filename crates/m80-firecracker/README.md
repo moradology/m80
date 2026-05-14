@@ -270,6 +270,21 @@ Leases are discarded and replaced. A restored slot does not enter
 ready-probe exec completes successfully. See `docs/design/warm-pool.md`
 for the state machine and sizing model.
 
+### Threat model when embedded
+
+`m80-firecracker` can be embedded as a Rust library, but in-process embedding is
+not a security boundary. Code in the same process can inspect heap state, retain
+handles, call public methods, and use documented run-root paths. Callers that
+need isolation from product-specific adapter code should put m80 behind a
+process boundary: CLI invocation, a narrow helper process, or a service that
+owns preflight discovery, admission, lifecycle, and warm-pool state.
+
+`BackendConfig` is constructed through `BackendConfig::builder(discovery)`;
+its fields are private so external callers cannot fabricate a backend config by
+literal assignment. Caller-supplied `vm_id` values are admitted only when they
+are 1..=64 ASCII alphanumeric, `.`, `_`, or `-` characters, are not reserved
+run-root names, and fit the AF_UNIX socket path budget.
+
 ### Run-root layout
 
 All per-VM state lives under `<run_root>/<vm_id>/`. The actual jailer
@@ -291,6 +306,9 @@ writing it fails, boot and teardown continue and the failure is logged through
 `Backend::new()` runs one synchronous best-effort stale run-root recovery pass.
 `Backend::recover_stale_run_root()` remains available as an explicit one-shot
 orchestrator-driven scan; v0.1 has no background recovery thread.
+Recovery treats only valid VM-id-shaped child names as VM run dirs. Malformed
+child names are preserved for manual inspection and never passed to cgroup or
+network cleanup as VM identifiers.
 Cross-process collision avoidance: distinct `<run_root>` paths.
 
 ### Boot cmdline behavior
@@ -551,6 +569,8 @@ Config helpers:
 
 - `load_config(flags) -> EffectiveConfig`
 - `load_config_from_paths(flags, ConfigFilePaths) -> EffectiveConfig`
+- `BackendConfig::builder(discovery)` for constructing backend config from
+  preflight discovery plus explicit overrides.
 
 Layout helpers:
 

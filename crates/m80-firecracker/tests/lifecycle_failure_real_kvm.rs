@@ -212,14 +212,13 @@ fn make_backend_config_with_cgroup(
     cgroup_mode: CgroupMode,
 ) -> BackendConfig {
     let run_root = discovery.run_root.clone();
-    BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode,
-    }
+    BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(cgroup_mode)
+        .build()
 }
 
 fn default_config(vm_id: &str) -> SandboxConfig {

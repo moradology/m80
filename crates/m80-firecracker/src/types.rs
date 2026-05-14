@@ -90,17 +90,129 @@ impl std::fmt::Debug for Backend {
 #[derive(Debug, Clone)]
 pub struct BackendConfig {
     /// Discovery output from `m80-preflight::run()`.
-    pub discovery: m80_preflight::Discovery,
+    pub(crate) discovery: m80_preflight::Discovery,
     /// Maximum concurrent VMs admitted on this host.
-    pub max_concurrent_vms: u32,
+    pub(crate) max_concurrent_vms: u32,
     /// Per-process run-root directory.
-    pub run_root: PathBuf,
+    pub(crate) run_root: PathBuf,
     /// UID for the jailed firecracker process.
-    pub jail_uid: u32,
+    pub(crate) jail_uid: u32,
     /// GID for the jailed firecracker process.
-    pub jail_gid: u32,
+    pub(crate) jail_gid: u32,
     /// Cgroup mode (unified-v2 or disabled).
-    pub cgroup_mode: CgroupMode,
+    pub(crate) cgroup_mode: CgroupMode,
+}
+
+impl BackendConfig {
+    /// Start building backend configuration from preflight discovery evidence.
+    #[must_use]
+    pub fn builder(discovery: m80_preflight::Discovery) -> BackendConfigBuilder {
+        BackendConfigBuilder {
+            run_root: discovery.run_root.clone(),
+            discovery,
+            max_concurrent_vms: 8,
+            jail_uid: 3000,
+            jail_gid: 3000,
+            cgroup_mode: CgroupMode::UnifiedV2,
+        }
+    }
+
+    /// Discovery output used by this backend.
+    #[must_use]
+    pub fn discovery(&self) -> &m80_preflight::Discovery {
+        &self.discovery
+    }
+
+    /// Maximum concurrent VMs admitted on this host.
+    #[must_use]
+    pub fn max_concurrent_vms(&self) -> u32 {
+        self.max_concurrent_vms
+    }
+
+    /// Per-process run-root directory.
+    #[must_use]
+    pub fn run_root(&self) -> &Path {
+        &self.run_root
+    }
+
+    /// UID for the jailed firecracker process.
+    #[must_use]
+    pub fn jail_uid(&self) -> u32 {
+        self.jail_uid
+    }
+
+    /// GID for the jailed firecracker process.
+    #[must_use]
+    pub fn jail_gid(&self) -> u32 {
+        self.jail_gid
+    }
+
+    /// Cgroup mode (unified-v2 or disabled).
+    #[must_use]
+    pub fn cgroup_mode(&self) -> CgroupMode {
+        self.cgroup_mode
+    }
+}
+
+/// Builder for [`BackendConfig`].
+#[derive(Debug, Clone)]
+pub struct BackendConfigBuilder {
+    discovery: m80_preflight::Discovery,
+    max_concurrent_vms: u32,
+    run_root: PathBuf,
+    jail_uid: u32,
+    jail_gid: u32,
+    cgroup_mode: CgroupMode,
+}
+
+impl BackendConfigBuilder {
+    /// Set the maximum concurrent VM admission limit.
+    #[must_use]
+    pub fn max_concurrent_vms(mut self, max: u32) -> Self {
+        self.max_concurrent_vms = max;
+        self
+    }
+
+    /// Set the backend run-root directory.
+    #[must_use]
+    pub fn run_root(mut self, run_root: impl Into<PathBuf>) -> Self {
+        self.run_root = run_root.into();
+        self
+    }
+
+    /// Set the UID for the jailed firecracker process.
+    #[must_use]
+    pub fn jail_uid(mut self, uid: u32) -> Self {
+        self.jail_uid = uid;
+        self
+    }
+
+    /// Set the GID for the jailed firecracker process.
+    #[must_use]
+    pub fn jail_gid(mut self, gid: u32) -> Self {
+        self.jail_gid = gid;
+        self
+    }
+
+    /// Set the cgroup hardening mode.
+    #[must_use]
+    pub fn cgroup_mode(mut self, mode: CgroupMode) -> Self {
+        self.cgroup_mode = mode;
+        self
+    }
+
+    /// Finish building the backend configuration.
+    #[must_use]
+    pub fn build(self) -> BackendConfig {
+        BackendConfig {
+            discovery: self.discovery,
+            max_concurrent_vms: self.max_concurrent_vms,
+            run_root: self.run_root,
+            jail_uid: self.jail_uid,
+            jail_gid: self.jail_gid,
+            cgroup_mode: self.cgroup_mode,
+        }
+    }
 }
 
 /// Cgroup hardening mode.

@@ -15,14 +15,15 @@ fn main() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
     let backend = Arc::new(
-        Backend::new(BackendConfig {
-            discovery,
-            max_concurrent_vms: 1,
-            run_root,
-            jail_uid: env_u32("M80_JAIL_UID", 3000),
-            jail_gid: env_u32("M80_JAIL_GID", 3000),
-            cgroup_mode: CgroupMode::Disabled,
-        })
+        Backend::new(
+            BackendConfig::builder(discovery)
+                .max_concurrent_vms(1)
+                .run_root(run_root)
+                .jail_uid(env_u32("M80_JAIL_UID", 3000))
+                .jail_gid(env_u32("M80_JAIL_GID", 3000))
+                .cgroup_mode(CgroupMode::Disabled)
+                .build(),
+        )
         .expect("Backend::new"),
     );
 

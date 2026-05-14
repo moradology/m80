@@ -13,14 +13,13 @@ fn jailer_daemonized_pid_sentinel_recovery() {
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
 
-    let config = m80_firecracker::BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
+    let config = m80_firecracker::BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(m80_firecracker::CgroupMode::Disabled)
+        .build();
     let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
     let sandbox_config = m80_firecracker::SandboxConfig {
         vm_id: Some("e2e-daemonized-recovery".into()),

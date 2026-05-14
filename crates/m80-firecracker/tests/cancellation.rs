@@ -58,14 +58,13 @@ fn launch_vm(
     discovery: &m80_preflight::Discovery,
     run_root: &std::path::Path,
 ) -> (m80_firecracker::RunningSandbox, PathBuf) {
-    let config = m80_firecracker::BackendConfig {
-        discovery: discovery.clone(),
-        max_concurrent_vms: 1,
-        run_root: run_root.to_owned(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: m80_firecracker::CgroupMode::Disabled,
-    };
+    let config = m80_firecracker::BackendConfig::builder(discovery.clone())
+        .max_concurrent_vms(1)
+        .run_root(run_root.to_owned())
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(m80_firecracker::CgroupMode::Disabled)
+        .build();
     let backend = std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(m80_firecracker::SandboxConfig {

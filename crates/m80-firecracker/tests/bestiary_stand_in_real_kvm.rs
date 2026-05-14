@@ -227,14 +227,13 @@ fn drive_attach_identity_mismatch_kills_vm_and_refills_slot() {
 
 fn backend_config(discovery: m80_preflight::Discovery, max_concurrent_vms: u32) -> BackendConfig {
     let run_root = discovery.run_root.clone();
-    BackendConfig {
-        discovery,
-        max_concurrent_vms,
-        run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    }
+    BackendConfig::builder(discovery)
+        .max_concurrent_vms(max_concurrent_vms)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(CgroupMode::Disabled)
+        .build()
 }
 
 fn bestiary_sandbox_config(vm_id: impl Into<String>, one_shot: bool) -> SandboxConfig {

@@ -15,14 +15,13 @@ const REQUEST_ID: &str = "req-diagnostics-phase-e2e";
 fn diagnostics_phase_markers_emitted_on_exec() {
     let discovery = m80_preflight::run().expect("preflight");
     let run_root = discovery.run_root.clone();
-    let config = BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
+    let config = BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(CgroupMode::Disabled)
+        .build();
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
     let sandbox = backend
         .admit(SandboxConfig {

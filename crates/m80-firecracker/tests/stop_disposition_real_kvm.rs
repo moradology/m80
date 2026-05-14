@@ -23,14 +23,15 @@ fn launch_vm(
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
     let backend = Arc::new(
-        Backend::new(BackendConfig {
-            discovery,
-            max_concurrent_vms: 1,
-            run_root: run_root.clone(),
-            jail_uid: 3000,
-            jail_gid: 3000,
-            cgroup_mode: CgroupMode::Disabled,
-        })
+        Backend::new(
+            BackendConfig::builder(discovery)
+                .max_concurrent_vms(1)
+                .run_root(run_root.clone())
+                .jail_uid(3000)
+                .jail_gid(3000)
+                .cgroup_mode(CgroupMode::Disabled)
+                .build(),
+        )
         .expect("Backend::new"),
     );
     let sandbox = backend

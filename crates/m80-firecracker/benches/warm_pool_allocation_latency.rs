@@ -158,14 +158,15 @@ fn write_failure_artifacts(
 fn make_backend(discovery: m80_preflight::Discovery, max_concurrent_vms: u32) -> Arc<Backend> {
     let run_root = discovery.run_root.clone();
     Arc::new(
-        Backend::new(BackendConfig {
-            discovery,
-            max_concurrent_vms,
-            run_root,
-            jail_uid: env_u32("M80_JAIL_UID", 3000),
-            jail_gid: env_u32("M80_JAIL_GID", 3000),
-            cgroup_mode: CgroupMode::Disabled,
-        })
+        Backend::new(
+            BackendConfig::builder(discovery)
+                .max_concurrent_vms(max_concurrent_vms)
+                .run_root(run_root)
+                .jail_uid(env_u32("M80_JAIL_UID", 3000))
+                .jail_gid(env_u32("M80_JAIL_GID", 3000))
+                .cgroup_mode(CgroupMode::Disabled)
+                .build(),
+        )
         .expect("Backend::new"),
     )
 }

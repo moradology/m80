@@ -222,14 +222,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let discovery = fake_discovery(dir.path());
         let backend = Arc::new(
-            Backend::new(BackendConfig {
-                discovery,
-                max_concurrent_vms: 1,
-                run_root: dir.path().to_path_buf(),
-                jail_uid: 3000,
-                jail_gid: 3000,
-                cgroup_mode: CgroupMode::Disabled,
-            })
+            Backend::new(
+                BackendConfig::builder(discovery)
+                    .max_concurrent_vms(1)
+                    .run_root(dir.path().to_path_buf())
+                    .jail_uid(3000)
+                    .jail_gid(3000)
+                    .cgroup_mode(CgroupMode::Disabled)
+                    .build(),
+            )
             .expect("backend"),
         );
         WarmPool::new(

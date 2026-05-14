@@ -201,14 +201,13 @@ fn idle_timeout_resets_on_exec() {
     let run_root = discovery.run_root.clone();
     let _dump_guard = RunDirDumpGuard::new(run_root.clone());
 
-    let backend_config = BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
+    let backend_config = BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(CgroupMode::Disabled)
+        .build();
     let backend = std::sync::Arc::new(Backend::new(backend_config).expect("backend"));
     let cfg = SandboxConfig {
         idle_timeout: Some(Duration::from_secs(2)),
@@ -283,14 +282,13 @@ fn idle_timeout_fires_after_inactivity() {
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let run_root = discovery.run_root.clone();
 
-    let backend_config = BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root: run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
+    let backend_config = BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(CgroupMode::Disabled)
+        .build();
     let backend = std::sync::Arc::new(Backend::new(backend_config).expect("backend"));
     let cfg = SandboxConfig {
         idle_timeout: Some(Duration::from_secs(2)),

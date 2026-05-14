@@ -25,14 +25,13 @@ use tempfile::TempDir;
 /// Build a `BackendConfig` from `m80_preflight::run()`.
 fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
     let run_root = discovery.run_root.clone();
-    BackendConfig {
-        discovery,
-        max_concurrent_vms: 1,
-        run_root,
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    }
+    BackendConfig::builder(discovery)
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(CgroupMode::Disabled)
+        .build()
 }
 
 /// Minimal sandbox config shared across tests.
@@ -341,14 +340,13 @@ fn interrupted_snapshot_restore_run_dir_recovery_removes_partial_state() {
     )
     .expect("stale owner marker");
 
-    let config = BackendConfig {
-        discovery: common::fake_discovery(dir.path()),
-        max_concurrent_vms: 1,
-        run_root: dir.path().to_path_buf(),
-        jail_uid: 3000,
-        jail_gid: 3000,
-        cgroup_mode: CgroupMode::Disabled,
-    };
+    let config = BackendConfig::builder(common::fake_discovery(dir.path()))
+        .max_concurrent_vms(1)
+        .run_root(dir.path().to_path_buf())
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(CgroupMode::Disabled)
+        .build();
     let backend = Backend::new(config).expect("Backend::new");
     backend
         .recover_stale_run_root(false)
