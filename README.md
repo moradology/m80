@@ -45,6 +45,10 @@ Linux/KVM host, `/dev/kvm` access, the Firecracker and jailer binaries, m80
 artifacts, and startup privilege through root, file capabilities, or a
 privileged container.
 
+Production operators should read [`docs/ops/host-setup.md`](docs/ops/host-setup.md)
+before trusting a host. It covers identity separation, Docker socket risk,
+artifact ownership, Cargo source controls, and runtime host assumptions.
+
 ## Diagnostics
 
 `m80 run` keeps stdout/stderr transparent for the wrapped process. VM mechanics
