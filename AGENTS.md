@@ -55,6 +55,36 @@ Avoid Rust files larger than 500 lines. **Hard limit: 1000 lines** — files cro
   wrapping) → PR must include a real-KVM smoke paste. See
   [`AGENTS.md`](AGENTS.md) → "Kernel-touching diffs require smoke evidence".
 
+## Untrusted-input-to-kernel-primitive checklist
+
+Any caller-controlled value that reaches a kernel-facing primitive must be
+validated at the typed API boundary, before it becomes a string, argv token,
+file path, mount option, bitset, or cgroup file payload. Validation at the final
+consumer is too late unless the consumer owns the public type.
+
+Checklist before touching one of these paths:
+
+- **Kernel cmdline tokens**: reject whitespace/control-token injection and
+  reject m80-owned keys (`init=`, `m80.workspace=`, `m80.rootfs=`,
+  `rootfstype=`) at admission or earlier.
+- **Mount source/destination paths**: canonicalize host sources where the
+  contract requires it, reject escaping/absolute/in-kernel-fs guest
+  destinations at the plan boundary, and use `O_NOFOLLOW` for host-created
+  placeholders.
+- **Capability sets**: construct allowlists from finite enums and pin the exact
+  set with tests. No stringly capability names flowing from caller input into
+  `caps::Capability`.
+- **BPF/seccomp programs**: treat filters as code. Inputs choose among named
+  profiles, not arbitrary instructions, unless the caller is explicitly the
+  policy compiler.
+- **Cgroup file contents**: validate ranges and syntax in the type that owns
+  the setting (`cpuset.cpus`, `io.weight`, `memory.max`, `pids.max`, etc.)
+  before writing virtual files.
+
+If a value is accepted as `String` and later feeds one of these surfaces, either
+replace it with a validated newtype or add a local validator at the API
+boundary and a regression test proving injection fails closed.
+
 ## Kernel-touching diffs require smoke evidence
 
 If a diff touches any of:
@@ -103,6 +133,10 @@ require smoke evidence" rule.
 - `caps::Capability`, capability-set construction
 - seccomp filter / BPF construction
 - cgroup v2 controller writes
+- kernel cmdline construction or any `String` field that flows to a kernel
+  cmdline token
+- caller-controlled strings that flow to mount, exec, capability, seccomp, BPF,
+  or cgroup file payloads
 - `mount(2)`, `umount2(2)`, `pivot_root(2)`, `chroot(2)`
 - `clone(2)`, `unshare(2)`, `setns(2)`
 - `sudo` wrappers in `scripts/`
