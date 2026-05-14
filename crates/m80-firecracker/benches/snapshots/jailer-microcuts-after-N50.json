@@ -1,0 +1,1746 @@
+{
+  "version": 1,
+  "data": {
+    "wallclock": {
+      "minimal": {
+        "idle": {
+          "p50": 1339,
+          "p75": 1340,
+          "p90": 1341,
+          "p95": 1342,
+          "p99": 1342,
+          "p999": 1342,
+          "max": 1342,
+          "count": 50,
+          "fail_count": 0,
+          "outliers": 7,
+          "p50_ci95": [
+            1338,
+            1340
+          ]
+        }
+      }
+    },
+    "phases": {
+      "minimal": {
+        "idle": {
+          "phase_1_run_root_prep": {
+            "p50_us": 47,
+            "p75_us": 59,
+            "p90_us": 65,
+            "p95_us": 65,
+            "p99_us": 67,
+            "p999_us": 67,
+            "max_us": 77,
+            "count": 50,
+            "histogram_us": [
+              [
+                35,
+                70,
+                49
+              ],
+              [
+                70,
+                140,
+                1
+              ]
+            ]
+          },
+          "phase_2_lease": {
+            "p50_us": 34,
+            "p75_us": 36,
+            "p90_us": 43,
+            "p95_us": 55,
+            "p99_us": 66,
+            "p999_us": 66,
+            "max_us": 70,
+            "count": 50,
+            "histogram_us": [
+              [
+                32,
+                64,
+                47
+              ],
+              [
+                64,
+                128,
+                3
+              ]
+            ]
+          },
+          "phase_3b_rootfs_prepare": {
+            "p50_us": 11899,
+            "p75_us": 12598,
+            "p90_us": 13489,
+            "p95_us": 13617,
+            "p99_us": 14476,
+            "p999_us": 14476,
+            "max_us": 15966,
+            "count": 50,
+            "histogram_us": [
+              [
+                8959,
+                17918,
+                50
+              ]
+            ]
+          },
+          "phase_3_storage_prep": {
+            "p50_us": 11955,
+            "p75_us": 12661,
+            "p90_us": 13546,
+            "p95_us": 13684,
+            "p99_us": 14542,
+            "p999_us": 14542,
+            "max_us": 16024,
+            "count": 50,
+            "histogram_us": [
+              [
+                9017,
+                18034,
+                50
+              ]
+            ]
+          },
+          "phase_4_jailer_materialize": {
+            "p50_us": 759,
+            "p75_us": 838,
+            "p90_us": 1353,
+            "p95_us": 1397,
+            "p99_us": 1652,
+            "p999_us": 1652,
+            "max_us": 2452,
+            "count": 50,
+            "histogram_us": [
+              [
+                593,
+                1186,
+                43
+              ],
+              [
+                1186,
+                2372,
+                6
+              ],
+              [
+                2372,
+                4744,
+                1
+              ]
+            ]
+          },
+          "phase_5_cgroup_probe": {
+            "p50_us": 0,
+            "p75_us": 0,
+            "p90_us": 0,
+            "p95_us": 0,
+            "p99_us": 0,
+            "p999_us": 0,
+            "max_us": 0,
+            "count": 50,
+            "histogram_us": []
+          },
+          "phase_6_network_realize": {
+            "p50_us": 0,
+            "p75_us": 0,
+            "p90_us": 6,
+            "p95_us": 6,
+            "p99_us": 7,
+            "p999_us": 7,
+            "max_us": 7,
+            "count": 50,
+            "histogram_us": [
+              [
+                4,
+                8,
+                9
+              ]
+            ]
+          },
+          "phase_7_outbound_guest_config": {
+            "p50_us": 0,
+            "p75_us": 0,
+            "p90_us": 0,
+            "p95_us": 0,
+            "p99_us": 0,
+            "p999_us": 0,
+            "max_us": 0,
+            "count": 50,
+            "histogram_us": []
+          },
+          "phase_9_jailer_launch": {
+            "p50_us": 15583,
+            "p75_us": 31609,
+            "p90_us": 31686,
+            "p95_us": 31724,
+            "p99_us": 31873,
+            "p999_us": 31873,
+            "max_us": 31921,
+            "count": 50,
+            "histogram_us": [
+              [
+                15447,
+                30894,
+                33
+              ],
+              [
+                30894,
+                61788,
+                17
+              ]
+            ]
+          },
+          "phase_5b_cgroup_create": {
+            "p50_us": 20508,
+            "p75_us": 22456,
+            "p90_us": 25012,
+            "p95_us": 25342,
+            "p99_us": 26970,
+            "p999_us": 26970,
+            "max_us": 28808,
+            "count": 50,
+            "histogram_us": [
+              [
+                13052,
+                26104,
+                47
+              ],
+              [
+                26104,
+                52208,
+                3
+              ]
+            ]
+          },
+          "phase_10_open_uds": {
+            "p50_us": 25,
+            "p75_us": 31,
+            "p90_us": 33,
+            "p95_us": 36,
+            "p99_us": 45,
+            "p999_us": 45,
+            "max_us": 46,
+            "count": 50,
+            "histogram_us": [
+              [
+                18,
+                36,
+                46
+              ],
+              [
+                36,
+                72,
+                4
+              ]
+            ]
+          },
+          "phase_11_put_machine_config": {
+            "p50_us": 185,
+            "p75_us": 219,
+            "p90_us": 255,
+            "p95_us": 260,
+            "p99_us": 269,
+            "p999_us": 269,
+            "max_us": 302,
+            "count": 50,
+            "histogram_us": [
+              [
+                159,
+                318,
+                50
+              ]
+            ]
+          },
+          "phase_11_put_boot_source": {
+            "p50_us": 90,
+            "p75_us": 102,
+            "p90_us": 118,
+            "p95_us": 121,
+            "p99_us": 126,
+            "p999_us": 126,
+            "max_us": 127,
+            "count": 50,
+            "histogram_us": [
+              [
+                65,
+                130,
+                50
+              ]
+            ]
+          },
+          "phase_11_put_drive_rootfs": {
+            "p50_us": 93,
+            "p75_us": 108,
+            "p90_us": 120,
+            "p95_us": 122,
+            "p99_us": 135,
+            "p999_us": 135,
+            "max_us": 137,
+            "count": 50,
+            "histogram_us": [
+              [
+                71,
+                142,
+                50
+              ]
+            ]
+          },
+          "phase_11_put_drive_rootfs_overlay": {
+            "p50_us": 181,
+            "p75_us": 211,
+            "p90_us": 244,
+            "p95_us": 260,
+            "p99_us": 312,
+            "p999_us": 312,
+            "max_us": 319,
+            "count": 50,
+            "histogram_us": [
+              [
+                156,
+                312,
+                48
+              ],
+              [
+                312,
+                624,
+                2
+              ]
+            ]
+          },
+          "phase_11_put_entropy": {
+            "p50_us": 93,
+            "p75_us": 108,
+            "p90_us": 122,
+            "p95_us": 130,
+            "p99_us": 133,
+            "p999_us": 133,
+            "max_us": 137,
+            "count": 50,
+            "histogram_us": [
+              [
+                76,
+                152,
+                50
+              ]
+            ]
+          },
+          "phase_11_put_vsock": {
+            "p50_us": 164,
+            "p75_us": 186,
+            "p90_us": 216,
+            "p95_us": 236,
+            "p99_us": 254,
+            "p999_us": 254,
+            "max_us": 295,
+            "count": 50,
+            "histogram_us": [
+              [
+                139,
+                278,
+                49
+              ],
+              [
+                278,
+                556,
+                1
+              ]
+            ]
+          },
+          "phase_11_rest_puts": {
+            "p50_us": 1478,
+            "p75_us": 1625,
+            "p90_us": 1761,
+            "p95_us": 1824,
+            "p99_us": 1868,
+            "p999_us": 1868,
+            "max_us": 1876,
+            "count": 50,
+            "histogram_us": [
+              [
+                1004,
+                2008,
+                50
+              ]
+            ]
+          },
+          "phase_11b_ready_listener_bind": {
+            "p50_us": 78,
+            "p75_us": 89,
+            "p90_us": 98,
+            "p95_us": 100,
+            "p99_us": 103,
+            "p999_us": 103,
+            "max_us": 104,
+            "count": 50,
+            "histogram_us": [
+              [
+                32,
+                64,
+                17
+              ],
+              [
+                64,
+                128,
+                33
+              ]
+            ]
+          },
+          "phase_11c_boot_identity_record": {
+            "p50_us": 82,
+            "p75_us": 92,
+            "p90_us": 103,
+            "p95_us": 106,
+            "p99_us": 109,
+            "p999_us": 109,
+            "max_us": 121,
+            "count": 50,
+            "histogram_us": [
+              [
+                36,
+                72,
+                18
+              ],
+              [
+                72,
+                144,
+                32
+              ]
+            ]
+          },
+          "phase_12a_instance_start": {
+            "p50_us": 14218,
+            "p75_us": 15115,
+            "p90_us": 16638,
+            "p95_us": 18058,
+            "p99_us": 18977,
+            "p999_us": 18977,
+            "max_us": 19134,
+            "count": 50,
+            "histogram_us": [
+              [
+                9856,
+                19712,
+                50
+              ]
+            ]
+          },
+          "phase_12b_host_waiting_accept": {
+            "p50_us": 1021473,
+            "p75_us": 1023657,
+            "p90_us": 1025960,
+            "p95_us": 1026776,
+            "p99_us": 1029607,
+            "p999_us": 1029607,
+            "max_us": 1031562,
+            "count": 50,
+            "histogram_us": [
+              [
+                991655,
+                1983310,
+                50
+              ]
+            ]
+          },
+          "phase_12b_kernel_console_range": {
+            "p50_us": 914691,
+            "p75_us": 918496,
+            "p90_us": 921001,
+            "p95_us": 923008,
+            "p99_us": 924807,
+            "p999_us": 924807,
+            "max_us": 925347,
+            "count": 50,
+            "histogram_us": [
+              [
+                885956,
+                1771912,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_process_start": {
+            "p50_us": 1,
+            "p75_us": 1,
+            "p90_us": 1,
+            "p95_us": 1,
+            "p99_us": 1,
+            "p999_us": 1,
+            "max_us": 1,
+            "count": 50,
+            "histogram_us": [
+              [
+                1,
+                2,
+                34
+              ]
+            ]
+          },
+          "phase_12b_guest_stdio_redirected": {
+            "p50_us": 1845,
+            "p75_us": 1953,
+            "p90_us": 2001,
+            "p95_us": 2007,
+            "p99_us": 2071,
+            "p999_us": 2071,
+            "max_us": 2097,
+            "count": 50,
+            "histogram_us": [
+              [
+                490,
+                980,
+                17
+              ],
+              [
+                980,
+                1960,
+                23
+              ],
+              [
+                1960,
+                3920,
+                10
+              ]
+            ]
+          },
+          "phase_12b_guest_panic_hook_installed": {
+            "p50_us": 3463,
+            "p75_us": 3533,
+            "p90_us": 3568,
+            "p95_us": 3646,
+            "p99_us": 3708,
+            "p999_us": 3708,
+            "max_us": 3743,
+            "count": 50,
+            "histogram_us": [
+              [
+                493,
+                986,
+                17
+              ],
+              [
+                986,
+                1972,
+                5
+              ],
+              [
+                1972,
+                3944,
+                28
+              ]
+            ]
+          },
+          "phase_12b_guest_pseudo_fs_mounted": {
+            "p50_us": 12079,
+            "p75_us": 12244,
+            "p90_us": 12516,
+            "p95_us": 12746,
+            "p99_us": 12900,
+            "p999_us": 12900,
+            "max_us": 13231,
+            "count": 48,
+            "histogram_us": [
+              [
+                6127,
+                12254,
+                38
+              ],
+              [
+                12254,
+                24508,
+                10
+              ]
+            ]
+          },
+          "phase_12b_guest_mount_namespace_private": {
+            "p50_us": 17318,
+            "p75_us": 17486,
+            "p90_us": 17891,
+            "p95_us": 18257,
+            "p99_us": 18449,
+            "p999_us": 18449,
+            "max_us": 18546,
+            "count": 49,
+            "histogram_us": [
+              [
+                8819,
+                17638,
+                41
+              ],
+              [
+                17638,
+                35276,
+                8
+              ]
+            ]
+          },
+          "phase_12b_guest_base_mounted": {
+            "p50_us": 22907,
+            "p75_us": 23137,
+            "p90_us": 23670,
+            "p95_us": 24061,
+            "p99_us": 24355,
+            "p999_us": 24355,
+            "max_us": 24420,
+            "count": 49,
+            "histogram_us": [
+              [
+                11709,
+                23418,
+                43
+              ],
+              [
+                23418,
+                46836,
+                6
+              ]
+            ]
+          },
+          "phase_12b_guest_overlay_disk_mounted": {
+            "p50_us": 31360,
+            "p75_us": 31578,
+            "p90_us": 32554,
+            "p95_us": 33011,
+            "p99_us": 33657,
+            "p999_us": 33657,
+            "max_us": 33915,
+            "count": 50,
+            "histogram_us": [
+              [
+                17283,
+                34566,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_overlay_dirs_ready": {
+            "p50_us": 36143,
+            "p75_us": 36442,
+            "p90_us": 37756,
+            "p95_us": 37993,
+            "p99_us": 39277,
+            "p999_us": 39277,
+            "max_us": 39437,
+            "count": 49,
+            "histogram_us": [
+              [
+                20495,
+                40990,
+                49
+              ]
+            ]
+          },
+          "phase_12b_guest_merged_mountpoint_ready": {
+            "p50_us": 38843,
+            "p75_us": 39547,
+            "p90_us": 41111,
+            "p95_us": 41483,
+            "p99_us": 42370,
+            "p999_us": 42370,
+            "max_us": 42637,
+            "count": 48,
+            "histogram_us": [
+              [
+                23002,
+                46004,
+                48
+              ]
+            ]
+          },
+          "phase_12b_guest_overlayfs_mounted": {
+            "p50_us": 42361,
+            "p75_us": 43235,
+            "p90_us": 45491,
+            "p95_us": 46114,
+            "p99_us": 47008,
+            "p999_us": 47008,
+            "max_us": 48668,
+            "count": 50,
+            "histogram_us": [
+              [
+                24924,
+                49848,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_pseudo_fs_bound_into_merged": {
+            "p50_us": 45275,
+            "p75_us": 46204,
+            "p90_us": 49014,
+            "p95_us": 50144,
+            "p99_us": 51448,
+            "p999_us": 51448,
+            "max_us": 53118,
+            "count": 50,
+            "histogram_us": [
+              [
+                29214,
+                58428,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_merged_self_bound": {
+            "p50_us": 48120,
+            "p75_us": 49147,
+            "p90_us": 51932,
+            "p95_us": 53388,
+            "p99_us": 54359,
+            "p999_us": 54359,
+            "max_us": 56033,
+            "count": 50,
+            "histogram_us": [
+              [
+                32091,
+                64182,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_pivot_rootfs_done": {
+            "p50_us": 49846,
+            "p75_us": 50902,
+            "p90_us": 53648,
+            "p95_us": 55088,
+            "p99_us": 56146,
+            "p999_us": 56146,
+            "max_us": 57782,
+            "count": 50,
+            "histogram_us": [
+              [
+                33809,
+                67618,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_overlay_pivot_complete": {
+            "p50_us": 51684,
+            "p75_us": 52798,
+            "p90_us": 55465,
+            "p95_us": 56908,
+            "p99_us": 58036,
+            "p999_us": 58036,
+            "max_us": 59632,
+            "count": 50,
+            "histogram_us": [
+              [
+                35657,
+                71314,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_network_configured": {
+            "p50_us": 53484,
+            "p75_us": 54638,
+            "p90_us": 57269,
+            "p95_us": 58706,
+            "p99_us": 59888,
+            "p999_us": 59888,
+            "max_us": 61493,
+            "count": 50,
+            "histogram_us": [
+              [
+                37483,
+                74966,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_workspace_absent": {
+            "p50_us": 55390,
+            "p75_us": 56120,
+            "p90_us": 59233,
+            "p95_us": 60659,
+            "p99_us": 61985,
+            "p999_us": 61985,
+            "max_us": 63496,
+            "count": 50,
+            "histogram_us": [
+              [
+                39474,
+                78948,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_pid1_setup_complete": {
+            "p50_us": 56196,
+            "p75_us": 57022,
+            "p90_us": 60049,
+            "p95_us": 61463,
+            "p99_us": 62797,
+            "p999_us": 62797,
+            "max_us": 64311,
+            "count": 50,
+            "histogram_us": [
+              [
+                40290,
+                80580,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_guestd_starting_log": {
+            "p50_us": 57752,
+            "p75_us": 58814,
+            "p90_us": 61628,
+            "p95_us": 63047,
+            "p99_us": 64355,
+            "p999_us": 64355,
+            "max_us": 65905,
+            "count": 50,
+            "histogram_us": [
+              [
+                41870,
+                83740,
+                50
+              ]
+            ]
+          },
+          "phase_12b_guest_exec_listener_bound": {
+            "p50_us": 58612,
+            "p75_us": 59727,
+            "p90_us": 62490,
+            "p95_us": 63911,
+            "p99_us": 65223,
+            "p999_us": 65223,
+            "max_us": 66786,
+            "count": 50,
+            "histogram_us": [
+              [
+                42742,
+                85484,
+                50
+              ]
+            ]
+          },
+          "phase_12b_ready_accept": {
+            "p50_us": 1023740,
+            "p75_us": 1025923,
+            "p90_us": 1028011,
+            "p95_us": 1028428,
+            "p99_us": 1031744,
+            "p999_us": 1031744,
+            "max_us": 1034408,
+            "count": 50,
+            "histogram_us": [
+              [
+                993000,
+                1986000,
+                50
+              ]
+            ]
+          },
+          "exec_send": {
+            "p50_us": 19,
+            "p75_us": 20,
+            "p90_us": 21,
+            "p95_us": 24,
+            "p99_us": 25,
+            "p999_us": 25,
+            "max_us": 37,
+            "count": 50,
+            "histogram_us": [
+              [
+                8,
+                16,
+                7
+              ],
+              [
+                16,
+                32,
+                42
+              ],
+              [
+                32,
+                64,
+                1
+              ]
+            ]
+          },
+          "exec_recv": {
+            "p50_us": 16186,
+            "p75_us": 17471,
+            "p90_us": 20087,
+            "p95_us": 20980,
+            "p99_us": 21730,
+            "p999_us": 21730,
+            "max_us": 21861,
+            "count": 50,
+            "histogram_us": [
+              [
+                12235,
+                24470,
+                50
+              ]
+            ]
+          },
+          "stop_bounded": {
+            "p50_us": 52028,
+            "p75_us": 54962,
+            "p90_us": 57417,
+            "p95_us": 59021,
+            "p99_us": 63757,
+            "p999_us": 63757,
+            "max_us": 67978,
+            "count": 50,
+            "histogram_us": [
+              [
+                35115,
+                70230,
+                50
+              ]
+            ]
+          },
+          "stop_release": {
+            "p50_us": 115,
+            "p75_us": 121,
+            "p90_us": 140,
+            "p95_us": 144,
+            "p99_us": 151,
+            "p999_us": 151,
+            "max_us": 153,
+            "count": 50,
+            "histogram_us": [
+              [
+                57,
+                114,
+                20
+              ],
+              [
+                114,
+                228,
+                30
+              ]
+            ]
+          },
+          "guest_elapsed_process_start": {
+            "p50_us": 1,
+            "p75_us": 1,
+            "p90_us": 1,
+            "p95_us": 1,
+            "p99_us": 1,
+            "p999_us": 1,
+            "max_us": 1,
+            "count": 50,
+            "histogram_us": [
+              [
+                1,
+                2,
+                34
+              ]
+            ]
+          },
+          "guest_delta_process_start": {
+            "p50_us": 1,
+            "p75_us": 1,
+            "p90_us": 1,
+            "p95_us": 1,
+            "p99_us": 1,
+            "p999_us": 1,
+            "max_us": 1,
+            "count": 50,
+            "histogram_us": [
+              [
+                1,
+                2,
+                34
+              ]
+            ]
+          },
+          "guest_elapsed_stdio_redirected": {
+            "p50_us": 1845,
+            "p75_us": 1953,
+            "p90_us": 2001,
+            "p95_us": 2007,
+            "p99_us": 2071,
+            "p999_us": 2071,
+            "max_us": 2097,
+            "count": 50,
+            "histogram_us": [
+              [
+                490,
+                980,
+                17
+              ],
+              [
+                980,
+                1960,
+                23
+              ],
+              [
+                1960,
+                3920,
+                10
+              ]
+            ]
+          },
+          "guest_delta_stdio_redirected": {
+            "p50_us": 1843,
+            "p75_us": 1953,
+            "p90_us": 2000,
+            "p95_us": 2006,
+            "p99_us": 2069,
+            "p999_us": 2069,
+            "max_us": 2097,
+            "count": 50,
+            "histogram_us": [
+              [
+                489,
+                978,
+                17
+              ],
+              [
+                978,
+                1956,
+                20
+              ],
+              [
+                1956,
+                3912,
+                13
+              ]
+            ]
+          },
+          "guest_elapsed_panic_hook_installed": {
+            "p50_us": 3463,
+            "p75_us": 3533,
+            "p90_us": 3568,
+            "p95_us": 3646,
+            "p99_us": 3708,
+            "p999_us": 3708,
+            "max_us": 3743,
+            "count": 50,
+            "histogram_us": [
+              [
+                493,
+                986,
+                17
+              ],
+              [
+                986,
+                1972,
+                5
+              ],
+              [
+                1972,
+                3944,
+                28
+              ]
+            ]
+          },
+          "guest_delta_panic_hook_installed": {
+            "p50_us": 1562,
+            "p75_us": 1581,
+            "p90_us": 1609,
+            "p95_us": 1643,
+            "p99_us": 1649,
+            "p999_us": 1649,
+            "max_us": 1673,
+            "count": 50,
+            "histogram_us": [
+              [
+                1,
+                2,
+                1
+              ],
+              [
+                2,
+                4,
+                12
+              ],
+              [
+                4,
+                8,
+                4
+              ],
+              [
+                512,
+                1024,
+                6
+              ],
+              [
+                1024,
+                2048,
+                27
+              ]
+            ]
+          },
+          "guest_elapsed_pseudo_fs_mounted": {
+            "p50_us": 12079,
+            "p75_us": 12244,
+            "p90_us": 12516,
+            "p95_us": 12746,
+            "p99_us": 12900,
+            "p999_us": 12900,
+            "max_us": 13231,
+            "count": 48,
+            "histogram_us": [
+              [
+                6127,
+                12254,
+                38
+              ],
+              [
+                12254,
+                24508,
+                10
+              ]
+            ]
+          },
+          "guest_delta_pseudo_fs_mounted": {
+            "p50_us": 8739,
+            "p75_us": 10712,
+            "p90_us": 10882,
+            "p95_us": 10941,
+            "p99_us": 10959,
+            "p999_us": 10959,
+            "max_us": 11064,
+            "count": 48,
+            "histogram_us": [
+              [
+                4482,
+                8964,
+                28
+              ],
+              [
+                8964,
+                17928,
+                20
+              ]
+            ]
+          },
+          "guest_elapsed_mount_namespace_private": {
+            "p50_us": 17318,
+            "p75_us": 17486,
+            "p90_us": 17891,
+            "p95_us": 18257,
+            "p99_us": 18449,
+            "p999_us": 18449,
+            "max_us": 18546,
+            "count": 49,
+            "histogram_us": [
+              [
+                8819,
+                17638,
+                41
+              ],
+              [
+                17638,
+                35276,
+                8
+              ]
+            ]
+          },
+          "guest_delta_mount_namespace_private": {
+            "p50_us": 5231,
+            "p75_us": 5272,
+            "p90_us": 5448,
+            "p95_us": 5520,
+            "p99_us": 5549,
+            "p999_us": 5549,
+            "max_us": 5558,
+            "count": 49,
+            "histogram_us": [
+              [
+                2624,
+                5248,
+                30
+              ],
+              [
+                5248,
+                10496,
+                19
+              ]
+            ]
+          },
+          "guest_elapsed_base_mounted": {
+            "p50_us": 22907,
+            "p75_us": 23137,
+            "p90_us": 23670,
+            "p95_us": 24061,
+            "p99_us": 24355,
+            "p999_us": 24355,
+            "max_us": 24420,
+            "count": 49,
+            "histogram_us": [
+              [
+                11709,
+                23418,
+                43
+              ],
+              [
+                23418,
+                46836,
+                6
+              ]
+            ]
+          },
+          "guest_delta_base_mounted": {
+            "p50_us": 5622,
+            "p75_us": 5659,
+            "p90_us": 5778,
+            "p95_us": 5805,
+            "p99_us": 5970,
+            "p999_us": 5970,
+            "max_us": 6108,
+            "count": 49,
+            "histogram_us": [
+              [
+                2844,
+                5688,
+                41
+              ],
+              [
+                5688,
+                11376,
+                8
+              ]
+            ]
+          },
+          "guest_elapsed_overlay_disk_mounted": {
+            "p50_us": 31360,
+            "p75_us": 31578,
+            "p90_us": 32554,
+            "p95_us": 33011,
+            "p99_us": 33657,
+            "p999_us": 33657,
+            "max_us": 33915,
+            "count": 50,
+            "histogram_us": [
+              [
+                17283,
+                34566,
+                50
+              ]
+            ]
+          },
+          "guest_delta_overlay_disk_mounted": {
+            "p50_us": 8356,
+            "p75_us": 8478,
+            "p90_us": 8941,
+            "p95_us": 9133,
+            "p99_us": 9494,
+            "p999_us": 9494,
+            "max_us": 9596,
+            "count": 50,
+            "histogram_us": [
+              [
+                5437,
+                10874,
+                50
+              ]
+            ]
+          },
+          "guest_elapsed_overlay_dirs_ready": {
+            "p50_us": 36143,
+            "p75_us": 36442,
+            "p90_us": 37756,
+            "p95_us": 37993,
+            "p99_us": 39277,
+            "p999_us": 39277,
+            "max_us": 39437,
+            "count": 49,
+            "histogram_us": [
+              [
+                20495,
+                40990,
+                49
+              ]
+            ]
+          },
+          "guest_delta_overlay_dirs_ready": {
+            "p50_us": 4794,
+            "p75_us": 4825,
+            "p90_us": 4960,
+            "p95_us": 5522,
+            "p99_us": 5543,
+            "p999_us": 5543,
+            "max_us": 5619,
+            "count": 49,
+            "histogram_us": [
+              [
+                3144,
+                6288,
+                49
+              ]
+            ]
+          },
+          "guest_elapsed_merged_mountpoint_ready": {
+            "p50_us": 38843,
+            "p75_us": 39547,
+            "p90_us": 41111,
+            "p95_us": 41483,
+            "p99_us": 42370,
+            "p999_us": 42370,
+            "max_us": 42637,
+            "count": 48,
+            "histogram_us": [
+              [
+                23002,
+                46004,
+                48
+              ]
+            ]
+          },
+          "guest_delta_merged_mountpoint_ready": {
+            "p50_us": 2685,
+            "p75_us": 2884,
+            "p90_us": 3736,
+            "p95_us": 3790,
+            "p99_us": 3904,
+            "p999_us": 3904,
+            "max_us": 4384,
+            "count": 48,
+            "histogram_us": [
+              [
+                2391,
+                4782,
+                48
+              ]
+            ]
+          },
+          "guest_elapsed_overlayfs_mounted": {
+            "p50_us": 42361,
+            "p75_us": 43235,
+            "p90_us": 45491,
+            "p95_us": 46114,
+            "p99_us": 47008,
+            "p999_us": 47008,
+            "max_us": 48668,
+            "count": 50,
+            "histogram_us": [
+              [
+                24924,
+                49848,
+                50
+              ]
+            ]
+          },
+          "guest_delta_overlayfs_mounted": {
+            "p50_us": 3539,
+            "p75_us": 3617,
+            "p90_us": 5420,
+            "p95_us": 5449,
+            "p99_us": 5525,
+            "p999_us": 5525,
+            "max_us": 6298,
+            "count": 50,
+            "histogram_us": [
+              [
+                1932,
+                3864,
+                43
+              ],
+              [
+                3864,
+                7728,
+                7
+              ]
+            ]
+          },
+          "guest_elapsed_pseudo_fs_bound_into_merged": {
+            "p50_us": 45275,
+            "p75_us": 46204,
+            "p90_us": 49014,
+            "p95_us": 50144,
+            "p99_us": 51448,
+            "p999_us": 51448,
+            "max_us": 53118,
+            "count": 50,
+            "histogram_us": [
+              [
+                29214,
+                58428,
+                50
+              ]
+            ]
+          },
+          "guest_delta_pseudo_fs_bound_into_merged": {
+            "p50_us": 2924,
+            "p75_us": 2969,
+            "p90_us": 4241,
+            "p95_us": 4439,
+            "p99_us": 4505,
+            "p999_us": 4505,
+            "max_us": 4520,
+            "count": 50,
+            "histogram_us": [
+              [
+                2834,
+                5668,
+                50
+              ]
+            ]
+          },
+          "guest_elapsed_merged_self_bound": {
+            "p50_us": 48120,
+            "p75_us": 49147,
+            "p90_us": 51932,
+            "p95_us": 53388,
+            "p99_us": 54359,
+            "p999_us": 54359,
+            "max_us": 56033,
+            "count": 50,
+            "histogram_us": [
+              [
+                32091,
+                64182,
+                50
+              ]
+            ]
+          },
+          "guest_delta_merged_self_bound": {
+            "p50_us": 2877,
+            "p75_us": 2907,
+            "p90_us": 2921,
+            "p95_us": 2963,
+            "p99_us": 2975,
+            "p999_us": 2975,
+            "max_us": 3244,
+            "count": 50,
+            "histogram_us": [
+              [
+                2761,
+                5522,
+                50
+              ]
+            ]
+          },
+          "guest_elapsed_pivot_rootfs_done": {
+            "p50_us": 49846,
+            "p75_us": 50902,
+            "p90_us": 53648,
+            "p95_us": 55088,
+            "p99_us": 56146,
+            "p999_us": 56146,
+            "max_us": 57782,
+            "count": 50,
+            "histogram_us": [
+              [
+                33809,
+                67618,
+                50
+              ]
+            ]
+          },
+          "guest_delta_pivot_rootfs_done": {
+            "p50_us": 1721,
+            "p75_us": 1745,
+            "p90_us": 1784,
+            "p95_us": 1786,
+            "p99_us": 1791,
+            "p999_us": 1791,
+            "max_us": 1824,
+            "count": 50,
+            "histogram_us": [
+              [
+                1660,
+                3320,
+                50
+              ]
+            ]
+          },
+          "guest_elapsed_overlay_pivot_complete": {
+            "p50_us": 51684,
+            "p75_us": 52798,
+            "p90_us": 55465,
+            "p95_us": 56908,
+            "p99_us": 58036,
+            "p999_us": 58036,
+            "max_us": 59632,
+            "count": 50,
+            "histogram_us": [
+              [
+                35657,
+                71314,
+                50
+              ]
+            ]
+          },
+          "guest_delta_overlay_pivot_complete": {
+            "p50_us": 1837,
+            "p75_us": 1858,
+            "p90_us": 1890,
+            "p95_us": 1895,
+            "p99_us": 1902,
+            "p999_us": 1902,
+            "max_us": 1905,
+            "count": 50,
+            "histogram_us": [
+              [
+                158,
+                316,
+                1
+              ],
+              [
+                1264,
+                2528,
+                49
+              ]
+            ]
+          },
+          "guest_elapsed_network_configured": {
+            "p50_us": 53484,
+            "p75_us": 54638,
+            "p90_us": 57269,
+            "p95_us": 58706,
+            "p99_us": 59888,
+            "p999_us": 59888,
+            "max_us": 61493,
+            "count": 50,
+            "histogram_us": [
+              [
+                37483,
+                74966,
+                50
+              ]
+            ]
+          },
+          "guest_delta_network_configured": {
+            "p50_us": 1815,
+            "p75_us": 1836,
+            "p90_us": 1855,
+            "p95_us": 1860,
+            "p99_us": 1877,
+            "p999_us": 1877,
+            "max_us": 1877,
+            "count": 50,
+            "histogram_us": [
+              [
+                22,
+                44,
+                1
+              ],
+              [
+                1408,
+                2816,
+                49
+              ]
+            ]
+          },
+          "guest_elapsed_workspace_absent": {
+            "p50_us": 55390,
+            "p75_us": 56120,
+            "p90_us": 59233,
+            "p95_us": 60659,
+            "p99_us": 61985,
+            "p999_us": 61985,
+            "max_us": 63496,
+            "count": 50,
+            "histogram_us": [
+              [
+                39474,
+                78948,
+                50
+              ]
+            ]
+          },
+          "guest_delta_workspace_absent": {
+            "p50_us": 1980,
+            "p75_us": 2003,
+            "p90_us": 2024,
+            "p95_us": 2028,
+            "p99_us": 2055,
+            "p999_us": 2055,
+            "max_us": 2096,
+            "count": 50,
+            "histogram_us": [
+              [
+                15,
+                30,
+                1
+              ],
+              [
+                120,
+                240,
+                1
+              ],
+              [
+                1920,
+                3840,
+                48
+              ]
+            ]
+          },
+          "guest_elapsed_pid1_setup_complete": {
+            "p50_us": 56196,
+            "p75_us": 57022,
+            "p90_us": 60049,
+            "p95_us": 61463,
+            "p99_us": 62797,
+            "p999_us": 62797,
+            "max_us": 64311,
+            "count": 50,
+            "histogram_us": [
+              [
+                40290,
+                80580,
+                50
+              ]
+            ]
+          },
+          "guest_delta_pid1_setup_complete": {
+            "p50_us": 810,
+            "p75_us": 818,
+            "p90_us": 828,
+            "p95_us": 832,
+            "p99_us": 845,
+            "p999_us": 845,
+            "max_us": 902,
+            "count": 50,
+            "histogram_us": [
+              [
+                1,
+                2,
+                2
+              ],
+              [
+                512,
+                1024,
+                48
+              ]
+            ]
+          },
+          "guest_elapsed_guestd_starting_log": {
+            "p50_us": 57752,
+            "p75_us": 58814,
+            "p90_us": 61628,
+            "p95_us": 63047,
+            "p99_us": 64355,
+            "p999_us": 64355,
+            "max_us": 65905,
+            "count": 50,
+            "histogram_us": [
+              [
+                41870,
+                83740,
+                50
+              ]
+            ]
+          },
+          "guest_delta_guestd_starting_log": {
+            "p50_us": 1569,
+            "p75_us": 1584,
+            "p90_us": 1598,
+            "p95_us": 1613,
+            "p99_us": 1629,
+            "p999_us": 1629,
+            "max_us": 1792,
+            "count": 50,
+            "histogram_us": [
+              [
+                3,
+                6,
+                2
+              ],
+              [
+                768,
+                1536,
+                4
+              ],
+              [
+                1536,
+                3072,
+                44
+              ]
+            ]
+          },
+          "guest_elapsed_exec_listener_bound": {
+            "p50_us": 58612,
+            "p75_us": 59727,
+            "p90_us": 62490,
+            "p95_us": 63911,
+            "p99_us": 65223,
+            "p999_us": 65223,
+            "max_us": 66786,
+            "count": 50,
+            "histogram_us": [
+              [
+                42742,
+                85484,
+                50
+              ]
+            ]
+          },
+          "guest_delta_exec_listener_bound": {
+            "p50_us": 864,
+            "p75_us": 874,
+            "p90_us": 887,
+            "p95_us": 893,
+            "p99_us": 908,
+            "p999_us": 908,
+            "max_us": 912,
+            "count": 50,
+            "histogram_us": [
+              [
+                26,
+                52,
+                2
+              ],
+              [
+                832,
+                1664,
+                48
+              ]
+            ]
+          },
+          "guest_elapsed_ready_signal_sent": {
+            "p50_us": 60709,
+            "p75_us": 61874,
+            "p90_us": 64541,
+            "p95_us": 65946,
+            "p99_us": 67268,
+            "p999_us": 67268,
+            "max_us": 68853,
+            "count": 50,
+            "histogram_us": [
+              [
+                44767,
+                89534,
+                50
+              ]
+            ]
+          },
+          "guest_delta_ready_signal_sent": {
+            "p50_us": 2039,
+            "p75_us": 2060,
+            "p90_us": 2101,
+            "p95_us": 2121,
+            "p99_us": 6298,
+            "p999_us": 6298,
+            "max_us": 9587,
+            "count": 50,
+            "histogram_us": [
+              [
+                1865,
+                3730,
+                48
+              ],
+              [
+                3730,
+                7460,
+                1
+              ],
+              [
+                7460,
+                14920,
+                1
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "useful_ms": {
+      "minimal": {
+        "idle": 4538
+      }
+    },
+    "meta": {
+      "generated_at": "2026-05-14T01:41:03.874675+00:00"
+    }
+  }
+}
