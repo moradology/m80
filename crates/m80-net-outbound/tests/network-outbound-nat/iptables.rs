@@ -276,6 +276,39 @@ fn permanent_deny_list_includes_bridge_cidr() {
 }
 
 #[test]
+fn icmp_rejected_before_default_accept() {
+    let state = ready_state();
+    let chain = outbound_nat_filter_chain(&state);
+    let comment = outbound_nat_rule_comment(&state);
+    let mut ops = RecordingPolicyOps::default();
+
+    apply_outbound_nat_policy_with_ops(&mut ops, &state).unwrap();
+
+    let rules = ops.chain_rules("filter", &chain);
+    let icmp_index = rules
+        .iter()
+        .position(|rule| {
+            rule == &vec![
+                "-p",
+                "icmp",
+                "-m",
+                "comment",
+                "--comment",
+                &comment,
+                "-j",
+                "REJECT",
+            ]
+        })
+        .expect("missing ICMP reject rule");
+    let default_accept_index = rules
+        .iter()
+        .position(|rule| rule == &vec!["-m", "comment", "--comment", &comment, "-j", "ACCEPT"])
+        .expect("missing default accept");
+
+    assert!(icmp_index < default_accept_index);
+}
+
+#[test]
 fn default_accept_after_deny_list() {
     let state = ready_state();
     let chain = outbound_nat_filter_chain(&state);

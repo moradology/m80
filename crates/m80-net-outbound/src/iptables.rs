@@ -355,6 +355,21 @@ fn ensure_filter_chain_rules(
         "filter",
         chain,
         vec![
+            "-p".into(),
+            "icmp".into(),
+            "-m".into(),
+            "comment".into(),
+            "--comment".into(),
+            comment.into(),
+            "-j".into(),
+            "REJECT".into(),
+        ],
+    ));
+
+    rules.push(PlannedRule::append(
+        "filter",
+        chain,
+        vec![
             "-m".into(),
             "comment".into(),
             "--comment".into(),

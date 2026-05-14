@@ -110,7 +110,8 @@ Sequestering it has three benefits:
   break our teardown.
 - The per-VM filter chain accepts configured DNS resolvers on UDP/TCP 53,
   rejects all other DNS, accepts bounded private exceptions, rejects the
-  permanent-deny CIDR set, then ends with default ACCEPT for public IPv4.
+  permanent-deny CIDR set, rejects IPv4 ICMP, then ends with default ACCEPT
+  for public IPv4.
   The permanent-deny set is `0.0.0.0/8`, `10.0.0.0/8`,
   `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`,
   `172.16.0.0/12`, `192.168.0.0/16`, documentation/benchmark ranges,

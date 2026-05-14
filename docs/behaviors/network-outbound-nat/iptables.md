@@ -86,11 +86,22 @@ Source: predecessor `denied_outbound_cidrs` lines 1721-1744.
 Verification:
 `crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::permanent_deny_list_includes_bridge_cidr`.
 
+## ICMP Reject
+
+After the permanent-deny CIDR set and before the default public-IPv4 ACCEPT,
+the per-VM filter chain rejects IPv4 ICMP with `-p icmp -j REJECT`. ICMP is not
+part of the admitted outbound surface because echo payloads provide a covert
+exfiltration channel outside the DNS/CIDR policy shape.
+
+Verification:
+`crates/m80-net-outbound/tests/network-outbound-nat/iptables.rs::icmp_rejected_before_default_accept`.
+
 ## Default Accept
 
 The per-VM filter chain ends with a final comment-tagged `-j ACCEPT` rule.
-Traffic that survives DNS rejection, private exception handling, and the
-permanent-deny list is allowed to reach public IPv4 destinations.
+Traffic that survives DNS rejection, private exception handling, the
+permanent-deny list, and ICMP rejection is allowed to reach public IPv4
+destinations.
 
 Source: predecessor `ensure_outbound_nat_filter_chain_rules` lines 1621-1627.
 

@@ -64,6 +64,20 @@ fn external_network_enabled() -> bool {
 }
 
 fn run_outbound_probe(script: &str) -> m80_proto::ExecResponse {
+    let response = run_outbound_probe_response(script);
+    if response.status != ExecStatus::Completed || response.exit_code != Some(0) {
+        panic!(
+            "exec outbound probe failed: status={:?}; exit={:?}; stdout={:?}; stderr={:?}",
+            response.status,
+            response.exit_code,
+            String::from_utf8_lossy(&response.stdout),
+            String::from_utf8_lossy(&response.stderr),
+        );
+    }
+    response
+}
+
+fn run_outbound_probe_response(script: &str) -> m80_proto::ExecResponse {
     let (mut running, run_dir) = launch_outbound_vm();
     let _dump_guard = RunDirDumpGuard::new(run_dir);
 
@@ -88,17 +102,6 @@ fn run_outbound_probe(script: &str) -> m80_proto::ExecResponse {
     let stopped = running.stop().expect("stop");
     match response {
         Ok(response) => {
-            if response.status != ExecStatus::Completed || response.exit_code != Some(0) {
-                let stdout = String::from_utf8_lossy(&response.stdout);
-                let stderr = String::from_utf8_lossy(&response.stderr);
-                let preserved = stopped.preserve_for_triage().expect("preserve run dir");
-                panic!(
-                    "exec outbound probe failed: status={:?}; exit={:?}; stdout={stdout:?}; stderr={stderr:?}; preserved run dir={}",
-                    response.status,
-                    response.exit_code,
-                    preserved.display()
-                );
-            }
             stopped.delete().expect("delete");
             response
         }
@@ -129,6 +132,27 @@ fn allow_outbound_resolves_external_dns() {
         response.exit_code,
         Some(0),
         "AllowOutbound must resolve external DNS; stdout={:?}; stderr={:?}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+}
+
+#[test]
+#[ignore = "requires KVM host, CAP_NET_ADMIN, and opt-in external network"]
+fn allow_outbound_rejects_external_icmp() {
+    if !external_network_enabled() {
+        eprintln!("skipping: set M80_RUN_EXTERNAL_NETWORK_E2E=1 to run external-network probe");
+        return;
+    }
+
+    let response =
+        run_outbound_probe_response("/bin/busybox timeout 4 /bin/busybox ping -c 1 -W 2 1.1.1.1");
+
+    assert_eq!(response.status, ExecStatus::Completed);
+    assert_ne!(
+        response.exit_code,
+        Some(0),
+        "AllowOutbound must reject external ICMP; stdout={:?}; stderr={:?}",
         String::from_utf8_lossy(&response.stdout),
         String::from_utf8_lossy(&response.stderr)
     );
