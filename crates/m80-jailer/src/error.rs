@@ -25,6 +25,10 @@ pub enum JailerError {
         #[source]
         source: nix::Error,
     },
+    /// The host mount namespace could not be made private before m80's
+    /// pre-jailer bind plan.
+    #[error("make host mount namespace private: {0}")]
+    MountPropagationFailed(#[source] nix::Error),
     /// `chroot` syscall (or jailer's chroot step) failed.
     #[error("chroot failed in {jail_path}", jail_path = jail_path.display())]
     ChrootFailed {

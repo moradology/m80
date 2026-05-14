@@ -115,6 +115,7 @@ impl Plan {
             plan: self,
         };
 
+        let mut mount_propagation_private = false;
         for step in &materialized.plan.steps {
             match step {
                 PlanStep::CreateDir { path, mode } => {
@@ -134,6 +135,11 @@ impl Plan {
                     materialized.created_dirs.push(path.clone());
                 }
                 PlanStep::Bind { source, dest, mode } => {
+                    if !mount_propagation_private {
+                        make_mounts_private()?;
+                        mount_propagation_private = true;
+                    }
+
                     let canonical_source =
                         std::fs::canonicalize(source).map_err(|io_source| JailerError::Io {
                             path: source.clone(),
@@ -295,6 +301,21 @@ fn bind_mount_flags(source_is_dir: bool, dest_is_dir: bool) -> nix::mount::MsFla
     flags
 }
 
+fn private_mount_flags() -> nix::mount::MsFlags {
+    nix::mount::MsFlags::MS_PRIVATE | nix::mount::MsFlags::MS_REC
+}
+
+fn make_mounts_private() -> Result<(), JailerError> {
+    nix::mount::mount(
+        None::<&str>,
+        "/",
+        None::<&str>,
+        private_mount_flags(),
+        None::<&str>,
+    )
+    .map_err(JailerError::MountPropagationFailed)
+}
+
 struct UmaskGuard(nix::sys::stat::Mode);
 
 impl UmaskGuard {
@@ -364,5 +385,11 @@ mod tests {
         assert_eq!(super::bind_mount_flags(true, false), expected);
         assert_eq!(super::bind_mount_flags(false, true), expected);
         assert_eq!(super::bind_mount_flags(true, true), expected);
+    }
+
+    #[test]
+    fn private_mount_flags_make_recursive_private() {
+        let expected = MsFlags::MS_PRIVATE | MsFlags::MS_REC;
+        assert_eq!(super::private_mount_flags(), expected);
     }
 }

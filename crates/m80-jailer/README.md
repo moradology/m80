@@ -21,9 +21,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   recorded to `jailer-state.json`; `Drop` tears the chroot down. Jail-root
   and in-jail directories are created `0700` and chowned to the configured
   jail uid/gid. Bind sources are canonicalized before use; file creation
-  uses `O_NOFOLLOW`; file bind mounts use `MS_BIND`, directory bind mounts use
-  `MS_BIND|MS_REC`, and both are remounted with `MS_NODEV|MS_NOEXEC|MS_NOSUID`
-  (`MS_RDONLY` for read-only binds).
+  uses `O_NOFOLLOW`; before the first bind, the process marks `/` recursively
+  private with `MS_PRIVATE|MS_REC` so m80's pre-jailer bind plan cannot
+  propagate through a shared host mount namespace. File bind mounts use
+  `MS_BIND`, directory bind mounts use `MS_BIND|MS_REC`, and both are remounted
+  with `MS_NODEV|MS_NOEXEC|MS_NOSUID` (`MS_RDONLY` for read-only binds).
   Bind destinations under `dev`, `proc`, or `sys` are rejected: device nodes
   and virtual kernel filesystems are the official jailer's responsibility,
   not caller-provided host binds.
@@ -93,7 +95,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `MaterializedJail::jail_root()`, `MaterializedJail::run_dir()`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `inspect_run_dir`, `InspectionDecision`, `ReapPlan`.
-- `JailerError`: `BindDestRejected` (policy rejection), `BindFailed { source: nix::Error }` (syscall failure), `ChrootFailed`, `FirecrackerPidTimeout`,
+- `JailerError`: `BindDestRejected` (policy rejection), `BindFailed { source: nix::Error }` (syscall failure), `MountPropagationFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
   `UidGidInvalid`, `InvalidNetns`, `Io { path, source }`. Privilege is verified once by
   `m80-preflight`; this crate does not run a per-launch sudo probe.
 
@@ -136,9 +138,10 @@ hands a config in and gets back a launchable chroot — or a typed error.
   the hardening wrapper, resource limits, environment clearing, stdio capture,
   netns validation, `new_pid_ns` parent reaping, and daemonized parent reaping.
 - `tests/integration_root.rs` — ignored root-only smoke for real
-  materialization and real Firecracker-jailer `--new-pid-ns` launch state
-  (`jailer_pid = 0`, Firecracker `NSpid` ends in `1`, resource limit live,
-  private Firecracker executable copy).
+  materialization, private mount propagation on m80's bind targets, and real
+  Firecracker-jailer `--new-pid-ns` launch state (`jailer_pid = 0`,
+  Firecracker `NSpid` ends in `1`, resource limit live, private Firecracker
+  executable copy).
 - `tests/defense_in_depth.rs` — ignored root-only harness that launches the
   musl `m80-attack-runner` payload through the official Firecracker jailer
   path and waits for its exit code. The `echo_zero` negative control must exit

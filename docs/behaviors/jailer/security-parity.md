@@ -13,8 +13,12 @@ the host orchestrator process, so doing that there would isolate m80 itself
 rather than the Firecracker process. The m80-owned hardening surface is the
 materialized bind plan: jail-internal directories are `0700` and chowned to
 the jail uid/gid, bind sources are canonicalized before use, placeholder and
-state-file writes use `O_NOFOLLOW`, binds are recursive, and bind remounts add
-`MS_NODEV`, `MS_NOEXEC`, and `MS_NOSUID` with `MS_RDONLY` for read-only binds.
+state-file writes use `O_NOFOLLOW`, `/` is marked recursively private with
+`MS_PRIVATE|MS_REC` before the first m80-owned bind, binds are recursive, and
+bind remounts add `MS_NODEV`, `MS_NOEXEC`, and `MS_NOSUID` with `MS_RDONLY` for
+read-only binds. The private propagation step prevents m80's pre-jailer binds
+from leaking through a shared host mount namespace and prevents peer shared
+mounts from propagating back into the jail.
 
 `JailerConfig::resource_limits` is persisted in `jailer-plan.json` and passed
 as Firecracker-jailer `--resource-limit` arguments. The default is
@@ -55,6 +59,9 @@ Runtime evidence:
   then asserts `jailer_pid = 0`, Firecracker's `NSpid` ends in `1`, and the
   configured resource limit, inherited hardening state, and private
   Firecracker executable copy are live.
+- `crates/m80-jailer/tests/integration_root.rs::materialize_creates_jail_root_and_persists_plan`
+  materializes a real bind plan and asserts the bind target's mountinfo entry
+  has no shared or slave propagation marker.
 - `crates/m80-jailer-harden/tests/integration_root.rs::wrapper_applies_inherited_hardening_before_exec`
   execs a shell through the hardening wrapper and inspects `/proc/self/status`,
   the environment, and a deliberately inherited fd for the wrapper-level

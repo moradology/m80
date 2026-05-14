@@ -65,6 +65,7 @@ fn materialize_creates_jail_root_and_persists_plan() {
         run_dir.path().join("jailer-state.json").exists(),
         "jailer-state.json must be written"
     );
+    assert_mount_private(&jail.jail_root().join("kernel/vmlinux"));
 }
 
 #[test]
@@ -483,6 +484,31 @@ fn assert_no_mountinfo_references(path: &std::path::Path) {
     assert!(
         !mountinfo.contains(needle.as_ref()),
         "host mountinfo still references {} after materialize failure:\n{mountinfo}",
+        path.display()
+    );
+}
+
+fn assert_mount_private(path: &std::path::Path) {
+    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").expect("host mountinfo");
+    let needle = path.to_string_lossy();
+    let line = mountinfo
+        .lines()
+        .find(|line| line.split_whitespace().nth(4) == Some(needle.as_ref()))
+        .unwrap_or_else(|| {
+            panic!(
+                "missing mountinfo entry for {}:\n{mountinfo}",
+                path.display()
+            )
+        });
+    let optional_fields = line
+        .split(" - ")
+        .next()
+        .expect("mountinfo separator present before fs fields");
+    assert!(
+        !optional_fields
+            .split_whitespace()
+            .any(|field| field.starts_with("shared:") || field.starts_with("master:")),
+        "{} must not be shared or slave propagated: {line}",
         path.display()
     );
 }
