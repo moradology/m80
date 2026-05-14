@@ -55,6 +55,10 @@ fn snapshot_paths(dir: &Path) -> SnapshotPaths {
     }
 }
 
+fn warm_snapshot_dir(discovery: &m80_preflight::Discovery, name: &str) -> PathBuf {
+    discovery.run_root.join("warm").join(name)
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: full round-trip — write a marker file before capture, read it back
 //         after restore.
@@ -70,7 +74,7 @@ fn snapshot_paths(dir: &Path) -> SnapshotPaths {
 fn capture_then_restore_round_trip() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery.run_root.join("snap-round-trip");
+    let snap_dir = warm_snapshot_dir(&discovery, "snap-round-trip");
 
     let config = make_backend_config(discovery.clone());
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
@@ -156,7 +160,7 @@ fn capture_then_restore_round_trip() {
 fn restore_executes_after_idle() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery.run_root.join("snap-idle");
+    let snap_dir = warm_snapshot_dir(&discovery, "snap-idle");
 
     let config = make_backend_config(discovery.clone());
     let backend = std::sync::Arc::new(Backend::new(config).expect("Backend::new"));
@@ -221,7 +225,7 @@ fn restore_executes_after_idle() {
 fn corrupted_snapshot_file_fails_clearly() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery.run_root.join("snap-corrupted");
+    let snap_dir = warm_snapshot_dir(&discovery, "snap-corrupted");
     let backend = std::sync::Arc::new(
         Backend::new(make_backend_config(discovery.clone())).expect("Backend::new"),
     );
@@ -271,7 +275,7 @@ fn corrupted_snapshot_file_fails_clearly() {
 fn post_capture_mutation_does_not_change_snapshot_restore_state() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery.run_root.join("snap-mutation");
+    let snap_dir = warm_snapshot_dir(&discovery, "snap-mutation");
     let backend = std::sync::Arc::new(
         Backend::new(make_backend_config(discovery.clone())).expect("Backend::new"),
     );

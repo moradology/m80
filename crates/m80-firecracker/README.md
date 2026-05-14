@@ -407,9 +407,10 @@ as a runtime retry. See `docs/behaviors/lifecycle/graceful-stop.md`.
 already-missing run-dir as clean. Recovery runs once during `Backend::new()` and
 remains available through the explicit `Backend::recover_stale_run_root()` pass:
 live `ownership.lock` directories are skipped, `.preserved/` triage archives are
-skipped, clear orphan directories are reaped, orphaned live jail pids are killed
-before removal, owned network state is cleaned before `network-state.json` is
-deleted, and ambiguous jailer or ownership-lock state is preserved. See
+skipped, the `warm/` owner control tree is skipped, clear orphan directories
+are reaped, orphaned live jail pids are killed before removal, owned network
+state is cleaned before `network-state.json` is deleted, and ambiguous jailer
+or ownership-lock state is preserved. See
 `docs/behaviors/lifecycle/delete-and-recovery.md`,
 `docs/behaviors/cleanup/idempotent-teardown.md`, and
 `docs/behaviors/concurrency/stale-detection.md`.
@@ -480,6 +481,9 @@ an invariant fails closed.
   appears twice because the jail layout inherits Firecracker's jailer
   convention. The check is pure arithmetic and runs before the admission
   permit is acquired — over-budget admits never consume a permit.
+- `Backend::admit()` also rejects caller-supplied `vm_id` values that collide
+  with reserved run-root children (`.preserved`, `warm`) before consuming a
+  permit.
 - `FcError::ApiSocketTimeout { path, timeout }` — Firecracker did not create
   its REST API socket during launch.
 - `FcError::GuestdReadyTimeout { path, timeout }` — m80-guestd did not connect

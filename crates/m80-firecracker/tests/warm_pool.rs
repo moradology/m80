@@ -54,6 +54,13 @@ fn snapshot_paths(dir: &std::path::Path) -> SnapshotPaths {
     }
 }
 
+fn warm_snapshot_dir(
+    discovery: &m80_preflight::Discovery,
+    name: impl AsRef<str>,
+) -> std::path::PathBuf {
+    discovery.run_root.join("warm").join(name.as_ref())
+}
+
 fn unique_name(prefix: &str) -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -124,7 +131,7 @@ fn workspace_backed_pool_config_is_rejected() {
 fn warm_pool_allocates_pre_restored_slot_and_refills_after_discard() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery.run_root.join("warm-pool-test-snapshot");
+    let snap_dir = warm_snapshot_dir(&discovery, "warm-pool-test-snapshot");
 
     let golden_backend = Arc::new(
         Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new golden"),
@@ -191,7 +198,7 @@ fn warm_pool_empty_returns_pool_empty_error() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let suffix = unique_name("pool-empty");
-    let snap_dir = discovery.run_root.join(format!("{suffix}-snapshot"));
+    let snap_dir = warm_snapshot_dir(&discovery, format!("{suffix}-snapshot"));
 
     let golden_backend = Arc::new(
         Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new golden"),
@@ -257,7 +264,7 @@ fn warm_pool_simultaneous_lease_and_refill() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let suffix = unique_name("pool-race");
-    let snap_dir = discovery.run_root.join(format!("{suffix}-snapshot"));
+    let snap_dir = warm_snapshot_dir(&discovery, format!("{suffix}-snapshot"));
 
     let golden_backend = Arc::new(
         Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new golden"),
@@ -352,7 +359,7 @@ fn warm_pool_cpuset_allocator_assigns_disjoint_concurrent_slots() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
     let suffix = unique_name("pool-cpuset");
-    let snap_dir = discovery.run_root.join(format!("{suffix}-snapshot"));
+    let snap_dir = warm_snapshot_dir(&discovery, format!("{suffix}-snapshot"));
 
     let golden_backend = Arc::new(
         Backend::new(make_backend_config(discovery.clone(), 1)).expect("Backend::new golden"),

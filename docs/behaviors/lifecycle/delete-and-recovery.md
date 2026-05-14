@@ -37,10 +37,12 @@ For each run-root child directory:
 2. A malformed `ownership.lock` is ambiguous and causes recovery to preserve
    that directory.
 3. `.preserved/` is skipped because it contains explicit triage archives.
-4. A persisted live jail state with no live m80 owner is treated as an orphaned
+4. `warm/` is skipped because it contains the resident warm owner's control
+   socket, identity, and clean snapshot pair rather than one VM run directory.
+5. A persisted live jail state with no live m80 owner is treated as an orphaned
    VM; recovery SIGKILLs the jailer/firecracker pids and removes the run dir.
-5. An orphan/no-jail directory is removed.
-6. Ambiguous or unreadable jailer recovery state is logged and preserved.
+6. An orphan/no-jail directory is removed.
+7. Ambiguous or unreadable jailer recovery state is logged and preserved.
 
 Removal first detaches any mountpoints under the run directory using
 `/proc/self/mountinfo`, then cleans owned outbound-network state when

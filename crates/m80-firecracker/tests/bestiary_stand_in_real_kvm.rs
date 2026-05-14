@@ -28,7 +28,7 @@ use nix::unistd::{chown, Gid, Uid};
 fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery.run_root.join("bestiary-stand-in-snapshot");
+    let snap_dir = warm_snapshot_dir(&discovery, "bestiary-stand-in-snapshot");
     let prefix = "bestiary-stand-in-slot";
     let tenant_id = b"tenant-a";
 
@@ -137,7 +137,7 @@ fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
 fn drive_attach_identity_mismatch_kills_vm_and_refills_slot() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    let snap_dir = discovery.run_root.join("identity-mismatch-snapshot");
+    let snap_dir = warm_snapshot_dir(&discovery, "identity-mismatch-snapshot");
     let prefix = "identity-mismatch-slot";
     let actual_tenant_id = b"tenant-a";
     let expected_tenant_id = b"tenant-b";
@@ -263,6 +263,10 @@ fn snapshot_paths(dir: &Path) -> SnapshotPaths {
         vm_state: dir.join("vm.snap"),
         mem: dir.join("mem.snap"),
     }
+}
+
+fn warm_snapshot_dir(discovery: &m80_preflight::Discovery, name: &str) -> PathBuf {
+    discovery.run_root.join("warm").join(name)
 }
 
 fn true_request() -> m80_proto::ExecRequest {

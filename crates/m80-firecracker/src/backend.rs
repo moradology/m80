@@ -63,6 +63,7 @@ impl Backend {
         // auto-generated `vm-{pid}-{ts}` form (resolve_vm_id) is bounded by
         // construction and does not need a check here.
         if let Some(vm_id) = config.vm_id.as_deref() {
+            check_vm_id_reserved_name(vm_id)?;
             check_vm_id_path_budget(&self.config, vm_id)?;
         }
 
@@ -113,7 +114,7 @@ impl Backend {
             if !subdir.is_dir() {
                 continue;
             }
-            if entry.file_name() == ".preserved" {
+            if is_reserved_run_root_child(&entry.file_name()) {
                 continue;
             }
 
@@ -207,6 +208,20 @@ fn check_vm_id_path_budget(config: &BackendConfig, vm_id: &str) -> Result<(), Fc
         }));
     }
     Ok(())
+}
+
+fn check_vm_id_reserved_name(vm_id: &str) -> Result<(), FcError> {
+    if is_reserved_run_root_child(std::ffi::OsStr::new(vm_id)) {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "vm_id",
+            reason: format!("{vm_id:?} is reserved under run_root"),
+        }));
+    }
+    Ok(())
+}
+
+fn is_reserved_run_root_child(name: &std::ffi::OsStr) -> bool {
+    name == ".preserved" || name == "warm"
 }
 
 /// Build an `EffectiveConfig` snapshot from a `BackendConfig`.
@@ -338,8 +353,63 @@ fn kill_orphan_pids(jailer_pid: u32, firecracker_pid: u32) {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::path::PathBuf;
 
     use super::*;
+
+    fn fake_discovery(run_root: &std::path::Path) -> m80_preflight::Discovery {
+        m80_preflight::Discovery {
+            firecracker_bin: PathBuf::from("/tmp/firecracker"),
+            jailer_bin: PathBuf::from("/tmp/jailer"),
+            jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
+            kernel: PathBuf::from("/tmp/vmlinux"),
+            rootfs: PathBuf::from("/tmp/rootfs.ext4"),
+            manifest: m80_image_manifest::Manifest::new(
+                "/tmp/m80-guestd".into(),
+                "0".repeat(64),
+                "v1.0.0".to_owned(),
+                52,
+                m80_image_manifest::ImageKind::Minimal,
+                "/tmp/vmlinux".into(),
+                "1".repeat(64),
+                m80_image_manifest::KernelKind::Stock,
+                None,
+                "/tmp/rootfs.ext4".into(),
+                "2".repeat(64),
+                "M80_READY".to_owned(),
+                m80_image_manifest::RootfsFormat::Ext4,
+                None,
+                None,
+            ),
+            run_root: run_root.to_path_buf(),
+            privilege: m80_preflight::PrivilegeStatus::Root,
+            report: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn startup_recovery_preserves_warm_control_tree() {
+        let run_root = tempfile::tempdir().expect("run root");
+        let snapshot_dir = run_root.path().join("warm/snapshot");
+        std::fs::create_dir_all(&snapshot_dir).expect("snapshot dir");
+        let marker = snapshot_dir.join("vm.snap");
+        std::fs::write(&marker, b"snapshot").expect("snapshot marker");
+
+        let config = BackendConfig {
+            discovery: fake_discovery(run_root.path()),
+            max_concurrent_vms: 1,
+            run_root: run_root.path().to_path_buf(),
+            jail_uid: 3000,
+            jail_gid: 3000,
+            cgroup_mode: CgroupMode::Disabled,
+        };
+        let _backend = Backend::new(config).expect("Backend::new");
+
+        assert!(
+            marker.exists(),
+            "warm control/snapshot tree must not be reaped as a stale VM run-dir"
+        );
+    }
 
     #[test]
     fn remove_run_dir_cleans_network_before_deleting_state() {
