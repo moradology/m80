@@ -797,6 +797,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "m80-net-helper"
+version = "0.0.0"
+dependencies = [
+ "m80-net-outbound",
+]
+
+[[package]]
 name = "m80-net-mode"
 version = "0.0.0"
 dependencies = [

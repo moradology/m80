@@ -22,7 +22,11 @@ Sequestering it has three benefits:
    Linux TUN/TAP driver because the kernel rejects TUN/TAP creation over
    rtnetlink. The m80 process must already hold `CAP_NET_ADMIN` (or run as
    root); `m80-preflight` verifies at startup, so calls here use the host
-   kernel APIs directly without a per-call privilege check.
+   kernel APIs directly without a per-call privilege check. The finite helper
+   protocol in this crate is the process-boundary surface for moving those
+   operations into `m80-net-helper`; it accepts only m80-owned OutboundNat
+   setup/policy/cleanup requests, never arbitrary network administration
+   commands.
 3. **Network changes can be released independently.** Bumping the rule
    set, adjusting the CIDR cap, or fixing a teardown bug doesn't force
    a re-cert of the rest of the system.
@@ -172,6 +176,11 @@ Sequestering it has three benefits:
 - `cleanup_orphan_bridge(run_root) -> Result<(), NetError>` and
   `cleanup_orphan_bridge_with_ops(...)` — orphan bridge recovery, with a
   deterministic test seam.
+- `NetworkHelperRequest`, `NetworkHelperResponse`, `NetworkHelperSuccess`,
+  `NetworkHelperFailure`, `decode_network_helper_request(...)`,
+  `encode_network_helper_response(...)`, and
+  `serve_network_helper_stdio(...)` — finite JSON protocol used by
+  `m80-net-helper` for privileged network operations.
 - `M80_RULE_COMMENT_PREFIX`, `outbound_nat_filter_chain(...)`,
   `outbound_nat_rule_comment(...)`, and `permanent_deny_cidrs(...)` —
   public deterministic helpers for policy identity and tests.

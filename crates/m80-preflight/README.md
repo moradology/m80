@@ -88,10 +88,13 @@ which is the right place for a security review to start.
       default.
   16. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
-  16b. **Host binary manifest** — reads
+  16b. **Network helper** — `m80-net-helper`, discovered via
+     `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`.
+  16c. **Host binary manifest** — reads
       `<artifact_dir>/host-binaries.manifest.json`, requires entries for
-      `firecracker`, `jailer`, `m80`, `m80_cli`, and `m80_jailer_harden`,
-      checks the configured paths for the three runtime-selected binaries,
+      `firecracker`, `jailer`, `m80`, `m80_cli`, `m80_jailer_harden`, and
+      `m80_net_helper`,
+      checks the configured paths for the runtime-selected binaries,
       opens every recorded path with `O_NOFOLLOW`, hashes the opened file
       descriptor, and rejects non-root-owned or group/world-writable binaries.
   17. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
@@ -121,12 +124,12 @@ which is the right place for a security review to start.
   `m80-image-manifest::verify`. Host binary sha256 verification still runs on
   every preflight invocation. The key includes the kernel boot id, configured
   Firecracker version pin, kernel kind override, and metadata for the
-  Firecracker, jailer, hardening wrapper, kernel, rootfs, and manifest files.
+  Firecracker, jailer, hardening wrapper, network helper, kernel, rootfs, and manifest files.
   Corrupt or mismatched sentinels are ignored and rewritten after a successful
   full check. `M80_FORCE_PREFLIGHT=1` disables the cache for that invocation.
 - Env keys are exact and case-sensitive. Preflight recognizes
   `M80_FIRECRACKER_BIN`, `M80_FIRECRACKER_VERSION`, `M80_JAILER_BIN`,
-  `M80_JAILER_HARDEN_BIN`, `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`,
+  `M80_JAILER_HARDEN_BIN`, `M80_NET_HELPER_BIN`, `M80_KERNEL_IMAGE`, `M80_ARTIFACT_DIR`,
   `M80_ROOTFS_IMAGE`, `M80_KERNEL_KIND`, `M80_RUN_ROOT`, `M80_JAIL_UID`,
   `M80_JAIL_GID`, `M80_CGROUP_MODE`, `M80_MAX_CONCURRENT_VMS`, and
   `M80_FORCE_PREFLIGHT`.
@@ -150,7 +153,7 @@ which is the right place for a security review to start.
 - `run() -> Result<Discovery, PreflightError>`.
 - `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig, host_feature_config: HostFeaturePreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
 - `BinaryDiscoveryConfig { firecracker_bin, firecracker_seccomp_filter,
-  jailer_bin, jailer_harden_bin, expected_firecracker_version }` and
+  jailer_bin, jailer_harden_bin, net_helper_bin, expected_firecracker_version }` and
   `BinaryDiscoveryConfig::from_env()` for
   explicit `run_with_configs` callers. There is no `Default`; callers must use
   `from_env()` or construct the full effective config.
@@ -168,7 +171,7 @@ which is the right place for a security review to start.
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
 - `Discovery { firecracker_bin, firecracker_seccomp_filter, jailer_bin,
-  jailer_harden_bin, kernel: PathBuf, rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
+  jailer_harden_bin, net_helper_bin, kernel: PathBuf, rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
   manifest: m80_image_manifest::Manifest, run_root: PathBuf,
   privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
 - `PinnedRootfs::from_file(path, file) -> PinnedRootfs`,

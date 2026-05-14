@@ -15,14 +15,16 @@ keys:
 - `M80_FIRECRACKER_SECCOMP_FILTER`
 - `M80_JAILER_BIN`
 - `M80_JAILER_HARDEN_BIN`
+- `M80_NET_HELPER_BIN`
 - `M80_FIRECRACKER_VERSION`
 
 When no path override is present, Firecracker defaults to
 `/opt/firecracker/bin/firecracker`, Firecracker's advanced seccomp filter
 defaults to `/opt/firecracker/bin/firecracker-seccomp-filter.bin`, jailer
 defaults to `/opt/firecracker/bin/jailer`, and the m80 hardening wrapper
-defaults to `/opt/m80/bin/m80-jailer-harden`. There are no legacy aliases
-without the `M80_` prefix. All four resolved paths must be absolute; an empty env var is
+defaults to `/opt/m80/bin/m80-jailer-harden`. The m80 network helper defaults
+to `/opt/m80/bin/m80-net-helper`. There are no legacy aliases
+without the `M80_` prefix. All resolved paths must be absolute; an empty env var is
 therefore rejected as `PreflightError::NonAbsolutePath`, not treated as "use
 the default."
 
@@ -53,9 +55,10 @@ one entry for each TCB binary:
 - `m80`
 - `m80_cli`
 - `m80_jailer_harden`
+- `m80_net_helper`
 
-For `firecracker`, `jailer`, and `m80_jailer_harden`, the manifest path must
-match the runtime-configured path. Every recorded path is opened with
+For `firecracker`, `jailer`, `m80_jailer_harden`, and `m80_net_helper`, the
+manifest path must match the runtime-configured path. Every recorded path is opened with
 `O_NOFOLLOW`; preflight hashes the opened file descriptor and compares it to
 the manifest sha256. Each binary must be a regular file owned `root:root`, with
 mode no broader than `0755`, and without group/world write bits.

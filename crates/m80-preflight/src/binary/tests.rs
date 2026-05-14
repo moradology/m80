@@ -5,8 +5,8 @@ use std::path::Path;
 use super::{
     discover_binaries, verify_host_binaries, BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN,
     DEFAULT_FIRECRACKER_SECCOMP_FILTER, DEFAULT_JAILER_BIN, DEFAULT_JAILER_HARDEN_BIN,
-    ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER, ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN,
-    ENV_JAILER_HARDEN_BIN,
+    DEFAULT_NET_HELPER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER,
+    ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN, ENV_NET_HELPER_BIN,
 };
 use crate::PreflightError;
 use m80_image_manifest::{HostBinariesManifest, HostBinaryEntry, HostBinaryName};
@@ -55,6 +55,7 @@ fn write_host_binary_manifest(
     firecracker: &Path,
     jailer: &Path,
     jailer_harden: &Path,
+    net_helper: &Path,
     m80: &Path,
     m80_cli: &Path,
 ) {
@@ -84,6 +85,11 @@ fn write_host_binary_manifest(
             path: jailer_harden.to_path_buf(),
             sha256: sha256_file(jailer_harden),
         },
+        HostBinaryEntry {
+            name: HostBinaryName::M80NetHelper,
+            path: net_helper.to_path_buf(),
+            sha256: sha256_file(net_helper),
+        },
     ])
     .write(path)
     .unwrap();
@@ -94,6 +100,7 @@ fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
     let firecracker = dir.path().join("firecracker");
     let jailer = dir.path().join("jailer");
     let jailer_harden = dir.path().join("m80-jailer-harden");
+    let net_helper = dir.path().join("m80-net-helper");
     let firecracker_seccomp_filter = dir.path().join("firecracker-seccomp-filter.bin");
 
     write_executable(
@@ -102,6 +109,7 @@ fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
     );
     write_executable(&jailer, "#!/bin/sh\nexit 0\n");
     write_executable(&jailer_harden, "#!/bin/sh\nexit 0\n");
+    write_executable(&net_helper, "#!/bin/sh\nexit 0\n");
     write_seccomp_filter(&firecracker_seccomp_filter);
 
     let config = BinaryDiscoveryConfig {
@@ -109,6 +117,7 @@ fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
         firecracker_seccomp_filter,
         jailer_bin: jailer,
         jailer_harden_bin: jailer_harden,
+        net_helper_bin: net_helper,
         expected_firecracker_version: Some(version.to_owned()),
     };
     (dir, config)
@@ -122,10 +131,12 @@ fn env_config_uses_exact_m80_keys_and_defaults() {
     let seccomp_filter = dir.path().join("firecracker-seccomp-filter.bin");
     let jailer = dir.path().join("jailer");
     let jailer_harden = dir.path().join("m80-jailer-harden");
+    let net_helper = dir.path().join("m80-net-helper");
     let _firecracker = EnvGuard::set(ENV_FIRECRACKER_BIN, &firecracker);
     let _seccomp_filter = EnvGuard::set(ENV_FIRECRACKER_SECCOMP_FILTER, &seccomp_filter);
     let _jailer = EnvGuard::set(ENV_JAILER_BIN, &jailer);
     let _jailer_harden = EnvGuard::set(ENV_JAILER_HARDEN_BIN, &jailer_harden);
+    let _net_helper = EnvGuard::set(ENV_NET_HELPER_BIN, &net_helper);
     let _version = EnvGuard::set_str(ENV_FIRECRACKER_VERSION, "v1.15.1");
 
     let config = BinaryDiscoveryConfig::from_env();
@@ -134,6 +145,7 @@ fn env_config_uses_exact_m80_keys_and_defaults() {
     assert_eq!(config.firecracker_seccomp_filter, seccomp_filter);
     assert_eq!(config.jailer_bin, jailer);
     assert_eq!(config.jailer_harden_bin, jailer_harden);
+    assert_eq!(config.net_helper_bin, net_helper);
     assert_eq!(
         config.expected_firecracker_version,
         Some("v1.15.1".to_owned())
@@ -147,6 +159,7 @@ fn env_config_defaults_to_opt_firecracker_paths_without_version_pin() {
     let _seccomp_filter = EnvGuard::remove(ENV_FIRECRACKER_SECCOMP_FILTER);
     let _jailer = EnvGuard::remove(ENV_JAILER_BIN);
     let _jailer_harden = EnvGuard::remove(ENV_JAILER_HARDEN_BIN);
+    let _net_helper = EnvGuard::remove(ENV_NET_HELPER_BIN);
     let _version = EnvGuard::remove(ENV_FIRECRACKER_VERSION);
 
     let config = BinaryDiscoveryConfig::from_env();
@@ -161,6 +174,7 @@ fn env_config_defaults_to_opt_firecracker_paths_without_version_pin() {
         config.jailer_harden_bin,
         Path::new(DEFAULT_JAILER_HARDEN_BIN)
     );
+    assert_eq!(config.net_helper_bin, Path::new(DEFAULT_NET_HELPER_BIN));
     assert_eq!(config.expected_firecracker_version, None);
 }
 
@@ -178,6 +192,7 @@ fn discovery_returns_resolved_paths_and_probed_firecracker_version() {
     assert_eq!(discovery.firecracker_version, "v1.15.1");
     assert_eq!(discovery.jailer_bin, config.jailer_bin);
     assert_eq!(discovery.jailer_harden_bin, config.jailer_harden_bin);
+    assert_eq!(discovery.net_helper_bin, config.net_helper_bin);
 }
 
 #[test]
@@ -202,6 +217,7 @@ fn missing_firecracker_binary_fails_closed() {
         firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.bin"),
         jailer_bin: dir.path().join("jailer"),
         jailer_harden_bin: dir.path().join("m80-jailer-harden"),
+        net_helper_bin: dir.path().join("m80-net-helper"),
         expected_firecracker_version: Some("v1.15.1".to_owned()),
     };
     write_seccomp_filter(&config.firecracker_seccomp_filter);
@@ -219,6 +235,7 @@ fn relative_firecracker_binary_path_fails_closed() {
         firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.bin"),
         jailer_bin: dir.path().join("jailer"),
         jailer_harden_bin: dir.path().join("m80-jailer-harden"),
+        net_helper_bin: dir.path().join("m80-net-helper"),
         expected_firecracker_version: Some("v1.15.1".to_owned()),
     };
     write_seccomp_filter(&config.firecracker_seccomp_filter);
@@ -302,6 +319,16 @@ fn missing_jailer_hardening_wrapper_fails_closed() {
 }
 
 #[test]
+fn missing_network_helper_fails_closed() {
+    let (dir, mut config) = fixture_config("v1.15.1");
+    config.net_helper_bin = dir.path().join("missing-m80-net-helper");
+
+    let err = discover_binaries(&config, None).unwrap_err();
+
+    assert!(matches!(err, PreflightError::NetHelperBinaryNotFound));
+}
+
+#[test]
 fn firecracker_version_mismatch_fails_closed() {
     let (_dir, mut config) = fixture_config("v1.15.1");
     config.expected_firecracker_version = Some("v1.14.0".to_owned());
@@ -350,6 +377,7 @@ fn host_binary_manifest_hash_mismatch_fails_closed() {
         system_binary,
         system_binary,
         system_binary,
+        system_binary,
     );
     let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
     manifest.binaries[0].sha256 = "0".repeat(64);
@@ -359,6 +387,7 @@ fn host_binary_manifest_hash_mismatch_fails_closed() {
         firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.bin"),
         jailer_bin: system_binary.to_path_buf(),
         jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
         expected_firecracker_version: None,
     };
     write_seccomp_filter(&config.firecracker_seccomp_filter);
@@ -385,6 +414,7 @@ fn host_binary_manifest_rejects_path_mismatch() {
         &other_firecracker,
         &config.jailer_bin,
         &config.jailer_harden_bin,
+        &config.net_helper_bin,
         &config.firecracker_bin,
         &config.firecracker_bin,
     );
@@ -414,6 +444,7 @@ fn host_binary_manifest_rejects_unsafe_permissions() {
         &config.firecracker_bin,
         &config.jailer_bin,
         &config.jailer_harden_bin,
+        &config.net_helper_bin,
         &config.firecracker_bin,
         &config.firecracker_bin,
     );

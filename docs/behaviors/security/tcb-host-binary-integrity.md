@@ -3,7 +3,7 @@
 `m80-preflight` verifies the host-side TCB binaries against an install-time
 manifest before launch can proceed. The manifest lives at
 `<artifact_dir>/host-binaries.manifest.json` and records `firecracker`,
-`jailer`, `m80`, `m80_cli`, and `m80_jailer_harden`.
+`jailer`, `m80`, `m80_cli`, `m80_jailer_harden`, and `m80_net_helper`.
 
 The Firecracker, jailer, and hardening-wrapper manifest paths must match the
 runtime-configured paths. m80 and m80-cli are verified from the manifest paths

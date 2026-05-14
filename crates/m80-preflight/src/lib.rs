@@ -97,6 +97,8 @@ pub struct Discovery {
     pub jailer_bin: PathBuf,
     /// Resolved m80 jailer hardening wrapper path.
     pub jailer_harden_bin: PathBuf,
+    /// Resolved m80 network helper path.
+    pub net_helper_bin: PathBuf,
     /// Resolved kernel image path.
     pub kernel: PathBuf,
     /// Resolved rootfs image path.
@@ -386,6 +388,10 @@ pub enum PreflightError {
     /// `m80-jailer-harden` binary not found.
     #[error("jailer hardening wrapper not found")]
     JailerHardenBinaryNotFound,
+
+    /// `m80-net-helper` binary not found.
+    #[error("network helper binary not found")]
+    NetHelperBinaryNotFound,
 
     /// Host TCB binary manifest read/validate failed.
     #[error("host binary manifest: {0}")]
@@ -697,6 +703,9 @@ impl PreflightError {
             }
             Self::JailerHardenBinaryNotFound => {
                 "install m80-jailer-harden to /opt/m80/bin/m80-jailer-harden or set M80_JAILER_HARDEN_BIN to the binary path"
+            }
+            Self::NetHelperBinaryNotFound => {
+                "install m80-net-helper to /opt/m80/bin/m80-net-helper or set M80_NET_HELPER_BIN to the binary path"
             }
             Self::HostBinaryManifest(_) => {
                 "install /opt/m80/artifacts/host-binaries.manifest.json from the deploy step"

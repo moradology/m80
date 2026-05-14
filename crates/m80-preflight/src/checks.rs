@@ -289,6 +289,11 @@ pub fn run_with_configs(
         detail: binaries.jailer_harden_bin.display().to_string(),
     });
     report.push(CheckRow {
+        label: "Network helper".to_string(),
+        passed: true,
+        detail: binaries.net_helper_bin.display().to_string(),
+    });
+    report.push(CheckRow {
         label: "Host binary manifest".to_string(),
         passed: true,
         detail: format!("{} (sha256 ok)", host_binary_manifest.display()),
@@ -333,6 +338,7 @@ pub fn run_with_configs(
         firecracker_seccomp_filter: binaries.firecracker_seccomp_filter,
         jailer_bin: binaries.jailer_bin,
         jailer_harden_bin: binaries.jailer_harden_bin,
+        net_helper_bin: binaries.net_helper_bin,
         kernel: artifacts.kernel,
         rootfs: artifacts.rootfs,
         pinned_rootfs: artifacts.pinned_rootfs,

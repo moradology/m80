@@ -49,21 +49,22 @@ once.
 - The manifest is **side-by-side** with the rootfs (`<rootfs>.manifest.json`).
   This crate does not look up a manifest by some registry or env var.
 - `host-binaries.manifest.json` is a separate install-time manifest with
-  `schema_version: 1`. It records logical binary names, absolute paths, and
-  sha256 digests for `firecracker`, `jailer`, `m80`, `m80_cli`, and
-  `m80_jailer_harden`. `m80-preflight` owns live path matching, open-by-fd
-  hashing, and root-owned/mode checks because those are host state, not guest
-  image state.
+  `schema_version: 2`. It records logical binary names, absolute paths, and
+  sha256 digests for `firecracker`, `jailer`, `m80`, `m80_cli`,
+  `m80_jailer_harden`, and `m80_net_helper`. `m80-preflight` owns live path
+  matching, open-by-fd hashing, and root-owned/mode checks because those are
+  host state, not guest image state.
 - `<rootfs>.build-receipt.json` is a deploy-time receipt with
   `schema_version: 1`. It records the sha256 of `<rootfs>.manifest.json` plus
   the artifact path/hash tuples that the manifest described.
 
 ## Schema
 
-### host-binaries v1
+### host-binaries v2
 
-`schema_version: 1`. Records `binaries: Vec<HostBinaryEntry>`, where each entry
-has `name`, `path`, and `sha256`. Unknown fields fail closed.
+`schema_version: 2`. Records `binaries: Vec<HostBinaryEntry>`, where each entry
+has `name`, `path`, and `sha256`. Adds `m80_net_helper` as a required host TCB
+binary. Unknown fields fail closed. Existing v1 manifests must be regenerated.
 
 ### build-receipt v1
 
@@ -116,7 +117,7 @@ artifacts.
 - `HostBinariesManifest::new(Vec<HostBinaryEntry>)`, `read`, `write`,
   `from_bytes`, and `schema_version`.
 - `HostBinaryEntry { name, path, sha256 }`.
-- `HostBinaryName { Firecracker, Jailer, M80, M80Cli, M80JailerHarden }`.
+- `HostBinaryName { Firecracker, Jailer, M80, M80Cli, M80JailerHarden, M80NetHelper }`.
 - `BuildReceipt::new(manifest_path, manifest_sha256, artifacts)`, `read`,
   `write`, `from_bytes`, and `schema_version`.
 - `BuildReceiptArtifact { kind, path, sha256 }`.
@@ -131,7 +132,7 @@ artifacts.
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
 - `SCHEMA_VERSION: u32 = 5`.
-- `HOST_BINARIES_SCHEMA_VERSION: u32 = 1`.
+- `HOST_BINARIES_SCHEMA_VERSION: u32 = 2`.
 - `BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for
   m80-built network-neutral images.

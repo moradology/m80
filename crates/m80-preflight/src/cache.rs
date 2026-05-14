@@ -47,6 +47,7 @@ struct PreflightCacheKey {
     firecracker_seccomp_filter: FileIdentity,
     jailer: FileIdentity,
     jailer_harden: FileIdentity,
+    net_helper: FileIdentity,
     kernel: FileIdentity,
     rootfs: FileIdentity,
     manifest: FileIdentity,
@@ -158,6 +159,7 @@ impl PreflightCacheKey {
             )?,
             jailer: FileIdentity::read(&binary_config.jailer_bin)?,
             jailer_harden: FileIdentity::read(&binary_config.jailer_harden_bin)?,
+            net_helper: FileIdentity::read(&binary_config.net_helper_bin)?,
             kernel: FileIdentity::read(&kernel)?,
             rootfs: FileIdentity::read(rootfs)?,
             manifest: FileIdentity::read(&manifest)?,
@@ -243,11 +245,13 @@ mod tests {
         let firecracker_seccomp_filter = dir.path().join("firecracker-seccomp-filter.bin");
         let jailer = dir.path().join("jailer");
         let jailer_harden = dir.path().join("m80-jailer-harden");
+        let net_helper = dir.path().join("m80-net-helper");
         let kernel = dir.path().join("vmlinux-2027");
         write_empty(&firecracker);
         fs::write(&firecracker_seccomp_filter, b"{}").unwrap();
         write_empty(&jailer);
         write_empty(&jailer_harden);
+        write_empty(&net_helper);
         write_empty(&kernel);
         let (rootfs, manifest) = fixture_manifest(dir.path(), &kernel);
         let binary_config = BinaryDiscoveryConfig {
@@ -255,6 +259,7 @@ mod tests {
             firecracker_seccomp_filter,
             jailer_bin: jailer,
             jailer_harden_bin: jailer_harden,
+            net_helper_bin: net_helper,
             expected_firecracker_version: Some("v1.15.1".to_owned()),
         };
         let artifact_config = ArtifactPreflightConfig {

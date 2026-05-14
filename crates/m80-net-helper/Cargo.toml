@@ -1,0 +1,18 @@
+[package]
+name = "m80-net-helper"
+description = "Privileged helper for finite m80 outbound network operations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "m80-net-helper"
+path = "src/main.rs"
+
+[dependencies]
+m80-net-outbound.workspace = true

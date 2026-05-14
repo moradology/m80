@@ -32,6 +32,11 @@ fn fixture_manifest() -> HostBinariesManifest {
             path: PathBuf::from("/opt/m80/bin/m80-jailer-harden"),
             sha256: "e".repeat(64),
         },
+        HostBinaryEntry {
+            name: HostBinaryName::M80NetHelper,
+            path: PathBuf::from("/opt/m80/bin/m80-net-helper"),
+            sha256: "f".repeat(64),
+        },
     ])
 }
 
@@ -68,7 +73,7 @@ fn host_binaries_manifest_rejects_unknown_fields() {
     let raw = br#"{
   "binaries": [],
   "future_field": true,
-  "schema_version": 1
+  "schema_version": 2
 }"#;
 
     let err = HostBinariesManifest::from_bytes(raw).unwrap_err();

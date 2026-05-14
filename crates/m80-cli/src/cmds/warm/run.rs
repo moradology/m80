@@ -291,6 +291,7 @@ mod tests {
             firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.bin".into(),
             jailer_bin: "/tmp/jailer".into(),
             jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
+            net_helper_bin: "/tmp/m80-net-helper".into(),
             kernel: "/tmp/vmlinux".into(),
             rootfs: "/tmp/rootfs.ext4".into(),
             pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),

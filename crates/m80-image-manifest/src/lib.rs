@@ -32,7 +32,9 @@ use sha2::{Digest, Sha256};
 pub const SCHEMA_VERSION: u32 = 5;
 
 /// Schema version for `host-binaries.manifest.json`.
-pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 1;
+///
+/// `2` — adds `m80_net_helper` as a required host TCB binary.
+pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 2;
 
 /// Schema version for m80 build receipts.
 pub const BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1;
@@ -90,6 +92,8 @@ pub enum HostBinaryName {
     M80Cli,
     /// m80 hardening wrapper that execs the official jailer.
     M80JailerHarden,
+    /// m80 helper that owns privileged outbound network operations.
+    M80NetHelper,
 }
 
 impl HostBinaryName {
@@ -102,6 +106,7 @@ impl HostBinaryName {
             Self::M80 => "m80",
             Self::M80Cli => "m80_cli",
             Self::M80JailerHarden => "m80_jailer_harden",
+            Self::M80NetHelper => "m80_net_helper",
         }
     }
 }

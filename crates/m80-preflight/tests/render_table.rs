@@ -53,6 +53,7 @@ fn fixture_discovery() -> Discovery {
         ),
         jailer_bin: PathBuf::from("/opt/firecracker/bin/jailer"),
         jailer_harden_bin: PathBuf::from("/opt/m80/bin/m80-jailer-harden"),
+        net_helper_bin: PathBuf::from("/opt/m80/bin/m80-net-helper"),
         kernel: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),
         rootfs: PathBuf::from("/opt/m80/images/rootfs.ext4"),
         pinned_rootfs: PinnedRootfs::from_file(rootfs_path, rootfs_file),

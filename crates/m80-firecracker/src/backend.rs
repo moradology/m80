@@ -448,6 +448,7 @@ mod tests {
             firecracker_seccomp_filter: PathBuf::from("/tmp/firecracker-seccomp-filter.bin"),
             jailer_bin: PathBuf::from("/tmp/jailer"),
             jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
+            net_helper_bin: PathBuf::from("/tmp/m80-net-helper"),
             kernel: PathBuf::from("/tmp/vmlinux"),
             rootfs: PathBuf::from("/tmp/rootfs.ext4"),
             pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),

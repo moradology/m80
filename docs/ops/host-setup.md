@@ -43,6 +43,7 @@ Required runtime artifacts:
 - `/opt/firecracker/bin/firecracker`
 - `/opt/firecracker/bin/jailer`
 - `/opt/m80/bin/m80-jailer-harden`
+- `/opt/m80/bin/m80-net-helper`
 - `/opt/m80/bin/m80`
 - `/opt/m80/bin/m80-cli`
 - `/opt/m80/artifacts/host-binaries.manifest.json`

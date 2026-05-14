@@ -25,6 +25,8 @@ pub const ENV_FIRECRACKER_SECCOMP_FILTER: &str = "M80_FIRECRACKER_SECCOMP_FILTER
 pub(crate) const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
 /// Environment key for overriding the m80 jailer hardening wrapper path.
 pub(crate) const ENV_JAILER_HARDEN_BIN: &str = "M80_JAILER_HARDEN_BIN";
+/// Environment key for overriding the m80 network helper path.
+pub(crate) const ENV_NET_HELPER_BIN: &str = "M80_NET_HELPER_BIN";
 
 /// Default Firecracker binary location when no env override is present.
 pub const DEFAULT_FIRECRACKER_BIN: &str = "/opt/firecracker/bin/firecracker";
@@ -35,6 +37,8 @@ pub const DEFAULT_FIRECRACKER_SECCOMP_FILTER: &str =
 pub(crate) const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
 /// Default m80 jailer hardening wrapper location when no env override is present.
 pub(crate) const DEFAULT_JAILER_HARDEN_BIN: &str = "/opt/m80/bin/m80-jailer-harden";
+/// Default m80 network helper location when no env override is present.
+pub(crate) const DEFAULT_NET_HELPER_BIN: &str = "/opt/m80/bin/m80-net-helper";
 
 /// Inputs for the binary discovery preflight step.
 #[derive(Debug, Clone)]
@@ -47,6 +51,8 @@ pub struct BinaryDiscoveryConfig {
     pub jailer_bin: PathBuf,
     /// m80 jailer hardening wrapper path to require on disk.
     pub jailer_harden_bin: PathBuf,
+    /// m80 network helper path to require on disk.
+    pub net_helper_bin: PathBuf,
     /// Optional exact Firecracker version pin.
     pub expected_firecracker_version: Option<String>,
 }
@@ -67,6 +73,9 @@ impl BinaryDiscoveryConfig {
             jailer_harden_bin: env::var_os(ENV_JAILER_HARDEN_BIN)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_JAILER_HARDEN_BIN)),
+            net_helper_bin: env::var_os(ENV_NET_HELPER_BIN)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_NET_HELPER_BIN)),
             expected_firecracker_version: env::var(ENV_FIRECRACKER_VERSION).ok(),
         }
     }
@@ -85,6 +94,8 @@ pub(crate) struct BinaryDiscovery {
     pub(crate) jailer_bin: PathBuf,
     /// Resolved m80 jailer hardening wrapper path.
     pub(crate) jailer_harden_bin: PathBuf,
+    /// Resolved m80 network helper path.
+    pub(crate) net_helper_bin: PathBuf,
 }
 
 /// Resolve Firecracker and jailer binaries and fail closed on version mismatch.
@@ -99,6 +110,7 @@ pub(crate) fn discover_binaries(
     )?;
     require_absolute_binary("jailer", &config.jailer_bin)?;
     require_absolute_binary("m80-jailer-harden", &config.jailer_harden_bin)?;
+    require_absolute_binary("m80-net-helper", &config.net_helper_bin)?;
 
     if !config.firecracker_bin.exists() {
         return Err(PreflightError::FirecrackerBinaryNotFound);
@@ -125,6 +137,9 @@ pub(crate) fn discover_binaries(
     if !config.jailer_harden_bin.exists() {
         return Err(PreflightError::JailerHardenBinaryNotFound);
     }
+    if !config.net_helper_bin.exists() {
+        return Err(PreflightError::NetHelperBinaryNotFound);
+    }
 
     Ok(BinaryDiscovery {
         firecracker_bin: config.firecracker_bin.clone(),
@@ -132,6 +147,7 @@ pub(crate) fn discover_binaries(
         firecracker_version: actual_version,
         jailer_bin: config.jailer_bin.clone(),
         jailer_harden_bin: config.jailer_harden_bin.clone(),
+        net_helper_bin: config.net_helper_bin.clone(),
     })
 }
 
@@ -191,6 +207,10 @@ pub(crate) fn verify_host_binaries(
         (
             HostBinaryName::M80JailerHarden,
             Some(config.jailer_harden_bin.as_path()),
+        ),
+        (
+            HostBinaryName::M80NetHelper,
+            Some(config.net_helper_bin.as_path()),
         ),
         (HostBinaryName::M80, None),
         (HostBinaryName::M80Cli, None),

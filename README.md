@@ -170,7 +170,7 @@ on tag pushes.
 
 ## Workspace
 
-m80 is a Rust workspace split into 20 black-box crates:
+m80 is a Rust workspace split into 21 black-box crates:
 
 **Foundation (10)** — privilege acquired at process startup and verified by
 `m80-preflight`; no per-call privilege shim:
@@ -188,9 +188,10 @@ m80 is a Rust workspace split into 20 black-box crates:
 **Orchestration (1)**:
 - `m80-firecracker` — composes foundation crates; lifecycle state machine, run-root layout, drive hot-plug + tenant-identity verification, warm-pool / persistent-VM modes
 
-**Binaries (3)**:
+**Binaries (4)**:
 - `m80-image-build` — image construction pipeline (kernel + rootfs + guestd)
 - `m80-guestd` — cross-compiled, runs as PID 1 on minimal images
+- `m80-net-helper` — privileged helper for finite outbound network operations
 - `m80-cli` — the `m80` binary
 
 **Test infrastructure (3)**:

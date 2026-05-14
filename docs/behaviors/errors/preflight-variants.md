@@ -24,6 +24,17 @@ Test:
 `crates/m80-preflight/src/binary.rs::tests::missing_firecracker_seccomp_filter_fails_closed`, and
 `crates/m80-preflight/src/binary.rs::tests::empty_firecracker_seccomp_filter_fails_closed`.
 
+## net-helper-binary-not-found
+
+`m80-preflight` rejects a missing `m80-net-helper` binary with the typed
+`PreflightError::NetHelperBinaryNotFound` variant. The rendered hint points at
+the default `/opt/m80/bin/m80-net-helper` path and the `M80_NET_HELPER_BIN`
+override.
+
+Test:
+`crates/m80-preflight/src/binary.rs::tests::missing_network_helper_fails_closed`
+and `crates/m80-preflight/tests/error_hints.rs::net_helper_binary_not_found_has_hint`.
+
 ## kvm-unavailable
 
 `m80-preflight` rejects a missing `/dev/kvm` with

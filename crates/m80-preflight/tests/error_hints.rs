@@ -218,6 +218,11 @@ fn jailer_harden_binary_not_found_has_hint() {
 }
 
 #[test]
+fn net_helper_binary_not_found_has_hint() {
+    assert_hint(&PreflightError::NetHelperBinaryNotFound);
+}
+
+#[test]
 fn host_binary_manifest_has_hint() {
     let inner = ManifestError::UnsupportedHostBinariesSchemaVersion(99);
     assert_hint(&PreflightError::HostBinaryManifest(inner));

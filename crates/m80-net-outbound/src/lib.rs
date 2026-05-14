@@ -5,6 +5,7 @@
 #![deny(missing_docs)]
 
 mod dns;
+mod helper;
 mod injection;
 pub(crate) mod iptables;
 mod link_ops;
@@ -32,6 +33,11 @@ static NETWORK_ALLOCATION_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 pub(crate) use dns::CommandDnsDiscoveryOps;
 pub use dns::{
     discover_dns_resolvers_with_ops, is_admitted_dns_resolver, DnsCommandOutput, DnsDiscoveryOps,
+};
+pub use helper::{
+    decode_network_helper_request, encode_network_helper_response, serve_network_helper_stdio,
+    NetworkHelperFailure, NetworkHelperFailureKind, NetworkHelperRequest, NetworkHelperResponse,
+    NetworkHelperSuccess, NETWORK_HELPER_MAX_FRAME_BYTES,
 };
 #[cfg(test)]
 pub(crate) use injection::{

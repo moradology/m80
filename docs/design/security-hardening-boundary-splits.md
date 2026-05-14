@@ -58,17 +58,34 @@ launch rollback, stopped-VM delete, and startup orphan cleanup.
 
 The safe hard-cutover design is a narrow network-ops helper boundary:
 
-1. Spawn a helper that owns only the network operations requiring
-   `CAP_NET_ADMIN`: bridge/TAP/namespace setup, iptables policy application,
-   and owned cleanup.
-2. Move existing `m80-net-outbound` operations behind a finite request/response
-   protocol with typed failure variants and bounded stderr capture.
-3. After helper startup, the parent drops `CAP_NET_ADMIN` from effective,
+1. Discover an m80-owned helper executable during preflight. The helper is a
+   pinned host binary, covered by the host-binaries manifest, with the same
+   fail-closed path and sha256 checks as `m80-jailer-harden`; there is no
+   fallback to shelling out through the parent.
+2. Spawn the helper before the parent drops capabilities. The helper owns only
+   the network operations requiring `CAP_NET_ADMIN`: bridge/veth/TAP/namespace
+   setup, iptables/sysctl policy application, per-VM cleanup, and orphan
+   bridge cleanup.
+3. Move existing `m80-net-outbound` operations behind a finite request/response
+   protocol with typed failure variants, request/response size caps, unknown
+   operation rejection, and bounded stderr capture for helper diagnostics.
+4. After helper startup, the parent drops `CAP_NET_ADMIN` from effective,
    permitted, inheritable, ambient, and bounding sets.
-4. Parent launch and cleanup paths call the helper instead of running rtnetlink
+5. Parent launch and cleanup paths call the helper instead of running rtnetlink
    or iptables directly.
-5. Helper lifetime is bound to the backend owner; helper exit poisons new
+6. Helper lifetime is bound to the backend owner; helper exit poisons new
    outbound launches and triggers explicit cleanup diagnostics.
+
+The initial helper operation set is intentionally small:
+
+- realize the `OutboundNat` bridge/veth/private-netns/TAP topology;
+- apply the host sysctl and iptables policy for a ready VM network state;
+- clean one VM's owned network state;
+- clean an orphan run-root bridge.
+
+No caller-controlled tool catalog, adapter policy, arbitrary command execution,
+or generic "network admin" RPC may enter this helper. If an operation is not in
+the enum, it is unsupported.
 
 Required evidence:
 
@@ -99,6 +116,11 @@ The safe hard-cutover design is:
    exec shim or broker child, not caller-controlled wire policy.
 5. Bound broker request size and response size; broker crash poisons further
    exec requests with a typed guest-side failure.
+
+The daemon filter and the workload filter are separate fixed m80 profiles. The
+guest, host caller, and adapter consumer do not get a wire field that selects or
+extends syscall policy. A future adapter-specific policy surface would need its
+own promotion decision outside this security hardening cutover.
 
 Required evidence:
 
