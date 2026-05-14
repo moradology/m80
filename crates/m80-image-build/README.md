@@ -33,7 +33,8 @@ gives us:
 
 1. Download kernel from `https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/<artifact_track>/<arch>` via `curl`.
 2. Download source rootfs squashfs from the same firecracker-ci bucket.
-3. Convert squashfs → ext4 (in a temp dir) via `unsquashfs` + `mkfs.ext4`.
+3. Convert squashfs → ext4 (in a temp dir) via `unsquashfs -no-xattrs`,
+   strip SUID/SGID mode bits from the extracted tree, then `mkfs.ext4`.
 4. Resize the output ext4 to the configured size via `truncate`.
 5. Enter a private mount namespace, then loop-mount the output rootfs RW.
    (The m80 process must hold `CAP_SYS_ADMIN` or run as root;
@@ -212,6 +213,9 @@ lines:
   in CI.
 - The builder does **not** alter timestamps inside the rootfs. We use
   fixed mtimes (`SOURCE_DATE_EPOCH`) to make the output bit-reproducible.
+- Ubuntu builds extract the upstream squashfs without xattrs and clear SUID/SGID
+  mode bits before creating the ext4 image. m80's guest privilege model must
+  not rely on upstream package SUID helpers or file capabilities.
 
 ## Public surface
 

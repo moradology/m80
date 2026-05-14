@@ -1,5 +1,6 @@
 use std::fs;
 use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use tempfile::TempDir;
@@ -80,4 +81,41 @@ fn does_not_install_systemd_units_for_guestd_startup() {
             .exists(),
         "workspace is mounted by PID-1 guestd from /dev/vdc, not systemd from /dev/vdb"
     );
+}
+
+#[test]
+fn unsquashfs_command_disables_xattr_extraction() {
+    let command = super::unsquashfs_command(Path::new("source.squashfs"), Path::new("out"));
+    let args = command
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    assert_eq!(args, vec!["-no-xattrs", "-d", "out", "source.squashfs"]);
+}
+
+#[test]
+fn strip_suid_sgid_bits_clears_tree_without_following_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    let nested = dir.path().join("nested");
+    let nested_bin = nested.join("helper");
+    fs::create_dir(&nested).unwrap();
+    fs::write(&bin, b"bin").unwrap();
+    fs::write(&nested_bin, b"nested").unwrap();
+    std::os::unix::fs::symlink(&bin, dir.path().join("bin-link")).unwrap();
+    fs::set_permissions(&bin, fs::Permissions::from_mode(0o6755)).unwrap();
+    fs::set_permissions(&nested_bin, fs::Permissions::from_mode(0o2755)).unwrap();
+
+    super::strip_suid_sgid_bits(dir.path()).unwrap();
+
+    assert_eq!(fs::symlink_metadata(&bin).unwrap().mode() & 0o7777, 0o0755);
+    assert_eq!(
+        fs::symlink_metadata(&nested_bin).unwrap().mode() & 0o7777,
+        0o0755
+    );
+    assert!(fs::symlink_metadata(dir.path().join("bin-link"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
 }

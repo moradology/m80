@@ -213,7 +213,7 @@ fn mount_overlay_and_pivot(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
         Some("/dev/vdb"),
         "/upper",
         Some("ext4"),
-        MsFlags::empty(),
+        writable_guest_data_mount_flags(),
         None::<&str>,
     );
     if let Err(ref e) = upper_mounted {
@@ -255,7 +255,7 @@ fn mount_overlay_and_pivot(boot_timer: &mut BootTimer) -> anyhow::Result<()> {
         Some("overlay"),
         "/merged",
         Some("overlay"),
-        MsFlags::empty(),
+        writable_guest_data_mount_flags(),
         Some(opts),
     );
     if let Err(ref e) = overlay_mounted {
@@ -536,7 +536,15 @@ fn workspace_device_exists(device: &str) -> bool {
 }
 
 fn workspace_mount_ext4(device: &str, target: &str) -> io::Result<()> {
-    mount_one(device, target, "ext4", MsFlags::empty()).map_err(io::Error::other)
+    mount_one(device, target, "ext4", workspace_mount_flags()).map_err(io::Error::other)
+}
+
+fn writable_guest_data_mount_flags() -> MsFlags {
+    MsFlags::MS_NOSUID | MsFlags::MS_NODEV
+}
+
+fn workspace_mount_flags() -> MsFlags {
+    MsFlags::MS_NOSUID | MsFlags::MS_NODEV
 }
 
 fn workspace_repair_ext4(device: &str) -> io::Result<()> {

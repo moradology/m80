@@ -140,7 +140,9 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
             rootfs_url,
             source_rootfs.display()
         );
-        eprintln!("3. Convert squashfs → ext4 in temp dir: unsquashfs + mkfs.ext4");
+        eprintln!(
+            "3. Convert squashfs → ext4 in temp dir: unsquashfs -no-xattrs + SUID/SGID strip + mkfs.ext4"
+        );
         eprintln!(
             "4. Resize ext4 to {} bytes: truncate -s {} {}",
             size_bytes,
@@ -284,15 +286,13 @@ fn squashfs_to_ext4(
             squash_out.display()
         );
     }
-    let status = Command::new("unsquashfs")
-        .args(["-d"])
-        .arg(&squash_out)
-        .arg(squashfs)
+    let status = unsquashfs_command(squashfs, &squash_out)
         .status()
         .context("spawning unsquashfs")?;
     if !status.success() {
         anyhow::bail!("unsquashfs failed (exit {})", format_exit(status));
     }
+    strip_suid_sgid_bits(&squash_out).context("stripping SUID/SGID mode bits")?;
     truncate_file(ext4, size_bytes).context("pre-sizing source ext4 image")?;
     let status = Command::new("mkfs.ext4")
         .args(["-F", "-d"])
@@ -304,6 +304,46 @@ fn squashfs_to_ext4(
         anyhow::bail!("mkfs.ext4 failed (exit {})", format_exit(status));
     }
     std::fs::remove_dir_all(&squash_out).context("removing squashfs-root after mkfs")?;
+    Ok(())
+}
+
+fn unsquashfs_command(squashfs: &Path, squash_out: &Path) -> Command {
+    let mut command = Command::new("unsquashfs");
+    command
+        .arg("-no-xattrs")
+        .arg("-d")
+        .arg(squash_out)
+        .arg(squashfs);
+    command
+}
+
+fn strip_suid_sgid_bits(root: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata =
+        std::fs::symlink_metadata(root).with_context(|| format!("stat {}", root.display()))?;
+    if metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+
+    let mode = metadata.permissions().mode();
+    if mode & 0o6000 != 0 {
+        let mut perms = metadata.permissions();
+        perms.set_mode(mode & !0o6000);
+        std::fs::set_permissions(root, perms)
+            .with_context(|| format!("chmod a-s {}", root.display()))?;
+    }
+
+    if metadata.is_dir() {
+        for entry in
+            std::fs::read_dir(root).with_context(|| format!("read_dir {}", root.display()))?
+        {
+            let entry =
+                entry.with_context(|| format!("read_dir entry under {}", root.display()))?;
+            strip_suid_sgid_bits(&entry.path())?;
+        }
+    }
+
     Ok(())
 }
 

@@ -107,6 +107,24 @@ fn devpts_mount_must_permit_ptmx_device_open() {
 }
 
 #[test]
+fn writable_rootfs_overlay_mounts_disable_suid_and_devices() {
+    let flags = writable_guest_data_mount_flags();
+
+    assert!(flags.contains(MsFlags::MS_NOSUID));
+    assert!(flags.contains(MsFlags::MS_NODEV));
+    assert!(!flags.contains(MsFlags::MS_NOEXEC));
+}
+
+#[test]
+fn workspace_mount_disables_suid_and_devices() {
+    let flags = workspace_mount_flags();
+
+    assert!(flags.contains(MsFlags::MS_NOSUID));
+    assert!(flags.contains(MsFlags::MS_NODEV));
+    assert!(!flags.contains(MsFlags::MS_NOEXEC));
+}
+
+#[test]
 fn workspace_cmdline_flag_controls_pid1_workspace_mount() {
     assert!(
         workspace_requested_from_cmdline("console=ttyS0 init=/m80-guestd m80.workspace=1").unwrap()

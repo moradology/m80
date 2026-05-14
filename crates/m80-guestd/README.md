@@ -55,6 +55,9 @@ proof.
   requests so re-parented orphans don't accumulate. No SIGCHLD or SIGTERM
   handlers — the workspace forbids `unsafe` and the firecracker host stops
   the VM with SIGKILL on the outside.
+- PID-1 mounts the writable rootfs overlay and optional workspace with
+  `MS_NOSUID | MS_NODEV`. The rootfs remains executable; the boundary is that
+  guest-created files cannot gain privilege through SUID/SGID or device nodes.
 - On startup: bind vsock port (default `m80_proto::GUEST_PORT_DEFAULT`),
   emit a structured ready log containing `m80_proto::READY_MARKER_DEFAULT`,
   connect back to the host ready port, then loop on `accept()`.
