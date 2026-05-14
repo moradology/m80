@@ -12,10 +12,13 @@ sudo install -o root -g root -m 0755 jailer /opt/firecracker/bin/jailer
 sudo install -o root -g root -m 0755 m80 /opt/m80/bin/m80
 sudo install -o root -g root -m 0755 m80-cli /opt/m80/bin/m80-cli
 sudo install -o root -g root -m 0755 m80-jailer-harden /opt/m80/bin/m80-jailer-harden
+sudo install -o root -g root -m 0644 firecracker-seccomp-filter.json /opt/firecracker/bin/firecracker-seccomp-filter.json
 ```
 
 Write `/opt/m80/artifacts/host-binaries.manifest.json` from the exact installed
-bytes. The schema is:
+binary bytes. The seccomp filter is validated as launch material by path and
+file identity during preflight; it is not a host-binary manifest entry. The
+manifest schema is:
 
 ```json
 {

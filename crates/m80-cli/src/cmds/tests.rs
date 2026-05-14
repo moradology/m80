@@ -16,6 +16,7 @@ fn fake_discovery() -> Discovery {
     let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
     let mut d = Discovery {
         firecracker_bin: "/tmp/firecracker".into(),
+        firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.json".into(),
         jailer_bin: "/tmp/jailer".into(),
         jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
         kernel: "/tmp/vmlinux".into(),

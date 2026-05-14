@@ -59,6 +59,7 @@ use ready::{phase_11b_bind_ready_listener, phase_12b_ready_accept, ready_listene
 use snapshot_prime::prime_snapshot_files;
 
 const RUN_DIR_MODE: u32 = 0o700;
+const FIRECRACKER_SECCOMP_FILTER_JAIL_PATH: &str = "firecracker-seccomp-filter.json";
 
 /// Record a diagnostics-annotated phase result.
 ///
@@ -156,6 +157,9 @@ impl Sandbox {
                     jailer_bin: &backend_config.discovery.jailer_bin,
                     jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
                     firecracker_bin: &backend_config.discovery.firecracker_bin,
+                    firecracker_seccomp_filter: &backend_config
+                        .discovery
+                        .firecracker_seccomp_filter,
                     uid: backend_config.jail_uid,
                     gid: backend_config.jail_gid,
                     run_dir: &run_dir,
@@ -517,6 +521,9 @@ impl Sandbox {
                     jailer_bin: &backend_config.discovery.jailer_bin,
                     jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
                     firecracker_bin: &backend_config.discovery.firecracker_bin,
+                    firecracker_seccomp_filter: &backend_config
+                        .discovery
+                        .firecracker_seccomp_filter,
                     uid: backend_config.jail_uid,
                     gid: backend_config.jail_gid,
                     run_dir: &run_dir,
@@ -837,6 +844,7 @@ struct JailerMaterializeInput<'a> {
     jailer_bin: &'a Path,
     jailer_harden_bin: &'a Path,
     firecracker_bin: &'a Path,
+    firecracker_seccomp_filter: &'a Path,
     uid: u32,
     gid: u32,
     run_dir: &'a Path,
@@ -868,6 +876,11 @@ fn phase_4_jailer_materialize(
             source: input.storage.rootfs.overlay_path().to_path_buf(),
             dest: PathBuf::from("rootfs.overlay.ext4"),
             mode: BindMode::Rw,
+        },
+        Binding {
+            source: input.firecracker_seccomp_filter.to_path_buf(),
+            dest: PathBuf::from(FIRECRACKER_SECCOMP_FILTER_JAIL_PATH),
+            mode: BindMode::Ro,
         },
     ];
 
@@ -903,6 +916,7 @@ fn phase_4_jailer_materialize(
         daemonize: input.daemonize,
         new_cgroup_ns: false,
         netns_path: input.netns_path.map(Path::to_path_buf),
+        seccomp_filter_path: Some(PathBuf::from(FIRECRACKER_SECCOMP_FILTER_JAIL_PATH)),
         stdio_log: Some(console_log_path(input.run_dir)),
     };
 

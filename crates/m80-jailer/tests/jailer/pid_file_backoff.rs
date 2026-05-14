@@ -37,6 +37,7 @@ fn launch_observes_pid_file_without_fixed_twenty_five_ms_floor() {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
     let jail = Plan::compute(&cfg).unwrap().materialize().unwrap();

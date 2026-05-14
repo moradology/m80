@@ -181,6 +181,7 @@ echo fake-firecracker-stderr >&2
         daemonize: false,
         new_cgroup_ns: true,
         netns_path: None,
+        seccomp_filter_path: Some(PathBuf::from("firecracker-seccomp-filter.json")),
         stdio_log: Some(stdio_log.clone()),
     };
     let plan = Plan::compute(&cfg).unwrap();
@@ -216,6 +217,12 @@ echo fake-firecracker-stderr >&2
     let args = std::fs::read_to_string(run_dir.join("args.txt")).unwrap();
     assert!(args.contains("--resource-limit no-file=1024"), "{args}");
     assert!(args.contains("--resource-limit fsize=4096"), "{args}");
+    assert!(
+        args.contains(
+            "-- --api-sock firecracker.sock --seccomp-filter firecracker-seccomp-filter.json"
+        ),
+        "{args}"
+    );
     let harden_args = std::fs::read_to_string(harden_args_path).unwrap();
     assert!(harden_args.contains("--jailer-bin"), "{harden_args}");
     assert!(harden_args.contains("--uid 3000"), "{harden_args}");
@@ -330,6 +337,7 @@ fi
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
     let plan = Plan::compute(&cfg).unwrap();
@@ -406,6 +414,7 @@ echo $$ > "$jail_root/firecracker.pid"
         daemonize: true,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
     let plan = Plan::compute(&cfg).unwrap();
@@ -492,6 +501,7 @@ echo $$ > "$jail_root/firecracker.pid"
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
     let plan = Plan::compute(&cfg).unwrap();

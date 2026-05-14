@@ -19,6 +19,7 @@ All keys are exact and case-sensitive. Legacy predecessor-style names such as
 | Env var | Meaning | Default when unset |
 |---|---|---|
 | `M80_FIRECRACKER_BIN` | Host path to the `firecracker` binary. | `/opt/firecracker/bin/firecracker` |
+| `M80_FIRECRACKER_SECCOMP_FILTER` | Host path to the Firecracker advanced seccomp filter JSON. | `/opt/firecracker/bin/firecracker-seccomp-filter.json` |
 | `M80_FIRECRACKER_VERSION` | Optional exact version pin compared to `firecracker --version`. | no version comparison |
 | `M80_JAILER_BIN` | Host path to the `jailer` binary. | `/opt/firecracker/bin/jailer` |
 | `M80_JAILER_HARDEN_BIN` | Host path to the m80 hardening wrapper that execs the official jailer. | `/opt/m80/bin/m80-jailer-harden` |
@@ -78,3 +79,6 @@ backend config shown by `m80 config show`.
   covers the `M80_SKIP_CHECK_VULNERABILITIES=1` escape hatch.
 - `crates/m80-preflight/src/binary.rs::tests::relative_firecracker_binary_path_fails_closed`
   covers fail-closed absolute path validation for binary env/config inputs.
+- `crates/m80-preflight/src/binary.rs::tests::missing_firecracker_seccomp_filter_fails_closed`
+  and `::empty_firecracker_seccomp_filter_fails_closed` cover fail-closed
+  validation for the Firecracker seccomp filter path.

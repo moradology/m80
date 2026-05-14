@@ -311,6 +311,9 @@ The public pure helpers `run_dir_path`, `firecracker_api_socket_path`,
 and regression tests.
 The Firecracker API socket and vsock muxer socket are inside the jailer
 chroot, not directly in `<run_root>/<vm_id>/`.
+The Firecracker advanced seccomp filter discovered by `m80-preflight` is bound
+read-only into the chroot as `firecracker-seccomp-filter.json`; launch passes
+that jail-relative path to Firecracker with `--seccomp-filter`.
 Firecracker/jailer stdout and stderr are appended to
 `<run_root>/<vm_id>/console.log`; with `console=ttyS0` this is also the
 guest serial console, including m80-guestd's structured stderr lines. The file

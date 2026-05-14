@@ -12,17 +12,23 @@ append a success row to the host preflight report.
 keys:
 
 - `M80_FIRECRACKER_BIN`
+- `M80_FIRECRACKER_SECCOMP_FILTER`
 - `M80_JAILER_BIN`
 - `M80_JAILER_HARDEN_BIN`
 - `M80_FIRECRACKER_VERSION`
 
 When no path override is present, Firecracker defaults to
-`/opt/firecracker/bin/firecracker`, jailer defaults to
-`/opt/firecracker/bin/jailer`, and the m80 hardening wrapper defaults to
-`/opt/m80/bin/m80-jailer-harden`. There are no legacy aliases without the
-`M80_` prefix. All three resolved paths must be absolute; an empty env var is
+`/opt/firecracker/bin/firecracker`, Firecracker's advanced seccomp filter
+defaults to `/opt/firecracker/bin/firecracker-seccomp-filter.json`, jailer
+defaults to `/opt/firecracker/bin/jailer`, and the m80 hardening wrapper
+defaults to `/opt/m80/bin/m80-jailer-harden`. There are no legacy aliases
+without the `M80_` prefix. All four resolved paths must be absolute; an empty env var is
 therefore rejected as `PreflightError::NonAbsolutePath`, not treated as "use
 the default."
+
+The seccomp filter path is opened with `O_NOFOLLOW` during binary discovery and
+must name a non-empty regular file. Missing, non-file, or empty filters fail
+preflight before any launch can reach Firecracker.
 
 ## Version Probe
 
@@ -56,12 +62,14 @@ mode no broader than `0755`, and without group/world write bits.
 
 The boot-scoped sentinel cache can skip the Firecracker version subprocess and
 guest-image manifest verification, but it does not skip host-binary sha256
-verification.
+verification or seccomp-filter path validation.
 
 ## Evidence
 
 - `crates/m80-preflight/src/binary.rs`
 - `crates/m80-preflight/src/binary.rs::tests::relative_firecracker_binary_path_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::missing_firecracker_seccomp_filter_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::empty_firecracker_seccomp_filter_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_hash_mismatch_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`

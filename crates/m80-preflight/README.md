@@ -149,8 +149,9 @@ which is the right place for a security review to start.
 
 - `run() -> Result<Discovery, PreflightError>`.
 - `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig, host_feature_config: HostFeaturePreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
-- `BinaryDiscoveryConfig { firecracker_bin, jailer_bin, jailer_harden_bin,
-  expected_firecracker_version }` and `BinaryDiscoveryConfig::from_env()` for
+- `BinaryDiscoveryConfig { firecracker_bin, firecracker_seccomp_filter,
+  jailer_bin, jailer_harden_bin, expected_firecracker_version }` and
+  `BinaryDiscoveryConfig::from_env()` for
   explicit `run_with_configs` callers. There is no `Default`; callers must use
   `from_env()` or construct the full effective config.
 - `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
@@ -166,8 +167,8 @@ which is the right place for a security review to start.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
-- `Discovery { firecracker_bin, jailer_bin, jailer_harden_bin, kernel: PathBuf,
-  rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
+- `Discovery { firecracker_bin, firecracker_seccomp_filter, jailer_bin,
+  jailer_harden_bin, kernel: PathBuf, rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
   manifest: m80_image_manifest::Manifest, run_root: PathBuf,
   privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
 - `PinnedRootfs::from_file(path, file) -> PinnedRootfs`,
@@ -179,11 +180,13 @@ which is the right place for a security review to start.
 - `REQUIRED_CAPABILITIES: &[caps::Capability]` — the per-call cap list
   (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
   `CAP_FOWNER`, `CAP_KILL`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`).
-- `ENV_FIRECRACKER_BIN`, `ENV_FIRECRACKER_VERSION`,
-  `DEFAULT_FIRECRACKER_BIN`, `ENV_KERNEL_IMAGE`, `ENV_KERNEL_KIND`, and
-  `ENV_ROOTFS_IMAGE` — shared keys/default used by the CLI when it displays or
-  overlays effective preflight inputs. Other env keys/default paths remain
-  crate-private implementation details of `from_env()`.
+- `ENV_FIRECRACKER_BIN`, `ENV_FIRECRACKER_SECCOMP_FILTER`,
+  `ENV_FIRECRACKER_VERSION`, `DEFAULT_FIRECRACKER_BIN`,
+  `DEFAULT_FIRECRACKER_SECCOMP_FILTER`, `ENV_KERNEL_IMAGE`,
+  `ENV_KERNEL_KIND`, and `ENV_ROOTFS_IMAGE` — shared keys/default used by the
+  CLI when it displays or overlays effective preflight inputs. Other env
+  keys/default paths remain crate-private implementation details of
+  `from_env()`.
 - `PreflightError`: `UnsupportedHostPlatform { actual }`,
   `HostKernelUnsupported { actual, minimum }`,
   `KvmUnavailable { path }`, `KvmNotWritable { path }`,
@@ -201,6 +204,8 @@ which is the right place for a security review to start.
   `FirecrackerBinaryNotFound`,
   `FirecrackerVersionMismatch { expected, actual }`,
   `FirecrackerCveFloorViolation { cve_id, actual, fixed_versions }`,
+  `FirecrackerSeccompFilterNotFound { path }`,
+  `FirecrackerSeccompFilterEmpty { path }`,
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
   effective capability set),
   `JailerBinaryNotFound`, `JailerHardenBinaryNotFound`,

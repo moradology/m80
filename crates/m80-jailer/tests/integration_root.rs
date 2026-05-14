@@ -45,6 +45,7 @@ fn materialize_creates_jail_root_and_persists_plan() {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
 
@@ -102,6 +103,7 @@ fn materialize_binds_proc_fd_source_without_reopening_original_path() {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
 
@@ -151,6 +153,7 @@ fn jailer_placeholder_cleanup_on_partial_bind_failure() {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
     let jail_root = jail_root_path(run_dir.path(), &firecracker_bin);
@@ -215,6 +218,7 @@ fn jailer_partial_failure_mid_bind_reverses_prior_steps() {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
     let jail_root = jail_root_path(run_dir.path(), &firecracker_bin);
@@ -286,6 +290,7 @@ jail_root="$chroot_base/$exec_base/$id/root"
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
 
@@ -337,6 +342,7 @@ fn jailer_dir_perms_enforced_against_non_owner() {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     };
 
@@ -418,6 +424,7 @@ fn launch_with_new_pid_ns_records_sentinel_and_firecracker_is_pid_one() {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: Some(run_dir.path().join("console.log")),
     };
 

@@ -91,6 +91,8 @@ pub struct CheckRow {
 pub struct Discovery {
     /// Resolved firecracker binary path.
     pub firecracker_bin: PathBuf,
+    /// Resolved Firecracker advanced seccomp filter path.
+    pub firecracker_seccomp_filter: PathBuf,
     /// Resolved jailer binary path.
     pub jailer_bin: PathBuf,
     /// Resolved m80 jailer hardening wrapper path.
@@ -164,7 +166,8 @@ impl PinnedRootfs {
 
 pub use artifacts::{ArtifactPreflightConfig, ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE};
 pub use binary::{
-    BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_VERSION,
+    BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN, DEFAULT_FIRECRACKER_SECCOMP_FILTER,
+    ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER, ENV_FIRECRACKER_VERSION,
 };
 pub use checks::{run, run_with_configs, CgroupPreflightMode, HostFeaturePreflightConfig};
 
@@ -359,6 +362,21 @@ pub enum PreflightError {
         actual: String,
         /// Documented fixed version set.
         fixed_versions: String,
+    },
+
+    /// The configured Firecracker advanced seccomp filter is missing or is
+    /// not a regular file.
+    #[error("firecracker seccomp filter not found at {}", path.display())]
+    FirecrackerSeccompFilterNotFound {
+        /// Filter path that failed validation.
+        path: PathBuf,
+    },
+
+    /// The configured Firecracker advanced seccomp filter file is empty.
+    #[error("firecracker seccomp filter is empty at {}", path.display())]
+    FirecrackerSeccompFilterEmpty {
+        /// Filter path that failed validation.
+        path: PathBuf,
     },
 
     /// `jailer` binary not found.
@@ -667,6 +685,12 @@ impl PreflightError {
             }
             Self::FirecrackerCveFloorViolation { .. } => {
                 "upgrade firecracker to a version fixed for every advisory tracked by m80-preflight"
+            }
+            Self::FirecrackerSeccompFilterNotFound { .. } => {
+                "install the Firecracker advanced seccomp filter JSON or set M80_FIRECRACKER_SECCOMP_FILTER to its absolute path"
+            }
+            Self::FirecrackerSeccompFilterEmpty { .. } => {
+                "replace the Firecracker advanced seccomp filter with a non-empty JSON filter file"
             }
             Self::JailerBinaryNotFound => {
                 "install jailer to /opt/firecracker/bin/jailer (it ships alongside firecracker) or set M80_JAILER_BIN to the binary path"

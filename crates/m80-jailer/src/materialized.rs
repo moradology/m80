@@ -149,6 +149,11 @@ impl MaterializedJail {
         }
 
         command.arg("--").arg("--api-sock").arg(api_socket_name);
+        if let Some(seccomp_filter_path) = &self.plan.config.seccomp_filter_path {
+            command
+                .arg("--seccomp-filter")
+                .arg(seccomp_filter_path.as_os_str());
+        }
 
         command.stdin(Stdio::null());
 

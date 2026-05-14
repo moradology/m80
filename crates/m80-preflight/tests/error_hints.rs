@@ -194,6 +194,20 @@ fn firecracker_cve_floor_violation_has_hint() {
 }
 
 #[test]
+fn firecracker_seccomp_filter_not_found_has_hint() {
+    assert_hint(&PreflightError::FirecrackerSeccompFilterNotFound {
+        path: "/opt/firecracker/bin/firecracker-seccomp-filter.json".into(),
+    });
+}
+
+#[test]
+fn firecracker_seccomp_filter_empty_has_hint() {
+    assert_hint(&PreflightError::FirecrackerSeccompFilterEmpty {
+        path: "/opt/firecracker/bin/firecracker-seccomp-filter.json".into(),
+    });
+}
+
+#[test]
 fn jailer_binary_not_found_has_hint() {
     assert_hint(&PreflightError::JailerBinaryNotFound);
 }

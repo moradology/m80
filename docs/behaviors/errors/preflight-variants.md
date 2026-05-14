@@ -11,6 +11,19 @@ predecessor source: `crates/sandbox/agent-sandbox-firecracker/src/errors.rs:152-
 
 Test: `crates/m80-preflight/tests/error_hints.rs::firecracker_binary_not_found_has_hint`.
 
+## firecracker-seccomp-filter
+
+`m80-preflight` rejects a missing, non-file, or empty Firecracker advanced
+seccomp filter before launch. Missing and non-file paths return
+`PreflightError::FirecrackerSeccompFilterNotFound { path }`; empty regular
+files return `PreflightError::FirecrackerSeccompFilterEmpty { path }`.
+
+Test:
+`crates/m80-preflight/tests/error_hints.rs::firecracker_seccomp_filter_not_found_has_hint`,
+`crates/m80-preflight/tests/error_hints.rs::firecracker_seccomp_filter_empty_has_hint`,
+`crates/m80-preflight/src/binary.rs::tests::missing_firecracker_seccomp_filter_fails_closed`, and
+`crates/m80-preflight/src/binary.rs::tests::empty_firecracker_seccomp_filter_fails_closed`.
+
 ## kvm-unavailable
 
 `m80-preflight` rejects a missing `/dev/kvm` with

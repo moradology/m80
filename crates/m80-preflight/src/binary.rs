@@ -19,6 +19,8 @@ use sha2::{Digest, Sha256};
 pub const ENV_FIRECRACKER_BIN: &str = "M80_FIRECRACKER_BIN";
 /// Environment key for enabling an exact Firecracker version check.
 pub const ENV_FIRECRACKER_VERSION: &str = "M80_FIRECRACKER_VERSION";
+/// Environment key for overriding the Firecracker advanced seccomp filter path.
+pub const ENV_FIRECRACKER_SECCOMP_FILTER: &str = "M80_FIRECRACKER_SECCOMP_FILTER";
 /// Environment key for overriding the jailer binary path.
 pub(crate) const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
 /// Environment key for overriding the m80 jailer hardening wrapper path.
@@ -26,6 +28,9 @@ pub(crate) const ENV_JAILER_HARDEN_BIN: &str = "M80_JAILER_HARDEN_BIN";
 
 /// Default Firecracker binary location when no env override is present.
 pub const DEFAULT_FIRECRACKER_BIN: &str = "/opt/firecracker/bin/firecracker";
+/// Default Firecracker advanced seccomp filter location.
+pub const DEFAULT_FIRECRACKER_SECCOMP_FILTER: &str =
+    "/opt/firecracker/bin/firecracker-seccomp-filter.json";
 /// Default jailer binary location when no env override is present.
 pub(crate) const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
 /// Default m80 jailer hardening wrapper location when no env override is present.
@@ -36,6 +41,8 @@ pub(crate) const DEFAULT_JAILER_HARDEN_BIN: &str = "/opt/m80/bin/m80-jailer-hard
 pub struct BinaryDiscoveryConfig {
     /// Firecracker binary path to probe with `--version`.
     pub firecracker_bin: PathBuf,
+    /// Firecracker advanced seccomp filter path.
+    pub firecracker_seccomp_filter: PathBuf,
     /// Jailer binary path to require on disk.
     pub jailer_bin: PathBuf,
     /// m80 jailer hardening wrapper path to require on disk.
@@ -51,6 +58,9 @@ impl BinaryDiscoveryConfig {
             firecracker_bin: env::var_os(ENV_FIRECRACKER_BIN)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_FIRECRACKER_BIN)),
+            firecracker_seccomp_filter: env::var_os(ENV_FIRECRACKER_SECCOMP_FILTER)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_FIRECRACKER_SECCOMP_FILTER)),
             jailer_bin: env::var_os(ENV_JAILER_BIN)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_JAILER_BIN)),
@@ -67,6 +77,8 @@ impl BinaryDiscoveryConfig {
 pub(crate) struct BinaryDiscovery {
     /// Resolved Firecracker binary path.
     pub(crate) firecracker_bin: PathBuf,
+    /// Resolved Firecracker advanced seccomp filter path.
+    pub(crate) firecracker_seccomp_filter: PathBuf,
     /// Version parsed from `firecracker --version`.
     pub(crate) firecracker_version: String,
     /// Resolved jailer binary path.
@@ -81,12 +93,17 @@ pub(crate) fn discover_binaries(
     cached_firecracker_version: Option<&str>,
 ) -> Result<BinaryDiscovery, PreflightError> {
     require_absolute_binary("firecracker", &config.firecracker_bin)?;
+    require_absolute_binary(
+        "firecracker seccomp filter",
+        &config.firecracker_seccomp_filter,
+    )?;
     require_absolute_binary("jailer", &config.jailer_bin)?;
     require_absolute_binary("m80-jailer-harden", &config.jailer_harden_bin)?;
 
     if !config.firecracker_bin.exists() {
         return Err(PreflightError::FirecrackerBinaryNotFound);
     }
+    verify_seccomp_filter_path(&config.firecracker_seccomp_filter)?;
 
     let actual_version = match cached_firecracker_version {
         Some(version) => version.to_owned(),
@@ -111,10 +128,52 @@ pub(crate) fn discover_binaries(
 
     Ok(BinaryDiscovery {
         firecracker_bin: config.firecracker_bin.clone(),
+        firecracker_seccomp_filter: config.firecracker_seccomp_filter.clone(),
         firecracker_version: actual_version,
         jailer_bin: config.jailer_bin.clone(),
         jailer_harden_bin: config.jailer_harden_bin.clone(),
     })
+}
+
+fn verify_seccomp_filter_path(path: &Path) -> Result<(), PreflightError> {
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(path)
+        .map_err(|source| {
+            if source.kind() == std::io::ErrorKind::NotFound {
+                PreflightError::FirecrackerSeccompFilterNotFound {
+                    path: path.to_path_buf(),
+                }
+            } else {
+                PreflightError::PathIo {
+                    path: path.to_path_buf(),
+                    source,
+                }
+            }
+        })?;
+    let metadata = file.metadata().map_err(|source| PreflightError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(PreflightError::FirecrackerSeccompFilterNotFound {
+            path: path.to_path_buf(),
+        });
+    }
+    let mut buf = [0u8; 1];
+    let n = file
+        .read(&mut buf)
+        .map_err(|source| PreflightError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if n == 0 {
+        return Err(PreflightError::FirecrackerSeccompFilterEmpty {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
 }
 
 pub(crate) fn verify_host_binaries(

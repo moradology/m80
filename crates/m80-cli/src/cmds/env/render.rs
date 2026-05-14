@@ -80,6 +80,11 @@ pub(super) fn render_env_human(dump: &EnvDump) -> String {
             .unwrap_or("unknown")
     ));
     out.push_str(&format!(
+        "firecracker_seccomp_filter: {} exists={}\n",
+        dump.firecracker.seccomp_filter_path.display(),
+        dump.firecracker.seccomp_filter_exists
+    ));
+    out.push_str(&format!(
         "run_root: {} exists={} run_dirs={}\n",
         display_optional_path(dump.run_root.path.as_deref()),
         dump.run_root.exists,

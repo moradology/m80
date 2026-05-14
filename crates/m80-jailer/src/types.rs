@@ -51,6 +51,8 @@ pub struct JailerConfig {
     /// Optional caller-provided network namespace path passed to the official
     /// jailer as `--netns`.
     pub netns_path: Option<PathBuf>,
+    /// Optional Firecracker advanced seccomp filter path inside the jail.
+    pub seccomp_filter_path: Option<PathBuf>,
     /// Optional host-side file that receives firecracker/jailer stdout and
     /// stderr. The orchestrator uses this for the per-VM serial console log.
     pub stdio_log: Option<PathBuf>,

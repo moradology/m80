@@ -270,6 +270,7 @@ pub(crate) fn launch_attack_in_jailer_with_resource_limits(
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: Some(stdio_log),
     };
     let jail = Plan::compute(&config)?.materialize()?;

@@ -48,7 +48,11 @@ hands a config in and gets back a launchable chroot — or a typed error.
   jailer process environment, gives stdin `/dev/null`, gives stdout/stderr
   either the configured log file or `/dev/null`, can pass `--new-pid-ns`, can
   pass `--daemonize`, and can pass `--netns <path>` after validating the path
-  with `O_NOFOLLOW` and `NSFS_MAGIC`.
+  with `O_NOFOLLOW` and `NSFS_MAGIC`. When
+  `JailerConfig::seccomp_filter_path` is set, m80 passes
+  `--seccomp-filter <path>` on Firecracker's side of the `--` separator; the
+  caller is responsible for binding that jail-relative path into the chroot
+  before launch.
   Without `new_pid_ns` or `daemonize`, jailer `exec()`s into firecracker, so
   `jailer_pid` and `firecracker_pid` refer to the same OS process. With
   `new_pid_ns` or `daemonize`, the official jailer writes the Firecracker PID
@@ -140,8 +144,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
   `firecracker.pid` without paying the old fixed 25 ms wait floor.
 - Unit tests in `src/materialized.rs` — launch argument plumbing for
   the hardening wrapper, resource limits, environment clearing, stdio capture,
-  stdio log size capping, netns validation, `new_pid_ns` parent reaping, and
-  daemonized parent reaping.
+  stdio log size capping, seccomp-filter forwarding, netns validation,
+  `new_pid_ns` parent reaping, and daemonized parent reaping.
 - `tests/integration_root.rs` — ignored root-only smoke for real
   materialization, private mount propagation on m80's bind targets, and real
   Firecracker-jailer `--new-pid-ns` launch state (`jailer_pid = 0`,

@@ -272,6 +272,11 @@ pub fn run_with_configs(
             binaries.firecracker_version
         ),
     });
+    report.push(CheckRow {
+        label: "Firecracker seccomp filter".to_string(),
+        passed: true,
+        detail: binaries.firecracker_seccomp_filter.display().to_string(),
+    });
 
     report.push(CheckRow {
         label: "Jailer binary".to_string(),
@@ -325,6 +330,7 @@ pub fn run_with_configs(
 
     Ok(Discovery {
         firecracker_bin: binaries.firecracker_bin,
+        firecracker_seccomp_filter: binaries.firecracker_seccomp_filter,
         jailer_bin: binaries.jailer_bin,
         jailer_harden_bin: binaries.jailer_harden_bin,
         kernel: artifacts.kernel,

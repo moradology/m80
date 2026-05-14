@@ -87,6 +87,8 @@ struct ArtifactDump {
 struct BinaryDump {
     path: PathBuf,
     exists: bool,
+    seccomp_filter_path: PathBuf,
+    seccomp_filter_exists: bool,
     version_output: Option<String>,
     error: Option<String>,
     configured_pin: Option<String>,
@@ -318,6 +320,10 @@ fn firecracker_dump() -> BinaryDump {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(m80_preflight::DEFAULT_FIRECRACKER_BIN));
     let exists = path.exists();
+    let seccomp_filter_path = std::env::var_os(m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(m80_preflight::DEFAULT_FIRECRACKER_SECCOMP_FILTER));
+    let seccomp_filter_exists = seccomp_filter_path.exists();
     let configured_pin = std::env::var(m80_preflight::ENV_FIRECRACKER_VERSION).ok();
     let mut error = None;
     let version_output = match Command::new(&path).arg("--version").output() {
@@ -343,6 +349,8 @@ fn firecracker_dump() -> BinaryDump {
     BinaryDump {
         path,
         exists,
+        seccomp_filter_path,
+        seccomp_filter_exists,
         version_output,
         error,
         configured_pin,
@@ -432,6 +440,7 @@ mod tests {
         assert!(parsed["data"]["host"]["kvm"].is_object());
         assert!(parsed["data"]["config"].is_object());
         assert!(parsed["data"]["firecracker"].is_object());
+        assert!(parsed["data"]["firecracker"]["seccomp_filter_path"].is_string());
     }
 
     #[test]
@@ -440,6 +449,7 @@ mod tests {
 
         assert!(text.contains("kvm:"));
         assert!(text.contains("firecracker:"));
+        assert!(text.contains("firecracker_seccomp_filter:"));
         assert!(text.contains("run_root:"));
         assert!(text.contains("preflight:"));
     }

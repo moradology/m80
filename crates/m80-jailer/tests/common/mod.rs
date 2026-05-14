@@ -23,6 +23,7 @@ pub(crate) fn minimal_config(run_dir: &Path) -> JailerConfig {
         daemonize: false,
         new_cgroup_ns: false,
         netns_path: None,
+        seccomp_filter_path: None,
         stdio_log: None,
     }
 }
