@@ -7,15 +7,16 @@ Behavior beads: `m80-8emae.30`, `m80-8emae.34`, `m80-8emae.14`.
 The remaining `m80-8emae` hardening items are process-boundary problems, not
 single-flag launch changes. This document records the safe split so follow-up
 work does not reintroduce the rejected shortcuts. The `AllowOutbound` topology
-below has been implemented; the network-helper protocol and helper-backed
-OutboundNat call routing are implemented; the parent CAP_NET_ADMIN drop and
-guestd seccomp boundaries remain split follow-up work:
+below has been implemented; the network-helper protocol, helper-backed
+OutboundNat call routing, and parent `CAP_NET_ADMIN` drop are implemented.
+The remaining split follow-up work is smoke evidence for the full outbound
+path and the guestd seccomp boundary:
 
 - moving an `AllowOutbound` TAP out of the host namespace without replacing the
   data path; implemented with an m80-owned namespace, private bridge, and veth
   pair;
 - dropping `CAP_NET_ADMIN` from the long-lived m80 process after helper-backed
-  launches and cleanup are live;
+  launches and cleanup are live; implemented at backend initialization;
 - installing seccomp in long-lived `m80-guestd` while workload `fork`/`exec`
   still inherits the daemon filter.
 
@@ -72,13 +73,15 @@ The safe hard-cutover design is a narrow network-ops helper boundary:
    unknown operation rejection. This protocol and the parent-side client are
    implemented.
 4. After helper startup, the parent drops `CAP_NET_ADMIN` from effective,
-   permitted, inheritable, ambient, and bounding sets.
+   permitted, inheritable, ambient, and bounding sets. This is implemented in
+   `m80-firecracker` backend initialization.
 5. Parent launch and cleanup paths call the helper instead of running rtnetlink
    or iptables directly. Phase 6 realization, phase 7 policy application,
    launch rollback, stopped-sandbox delete/preserve cleanup, and stale run-root
    recovery are helper-backed.
-6. Helper lifetime is bound to the backend owner; helper exit poisons new
-   outbound launches and triggers explicit cleanup diagnostics.
+6. Helper lifetime is bound to live backend handles through a process-global
+   weak registry; helper exit poisons new outbound launches and triggers
+   explicit cleanup diagnostics.
 
 The initial helper operation set is intentionally small:
 

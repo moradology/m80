@@ -676,6 +676,7 @@ dependencies = [
 name = "m80-firecracker"
 version = "0.0.0"
 dependencies = [
+ "caps",
  "hex",
  "ipnet",
  "m80-cgroup",

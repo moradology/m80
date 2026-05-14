@@ -9,9 +9,11 @@ use tracing::warn;
 
 use m80_jailer::inspect_run_dir;
 
+#[cfg(not(test))]
+use crate::capabilities::drop_parent_cap_net_admin;
 use crate::error::{ConfigError, FcError};
 use crate::layout::{socket_path_len, SUN_PATH_BUDGET};
-use crate::network_helper::NetworkHelperClient;
+use crate::network_helper::backend_network_helper;
 use crate::preboot::validate_caller_boot_args_if_present;
 use crate::runroot::{run_dir_liveness, RunDirLiveness};
 use crate::types::{
@@ -41,9 +43,9 @@ impl Backend {
     ) -> Result<Self, FcError> {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new(Mutex::new(permits));
-        let network_helper = Arc::new(NetworkHelperClient::new(
-            config.discovery.net_helper_bin.clone(),
-        ));
+        let network_helper = backend_network_helper(&config.discovery.net_helper_bin)?;
+        #[cfg(not(test))]
+        drop_parent_cap_net_admin()?;
         let backend = Backend {
             config,
             effective,
@@ -442,6 +444,8 @@ fn kill_orphan_pids(jailer_pid: u32, firecracker_pid: u32) {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
     use std::path::PathBuf;
 
     use super::*;
@@ -450,12 +454,13 @@ mod tests {
         let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
         let rootfs_path = rootfs.path().to_path_buf();
         let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
+        let net_helper_bin = fake_net_helper(run_root);
         m80_preflight::Discovery {
             firecracker_bin: PathBuf::from("/tmp/firecracker"),
             firecracker_seccomp_filter: PathBuf::from("/tmp/firecracker-seccomp-filter.bin"),
             jailer_bin: PathBuf::from("/tmp/jailer"),
             jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
-            net_helper_bin: PathBuf::from("/tmp/m80-net-helper"),
+            net_helper_bin,
             kernel: PathBuf::from("/tmp/vmlinux"),
             rootfs: PathBuf::from("/tmp/rootfs.ext4"),
             pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
@@ -480,6 +485,26 @@ mod tests {
             privilege: m80_preflight::PrivilegeStatus::Root,
             report: Vec::new(),
         }
+    }
+
+    fn fake_net_helper(run_root: &std::path::Path) -> PathBuf {
+        std::fs::create_dir_all(run_root).expect("run root");
+        let path = run_root.join("m80-net-helper-test");
+        let mut file = std::fs::File::create(&path).expect("fake net helper");
+        file.write_all(
+            br#"#!/bin/sh
+while IFS= read -r _line; do
+  printf '%s\n' '{"status":"ok","success":{"kind":"empty"}}'
+done
+"#,
+        )
+        .expect("write fake net helper");
+        file.sync_all().expect("sync fake net helper");
+        drop(file);
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path
     }
 
     #[test]

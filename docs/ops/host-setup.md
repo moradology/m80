@@ -153,6 +153,11 @@ sudo setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill,
 getcap /usr/local/bin/m80
 ```
 
+`CAP_NET_ADMIN` is needed only long enough for `m80-firecracker` to start the
+pinned `m80-net-helper`; backend initialization then drops it from the
+long-lived parent. Keep `CAP_SETPCAP` in the launch set so that drop can remove
+`CAP_NET_ADMIN` from the parent bounding, permitted, and effective sets.
+
 Do not combine the run identity with broader host powers such as Docker daemon
 access, passwordless sudo, or write access to the artifact directory.
 

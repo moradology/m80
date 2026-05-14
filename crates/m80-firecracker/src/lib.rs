@@ -5,6 +5,7 @@
 
 mod backend;
 mod boot_identity;
+mod capabilities;
 mod config;
 mod diagnostics;
 mod error;
@@ -24,8 +25,8 @@ pub use config::{
     ConfigFilePaths,
 };
 pub use error::{
-    CleanupAuthority, CleanupPhase, CleanupReleaseBlocker, ConfigError, FcError,
-    LifecycleFailureKind, NetworkHelperError, NetworkHelperOperation, StopDisposition,
+    CapabilityDropError, CleanupAuthority, CleanupPhase, CleanupReleaseBlocker, ConfigError,
+    FcError, LifecycleFailureKind, NetworkHelperError, NetworkHelperOperation, StopDisposition,
     WireProtocolError, CLEANUP_AUTHORITY, CLEANUP_PHASE_ORDER, CLEANUP_RELEASE_BLOCKERS,
     STOP_DISPOSITIONS,
 };

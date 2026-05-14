@@ -3,7 +3,11 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+#[cfg(not(test))]
+use std::sync::Arc;
 use std::sync::Mutex;
+#[cfg(not(test))]
+use std::sync::Weak;
 
 use m80_net_mode::OutboundIntent;
 use m80_net_outbound::{
@@ -19,6 +23,44 @@ pub(crate) struct NetworkHelperClient {
     child: Mutex<Option<NetworkHelperChild>>,
 }
 
+#[cfg(not(test))]
+static BACKEND_NETWORK_HELPER: Mutex<Option<Weak<NetworkHelperClient>>> = Mutex::new(None);
+
+/// Return the backend helper client and ensure its child is running.
+#[cfg(not(test))]
+pub(crate) fn backend_network_helper(
+    path: &Path,
+) -> Result<Arc<NetworkHelperClient>, NetworkHelperError> {
+    let mut slot = BACKEND_NETWORK_HELPER
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if let Some(helper) = slot.as_ref().and_then(Weak::upgrade) {
+        if helper.path != path {
+            return Err(NetworkHelperError::PathMismatch {
+                active: helper.path.clone(),
+                requested: path.to_path_buf(),
+            });
+        }
+        helper.start()?;
+        return Ok(helper);
+    }
+
+    let helper = Arc::new(NetworkHelperClient::new(path.to_path_buf()));
+    helper.start()?;
+    *slot = Some(Arc::downgrade(&helper));
+    Ok(Arc::clone(&helper))
+}
+
+/// Return a test-local backend helper client and ensure its child is running.
+#[cfg(test)]
+pub(crate) fn backend_network_helper(
+    path: &Path,
+) -> Result<std::sync::Arc<NetworkHelperClient>, NetworkHelperError> {
+    let helper = std::sync::Arc::new(NetworkHelperClient::new(path.to_path_buf()));
+    helper.start()?;
+    Ok(helper)
+}
+
 impl NetworkHelperClient {
     /// Build a client for the preflight-discovered helper executable.
     pub(crate) fn new(path: PathBuf) -> Self {
@@ -26,6 +68,18 @@ impl NetworkHelperClient {
             path,
             child: Mutex::new(None),
         }
+    }
+
+    /// Start the helper child if this client has not already spawned it.
+    pub(crate) fn start(&self) -> Result<(), NetworkHelperError> {
+        let mut guard = self
+            .child
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if guard.is_none() {
+            *guard = Some(NetworkHelperChild::spawn(&self.path)?);
+        }
+        Ok(())
     }
 
     /// Realize bridge/veth/TAP topology for one outbound VM.
@@ -114,7 +168,12 @@ impl NetworkHelperClient {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         if guard.is_none() {
-            *guard = Some(NetworkHelperChild::spawn(&self.path)?);
+            drop(guard);
+            self.start()?;
+            guard = self
+                .child
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
         }
         let child = guard
             .as_mut()

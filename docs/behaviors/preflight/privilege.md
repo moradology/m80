@@ -33,12 +33,12 @@ The process must observe every capability in `REQUIRED_CAPABILITIES` in its
 effective set. Missing any one of them returns
 `PreflightError::PrivilegeUnavailable`.
 
-`CAP_SETPCAP` is consumed at the hardening-wrapper boundary: it lets
-`m80-jailer-harden` drop unneeded capabilities from the bounding set, and it is
-not retained in the official jailer's effective/permitted sets.
-Dropping `CAP_NET_ADMIN` from the long-lived parent requires a helper boundary
-because outbound launch and cleanup still need host network mutation; that
-split is tracked in `docs/design/security-hardening-boundary-splits.md`.
+`CAP_SETPCAP` is consumed at hardening boundaries: it lets `m80-jailer-harden`
+drop unneeded capabilities from the official jailer's bounding set, and it lets
+`m80-firecracker` drop `CAP_NET_ADMIN` from the long-lived parent after
+`m80-net-helper` starts. `CAP_NET_ADMIN` is retained by the helper boundary for
+outbound launch and cleanup; the parent must not keep it after backend
+initialization.
 
 ### Privileged container capability set
 

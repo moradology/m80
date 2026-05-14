@@ -463,6 +463,9 @@ fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+
     use super::*;
     use crate::types::{BackendConfig, CgroupMode};
 
@@ -573,12 +576,13 @@ mod tests {
         let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
         let rootfs_path = rootfs.path().to_path_buf();
         let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
+        let net_helper_bin = fake_net_helper(run_root);
         m80_preflight::Discovery {
             firecracker_bin: "/tmp/firecracker".into(),
             firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.bin".into(),
             jailer_bin: "/tmp/jailer".into(),
             jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
-            net_helper_bin: "/tmp/m80-net-helper".into(),
+            net_helper_bin,
             kernel: "/tmp/vmlinux".into(),
             rootfs: "/tmp/rootfs.ext4".into(),
             pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
@@ -603,5 +607,25 @@ mod tests {
             privilege: m80_preflight::PrivilegeStatus::Root,
             report: Vec::new(),
         }
+    }
+
+    fn fake_net_helper(run_root: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(run_root).expect("run root");
+        let path = run_root.join("m80-net-helper-test");
+        let mut file = std::fs::File::create(&path).expect("fake net helper");
+        file.write_all(
+            br#"#!/bin/sh
+while IFS= read -r _line; do
+  printf '%s\n' '{"status":"ok","success":{"kind":"empty"}}'
+done
+"#,
+        )
+        .expect("write fake net helper");
+        file.sync_all().expect("sync fake net helper");
+        drop(file);
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path
     }
 }

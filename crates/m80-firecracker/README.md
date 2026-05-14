@@ -213,6 +213,12 @@ Firecracker's official jailer as `--netns`, emits the Firecracker
 `NetworkInterface` PUT for the caller-created TAP, and passes static PID-1 guest
 network tokens for `eth0`.
 
+Backend initialization starts the process-global `m80-net-helper` before
+dropping `CAP_NET_ADMIN` from the parent effective, permitted, inheritable,
+ambient, and bounding sets. Live backend handles in the same process reuse that
+helper; requesting a different helper path while one is active fails closed with
+`FcError::NetworkHelper`.
+
 Cold and restored launches ask the official Firecracker jailer for a private
 PID namespace, so Firecracker is PID 1 in that namespace and m80 records
 `jailer_pid = 0` as the no-live-jailer-parent sentinel while tracking the
@@ -664,6 +670,7 @@ Warm pool:
 - `m80-preflight` — host capability verification at backend construction.
 - `m80-net-mode` — network policy resolution.
 - `m80-net-outbound` — outbound NAT bridge/TAP, guest config, iptables, and cleanup.
+- `caps` — parent `CAP_NET_ADMIN` drop after helper startup.
 - `m80-snapshot` — snapshot path types.
 - `m80-proto` — wire types re-exported for callers.
 - `m80-image-manifest` — image kind / kernel kind for boot-args selection.

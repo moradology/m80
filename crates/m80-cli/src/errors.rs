@@ -73,6 +73,7 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Cgroup(_)
         | FcError::Network(_)
         | FcError::NetworkHelper(_)
+        | FcError::CapabilityDrop(_)
         | FcError::Client(_)
         | FcError::Vsock(_)
         | FcError::Protocol(_)
@@ -149,6 +150,7 @@ fn variant_name(err: &FcError) -> &'static str {
         FcError::Cgroup(_) => "Cgroup",
         FcError::Network(_) => "Network",
         FcError::NetworkHelper(_) => "NetworkHelper",
+        FcError::CapabilityDrop(_) => "CapabilityDrop",
         FcError::Client(_) => "Client",
         FcError::Vsock(_) => "Vsock",
         FcError::Protocol(_) => "Protocol",

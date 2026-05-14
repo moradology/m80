@@ -9,7 +9,9 @@
 //! `m80-test-helpers`.
 
 use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── Re-exports from m80-test-helpers ─────────────────────────────────────────
@@ -29,12 +31,13 @@ pub(crate) fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
     let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
     let rootfs_path = rootfs.path().to_path_buf();
     let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
+    let net_helper_bin = fake_net_helper(run_root);
     m80_preflight::Discovery {
         firecracker_bin: PathBuf::from("/tmp/firecracker"),
         firecracker_seccomp_filter: PathBuf::from("/tmp/firecracker-seccomp-filter.bin"),
         jailer_bin: PathBuf::from("/tmp/jailer"),
         jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
-        net_helper_bin: PathBuf::from("/tmp/m80-net-helper"),
+        net_helper_bin,
         kernel: PathBuf::from("/tmp/vmlinux"),
         rootfs: PathBuf::from("/tmp/rootfs.ext4"),
         pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
@@ -43,6 +46,31 @@ pub(crate) fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
         privilege: m80_preflight::PrivilegeStatus::Root,
         report: Vec::new(),
     }
+}
+
+fn fake_net_helper(run_root: &Path) -> PathBuf {
+    static FAKE_NET_HELPER: OnceLock<PathBuf> = OnceLock::new();
+    let _ = run_root;
+    FAKE_NET_HELPER.get_or_init(write_fake_net_helper).clone()
+}
+
+fn write_fake_net_helper() -> PathBuf {
+    let path = std::env::temp_dir().join(format!("m80-net-helper-test-{}", std::process::id()));
+    let mut file = std::fs::File::create(&path).expect("fake net helper");
+    file.write_all(
+        br#"#!/bin/sh
+while IFS= read -r _line; do
+  printf '%s\n' '{"status":"ok","success":{"kind":"empty"}}'
+done
+"#,
+    )
+    .expect("write fake net helper");
+    file.sync_all().expect("sync fake net helper");
+    drop(file);
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&path, perms).unwrap();
+    path
 }
 
 fn fake_manifest() -> m80_image_manifest::Manifest {

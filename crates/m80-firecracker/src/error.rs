@@ -208,6 +208,70 @@ pub enum NetworkHelperError {
         /// Operation in progress.
         operation: NetworkHelperOperation,
     },
+    /// Backend construction attempted to switch helper executable paths after
+    /// the process-global helper was already started.
+    #[error(
+        "network helper path mismatch: active {}, requested {}",
+        active.display(),
+        requested.display()
+    )]
+    PathMismatch {
+        /// Helper path already active for this process.
+        active: PathBuf,
+        /// Helper path requested by this backend.
+        requested: PathBuf,
+    },
+}
+
+/// Failure while dropping `CAP_NET_ADMIN` from the long-lived parent process.
+#[derive(Debug, thiserror::Error)]
+pub enum CapabilityDropError {
+    /// Reading a Linux capability set failed.
+    #[error("failed to read {set} capabilities: {source}")]
+    ReadCaps {
+        /// Capability set name.
+        set: &'static str,
+        /// Capability subsystem error.
+        #[source]
+        source: caps::errors::CapsError,
+    },
+    /// Writing a Linux capability set failed.
+    #[error("failed to update {set} capabilities: {source}")]
+    SetCaps {
+        /// Capability set name.
+        set: &'static str,
+        /// Capability subsystem error.
+        #[source]
+        source: caps::errors::CapsError,
+    },
+    /// Dropping from the bounding set failed.
+    #[error("failed to drop CAP_NET_ADMIN from bounding capabilities: {source}")]
+    DropBounding {
+        /// Capability subsystem error.
+        #[source]
+        source: caps::errors::CapsError,
+    },
+    /// `/proc/self/status` could not be read for post-drop verification.
+    #[error("failed to read /proc/self/status after CAP_NET_ADMIN drop: {source}")]
+    StatusRead {
+        /// I/O failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A capability line in `/proc/self/status` was malformed.
+    #[error("failed to parse {field} from /proc/self/status: {value}")]
+    StatusParse {
+        /// Status field name.
+        field: &'static str,
+        /// Raw field value.
+        value: String,
+    },
+    /// Post-drop verification still observed `CAP_NET_ADMIN`.
+    #[error("CAP_NET_ADMIN still present in {field} after parent drop")]
+    Verification {
+        /// Status field name.
+        field: &'static str,
+    },
 }
 
 /// Bounded lifecycle failure vocabulary used in behavior docs and tests.
@@ -326,6 +390,9 @@ pub enum FcError {
     /// Privileged network-helper protocol or operation failed.
     #[error("network helper: {0}")]
     NetworkHelper(#[from] NetworkHelperError),
+    /// Parent process capability hardening failed.
+    #[error("capability drop: {0}")]
+    CapabilityDrop(#[from] CapabilityDropError),
     /// Firecracker REST API call failed.
     #[error("client: {0}")]
     Client(#[from] ClientError),
