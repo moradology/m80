@@ -173,7 +173,7 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
 | `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
 | `StoppedSandbox::run_dir` | `(&self) -> &Path` | Return the stopped VM run directory. |
-| `StoppedSandbox::extract_changes` | `(&self, into: &Path) -> Result<ChangeSet, FcError>` | Extract caller-requested workspace changes from the scratch image. |
+| `StoppedSandbox::extract_changes` | `(&self, into: &Path) -> Result<ChangeSet, FcError>` | Extract caller-requested workspace changes from the scratch image, capped at the scratch image byte length. |
 | `StoppedSandbox::delete` | `(self) -> Result<(), FcError>` | Remove the run directory and release the admission permit. |
 | `StoppedSandbox::preserve_for_triage` | `(self) -> Result<PathBuf, FcError>` | Move the run directory under `.preserved/` and release the admission permit. |
 

@@ -30,7 +30,7 @@ fn scratch_extract_round_trips_workspace() {
     Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create");
 
     let into = dir.path().join("extracted");
-    let cs = Scratch::extract(&image, &into).expect("extract");
+    let cs = Scratch::extract(&image, &into, None).expect("extract");
 
     assert!(into.exists(), "into must exist after extract");
     assert!(cs.rejected.is_empty(), "no rejections expected");
@@ -69,7 +69,7 @@ fn scratch_extract_rejects_into_already_exists() {
     let into = dir.path().join("already_exists");
     std::fs::create_dir_all(&into).unwrap();
 
-    let err = Scratch::extract(&image, &into).unwrap_err();
+    let err = Scratch::extract(&image, &into, None).unwrap_err();
     assert!(
         matches!(err, m80_storage::StorageError::Io { .. }),
         "expected Io(AlreadyExists), got {err:?}"
@@ -96,7 +96,7 @@ fn writeback_preserves_file_modes() {
     Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create");
 
     let into = dir.path().join("extracted");
-    Scratch::extract(&image, &into).expect("extract");
+    Scratch::extract(&image, &into, None).expect("extract");
 
     assert_mode(&into.join("private-dir"), 0o700);
     assert_mode(&into.join("regular.txt"), 0o644);

@@ -115,6 +115,19 @@ pub enum StorageError {
         /// Path rejected by the admissibility scan.
         path: PathBuf,
     },
+    /// Extraction would exceed the caller's byte cap.
+    #[error(
+        "extracting {} would exceed byte cap {max_bytes} (attempted {actual_bytes})",
+        path.display()
+    )]
+    ExtractSizeExceeded {
+        /// Relative path whose copy crossed the configured cap.
+        path: PathBuf,
+        /// Maximum allowed extracted regular-file bytes.
+        max_bytes: u64,
+        /// Total extracted bytes that would result from admitting `path`.
+        actual_bytes: u64,
+    },
     /// The atomic swap into the destination failed.
     #[error("atomic swap into destination failed: {source}")]
     SwapFailed {

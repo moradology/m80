@@ -11,7 +11,13 @@ Hydration fails the operation with `StorageError::AdmissibilityRefused { path }`
 Extraction records rejected entries in `ChangeSet::rejected` and does not copy
 them into the staged tree.
 
+Regular-file hydration opens each source with `O_NOFOLLOW` at the copy point.
+If a workspace entry is swapped from regular file to symlink after metadata
+inspection, the open fails and no symlink target content is copied into the
+scratch image.
+
 Test: `crates/m80-storage/tests/scratch_admissibility.rs`.
+Test: `crates/m80-storage/src/scratch.rs::tests::copy_regular_file_no_follow_rejects_symlink_at_open`.
 
 ## atomic-swap
 

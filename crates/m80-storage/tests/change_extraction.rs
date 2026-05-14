@@ -28,7 +28,7 @@ fn rollback_on_extract_failure() {
     std::fs::create_dir_all(&into).unwrap();
     std::fs::write(into.join("original.txt"), b"original").unwrap();
 
-    let err = Scratch::extract(&image, &into).unwrap_err();
+    let err = Scratch::extract(&image, &into, None).unwrap_err();
 
     assert!(matches!(err, StorageError::Io { .. }));
     assert_eq!(
@@ -53,7 +53,7 @@ fn stages_into_sibling_directory() {
     Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create");
 
     let into = dir.path().join("extracted");
-    let change_set = Scratch::extract(&image, &into).expect("extract");
+    let change_set = Scratch::extract(&image, &into, None).expect("extract");
 
     assert!(into.exists());
     assert!(change_set
@@ -84,7 +84,7 @@ fn loop_mount_extracts_changed_file_set() {
     Scratch::create(&workspace, &image, 64 * 1024 * 1024).expect("create");
 
     let into = dir.path().join("extracted");
-    let change_set = Scratch::extract(&image, &into).expect("extract");
+    let change_set = Scratch::extract(&image, &into, None).expect("extract");
 
     assert!(change_set.rejected.is_empty());
     assert_eq!(std::fs::read(into.join("changed.txt")).unwrap(), b"changed");

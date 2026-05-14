@@ -3,10 +3,12 @@
 //! the parser surface isn't worth it at the scratch sizes we target.
 
 use std::fs::{self, OpenOptions};
-use std::os::unix::fs::FileTypeExt;
+use std::io;
+use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use nix::fcntl::OFlag;
 use tempfile::TempDir;
 
 use crate::{format_exit, io_err, ChangeSet, Rejection, RejectionReason, StorageError};
@@ -72,7 +74,11 @@ impl Scratch {
     ///
     /// Returns a [`ChangeSet`] describing what was staged and what was
     /// rejected.
-    pub fn extract(image: &Path, into: &Path) -> Result<ChangeSet, StorageError> {
+    pub fn extract(
+        image: &Path,
+        into: &Path,
+        max_extract_bytes: Option<u64>,
+    ) -> Result<ChangeSet, StorageError> {
         if into.exists() {
             return Err(StorageError::Io {
                 path: into.to_path_buf(),
@@ -88,7 +94,7 @@ impl Scratch {
         let mount_dir = TempDir::new().map_err(|e| io_err(image, e))?;
         run_mount(mount_dir.path(), &["mount", "-o", "loop,ro"], Some(image))?;
 
-        let stage_result = build_stage(mount_dir.path(), into);
+        let stage_result = build_stage(mount_dir.path(), into, max_extract_bytes);
 
         // Unmount before the rename; the staging tree lives in a sibling
         // TempDir, so it's not on the now-unmounted filesystem.
@@ -106,7 +112,8 @@ impl Scratch {
     }
 
     /// Path of this scratch image.
-    #[must_use] pub fn path(&self) -> &Path {
+    #[must_use]
+    pub fn path(&self) -> &Path {
         &self.path
     }
 }
@@ -274,7 +281,7 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
             fs::set_permissions(&dst_path, meta.permissions()).map_err(|e| io_err(&dst_path, e))?;
             copy_tree(root, &src_path, dst_root)?;
         } else if ft.is_file() {
-            fs::copy(&src_path, &dst_path).map_err(|e| io_err(&src_path, e))?;
+            copy_regular_file_no_follow(&src_path, &dst_path, &meta)?;
         } else {
             return Err(admissibility_refused(&src_path));
         }
@@ -286,7 +293,11 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
 /// temporary staging directory.
 ///
 /// Returns `(stage_dir, ChangeSet)`.
-fn build_stage(mount_root: &Path, into: &Path) -> Result<(TempDir, ChangeSet), StorageError> {
+fn build_stage(
+    mount_root: &Path,
+    into: &Path,
+    max_extract_bytes: Option<u64>,
+) -> Result<(TempDir, ChangeSet), StorageError> {
     let stage_parent = stage_parent(into);
     let stage = tempfile::Builder::new()
         .prefix(&stage_prefix(into))
@@ -303,6 +314,7 @@ fn build_stage(mount_root: &Path, into: &Path) -> Result<(TempDir, ChangeSet), S
         &mut staged,
         &mut rejected,
         &mut total_bytes,
+        max_extract_bytes,
     )?;
 
     Ok((
@@ -337,6 +349,7 @@ fn walk_for_extract(
     staged: &mut Vec<PathBuf>,
     rejected: &mut Vec<Rejection>,
     total_bytes: &mut u64,
+    max_extract_bytes: Option<u64>,
 ) -> Result<(), StorageError> {
     for entry in fs::read_dir(src).map_err(|e| io_err(src, e))? {
         let entry = entry.map_err(|e| io_err(src, e))?;
@@ -382,10 +395,21 @@ fn walk_for_extract(
                 staged,
                 rejected,
                 total_bytes,
+                max_extract_bytes,
             )?;
         } else if ft.is_file() {
+            let next_total = total_bytes.checked_add(meta.len()).unwrap_or(u64::MAX);
+            if let Some(max_bytes) = max_extract_bytes {
+                if next_total > max_bytes {
+                    return Err(StorageError::ExtractSizeExceeded {
+                        path: rel.to_path_buf(),
+                        max_bytes,
+                        actual_bytes: next_total,
+                    });
+                }
+            }
             fs::copy(&src_path, &dst_path).map_err(|e| io_err(&src_path, e))?;
-            *total_bytes = total_bytes.saturating_add(meta.len());
+            *total_bytes = next_total;
             staged.push(rel.to_path_buf());
         } else {
             rejected.push(Rejection {
@@ -394,6 +418,27 @@ fn walk_for_extract(
             });
         }
     }
+    Ok(())
+}
+
+fn copy_regular_file_no_follow(
+    src_path: &Path,
+    dst_path: &Path,
+    meta: &fs::Metadata,
+) -> Result<(), StorageError> {
+    let mut src = OpenOptions::new()
+        .read(true)
+        .custom_flags(OFlag::O_NOFOLLOW.bits())
+        .open(src_path)
+        .map_err(|e| io_err(src_path, e))?;
+    let mut dst = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dst_path)
+        .map_err(|e| io_err(dst_path, e))?;
+
+    io::copy(&mut src, &mut dst).map_err(|e| io_err(src_path, e))?;
+    fs::set_permissions(dst_path, meta.permissions()).map_err(|e| io_err(dst_path, e))?;
     Ok(())
 }
 
@@ -423,6 +468,54 @@ mod tests {
     #[test]
     fn relative_stage_parent_defaults_to_current_directory() {
         assert_eq!(stage_parent(Path::new("ws")), PathBuf::from("."));
+    }
+
+    #[test]
+    fn copy_regular_file_no_follow_rejects_symlink_at_open() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.txt");
+        let dst = dir.path().join("dest.txt");
+        let secret = dir.path().join("secret.txt");
+        fs::write(&src, b"before").unwrap();
+        let stale_meta = fs::symlink_metadata(&src).unwrap();
+        fs::write(&secret, b"secret").unwrap();
+        fs::remove_file(&src).unwrap();
+        symlink(&secret, &src).unwrap();
+
+        let err = copy_regular_file_no_follow(&src, &dst, &stale_meta).unwrap_err();
+
+        assert!(
+            matches!(err, StorageError::Io { ref path, .. } if path == &src),
+            "expected source-path I/O error, got {err:?}"
+        );
+        assert!(!dst.exists());
+    }
+
+    #[test]
+    fn build_stage_rejects_extract_size_over_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let mount_root = dir.path().join("mount");
+        let out = dir.path().join("out");
+        fs::create_dir_all(&mount_root).unwrap();
+        fs::write(mount_root.join("a.txt"), b"1234").unwrap();
+
+        let err = build_stage(&mount_root, &out, Some(3)).unwrap_err();
+
+        match err {
+            StorageError::ExtractSizeExceeded {
+                path,
+                max_bytes,
+                actual_bytes,
+            } => {
+                assert_eq!(path, PathBuf::from("a.txt"));
+                assert_eq!(max_bytes, 3);
+                assert_eq!(actual_bytes, 4);
+            }
+            other => panic!("expected ExtractSizeExceeded, got {other:?}"),
+        }
+        assert!(!out.exists());
     }
 
     #[test]

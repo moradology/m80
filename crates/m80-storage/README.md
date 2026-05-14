@@ -68,7 +68,7 @@ base from one set of pages.
   `mkfs.ext4`, loop-mounts it, copies the host workspace tree, and
   unmounts. The host source is opaque to the guest — only the mounted
   device shows up in-VM.
-- `Scratch::extract(image: &Path, into: &Path) -> Result<ChangeSet, StorageError>`
+- `Scratch::extract(image: &Path, into: &Path, max_extract_bytes: Option<u64>) -> Result<ChangeSet, StorageError>`
   is the post-stop extraction:
   0. Fail with `SwapFailed` if `into` already exists.
   1. Run `e2fsck -p -f` on the image to repair the journal.
@@ -76,6 +76,9 @@ base from one set of pages.
   3. Walk and apply the admissibility scan: regular files and
      directories pass; symlinks → `RejectionReason::Symlink`; devices /
      fifos / sockets → `RejectionReason::SpecialFile`.
+     When `max_extract_bytes` is set, the walk fails with
+     `StorageError::ExtractSizeExceeded` before copying a regular file that
+     would push total extracted bytes above the cap.
   4. Stage the surviving set in a sibling temp directory under the
      destination parent, named `.<workspace>.m80-writeback-stage-<pid>-<n>`.
   5. Atomic `fs::rename` into `into`; rename failure is `SwapFailed`.
@@ -112,7 +115,7 @@ images but adds non-trivial output-parsing surface.
   `Rootfs::new_at(base, overlay)`,
   `Rootfs::base_path()`, `Rootfs::overlay_path()`.
 - `Scratch::create(workspace, image, size)`,
-  `Scratch::extract(image, into)`, `Scratch::path()`.
+  `Scratch::extract(image, into, max_extract_bytes)`, `Scratch::path()`.
 - `ChangeSet { staged: Vec<PathBuf>, rejected: Vec<Rejection>, total_bytes: u64 }`.
 - `Rejection { path: PathBuf, reason: RejectionReason }`.
 - `RejectionReason`: `Symlink`, `SpecialFile`.
@@ -120,8 +123,9 @@ images but adds non-trivial output-parsing surface.
   `OverlayTemplateCreateFailed`, `OverlayTemplateMismatch`,
   `OverlayTemplateCloneFailed`,
   `SubprocessFailed { program: &'static str, path: PathBuf, status: String, stderr: String }`,
-  `AdmissibilityRefused { path: PathBuf }`, `SwapFailed`,
-  `Io { path: PathBuf, source: io::Error }`.
+  `AdmissibilityRefused { path: PathBuf }`,
+  `ExtractSizeExceeded { path: PathBuf, max_bytes: u64, actual_bytes: u64 }`,
+  `SwapFailed`, `Io { path: PathBuf, source: io::Error }`.
 
 Removed variants:
 - `BaseSha256Mismatch` — verification is the caller's responsibility
@@ -148,7 +152,7 @@ Removed variants:
 
 ## Dependencies
 
-Runtime: `thiserror`, `tracing`, `serde`, `tempfile`.  
+Runtime: `thiserror`, `tracing`, `serde`, `tempfile`, `nix`.
 Dev: `sha2`, `hex`, `serde_json`, `nix` (root-check in integration tests).
 
 Shell-outs require `CAP_SYS_ADMIN` (for `mount`/`umount`) and

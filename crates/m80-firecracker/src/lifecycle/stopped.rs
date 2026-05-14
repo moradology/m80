@@ -11,7 +11,8 @@ use crate::types::StoppedSandbox;
 
 impl StoppedSandbox {
     /// Return the per-VM run directory.
-    #[must_use] pub fn run_dir(&self) -> &Path {
+    #[must_use]
+    pub fn run_dir(&self) -> &Path {
         &self.run_dir
     }
 
@@ -24,7 +25,15 @@ impl StoppedSandbox {
             .scratch
             .as_ref()
             .ok_or_else(|| FcError::Config(ConfigError::MissingField { field: "workspace" }))?;
-        let cs = m80_storage::Scratch::extract(scratch.path(), into)?;
+        let max_extract_bytes = std::fs::metadata(scratch.path())
+            .map_err(|source| {
+                FcError::Storage(m80_storage::StorageError::Io {
+                    path: scratch.path().to_path_buf(),
+                    source,
+                })
+            })?
+            .len();
+        let cs = m80_storage::Scratch::extract(scratch.path(), into, Some(max_extract_bytes))?;
         Ok(cs)
     }
 

@@ -99,6 +99,19 @@ fn admissibility_refused_displays() {
 }
 
 #[test]
+fn extract_size_exceeded_displays_path_and_counts() {
+    let e = StorageError::ExtractSizeExceeded {
+        path: PathBuf::from("large.bin"),
+        max_bytes: 1024,
+        actual_bytes: 2048,
+    };
+    let s = format!("{e}");
+    assert!(s.contains("large.bin"), "path must appear: {s}");
+    assert!(s.contains("1024"), "max must appear: {s}");
+    assert!(s.contains("2048"), "actual must appear: {s}");
+}
+
+#[test]
 fn swap_failed_displays() {
     let e = StorageError::SwapFailed {
         source: std::io::Error::new(std::io::ErrorKind::Other, "rename failed"),

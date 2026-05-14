@@ -5,8 +5,8 @@
 Post-stop change extraction is caller-driven. `m80-storage` never writes back a
 workspace merely because a guest process exits, and it does not inspect agent
 concepts such as read-only versus mutating effects. The caller either invokes
-`Scratch::extract(image, into)` or discards/preserves the scratch image through
-the surrounding lifecycle.
+`Scratch::extract(image, into, max_extract_bytes)` or discards/preserves the
+scratch image through the surrounding lifecycle.
 
 Source: dossier `01-coupling-audit.md` writeback model notes and
 `07-modules-essential-vs-hygiene.md` storage module notes.
@@ -28,6 +28,18 @@ Source: predecessor
 section "v0.1 departure: loop-mount instead of debugfs".
 
 Test: `crates/m80-storage/tests/storage/change_extraction.rs::loop_mount_extracts_changed_file_set`.
+
+## size-cap
+
+Extraction accepts an optional maximum byte count for staged regular files. The
+walk checks the cap before copying each regular file and fails with
+`StorageError::ExtractSizeExceeded` when admitting that file would push
+`ChangeSet::total_bytes` beyond the cap. The surrounding lifecycle passes the
+scratch image length as the default cap for `StoppedSandbox::extract_changes`,
+so a guest cannot force host extraction of more regular-file bytes than the
+scratch device was sized to hold.
+
+Test: `crates/m80-storage/src/scratch.rs::tests::build_stage_rejects_extract_size_over_cap`.
 
 ## staging
 
