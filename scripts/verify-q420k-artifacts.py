@@ -404,6 +404,8 @@ def verify_pmem_density_smoke(path: Path) -> list[str]:
         "M80_PMEM_SHARED_PAYLOAD_MIB:-128",
         "M80_PMEM_SHARED_DENSITY_ARTIFACT:-docs/perf/pmem-shared-density.md",
         "M80_PMEM_SHARED_ALLOW_OTHER_VMS",
+        "repro_command+=\" M80_KERNEL_KIND=$KERNEL_KIND\"",
+        "M80_KERNEL_KIND=\"$KERNEL_KIND\"",
         "pgrep -af",
         "refusing density measurement while other Firecracker VMs are present",
         "M80_RUN_PMEM_SHARED_DENSITY=1",
@@ -1577,6 +1579,8 @@ CYCLES="${M80_PMEM_SHARED_CYCLES:-10}"
 PAYLOAD_MIB="${M80_PMEM_SHARED_PAYLOAD_MIB:-128}"
 ARTIFACT="${M80_PMEM_SHARED_DENSITY_ARTIFACT:-docs/perf/pmem-shared-density.md}"
 ALLOW_OTHER_VMS="${M80_PMEM_SHARED_ALLOW_OTHER_VMS:-0}"
+KERNEL_KIND="${M80_KERNEL_KIND:-stripped}"
+repro_command+=" M80_KERNEL_KIND=$KERNEL_KIND"
 
 if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then
     existing_firecrackers="$(pgrep -af '(^|/)firecracker( |$)' || true)"
@@ -1589,6 +1593,7 @@ fi
 cargo test -p m80-firecracker --test pmem_shared_host_page_sharing_real_kvm --no-run
 sudo -n env \
     M80_RUN_PMEM_SHARED_DENSITY=1 \
+    M80_KERNEL_KIND="$KERNEL_KIND" \
     M80_PMEM_SHARED_DENSITY_ARTIFACT="$ARTIFACT" \
     "$test_bin" shared_pmem_host_page_sharing_measurement_lives_in_density_gate
 """
