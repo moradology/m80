@@ -7,17 +7,17 @@ Bead: `m80-q420k.8.16`.
 - host filesystem: `ext4` mounted at `/` from `/dev/nvme1n1p2`
 - filesystem options: `rw,relatime,nodioread_nolock,nodelalloc`
 - kernel: `6.17.0-23-generic`
-- run root: `/var/tmp/m80-ext4-overlay-template-clone-codex`
+- run root: `/var/tmp/m80-ext4-overlay-template-clone`
 - artifact: `/tank/projects/m80/docs/perf/ext4-overlay-template-clone.md`
-- commit: `83be24e8610ab58b62e8d56fa8b66fcaa8aad0f0`
-- git worktree dirty excluding this artifact: `true`
+- commit: `74a3d3b79ea30e34d8d2c702428172bc9b86fd16`
+- git worktree dirty excluding this artifact: `false`
 - substrate kind: `storage-only`
 - command:
 
 ```sh
 M80_RUN_EXT4_OVERLAY_TEMPLATE_CLONE=1 \
 M80_EXT4_OVERLAY_TEMPLATE_SAMPLES=30 \
-M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=/var/tmp/m80-ext4-overlay-template-clone-codex \
+M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=/var/tmp/m80-ext4-overlay-template-clone \
 M80_EXT4_OVERLAY_TEMPLATE_ARTIFACT=/tank/projects/m80/docs/perf/ext4-overlay-template-clone.md \
 cargo test -p m80-storage --test ext4_overlay_template_clone -- --ignored --nocapture
 ```
@@ -37,11 +37,11 @@ base-image verification before this storage step.
 ## Observable
 
 - samples: `30`
-- phase_3b_rootfs_prepare p50_ms: `7.006`
-- phase_3b_rootfs_prepare p95_ms: `8.074`
-- phase_3b_rootfs_prepare p99_ms: `8.389`
-- phase_3b_rootfs_prepare min_ms: `6.722`
-- phase_3b_rootfs_prepare max_ms: `8.389`
+- phase_3b_rootfs_prepare p50_ms: `7.842`
+- phase_3b_rootfs_prepare p95_ms: `8.587`
+- phase_3b_rootfs_prepare p99_ms: `9.073`
+- phase_3b_rootfs_prepare min_ms: `6.924`
+- phase_3b_rootfs_prepare max_ms: `9.073`
 - reconsider dm-snapshot threshold: `p50 > 80 ms or p95 > 100 ms`
 - threshold result: `keep byte-copy fallback`
 
