@@ -241,14 +241,21 @@ pub(crate) fn real_backend_from_discovery(
     let config = BackendConfig::builder(discovery)
         .max_concurrent_vms(max_concurrent_vms)
         .run_root(run_root)
-        .jail_uid(3000)
-        .jail_gid(3000)
+        .jail_uid(jail_id_from_env("M80_JAIL_UID", 3000))
+        .jail_gid(jail_id_from_env("M80_JAIL_GID", 3000))
         .cgroup_mode(CgroupMode::Disabled)
         .build();
     RealBackend {
         backend: Arc::new(Backend::new(config).expect("Backend::new")),
         firecracker_bin,
     }
+}
+
+fn jail_id_from_env(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(default)
 }
 
 pub(crate) fn launch_with_layers(
