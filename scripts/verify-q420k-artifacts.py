@@ -1493,6 +1493,7 @@ def run_checks(args: argparse.Namespace) -> int:
 
 
 def run_self_tests() -> int:
+    global REQUIRED_CLOSE_ARTIFACT_PATHS
     with tempfile.TemporaryDirectory() as tmp_raw:
         tmp = Path(tmp_raw)
         snapshot = tmp / "snapshot.json"
@@ -1992,6 +1993,24 @@ The measured signal is acceptable under the same-trust-domain assumption.
         args.only = ["composed-doc"]
         composed_doc_subset_status = quiet_run_checks(args)
         args.only = None
+        original_close_artifact_paths = REQUIRED_CLOSE_ARTIFACT_PATHS
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix=".q420k-close-path-self-test-",
+                dir=ROOT,
+            ) as repo_tmp_raw:
+                repo_tmp = Path(repo_tmp_raw)
+                (repo_tmp / ".gitignore").write_text("ignored.md\n")
+                trackable_path = repo_tmp / "trackable.md"
+                ignored_path = repo_tmp / "ignored.md"
+                trackable_path.write_text("")
+                ignored_path.write_text("")
+                REQUIRED_CLOSE_ARTIFACT_PATHS = [trackable_path]
+                close_artifact_paths_status = 0 if not verify_close_artifact_paths(ROOT) else 1
+                REQUIRED_CLOSE_ARTIFACT_PATHS = [ignored_path]
+                close_artifact_paths_ignored_status = 0 if not verify_close_artifact_paths(ROOT) else 1
+        finally:
+            REQUIRED_CLOSE_ARTIFACT_PATHS = original_close_artifact_paths
         args.only = ["ext4-overlay"]
         ext4_status = quiet_run_checks(args)
         ext4_bad = ext4_overlay.read_text().replace(
@@ -2331,6 +2350,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
         if (
             ok_status != 0
             or composed_doc_subset_status != 0
+            or close_artifact_paths_status != 0
+            or close_artifact_paths_ignored_status == 0
             or ext4_status != 0
             or ext4_bad_status == 0
             or dax_status != 0
