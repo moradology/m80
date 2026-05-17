@@ -66,14 +66,19 @@ fn pmem_dax_memory_pressure_real_kvm() {
     let run_root = env_path("M80_RUN_ROOT").unwrap_or_else(|| PathBuf::from("/var/lib/m80"));
     let artifact = env_path("M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT")
         .unwrap_or_else(|| repo_root().join("docs/perf/pmem-dax-memory-pressure.md"));
-    let git_worktree_dirty = git_worktree_dirty_excluding(&artifact);
+    let git_worktree_dirty =
+        quiet_host::git_worktree_dirty_excluding(std::slice::from_ref(&artifact));
+    let git_commit = quiet_host::git_head_commit();
 
     let store = support::open_default_store();
     let digest = support::build_payload_image_digest(&store, payload_mib);
     let store_path = support::store_erofs_path(&store, &digest);
     let payload_layout =
         support::assert_payload_file_uncompressed_non_inlined(&store_path, "payload.bin");
-    let real = support::real_backend(vm_count as u32);
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    quiet_host::record_preflight_artifacts(&mut substrate, &discovery);
+    let real = support::real_backend_from_discovery(discovery, vm_count as u32);
 
     let process_count_before = process_count_by_basename(&["firecracker", "jailer"]);
     let mount_count_before = mount_count_under(&run_root);
@@ -137,6 +142,7 @@ fn pmem_dax_memory_pressure_real_kvm() {
         payload_layout,
         substrate,
         git_worktree_dirty,
+        git_commit,
         pressure_command,
         baseline,
         post_pressure,
@@ -225,6 +231,7 @@ struct PressureReport {
     payload_layout: support::PayloadLayout,
     substrate: serde_json::Value,
     git_worktree_dirty: bool,
+    git_commit: String,
     pressure_command: String,
     baseline: Vec<LatencyStats>,
     post_pressure: Vec<LatencyStats>,
@@ -325,42 +332,6 @@ fn command_output(program: &str, args: &[&str]) -> String {
         .join("; ")
 }
 
-fn git_worktree_dirty_excluding(path: &Path) -> bool {
-    let repo = repo_root();
-    let rel = path
-        .strip_prefix(&repo)
-        .ok()
-        .and_then(|path| path.to_str())
-        .unwrap_or_default()
-        .to_owned();
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &repo.display().to_string(),
-            "status",
-            "--porcelain=v1",
-        ])
-        .output();
-    let Ok(output) = output else {
-        return true;
-    };
-    if !output.status.success() {
-        return true;
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .any(|line| {
-            let path = line
-                .strip_prefix("?? ")
-                .or_else(|| line.get(3..))
-                .unwrap_or(line)
-                .trim();
-            path != rel
-        })
-}
-
 fn host_filesystem_for(path: &Path) -> String {
     let output = Command::new("findmnt")
         .args(["-T", path.to_str().unwrap(), "-n", "-o", "FSTYPE"])
@@ -431,20 +402,7 @@ fn write_artifact(path: &Path, report: &PressureReport) {
     writeln!(out, "Bead: `m80-q420k.8.9`.\n").unwrap();
     writeln!(out, "## Substrate\n").unwrap();
     writeln!(out, "- substrate kind: `real-kvm`").unwrap();
-    writeln!(
-        out,
-        "- commit: `{}`",
-        command_output(
-            "git",
-            &[
-                "-C",
-                &repo_root().display().to_string(),
-                "rev-parse",
-                "HEAD"
-            ]
-        )
-    )
-    .unwrap();
+    writeln!(out, "- commit: `{}`", report.git_commit).unwrap();
     writeln!(
         out,
         "- git worktree dirty excluding this artifact: `{}`",
