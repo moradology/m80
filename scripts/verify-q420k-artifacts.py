@@ -86,6 +86,21 @@ REQUIRED_CLOSE_BEADS = {
     "ext4-overlay": "m80-q420k.8.16",
     "dax-memory-pressure": "m80-q420k.8.9",
 }
+REQUIRED_VERIFIED_CLOSE_LABEL_ISSUES = [
+    "m80-q420k",
+    "m80-q420k.3",
+    "m80-q420k.3.8",
+    "m80-q420k.4",
+    "m80-q420k.4.15",
+    "m80-q420k.6",
+    "m80-q420k.6.2",
+    "m80-q420k.6.3",
+    "m80-q420k.6.4",
+    "m80-q420k.6.5",
+    "m80-q420k.8",
+    "m80-q420k.8.9",
+    "m80-q420k.8.16",
+]
 REQUIRED_PARENT_PHASES = [
     "m80-q420k.7",
     "m80-q420k.1",
@@ -2600,7 +2615,7 @@ def kernel_version_at_least(value: Any, major: int, minor: int) -> bool:
 def verify_committed_artifacts(check_specs: list[tuple[str, str, Any, Path]]) -> list[str]:
     errors: list[str] = []
     for key, label, _, path in check_specs:
-        if key in {"close-artifact-paths", "prepared-inputs"}:
+        if key in {"tracker-labels", "close-artifact-paths", "prepared-inputs"}:
             continue
         try:
             rel_path = path.resolve().relative_to(ROOT)
@@ -2630,6 +2645,30 @@ def verify_close_artifact_paths(_: Path) -> list[str]:
             errors.append(f"close artifact path: parent directory is missing: {path.parent}")
         if git_ok(["check-ignore", "-q", "--", rel]):
             errors.append(f"close artifact path: path is ignored by git: {rel}")
+    return errors
+
+
+def required_verified_close_label_errors(issues_by_id: dict[str, dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    for bead_id in REQUIRED_VERIFIED_CLOSE_LABEL_ISSUES:
+        issue = issues_by_id.get(bead_id)
+        if issue is None:
+            errors.append(f"tracker labels: {bead_id} missing from label check")
+            continue
+        labels = issue.get("labels")
+        if not isinstance(labels, list) or "requires-verified-close" not in labels:
+            errors.append(f"tracker labels: {bead_id} must carry requires-verified-close")
+    return errors
+
+
+def verify_verified_close_labels(_: Path) -> list[str]:
+    errors: list[str] = []
+    issues_by_id: dict[str, dict[str, Any]] = {}
+    for bead_id in REQUIRED_VERIFIED_CLOSE_LABEL_ISSUES:
+        issue = load_bead(bead_id, "tracker labels", errors)
+        if issue is not None:
+            issues_by_id[bead_id] = issue
+    errors.extend(required_verified_close_label_errors(issues_by_id))
     return errors
 
 
@@ -3079,6 +3118,12 @@ def git_stdout(args: list[str]) -> str | None:
 
 def run_checks(args: argparse.Namespace) -> int:
     check_specs = [
+        (
+            "tracker-labels",
+            "verified-close tracker labels",
+            verify_verified_close_labels,
+            ROOT,
+        ),
         (
             "close-artifact-paths",
             "close artifact path trackability",
@@ -4650,6 +4695,24 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 1,
             )
         )
+        label_ok_issues = {
+            bead_id: {"labels": ["requires-verified-close"]}
+            for bead_id in REQUIRED_VERIFIED_CLOSE_LABEL_ISSUES
+        }
+        verified_close_labels_status = (
+            0 if not required_verified_close_label_errors(label_ok_issues) else 1
+        )
+        label_missing_issues = {
+            bead_id: {"labels": ["requires-verified-close"]}
+            for bead_id in REQUIRED_VERIFIED_CLOSE_LABEL_ISSUES
+        }
+        label_missing_issues["m80-q420k.4"] = {"labels": ["snapshot"]}
+        verified_close_labels_missing_status = (
+            0 if not required_verified_close_label_errors(label_missing_issues) else 1
+        )
+        label_missing_issue_status = (
+            0 if not required_verified_close_label_errors({}) else 1
+        )
         args.only = ["pmem-density"]
         density_bad = density.read_text().replace(
             "- final active-use markers: `0`",
@@ -5724,6 +5787,9 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or snapshot_doc_identity_outside_section_status == 0
             or snapshot_doc_preflight_outside_section_status == 0
             or snapshot_doc_runtime_outside_section_status == 0
+            or verified_close_labels_status != 0
+            or verified_close_labels_missing_status == 0
+            or label_missing_issue_status == 0
             or density_bad_teardown_status == 0
             or density_bad_host_kernel_status == 0
             or density_bad_kvm_status == 0
@@ -5857,6 +5923,7 @@ def parser() -> argparse.ArgumentParser:
         "--only",
         action="append",
         choices=[
+            "tracker-labels",
             "snapshot-template",
             "snapshot-doc",
             "close-artifact-paths",
