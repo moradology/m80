@@ -49,6 +49,23 @@ The snapshot-template and Phase F composed artifacts also carry runtime
 substrate details; the verifier requires host kernel >= 6.5, `/dev/kvm` rw
 stat output, sudo uid `0`, and actual Firecracker version matching preflight.
 
+An alternate runner is eligible only if all close inputs are staged before the
+run:
+
+- `/dev/kvm` exists and is usable by the measurement command, either because
+  the user has `kvm` access or because `sudo -n` is available for the command;
+- `sudo -n true` succeeds if any close command needs sudo;
+- the m80 checkout is present at the path used for the measured `git_commit`;
+- Firecracker, jailer, seccomp filter, `m80-jailer-harden`, and
+  `m80-net-helper` exist at the paths passed into the command;
+- the stripped kernel and rootfs artifacts exist at the paths passed into the
+  command, and their manifest identity matches the verifier expectations;
+- the quiet-host inventory helper exits 0 on that runner before measurement.
+
+A host that merely exposes `/dev/kvm` is not enough. If the repo, helper
+binaries, artifact stack, or noninteractive privilege path is missing, stage
+those first or use the current prepared host after explicit quieting approval.
+
 The helper is equivalent to this manual inventory. To identify the owner
 without changing host state, capture the process tree and cgroup first:
 
