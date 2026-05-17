@@ -175,10 +175,10 @@ fn composed_e2e_layered_warm_pool() {
     )
     .expect("WarmPool::new composed");
 
-    let baseline_before_fill_bytes = mem_available_bytes();
+    let baseline_before_fill_bytes = mem_available_before_checkpoint_bytes();
     pool.fill_to_target_blocking()
         .expect("fill composed snapshot-template pool");
-    let after_fill_bytes = mem_available_bytes();
+    let after_fill_bytes = mem_available_after_checkpoint_bytes();
     let fill_snapshot = pool.snapshot();
     assert_eq!(fill_snapshot.ready, target_ready);
     assert_eq!(fill_snapshot.fill_failures_total, 0);
@@ -224,12 +224,12 @@ fn composed_e2e_layered_warm_pool() {
     assert_composed_diagnostics(&diagnostics_summaries, target_ready);
     let during_leases_snapshot = pool.snapshot();
     memory::assert_attached_without_refill(during_leases_snapshot, target_ready);
-    let after_attached_bytes = mem_available_bytes();
+    let after_attached_bytes = mem_available_after_checkpoint_bytes();
     hold.wait();
     for handle in handles {
         handle.join().expect("composed lease thread");
     }
-    let after_teardown_bytes = mem_available_bytes();
+    let after_teardown_bytes = mem_available_before_checkpoint_bytes();
     let after_discard_snapshot = pool.snapshot();
     drop(pool);
     snapshot_template_support::assert_no_run_dirs_with_prefix(&discovery.run_root, &prefix);
@@ -831,6 +831,34 @@ fn mem_available_bytes() -> u64 {
         }
     }
     panic!("MemAvailable not found in /proc/meminfo");
+}
+
+fn mem_available_before_checkpoint_bytes() -> u64 {
+    mem_available_checkpoint_bytes(CheckpointExtremum::Max)
+}
+
+fn mem_available_after_checkpoint_bytes() -> u64 {
+    mem_available_checkpoint_bytes(CheckpointExtremum::Min)
+}
+
+fn mem_available_checkpoint_bytes(extremum: CheckpointExtremum) -> u64 {
+    const SAMPLES: usize = 9;
+    const SAMPLE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
+    let mut selected = mem_available_bytes();
+    for _ in 1..SAMPLES {
+        std::thread::sleep(SAMPLE_INTERVAL);
+        let value = mem_available_bytes();
+        selected = match extremum {
+            CheckpointExtremum::Min => selected.min(value),
+            CheckpointExtremum::Max => selected.max(value),
+        };
+    }
+    selected
+}
+
+enum CheckpointExtremum {
+    Min,
+    Max,
 }
 
 fn env_usize(name: &str, default: usize) -> usize {

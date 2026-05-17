@@ -95,10 +95,10 @@ pub(super) fn measure_per_vm_baseline(
         },
     )
     .expect("WarmPool::new PerVm baseline");
-    let before_fill_bytes = mem_available_bytes();
+    let before_fill_bytes = mem_available_before_checkpoint_bytes();
     pool.fill_to_target_blocking()
         .expect("fill PerVm baseline pool");
-    let after_fill_bytes = mem_available_bytes();
+    let after_fill_bytes = mem_available_after_checkpoint_bytes();
     let fill_snapshot = pool.snapshot();
     assert_eq!(fill_snapshot.ready, target_ready);
     assert_eq!(fill_snapshot.fill_failures_total, 0);
@@ -129,12 +129,12 @@ pub(super) fn measure_per_vm_baseline(
     }
     let attached_snapshot = pool.snapshot();
     assert_attached_without_refill(attached_snapshot, target_ready);
-    let after_n_attached_bytes = mem_available_bytes();
+    let after_n_attached_bytes = mem_available_after_checkpoint_bytes();
     hold.wait();
     for handle in handles {
         handle.join().expect("PerVm baseline lease thread");
     }
-    let after_teardown_bytes = mem_available_bytes();
+    let after_teardown_bytes = mem_available_before_checkpoint_bytes();
     drop(pool);
     snapshot_template_support::assert_no_run_dirs_with_prefix(run_root, prefix);
 
