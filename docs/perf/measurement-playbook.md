@@ -57,7 +57,8 @@ guard.
 This guard rejects missing artifacts, artifacts that do not name the real-KVM
 preflight substrate, noisy-host override artifacts, weak sample counts,
 threshold misses, teardown residue, Shared payload layout drift found by
-`m80-q420k.8.12`, a missing or non-executable Shared density smoke script,
+`m80-q420k.8.12`, a missing or non-executable quiet-host inventory helper,
+a missing or non-executable Shared density smoke script,
 snapshot-template docs without the matching bench stderr paste, and a composed
 receipt doc that still carries the diagnostic banner.
 Measurement artifacts that carry source-tree cleanliness fields must record a

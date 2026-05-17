@@ -66,10 +66,10 @@ For final `m80-q420k` closure, run the verifier without `--only` and with
 `--require-committed --require-closed-beads --require-parent-phases-closed`;
 that checks the `.3.8` Shared density artifact, the snapshot-template artifact,
 all three Phase F composed-e2e artifacts, the `docs/perf/composed-e2e.md`
-receipt doc, the measurement beads' `verified: <artifact> @ <commit>` close
-reasons, and the Phase 0 / A-F parent statuses. The verifier is a field,
-git-state, close-reason, and tracker-state guard only. It does not replace the
-real-KVM run or committed artifacts.
+receipt doc, the quiet-host inventory helper, the measurement beads'
+`verified: <artifact> @ <commit>` close reasons, and the Phase 0 / A-F parent
+statuses. The verifier is a field, git-state, close-reason, and tracker-state
+guard only. It does not replace the real-KVM run or committed artifacts.
 
 ## Snapshot schema
 

@@ -27,6 +27,7 @@ DEFAULT_SNAPSHOT = ROOT / "crates/m80-firecracker/benches/snapshot_template_rest
 DEFAULT_SNAPSHOT_DOC = ROOT / "docs/perf/snapshot-template-restore.md"
 DEFAULT_DENSITY = ROOT / "docs/perf/pmem-shared-density.md"
 DEFAULT_DENSITY_SMOKE = ROOT / "scripts/smoke-pmem-shared.sh"
+DEFAULT_QUIET_HOST_INVENTORY = ROOT / "scripts/q420k-quiet-host-inventory.sh"
 DEFAULT_COMPOSED_RESTORE = (
     ROOT / "crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json"
 )
@@ -396,6 +397,39 @@ def verify_pmem_density_smoke(path: Path) -> list[str]:
         "shared_pmem_host_page_sharing_measurement_lives_in_density_gate",
     ]:
         check.require(required in text, f"pmem density smoke script: missing {required}")
+    return check.errors
+
+
+def verify_quiet_host_inventory(path: Path) -> list[str]:
+    text = load_text(path)
+    check = Check()
+    check.require(path.is_file(), "quiet-host inventory helper: path must be a file")
+    check.require(
+        path.stat().st_mode & 0o111 != 0,
+        "quiet-host inventory helper: script must be executable",
+    )
+    for required in [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "pgrep -x firecracker",
+        "kubectl get pod -A -o json",
+        "systemctl --user status",
+        "Refusing close-quality q420k measurement",
+        "This script is inventory only",
+        "exit 1",
+    ]:
+        check.require(required in text, f"quiet-host inventory helper: missing {required}")
+    for forbidden in [
+        r"\bkill\s+-?[0-9]",
+        r"\bpkill\b",
+        r"\bkillall\b",
+        r"\bkubectl\s+(delete|drain|scale|patch|cordon|taint)\b",
+        r"\bsystemctl\s+(--user\s+)?(stop|kill|restart)\b",
+    ]:
+        check.require(
+            re.search(forbidden, text) is None,
+            f"quiet-host inventory helper: contains forbidden mutating pattern {forbidden}",
+        )
     return check.errors
 
 
@@ -1245,6 +1279,12 @@ def git_stdout(args: list[str]) -> str | None:
 
 def run_checks(args: argparse.Namespace) -> int:
     check_specs = [
+        (
+            "quiet-host-inventory",
+            "quiet-host inventory helper",
+            verify_quiet_host_inventory,
+            artifact_path(args.quiet_host_inventory),
+        ),
         ("snapshot-template", "snapshot template", verify_snapshot_template, artifact_path(args.snapshot_template)),
         ("snapshot-doc", "snapshot doc", verify_snapshot_doc, artifact_path(args.snapshot_doc)),
         ("pmem-density", "pmem density", verify_pmem_density, artifact_path(args.pmem_density)),
@@ -1333,6 +1373,7 @@ def run_self_tests() -> int:
         composed_doc = tmp / "composed-e2e.md"
         ext4_overlay = tmp / "ext4-overlay.md"
         dax_pressure = tmp / "dax-pressure.md"
+        quiet_host_inventory = tmp / "q420k-quiet-host-inventory.sh"
         preflight_artifacts = {
             "firecracker_bin": "/opt/firecracker/bin/firecracker",
             "firecracker_seccomp_filter": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
@@ -1503,6 +1544,19 @@ sudo -n env \
 """
         )
         density_smoke.chmod(0o755)
+        quiet_host_inventory.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+
+mapfile -t firecracker_pids < <(pgrep -x firecracker || true)
+kubectl get pod -A -o json
+systemctl --user status "tmux-spawn-example.scope" --no-pager --lines=0
+echo "Refusing close-quality q420k measurement on this host until the listed processes are gone."
+echo "This script is inventory only; it does not drain, signal, or kill anything."
+exit 1
+"""
+        )
+        quiet_host_inventory.chmod(0o755)
         restore.write_text(json.dumps({
             "schema_version": 1,
             "scenario": "composed_e2e_layered_warm_pool",
@@ -1724,6 +1778,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             snapshot_doc=snapshot_doc,
             pmem_density=density,
             pmem_density_smoke=density_smoke,
+            quiet_host_inventory=quiet_host_inventory,
             composed_restore=restore,
             composed_memory=memory,
             composed_residue=residue,
@@ -2058,6 +2113,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--snapshot-doc", default=DEFAULT_SNAPSHOT_DOC)
     p.add_argument("--pmem-density", default=DEFAULT_DENSITY)
     p.add_argument("--pmem-density-smoke", default=DEFAULT_DENSITY_SMOKE)
+    p.add_argument("--quiet-host-inventory", default=DEFAULT_QUIET_HOST_INVENTORY)
     p.add_argument("--composed-restore", default=DEFAULT_COMPOSED_RESTORE)
     p.add_argument("--composed-memory", default=DEFAULT_COMPOSED_MEMORY)
     p.add_argument("--composed-residue", default=DEFAULT_COMPOSED_RESIDUE)
@@ -2070,6 +2126,7 @@ def parser() -> argparse.ArgumentParser:
         choices=[
             "snapshot-template",
             "snapshot-doc",
+            "quiet-host-inventory",
             "pmem-density",
             "pmem-density-smoke",
             "composed-restore",
