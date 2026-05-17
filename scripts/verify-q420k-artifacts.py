@@ -2179,6 +2179,16 @@ def run_checks(args: argparse.Namespace) -> int:
         except AssertionError as exc:
             checks.append((label, [f"{label}: {exc}"]))
     errors = [error for _, group in checks for error in group]
+    if selected and getattr(args, "require_parent_phases_closed", False):
+        errors.append(
+            "--require-parent-phases-closed cannot be combined with --only; "
+            "run the full A-F guard for parent close"
+        )
+    if selected and getattr(args, "require_super_epic_closed", False):
+        errors.append(
+            "--require-super-epic-closed cannot be combined with --only; "
+            "run the full A-F guard for super-epic close"
+        )
     selected_keys = {key for key, _, _, _ in check_specs}
     if {"snapshot-template", "snapshot-doc"}.issubset(selected_keys):
         snapshot_path = artifact_path(args.snapshot_template)
@@ -2912,6 +2922,12 @@ The measured signal is acceptable under the same-trust-domain assumption.
         ok_status = quiet_run_checks(args)
         args.only = ["composed-doc"]
         composed_doc_subset_status = quiet_run_checks(args)
+        args.require_parent_phases_closed = True
+        subset_parent_flag_status = quiet_run_checks(args)
+        args.require_parent_phases_closed = False
+        args.require_super_epic_closed = True
+        subset_super_flag_status = quiet_run_checks(args)
+        args.require_super_epic_closed = False
         args.only = None
         original_close_artifact_paths = REQUIRED_CLOSE_ARTIFACT_PATHS
         try:
@@ -3571,6 +3587,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
         if (
             ok_status != 0
             or composed_doc_subset_status != 0
+            or subset_parent_flag_status == 0
+            or subset_super_flag_status == 0
             or close_artifact_paths_status != 0
             or close_artifact_paths_ignored_status == 0
             or ext4_status != 0

@@ -299,6 +299,11 @@ br blocked --json | jq '[.[] | select(.id == "m80-q420k" or .id == "m80-q420k.3"
 br dep cycles --json
 ```
 
+Do not add `--only` to the parent or super-epic close commands. Subset checks
+are only for leaf preflight/debugging, and the verifier rejects `--only` when
+combined with `--require-parent-phases-closed` or
+`--require-super-epic-closed`.
+
 `m80-q420k` is ready to close only when the verifier passes and the filtered
 `br blocked` command shows no remaining blockers for `m80-q420k`, `.3`, `.4`,
 or `.6`. The verifier also checks those q420k blocker rows and dependency
