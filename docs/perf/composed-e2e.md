@@ -89,10 +89,10 @@ phases and workload exec completions for every lease. With `--require-committed`
 it also rejects
 missing or malformed preflight artifact identity, artifacts absent from `HEAD`,
 malformed `git_commit`, mismatched composed JSON identity/count/digest fields,
-receipt text that does not mention the JSON artifacts' measured commit,
-substrate identity, Shared image digest, and exactly one smoke artifact-write
-line for each canonical composed JSON file, or artifacts with staged/unstaged
-changes.
+receipt text whose `## Method` section does not mention the JSON artifacts'
+measured commit and substrate identity, receipt sections missing the Shared
+image digest, and exactly one smoke artifact-write line for each canonical
+composed JSON file, or artifacts with staged/unstaged changes.
 
 Before closing `.6.5` or the parent super-epic, run the verifier without
 `--only` so it also checks the Phase C density, Phase D snapshot-template

@@ -1810,6 +1810,7 @@ def verify_composed_doc_consistency(
     residue = load_json(residue_path)
     check = Check()
     method = markdown_section(text, "Method")
+    method_text = method or ""
     command = markdown_shell_block(method) if method is not None else None
     restore_section = markdown_section(text, "Restore latency")
     host_memory_section = markdown_section(text, "Host memory delta")
@@ -1817,7 +1818,10 @@ def verify_composed_doc_consistency(
 
     commit = restore.get("git_commit")
     if isinstance(commit, str):
-        check.require(commit in text, "composed doc: missing measured git_commit from JSON artifacts")
+        check.require(
+            commit in method_text,
+            "composed doc: Method section missing measured git_commit from JSON artifacts",
+        )
 
     preflight = at(restore, "substrate.preflight_artifacts")
     if isinstance(preflight, dict):
@@ -1835,8 +1839,9 @@ def verify_composed_doc_consistency(
         ]:
             value = preflight.get(field)
             check.require(
-                isinstance(value, str) and value in text,
-                f"composed doc: missing substrate.preflight_artifacts.{field} from JSON artifacts",
+                isinstance(value, str) and value in method_text,
+                f"composed doc: Method section missing "
+                f"substrate.preflight_artifacts.{field} from JSON artifacts",
             )
         if command is not None:
             for env, field in [
@@ -1862,8 +1867,8 @@ def verify_composed_doc_consistency(
         value = at(restore, f"substrate.{field}")
         if isinstance(value, str):
             check.require(
-                f"{label}: `{value}`" in text,
-                f"composed doc: missing substrate.{field} from JSON artifact",
+                f"{label}: `{value}`" in method_text,
+                f"composed doc: Method section missing substrate.{field} from JSON artifact",
             )
 
     shared_digest = at(memory, "data.host_memory.shared_image_digest")
@@ -4711,6 +4716,92 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\nPreflight artifacts:",
             )
         )
+        composed_doc_identity_outside_method = (
+            composed_doc.read_text()
+            .replace(
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                "",
+                1,
+            )
+            .replace(
+                "# Composed E2E\n\n",
+                "# Composed E2E\n\n"
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                1,
+            )
+        )
+        composed_doc.write_text(composed_doc_identity_outside_method)
+        composed_doc_identity_outside_method_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_identity_outside_method
+            .replace(
+                "# Composed E2E\n\n"
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                "# Composed E2E\n\n",
+                1,
+            )
+            .replace(
+                "Preflight artifacts:",
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n"
+                "Preflight artifacts:",
+                1,
+            )
+        )
+        composed_doc_preflight_outside_method = (
+            composed_doc.read_text()
+            .replace(
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                "",
+                1,
+            )
+            .replace(
+                "# Composed E2E\n\n",
+                "# Composed E2E\n\n"
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                1,
+            )
+        )
+        composed_doc.write_text(composed_doc_preflight_outside_method)
+        composed_doc_preflight_outside_method_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_preflight_outside_method
+            .replace(
+                "# Composed E2E\n\n"
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                "# Composed E2E\n\n",
+                1,
+            )
+            .replace(
+                "Preflight artifacts:\n\n",
+                "Preflight artifacts:\n\n"
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                1,
+            )
+        )
+        composed_doc_substrate_outside_method = (
+            composed_doc.read_text()
+            .replace("- host kernel release: `6.17.0-23-generic`\n", "", 1)
+            .replace(
+                "# Composed E2E\n\n",
+                "# Composed E2E\n\n- host kernel release: `6.17.0-23-generic`\n\n",
+                1,
+            )
+        )
+        composed_doc.write_text(composed_doc_substrate_outside_method)
+        composed_doc_substrate_outside_method_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_substrate_outside_method
+            .replace(
+                "# Composed E2E\n\n- host kernel release: `6.17.0-23-generic`\n\n",
+                "# Composed E2E\n\n",
+                1,
+            )
+            .replace(
+                "Substrate details:\n\n",
+                "Substrate details:\n\n- host kernel release: `6.17.0-23-generic`\n",
+                1,
+            )
+        )
         composed_doc_bad_host_memory_digest = composed_doc.read_text().replace(
             "Shared image digest: `1111111111111111111111111111111111111111111111111111111111111111`.\n\n",
             "",
@@ -4978,6 +5069,9 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or composed_playbook_bad_helper_status == 0
             or composed_playbook_bad_run_root_status == 0
             or missing_doc_json_identity_status == 0
+            or composed_doc_identity_outside_method_status == 0
+            or composed_doc_preflight_outside_method_status == 0
+            or composed_doc_substrate_outside_method_status == 0
             or missing_doc_host_memory_digest_status == 0
             or missing_doc_residue_root_status == 0
             or missing_doc_restore_number_status == 0

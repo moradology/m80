@@ -240,8 +240,9 @@ and post-restore-hook diagnostics, and workload exec completions were observed.
 The residue artifact must also record lowercase sha256 Shared and PerVm
 image-store digests, make the expected image set exactly those two digests, and
 use lowercase sha256 template-store fingerprints. The full guard
-also checks that the receipt doc mentions the measured git commit, substrate
-identity, Shared image digest from those JSON artifacts, and green
+also checks that the receipt doc's `## Method` section mentions the measured
+git commit and substrate identity from those JSON artifacts, that the receipt
+mentions the Shared image digest, and that it has green
 `composed_e2e_layered_warm_pool` test-result lines, with exactly one
 `M80_COMPOSED_E2E_ARTIFACT` smoke line inside `## Smoke evidence` for each
 canonical composed JSON artifact. It also cross-checks the receipt's

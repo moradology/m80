@@ -661,12 +661,13 @@ test-result lines, with exactly one `M80_COMPOSED_E2E_ARTIFACT` smoke line
 inside `## Smoke evidence` for each canonical composed JSON artifact. The
 verifier also checks that the three
 composed JSON artifacts agree on `git_commit`, `substrate`, target count, and
-lowercase sha256 Shared image digest, and that the receipt doc mentions the
-measured git commit, substrate identity, the Shared image digest in the
-host-memory and residue sections, restore P50/P95/P99 in the restore section,
-host-memory byte values in the host-memory section, residue roots in the residue
-section, and command-block helper/kernel/rootfs/run-root assignments from those
-JSON artifacts. Run the composed
+lowercase sha256 Shared image digest, and that the receipt doc's `## Method`
+section mentions the measured git commit and substrate identity from those
+artifacts, the Shared image digest appears in the host-memory and residue
+sections, restore P50/P95/P99 appear in the restore section, host-memory byte
+values appear in the host-memory section, residue roots appear in the residue
+section, and command-block helper/kernel/rootfs/run-root assignments match
+those JSON artifacts. Run the composed
 JSON subset after committing artifacts and before closing `m80-q420k.6.2`,
 `.6.3`, and `.6.4`:
 
