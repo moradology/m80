@@ -233,9 +233,11 @@ crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json
 Replace the diagnostic values in `docs/perf/composed-e2e.md` with the
 close-quality host context, tables, and smoke paste from that run. Then verify
 the composed subset. This also checks that the three JSON artifacts agree on
-`git_commit`, substrate, target count, and lowercase sha256 Shared image
-digest, and that the Phase F cardinality is exactly N=10 across restore,
-host-memory, and residue. The restore artifact's `samples_ms` array must back
+`git_commit`, `run_id`, substrate, target count, and lowercase sha256 Shared
+image digest, and that the Phase F cardinality is exactly N=10 across restore,
+host-memory, and residue. The shared `run_id` is the close guard for the
+"same invocation emits all three artifacts" requirement. The restore artifact's
+`samples_ms` array must back
 its `count`, `target_ready` must equal `count`, and P50/P95/P99 values must
 recompute from that same sample array. Runtime substrate fields must show host
 kernel >= 6.5, `/dev/kvm` rw, sudo uid `0`, and actual Firecracker version
@@ -246,8 +248,8 @@ The residue artifact must also record lowercase sha256 Shared and PerVm
 image-store digests, make the expected image set exactly those two digests, and
 use lowercase sha256 template-store fingerprints. The full guard
 also checks that the receipt doc's `## Method` section mentions the measured
-git commit and substrate identity from those JSON artifacts, that the receipt
-mentions the Shared image digest, and that it has green
+git commit, run ID, and substrate identity from those JSON artifacts, that the
+receipt mentions the Shared image digest, and that it has green
 `composed_e2e_layered_warm_pool` test-result lines, with exactly one
 `M80_COMPOSED_E2E_ARTIFACT` smoke line inside `## Smoke evidence` for each
 canonical composed JSON artifact. It also cross-checks the receipt's

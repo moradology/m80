@@ -5,8 +5,9 @@
 > replace the diagnostic values below with artifacts whose substrate records
 > `allow_other_firecracker_vms=false` and an empty pre-existing Firecracker
 > process list plus an empty post-run Firecracker process list and preflight
-> artifact identity, and whose top-level `git_commit` records the measured
-> source commit.
+> artifact identity, whose top-level `git_commit` records the measured source
+> commit, and whose shared top-level `run_id` proves all three JSON files came
+> from one composed test invocation.
 
 Beads: `m80-q420k.6.2`, `m80-q420k.6.3`, `m80-q420k.6.4`,
 `m80-q420k.6.5`.
@@ -67,7 +68,7 @@ process list under `substrate`. Close-quality JSON also records an empty
 Firecracker/jailer/kernel/rootfs inputs and manifest sha256s, plus runtime
 substrate details for host kernel release, actual Firecracker version,
 `/dev/kvm` stat output, and sudo uid. Each JSON artifact also records the full
-measured `git_commit`.
+measured `git_commit` and the same top-level `run_id`.
 
 Before closing `m80-q420k.6.2`, `.6.3`, or `.6.4`, after committing the
 artifacts, run:
@@ -88,11 +89,12 @@ concurrent lease shape, plus diagnostics for restore/load/probe/post-restore-hoo
 phases and workload exec completions for every lease. With `--require-committed`,
 it also rejects
 missing or malformed preflight artifact identity, artifacts absent from `HEAD`,
-malformed `git_commit`, mismatched composed JSON identity/count/digest fields,
-receipt text whose `## Method` section does not mention the JSON artifacts'
-measured commit and substrate identity, receipt sections missing the Shared
-image digest, and exactly one smoke artifact-write line for each canonical
-composed JSON file, or artifacts with staged/unstaged changes.
+malformed `git_commit`, mismatched composed JSON identity/run_id/count/digest
+fields, receipt text whose `## Method` section does not
+mention the JSON artifacts' measured commit, run ID, and substrate identity,
+receipt sections missing the Shared image digest, and exactly one smoke
+artifact-write line for each canonical composed JSON file, or artifacts with
+staged/unstaged changes.
 
 Before closing `.6.5` or the parent super-epic, run the verifier without
 `--only` so it also checks the Phase C density, Phase D snapshot-template

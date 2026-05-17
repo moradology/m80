@@ -80,6 +80,7 @@ fn composed_e2e_layered_warm_pool() {
     let shared_image_bytes = shared_image_metadata.len();
 
     let prefix = snapshot_template_support::unique_suffix("composed");
+    let run_id = prefix.clone();
     let admission_capacity = target_ready * 2 + BACKGROUND_REFILL_HEADROOM;
     let backend = Arc::new(
         Backend::new(make_backend_config(
@@ -288,6 +289,7 @@ fn composed_e2e_layered_warm_pool() {
             substrate.clone(),
             git_worktree_dirty_excluding_artifacts,
             &git_commit,
+            &run_id,
         ),
     );
     write_json_artifact(
@@ -295,6 +297,7 @@ fn composed_e2e_layered_warm_pool() {
         json!({
             "schema_version": 1,
             "scenario": "composed_e2e_layered_warm_pool",
+            "run_id": run_id.as_str(),
             "substrate": substrate.clone(),
             "git_worktree_dirty_excluding_artifacts": git_worktree_dirty_excluding_artifacts,
             "git_commit": git_commit.as_str(),
@@ -339,6 +342,7 @@ fn composed_e2e_layered_warm_pool() {
             substrate,
             git_worktree_dirty_excluding_artifacts,
             &git_commit,
+            &run_id,
         ),
     );
 
@@ -711,6 +715,7 @@ fn restore_artifact(
     substrate: serde_json::Value,
     git_worktree_dirty_excluding_artifacts: bool,
     git_commit: &str,
+    run_id: &str,
 ) -> serde_json::Value {
     let samples_ms = samples_us
         .iter()
@@ -719,6 +724,7 @@ fn restore_artifact(
     json!({
         "schema_version": 1,
         "scenario": "composed_e2e_layered_warm_pool",
+        "run_id": run_id,
         "substrate": substrate,
         "git_worktree_dirty_excluding_artifacts": git_worktree_dirty_excluding_artifacts,
         "git_commit": git_commit,
@@ -937,10 +943,12 @@ impl ResidueReport {
         substrate: serde_json::Value,
         git_worktree_dirty_excluding_artifacts: bool,
         git_commit: &str,
+        run_id: &str,
     ) -> serde_json::Value {
         json!({
             "schema_version": 1,
             "scenario": "composed_e2e_layered_warm_pool",
+            "run_id": run_id,
             "substrate": substrate,
             "git_worktree_dirty_excluding_artifacts": git_worktree_dirty_excluding_artifacts,
             "git_commit": git_commit,

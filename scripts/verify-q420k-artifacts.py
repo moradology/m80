@@ -315,6 +315,14 @@ def composed_runtime_substrate(data: Any, label: str, check: Check) -> None:
     )
 
 
+def require_composed_run_id(check: Check, label: str, data: Any) -> None:
+    run_id = data.get("run_id") if isinstance(data, dict) else None
+    check.require(
+        isinstance(run_id, str) and re.fullmatch(r"composed-[0-9a-f]{4,}", run_id) is not None,
+        f"{label}: run_id must identify the composed test invocation",
+    )
+
+
 def verify_preflight_artifacts(artifacts: Any, label: str, check: Check) -> None:
     check.require(isinstance(artifacts, dict), f"{label}: missing substrate.preflight_artifacts object")
     if not isinstance(artifacts, dict):
@@ -1218,6 +1226,7 @@ def verify_composed_restore(path: Path) -> list[str]:
         data.get("scenario") == "composed_e2e_layered_warm_pool",
         "composed restore: scenario mismatch",
     )
+    require_composed_run_id(check, "composed restore", data)
     check.require(
         data.get("git_worktree_dirty_excluding_artifacts") is False,
         "composed restore: measured source worktree must be clean except for artifacts",
@@ -1411,6 +1420,7 @@ def verify_composed_memory(path: Path) -> list[str]:
         data.get("scenario") == "composed_e2e_layered_warm_pool",
         "composed memory: scenario mismatch",
     )
+    require_composed_run_id(check, "composed memory", data)
     check.require(
         data.get("git_worktree_dirty_excluding_artifacts") is False,
         "composed memory: measured source worktree must be clean except for artifacts",
@@ -1614,6 +1624,7 @@ def verify_composed_residue(path: Path) -> list[str]:
         data.get("scenario") == "composed_e2e_layered_warm_pool",
         "composed residue: scenario mismatch",
     )
+    require_composed_run_id(check, "composed residue", data)
     check.require(
         data.get("git_worktree_dirty_excluding_artifacts") is False,
         "composed residue: measured source worktree must be clean except for artifacts",
@@ -1751,6 +1762,13 @@ def verify_composed_consistency(
         restore_commit == memory_commit == residue_commit,
         "composed consistency: restore, memory, and residue artifacts must share git_commit",
     )
+    restore_run_id = restore.get("run_id")
+    memory_run_id = memory.get("run_id")
+    residue_run_id = residue.get("run_id")
+    check.require(
+        restore_run_id == memory_run_id == residue_run_id,
+        "composed consistency: restore, memory, and residue artifacts must share run_id",
+    )
     check.require(
         restore.get("substrate") == memory.get("substrate") == residue.get("substrate"),
         "composed consistency: restore, memory, and residue artifacts must share identical substrate",
@@ -1852,6 +1870,12 @@ def verify_composed_doc_consistency(
         check.require(
             commit in method_text,
             "composed doc: Method section missing measured git_commit from JSON artifacts",
+        )
+    run_id = restore.get("run_id")
+    if isinstance(run_id, str):
+        check.require(
+            run_id in method_text,
+            "composed doc: Method section missing run_id from JSON artifacts",
         )
 
     preflight = at(restore, "substrate.preflight_artifacts")
@@ -3046,6 +3070,7 @@ def run_self_tests() -> int:
             "expected_firecracker_version": "v1.15.1",
         }
         git_commit = "c" * 40
+        composed_run_id = "composed-1a2b"
         shared_digest = "1" * 64
         per_vm_digest = "2" * 64
         snapshot_samples_us = [199_000 for _ in range(SNAPSHOT_TEMPLATE_SAMPLES_TOTAL)]
@@ -3445,6 +3470,7 @@ exit 1
         restore.write_text(json.dumps({
             "schema_version": 1,
             "scenario": "composed_e2e_layered_warm_pool",
+            "run_id": composed_run_id,
             "git_worktree_dirty_excluding_artifacts": False,
             "git_commit": git_commit,
             "page_cache_dropped_between_leases": False,
@@ -3524,6 +3550,7 @@ exit 1
         memory.write_text(json.dumps({
             "schema_version": 1,
             "scenario": "composed_e2e_layered_warm_pool",
+            "run_id": composed_run_id,
             "git_worktree_dirty_excluding_artifacts": False,
             "git_commit": git_commit,
             "page_cache_dropped_between_fill_and_attach": False,
@@ -3581,6 +3608,7 @@ exit 1
         residue.write_text(json.dumps({
             "schema_version": 1,
             "scenario": "composed_e2e_layered_warm_pool",
+            "run_id": composed_run_id,
             "git_worktree_dirty_excluding_artifacts": False,
             "git_commit": git_commit,
             "substrate": substrate,
@@ -3646,6 +3674,9 @@ Page cache was not dropped inside the run.
 
 Measured git commit:
 `cccccccccccccccccccccccccccccccccccccccc`
+
+Run ID:
+`composed-1a2b`
 
 Preflight artifacts:
 
@@ -4573,6 +4604,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore_bad_page_cache_status = quiet_run_checks(args)
         restore_bad["page_cache_dropped_between_leases"] = False
         restore.write_text(json.dumps(restore_bad))
+        restore_bad.pop("run_id")
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_run_id_status = quiet_run_checks(args)
+        restore_bad["run_id"] = composed_run_id
+        restore.write_text(json.dumps(restore_bad))
         restore_bad["substrate"]["host_kernel_release"] = "6.1.0"
         restore.write_text(json.dumps(restore_bad))
         restore_bad_host_kernel_status = quiet_run_checks(args)
@@ -4792,6 +4828,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
         composed_bad_consistency_status = quiet_run_checks(args)
         memory_bad["git_commit"] = git_commit
         memory.write_text(json.dumps(memory_bad))
+        memory_bad["run_id"] = "composed-ffff"
+        memory.write_text(json.dumps(memory_bad))
+        composed_bad_run_id_consistency_status = quiet_run_checks(args)
+        memory_bad["run_id"] = composed_run_id
+        memory.write_text(json.dumps(memory_bad))
         args.only = None
         args.require_committed = True
         uncommitted_status = quiet_run_checks(args)
@@ -4940,6 +4981,48 @@ The measured signal is acceptable under the same-trust-domain assumption.
             composed_doc_bad.replace(
                 "Preflight artifacts:",
                 "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\nPreflight artifacts:",
+            )
+        )
+        composed_doc_missing_run_id = composed_doc.read_text().replace(
+            "Run ID:\n`composed-1a2b`\n\n",
+            "",
+            1,
+        )
+        composed_doc.write_text(composed_doc_missing_run_id)
+        missing_doc_run_id_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_missing_run_id.replace(
+                "Preflight artifacts:",
+                "Run ID:\n`composed-1a2b`\n\nPreflight artifacts:",
+                1,
+            )
+        )
+        composed_doc_run_id_outside_method = (
+            composed_doc.read_text()
+            .replace(
+                "Run ID:\n`composed-1a2b`\n\n",
+                "",
+                1,
+            )
+            .replace(
+                "# Composed E2E\n\n",
+                "# Composed E2E\n\nRun ID:\n`composed-1a2b`\n\n",
+                1,
+            )
+        )
+        composed_doc.write_text(composed_doc_run_id_outside_method)
+        composed_doc_run_id_outside_method_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_run_id_outside_method
+            .replace(
+                "# Composed E2E\n\nRun ID:\n`composed-1a2b`\n\n",
+                "# Composed E2E\n\n",
+                1,
+            )
+            .replace(
+                "Preflight artifacts:",
+                "Run ID:\n`composed-1a2b`\n\nPreflight artifacts:",
+                1,
             )
         )
         composed_doc_identity_outside_method = (
@@ -5289,6 +5372,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or quiet_host_inventory_not_executable_status == 0
             or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
+            or restore_bad_run_id_status == 0
             or restore_bad_host_kernel_status == 0
             or restore_bad_kvm_status == 0
             or restore_bad_sudo_status == 0
@@ -5317,6 +5401,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or residue_bad_leased_run_dir_status == 0
             or residue_bad_leased_run_dir_root_status == 0
             or composed_bad_consistency_status == 0
+            or composed_bad_run_id_consistency_status == 0
             or uncommitted_status == 0
             or diagnostic_doc_status == 0
             or composed_doc_bad_artifact_marker_status == 0
@@ -5330,6 +5415,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or composed_playbook_bad_run_root_status == 0
             or composed_playbook_artifact_outside_section_status == 0
             or missing_doc_json_identity_status == 0
+            or missing_doc_run_id_status == 0
+            or composed_doc_run_id_outside_method_status == 0
             or composed_doc_identity_outside_method_status == 0
             or composed_doc_preflight_outside_method_status == 0
             or composed_doc_substrate_outside_method_status == 0
