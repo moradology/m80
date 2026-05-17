@@ -1795,6 +1795,9 @@ def verify_composed_doc_consistency(
     check = Check()
     method = markdown_section(text, "Method")
     command = markdown_shell_block(method) if method is not None else None
+    restore_section = markdown_section(text, "Restore latency")
+    host_memory_section = markdown_section(text, "Host memory delta")
+    residue_section = markdown_section(text, "Residue")
 
     commit = restore.get("git_commit")
     if isinstance(commit, str):
@@ -1850,14 +1853,21 @@ def verify_composed_doc_consistency(
     shared_digest = at(memory, "data.host_memory.shared_image_digest")
     residue_shared = at(residue, "data.residue.image_store.shared_digest")
     if isinstance(shared_digest, str) and shared_digest == residue_shared:
-        check.require(shared_digest in text, "composed doc: missing Shared image digest from JSON artifacts")
+        check.require(
+            shared_digest in (host_memory_section or ""),
+            "composed doc: missing Shared image digest from host-memory section",
+        )
+        check.require(
+            shared_digest in (residue_section or ""),
+            "composed doc: missing Shared image digest from residue section",
+        )
     for field in ["p50_ms", "p95_ms", "p99_ms"]:
         value = at(restore, f"data.restore_latency.{field}")
         if is_number(value):
             require_text_contains_number(
                 check,
                 f"composed doc: restore {field}",
-                text,
+                restore_section or "",
                 value,
                 f"{float(value):.3f} ms",
             )
@@ -1872,7 +1882,7 @@ def verify_composed_doc_consistency(
             require_text_contains_number(
                 check,
                 f"composed doc: host_memory {field}",
-                text,
+                host_memory_section or "",
                 value,
                 f"{int(value):,}",
             )
@@ -1895,7 +1905,8 @@ def verify_composed_doc_consistency(
                     root,
                 )
             check.require(
-                f"`{root}`" in text or f"`{display_root}`" in text,
+                f"`{root}`" in (residue_section or "")
+                or f"`{display_root}`" in (residue_section or ""),
                 f"composed doc: missing residue scanned root from JSON artifacts: {display_root}",
             )
     return check.errors
@@ -3611,9 +3622,13 @@ Raw artifacts:
 | derived `per_vm_overhead_bytes` | 1 |
 | bound (`shared_image_bytes + per_vm_overhead_bytes * N`) | 20 |
 
+Shared image digest: `1111111111111111111111111111111111111111111111111111111111111111`.
+
 `after_n_attached_delta_bytes` stayed within bound.
 
 ## Residue
+
+Shared image digest: `1111111111111111111111111111111111111111111111111111111111111111`.
 
 Scanned roots:
 
@@ -4638,6 +4653,21 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\nPreflight artifacts:",
             )
         )
+        composed_doc_bad_host_memory_digest = composed_doc.read_text().replace(
+            "Shared image digest: `1111111111111111111111111111111111111111111111111111111111111111`.\n\n",
+            "",
+            1,
+        )
+        composed_doc.write_text(composed_doc_bad_host_memory_digest)
+        missing_doc_host_memory_digest_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_bad_host_memory_digest.replace(
+                "`after_n_attached_delta_bytes` stayed within bound.",
+                "Shared image digest: `1111111111111111111111111111111111111111111111111111111111111111`.\n\n"
+                "`after_n_attached_delta_bytes` stayed within bound.",
+                1,
+            )
+        )
         composed_doc_bad_residue_root = composed_doc.read_text().replace(
             "- `/var/lib/m80-composed-e2e`",
             "- `/var/lib/m80-runs`",
@@ -4887,6 +4917,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or composed_playbook_bad_helper_status == 0
             or composed_playbook_bad_run_root_status == 0
             or missing_doc_json_identity_status == 0
+            or missing_doc_host_memory_digest_status == 0
             or missing_doc_residue_root_status == 0
             or missing_doc_restore_number_status == 0
             or missing_doc_substrate_status == 0

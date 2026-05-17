@@ -121,6 +121,9 @@ separately. The N=10 restore samples exclude that build path.
 
 Artifact: `composed-e2e-host-memory.json`.
 
+Shared image digest:
+`51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd`.
+
 | field | bytes |
 |---|---:|
 | composed `after_n_attached_delta_bytes` | 58,433,536 |
@@ -150,7 +153,7 @@ Artifact: `composed-e2e-residue.json`.
 | check | result |
 |---|---|
 | unexpected paths | `[]` |
-| image store preserved | expected Shared and PerVm digests only |
+| image store preserved | expected Shared digest `51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd` and PerVm digest `591aa08af783982da87fb19113fe2841068ccdfcd5dcfd2bc8a7d2ee0f580c9e` only |
 | template store preserved | `13bf71c6468722d6a0a5bd2c57509c396c3abeb2b2a87e150838143b9e8899cb` |
 
 Scanned roots:

@@ -244,9 +244,11 @@ also checks that the receipt doc mentions the measured git commit, substrate
 identity, Shared image digest from those JSON artifacts, and green
 `composed_e2e_layered_warm_pool` test-result lines, with exactly one
 `M80_COMPOSED_E2E_ARTIFACT` smoke line inside `## Smoke evidence` for each
-canonical composed JSON artifact. It also cross-checks the receipt's command-block env assignments,
-restore P50/P95/P99, and host-memory byte values against the JSON artifacts;
-prose outside the command block does not satisfy command requirements. The
+canonical composed JSON artifact. It also cross-checks the receipt's
+command-block env assignments, restore-section P50/P95/P99, host-memory-section
+byte values, residue-section scan roots, and the Shared image digest in both the
+host-memory and residue sections against the JSON artifacts; prose outside the
+command block does not satisfy command requirements. The
 host-memory subset check also recomputes `bound_bytes` from
 `shared_image_bytes`,
 `per_vm_overhead_bytes`, and `n_attached`, verifies the attached-memory delta
