@@ -74,6 +74,18 @@ systemctl --user status '<scope-name>.scope' --no-pager
 These commands are inventory only. Do not use them as approval to terminate the
 processes.
 
+If the inventory shows a noisy single-node host and no alternate real-KVM
+runner is available, send an approval request that names the exact workloads to
+pause, the measurement window, and the restore plan. The request should include:
+
+- the Kubernetes controller, namespace, pod name, node, and Firecracker PIDs;
+- any user systemd/tmux scope, owning process names, and Firecracker PIDs;
+- the q420k leaves that will be measured while the host is quiet;
+- confirmation that the pause is temporary and that Kubernetes workloads will
+  be restored after the measurement run;
+- a reminder that q420k agents must not drain, signal, kill, or scale these
+  workloads without explicit operator approval.
+
 Run close-quality measurements from a clean worktree except for the artifact
 path being produced. The artifact guards reject measurements that record
 uncommitted source changes.
