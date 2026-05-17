@@ -683,6 +683,7 @@ def verify_pmem_density(path: Path) -> list[str]:
         text,
         r"- canonical Shared artifact present after teardown: `([^`]+)`",
     )
+    samples = pmem_density_samples(text)
 
     check.require(
         command is not None,
@@ -765,6 +766,38 @@ def verify_pmem_density(path: Path) -> list[str]:
     check.require(is_number(max_delta), "pmem density: max observed delta KiB must be numeric")
     if is_number(max_delta) and is_number(bound):
         check.require(max_delta <= bound, f"pmem density: max delta {max_delta} exceeds bound {bound}")
+    check.require(samples is not None, "pmem density: missing Samples table")
+    if samples is not None:
+        if is_number(cycles):
+            check.require(
+                len(samples) == cycles,
+                f"pmem density: Samples row count must equal cycles ({cycles})",
+            )
+            check.require(
+                [sample["cycle"] for sample in samples] == list(range(1, int(cycles) + 1)),
+                "pmem density: Samples cycles must cover 1..cycles exactly",
+            )
+        if is_number(bound):
+            for sample in samples:
+                check.require(
+                    sample["bound_kib"] == bound,
+                    f"pmem density: sample {sample['cycle']} bound must equal summary bound",
+                )
+                check.require(
+                    sample["delta_kib"] <= bound,
+                    f"pmem density: sample {sample['cycle']} delta exceeds bound",
+                )
+        for sample in samples:
+            expected_delta = max(0, sample["before_kib"] - sample["after_kib"])
+            check.require(
+                sample["delta_kib"] == expected_delta,
+                f"pmem density: sample {sample['cycle']} delta must equal before-after",
+            )
+        if is_number(max_delta) and samples:
+            check.require(
+                max(sample["delta_kib"] for sample in samples) == max_delta,
+                "pmem density: max observed delta must equal max Samples delta",
+            )
     check.require(result == "pass", "pmem density: result must be pass")
     check.require(
         max_active_markers == vm_count,
@@ -1841,6 +1874,33 @@ def markdown_json_block(text: str, heading: str) -> Any | None:
         return None
 
 
+def pmem_density_samples(text: str) -> list[dict[str, int]] | None:
+    section = markdown_section(text, "Samples")
+    if section is None:
+        return None
+    samples: list[dict[str, int]] = []
+    for line in section.splitlines():
+        match = re.fullmatch(
+            r"\|\s*(?P<cycle>\d+)\s*"
+            r"\|\s*(?P<before>\d+)\s*"
+            r"\|\s*(?P<after>\d+)\s*"
+            r"\|\s*(?P<delta>\d+)\s*"
+            r"\|\s*(?P<bound>\d+)\s*\|",
+            line,
+        )
+        if match is not None:
+            samples.append(
+                {
+                    "cycle": int(match.group("cycle")),
+                    "before_kib": int(match.group("before")),
+                    "after_kib": int(match.group("after")),
+                    "delta_kib": int(match.group("delta")),
+                    "bound_kib": int(match.group("bound")),
+                }
+            )
+    return samples
+
+
 def markdown_section(text: str, heading: str) -> str | None:
     match = re.search(
         rf"^## {re.escape(heading)}\n\n(?P<body>.*?)(?=^## |\Z)",
@@ -2604,6 +2664,21 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
 - final active-use markers: `0`
 - stale markers swept after teardown: `0`
 - canonical Shared artifact present after teardown: `true`
+
+## Samples
+
+| cycle | MemAvailable before KiB | MemAvailable after KiB | delta KiB | bound KiB |
+|---:|---:|---:|---:|---:|
+| 1 | 8192 | 4096 | 4096 | 8192 |
+| 2 | 8192 | 4096 | 4096 | 8192 |
+| 3 | 8192 | 4096 | 4096 | 8192 |
+| 4 | 8192 | 4096 | 4096 | 8192 |
+| 5 | 8192 | 4096 | 4096 | 8192 |
+| 6 | 8192 | 4096 | 4096 | 8192 |
+| 7 | 8192 | 4096 | 4096 | 8192 |
+| 8 | 8192 | 4096 | 4096 | 8192 |
+| 9 | 8192 | 4096 | 4096 | 8192 |
+| 10 | 8192 | 4096 | 4096 | 8192 |
 
 ## Payload erofs layout
 
@@ -3449,6 +3524,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "### Firecracker process substrate",
             1,
         ))
+        density_bad_sample = density.read_text().replace(
+            "| 10 | 8192 | 4096 | 4096 | 8192 |",
+            "| 10 | 8192 | 4096 | 4097 | 8192 |",
+        )
+        density.write_text(density_bad_sample)
+        density_bad_sample_status = quiet_run_checks(args)
+        density.write_text(density_bad_sample.replace(
+            "| 10 | 8192 | 4096 | 4097 | 8192 |",
+            "| 10 | 8192 | 4096 | 4096 | 8192 |",
+        ))
         density_bad_repro = density.read_text().replace(
             "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 ",
             "",
@@ -3899,6 +3984,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_image_path_status == 0
             or density_bad_preflight_command_status == 0
             or density_duplicate_substrate_status == 0
+            or density_bad_sample_status == 0
             or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0

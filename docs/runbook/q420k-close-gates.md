@@ -136,7 +136,10 @@ cache-timing side channel, and read-only Shared pmem jail bindings. It also
 requires the measured Shared image digest to be a lowercase sha256 and its
 image path to be absolute and to contain that digest. The reproduction command
 must also match the Firecracker, jailer, helper, kernel, rootfs, version, and
-kernel-kind values in the artifact's `preflight_artifacts` block.
+kernel-kind values in the artifact's `preflight_artifacts` block. The
+`Samples` table must contain exactly one row per cycle, each row's delta must
+recompute from the MemAvailable before/after values, and the summary max delta
+must equal the table max.
 
 After committing the artifact, rerun the close guard with git-state checks:
 
