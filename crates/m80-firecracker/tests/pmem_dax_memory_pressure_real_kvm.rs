@@ -612,7 +612,7 @@ fn reproduction_command(path: &Path, report: &PressureReport) -> String {
             shell_quote(&artifact)
         ),
     ];
-    for env_name in ["M80_RUN_ROOT"] {
+    for env_name in ["M80_RUN_ROOT", "M80_JAIL_UID", "M80_JAIL_GID"] {
         if let Ok(value) = std::env::var(env_name) {
             push_env(&mut parts, env_name, &value);
         }
