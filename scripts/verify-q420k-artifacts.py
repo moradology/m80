@@ -94,6 +94,13 @@ PARENT_PHASE_CLOSE_REFERENCES = {
     ],
 }
 SUPER_EPIC_CLOSE_REFERENCE = ("m80-q420k.6", "docs/perf/composed-e2e.md")
+REQUIRED_STRIPPED_KERNEL_LABELS = {
+    "snapshot",
+    "pmem density",
+    "composed restore",
+    "composed memory",
+    "composed residue",
+}
 
 
 class Check:
@@ -213,6 +220,11 @@ def verify_preflight_artifacts(artifacts: Any, label: str, check: Check) -> None
         artifacts.get("kernel_kind") in {"stock", "stripped"},
         f"{label}: substrate.preflight_artifacts.kernel_kind must be stock or stripped",
     )
+    if label in REQUIRED_STRIPPED_KERNEL_LABELS:
+        check.require(
+            artifacts.get("kernel_kind") == "stripped",
+            f"{label}: substrate.preflight_artifacts.kernel_kind must be stripped",
+        )
     check.require(
         artifacts.get("image_kind") in {"ubuntu", "minimal"},
         f"{label}: substrate.preflight_artifacts.image_kind must be ubuntu or minimal",
@@ -1835,6 +1847,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
         bad_preflight_artifacts_status = quiet_run_checks(args)
         snapshot_bad["substrate"]["preflight_artifacts"]["kernel_image_sha256"] = "a" * 64
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["substrate"]["preflight_artifacts"]["kernel_kind"] = "stock"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        stock_kernel_status = quiet_run_checks(args)
+        snapshot_bad["substrate"]["preflight_artifacts"]["kernel_kind"] = "stripped"
+        snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["git_commit"] = "short"
         snapshot.write_text(json.dumps(snapshot_bad))
         bad_git_commit_status = quiet_run_checks(args)
@@ -2077,6 +2094,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or bad_substrate_status == 0
             or leaked_firecracker_status == 0
             or bad_preflight_artifacts_status == 0
+            or stock_kernel_status == 0
             or bad_git_commit_status == 0
             or snapshot_doc_bad_smoke_status == 0
             or density_bad_teardown_status == 0

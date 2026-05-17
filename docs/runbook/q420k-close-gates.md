@@ -41,6 +41,11 @@ appears, it prints owner inventory and exits 1. Stop there and ask the owner of
 those VMs before draining or killing them. The measurement harnesses fail
 closed on a noisy host.
 
+For q420k close artifacts, the preflight artifact identity must report
+`kernel_kind=stripped`. Do not pair a stock kernel path with
+`M80_KERNEL_KIND=stripped`; the close verifier rejects stock-kernel
+measurement artifacts for the Phase C, Phase D, and Phase F close gates.
+
 The helper is equivalent to this manual inventory. To identify the owner
 without changing host state, capture the process tree and cgroup first:
 
