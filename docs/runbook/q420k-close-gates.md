@@ -479,7 +479,7 @@ Phase G leaves are handled after, or in parallel with, the A-F close gate. They
 use the same measurement discipline, but they are not inputs to the
 `m80-q420k` super-epic close decision.
 
-`m80-q420k.8.16` is the ext4 overlay-template fallback recheck. The current
+`m80-q420k.8.16` is the ext4 overlay-template explicit byte-copy recheck. The current
 artifact path is:
 
 ```text

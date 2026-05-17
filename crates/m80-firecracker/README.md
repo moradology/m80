@@ -514,6 +514,13 @@ original rootfs pathname after preflight.
 (default: 512 MiB). The overlay grows as the guest writes; the sparse
 allocation costs zero disk bytes at creation.
 
+`SandboxConfig::overlay_clone_mode` controls how the empty overlay template is
+cloned for each VM. `ByteCopy` is the default and uses `cp --reflink=never`;
+`Reflink` requires metadata-only CoW clone semantics; `Auto` probes the
+run-root filesystem and selects one of those concrete modes before cloning.
+Once a concrete mode is selected, clone failure is returned to the caller; m80
+does not retry another mode.
+
 `SandboxConfig::drive_cache_type` overrides the writable preboot drive cache
 policy. `None` uses the m80 default, `CacheType::Unsafe`, for the ephemeral
 overlay and workspace drives. Set `Some(CacheType::Writeback)` when a caller
@@ -784,7 +791,9 @@ Core types:
   `load_boot_spec_json_str` — fail-closed YAML/JSON config parser for
   `pmem_layers` and snapshot-template warm strategy. The parser returns typed
   `ConfigError` variants before any host action.
-- `SandboxConfig` — per-VM launch parameters (request id, cpuset pin, overlay size, idle timeout, daemonize, pmem layers, preallocated drive slots, one-shot mode, etc.).
+- `SandboxConfig` — per-VM launch parameters (request id, cpuset pin, overlay size and clone policy, idle timeout, daemonize, pmem layers, preallocated drive slots, one-shot mode, etc.).
+- `OverlayTemplateCloneMode` — re-exported storage clone policy enum for
+  `SandboxConfig::overlay_clone_mode`.
 - `CpuTemplate` — re-exported Firecracker CPU template enum for callers that
   opt into `SandboxConfig::cpu_template`.
 - `CacheType` — re-exported Firecracker drive cache enum for callers that opt

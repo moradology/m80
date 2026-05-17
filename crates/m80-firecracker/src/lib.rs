@@ -45,7 +45,7 @@ pub use layout::{
 pub use m80_firecracker_client::{CacheType, CpuTemplate};
 pub use m80_net_mode::{MacAddr, NetnsSpec, NetworkPolicy};
 pub use m80_snapshot::SnapshotPaths;
-pub use m80_storage::ChangeSet;
+pub use m80_storage::{ChangeSet, OverlayTemplateCloneMode};
 pub use pmem::{
     validate_pmem_layers, ErofsImageRef, GuestMountPath, ImageDigest, PmemLayer, PmemSharing,
     TrustDomainAck, TrustReason, MAX_PMEM_LAYERS,

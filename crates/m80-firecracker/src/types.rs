@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use m80_firecracker_client::{CacheType, Client, CpuTemplate};
 use m80_jailer::{JailedFirecracker, MaterializedJail};
 use m80_net_mode::NetworkPolicy;
-use m80_storage::{Rootfs, Scratch};
+use m80_storage::{OverlayTemplateCloneMode, Rootfs, Scratch};
 
 use crate::network_helper::NetworkHelperClient;
 use crate::pmem::PmemLayer;
@@ -371,6 +371,14 @@ pub struct SandboxConfig {
     /// costs nothing until the guest actually writes. Callers with larger or
     /// smaller needs should override this field explicitly.
     pub overlay_size_bytes: u64,
+    /// How the empty overlay template is cloned into each per-VM overlay.
+    ///
+    /// The default is `ByteCopy`, which is deterministic on ext4, tmpfs, XFS,
+    /// btrfs, and ZFS. Set `Reflink` to require CoW clone semantics, or `Auto`
+    /// to probe the run-root filesystem once and select `Reflink` or
+    /// `ByteCopy` before the clone command is built. A selected clone mode is
+    /// fail-closed; m80 does not retry another mode after `cp` fails.
+    pub overlay_clone_mode: OverlayTemplateCloneMode,
     /// How long the VM may sit idle (no exec in flight, none pending) before
     /// the host issues a graceful shutdown. `None` opts out of idle shutdown.
     ///
@@ -422,6 +430,7 @@ impl Default for SandboxConfig {
             drive_cache_type: None,
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
+            overlay_clone_mode: OverlayTemplateCloneMode::ByteCopy,
             idle_timeout: Some(Duration::from_secs(300)),
             daemonize: false,
             request_id: None,

@@ -43,15 +43,15 @@ base from one set of pages.
 
 ### Public API
 
-- `Rootfs::prepare(base: &Path, overlay_dest: &Path, overlay_size_bytes: u64) -> Result<Rootfs, StorageError>`
+- `Rootfs::prepare(base: &Path, overlay_dest: &Path, overlay_size_bytes: u64, clone_mode: OverlayTemplateCloneMode) -> Result<Rootfs, StorageError>`
   Ensures a run-root-local empty overlay template exists, then clones it
-  to `overlay_dest` through a per-device reflink gate. Reflink-capable
-  filesystems use `cp --reflink=always --sparse=auto`; filesystems
-  classified as non-reflink, or probe failures, use
-  `cp --reflink=never --sparse=always` and emit one `m80_storage::rootfs`
-  byte-copy event per device per process. If a mandatory reflink clone is
-  rejected at runtime, `Rootfs::prepare` emits one warning for that call
-  and retries as a byte copy. The returned `Rootfs` has `base_path()` set to the
+  to `overlay_dest` through the caller-selected clone mode. `ByteCopy`
+  runs `cp --reflink=never --sparse=auto`; `Reflink` runs
+  `cp --reflink=always --sparse=auto`; `Auto` probes the run-root
+  filesystem once and selects one of those two concrete modes before
+  cloning. Probe failures and concrete clone failures are hard errors;
+  `Rootfs::prepare` does not retry as another mode. The returned `Rootfs`
+  has `base_path()` set to the
   caller-supplied shared base and `overlay_path()` set to the new
   per-VM overlay. **Caller is responsible for sha256 verification of
   `base` via `m80_image_manifest::Manifest::verify()` before calling
@@ -64,6 +64,7 @@ base from one set of pages.
   of existing paths without allocating; for tests and recovery scenarios.
 - `Rootfs::base_path(&self) -> &Path` — the shared, read-only base ext4.
 - `Rootfs::overlay_path(&self) -> &Path` — the per-VM writable overlay.
+- `OverlayTemplateCloneMode` — `ByteCopy`, `Reflink`, or `Auto`.
 
 ### Scratch (workspace) — unchanged
 
@@ -105,11 +106,11 @@ operates on the workspace, not the rootfs overlay.
 
 - All shell-outs (`mkfs.ext4`, `cp`, `fallocate`, `e2fsck`, `mount`, `umount`) bubble up
   exit codes as typed errors.
-- Reflink use is a runtime optimization, not a requirement. The byte-copy
-  overlay-template clone path remains permanent because ext4 production
-  hosts are valid. See
+- Reflink use is a caller-selected optimization, not a requirement. The
+  byte-copy overlay-template clone path remains permanent because ext4
+  production hosts are valid. See
   [`docs/behaviors/storage/reflink-rootfs.md`](../../docs/behaviors/storage/reflink-rootfs.md)
-  for the probe, memoization, and fallback observability contract.
+  for the explicit policy contract.
 - Concurrency: `Rootfs` and `Scratch` are NOT thread-safe. The
   orchestrator serializes per-VM storage operations.
 
@@ -123,9 +124,10 @@ images but adds non-trivial output-parsing surface.
 
 ## Public surface
 
-- `Rootfs::prepare(base, overlay_dest, overlay_size_bytes)`,
+- `Rootfs::prepare(base, overlay_dest, overlay_size_bytes, clone_mode)`,
   `Rootfs::new_at(base, overlay)`,
   `Rootfs::base_path()`, `Rootfs::overlay_path()`.
+- `OverlayTemplateCloneMode`: `ByteCopy`, `Reflink`, `Auto`.
 - `Scratch::create(workspace, image, size)`,
   `Scratch::extract(image, into, max_extract_bytes)`, `Scratch::path()`.
 - `ChangeSet { staged: Vec<PathBuf>, rejected: Vec<Rejection>, total_bytes: u64 }`.
@@ -134,6 +136,7 @@ images but adds non-trivial output-parsing surface.
 - `StorageError`: `OverlayCreateFailed`,
   `OverlayTemplateCreateFailed`, `OverlayTemplateMismatch`,
   `OverlayTemplateCloneFailed`,
+  `OverlayTemplateCloneModeProbeFailed`,
   `SubprocessFailed { program: &'static str, path: PathBuf, status: String, stderr: String }`,
   `AdmissibilityRefused { path: PathBuf }`,
   `ExtractSizeExceeded { path: PathBuf, max_bytes: u64, actual_bytes: u64 }`,
@@ -207,7 +210,7 @@ location, sized to match the base. That model is removed:
   sub-millisecond and reduces per-VM disk usage from `O(base size)` to
   `O(actual writes)`.
 - `Rootfs::clone` is gone. Replace with `Rootfs::prepare(base,
-  overlay_dest, overlay_size)`. `m80-firecracker` is the only caller in
+  overlay_dest, overlay_size, clone_mode)`. `m80-firecracker` is the only caller in
   this workspace; the migration is mechanical. `Rootfs::prepare` now
   reuses a run-root-local empty ext4 template so the per-launch path does
   not run `mkfs.ext4`.

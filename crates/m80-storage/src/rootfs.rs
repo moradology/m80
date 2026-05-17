@@ -1,23 +1,47 @@
 //! Per-VM rootfs: shared base + cloned empty overlay allocation.
 
-use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::reflink::{self, ReflinkCapability, UnsupportedReason};
+use serde::{Deserialize, Serialize};
+
+use crate::reflink::{self, ReflinkCapability};
 use crate::{format_exit, StorageError};
 
 const TEMPLATE_SCHEMA_VERSION: u32 = 1;
 const TEMPLATE_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 const REFLINK_CLONE_ARGS: &[&str] = &["--reflink=always", "--sparse=auto"];
-const BYTE_COPY_CLONE_ARGS: &[&str] = &["--reflink=never", "--sparse=always"];
+const BYTE_COPY_CLONE_ARGS: &[&str] = &["--reflink=never", "--sparse=auto"];
 
-static BYTE_COPY_LOGGED_DEVICES: OnceLock<Mutex<HashSet<u64>>> = OnceLock::new();
+/// How to clone the run-root-local empty overlay template into a per-VM overlay.
+///
+/// The choice is explicit and fail-closed. `Auto` may probe to choose a
+/// concrete mode; the clone itself never retries with another mode after
+/// failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayTemplateCloneMode {
+    /// Probe the run-root filesystem once and select either `Reflink` or
+    /// `ByteCopy` before cloning.
+    ///
+    /// Probe failures are hard errors. A selected `Reflink` clone still fails
+    /// closed if `cp --reflink=always` fails at clone time.
+    Auto,
+    /// Copy bytes with reflinks disabled.
+    ByteCopy,
+    /// Require a reflink/CoW clone.
+    Reflink,
+}
+
+impl Default for OverlayTemplateCloneMode {
+    fn default() -> Self {
+        Self::ByteCopy
+    }
+}
 
 /// A per-VM rootfs view: shared read-only base ext4 + per-VM writable overlay.
 ///
@@ -34,7 +58,13 @@ impl Rootfs {
     /// shared base and the new overlay.
     ///
     /// Ensures a run-root-local empty ext4 overlay template exists, then
-    /// clones that template to `overlay_dest`.  The base is NOT copied.
+    /// clones that template to `overlay_dest` according to `clone_mode`.  The
+    /// base is NOT copied.
+    ///
+    /// `clone_mode` is fail-closed. `ByteCopy` runs `cp --reflink=never`,
+    /// `Reflink` runs `cp --reflink=always`, and `Auto` first resolves to one
+    /// of those concrete modes. A failed concrete clone is returned to the
+    /// caller without retrying a different mode.
     ///
     /// Caller is responsible for sha256 verification of `base` via
     /// `m80_image_manifest::Manifest::verify()` before calling `prepare`.
@@ -47,10 +77,11 @@ impl Rootfs {
         base: &Path,
         overlay_dest: &Path,
         overlay_size_bytes: u64,
+        clone_mode: OverlayTemplateCloneMode,
     ) -> Result<Self, StorageError> {
         let template = default_template_path(overlay_dest, overlay_size_bytes)?;
         ensure_template(&template, overlay_size_bytes)?;
-        clone_template(&template, overlay_dest)?;
+        clone_template(&template, overlay_dest, clone_mode)?;
 
         Ok(Self {
             base: base.to_path_buf(),
@@ -269,7 +300,11 @@ fn validate_template(template: &Path, size_bytes: u64) -> Result<(), StorageErro
     Ok(())
 }
 
-fn clone_template(template: &Path, dest: &Path) -> Result<(), StorageError> {
+fn clone_template(
+    template: &Path,
+    dest: &Path,
+    clone_mode: OverlayTemplateCloneMode,
+) -> Result<(), StorageError> {
     let parent = template
         .parent()
         .ok_or_else(|| StorageError::OverlayTemplateCloneFailed {
@@ -281,36 +316,37 @@ fn clone_template(template: &Path, dest: &Path) -> Result<(), StorageError> {
             ),
         })?;
 
-    match reflink::probe_cached_for(parent) {
-        ReflinkCapability::Supported => clone_template_reflink_then_byte_copy(template, dest),
-        ReflinkCapability::Unsupported { reason } => {
-            log_byte_copy_fallback_once(parent, template, dest, &reason);
-            run_cp(template, dest, BYTE_COPY_CLONE_ARGS)
-        }
-        ReflinkCapability::ProbeFailed { reason } => {
-            let reason = UnsupportedReason::Other(reason);
-            log_byte_copy_fallback_once(parent, template, dest, &reason);
-            run_cp(template, dest, BYTE_COPY_CLONE_ARGS)
-        }
-    }
+    let clone_mode = resolve_clone_mode(parent, clone_mode)?;
+    let args = match clone_mode {
+        ResolvedOverlayTemplateCloneMode::ByteCopy => BYTE_COPY_CLONE_ARGS,
+        ResolvedOverlayTemplateCloneMode::Reflink => REFLINK_CLONE_ARGS,
+    };
+    run_cp(template, dest, args)
 }
 
-fn clone_template_reflink_then_byte_copy(template: &Path, dest: &Path) -> Result<(), StorageError> {
-    match run_cp(template, dest, REFLINK_CLONE_ARGS) {
-        Ok(()) => Ok(()),
-        Err(StorageError::SubprocessFailed { stderr, .. }) if is_reflink_rejection(&stderr) => {
-            let _ = std::fs::remove_file(dest);
-            tracing::warn!(
-                target: "m80_storage::rootfs",
-                template = %template.display(),
-                dest = %dest.display(),
-                reason = %stderr,
-                fallback = "byte_copy",
-                "mandatory reflink clone rejected; retrying overlay template clone as byte copy"
-            );
-            run_cp(template, dest, BYTE_COPY_CLONE_ARGS)
-        }
-        Err(err) => Err(err),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResolvedOverlayTemplateCloneMode {
+    ByteCopy,
+    Reflink,
+}
+
+fn resolve_clone_mode(
+    parent: &Path,
+    clone_mode: OverlayTemplateCloneMode,
+) -> Result<ResolvedOverlayTemplateCloneMode, StorageError> {
+    match clone_mode {
+        OverlayTemplateCloneMode::ByteCopy => Ok(ResolvedOverlayTemplateCloneMode::ByteCopy),
+        OverlayTemplateCloneMode::Reflink => Ok(ResolvedOverlayTemplateCloneMode::Reflink),
+        OverlayTemplateCloneMode::Auto => match reflink::probe_cached_for(parent) {
+            ReflinkCapability::Supported => Ok(ResolvedOverlayTemplateCloneMode::Reflink),
+            ReflinkCapability::Unsupported { .. } => Ok(ResolvedOverlayTemplateCloneMode::ByteCopy),
+            ReflinkCapability::ProbeFailed { reason } => {
+                Err(StorageError::OverlayTemplateCloneModeProbeFailed {
+                    path: parent.to_path_buf(),
+                    reason,
+                })
+            }
+        },
     }
 }
 
@@ -335,58 +371,6 @@ fn run_cp(template: &Path, dest: &Path, args: &[&str]) -> Result<(), StorageErro
         status: format_exit(out.status),
         stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
     })
-}
-
-fn is_reflink_rejection(stderr: &str) -> bool {
-    stderr.contains("Operation not supported")
-        || stderr.contains("Invalid cross-device link")
-        || stderr.contains("cross-device clone")
-        || stderr.contains("reflink failed")
-}
-
-fn log_byte_copy_fallback_once(
-    parent: &Path,
-    template: &Path,
-    dest: &Path,
-    reason: &UnsupportedReason,
-) {
-    let Ok(dev_id) = reflink::device_id_for(parent) else {
-        tracing::info!(
-            target: "m80_storage::rootfs",
-            template = %template.display(),
-            dest = %dest.display(),
-            reason = %reason,
-            mode = "byte_copy",
-            "reflink capability probe failed; using byte-copy overlay template clone"
-        );
-        return;
-    };
-
-    if !mark_byte_copy_fallback_logged(dev_id) {
-        return;
-    }
-
-    let fs_kind = reason
-        .fs_kind()
-        .map(|kind| kind.to_string())
-        .unwrap_or_else(|| "unknown".to_owned());
-    tracing::info!(
-        target: "m80_storage::rootfs",
-        template = %template.display(),
-        dest = %dest.display(),
-        fs_kind = %fs_kind,
-        reason = %reason,
-        mode = "byte_copy",
-        "reflink unsupported; using byte-copy overlay template clone"
-    );
-}
-
-fn mark_byte_copy_fallback_logged(dev_id: u64) -> bool {
-    let logged = BYTE_COPY_LOGGED_DEVICES.get_or_init(|| Mutex::new(HashSet::new()));
-    logged
-        .lock()
-        .expect("byte-copy fallback log cache poisoned")
-        .insert(dev_id)
 }
 
 struct TemplateLock {
@@ -444,36 +428,11 @@ impl Drop for TemplateLock {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        is_reflink_rejection, mark_byte_copy_fallback_logged, BYTE_COPY_CLONE_ARGS,
-        REFLINK_CLONE_ARGS,
-    };
+    use super::{BYTE_COPY_CLONE_ARGS, REFLINK_CLONE_ARGS};
 
     #[test]
-    fn template_clone_command_requests_mandatory_reflink_or_byte_copy() {
+    fn template_clone_commands_are_explicit() {
         assert_eq!(REFLINK_CLONE_ARGS, &["--reflink=always", "--sparse=auto"]);
-        assert_eq!(
-            BYTE_COPY_CLONE_ARGS,
-            &["--reflink=never", "--sparse=always"]
-        );
-    }
-
-    #[test]
-    fn reflink_rejection_detection_is_narrow() {
-        assert!(is_reflink_rejection(
-            "cp: failed to clone 'a' from 'b': Operation not supported"
-        ));
-        assert!(is_reflink_rejection("Invalid cross-device link"));
-        assert!(!is_reflink_rejection("No space left on device"));
-        assert!(!is_reflink_rejection("Permission denied"));
-    }
-
-    #[test]
-    fn byte_copy_fallback_marker_is_once_per_device() {
-        let dev_id = u64::MAX - u64::from(std::process::id());
-
-        assert!(mark_byte_copy_fallback_logged(dev_id));
-        assert!(!mark_byte_copy_fallback_logged(dev_id));
-        assert!(mark_byte_copy_fallback_logged(dev_id - 1));
+        assert_eq!(BYTE_COPY_CLONE_ARGS, &["--reflink=never", "--sparse=auto"]);
     }
 }

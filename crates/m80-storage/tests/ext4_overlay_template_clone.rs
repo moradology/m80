@@ -1,10 +1,10 @@
-//! Measurement harness for ext4 overlay-template byte-copy fallback.
+//! Measurement harness for ext4 overlay-template explicit byte-copy mode.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use m80_storage::Rootfs;
+use m80_storage::{OverlayTemplateCloneMode, Rootfs};
 
 const DEFAULT_SAMPLES: usize = 30;
 const OVERLAY_SIZE_BYTES: u64 = 64 * 1024 * 1024;
@@ -49,7 +49,13 @@ fn ext4_overlay_template_clone_measurement() {
     let prime_dir = run_root.join("vm-prime");
     std::fs::create_dir(&prime_dir).expect("prime vm dir");
     let prime_overlay = prime_dir.join("rootfs.overlay.ext4");
-    Rootfs::prepare(&base, &prime_overlay, OVERLAY_SIZE_BYTES).expect("prime template");
+    Rootfs::prepare(
+        &base,
+        &prime_overlay,
+        OVERLAY_SIZE_BYTES,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .expect("prime template");
     std::fs::remove_file(&prime_overlay).expect("remove prime overlay");
     std::fs::remove_dir(&prime_dir).expect("remove prime dir");
 
@@ -59,7 +65,13 @@ fn ext4_overlay_template_clone_measurement() {
         std::fs::create_dir(&vm_dir).expect("vm dir");
         let overlay = vm_dir.join("rootfs.overlay.ext4");
         let started = Instant::now();
-        Rootfs::prepare(&base, &overlay, OVERLAY_SIZE_BYTES).expect("prepare overlay");
+        Rootfs::prepare(
+            &base,
+            &overlay,
+            OVERLAY_SIZE_BYTES,
+            OverlayTemplateCloneMode::ByteCopy,
+        )
+        .expect("prepare overlay");
         durations_ms.push(started.elapsed().as_secs_f64() * 1000.0);
         std::fs::remove_file(&overlay).expect("remove overlay");
         std::fs::remove_dir(&vm_dir).expect("remove vm dir");
@@ -363,7 +375,7 @@ base-image verification before this storage step.
 - overlay size bytes: `{}`
 - template logical size bytes: `{}`
 - template allocated bytes after hole digging: `{}`
-- clone mode: `byte-copy fallback` (`ext4` is classified non-reflink by the runtime gate)
+- clone mode: explicit `byte_copy`
 
 ## Observable
 
@@ -378,7 +390,7 @@ base-image verification before this storage step.
 
 ## Device-Mapper Comparison
 
-dm-snapshot was not prototyped in this run. The measured byte-copy fallback is
+dm-snapshot was not prototyped in this run. The measured byte-copy mode is
 below the reconsider threshold, and adding a dm-snapshot prototype would touch
 device-mapper setup/teardown, which the m80 audit-sweep doctrine treats as a
 single-purpose kernel/device-mapper diff requiring its own real-KVM smoke if it
@@ -417,7 +429,7 @@ ever becomes justified.
         if data.stats.p50 > 80.0 || data.stats.p95 > 100.0 {
             "reconsider dm-snapshot"
         } else {
-            "keep byte-copy fallback"
+            "keep explicit byte-copy"
         },
         data.dm_before
             .map(|value| value.to_string())

@@ -16,6 +16,7 @@ sandbox:
   network: none
   # Per-VM writable overlay size in bytes.
   overlay_size_bytes: 134217728
+  overlay_clone_mode: byte_copy
   # Extra boot args are append-only. m80-owned keys remain forbidden.
   boot_args: []
 

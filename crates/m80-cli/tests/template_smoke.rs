@@ -208,6 +208,7 @@ sandbox:
   mem_size_mib: 512
   network: none
   overlay_size_bytes: 536870912
+  overlay_clone_mode: byte_copy
 pmem_layers: []
 warm_strategy:
   mode: boot_fill

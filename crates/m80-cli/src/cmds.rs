@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use m80_firecracker::{
-    Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, SandboxConfig, StoppedSandbox,
-    CONSOLE_LOG,
+    Backend, ConfigError, EffectiveConfig, FcError, NetworkPolicy, OverlayTemplateCloneMode,
+    SandboxConfig, StoppedSandbox, CONSOLE_LOG,
 };
 use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
 
 use crate::args::{
-    EgressMode, ImageAction, QuickstartArgs, TemplateAction, WarmAction, WritebackMode,
+    EgressMode, ImageAction, OverlayCloneModeArg, QuickstartArgs, TemplateAction, WarmAction,
+    WritebackMode,
 };
 use crate::config;
 use crate::errors;
@@ -74,6 +75,7 @@ pub(crate) fn cmd_run(
     stdin: bool,
     egress: EgressMode,
     scratch_size: Option<u64>,
+    overlay_clone_mode: OverlayCloneModeArg,
     vcpu_count: Option<u32>,
     mem_size_mib: Option<u32>,
     writeback: WritebackMode,
@@ -179,6 +181,7 @@ pub(crate) fn cmd_run(
         workspace,
         egress,
         scratch_size,
+        overlay_clone_mode,
         vcpu_count,
         mem_size_mib,
         request_id,
@@ -415,10 +418,19 @@ fn network_policy_for_egress(egress: EgressMode) -> NetworkPolicy {
     }
 }
 
+fn overlay_clone_mode_for_run(mode: OverlayCloneModeArg) -> OverlayTemplateCloneMode {
+    match mode {
+        OverlayCloneModeArg::Auto => OverlayTemplateCloneMode::Auto,
+        OverlayCloneModeArg::ByteCopy => OverlayTemplateCloneMode::ByteCopy,
+        OverlayCloneModeArg::Reflink => OverlayTemplateCloneMode::Reflink,
+    }
+}
+
 fn sandbox_config_for_run(
     workspace: Option<PathBuf>,
     egress: EgressMode,
     scratch_size: Option<u64>,
+    overlay_clone_mode: OverlayCloneModeArg,
     vcpu_count: Option<u32>,
     mem_size_mib: Option<u32>,
     request_id: String,
@@ -434,6 +446,7 @@ fn sandbox_config_for_run(
         drive_cache_type: None,
         boot_args: None,
         overlay_size_bytes: scratch_size.unwrap_or(512 * 1024 * 1024),
+        overlay_clone_mode: overlay_clone_mode_for_run(overlay_clone_mode),
         idle_timeout: None,
         daemonize: false,
         request_id: Some(request_id),

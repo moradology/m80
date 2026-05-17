@@ -29,8 +29,8 @@ top-level or nested fields fail closed.
 Schema version `1` is the only accepted version. The v1 shape includes:
 
 - `sandbox`: resource and policy settings such as `vm_id_prefix`,
-  `vcpu_count`, `mem_size_mib`, `network`, `overlay_size_bytes`, and
-  append-only `boot_args`.
+  `vcpu_count`, `mem_size_mib`, `network`, `overlay_size_bytes`,
+  `overlay_clone_mode`, and append-only `boot_args`.
 - `pmem_layers`: a bounded list of erofs image digests, guest mount paths, and
   sharing mode.
 - `warm_strategy`: either `boot_fill` or `snapshot_restore`.

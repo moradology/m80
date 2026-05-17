@@ -144,6 +144,11 @@ Snapshot-template command behavior is captured in
   Until the egress allowlist behavior lands, using either exits 7.
 - `--scratch-size <bytes>` - overrides scratch overlay size in bytes. Zero is
   rejected.
+- `--overlay-clone-mode byte-copy|reflink|auto` - selects how the empty
+  overlay template is cloned for the cold-booted VM. The default is
+  `byte-copy`. `reflink` requires metadata-only CoW clone semantics. `auto`
+  probes the run-root and selects one concrete mode before cloning; clone
+  failures are not retried as another mode.
 - `--vcpu-count <n>` - overrides the cold-booted VM vCPU count. Zero is
   rejected. This is incompatible with `--warm` because warm slot sizing is
   fixed by the owner.
@@ -330,6 +335,7 @@ Rust library items:
 - `Cmd` - supported subcommand enum.
 - `ConfigAction` - `m80 config` action enum.
 - `EgressMode` - `m80 run --egress` value enum.
+- `OverlayCloneModeArg` - `m80 run --overlay-clone-mode` value enum.
 - `QuickstartArgs` - `m80 quickstart` argument struct.
 - `WarmAction` - `m80 warm` action enum.
 - `WarmEnableArgs` - `m80 warm enable` argument struct.

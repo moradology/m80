@@ -201,7 +201,7 @@ Gates: `m80-q420k.8.16`, a Phase G followup. This does not block the A-F
 super-epic close, but it is the evidence gate for reconsidering dm-snapshot on
 ext4 run roots.
 
-Purpose: isolate the explicit byte-copy fallback for a run-root-local empty
+Purpose: isolate the explicit byte-copy mode for a run-root-local empty
 overlay template on ext4 and compare the result to the dm-snapshot reconsider
 threshold.
 

@@ -75,6 +75,7 @@ fn sandbox_config(vm_id: String) -> SandboxConfig {
         drive_cache_type: None,
         boot_args: None,
         overlay_size_bytes: 128 * 1024 * 1024,
+        overlay_clone_mode: Default::default(),
         idle_timeout: None,
         daemonize: false,
         request_id: None,

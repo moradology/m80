@@ -27,6 +27,7 @@ sandbox:
   workspace: null
   network: none
   overlay_size_bytes: 134217728
+  overlay_clone_mode: byte_copy
   boot_args: []
 
 pmem_layers:

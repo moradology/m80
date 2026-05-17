@@ -4,7 +4,7 @@ mod common;
 
 use std::os::unix::fs::MetadataExt as _;
 
-use m80_storage::{Rootfs, StorageError};
+use m80_storage::{OverlayTemplateCloneMode, Rootfs, StorageError};
 
 use common::reflink_helpers::{
     assert_debugfs_can_read_ext4, assert_reflink_always_is_unsupported, assert_sparse_file,
@@ -25,7 +25,13 @@ fn paths() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
 fn prepare_creates_overlay_file() {
     let (_dir, base, overlay) = paths();
 
-    Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).expect("prepare must succeed");
+    Rootfs::prepare(
+        &base,
+        &overlay,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .expect("prepare must succeed");
 
     assert!(overlay.exists(), "overlay file must be created");
 }
@@ -35,7 +41,13 @@ fn prepare_creates_overlay_file() {
 fn prepare_base_path_matches_caller_supplied_base() {
     let (_dir, base, overlay) = paths();
 
-    let rootfs = Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).unwrap();
+    let rootfs = Rootfs::prepare(
+        &base,
+        &overlay,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .unwrap();
 
     assert_eq!(rootfs.base_path(), base.as_path());
 }
@@ -45,7 +57,13 @@ fn prepare_base_path_matches_caller_supplied_base() {
 fn prepare_overlay_path_matches_dest() {
     let (_dir, base, overlay) = paths();
 
-    let rootfs = Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).unwrap();
+    let rootfs = Rootfs::prepare(
+        &base,
+        &overlay,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .unwrap();
 
     assert_eq!(rootfs.overlay_path(), overlay.as_path());
 }
@@ -56,7 +74,7 @@ fn prepare_overlay_file_has_correct_size() {
     let (_dir, base, overlay) = paths();
 
     let size: u64 = 64 * 1024 * 1024; // 64 MiB
-    Rootfs::prepare(&base, &overlay, size).unwrap();
+    Rootfs::prepare(&base, &overlay, size, OverlayTemplateCloneMode::ByteCopy).unwrap();
 
     let meta = std::fs::metadata(&overlay).unwrap();
     assert_eq!(
@@ -71,7 +89,7 @@ fn overlay_template_and_clone_are_sparse() {
     let (dir, base, overlay) = paths();
     let size: u64 = 64 * 1024 * 1024;
 
-    Rootfs::prepare(&base, &overlay, size).unwrap();
+    Rootfs::prepare(&base, &overlay, size, OverlayTemplateCloneMode::ByteCopy).unwrap();
 
     let template = dir.path().join(".rootfs-overlay-template-v1-67108864.ext4");
     assert_sparse_file(&template, size);
@@ -79,11 +97,11 @@ fn overlay_template_and_clone_are_sparse() {
 }
 
 #[test]
-fn overlay_clone_fallback_on_non_reflink_fs() {
+fn explicit_byte_copy_succeeds_on_non_reflink_fs() {
     let dir = tempfile::Builder::new()
         .prefix("m80-rootfs-non-reflink-")
         .tempdir_in("/dev/shm")
-        .expect("/dev/shm tmpfs must be available for non-reflink fallback test");
+        .expect("/dev/shm tmpfs must be available for non-reflink test");
     assert_reflink_always_is_unsupported(dir.path());
 
     let run_dir = dir.path().join("vm-1");
@@ -93,11 +111,80 @@ fn overlay_clone_fallback_on_non_reflink_fs() {
     std::fs::write(&base, b"fake-base").unwrap();
 
     let size: u64 = 64 * 1024 * 1024;
-    let rootfs = Rootfs::prepare(&base, &overlay, size).unwrap();
+    let rootfs =
+        Rootfs::prepare(&base, &overlay, size, OverlayTemplateCloneMode::ByteCopy).unwrap();
 
     assert_eq!(rootfs.overlay_path(), overlay.as_path());
     assert_eq!(std::fs::metadata(&overlay).unwrap().nlink(), 1);
     assert_sparse_file(&overlay, size);
+    assert_debugfs_can_read_ext4(&overlay);
+}
+
+#[test]
+fn explicit_reflink_fails_closed_on_non_reflink_fs() {
+    let dir = tempfile::Builder::new()
+        .prefix("m80-rootfs-reflink-required-")
+        .tempdir_in("/dev/shm")
+        .expect("/dev/shm tmpfs must be available for non-reflink test");
+    assert_reflink_always_is_unsupported(dir.path());
+
+    let run_dir = dir.path().join("vm-1");
+    std::fs::create_dir(&run_dir).unwrap();
+    let base = dir.path().join("base.ext4");
+    let overlay = run_dir.join("rootfs.overlay.ext4");
+    std::fs::write(&base, b"fake-base").unwrap();
+
+    let err = Rootfs::prepare(
+        &base,
+        &overlay,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::Reflink,
+    )
+    .unwrap_err();
+
+    match err {
+        StorageError::SubprocessFailed {
+            program,
+            path,
+            stderr,
+            ..
+        } => {
+            assert_eq!(program, "cp");
+            assert_eq!(path, overlay);
+            assert!(
+                stderr.contains("Operation not supported")
+                    || stderr.contains("Invalid cross-device link")
+                    || stderr.contains("reflink"),
+                "unexpected stderr: {stderr}"
+            );
+        }
+        other => panic!("expected SubprocessFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn auto_selects_byte_copy_on_non_reflink_fs() {
+    let dir = tempfile::Builder::new()
+        .prefix("m80-rootfs-auto-non-reflink-")
+        .tempdir_in("/dev/shm")
+        .expect("/dev/shm tmpfs must be available for non-reflink test");
+    assert_reflink_always_is_unsupported(dir.path());
+
+    let run_dir = dir.path().join("vm-1");
+    std::fs::create_dir(&run_dir).unwrap();
+    let base = dir.path().join("base.ext4");
+    let overlay = run_dir.join("rootfs.overlay.ext4");
+    std::fs::write(&base, b"fake-base").unwrap();
+
+    let rootfs = Rootfs::prepare(
+        &base,
+        &overlay,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::Auto,
+    )
+    .unwrap();
+
+    assert_eq!(rootfs.overlay_path(), overlay.as_path());
     assert_debugfs_can_read_ext4(&overlay);
 }
 
@@ -111,7 +198,13 @@ fn prepare_missing_parent_returns_overlay_template_clone_failed() {
     // The parent "nonexistent/" does not exist.
     let overlay = dir.path().join("nonexistent").join("overlay.ext4");
 
-    let err = Rootfs::prepare(&base, &overlay, 64 * 1024 * 1024).unwrap_err();
+    let err = Rootfs::prepare(
+        &base,
+        &overlay,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .unwrap_err();
     match err {
         StorageError::SubprocessFailed { program, path, .. } => {
             assert_eq!(program, "cp", "subprocess error must identify cp");
@@ -125,7 +218,7 @@ fn prepare_missing_parent_returns_overlay_template_clone_failed() {
 #[test]
 fn prepare_mkfs_failure_returns_subprocess_failed() {
     let (_dir, base, overlay) = paths();
-    let err = Rootfs::prepare(&base, &overlay, 0).unwrap_err();
+    let err = Rootfs::prepare(&base, &overlay, 0, OverlayTemplateCloneMode::ByteCopy).unwrap_err();
     match err {
         StorageError::SubprocessFailed {
             program, status, ..
@@ -163,8 +256,20 @@ fn prepare_creates_template_metadata_once_and_reuses_it() {
     let overlay1 = run1.join("rootfs.overlay.ext4");
     let overlay2 = run2.join("rootfs.overlay.ext4");
 
-    Rootfs::prepare(&base, &overlay1, 64 * 1024 * 1024).unwrap();
-    Rootfs::prepare(&base, &overlay2, 64 * 1024 * 1024).unwrap();
+    Rootfs::prepare(
+        &base,
+        &overlay1,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .unwrap();
+    Rootfs::prepare(
+        &base,
+        &overlay2,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .unwrap();
 
     let template = dir.path().join(".rootfs-overlay-template-v1-67108864.ext4");
     let meta = dir.path().join(".rootfs-overlay-template-v1-67108864.meta");
@@ -186,11 +291,23 @@ fn stale_template_metadata_is_a_hard_error() {
     let overlay1 = run1.join("rootfs.overlay.ext4");
     let overlay2 = run2.join("rootfs.overlay.ext4");
 
-    Rootfs::prepare(&base, &overlay1, 64 * 1024 * 1024).unwrap();
+    Rootfs::prepare(
+        &base,
+        &overlay1,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .unwrap();
     let meta = dir.path().join(".rootfs-overlay-template-v1-67108864.meta");
     std::fs::write(&meta, "schema_version=1\nfs=ext4\nsize_bytes=123\n").unwrap();
 
-    let err = Rootfs::prepare(&base, &overlay2, 64 * 1024 * 1024).unwrap_err();
+    let err = Rootfs::prepare(
+        &base,
+        &overlay2,
+        64 * 1024 * 1024,
+        OverlayTemplateCloneMode::ByteCopy,
+    )
+    .unwrap_err();
     match err {
         StorageError::OverlayTemplateMismatch { path, .. } => assert_eq!(path, meta),
         other => panic!("expected OverlayTemplateMismatch, got {other:?}"),

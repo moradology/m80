@@ -145,6 +145,7 @@ fn failed_launch_returns_admission_slot() {
         .admit(SandboxConfig {
             vm_id: Some("failed-launch-slot".to_string()),
             overlay_size_bytes: 64 * 1024 * 1024,
+            overlay_clone_mode: Default::default(),
             ..SandboxConfig::default()
         })
         .expect("first admit must acquire the only slot");

@@ -41,6 +41,7 @@ fn malicious_guestd_noop_reaches_ready_signal() {
             drive_cache_type: None,
             boot_args: Some("m80.malicious_attack=noop".into()),
             overlay_size_bytes: 512 * 1024 * 1024,
+            overlay_clone_mode: Default::default(),
             idle_timeout: None,
             daemonize: false,
             request_id: None,

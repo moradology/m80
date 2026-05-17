@@ -22,11 +22,14 @@ per-VM base-rootfs copy.
 
 Decision tree:
 
-1. If the run-root filesystem supports reflink clone semantics, use the
-   reflink overlay-template path.
-2. If the host filesystem does not support reflinks, allow the explicit
-   byte-copy fallback and budget for the extra clone cost.
-3. If an operator sees full base-rootfs copies per VM, treat that as a bug or
+1. If the run-root filesystem supports reflink clone semantics and metadata
+   clone latency matters, choose explicit reflink overlay-template mode.
+2. If the host filesystem does not support reflinks, choose explicit byte-copy
+   mode and budget for the extra clone cost.
+3. If the operator wants host-selected behavior, choose explicit auto mode; it
+   resolves to reflink or byte-copy before cloning and does not retry after a
+   concrete clone failure.
+4. If an operator sees full base-rootfs copies per VM, treat that as a bug or
    stale configuration. That model is not the target architecture.
 
 Expected operator commands:

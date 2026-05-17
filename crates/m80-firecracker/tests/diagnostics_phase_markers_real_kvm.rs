@@ -36,6 +36,7 @@ fn diagnostics_phase_markers_emitted_on_exec() {
             drive_cache_type: None,
             boot_args: None,
             overlay_size_bytes: 512 * 1024 * 1024,
+            overlay_clone_mode: Default::default(),
             idle_timeout: None,
             daemonize: false,
             request_id: Some(REQUEST_ID.to_owned()),

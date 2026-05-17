@@ -1,4 +1,4 @@
-//! Runtime reflink capability probing for per-VM overlay template clones.
+//! Reflink capability probing for `OverlayTemplateCloneMode::Auto`.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -51,16 +51,6 @@ pub(crate) enum UnsupportedReason {
     /// Other unsupported condition not worth splitting yet.
     #[allow(dead_code)]
     Other(String),
-}
-
-impl UnsupportedReason {
-    /// Filesystem kind attached to this reason, when statfs identified it.
-    pub(crate) fn fs_kind(&self) -> Option<FsKind> {
-        match self {
-            Self::FsTypeKnownNoReflink(kind) => Some(*kind),
-            Self::FicloneRejected(_) | Self::CrossDevice | Self::Other(_) => None,
-        }
-    }
 }
 
 impl fmt::Display for UnsupportedReason {

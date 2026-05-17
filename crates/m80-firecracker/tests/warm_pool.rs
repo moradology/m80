@@ -43,6 +43,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         cpuset_cpus: None,
         cpu_template: None,
         overlay_size_bytes: 128 * 1024 * 1024,
+        overlay_clone_mode: Default::default(),
         ..common::sandbox_config_with_id(vm_id)
     }
 }

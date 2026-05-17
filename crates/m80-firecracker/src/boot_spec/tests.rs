@@ -10,6 +10,10 @@ fn yaml_loader_parses_typed_pmem_and_snapshot_restore() {
 
     assert_eq!(spec.schema_version, 1);
     assert_eq!(spec.name.as_deref(), Some("typed"));
+    assert_eq!(
+        spec.sandbox.overlay_clone_mode,
+        OverlayTemplateCloneMode::ByteCopy
+    );
     assert_eq!(spec.pmem_layers.len(), 2);
     assert_eq!(spec.pmem_layers[0].image().digest().as_str(), DIGEST_A);
     assert!(matches!(spec.pmem_layers[0].sharing(), PmemSharing::PerVm));
@@ -35,6 +39,10 @@ fn yaml_loader_parses_typed_pmem_and_snapshot_restore() {
 fn json_loader_shares_validation_path() {
     let spec = load_boot_spec_json_str(&valid_json()).expect("valid json boot spec");
     assert_eq!(spec.schema_version, 1);
+    assert_eq!(
+        spec.sandbox.overlay_clone_mode,
+        OverlayTemplateCloneMode::Auto
+    );
     assert!(matches!(spec.warm_strategy, BootSpecWarmStrategy::BootFill));
     assert_eq!(spec.pmem_layers.len(), 1);
 }
@@ -161,6 +169,7 @@ sandbox:
   workspace: null
   network: none
   overlay_size_bytes: 134217728
+  overlay_clone_mode: byte_copy
   boot_args: []
 pmem_layers:
   - image:
@@ -188,6 +197,7 @@ sandbox:
   workspace: null
   network: none
   overlay_size_bytes: 134217728
+  overlay_clone_mode: byte_copy
   boot_args: []
 pmem_layers:
   - image:
@@ -234,6 +244,7 @@ fn valid_json() -> String {
     "workspace": null,
     "network": "none",
     "overlay_size_bytes": 134217728,
+    "overlay_clone_mode": "auto",
     "boot_args": []
   }},
   "pmem_layers": [

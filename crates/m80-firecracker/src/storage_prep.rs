@@ -33,7 +33,12 @@ pub(crate) fn phase_3_storage_prep(
 ) -> Result<StoragePrep, FcError> {
     let overlay_dest = rootfs_overlay_path(run_dir);
     let t = Instant::now();
-    let rootfs = Rootfs::prepare(base_rootfs, &overlay_dest, config.overlay_size_bytes)?;
+    let rootfs = Rootfs::prepare(
+        base_rootfs,
+        &overlay_dest,
+        config.overlay_size_bytes,
+        config.overlay_clone_mode,
+    )?;
     phase_event("phase_3b_rootfs_prepare", vm_id, t.elapsed());
 
     let scratch = if let Some(workspace) = &config.workspace {

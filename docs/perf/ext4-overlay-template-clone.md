@@ -32,7 +32,7 @@ base-image verification before this storage step.
 - overlay size bytes: `67108864`
 - template logical size bytes: `67108864`
 - template allocated bytes after hole digging: `4440064`
-- clone mode: `byte-copy fallback` (`ext4` is classified non-reflink by the runtime gate)
+- clone mode: explicit `byte_copy`
 
 ## Observable
 
@@ -43,11 +43,11 @@ base-image verification before this storage step.
 - phase_3b_rootfs_prepare min_ms: `6.924`
 - phase_3b_rootfs_prepare max_ms: `9.073`
 - reconsider dm-snapshot threshold: `p50 > 80 ms or p95 > 100 ms`
-- threshold result: `keep byte-copy fallback`
+- threshold result: `keep explicit byte-copy`
 
 ## Device-Mapper Comparison
 
-dm-snapshot was not prototyped in this run. The measured byte-copy fallback is
+dm-snapshot was not prototyped in this run. The measured explicit byte-copy is
 below the reconsider threshold, and adding a dm-snapshot prototype would touch
 device-mapper setup/teardown, which the m80 audit-sweep doctrine treats as a
 single-purpose kernel/device-mapper diff requiring its own real-KVM smoke if it

@@ -7,8 +7,8 @@ use serde_json::Value;
 
 use crate::{
     ConfigError, ErofsImageRef, FcError, GuestMountPath, HookSpec, HookSpecSet, HostnameSpec,
-    ImageDigest, NetworkPolicy, PmemLayer, PmemSharing, TemplateFingerprint, TrustDomainAck,
-    TrustReason,
+    ImageDigest, NetworkPolicy, OverlayTemplateCloneMode, PmemLayer, PmemSharing,
+    TemplateFingerprint, TrustDomainAck, TrustReason,
 };
 
 /// Parsed BootSpec configuration.
@@ -41,6 +41,8 @@ pub struct BootSpecSandbox {
     pub network: NetworkPolicy,
     /// Writable overlay size in bytes.
     pub overlay_size_bytes: u64,
+    /// How the empty overlay template is cloned into each per-VM overlay.
+    pub overlay_clone_mode: OverlayTemplateCloneMode,
     /// Caller boot-argument tokens admitted as append-only extras.
     pub boot_args: Vec<String>,
 }
@@ -141,6 +143,7 @@ struct RawSandbox {
     workspace: Option<PathBuf>,
     network: RawNetwork,
     overlay_size_bytes: u64,
+    overlay_clone_mode: RawOverlayCloneMode,
     #[serde(default)]
     boot_args: Vec<String>,
 }
@@ -150,6 +153,14 @@ struct RawSandbox {
 enum RawNetwork {
     None,
     Outbound,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RawOverlayCloneMode {
+    Auto,
+    ByteCopy,
+    Reflink,
 }
 
 #[derive(Debug, Deserialize)]
@@ -257,6 +268,11 @@ fn parse_sandbox(raw: RawSandbox) -> Result<BootSpecSandbox, FcError> {
             },
         },
         overlay_size_bytes: raw.overlay_size_bytes,
+        overlay_clone_mode: match raw.overlay_clone_mode {
+            RawOverlayCloneMode::Auto => OverlayTemplateCloneMode::Auto,
+            RawOverlayCloneMode::ByteCopy => OverlayTemplateCloneMode::ByteCopy,
+            RawOverlayCloneMode::Reflink => OverlayTemplateCloneMode::Reflink,
+        },
         boot_args: raw.boot_args,
     })
 }

@@ -70,6 +70,10 @@ pub enum Cmd {
         #[arg(long, value_name = "BYTES")]
         scratch_size: Option<u64>,
 
+        /// Overlay template clone policy.
+        #[arg(long, value_enum, default_value = "byte-copy")]
+        overlay_clone_mode: OverlayCloneModeArg,
+
         /// Number of vCPUs assigned to the cold-booted VM.
         #[arg(long, value_name = "N")]
         vcpu_count: Option<u32>,
@@ -192,6 +196,17 @@ pub enum EgressMode {
     None,
     /// NAT-backed outbound network where host preflight can support it.
     Outbound,
+}
+
+/// CLI overlay template clone policy selected by `m80 run --overlay-clone-mode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OverlayCloneModeArg {
+    /// Probe the run-root filesystem and select reflink or byte-copy before cloning.
+    Auto,
+    /// Require byte-copy with reflinks disabled.
+    ByteCopy,
+    /// Require reflink/CoW clone semantics.
+    Reflink,
 }
 
 /// CLI writeback policy selected by `m80 run --writeback`.

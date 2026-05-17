@@ -464,7 +464,7 @@ fn run_root_reflink_probe_reports_supported_clone() {
     }
     assert!(
         dest.exists() || matches!(result, RunRootReflink::Unsupported { .. }),
-        "supported clone must create destination, unsupported clone must report fallback"
+        "supported clone must create destination, unsupported clone must report unavailable reflink"
     );
     assert!(result.detail().contains("reflink") || result.detail().contains("overlay clone"));
 }
@@ -478,12 +478,12 @@ fn run_root_reflink_probe_failures_are_non_blocking() {
     let result = probe_run_root_reflink_at(&source, &dest);
 
     assert!(matches!(result, RunRootReflink::ProbeFailed { .. }));
-    assert!(result.detail().contains("probe inconclusive"));
+    assert!(result.detail().contains("auto overlay clone mode"));
 }
 
 #[test]
 #[cfg(unix)]
-fn run_root_reflink_probe_reports_full_copy_fallback_on_unsupported_clone() {
+fn run_root_reflink_probe_reports_unavailable_reflink_on_unsupported_clone() {
     let dir = tempfile::tempdir().unwrap();
     let cp = dir.path().join("cp");
     fs::write(
@@ -501,10 +501,9 @@ fn run_root_reflink_probe_reports_full_copy_fallback_on_unsupported_clone() {
 
     assert!(
         matches!(result, RunRootReflink::Unsupported { .. }),
-        "failed reflink command should report full-copy fallback, got {result:?}"
+        "failed reflink command should report unavailable reflink, got {result:?}"
     );
-    assert!(result.detail().contains("full byte copy"));
-    assert!(result.detail().contains("cp --reflink=never"));
+    assert!(result.detail().contains("explicit byte-copy"));
 }
 
 #[test]

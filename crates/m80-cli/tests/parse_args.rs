@@ -6,8 +6,8 @@
 
 use clap::Parser;
 use m80_cli::{
-    Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageKindArg, QuickstartArgs, TemplateAction,
-    WarmAction, WritebackMode,
+    Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageKindArg, OverlayCloneModeArg,
+    QuickstartArgs, TemplateAction, WarmAction, WritebackMode,
 };
 
 // ---- run ----
@@ -25,6 +25,7 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             stdin,
             egress,
             scratch_size,
+            overlay_clone_mode,
             vcpu_count,
             mem_size_mib,
             writeback,
@@ -41,6 +42,7 @@ fn parse_run_defaults_to_process_wrapper_contract() {
             assert!(!stdin);
             assert_eq!(egress, EgressMode::Outbound);
             assert!(scratch_size.is_none());
+            assert_eq!(overlay_clone_mode, OverlayCloneModeArg::ByteCopy);
             assert!(vcpu_count.is_none());
             assert!(mem_size_mib.is_none());
             assert_eq!(writeback, WritebackMode::Never);
@@ -73,6 +75,8 @@ fn parse_run_visibility_and_exec_options() {
         "none",
         "--scratch-size",
         "1048576",
+        "--overlay-clone-mode",
+        "reflink",
         "--vcpu-count",
         "2",
         "--mem-size-mib",
@@ -90,6 +94,7 @@ fn parse_run_visibility_and_exec_options() {
             stdin,
             egress,
             scratch_size,
+            overlay_clone_mode,
             vcpu_count,
             mem_size_mib,
             argv,
@@ -102,6 +107,7 @@ fn parse_run_visibility_and_exec_options() {
             assert!(stdin);
             assert_eq!(egress, EgressMode::None);
             assert_eq!(scratch_size, Some(1_048_576));
+            assert_eq!(overlay_clone_mode, OverlayCloneModeArg::Reflink);
             assert_eq!(vcpu_count, Some(2));
             assert_eq!(mem_size_mib, Some(512));
             assert_eq!(argv, vec!["/usr/bin/env"]);

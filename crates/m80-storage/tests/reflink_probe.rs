@@ -23,10 +23,6 @@ fn tmpfs_probe_reports_known_unsupported_without_ficlone() {
             reason: UnsupportedReason::FsTypeKnownNoReflink(FsKind::Tmpfs)
         }
     );
-    let ReflinkCapability::Unsupported { reason } = result else {
-        unreachable!("assert_eq above pins the variant");
-    };
-    assert_eq!(reason.fs_kind(), Some(FsKind::Tmpfs));
 }
 
 #[test]

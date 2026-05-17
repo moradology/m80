@@ -59,7 +59,7 @@ dependencies: [m80-ovrl]
 
 **Description.** Produce a written design that pins, in one place, the contract every other leaf in `m80-ovrl` consumes:
 
-1. **m80-storage public surface (final form).** `Rootfs::prepare(base, overlay_dest, overlay_size_bytes) -> Result<Rootfs, StorageError>`, `Rootfs::new_at`, `Rootfs::base_path`, `Rootfs::overlay_path`. `Rootfs::clone` and `Rootfs::path` deleted. Behavioural notes: caller verifies base sha256, `prepare` allocates sparse + `mkfs.ext4 -F`.
+1. **m80-storage public surface (final form).** `Rootfs::prepare(base, overlay_dest, overlay_size_bytes, clone_mode) -> Result<Rootfs, StorageError>`, `Rootfs::new_at`, `Rootfs::base_path`, `Rootfs::overlay_path`. `Rootfs::clone` and `Rootfs::path` deleted. Behavioural notes: caller verifies base sha256, `prepare` allocates sparse + `mkfs.ext4 -F`.
 2. **Drive layout, PUT order.** vda = base RO, vdb = overlay RW, vdc = workspace RW (when present). PUT order matches; `is_read_only: true` on vda; root is vda; ACPI DSDT order is the documented contract (`firecracker-shared-rootfs.md` §2).
 3. **In-guest sequence (PID 1).** The 11-step mount/pivot pseudocode from `overlayfs-kernel-semantics.md` §"Minimum Mount Call Sequence" is normative: MS_REC|MS_PRIVATE on `/`, mount vda RO at `/lower`, vdb at `/upper`, mkdir `/upper/root` and `/upper/.work`, mount overlay at `/merged`, mount `/proc`/`/sys`/`/dev` *into* `/merged/...`, MS_SLAVE|MS_REC on `/`, bind `/merged` onto itself, `pivot_root(".", ".")` per kata, MNT_DETACH old root, then mount `/dev/vdc` at `/workspace` *inside the new root*.
 4. **Failure policy.** Overlay mount or pivot failure as PID 1 panics (no kernel panic recovery; the run-dir is preserved for triage). No retry — failure here is structural and a retry hides it.
@@ -85,7 +85,7 @@ labels: [storage, active-v0.1]
 dependencies: [m80-ovrl.1]
 ```
 
-**Description.** Replace `Rootfs::clone(base, dest)` with `Rootfs::prepare(base, overlay_dest, overlay_size_bytes)`. `prepare` allocates a sparse file at `overlay_dest` (use `File::create` + `set_len` — sparse on ext4/xfs/tmpfs by default), then shells out `mkfs.ext4 -F <overlay_dest>`. Returns `Rootfs { base, overlay }`. Add `base_path()` and `overlay_path()` accessors. Delete `Rootfs::clone`, `Rootfs::path()`, the `BaseSha256Mismatch` and `CopyRootfs` error variants, and any sha256-on-clone behavior — per the README, base verification is the caller's job (`m80-image-manifest::Manifest::verify`), not `Rootfs`'s.
+**Description.** Replace `Rootfs::clone(base, dest)` with `Rootfs::prepare(base, overlay_dest, overlay_size_bytes, clone_mode)`. `prepare` allocates a sparse file at `overlay_dest` (use `File::create` + `set_len` — sparse on ext4/xfs/tmpfs by default), then shells out `mkfs.ext4 -F <overlay_dest>`. Returns `Rootfs { base, overlay }`. Add `base_path()` and `overlay_path()` accessors. Delete `Rootfs::clone`, `Rootfs::path()`, the `BaseSha256Mismatch` and `CopyRootfs` error variants, and any sha256-on-clone behavior — per the README, base verification is the caller's job (`m80-image-manifest::Manifest::verify`), not `Rootfs`'s.
 
 **Acceptance.**
 - `crates/m80-storage/src/lib.rs`: `Rootfs::prepare`, `new_at`, `base_path`, `overlay_path` present; `clone` and `path` absent. `mkfs.ext4 -F` shellout via existing `Command` pattern; bubble exit code as `StorageError::Mkfs`.

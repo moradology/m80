@@ -22,8 +22,8 @@ snapshot restore when the backing path is stable.
 
 ## Phasing
 
-- Phase A: gated reflink clone of the empty writable overlay template, with
-  explicit byte-copy fallback behavior on non-reflink host filesystems.
+- Phase A: explicit clone policy for the empty writable overlay template, with
+  reflink and byte-copy modes plus a probe-only auto selector.
 - Phase B: `PmemLayer` with `PmemSharing::PerVm` and erofs over virtio-pmem.
 - Phase C: `PmemSharing::Shared` behind explicit trust-domain acknowledgement.
 - Phase D: snapshot-template restore, template fingerprints, and post-restore

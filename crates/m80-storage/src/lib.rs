@@ -17,7 +17,7 @@ mod reflink;
 mod rootfs;
 mod scratch;
 
-pub use rootfs::Rootfs;
+pub use rootfs::{OverlayTemplateCloneMode, Rootfs};
 pub use scratch::Scratch;
 
 /// Result of a successful [`Scratch::extract`].
@@ -97,6 +97,15 @@ pub enum StorageError {
         dest: PathBuf,
         /// Underlying I/O error.
         err: io::Error,
+    },
+    /// Automatic overlay clone mode selection could not determine a concrete
+    /// clone mode.
+    #[error("overlay template clone mode probe failed at {}: {reason}", path.display())]
+    OverlayTemplateCloneModeProbeFailed {
+        /// Directory whose filesystem was probed.
+        path: PathBuf,
+        /// Probe failure detail.
+        reason: String,
     },
     /// A storage subprocess (mkfs.ext4, e2fsck, etc.) exited non-zero.
     #[error("{program} failed on {} (exit {status}): {stderr}", path.display())]

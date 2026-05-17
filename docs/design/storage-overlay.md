@@ -22,10 +22,10 @@ The following is the normative API. IMPL leaf `m80-ovrl.2` produces code that ma
 /// shared base and the new overlay.
 ///
 /// Ensures a run-root-local empty ext4 overlay template exists, then clones it
-/// to `overlay_dest` through the runtime reflink gate: `cp --reflink=always
-/// --sparse=always` on capable filesystems and `cp --reflink=never
-/// --sparse=always` on known non-reflink filesystems or probe failures. The
-/// base is NOT copied.
+/// to `overlay_dest` through the caller-selected clone mode. `ByteCopy` runs
+/// `cp --reflink=never --sparse=auto`; `Reflink` runs
+/// `cp --reflink=always --sparse=auto`; `Auto` resolves to one of those two
+/// concrete modes before cloning. The base is NOT copied.
 ///
 /// Caller is responsible for sha256 verification of `base` via
 /// `m80_image_manifest::Manifest::verify()` before calling `prepare`.
@@ -38,6 +38,7 @@ pub fn Rootfs::prepare(
     base: &Path,
     overlay_dest: &Path,
     overlay_size_bytes: u64,
+    clone_mode: OverlayTemplateCloneMode,
 ) -> Result<Rootfs, StorageError>;
 
 /// Wrap an existing (base, overlay) pair without I/O.
@@ -69,7 +70,7 @@ pub fn Rootfs::overlay_path(&self) -> &Path;
 
 **Retained unchanged:** `Scratch::create`, `Scratch::extract`, `Scratch::path`, `ChangeSet`, `Rejection`, `RejectionReason`, remaining `StorageError` variants.
 
-**Sparse overlay sizing:** Default 512 MiB. Configurable via `SandboxConfig::overlay_size_bytes`. The empty ext4 template is keyed by schema version and size under the run root, formatted once with `mkfs.ext4 -F`, then trimmed with `fallocate -d` so sparse fallback copies only live ext4 metadata. A stale/wrong-size template is a hard error, not silently reused. The per-VM overlay is cloned from that template and grows as the guest writes.
+**Sparse overlay sizing:** Default 512 MiB. Configurable via `SandboxConfig::overlay_size_bytes`. The empty ext4 template is keyed by schema version and size under the run root, formatted once with `mkfs.ext4 -F`, then trimmed with `fallocate -d` so explicit byte-copy copies only live ext4 metadata. A stale/wrong-size template is a hard error, not silently reused. The per-VM overlay is cloned from that template and grows as the guest writes.
 
 ---
 
@@ -291,6 +292,7 @@ There is no fallback to running on the bare lower layer. There is no retry. Fail
 |---|---|
 | Default overlay size | 512 MiB sparse |
 | Configuration field | `SandboxConfig::overlay_size_bytes` |
+| Clone policy field | `SandboxConfig::overlay_clone_mode` |
 | Allocation mechanism | `File::create(overlay_dest)? + file.set_len(overlay_size_bytes)?` |
 | Format | `mkfs.ext4 -F <overlay_dest>` shell-out |
 | On-disk cost at creation | Zero bytes (sparse on ext4, xfs, btrfs, tmpfs) |
@@ -359,7 +361,8 @@ vsock/scheduling work rather than storage-copy work.
 
 Follow-up `m80-f2zc.10` replaced per-launch `mkfs.ext4` with a run-root-local
 empty overlay template cloned through the gated `cp --reflink=always` /
-`cp --reflink=never` path.
+`cp --reflink=never` path. That gate is now an explicit clone policy rather
+than a fallback path.
 Measured on 2026-05-05:
 
 | Metric | Minimal stock idle | Minimal stripped idle |

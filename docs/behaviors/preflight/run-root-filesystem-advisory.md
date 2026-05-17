@@ -11,18 +11,19 @@ temporary source file under the run-root and running:
 cp --reflink=always <probe-src> <probe-dst>
 ```
 
-If the command succeeds, the row reports that overlay template clones can use
-metadata-only CoW. If the command exits non-zero, the row reports that storage
-will fall back to a full byte copy through the runtime clone gate's explicit
-`cp --reflink=never --sparse=always` command. If the probe itself cannot run
-or write its temporary source, the row remains passing but says the advisory is
-inconclusive.
+If the command succeeds, the row reports that explicit reflink overlay clone
+mode can use metadata-only CoW. If the command exits non-zero, the row reports
+that callers should choose explicit byte-copy mode, or explicit auto mode will
+select byte-copy. If the probe itself cannot run or write its temporary source,
+the row remains passing but says the advisory is inconclusive; explicit auto
+mode treats that as a hard selection failure.
 
-This row does not change launch behavior. It makes the fallback visible so
-operators can choose a run-root filesystem deliberately.
+This row does not change launch behavior. It makes the run-root's reflink
+capability visible so operators can choose a filesystem and clone policy
+deliberately.
 
 Tests:
 
 - `crates/m80-preflight/src/artifacts/tests.rs::run_root_reflink_probe_reports_supported_clone`
-- `crates/m80-preflight/src/artifacts/tests.rs::run_root_reflink_probe_reports_full_copy_fallback_on_unsupported_clone`
+- `crates/m80-preflight/src/artifacts/tests.rs::run_root_reflink_probe_reports_unavailable_reflink_on_unsupported_clone`
 - `crates/m80-preflight/src/artifacts/tests.rs::run_root_reflink_probe_failures_are_non_blocking`

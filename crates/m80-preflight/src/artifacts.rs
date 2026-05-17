@@ -108,13 +108,14 @@ impl RunRootReflink {
     pub(crate) fn detail(&self) -> String {
         match self {
             Self::Supported => {
-                "reflink supported; overlay template clone can use metadata-only CoW".to_string()
+                "reflink supported; explicit reflink overlay clone mode can use metadata-only CoW"
+                    .to_string()
             }
             Self::Unsupported { reason } => format!(
-                "reflink unavailable: {reason}; overlay clone will use full byte copy with cp --reflink=never (docs/ops/host-tuning.md)"
+                "reflink unavailable: {reason}; use explicit byte-copy overlay clone mode on this run-root (docs/ops/host-tuning.md)"
             ),
             Self::ProbeFailed { reason } => format!(
-                "reflink probe inconclusive: {reason}; overlay clone may fall back to full byte copy (docs/ops/host-tuning.md)"
+                "reflink probe inconclusive: {reason}; explicit auto overlay clone mode cannot select a concrete mode (docs/ops/host-tuning.md)"
             ),
         }
     }

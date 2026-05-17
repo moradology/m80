@@ -3,7 +3,7 @@ use super::{
     network_policy_for_egress, parse_env, render_preflight_result, run_request, run_stream,
     sandbox_config_for_run, should_writeback, validate_run_flags,
 };
-use crate::args::{EgressMode, WritebackMode};
+use crate::args::{EgressMode, OverlayCloneModeArg, WritebackMode};
 use crate::errors::EXIT_PREFLIGHT;
 use crate::json;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
@@ -177,6 +177,7 @@ fn run_workspace_and_scratch_map_to_sandbox_config() {
         Some("/tmp/m80-ws".into()),
         EgressMode::None,
         Some(64 * 1024 * 1024),
+        OverlayCloneModeArg::Reflink,
         Some(2),
         Some(768),
         "req-test".to_owned(),
@@ -188,6 +189,10 @@ fn run_workspace_and_scratch_map_to_sandbox_config() {
     );
     assert_eq!(config.network, NetworkPolicy::NoEgress);
     assert_eq!(config.overlay_size_bytes, 64 * 1024 * 1024);
+    assert_eq!(
+        config.overlay_clone_mode,
+        m80_firecracker::OverlayTemplateCloneMode::Reflink
+    );
     assert_eq!(config.vcpu_count, Some(2));
     assert_eq!(config.mem_size_mib, Some(768));
     assert!(config.idle_timeout.is_none());
@@ -200,6 +205,7 @@ fn run_defaults_to_no_workspace_and_default_overlay_size() {
         None,
         EgressMode::Outbound,
         None,
+        OverlayCloneModeArg::ByteCopy,
         None,
         None,
         "req-default".to_owned(),
@@ -211,6 +217,10 @@ fn run_defaults_to_no_workspace_and_default_overlay_size() {
         NetworkPolicy::AllowOutbound { exceptions: vec![] }
     );
     assert_eq!(config.overlay_size_bytes, 512 * 1024 * 1024);
+    assert_eq!(
+        config.overlay_clone_mode,
+        m80_firecracker::OverlayTemplateCloneMode::ByteCopy
+    );
     assert!(config.vcpu_count.is_none());
     assert!(config.mem_size_mib.is_none());
     assert_eq!(config.request_id.as_deref(), Some("req-default"));
