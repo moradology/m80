@@ -558,6 +558,11 @@ sudo -n env \
   M80_RUN_ROOT=/var/lib/m80-composed-e2e \
   M80_JAIL_UID="$(id -u)" \
   M80_JAIL_GID="$(id -g)" \
+  M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
+  M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+  M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
+  M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
+  M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
   M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
   M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
   M80_KERNEL_KIND=stripped \
