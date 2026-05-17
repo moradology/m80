@@ -615,7 +615,10 @@ lowercase sha256 Shared and PerVm image-store digests. The restore artifact's
 non-empty. Its `target_ready` must equal `count`, and P50/P95/P99 values must
 recompute from `samples_ms`. The host-memory artifact must carry raw
 MemAvailable checkpoints that derive `after_n_attached_delta_bytes`, and its
-Shared image path must contain the Shared digest. The receipt doc must also retain the exact
+Shared image path must contain the Shared digest. The same-run PerVm baseline
+section must agree with the top-level Shared digest, Shared bytes, attached
+count, payload-copy bytes, attached-memory delta, derived per-VM overhead, and
+all-slots-leased snapshot. The receipt doc must also retain the exact
 `cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`
 reproduction command, host context, page-cache statement, and green
 `composed_e2e_layered_warm_pool` test-result lines. The verifier also

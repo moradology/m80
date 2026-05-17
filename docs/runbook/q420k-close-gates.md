@@ -226,7 +226,10 @@ artifacts. The host-memory subset check also recomputes `bound_bytes` from
 `shared_image_bytes`,
 `per_vm_overhead_bytes`, and `n_attached`, verifies the attached-memory delta
 from the raw MemAvailable checkpoints, and requires the Shared image path to
-contain the Shared digest. The residue subset requires an
+contain the Shared digest. It also checks that the same-run PerVm baseline
+section agrees with the top-level Shared digest, Shared bytes, attached count,
+payload-copy bytes, attached-memory delta, derived per-VM overhead, and
+all-slots-leased snapshot. The residue subset requires an
 explicit scanned run-root entry alongside `/tmp/m80-*`, `/var/run/m80`, the
 image store, and the template store; its `leased_run_dirs` entries must be
 absolute path strings:

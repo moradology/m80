@@ -925,6 +925,113 @@ def verify_composed_memory(path: Path) -> list[str]:
                 baseline - after_attached == delta,
                 "composed memory: after_n_attached_delta_bytes must equal baseline_before_fill_bytes - after_n_attached_bytes",
             )
+        per_vm_baseline = memory.get("per_vm_baseline")
+        check.require(isinstance(per_vm_baseline, dict), "composed memory: missing per_vm_baseline")
+        if isinstance(per_vm_baseline, dict):
+            baseline_n_attached = per_vm_baseline.get("n_attached")
+            check.require(
+                baseline_n_attached == memory.get("n_attached"),
+                "composed memory: per_vm_baseline.n_attached must equal n_attached",
+            )
+            for field in [
+                "before_fill_bytes",
+                "after_fill_bytes",
+                "after_n_attached_bytes",
+                "after_teardown_bytes",
+                "after_n_attached_delta_bytes",
+                "per_vm_payload_bytes",
+                "per_vm_overhead_bytes",
+                "shared_payload_bytes",
+            ]:
+                value = per_vm_baseline.get(field)
+                check.require(
+                    is_number(value) and value >= 0,
+                    f"composed memory: per_vm_baseline.{field} must be >= 0",
+                )
+            check.require(
+                per_vm_baseline.get("per_vm_overhead_bytes") == per_vm_overhead_bytes,
+                "composed memory: per_vm_baseline.per_vm_overhead_bytes must match top-level per_vm_overhead_bytes",
+            )
+            check.require(
+                per_vm_baseline.get("shared_payload_digest") == shared_image_digest,
+                "composed memory: per_vm_baseline.shared_payload_digest must equal shared_image_digest",
+            )
+            check.require(
+                per_vm_baseline.get("shared_payload_bytes") == shared_image_bytes,
+                "composed memory: per_vm_baseline.shared_payload_bytes must equal shared_image_bytes",
+            )
+            require_sha256_hex(
+                check,
+                "composed memory: per_vm_baseline.image_digest",
+                per_vm_baseline.get("image_digest"),
+            )
+            check.require(
+                is_number(per_vm_baseline.get("image_bytes")) and per_vm_baseline.get("image_bytes") > 0,
+                "composed memory: per_vm_baseline.image_bytes must be > 0",
+            )
+            fingerprint = per_vm_baseline.get("template_fingerprint")
+            check.require(
+                isinstance(fingerprint, str) and re.fullmatch(r"[0-9a-f]{64}", fingerprint) is not None,
+                "composed memory: per_vm_baseline.template_fingerprint must be a 64-character lowercase hex string",
+            )
+            if is_number(shared_image_bytes) and is_number(memory.get("n_attached")):
+                expected_payload = shared_image_bytes * memory["n_attached"]
+                check.require(
+                    per_vm_baseline.get("per_vm_payload_bytes") == expected_payload,
+                    f"composed memory: per_vm_baseline.per_vm_payload_bytes must equal shared_image_bytes * n_attached ({expected_payload})",
+                )
+            baseline_before = per_vm_baseline.get("before_fill_bytes")
+            baseline_after_attached = per_vm_baseline.get("after_n_attached_bytes")
+            baseline_delta = per_vm_baseline.get("after_n_attached_delta_bytes")
+            baseline_payload = per_vm_baseline.get("per_vm_payload_bytes")
+            if is_number(baseline_before) and is_number(baseline_after_attached) and is_number(baseline_delta):
+                check.require(
+                    baseline_before - baseline_after_attached == baseline_delta,
+                    "composed memory: per_vm_baseline.after_n_attached_delta_bytes must equal before_fill_bytes - after_n_attached_bytes",
+                )
+            if is_number(baseline_delta) and is_number(baseline_payload):
+                check.require(
+                    baseline_delta >= baseline_payload,
+                    "composed memory: per_vm_baseline delta must cover per_vm_payload_bytes",
+                )
+            if (
+                is_number(baseline_delta)
+                and is_number(baseline_payload)
+                and is_number(baseline_n_attached)
+                and baseline_n_attached > 0
+            ):
+                expected_overhead = max(0, baseline_delta - baseline_payload)
+                expected_overhead = (expected_overhead + baseline_n_attached - 1) // baseline_n_attached
+                check.require(
+                    per_vm_baseline.get("per_vm_overhead_bytes") == expected_overhead,
+                    f"composed memory: per_vm_baseline.per_vm_overhead_bytes must equal ceil((delta - payload) / n_attached) ({expected_overhead})",
+                )
+            attached_snapshot = per_vm_baseline.get("attached_snapshot")
+            check.require(
+                isinstance(attached_snapshot, dict),
+                "composed memory: per_vm_baseline.attached_snapshot missing",
+            )
+            if isinstance(attached_snapshot, dict):
+                check.require(
+                    attached_snapshot.get("target_ready") == baseline_n_attached,
+                    "composed memory: per_vm_baseline.attached_snapshot.target_ready must equal n_attached",
+                )
+                check.require(
+                    attached_snapshot.get("leased") == baseline_n_attached,
+                    "composed memory: per_vm_baseline.attached_snapshot.leased must equal n_attached",
+                )
+                check.require(
+                    attached_snapshot.get("ready") == 0,
+                    "composed memory: per_vm_baseline.attached_snapshot.ready must be 0",
+                )
+                check.require(
+                    attached_snapshot.get("filling") == 0,
+                    "composed memory: per_vm_baseline.attached_snapshot.filling must be 0",
+                )
+                check.require(
+                    attached_snapshot.get("fill_failures_total") == 0,
+                    "composed memory: per_vm_baseline.attached_snapshot.fill_failures_total must be 0",
+                )
         if (
             is_number(bound)
             and is_number(shared_image_bytes)
@@ -2380,6 +2487,33 @@ exit 1
                     "size_bytes": 4096,
                     "on_disk_size_bytes": 4096,
                 },
+                "per_vm_baseline": {
+                    "n_attached": 10,
+                    "before_fill_bytes": 2000,
+                    "after_fill_bytes": 1990,
+                    "after_n_attached_bytes": 1890,
+                    "after_teardown_bytes": 2000,
+                    "after_n_attached_delta_bytes": 110,
+                    "per_vm_payload_bytes": 100,
+                    "per_vm_overhead_bytes": 1,
+                    "image_digest": per_vm_digest,
+                    "image_bytes": 10,
+                    "shared_payload_digest": shared_digest,
+                    "shared_payload_bytes": 10,
+                    "template_fingerprint": "f" * 64,
+                    "attached_snapshot": {
+                        "target_ready": 10,
+                        "ready": 0,
+                        "filling": 0,
+                        "leased": 10,
+                        "discarded": 0,
+                        "consecutive_fill_errors": 0,
+                        "fill_attempts_total": 10,
+                        "fill_failures_total": 0,
+                        "lease_acquired_total": 10,
+                        "lease_returned_total": 0,
+                    },
+                },
             }},
         }))
         residue.write_text(json.dumps({
@@ -2941,6 +3075,32 @@ The measured signal is acceptable under the same-trust-domain assumption.
             f"/var/lib/m80-images/11/{shared_digest}/image.erofs"
         )
         memory.write_text(json.dumps(memory_bad_path))
+        memory_bad_per_vm_baseline = json.loads(memory.read_text())
+        memory_bad_per_vm_baseline["data"]["host_memory"]["per_vm_baseline"]["shared_payload_digest"] = (
+            per_vm_digest
+        )
+        memory.write_text(json.dumps(memory_bad_per_vm_baseline))
+        memory_bad_per_vm_baseline_status = quiet_run_checks(args)
+        memory_bad_per_vm_baseline["data"]["host_memory"]["per_vm_baseline"]["shared_payload_digest"] = (
+            shared_digest
+        )
+        memory.write_text(json.dumps(memory_bad_per_vm_baseline))
+        memory_bad_per_vm_baseline_overhead = json.loads(memory.read_text())
+        memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
+            "after_n_attached_bytes"
+        ] = 1880
+        memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
+            "after_n_attached_delta_bytes"
+        ] = 120
+        memory.write_text(json.dumps(memory_bad_per_vm_baseline_overhead))
+        memory_bad_per_vm_baseline_overhead_status = quiet_run_checks(args)
+        memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
+            "after_n_attached_bytes"
+        ] = 1890
+        memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
+            "after_n_attached_delta_bytes"
+        ] = 110
+        memory.write_text(json.dumps(memory_bad_per_vm_baseline_overhead))
         args.only = ["composed-residue"]
         residue_bad = json.loads(residue.read_text())
         residue_bad["data"]["residue"]["image_store"]["shared_digest"] = f"sha256:{shared_digest}"
@@ -3239,6 +3399,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or memory_bad_digest_status == 0
             or memory_bad_delta_status == 0
             or memory_bad_path_status == 0
+            or memory_bad_per_vm_baseline_status == 0
+            or memory_bad_per_vm_baseline_overhead_status == 0
             or residue_bad_digest_status == 0
             or residue_bad_roots_status == 0
             or residue_bad_run_root_status == 0
