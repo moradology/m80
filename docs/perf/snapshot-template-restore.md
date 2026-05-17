@@ -30,7 +30,8 @@ under `substrate`. Close-quality JSON also records an empty
 `substrate.post_run_firecracker_processes` list after the measured runs finish
 and a `substrate.preflight_artifacts` object naming the resolved
 Firecracker/jailer/kernel/rootfs inputs and manifest sha256s. The JSON also
-records the full measured `git_commit`.
+records the full measured `git_commit` and a `reproduction_command` that
+includes the measured Firecracker, jailer, helper, kernel, and rootfs paths.
 
 ## Command
 

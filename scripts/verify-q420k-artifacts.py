@@ -276,7 +276,41 @@ def verify_snapshot_template(path: Path) -> list[str]:
     if is_number(p99):
         check.require(p99 <= 200.0, f"snapshot: p99 {p99} exceeds 200 ms")
     quiet_substrate(data, "snapshot", check)
+    require_snapshot_reproduction_command(data, check)
     return check.errors
+
+
+def require_snapshot_reproduction_command(data: dict[str, Any], check: Check) -> None:
+    command = data.get("reproduction_command")
+    check.require(isinstance(command, str) and command, "snapshot: missing reproduction_command")
+    if not isinstance(command, str):
+        return
+    for required in [
+        "M80_SNAPSHOT_BENCH_LOAD=idle",
+        "N=20",
+        "M80_SNAPSHOT_TEMPLATE_RUNS=3",
+        "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+        "M80_KERNEL_KIND=stripped",
+        "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
+    ]:
+        check.require(required in command, f"snapshot: reproduction_command missing {required}")
+    preflight = at(data, "substrate.preflight_artifacts")
+    if isinstance(preflight, dict):
+        for env, field in [
+            ("M80_FIRECRACKER_BIN", "firecracker_bin"),
+            ("M80_JAILER_BIN", "jailer_bin"),
+            ("M80_FIRECRACKER_SECCOMP_FILTER", "firecracker_seccomp_filter"),
+            ("M80_JAILER_HARDEN_BIN", "jailer_harden_bin"),
+            ("M80_NET_HELPER_BIN", "net_helper_bin"),
+            ("M80_KERNEL_IMAGE", "kernel_image"),
+            ("M80_ROOTFS_IMAGE", "rootfs_image"),
+        ]:
+            value = preflight.get(field)
+            if isinstance(value, str):
+                check.require(
+                    f"{env}={value}" in command,
+                    f"snapshot: reproduction_command missing {env} from preflight {field}",
+                )
 
 
 def verify_snapshot_doc(path: Path) -> list[str]:
@@ -297,6 +331,7 @@ def verify_snapshot_doc(path: Path) -> list[str]:
         "verified: crates/m80-firecracker/benches/snapshot_template_restore_latency.json @ <commit-sha>",
         "python3 scripts/verify-q420k-artifacts.py --only snapshot-template --require-committed",
         "git_commit",
+        "reproduction_command",
         "substrate.preflight_artifacts",
         "substrate.post_run_firecracker_processes",
     ]:
@@ -1546,6 +1581,21 @@ def run_self_tests() -> int:
             "page_cache_dropped_between_samples": True,
             "git_worktree_dirty_excluding_artifact": False,
             "git_commit": git_commit,
+            "reproduction_command": (
+                "M80_SNAPSHOT_BENCH_LOAD=idle "
+                "N=20 "
+                "M80_SNAPSHOT_TEMPLATE_RUNS=3 "
+                "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json "
+                "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker "
+                "M80_JAILER_BIN=/opt/firecracker/bin/jailer "
+                "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin "
+                "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden "
+                "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper "
+                "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux "
+                "M80_KERNEL_KIND=stripped "
+                "M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 "
+                "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency"
+            ),
             "substrate": substrate,
             "data": {"warm": {"restore_to_handback_ms": {"p99": 199.0}}},
         }))
@@ -1578,8 +1628,8 @@ Verify:
 python3 scripts/verify-q420k-artifacts.py --only snapshot-template --require-committed
 ```
 
-The verifier checks `git_commit`, `substrate.preflight_artifacts`, and
-`substrate.post_run_firecracker_processes`.
+The verifier checks `git_commit`, `reproduction_command`,
+`substrate.preflight_artifacts`, and `substrate.post_run_firecracker_processes`.
 
 ## Smoke evidence
 
@@ -2064,6 +2114,17 @@ The measured signal is acceptable under the same-trust-domain assumption.
         bad_git_commit_status = quiet_run_checks(args)
         snapshot_bad["git_commit"] = git_commit
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_KERNEL_KIND=stripped",
+            "M80_KERNEL_KIND=stock",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_reproduction_command_status = quiet_run_checks(args)
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_KERNEL_KIND=stock",
+            "M80_KERNEL_KIND=stripped",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
         args.only = ["snapshot-doc"]
         snapshot_doc_bad = snapshot_doc.read_text().replace(
             "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
@@ -2361,6 +2422,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or bad_preflight_artifacts_status == 0
             or stock_kernel_status == 0
             or bad_git_commit_status == 0
+            or bad_snapshot_reproduction_command_status == 0
             or snapshot_doc_bad_smoke_status == 0
             or snapshot_doc_bad_kernel_kind_status == 0
             or density_bad_teardown_status == 0

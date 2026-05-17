@@ -12,6 +12,7 @@ use m80_firecracker::{
     SandboxConfig, TemplateStore, WarmPool, WarmPoolConfig, WarmStrategy, FIRST_LINE_MEM_SIZE_MIB,
     FIRST_LINE_VCPU_COUNT,
 };
+use m80_image_manifest::KernelKind;
 use m80_proto::ExecRequest;
 
 const DEFAULT_N: usize = 20;
@@ -80,6 +81,7 @@ fn main() {
         load: &load,
         n,
         runs,
+        output: &output,
         target_ready: 1,
         vcpu_count,
         mem_size_mib,
@@ -359,6 +361,7 @@ struct BenchReport<'a> {
     load: &'a str,
     n: usize,
     runs: usize,
+    output: &'a Path,
     target_ready: usize,
     vcpu_count: u32,
     mem_size_mib: u32,
@@ -395,6 +398,7 @@ fn render_json(report: &BenchReport<'_>) -> String {
         "page_cache_dropped_between_samples": true,
         "git_worktree_dirty_excluding_artifact": report.git_worktree_dirty_excluding_artifact,
         "git_commit": report.git_commit,
+        "reproduction_command": reproduction_command(report),
         "store_root": report.store_root,
         "substrate": {
             "substrate_kind": "real-kvm",
@@ -440,6 +444,100 @@ fn render_json(report: &BenchReport<'_>) -> String {
             .collect::<Vec<_>>(),
     });
     serde_json::to_string_pretty(&payload).expect("render snapshot-template restore bench json")
+}
+
+fn reproduction_command(report: &BenchReport<'_>) -> String {
+    let mut parts = vec![
+        env_assignment(
+            "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS",
+            if report.allow_other_firecracker_vms {
+                "1"
+            } else {
+                "0"
+            },
+        ),
+        env_assignment("M80_SNAPSHOT_BENCH_LOAD", report.load),
+        env_assignment("N", &report.n.to_string()),
+        env_assignment("M80_SNAPSHOT_TEMPLATE_RUNS", &report.runs.to_string()),
+        env_assignment(
+            "M80_SNAPSHOT_BENCH_VCPU_COUNT",
+            &report.vcpu_count.to_string(),
+        ),
+        env_assignment(
+            "M80_SNAPSHOT_BENCH_MEM_SIZE_MIB",
+            &report.mem_size_mib.to_string(),
+        ),
+        env_assignment(
+            "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT",
+            &report.output.display().to_string(),
+        ),
+        env_assignment(
+            "M80_FIRECRACKER_BIN",
+            &report.discovery.firecracker_bin.display().to_string(),
+        ),
+        env_assignment(
+            "M80_JAILER_BIN",
+            &report.discovery.jailer_bin.display().to_string(),
+        ),
+        env_assignment(
+            "M80_FIRECRACKER_SECCOMP_FILTER",
+            &report
+                .discovery
+                .firecracker_seccomp_filter
+                .display()
+                .to_string(),
+        ),
+        env_assignment(
+            "M80_JAILER_HARDEN_BIN",
+            &report.discovery.jailer_harden_bin.display().to_string(),
+        ),
+        env_assignment(
+            "M80_NET_HELPER_BIN",
+            &report.discovery.net_helper_bin.display().to_string(),
+        ),
+        env_assignment(
+            "M80_KERNEL_IMAGE",
+            &report.discovery.kernel.display().to_string(),
+        ),
+        env_assignment(
+            "M80_KERNEL_KIND",
+            kernel_kind_env(report.discovery.manifest.kernel_kind),
+        ),
+        env_assignment(
+            "M80_ROOTFS_IMAGE",
+            &report.discovery.rootfs.display().to_string(),
+        ),
+        env_assignment(
+            "M80_RUN_ROOT",
+            &report.discovery.run_root.display().to_string(),
+        ),
+    ];
+    parts.push(
+        "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency".to_owned(),
+    );
+    parts.join(" ")
+}
+
+fn kernel_kind_env(kind: KernelKind) -> &'static str {
+    match kind {
+        KernelKind::Stock => "stock",
+        KernelKind::Stripped => "stripped",
+    }
+}
+
+fn env_assignment(name: &str, value: &str) -> String {
+    format!("{name}={}", shell_escape(value))
+}
+
+fn shell_escape(value: &str) -> String {
+    if value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'/' | b':' | b'='))
+    {
+        value.to_owned()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }
 
 fn preflight_artifacts_json(discovery: &m80_preflight::Discovery) -> serde_json::Value {
