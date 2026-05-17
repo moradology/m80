@@ -1,6 +1,6 @@
 # Shared pmem density
 
-Generated: `2026-05-17T11:18:22+00:00`
+Generated: `2026-05-17T11:25:33+00:00`
 
 ## Reproduction
 
@@ -9,14 +9,14 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
 ## Substrate
 
 - host kernel: `6.17.0-23-generic`
-- firecracker: `Firecracker v1.15.1; 2026-05-17T11:18:22.305717924 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0`
+- firecracker: `Firecracker v1.15.1; 2026-05-17T11:25:33.540562298 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0`
 - `/dev/kvm`: `crw-rw---- root:kvm /dev/kvm`
 - sudo: required; test ran as uid `0`
 - dropped page cache before each cycle: `sync && echo 3 > /proc/sys/vm/drop_caches`
 - quiet host check: `true`
 - allow other Firecracker VMs: `false`
 - git worktree dirty excluding this artifact: `false`
-- git commit: `8c3e8d4cbfba04a74571b6a32b98eff8298def64`
+- git commit: `3706f497977e7a1e64bba6309d113aad2dde485b`
 
 ### Firecracker process substrate
 
@@ -24,7 +24,7 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
 {
   "allow_other_firecracker_vms": false,
   "dev_kvm_stat": "crw-rw---- root:kvm /dev/kvm",
-  "firecracker_version": "Firecracker v1.15.1\n\n2026-05-17T11:17:18.268975138 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0",
+  "firecracker_version": "Firecracker v1.15.1\n\n2026-05-17T11:24:36.429593749 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0",
   "host_kernel_release": "6.17.0-23-generic",
   "post_run_firecracker_processes": [],
   "preexisting_firecracker_processes": [],
@@ -36,7 +36,7 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
     "jailer_bin": "/opt/firecracker/bin/jailer",
     "jailer_harden_bin": "/opt/m80/bin/m80-jailer-harden",
     "kernel_image": "/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
-    "kernel_image_sha256": "c453f36520d2f2792ab8e4532a814e4a647a4a41a4c94d4e9083a502800159b1",
+    "kernel_image_sha256": "143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3",
     "kernel_kind": "stripped",
     "net_helper_bin": "/opt/m80/bin/m80-net-helper",
     "rootfs_format": "ext4",
@@ -62,7 +62,7 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
 - payload erofs layout: `Layout: 0`, size `134217728` bytes, on-disk size `134217728` bytes, compression ratio `100.00%`
 - per-VM overhead bound: `131072 KiB`
 - bound: `655364 KiB`
-- max observed delta: `214664 KiB`
+- max observed delta: `252308 KiB`
 - result: `pass`
 
 ## Teardown
@@ -76,16 +76,16 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
 
 | cycle | MemAvailable before KiB | MemAvailable after KiB | delta KiB | bound KiB |
 |---:|---:|---:|---:|---:|
-| 1 | 151405816 | 151233272 | 172544 | 655364 |
-| 2 | 151392100 | 151299828 | 92272 | 655364 |
-| 3 | 151436916 | 151222252 | 214664 | 655364 |
-| 4 | 151414864 | 151276508 | 138356 | 655364 |
-| 5 | 151425376 | 151272596 | 152780 | 655364 |
-| 6 | 151429992 | 151268408 | 161584 | 655364 |
-| 7 | 151391404 | 151237980 | 153424 | 655364 |
-| 8 | 151395720 | 151269840 | 125880 | 655364 |
-| 9 | 151419848 | 151232944 | 186904 | 655364 |
-| 10 | 151414740 | 151280852 | 133888 | 655364 |
+| 1 | 151377152 | 151170660 | 206492 | 655364 |
+| 2 | 151317436 | 151130760 | 186676 | 655364 |
+| 3 | 151241916 | 151088624 | 153292 | 655364 |
+| 4 | 151257924 | 151005616 | 252308 | 655364 |
+| 5 | 151161332 | 150948676 | 212656 | 655364 |
+| 6 | 151115956 | 150973452 | 142504 | 655364 |
+| 7 | 151143552 | 151004168 | 139384 | 655364 |
+| 8 | 151152952 | 150978340 | 174612 | 655364 |
+| 9 | 151133496 | 150985252 | 148244 | 655364 |
+| 10 | 151144608 | 150902892 | 241716 | 655364 |
 
 ## Payload erofs layout
 
