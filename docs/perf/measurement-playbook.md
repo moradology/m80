@@ -617,8 +617,9 @@ reproduction command, host context, page-cache statement, and green
 `composed_e2e_layered_warm_pool` test-result lines. The verifier also
 checks that the three composed JSON artifacts agree on `git_commit`,
 `substrate`, target count, and lowercase sha256 Shared image digest, and that
-the receipt doc mentions the measured git commit, substrate identity, and
-Shared image digest from those JSON artifacts. Run the composed
+the receipt doc mentions the measured git commit, substrate identity, Shared
+image digest, restore P50/P95/P99, and host-memory byte values from those JSON
+artifacts. Run the composed
 JSON subset after committing artifacts and before closing `m80-q420k.6.2`,
 `.6.3`, and `.6.4`:
 

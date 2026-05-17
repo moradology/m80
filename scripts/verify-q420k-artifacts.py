@@ -210,6 +210,18 @@ def require_number_close(
         )
 
 
+def require_text_contains_number(
+    check: Check,
+    label: str,
+    text: str,
+    value: Any,
+    formatted: str,
+) -> None:
+    check.require(is_number(value), f"{label} must be numeric")
+    if is_number(value):
+        check.require(formatted in text, f"{label} missing from text: {formatted}")
+
+
 def require_git_commit(check: Check, label: str, value: Any) -> None:
     check.require(
         isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None,
@@ -1064,6 +1076,31 @@ def verify_composed_doc_consistency(
     residue_shared = at(residue, "data.residue.image_store.shared_digest")
     if isinstance(shared_digest, str) and shared_digest == residue_shared:
         check.require(shared_digest in text, "composed doc: missing Shared image digest from JSON artifacts")
+    for field in ["p50_ms", "p95_ms", "p99_ms"]:
+        value = at(restore, f"data.restore_latency.{field}")
+        if is_number(value):
+            require_text_contains_number(
+                check,
+                f"composed doc: restore {field}",
+                text,
+                value,
+                f"{float(value):.3f} ms",
+            )
+    for field in [
+        "after_n_attached_delta_bytes",
+        "shared_image_bytes",
+        "per_vm_overhead_bytes",
+        "bound_bytes",
+    ]:
+        value = at(memory, f"data.host_memory.{field}")
+        if is_number(value):
+            require_text_contains_number(
+                check,
+                f"composed doc: host_memory {field}",
+                text,
+                value,
+                f"{int(value):,}",
+            )
     scanned_roots = at(residue, "data.residue.scanned_roots")
     if isinstance(scanned_roots, list):
         for root in [root for root in scanned_roots if isinstance(root, str)]:
@@ -2246,12 +2283,12 @@ exit 1
             "data": {"restore_latency": {
                 "count": 10,
                 "target_ready": 10,
-                "samples_ms": [199.0 for _ in range(10)],
+                "samples_ms": [100.0 + index for index in range(10)],
                 "template_build_warmup_ms": [150.0],
                 "fail_count": 0,
-                "p50_ms": 199.0,
-                "p95_ms": 199.0,
-                "p99_ms": 199.0,
+                "p50_ms": 104.0,
+                "p95_ms": 109.0,
+                "p99_ms": 109.0,
             }},
         }))
         memory.write_text(json.dumps({
@@ -2365,9 +2402,16 @@ Raw artifacts:
 
 | N | fail count | P50 | P95 | P99 | bound |
 |---:|---:|---:|---:|---:|---:|
-| 10 | 0 | 100.000 ms | 150.000 ms | 199.000 ms | <= 200 ms |
+| 10 | 0 | 104.000 ms | 109.000 ms | 109.000 ms | <= 200 ms |
 
 ## Host memory delta
+
+| field | bytes |
+|---|---:|
+| composed `after_n_attached_delta_bytes` | 10 |
+| Shared erofs image | 10 |
+| derived `per_vm_overhead_bytes` | 1 |
+| bound (`shared_image_bytes + per_vm_overhead_bytes * N`) | 20 |
 
 `after_n_attached_delta_bytes` stayed within bound.
 
@@ -2767,12 +2811,12 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore_bad["data"]["restore_latency"]["samples_ms"] = restore_bad["data"]["restore_latency"]["samples_ms"][:9]
         restore.write_text(json.dumps(restore_bad))
         restore_bad_sample_count_status = quiet_run_checks(args)
-        restore_bad["data"]["restore_latency"]["samples_ms"] = [199.0 for _ in range(10)]
+        restore_bad["data"]["restore_latency"]["samples_ms"] = [100.0 + index for index in range(10)]
         restore.write_text(json.dumps(restore_bad))
         restore_bad["data"]["restore_latency"]["p99_ms"] = 100.0
         restore.write_text(json.dumps(restore_bad))
         restore_bad_percentile_status = quiet_run_checks(args)
-        restore_bad["data"]["restore_latency"]["p99_ms"] = 199.0
+        restore_bad["data"]["restore_latency"]["p99_ms"] = 109.0
         restore.write_text(json.dumps(restore_bad))
         args.only = ["composed-memory"]
         memory_bad_bound = json.loads(memory.read_text())
@@ -2933,6 +2977,20 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "- `/var/lib/m80-composed-e2e`",
             )
         )
+        composed_doc_bad_restore_number = composed_doc.read_text().replace(
+            "104.000 ms",
+            "103.000 ms",
+            1,
+        )
+        composed_doc.write_text(composed_doc_bad_restore_number)
+        missing_doc_restore_number_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_bad_restore_number.replace(
+                "103.000 ms",
+                "104.000 ms",
+                1,
+            )
+        )
         args.only = ["snapshot-template"]
         bad = json.loads(snapshot.read_text())
         bad["substrate"]["allow_other_firecracker_vms"] = True
@@ -3076,6 +3134,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or composed_playbook_bad_run_root_status == 0
             or missing_doc_json_identity_status == 0
             or missing_doc_residue_root_status == 0
+            or missing_doc_restore_number_status == 0
             or bad_status == 0
             or not valid_head_close_reason
             or not short_full_commit_match

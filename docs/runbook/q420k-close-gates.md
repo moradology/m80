@@ -217,8 +217,10 @@ The residue artifact must also record lowercase sha256 Shared and PerVm
 image-store digests. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate
 identity, Shared image digest from those JSON artifacts, and green
-`composed_e2e_layered_warm_pool` test-result lines. The host-memory subset
-check also recomputes `bound_bytes` from `shared_image_bytes`,
+`composed_e2e_layered_warm_pool` test-result lines. It also cross-checks the
+receipt's restore P50/P95/P99 and host-memory byte values against the JSON
+artifacts. The host-memory subset check also recomputes `bound_bytes` from
+`shared_image_bytes`,
 `per_vm_overhead_bytes`, and `n_attached`. The residue subset requires an
 explicit scanned run-root entry alongside `/tmp/m80-*`, `/var/run/m80`, the
 image store, and the template store:
