@@ -366,8 +366,10 @@ def verify_pmem_density(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
     check.require(text.startswith("# Shared pmem density"), "pmem density: title mismatch")
+    command = markdown_text(text, r"Command: `([^`]+)`")
     vm_count = markdown_int(text, r"- field: host memory delta after (\d+) attached Shared VMs")
     cycles = markdown_int(text, r"- cycles: `(\d+)`")
+    payload_mib = markdown_int(text, r"- payload size: `(\d+) MiB`")
     layout = markdown_int(text, r"- payload erofs layout: `Layout: (\d+)`,")
     payload_size = markdown_int(text, r"size `(\d+)` bytes, on-disk size")
     payload_on_disk = markdown_int(text, r"on-disk size `(\d+)` bytes")
@@ -385,12 +387,56 @@ def verify_pmem_density(path: Path) -> list[str]:
     )
 
     check.require(
+        command is not None,
+        "pmem density: missing reproduction command",
+    )
+    if command is not None:
+        try:
+            artifact_rel = path.resolve().relative_to(ROOT).as_posix()
+        except ValueError:
+            artifact_rel = path.as_posix()
+        for required in [
+            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0",
+            "M80_PMEM_SHARED_VM_COUNT=",
+            "M80_PMEM_SHARED_CYCLES=",
+            "M80_PMEM_SHARED_PAYLOAD_MIB=",
+            "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=",
+            f"M80_PMEM_SHARED_DENSITY_ARTIFACT={artifact_rel}",
+            "M80_RUN_ROOT=",
+            "M80_KERNEL_IMAGE=",
+            "M80_KERNEL_KIND=stripped",
+            "M80_ROOTFS_IMAGE=",
+            "M80_FIRECRACKER_BIN=",
+            "M80_JAILER_BIN=",
+            "M80_FIRECRACKER_SECCOMP_FILTER=",
+            "M80_JAILER_HARDEN_BIN=",
+            "M80_NET_HELPER_BIN=",
+            "M80_FIRECRACKER_VERSION=",
+            "M80_JAIL_UID=",
+            "M80_JAIL_GID=",
+            "scripts/smoke-pmem-shared.sh",
+        ]:
+            check.require(required in command, f"pmem density: reproduction command missing {required}")
+        for env, value in [
+            ("M80_PMEM_SHARED_VM_COUNT", vm_count),
+            ("M80_PMEM_SHARED_CYCLES", cycles),
+            ("M80_PMEM_SHARED_PAYLOAD_MIB", payload_mib),
+            ("M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB", per_vm_overhead),
+        ]:
+            if is_number(value):
+                check.require(
+                    f"{env}={int(value)}" in command,
+                    f"pmem density: reproduction command missing {env}={int(value)}",
+                )
+
+    check.require(
         markdown_text(text, r"- git worktree dirty excluding this artifact: `([^`]+)`") == "false",
         "pmem density: measured source worktree must be clean except for the artifact",
     )
     require_git_commit(check, "pmem density", markdown_text(text, r"- git commit: `([^`]+)`"))
     require_number_at_least(check, "pmem density: vm_count", vm_count, 4)
     require_number_at_least(check, "pmem density: cycles", cycles, 10)
+    require_number_at_least(check, "pmem density: payload MiB", payload_mib, 1)
     check.require(layout == 0, "pmem density: payload erofs layout must be 0")
     require_number_at_least(check, "pmem density: payload size", payload_size, 1)
     require_number_at_least(check, "pmem density: payload on-disk size", payload_on_disk, 1)
@@ -468,6 +514,10 @@ def verify_pmem_density_smoke(path: Path) -> list[str]:
         "repro_command+=\" M80_FIRECRACKER_SECCOMP_FILTER=$FIRECRACKER_SECCOMP_FILTER\"",
         "repro_command+=\" M80_JAILER_HARDEN_BIN=$JAILER_HARDEN_BIN\"",
         "repro_command+=\" M80_NET_HELPER_BIN=$NET_HELPER_BIN\"",
+        "repro_command+=\" M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=$PER_VM_OVERHEAD_KIB\"",
+        "repro_command+=\" M80_FIRECRACKER_VERSION=$FIRECRACKER_VERSION\"",
+        "repro_command+=\" M80_JAIL_UID=$JAIL_UID\"",
+        "repro_command+=\" M80_JAIL_GID=$JAIL_GID\"",
         "M80_FIRECRACKER_SECCOMP_FILTER=\"$FIRECRACKER_SECCOMP_FILTER\"",
         "M80_JAILER_HARDEN_BIN=\"$JAILER_HARDEN_BIN\"",
         "M80_NET_HELPER_BIN=\"$NET_HELPER_BIN\"",
@@ -491,6 +541,7 @@ def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
         "M80_PMEM_SHARED_VM_COUNT=4",
         "M80_PMEM_SHARED_CYCLES=10",
         "M80_PMEM_SHARED_PAYLOAD_MIB=128",
+        "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=131072",
         "M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md",
         "M80_RUN_ROOT=/var/lib/m80-psd",
         "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
@@ -501,6 +552,9 @@ def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
         "M80_KERNEL_IMAGE=<real-stripped-kernel.bin>",
         "M80_KERNEL_KIND=stripped",
         "M80_ROOTFS_IMAGE=<real-rootfs.ext4>",
+        "M80_FIRECRACKER_VERSION=v1.15.1",
+        "M80_JAIL_UID=",
+        "M80_JAIL_GID=",
         "./scripts/smoke-pmem-shared.sh",
         "python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committed",
     ]:
@@ -1705,6 +1759,10 @@ snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-
         density.write_text(
             """# Shared pmem density
 
+## Reproduction
+
+Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_SHARED_CYCLES=10 M80_PMEM_SHARED_PAYLOAD_MIB=128 M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 M80_PMEM_SHARED_DENSITY_ARTIFACT={density_path} M80_RUN_ROOT=/var/lib/m80-psd M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_FIRECRACKER_VERSION=v1.15.1 M80_JAIL_UID=1000 M80_JAIL_GID=1000 scripts/smoke-pmem-shared.sh`
+
 ## Substrate
 
 - dropped page cache before each cycle: `sync && echo 3 > /proc/sys/vm/drop_caches`
@@ -1743,6 +1801,7 @@ snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-
 
 - field: host memory delta after 4 attached Shared VMs
 - cycles: `10`
+- payload size: `128 MiB`
 - payload erofs layout: `Layout: 0`, size `4096` bytes, on-disk size `4096` bytes, compression ratio `0.00%`
 - image KiB: `4096`
 - per-VM overhead bound: `1024 KiB`
@@ -1767,6 +1826,7 @@ Shared pmem is admitted only with `TrustDomainAck` in the same trust domain.
 The DAX cache-timing side channel is acknowledged by that trust model.
 Shared pmem jail bindings are read-only; writable layers must use `PmemSharing::PerVm`.
 """
+            .replace("{density_path}", density.as_posix())
         )
         density_smoke.write_text(
             """#!/usr/bin/env bash
@@ -1775,16 +1835,24 @@ set -euo pipefail
 VM_COUNT="${M80_PMEM_SHARED_VM_COUNT:-4}"
 CYCLES="${M80_PMEM_SHARED_CYCLES:-10}"
 PAYLOAD_MIB="${M80_PMEM_SHARED_PAYLOAD_MIB:-128}"
+PER_VM_OVERHEAD_KIB="${M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB:-131072}"
 ARTIFACT="${M80_PMEM_SHARED_DENSITY_ARTIFACT:-docs/perf/pmem-shared-density.md}"
 ALLOW_OTHER_VMS="${M80_PMEM_SHARED_ALLOW_OTHER_VMS:-0}"
 KERNEL_KIND="${M80_KERNEL_KIND:-stripped}"
 FIRECRACKER_SECCOMP_FILTER="${M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin}"
 JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-/opt/m80/bin/m80-jailer-harden}"
 NET_HELPER_BIN="${M80_NET_HELPER_BIN:-/opt/m80/bin/m80-net-helper}"
+FIRECRACKER_VERSION="${M80_FIRECRACKER_VERSION:-v1.15.1}"
+JAIL_UID="${M80_JAIL_UID:-1000}"
+JAIL_GID="${M80_JAIL_GID:-1000}"
+repro_command+=" M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=$PER_VM_OVERHEAD_KIB"
 repro_command+=" M80_KERNEL_KIND=$KERNEL_KIND"
 repro_command+=" M80_FIRECRACKER_SECCOMP_FILTER=$FIRECRACKER_SECCOMP_FILTER"
 repro_command+=" M80_JAILER_HARDEN_BIN=$JAILER_HARDEN_BIN"
 repro_command+=" M80_NET_HELPER_BIN=$NET_HELPER_BIN"
+repro_command+=" M80_FIRECRACKER_VERSION=$FIRECRACKER_VERSION"
+repro_command+=" M80_JAIL_UID=$JAIL_UID"
+repro_command+=" M80_JAIL_GID=$JAIL_GID"
 
 if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then
     existing_firecrackers="$(pgrep -af '(^|/)firecracker( |$)' || true)"
@@ -1812,6 +1880,7 @@ sudo -n env \
 M80_PMEM_SHARED_VM_COUNT=4 \
 M80_PMEM_SHARED_CYCLES=10 \
 M80_PMEM_SHARED_PAYLOAD_MIB=128 \
+M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=131072 \
 M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md \
 M80_RUN_ROOT=/var/lib/m80-psd \
 M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
@@ -1822,6 +1891,9 @@ M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
 M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
 M80_KERNEL_KIND=stripped \
 M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
+M80_FIRECRACKER_VERSION=v1.15.1 \
+M80_JAIL_UID=1000 \
+M80_JAIL_GID=1000 \
 ./scripts/smoke-pmem-shared.sh
 ```
 
@@ -2255,6 +2327,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- bound: `8193 KiB`",
             "- bound: `8192 KiB`",
         ))
+        density_bad_repro = density.read_text().replace(
+            "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 ",
+            "",
+        )
+        density.write_text(density_bad_repro)
+        density_bad_reproduction_command_status = quiet_run_checks(args)
+        density.write_text(
+            density_bad_repro.replace(
+                "M80_PMEM_SHARED_DENSITY_ARTIFACT=",
+                "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 M80_PMEM_SHARED_DENSITY_ARTIFACT=",
+            )
+        )
         args.only = ["pmem-density-smoke"]
         density_smoke_status = quiet_run_checks(args)
         density_smoke.chmod(0o644)
@@ -2529,6 +2613,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or snapshot_doc_bad_kernel_kind_status == 0
             or density_bad_teardown_status == 0
             or density_bad_bound_status == 0
+            or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0
             or density_runbook_status != 0

@@ -103,6 +103,7 @@ Run from the repository root:
 M80_PMEM_SHARED_VM_COUNT=4 \
 M80_PMEM_SHARED_CYCLES=10 \
 M80_PMEM_SHARED_PAYLOAD_MIB=128 \
+M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=131072 \
 M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md \
 M80_RUN_ROOT=/var/lib/m80-psd \
 M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
@@ -113,6 +114,9 @@ M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
 M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
 M80_KERNEL_KIND=stripped \
 M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
+M80_FIRECRACKER_VERSION=v1.15.1 \
+M80_JAIL_UID="$(id -u)" \
+M80_JAIL_GID="$(id -g)" \
 ./scripts/smoke-pmem-shared.sh
 ```
 
