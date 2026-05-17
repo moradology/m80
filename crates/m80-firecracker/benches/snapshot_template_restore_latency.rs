@@ -37,9 +37,7 @@ fn main() {
     let n = env_nonzero_usize("N", DEFAULT_N);
     let runs = env_nonzero_usize("M80_SNAPSHOT_TEMPLATE_RUNS", DEFAULT_RUNS);
     let load = std::env::var("M80_SNAPSHOT_BENCH_LOAD").unwrap_or_else(|_| "idle".into());
-    let output = std::env::var_os("M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT));
+    let output = output_path_from_env();
     let git_worktree_dirty_excluding_artifact = git_worktree_dirty_excluding(&output);
     let git_commit = git_head_commit();
     let vcpu_count = env_nonzero_u32("M80_SNAPSHOT_BENCH_VCPU_COUNT", FIRST_LINE_VCPU_COUNT);
@@ -110,7 +108,7 @@ fn main() {
     eprintln!(
         "snapshot-template restore: load={load} runs={runs} n={n} p99={}us output={}",
         all_stats(&run_results).p99_us,
-        output.display()
+        display_output_path(&output)
     );
 
     let _ = fs::remove_dir_all(&store_root);
@@ -495,7 +493,7 @@ fn reproduction_command(report: &BenchReport<'_>) -> String {
         env_assignment("M80_CGROUP_MODE", "disabled"),
         env_assignment(
             "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT",
-            &report.output.display().to_string(),
+            &display_output_path(report.output),
         ),
         env_assignment(
             "M80_FIRECRACKER_BIN",
@@ -553,6 +551,25 @@ fn kernel_kind_env(kind: KernelKind) -> &'static str {
 
 fn env_assignment(name: &str, value: &str) -> String {
     format!("{name}={}", shell_escape(value))
+}
+
+fn output_path_from_env() -> PathBuf {
+    let raw = std::env::var_os("M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT));
+    if raw.is_absolute() {
+        raw
+    } else {
+        repo_root().join(raw)
+    }
+}
+
+fn display_output_path(path: &Path) -> String {
+    let repo = repo_root();
+    path.strip_prefix(&repo)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 fn shell_escape(value: &str) -> String {
