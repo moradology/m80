@@ -176,10 +176,10 @@ fn measure_guest_reads(
 ) -> LatencyStats {
     let command = format!(
         "i=0; while [ \"$i\" -lt {samples} ]; do \
-         start=$(date +%s%N); \
+         read start _ < /proc/uptime; \
          dd if=/opt/m80-layers/smoke-0/payload.bin of=/dev/null bs=4M status=none; \
-         end=$(date +%s%N); \
-         echo $((end - start)); \
+         read end _ < /proc/uptime; \
+         echo \"$start $end\"; \
          i=$((i + 1)); \
          done"
     );
@@ -188,14 +188,40 @@ fn measure_guest_reads(
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .map(|line| {
-            line.parse::<f64>()
-                .unwrap_or_else(|_| panic!("guest latency line must be ns integer: {line:?}"))
-                / 1_000_000.0
-        })
+        .map(guest_uptime_delta_ms)
         .collect::<Vec<_>>();
     values_ms.sort_by(f64::total_cmp);
     LatencyStats::from_sorted(&values_ms)
+}
+
+fn guest_uptime_delta_ms(line: &str) -> f64 {
+    let mut fields = line.split_whitespace();
+    let start = fields
+        .next()
+        .unwrap_or_else(|| panic!("guest latency line must contain start uptime: {line:?}"))
+        .parse::<f64>()
+        .unwrap_or_else(|_| panic!("guest start uptime must be numeric: {line:?}"));
+    let end = fields
+        .next()
+        .unwrap_or_else(|| panic!("guest latency line must contain end uptime: {line:?}"))
+        .parse::<f64>()
+        .unwrap_or_else(|_| panic!("guest end uptime must be numeric: {line:?}"));
+    assert!(
+        end >= start,
+        "guest uptime must be monotonic in latency line: {line:?}"
+    );
+    (end - start) * 1_000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guest_uptime_delta_uses_proc_uptime_fields() {
+        let delta = guest_uptime_delta_ms("12.34 12.37");
+        assert!((delta - 30.0).abs() < 1e-9);
+    }
 }
 
 #[derive(Clone, Copy)]
