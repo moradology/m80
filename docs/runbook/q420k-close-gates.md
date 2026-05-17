@@ -189,8 +189,8 @@ matrix. The recorded `p99` must recompute from those samples. Remove pending or
 diagnostic-only text from the receipt doc before close; the verifier rejects
 stale diagnostic markers and cross-checks the doc against the JSON artifact's
 measured git commit, preflight identity, command-block env assignments, and
-smoke p99. Prose outside the command block does not satisfy command
-requirements.
+smoke-section p99. Prose outside the command block or smoke section does not
+satisfy those requirements.
 
 Then verify the artifact:
 

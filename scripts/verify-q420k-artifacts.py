@@ -758,6 +758,7 @@ def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list
     check = Check()
     command_section = markdown_section(text, "Command")
     command = markdown_shell_block(command_section) if command_section is not None else None
+    smoke = markdown_section(text, "Smoke evidence")
     commit = data.get("git_commit")
     if isinstance(commit, str):
         check.require(commit in text, "snapshot doc: missing measured git_commit from JSON artifact")
@@ -765,7 +766,10 @@ def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list
     p99_ms = at(data, "data.warm.restore_to_handback_ms.p99")
     if is_number(p99_us) or is_number(p99_ms):
         p99_us = int(p99_us if is_number(p99_us) else round(p99_ms * 1000))
-        check.require(f"p99={p99_us}us" in text, "snapshot doc: smoke p99 does not match JSON artifact")
+        check.require(
+            f"p99={p99_us}us" in (smoke or ""),
+            "snapshot doc: smoke p99 does not match JSON artifact",
+        )
     preflight = at(data, "substrate.preflight_artifacts")
     if isinstance(preflight, dict):
         for field in [
@@ -4119,6 +4123,28 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
         ))
         args.only = ["snapshot-template"]
+        snapshot_doc_bad_p99_scope = (
+            snapshot_doc.read_text()
+            .replace(
+                "# Snapshot-Template Restore Latency\n",
+                "# Snapshot-Template Restore Latency\n\nOutside smoke: p99=199000us.\n",
+                1,
+            )
+            .replace(
+                "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+                "snapshot-template restore: load=idle runs=3 n=20 p99=198000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+            )
+        )
+        snapshot_doc.write_text(snapshot_doc_bad_p99_scope)
+        snapshot_doc_bad_p99_scope_status = quiet_run_checks(args)
+        snapshot_doc.write_text(
+            snapshot_doc_bad_p99_scope
+            .replace("\nOutside smoke: p99=199000us.\n", "", 1)
+            .replace(
+                "snapshot-template restore: load=idle runs=3 n=20 p99=198000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+                "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+            )
+        )
         snapshot_doc_bad_identity = snapshot_doc.read_text().replace(
             "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
             "",
@@ -4868,6 +4894,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or snapshot_doc_duplicate_smoke_status == 0
             or snapshot_doc_bad_kernel_kind_status == 0
             or snapshot_doc_bad_command_identity_status == 0
+            or snapshot_doc_bad_p99_scope_status == 0
             or snapshot_doc_bad_identity_status == 0
             or density_bad_teardown_status == 0
             or density_bad_host_kernel_status == 0

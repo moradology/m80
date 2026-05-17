@@ -85,8 +85,9 @@ jailer, seccomp filter, helper, kernel, and rootfs paths plus manifest
 kernel/rootfs sha256s. Each close artifact records the full measured
 `git_commit` alongside the clean-worktree flag. The snapshot-template receipt
 doc is cross-checked against its JSON artifact for measured git commit,
-preflight identity, command-block env assignments, and smoke p99; prose outside
-the command block does not satisfy command requirements. Add
+preflight identity, command-block env assignments, and smoke-section p99; prose
+outside the command block or smoke section does not satisfy those requirements.
+Add
 `--require-committed` after the artifacts are committed; that mode rejects
 artifacts absent from `HEAD` or with staged/unstaged changes. For final parent
 close, add `--require-closed-beads` and
