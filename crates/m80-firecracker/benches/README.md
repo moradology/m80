@@ -76,7 +76,9 @@ that checks the `.3.8` Shared density artifact, the snapshot-template artifact,
 all three Phase F composed-e2e artifacts, the `docs/perf/composed-e2e.md`
 receipt doc, the quiet-host inventory helper, the measurement beads'
 `verified: <artifact> @ <commit>` close reasons, and the Phase 0 / A-F parent
-statuses. The verifier is a field, git-state, close-reason, and tracker-state
+statuses. It also checks q420k tracker metadata: `requires-verified-close`
+labels on measurement parents/leaves and the expected success/acceptance
+criteria headings. The verifier is a field, git-state, close-reason, and tracker-state
 guard only. It does not replace the real-KVM run or committed artifacts.
 
 ## Snapshot schema

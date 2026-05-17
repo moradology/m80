@@ -66,7 +66,10 @@ This guard rejects missing artifacts, artifacts that do not name the real-KVM
 preflight substrate, noisy-host override artifacts, weak sample counts,
 threshold misses, teardown residue, Shared payload layout drift found by
 `m80-q420k.8.12`, a missing or non-executable quiet-host inventory helper,
-a missing or non-executable Shared density smoke script,
+a missing or non-executable Shared density smoke script, missing
+`requires-verified-close` labels on q420k measurement parents/leaves, missing
+`## Success Criteria` on q420k parent epics, missing `## Acceptance Criteria`
+on q420k measurement leaves,
 snapshot-template docs without the matching bench stderr paste, snapshot
 artifact commands that do not pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
 `target_ready=1`, vCPU/memory sizing, run-root inputs, and sample arrays that

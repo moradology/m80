@@ -450,7 +450,10 @@ commit exists in `HEAD` history and contains the named artifact, verifies that
 the cited commit descends from the artifact's measured `git_commit`, verifies
 that the artifact has not changed since that cited commit, verifies the Phase C,
 Phase D, and Phase F parent close reasons reuse the matching child evidence
-commits, and confirms Phase 0 plus Phases A-F are closed.
+commits, confirms Phase 0 plus Phases A-F are closed, and checks q420k tracker
+metadata: measurement parents/leaves retain `requires-verified-close`, open
+parent epics carry `## Success Criteria`, and measurement blocker leaves carry
+`## Acceptance Criteria`.
 
 After closing `m80-q420k`, rerun the same guard with the post-close check:
 
