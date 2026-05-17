@@ -132,12 +132,14 @@ python3 scripts/verify-q420k-artifacts.py --only pmem-density
 
 The `pmem-density` selector verifies both
 `docs/perf/pmem-shared-density.md` and `scripts/smoke-pmem-shared.sh`. The
-script must be executable and retain the quiet-host fail-closed guard. The
-artifact guard also requires the trust-model text that the parent close/PR
-description must paste or cite: `TrustDomainAck`, same trust domain, DAX
-cache-timing side channel, and read-only Shared pmem jail bindings. It also
-requires host kernel >= 6.5, `/dev/kvm` rw stat output, sudo/root uid evidence,
-and Firecracker version output matching preflight. The measured Shared image
+script must be executable, retain the quiet-host fail-closed guard in
+uncommented code, pass the exact helper/kernel/rootfs/run-root paths through
+sudo, and emit the artifact's reproduction command. The artifact guard also
+requires the trust-model text that the parent close/PR description must paste or
+cite: `TrustDomainAck`, same trust domain, DAX cache-timing side channel, and
+read-only Shared pmem jail bindings. It also requires host kernel >= 6.5,
+`/dev/kvm` rw stat output, sudo/root uid evidence, and Firecracker version
+output matching preflight. The measured Shared image
 digest must be a lowercase sha256 and its image path must be absolute and must
 contain that digest. The reproduction command must also match the Firecracker,
 jailer, helper, kernel, rootfs, version, and kernel-kind values in the

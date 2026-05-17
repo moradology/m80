@@ -167,10 +167,12 @@ python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committe
 ```
 
 That selector also checks `scripts/smoke-pmem-shared.sh`; the script must be
-executable, retain the quiet-host fail-closed guard, and be committed without
-mode or content drift when `--require-committed` is present. The density
-artifact's reproduction command is parsed as exact env assignments; prefix
-matches such as `M80_PMEM_SHARED_VM_COUNT=40` do not satisfy an expected
+executable, retain the quiet-host fail-closed guard in uncommented code, pass
+the exact helper/kernel/rootfs/run-root paths through sudo, emit the artifact's
+reproduction command, and be committed without mode or content drift when
+`--require-committed` is present. The density artifact's reproduction command
+is parsed as exact env assignments; prefix matches such as
+`M80_PMEM_SHARED_VM_COUNT=40` do not satisfy an expected
 `M80_PMEM_SHARED_VM_COUNT=4`.
 
 ## Q420K Ext4 Overlay-Template Clone

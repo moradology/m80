@@ -145,6 +145,12 @@ def load_text(path: Path) -> str:
         raise AssertionError(f"missing artifact: {path}") from exc
 
 
+def uncommented_text(text: str) -> str:
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 def artifact_path(raw: str | Path) -> Path:
     path = Path(raw)
     if not path.is_absolute():
@@ -909,42 +915,84 @@ def verify_pmem_density(path: Path) -> list[str]:
 
 def verify_pmem_density_smoke(path: Path) -> list[str]:
     text = load_text(path)
+    code_text = uncommented_text(text)
     check = Check()
     check.require(path.is_file(), "pmem density smoke script: path must be a file")
     check.require(
         path.stat().st_mode & 0o111 != 0,
         "pmem density smoke script: script must be executable",
     )
+    check.require(
+        "#!/usr/bin/env bash" in text,
+        "pmem density smoke script: missing #!/usr/bin/env bash",
+    )
     for required in [
-        "#!/usr/bin/env bash",
         "set -euo pipefail",
         "M80_PMEM_SHARED_VM_COUNT:-4",
         "M80_PMEM_SHARED_CYCLES:-10",
         "M80_PMEM_SHARED_PAYLOAD_MIB:-128",
+        "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB:-131072",
+        'RUN_ROOT="${M80_RUN_ROOT:-/var/lib/m80-psd}"',
         "M80_PMEM_SHARED_DENSITY_ARTIFACT:-docs/perf/pmem-shared-density.md",
         "M80_PMEM_SHARED_ALLOW_OTHER_VMS",
+        'FIRECRACKER_BIN="${M80_FIRECRACKER_BIN:-/opt/firecracker/bin/firecracker}"',
+        'JAILER_BIN="${M80_JAILER_BIN:-/opt/firecracker/bin/jailer}"',
         "M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin",
         "M80_JAILER_HARDEN_BIN:-/opt/m80/bin/m80-jailer-harden",
         "M80_NET_HELPER_BIN:-/opt/m80/bin/m80-net-helper",
+        'if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then',
+        "pgrep -af",
+        "refusing density measurement while other Firecracker VMs are present",
+        "exit 3",
+        "sudo -n true",
+        "cargo test -p m80-firecracker --test pmem_shared_host_page_sharing_real_kvm --no-run",
+        'repro_command="M80_PMEM_SHARED_ALLOW_OTHER_VMS=$ALLOW_OTHER_VMS"',
+        "repro_command+=\" M80_PMEM_SHARED_VM_COUNT=$VM_COUNT\"",
+        "repro_command+=\" M80_PMEM_SHARED_CYCLES=$CYCLES\"",
+        "repro_command+=\" M80_PMEM_SHARED_PAYLOAD_MIB=$PAYLOAD_MIB\"",
         "repro_command+=\" M80_FIRECRACKER_SECCOMP_FILTER=$FIRECRACKER_SECCOMP_FILTER\"",
         "repro_command+=\" M80_JAILER_HARDEN_BIN=$JAILER_HARDEN_BIN\"",
         "repro_command+=\" M80_NET_HELPER_BIN=$NET_HELPER_BIN\"",
         "repro_command+=\" M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=$PER_VM_OVERHEAD_KIB\"",
+        "repro_command+=\" M80_PMEM_SHARED_DENSITY_ARTIFACT=$ARTIFACT\"",
+        "repro_command+=\" M80_RUN_ROOT=$RUN_ROOT\"",
+        "repro_command+=\" M80_KERNEL_IMAGE=$KERNEL_IMAGE\"",
+        "repro_command+=\" M80_KERNEL_KIND=$KERNEL_KIND\"",
+        "repro_command+=\" M80_ROOTFS_IMAGE=$ROOTFS_IMAGE\"",
+        "repro_command+=\" M80_FIRECRACKER_BIN=$FIRECRACKER_BIN\"",
+        "repro_command+=\" M80_JAILER_BIN=$JAILER_BIN\"",
         "repro_command+=\" M80_FIRECRACKER_VERSION=$FIRECRACKER_VERSION\"",
         "repro_command+=\" M80_JAIL_UID=$JAIL_UID\"",
         "repro_command+=\" M80_JAIL_GID=$JAIL_GID\"",
+        "repro_command+=\" $0\"",
+        "timeout 1800 sudo -n env",
+        "M80_RUN_PMEM_SHARED_DENSITY=1",
+        "M80_PMEM_SHARED_VM_COUNT=\"$VM_COUNT\"",
+        "M80_PMEM_SHARED_CYCLES=\"$CYCLES\"",
+        "M80_PMEM_SHARED_PAYLOAD_MIB=\"$PAYLOAD_MIB\"",
+        "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=\"$PER_VM_OVERHEAD_KIB\"",
+        "M80_PMEM_SHARED_ALLOW_OTHER_VMS=\"$ALLOW_OTHER_VMS\"",
+        "M80_PMEM_SHARED_DENSITY_ARTIFACT=\"$ARTIFACT_PATH\"",
+        "M80_PMEM_SHARED_REPRO_COMMAND=\"$repro_command\"",
+        "M80_FIRECRACKER_BIN=\"$FIRECRACKER_BIN\"",
+        "M80_JAILER_BIN=\"$JAILER_BIN\"",
         "M80_FIRECRACKER_SECCOMP_FILTER=\"$FIRECRACKER_SECCOMP_FILTER\"",
         "M80_JAILER_HARDEN_BIN=\"$JAILER_HARDEN_BIN\"",
         "M80_NET_HELPER_BIN=\"$NET_HELPER_BIN\"",
-        "repro_command+=\" M80_KERNEL_KIND=$KERNEL_KIND\"",
+        "M80_KERNEL_IMAGE=\"$KERNEL_IMAGE\"",
         "M80_KERNEL_KIND=\"$KERNEL_KIND\"",
-        "pgrep -af",
-        "refusing density measurement while other Firecracker VMs are present",
-        "M80_RUN_PMEM_SHARED_DENSITY=1",
-        "cargo test -p m80-firecracker --test pmem_shared_host_page_sharing_real_kvm --no-run",
+        "M80_ROOTFS_IMAGE=\"$ROOTFS_IMAGE\"",
+        "M80_RUN_ROOT=\"$RUN_ROOT\"",
+        "M80_FIRECRACKER_VERSION=\"$FIRECRACKER_VERSION\"",
+        "M80_JAIL_UID=\"$JAIL_UID\"",
+        "M80_JAIL_GID=\"$JAIL_GID\"",
         "shared_pmem_host_page_sharing_measurement_lives_in_density_gate",
+        "--ignored --exact --nocapture",
     ]:
-        check.require(required in text, f"pmem density smoke script: missing {required}")
+        check.require(
+            required in code_text,
+            f"pmem density smoke script: missing executable code {required}",
+        )
     return check.errors
 
 
@@ -2964,23 +3012,40 @@ VM_COUNT="${M80_PMEM_SHARED_VM_COUNT:-4}"
 CYCLES="${M80_PMEM_SHARED_CYCLES:-10}"
 PAYLOAD_MIB="${M80_PMEM_SHARED_PAYLOAD_MIB:-128}"
 PER_VM_OVERHEAD_KIB="${M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB:-131072}"
+RUN_ROOT="${M80_RUN_ROOT:-/var/lib/m80-psd}"
 ARTIFACT="${M80_PMEM_SHARED_DENSITY_ARTIFACT:-docs/perf/pmem-shared-density.md}"
+ARTIFACT_PATH="$ARTIFACT"
 ALLOW_OTHER_VMS="${M80_PMEM_SHARED_ALLOW_OTHER_VMS:-0}"
+FIRECRACKER_BIN="${M80_FIRECRACKER_BIN:-/opt/firecracker/bin/firecracker}"
+JAILER_BIN="${M80_JAILER_BIN:-/opt/firecracker/bin/jailer}"
 KERNEL_KIND="${M80_KERNEL_KIND:-stripped}"
 FIRECRACKER_SECCOMP_FILTER="${M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin}"
 JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-/opt/m80/bin/m80-jailer-harden}"
 NET_HELPER_BIN="${M80_NET_HELPER_BIN:-/opt/m80/bin/m80-net-helper}"
+KERNEL_IMAGE="${M80_KERNEL_IMAGE:-/var/lib/m80/kernels/vmlinux}"
+ROOTFS_IMAGE="${M80_ROOTFS_IMAGE:-/var/lib/m80/rootfs.ext4}"
 FIRECRACKER_VERSION="${M80_FIRECRACKER_VERSION:-v1.15.1}"
 JAIL_UID="${M80_JAIL_UID:-1000}"
 JAIL_GID="${M80_JAIL_GID:-1000}"
+repro_command="M80_PMEM_SHARED_ALLOW_OTHER_VMS=$ALLOW_OTHER_VMS"
+repro_command+=" M80_PMEM_SHARED_VM_COUNT=$VM_COUNT"
+repro_command+=" M80_PMEM_SHARED_CYCLES=$CYCLES"
+repro_command+=" M80_PMEM_SHARED_PAYLOAD_MIB=$PAYLOAD_MIB"
 repro_command+=" M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=$PER_VM_OVERHEAD_KIB"
+repro_command+=" M80_PMEM_SHARED_DENSITY_ARTIFACT=$ARTIFACT"
+repro_command+=" M80_RUN_ROOT=$RUN_ROOT"
+repro_command+=" M80_KERNEL_IMAGE=$KERNEL_IMAGE"
 repro_command+=" M80_KERNEL_KIND=$KERNEL_KIND"
+repro_command+=" M80_ROOTFS_IMAGE=$ROOTFS_IMAGE"
+repro_command+=" M80_FIRECRACKER_BIN=$FIRECRACKER_BIN"
+repro_command+=" M80_JAILER_BIN=$JAILER_BIN"
 repro_command+=" M80_FIRECRACKER_SECCOMP_FILTER=$FIRECRACKER_SECCOMP_FILTER"
 repro_command+=" M80_JAILER_HARDEN_BIN=$JAILER_HARDEN_BIN"
 repro_command+=" M80_NET_HELPER_BIN=$NET_HELPER_BIN"
 repro_command+=" M80_FIRECRACKER_VERSION=$FIRECRACKER_VERSION"
 repro_command+=" M80_JAIL_UID=$JAIL_UID"
 repro_command+=" M80_JAIL_GID=$JAIL_GID"
+repro_command+=" $0"
 
 if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then
     existing_firecrackers="$(pgrep -af '(^|/)firecracker( |$)' || true)"
@@ -2990,15 +3055,31 @@ if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then
     fi
 fi
 
+sudo -n true
 cargo test -p m80-firecracker --test pmem_shared_host_page_sharing_real_kvm --no-run
-sudo -n env \
+timeout 1800 sudo -n env \
     M80_RUN_PMEM_SHARED_DENSITY=1 \
+    M80_PMEM_SHARED_VM_COUNT="$VM_COUNT" \
+    M80_PMEM_SHARED_CYCLES="$CYCLES" \
+    M80_PMEM_SHARED_PAYLOAD_MIB="$PAYLOAD_MIB" \
+    M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB="$PER_VM_OVERHEAD_KIB" \
+    M80_PMEM_SHARED_ALLOW_OTHER_VMS="$ALLOW_OTHER_VMS" \
+    M80_PMEM_SHARED_DENSITY_ARTIFACT="$ARTIFACT_PATH" \
+    M80_PMEM_SHARED_REPRO_COMMAND="$repro_command" \
+    M80_FIRECRACKER_BIN="$FIRECRACKER_BIN" \
+    M80_JAILER_BIN="$JAILER_BIN" \
     M80_KERNEL_KIND="$KERNEL_KIND" \
+    M80_KERNEL_IMAGE="$KERNEL_IMAGE" \
+    M80_ROOTFS_IMAGE="$ROOTFS_IMAGE" \
+    M80_RUN_ROOT="$RUN_ROOT" \
     M80_FIRECRACKER_SECCOMP_FILTER="$FIRECRACKER_SECCOMP_FILTER" \
     M80_JAILER_HARDEN_BIN="$JAILER_HARDEN_BIN" \
     M80_NET_HELPER_BIN="$NET_HELPER_BIN" \
-    M80_PMEM_SHARED_DENSITY_ARTIFACT="$ARTIFACT" \
-    "$test_bin" shared_pmem_host_page_sharing_measurement_lives_in_density_gate
+    M80_FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
+    M80_JAIL_UID="$JAIL_UID" \
+    M80_JAIL_GID="$JAIL_GID" \
+    "$test_bin" shared_pmem_host_page_sharing_measurement_lives_in_density_gate \
+    --ignored --exact --nocapture
 """
         )
         density_smoke.chmod(0o755)
@@ -3920,6 +4001,26 @@ The measured signal is acceptable under the same-trust-domain assumption.
         )
         args.only = ["pmem-density-smoke"]
         density_smoke_status = quiet_run_checks(args)
+        density_smoke_bad_repro_command = density_smoke.read_text().replace(
+            'M80_PMEM_SHARED_REPRO_COMMAND="$repro_command"',
+            'M80_PMEM_SHARED_REPRO_COMMAND_DISABLED="$repro_command"',
+        )
+        density_smoke.write_text(density_smoke_bad_repro_command)
+        density_smoke_bad_repro_command_status = quiet_run_checks(args)
+        density_smoke.write_text(density_smoke_bad_repro_command.replace(
+            'M80_PMEM_SHARED_REPRO_COMMAND_DISABLED="$repro_command"',
+            'M80_PMEM_SHARED_REPRO_COMMAND="$repro_command"',
+        ))
+        density_smoke_commented_guard = density_smoke.read_text().replace(
+            'if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then',
+            '# if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then',
+        )
+        density_smoke.write_text(density_smoke_commented_guard)
+        density_smoke_commented_guard_status = quiet_run_checks(args)
+        density_smoke.write_text(density_smoke_commented_guard.replace(
+            '# if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then',
+            'if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then',
+        ))
         density_smoke.chmod(0o644)
         density_smoke_not_executable_status = quiet_run_checks(args)
         density_smoke.chmod(0o755)
@@ -4483,6 +4584,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_exact_command_status == 0
             or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
+            or density_smoke_bad_repro_command_status == 0
+            or density_smoke_commented_guard_status == 0
             or density_smoke_not_executable_status == 0
             or density_runbook_status != 0
             or density_runbook_bad_allow_other_status == 0
