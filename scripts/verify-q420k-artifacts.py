@@ -2804,9 +2804,10 @@ def verify_composed_doc_close_reason_refs(
 def artifact_measured_git_commit(key: str, path: Path) -> str | None:
     if key == "pmem-density":
         try:
-            commit = markdown_text(path.read_text(), r"- git commit: `([^`]+)`")
+            substrate_section = markdown_section(path.read_text(), "Substrate") or ""
         except FileNotFoundError:
             return None
+        commit = markdown_text(substrate_section, r"- git commit: `([^`]+)`")
     elif key in {
         "snapshot-template",
         "composed-restore",
@@ -5144,6 +5145,33 @@ The measured signal is acceptable under the same-trust-domain assumption.
             and artifact_measured_git_commit("composed-restore", restore) == git_commit
             and artifact_measured_git_commit("composed-doc", composed_doc) is None
         )
+        density_commit_outside_substrate = (
+            density.read_text()
+            .replace("- git commit: `cccccccccccccccccccccccccccccccccccccccc`\n", "", 1)
+            .replace(
+                "# Shared pmem density\n\n",
+                "# Shared pmem density\n\n"
+                "- git commit: `cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                1,
+            )
+        )
+        density.write_text(density_commit_outside_substrate)
+        density_measured_commit_scoped = artifact_measured_git_commit("pmem-density", density) is None
+        density.write_text(
+            density_commit_outside_substrate
+            .replace(
+                "# Shared pmem density\n\n"
+                "- git commit: `cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                "# Shared pmem density\n\n",
+                1,
+            )
+            .replace(
+                "- git worktree dirty excluding this artifact: `false`\n",
+                "- git worktree dirty excluding this artifact: `false`\n"
+                "- git commit: `cccccccccccccccccccccccccccccccccccccccc`\n",
+                1,
+            )
+        )
         full_close_flags = argparse.Namespace(
             require_committed=True,
             require_closed_beads=True,
@@ -5295,6 +5323,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or not super_epic_close_reason_valid
             or not super_epic_close_reason_bad
             or not measured_commit_extraction
+            or not density_measured_commit_scoped
             or not final_flag_composition
             or not close_reason_matches(
                 "verified: docs/perf/pmem-shared-density.md @ 0123abc",
