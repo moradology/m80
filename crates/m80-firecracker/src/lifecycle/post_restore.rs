@@ -30,14 +30,13 @@ pub(crate) fn phase_restore_post_restore_hooks(
         return Ok(());
     }
 
-    let restore_nonce = restore_nonce()?;
     send_post_restore_hooks(
         vsock_uds,
         vm_id,
         base_request_id,
         firecracker_pid,
         hooks,
-        restore_nonce,
+        restore_nonce()?,
     )
 }
 

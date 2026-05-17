@@ -267,8 +267,8 @@ impl RunningSandbox {
 
     fn fileop_round_trip<T, U>(&mut self, payload: T, kind: &str) -> Result<U, FcError>
     where
-        T: m80_proto::Payload + Clone,
-        U: m80_proto::Payload + Clone,
+        T: m80_proto::Payload,
+        U: m80_proto::Payload,
     {
         self.prepare_fileop_activity()?;
         let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
@@ -283,10 +283,9 @@ impl RunningSandbox {
             &envelope,
         )?;
         let frame: Envelope<U> = recv_fileop(&mut channel, "file operation", firecracker_pid)?;
-        let response = frame.payload;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
-        Ok(response)
+        Ok(frame.payload)
     }
 
     fn prepare_fileop_activity(&self) -> Result<(), FcError> {

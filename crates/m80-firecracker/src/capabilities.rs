@@ -79,7 +79,7 @@ fn drop_cap_from_set(set: CapSet, set_name: &'static str) -> Result<(), Capabili
 /// Parsed `/proc/thread-self/status` capability fields used by tests and
 /// verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ParentCapabilityStatus {
+struct ParentCapabilityStatus {
     cap_eff: u64,
     cap_prm: u64,
     cap_bnd: u64,
@@ -113,7 +113,7 @@ fn read_parent_capability_status() -> Result<ParentCapabilityStatus, CapabilityD
     parse_parent_capability_status(&text)
 }
 
-pub(crate) fn parse_parent_capability_status(
+fn parse_parent_capability_status(
     text: &str,
 ) -> Result<ParentCapabilityStatus, CapabilityDropError> {
     Ok(ParentCapabilityStatus {

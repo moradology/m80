@@ -74,16 +74,13 @@ pub(crate) fn record_context(
     vm_id: &str,
     request_id: Option<&str>,
     message: &str,
-    extra: impl IntoIterator<Item = (String, String)>,
+    extra: BTreeMap<String, String>,
 ) {
     let Some(handle) = diagnostics.as_mut() else {
         return;
     };
-    let mut context = BTreeMap::new();
+    let mut context = extra;
     context.insert("vm_id".to_owned(), vm_id.to_owned());
-    for (key, value) in extra {
-        context.insert(key, value);
-    }
     let event = VmEvent::host(
         phase,
         message.to_owned(),
@@ -282,6 +279,7 @@ impl PhaseErrorDetails for FcError {
     }
 }
 
+#[cfg(test)]
 impl PhaseErrorDetails for std::io::Error {}
 
 fn record_phase_started(

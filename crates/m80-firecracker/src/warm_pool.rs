@@ -466,7 +466,7 @@ fn duration_micros_u64(duration: Duration) -> u64 {
 
 /// Discard a sandbox, first recording a diagnostics event if `exec_err` is
 /// `Some` (i.e., we are discarding after an exec failure, not normal teardown).
-pub(crate) fn discard_sandbox_with_diagnostics(
+pub(super) fn discard_sandbox_with_diagnostics(
     mut sandbox: RunningSandbox,
     exec_err: Option<&FcError>,
 ) -> Result<(), FcError> {

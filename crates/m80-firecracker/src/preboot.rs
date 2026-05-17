@@ -293,7 +293,6 @@ fn validate_cmdline_tokens(field: &'static str, tokens: &[String]) -> Result<(),
     Ok(())
 }
 
-/// Build kernel boot args for the given `(image_kind, kernel_kind)` pair.
 fn boot_args_for(
     kind: ImageKind,
     kernel_kind: KernelKind,

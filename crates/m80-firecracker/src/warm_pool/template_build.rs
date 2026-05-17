@@ -17,8 +17,6 @@ use m80_snapshot_template::{
     JailBackingPath, PinnedTemplate, PmemTemplateEntry, PmemTemplateSharing, TemplateDigest,
     TemplateInputs, TemplateRestoreLayout, TemplateStore,
 };
-use nix::sys::utsname::uname;
-
 use crate::error::{ConfigError, FcError};
 use crate::layout::pmem_layer_jail_path;
 use crate::pmem::{validate_pmem_layers, PmemSharing};
@@ -239,7 +237,7 @@ pub(crate) fn template_inputs_for_current_host(
     )?)
 }
 
-pub(crate) fn restore_layout_for_inputs(
+pub(super) fn restore_layout_for_inputs(
     inputs: &TemplateInputs,
 ) -> Result<TemplateRestoreLayout, FcError> {
     Ok(TemplateRestoreLayout::new(
@@ -310,7 +308,7 @@ fn discard_running(running: crate::types::RunningSandbox) {
 }
 
 fn host_kernel_release() -> Result<String, FcError> {
-    let uts = uname().map_err(|err| {
+    let uts = nix::sys::utsname::uname().map_err(|err| {
         FcError::Config(ConfigError::InvalidValue {
             field: "template.host_kernel_version",
             reason: format!("uname failed: {err}"),
@@ -335,7 +333,7 @@ static FAIL_AFTER_CAPTURE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(test)]
-pub(crate) fn fail_next_template_build_after_capture_for_test() {
+pub(super) fn fail_next_template_build_after_capture_for_test() {
     FAIL_AFTER_CAPTURE.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 

@@ -406,11 +406,10 @@ fn parse_set_hostname_hook(payload: Value) -> Result<HookSpec, FcError> {
             reason: "set_hostname payload must be an object".to_owned(),
         })
     })?;
-    let allowed = ["hostname"].into_iter().collect::<Vec<_>>();
     reject_unknown_keys(
         "warm_strategy.hooks[].set_hostname",
         object.keys().map(String::as_str),
-        &allowed,
+        &["hostname"],
     )?;
     let hostname = object
         .get("hostname")
@@ -503,10 +502,10 @@ where
     Ok(())
 }
 
-fn invalid_value<T>(field: &'static str, reason: impl Into<String>) -> Result<T, FcError> {
+fn invalid_value<T>(field: &'static str, reason: &str) -> Result<T, FcError> {
     Err(FcError::Config(ConfigError::InvalidValue {
         field,
-        reason: reason.into(),
+        reason: reason.to_owned(),
     }))
 }
 

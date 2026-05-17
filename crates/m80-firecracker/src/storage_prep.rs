@@ -167,11 +167,10 @@ fn validate_shared_erofs_layout(path: &Path) -> Result<(), FcError> {
             source,
         })?;
     if !output.status.success() {
-        let detail = command_output_detail(&output.stdout, &output.stderr);
         return Err(FcError::CommandFailed {
             command: "dump.erofs",
             status: output.status,
-            output: detail,
+            output: command_output_detail(&output.stdout, &output.stderr),
         });
     }
 
@@ -253,11 +252,10 @@ fn clone_pmem_backing(source: &Path, dest: &Path) -> Result<(), FcError> {
     if output.status.success() {
         return Ok(());
     }
-    let detail = command_output_detail(&output.stdout, &output.stderr);
     Err(FcError::CommandFailed {
         command: "cp",
         status: output.status,
-        output: detail,
+        output: command_output_detail(&output.stdout, &output.stderr),
     })
 }
 

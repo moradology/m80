@@ -333,8 +333,6 @@ impl Sandbox {
                 .expect("launch process cleanup guard must exist after firecracker spawn");
 
             // Phase 10: open UDS REST client (retries for up to 5 s).
-            let host_api_socket =
-                firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
             let client = diag_phase!(
                 current_phase,
                 &mut diagnostics,
@@ -342,7 +340,7 @@ impl Sandbox {
                 request_id.as_deref(),
                 Phase::Boot,
                 "phase_10_open_uds",
-                { phase_10_open_uds(&host_api_socket) }
+                { phase_10_open_uds(&api_socket) }
             )?;
 
             // Phase 11: REST PUTs in documented order.
@@ -610,7 +608,6 @@ impl Sandbox {
         )
     }
 
-    #[allow(dead_code)] // Wired into WarmStrategy::SnapshotRestore by m80-q420k.4.5.
     pub(crate) fn launch_from_template_body_with_hooks(
         self,
         template: &PinnedTemplate,
@@ -771,8 +768,6 @@ impl Sandbox {
                 .expect("restore process cleanup guard must exist after firecracker spawn");
 
             // Phase 10: open UDS REST client.
-            let host_api_socket =
-                firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
             let client = diag_phase!(
                 current_phase,
                 &mut diagnostics,
@@ -780,7 +775,7 @@ impl Sandbox {
                 request_id.as_deref(),
                 Phase::Boot,
                 "phase_10_open_uds",
-                { phase_10_open_uds(&host_api_socket) }
+                { phase_10_open_uds(&api_socket) }
             )?;
 
             // Phase restore-prime: queue host readahead on the real snapshot
@@ -816,7 +811,7 @@ impl Sandbox {
                 "phase_restore_load",
                 {
                     let req = RestoreRequest {
-                        api_socket: host_api_socket.clone(),
+                        api_socket: api_socket.clone(),
                         paths: snapshot_bind.jail_paths.clone(),
                         host_paths: snapshot.clone(),
                         expected_firecracker_version: discovery
@@ -1547,17 +1542,6 @@ fn wait_for_api_socket_create(api_socket: &Path, deadline: Instant) -> Result<()
             Err(errno) => return Err(errno_path_io(api_socket, errno)),
         }
     }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn wait_for_api_socket_create(api_socket: &Path, _deadline: Instant) -> Result<(), FcError> {
-    Err(path_io(
-        api_socket,
-        std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "inotify is only available on Linux",
-        ),
-    ))
 }
 
 fn event_name_matches(event_name: Option<&OsStr>, filename: &OsStr) -> bool {

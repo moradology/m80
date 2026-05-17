@@ -56,12 +56,11 @@ impl RunningSandbox {
 
         let drive_id = preallocated_drive_slot_id(request.slot);
         let device_path = preallocated_drive_device_path(self.scratch.is_some(), request.slot);
-        let patch = PartialDriveConfig {
+        let t_patch = Instant::now();
+        self.client.patch_drive(&PartialDriveConfig {
             drive_id: drive_id.clone(),
             path_on_host: Some(request.path_on_host.clone()),
-        };
-        let t_patch = Instant::now();
-        self.client.patch_drive(&patch)?;
+        })?;
         phase_event("hotplug_drive_patch", &self.vm_id, t_patch.elapsed());
 
         let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
@@ -136,12 +135,11 @@ impl RunningSandbox {
         validate_detach_response(&response.payload, &drive_id)?;
         phase_event("hotplug_drive_detach", &self.vm_id, t_detach.elapsed());
 
-        let patch = PartialDriveConfig {
+        let t_patch = Instant::now();
+        self.client.patch_drive(&PartialDriveConfig {
             drive_id,
             path_on_host: Some(preallocated_drive_slot_jail_path(request.slot)),
-        };
-        let t_patch = Instant::now();
-        self.client.patch_drive(&patch)?;
+        })?;
         phase_event(
             "hotplug_drive_placeholder_patch",
             &self.vm_id,

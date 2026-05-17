@@ -15,7 +15,7 @@ pub(crate) struct Response {
 }
 
 pub(crate) fn send_json(
-    stream: &mut impl ReadWrite,
+    stream: &mut (impl Read + Write),
     method: &str,
     path: &str,
     body: &[u8],
@@ -31,10 +31,6 @@ pub(crate) fn send_json(
     stream.flush()?;
     read_response(stream)
 }
-
-pub(crate) trait ReadWrite: Read + Write {}
-
-impl<T: Read + Write> ReadWrite for T {}
 
 /// Read a full HTTP/1.1 response from `stream`.
 ///

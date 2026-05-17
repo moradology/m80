@@ -71,7 +71,7 @@ impl ConfigFilePaths {
     /// Host config paths: `/etc/m80/config.toml`, `/etc/m80/config.d`,
     /// `~/.config/m80/config.toml`, and `~/.config/m80/config.d` when `HOME`
     /// is set.
-    pub(crate) fn host() -> Self {
+    fn host() -> Self {
         Self {
             system: Some(PathBuf::from("/etc/m80/config.toml")),
             system_drop_in_dir: Some(PathBuf::from("/etc/m80/config.d")),

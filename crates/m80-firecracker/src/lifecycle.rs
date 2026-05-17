@@ -425,7 +425,6 @@ pub(crate) fn prepare_snapshot_paths(
     })
 }
 
-#[allow(dead_code)] // Wired into WarmStrategy::SnapshotRestore by m80-q420k.4.5.
 fn clean_snapshot_stage_files(paths: &SnapshotPaths) -> Result<(), FcError> {
     remove_file_if_exists(&paths.vm_state)?;
     remove_file_if_exists(&paths.mem)?;
@@ -560,8 +559,7 @@ fn send_shutdown_request(
     let deadline = Instant::now() + SHUTDOWN_RPC_TIMEOUT;
     let mut channel = Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT)?;
 
-    let req = ShutdownRequest { reason: None };
-    channel.send(&Envelope::new(req))?;
+    channel.send(&Envelope::new(ShutdownRequest { reason: None }))?;
 
     let resp_env: Envelope<ShutdownResponse> = channel.recv().map_err(|err| {
         protocol::recv_error_after_clean_request(err, "shutdown_response", firecracker_pid)

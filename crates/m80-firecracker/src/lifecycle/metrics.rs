@@ -32,9 +32,8 @@ impl RunningSandbox {
         let frame: Envelope<MetricsResponse> = channel
             .recv()
             .map_err(|e| super::protocol::recv_error(e, "guest metrics", firecracker_pid))?;
-        let response = frame.payload;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
-        Ok(response)
+        Ok(frame.payload)
     }
 }

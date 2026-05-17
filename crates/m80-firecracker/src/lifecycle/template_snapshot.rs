@@ -7,7 +7,6 @@ use m80_snapshot::SnapshotPaths;
 use crate::error::{ConfigError, FcError};
 use crate::lifecycle::{PreparedSnapshotPaths, SNAPSHOT_BIND_DEST};
 
-#[allow(dead_code)] // Wired into WarmStrategy::SnapshotRestore by m80-q420k.4.5.
 pub(crate) fn prepare_template_snapshot_paths(
     paths: &SnapshotPaths,
 ) -> Result<PreparedSnapshotPaths, FcError> {
