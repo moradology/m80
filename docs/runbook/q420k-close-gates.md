@@ -133,13 +133,15 @@ script must be executable and retain the quiet-host fail-closed guard. The
 artifact guard also requires the trust-model text that the parent close/PR
 description must paste or cite: `TrustDomainAck`, same trust domain, DAX
 cache-timing side channel, and read-only Shared pmem jail bindings. It also
-requires the measured Shared image digest to be a lowercase sha256 and its
-image path to be absolute and to contain that digest. The reproduction command
-must also match the Firecracker, jailer, helper, kernel, rootfs, version, and
-kernel-kind values in the artifact's `preflight_artifacts` block. The
-`Samples` table must contain exactly one row per cycle, each row's delta must
-recompute from the MemAvailable before/after values, and the summary max delta
-must equal the table max.
+requires host kernel >= 6.5, `/dev/kvm` rw stat output, sudo/root uid evidence,
+and Firecracker version output matching preflight. The measured Shared image
+digest must be a lowercase sha256 and its image path must be absolute and must
+contain that digest. The reproduction command must also match the Firecracker,
+jailer, helper, kernel, rootfs, version, and kernel-kind values in the
+artifact's `preflight_artifacts` block. The `Samples` table must contain
+exactly one row per cycle, each row's delta must recompute from the
+MemAvailable before/after values, and the summary max delta must equal the
+table max.
 
 After committing the artifact, rerun the close guard with git-state checks:
 

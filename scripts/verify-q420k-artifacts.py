@@ -663,6 +663,10 @@ def verify_pmem_density(path: Path) -> list[str]:
     check = Check()
     check.require(text.startswith("# Shared pmem density"), "pmem density: title mismatch")
     command = markdown_text(text, r"Command: `([^`]+)`")
+    host_kernel = markdown_text(text, r"- host kernel: `([^`]+)`")
+    firecracker_version = markdown_text(text, r"- firecracker: `([^`]+)`")
+    kvm_stat = markdown_text(text, r"- `/dev/kvm`: `([^`]+)`")
+    sudo_uid = markdown_text(text, r"- sudo: required; test ran as uid `([^`]+)`")
     vm_count = markdown_int(text, r"- field: host memory delta after (\d+) attached Shared VMs")
     cycles = markdown_int(text, r"- cycles: `(\d+)`")
     payload_mib = markdown_int(text, r"- payload size: `(\d+) MiB`")
@@ -733,6 +737,19 @@ def verify_pmem_density(path: Path) -> list[str]:
         "pmem density: measured source worktree must be clean except for the artifact",
     )
     require_git_commit(check, "pmem density", markdown_text(text, r"- git commit: `([^`]+)`"))
+    check.require(
+        kernel_version_at_least(host_kernel, 6, 5),
+        "pmem density: host kernel must be recorded and >= 6.5",
+    )
+    check.require(
+        isinstance(firecracker_version, str) and firecracker_version,
+        "pmem density: Firecracker version output must be recorded",
+    )
+    check.require(
+        isinstance(kvm_stat, str) and "/dev/kvm" in kvm_stat and "rw" in kvm_stat,
+        "pmem density: /dev/kvm rw stat must be recorded",
+    )
+    check.require(sudo_uid == "0", "pmem density: sudo/root uid evidence must be 0")
     require_number_at_least(check, "pmem density: vm_count", vm_count, 4)
     require_number_at_least(check, "pmem density: cycles", cycles, 10)
     require_number_at_least(check, "pmem density: payload MiB", payload_mib, 1)
@@ -832,6 +849,12 @@ def verify_pmem_density(path: Path) -> list[str]:
         quiet_substrate({"substrate": substrate}, "pmem density", check)
         preflight = substrate.get("preflight_artifacts")
         if command is not None and isinstance(preflight, dict):
+            expected_version = preflight.get("expected_firecracker_version")
+            if isinstance(expected_version, str) and isinstance(firecracker_version, str):
+                check.require(
+                    expected_version in firecracker_version,
+                    "pmem density: Firecracker version output must match preflight version",
+                )
             for env, field in [
                 ("M80_FIRECRACKER_BIN", "firecracker_bin"),
                 ("M80_JAILER_BIN", "jailer_bin"),
@@ -1920,6 +1943,16 @@ def is_non_negative_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def kernel_version_at_least(value: Any, major: int, minor: int) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = re.match(r"(?P<major>\d+)\.(?P<minor>\d+)(?:\.|-|$)", value)
+    if match is None:
+        return False
+    parsed = (int(match.group("major")), int(match.group("minor")))
+    return parsed >= (major, minor)
+
+
 def verify_committed_artifacts(check_specs: list[tuple[str, str, Any, Path]]) -> list[str]:
     errors: list[str] = []
     for key, label, _, path in check_specs:
@@ -2612,6 +2645,10 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
 
 ## Substrate
 
+- host kernel: `6.17.0-23-generic`
+- firecracker: `Firecracker v1.15.1`
+- `/dev/kvm`: `crw-rw---- root:kvm /dev/kvm`
+- sudo: required; test ran as uid `0`
 - dropped page cache before each cycle: `sync && echo 3 > /proc/sys/vm/drop_caches`
 - git worktree dirty excluding this artifact: `false`
 - git commit: `cccccccccccccccccccccccccccccccccccccccc`
@@ -3468,6 +3505,36 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- final active-use markers: `1`",
             "- final active-use markers: `0`",
         ))
+        density_bad_host_kernel = density.read_text().replace(
+            "- host kernel: `6.17.0-23-generic`",
+            "- host kernel: `6.4.0`",
+        )
+        density.write_text(density_bad_host_kernel)
+        density_bad_host_kernel_status = quiet_run_checks(args)
+        density.write_text(density_bad_host_kernel.replace(
+            "- host kernel: `6.4.0`",
+            "- host kernel: `6.17.0-23-generic`",
+        ))
+        density_bad_kvm = density.read_text().replace(
+            "- `/dev/kvm`: `crw-rw---- root:kvm /dev/kvm`",
+            "- `/dev/kvm`: `cr-------- root:kvm /dev/kvm`",
+        )
+        density.write_text(density_bad_kvm)
+        density_bad_kvm_status = quiet_run_checks(args)
+        density.write_text(density_bad_kvm.replace(
+            "- `/dev/kvm`: `cr-------- root:kvm /dev/kvm`",
+            "- `/dev/kvm`: `crw-rw---- root:kvm /dev/kvm`",
+        ))
+        density_bad_sudo = density.read_text().replace(
+            "- sudo: required; test ran as uid `0`",
+            "- sudo: required; test ran as uid `1000`",
+        )
+        density.write_text(density_bad_sudo)
+        density_bad_sudo_status = quiet_run_checks(args)
+        density.write_text(density_bad_sudo.replace(
+            "- sudo: required; test ran as uid `1000`",
+            "- sudo: required; test ran as uid `0`",
+        ))
         density_bad_bound = density.read_text().replace(
             "- bound: `8192 KiB`",
             "- bound: `8193 KiB`",
@@ -3979,6 +4046,9 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or snapshot_doc_bad_kernel_kind_status == 0
             or snapshot_doc_bad_identity_status == 0
             or density_bad_teardown_status == 0
+            or density_bad_host_kernel_status == 0
+            or density_bad_kvm_status == 0
+            or density_bad_sudo_status == 0
             or density_bad_bound_status == 0
             or density_bad_digest_status == 0
             or density_bad_image_path_status == 0
