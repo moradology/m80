@@ -137,16 +137,18 @@ pub(super) fn git_worktree_dirty_excluding(paths: &[PathBuf]) -> bool {
     }
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
+        .filter(|line| !line.trim().is_empty())
         .any(|line| {
-            let path = line
-                .strip_prefix("?? ")
-                .or_else(|| line.get(3..))
-                .unwrap_or(line)
-                .trim();
+            let path = git_status_path(line);
             !allowed.iter().any(|allowed| allowed == path)
         })
+}
+
+fn git_status_path(line: &str) -> &str {
+    line.strip_prefix("?? ")
+        .or_else(|| line.get(3..))
+        .unwrap_or(line)
+        .trim()
 }
 
 pub(super) fn git_head_commit() -> String {
@@ -223,5 +225,26 @@ fn env_bool(name: &str) -> bool {
         Ok("1" | "true" | "TRUE" | "yes" | "YES") => true,
         Ok("0" | "false" | "FALSE" | "no" | "NO") | Err(_) => false,
         Ok(raw) => panic!("{name} must be boolean-like, got {raw:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_status_path_preserves_tracked_modified_path() {
+        assert_eq!(
+            git_status_path(" M docs/perf/pmem-dax-memory-pressure.md"),
+            "docs/perf/pmem-dax-memory-pressure.md"
+        );
+    }
+
+    #[test]
+    fn git_status_path_preserves_untracked_path() {
+        assert_eq!(
+            git_status_path("?? docs/perf/pmem-dax-memory-pressure.md"),
+            "docs/perf/pmem-dax-memory-pressure.md"
+        );
     }
 }
