@@ -274,3 +274,56 @@ The super-epic close reason must reuse the same
 `m80-q420k.8` is a rolling Phase G holding area and is not a super-epic close
 blocker; do not use its open measurement followups (`.8.9`, `.8.16`) as a
 reason to hold the A-F parent close.
+
+## 5. Phase G Followups
+
+Phase G leaves are handled after, or in parallel with, the A-F close gate. They
+use the same measurement discipline, but they are not inputs to the
+`m80-q420k` super-epic close decision.
+
+`m80-q420k.8.16` is the ext4 overlay-template fallback recheck. The current
+artifact path is:
+
+```text
+docs/perf/ext4-overlay-template-clone.md
+```
+
+Before closing `.8.16`, run:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py \
+  --only ext4-overlay \
+  --require-committed
+```
+
+The leaf is `requires-verified-close`; close it only with explicit operator
+approval and a close reason in this form:
+
+```text
+verified: docs/perf/ext4-overlay-template-clone.md @ <commit-sha>
+```
+
+`m80-q420k.8.9` is the DAX memory-pressure side-channel investigation. It
+must produce:
+
+```text
+docs/perf/pmem-dax-memory-pressure.md
+```
+
+Use the command block in `docs/perf/measurement-playbook.md` under "Q420K DAX
+Memory Pressure". Do not use `M80_PMEM_DAX_MEMORY_PRESSURE_ALLOW_OTHER_VMS=1`
+for verified evidence. If the quiet-host inventory helper reports unrelated
+Firecracker processes, stop and collect owner approval or move to a quiet real
+KVM host. After committing the artifact, run:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py \
+  --only dax-memory-pressure \
+  --require-committed
+```
+
+The `.8.9` close reason is:
+
+```text
+verified: docs/perf/pmem-dax-memory-pressure.md @ <commit-sha>
+```
