@@ -604,6 +604,32 @@ def require_command_env_value(
     )
 
 
+def require_command_env_present(
+    check: Check,
+    label: str,
+    command: str,
+    env: str,
+) -> str | None:
+    value = command_env_value(command, env)
+    check.require(
+        value is not None and value != "",
+        f"{label}: command must set {env}",
+    )
+    return value
+
+
+def require_command_env_absolute_path(
+    check: Check,
+    label: str,
+    command: str,
+    env: str,
+) -> str | None:
+    value = require_command_env_present(check, label, command, env)
+    if value is not None:
+        check.require(value.startswith("/"), f"{label}: {env} must be an absolute path")
+    return value
+
+
 def command_env_value(command: str, env: str) -> str | None:
     match = re.search(rf"(?:^|\s){re.escape(env)}=(?P<value>[^\s\\]+)", command)
     if match is None:
@@ -617,6 +643,8 @@ def command_env_value(command: str, env: str) -> str | None:
 def verify_snapshot_doc(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
+    command_section = markdown_section(text, "Command")
+    command = markdown_shell_block(command_section) if command_section is not None else None
     check.require(
         text.startswith("# Snapshot-Template Restore Latency"),
         "snapshot doc: title mismatch",
@@ -645,6 +673,47 @@ def verify_snapshot_doc(path: Path) -> list[str]:
         "substrate.post_run_firecracker_processes",
     ]:
         check.require(required in text, f"snapshot doc: missing {required}")
+    check.require(command is not None, "snapshot doc: missing ## Command shell block")
+    if command is not None:
+        for required in [
+            "sync && echo 3 | sudo tee /proc/sys/vm/drop_caches",
+            "sudo -n env",
+            "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
+        ]:
+            check.require(required in command, f"snapshot doc command: missing {required}")
+        for env, expected in [
+            ("M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS", 0),
+            ("M80_SNAPSHOT_BENCH_LOAD", "idle"),
+            ("M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT", "crates/m80-firecracker/benches/snapshot_template_restore_latency.json"),
+            ("M80_KERNEL_KIND", "stripped"),
+            ("M80_CGROUP_MODE", "disabled"),
+            ("N", SNAPSHOT_TEMPLATE_N_PER_RUN),
+            ("M80_SNAPSHOT_TEMPLATE_RUNS", SNAPSHOT_TEMPLATE_RUNS),
+        ]:
+            require_command_env_value(check, "snapshot doc command", command, env, expected)
+        for env in [
+            "M80_FIRECRACKER_BIN",
+            "M80_JAILER_BIN",
+            "M80_FIRECRACKER_SECCOMP_FILTER",
+            "M80_JAILER_HARDEN_BIN",
+            "M80_NET_HELPER_BIN",
+            "M80_KERNEL_IMAGE",
+            "M80_ROOTFS_IMAGE",
+            "M80_RUN_ROOT",
+        ]:
+            require_command_env_absolute_path(check, "snapshot doc command", command, env)
+        for env in [
+            "M80_SNAPSHOT_BENCH_VCPU_COUNT",
+            "M80_SNAPSHOT_BENCH_MEM_SIZE_MIB",
+            "M80_JAIL_UID",
+            "M80_JAIL_GID",
+        ]:
+            value = require_command_env_present(check, "snapshot doc command", command, env)
+            if value is not None:
+                check.require(
+                    re.fullmatch(r"\d+", value) is not None,
+                    f"snapshot doc command: {env} must be an integer",
+                )
     smoke = markdown_section(text, "Smoke evidence")
     check.require(smoke is not None, "snapshot doc: missing ## Smoke evidence")
     if smoke is not None:
@@ -668,6 +737,8 @@ def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list
     text = load_text(doc_path)
     data = load_json(snapshot_path)
     check = Check()
+    command_section = markdown_section(text, "Command")
+    command = markdown_shell_block(command_section) if command_section is not None else None
     commit = data.get("git_commit")
     if isinstance(commit, str):
         check.require(commit in text, "snapshot doc: missing measured git_commit from JSON artifact")
@@ -696,6 +767,29 @@ def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list
                     value in text,
                     f"snapshot doc: missing substrate.preflight_artifacts.{field} from JSON artifact",
                 )
+        if command is not None:
+            for env, field in [
+                ("M80_FIRECRACKER_BIN", "firecracker_bin"),
+                ("M80_JAILER_BIN", "jailer_bin"),
+                ("M80_FIRECRACKER_SECCOMP_FILTER", "firecracker_seccomp_filter"),
+                ("M80_JAILER_HARDEN_BIN", "jailer_harden_bin"),
+                ("M80_NET_HELPER_BIN", "net_helper_bin"),
+                ("M80_KERNEL_IMAGE", "kernel_image"),
+                ("M80_ROOTFS_IMAGE", "rootfs_image"),
+            ]:
+                value = preflight.get(field)
+                if isinstance(value, str) and value:
+                    require_command_env_value(check, "snapshot doc command", command, env, value)
+    if command is not None:
+        for env, field in [
+            ("M80_SNAPSHOT_BENCH_VCPU_COUNT", "vcpu_count"),
+            ("M80_SNAPSHOT_BENCH_MEM_SIZE_MIB", "mem_size_mib"),
+            ("M80_JAIL_UID", "jail_uid"),
+            ("M80_JAIL_GID", "jail_gid"),
+        ]:
+            value = data.get(field)
+            if is_number(value):
+                require_command_env_value(check, "snapshot doc command", command, env, int(value))
     return check.errors
 
 
@@ -2874,11 +2968,20 @@ Preflight artifacts:
 - rootfs_image_sha256: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`
 - expected_firecracker_version: `v1.15.1`
 
-Command:
+## Command
 
 ```sh
+sync && echo 3 | sudo tee /proc/sys/vm/drop_caches
+
 sudo -n env \
   M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 \
+  M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
+  M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+  M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
+  M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
+  M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
+  M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux \
+  M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 \
   M80_SNAPSHOT_BENCH_LOAD=idle \
   M80_SNAPSHOT_BENCH_VCPU_COUNT=1 M80_SNAPSHOT_BENCH_MEM_SIZE_MIB=512 \
   M80_KERNEL_KIND=stripped \
@@ -3858,6 +3961,17 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_KERNEL_KIND=stripped",
         ))
         args.only = ["snapshot-template"]
+        snapshot_doc_bad_command_identity = snapshot_doc.read_text().replace(
+            "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
+            "M80_FIRECRACKER_BIN=/tmp/firecracker",
+        )
+        snapshot_doc.write_text(snapshot_doc_bad_command_identity)
+        snapshot_doc_bad_command_identity_status = quiet_run_checks(args)
+        snapshot_doc.write_text(snapshot_doc_bad_command_identity.replace(
+            "M80_FIRECRACKER_BIN=/tmp/firecracker",
+            "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
+        ))
+        args.only = ["snapshot-template"]
         snapshot_doc_bad_identity = snapshot_doc.read_text().replace(
             "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
             "",
@@ -4570,6 +4684,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or bad_snapshot_jail_uid_reproduction_command_status == 0
             or snapshot_doc_bad_smoke_status == 0
             or snapshot_doc_bad_kernel_kind_status == 0
+            or snapshot_doc_bad_command_identity_status == 0
             or snapshot_doc_bad_identity_status == 0
             or density_bad_teardown_status == 0
             or density_bad_host_kernel_status == 0
