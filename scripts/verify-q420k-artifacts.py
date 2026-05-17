@@ -1651,28 +1651,16 @@ def verify_composed_memory(path: Path) -> list[str]:
             baseline_before = per_vm_baseline.get("before_fill_bytes")
             baseline_after_attached = per_vm_baseline.get("after_n_attached_bytes")
             baseline_delta = per_vm_baseline.get("after_n_attached_delta_bytes")
-            baseline_payload = per_vm_baseline.get("per_vm_payload_bytes")
             if is_number(baseline_before) and is_number(baseline_after_attached) and is_number(baseline_delta):
                 check.require(
                     baseline_before - baseline_after_attached == baseline_delta,
                     "composed memory: per_vm_baseline.after_n_attached_delta_bytes must equal before_fill_bytes - after_n_attached_bytes",
                 )
-            if is_number(baseline_delta) and is_number(baseline_payload):
-                check.require(
-                    baseline_delta >= baseline_payload,
-                    "composed memory: per_vm_baseline delta must cover per_vm_payload_bytes",
-                )
-            if (
-                is_number(baseline_delta)
-                and is_number(baseline_payload)
-                and is_number(baseline_n_attached)
-                and baseline_n_attached > 0
-            ):
-                expected_overhead = max(0, baseline_delta - baseline_payload)
-                expected_overhead = (expected_overhead + baseline_n_attached - 1) // baseline_n_attached
+            if is_number(baseline_delta) and is_number(baseline_n_attached) and baseline_n_attached > 0:
+                expected_overhead = (baseline_delta + baseline_n_attached - 1) // baseline_n_attached
                 check.require(
                     per_vm_baseline.get("per_vm_overhead_bytes") == expected_overhead,
-                    f"composed memory: per_vm_baseline.per_vm_overhead_bytes must equal ceil((delta - payload) / n_attached) ({expected_overhead})",
+                    f"composed memory: per_vm_baseline.per_vm_overhead_bytes must equal ceil(delta / n_attached) ({expected_overhead})",
                 )
             attached_snapshot = per_vm_baseline.get("attached_snapshot")
             check.require(
@@ -3910,8 +3898,8 @@ exit 1
                 "after_teardown_bytes": 1000,
                 "after_n_attached_delta_bytes": 10,
                 "shared_image_bytes": 10,
-                "per_vm_overhead_bytes": 1,
-                "bound_bytes": 20,
+                "per_vm_overhead_bytes": 11,
+                "bound_bytes": 120,
                 "bound_satisfied": True,
                 "shared_image_digest": shared_digest,
                 "shared_image_path": f"/var/lib/m80-images/11/{shared_digest}/image.erofs",
@@ -3930,7 +3918,7 @@ exit 1
                     "after_teardown_bytes": 2000,
                     "after_n_attached_delta_bytes": 110,
                     "per_vm_payload_bytes": 100,
-                    "per_vm_overhead_bytes": 1,
+                    "per_vm_overhead_bytes": 11,
                     "image_digest": per_vm_digest,
                     "image_bytes": 10,
                     "shared_payload_digest": shared_digest,
@@ -4058,8 +4046,8 @@ Raw artifacts:
 |---|---:|
 | composed `after_n_attached_delta_bytes` | 10 |
 | Shared erofs image | 10 |
-| derived `per_vm_overhead_bytes` | 1 |
-| bound (`shared_image_bytes + per_vm_overhead_bytes * N`) | 20 |
+| derived `per_vm_overhead_bytes` | 11 |
+| bound (`shared_image_bytes + per_vm_overhead_bytes * N`) | 120 |
 
 Shared image digest: `1111111111111111111111111111111111111111111111111111111111111111`.
 
@@ -5211,7 +5199,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
         memory_bad_bound["data"]["host_memory"]["bound_bytes"] = 21
         memory.write_text(json.dumps(memory_bad_bound))
         memory_bad_bound_status = quiet_run_checks(args)
-        memory_bad_bound["data"]["host_memory"]["bound_bytes"] = 20
+        memory_bad_bound["data"]["host_memory"]["bound_bytes"] = 120
         memory.write_text(json.dumps(memory_bad_bound))
         memory_bad_n = json.loads(memory.read_text())
         memory_bad_n["data"]["host_memory"]["n_attached"] = 11
@@ -5260,19 +5248,13 @@ The measured signal is acceptable under the same-trust-domain assumption.
         memory.write_text(json.dumps(memory_bad_per_vm_baseline))
         memory_bad_per_vm_baseline_overhead = json.loads(memory.read_text())
         memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
-            "after_n_attached_bytes"
-        ] = 1880
-        memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
-            "after_n_attached_delta_bytes"
-        ] = 120
+            "per_vm_overhead_bytes"
+        ] = 12
         memory.write_text(json.dumps(memory_bad_per_vm_baseline_overhead))
         memory_bad_per_vm_baseline_overhead_status = quiet_run_checks(args)
         memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
-            "after_n_attached_bytes"
-        ] = 1890
-        memory_bad_per_vm_baseline_overhead["data"]["host_memory"]["per_vm_baseline"][
-            "after_n_attached_delta_bytes"
-        ] = 110
+            "per_vm_overhead_bytes"
+        ] = 11
         memory.write_text(json.dumps(memory_bad_per_vm_baseline_overhead))
         args.only = ["composed-residue"]
         residue_bad = json.loads(residue.read_text())

@@ -150,14 +150,7 @@ pub(super) fn measure_per_vm_baseline(
     let per_vm_payload_bytes = shared_image_bytes
         .checked_mul(target_ready as u64)
         .expect("shared image bytes * target_ready overflow");
-    let overhead_bytes = after_n_attached_delta_bytes
-        .checked_sub(per_vm_payload_bytes)
-        .unwrap_or_else(|| {
-            panic!(
-                "PerVm baseline delta {after_n_attached_delta_bytes} did not cover \
-                 {per_vm_payload_bytes} bytes of per-VM Shared-payload copies"
-            )
-        });
+    let per_vm_observed_bytes = after_n_attached_delta_bytes.div_ceil(target_ready as u64);
     let image_path = pmem_shared_support::store_erofs_path(image_store, per_vm_digest);
     let image_bytes = std::fs::metadata(&image_path)
         .expect("PerVm baseline image metadata")
@@ -170,7 +163,7 @@ pub(super) fn measure_per_vm_baseline(
         after_teardown_bytes,
         after_n_attached_delta_bytes,
         per_vm_payload_bytes,
-        per_vm_overhead_bytes: overhead_bytes.div_ceil(target_ready as u64),
+        per_vm_overhead_bytes: per_vm_observed_bytes,
         image_digest: per_vm_digest.as_str().to_owned(),
         image_bytes,
         shared_payload_digest: shared_digest.as_str().to_owned(),
