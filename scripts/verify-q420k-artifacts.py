@@ -27,6 +27,8 @@ DEFAULT_SNAPSHOT = ROOT / "crates/m80-firecracker/benches/snapshot_template_rest
 DEFAULT_SNAPSHOT_DOC = ROOT / "docs/perf/snapshot-template-restore.md"
 DEFAULT_DENSITY = ROOT / "docs/perf/pmem-shared-density.md"
 DEFAULT_DENSITY_SMOKE = ROOT / "scripts/smoke-pmem-shared.sh"
+DEFAULT_CLOSE_RUNBOOK = ROOT / "docs/runbook/q420k-close-gates.md"
+DEFAULT_MEASUREMENT_PLAYBOOK = ROOT / "docs/perf/measurement-playbook.md"
 DEFAULT_QUIET_HOST_INVENTORY = ROOT / "scripts/q420k-quiet-host-inventory.sh"
 DEFAULT_COMPOSED_RESTORE = (
     ROOT / "crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json"
@@ -409,6 +411,26 @@ def verify_pmem_density_smoke(path: Path) -> list[str]:
         "shared_pmem_host_page_sharing_measurement_lives_in_density_gate",
     ]:
         check.require(required in text, f"pmem density smoke script: missing {required}")
+    return check.errors
+
+
+def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
+    text = load_text(path)
+    check = Check()
+    check.require(path.is_file(), f"pmem density instruction doc: missing {path}")
+    for required in [
+        "M80_PMEM_SHARED_VM_COUNT=4",
+        "M80_PMEM_SHARED_CYCLES=10",
+        "M80_PMEM_SHARED_PAYLOAD_MIB=128",
+        "M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md",
+        "M80_RUN_ROOT=/var/lib/m80-psd",
+        "M80_KERNEL_IMAGE=<real-stripped-kernel.bin>",
+        "M80_KERNEL_KIND=stripped",
+        "M80_ROOTFS_IMAGE=<real-rootfs.ext4>",
+        "./scripts/smoke-pmem-shared.sh",
+        "python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committed",
+    ]:
+        check.require(required in text, f"pmem density instruction doc: missing {required}")
     return check.errors
 
 
@@ -1306,6 +1328,18 @@ def run_checks(args: argparse.Namespace) -> int:
             verify_pmem_density_smoke,
             artifact_path(args.pmem_density_smoke),
         ),
+        (
+            "pmem-density-runbook",
+            "pmem density runbook instructions",
+            verify_pmem_density_instruction_doc,
+            artifact_path(args.close_runbook),
+        ),
+        (
+            "pmem-density-playbook",
+            "pmem density playbook instructions",
+            verify_pmem_density_instruction_doc,
+            artifact_path(args.measurement_playbook),
+        ),
         ("composed-restore", "composed restore", verify_composed_restore, artifact_path(args.composed_restore)),
         ("composed-memory", "composed memory", verify_composed_memory, artifact_path(args.composed_memory)),
         ("composed-residue", "composed residue", verify_composed_residue, artifact_path(args.composed_residue)),
@@ -1325,6 +1359,8 @@ def run_checks(args: argparse.Namespace) -> int:
         selected.add("snapshot-doc")
     if "pmem-density" in selected:
         selected.add("pmem-density-smoke")
+        selected.add("pmem-density-runbook")
+        selected.add("pmem-density-playbook")
     if "composed-doc" in selected:
         selected.update(["composed-restore", "composed-memory", "composed-residue"])
     if selected:
@@ -1379,6 +1415,8 @@ def run_self_tests() -> int:
         snapshot_doc = tmp / "snapshot-template-restore.md"
         density = tmp / "density.md"
         density_smoke = tmp / "smoke-pmem-shared.sh"
+        close_runbook = tmp / "q420k-close-gates.md"
+        measurement_playbook = tmp / "measurement-playbook.md"
         restore = tmp / "restore.json"
         memory = tmp / "memory.json"
         residue = tmp / "residue.json"
@@ -1556,6 +1594,26 @@ sudo -n env \
 """
         )
         density_smoke.chmod(0o755)
+        density_instruction = """# Shared Pmem Density
+
+```sh
+M80_PMEM_SHARED_VM_COUNT=4 \
+M80_PMEM_SHARED_CYCLES=10 \
+M80_PMEM_SHARED_PAYLOAD_MIB=128 \
+M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md \
+M80_RUN_ROOT=/var/lib/m80-psd \
+M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
+M80_KERNEL_KIND=stripped \
+M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
+./scripts/smoke-pmem-shared.sh
+```
+
+```sh
+python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committed
+```
+"""
+        close_runbook.write_text(density_instruction)
+        measurement_playbook.write_text(density_instruction)
         quiet_host_inventory.write_text(
             """#!/usr/bin/env bash
 set -euo pipefail
@@ -1790,6 +1848,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             snapshot_doc=snapshot_doc,
             pmem_density=density,
             pmem_density_smoke=density_smoke,
+            close_runbook=close_runbook,
+            measurement_playbook=measurement_playbook,
             quiet_host_inventory=quiet_host_inventory,
             composed_restore=restore,
             composed_memory=memory,
@@ -1894,6 +1954,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
         density_smoke.chmod(0o644)
         density_smoke_not_executable_status = quiet_run_checks(args)
         density_smoke.chmod(0o755)
+        args.only = ["pmem-density-runbook"]
+        density_runbook_status = quiet_run_checks(args)
+        density_runbook_bad = close_runbook.read_text().replace(
+            "M80_KERNEL_KIND=stripped",
+            "M80_KERNEL_KIND=stock",
+        )
+        close_runbook.write_text(density_runbook_bad)
+        density_runbook_bad_kernel_kind_status = quiet_run_checks(args)
+        close_runbook.write_text(density_runbook_bad.replace(
+            "M80_KERNEL_KIND=stock",
+            "M80_KERNEL_KIND=stripped",
+        ))
         args.only = ["quiet-host-inventory"]
         quiet_host_inventory_status = quiet_run_checks(args)
         quiet_host_inventory.chmod(0o644)
@@ -2101,6 +2173,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_bound_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0
+            or density_runbook_status != 0
+            or density_runbook_bad_kernel_kind_status == 0
             or quiet_host_inventory_status != 0
             or quiet_host_inventory_not_executable_status == 0
             or quiet_host_inventory_mutating_status == 0
@@ -2149,6 +2223,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--snapshot-doc", default=DEFAULT_SNAPSHOT_DOC)
     p.add_argument("--pmem-density", default=DEFAULT_DENSITY)
     p.add_argument("--pmem-density-smoke", default=DEFAULT_DENSITY_SMOKE)
+    p.add_argument("--close-runbook", default=DEFAULT_CLOSE_RUNBOOK)
+    p.add_argument("--measurement-playbook", default=DEFAULT_MEASUREMENT_PLAYBOOK)
     p.add_argument("--quiet-host-inventory", default=DEFAULT_QUIET_HOST_INVENTORY)
     p.add_argument("--composed-restore", default=DEFAULT_COMPOSED_RESTORE)
     p.add_argument("--composed-memory", default=DEFAULT_COMPOSED_MEMORY)
@@ -2165,6 +2241,8 @@ def parser() -> argparse.ArgumentParser:
             "quiet-host-inventory",
             "pmem-density",
             "pmem-density-smoke",
+            "pmem-density-runbook",
+            "pmem-density-playbook",
             "composed-restore",
             "composed-memory",
             "composed-residue",
