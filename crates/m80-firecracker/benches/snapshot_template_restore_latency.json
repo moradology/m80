@@ -1,0 +1,1450 @@
+{
+  "bench": "snapshot_template_restore_latency",
+  "cgroup_mode": "disabled",
+  "data": {
+    "warm": {
+      "fill_us": {
+        "max": 156476,
+        "mean": 112352,
+        "p50": 107682,
+        "p95": 136245,
+        "p99": 156476
+      },
+      "handoff_us": {
+        "max": 177,
+        "mean": 121,
+        "p50": 118,
+        "p95": 166,
+        "p99": 177
+      },
+      "restore_to_handback_ms": {
+        "max": 156.585,
+        "mean": 112.474,
+        "p50": 107.811,
+        "p95": 136.374,
+        "p99": 156.585
+      },
+      "restore_to_handback_us": {
+        "max": 156585,
+        "mean": 112474,
+        "p50": 107811,
+        "p95": 136374,
+        "p99": 156585
+      },
+      "sample_details": [
+        {
+          "cycle": 0,
+          "fill_us": 134675,
+          "handoff_us": 139,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 13861,
+            "phase_4_jailer_materialize": 1122,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32491,
+            "phase_restore_load": 5698,
+            "phase_restore_post_restore_hooks": 2576,
+            "phase_restore_probe_exec_channel": 36461,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 869
+          },
+          "restore_to_handback_us": 134814,
+          "run": 0
+        },
+        {
+          "cycle": 1,
+          "fill_us": 133940,
+          "handoff_us": 168,
+          "phase_durations_us": {
+            "phase_10_open_uds": 17,
+            "phase_3_storage_prep": 11995,
+            "phase_4_jailer_materialize": 3062,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32150,
+            "phase_restore_load": 5460,
+            "phase_restore_post_restore_hooks": 2759,
+            "phase_restore_probe_exec_channel": 36676,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 878
+          },
+          "restore_to_handback_us": 134108,
+          "run": 0
+        },
+        {
+          "cycle": 2,
+          "fill_us": 90542,
+          "handoff_us": 109,
+          "phase_durations_us": {
+            "phase_10_open_uds": 17,
+            "phase_3_storage_prep": 14148,
+            "phase_4_jailer_materialize": 2801,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16302,
+            "phase_restore_load": 4504,
+            "phase_restore_post_restore_hooks": 1878,
+            "phase_restore_probe_exec_channel": 17648,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 861
+          },
+          "restore_to_handback_us": 90651,
+          "run": 0
+        },
+        {
+          "cycle": 3,
+          "fill_us": 105837,
+          "handoff_us": 108,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12437,
+            "phase_4_jailer_materialize": 4768,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32328,
+            "phase_restore_load": 3724,
+            "phase_restore_post_restore_hooks": 1629,
+            "phase_restore_probe_exec_channel": 17870,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 856
+          },
+          "restore_to_handback_us": 105945,
+          "run": 0
+        },
+        {
+          "cycle": 4,
+          "fill_us": 113329,
+          "handoff_us": 152,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12411,
+            "phase_4_jailer_materialize": 1239,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32444,
+            "phase_restore_load": 4175,
+            "phase_restore_post_restore_hooks": 1936,
+            "phase_restore_probe_exec_channel": 17634,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 878
+          },
+          "restore_to_handback_us": 113481,
+          "run": 0
+        },
+        {
+          "cycle": 5,
+          "fill_us": 105021,
+          "handoff_us": 118,
+          "phase_durations_us": {
+            "phase_10_open_uds": 20,
+            "phase_3_storage_prep": 12996,
+            "phase_4_jailer_materialize": 1167,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32530,
+            "phase_restore_load": 4285,
+            "phase_restore_post_restore_hooks": 2093,
+            "phase_restore_probe_exec_channel": 17662,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 861
+          },
+          "restore_to_handback_us": 105139,
+          "run": 0
+        },
+        {
+          "cycle": 6,
+          "fill_us": 103106,
+          "handoff_us": 120,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 12225,
+            "phase_4_jailer_materialize": 1998,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32432,
+            "phase_restore_load": 4150,
+            "phase_restore_post_restore_hooks": 1680,
+            "phase_restore_probe_exec_channel": 17678,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 909
+          },
+          "restore_to_handback_us": 103226,
+          "run": 0
+        },
+        {
+          "cycle": 7,
+          "fill_us": 106726,
+          "handoff_us": 161,
+          "phase_durations_us": {
+            "phase_10_open_uds": 20,
+            "phase_3_storage_prep": 12102,
+            "phase_4_jailer_materialize": 4277,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32217,
+            "phase_restore_load": 4354,
+            "phase_restore_post_restore_hooks": 1604,
+            "phase_restore_probe_exec_channel": 17592,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 914
+          },
+          "restore_to_handback_us": 106887,
+          "run": 0
+        },
+        {
+          "cycle": 8,
+          "fill_us": 113619,
+          "handoff_us": 95,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 12190,
+            "phase_4_jailer_materialize": 2499,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32170,
+            "phase_restore_load": 5984,
+            "phase_restore_post_restore_hooks": 2137,
+            "phase_restore_probe_exec_channel": 24688,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 899
+          },
+          "restore_to_handback_us": 113714,
+          "run": 0
+        },
+        {
+          "cycle": 9,
+          "fill_us": 127495,
+          "handoff_us": 82,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 13584,
+            "phase_4_jailer_materialize": 5114,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32324,
+            "phase_restore_load": 5597,
+            "phase_restore_post_restore_hooks": 3104,
+            "phase_restore_probe_exec_channel": 36724,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 898
+          },
+          "restore_to_handback_us": 127577,
+          "run": 0
+        },
+        {
+          "cycle": 10,
+          "fill_us": 129707,
+          "handoff_us": 111,
+          "phase_durations_us": {
+            "phase_10_open_uds": 32,
+            "phase_3_storage_prep": 13579,
+            "phase_4_jailer_materialize": 2391,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 41486,
+            "phase_restore_load": 5412,
+            "phase_restore_post_restore_hooks": 2588,
+            "phase_restore_probe_exec_channel": 24655,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1556
+          },
+          "restore_to_handback_us": 129818,
+          "run": 0
+        },
+        {
+          "cycle": 11,
+          "fill_us": 93371,
+          "handoff_us": 90,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 15082,
+            "phase_4_jailer_materialize": 4541,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16225,
+            "phase_restore_load": 4775,
+            "phase_restore_post_restore_hooks": 1677,
+            "phase_restore_probe_exec_channel": 17295,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 909
+          },
+          "restore_to_handback_us": 93461,
+          "run": 0
+        },
+        {
+          "cycle": 12,
+          "fill_us": 90035,
+          "handoff_us": 118,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 14863,
+            "phase_4_jailer_materialize": 2763,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16091,
+            "phase_restore_load": 4249,
+            "phase_restore_post_restore_hooks": 2006,
+            "phase_restore_probe_exec_channel": 17603,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 915
+          },
+          "restore_to_handback_us": 90153,
+          "run": 0
+        },
+        {
+          "cycle": 13,
+          "fill_us": 106858,
+          "handoff_us": 102,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 13569,
+            "phase_4_jailer_materialize": 4248,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32251,
+            "phase_restore_load": 5466,
+            "phase_restore_post_restore_hooks": 1897,
+            "phase_restore_probe_exec_channel": 16491,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 920
+          },
+          "restore_to_handback_us": 106960,
+          "run": 0
+        },
+        {
+          "cycle": 14,
+          "fill_us": 92263,
+          "handoff_us": 124,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 14625,
+            "phase_4_jailer_materialize": 3001,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16148,
+            "phase_restore_load": 5027,
+            "phase_restore_post_restore_hooks": 1654,
+            "phase_restore_probe_exec_channel": 16736,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 920
+          },
+          "restore_to_handback_us": 92387,
+          "run": 0
+        },
+        {
+          "cycle": 15,
+          "fill_us": 107298,
+          "handoff_us": 107,
+          "phase_durations_us": {
+            "phase_10_open_uds": 28,
+            "phase_3_storage_prep": 15956,
+            "phase_4_jailer_materialize": 2091,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32502,
+            "phase_restore_load": 4706,
+            "phase_restore_post_restore_hooks": 1852,
+            "phase_restore_probe_exec_channel": 17179,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 914
+          },
+          "restore_to_handback_us": 107405,
+          "run": 0
+        },
+        {
+          "cycle": 16,
+          "fill_us": 129132,
+          "handoff_us": 124,
+          "phase_durations_us": {
+            "phase_10_open_uds": 29,
+            "phase_3_storage_prep": 15065,
+            "phase_4_jailer_materialize": 2856,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 34264,
+            "phase_restore_load": 5075,
+            "phase_restore_post_restore_hooks": 1716,
+            "phase_restore_probe_exec_channel": 36974,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 931
+          },
+          "restore_to_handback_us": 129256,
+          "run": 0
+        },
+        {
+          "cycle": 17,
+          "fill_us": 103782,
+          "handoff_us": 70,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 11550,
+            "phase_4_jailer_materialize": 2610,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32344,
+            "phase_restore_load": 4657,
+            "phase_restore_post_restore_hooks": 2090,
+            "phase_restore_probe_exec_channel": 17230,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 876
+          },
+          "restore_to_handback_us": 103852,
+          "run": 0
+        },
+        {
+          "cycle": 18,
+          "fill_us": 89682,
+          "handoff_us": 95,
+          "phase_durations_us": {
+            "phase_10_open_uds": 17,
+            "phase_3_storage_prep": 13582,
+            "phase_4_jailer_materialize": 2910,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16097,
+            "phase_restore_load": 4203,
+            "phase_restore_post_restore_hooks": 2021,
+            "phase_restore_probe_exec_channel": 17593,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 925
+          },
+          "restore_to_handback_us": 89777,
+          "run": 0
+        },
+        {
+          "cycle": 19,
+          "fill_us": 86646,
+          "handoff_us": 121,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12556,
+            "phase_4_jailer_materialize": 1811,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16075,
+            "phase_restore_load": 4083,
+            "phase_restore_post_restore_hooks": 2558,
+            "phase_restore_probe_exec_channel": 17665,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 931
+          },
+          "restore_to_handback_us": 86767,
+          "run": 0
+        },
+        {
+          "cycle": 0,
+          "fill_us": 106224,
+          "handoff_us": 166,
+          "phase_durations_us": {
+            "phase_10_open_uds": 18,
+            "phase_3_storage_prep": 15142,
+            "phase_4_jailer_materialize": 1468,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32126,
+            "phase_restore_load": 5202,
+            "phase_restore_post_restore_hooks": 1622,
+            "phase_restore_probe_exec_channel": 17172,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 939
+          },
+          "restore_to_handback_us": 106390,
+          "run": 1
+        },
+        {
+          "cycle": 1,
+          "fill_us": 136245,
+          "handoff_us": 129,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 12522,
+            "phase_4_jailer_materialize": 3729,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32328,
+            "phase_restore_load": 5565,
+            "phase_restore_post_restore_hooks": 2524,
+            "phase_restore_probe_exec_channel": 36660,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 986
+          },
+          "restore_to_handback_us": 136374,
+          "run": 1
+        },
+        {
+          "cycle": 2,
+          "fill_us": 95199,
+          "handoff_us": 114,
+          "phase_durations_us": {
+            "phase_10_open_uds": 26,
+            "phase_3_storage_prep": 12606,
+            "phase_4_jailer_materialize": 4301,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16283,
+            "phase_restore_load": 4162,
+            "phase_restore_post_restore_hooks": 2132,
+            "phase_restore_probe_exec_channel": 16528,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1558
+          },
+          "restore_to_handback_us": 95313,
+          "run": 1
+        },
+        {
+          "cycle": 3,
+          "fill_us": 86431,
+          "handoff_us": 137,
+          "phase_durations_us": {
+            "phase_10_open_uds": 23,
+            "phase_3_storage_prep": 12220,
+            "phase_4_jailer_materialize": 1299,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16252,
+            "phase_restore_load": 3811,
+            "phase_restore_post_restore_hooks": 2158,
+            "phase_restore_probe_exec_channel": 17848,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 967
+          },
+          "restore_to_handback_us": 86568,
+          "run": 1
+        },
+        {
+          "cycle": 4,
+          "fill_us": 112267,
+          "handoff_us": 157,
+          "phase_durations_us": {
+            "phase_10_open_uds": 30,
+            "phase_3_storage_prep": 12454,
+            "phase_4_jailer_materialize": 4834,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32389,
+            "phase_restore_load": 4466,
+            "phase_restore_post_restore_hooks": 2204,
+            "phase_restore_probe_exec_channel": 16253,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1738
+          },
+          "restore_to_handback_us": 112424,
+          "run": 1
+        },
+        {
+          "cycle": 5,
+          "fill_us": 106627,
+          "handoff_us": 106,
+          "phase_durations_us": {
+            "phase_10_open_uds": 18,
+            "phase_3_storage_prep": 12888,
+            "phase_4_jailer_materialize": 4390,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32168,
+            "phase_restore_load": 4081,
+            "phase_restore_post_restore_hooks": 1910,
+            "phase_restore_probe_exec_channel": 17696,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1015
+          },
+          "restore_to_handback_us": 106733,
+          "run": 1
+        },
+        {
+          "cycle": 6,
+          "fill_us": 118442,
+          "handoff_us": 127,
+          "phase_durations_us": {
+            "phase_10_open_uds": 26,
+            "phase_3_storage_prep": 12116,
+            "phase_4_jailer_materialize": 1276,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32587,
+            "phase_restore_load": 6362,
+            "phase_restore_post_restore_hooks": 2291,
+            "phase_restore_probe_exec_channel": 25752,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1525
+          },
+          "restore_to_handback_us": 118569,
+          "run": 1
+        },
+        {
+          "cycle": 7,
+          "fill_us": 126711,
+          "handoff_us": 107,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 12413,
+            "phase_4_jailer_materialize": 5356,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32510,
+            "phase_restore_load": 5050,
+            "phase_restore_post_restore_hooks": 7780,
+            "phase_restore_probe_exec_channel": 27847,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 984
+          },
+          "restore_to_handback_us": 126818,
+          "run": 1
+        },
+        {
+          "cycle": 8,
+          "fill_us": 102977,
+          "handoff_us": 177,
+          "phase_durations_us": {
+            "phase_10_open_uds": 16,
+            "phase_3_storage_prep": 12026,
+            "phase_4_jailer_materialize": 2354,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32086,
+            "phase_restore_load": 3918,
+            "phase_restore_post_restore_hooks": 1617,
+            "phase_restore_probe_exec_channel": 16260,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 988
+          },
+          "restore_to_handback_us": 103154,
+          "run": 1
+        },
+        {
+          "cycle": 9,
+          "fill_us": 133765,
+          "handoff_us": 165,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 12599,
+            "phase_4_jailer_materialize": 1745,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32123,
+            "phase_restore_load": 5319,
+            "phase_restore_post_restore_hooks": 3107,
+            "phase_restore_probe_exec_channel": 36609,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1014
+          },
+          "restore_to_handback_us": 133930,
+          "run": 1
+        },
+        {
+          "cycle": 10,
+          "fill_us": 107682,
+          "handoff_us": 129,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 12860,
+            "phase_4_jailer_materialize": 4547,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32373,
+            "phase_restore_load": 4387,
+            "phase_restore_post_restore_hooks": 2185,
+            "phase_restore_probe_exec_channel": 17622,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 992
+          },
+          "restore_to_handback_us": 107811,
+          "run": 1
+        },
+        {
+          "cycle": 11,
+          "fill_us": 107782,
+          "handoff_us": 114,
+          "phase_durations_us": {
+            "phase_10_open_uds": 23,
+            "phase_3_storage_prep": 12642,
+            "phase_4_jailer_materialize": 1626,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16079,
+            "phase_restore_load": 5066,
+            "phase_restore_post_restore_hooks": 3156,
+            "phase_restore_probe_exec_channel": 37498,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1030
+          },
+          "restore_to_handback_us": 107896,
+          "run": 1
+        },
+        {
+          "cycle": 12,
+          "fill_us": 133269,
+          "handoff_us": 131,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12336,
+            "phase_4_jailer_materialize": 1484,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32329,
+            "phase_restore_load": 5273,
+            "phase_restore_post_restore_hooks": 2890,
+            "phase_restore_probe_exec_channel": 36842,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1031
+          },
+          "restore_to_handback_us": 133400,
+          "run": 1
+        },
+        {
+          "cycle": 13,
+          "fill_us": 123491,
+          "handoff_us": 129,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12296,
+            "phase_4_jailer_materialize": 2633,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32188,
+            "phase_restore_load": 5099,
+            "phase_restore_post_restore_hooks": 2623,
+            "phase_restore_probe_exec_channel": 37108,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1019
+          },
+          "restore_to_handback_us": 123620,
+          "run": 1
+        },
+        {
+          "cycle": 14,
+          "fill_us": 104788,
+          "handoff_us": 116,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12226,
+            "phase_4_jailer_materialize": 3213,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32129,
+            "phase_restore_load": 4137,
+            "phase_restore_post_restore_hooks": 2199,
+            "phase_restore_probe_exec_channel": 17833,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1021
+          },
+          "restore_to_handback_us": 104904,
+          "run": 1
+        },
+        {
+          "cycle": 15,
+          "fill_us": 88832,
+          "handoff_us": 114,
+          "phase_durations_us": {
+            "phase_10_open_uds": 20,
+            "phase_3_storage_prep": 11875,
+            "phase_4_jailer_materialize": 2451,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16204,
+            "phase_restore_load": 4748,
+            "phase_restore_post_restore_hooks": 1868,
+            "phase_restore_probe_exec_channel": 17327,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1082
+          },
+          "restore_to_handback_us": 88946,
+          "run": 1
+        },
+        {
+          "cycle": 16,
+          "fill_us": 128370,
+          "handoff_us": 124,
+          "phase_durations_us": {
+            "phase_10_open_uds": 24,
+            "phase_3_storage_prep": 12310,
+            "phase_4_jailer_materialize": 2011,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32118,
+            "phase_restore_load": 6082,
+            "phase_restore_post_restore_hooks": 3304,
+            "phase_restore_probe_exec_channel": 25864,
+            "phase_restore_snapshot_bind": 1,
+            "phase_restore_snapshot_prime": 1666
+          },
+          "restore_to_handback_us": 128494,
+          "run": 1
+        },
+        {
+          "cycle": 17,
+          "fill_us": 122955,
+          "handoff_us": 106,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 12604,
+            "phase_4_jailer_materialize": 1204,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32158,
+            "phase_restore_load": 4401,
+            "phase_restore_post_restore_hooks": 2902,
+            "phase_restore_probe_exec_channel": 37793,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1068
+          },
+          "restore_to_handback_us": 123061,
+          "run": 1
+        },
+        {
+          "cycle": 18,
+          "fill_us": 141399,
+          "handoff_us": 100,
+          "phase_durations_us": {
+            "phase_10_open_uds": 18,
+            "phase_3_storage_prep": 15324,
+            "phase_4_jailer_materialize": 6046,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32513,
+            "phase_restore_load": 5229,
+            "phase_restore_post_restore_hooks": 2729,
+            "phase_restore_probe_exec_channel": 36901,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1052
+          },
+          "restore_to_handback_us": 141499,
+          "run": 1
+        },
+        {
+          "cycle": 19,
+          "fill_us": 103487,
+          "handoff_us": 118,
+          "phase_durations_us": {
+            "phase_10_open_uds": 23,
+            "phase_3_storage_prep": 12761,
+            "phase_4_jailer_materialize": 1111,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32560,
+            "phase_restore_load": 4094,
+            "phase_restore_post_restore_hooks": 1651,
+            "phase_restore_probe_exec_channel": 17754,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1060
+          },
+          "restore_to_handback_us": 103605,
+          "run": 1
+        },
+        {
+          "cycle": 0,
+          "fill_us": 104716,
+          "handoff_us": 117,
+          "phase_durations_us": {
+            "phase_10_open_uds": 18,
+            "phase_3_storage_prep": 13227,
+            "phase_4_jailer_materialize": 1387,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32139,
+            "phase_restore_load": 4197,
+            "phase_restore_post_restore_hooks": 2739,
+            "phase_restore_probe_exec_channel": 17854,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1070
+          },
+          "restore_to_handback_us": 104833,
+          "run": 2
+        },
+        {
+          "cycle": 1,
+          "fill_us": 108587,
+          "handoff_us": 116,
+          "phase_durations_us": {
+            "phase_10_open_uds": 22,
+            "phase_3_storage_prep": 15151,
+            "phase_4_jailer_materialize": 3430,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32481,
+            "phase_restore_load": 3824,
+            "phase_restore_post_restore_hooks": 2357,
+            "phase_restore_probe_exec_channel": 17839,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1070
+          },
+          "restore_to_handback_us": 108703,
+          "run": 2
+        },
+        {
+          "cycle": 2,
+          "fill_us": 94726,
+          "handoff_us": 119,
+          "phase_durations_us": {
+            "phase_10_open_uds": 25,
+            "phase_3_storage_prep": 15374,
+            "phase_4_jailer_materialize": 3107,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16329,
+            "phase_restore_load": 4196,
+            "phase_restore_post_restore_hooks": 2206,
+            "phase_restore_probe_exec_channel": 17669,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1082
+          },
+          "restore_to_handback_us": 94845,
+          "run": 2
+        },
+        {
+          "cycle": 3,
+          "fill_us": 128419,
+          "handoff_us": 119,
+          "phase_durations_us": {
+            "phase_10_open_uds": 33,
+            "phase_3_storage_prep": 16344,
+            "phase_4_jailer_materialize": 5759,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32245,
+            "phase_restore_load": 5680,
+            "phase_restore_post_restore_hooks": 2174,
+            "phase_restore_probe_exec_channel": 25983,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1868
+          },
+          "restore_to_handback_us": 128538,
+          "run": 2
+        },
+        {
+          "cycle": 4,
+          "fill_us": 108978,
+          "handoff_us": 167,
+          "phase_durations_us": {
+            "phase_10_open_uds": 18,
+            "phase_3_storage_prep": 14830,
+            "phase_4_jailer_materialize": 3033,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32366,
+            "phase_restore_load": 4671,
+            "phase_restore_post_restore_hooks": 1842,
+            "phase_restore_probe_exec_channel": 17215,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1040
+          },
+          "restore_to_handback_us": 109145,
+          "run": 2
+        },
+        {
+          "cycle": 5,
+          "fill_us": 109330,
+          "handoff_us": 116,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 13879,
+            "phase_4_jailer_materialize": 6090,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32206,
+            "phase_restore_load": 4205,
+            "phase_restore_post_restore_hooks": 1874,
+            "phase_restore_probe_exec_channel": 17621,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1080
+          },
+          "restore_to_handback_us": 109446,
+          "run": 2
+        },
+        {
+          "cycle": 6,
+          "fill_us": 103975,
+          "handoff_us": 108,
+          "phase_durations_us": {
+            "phase_10_open_uds": 17,
+            "phase_3_storage_prep": 13267,
+            "phase_4_jailer_materialize": 1045,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32425,
+            "phase_restore_load": 4802,
+            "phase_restore_post_restore_hooks": 1704,
+            "phase_restore_probe_exec_channel": 17229,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1067
+          },
+          "restore_to_handback_us": 104083,
+          "run": 2
+        },
+        {
+          "cycle": 7,
+          "fill_us": 90269,
+          "handoff_us": 131,
+          "phase_durations_us": {
+            "phase_10_open_uds": 28,
+            "phase_3_storage_prep": 12682,
+            "phase_4_jailer_materialize": 2959,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16320,
+            "phase_restore_load": 4280,
+            "phase_restore_post_restore_hooks": 1797,
+            "phase_restore_probe_exec_channel": 17657,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1073
+          },
+          "restore_to_handback_us": 90400,
+          "run": 2
+        },
+        {
+          "cycle": 8,
+          "fill_us": 136007,
+          "handoff_us": 116,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12770,
+            "phase_4_jailer_materialize": 3197,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32346,
+            "phase_restore_load": 5666,
+            "phase_restore_post_restore_hooks": 2873,
+            "phase_restore_probe_exec_channel": 36973,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1075
+          },
+          "restore_to_handback_us": 136123,
+          "run": 2
+        },
+        {
+          "cycle": 9,
+          "fill_us": 156476,
+          "handoff_us": 109,
+          "phase_durations_us": {
+            "phase_10_open_uds": 34,
+            "phase_3_storage_prep": 11759,
+            "phase_4_jailer_materialize": 7234,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32275,
+            "phase_restore_load": 4857,
+            "phase_restore_post_restore_hooks": 3022,
+            "phase_restore_probe_exec_channel": 45931,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1879
+          },
+          "restore_to_handback_us": 156585,
+          "run": 2
+        },
+        {
+          "cycle": 10,
+          "fill_us": 133566,
+          "handoff_us": 139,
+          "phase_durations_us": {
+            "phase_10_open_uds": 26,
+            "phase_3_storage_prep": 12327,
+            "phase_4_jailer_materialize": 1122,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32440,
+            "phase_restore_load": 5230,
+            "phase_restore_post_restore_hooks": 2530,
+            "phase_restore_probe_exec_channel": 36951,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1057
+          },
+          "restore_to_handback_us": 133705,
+          "run": 2
+        },
+        {
+          "cycle": 11,
+          "fill_us": 123968,
+          "handoff_us": 113,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 12676,
+            "phase_4_jailer_materialize": 2317,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32291,
+            "phase_restore_load": 4874,
+            "phase_restore_post_restore_hooks": 3585,
+            "phase_restore_probe_exec_channel": 37193,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1062
+          },
+          "restore_to_handback_us": 124081,
+          "run": 2
+        },
+        {
+          "cycle": 12,
+          "fill_us": 106397,
+          "handoff_us": 119,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 14438,
+            "phase_4_jailer_materialize": 2477,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32254,
+            "phase_restore_load": 4630,
+            "phase_restore_post_restore_hooks": 2276,
+            "phase_restore_probe_exec_channel": 17304,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1059
+          },
+          "restore_to_handback_us": 106516,
+          "run": 2
+        },
+        {
+          "cycle": 13,
+          "fill_us": 110929,
+          "handoff_us": 126,
+          "phase_durations_us": {
+            "phase_10_open_uds": 21,
+            "phase_3_storage_prep": 14073,
+            "phase_4_jailer_materialize": 6794,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32165,
+            "phase_restore_load": 4603,
+            "phase_restore_post_restore_hooks": 1690,
+            "phase_restore_probe_exec_channel": 17172,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1063
+          },
+          "restore_to_handback_us": 111055,
+          "run": 2
+        },
+        {
+          "cycle": 14,
+          "fill_us": 143238,
+          "handoff_us": 106,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 12624,
+            "phase_4_jailer_materialize": 1110,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32456,
+            "phase_restore_load": 5448,
+            "phase_restore_post_restore_hooks": 3265,
+            "phase_restore_probe_exec_channel": 46921,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1065
+          },
+          "restore_to_handback_us": 143344,
+          "run": 2
+        },
+        {
+          "cycle": 15,
+          "fill_us": 104489,
+          "handoff_us": 130,
+          "phase_durations_us": {
+            "phase_10_open_uds": 19,
+            "phase_3_storage_prep": 12181,
+            "phase_4_jailer_materialize": 2548,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32107,
+            "phase_restore_load": 5627,
+            "phase_restore_post_restore_hooks": 1678,
+            "phase_restore_probe_exec_channel": 16691,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1068
+          },
+          "restore_to_handback_us": 104619,
+          "run": 2
+        },
+        {
+          "cycle": 16,
+          "fill_us": 124269,
+          "handoff_us": 117,
+          "phase_durations_us": {
+            "phase_10_open_uds": 27,
+            "phase_3_storage_prep": 12681,
+            "phase_4_jailer_materialize": 3068,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16226,
+            "phase_restore_load": 4089,
+            "phase_restore_post_restore_hooks": 2927,
+            "phase_restore_probe_exec_channel": 36520,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1690
+          },
+          "restore_to_handback_us": 124386,
+          "run": 2
+        },
+        {
+          "cycle": 17,
+          "fill_us": 87182,
+          "handoff_us": 131,
+          "phase_durations_us": {
+            "phase_10_open_uds": 25,
+            "phase_3_storage_prep": 12529,
+            "phase_4_jailer_materialize": 1242,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 16089,
+            "phase_restore_load": 4574,
+            "phase_restore_post_restore_hooks": 1882,
+            "phase_restore_probe_exec_channel": 17419,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1017
+          },
+          "restore_to_handback_us": 87313,
+          "run": 2
+        },
+        {
+          "cycle": 18,
+          "fill_us": 104537,
+          "handoff_us": 119,
+          "phase_durations_us": {
+            "phase_10_open_uds": 18,
+            "phase_3_storage_prep": 12249,
+            "phase_4_jailer_materialize": 3507,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32123,
+            "phase_restore_load": 4220,
+            "phase_restore_post_restore_hooks": 2044,
+            "phase_restore_probe_exec_channel": 17550,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1070
+          },
+          "restore_to_handback_us": 104656,
+          "run": 2
+        },
+        {
+          "cycle": 19,
+          "fill_us": 111106,
+          "handoff_us": 78,
+          "phase_durations_us": {
+            "phase_10_open_uds": 20,
+            "phase_3_storage_prep": 15922,
+            "phase_4_jailer_materialize": 5064,
+            "phase_5_cgroup_probe": 0,
+            "phase_5b_cgroup_create": 0,
+            "phase_9_jailer_launch": 32334,
+            "phase_restore_load": 4347,
+            "phase_restore_post_restore_hooks": 2607,
+            "phase_restore_probe_exec_channel": 17708,
+            "phase_restore_snapshot_bind": 0,
+            "phase_restore_snapshot_prime": 1064
+          },
+          "restore_to_handback_us": 111184,
+          "run": 2
+        }
+      ],
+      "samples_us": [
+        134814,
+        134108,
+        90651,
+        105945,
+        113481,
+        105139,
+        103226,
+        106887,
+        113714,
+        127577,
+        129818,
+        93461,
+        90153,
+        106960,
+        92387,
+        107405,
+        129256,
+        103852,
+        89777,
+        86767,
+        106390,
+        136374,
+        95313,
+        86568,
+        112424,
+        106733,
+        118569,
+        126818,
+        103154,
+        133930,
+        107811,
+        107896,
+        133400,
+        123620,
+        104904,
+        88946,
+        128494,
+        123061,
+        141499,
+        103605,
+        104833,
+        108703,
+        94845,
+        128538,
+        109145,
+        109446,
+        104083,
+        90400,
+        136123,
+        156585,
+        133705,
+        124081,
+        106516,
+        111055,
+        143344,
+        104619,
+        124386,
+        87313,
+        104656,
+        111184
+      ]
+    }
+  },
+  "git_commit": "49d991f2ce1013501641d48d70b9612eda0fb5db",
+  "git_worktree_dirty_excluding_artifact": false,
+  "jail_gid": 1000,
+  "jail_uid": 1000,
+  "load": "idle",
+  "mem_size_mib": 512,
+  "n_per_run": 20,
+  "page_cache_dropped_between_samples": true,
+  "reproduction_command": "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 M80_SNAPSHOT_BENCH_LOAD=idle N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3 M80_SNAPSHOT_BENCH_VCPU_COUNT=1 M80_SNAPSHOT_BENCH_MEM_SIZE_MIB=512 M80_JAIL_UID=1000 M80_JAIL_GID=1000 M80_CGROUP_MODE=disabled M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 M80_RUN_ROOT=/tank/tmp/m80-template-build-test cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
+  "runs": 3,
+  "runs_detail": [
+    {
+      "initial_fill_samples_us": [
+        8394770
+      ],
+      "restore_to_handback_us": {
+        "max": 134814,
+        "mean": 108268,
+        "p50": 105945,
+        "p95": 134108,
+        "p99": 134814
+      },
+      "run": 0,
+      "samples_us": [
+        134814,
+        134108,
+        90651,
+        105945,
+        113481,
+        105139,
+        103226,
+        106887,
+        113714,
+        127577,
+        129818,
+        93461,
+        90153,
+        106960,
+        92387,
+        107405,
+        129256,
+        103852,
+        89777,
+        86767
+      ]
+    },
+    {
+      "initial_fill_samples_us": [
+        98541
+      ],
+      "restore_to_handback_us": {
+        "max": 141499,
+        "mean": 114475,
+        "p50": 107896,
+        "p95": 136374,
+        "p99": 141499
+      },
+      "run": 1,
+      "samples_us": [
+        106390,
+        136374,
+        95313,
+        86568,
+        112424,
+        106733,
+        118569,
+        126818,
+        103154,
+        133930,
+        107811,
+        107896,
+        133400,
+        123620,
+        104904,
+        88946,
+        128494,
+        123061,
+        141499,
+        103605
+      ]
+    },
+    {
+      "initial_fill_samples_us": [
+        89786
+      ],
+      "restore_to_handback_us": {
+        "max": 156585,
+        "mean": 114678,
+        "p50": 109145,
+        "p95": 143344,
+        "p99": 156585
+      },
+      "run": 2,
+      "samples_us": [
+        104833,
+        108703,
+        94845,
+        128538,
+        109145,
+        109446,
+        104083,
+        90400,
+        136123,
+        156585,
+        133705,
+        124081,
+        106516,
+        111055,
+        143344,
+        104619,
+        124386,
+        87313,
+        104656,
+        111184
+      ]
+    }
+  ],
+  "samples_total": 60,
+  "schema_version": 1,
+  "started_at_unix": 1779017441,
+  "store_root": "/tank/tmp/m80-template-build-test/warm/snapshot-template-restore-bench-2933297",
+  "substrate": {
+    "allow_other_firecracker_vms": false,
+    "dev_kvm_stat": "crw-rw---- root:kvm /dev/kvm",
+    "firecracker_version": "Firecracker v1.15.1\n\n2026-05-17T11:31:56.764192212 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0",
+    "host_kernel_release": "6.17.0-23-generic",
+    "post_run_firecracker_processes": [],
+    "preexisting_firecracker_processes": [],
+    "preflight_artifacts": {
+      "expected_firecracker_version": "v1.15.1",
+      "firecracker_bin": "/opt/firecracker/bin/firecracker",
+      "firecracker_seccomp_filter": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+      "image_kind": "minimal",
+      "jailer_bin": "/opt/firecracker/bin/jailer",
+      "jailer_harden_bin": "/opt/m80/bin/m80-jailer-harden",
+      "kernel_image": "/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
+      "kernel_image_sha256": "143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3",
+      "kernel_kind": "stripped",
+      "net_helper_bin": "/opt/m80/bin/m80-net-helper",
+      "rootfs_format": "ext4",
+      "rootfs_image": "/tank/tmp/m80-build/post-restore-current/output.ext4",
+      "rootfs_image_sha256": "bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d"
+    },
+    "preflight_required": true,
+    "quiet_host_checked": true,
+    "substrate_kind": "real-kvm",
+    "sudo_uid": "0"
+  },
+  "target_ready": 1,
+  "vcpu_count": 1
+}

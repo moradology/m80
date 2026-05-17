@@ -41,12 +41,31 @@ Firecracker version matching preflight.
 
 ## Artifact identity
 
-The close-quality update must record the JSON artifact's measured `git_commit`
-each runtime substrate value, and each `substrate.preflight_artifacts` value
-here, including the resolved Firecracker, seccomp filter, jailer, harden
-helper, net helper, kernel, rootfs, kernel/rootfs sha256, and expected
-Firecracker version. The verifier requires these JSON-derived values in this
-section; copies elsewhere in the document do not satisfy the close receipt.
+- git_commit: `49d991f2ce1013501641d48d70b9612eda0fb5db`
+- host_kernel_release: `6.17.0-23-generic`
+- firecracker_version:
+
+```text
+Firecracker v1.15.1
+
+2026-05-17T11:31:56.764192212 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0
+```
+
+- dev_kvm_stat: `crw-rw---- root:kvm /dev/kvm`
+- sudo_uid: `0`
+- firecracker_bin: `/opt/firecracker/bin/firecracker`
+- firecracker_seccomp_filter: `/opt/firecracker/bin/firecracker-seccomp-filter.bin`
+- jailer_bin: `/opt/firecracker/bin/jailer`
+- jailer_harden_bin: `/opt/m80/bin/m80-jailer-harden`
+- net_helper_bin: `/opt/m80/bin/m80-net-helper`
+- kernel_image: `/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin`
+- rootfs_image: `/tank/tmp/m80-build/post-restore-current/output.ext4`
+- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`
+- rootfs_image_sha256: `bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d`
+- kernel_kind: `stripped`
+- image_kind: `minimal`
+- rootfs_format: `ext4`
+- expected_firecracker_version: `v1.15.1`
 
 ## Command
 
@@ -101,18 +120,6 @@ below. It does not replace the verified-close reason.
 
 ## Smoke evidence
 
-Pending quiet-host close run. Replace this section with the bench stderr line
-from the same run that wrote
-`crates/m80-firecracker/benches/snapshot_template_restore_latency.json`.
-
-## Diagnostic Run
-
-On 2026-05-17, the full N=20 x 3 harness completed on this host with
-`data.warm.restore_to_handback_ms.p99 = 148.713` and
-`samples_total = 60`. The diagnostic output was written to
-`/tmp/m80-snapshot-template-restore-latency-diagnostic-N20x3.json`.
-
-This does not close `m80-q420k.4.15`: unrelated
-`t2-warm-slot-*` Firecracker processes from
-`/tank/torpor-run/sandbox-executor/m80` were present, and the artifact was not
-committed at the verified-close path.
+```text
+snapshot-template restore: load=idle runs=3 n=20 p99=156585us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json
+```
