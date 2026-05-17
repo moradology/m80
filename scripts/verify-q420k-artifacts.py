@@ -1075,6 +1075,133 @@ def verify_composed_restore(path: Path) -> list[str]:
         check.require(is_number(p99), "composed restore: p99_ms missing")
         if is_number(p99):
             check.require(p99 <= 200.0, f"composed restore: p99_ms {p99} exceeds 200")
+    warm_pool = at(data, "data.warm_pool")
+    check.require(isinstance(warm_pool, dict), "composed restore: missing warm_pool")
+    if isinstance(warm_pool, dict):
+        after_fill = warm_pool.get("after_fill")
+        check.require(isinstance(after_fill, dict), "composed restore: warm_pool.after_fill missing")
+        if isinstance(after_fill, dict):
+            require_int_equal(
+                check,
+                "composed restore: warm_pool.after_fill.target_ready",
+                after_fill.get("target_ready"),
+                COMPOSED_E2E_N,
+            )
+            require_int_equal(
+                check,
+                "composed restore: warm_pool.after_fill.ready",
+                after_fill.get("ready"),
+                COMPOSED_E2E_N,
+            )
+            check.require(
+                after_fill.get("leased") == 0,
+                "composed restore: warm_pool.after_fill.leased must be 0",
+            )
+            check.require(
+                after_fill.get("filling") == 0,
+                "composed restore: warm_pool.after_fill.filling must be 0",
+            )
+            check.require(
+                after_fill.get("fill_failures_total") == 0,
+                "composed restore: warm_pool.after_fill.fill_failures_total must be 0",
+            )
+        during_leases = warm_pool.get("during_leases")
+        check.require(isinstance(during_leases, dict), "composed restore: warm_pool.during_leases missing")
+        if isinstance(during_leases, dict):
+            require_int_equal(
+                check,
+                "composed restore: warm_pool.during_leases.target_ready",
+                during_leases.get("target_ready"),
+                COMPOSED_E2E_N,
+            )
+            require_int_equal(
+                check,
+                "composed restore: warm_pool.during_leases.leased",
+                during_leases.get("leased"),
+                COMPOSED_E2E_N,
+            )
+            check.require(
+                during_leases.get("ready") == 0,
+                "composed restore: warm_pool.during_leases.ready must be 0",
+            )
+            check.require(
+                during_leases.get("filling") == 0,
+                "composed restore: warm_pool.during_leases.filling must be 0",
+            )
+            check.require(
+                during_leases.get("fill_failures_total") == 0,
+                "composed restore: warm_pool.during_leases.fill_failures_total must be 0",
+            )
+        check.require(
+            isinstance(warm_pool.get("after_discard"), dict),
+            "composed restore: warm_pool.after_discard missing",
+        )
+    observability = at(data, "data.observability")
+    check.require(isinstance(observability, dict), "composed restore: missing observability")
+    if isinstance(observability, dict):
+        check.require(
+            observability.get("pmem_layers_by_sharing") == {"Shared": 1, "PerVm": 1},
+            "composed restore: observability.pmem_layers_by_sharing must be Shared=1 and PerVm=1",
+        )
+        diagnostics = observability.get("diagnostics")
+        require_list_len(
+            check,
+            "composed restore: observability.diagnostics",
+            diagnostics,
+            COMPOSED_E2E_N,
+        )
+        if isinstance(diagnostics, list):
+            required_phases = [
+                "phase_3_storage_prep",
+                "phase_restore_load",
+                "phase_restore_probe_exec_channel",
+                "phase_restore_post_restore_hooks",
+            ]
+            required_messages = ["snapshot restored", "restored guestd ready"]
+            for index, summary in enumerate(diagnostics):
+                check.require(
+                    isinstance(summary, dict),
+                    f"composed restore: diagnostics[{index}] must be an object",
+                )
+                if not isinstance(summary, dict):
+                    continue
+                check.require(
+                    isinstance(summary.get("run_dir"), str)
+                    and summary.get("run_dir").startswith("/"),
+                    f"composed restore: diagnostics[{index}].run_dir must be absolute",
+                )
+                check.require(
+                    isinstance(summary.get("vm_id"), str) and summary.get("vm_id"),
+                    f"composed restore: diagnostics[{index}].vm_id must be non-empty",
+                )
+                phases = summary.get("phase_completed")
+                check.require(
+                    isinstance(phases, list),
+                    f"composed restore: diagnostics[{index}].phase_completed must be a list",
+                )
+                if isinstance(phases, list):
+                    for phase in required_phases:
+                        check.require(
+                            phase in phases,
+                            f"composed restore: diagnostics[{index}] missing phase {phase}",
+                        )
+                messages = summary.get("lifecycle_messages")
+                check.require(
+                    isinstance(messages, list),
+                    f"composed restore: diagnostics[{index}].lifecycle_messages must be a list",
+                )
+                if isinstance(messages, list):
+                    for message in required_messages:
+                        check.require(
+                            message in messages,
+                            f"composed restore: diagnostics[{index}] missing lifecycle message {message}",
+                        )
+                require_number_at_least(
+                    check,
+                    f"composed restore: diagnostics[{index}].exec_completed_count",
+                    summary.get("exec_completed_count"),
+                    5,
+                )
     quiet_substrate(data, "composed restore", check)
     composed_runtime_substrate(data, "composed restore", check)
     return check.errors
@@ -2918,16 +3045,77 @@ exit 1
             "git_commit": git_commit,
             "page_cache_dropped_between_leases": False,
             "substrate": substrate,
-            "data": {"restore_latency": {
-                "count": 10,
-                "target_ready": 10,
-                "samples_ms": [100.0 + index for index in range(10)],
-                "template_build_warmup_ms": [150.0],
-                "fail_count": 0,
-                "p50_ms": 104.0,
-                "p95_ms": 109.0,
-                "p99_ms": 109.0,
-            }},
+            "data": {
+                "restore_latency": {
+                    "count": 10,
+                    "target_ready": 10,
+                    "samples_ms": [100.0 + index for index in range(10)],
+                    "template_build_warmup_ms": [150.0],
+                    "fail_count": 0,
+                    "p50_ms": 104.0,
+                    "p95_ms": 109.0,
+                    "p99_ms": 109.0,
+                },
+                "warm_pool": {
+                    "after_fill": {
+                        "target_ready": 10,
+                        "ready": 10,
+                        "filling": 0,
+                        "leased": 0,
+                        "discarded": 0,
+                        "consecutive_fill_errors": 0,
+                        "fill_attempts_total": 10,
+                        "fill_failures_total": 0,
+                        "lease_acquired_total": 0,
+                        "lease_returned_total": 0,
+                    },
+                    "during_leases": {
+                        "target_ready": 10,
+                        "ready": 0,
+                        "filling": 0,
+                        "leased": 10,
+                        "discarded": 0,
+                        "consecutive_fill_errors": 0,
+                        "fill_attempts_total": 10,
+                        "fill_failures_total": 0,
+                        "lease_acquired_total": 10,
+                        "lease_returned_total": 0,
+                    },
+                    "after_discard": {
+                        "target_ready": 10,
+                        "ready": 0,
+                        "filling": 0,
+                        "leased": 0,
+                        "discarded": 10,
+                        "consecutive_fill_errors": 0,
+                        "fill_attempts_total": 10,
+                        "fill_failures_total": 0,
+                        "lease_acquired_total": 10,
+                        "lease_returned_total": 0,
+                    },
+                },
+                "observability": {
+                    "diagnostics": [
+                        {
+                            "run_dir": f"{composed_run_root}/lease-{index}",
+                            "vm_id": f"composed-{index}",
+                            "phase_completed": [
+                                "phase_3_storage_prep",
+                                "phase_restore_load",
+                                "phase_restore_probe_exec_channel",
+                                "phase_restore_post_restore_hooks",
+                            ],
+                            "lifecycle_messages": [
+                                "snapshot restored",
+                                "restored guestd ready",
+                            ],
+                            "exec_completed_count": 5,
+                        }
+                        for index in range(10)
+                    ],
+                    "pmem_layers_by_sharing": {"Shared": 1, "PerVm": 1},
+                },
+            },
         }))
         memory.write_text(json.dumps({
             "schema_version": 1,
@@ -3784,6 +3972,30 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore_bad_percentile_status = quiet_run_checks(args)
         restore_bad["data"]["restore_latency"]["p99_ms"] = 109.0
         restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["warm_pool"]["during_leases"]["leased"] = 9
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_warm_pool_status = quiet_run_checks(args)
+        restore_bad["data"]["warm_pool"]["during_leases"]["leased"] = 10
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["observability"]["diagnostics"][0]["phase_completed"].remove(
+            "phase_restore_post_restore_hooks"
+        )
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_diagnostics_phase_status = quiet_run_checks(args)
+        restore_bad["data"]["observability"]["diagnostics"][0]["phase_completed"].append(
+            "phase_restore_post_restore_hooks"
+        )
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["observability"]["diagnostics"][0]["exec_completed_count"] = 4
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_exec_count_status = quiet_run_checks(args)
+        restore_bad["data"]["observability"]["diagnostics"][0]["exec_completed_count"] = 5
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["observability"]["pmem_layers_by_sharing"]["Shared"] = 0
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_pmem_layers_status = quiet_run_checks(args)
+        restore_bad["data"]["observability"]["pmem_layers_by_sharing"]["Shared"] = 1
+        restore.write_text(json.dumps(restore_bad))
         args.only = ["composed-memory"]
         memory_bad_bound = json.loads(memory.read_text())
         memory_bad_bound["data"]["host_memory"]["bound_bytes"] = 21
@@ -4215,6 +4427,10 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or restore_bad_exact_n_status == 0
             or restore_bad_sample_count_status == 0
             or restore_bad_percentile_status == 0
+            or restore_bad_warm_pool_status == 0
+            or restore_bad_diagnostics_phase_status == 0
+            or restore_bad_exec_count_status == 0
+            or restore_bad_pmem_layers_status == 0
             or memory_bad_bound_status == 0
             or memory_bad_n_status == 0
             or memory_bad_digest_status == 0

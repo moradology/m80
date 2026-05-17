@@ -633,8 +633,10 @@ host-memory bound formula `shared_image_bytes + per_vm_overhead_bytes *
 n_attached`, and lowercase sha256 Shared and PerVm image-store digests. The
 restore artifact's `samples_ms` array must match `count`, and
 `template_build_warmup_ms` must be non-empty. Its `target_ready` must equal
-`count`, and P50/P95/P99 values must recompute from `samples_ms`. The
-host-memory artifact must carry raw
+`count`, P50/P95/P99 values must recompute from `samples_ms`, warm-pool
+snapshots must prove all 10 slots filled and then all 10 slots leased, and
+diagnostics must show restore/load/probe/post-restore-hook phases plus workload
+exec completions for every lease. The host-memory artifact must carry raw
 MemAvailable checkpoints that derive `after_n_attached_delta_bytes`, and its
 Shared image path must contain the Shared digest. The same-run PerVm baseline
 section must agree with the top-level Shared digest, Shared bytes, attached

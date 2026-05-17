@@ -228,7 +228,9 @@ host-memory, and residue. The restore artifact's `samples_ms` array must back
 its `count`, `target_ready` must equal `count`, and P50/P95/P99 values must
 recompute from that same sample array. Runtime substrate fields must show host
 kernel >= 6.5, `/dev/kvm` rw, sudo uid `0`, and actual Firecracker version
-matching preflight.
+matching preflight. The restore JSON must also prove all 10 warm-pool slots
+filled, all 10 were leased concurrently, each lease recorded restore/load/probe
+and post-restore-hook diagnostics, and workload exec completions were observed.
 The residue artifact must also record lowercase sha256 Shared and PerVm
 image-store digests. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate

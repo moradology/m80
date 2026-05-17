@@ -81,7 +81,10 @@ python3 scripts/verify-q420k-artifacts.py \
 The verifier rejects noisy-host override artifacts, missing fields, threshold
 misses, teardown residue, and Shared payload layouts that do not match the
 `.8.12` file-level DAX requirement. It also rejects artifacts that report
-post-run Firecracker processes. With `--require-committed`, it also rejects
+post-run Firecracker processes. The restore JSON must also carry warm-pool
+snapshots proving N=10 fill and N=10 concurrent lease shape, plus diagnostics
+for restore/load/probe/post-restore-hook phases and workload exec completions
+for every lease. With `--require-committed`, it also rejects
 missing or malformed preflight artifact identity, artifacts absent from `HEAD`,
 malformed `git_commit`, mismatched composed JSON identity/count/digest fields,
 receipt text that does not mention the JSON artifacts' measured commit,
