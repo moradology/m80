@@ -1828,15 +1828,15 @@ def markdown_shell_block(text: str) -> str | None:
 
 
 def markdown_json_block(text: str, heading: str) -> Any | None:
-    match = re.search(
+    matches = re.findall(
         rf"### {re.escape(heading)}\n\n```json\n(?P<body>.*?)\n```\n",
         text,
         flags=re.DOTALL,
     )
-    if match is None:
+    if len(matches) != 1:
         return None
     try:
-        return json.loads(match.group("body"))
+        return json.loads(matches[0])
     except json.JSONDecodeError:
         return None
 
@@ -3284,7 +3284,9 @@ The measured signal is acceptable under the same-trust-domain assumption.
         snapshot_bad["runs_detail"][0]["samples_us"] = snapshot_bad["runs_detail"][0]["samples_us"][:19]
         snapshot.write_text(json.dumps(snapshot_bad))
         bad_snapshot_runs_detail_status = quiet_run_checks(args)
-        snapshot_bad["runs_detail"][0]["samples_us"] = [199_000 for _ in range(20)]
+        snapshot_bad["runs_detail"][0]["samples_us"] = [
+            199_000 for _ in range(SNAPSHOT_TEMPLATE_N_PER_RUN)
+        ]
         snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["data"]["warm"]["restore_to_handback_ms"]["p99"] = 100.0
         snapshot.write_text(json.dumps(snapshot_bad))
@@ -3430,6 +3432,22 @@ The measured signal is acceptable under the same-trust-domain assumption.
         density.write_text(density_bad_preflight_command.replace(
             "M80_KERNEL_IMAGE=/tmp/vmlinux",
             "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux",
+        ))
+        density_duplicate_substrate = density.read_text().replace(
+            "### Firecracker process substrate",
+            "### Firecracker process substrate\n\n```json\n"
+            f"{json.dumps(substrate, indent=2)}\n"
+            "```\n\n### Firecracker process substrate",
+            1,
+        )
+        density.write_text(density_duplicate_substrate)
+        density_duplicate_substrate_status = quiet_run_checks(args)
+        density.write_text(density_duplicate_substrate.replace(
+            "### Firecracker process substrate\n\n```json\n"
+            f"{json.dumps(substrate, indent=2)}\n"
+            "```\n\n### Firecracker process substrate",
+            "### Firecracker process substrate",
+            1,
         ))
         density_bad_repro = density.read_text().replace(
             "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 ",
@@ -3880,6 +3898,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_digest_status == 0
             or density_bad_image_path_status == 0
             or density_bad_preflight_command_status == 0
+            or density_duplicate_substrate_status == 0
             or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0
