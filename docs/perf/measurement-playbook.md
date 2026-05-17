@@ -653,8 +653,9 @@ all-slots-leased snapshot. The receipt doc must also retain the exact command
 block env contract for
 `cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`, host
 context, page-cache statement, and green `composed_e2e_layered_warm_pool`
-test-result lines, with exactly one `M80_COMPOSED_E2E_ARTIFACT` smoke line for
-each canonical composed JSON artifact. The verifier also checks that the three
+test-result lines, with exactly one `M80_COMPOSED_E2E_ARTIFACT` smoke line
+inside `## Smoke evidence` for each canonical composed JSON artifact. The
+verifier also checks that the three
 composed JSON artifacts agree on `git_commit`, `substrate`, target count, and
 lowercase sha256 Shared image digest, and that the receipt doc mentions the
 measured git commit, substrate identity, Shared image digest, restore

@@ -243,8 +243,8 @@ use lowercase sha256 template-store fingerprints. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate
 identity, Shared image digest from those JSON artifacts, and green
 `composed_e2e_layered_warm_pool` test-result lines, with exactly one
-`M80_COMPOSED_E2E_ARTIFACT` smoke line for each canonical composed JSON
-artifact. It also cross-checks the receipt's command-block env assignments,
+`M80_COMPOSED_E2E_ARTIFACT` smoke line inside `## Smoke evidence` for each
+canonical composed JSON artifact. It also cross-checks the receipt's command-block env assignments,
 restore P50/P95/P99, and host-memory byte values against the JSON artifacts;
 prose outside the command block does not satisfy command requirements. The
 host-memory subset check also recomputes `bound_bytes` from

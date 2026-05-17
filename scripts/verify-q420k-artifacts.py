@@ -1905,7 +1905,14 @@ def verify_composed_doc(path: Path) -> list[str]:
         "composed-e2e-residue.json",
     ]:
         check.require(artifact in text, f"composed doc: missing {artifact}")
-    smoke_artifact_paths = re.findall(r"^M80_COMPOSED_E2E_ARTIFACT\s+(\S+)$", text, re.MULTILINE)
+    smoke = markdown_section(text, "Smoke evidence")
+    check.require(smoke is not None, "composed doc: missing Smoke evidence section")
+    smoke_text = smoke or ""
+    smoke_artifact_paths = re.findall(
+        r"^M80_COMPOSED_E2E_ARTIFACT\s+(\S+)$",
+        smoke_text,
+        re.MULTILINE,
+    )
     check.require(
         len(smoke_artifact_paths) == 3,
         "composed doc: smoke evidence must list exactly three artifact writes",
@@ -1920,10 +1927,13 @@ def verify_composed_doc(path: Path) -> list[str]:
             f"composed doc: smoke evidence missing artifact write {suffix}",
         )
     check.require(
-        "test composed_e2e_layered_warm_pool ... ok" in text,
+        "test composed_e2e_layered_warm_pool ... ok" in smoke_text,
         "composed doc: smoke evidence must show composed_e2e_layered_warm_pool passed",
     )
-    check.require("test result: ok." in text, "composed doc: smoke evidence must show green test result")
+    check.require(
+        "test result: ok." in smoke_text,
+        "composed doc: smoke evidence must show green test result",
+    )
     for required in [
         "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
         "M80_COMPOSED_E2E_ALLOW_OTHER_VMS=0",
@@ -4511,6 +4521,21 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "M80_COMPOSED_E2E_ARTIFACT /repo/crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json",
             )
         )
+        composed_doc_smoke_outside_section = (
+            "M80_COMPOSED_E2E_ARTIFACT /repo/crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json\n\n"
+            + composed_doc.read_text().replace(
+                "```text\nM80_COMPOSED_E2E_ARTIFACT /repo/crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json\n",
+                "```text\n",
+                1,
+            )
+        )
+        composed_doc.write_text(composed_doc_smoke_outside_section)
+        composed_doc_smoke_outside_section_status = quiet_run_checks(args)
+        composed_doc.write_text(composed_doc_smoke_outside_section.split("\n\n", maxsplit=1)[1].replace(
+            "```text\n",
+            "```text\nM80_COMPOSED_E2E_ARTIFACT /repo/crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json\n",
+            1,
+        ))
         composed_doc_bad = composed_doc.read_text().replace(
             "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
             "cargo test --release -p m80-firecracker --test wrong_test",
@@ -4825,6 +4850,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or uncommitted_status == 0
             or diagnostic_doc_status == 0
             or composed_doc_bad_artifact_marker_status == 0
+            or composed_doc_smoke_outside_section_status == 0
             or missing_doc_command_status == 0
             or composed_doc_bad_helper_status == 0
             or composed_doc_bad_run_root_status == 0
