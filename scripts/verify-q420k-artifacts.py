@@ -405,6 +405,15 @@ def verify_pmem_density_smoke(path: Path) -> list[str]:
         "M80_PMEM_SHARED_PAYLOAD_MIB:-128",
         "M80_PMEM_SHARED_DENSITY_ARTIFACT:-docs/perf/pmem-shared-density.md",
         "M80_PMEM_SHARED_ALLOW_OTHER_VMS",
+        "M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+        "M80_JAILER_HARDEN_BIN:-/opt/m80/bin/m80-jailer-harden",
+        "M80_NET_HELPER_BIN:-/opt/m80/bin/m80-net-helper",
+        "repro_command+=\" M80_FIRECRACKER_SECCOMP_FILTER=$FIRECRACKER_SECCOMP_FILTER\"",
+        "repro_command+=\" M80_JAILER_HARDEN_BIN=$JAILER_HARDEN_BIN\"",
+        "repro_command+=\" M80_NET_HELPER_BIN=$NET_HELPER_BIN\"",
+        "M80_FIRECRACKER_SECCOMP_FILTER=\"$FIRECRACKER_SECCOMP_FILTER\"",
+        "M80_JAILER_HARDEN_BIN=\"$JAILER_HARDEN_BIN\"",
+        "M80_NET_HELPER_BIN=\"$NET_HELPER_BIN\"",
         "repro_command+=\" M80_KERNEL_KIND=$KERNEL_KIND\"",
         "M80_KERNEL_KIND=\"$KERNEL_KIND\"",
         "pgrep -af",
@@ -427,6 +436,11 @@ def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
         "M80_PMEM_SHARED_PAYLOAD_MIB=128",
         "M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md",
         "M80_RUN_ROOT=/var/lib/m80-psd",
+        "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
+        "M80_JAILER_BIN=/opt/firecracker/bin/jailer",
+        "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+        "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden",
+        "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper",
         "M80_KERNEL_IMAGE=<real-stripped-kernel.bin>",
         "M80_KERNEL_KIND=stripped",
         "M80_ROOTFS_IMAGE=<real-rootfs.ext4>",
@@ -1617,7 +1631,13 @@ PAYLOAD_MIB="${M80_PMEM_SHARED_PAYLOAD_MIB:-128}"
 ARTIFACT="${M80_PMEM_SHARED_DENSITY_ARTIFACT:-docs/perf/pmem-shared-density.md}"
 ALLOW_OTHER_VMS="${M80_PMEM_SHARED_ALLOW_OTHER_VMS:-0}"
 KERNEL_KIND="${M80_KERNEL_KIND:-stripped}"
+FIRECRACKER_SECCOMP_FILTER="${M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin}"
+JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-/opt/m80/bin/m80-jailer-harden}"
+NET_HELPER_BIN="${M80_NET_HELPER_BIN:-/opt/m80/bin/m80-net-helper}"
 repro_command+=" M80_KERNEL_KIND=$KERNEL_KIND"
+repro_command+=" M80_FIRECRACKER_SECCOMP_FILTER=$FIRECRACKER_SECCOMP_FILTER"
+repro_command+=" M80_JAILER_HARDEN_BIN=$JAILER_HARDEN_BIN"
+repro_command+=" M80_NET_HELPER_BIN=$NET_HELPER_BIN"
 
 if [[ "$ALLOW_OTHER_VMS" != "1" ]]; then
     existing_firecrackers="$(pgrep -af '(^|/)firecracker( |$)' || true)"
@@ -1631,6 +1651,9 @@ cargo test -p m80-firecracker --test pmem_shared_host_page_sharing_real_kvm --no
 sudo -n env \
     M80_RUN_PMEM_SHARED_DENSITY=1 \
     M80_KERNEL_KIND="$KERNEL_KIND" \
+    M80_FIRECRACKER_SECCOMP_FILTER="$FIRECRACKER_SECCOMP_FILTER" \
+    M80_JAILER_HARDEN_BIN="$JAILER_HARDEN_BIN" \
+    M80_NET_HELPER_BIN="$NET_HELPER_BIN" \
     M80_PMEM_SHARED_DENSITY_ARTIFACT="$ARTIFACT" \
     "$test_bin" shared_pmem_host_page_sharing_measurement_lives_in_density_gate
 """
@@ -1644,6 +1667,11 @@ M80_PMEM_SHARED_CYCLES=10 \
 M80_PMEM_SHARED_PAYLOAD_MIB=128 \
 M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md \
 M80_RUN_ROOT=/var/lib/m80-psd \
+M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
+M80_JAILER_BIN=/opt/firecracker/bin/jailer \
+M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
+M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
+M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
 M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
 M80_KERNEL_KIND=stripped \
 M80_ROOTFS_IMAGE=<real-rootfs.ext4> \

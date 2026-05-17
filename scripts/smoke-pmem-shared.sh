@@ -19,6 +19,9 @@ fi
 ALLOW_OTHER_VMS="${M80_PMEM_SHARED_ALLOW_OTHER_VMS:-0}"
 FIRECRACKER_BIN="${M80_FIRECRACKER_BIN:-/opt/firecracker/bin/firecracker}"
 JAILER_BIN="${M80_JAILER_BIN:-/opt/firecracker/bin/jailer}"
+FIRECRACKER_SECCOMP_FILTER="${M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin}"
+JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-/opt/m80/bin/m80-jailer-harden}"
+NET_HELPER_BIN="${M80_NET_HELPER_BIN:-/opt/m80/bin/m80-net-helper}"
 JAIL_UID="${M80_JAIL_UID:-$(id -u)}"
 JAIL_GID="${M80_JAIL_GID:-$(id -g)}"
 FIRECRACKER_VERSION="${M80_FIRECRACKER_VERSION:-v1.15.1}"
@@ -51,7 +54,7 @@ fi
 
 ROOTFS_IMAGE="${M80_ROOTFS_IMAGE:-/tank/tmp/m80-build/shared-pmem-ubuntu2/output.ext4}"
 
-for path in "$FIRECRACKER_BIN" "$JAILER_BIN" "$KERNEL_IMAGE" "$ROOTFS_IMAGE"; do
+for path in "$FIRECRACKER_BIN" "$JAILER_BIN" "$FIRECRACKER_SECCOMP_FILTER" "$JAILER_HARDEN_BIN" "$NET_HELPER_BIN" "$KERNEL_IMAGE" "$ROOTFS_IMAGE"; do
     if [[ ! -e "$path" ]]; then
         echo "missing required path: $path" >&2
         exit 2
@@ -60,6 +63,9 @@ done
 
 FIRECRACKER_BIN="$(realpath "$FIRECRACKER_BIN")"
 JAILER_BIN="$(realpath "$JAILER_BIN")"
+FIRECRACKER_SECCOMP_FILTER="$(realpath "$FIRECRACKER_SECCOMP_FILTER")"
+JAILER_HARDEN_BIN="$(realpath "$JAILER_HARDEN_BIN")"
+NET_HELPER_BIN="$(realpath "$NET_HELPER_BIN")"
 KERNEL_IMAGE="$(realpath "$KERNEL_IMAGE")"
 ROOTFS_IMAGE="$(realpath "$ROOTFS_IMAGE")"
 
@@ -97,6 +103,9 @@ repro_command+=" M80_KERNEL_KIND=$KERNEL_KIND"
 repro_command+=" M80_ROOTFS_IMAGE=$ROOTFS_IMAGE"
 repro_command+=" M80_FIRECRACKER_BIN=$FIRECRACKER_BIN"
 repro_command+=" M80_JAILER_BIN=$JAILER_BIN"
+repro_command+=" M80_FIRECRACKER_SECCOMP_FILTER=$FIRECRACKER_SECCOMP_FILTER"
+repro_command+=" M80_JAILER_HARDEN_BIN=$JAILER_HARDEN_BIN"
+repro_command+=" M80_NET_HELPER_BIN=$NET_HELPER_BIN"
 repro_command+=" $0"
 
 timeout 1800 sudo -n env \
@@ -110,6 +119,9 @@ timeout 1800 sudo -n env \
     M80_PMEM_SHARED_REPRO_COMMAND="$repro_command" \
     M80_FIRECRACKER_BIN="$FIRECRACKER_BIN" \
     M80_JAILER_BIN="$JAILER_BIN" \
+    M80_FIRECRACKER_SECCOMP_FILTER="$FIRECRACKER_SECCOMP_FILTER" \
+    M80_JAILER_HARDEN_BIN="$JAILER_HARDEN_BIN" \
+    M80_NET_HELPER_BIN="$NET_HELPER_BIN" \
     M80_KERNEL_IMAGE="$KERNEL_IMAGE" \
     M80_KERNEL_KIND="$KERNEL_KIND" \
     M80_ROOTFS_IMAGE="$ROOTFS_IMAGE" \
