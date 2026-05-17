@@ -947,11 +947,15 @@ def verify_composed_doc(path: Path) -> list[str]:
         "M80_COMPOSED_E2E_N=10",
         "M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32",
         "M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots",
+        "M80_RUN_ROOT=/var/lib/m80-composed-e2e",
+        "M80_JAIL_UID=",
+        "M80_JAIL_GID=",
         "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
         "M80_JAILER_BIN=/opt/firecracker/bin/jailer",
         "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
         "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden",
         "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper",
+        "M80_ROOTFS_IMAGE=",
         "M80_KERNEL_KIND=stripped",
         "--ignored composed_e2e_layered_warm_pool --nocapture",
         "Host:",
@@ -988,11 +992,15 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
         "M80_COMPOSED_E2E_N=10",
         "M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32",
         "M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots",
+        "M80_RUN_ROOT=/var/lib/m80-composed-e2e",
+        "M80_JAIL_UID=",
+        "M80_JAIL_GID=",
         "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
         "M80_JAILER_BIN=/opt/firecracker/bin/jailer",
         "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
         "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden",
         "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper",
+        "M80_ROOTFS_IMAGE=<real-rootfs.ext4>",
         "M80_KERNEL_IMAGE=<real-stripped-kernel.bin>",
         "M80_KERNEL_KIND=stripped",
         "--ignored composed_e2e_layered_warm_pool --nocapture",
@@ -2009,11 +2017,15 @@ sudo -n env \
   M80_COMPOSED_E2E_N=10 \
   M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32 \
   M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots \
+  M80_RUN_ROOT=/var/lib/m80-composed-e2e \
+  M80_JAIL_UID=1000 \
+  M80_JAIL_GID=1000 \
   M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
   M80_JAILER_BIN=/opt/firecracker/bin/jailer \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
   M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
   M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
+  M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
   M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
   M80_KERNEL_KIND=stripped \
   cargo test --release -p m80-firecracker --test e2e_composed_real_kvm -- \
@@ -2115,11 +2127,15 @@ sudo -n env \
   M80_COMPOSED_E2E_N=10 \
   M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32 \
   M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots \
+  M80_RUN_ROOT=/var/lib/m80-composed-e2e \
+  M80_JAIL_UID=1000 \
+  M80_JAIL_GID=1000 \
   M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
   M80_JAILER_BIN=/opt/firecracker/bin/jailer \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
   M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
   M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
+  M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
   M80_KERNEL_KIND=stripped \
   cargo test --release -p m80-firecracker --test e2e_composed_real_kvm -- \
     --ignored composed_e2e_layered_warm_pool --nocapture
@@ -2605,6 +2621,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_NET_HELPER_BIN=/tmp/m80-net-helper",
             "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper",
         ))
+        composed_doc_bad_run_root = composed_doc.read_text().replace(
+            "M80_RUN_ROOT=/var/lib/m80-composed-e2e",
+            "M80_RUN_ROOT=/tmp/m80-composed-e2e",
+        )
+        composed_doc.write_text(composed_doc_bad_run_root)
+        composed_doc_bad_run_root_status = quiet_run_checks(args)
+        composed_doc.write_text(composed_doc_bad_run_root.replace(
+            "M80_RUN_ROOT=/tmp/m80-composed-e2e",
+            "M80_RUN_ROOT=/var/lib/m80-composed-e2e",
+        ))
         composed_doc_bad_kernel_kind = composed_doc.read_text().replace(
             "M80_KERNEL_KIND=stripped",
             "M80_KERNEL_KIND=stock",
@@ -2626,6 +2652,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
         measurement_playbook.write_text(composed_playbook_bad.replace(
             "M80_FIRECRACKER_SECCOMP_FILTER=/tmp/filter.bin",
             "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+        ))
+        composed_playbook_bad_run_root = measurement_playbook.read_text().replace(
+            "M80_RUN_ROOT=/var/lib/m80-composed-e2e",
+            "M80_RUN_ROOT=/tmp/m80-composed-e2e",
+        )
+        measurement_playbook.write_text(composed_playbook_bad_run_root)
+        composed_playbook_bad_run_root_status = quiet_run_checks(args)
+        measurement_playbook.write_text(composed_playbook_bad_run_root.replace(
+            "M80_RUN_ROOT=/tmp/m80-composed-e2e",
+            "M80_RUN_ROOT=/var/lib/m80-composed-e2e",
         ))
         args.only = ["composed-doc"]
         composed_doc_bad = composed_doc.read_text().replace(
@@ -2780,9 +2816,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or diagnostic_doc_status == 0
             or missing_doc_command_status == 0
             or composed_doc_bad_helper_status == 0
+            or composed_doc_bad_run_root_status == 0
             or composed_doc_bad_kernel_kind_status == 0
             or composed_playbook_status != 0
             or composed_playbook_bad_helper_status == 0
+            or composed_playbook_bad_run_root_status == 0
             or missing_doc_json_identity_status == 0
             or missing_doc_residue_root_status == 0
             or bad_status == 0
