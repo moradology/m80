@@ -49,6 +49,11 @@ COMPOSED_E2E_N = 10
 COMPOSED_E2E_SHARED_PAYLOAD_MIB = 32
 COMPOSED_E2E_OUT_DIR = "crates/m80-firecracker/benches/snapshots"
 COMPOSED_E2E_RUN_ROOT = "/var/lib/m80-composed-e2e"
+PREPARED_STRIPPED_KERNEL_IMAGE = (
+    "/tank/projects/m80/crates/m80-image-build/kernels/"
+    "vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin"
+)
+PREPARED_ROOTFS_IMAGE = "/tank/tmp/m80-build/post-restore-current/output.ext4"
 REQUIRED_CLOSE_BEADS = {
     "snapshot-template": "m80-q420k.4.15",
     "pmem-density": "m80-q420k.3.8",
@@ -1178,9 +1183,9 @@ def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
         "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
         "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden",
         "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper",
-        "M80_KERNEL_IMAGE=<real-stripped-kernel.bin>",
+        f"M80_KERNEL_IMAGE={PREPARED_STRIPPED_KERNEL_IMAGE}",
         "M80_KERNEL_KIND=stripped",
-        "M80_ROOTFS_IMAGE=<real-rootfs.ext4>",
+        f"M80_ROOTFS_IMAGE={PREPARED_ROOTFS_IMAGE}",
         "M80_FIRECRACKER_VERSION=v1.15.1",
         "M80_JAIL_UID=",
         "M80_JAIL_GID=",
@@ -2119,8 +2124,8 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
         "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
         "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden",
         "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper",
-        "M80_ROOTFS_IMAGE=<real-rootfs.ext4>",
-        "M80_KERNEL_IMAGE=<real-stripped-kernel.bin>",
+        f"M80_ROOTFS_IMAGE={PREPARED_ROOTFS_IMAGE}",
+        f"M80_KERNEL_IMAGE={PREPARED_STRIPPED_KERNEL_IMAGE}",
         "M80_KERNEL_KIND=stripped",
         "--ignored composed_e2e_layered_warm_pool --nocapture",
         "crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json",
@@ -2134,8 +2139,8 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
             check,
             "composed instruction command",
             command,
-            kernel_image="<real-stripped-kernel.bin>",
-            rootfs_image="<real-rootfs.ext4>",
+            kernel_image=PREPARED_STRIPPED_KERNEL_IMAGE,
+            rootfs_image=PREPARED_ROOTFS_IMAGE,
         )
     return check.errors
 
@@ -3422,7 +3427,7 @@ timeout 1800 sudo -n env \
 """
         )
         density_smoke.chmod(0o755)
-        density_instruction = """## Q420K Shared Pmem Density
+        density_instruction = f"""## Q420K Shared Pmem Density
 
 ```sh
 M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 \
@@ -3437,9 +3442,9 @@ M80_JAILER_BIN=/opt/firecracker/bin/jailer \
 M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
 M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
 M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
-M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
+M80_KERNEL_IMAGE={PREPARED_STRIPPED_KERNEL_IMAGE} \
 M80_KERNEL_KIND=stripped \
-M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
+M80_ROOTFS_IMAGE={PREPARED_ROOTFS_IMAGE} \
 M80_FIRECRACKER_VERSION=v1.15.1 \
 M80_JAIL_UID=1000 \
 M80_JAIL_GID=1000 \
@@ -3450,7 +3455,7 @@ M80_JAIL_GID=1000 \
 python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committed
 ```
 """
-        composed_instruction = """
+        composed_instruction = f"""
 ## E13. Composed E2E
 
 ```sh
@@ -3467,8 +3472,8 @@ sudo -n env \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
   M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
   M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
-  M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
-  M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
+  M80_ROOTFS_IMAGE={PREPARED_ROOTFS_IMAGE} \
+  M80_KERNEL_IMAGE={PREPARED_STRIPPED_KERNEL_IMAGE} \
   M80_KERNEL_KIND=stripped \
   cargo test --release -p m80-firecracker --test e2e_composed_real_kvm -- \
     --ignored composed_e2e_layered_warm_pool --nocapture
