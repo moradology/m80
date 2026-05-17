@@ -4134,6 +4134,63 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 close_artifact_paths_ignored_status = 0 if not verify_close_artifact_paths(ROOT) else 1
         finally:
             REQUIRED_CLOSE_ARTIFACT_PATHS = original_close_artifact_paths
+        with tempfile.TemporaryDirectory(prefix="q420k-prepared-input-self-test-") as input_tmp_raw:
+            input_tmp = Path(input_tmp_raw)
+            prepared_input = input_tmp / "prepared-input.bin"
+            prepared_input.write_bytes(b"prepared input\n")
+            prepared_input.chmod(0o644)
+            prepared_input_digest = sha256_file(prepared_input)
+
+            check = Check()
+            require_prepared_input(
+                check,
+                "self-test",
+                prepared_input.as_posix(),
+                prepared_input_digest,
+                executable=False,
+            )
+            prepared_input_status = 0 if not check.errors else 1
+
+            check = Check()
+            require_prepared_input(
+                check,
+                "self-test",
+                prepared_input.as_posix(),
+                prepared_input_digest,
+                executable=True,
+            )
+            prepared_input_non_executable_status = 0 if not check.errors else 1
+
+            prepared_input.chmod(0o755)
+            check = Check()
+            require_prepared_input(
+                check,
+                "self-test",
+                prepared_input.as_posix(),
+                prepared_input_digest,
+                executable=True,
+            )
+            prepared_input_executable_status = 0 if not check.errors else 1
+
+            check = Check()
+            require_prepared_input(
+                check,
+                "self-test",
+                prepared_input.as_posix(),
+                "0" * 64,
+                executable=True,
+            )
+            prepared_input_bad_hash_status = 0 if not check.errors else 1
+
+            check = Check()
+            require_prepared_input(
+                check,
+                "self-test",
+                (input_tmp / "missing.bin").as_posix(),
+                prepared_input_digest,
+                executable=False,
+            )
+            prepared_input_missing_status = 0 if not check.errors else 1
         args.only = ["ext4-overlay"]
         ext4_status = quiet_run_checks(args)
         ext4_bad = ext4_overlay.read_text().replace(
@@ -5620,6 +5677,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or subset_super_flag_status == 0
             or close_artifact_paths_status != 0
             or close_artifact_paths_ignored_status == 0
+            or prepared_input_status != 0
+            or prepared_input_non_executable_status == 0
+            or prepared_input_executable_status != 0
+            or prepared_input_bad_hash_status == 0
+            or prepared_input_missing_status == 0
             or ext4_status != 0
             or ext4_bad_status == 0
             or ext4_bad_command_status == 0
