@@ -104,6 +104,7 @@ M80_PMEM_SHARED_PAYLOAD_MIB=128 \
 M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md \
 M80_RUN_ROOT=/var/lib/m80-psd \
 M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
+M80_KERNEL_KIND=stripped \
 M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
 ./scripts/smoke-pmem-shared.sh
 ```
