@@ -250,9 +250,11 @@ Artifact:
 
 Required interpretation: real-KVM substrate, actual Shared pmem guests, full
 measured commit, quiet-host Firecracker substrate JSON with empty pre-run and
-post-run Firecracker process lists, `VM count >= 2`, `samples per guest >= 3`,
-payload size, lowercase sha256 image digest with an absolute image path
-containing that digest, uncompressed non-inlined Shared payload layout
+post-run Firecracker process lists, preflight artifact identity for the measured
+Firecracker/jailer/helper/kernel/rootfs inputs, a reproduction command whose
+env assignments match that preflight identity, `VM count >= 2`, `samples per
+guest >= 3`, payload size, lowercase sha256 image digest with an absolute image
+path containing that digest, uncompressed non-inlined Shared payload layout
 (`Layout: 0` with equal logical and on-disk size), baseline read latency
 P50/P95/P99, post-pressure read/refault latency P50/P95/P99, cross-guest signal
 delta recomputed from the P50 values, host memory and page-cache deltas

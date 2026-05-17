@@ -410,10 +410,12 @@ for verified evidence. If the quiet-host inventory helper reports unrelated
 Firecracker processes, stop and collect owner approval or move to a quiet real
 KVM host. The receipt must record the full measured commit, quiet-host
 Firecracker substrate JSON with empty pre-run and post-run Firecracker process
-lists, lowercase sha256 Shared image digest with an absolute image path
-containing that digest, ordered baseline/post-pressure latency percentiles, and
-the cross-guest signal delta recomputed from P50 values. After committing the
-artifact, run:
+lists, preflight artifact identity for the measured
+Firecracker/jailer/helper/kernel/rootfs inputs, a reproduction command whose
+env assignments match that preflight identity, lowercase sha256 Shared image
+digest with an absolute image path containing that digest, ordered
+baseline/post-pressure latency percentiles, and the cross-guest signal delta
+recomputed from P50 values. After committing the artifact, run:
 
 ```sh
 python3 scripts/verify-q420k-artifacts.py \

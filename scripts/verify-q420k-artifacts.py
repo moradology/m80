@@ -2353,18 +2353,24 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     substrate = markdown_json_block(text, "Firecracker process substrate")
     check.require(isinstance(substrate, dict), "dax memory pressure: missing Firecracker process substrate JSON")
     if isinstance(substrate, dict):
-        check.require(
-            substrate.get("allow_other_firecracker_vms") is False,
-            "dax memory pressure: substrate allow_other_firecracker_vms must be false",
-        )
-        check.require(
-            substrate.get("preexisting_firecracker_processes") == [],
-            "dax memory pressure: preexisting Firecracker process list must be empty",
-        )
-        check.require(
-            substrate.get("post_run_firecracker_processes") == [],
-            "dax memory pressure: post-run Firecracker process list must be empty",
-        )
+        substrate_data = {"substrate": substrate}
+        quiet_substrate(substrate_data, "dax memory pressure", check)
+        composed_runtime_substrate(substrate_data, "dax memory pressure", check)
+        preflight = substrate.get("preflight_artifacts")
+        if command is not None and isinstance(preflight, dict):
+            for env, field in [
+                ("M80_FIRECRACKER_BIN", "firecracker_bin"),
+                ("M80_JAILER_BIN", "jailer_bin"),
+                ("M80_FIRECRACKER_SECCOMP_FILTER", "firecracker_seccomp_filter"),
+                ("M80_JAILER_HARDEN_BIN", "jailer_harden_bin"),
+                ("M80_NET_HELPER_BIN", "net_helper_bin"),
+                ("M80_KERNEL_IMAGE", "kernel_image"),
+                ("M80_KERNEL_KIND", "kernel_kind"),
+                ("M80_ROOTFS_IMAGE", "rootfs_image"),
+            ]:
+                value = preflight.get(field)
+                if isinstance(value, str):
+                    require_command_env_value(check, "dax memory pressure", command, env, value)
 
     check.require(
         markdown_int(text, r"- leaked Shared markers: `(\d+)`") == 0,
@@ -3786,17 +3792,13 @@ Bead: `m80-q420k.8.9`.
 - command:
 
 ```sh
-M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
+M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
 ```
 
 ### Firecracker process substrate
 
 ```json
-{{
-  "allow_other_firecracker_vms": false,
-  "preexisting_firecracker_processes": [],
-  "post_run_firecracker_processes": []
-}}
+{json.dumps(substrate, indent=2)}
 ```
 
 ## Observable
@@ -3955,6 +3957,26 @@ The measured signal is acceptable under the same-trust-domain assumption.
         dax_pressure.write_text(dax_bad_post_run.replace(
             '"post_run_firecracker_processes": [{"pid": 1234, "argv": ["firecracker"]}]',
             '"post_run_firecracker_processes": []',
+        ))
+        dax_bad_preflight = dax_pressure.read_text().replace(
+            '"preflight_artifacts": {',
+            '"preflight_artifacts_missing": {',
+        )
+        dax_pressure.write_text(dax_bad_preflight)
+        dax_bad_preflight_status = quiet_run_checks(args)
+        dax_pressure.write_text(dax_bad_preflight.replace(
+            '"preflight_artifacts_missing": {',
+            '"preflight_artifacts": {',
+        ))
+        dax_bad_preflight_command = dax_pressure.read_text().replace(
+            "M80_KERNEL_KIND=stripped",
+            "M80_KERNEL_KIND=stock",
+        )
+        dax_pressure.write_text(dax_bad_preflight_command)
+        dax_bad_preflight_command_status = quiet_run_checks(args)
+        dax_pressure.write_text(dax_bad_preflight_command.replace(
+            "M80_KERNEL_KIND=stock",
+            "M80_KERNEL_KIND=stripped",
         ))
         args.only = ["snapshot-template"]
         snapshot_bad = json.loads(snapshot.read_text())
@@ -5213,6 +5235,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or dax_bad_delta_status == 0
             or dax_bad_substrate_status == 0
             or dax_bad_post_run_status == 0
+            or dax_bad_preflight_status == 0
+            or dax_bad_preflight_command_status == 0
             or bad_substrate_status == 0
             or leaked_firecracker_status == 0
             or bad_preflight_artifacts_status == 0

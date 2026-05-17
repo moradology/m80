@@ -586,19 +586,32 @@ fn reproduction_command(path: &Path, report: &PressureReport) -> String {
             shell_quote(&artifact)
         ),
     ];
-    for env_name in [
-        "M80_RUN_ROOT",
-        "M80_FIRECRACKER_BIN",
-        "M80_JAILER_BIN",
-        "M80_FIRECRACKER_SECCOMP_FILTER",
-        "M80_JAILER_HARDEN_BIN",
-        "M80_NET_HELPER_BIN",
-        "M80_KERNEL_IMAGE",
-        "M80_KERNEL_KIND",
-        "M80_ROOTFS_IMAGE",
-    ] {
+    for env_name in ["M80_RUN_ROOT"] {
         if let Ok(value) = std::env::var(env_name) {
-            parts.push(format!("{env_name}={}", shell_quote(&value)));
+            push_env(&mut parts, env_name, &value);
+        }
+    }
+    if let Some(preflight) = report
+        .substrate
+        .get("preflight_artifacts")
+        .and_then(serde_json::Value::as_object)
+    {
+        for (env_name, field) in [
+            ("M80_FIRECRACKER_BIN", "firecracker_bin"),
+            ("M80_JAILER_BIN", "jailer_bin"),
+            (
+                "M80_FIRECRACKER_SECCOMP_FILTER",
+                "firecracker_seccomp_filter",
+            ),
+            ("M80_JAILER_HARDEN_BIN", "jailer_harden_bin"),
+            ("M80_NET_HELPER_BIN", "net_helper_bin"),
+            ("M80_KERNEL_IMAGE", "kernel_image"),
+            ("M80_KERNEL_KIND", "kernel_kind"),
+            ("M80_ROOTFS_IMAGE", "rootfs_image"),
+        ] {
+            if let Some(value) = preflight.get(field).and_then(serde_json::Value::as_str) {
+                push_env(&mut parts, env_name, value);
+            }
         }
     }
     parts.push(
@@ -606,6 +619,13 @@ fn reproduction_command(path: &Path, report: &PressureReport) -> String {
             .to_owned(),
     );
     parts.join(" ")
+}
+
+fn push_env(parts: &mut Vec<String>, name: &str, value: &str) {
+    let prefix = format!("{name}=");
+    if !parts.iter().any(|part| part.starts_with(&prefix)) {
+        parts.push(format!("{name}={}", shell_quote(value)));
+    }
 }
 
 fn shell_quote(value: &str) -> String {
