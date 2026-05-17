@@ -497,14 +497,7 @@ fn write_artifact(path: &Path, report: &PressureReport) {
     )
     .unwrap();
     writeln!(out, "- command:\n").unwrap();
-    writeln!(
-        out,
-        "```sh\n{}\n```\n",
-        std::env::var("M80_PMEM_DAX_MEMORY_PRESSURE_REPRO_COMMAND").unwrap_or_else(|_| {
-            "M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture".to_owned()
-        })
-    )
-    .unwrap();
+    writeln!(out, "```sh\n{}\n```\n", reproduction_command(path, report)).unwrap();
     writeln!(out, "### Firecracker process substrate\n").unwrap();
     writeln!(
         out,
@@ -602,4 +595,63 @@ fn write_artifact(path: &Path, report: &PressureReport) {
     .unwrap();
 
     std::fs::write(path, out).expect("write memory-pressure artifact");
+}
+
+fn reproduction_command(path: &Path, report: &PressureReport) -> String {
+    if let Ok(command) = std::env::var("M80_PMEM_DAX_MEMORY_PRESSURE_REPRO_COMMAND") {
+        return command;
+    }
+
+    let vm_count = report.vm_count.to_string();
+    let samples = report.samples.to_string();
+    let payload_mib = report.payload_mib.to_string();
+    let artifact = path
+        .strip_prefix(repo_root())
+        .unwrap_or(path)
+        .display()
+        .to_string();
+    let mut parts = vec![
+        "M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1".to_owned(),
+        format!(
+            "M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND={}",
+            shell_quote(&report.pressure_command)
+        ),
+        format!("M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT={vm_count}"),
+        format!("M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES={samples}"),
+        format!("M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB={payload_mib}"),
+        format!(
+            "M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={}",
+            shell_quote(&artifact)
+        ),
+    ];
+    for env_name in [
+        "M80_RUN_ROOT",
+        "M80_FIRECRACKER_BIN",
+        "M80_JAILER_BIN",
+        "M80_FIRECRACKER_SECCOMP_FILTER",
+        "M80_JAILER_HARDEN_BIN",
+        "M80_NET_HELPER_BIN",
+        "M80_KERNEL_IMAGE",
+        "M80_KERNEL_KIND",
+        "M80_ROOTFS_IMAGE",
+    ] {
+        if let Ok(value) = std::env::var(env_name) {
+            parts.push(format!("{env_name}={}", shell_quote(&value)));
+        }
+    }
+    parts.push(
+        "cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture"
+            .to_owned(),
+    );
+    parts.join(" ")
+}
+
+fn shell_quote(value: &str) -> String {
+    if value.chars().all(|ch| {
+        ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':' | ',' | '=')
+    }) {
+        value.to_owned()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }

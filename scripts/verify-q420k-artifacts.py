@@ -936,10 +936,8 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
         text.startswith("# Pmem DAX Memory Pressure"),
         "dax memory pressure: title mismatch",
     )
-    check.require(
-        "```sh\n" in text and "M80_" in text,
-        "dax memory pressure: missing reproduction command block",
-    )
+    command = markdown_shell_block(text)
+    check.require(command is not None, "dax memory pressure: missing reproduction command block")
     check.require(
         markdown_text(text, r"- git worktree dirty excluding this artifact: `([^`]+)`") == "false",
         "dax memory pressure: measured source worktree must be clean except for the artifact",
@@ -954,6 +952,11 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     layout = markdown_int(text, r"- payload erofs layout: `Layout: (\d+)`,")
     payload_size = markdown_int(text, r"size `(\d+)` bytes, on-disk size")
     payload_on_disk = markdown_int(text, r"on-disk size `(\d+)` bytes")
+    pressure_command = markdown_text(text, r"- pressure command: `([^`]+)`")
+    try:
+        artifact_path = path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        artifact_path = path.as_posix()
 
     check.require(substrate_kind == "real-kvm", "dax memory pressure: substrate kind must be real-kvm")
     require_number_at_least(check, "dax memory pressure: VM count", vm_count, 2)
@@ -969,6 +972,23 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
             payload_size == payload_on_disk,
             "dax memory pressure: payload logical and on-disk size must match",
         )
+    if command is not None:
+        for required in [
+            "M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1",
+            "M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND=",
+            "M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=",
+            "M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=",
+            "M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=",
+            f"M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={artifact_path}",
+            "cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm",
+            "--ignored --nocapture",
+        ]:
+            check.require(required in command, f"dax memory pressure: reproduction command missing {required}")
+        if isinstance(pressure_command, str):
+            check.require(
+                pressure_command in command,
+                "dax memory pressure: reproduction command missing pressure command",
+            )
 
     for label in [
         "baseline Shared-payload read latency p50_ms",
@@ -1032,6 +1052,13 @@ def markdown_text(text: str, pattern: str) -> str | None:
     if match is None:
         return None
     return match.group(1)
+
+
+def markdown_shell_block(text: str) -> str | None:
+    match = re.search(r"```sh\n(?P<body>.*?)\n```", text, flags=re.DOTALL)
+    if match is None:
+        return None
+    return match.group("body")
 
 
 def markdown_json_block(text: str, heading: str) -> Any | None:
@@ -1990,7 +2017,7 @@ dm-snapshot was not prototyped in this run.
 """
         )
         dax_pressure.write_text(
-            """# Pmem DAX Memory Pressure
+            f"""# Pmem DAX Memory Pressure
 
 Bead: `m80-q420k.8.9`.
 
@@ -2010,7 +2037,7 @@ Bead: `m80-q420k.8.9`.
 - command:
 
 ```sh
-M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
+M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
 ```
 
 ## Observable
@@ -2101,6 +2128,19 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- leaked mounts: `1`",
             "- leaked mounts: `0`",
         ))
+        dax_bad_repro = dax_pressure.read_text().replace(
+            "M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' ",
+            "",
+        )
+        dax_pressure.write_text(dax_bad_repro)
+        dax_bad_reproduction_command_status = quiet_run_checks(args)
+        dax_pressure.write_text(
+            dax_bad_repro.replace(
+                "M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 ",
+                "M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 "
+                "M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' ",
+            )
+        )
         args.only = ["snapshot-template"]
         snapshot_bad = json.loads(snapshot.read_text())
         snapshot_bad["substrate"]["substrate_kind"] = "mock"
@@ -2445,6 +2485,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or ext4_bad_status == 0
             or dax_status != 0
             or dax_bad_status == 0
+            or dax_bad_reproduction_command_status == 0
             or bad_substrate_status == 0
             or leaked_firecracker_status == 0
             or bad_preflight_artifacts_status == 0
