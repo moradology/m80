@@ -70,8 +70,9 @@ a missing or non-executable Shared density smoke script,
 snapshot-template docs without the matching bench stderr paste, snapshot
 artifact commands that do not pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
 `target_ready=1`, vCPU/memory sizing, run-root inputs, and sample arrays that
-back `samples_total` and its `p99`, and a composed receipt doc that still
-carries the diagnostic banner.
+back `samples_total` and its `p99`, missing or duplicated snapshot-template
+`(run, cycle)` sample coverage, missing per-run detail, and a composed receipt
+doc that still carries the diagnostic banner.
 Measurement artifacts that carry source-tree cleanliness fields must record a
 clean worktree except for the artifact paths themselves. Real-KVM close
 artifacts also record empty pre-run and post-run Firecracker process lists,

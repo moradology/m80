@@ -329,6 +329,31 @@ def verify_snapshot_template(path: Path) -> list[str]:
     require_number_at_least(check, "snapshot: n_per_run", data.get("n_per_run"), 20)
     require_number_at_least(check, "snapshot: runs", data.get("runs"), 3)
     require_number_at_least(check, "snapshot: samples_total", data.get("samples_total"), 60)
+    n_per_run = data.get("n_per_run")
+    runs = data.get("runs")
+    samples_total = data.get("samples_total")
+    check.require(
+        is_non_negative_int(n_per_run),
+        "snapshot: n_per_run must be a non-negative integer",
+    )
+    check.require(
+        is_non_negative_int(runs),
+        "snapshot: runs must be a non-negative integer",
+    )
+    check.require(
+        is_non_negative_int(samples_total),
+        "snapshot: samples_total must be a non-negative integer",
+    )
+    if (
+        is_non_negative_int(n_per_run)
+        and is_non_negative_int(runs)
+        and is_non_negative_int(samples_total)
+    ):
+        expected_total = n_per_run * runs
+        check.require(
+            samples_total == expected_total,
+            f"snapshot: samples_total must equal n_per_run * runs ({expected_total})",
+        )
     samples = at(data, "data.warm.samples_us")
     sample_details = at(data, "data.warm.sample_details")
     require_list_len(check, "snapshot: data.warm.samples_us", samples, data.get("samples_total"))
@@ -340,17 +365,30 @@ def verify_snapshot_template(path: Path) -> list[str]:
     )
     require_positive_number_list(check, "snapshot: data.warm.samples_us", samples)
     if isinstance(sample_details, list):
+        observed_run_cycles = set()
         for index, detail in enumerate(sample_details):
             check.require(
                 isinstance(detail, dict),
                 f"snapshot: data.warm.sample_details[{index}] must be an object",
             )
             if isinstance(detail, dict):
-                for field in ["run", "cycle", "fill_us", "handoff_us", "restore_to_handback_us"]:
+                for field in ["fill_us", "handoff_us", "restore_to_handback_us"]:
                     check.require(
                         is_number(detail.get(field)) and detail.get(field) >= 0,
                         f"snapshot: data.warm.sample_details[{index}].{field} must be numeric",
                     )
+                run = detail.get("run")
+                cycle = detail.get("cycle")
+                check.require(
+                    is_non_negative_int(run),
+                    f"snapshot: data.warm.sample_details[{index}].run must be a non-negative integer",
+                )
+                check.require(
+                    is_non_negative_int(cycle),
+                    f"snapshot: data.warm.sample_details[{index}].cycle must be a non-negative integer",
+                )
+                if is_non_negative_int(run) and is_non_negative_int(cycle):
+                    observed_run_cycles.add((run, cycle))
                 fill_us = detail.get("fill_us")
                 handoff_us = detail.get("handoff_us")
                 restore_us = detail.get("restore_to_handback_us")
@@ -369,6 +407,42 @@ def verify_snapshot_template(path: Path) -> list[str]:
                         samples[index] == restore_us,
                         f"snapshot: data.warm.sample_details[{index}].restore_to_handback_us must match samples_us[{index}]",
                     )
+        if is_non_negative_int(runs) and is_non_negative_int(n_per_run):
+            expected_run_cycles = {
+                (run, cycle)
+                for run in range(runs)
+                for cycle in range(n_per_run)
+            }
+            check.require(
+                observed_run_cycles == expected_run_cycles,
+                "snapshot: sample_details must cover each run/cycle exactly once",
+            )
+    runs_detail = data.get("runs_detail")
+    require_list_len(check, "snapshot: runs_detail", runs_detail, data.get("runs"))
+    if isinstance(runs_detail, list):
+        for index, run_detail in enumerate(runs_detail):
+            check.require(
+                isinstance(run_detail, dict),
+                f"snapshot: runs_detail[{index}] must be an object",
+            )
+            if not isinstance(run_detail, dict):
+                continue
+            check.require(
+                run_detail.get("run") == index,
+                f"snapshot: runs_detail[{index}].run must equal {index}",
+            )
+            run_samples = run_detail.get("samples_us")
+            require_list_len(
+                check,
+                f"snapshot: runs_detail[{index}].samples_us",
+                run_samples,
+                data.get("n_per_run"),
+            )
+            require_positive_number_list(
+                check,
+                f"snapshot: runs_detail[{index}].samples_us",
+                run_samples,
+            )
     numeric_samples = numeric_list(samples)
     if numeric_samples:
         expected_p99_us = percentile(numeric_samples, 99)
@@ -1737,6 +1811,10 @@ def is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def is_non_negative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def verify_committed_artifacts(check_specs: list[tuple[str, str, Any, Path]]) -> list[str]:
     errors: list[str] = []
     for key, label, _, path in check_specs:
@@ -2350,6 +2428,15 @@ def run_self_tests() -> int:
                     for index, value in enumerate(snapshot_samples_us)
                 ],
             }},
+            "runs_detail": [
+                {
+                    "run": run,
+                    "initial_fill_samples_us": [50_000],
+                    "restore_to_handback_us": {"p99": 199_000},
+                    "samples_us": [199_000 for _ in range(20)],
+                }
+                for run in range(3)
+            ],
         }))
         snapshot_doc.write_text(
             """# Snapshot-Template Restore Latency
@@ -3094,6 +3181,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
         bad_snapshot_sample_detail_status = quiet_run_checks(args)
         snapshot_bad["data"]["warm"]["sample_details"][0]["restore_to_handback_us"] = snapshot_samples_us[0]
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["data"]["warm"]["sample_details"][1]["cycle"] = 0
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_run_cycle_status = quiet_run_checks(args)
+        snapshot_bad["data"]["warm"]["sample_details"][1]["cycle"] = 1
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["runs_detail"][0]["samples_us"] = snapshot_bad["runs_detail"][0]["samples_us"][:19]
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_runs_detail_status = quiet_run_checks(args)
+        snapshot_bad["runs_detail"][0]["samples_us"] = [199_000 for _ in range(20)]
+        snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["data"]["warm"]["restore_to_handback_ms"]["p99"] = 100.0
         snapshot.write_text(json.dumps(snapshot_bad))
         bad_snapshot_percentile_status = quiet_run_checks(args)
@@ -3649,6 +3746,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or bad_snapshot_target_ready_status == 0
             or bad_snapshot_sample_count_status == 0
             or bad_snapshot_sample_detail_status == 0
+            or bad_snapshot_run_cycle_status == 0
+            or bad_snapshot_runs_detail_status == 0
             or bad_snapshot_percentile_status == 0
             or bad_snapshot_allow_other_reproduction_command_status == 0
             or bad_snapshot_reproduction_command_status == 0
