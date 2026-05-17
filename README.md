@@ -53,6 +53,8 @@ container.
 Production operators should read [`docs/ops/host-setup.md`](docs/ops/host-setup.md)
 before trusting a host. It covers identity separation, Docker socket risk,
 artifact ownership, Cargo source controls, and runtime host assumptions.
+Developers running the privileged real-KVM test battery locally should use
+[`docs/operations/e2e-local-dev.md`](docs/operations/e2e-local-dev.md).
 
 ## Diagnostics
 
@@ -120,6 +122,15 @@ Drive hot-plug + tenant-identity verification primitives are available for
 multi-tenant pool callers; see `docs/future-directions/bestiary-conveyor-belt.md`
 for the canonical pool architecture this enables.
 
+Layered rootfs, pmem layers, Shared same-trust-domain backing, and
+snapshot-template restore are covered by the operator runbooks:
+[`docs/runbook/layered-rootfs-operations.md`](docs/runbook/layered-rootfs-operations.md)
+and
+[`docs/runbook/migrating-to-pmem-and-snapshot-restore.md`](docs/runbook/migrating-to-pmem-and-snapshot-restore.md).
+The verified-close checklist for the remaining q420k measurement gates lives
+at
+[`docs/runbook/q420k-close-gates.md`](docs/runbook/q420k-close-gates.md).
+
 ## File Operations
 
 Beyond exec, m80 exposes wire verbs for direct guest file movement that avoid
@@ -170,7 +181,7 @@ on tag pushes.
 
 ## Workspace
 
-m80 is a Rust workspace split into 21 black-box crates:
+m80 is a Rust workspace split into 22 black-box crates:
 
 **Foundation (10)** — privilege acquired at process startup and verified by
 `m80-preflight`; no per-call privilege shim:
@@ -180,9 +191,10 @@ m80 is a Rust workspace split into 21 black-box crates:
 - `m80-cgroup`, `m80-storage` — cgroup-v2 limits, overlay+pivot rootfs
 - `m80-preflight`, `m80-net-mode` — host capability checks, network mode types
 
-**Feature crates (3)**:
+**Feature crates (4)**:
 - `m80-net-outbound` — egress NAT/iptables/DNS/cleanup (~3500 LOC; the largest single risk surface)
 - `m80-snapshot` — capture/restore execution
+- `m80-snapshot-template` — content-addressed snapshot-template store with process-local pins
 - `m80-observability` — probe + Prometheus render
 
 **Orchestration (1)**:
@@ -228,6 +240,7 @@ VM-mechanics tests, mandatory jailer, and no hidden agent policy in the core.
 See:
 - [`docs/positioning.md`](docs/positioning.md) — fuller comparison and adapter pattern
 - [`docs/adapter-boundary.md`](docs/adapter-boundary.md) — what lives in m80 vs above (with the Promotion Bar For New Core Verbs)
+- [`docs/runbook/layered-rootfs-operations.md`](docs/runbook/layered-rootfs-operations.md) — operator choices for rootfs overlays, pmem sharing, template rebuilds, and capacity
 - [`docs/future-directions/bestiary-conveyor-belt.md`](docs/future-directions/bestiary-conveyor-belt.md) — multi-tenant pool architecture (out of m80 scope; consumer-side)
 
 ## What m80 Is Not

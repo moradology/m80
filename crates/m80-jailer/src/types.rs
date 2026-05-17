@@ -152,6 +152,8 @@ pub struct Binding {
 pub enum BindMode {
     /// Bind read-only.
     Ro,
+    /// Bind read-only and require the host source to be in m80's image store.
+    RoImageStore,
     /// Bind read-write.
     Rw,
     /// Create the destination directory inside the jail (no host source).

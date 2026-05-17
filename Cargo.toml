@@ -59,6 +59,7 @@ clap = { version = "4", features = ["derive"] }
 scopeguard = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 signal-hook = "0.3"
 thiserror = "2"
 anyhow = "1"
@@ -68,6 +69,7 @@ hex = "0.4"
 sha2 = "0.10"
 ipnet = "2"
 nix = { version = "0.29", default-features = false, features = ["user", "mount", "fs", "feature", "signal", "process", "term", "resource", "sched", "socket", "poll", "inotify"] }
+rustix = { version = "1", features = ["fs"] }
 portable-pty = "0.9"
 terminal_size = "0.4"
 ulid = "1"
@@ -96,11 +98,14 @@ m80-vsock = { path = "crates/m80-vsock" }
 m80-jailer = { path = "crates/m80-jailer" }
 m80-cgroup = { path = "crates/m80-cgroup" }
 m80-storage = { path = "crates/m80-storage" }
+m80-image-store = { path = "crates/m80-image-store" }
 m80-preflight = { path = "crates/m80-preflight" }
 m80-net-mode = { path = "crates/m80-net-mode" }
 m80-net-outbound = { path = "crates/m80-net-outbound" }
 m80-snapshot = { path = "crates/m80-snapshot" }
+m80-snapshot-template = { path = "crates/m80-snapshot-template" }
 m80-observability = { path = "crates/m80-observability" }
 m80-firecracker = { path = "crates/m80-firecracker" }
 m80-test-helpers = { path = "crates/m80-test-helpers" }
 m80-close-range = { path = "support/m80-close-range" }
+m80-guest-kernel = { path = "support/m80-guest-kernel" }

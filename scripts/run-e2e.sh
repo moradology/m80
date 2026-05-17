@@ -29,6 +29,7 @@ Environment:
   M80_KERNEL_IMAGE                 default /tmp/m80-build-current/artifacts/vmlinux
   M80_ROOTFS_IMAGE                 default /tmp/m80-build-current/artifacts/output.ext4
   M80_JAILER_HARDEN_BIN            default target/debug/m80-jailer-harden
+  M80_JAIL_UID / M80_JAIL_GID       override test jail identity when 3000 is unavailable
   M80_RUN_EXTERNAL_NETWORK_E2E=1   opt into external-network egress tests
   M80_MALICIOUS_ARTIFACT_DIR       enables malicious-guestd real-KVM tests
   M80_MINIMAL_ARTIFACT_DIR         enables image-kind Minimal tests
@@ -367,6 +368,12 @@ while IFS= read -r exe; do
         fi
         if [[ -n "${M80_JAILER_BIN:-}" ]]; then
             run_env+=(M80_JAILER_BIN="$M80_JAILER_BIN")
+        fi
+        if [[ -n "${M80_JAIL_UID:-}" ]]; then
+            run_env+=(M80_JAIL_UID="$M80_JAIL_UID")
+        fi
+        if [[ -n "${M80_JAIL_GID:-}" ]]; then
+            run_env+=(M80_JAIL_GID="$M80_JAIL_GID")
         fi
         timeout "$timeout_s" "${sudo_cmd[@]}" env "${run_env[@]}" \
             "$exe" --ignored --exact "$test_name" --nocapture --test-threads=1 \

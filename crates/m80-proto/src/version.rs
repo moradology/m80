@@ -8,7 +8,7 @@
 /// run the new version atomically. Backward-compatible range checks
 /// (`MIN..=MAX`), dual-version dispatch paths, and host-side translation shims
 /// are explicitly forbidden — fix the deploy pipeline, not the protocol.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// Maximum size of a single protobuf frame body in bytes.
 ///

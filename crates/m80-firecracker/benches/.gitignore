@@ -1,5 +1,8 @@
 *.csv
-snapshots/
+snapshots/*
+!snapshots/composed-e2e-restore-N10.json
+!snapshots/composed-e2e-host-memory.json
+!snapshots/composed-e2e-residue.json
 cold-launch.csv
 cold-launch-phases.csv
 sweep-*.csv

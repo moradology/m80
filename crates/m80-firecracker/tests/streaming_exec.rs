@@ -4,11 +4,12 @@ mod common;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, ExecChunk, FcError, SandboxConfig, WireProtocolError,
+    Backend, BackendConfig, CgroupMode, DisconnectCause, ExecChunk, FcError, SandboxConfig,
+    WireProtocolError,
 };
 use m80_proto::{ExecRequest, ExecStatus};
 
@@ -19,14 +20,21 @@ fn backend() -> (Arc<Backend>, std::path::PathBuf) {
     let config = BackendConfig::builder(discovery)
         .max_concurrent_vms(1)
         .run_root(run_root.clone())
-        .jail_uid(3000)
-        .jail_gid(3000)
+        .jail_uid(jail_id_from_env("M80_JAIL_UID", 3000))
+        .jail_gid(jail_id_from_env("M80_JAIL_GID", 3000))
         .cgroup_mode(CgroupMode::Disabled)
         .build();
     (
         Arc::new(Backend::new(config).expect("Backend::new")),
         run_root,
     )
+}
+
+fn jail_id_from_env(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
 }
 
 fn sandbox_config(vm_id: &str) -> SandboxConfig {
@@ -84,6 +92,40 @@ fn exec_and_exec_streaming_report_equivalent_output() {
     assert_eq!(exit.exit_code, Some(7));
     assert_eq!(buffered.stdout, stdout);
     assert_eq!(buffered.stderr, stderr);
+
+    let stopped = running.stop().expect("stop");
+    stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn exec_with_no_output_longer_than_bridge_timeout_completes() {
+    let (backend, run_root) = backend();
+    let vm_id = "longidle";
+    let sandbox = backend.admit(sandbox_config(vm_id)).expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+    let _dump_guard = RunDirDumpGuard::new(run_root.join(vm_id));
+
+    let started = Instant::now();
+    let resp = running
+        .exec(ExecRequest {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), "sleep 30; printf bridge-timeout-ok".into()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(45_000),
+            streaming: false,
+        })
+        .expect("idle exec must wait for guest terminal frame, not bridge I/O timeout");
+
+    assert!(
+        started.elapsed() >= Duration::from_secs(30),
+        "test must stay silent longer than the old 5s bridge timeout"
+    );
+    assert_eq!(resp.status, ExecStatus::Completed);
+    assert_eq!(resp.exit_code, Some(0));
+    assert_eq!(String::from_utf8_lossy(&resp.stdout), "bridge-timeout-ok");
 
     let stopped = running.stop().expect("stop");
     stopped.delete().expect("delete");
@@ -311,14 +353,64 @@ fn disconnect_mid_streaming_exec_maps_to_disconnect_before_terminal() {
         matches!(
             err,
             FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal {
-                context: "streaming exec"
+                context: "streaming exec",
+                cause: DisconnectCause::FcProcessDead
             })
         ),
-        "expected DisconnectBeforeTerminal(streaming exec), got {err:?}"
+        "expected DisconnectBeforeTerminal(streaming exec, FcProcessDead), got {err:?}"
     );
 
     let stopped = running.stop().expect("stop after guest disconnect");
     stopped.delete().expect("delete");
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary"]
+fn exec_on_dead_firecracker_fails_fast_without_open_retry() {
+    let (backend, run_root) = backend();
+    let vm_id = "deadx";
+    let sandbox = backend.admit(sandbox_config(vm_id)).expect("admit");
+    let mut running = sandbox.launch().expect("launch");
+    let _dump_guard = RunDirDumpGuard::new(run_root.join(vm_id));
+    let firecracker_pid = firecracker_pid(running.run_dir());
+
+    kill_process(firecracker_pid);
+    wait_for_process_exit(firecracker_pid);
+
+    let started = Instant::now();
+    let err = running
+        .exec(ExecRequest {
+            program: "/bin/true".into(),
+            args: Vec::new(),
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(5_000),
+            streaming: false,
+        })
+        .expect_err("dead firecracker should fail before vsock retry loop");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "dead sandbox exec took {elapsed:?}, expected liveness guard before retry loop"
+    );
+    assert!(
+        matches!(
+            err,
+            FcError::SandboxDead {
+                vm_id: ref observed_vm_id,
+                firecracker_pid: observed_pid
+            } if observed_vm_id == vm_id && observed_pid == firecracker_pid
+        ),
+        "expected SandboxDead for {vm_id}/{firecracker_pid}, got {err:?}"
+    );
+
+    running
+        .force_kill()
+        .expect("force kill already-dead sandbox")
+        .delete()
+        .expect("delete");
 }
 
 fn firecracker_pid(run_dir: &std::path::Path) -> u32 {
@@ -340,4 +432,28 @@ fn kill_process(pid: u32) {
         nix::sys::signal::Signal::SIGKILL,
     )
     .unwrap_or_else(|e| panic!("kill firecracker pid {pid}: {e}"));
+}
+
+fn wait_for_process_exit(pid: u32) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if !process_is_live(pid) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("firecracker pid {pid} still exists after SIGKILL");
+}
+
+fn process_is_live(pid: u32) -> bool {
+    let proc_dir = std::path::PathBuf::from(format!("/proc/{pid}"));
+    match std::fs::read_to_string(proc_dir.join("stat")) {
+        Ok(stat) => !matches!(proc_stat_state(&stat), Some('Z' | 'X')),
+        Err(_) => proc_dir.exists(),
+    }
+}
+
+fn proc_stat_state(stat: &str) -> Option<char> {
+    let (_comm, after_comm) = stat.rsplit_once(") ")?;
+    after_comm.chars().next()
 }

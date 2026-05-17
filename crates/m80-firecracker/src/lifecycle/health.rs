@@ -21,8 +21,17 @@ impl RunningSandbox {
         let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), "ping");
         let envelope = Envelope::with_request_id(PingRequest {}, request_id.clone());
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
-        let frame: Envelope<PongResponse> = channel.recv()?;
+        let firecracker_pid = self.firecracker.firecracker_pid();
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            firecracker_pid,
+            "guest ping",
+            &envelope,
+        )?;
+        let frame: Envelope<PongResponse> = channel
+            .recv()
+            .map_err(|e| super::protocol::recv_error(e, "guest ping", firecracker_pid))?;
         let response = validate_pong_response(frame, &request_id)?;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);

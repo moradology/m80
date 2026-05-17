@@ -8,6 +8,7 @@ use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
 use super::signal_watcher::SignalWatcher;
+use crate::errors;
 
 pub(super) struct RunOutcome<T> {
     pub(super) payload: T,
@@ -22,11 +23,16 @@ pub(super) fn exec_pipe_streaming(
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     let exit = running.exec_streaming_with_cancel(req, cancel_rx, |chunk| {
-        copy_guest_chunk(chunk, &mut stdout, &mut stderr).map_err(FcError::Io)
+        copy_guest_chunk(chunk, &mut stdout, &mut stderr)
+            .map_err(|source| errors::host_io("write streamed guest output", source))
     })?;
     let signal = watcher.observed_signal();
-    stdout.flush().map_err(FcError::Io)?;
-    stderr.flush().map_err(FcError::Io)?;
+    stdout
+        .flush()
+        .map_err(|source| errors::host_io("flush stdout", source))?;
+    stderr
+        .flush()
+        .map_err(|source| errors::host_io("flush stderr", source))?;
     Ok(RunOutcome {
         payload: exit,
         signal,
@@ -87,7 +93,8 @@ struct SignalCancellation(SignalWatcher);
 impl SignalCancellation {
     fn install() -> Result<(mpsc::Receiver<()>, Self), FcError> {
         let (cancel_tx, cancel_rx) = mpsc::channel();
-        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP]).map_err(FcError::Io)?;
+        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP])
+            .map_err(|source| errors::host_io("install run signal handler", source))?;
         let handle = signals.handle();
         let first_signal = Arc::new(AtomicI32::new(0));
         let first_signal_for_thread = Arc::clone(&first_signal);

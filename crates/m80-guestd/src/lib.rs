@@ -7,5 +7,6 @@ mod exec_sandbox;
 pub mod guest_log;
 #[allow(dead_code)]
 mod guest_seccomp;
+pub(crate) mod post_restore;
 pub(crate) mod uevent;
 mod workload_broker;

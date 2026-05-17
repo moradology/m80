@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 use std::time::Duration;
 
-use m80_firecracker::{FcError, WireProtocolError};
+use m80_firecracker::{DisconnectCause, FcError, WireProtocolError};
 use m80_proto::ExecRequest;
 
 use super::common::RunDirDumpGuard;
@@ -36,7 +36,8 @@ fn truncated_frame_returns_disconnect_before_terminal_without_stuck_reader() {
             matches!(
                 err,
                 FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal {
-                    context: "streaming exec"
+                    context: "streaming exec",
+                    cause: DisconnectCause::MidStreamEof
                 })
             ),
             "expected disconnect-before-terminal protocol error, got {err:?}"

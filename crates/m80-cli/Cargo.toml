@@ -20,12 +20,14 @@ path = "src/main.rs"
 
 [dependencies]
 m80-firecracker.workspace = true
+m80-image-store.workspace = true
 m80-image-manifest.workspace = true
 m80-jailer.workspace = true
 m80-observability.workspace = true
 m80-preflight.workspace = true
 m80-proto.workspace = true
 m80-snapshot.workspace = true
+m80-snapshot-template.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -5,7 +5,7 @@ use std::os::unix::net::UnixStream;
 
 use serde::{Deserialize, Serialize};
 
-use m80_firecracker::{ExecChunk, FcError, WireProtocolError};
+use m80_firecracker::{DisconnectCause, ExecChunk, FcError, WireProtocolError};
 
 use crate::cmds::proto_json::{ExecExitJson, ExecRequestJson, ExecResponseJson};
 use crate::errors;
@@ -91,6 +91,8 @@ pub(super) enum WarmErrorKind {
     Preflight,
     Manifest,
     Storage,
+    ImageStore,
+    TemplateStore,
     Jailer,
     Cgroup,
     Network,
@@ -100,7 +102,11 @@ pub(super) enum WarmErrorKind {
     Vsock,
     Snapshot,
     FileOp,
+    FileUploadReadFailed,
+    HostIo,
     DriveHotplug,
+    PmemMount,
+    PostRestoreHook,
     TenantIdentityMismatch,
     AdmissionRefused,
     PoolEmpty,
@@ -127,10 +133,11 @@ pub(super) enum WarmErrorKind {
     KillFailed,
     ReapTimeout,
     ReapFailed,
-    Io,
     Config,
+    InvalidVmId,
     IdleTimedOut,
     OneShotConsumed,
+    SandboxDead,
     Protocol,
     ExecTimeoutHost,
 }
@@ -141,6 +148,8 @@ impl WarmErrorKind {
             FcError::Preflight(_) => Self::Preflight,
             FcError::Manifest(_) => Self::Manifest,
             FcError::Storage(_) => Self::Storage,
+            FcError::ImageStore(_) => Self::ImageStore,
+            FcError::TemplateStore(_) => Self::TemplateStore,
             FcError::Jailer(_) => Self::Jailer,
             FcError::Cgroup(_) => Self::Cgroup,
             FcError::Network(_) => Self::Network,
@@ -149,9 +158,14 @@ impl WarmErrorKind {
             FcError::Client(_) => Self::Client,
             FcError::Vsock(_) => Self::Vsock,
             FcError::Protocol(_) => Self::Protocol,
+            FcError::ExecTimeoutHost { .. } => Self::ExecTimeoutHost,
             FcError::Snapshot(_) => Self::Snapshot,
             FcError::FileOp(_) => Self::FileOp,
+            FcError::FileUploadReadFailed { .. } => Self::FileUploadReadFailed,
+            FcError::HostIo { .. } => Self::HostIo,
             FcError::DriveHotplug(_) => Self::DriveHotplug,
+            FcError::PmemMount(_) => Self::PmemMount,
+            FcError::PostRestoreHook(_) => Self::PostRestoreHook,
             FcError::TenantIdentityMismatch { .. } => Self::TenantIdentityMismatch,
             FcError::AdmissionRefused { .. } => Self::AdmissionRefused,
             FcError::PoolEmpty { .. } => Self::PoolEmpty,
@@ -178,11 +192,11 @@ impl WarmErrorKind {
             FcError::KillFailed { .. } => Self::KillFailed,
             FcError::ReapTimeout { .. } => Self::ReapTimeout,
             FcError::ReapFailed { .. } => Self::ReapFailed,
-            FcError::Io(_) => Self::Io,
             FcError::Config(_) => Self::Config,
+            FcError::InvalidVmId { .. } => Self::InvalidVmId,
             FcError::IdleTimedOut => Self::IdleTimedOut,
             FcError::OneShotConsumed => Self::OneShotConsumed,
-            FcError::ExecTimeoutHost { .. } => Self::ExecTimeoutHost,
+            FcError::SandboxDead { .. } => Self::SandboxDead,
         }
     }
 
@@ -191,6 +205,8 @@ impl WarmErrorKind {
             Self::Preflight => "Preflight",
             Self::Manifest => "Manifest",
             Self::Storage => "Storage",
+            Self::ImageStore => "ImageStore",
+            Self::TemplateStore => "TemplateStore",
             Self::Jailer => "Jailer",
             Self::Cgroup => "Cgroup",
             Self::Network => "Network",
@@ -200,7 +216,11 @@ impl WarmErrorKind {
             Self::Vsock => "Vsock",
             Self::Snapshot => "Snapshot",
             Self::FileOp => "FileOp",
+            Self::FileUploadReadFailed => "FileUploadReadFailed",
+            Self::HostIo => "HostIo",
             Self::DriveHotplug => "DriveHotplug",
+            Self::PmemMount => "PmemMount",
+            Self::PostRestoreHook => "PostRestoreHook",
             Self::TenantIdentityMismatch => "TenantIdentityMismatch",
             Self::AdmissionRefused => "AdmissionRefused",
             Self::PoolEmpty => "PoolEmpty",
@@ -227,10 +247,11 @@ impl WarmErrorKind {
             Self::KillFailed => "KillFailed",
             Self::ReapTimeout => "ReapTimeout",
             Self::ReapFailed => "ReapFailed",
-            Self::Io => "Io",
             Self::Config => "Config",
+            Self::InvalidVmId => "InvalidVmId",
             Self::IdleTimedOut => "IdleTimedOut",
             Self::OneShotConsumed => "OneShotConsumed",
+            Self::SandboxDead => "SandboxDead",
             Self::Protocol => "Protocol",
             Self::ExecTimeoutHost => "ExecTimeoutHost",
         }
@@ -280,24 +301,30 @@ fn malformed_peer(context: &str, source: impl Display) -> FcError {
 fn connect_owner() -> Result<UnixStream, FcError> {
     let socket = status::socket_path()?;
     UnixStream::connect(&socket).map_err(|e| {
-        FcError::Io(std::io::Error::new(
-            e.kind(),
-            format!("warm owner unavailable at {}: {e}", socket.display()),
-        ))
+        errors::host_io(
+            "connect warm owner",
+            std::io::Error::new(e.kind(), format!("{}: {e}", socket.display())),
+        )
     })
 }
 
 fn write_request(stream: &mut UnixStream, req: &WarmControlRequest) -> Result<(), FcError> {
     let payload =
         serde_json::to_vec(req).map_err(|e| malformed_peer("serialize warm control request", e))?;
-    stream.write_all(&payload).map_err(FcError::Io)?;
-    stream.shutdown(Shutdown::Write).map_err(FcError::Io)
+    stream
+        .write_all(&payload)
+        .map_err(|source| errors::host_io("write warm control request", source))?;
+    stream
+        .shutdown(Shutdown::Write)
+        .map_err(|source| errors::host_io("shutdown warm control request", source))
 }
 
 pub(super) fn read_request(stream: &mut UnixStream) -> Result<WarmControlRequest, FcError> {
     let mut bytes = Vec::new();
     let mut limited = stream.take((MAX_REQUEST_BYTES + 1) as u64);
-    limited.read_to_end(&mut bytes).map_err(FcError::Io)?;
+    limited
+        .read_to_end(&mut bytes)
+        .map_err(|source| errors::host_io("read warm control request", source))?;
     if bytes.len() > MAX_REQUEST_BYTES {
         return Err(FcError::Protocol(WireProtocolError::OversizedFrame {
             size: bytes.len(),
@@ -313,8 +340,12 @@ pub(super) fn write_response(
 ) -> Result<(), FcError> {
     let payload = serde_json::to_vec(response)
         .map_err(|e| malformed_peer("serialize warm control response", e))?;
-    stream.write_all(&payload).map_err(FcError::Io)?;
-    stream.flush().map_err(FcError::Io)
+    stream
+        .write_all(&payload)
+        .map_err(|source| errors::host_io("write warm control response", source))?;
+    stream
+        .flush()
+        .map_err(|source| errors::host_io("flush warm control response", source))
 }
 
 pub(super) fn write_stream_frame(
@@ -323,9 +354,15 @@ pub(super) fn write_stream_frame(
 ) -> Result<(), FcError> {
     let payload =
         serde_json::to_vec(frame).map_err(|e| malformed_peer("serialize warm stream frame", e))?;
-    stream.write_all(&payload).map_err(FcError::Io)?;
-    stream.write_all(b"\n").map_err(FcError::Io)?;
-    stream.flush().map_err(FcError::Io)
+    stream
+        .write_all(&payload)
+        .map_err(|source| errors::host_io("write warm stream frame", source))?;
+    stream
+        .write_all(b"\n")
+        .map_err(|source| errors::host_io("write warm stream newline", source))?;
+    stream
+        .flush()
+        .map_err(|source| errors::host_io("flush warm stream frame", source))
 }
 
 pub(super) fn read_stream_frame<R>(reader: &mut R) -> Result<WarmStreamFrame, FcError>
@@ -333,11 +370,14 @@ where
     R: std::io::BufRead,
 {
     let mut line = String::new();
-    let read = reader.read_line(&mut line).map_err(FcError::Io)?;
+    let read = reader
+        .read_line(&mut line)
+        .map_err(|source| errors::host_io("read warm stream frame", source))?;
     if read == 0 {
         return Err(FcError::Protocol(
             WireProtocolError::DisconnectBeforeTerminal {
                 context: "warm stream",
+                cause: DisconnectCause::MidStreamEof,
             },
         ));
     }
@@ -353,7 +393,9 @@ pub(super) fn stream_frame_for_chunk(chunk: ExecChunk) -> WarmStreamFrame {
 
 fn read_response(stream: &mut UnixStream) -> Result<WarmControlResponse, FcError> {
     let mut bytes = Vec::new();
-    stream.read_to_end(&mut bytes).map_err(FcError::Io)?;
+    stream
+        .read_to_end(&mut bytes)
+        .map_err(|source| errors::host_io("read warm control response", source))?;
     serde_json::from_slice(&bytes).map_err(|e| malformed_peer("parse warm control response", e))
 }
 
@@ -408,6 +450,32 @@ mod tests {
         assert_eq!(err.variant, WarmErrorKind::ExecTimeoutHost);
         assert_eq!(err.variant.as_str(), "ExecTimeoutHost");
         assert_eq!(err.exit_code, errors::EXIT_TIMEOUT);
+        assert_eq!(err.target_ready, None);
+    }
+
+    #[test]
+    fn sandbox_dead_owner_error_preserves_variant_and_exit_code() {
+        let err = WarmErrorResponse::from_error(&FcError::SandboxDead {
+            vm_id: "vm0".to_owned(),
+            firecracker_pid: 1234,
+        });
+
+        assert_eq!(err.variant, WarmErrorKind::SandboxDead);
+        assert_eq!(err.variant.as_str(), "SandboxDead");
+        assert_eq!(err.exit_code, errors::EXIT_SANDBOX_DEAD);
+        assert_eq!(err.target_ready, None);
+    }
+
+    #[test]
+    fn invalid_vm_id_owner_error_preserves_variant_and_exit_code() {
+        let err = WarmErrorResponse::from_error(&FcError::InvalidVmId {
+            vm_id: "..".to_owned(),
+            reason: "must not be a traversal component".to_owned(),
+        });
+
+        assert_eq!(err.variant, WarmErrorKind::InvalidVmId);
+        assert_eq!(err.variant.as_str(), "InvalidVmId");
+        assert_eq!(err.exit_code, errors::EXIT_CONFIG);
         assert_eq!(err.target_ready, None);
     }
 
@@ -471,7 +539,8 @@ mod tests {
         assert!(matches!(
             err,
             FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal {
-                context: "warm stream"
+                context: "warm stream",
+                cause: DisconnectCause::MidStreamEof
             })
         ));
     }

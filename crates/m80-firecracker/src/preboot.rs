@@ -5,14 +5,18 @@ use std::time::Instant;
 
 use m80_firecracker_client::{
     BootSourceConfig, CacheType, Client, DriveConfig, IoEngine, MachineConfig,
-    NetworkInterfaceConfig, VsockConfig,
+    NetworkInterfaceConfig, PmemConfig, VsockConfig,
 };
 use m80_image_manifest::{ImageKind, KernelKind, RootfsFormat};
 
 use crate::error::{ConfigError, FcError};
-use crate::layout::preallocated_drive_slot_jail_path;
+use crate::layout::{
+    pmem_layer_jail_basename, pmem_layer_jail_path, preallocated_drive_slot_jail_path,
+};
+use crate::pmem::PmemLayer;
 use crate::types::{
-    RealizedNetwork, SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+    RealizedNetwork, ResolvedPmemBacking, SandboxConfig, FIRST_LINE_MEM_SIZE_MIB,
+    FIRST_LINE_VCPU_COUNT,
 };
 
 /// `panic=-1` triggers immediate reboot on kernel panic (vs. `panic=1`'s
@@ -42,6 +46,8 @@ pub(crate) enum PrebootPut {
     BootSource(BootSourceConfig),
     /// PUT `/drives/{drive_id}`.
     Drive(DriveConfig),
+    /// PUT `/pmem/{id}`.
+    Pmem(PmemConfig),
     /// PUT `/network-interfaces/{iface_id}`.
     NetworkInterface(NetworkInterfaceConfig),
     /// PUT `/entropy`.
@@ -56,6 +62,7 @@ impl PrebootPut {
             PrebootPut::MachineConfig(_) => "phase_11_put_machine_config".to_owned(),
             PrebootPut::BootSource(_) => "phase_11_put_boot_source".to_owned(),
             PrebootPut::Drive(config) => format!("phase_11_put_drive_{}", config.drive_id),
+            PrebootPut::Pmem(config) => format!("phase_11_put_pmem_{}", config.id),
             PrebootPut::NetworkInterface(config) => {
                 format!("phase_11_put_network_interface_{}", config.iface_id)
             }
@@ -74,11 +81,14 @@ pub(crate) fn plan_preboot_puts(
     kernel_kind: KernelKind,
     rootfs_format: RootfsFormat,
     include_workspace_drive: bool,
+    pmem_layers: &[PmemLayer],
+    pmem_backings: &[ResolvedPmemBacking],
     network: &RealizedNetwork,
     extra_boot_args: &[String],
 ) -> Result<Vec<PrebootPut>, FcError> {
     validate_caller_boot_args_if_present(config.boot_args.as_deref())?;
     validate_cmdline_tokens("extra_boot_args", extra_boot_args)?;
+    validate_resolved_pmem_backings(pmem_layers, pmem_backings)?;
 
     let mut puts = vec![
         PrebootPut::MachineConfig(machine_config_for(config)),
@@ -134,6 +144,15 @@ pub(crate) fn plan_preboot_puts(
         }));
     }
 
+    for slot in 0..pmem_layers.len() {
+        puts.push(PrebootPut::Pmem(PmemConfig {
+            id: format!("pmem_{slot}"),
+            path_on_host: pmem_layer_jail_path(slot),
+            root_device: false,
+            read_only: true,
+        }));
+    }
+
     match network {
         RealizedNetwork::OutboundNat {
             tap_name,
@@ -177,6 +196,7 @@ pub(crate) fn apply_preboot_puts(
             PrebootPut::MachineConfig(config) => client.put_machine_config(config)?,
             PrebootPut::BootSource(config) => client.put_boot_source(config)?,
             PrebootPut::Drive(config) => client.put_drive(config)?,
+            PrebootPut::Pmem(config) => client.put_pmem(config)?,
             PrebootPut::NetworkInterface(config) => client.put_network_interface(config)?,
             PrebootPut::EntropyDevice => client.put_entropy_device()?,
             PrebootPut::Vsock(config) => client.put_vsock(config)?,
@@ -202,6 +222,29 @@ fn machine_config_for(config: &SandboxConfig) -> MachineConfig {
 
 fn writable_drive_cache_type(config: &SandboxConfig) -> CacheType {
     config.drive_cache_type.unwrap_or(CacheType::Unsafe)
+}
+
+fn validate_resolved_pmem_backings(
+    pmem_layers: &[PmemLayer],
+    pmem_backings: &[ResolvedPmemBacking],
+) -> Result<(), FcError> {
+    if pmem_layers.len() != pmem_backings.len() {
+        return Err(FcError::InvalidState {
+            expected: "one resolved pmem backing per declared layer",
+            actual: "pmem layer/backing count mismatch",
+        });
+    }
+
+    for (slot, backing) in pmem_backings.iter().enumerate() {
+        if backing.jail_basename != pmem_layer_jail_basename(slot) {
+            return Err(FcError::InvalidState {
+                expected: "slot-indexed pmem jail basename",
+                actual: "pmem backing jail basename mismatch",
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Validate caller-supplied boot args before admission consumes a permit.

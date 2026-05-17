@@ -72,6 +72,19 @@ impl Client {
         })
     }
 
+    /// PUT `/pmem/{id}`. The `id` is taken from the config.
+    pub fn put_pmem(&self, config: &PmemConfig) -> Result<(), ClientError> {
+        let path = format!("/pmem/{}", config.id);
+        let body = serde_json::to_vec(config)?;
+        let resp = self.put(&path, &body)?;
+        if ok(resp.status) {
+            return Ok(());
+        }
+        Err(ClientError::PmemWriteFailed {
+            fault: body_to_string(&resp.body),
+        })
+    }
+
     /// PATCH `/drives/{drive_id}`. The `drive_id` is taken from the config.
     pub fn patch_drive(&self, config: &PartialDriveConfig) -> Result<(), ClientError> {
         let path = format!("/drives/{}", config.drive_id);
@@ -385,6 +398,22 @@ pub struct PartialDriveConfig {
     pub path_on_host: Option<PathBuf>,
 }
 
+/// Firecracker persistent-memory device config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PmemConfig {
+    /// Stable pmem identifier, used in the `/pmem/{id}` URL.
+    pub id: String,
+    /// Absolute path on the host (or jail) to the pmem backing file.
+    pub path_on_host: PathBuf,
+    /// Whether this pmem device is the root device.
+    #[serde(default)]
+    pub root_device: bool,
+    /// Whether this pmem backing is read-only.
+    #[serde(default)]
+    pub read_only: bool,
+}
+
 /// Vsock device config — guest CID + host UDS path.
 #[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -545,6 +574,12 @@ pub enum ClientError {
     /// `PUT` or `PATCH` `/drives/{id}` failed.
     #[error("drive write failed: {fault}")]
     DriveWriteFailed {
+        /// Firecracker fault JSON (verbatim).
+        fault: String,
+    },
+    /// `PUT /pmem/{id}` failed.
+    #[error("pmem write failed: {fault}")]
+    PmemWriteFailed {
         /// Firecracker fault JSON (verbatim).
         fault: String,
     },

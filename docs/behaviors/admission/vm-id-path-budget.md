@@ -8,6 +8,10 @@ Firecracker REST API socket path would exceed the kernel's `sun_path` cap of
 `FcError::Config(ConfigError::VmIdPathBudgetExceeded { vm_id, run_root,
 fc_basename, path_len, budget })` and consumes no admission permit.
 
+This check runs after the single-component shape gate. Values containing path
+separators, NULs, unsupported characters, `.` / `..`, or reserved run-root
+names fail earlier as `FcError::InvalidVmId`.
+
 ## Path layout
 
 `m80-jailer` inherits Firecracker's jailer convention of nesting
@@ -72,7 +76,12 @@ unchanged. The caller may retry with a shorter `vm_id` or a shorter
   `admit_just_under_budget_succeeds`,
   `admit_over_budget_returns_typed_error`,
   `admit_with_no_vm_id_skips_check`,
+  `admit_reserved_run_root_names_fail_before_permit`,
   `admit_over_budget_does_not_consume_permit`.
+- `crates/m80-firecracker/tests/security/backend_trust_boundary.rs` -
+  `caller_vm_id_shape_fails_before_admission_permit` pins separator, NUL,
+  dot-component, empty, bad-character, and over-length rejections as
+  `FcError::InvalidVmId`.
 
 ## Source
 

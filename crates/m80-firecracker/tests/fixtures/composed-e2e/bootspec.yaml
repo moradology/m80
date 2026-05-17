@@ -1,0 +1,39 @@
+schema_version: 1
+name: composed-e2e
+sandbox:
+  vm_id_prefix: m80-composed-e2e
+  vcpu_count: 1
+  mem_size_mib: 512
+  workspace: null
+  network: none
+  overlay_size_bytes: 134217728
+  boot_args: []
+pmem_layers:
+  - image:
+      digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+      format: erofs
+    mount_at: /opt/m80-layers/smoke-0
+    sharing:
+      mode: shared
+      trust_reason: same_operator
+      acknowledged: true
+  - image:
+      digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+      format: erofs
+    mount_at: /opt/m80-layers/smoke-1
+    sharing:
+      mode: per_vm
+warm_strategy:
+  mode: snapshot_restore
+  template:
+    store: /tmp/m80-composed-e2e-template-store
+    fingerprint: 3333333333333333333333333333333333333333333333333333333333333333
+  ready_probe:
+    program: /bin/true
+    args: []
+    timeout_ms: 5000
+  hooks:
+    - regen_machine_id
+    - set_hostname:
+        hostname: m80-composed
+    - reseed_systemd_random_seed

@@ -155,6 +155,20 @@ filesystem visibility, explicit egress, stdout/stderr/exit fidelity, file
 movement, diagnostics, and cleanup. They do not need agent semantic fields in
 the core.
 
+## Trust-Domain Assumption for Shared Pmem
+
+`PmemSharing::Shared` is a same-trust-domain optimization, not a tenant
+isolation primitive. m80 assumes guests sharing a `PmemSharing::Shared` image
+share a trust boundary, because shared DAX-backed pages create a cache-timing
+side channel between those guests. Cross-tenant isolation between
+Shared-pmem-sharing guests is out of scope for m80; callers that need
+cross-tenant isolation must use per-VM backing instead.
+
+The acknowledgement for this tradeoff is part of construction, not prose in a
+config comment. The shared mode is gated by a typed witness with finite
+`TrustReason` variants; free strings and implicit defaults are deliberately not
+accepted.
+
 ## Product Surface Implications
 
 The m80 repository should continue to prioritize:
@@ -165,6 +179,13 @@ The m80 repository should continue to prioritize:
 - explicit warm-owner lifecycle rather than hidden daemon behavior
 - diagnostics that expose guest and host evidence before speculation
 - crate READMEs as black-box contracts
+
+Operator-facing layered-rootfs guidance lives in
+`docs/runbook/layered-rootfs-operations.md` and
+`docs/runbook/migrating-to-pmem-and-snapshot-restore.md`. Those runbooks keep
+the same boundary as this document: they explain when to use PerVm, Shared, and
+snapshot-template restore, but they do not introduce agent policy or
+cross-tenant Shared-pmem semantics.
 
 The m80 repository should not add:
 

@@ -78,10 +78,17 @@ impl RunningSandbox {
             request_id,
         );
         let t_mount = Instant::now();
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
+        let firecracker_pid = self.firecracker.firecracker_pid();
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            firecracker_pid,
+            "drive mount",
+            &envelope,
+        )?;
         let response: Envelope<DriveMountResponse> = channel
             .recv()
-            .map_err(|e| super::protocol::recv_error(e, "drive mount"))?;
+            .map_err(|e| super::protocol::recv_error(e, "drive mount", firecracker_pid))?;
         validate_mount_response(&response.payload, request, &drive_id)?;
         phase_event("hotplug_drive_mount", &self.vm_id, t_mount.elapsed());
         self.last_activity_ns
@@ -115,10 +122,17 @@ impl RunningSandbox {
             request_id,
         );
         let t_detach = Instant::now();
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
+        let firecracker_pid = self.firecracker.firecracker_pid();
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            firecracker_pid,
+            "drive detach",
+            &envelope,
+        )?;
         let response: Envelope<DriveDetachResponse> = channel
             .recv()
-            .map_err(|e| super::protocol::recv_error(e, "drive detach"))?;
+            .map_err(|e| super::protocol::recv_error(e, "drive detach", firecracker_pid))?;
         validate_detach_response(&response.payload, &drive_id)?;
         phase_event("hotplug_drive_detach", &self.vm_id, t_detach.elapsed());
 

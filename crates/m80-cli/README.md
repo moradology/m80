@@ -61,6 +61,17 @@ binaries, pull OCI images, or install packages implicitly.
   run-root state. `m80 --json env` emits the same data in a versioned envelope.
 - `m80 cleanup [--force]` - recovers stale run-root state and removes orphaned
   host resources where the lower crates expose cleanup.
+- `m80 image build/gc/list/show/rm/verify` - manages content-addressed
+  `m80-image-store` artifacts. The CLI can import a pre-built artifact file or
+  build a small local-dev image from a directory, list and show records in human
+  or JSON form, report or execute conservative GC, verify stored bytes, and
+  refuse removal when active Shared refs or snapshot-template manifests still
+  reference the digest.
+- `m80 template build/list/show/prune/rm` - manages committed
+  `m80-snapshot-template` artifacts. `build` parses a BootSpec and runs the
+  Phase D snapshot-template producer path, `list`/`show` inspect committed
+  manifests, `rm` removes one unpinned template, and `prune --boot-spec`
+  removes only invalidated templates in the selected conservative family scope.
 - `m80 warm` - explicit warm-sandbox owner control. Foreground owner mode is
   implemented with `enable --foreground`, `status`, `drain`, and `disable`;
   packaged system service mode remains reserved.
@@ -108,6 +119,10 @@ Out-of-band diagnostics tailing is captured in
 `docs/behaviors/cli/diagnostic-logs.md`.
 The diagnostic environment dump is captured in
 `docs/behaviors/cli/env-dump.md`.
+Image-store command behavior is captured in
+`docs/behaviors/cli/image-commands.md`.
+Snapshot-template command behavior is captured in
+`docs/behaviors/cli/template-commands.md`.
 
 ### `m80 run` options
 
@@ -175,6 +190,70 @@ stream stdout/stderr frames over that control socket before the terminal exit
 frame; JSON warm runs intentionally keep the buffered response shape. System
 service packaging follows once that contract is proven; user-service ownership
 is deferred.
+
+### Image Store Commands
+
+Current image-store shape:
+
+```text
+m80 image build <name> --source <path> --out <store> [--kind erofs|ext4]
+m80 image gc [--store <store>] [--template-store <store>] [--keep <digest>...]
+             [--pin-file <path>] [--min-age <duration>] [--execute]
+m80 image list [--store <store>]
+m80 image show <digest> [--store <store>]
+m80 image verify <digest> [--store <store>]
+m80 image rm <digest> [--store <store>] [--template-store <store>]
+```
+
+Images are content-addressed; `<name>` is an operator label echoed in command
+output, not a persistent alias. A directory `--source` is built through the
+small local-dev image-store builder, while a regular file is imported as a
+pre-built artifact of the selected `--kind`. `list` and `show` render a tabular
+human view by default and a versioned JSON envelope with `--json`.
+
+`verify` re-hashes the stored bytes and validates the store metadata shape.
+`rm` removes all artifact kinds for the digest only after the image store reports
+zero active Shared refs and the selected snapshot-template store has no committed
+manifest referencing that digest.
+
+`gc` is dry-run by default. It reports candidate digests, protected digests,
+protection reasons, and total reclaimable bytes. The mark set includes
+committed template references, active Shared refs, repeated `--keep` digests,
+newline-delimited `--pin-file` digests, and optional `--min-age` recency
+retention. `--execute` is required to delete candidates and still uses the same
+typed `ImageStore::remove` path as `rm`.
+
+### Template Store Commands
+
+Current snapshot-template store shape:
+
+```text
+m80 template build <name> --boot-spec <file>
+m80 template list [--store <store>]
+m80 template show <fingerprint> [--store <store>]
+m80 template prune [--store <store>]
+m80 template rm <fingerprint> [--store <store>]
+```
+
+The default template store is `/var/lib/m80/templates`. Template fingerprints
+are content addresses derived from typed Phase D inputs; `<name>` is an operator
+label echoed in build output, not a persistent alias.
+
+`build` loads the BootSpec before preflight or VM admission. Syntax and typed
+BootSpec errors therefore fail before any host action. For a valid
+`snapshot_restore` BootSpec, the command uses the BootSpec's template-store
+path and post-restore hook set, derives the real fingerprint from live host
+inputs, and runs the snapshot-template producer path. The BootSpec's restore
+fingerprint is a restore selector and is not treated as the build output
+fingerprint.
+
+`list` and `show` render human output by default and the standard versioned JSON
+envelope with `--json`. `rm` removes only the requested unpinned template.
+`prune` without `--boot-spec` opens the store and exits 0 with
+`removed_count: 0`. `prune --boot-spec <file>` computes live inputs without
+launching a VM and removes only unpinned templates with the same pmem image set,
+post-init state digest, and hook set whose fingerprint no longer matches the
+current host/kernel/Firecracker tuple.
 
 ### Output discipline
 

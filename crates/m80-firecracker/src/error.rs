@@ -12,10 +12,32 @@ use m80_jailer::JailerError;
 use m80_net_outbound::NetError;
 use m80_net_outbound::NetworkHelperFailureKind;
 use m80_preflight::PreflightError;
-use m80_proto::{DriveHotplugError, ExecStatus, FileError};
+use m80_proto::{DriveHotplugError, ExecStatus, FileError, HookError, PmemMountError};
 use m80_snapshot::SnapshotError;
+use m80_snapshot_template::TemplateStoreError;
 use m80_storage::StorageError;
 use m80_vsock::VsockError;
+
+/// Structured cause for a peer disconnect before m80 observed the required
+/// terminal response frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DisconnectCause {
+    /// The recorded Firecracker process was no longer live when the disconnect
+    /// or failed channel setup was observed.
+    #[error("firecracker process dead")]
+    FcProcessDead,
+    /// The host could not establish or send the initial request frame over the
+    /// guest vsock bridge while Firecracker still appeared live.
+    #[error("guest uds connection failed")]
+    UdsConnectFailed,
+    /// The guest-side channel closed after the request was in flight while
+    /// Firecracker still appeared live.
+    #[error("mid-stream eof")]
+    MidStreamEof,
+    /// The peer closed intentionally before a terminal frame was required.
+    #[error("clean requested close")]
+    CleanRequestedClose,
+}
 
 /// Host-side wire protocol failures after a vsock channel is open.
 #[derive(Debug, thiserror::Error)]
@@ -60,10 +82,12 @@ pub enum WireProtocolError {
         got: Option<String>,
     },
     /// Peer disconnected before the request produced its required terminal frame.
-    #[error("disconnect before terminal frame in {context}")]
+    #[error("disconnect before terminal frame in {context}: {cause}")]
     DisconnectBeforeTerminal {
         /// State or request that was awaiting a terminal frame.
         context: &'static str,
+        /// Host-visible cause classification at the observation point.
+        cause: DisconnectCause,
     },
     /// Peer stopped making read progress before the required terminal frame.
     #[error("read timeout before terminal frame in {context}")]
@@ -311,6 +335,29 @@ impl LifecycleFailureKind {
     ];
 }
 
+/// Coarse recovery class for [`FcError`].
+///
+/// This is intentionally smaller than the error enum. Callers can branch on
+/// the broad recovery decision without re-encoding every concrete variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FcErrorKind {
+    /// Caller or operator supplied invalid configuration, paths, artifacts, or
+    /// used a handle in a way m80 rejects.
+    UserInput,
+    /// Capacity was unavailable right now; retrying later may succeed without
+    /// changing the request.
+    ResourceExhaustion,
+    /// Host, VMM, transport, or timeout failure that may succeed on a fresh
+    /// attempt.
+    Transient,
+    /// m80 host-side mechanics failed in a way the caller cannot repair by
+    /// changing request fields.
+    Internal,
+    /// Guest or guest-facing request outcome; the host machinery reached the
+    /// guest boundary and received or inferred a terminal result.
+    GuestOutcome,
+}
+
 /// Structured configuration error. Used as the inner payload of
 /// [`FcError::Config`].
 ///
@@ -340,6 +387,72 @@ pub enum ConfigError {
         field: &'static str,
         /// Human-readable rejection reason.
         reason: String,
+    },
+    /// A content digest failed typed validation.
+    #[error("invalid image digest: {reason}")]
+    DigestInvalid {
+        /// Finite rejection reason.
+        reason: &'static str,
+    },
+    /// A guest mount path failed typed validation.
+    #[error("invalid guest mount path: {reason}")]
+    MountPathInvalid {
+        /// Finite rejection reason.
+        reason: &'static str,
+    },
+    /// A guest mount path shadows a reserved guest root.
+    #[error("guest mount path {} shadows a reserved mount point", path.display())]
+    MountPathShadowsReserved {
+        /// Rejected guest mount path.
+        path: PathBuf,
+    },
+    /// Two pmem layers requested the same guest mount path.
+    #[error("duplicate pmem mount path {}", path.display())]
+    MountPathDuplicated {
+        /// Duplicated guest mount path.
+        path: PathBuf,
+    },
+    /// Too many pmem layers were requested.
+    #[error("too many pmem layers: got {got}, max {max}")]
+    TooManyLayers {
+        /// Maximum accepted pmem layer count.
+        max: usize,
+        /// Caller-supplied layer count.
+        got: usize,
+    },
+    /// A Shared pmem erofs artifact contains compressed files, which cannot
+    /// provide the file-level DAX behavior Shared is admitted for.
+    #[error(
+        "shared pmem erofs image {} contains {compressed_files} compressed regular files; Shared requires uncompressed erofs payloads",
+        path.display()
+    )]
+    SharedPmemCompressedErofs {
+        /// Rejected erofs artifact path.
+        path: PathBuf,
+        /// Compressed regular-file count reported by `dump.erofs -S`.
+        compressed_files: u64,
+    },
+    /// The host erofs probe produced output m80 cannot classify.
+    #[error("could not determine shared pmem erofs layout for {}: {reason}", path.display())]
+    SharedPmemErofsLayoutProbeInvalid {
+        /// Erofs artifact path being probed.
+        path: PathBuf,
+        /// Finite parser rejection reason.
+        reason: &'static str,
+    },
+    /// A pmem erofs artifact is too large for Firecracker's v1.15.1
+    /// virtio-pmem guest-physical address window.
+    #[error(
+        "pmem erofs image {} is too large for Firecracker virtio-pmem: got {got} bytes, max {max} bytes",
+        path.display()
+    )]
+    PmemImageTooLarge {
+        /// Rejected erofs artifact path.
+        path: PathBuf,
+        /// Artifact byte length from the image store.
+        got: u64,
+        /// Maximum accepted artifact byte length.
+        max: u64,
     },
     /// The caller-supplied `vm_id` would produce an AF_UNIX socket path that
     /// exceeds the kernel's `sun_path` cap. Surfaces at admission time so the
@@ -376,6 +489,9 @@ pub enum FcError {
     /// Storage operation failed.
     #[error("storage: {0}")]
     Storage(#[from] StorageError),
+    /// Image-store lookup or verification failed.
+    #[error("image store: {0}")]
+    ImageStore(#[from] m80_image_store::StoreError),
     /// Jailer materialization or recovery failed.
     #[error("jailer: {0}")]
     Jailer(#[from] JailerError),
@@ -412,15 +528,58 @@ pub enum FcError {
         /// Call-wide host budget that expired.
         timeout: Duration,
     },
+    /// Caller-supplied VM id is not a safe single path component.
+    #[error("invalid vm_id {vm_id:?}: {reason}")]
+    InvalidVmId {
+        /// Rejected caller-supplied vm_id.
+        vm_id: String,
+        /// Human-readable rejection reason.
+        reason: String,
+    },
     /// Snapshot capture or restore failed.
     #[error("snapshot: {0}")]
     Snapshot(#[from] SnapshotError),
+    /// Snapshot-template store lookup, validation, or commit failed.
+    #[error("snapshot template: {0}")]
+    TemplateStore(#[from] TemplateStoreError),
     /// Guest-side file operation failed with a typed wire error.
     #[error("file operation: {0:?}")]
     FileOp(FileError),
+    /// Caller-provided upload reader failed while m80 was streaming chunks to
+    /// the guest.
+    #[error("file upload source read failed: {source}")]
+    FileUploadReadFailed {
+        /// Underlying reader error.
+        #[source]
+        source: io::Error,
+    },
+    /// Host-side I/O failed where the path is not the useful diagnostic.
+    #[error("host I/O during {operation}: {source}")]
+    HostIo {
+        /// Operation in progress.
+        operation: &'static str,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
     /// Guest-side drive hotplug failed with a typed wire error.
     #[error("drive hotplug: {0:?}")]
     DriveHotplug(DriveHotplugError),
+    /// Guest-side pmem layer mount failed with a typed wire error.
+    #[error("pmem mount: {0:?}")]
+    PmemMount(PmemMountError),
+    /// Guest-side post-restore hook execution failed with a typed wire error.
+    #[error("post-restore hook: {0:?}")]
+    PostRestoreHook(HookError),
+    /// The recorded Firecracker process was already gone before m80 sent a new
+    /// request to a running sandbox.
+    #[error("sandbox {vm_id} firecracker pid {firecracker_pid} is not live")]
+    SandboxDead {
+        /// VM identifier.
+        vm_id: String,
+        /// Recorded Firecracker process id.
+        firecracker_pid: u32,
+    },
     /// Guest-mounted drive identity bytes did not match the caller's expected
     /// opaque identity.
     #[error(
@@ -628,9 +787,6 @@ pub enum FcError {
         #[source]
         source: io::Error,
     },
-    /// Underlying I/O failure.
-    #[error("i/o: {0}")]
-    Io(#[from] io::Error),
     /// Configuration loading or merging failure.
     #[error("config: {0}")]
     Config(ConfigError),
@@ -645,6 +801,147 @@ pub enum FcError {
     /// began. The caller must stop/drop/discard this VM instead of reusing it.
     #[error("one-shot sandbox already consumed")]
     OneShotConsumed,
+}
+
+impl FcError {
+    /// Stable variant name without payload detail.
+    #[must_use]
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            Self::Preflight(_) => "Preflight",
+            Self::Manifest(_) => "Manifest",
+            Self::Storage(_) => "Storage",
+            Self::ImageStore(_) => "ImageStore",
+            Self::Jailer(_) => "Jailer",
+            Self::Cgroup(_) => "Cgroup",
+            Self::Network(_) => "Network",
+            Self::NetworkHelper(_) => "NetworkHelper",
+            Self::CapabilityDrop(_) => "CapabilityDrop",
+            Self::Client(_) => "Client",
+            Self::Vsock(_) => "Vsock",
+            Self::Protocol(_) => "Protocol",
+            Self::ExecTimeoutHost { .. } => "ExecTimeoutHost",
+            Self::InvalidVmId { .. } => "InvalidVmId",
+            Self::Snapshot(_) => "Snapshot",
+            Self::TemplateStore(_) => "TemplateStore",
+            Self::FileOp(_) => "FileOp",
+            Self::FileUploadReadFailed { .. } => "FileUploadReadFailed",
+            Self::HostIo { .. } => "HostIo",
+            Self::DriveHotplug(_) => "DriveHotplug",
+            Self::PmemMount(_) => "PmemMount",
+            Self::PostRestoreHook(_) => "PostRestoreHook",
+            Self::SandboxDead { .. } => "SandboxDead",
+            Self::TenantIdentityMismatch { .. } => "TenantIdentityMismatch",
+            Self::AdmissionRefused { .. } => "AdmissionRefused",
+            Self::PoolEmpty { .. } => "PoolEmpty",
+            Self::InvalidState { .. } => "InvalidState",
+            Self::ApiSocketTimeout { .. } => "ApiSocketTimeout",
+            Self::GuestdReadyTimeout { .. } => "GuestdReadyTimeout",
+            Self::RunDirOwnershipAmbiguous { .. } => "RunDirOwnershipAmbiguous",
+            Self::RunDirAlreadyOwned { .. } => "RunDirAlreadyOwned",
+            Self::RunDirNotFound { .. } => "RunDirNotFound",
+            Self::PathIo { .. } => "PathIo",
+            Self::Json { .. } => "Json",
+            Self::UnsupportedOperation { .. } => "UnsupportedOperation",
+            Self::CommandSpawnFailed { .. } => "CommandSpawnFailed",
+            Self::CommandFailed { .. } => "CommandFailed",
+            Self::ArtifactMissing { .. } => "ArtifactMissing",
+            Self::WarmPoolFillFailed { .. } => "WarmPoolFillFailed",
+            Self::WarmReadyProbeRejected { .. } => "WarmReadyProbeRejected",
+            Self::WarmReadyProbeNoResult => "WarmReadyProbeNoResult",
+            Self::WarmOwnerSocketExists { .. } => "WarmOwnerSocketExists",
+            Self::WarmOwnerNotAcceptingLeases => "WarmOwnerNotAcceptingLeases",
+            Self::WarmOwnerDrainTimeout { .. } => "WarmOwnerDrainTimeout",
+            Self::WarmCompatibilityMismatch { .. } => "WarmCompatibilityMismatch",
+            Self::UnexpectedWarmResponse { .. } => "UnexpectedWarmResponse",
+            Self::KillFailed { .. } => "KillFailed",
+            Self::ReapTimeout { .. } => "ReapTimeout",
+            Self::ReapFailed { .. } => "ReapFailed",
+            Self::Config(_) => "Config",
+            Self::IdleTimedOut => "IdleTimedOut",
+            Self::OneShotConsumed => "OneShotConsumed",
+        }
+    }
+
+    /// Coarse recovery class for caller policy.
+    #[must_use]
+    pub fn kind(&self) -> FcErrorKind {
+        match self {
+            Self::Preflight(_)
+            | Self::Manifest(_)
+            | Self::InvalidVmId { .. }
+            | Self::RunDirNotFound { .. }
+            | Self::UnsupportedOperation { .. }
+            | Self::ArtifactMissing { .. }
+            | Self::Config(_)
+            | Self::FileUploadReadFailed { .. }
+            | Self::WarmOwnerSocketExists { .. }
+            | Self::WarmCompatibilityMismatch { .. }
+            | Self::OneShotConsumed => FcErrorKind::UserInput,
+
+            Self::AdmissionRefused { .. }
+            | Self::PoolEmpty { .. }
+            | Self::RunDirAlreadyOwned { .. }
+            | Self::WarmOwnerNotAcceptingLeases
+            | Self::WarmOwnerDrainTimeout { .. } => FcErrorKind::ResourceExhaustion,
+
+            Self::Client(_)
+            | Self::Vsock(_)
+            | Self::Protocol(_)
+            | Self::ExecTimeoutHost { .. }
+            | Self::SandboxDead { .. }
+            | Self::ApiSocketTimeout { .. }
+            | Self::GuestdReadyTimeout { .. }
+            | Self::HostIo { .. }
+            | Self::WarmPoolFillFailed { .. }
+            | Self::WarmReadyProbeNoResult
+            | Self::KillFailed { .. }
+            | Self::ReapTimeout { .. }
+            | Self::ReapFailed { .. } => FcErrorKind::Transient,
+
+            Self::FileOp(_)
+            | Self::DriveHotplug(_)
+            | Self::PmemMount(_)
+            | Self::PostRestoreHook(_)
+            | Self::TenantIdentityMismatch { .. }
+            | Self::WarmReadyProbeRejected { .. }
+            | Self::IdleTimedOut => FcErrorKind::GuestOutcome,
+
+            Self::Storage(_)
+            | Self::ImageStore(_)
+            | Self::Jailer(_)
+            | Self::Cgroup(_)
+            | Self::Network(_)
+            | Self::NetworkHelper(_)
+            | Self::CapabilityDrop(_)
+            | Self::Snapshot(_)
+            | Self::TemplateStore(_)
+            | Self::InvalidState { .. }
+            | Self::RunDirOwnershipAmbiguous { .. }
+            | Self::PathIo { .. }
+            | Self::Json { .. }
+            | Self::CommandSpawnFailed { .. }
+            | Self::CommandFailed { .. }
+            | Self::UnexpectedWarmResponse { .. } => FcErrorKind::Internal,
+        }
+    }
+
+    /// Whether the same logical request may reasonably be retried later or on
+    /// a fresh sandbox without changing caller input.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self.kind(),
+            FcErrorKind::ResourceExhaustion | FcErrorKind::Transient
+        )
+    }
+
+    /// Whether the error points at caller/operator input rather than a
+    /// transient or host-internal failure.
+    #[must_use]
+    pub fn is_user_error(&self) -> bool {
+        self.kind() == FcErrorKind::UserInput
+    }
 }
 
 /// Ordered host-side teardown phases for a running VM.

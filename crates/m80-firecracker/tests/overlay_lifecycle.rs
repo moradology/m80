@@ -87,6 +87,7 @@ fn overlay_pivot_writes_land_in_overlay_and_base_stays_verified() {
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })
@@ -176,6 +177,7 @@ fn overlay_immutability_lower_unchanged_after_upper_write() {
             idle_timeout: None,
             daemonize: false,
             request_id: Some("req-overlay-immutability".into()),
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })
@@ -253,6 +255,7 @@ fn overlay_grows_under_sustained_guest_writes() {
             idle_timeout: None,
             daemonize: false,
             request_id: Some("req-overlay-growth".into()),
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })
@@ -325,6 +328,7 @@ fn three_drive_order_mounts_workspace_as_vdc_and_preserves_base() {
             idle_timeout: None,
             daemonize: false,
             request_id: Some("req-three-drive-order".into()),
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })

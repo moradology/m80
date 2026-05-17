@@ -17,8 +17,8 @@ use common::RunDirDumpGuard;
 use std::path::{Path, PathBuf};
 
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, SandboxConfig, SnapshotPaths, FIRST_LINE_MEM_SIZE_MIB,
-    FIRST_LINE_VCPU_COUNT,
+    Backend, BackendConfig, CgroupMode, HookSpec, HookSpecSet, HostnameSpec, SandboxConfig,
+    SnapshotPaths, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 use tempfile::TempDir;
 
@@ -28,10 +28,17 @@ fn make_backend_config(discovery: m80_preflight::Discovery) -> BackendConfig {
     BackendConfig::builder(discovery)
         .max_concurrent_vms(1)
         .run_root(run_root)
-        .jail_uid(3000)
-        .jail_gid(3000)
+        .jail_uid(jail_id_from_env("M80_JAIL_UID", 3000))
+        .jail_gid(jail_id_from_env("M80_JAIL_GID", 3000))
         .cgroup_mode(CgroupMode::Disabled)
         .build()
+}
+
+fn jail_id_from_env(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(default)
 }
 
 /// Minimal sandbox config shared across tests.
@@ -216,7 +223,88 @@ fn restore_executes_after_idle() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: corrupted snapshot files fail restore clearly.
+// Test 3: post-restore hooks run before the restored sandbox is handed back.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary and snapshot support"]
+fn post_restore_hooks_run_before_restored_sandbox_is_returned() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let snap_dir = warm_snapshot_dir(&discovery, "snap-post-restore-hooks");
+
+    let backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new"),
+    );
+    let golden = backend
+        .admit(sandbox_config("snap-hooks-golden"))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+    let original_machine_id = exec_sh(
+        &mut running,
+        "cat /etc/machine-id 2>/dev/null || true",
+        "read original machine-id",
+    )
+    .trim()
+    .to_owned();
+
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture");
+    let stopped = running.stop().expect("stop golden");
+    stopped.delete().expect("delete golden run-dir");
+
+    let hostname = format!("m80-restore-{:04x}", common::unique_suffix() % 0x10000);
+    let hooks = HookSpecSet::new(vec![
+        HookSpec::ReseedSystemdRandomSeed,
+        HookSpec::RegenMachineId,
+        HookSpec::SetHostname(HostnameSpec::new(&hostname).expect("valid hostname")),
+    ]);
+    let restore_backend = std::sync::Arc::new(
+        Backend::new(make_backend_config(discovery.clone())).expect("Backend::new restore"),
+    );
+    let restore_sandbox = restore_backend
+        .admit(sandbox_config("snap-hooks-restored"))
+        .expect("admit restore");
+
+    let mut restored = restore_sandbox
+        .launch_from_snapshot_with_hooks(paths.clone(), &discovery, hooks)
+        .expect("launch_from_snapshot_with_hooks");
+    let _dump2 = RunDirDumpGuard::new(restored.run_dir().to_path_buf());
+
+    let restored_machine_id = exec_sh(&mut restored, "cat /etc/machine-id", "read machine-id")
+        .trim()
+        .to_owned();
+    assert_eq!(
+        restored_machine_id.len(),
+        32,
+        "machine-id must be regenerated as 16 random bytes in lowercase hex"
+    );
+    assert_ne!(
+        restored_machine_id, original_machine_id,
+        "post-restore machine-id hook must rewrite captured identity"
+    );
+
+    let etc_hostname = exec_sh(&mut restored, "cat /etc/hostname", "read /etc/hostname")
+        .trim()
+        .to_owned();
+    assert_eq!(etc_hostname, hostname);
+    let kernel_hostname = exec_sh(
+        &mut restored,
+        "cat /proc/sys/kernel/hostname",
+        "read kernel hostname",
+    )
+    .trim()
+    .to_owned();
+    assert_eq!(kernel_hostname, hostname);
+
+    let stopped = restored.stop().expect("stop restored");
+    stopped.delete().expect("delete restored run-dir");
+    let _ = std::fs::remove_dir_all(&snap_dir);
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: corrupted snapshot files fail restore clearly.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -266,7 +354,7 @@ fn corrupted_snapshot_file_fails_clearly() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: post-capture mutations do not rewrite the source snapshot.
+// Test 5: post-capture mutations do not rewrite the source snapshot.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -324,7 +412,7 @@ fn post_capture_mutation_does_not_change_snapshot_restore_state() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: startup recovery removes interrupted snapshot-restore residue.
+// Test 6: startup recovery removes interrupted snapshot-restore residue.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -359,7 +447,7 @@ fn interrupted_snapshot_restore_run_dir_recovery_removes_partial_state() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 6: missing snapshot files produce a clearly-classified error (not a
+// Test 7: missing snapshot files produce a clearly-classified error (not a
 //         generic IO error swallow).
 //
 // This test does NOT require KVM — it calls launch_from_snapshot with a

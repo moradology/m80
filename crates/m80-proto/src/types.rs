@@ -4,6 +4,8 @@ mod fileops;
 mod health;
 mod hotplug;
 mod metrics;
+mod pmem;
+mod post_restore;
 mod pty;
 mod streaming;
 
@@ -36,6 +38,15 @@ pub use hotplug::{
 pub use metrics::{
     GuestCpuMetrics, GuestMemMetrics, MetricsRequest, MetricsResponse,
     PAYLOAD_KIND_METRICS_REQUEST, PAYLOAD_KIND_METRICS_RESPONSE,
+};
+pub use pmem::{
+    PmemMountError, PmemMountRequest, PmemMountResponse, PmemMountSpec, PmemMountStatus,
+    PmemMountStatusKind, PAYLOAD_KIND_PMEM_MOUNT_REQUEST, PAYLOAD_KIND_PMEM_MOUNT_RESPONSE,
+};
+pub use post_restore::{
+    HookError, HookHostname, HookKindWire, HookResultWire, HookStatus, PostRestoreHookRequest,
+    PostRestoreHookResponse, PAYLOAD_KIND_POST_RESTORE_HOOK_REQUEST,
+    PAYLOAD_KIND_POST_RESTORE_HOOK_RESPONSE,
 };
 pub use pty::{
     PtyControl, PtyControlEvent, PtyExit, PtyInput, PtyOutput, PtyRequest, PtyResize, PtySignal,

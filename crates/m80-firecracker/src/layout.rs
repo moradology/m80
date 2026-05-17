@@ -20,6 +20,8 @@ pub const ROOTFS_OVERLAY_IMAGE: &str = "rootfs.overlay.ext4";
 pub(crate) const SCRATCH_IMAGE: &str = "scratch.ext4";
 
 pub(crate) const PREALLOCATED_DRIVE_SLOT_PREFIX: &str = "hotplug-slot-";
+pub(crate) const PMEM_BACKING_DIR: &str = "pmem";
+pub(crate) const PMEM_JAIL_PREFIX: &str = "pmem.";
 
 /// Per-VM console and process stderr log filename in the run directory.
 pub const CONSOLE_LOG: &str = "console.log";
@@ -93,6 +95,26 @@ pub(crate) fn preallocated_drive_slot_path(run_dir: &Path, slot: u8) -> PathBuf 
 
 pub(crate) fn preallocated_drive_slot_jail_path(slot: u8) -> PathBuf {
     PathBuf::from(format!("/{}", preallocated_drive_slot_filename(slot)))
+}
+
+pub(crate) fn pmem_layer_backing_dir(run_dir: &Path) -> PathBuf {
+    run_dir.join(PMEM_BACKING_DIR)
+}
+
+pub(crate) fn pmem_layer_backing_path(run_dir: &Path, slot: usize) -> PathBuf {
+    pmem_layer_backing_dir(run_dir).join(format!("{slot}.img"))
+}
+
+pub(crate) fn pmem_layer_jail_basename(slot: usize) -> String {
+    format!("{PMEM_JAIL_PREFIX}{slot}.img")
+}
+
+pub(crate) fn pmem_layer_jail_bind_dest(slot: usize) -> PathBuf {
+    PathBuf::from(pmem_layer_jail_basename(slot))
+}
+
+pub(crate) fn pmem_layer_jail_path(slot: usize) -> PathBuf {
+    PathBuf::from(format!("/{}", pmem_layer_jail_basename(slot)))
 }
 
 /// Compute the console log path for the VM.
@@ -169,5 +191,17 @@ mod tests {
         let len = socket_path_len(run_root, vm_id, fake);
         assert_eq!(len, 80);
         assert!(len < SUN_PATH_BUDGET);
+    }
+
+    #[test]
+    fn pmem_layer_paths_are_slot_indexed_and_not_caller_derived() {
+        let run_dir = Path::new("/run/m80/vm-a");
+
+        assert_eq!(
+            pmem_layer_backing_path(run_dir, 2),
+            PathBuf::from("/run/m80/vm-a/pmem/2.img")
+        );
+        assert_eq!(pmem_layer_jail_bind_dest(2), PathBuf::from("pmem.2.img"));
+        assert_eq!(pmem_layer_jail_path(2), PathBuf::from("/pmem.2.img"));
     }
 }

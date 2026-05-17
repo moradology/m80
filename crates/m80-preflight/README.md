@@ -116,7 +116,7 @@ which is the right place for a security review to start.
   20. **Run-root filesystem** — creates a short-lived probe file under the
      run-root and runs `cp --reflink=always` to report whether the filesystem
      supports metadata-only CoW clones. This advisory is non-blocking:
-     unsupported reflinks mean launch falls back through `cp --reflink=auto`.
+     unsupported reflinks mean launch falls back through `cp --reflink=never`.
   21. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - A boot-scoped sentinel under `/run/m80-preflight-ok-<sha256>` caches only

@@ -108,6 +108,7 @@ while [ "$#" -gt 0 ]; do
     --gid) shift 2 ;;
     --rlimit) shift 2 ;;
     --new-cgroup-ns) shift ;;
+    --new-net-ns) shift ;;
     --) shift; break ;;
     *) exit 64 ;;
   esac

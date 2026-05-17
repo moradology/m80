@@ -1,0 +1,35 @@
+# Mixed pmem: one private per-VM layer and one same-trust-domain shared layer.
+schema_version: 1
+name: mixed-pmem
+
+sandbox:
+  vm_id_prefix: m80-mixed
+  vcpu_count: 1
+  mem_size_mib: 512
+  workspace: null
+  network: none
+  overlay_size_bytes: 134217728
+  boot_args: []
+
+pmem_layers:
+  - image:
+      digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      format: erofs
+    mount_at: /opt/m80-layers/project
+    sharing:
+      mode: per_vm
+
+  - image:
+      digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      format: erofs
+    mount_at: /opt/m80-layers/toolchain
+    sharing:
+      # Maps to PmemSharing::Shared(TrustDomainAck).
+      mode: shared
+      # Required for shared DAX/cache side-channel acknowledgement.
+      trust_reason: same_operator
+      # Explicit witness that the caller accepts same-domain sharing.
+      acknowledged: true
+
+warm_strategy:
+  mode: boot_fill

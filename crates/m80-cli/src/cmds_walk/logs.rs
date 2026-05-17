@@ -169,7 +169,10 @@ fn read_lines_if_present(path: &Path) -> Result<Vec<String>, FcError> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(text.lines().map(str::to_owned).collect()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(FcError::Io(e)),
+        Err(source) => Err(FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 

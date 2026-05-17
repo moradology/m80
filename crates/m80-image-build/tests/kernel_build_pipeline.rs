@@ -139,6 +139,47 @@ fn stripped_config_keeps_erofs_built_in() {
 }
 
 #[test]
+fn stripped_config_keeps_virtio_pmem_and_dax_built_in() {
+    let cfg = committed_config_text();
+    for symbol in [
+        "CONFIG_VIRTIO_PMEM=y",
+        "CONFIG_LIBNVDIMM=y",
+        "CONFIG_BLK_DEV_PMEM=y",
+        "CONFIG_FS_DAX=y",
+        "CONFIG_DAX=y",
+        "CONFIG_NVDIMM_PFN=y",
+        "CONFIG_NVDIMM_DAX=y",
+    ] {
+        assert!(
+            cfg.lines().any(|line| line == symbol),
+            "{symbol} must be built in for pmem-backed erofs layers"
+        );
+        assert!(
+            !cfg.lines().any(|line| line == symbol.replace("=y", "=m")),
+            "{symbol} must not be a module; PID 1 mounts pmem layers before module loading exists"
+        );
+    }
+}
+
+#[test]
+fn stripped_config_keeps_zone_device_memory_model_for_fs_dax() {
+    let cfg = committed_config_text();
+    for symbol in [
+        "CONFIG_SPARSEMEM_MANUAL=y",
+        "CONFIG_SPARSEMEM=y",
+        "CONFIG_SPARSEMEM_VMEMMAP=y",
+        "CONFIG_MEMORY_HOTPLUG=y",
+        "CONFIG_MEMORY_HOTREMOVE=y",
+        "CONFIG_ZONE_DEVICE=y",
+    ] {
+        assert!(
+            cfg.lines().any(|line| line == symbol),
+            "{symbol} must stay enabled so CONFIG_FS_DAX survives olddefconfig"
+        );
+    }
+}
+
+#[test]
 fn stripped_config_keeps_virtio_net_reachable() {
     let cfg = committed_config_text();
     assert!(

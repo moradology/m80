@@ -50,7 +50,12 @@ impl StoppedSandbox {
         match std::fs::remove_dir_all(&self.run_dir) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
+            Err(source) => {
+                return Err(FcError::PathIo {
+                    path: self.run_dir.clone(),
+                    source,
+                });
+            }
         }
         // `self` drops here; AdmissionPermit::drop returns the slot.
         Ok(())
@@ -60,7 +65,10 @@ impl StoppedSandbox {
     /// offline triage. The admission permit is released. Returns the new path.
     pub fn preserve_for_triage(mut self) -> Result<PathBuf, FcError> {
         let preserved_parent = self.run_root.join(".preserved");
-        std::fs::create_dir_all(&preserved_parent)?;
+        std::fs::create_dir_all(&preserved_parent).map_err(|source| FcError::PathIo {
+            path: preserved_parent.clone(),
+            source,
+        })?;
 
         let ts = unix_ms_now();
         let dest = preserved_parent.join(format!("{ts}-{}", self.vm_id));
@@ -72,7 +80,10 @@ impl StoppedSandbox {
             "preserve for triage",
         );
         self.cleanup_outbound_network_if_needed()?;
-        std::fs::rename(&self.run_dir, &dest)?;
+        std::fs::rename(&self.run_dir, &dest).map_err(|source| FcError::PathIo {
+            path: dest.clone(),
+            source,
+        })?;
 
         // `self` drops here; permit returned.
         Ok(dest)

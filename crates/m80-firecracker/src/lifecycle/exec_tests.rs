@@ -83,7 +83,12 @@ fn recv_raw_for_exec_returns_host_timeout_on_slow_drip() {
 
     let mut channel = Channel::open_uds_only(&path, GUEST_PORT_DEFAULT).unwrap();
     let started = Instant::now();
-    let err = recv_raw_for_exec(&mut channel, Some(host_exec_deadline(50))).unwrap_err();
+    let err = recv_raw_for_exec(
+        &mut channel,
+        Some(host_exec_deadline(50)),
+        std::process::id(),
+    )
+    .unwrap_err();
 
     assert!(matches!(
         err,

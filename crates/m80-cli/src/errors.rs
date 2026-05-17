@@ -13,6 +13,10 @@ use m80_firecracker::FcError;
 use crate::json;
 use crate::request_id;
 
+pub(crate) fn host_io(operation: &'static str, source: std::io::Error) -> FcError {
+    FcError::HostIo { operation, source }
+}
+
 // =====================================================================
 // Exit-code constants (stable per variant — do not renumber)
 // =====================================================================
@@ -43,6 +47,8 @@ pub(crate) const EXIT_RUN_DIR_OWNERSHIP: i32 = 10;
 pub(crate) const EXIT_IDLE_TIMED_OUT: i32 = 11;
 /// One-shot VM was already consumed; cannot reuse.
 pub(crate) const EXIT_ONE_SHOT_CONSUMED: i32 = 12;
+/// Recorded Firecracker process is dead before a new request.
+pub(crate) const EXIT_SANDBOX_DEAD: i32 = 13;
 
 /// Map an [`FcError`] to its stable CLI exit code.
 ///
@@ -55,7 +61,7 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         FcError::PoolEmpty { .. } => EXIT_POOL_EMPTY,
         FcError::Manifest(_) => EXIT_MANIFEST,
         FcError::InvalidState { .. } => EXIT_INVALID_STATE,
-        FcError::Config(_) => EXIT_CONFIG,
+        FcError::Config(_) | FcError::InvalidVmId { .. } => EXIT_CONFIG,
         FcError::UnsupportedOperation { .. } => EXIT_NOT_IMPLEMENTED,
         FcError::ApiSocketTimeout { .. }
         | FcError::GuestdReadyTimeout { .. }
@@ -65,10 +71,13 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         | FcError::RunDirNotFound { .. } => EXIT_RUN_DIR_OWNERSHIP,
         FcError::IdleTimedOut => EXIT_IDLE_TIMED_OUT,
         FcError::OneShotConsumed => EXIT_ONE_SHOT_CONSUMED,
-        // Storage, Jailer, Network, Client, Vsock, Io, and typed runtime
+        FcError::SandboxDead { .. } => EXIT_SANDBOX_DEAD,
+        // Storage, Jailer, Network, Client, Vsock, host I/O, and typed runtime
         // cleanup/serialization failures are all "something went wrong at
         // runtime" — generic.
         FcError::Storage(_)
+        | FcError::ImageStore(_)
+        | FcError::TemplateStore(_)
         | FcError::Jailer(_)
         | FcError::Cgroup(_)
         | FcError::Network(_)
@@ -80,8 +89,11 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         | FcError::Snapshot(_)
         | FcError::FileOp(_)
         | FcError::DriveHotplug(_)
+        | FcError::PmemMount(_)
+        | FcError::PostRestoreHook(_)
         | FcError::TenantIdentityMismatch { .. }
-        | FcError::Io(_)
+        | FcError::FileUploadReadFailed { .. }
+        | FcError::HostIo { .. }
         | FcError::PathIo { .. }
         | FcError::Json { .. }
         | FcError::CommandSpawnFailed { .. }
@@ -142,53 +154,7 @@ pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
 
 /// Return the stable variant name string for an [`FcError`].
 fn variant_name(err: &FcError) -> &'static str {
-    match err {
-        FcError::Preflight(_) => "Preflight",
-        FcError::Manifest(_) => "Manifest",
-        FcError::Storage(_) => "Storage",
-        FcError::Jailer(_) => "Jailer",
-        FcError::Cgroup(_) => "Cgroup",
-        FcError::Network(_) => "Network",
-        FcError::NetworkHelper(_) => "NetworkHelper",
-        FcError::CapabilityDrop(_) => "CapabilityDrop",
-        FcError::Client(_) => "Client",
-        FcError::Vsock(_) => "Vsock",
-        FcError::Protocol(_) => "Protocol",
-        FcError::ExecTimeoutHost { .. } => "ExecTimeoutHost",
-        FcError::AdmissionRefused { .. } => "AdmissionRefused",
-        FcError::PoolEmpty { .. } => "PoolEmpty",
-        FcError::InvalidState { .. } => "InvalidState",
-        FcError::ApiSocketTimeout { .. } => "ApiSocketTimeout",
-        FcError::GuestdReadyTimeout { .. } => "GuestdReadyTimeout",
-        FcError::RunDirOwnershipAmbiguous { .. } => "RunDirOwnershipAmbiguous",
-        FcError::RunDirAlreadyOwned { .. } => "RunDirAlreadyOwned",
-        FcError::RunDirNotFound { .. } => "RunDirNotFound",
-        FcError::PathIo { .. } => "PathIo",
-        FcError::Json { .. } => "Json",
-        FcError::UnsupportedOperation { .. } => "UnsupportedOperation",
-        FcError::CommandSpawnFailed { .. } => "CommandSpawnFailed",
-        FcError::CommandFailed { .. } => "CommandFailed",
-        FcError::ArtifactMissing { .. } => "ArtifactMissing",
-        FcError::WarmPoolFillFailed { .. } => "WarmPoolFillFailed",
-        FcError::WarmReadyProbeRejected { .. } => "WarmReadyProbeRejected",
-        FcError::WarmReadyProbeNoResult => "WarmReadyProbeNoResult",
-        FcError::WarmOwnerSocketExists { .. } => "WarmOwnerSocketExists",
-        FcError::WarmOwnerNotAcceptingLeases => "WarmOwnerNotAcceptingLeases",
-        FcError::WarmOwnerDrainTimeout { .. } => "WarmOwnerDrainTimeout",
-        FcError::WarmCompatibilityMismatch { .. } => "WarmCompatibilityMismatch",
-        FcError::UnexpectedWarmResponse { .. } => "UnexpectedWarmResponse",
-        FcError::KillFailed { .. } => "KillFailed",
-        FcError::ReapTimeout { .. } => "ReapTimeout",
-        FcError::ReapFailed { .. } => "ReapFailed",
-        FcError::Io(_) => "Io",
-        FcError::Config(_) => "Config",
-        FcError::Snapshot(_) => "Snapshot",
-        FcError::FileOp(_) => "FileOp",
-        FcError::DriveHotplug(_) => "DriveHotplug",
-        FcError::TenantIdentityMismatch { .. } => "TenantIdentityMismatch",
-        FcError::IdleTimedOut => "IdleTimedOut",
-        FcError::OneShotConsumed => "OneShotConsumed",
-    }
+    err.variant_name()
 }
 
 /// Render the error to stderr (shared JSON envelope when `json` is true;
@@ -255,6 +221,16 @@ mod tests {
     }
 
     #[test]
+    fn invalid_vm_id_is_6_with_named_variant() {
+        let err = FcError::InvalidVmId {
+            vm_id: "..".into(),
+            reason: "must not be a traversal component".into(),
+        };
+        assert_eq!(exit_code_for(&err), EXIT_CONFIG);
+        assert_eq!(envelope(&err).variant, "InvalidVmId");
+    }
+
+    #[test]
     fn invalid_state_is_5() {
         let err = FcError::InvalidState {
             expected: "Running",
@@ -264,9 +240,12 @@ mod tests {
     }
 
     #[test]
-    fn io_is_generic() {
+    fn host_io_is_generic() {
         use std::io;
-        let err = FcError::Io(io::Error::new(io::ErrorKind::NotFound, "gone"));
+        let err = FcError::HostIo {
+            operation: "test",
+            source: io::Error::new(io::ErrorKind::NotFound, "gone"),
+        };
         assert_eq!(exit_code_for(&err), EXIT_GENERIC);
     }
 
@@ -328,9 +307,12 @@ mod tests {
     }
 
     #[test]
-    fn io_exit_code_is_nonzero() {
+    fn host_io_exit_code_is_nonzero() {
         use std::io;
-        let err = FcError::Io(io::Error::new(io::ErrorKind::Other, "test"));
+        let err = FcError::HostIo {
+            operation: "test",
+            source: io::Error::other("test"),
+        };
         assert_ne!(exit_code_for(&err), 0);
     }
 
@@ -356,6 +338,7 @@ mod tests {
             EXIT_RUN_DIR_OWNERSHIP,
             EXIT_IDLE_TIMED_OUT,
             EXIT_ONE_SHOT_CONSUMED,
+            EXIT_SANDBOX_DEAD,
         ];
         let mut seen = std::collections::HashSet::new();
         for code in &defined {
@@ -427,6 +410,16 @@ mod tests {
             exit_code_for(&FcError::OneShotConsumed),
             EXIT_ONE_SHOT_CONSUMED
         );
+    }
+
+    #[test]
+    fn sandbox_dead_is_13() {
+        let err = FcError::SandboxDead {
+            vm_id: "vm0".into(),
+            firecracker_pid: 1234,
+        };
+        assert_eq!(exit_code_for(&err), EXIT_SANDBOX_DEAD);
+        assert_eq!(envelope(&err).variant, "SandboxDead");
     }
 
     #[test]

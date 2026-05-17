@@ -14,6 +14,7 @@ use m80_net_mode::NetworkPolicy;
 use m80_storage::{Rootfs, Scratch};
 
 use crate::network_helper::NetworkHelperClient;
+use crate::pmem::PmemLayer;
 use crate::runroot::LeaseGuard;
 
 /// First-line Firecracker shape used by default and by snapshot timing proofs.
@@ -312,10 +313,15 @@ pub enum ConfigSource {
 }
 
 /// Per-VM launch parameters: resource sizing, workspace path, network policy,
-/// idle-timeout deadline, and one-shot mode. Built once per [`Sandbox`] and
-/// cloned into warm-pool slots. `workspace` must be `None` for pool slots.
-/// Fields that accept `None` resolve to their defaults at launch time
-/// (e.g., 1 vCPU, 512 MiB RAM, 5-minute idle timeout, no preallocated drives).
+/// idle-timeout deadline, declared pmem layers, and one-shot mode. Built once
+/// per [`Sandbox`] and cloned into warm-pool slots. `workspace` must be `None`
+/// for pool slots. Fields that accept `None` resolve to their defaults at
+/// launch time (e.g., 1 vCPU, 512 MiB RAM, 5-minute idle timeout, no
+/// preallocated drives). An empty `pmem_layers` vector preserves the default
+/// v0.1 launch behavior; non-empty vectors are validated before any run-dir or
+/// VMM side effect, resolved to read-only host backings according to their
+/// sharing policy, attached through Firecracker pmem, and mounted by guestd
+/// before the running handle is returned.
 ///
 /// Current cold launches do not ask Firecracker's official jailer for a new PID
 /// namespace; a compromised VMM that forks a child before host teardown is
@@ -384,6 +390,13 @@ pub struct SandboxConfig {
     /// sandbox. CLI callers set this once per invocation so diagnostics and
     /// guest stderr can be grepped with the same token.
     pub request_id: Option<String>,
+    /// Declared read-only erofs-over-pmem layers for this VM.
+    ///
+    /// The vector defaults to empty. Non-empty values validate, resolve to
+    /// per-VM backings during storage prep, bind read-only into the jail,
+    /// attach through `PUT /pmem/{id}`, and mount as erofs+DAX inside the guest
+    /// before `launch()` returns `RunningSandbox`.
+    pub pmem_layers: Vec<PmemLayer>,
     /// Number of writable placeholder drive slots created before
     /// `InstanceStart` so later attachment can use `PATCH /drives/{id}`.
     ///
@@ -412,6 +425,7 @@ impl Default for SandboxConfig {
             idle_timeout: Some(Duration::from_secs(300)),
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: DEFAULT_PREALLOCATED_DRIVE_SLOTS,
             one_shot: false,
         }
@@ -430,6 +444,8 @@ pub struct Sandbox {
     pub(crate) permit: AdmissionPermit,
     /// Reference to the backend that created this sandbox.
     pub(crate) backend: Arc<Backend>,
+    /// Delete partial run-dir on launch failure instead of preserving it.
+    pub(crate) delete_run_dir_on_launch_error: bool,
 }
 
 impl std::fmt::Debug for Sandbox {
@@ -537,6 +553,8 @@ pub struct RunningSandbox {
     pub(crate) run_dir: PathBuf,
     /// The materialized jailer chroot.
     pub(crate) jail: MaterializedJail,
+    /// Active-use markers for shared pmem image-store artifacts.
+    pub(crate) shared_pmem_refs: Vec<m80_image_store::SharedImageRef>,
     /// Cgroup subtree (Some if UnifiedV2 mode).
     pub(crate) cgroup: Option<m80_cgroup::Subtree>,
     /// Per-VM rootfs clone.
@@ -649,6 +667,22 @@ pub(crate) struct StoragePrep {
     /// Writable placeholder drive images bound into the jail for preallocated
     /// hotplug slots.
     pub(crate) preallocated_drive_slots: Vec<PathBuf>,
+    /// Pmem backing files resolved from the image store.
+    pub(crate) pmem_backings: Vec<ResolvedPmemBacking>,
+    /// Active-use markers acquired for shared pmem backings.
+    pub(crate) shared_pmem_refs: Vec<m80_image_store::SharedImageRef>,
+}
+
+/// Host-side pmem backing prepared for one declared layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedPmemBacking {
+    /// Host backing path; per-VM sharing uses the run directory, shared
+    /// sharing uses the canonical image-store artifact.
+    pub(crate) host_path: PathBuf,
+    /// Deterministic jail basename, generated from the slot index.
+    pub(crate) jail_basename: String,
+    /// Sharing policy that produced this backing.
+    pub(crate) sharing: crate::pmem::PmemSharing,
 }
 
 impl std::fmt::Debug for StoragePrep {
@@ -659,6 +693,8 @@ impl std::fmt::Debug for StoragePrep {
                 "preallocated_drive_slots",
                 &self.preallocated_drive_slots.len(),
             )
+            .field("pmem_backings", &self.pmem_backings.len())
+            .field("shared_pmem_refs", &self.shared_pmem_refs.len())
             .finish()
     }
 }

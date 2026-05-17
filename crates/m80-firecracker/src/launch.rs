@@ -29,7 +29,11 @@ use m80_proto::{
     Envelope, ExecExit, ExecRequest, RawEnvelope, PAYLOAD_KIND_EXEC_EXIT, PAYLOAD_KIND_EXEC_STDERR,
     PAYLOAD_KIND_EXEC_STDOUT,
 };
-use m80_snapshot::{restore as snapshot_restore, RestoreRequest, SnapshotPaths};
+use m80_snapshot::{
+    restore as snapshot_restore, restore_preverified as snapshot_restore_preverified,
+    RestoreRequest, SnapshotPaths,
+};
+use m80_snapshot_template::PinnedTemplate;
 use m80_vsock::{Channel, VsockError};
 use nix::errno::Errno;
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
@@ -37,19 +41,22 @@ use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 use crate::diagnostics::phase;
 use crate::error::{ConfigError, FcError, WireProtocolError};
 use crate::layout::{
-    console_log_path, firecracker_api_socket_path, preallocated_drive_slot_filename, run_dir_path,
-    vsock_socket_path,
+    console_log_path, firecracker_api_socket_path, pmem_layer_jail_bind_dest, pmem_layer_jail_path,
+    preallocated_drive_slot_filename, run_dir_path, vsock_socket_path,
 };
 use crate::lifecycle::{
-    monotonic_ns, prepare_snapshot_paths, snapshot_stage_parent, spawn_idle_watcher,
-    SNAPSHOT_BIND_DEST,
+    monotonic_ns, phase_13_pmem_guest_mount, phase_restore_post_restore_hooks,
+    prepare_snapshot_paths, prepare_template_snapshot_paths, snapshot_stage_parent,
+    spawn_idle_watcher, SNAPSHOT_BIND_DEST,
 };
+use crate::pmem::{validate_pmem_layers, PmemSharing};
 use crate::preboot::{apply_preboot_puts, plan_preboot_puts};
 use crate::runroot::write_ownership_lock;
 use crate::storage_prep::phase_3_storage_prep;
 use crate::types::{
     CgroupMode, RealizedNetwork, RunningSandbox, Sandbox, SandboxConfig, StoragePrep,
 };
+use crate::warm_pool::HookSpecSet;
 
 mod failure_cleanup;
 mod ready;
@@ -64,6 +71,12 @@ use snapshot_prime::prime_snapshot_files;
 const RUN_DIR_MODE: u32 = 0o700;
 const FIRECRACKER_SECCOMP_FILTER_JAIL_PATH: &str = "firecracker-seccomp-filter.bin";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SnapshotRestoreVerification {
+    VerifyManifest,
+    PreverifiedTemplate,
+}
+
 /// Record a diagnostics-annotated phase result.
 ///
 /// Takes `diagnostics` (`&mut Option<Diagnostics>`), `vm_id` (`&str`), and
@@ -71,9 +84,10 @@ const FIRECRACKER_SECCOMP_FILTER_JAIL_PATH: &str = "firecracker-seccomp-filter.b
 /// defined at module scope — Rust `macro_rules!` cannot capture local
 /// variables from the caller's scope.
 macro_rules! diag_phase {
-    ($diag:expr, $vid:expr, $rid:expr, $phase:expr, $name:literal, $body:expr) => {
+    ($current_phase:ident, $diag:expr, $vid:expr, $rid:expr, $phase:expr, $name:literal, $body:expr) => {{
+        $current_phase = $name;
         crate::diagnostics::phase_result($diag, $phase, $name, $vid, $rid, || $body)
-    };
+    }};
 }
 
 const API_SOCKET_TIMEOUT: Duration = Duration::from_secs(5);
@@ -102,356 +116,428 @@ impl Sandbox {
         })
     }
 
+    /// Delete the partial run directory if launch fails.
+    ///
+    /// The default is to preserve failed launch run directories under
+    /// `.preserved/` so `failure_summary.json`, diagnostics, and console logs
+    /// remain available for triage.
+    #[must_use]
+    pub fn delete_run_dir_on_launch_error(mut self) -> Self {
+        self.delete_run_dir_on_launch_error = true;
+        self
+    }
+
     /// Run the strict 12-phase preboot pipeline (Created → Running).
     ///
     /// Consumes `self` so a failed launch cannot be retried — the admission
     /// permit is dropped on any error path.
     pub fn launch(self) -> Result<RunningSandbox, FcError> {
         let vm_id = self.resolve_vm_id();
-        let backend_config = &self.backend.config;
+        let backend = Arc::clone(&self.backend);
+        let backend_for_running = Arc::clone(&backend);
+        let backend_config = &backend.config;
         let run_root = &backend_config.run_root;
+        validate_declared_pmem_layers(&self.config)?;
 
         // Phase 1: run-root prep.
-        let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
-            phase_1_run_root_prep(run_root, &vm_id)
-        })?;
-        let mut run_dir_cleanup = LaunchRunDirCleanupGuard::new(&vm_id, run_dir.clone());
+        let run_dir = phase_1_run_root_prep_with_failure_artifact(
+            run_root,
+            &vm_id,
+            self.config.request_id.as_deref(),
+            self.delete_run_dir_on_launch_error,
+        )?;
+        let mut run_dir_cleanup = LaunchRunDirCleanupGuard::new(
+            &vm_id,
+            run_dir.clone(),
+            self.delete_run_dir_on_launch_error,
+        );
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
+        let summary_run_dir = run_dir.clone();
+        let summary_vm_id = vm_id.clone();
+        let summary_request_id = request_id.clone();
+        let mut current_phase: &'static str = "phase_2_lease";
+        let result = (|| -> Result<RunningSandbox, FcError> {
+            // Phase 2: lease acquisition. Keep the guard inside RunningSandbox so
+            // ownership.lock covers the whole VM lifetime, not just launch.
+            let lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
-        // Phase 2: lease acquisition. Keep the guard inside RunningSandbox so
-        // ownership.lock covers the whole VM lifetime, not just launch.
-        let lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
-
-        // Phase 3: storage prep. Artifact sha256 verification is owned by
-        // m80-preflight before Backend construction, not by each launch.
-        let storage = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::StoragePrepare,
-            "phase_3_storage_prep",
-            {
-                phase_3_storage_prep(
-                    &vm_id,
-                    &backend_config.discovery.pinned_rootfs.proc_fd_path(),
-                    &self.config,
-                    &run_dir,
-                )
-            }
-        )?;
-        crate::diagnostics::record_owned(
-            &mut diagnostics,
-            Phase::StoragePrepare,
-            &vm_id,
-            request_id.as_deref(),
-            "storage prepared",
-        );
-
-        let cold_launch_netns_path = cold_launch_netns_path(&self.config.network, run_root, &vm_id);
-
-        // Phase 4: jailer materialize.
-        let jail = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_4_jailer_materialize",
-            {
-                phase_4_jailer_materialize(JailerMaterializeInput {
-                    jailer_bin: &backend_config.discovery.jailer_bin,
-                    jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
-                    firecracker_bin: &backend_config.discovery.firecracker_bin,
-                    firecracker_seccomp_filter: &backend_config
-                        .discovery
-                        .firecracker_seccomp_filter,
-                    uid: backend_config.jail_uid,
-                    gid: backend_config.jail_gid,
-                    run_dir: &run_dir,
-                    kernel: &backend_config.discovery.kernel,
-                    storage: &storage,
-                    daemonize: self.config.daemonize,
-                    netns_path: cold_launch_netns_path.as_deref(),
-                    private_netns: private_vmm_netns(&self.config.network),
-                    snapshot_parent: None,
-                    snapshot_bind_mode: BindMode::Rw,
-                })
-            }
-        )?;
-
-        // Phase 5: probe cgroup availability (creation happens after phase 9).
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::HostPreflight,
-            "phase_5_cgroup_probe",
-            { phase_5_cgroup_probe(backend_config.cgroup_mode) }
-        )?;
-
-        // Phase 6: resolve network mode.
-        let net = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::NetworkPrepare,
-            "phase_6_network_realize",
-            {
-                phase_6_network_realize(
-                    &self.backend.network_helper,
-                    &self.config,
-                    &vm_id,
-                    run_root,
-                    &run_dir,
-                )
-            }
-        )?;
-        let mut network_cleanup = match &net {
-            RealizedNetwork::OutboundNat { .. } => Some(LaunchNetworkCleanupGuard::new(
-                &self.backend.network_helper,
+            // Phase 3: storage prep. Artifact sha256 verification is owned by
+            // m80-preflight before Backend construction, not by each launch.
+            let storage = diag_phase!(
+                current_phase,
+                &mut diagnostics,
                 &vm_id,
-                run_root.clone(),
-            )),
-            RealizedNetwork::NoEgress | RealizedNetwork::JoinNetns { .. } => None,
-        };
-        let network_message = match &net {
-            RealizedNetwork::NoEgress => "network prepared".to_owned(),
-            RealizedNetwork::OutboundNat {
-                tap_name,
-                vmm_netns_path,
-                ..
-            } => {
-                format!(
-                    "network prepared: outbound_nat tap {tap_name} netns {}",
-                    vmm_netns_path.display()
-                )
-            }
-            RealizedNetwork::JoinNetns { netns_path, .. } => {
-                format!("network prepared: join_netns {}", netns_path.display())
-            }
-        };
-        crate::diagnostics::record_owned(
-            &mut diagnostics,
-            Phase::NetworkPrepare,
-            &vm_id,
-            request_id.as_deref(),
-            &network_message,
-        );
+                request_id.as_deref(),
+                Phase::StoragePrepare,
+                "phase_3_storage_prep",
+                {
+                    phase_3_storage_prep(
+                        &vm_id,
+                        &backend_config.discovery.pinned_rootfs.proc_fd_path(),
+                        &self.config,
+                        &run_dir,
+                    )
+                }
+            )?;
+            crate::diagnostics::record_owned(
+                &mut diagnostics,
+                Phase::StoragePrepare,
+                &vm_id,
+                request_id.as_deref(),
+                "storage prepared",
+            );
 
-        // Phase 7: for OutboundNat, prepare PID-1 guest network tokens and
-        // apply the host firewall/NAT policy before the VM can boot.
-        let network_boot_args = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::NetworkPrepare,
-            "phase_7_outbound_guest_config",
-            { phase_7_outbound_guest_config(&self.backend.network_helper, &net, &run_dir) }
-        )?;
+            let cold_launch_netns_path =
+                cold_launch_netns_path(&self.config.network, run_root, &vm_id);
 
-        // Phase 8: compute the API socket path (inside the jail root).
-        let api_socket =
-            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+            // Phase 4: jailer materialize.
+            let jail = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_4_jailer_materialize",
+                {
+                    phase_4_jailer_materialize(JailerMaterializeInput {
+                        jailer_bin: &backend_config.discovery.jailer_bin,
+                        jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
+                        firecracker_bin: &backend_config.discovery.firecracker_bin,
+                        firecracker_seccomp_filter: &backend_config
+                            .discovery
+                            .firecracker_seccomp_filter,
+                        uid: backend_config.jail_uid,
+                        gid: backend_config.jail_gid,
+                        run_dir: &run_dir,
+                        kernel: &backend_config.discovery.kernel,
+                        storage: &storage,
+                        daemonize: self.config.daemonize,
+                        netns_path: cold_launch_netns_path.as_deref(),
+                        private_netns: private_vmm_netns(&self.config.network),
+                        snapshot_parent: None,
+                        snapshot_bind_mode: BindMode::Rw,
+                    })
+                }
+            )?;
+            // Phase 5: probe cgroup availability (creation happens after phase 9).
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::HostPreflight,
+                "phase_5_cgroup_probe",
+                { phase_5_cgroup_probe(backend_config.cgroup_mode) }
+            )?;
 
-        // Phase 9: jailer exec's firecracker. Returns live pids.
-        let firecracker = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_9_jailer_launch",
-            { jail.launch(&api_socket).map_err(FcError::Jailer) }
-        )?;
-        let mut early_process_cleanup =
-            Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
-
-        // Phase 5b: create cgroup subtree now that we have live pids.
-        let cgroup = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::HostPreflight,
-            "phase_5b_cgroup_create",
-            {
-                phase_5b_cgroup_create(
-                    backend_config.cgroup_mode,
+            // Phase 6: resolve network mode.
+            let net = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::NetworkPrepare,
+                "phase_6_network_realize",
+                {
+                    phase_6_network_realize(
+                        &backend.network_helper,
+                        &self.config,
+                        &vm_id,
+                        run_root,
+                        &run_dir,
+                    )
+                }
+            )?;
+            let mut network_cleanup = match &net {
+                RealizedNetwork::OutboundNat { .. } => Some(LaunchNetworkCleanupGuard::new(
+                    &backend.network_helper,
                     &vm_id,
-                    &self.config,
-                    &jail,
-                    &firecracker,
+                    run_root.clone(),
+                )),
+                RealizedNetwork::NoEgress | RealizedNetwork::JoinNetns { .. } => None,
+            };
+            let network_message = match &net {
+                RealizedNetwork::NoEgress => "network prepared".to_owned(),
+                RealizedNetwork::OutboundNat {
+                    tap_name,
+                    vmm_netns_path,
+                    ..
+                } => {
+                    format!(
+                        "network prepared: outbound_nat tap {tap_name} netns {}",
+                        vmm_netns_path.display()
+                    )
+                }
+                RealizedNetwork::JoinNetns { netns_path, .. } => {
+                    format!("network prepared: join_netns {}", netns_path.display())
+                }
+            };
+            crate::diagnostics::record_owned(
+                &mut diagnostics,
+                Phase::NetworkPrepare,
+                &vm_id,
+                request_id.as_deref(),
+                &network_message,
+            );
+
+            // Phase 7: for OutboundNat, prepare PID-1 guest network tokens and
+            // apply the host firewall/NAT policy before the VM can boot.
+            let network_boot_args = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::NetworkPrepare,
+                "phase_7_outbound_guest_config",
+                { phase_7_outbound_guest_config(&backend.network_helper, &net, &run_dir) }
+            )?;
+
+            // Phase 8: compute the API socket path (inside the jail root).
+            let api_socket =
+                firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+
+            // Phase 9: jailer exec's firecracker. Returns live pids.
+            let firecracker = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_9_jailer_launch",
+                { jail.launch(&api_socket).map_err(FcError::Jailer) }
+            )?;
+            let mut early_process_cleanup =
+                Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
+
+            // Phase 5b: create cgroup subtree now that we have live pids.
+            let cgroup = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::HostPreflight,
+                "phase_5b_cgroup_create",
+                {
+                    phase_5b_cgroup_create(
+                        backend_config.cgroup_mode,
+                        &vm_id,
+                        &self.config,
+                        &jail,
+                        &firecracker,
+                    )
+                }
+            )?;
+            let mut process_cleanup = early_process_cleanup
+                .take()
+                .expect("launch process cleanup guard must exist after firecracker spawn");
+
+            // Phase 10: open UDS REST client (retries for up to 5 s).
+            let host_api_socket =
+                firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+            let client = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_10_open_uds",
+                { phase_10_open_uds(&host_api_socket) }
+            )?;
+
+            // Phase 11: REST PUTs in documented order.
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_11_rest_puts",
+                {
+                    phase_11_rest_puts(
+                        &client,
+                        &storage,
+                        &self.config,
+                        &vm_id,
+                        backend_config.discovery.manifest.image_kind,
+                        backend_config.discovery.manifest.kernel_kind,
+                        backend_config.discovery.manifest.rootfs_format,
+                        &net,
+                        &network_boot_args,
+                    )
+                }
+            )?;
+
+            // Phase 11b: pre-create the inverted-readiness UnixListener at
+            // `<jail>/vsock.sock_<READY_PORT_DEFAULT>`. Firecracker's muxer
+            // connects to this path when the guest does outbound to the
+            // ready port; if it doesn't exist when that happens, the muxer
+            // RSTs the guest. Must be created before InstanceStart.
+            let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+            let ready_uds = ready_listener_path(&vsock_uds);
+            let ready_listener = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Ready,
+                "phase_11b_ready_listener_bind",
+                { phase_11b_bind_ready_listener(&ready_uds, backend_config.jail_uid) }
+            )?;
+
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_11c_boot_identity_record",
+                { crate::boot_identity::record(&run_dir, &backend_config.discovery) }
+            )?;
+
+            // Phase 12a: InstanceStart.
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_12a_instance_start",
+                {
+                    client
+                        .instance_action(InstanceAction::InstanceStart)
+                        .map_err(FcError::Client)
+                }
+            )?;
+            crate::diagnostics::record_owned(
+                &mut diagnostics,
+                Phase::Boot,
+                &vm_id,
+                request_id.as_deref(),
+                "instance started",
+            );
+
+            // Phase 12b: accept the inverted-readiness signal from m80-guestd.
+            // The signal is emitted after guestd has bound the exec listener, so
+            // launch does not consume a dummy exec-channel connection before the
+            // caller's first real request.
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Ready,
+                "phase_12b_ready_accept",
+                {
+                    phase_12b_ready_accept(
+                        &ready_listener,
+                        &ready_uds,
+                        &vsock_uds,
+                        &console_log_path(&run_dir),
+                        &vm_id,
+                    )
+                }
+            )?;
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Ready,
+                "phase_13_pmem_guest_mount",
+                {
+                    phase_13_pmem_guest_mount(
+                        &vsock_uds,
+                        &vm_id,
+                        request_id.as_deref(),
+                        firecracker.firecracker_pid(),
+                        &self.config.pmem_layers,
+                    )
+                }
+            )?;
+            record_post_launch_resource_snapshot(
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                firecracker.firecracker_pid(),
+                cgroup.is_some(),
+            );
+            crate::diagnostics::record_owned(
+                &mut diagnostics,
+                Phase::Ready,
+                &vm_id,
+                request_id.as_deref(),
+                "guestd ready",
+            );
+
+            let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
+            let active_execs = Arc::new(AtomicUsize::new(0));
+            let idle_timed_out = Arc::new(AtomicBool::new(false));
+            let watcher_stop = Arc::new(AtomicBool::new(false));
+            let watcher_thread = self.config.idle_timeout.map(|timeout| {
+                spawn_idle_watcher(
+                    timeout,
+                    vsock_uds.clone(),
+                    firecracker.firecracker_pid(),
+                    Arc::clone(&last_activity_ns),
+                    Arc::clone(&active_execs),
+                    Arc::clone(&idle_timed_out),
+                    Arc::clone(&watcher_stop),
+                    vm_id.clone(),
                 )
-            }
-        )?;
-        let mut process_cleanup = early_process_cleanup
-            .take()
-            .expect("launch process cleanup guard must exist after firecracker spawn");
+            });
 
-        // Phase 10: open UDS REST client (retries for up to 5 s).
-        let host_api_socket =
-            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let client = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_10_open_uds",
-            { phase_10_open_uds(&host_api_socket) }
-        )?;
-
-        // Phase 11: REST PUTs in documented order.
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_11_rest_puts",
-            {
-                phase_11_rest_puts(
-                    &client,
-                    &storage,
-                    &self.config,
-                    &vm_id,
-                    backend_config.discovery.manifest.image_kind,
-                    backend_config.discovery.manifest.kernel_kind,
-                    backend_config.discovery.manifest.rootfs_format,
-                    &net,
-                    &network_boot_args,
-                )
-            }
-        )?;
-
-        // Phase 11b: pre-create the inverted-readiness UnixListener at
-        // `<jail>/vsock.sock_<READY_PORT_DEFAULT>`. Firecracker's muxer
-        // connects to this path when the guest does outbound to the
-        // ready port; if it doesn't exist when that happens, the muxer
-        // RSTs the guest. Must be created before InstanceStart.
-        let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let ready_uds = ready_listener_path(&vsock_uds);
-        let ready_listener = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Ready,
-            "phase_11b_ready_listener_bind",
-            { phase_11b_bind_ready_listener(&ready_uds, backend_config.jail_uid) }
-        )?;
-
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_11c_boot_identity_record",
-            { crate::boot_identity::record(&run_dir, &backend_config.discovery) }
-        )?;
-
-        // Phase 12a: InstanceStart.
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_12a_instance_start",
-            { client.instance_action(InstanceAction::InstanceStart) }
-        )?;
-        crate::diagnostics::record_owned(
-            &mut diagnostics,
-            Phase::Boot,
-            &vm_id,
-            request_id.as_deref(),
-            "instance started",
-        );
-
-        // Phase 12b: accept the inverted-readiness signal from m80-guestd.
-        // The signal is emitted after guestd has bound the exec listener, so
-        // launch does not consume a dummy exec-channel connection before the
-        // caller's first real request.
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Ready,
-            "phase_12b_ready_accept",
-            {
-                phase_12b_ready_accept(
-                    &ready_listener,
-                    &ready_uds,
-                    &vsock_uds,
-                    &console_log_path(&run_dir),
-                    &vm_id,
-                )
-            }
-        )?;
-        record_post_launch_resource_snapshot(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            firecracker.firecracker_pid(),
-            cgroup.is_some(),
-        );
-        crate::diagnostics::record_owned(
-            &mut diagnostics,
-            Phase::Ready,
-            &vm_id,
-            request_id.as_deref(),
-            "guestd ready",
-        );
-
-        let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
-        let active_execs = Arc::new(AtomicUsize::new(0));
-        let idle_timed_out = Arc::new(AtomicBool::new(false));
-        let watcher_stop = Arc::new(AtomicBool::new(false));
-        let watcher_thread = self.config.idle_timeout.map(|timeout| {
-            spawn_idle_watcher(
-                timeout,
-                vsock_uds.clone(),
-                Arc::clone(&last_activity_ns),
-                Arc::clone(&active_execs),
-                Arc::clone(&idle_timed_out),
-                Arc::clone(&watcher_stop),
+            let kill_guard = crate::types::ForceKillGuard::new(
                 vm_id.clone(),
-            )
-        });
-
-        let kill_guard = crate::types::ForceKillGuard::new(
-            vm_id.clone(),
-            firecracker.firecracker_pid(),
-            firecracker.jailer_pid(),
-            Arc::clone(&watcher_stop),
-            None,
-        );
-        process_cleanup.disarm();
-        let network_cleanup_enabled = network_cleanup.is_some();
-        if let Some(guard) = &mut network_cleanup {
-            guard.disarm();
+                firecracker.firecracker_pid(),
+                firecracker.jailer_pid(),
+                Arc::clone(&watcher_stop),
+                None,
+            );
+            process_cleanup.disarm();
+            let network_cleanup_enabled = network_cleanup.is_some();
+            if let Some(guard) = &mut network_cleanup {
+                guard.disarm();
+            }
+            run_dir_cleanup.disarm();
+            Ok(RunningSandbox {
+                vm_id,
+                request_id,
+                run_dir,
+                jail,
+                shared_pmem_refs: storage.shared_pmem_refs,
+                cgroup,
+                rootfs: storage.rootfs,
+                scratch: storage.scratch,
+                snapshot_mount: None,
+                client,
+                firecracker,
+                permit: self.permit,
+                lease_guard,
+                backend: backend_for_running,
+                last_activity_ns,
+                active_execs,
+                idle_timed_out,
+                watcher_stop,
+                watcher_thread,
+                diagnostics,
+                preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
+                one_shot: self.config.one_shot,
+                one_shot_consumed: false,
+                kill_guard,
+                network_cleanup: network_cleanup_enabled,
+            })
+        })();
+        if let Err(err) = &result {
+            crate::diagnostics::record_failure_summary_best_effort(
+                &summary_run_dir,
+                &summary_vm_id,
+                current_phase,
+                summary_request_id.as_deref(),
+                err,
+            );
         }
-        run_dir_cleanup.disarm();
-        Ok(RunningSandbox {
-            vm_id,
-            request_id,
-            run_dir,
-            jail,
-            cgroup,
-            rootfs: storage.rootfs,
-            scratch: storage.scratch,
-            snapshot_mount: None,
-            client,
-            firecracker,
-            permit: self.permit,
-            lease_guard,
-            backend: self.backend,
-            last_activity_ns,
-            active_execs,
-            idle_timed_out,
-            watcher_stop,
-            watcher_thread,
-            diagnostics,
-            preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
-            one_shot: self.config.one_shot,
-            one_shot_consumed: false,
-            kill_guard,
-            network_cleanup: network_cleanup_enabled,
-        })
+        result
     }
 }
 
@@ -464,11 +550,25 @@ const RESTORE_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const RESTORE_PROBE_SLEEP: Duration = Duration::from_millis(50);
 
 impl Sandbox {
+    /// Restore a previously-captured snapshot without post-restore hooks.
+    ///
+    /// This preserves the existing direct snapshot restore contract. Warm-pool
+    /// template restores that need entropy reseed or lease-specific identity
+    /// work use [`Sandbox::launch_from_snapshot_with_hooks`].
+    pub fn launch_from_snapshot(
+        self,
+        snapshot: SnapshotPaths,
+        discovery: &Discovery,
+    ) -> Result<RunningSandbox, FcError> {
+        self.launch_from_snapshot_with_hooks(snapshot, discovery, HookSpecSet::empty())
+    }
+
     /// Restore a previously-captured snapshot into a running sandbox.
     ///
     /// Alternative to [`Sandbox::launch`] for the warm-pool path: instead of
-    /// cold-booting, load from a snapshot pair and probe the exec channel to
-    /// confirm guestd is live.
+    /// cold-booting, load from a snapshot pair, probe the exec channel to
+    /// confirm guestd is live, then send a host-driven post-restore hook
+    /// request before returning the running VM to the caller.
     ///
     /// # Phases
     ///
@@ -485,264 +585,364 @@ impl Sandbox {
     /// 6. Send a lightweight exec readiness probe over the restored vsock UDS
     ///    to confirm guestd itself can read, execute, and reply (retry loop,
     ///    50 ms sleep, 5 s cap).
+    /// 7. If hooks were supplied, send `PostRestoreHookRequest`; guestd mixes
+    ///    the host restore nonce, reseeds the guest CRNG, runs the hooks in
+    ///    order, and returns a success/failure ack before this method returns.
     ///
     /// The cold-boot inverted-readiness handshake (phases 11b / 12b) is
     /// **not used** on the restore path — guestd does not re-dial after
-    /// TRANSPORT_RESET. The probe in step 6 is the only readiness signal.
-    pub fn launch_from_snapshot(
+    /// TRANSPORT_RESET. The probe in step 6 is the readiness signal; post-restore
+    /// hooks are the lease-handoff gate.
+    pub fn launch_from_snapshot_with_hooks(
         self,
         snapshot: SnapshotPaths,
         discovery: &Discovery,
+        hooks: HookSpecSet,
+    ) -> Result<RunningSandbox, FcError> {
+        let snapshot_plan =
+            prepare_snapshot_paths(&snapshot, &self.backend.config.run_root, false)?;
+        self.launch_from_prepared_snapshot_with_hooks(
+            snapshot,
+            snapshot_plan,
+            discovery,
+            hooks,
+            SnapshotRestoreVerification::VerifyManifest,
+        )
+    }
+
+    #[allow(dead_code)] // Wired into WarmStrategy::SnapshotRestore by m80-q420k.4.5.
+    pub(crate) fn launch_from_template_body_with_hooks(
+        self,
+        template: &PinnedTemplate,
+        discovery: &Discovery,
+        hooks: HookSpecSet,
+    ) -> Result<RunningSandbox, FcError> {
+        let snapshot = template.body_paths().snapshot_paths();
+        let snapshot_plan = prepare_template_snapshot_paths(&snapshot)?;
+        self.launch_from_prepared_snapshot_with_hooks(
+            snapshot,
+            snapshot_plan,
+            discovery,
+            hooks,
+            SnapshotRestoreVerification::PreverifiedTemplate,
+        )
+    }
+
+    fn launch_from_prepared_snapshot_with_hooks(
+        self,
+        snapshot: SnapshotPaths,
+        snapshot_plan: crate::lifecycle::PreparedSnapshotPaths,
+        discovery: &Discovery,
+        hooks: HookSpecSet,
+        verification: SnapshotRestoreVerification,
     ) -> Result<RunningSandbox, FcError> {
         let vm_id = self.resolve_vm_id();
-        let backend_config = &self.backend.config;
+        let backend = Arc::clone(&self.backend);
+        let backend_for_running = Arc::clone(&backend);
+        let backend_config = &backend.config;
         let run_root = &backend_config.run_root;
-        let snapshot_plan = prepare_snapshot_paths(&snapshot, run_root, false)?;
+        validate_declared_pmem_layers(&self.config)?;
 
         // Phase 1: run-root prep.
-        let run_dir = phase("phase_1_run_root_prep", &vm_id, || {
-            phase_1_run_root_prep(run_root, &vm_id)
-        })?;
-        let mut run_dir_cleanup = LaunchRunDirCleanupGuard::new(&vm_id, run_dir.clone());
+        let run_dir = phase_1_run_root_prep_with_failure_artifact(
+            run_root,
+            &vm_id,
+            self.config.request_id.as_deref(),
+            self.delete_run_dir_on_launch_error,
+        )?;
+        let mut run_dir_cleanup = LaunchRunDirCleanupGuard::new(
+            &vm_id,
+            run_dir.clone(),
+            self.delete_run_dir_on_launch_error,
+        );
         let request_id = self.config.request_id.clone();
         let mut diagnostics = crate::diagnostics::open(&run_dir, &vm_id, request_id.as_deref());
+        let summary_run_dir = run_dir.clone();
+        let summary_vm_id = vm_id.clone();
+        let summary_request_id = request_id.clone();
+        let mut current_phase: &'static str = "phase_2_lease";
+        let result = (|| -> Result<RunningSandbox, FcError> {
+            // Phase 2: lease acquisition.
+            let lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
 
-        // Phase 2: lease acquisition.
-        let lease_guard = phase("phase_2_lease", &vm_id, || write_ownership_lock(&run_dir))?;
+            // Phase 3: storage prep (overlay + optional scratch — still needed
+            // for the jailer bind-mount layout even on restore path).
+            let storage = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::StoragePrepare,
+                "phase_3_storage_prep",
+                {
+                    phase_3_storage_prep(
+                        &vm_id,
+                        &backend_config.discovery.pinned_rootfs.proc_fd_path(),
+                        &self.config,
+                        &run_dir,
+                    )
+                }
+            )?;
+            crate::diagnostics::record_owned(
+                &mut diagnostics,
+                Phase::StoragePrepare,
+                &vm_id,
+                request_id.as_deref(),
+                "storage prepared for restore",
+            );
 
-        // Phase 3: storage prep (overlay + optional scratch — still needed
-        // for the jailer bind-mount layout even on restore path).
-        let storage = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::StoragePrepare,
-            "phase_3_storage_prep",
-            {
-                phase_3_storage_prep(
-                    &vm_id,
-                    &backend_config.discovery.pinned_rootfs.proc_fd_path(),
-                    &self.config,
-                    &run_dir,
+            // Phase 4: jailer materialize.
+            let jail = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_4_jailer_materialize",
+                {
+                    phase_4_jailer_materialize(JailerMaterializeInput {
+                        jailer_bin: &backend_config.discovery.jailer_bin,
+                        jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
+                        firecracker_bin: &backend_config.discovery.firecracker_bin,
+                        firecracker_seccomp_filter: &backend_config
+                            .discovery
+                            .firecracker_seccomp_filter,
+                        uid: backend_config.jail_uid,
+                        gid: backend_config.jail_gid,
+                        run_dir: &run_dir,
+                        kernel: &backend_config.discovery.kernel,
+                        storage: &storage,
+                        daemonize: self.config.daemonize,
+                        netns_path: join_netns_path(&self.config.network),
+                        private_netns: private_vmm_netns(&self.config.network),
+                        snapshot_parent: Some(snapshot_plan.host_parent.as_path()),
+                        snapshot_bind_mode: BindMode::Ro,
+                    })
+                }
+            )?;
+            // Phase 5: cgroup probe (restore path honours cgroup mode too).
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::HostPreflight,
+                "phase_5_cgroup_probe",
+                { phase_5_cgroup_probe(backend_config.cgroup_mode) }
+            )?;
+
+            // Phase 8: compute the API socket path (inside the jail root).
+            let api_socket =
+                firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+
+            // Phase 9: spawn Firecracker via jailer.
+            let firecracker = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_9_jailer_launch",
+                { jail.launch(&api_socket).map_err(FcError::Jailer) }
+            )?;
+            let mut early_process_cleanup =
+                Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
+
+            // Phase 5b: create cgroup subtree.
+            let cgroup = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::HostPreflight,
+                "phase_5b_cgroup_create",
+                {
+                    phase_5b_cgroup_create(
+                        backend_config.cgroup_mode,
+                        &vm_id,
+                        &self.config,
+                        &jail,
+                        &firecracker,
+                    )
+                }
+            )?;
+            let mut process_cleanup = early_process_cleanup
+                .take()
+                .expect("restore process cleanup guard must exist after firecracker spawn");
+
+            // Phase 10: open UDS REST client.
+            let host_api_socket =
+                firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+            let client = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_10_open_uds",
+                { phase_10_open_uds(&host_api_socket) }
+            )?;
+
+            // Phase restore-prime: queue host readahead on the real snapshot
+            // files before translating them into jail-visible /snapshot paths.
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_restore_snapshot_prime",
+                { prime_snapshot_files(&snapshot) }
+            )?;
+
+            // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +
+            // PATCH /vm Resumed (resume: true).
+            let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
+            let snapshot_bind = diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_restore_snapshot_bind",
+                { Ok::<_, FcError>(snapshot_plan.clone()) }
+            )?;
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Boot,
+                "phase_restore_load",
+                {
+                    let req = RestoreRequest {
+                        api_socket: host_api_socket.clone(),
+                        paths: snapshot_bind.jail_paths.clone(),
+                        host_paths: snapshot.clone(),
+                        expected_firecracker_version: discovery
+                            .manifest
+                            .expected_firecracker_version
+                            .clone(),
+                        vsock_uds: vsock_uds.clone(),
+                        resume: true,
+                    };
+                    match verification {
+                        SnapshotRestoreVerification::VerifyManifest => snapshot_restore(req),
+                        SnapshotRestoreVerification::PreverifiedTemplate => {
+                            snapshot_restore_preverified(req)
+                        }
+                    }
+                    .map_err(FcError::Snapshot)
+                }
+            )?;
+            crate::diagnostics::record_owned(
+                &mut diagnostics,
+                Phase::Boot,
+                &vm_id,
+                request_id.as_deref(),
+                "snapshot restored",
+            );
+
+            // Phase restore-probe: exec round-trip retry loop.
+            // Replaces the cold-boot phase_12b_ready_accept.
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Ready,
+                "phase_restore_probe_exec_channel",
+                { phase_restore_probe_exec_channel(&vsock_uds, &vm_id) }
+            )?;
+            diag_phase!(
+                current_phase,
+                &mut diagnostics,
+                &vm_id,
+                request_id.as_deref(),
+                Phase::Ready,
+                "phase_restore_post_restore_hooks",
+                {
+                    phase_restore_post_restore_hooks(
+                        &vsock_uds,
+                        &vm_id,
+                        request_id.as_deref(),
+                        firecracker.firecracker_pid(),
+                        &hooks,
+                    )
+                }
+            )?;
+            crate::diagnostics::record_owned(
+                &mut diagnostics,
+                Phase::Ready,
+                &vm_id,
+                request_id.as_deref(),
+                "restored guestd ready",
+            );
+            let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
+            let active_execs = Arc::new(AtomicUsize::new(0));
+            let idle_timed_out = Arc::new(AtomicBool::new(false));
+            let watcher_stop = Arc::new(AtomicBool::new(false));
+            let watcher_thread = self.config.idle_timeout.map(|timeout| {
+                spawn_idle_watcher(
+                    timeout,
+                    vsock_uds.clone(),
+                    firecracker.firecracker_pid(),
+                    Arc::clone(&last_activity_ns),
+                    Arc::clone(&active_execs),
+                    Arc::clone(&idle_timed_out),
+                    Arc::clone(&watcher_stop),
+                    vm_id.clone(),
                 )
-            }
-        )?;
-        crate::diagnostics::record_owned(
-            &mut diagnostics,
-            Phase::StoragePrepare,
-            &vm_id,
-            request_id.as_deref(),
-            "storage prepared for restore",
-        );
+            });
 
-        // Phase 4: jailer materialize.
-        let jail = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_4_jailer_materialize",
-            {
-                phase_4_jailer_materialize(JailerMaterializeInput {
-                    jailer_bin: &backend_config.discovery.jailer_bin,
-                    jailer_harden_bin: &backend_config.discovery.jailer_harden_bin,
-                    firecracker_bin: &backend_config.discovery.firecracker_bin,
-                    firecracker_seccomp_filter: &backend_config
-                        .discovery
-                        .firecracker_seccomp_filter,
-                    uid: backend_config.jail_uid,
-                    gid: backend_config.jail_gid,
-                    run_dir: &run_dir,
-                    kernel: &backend_config.discovery.kernel,
-                    storage: &storage,
-                    daemonize: self.config.daemonize,
-                    netns_path: join_netns_path(&self.config.network),
-                    private_netns: private_vmm_netns(&self.config.network),
-                    snapshot_parent: Some(snapshot_plan.host_parent.as_path()),
-                    snapshot_bind_mode: BindMode::Ro,
-                })
-            }
-        )?;
-
-        // Phase 5: cgroup probe (restore path honours cgroup mode too).
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::HostPreflight,
-            "phase_5_cgroup_probe",
-            { phase_5_cgroup_probe(backend_config.cgroup_mode) }
-        )?;
-
-        // Phase 8: compute the API socket path (inside the jail root).
-        let api_socket =
-            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-
-        // Phase 9: spawn Firecracker via jailer.
-        let firecracker = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_9_jailer_launch",
-            { jail.launch(&api_socket).map_err(FcError::Jailer) }
-        )?;
-        let mut early_process_cleanup =
-            Some(LaunchProcessCleanupGuard::from_jailed(&vm_id, &firecracker));
-
-        // Phase 5b: create cgroup subtree.
-        let cgroup = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::HostPreflight,
-            "phase_5b_cgroup_create",
-            {
-                phase_5b_cgroup_create(
-                    backend_config.cgroup_mode,
-                    &vm_id,
-                    &self.config,
-                    &jail,
-                    &firecracker,
-                )
-            }
-        )?;
-        let mut process_cleanup = early_process_cleanup
-            .take()
-            .expect("restore process cleanup guard must exist after firecracker spawn");
-
-        // Phase 10: open UDS REST client.
-        let host_api_socket =
-            firecracker_api_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let client = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_10_open_uds",
-            { phase_10_open_uds(&host_api_socket) }
-        )?;
-
-        // Phase restore-prime: queue host readahead on the real snapshot
-        // files before translating them into jail-visible /snapshot paths.
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_restore_snapshot_prime",
-            { prime_snapshot_files(&snapshot) }
-        )?;
-
-        // Phase restore-load: remove stale vsock.sock + PUT /snapshot/load +
-        // PATCH /vm Resumed (resume: true).
-        let vsock_uds = vsock_socket_path(&run_dir, &backend_config.discovery.firecracker_bin);
-        let snapshot_bind = diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_restore_snapshot_bind",
-            { Ok::<_, FcError>(snapshot_plan.clone()) }
-        )?;
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Boot,
-            "phase_restore_load",
-            {
-                snapshot_restore(RestoreRequest {
-                    api_socket: host_api_socket.clone(),
-                    paths: snapshot_bind.jail_paths.clone(),
-                    host_paths: snapshot.clone(),
-                    expected_firecracker_version: discovery
-                        .manifest
-                        .expected_firecracker_version
-                        .clone(),
-                    vsock_uds: vsock_uds.clone(),
-                    resume: true,
-                })
-                .map_err(FcError::Snapshot)
-            }
-        )?;
-        crate::diagnostics::record_owned(
-            &mut diagnostics,
-            Phase::Boot,
-            &vm_id,
-            request_id.as_deref(),
-            "snapshot restored",
-        );
-
-        // Phase restore-probe: exec round-trip retry loop.
-        // Replaces the cold-boot phase_12b_ready_accept.
-        diag_phase!(
-            &mut diagnostics,
-            &vm_id,
-            request_id.as_deref(),
-            Phase::Ready,
-            "phase_restore_probe_exec_channel",
-            { phase_restore_probe_exec_channel(&vsock_uds, &vm_id) }
-        )?;
-        crate::diagnostics::record_owned(
-            &mut diagnostics,
-            Phase::Ready,
-            &vm_id,
-            request_id.as_deref(),
-            "restored guestd ready",
-        );
-        let last_activity_ns = Arc::new(AtomicU64::new(monotonic_ns()));
-        let active_execs = Arc::new(AtomicUsize::new(0));
-        let idle_timed_out = Arc::new(AtomicBool::new(false));
-        let watcher_stop = Arc::new(AtomicBool::new(false));
-        let watcher_thread = self.config.idle_timeout.map(|timeout| {
-            spawn_idle_watcher(
-                timeout,
-                vsock_uds.clone(),
-                Arc::clone(&last_activity_ns),
-                Arc::clone(&active_execs),
-                Arc::clone(&idle_timed_out),
-                Arc::clone(&watcher_stop),
+            let snapshot_mount = None;
+            let kill_guard = crate::types::ForceKillGuard::new(
                 vm_id.clone(),
-            )
-        });
-
-        let snapshot_mount = None;
-        let kill_guard = crate::types::ForceKillGuard::new(
-            vm_id.clone(),
-            firecracker.firecracker_pid(),
-            firecracker.jailer_pid(),
-            Arc::clone(&watcher_stop),
-            snapshot_mount.clone(),
-        );
-        process_cleanup.disarm();
-        run_dir_cleanup.disarm();
-        Ok(RunningSandbox {
-            vm_id,
-            request_id,
-            run_dir,
-            jail,
-            cgroup,
-            rootfs: storage.rootfs,
-            scratch: storage.scratch,
-            snapshot_mount,
-            client,
-            firecracker,
-            permit: self.permit,
-            lease_guard,
-            backend: self.backend,
-            last_activity_ns,
-            active_execs,
-            idle_timed_out,
-            watcher_stop,
-            watcher_thread,
-            diagnostics,
-            preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
-            one_shot: self.config.one_shot,
-            one_shot_consumed: false,
-            kill_guard,
-            network_cleanup: false,
-        })
+                firecracker.firecracker_pid(),
+                firecracker.jailer_pid(),
+                Arc::clone(&watcher_stop),
+                snapshot_mount.clone(),
+            );
+            process_cleanup.disarm();
+            run_dir_cleanup.disarm();
+            Ok(RunningSandbox {
+                vm_id,
+                request_id,
+                run_dir,
+                jail,
+                shared_pmem_refs: storage.shared_pmem_refs,
+                cgroup,
+                rootfs: storage.rootfs,
+                scratch: storage.scratch,
+                snapshot_mount,
+                client,
+                firecracker,
+                permit: self.permit,
+                lease_guard,
+                backend: backend_for_running,
+                last_activity_ns,
+                active_execs,
+                idle_timed_out,
+                watcher_stop,
+                watcher_thread,
+                diagnostics,
+                preallocated_drive_slots: storage.preallocated_drive_slots.len() as u8,
+                one_shot: self.config.one_shot,
+                one_shot_consumed: false,
+                kill_guard,
+                network_cleanup: false,
+            })
+        })();
+        if let Err(err) = &result {
+            crate::diagnostics::record_failure_summary_best_effort(
+                &summary_run_dir,
+                &summary_vm_id,
+                current_phase,
+                summary_request_id.as_deref(),
+                err,
+            );
+        }
+        result
     }
 }
 
@@ -845,6 +1045,10 @@ fn check_restore_probe_request_id(frame: &RawEnvelope, request_id: &str) -> Resu
     }))
 }
 
+fn validate_declared_pmem_layers(config: &SandboxConfig) -> Result<(), FcError> {
+    validate_pmem_layers(&config.pmem_layers)
+}
+
 /// Phase 1: create `<run_root>/<vm_id>/`.
 ///
 /// `create_dir_all` is appropriate here: the m80 process owns the run_root
@@ -855,9 +1059,61 @@ fn phase_1_run_root_prep(run_root: &Path, vm_id: &str) -> Result<PathBuf, FcErro
     fs::DirBuilder::new()
         .recursive(true)
         .mode(RUN_DIR_MODE)
-        .create(&run_dir)?;
-    fs::set_permissions(&run_dir, fs::Permissions::from_mode(RUN_DIR_MODE))?;
+        .create(&run_dir)
+        .map_err(|source| path_io(&run_dir, source))?;
+    fs::set_permissions(&run_dir, fs::Permissions::from_mode(RUN_DIR_MODE))
+        .map_err(|source| path_io(&run_dir, source))?;
     Ok(run_dir)
+}
+
+fn phase_1_run_root_prep_with_failure_artifact(
+    run_root: &Path,
+    vm_id: &str,
+    request_id: Option<&str>,
+    delete_on_error: bool,
+) -> Result<PathBuf, FcError> {
+    match phase("phase_1_run_root_prep", vm_id, || {
+        phase_1_run_root_prep(run_root, vm_id)
+    }) {
+        Ok(run_dir) => Ok(run_dir),
+        Err(err) => {
+            let run_dir = run_dir_path(run_root, vm_id);
+            preserve_launch_failure_artifact_if_run_dir_exists(
+                &run_dir,
+                vm_id,
+                "phase_1_run_root_prep",
+                request_id,
+                &err,
+                delete_on_error,
+            );
+            Err(err)
+        }
+    }
+}
+
+fn preserve_launch_failure_artifact_if_run_dir_exists(
+    run_dir: &Path,
+    vm_id: &str,
+    failed_phase: &'static str,
+    request_id: Option<&str>,
+    err: &FcError,
+    delete_on_error: bool,
+) {
+    if !run_dir.is_dir() {
+        return;
+    }
+    crate::diagnostics::record_failure_summary_best_effort(
+        run_dir,
+        vm_id,
+        failed_phase,
+        request_id,
+        err,
+    );
+    drop(LaunchRunDirCleanupGuard::new(
+        vm_id,
+        run_dir.to_path_buf(),
+        delete_on_error,
+    ));
 }
 
 /// Phase 4: compute a `JailerConfig`, run `Plan::compute`, and materialize.
@@ -947,6 +1203,7 @@ fn phase_4_jailer_materialize(
             mode: BindMode::Rw,
         });
     }
+    push_pmem_backing_bindings(&mut bindings, &input.storage.pmem_backings);
 
     let sockets = vec![JailerSocket::Firecracker, JailerSocket::Vsock];
 
@@ -968,6 +1225,28 @@ fn phase_4_jailer_materialize(
 
     let plan = Plan::compute(&jailer_config)?;
     plan.materialize().map_err(FcError::Jailer)
+}
+
+fn push_pmem_backing_bindings(
+    bindings: &mut Vec<Binding>,
+    backings: &[crate::types::ResolvedPmemBacking],
+) {
+    for (slot, backing) in backings.iter().enumerate() {
+        let dest = pmem_layer_jail_bind_dest(slot);
+        debug_assert_eq!(dest, PathBuf::from(&backing.jail_basename));
+        debug_assert_eq!(
+            pmem_layer_jail_path(slot),
+            PathBuf::from(format!("/{}", backing.jail_basename))
+        );
+        bindings.push(Binding {
+            source: backing.host_path.clone(),
+            dest,
+            mode: match backing.sharing {
+                PmemSharing::PerVm => BindMode::Ro,
+                PmemSharing::Shared(_) => BindMode::RoImageStore,
+            },
+        });
+    }
 }
 
 fn push_snapshot_bindings(bindings: &mut Vec<Binding>, source: PathBuf, mode: BindMode) {
@@ -1221,26 +1500,32 @@ fn wait_for_api_socket_create(api_socket: &Path, deadline: Instant) -> Result<()
     use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 
     let parent = api_socket.parent().ok_or_else(|| {
-        FcError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("api socket has no parent: {}", api_socket.display()),
-        ))
+        path_io(
+            api_socket,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("api socket has no parent: {}", api_socket.display()),
+            ),
+        )
     })?;
     let filename = api_socket.file_name().ok_or_else(|| {
-        FcError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("api socket has no filename: {}", api_socket.display()),
-        ))
+        path_io(
+            api_socket,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("api socket has no filename: {}", api_socket.display()),
+            ),
+        )
     })?;
 
-    let inotify =
-        Inotify::init(InitFlags::IN_NONBLOCK | InitFlags::IN_CLOEXEC).map_err(errno_to_io_error)?;
+    let inotify = Inotify::init(InitFlags::IN_NONBLOCK | InitFlags::IN_CLOEXEC)
+        .map_err(|errno| errno_path_io(api_socket, errno))?;
     inotify
         .add_watch(
             parent,
             AddWatchFlags::IN_CREATE | AddWatchFlags::IN_MOVED_TO | AddWatchFlags::IN_ATTRIB,
         )
-        .map_err(errno_to_io_error)?;
+        .map_err(|errno| errno_path_io(api_socket, errno))?;
 
     if api_socket.exists() {
         return Ok(());
@@ -1259,17 +1544,20 @@ fn wait_for_api_socket_create(api_socket: &Path, deadline: Instant) -> Result<()
                 }
             }
             Err(Errno::EAGAIN) | Err(Errno::EINTR) => continue,
-            Err(errno) => return Err(errno_to_io_error(errno)),
+            Err(errno) => return Err(errno_path_io(api_socket, errno)),
         }
     }
 }
 
 #[cfg(not(target_os = "linux"))]
-fn wait_for_api_socket_create(_api_socket: &Path, _deadline: Instant) -> Result<(), FcError> {
-    Err(FcError::Io(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "inotify is only available on Linux",
-    )))
+fn wait_for_api_socket_create(api_socket: &Path, _deadline: Instant) -> Result<(), FcError> {
+    Err(path_io(
+        api_socket,
+        std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "inotify is only available on Linux",
+        ),
+    ))
 }
 
 fn event_name_matches(event_name: Option<&OsStr>, filename: &OsStr) -> bool {
@@ -1290,7 +1578,7 @@ fn wait_for_fd_readable(
             });
         }
         let mut fds = [PollFd::new(fd, PollFlags::POLLIN)];
-        match poll(&mut fds, poll_timeout_for_duration(remaining)?) {
+        match poll(&mut fds, poll_timeout_for_duration(remaining, path)?) {
             Ok(0) => {
                 return Err(FcError::ApiSocketTimeout {
                     path: path.to_path_buf(),
@@ -1299,28 +1587,39 @@ fn wait_for_fd_readable(
             }
             Ok(_) => return Ok(()),
             Err(Errno::EINTR) => continue,
-            Err(errno) => return Err(errno_to_io_error(errno)),
+            Err(errno) => return Err(errno_path_io(path, errno)),
         }
     }
 }
 
-fn poll_timeout_for_duration(duration: Duration) -> Result<PollTimeout, FcError> {
+fn poll_timeout_for_duration(duration: Duration, path: &Path) -> Result<PollTimeout, FcError> {
     PollTimeout::try_from(duration).map_err(|e| {
-        FcError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("poll timeout out of range: {e}"),
-        ))
+        path_io(
+            path,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("poll timeout out of range: {e}"),
+            ),
+        )
     })
 }
 
-fn errno_to_io_error(errno: Errno) -> FcError {
-    FcError::Io(std::io::Error::from_raw_os_error(errno as i32))
+fn errno_path_io(path: &Path, errno: Errno) -> FcError {
+    path_io(path, std::io::Error::from_raw_os_error(errno as i32))
+}
+
+fn path_io(path: &Path, source: std::io::Error) -> FcError {
+    FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    }
 }
 
 /// Phase 11: PUT all Firecracker resources in the documented order.
 ///
 /// From Firecracker's perspective, resources must be PUT before `InstanceStart`:
-/// machine-config → boot-source → drives (root first) → optional network NIC → vsock.
+/// machine-config → boot-source → drives (root first) → optional pmem layers
+/// → optional network NIC → entropy → vsock.
 #[allow(clippy::too_many_arguments)]
 fn phase_11_rest_puts(
     client: &Client,
@@ -1340,6 +1639,8 @@ fn phase_11_rest_puts(
         kernel_kind,
         rootfs_format,
         storage.scratch.is_some(),
+        &config.pmem_layers,
+        &storage.pmem_backings,
         network,
         extra_boot_args,
     )?;

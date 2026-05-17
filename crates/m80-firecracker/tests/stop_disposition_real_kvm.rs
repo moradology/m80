@@ -4,7 +4,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, NetworkPolicy, SandboxConfig};
@@ -49,6 +49,7 @@ fn launch_vm(
             idle_timeout: None,
             daemonize: false,
             request_id: Some(request_id.to_owned()),
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })
@@ -131,6 +132,7 @@ fn forced_kill_ambiguous_blocks_release() {
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })
@@ -144,7 +146,7 @@ fn forced_kill_ambiguous_blocks_release() {
     let _ = std::fs::remove_dir_all(&run_dir);
 
     assert!(
-        matches!(err, FcError::Io(ref e) if e.kind() == std::io::ErrorKind::PermissionDenied),
+        matches!(err, FcError::KillFailed { ref source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied),
         "expected injected EPERM/PermissionDenied, got {err:?}"
     );
     assert!(matches!(
@@ -194,6 +196,7 @@ fn stop_with_unreachable_guestd_still_returns_stopped_and_releases_after_delete(
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })

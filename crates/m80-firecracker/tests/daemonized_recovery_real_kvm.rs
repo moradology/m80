@@ -35,6 +35,7 @@ fn jailer_daemonized_pid_sentinel_recovery() {
         idle_timeout: None,
         daemonize: true,
         request_id: Some("req-daemonized-recovery".into()),
+        pmem_layers: Vec::new(),
         preallocated_drive_slots: 0,
         one_shot: false,
     };

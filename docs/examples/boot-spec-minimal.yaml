@@ -1,0 +1,28 @@
+# Minimal BootSpec: no pmem layers, no warm template.
+schema_version: 1
+
+# Human-facing name used by CLI output and template-build logs.
+name: minimal
+
+sandbox:
+  # VM id prefix; the runtime appends a unique slot suffix where needed.
+  vm_id_prefix: m80-minimal
+  # Baseline first-line profile used by current real-KVM tests.
+  vcpu_count: 1
+  mem_size_mib: 512
+  # No workspace is attached; warm/template slots must stay stateless.
+  workspace: null
+  # No outbound egress for the baseline example.
+  network: none
+  # Per-VM writable overlay size in bytes.
+  overlay_size_bytes: 134217728
+  # Extra boot args are append-only. m80-owned keys remain forbidden.
+  boot_args: []
+
+# No read-only erofs-over-pmem layers.
+pmem_layers: []
+
+warm_strategy:
+  # A normal cold/boot-filled execution path. SnapshotRestore is shown in
+  # the template examples below.
+  mode: boot_fill

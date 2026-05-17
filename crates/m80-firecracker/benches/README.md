@@ -16,6 +16,56 @@ inside are observational.
 | `snapshots/latest.json` | symlink to the most recent snapshot | replaced each run |
 | `baseline.json` | checked-in reference snapshot used by CI regression gate | replaced deliberately |
 
+## Close-Gate Artifacts
+
+Most generated files under `snapshots/` stay ignored. These named
+measurement-shaped close artifacts are exceptions because their beads require
+committed real-KVM evidence:
+
+- `snapshot_template_restore_latency.json` (`m80-q420k.4.15`)
+
+The Phase F composed-e2e artifacts are also kept trackable because
+`m80-q420k.6.2` through `m80-q420k.6.5` close from the same quiet-host run:
+
+- `snapshots/composed-e2e-restore-N10.json`
+- `snapshots/composed-e2e-host-memory.json`
+- `snapshots/composed-e2e-residue.json`
+
+Do not commit diagnostic versions of those files from noisy-host or override
+runs. Close-quality JSON records `substrate.allow_other_firecracker_vms=false`
+and empty `substrate.preexisting_firecracker_processes` and
+`substrate.post_run_firecracker_processes` arrays. It also records
+`substrate.preflight_artifacts` with the resolved Firecracker, jailer, helper,
+kernel, and rootfs identities measured by the run, plus a top-level
+`git_commit`.
+
+After writing a close-quality artifact, run the close guard before committing.
+After committing the artifact, add `--require-committed` before closing the
+bead, for example:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py --only snapshot-template --require-committed
+```
+
+The `snapshot-template` selector also checks
+`docs/perf/snapshot-template-restore.md`; the doc must include the bench stderr
+line from the close-quality run that wrote the JSON artifact.
+
+The Phase C Shared density artifact lives outside this benches directory at
+`docs/perf/pmem-shared-density.md`; check it with `--only pmem-density`. That
+selector also checks the executable close script
+`scripts/smoke-pmem-shared.sh`, including its quiet-host fail-closed guard and
+committed mode/content when `--require-committed` is present.
+
+For final `m80-q420k` closure, run the verifier without `--only` and with
+`--require-committed --require-closed-beads --require-parent-phases-closed`;
+that checks the `.3.8` Shared density artifact, the snapshot-template artifact,
+all three Phase F composed-e2e artifacts, the `docs/perf/composed-e2e.md`
+receipt doc, the measurement beads' `verified: <artifact> @ <commit>` close
+reasons, and the Phase 0 / A-F parent statuses. The verifier is a field,
+git-state, close-reason, and tracker-state guard only. It does not replace the
+real-KVM run or committed artifacts.
+
 ## Snapshot schema
 
 ```

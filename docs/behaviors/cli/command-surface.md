@@ -28,6 +28,8 @@ install packages implicitly.
 - `m80 list`
 - `m80 inspect <vm-id>`
 - `m80 cleanup [--force]`
+- `m80 image build/list/show/rm/verify`
+- `m80 template build/list/show/prune/rm`
 - `m80 warm enable/status/drain/disable`
 - `m80 version`
 
@@ -43,6 +45,13 @@ m80 warm disable
 
 `m80 warm enable --system` remains a reserved feature gap until service
 packaging lands. There is no hidden daemon started by `m80 run --warm`.
+
+The landed image command contract is captured in
+`docs/behaviors/cli/image-commands.md`.
+The landed snapshot-template command contract is captured in
+`docs/behaviors/cli/template-commands.md`. Its destructive prune path is scoped
+to the selected BootSpec family so one store can safely hold multiple template
+families.
 
 The old VM-front-door commands are removed, not compatibility aliases:
 

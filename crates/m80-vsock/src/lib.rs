@@ -17,8 +17,13 @@ use sha2::Digest;
 
 use m80_proto::{Envelope, Payload, ProtoError, RawEnvelope};
 
-/// Read/write timeout applied to every vsock bridge stream.
-const BRIDGE_IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Read/write timeout used only for the Firecracker bridge CONNECT/OK
+/// handshake. Application traffic may legitimately stay idle for longer than
+/// this; exec duration is enforced by guestd and optional host deadlines.
+const BRIDGE_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum socket read timeout used while enforcing an explicit receive
+/// deadline. The absolute deadline still owns the final budget.
+const DEADLINE_READ_POLL_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Derive the vsock CID a VM should be assigned from its `vm_id`.
 ///
@@ -38,10 +43,11 @@ pub fn cid_for_vm_id(vm_id: &str) -> u32 {
 /// One open connection to the in-VM guestd, bridged via Firecracker's UDS-to-vsock
 /// proxy. Created by [`Channel::open_uds_only`], which performs the `CONNECT` /
 /// `OK` handshake before returning. Frames are sent with [`Channel::send`] and
-/// received with [`Channel::recv`] / [`Channel::recv_raw`]; both directions carry
-/// a 5-second I/O timeout. An `OversizedPayload` error from `recv` leaves the
-/// internal `BufReader` misaligned — the connection is unrecoverable and must be
-/// dropped.
+/// received with [`Channel::recv`] / [`Channel::recv_raw`]. Normal application
+/// reads and writes are blocking; callers that need a host-side read budget use
+/// [`Channel::recv_raw_with_deadline`]. An `OversizedPayload` error from `recv`
+/// leaves the internal `BufReader` misaligned — the connection is unrecoverable
+/// and must be dropped.
 pub struct Channel {
     /// The host-side Firecracker UDS path. This is a listener owned by the VM,
     /// so channel teardown must not unlink it.
@@ -125,10 +131,10 @@ impl Channel {
         let host_uds_arc: Arc<Path> = Arc::from(host_uds);
 
         stream
-            .set_read_timeout(Some(BRIDGE_IO_TIMEOUT))
+            .set_read_timeout(Some(BRIDGE_HANDSHAKE_TIMEOUT))
             .map_err(|e| io_err(&host_uds_arc, e))?;
         stream
-            .set_write_timeout(Some(BRIDGE_IO_TIMEOUT))
+            .set_write_timeout(Some(BRIDGE_HANDSHAKE_TIMEOUT))
             .map_err(|e| io_err(&host_uds_arc, e))?;
 
         // Write CONNECT line.
@@ -156,6 +162,16 @@ impl Channel {
         if !ack.starts_with("OK ") {
             return Err(VsockError::HandshakeFailed);
         }
+        stream
+            .set_read_timeout(None)
+            .map_err(|e| io_err(&host_uds_arc, e))?;
+        stream
+            .set_write_timeout(None)
+            .map_err(|e| io_err(&host_uds_arc, e))?;
+        buf_reader
+            .get_ref()
+            .set_read_timeout(None)
+            .map_err(|e| io_err(&host_uds_arc, e))?;
 
         Ok(Channel {
             host_uds: host_uds_arc,
@@ -225,7 +241,7 @@ impl Channel {
     /// Returns `Ok(None)` when the deadline expires before the full frame is
     /// read. The method checks the deadline before each underlying socket read,
     /// so a peer cannot hold the call open indefinitely by dripping bytes just
-    /// under [`BRIDGE_IO_TIMEOUT`].
+    /// under [`DEADLINE_READ_POLL_TIMEOUT`].
     ///
     /// `Ok(None)` is terminal for this channel: partial frame bytes may already
     /// have been consumed into the frame decoder. Drop the channel instead of
@@ -234,24 +250,33 @@ impl Channel {
         &mut self,
         deadline: Instant,
     ) -> Result<Option<RawEnvelope>, VsockError> {
-        let mut reader = DeadlineReader {
-            inner: &mut self.buf_reader,
-            deadline,
-        };
-        match m80_proto::read_raw_frame(&mut reader) {
-            Ok(envelope) => {
-                if debug_wire::is_enabled("vsock") {
-                    tracing::trace!(direction = "in", kind = %envelope.kind, "vsock frame");
+        let result = {
+            let mut reader = DeadlineReader {
+                inner: &mut self.buf_reader,
+                deadline,
+            };
+            match m80_proto::read_raw_frame(&mut reader) {
+                Ok(envelope) => {
+                    if debug_wire::is_enabled("vsock") {
+                        tracing::trace!(direction = "in", kind = %envelope.kind, "vsock frame");
+                    }
+                    Ok(Some(envelope))
                 }
-                Ok(Some(envelope))
+                Err(ProtoError::Io(err))
+                    if is_read_timeout(err.kind()) && Instant::now() >= deadline =>
+                {
+                    Ok(None)
+                }
+                Err(err) => Err(VsockError::Proto(err)),
             }
-            Err(ProtoError::Io(err))
-                if is_read_timeout(err.kind()) && Instant::now() >= deadline =>
-            {
-                Ok(None)
-            }
-            Err(err) => Err(VsockError::Proto(err)),
+        };
+        if result.is_ok() {
+            self.buf_reader
+                .get_ref()
+                .set_read_timeout(None)
+                .map_err(|e| io_err(&self.host_uds, e))?;
         }
+        result
     }
 }
 
@@ -283,7 +308,7 @@ fn read_timeout_before(deadline: Instant) -> Option<Duration> {
     deadline
         .checked_duration_since(Instant::now())
         .filter(|remaining| !remaining.is_zero())
-        .map(|remaining| remaining.min(BRIDGE_IO_TIMEOUT))
+        .map(|remaining| remaining.min(DEADLINE_READ_POLL_TIMEOUT))
 }
 
 fn is_read_timeout(kind: io::ErrorKind) -> bool {
@@ -330,7 +355,7 @@ pub enum VsockError {
         #[source]
         source: io::Error,
     },
-    /// Frame-level protocol error.
+    /// Protobuf/framing error once the bridge is established.
     #[error("proto: {0}")]
     Proto(#[from] ProtoError),
 }

@@ -55,8 +55,11 @@ Every instrumented host phase emits two structured diagnostics events:
 - `event_kind: "phase_completed"`
 
 The completed event carries `duration_us` and `outcome`. Successful phases use
-`{"status":"ok"}`. Failed phases use `{"status":"err","class":"..."}` where the
-class is the Rust error type name, not the full free-text error string.
+`{"status":"ok"}`. Failed phases use
+`{"status":"err","class":"...","variant":"...","display":"..."}` when the
+error is a finite m80 error enum. `class` is the Rust error type class,
+`variant` is the stable enum variant name, and `display` is the human-readable
+error string. Non-finite errors omit `variant`.
 
 The stderr-only `M80_PHASE` line remains available when `M80_PHASE_TRACE=1` is
 set, but JSONL is the persistent evidence.

@@ -2,25 +2,27 @@
 
 mod cpu_allocator;
 mod fill_worker;
+mod inner;
 mod lease;
+mod template;
+mod template_build;
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-
-use m80_proto::{ExecRequest, ExecStatus};
-use m80_snapshot::{verify_snapshot_manifest, SnapshotPaths};
 
 use crate::error::{ConfigError, FcError};
 use crate::types::{Backend, RunningSandbox, SandboxConfig};
 
 use cpu_allocator::build_warm_pool_cpu_ranges;
 pub use cpu_allocator::WarmPoolCpuAllocator;
-use fill_worker::spawn_fill_worker;
+#[cfg(test)]
+use inner::verify_warm_snapshot;
 pub use lease::WarmLease;
-
-const RESTORED_SLOT_SETTLE: Duration = Duration::from_secs(1);
+pub use template::*;
+pub(crate) use template_build::{build_template, template_inputs_for_current_host};
 
 /// Maximum number of concurrent background fill workers per pool.
 ///
@@ -41,22 +43,21 @@ const FILL_BACKOFF: &[Duration] = &[
     Duration::from_secs(10),
 ];
 
-/// Parameters that govern a [`WarmPool`]: how many slots to keep ready,
-/// which snapshot pair to restore from, and what probe must pass before a
-/// slot is considered healthy. All fields are required at construction;
-/// `target_ready` must be greater than zero and `sandbox.workspace` must be
-/// `None` — warm slots are stateless and may not carry a workspace.
+/// Number of successful fill-duration samples retained for measurement reads.
+const MAX_FILL_DURATION_SAMPLES: usize = 1024;
+
+/// Parameters that govern a [`WarmPool`]. All fields are required at
+/// construction; `target_ready` must be greater than zero and
+/// `sandbox.workspace` must be `None` — warm slots are stateless and may not
+/// carry a workspace.
 #[derive(Debug, Clone)]
 pub struct WarmPoolConfig {
     /// Number of ready slots the pool tries to keep filled.
     pub target_ready: usize,
-    /// Snapshot pair used to restore every clean slot.
-    pub snapshot: SnapshotPaths,
     /// Sandbox configuration applied to each restored slot.
     pub sandbox: SandboxConfig,
-    /// Probe request that must complete successfully before a restored slot
-    /// enters `Ready`.
-    pub ready_probe: ExecRequest,
+    /// Strategy used to fill ready slots.
+    pub strategy: WarmStrategy,
     /// Prefix for generated per-slot VM ids.
     pub vm_id_prefix: String,
     /// Optional CPU range allocator for per-slot cgroup `cpuset.cpus`.
@@ -76,6 +77,16 @@ pub struct WarmPoolSnapshot {
     pub leased: usize,
     /// Slots discarded since pool creation.
     pub discarded: usize,
+    /// Consecutive slot-launch failures since the last successful fill.
+    pub consecutive_fill_errors: u32,
+    /// Slot-fill attempts since pool creation.
+    pub fill_attempts_total: usize,
+    /// Slot-fill failures since pool creation.
+    pub fill_failures_total: usize,
+    /// Leases handed to callers since pool creation.
+    pub lease_acquired_total: usize,
+    /// Leases released back to the pool since pool creation.
+    pub lease_returned_total: usize,
 }
 
 /// A pool of pre-restored Firecracker VMs ready to serve exec requests with
@@ -91,10 +102,14 @@ pub struct WarmPool {
 struct WarmPoolInner {
     backend: Arc<Backend>,
     config: WarmPoolConfig,
+    target_ready: AtomicUsize,
+    cpu_allocator_capacity: Option<usize>,
     state: Mutex<WarmPoolState>,
     changed: Condvar,
     shutdown: AtomicBool,
     next_slot: AtomicU64,
+    #[cfg(test)]
+    panic_next_launch_slot: AtomicBool,
 }
 
 struct WarmPoolState {
@@ -126,6 +141,11 @@ struct WarmPoolState {
     /// Number of consecutive slot-launch failures; reset to 0 on success.
     /// Used to index into `FILL_BACKOFF` to throttle retry threads.
     consecutive_fill_errors: u32,
+    fill_attempts_total: usize,
+    fill_failures_total: usize,
+    lease_acquired_total: usize,
+    lease_returned_total: usize,
+    fill_duration_samples_us: VecDeque<u64>,
 }
 
 pub(super) struct WarmSlot {
@@ -143,6 +163,7 @@ impl WarmPool {
                 reason: "must be > 0".into(),
             }));
         }
+        validate_target_ready_against_backend(&backend, config.target_ready)?;
         if config.sandbox.workspace.is_some() {
             return Err(FcError::Config(ConfigError::InvalidValue {
                 field: "warm_pool.sandbox.workspace",
@@ -150,6 +171,7 @@ impl WarmPool {
                     .into(),
             }));
         }
+        let cpu_allocator_capacity = config.cpu_allocator.as_ref().map(|_| config.target_ready);
         let free_cpuset_cpus =
             build_warm_pool_cpu_ranges(config.target_ready, config.cpu_allocator)?
                 .into_iter()
@@ -157,6 +179,8 @@ impl WarmPool {
         Ok(WarmPool {
             inner: Arc::new(WarmPoolInner {
                 backend,
+                target_ready: AtomicUsize::new(config.target_ready),
+                cpu_allocator_capacity,
                 config,
                 state: Mutex::new(WarmPoolState {
                     ready: VecDeque::new(),
@@ -166,10 +190,17 @@ impl WarmPool {
                     free_cpuset_cpus,
                     last_fill_error: None,
                     consecutive_fill_errors: 0,
+                    fill_attempts_total: 0,
+                    fill_failures_total: 0,
+                    lease_acquired_total: 0,
+                    lease_returned_total: 0,
+                    fill_duration_samples_us: VecDeque::new(),
                 }),
                 changed: Condvar::new(),
                 shutdown: AtomicBool::new(false),
                 next_slot: AtomicU64::new(0),
+                #[cfg(test)]
+                panic_next_launch_slot: AtomicBool::new(false),
             }),
         })
     }
@@ -182,7 +213,7 @@ impl WarmPool {
             }
             {
                 let state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
-                if state.ready.len() >= self.inner.config.target_ready {
+                if state.ready.len() >= self.inner.target_ready() {
                     return Ok(());
                 }
             }
@@ -193,17 +224,25 @@ impl WarmPool {
             if self.inner.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
                 return Ok(());
             }
+            {
+                let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                state.record_fill_attempt();
+            }
+            let fill_started = Instant::now();
             let slot = match self.inner.launch_slot(cpuset_cpus.clone()) {
                 Ok(slot) => slot,
                 Err(err) => {
                     let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
                     state.release_cpuset_cpus(cpuset_cpus);
+                    state.record_fill_failure(err.to_string());
+                    self.inner.changed.notify_all();
                     return Err(err);
                 }
             };
+            let fill_duration_us = duration_micros_u64(fill_started.elapsed());
             let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
             state.ready.push_back(slot);
-            state.last_fill_error = None;
+            state.record_fill_success(fill_duration_us);
             self.inner.changed.notify_all();
         }
     }
@@ -217,18 +256,85 @@ impl WarmPool {
     /// Lease one ready slot. Empty-pool behavior is fail-closed: this never
     /// cold-boots or restores synchronously on the request path.
     pub fn try_lease(&self) -> Result<WarmLease, FcError> {
-        let sandbox = {
-            let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
-            let Some(sandbox) = state.ready.pop_front() else {
-                return Err(FcError::PoolEmpty {
-                    target_ready: self.inner.config.target_ready,
-                });
+        let mut discarded_dead_slot = false;
+        loop {
+            let slot = {
+                let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                match state.ready.pop_front() {
+                    Some(slot) => slot,
+                    None => {
+                        if discarded_dead_slot {
+                            drop(state);
+                            self.inner.start_background_fill();
+                        }
+                        return Err(FcError::PoolEmpty {
+                            target_ready: self.inner.target_ready(),
+                        });
+                    }
+                }
             };
-            state.leased += 1;
-            sandbox
+            if slot.is_live() {
+                {
+                    let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+                    state.leased += 1;
+                    state.lease_acquired_total = state.lease_acquired_total.saturating_add(1);
+                    self.inner.changed.notify_all();
+                }
+                self.inner.start_background_fill();
+                return Ok(WarmLease::new(slot, Arc::clone(&self.inner)));
+            }
+            discarded_dead_slot = true;
+            self.inner.discard_unleased_slot(slot, "dead ready slot");
+        }
+    }
+
+    /// Adjust the ready-slot target at runtime.
+    ///
+    /// Growing starts normal background fill. Shrinking discards only surplus
+    /// ready slots; leased slots are never force-dropped by resize.
+    pub fn set_target_ready(&self, target_ready: NonZeroUsize) -> Result<NonZeroUsize, FcError> {
+        let target_ready = target_ready.get();
+        validate_target_ready_against_backend(&self.inner.backend, target_ready)?;
+        if let Some(capacity) = self.inner.cpu_allocator_capacity {
+            if target_ready > capacity {
+                return Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "warm_pool.target_ready",
+                    reason: format!("must be <= initial cpuset allocator capacity ({capacity})"),
+                }));
+            }
+        }
+
+        let discard = {
+            let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+            self.inner
+                .target_ready
+                .store(target_ready, Ordering::Relaxed);
+            let mut discard = Vec::new();
+            while state.ready.len() > target_ready {
+                let slot = state
+                    .ready
+                    .pop_back()
+                    .expect("ready length checked before pop");
+                let WarmSlot {
+                    sandbox,
+                    cpuset_cpus,
+                } = slot;
+                state.discarded = state.discarded.saturating_add(1);
+                discard.push((sandbox, cpuset_cpus));
+            }
+            self.inner.changed.notify_all();
+            discard
         };
+        for (sandbox, cpuset_cpus) in discard {
+            if let Err(err) = discard_sandbox(sandbox) {
+                tracing::error!(error = %err, "failed to discard surplus warm-pool slot after resize");
+            }
+            let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+            state.release_cpuset_cpus(cpuset_cpus);
+            self.inner.changed.notify_all();
+        }
         self.inner.start_background_fill();
-        Ok(WarmLease::new(sandbox, Arc::clone(&self.inner)))
+        Ok(NonZeroUsize::new(target_ready).expect("input was NonZeroUsize"))
     }
 
     /// Wait until at least `min_ready` slots are ready.
@@ -247,7 +353,7 @@ impl WarmPool {
                     });
                 }
                 return Err(FcError::PoolEmpty {
-                    target_ready: self.inner.config.target_ready,
+                    target_ready: self.inner.target_ready(),
                 });
             }
             let wait = deadline.saturating_duration_since(now);
@@ -288,6 +394,20 @@ impl WarmPool {
     pub fn snapshot(&self) -> WarmPoolSnapshot {
         self.inner.snapshot()
     }
+
+    /// Drain successful fill-duration samples recorded since pool creation or
+    /// the previous call. Each sample starts immediately before slot launch
+    /// work and stops when the slot is accepted into the ready queue.
+    ///
+    /// For [`WarmStrategy::SnapshotRestore`], this includes template
+    /// lookup/build, snapshot restore, post-restore hooks, and ready probes. It
+    /// does not include the caller's subsequent [`WarmPool::try_lease`] handoff;
+    /// measurement harnesses that need restore-to-handback latency should add
+    /// their checkout timing to the drained fill sample.
+    #[must_use]
+    pub fn take_fill_duration_samples_us(&self) -> Vec<u64> {
+        self.inner.take_fill_duration_samples_us()
+    }
 }
 
 impl Drop for WarmPool {
@@ -308,114 +428,40 @@ impl Drop for WarmPool {
                         .unwrap_or_else(|p| p.into_inner());
                     state = next;
                 }
+                let discarded = state.ready.len();
+                state.discarded = state.discarded.saturating_add(discarded);
                 state.ready.drain(..).collect::<Vec<_>>()
             };
             for slot in ready {
-                let _ = discard_sandbox(slot.sandbox);
+                let WarmSlot { sandbox, .. } = slot;
+                if let Err(err) = discard_sandbox(sandbox) {
+                    tracing::error!(error = %err, "failed to discard warm-pool slot during drop");
+                }
             }
         }
     }
 }
 
-impl WarmPoolInner {
-    fn launch_slot(&self, cpuset_cpus: Option<String>) -> Result<WarmSlot, FcError> {
-        verify_warm_snapshot(
-            &self.config.snapshot,
-            &self
-                .backend
-                .config
-                .discovery
-                .manifest
-                .expected_firecracker_version,
-        )?;
-        let slot_id = self.next_slot.fetch_add(1, Ordering::Relaxed);
-        let mut sandbox_config = self.config.sandbox.clone();
-        sandbox_config.vm_id = Some(format!("{}-{slot_id}", self.config.vm_id_prefix));
-        sandbox_config.cpuset_cpus = cpuset_cpus.clone();
-        let sandbox = self.backend.admit(sandbox_config)?;
-        let mut running = sandbox
-            .launch_from_snapshot(self.config.snapshot.clone(), &self.backend.config.discovery)?;
-        run_ready_probe(&mut running, &self.config.ready_probe)?;
-        Ok(WarmSlot {
-            sandbox: running,
-            cpuset_cpus,
-        })
+fn validate_target_ready_against_backend(
+    backend: &Arc<Backend>,
+    target_ready: usize,
+) -> Result<(), FcError> {
+    let max = backend.config().max_concurrent_vms() as usize;
+    if target_ready <= max {
+        return Ok(());
     }
-
-    fn start_background_fill(self: &Arc<Self>) {
-        loop {
-            {
-                let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-                if self.shutdown.load(Ordering::Relaxed) {
-                    return;
-                }
-                // Stop if the pool is already at target or already has the
-                // maximum number of concurrent fill workers running.
-                let deficit = self
-                    .config
-                    .target_ready
-                    .saturating_sub(state.ready.len() + state.filling);
-                if deficit == 0 || state.filling >= MAX_FILL_THREADS {
-                    return;
-                }
-                let cpuset_cpus = state.reserve_cpuset_cpus();
-                if self.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
-                    return;
-                }
-                state.filling += 1;
-                drop(state);
-
-                let inner = Arc::clone(self);
-                spawn_fill_worker(inner, cpuset_cpus);
-            }
-        }
-    }
-
-    fn lease_finished(&self, cpuset_cpus: Option<String>) {
-        {
-            let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-            state.leased = state.leased.saturating_sub(1);
-            state.discarded += 1;
-            state.release_cpuset_cpus(cpuset_cpus);
-            self.changed.notify_all();
-        }
-    }
-
-    fn snapshot(&self) -> WarmPoolSnapshot {
-        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-        WarmPoolSnapshot {
-            target_ready: self.config.target_ready,
-            ready: state.ready.len(),
-            filling: state.filling,
-            leased: state.leased,
-            discarded: state.discarded,
-        }
-    }
-}
-
-impl WarmPoolState {
-    fn reserve_cpuset_cpus(&mut self) -> Option<String> {
-        self.free_cpuset_cpus.pop_front()
-    }
-
-    fn release_cpuset_cpus(&mut self, cpuset_cpus: Option<String>) {
-        if let Some(cpuset_cpus) = cpuset_cpus {
-            self.free_cpuset_cpus.push_back(cpuset_cpus);
-        }
-    }
+    Err(FcError::Config(ConfigError::InvalidValue {
+        field: "warm_pool.target_ready",
+        reason: format!("must be <= backend.max_concurrent_vms ({max})"),
+    }))
 }
 
 fn discard_sandbox(sandbox: RunningSandbox) -> Result<(), FcError> {
     sandbox.force_kill()?.delete()
 }
 
-fn verify_warm_snapshot(
-    paths: &SnapshotPaths,
-    expected_firecracker_version: &str,
-) -> Result<(), FcError> {
-    verify_snapshot_manifest(paths, expected_firecracker_version)
-        .map(|_| ())
-        .map_err(FcError::Snapshot)
+fn duration_micros_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
 /// Discard a sandbox, first recording a diagnostics event if `exec_err` is
@@ -438,194 +484,5 @@ pub(crate) fn discard_sandbox_with_diagnostics(
     sandbox.force_kill()?.delete()
 }
 
-fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<(), FcError> {
-    let mut last_error = None;
-    for _ in 0..5 {
-        match sandbox.exec_ready_probe(req.clone()) {
-            Ok(resp) if resp.status == ExecStatus::Completed && resp.exit_code == Some(0) => {
-                std::thread::sleep(RESTORED_SLOT_SETTLE);
-                return Ok(());
-            }
-            Ok(resp) => {
-                return Err(FcError::WarmReadyProbeRejected {
-                    status: resp.status,
-                    exit_code: resp.exit_code,
-                });
-            }
-            Err(e) => {
-                last_error = Some(e);
-                std::thread::sleep(Duration::from_millis(50));
-            }
-        }
-    }
-    Err(last_error.unwrap_or(FcError::WarmReadyProbeNoResult))
-}
-
 #[cfg(test)]
-mod tests {
-    use std::io::Write as _;
-    use std::os::unix::fs::PermissionsExt as _;
-
-    use super::*;
-    use crate::types::{BackendConfig, CgroupMode};
-
-    const FC_VERSION: &str = "v1.15.1";
-
-    #[test]
-    fn warm_snapshot_verify_accepts_matching_manifest() {
-        let dir = tempfile::tempdir().expect("snapshot dir");
-        let paths = write_snapshot_pair(dir.path());
-        m80_snapshot::write_snapshot_manifest(&paths, FC_VERSION).expect("write manifest");
-
-        verify_warm_snapshot(&paths, FC_VERSION).expect("matching warm snapshot");
-    }
-
-    #[test]
-    fn warm_snapshot_verify_rejects_tampered_memory_before_slot_launch() {
-        let dir = tempfile::tempdir().expect("snapshot dir");
-        let paths = write_snapshot_pair(dir.path());
-        m80_snapshot::write_snapshot_manifest(&paths, FC_VERSION).expect("write manifest");
-        std::fs::write(&paths.mem, b"tampered-memory").expect("tamper memory");
-
-        let err = verify_warm_snapshot(&paths, FC_VERSION)
-            .expect_err("tampered warm snapshot must be rejected");
-
-        assert!(
-            matches!(
-                err,
-                FcError::Snapshot(m80_snapshot::SnapshotError::ArtifactMismatch {
-                    kind: m80_snapshot::ArtifactKind::Memory,
-                    ..
-                })
-            ),
-            "expected memory artifact mismatch, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn warm_pool_fill_rejects_tampered_snapshot_before_admission() {
-        let run_root = tempfile::tempdir().expect("run root");
-        let snapshot_dir = run_root.path().join("warm/snapshot");
-        std::fs::create_dir_all(&snapshot_dir).expect("snapshot dir");
-        let paths = write_snapshot_pair(&snapshot_dir);
-        let discovery = fake_discovery(run_root.path());
-        let expected_firecracker_version = discovery.manifest.expected_firecracker_version.clone();
-        m80_snapshot::write_snapshot_manifest(&paths, &expected_firecracker_version)
-            .expect("write manifest");
-        std::fs::write(&paths.mem, b"tampered-memory").expect("tamper memory");
-
-        let backend = Arc::new(
-            Backend::new(
-                BackendConfig::builder(discovery)
-                    .max_concurrent_vms(1)
-                    .run_root(run_root.path())
-                    .cgroup_mode(CgroupMode::Disabled)
-                    .build(),
-            )
-            .expect("backend"),
-        );
-        let pool = WarmPool::new(
-            backend,
-            WarmPoolConfig {
-                target_ready: 1,
-                snapshot: paths,
-                sandbox: SandboxConfig::default(),
-                ready_probe: ExecRequest {
-                    program: "/bin/true".to_owned(),
-                    args: Vec::new(),
-                    cwd: None,
-                    env: None,
-                    stdin: None,
-                    timeout_ms: Some(5_000),
-                    streaming: false,
-                },
-                vm_id_prefix: "tampered-warm".to_owned(),
-                cpu_allocator: None,
-            },
-        )
-        .expect("warm pool");
-
-        let err = pool
-            .fill_to_target_blocking()
-            .expect_err("tampered snapshot must fail before launch");
-
-        assert!(
-            matches!(
-                err,
-                FcError::Snapshot(m80_snapshot::SnapshotError::ArtifactMismatch {
-                    kind: m80_snapshot::ArtifactKind::Memory,
-                    ..
-                })
-            ),
-            "expected memory artifact mismatch, got {err:?}"
-        );
-        assert_eq!(pool.snapshot().ready, 0);
-    }
-
-    fn write_snapshot_pair(dir: &std::path::Path) -> SnapshotPaths {
-        let paths = SnapshotPaths {
-            vm_state: dir.join("vm.snap"),
-            mem: dir.join("mem.snap"),
-        };
-        std::fs::write(&paths.vm_state, b"vm-state").expect("write vm snapshot");
-        std::fs::write(&paths.mem, b"memory").expect("write memory snapshot");
-        paths
-    }
-
-    fn fake_discovery(run_root: &std::path::Path) -> m80_preflight::Discovery {
-        let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
-        let rootfs_path = rootfs.path().to_path_buf();
-        let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
-        let net_helper_bin = fake_net_helper(run_root);
-        m80_preflight::Discovery {
-            firecracker_bin: "/tmp/firecracker".into(),
-            firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.bin".into(),
-            jailer_bin: "/tmp/jailer".into(),
-            jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
-            net_helper_bin,
-            kernel: "/tmp/vmlinux".into(),
-            rootfs: "/tmp/rootfs.ext4".into(),
-            pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
-            manifest: m80_image_manifest::Manifest::new(
-                "/tmp/m80-guestd".into(),
-                "0".repeat(64),
-                "v1.0.0".to_owned(),
-                52,
-                m80_image_manifest::ImageKind::Minimal,
-                "/tmp/vmlinux".into(),
-                "1".repeat(64),
-                m80_image_manifest::KernelKind::Stock,
-                None,
-                "/tmp/rootfs.ext4".into(),
-                "2".repeat(64),
-                "M80_READY".to_owned(),
-                m80_image_manifest::RootfsFormat::Ext4,
-                None,
-                None,
-            ),
-            run_root: run_root.to_path_buf(),
-            privilege: m80_preflight::PrivilegeStatus::Root,
-            report: Vec::new(),
-        }
-    }
-
-    fn fake_net_helper(run_root: &std::path::Path) -> std::path::PathBuf {
-        std::fs::create_dir_all(run_root).expect("run root");
-        let path = run_root.join("m80-net-helper-test");
-        let mut file = std::fs::File::create(&path).expect("fake net helper");
-        file.write_all(
-            br#"#!/bin/sh
-while IFS= read -r _line; do
-  printf '%s\n' '{"status":"ok","success":{"kind":"empty"}}'
-done
-"#,
-        )
-        .expect("write fake net helper");
-        file.sync_all().expect("sync fake net helper");
-        drop(file);
-        let mut perms = std::fs::metadata(&path).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&path, perms).unwrap();
-        path
-    }
-}
+mod tests;

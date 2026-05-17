@@ -4,7 +4,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io;
-use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+use std::os::unix::fs::{FileTypeExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -19,6 +19,7 @@ pub(crate) const MIN_SCRATCH_BYTES: u64 = 64 * 1024 * 1024;
 pub(crate) const SCRATCH_PADDING_BYTES: u64 = 32 * 1024 * 1024;
 /// Scratch image sizes are rounded up to a 4 MiB boundary.
 pub(crate) const SCRATCH_ALIGNMENT_BYTES: u64 = 4 * 1024 * 1024;
+const HOST_VISIBLE_MODE_BITS: u32 = 0o777;
 
 /// A per-VM scratch ext4 image.
 ///
@@ -188,7 +189,8 @@ fn do_create(workspace: &Path, image: &Path, size: u64) -> Result<(), StorageErr
     // error wins over the umount error if both fail (the user wants to
     // know what went wrong with their workspace, not that umount also
     // couldn't recover).
-    let copy_result = copy_tree(workspace, workspace, mount_dir.path());
+    let copy_result = prepare_scratch_mount_root(workspace, mount_dir.path())
+        .and_then(|()| copy_tree(workspace, workspace, mount_dir.path()));
     let umount_result = run_mount(mount_dir.path(), &["umount"], None);
     copy_result?;
     umount_result
@@ -251,6 +253,11 @@ fn run_mount(mount_point: &Path, argv: &[&str], image: Option<&Path>) -> Result<
     Ok(())
 }
 
+fn prepare_scratch_mount_root(workspace: &Path, mount_root: &Path) -> Result<(), StorageError> {
+    let meta = fs::symlink_metadata(workspace).map_err(|e| io_err(workspace, e))?;
+    set_host_visible_permissions(mount_root, &meta)
+}
+
 /// Recursively copy `src` contents relative to `root` into `dst_root`.
 ///
 /// Directories and regular files are copied; symlinks/specials return
@@ -278,7 +285,7 @@ fn copy_tree(root: &Path, src: &Path, dst_root: &Path) -> Result<(), StorageErro
 
         if ft.is_dir() {
             fs::create_dir(&dst_path).map_err(|e| io_err(&dst_path, e))?;
-            fs::set_permissions(&dst_path, meta.permissions()).map_err(|e| io_err(&dst_path, e))?;
+            set_host_visible_permissions(&dst_path, &meta)?;
             copy_tree(root, &src_path, dst_root)?;
         } else if ft.is_file() {
             copy_regular_file_no_follow(&src_path, &dst_path, &meta)?;
@@ -386,7 +393,7 @@ fn walk_for_extract(
 
         if ft.is_dir() {
             fs::create_dir(&dst_path).map_err(|e| io_err(&dst_path, e))?;
-            fs::set_permissions(&dst_path, meta.permissions()).map_err(|e| io_err(&dst_path, e))?;
+            set_host_visible_permissions(&dst_path, &meta)?;
             staged.push(rel.to_path_buf());
             walk_for_extract(
                 mount_root,
@@ -409,6 +416,7 @@ fn walk_for_extract(
                 }
             }
             fs::copy(&src_path, &dst_path).map_err(|e| io_err(&src_path, e))?;
+            set_host_visible_permissions(&dst_path, &meta)?;
             *total_bytes = next_total;
             staged.push(rel.to_path_buf());
         } else {
@@ -438,8 +446,13 @@ fn copy_regular_file_no_follow(
         .map_err(|e| io_err(dst_path, e))?;
 
     io::copy(&mut src, &mut dst).map_err(|e| io_err(src_path, e))?;
-    fs::set_permissions(dst_path, meta.permissions()).map_err(|e| io_err(dst_path, e))?;
+    set_host_visible_permissions(dst_path, meta)?;
     Ok(())
+}
+
+fn set_host_visible_permissions(path: &Path, meta: &fs::Metadata) -> Result<(), StorageError> {
+    let mode = meta.permissions().mode() & HOST_VISIBLE_MODE_BITS;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|e| io_err(path, e))
 }
 
 fn admissibility_refused(path: &Path) -> StorageError {
@@ -516,6 +529,57 @@ mod tests {
             other => panic!("expected ExtractSizeExceeded, got {other:?}"),
         }
         assert!(!out.exists());
+    }
+
+    #[test]
+    fn build_stage_strips_setuid_bits_from_extracted_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mount_root = dir.path().join("mount");
+        let out = dir.path().join("out");
+        fs::create_dir_all(&mount_root).unwrap();
+        let source = mount_root.join("setuid_test");
+        fs::write(&source, b"payload").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o4755)).unwrap();
+
+        let (stage, _) = build_stage(&mount_root, &out, None).unwrap();
+
+        assert_mode_bits(stage.path().join("setuid_test"), 0o755);
+    }
+
+    #[test]
+    fn build_stage_strips_setgid_bits_from_extracted_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let mount_root = dir.path().join("mount");
+        let out = dir.path().join("out");
+        fs::create_dir_all(&mount_root).unwrap();
+        let source = mount_root.join("setgid_dir");
+        fs::create_dir(&source).unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o2755)).unwrap();
+
+        let (stage, _) = build_stage(&mount_root, &out, None).unwrap();
+
+        assert_mode_bits(stage.path().join("setgid_dir"), 0o755);
+    }
+
+    #[test]
+    fn scratch_mount_root_uses_workspace_root_mode_bits() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let mount_root = dir.path().join("mount");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&mount_root).unwrap();
+        fs::set_permissions(&workspace, fs::Permissions::from_mode(0o1777)).unwrap();
+        fs::set_permissions(&mount_root, fs::Permissions::from_mode(0o755)).unwrap();
+
+        prepare_scratch_mount_root(&workspace, &mount_root).unwrap();
+
+        assert_mode_bits(&mount_root, 0o777);
+    }
+
+    fn assert_mode_bits(path: impl AsRef<Path>, expected: u32) {
+        let path = path.as_ref();
+        let actual = fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(actual, expected, "{} mode", path.display());
     }
 
     #[test]

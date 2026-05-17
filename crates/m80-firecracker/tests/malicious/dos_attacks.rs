@@ -77,15 +77,18 @@ fn exec_error_with_timeout(
     std::thread::scope(|scope| {
         scope.spawn(|| {
             let err = running
-                .exec(ExecRequest {
-                    program: "/bin/true".into(),
-                    args: Vec::new(),
-                    cwd: None,
-                    env: None,
-                    stdin: None,
-                    timeout_ms: Some(5_000),
-                    streaming: false,
-                })
+                .exec_with_max_duration(
+                    ExecRequest {
+                        program: "/bin/true".into(),
+                        args: Vec::new(),
+                        cwd: None,
+                        env: None,
+                        stdin: None,
+                        timeout_ms: Some(5_000),
+                        streaming: false,
+                    },
+                    5_000,
+                )
                 .expect_err("malicious DoS mode must fail");
             tx.send(err).expect("send exec error");
         });

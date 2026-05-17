@@ -81,9 +81,23 @@ fn read_ownership_lock(lock_path: &Path) -> Result<OwnershipRecord, ()> {
     }
 }
 
-/// Returns `true` if `/proc/<pid>` exists (process is alive on Linux).
+/// Returns `true` if `/proc/<pid>` exists and is not a zombie/dead task.
 pub(crate) fn pid_is_alive(pid: u32) -> bool {
-    Path::new("/proc").join(pid.to_string()).exists()
+    let proc_dir = Path::new("/proc").join(pid.to_string());
+    let stat_path = proc_dir.join("stat");
+    match std::fs::read_to_string(stat_path) {
+        Ok(stat) => match proc_stat_state(&stat) {
+            Some('Z' | 'X') => false,
+            Some(_) => true,
+            None => proc_dir.exists(),
+        },
+        Err(_) => proc_dir.exists(),
+    }
+}
+
+fn proc_stat_state(stat: &str) -> Option<char> {
+    let (_comm, after_comm) = stat.rsplit_once(") ")?;
+    after_comm.chars().next()
 }
 
 /// RAII guard: removes `ownership.lock` when dropped.
@@ -101,7 +115,17 @@ pub(crate) struct LeaseGuard {
 
 impl Drop for LeaseGuard {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.lock_path);
+        match std::fs::remove_file(&self.lock_path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                tracing::warn!(
+                    path = %self.lock_path.display(),
+                    error = %err,
+                    "failed to remove run-dir ownership lock"
+                );
+            }
+        }
     }
 }
 
@@ -123,5 +147,30 @@ pub(crate) fn run_dir_liveness(run_dir: &Path) -> RunDirLiveness {
         Ok(record) if pid_is_alive(record.pid) => RunDirLiveness::Live,
         Ok(_) => RunDirLiveness::Dead,
         Err(()) => RunDirLiveness::Ambiguous,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proc_stat_state;
+
+    #[test]
+    fn proc_stat_state_parses_running_task() {
+        assert_eq!(proc_stat_state("123 (firecracker) S 1 2 3"), Some('S'));
+    }
+
+    #[test]
+    fn proc_stat_state_parses_zombie_task() {
+        assert_eq!(proc_stat_state("123 (firecracker) Z 1 2 3"), Some('Z'));
+    }
+
+    #[test]
+    fn proc_stat_state_uses_last_comm_close_paren() {
+        assert_eq!(proc_stat_state("123 (name with ) char) R 1 2 3"), Some('R'));
+    }
+
+    #[test]
+    fn proc_stat_state_rejects_malformed_stat() {
+        assert_eq!(proc_stat_state("123 firecracker S 1 2 3"), None);
     }
 }

@@ -5,6 +5,7 @@ use std::io;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 
+use m80_image_store::DEFAULT_STORE_ROOT;
 use nix::sys::stat::umask;
 
 use crate::error::JailerError;
@@ -30,13 +31,31 @@ impl Plan {
         }
         check_plan_basenames(&config.run_dir, &config.firecracker_bin)?;
 
-        // Reject any destination that can escape the jail root or expose
-        // host-kernel virtual filesystems inside the jail.
+        // Reject any destination that can escape the jail root, expose
+        // host-kernel virtual filesystems inside the jail, or collide with
+        // another bind destination. CreateInsideJail may share a destination
+        // with a later bind because that is the explicit "create mount point,
+        // then bind into it" pattern.
+        let mut bind_dests = BTreeSet::new();
         for binding in &config.bindings {
             if invalid_dest(&binding.dest) || is_hidden_kernel_dest(&binding.dest) {
                 return Err(JailerError::BindDestRejected {
                     src: binding.source.clone(),
                     dest: binding.dest.clone(),
+                });
+            }
+            if is_bind_mount_mode(binding.mode) && !bind_dests.insert(binding.dest.clone()) {
+                return Err(JailerError::BindDestRejected {
+                    src: binding.source.clone(),
+                    dest: binding.dest.clone(),
+                });
+            }
+            if binding.mode == BindMode::RoImageStore
+                && !image_store_source_has_default_root(&binding.source)
+            {
+                return Err(JailerError::BindSourceRejected {
+                    src: binding.source.clone(),
+                    expected_root: PathBuf::from(DEFAULT_STORE_ROOT),
                 });
             }
         }
@@ -65,9 +84,9 @@ impl Plan {
             }
         }
 
-        // Step 3: Ro/Rw bind mounts.
+        // Step 3: bind mounts.
         for binding in &config.bindings {
-            if binding.mode == BindMode::Ro || binding.mode == BindMode::Rw {
+            if is_bind_mount_mode(binding.mode) {
                 steps.push(PlanStep::Bind {
                     source: binding.source.clone(),
                     dest: jail_root.join(&binding.dest),
@@ -96,7 +115,7 @@ impl Plan {
     /// initial `jailer-state.json` in the run-dir on success. `Drop` on the
     /// returned [`MaterializedJail`] tears down the chroot.
     pub fn materialize(self) -> Result<MaterializedJail, JailerError> {
-        use nix::mount::{mount, MsFlags};
+        use nix::mount::mount;
         use nix::sys::stat::Mode;
         use nix::unistd::{chown, mkdir, Gid, Uid};
 
@@ -157,11 +176,7 @@ impl Plan {
                         mount_propagation_private = true;
                     }
 
-                    let mount_source =
-                        bind_mount_source(source).map_err(|io_source| JailerError::Io {
-                            path: source.clone(),
-                            source: io_source,
-                        })?;
+                    let mount_source = bind_mount_source_for_mode(source, *mode)?;
                     let source_meta =
                         std::fs::metadata(mount_source.as_path()).map_err(|io_source| {
                             JailerError::Io {
@@ -192,12 +207,12 @@ impl Plan {
                     })?;
                     materialized.bind_mounts.push(dest.clone());
 
-                    if *mode == BindMode::Ro {
+                    if is_read_only_bind_mode(*mode) {
                         mount(
                             None::<&str>,
                             dest.as_path(),
                             None::<&str>,
-                            bind_remount_flags() | MsFlags::MS_RDONLY,
+                            bind_remount_flags_for_mode(*mode),
                             None::<&str>,
                         )
                         .map_err(|e| JailerError::BindFailed {
@@ -312,6 +327,18 @@ fn is_hidden_kernel_dest(path: &Path) -> bool {
     )
 }
 
+fn is_bind_mount_mode(mode: BindMode) -> bool {
+    matches!(mode, BindMode::Ro | BindMode::RoImageStore | BindMode::Rw)
+}
+
+fn is_read_only_bind_mode(mode: BindMode) -> bool {
+    matches!(mode, BindMode::Ro | BindMode::RoImageStore)
+}
+
+fn image_store_source_has_default_root(source: &Path) -> bool {
+    source.is_absolute() && source.starts_with(Path::new(DEFAULT_STORE_ROOT))
+}
+
 fn bind_remount_flags() -> nix::mount::MsFlags {
     // MS_BIND is REQUIRED alongside MS_REMOUNT when remounting a bind-
     // mount: the kernel uses (MS_BIND|MS_REMOUNT) to disambiguate which
@@ -326,11 +353,43 @@ fn bind_remount_flags() -> nix::mount::MsFlags {
         | nix::mount::MsFlags::MS_NOSUID
 }
 
+fn bind_remount_flags_for_mode(mode: BindMode) -> nix::mount::MsFlags {
+    let flags = bind_remount_flags();
+    if is_read_only_bind_mode(mode) {
+        flags | nix::mount::MsFlags::MS_RDONLY
+    } else {
+        flags
+    }
+}
+
 fn bind_mount_source(source: &Path) -> Result<PathBuf, io::Error> {
     if is_proc_fd_path(source) {
         return Ok(source.to_path_buf());
     }
     std::fs::canonicalize(source)
+}
+
+fn bind_mount_source_for_mode(source: &Path, mode: BindMode) -> Result<PathBuf, JailerError> {
+    let mount_source = bind_mount_source(source).map_err(|io_source| JailerError::Io {
+        path: source.to_path_buf(),
+        source: io_source,
+    })?;
+    if mode == BindMode::RoImageStore {
+        let image_store_root =
+            std::fs::canonicalize(Path::new(DEFAULT_STORE_ROOT)).map_err(|io_source| {
+                JailerError::Io {
+                    path: PathBuf::from(DEFAULT_STORE_ROOT),
+                    source: io_source,
+                }
+            })?;
+        if !mount_source.starts_with(&image_store_root) {
+            return Err(JailerError::BindSourceRejected {
+                src: source.to_path_buf(),
+                expected_root: PathBuf::from(DEFAULT_STORE_ROOT),
+            });
+        }
+    }
+    Ok(mount_source)
 }
 
 fn is_proc_fd_path(source: &Path) -> bool {
@@ -403,6 +462,7 @@ pub(crate) fn write_file_no_follow(path: &Path, bytes: &[u8]) -> Result<(), Jail
 mod tests {
     use std::path::Path;
 
+    use crate::types::BindMode;
     use nix::mount::MsFlags;
 
     #[test]
@@ -419,6 +479,22 @@ mod tests {
             "bind_remount_flags() bitset changed; see crates/m80-jailer/src/plan.rs:282. \
              MS_BIND is required for remounting a bind mount; the earlier audit \
              regression m80-l020n.9 was wrong to remove it."
+        );
+    }
+
+    #[test]
+    fn shared_image_store_bind_remount_flags_include_readonly() {
+        let expected = MsFlags::MS_BIND
+            | MsFlags::MS_REMOUNT
+            | MsFlags::MS_NODEV
+            | MsFlags::MS_NOEXEC
+            | MsFlags::MS_NOSUID
+            | MsFlags::MS_RDONLY;
+
+        assert_eq!(
+            super::bind_remount_flags_for_mode(BindMode::RoImageStore),
+            expected,
+            "shared image-store binds must remount read-only"
         );
     }
 

@@ -9,6 +9,7 @@ indefinitely waiting for the missing bytes. It surfaces the under-read as:
 ```text
 FcError::Protocol(WireProtocolError::DisconnectBeforeTerminal {
     context: "streaming exec",
+    cause: DisconnectCause::MidStreamEof,
 })
 ```
 

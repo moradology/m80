@@ -24,13 +24,18 @@ use generated::{
     WireFileWriteBeginResponse, WireFileWriteChunkRequest, WireFileWriteChunkResponse,
     WireFileWriteCommitRequest, WireFileWriteCommitResponse, WireFileWriteRequest,
     WireFileWriteResponse, WireGuestCpuMetrics, WireGuestMemMetrics, WireHandshakeMessage,
-    WireMetricsRequest, WireMetricsResponse, WirePingRequest, WirePongResponse, WirePtyBytes,
-    WirePtyControl, WirePtyExit, WirePtyRequest, WirePtyResize, WirePtySize, WireShutdownRequest,
-    WireShutdownResponse,
+    WireHookError, WireHookKind, WireHookResult, WireMetricsRequest, WireMetricsResponse,
+    WirePingRequest, WirePongResponse, WirePostRestoreHookRequest, WirePostRestoreHookResponse,
+    WirePtyBytes, WirePtyControl, WirePtyExit, WirePtyRequest, WirePtyResize, WirePtySize,
+    WireShutdownRequest, WireShutdownResponse,
 };
 
 /// Active protobuf payload variants.
 pub use generated::wire_envelope::Payload as WirePayload;
+/// Active protobuf post-restore hook error variants.
+pub(crate) use generated::wire_hook_error::Error as WireHookErrorKind;
+/// Active protobuf post-restore hook kind variants.
+pub(crate) use generated::wire_hook_kind::Kind as WireHookKindKind;
 /// Active protobuf PTY control event variants.
 pub(crate) use generated::wire_pty_control::Event as WirePtyControlEvent;
 
@@ -124,8 +129,8 @@ pub(crate) fn decode_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, ProtoErro
 /// envelope's documented set so a wire-level schema drift between host and
 /// guest surfaces as a typed error instead of silently being dropped.
 ///
-/// The range is `1..=4 | 10..=52` because: fields 1-4 are the envelope
-/// scalars (`version`, `kind`, `request_id`, `max_duration_ms`) and 10-52
+/// The range is `1..=4 | 10..=56` because: fields 1-4 are the envelope
+/// scalars (`version`, `kind`, `request_id`, `max_duration_ms`) and 10-54
 /// are the payload-oneof tags (one per concrete payload type). Add fields
 /// to either set if `wire.proto` grows.
 fn reject_unknown_envelope_fields(bytes: &[u8]) -> Result<(), ProtoError> {
@@ -146,8 +151,8 @@ fn reject_unknown_envelope_fields(bytes: &[u8]) -> Result<(), ProtoError> {
 
 fn known_envelope_field(field: u64) -> bool {
     // Fields 1-4: envelope scalars (version, kind, request_id, max_duration_ms).
-    // Fields 10-52: payload oneof tags (one per concrete payload type in wire.proto).
-    matches!(field, 1..=4 | 10..=52)
+    // Fields 10-56: payload oneof tags (one per concrete payload type in wire.proto).
+    matches!(field, 1..=4 | 10..=56)
 }
 
 fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64, ProtoError> {

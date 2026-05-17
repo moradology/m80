@@ -24,6 +24,7 @@
 mod fileops;
 mod hotplug;
 mod metrics;
+mod pmem;
 mod protocol_log;
 mod pty;
 mod streaming;
@@ -37,8 +38,8 @@ use m80_proto::{
     read_raw_frame, write_frame, CancelRequest, CancelResponse, CancelStatus, Envelope,
     ExecRequest, ExecResponse, ExecStatus, ExecTiming, Payload, PingRequest, PongResponse,
     RawEnvelope, ShutdownAction, ShutdownRequest, ShutdownResponse, PAYLOAD_KIND_CANCEL_REQUEST,
-    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_PING_REQUEST, PAYLOAD_KIND_PTY_REQUEST,
-    PAYLOAD_KIND_SHUTDOWN_REQUEST,
+    PAYLOAD_KIND_EXEC_REQUEST, PAYLOAD_KIND_PING_REQUEST, PAYLOAD_KIND_POST_RESTORE_HOOK_REQUEST,
+    PAYLOAD_KIND_PTY_REQUEST, PAYLOAD_KIND_SHUTDOWN_REQUEST,
 };
 
 use crate::{
@@ -137,8 +138,12 @@ where
         PAYLOAD_KIND_CANCEL_REQUEST => handle_cancel_no_exec(raw, &mut writer),
         PAYLOAD_KIND_SHUTDOWN_REQUEST => handle_shutdown(raw, &mut writer, received_at),
         PAYLOAD_KIND_PING_REQUEST => handle_ping(raw, &mut writer),
+        PAYLOAD_KIND_POST_RESTORE_HOOK_REQUEST => {
+            crate::post_restore::handle_post_restore(raw, &mut writer)
+        }
         kind if fileops::is_fileop_kind(kind) => fileops::handle_fileop(raw, reader, &mut writer),
         kind if hotplug::is_hotplug_kind(kind) => hotplug::handle_hotplug(raw, reader, &mut writer),
+        kind if pmem::is_pmem_kind(kind) => pmem::handle_pmem(raw, reader, &mut writer),
         kind if metrics::is_metrics_kind(kind) => metrics::handle_metrics(raw, reader, &mut writer),
         other => {
             metrics::record_error();

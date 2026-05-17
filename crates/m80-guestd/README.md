@@ -32,8 +32,8 @@ manifest/preflight boundary; once a VM is running, any binary inside the guest
 that can speak the protocol can emit syntactically valid ready and response
 frames.
 
-Exec, PTY, file-op, metrics, ping, and drive responses are therefore guest
-statements, not host-attested facts. A compromised guestd can forge an
+Exec, PTY, file-op, metrics, ping, drive, pmem, and post-restore hook responses are therefore
+guest statements, not host-attested facts. A compromised guestd can forge an
 `ExecResponse` or hide guest-side state. Adapter consumers that need result
 integrity must verify it outside m80's generic VM mechanics, for example by
 checking signed artifacts, reproducible output, or another application-level
@@ -63,7 +63,7 @@ proof.
   connect back to the host ready port, then loop on `accept()`.
 - On each accepted connection:
   1. Read one
-     `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | PingRequest | DriveMountRequest | DriveDetachRequest | ShutdownRequest>`
+     `m80-proto::Envelope<ExecRequest | PtyRequest | file-op | MetricsRequest | PingRequest | DriveMountRequest | DriveDetachRequest | PmemMountRequest | PostRestoreHookRequest | ShutdownRequest>`
      (fail closed on version mismatch).
   2. For `ExecRequest` / `PtyRequest`, route workload command construction
      through guestd's shared workload broker seam, then spawn the child process
@@ -100,15 +100,33 @@ proof.
   10. If the request is `DriveDetachRequest`, sync guest filesystems, unmount
      each requested guest mount path, and return one `DriveDetachStatus` per
      device. Already-unmounted paths return `NotMounted`.
-  11. For exec / PTY, apply the request's `timeout_ms` budget; on expiry,
+  11. If the request is `PmemMountRequest`, validate each `/dev/pmem<N>` and
+      admitted `/opt/m80-layers/<name>` mount path, mount erofs read-only with
+      `dax=always`, assert DAX through `/proc/mounts`, and return one
+      `PmemMountStatus` per device.
+  12. If the request is `PostRestoreHookRequest`, treat receipt as the
+      current stripped-profile restore observation, write the host-provided
+      32-byte restore nonce to `/dev/urandom`, call `RNDRESEEDCRNG`, then run
+      the closed hook list sequentially. `ReseedSystemdRandomSeed` rewrites
+      `/var/lib/systemd/random-seed` only when that file exists;
+      `RegenMachineId` rewrites `/etc/machine-id`; `SetHostname` validates the
+      hostname again, calls `sethostname(2)`, and writes `/etc/hostname`.
+      First failure aborts remaining hooks and returns one typed `HookError`.
+      An empty hook list still mixes the nonce and reseeds the kernel CRNG;
+      missing systemd random-seed state is normal for non-systemd guests.
+      Image-specific uniqueness work such as SSH host-key regeneration or
+      application PRNG cache flushing requires a future typed hook variant.
+      The current profile never reads
+      `/sys/class/misc/vmgenid/generation_counter`.
+  13. For exec / PTY, apply the request's `timeout_ms` budget; on expiry,
      terminate the child process group.
-  12. For exec / PTY, reap, build the terminal response, and write it back as
+  14. For exec / PTY, reap, build the terminal response, and write it back as
      one or more `m80-proto` envelopes. Direct file-op, metrics, and ping
      requests write their direct response without spawning a child.
-  13. Exec, PTY, file-op, and shutdown paths sync filesystems before close so
-      post-stop change extraction sees the final state. Metrics and ping are
-      read-only and do not force a filesystem sync.
-  14. Close.
+  15. Exec, PTY, file-op, and shutdown paths sync filesystems before close so
+      post-stop change extraction sees the final state. Metrics, ping, pmem
+      mount, and post-restore hooks do not force a filesystem sync.
+  16. Close.
 - Concurrent connections per VM are **not supported in v0.1**. The
   daemon serializes (`accept()` returns one at a time, processes,
   closes, accepts again).

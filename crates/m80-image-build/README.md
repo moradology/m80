@@ -173,8 +173,9 @@ Files:
 - `kernel-builder/m80-stripped.config` — canonical keep/drop config per
   `docs/design/stripped-kernel.md`. Contains `CONFIG_OVERLAY_FS=y` and
   `CONFIG_OVERLAY_FS_XINO_AUTO=y` (required by m80-f2zc.5), built-in erofs
-  support for `minimal-erofs`, plus the cgroup/tmpfs/event primitives required
-  for Ubuntu systemd to mount its API filesystems.
+  support for `minimal-erofs`, built-in virtio-pmem / libnvdimm / filesystem
+  DAX support for pmem-backed erofs layers, plus the cgroup/tmpfs/event
+  primitives required for Ubuntu systemd to mount its API filesystems.
 - `kernel-builder/build.sh` — copies config, runs `olddefconfig`, builds
   vmlinux, strips symbol tables, prints config sha, copies output to `/out`.
 - `kernels/` — gitignored binary output directory.

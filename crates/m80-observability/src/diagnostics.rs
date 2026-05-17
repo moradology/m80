@@ -201,6 +201,11 @@ pub enum PhaseOutcome {
     Err {
         /// Error class, not the full free-text error message.
         class: String,
+        /// Stable variant name for finite error enums when available.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        variant: Option<String>,
+        /// Human-readable error display string.
+        display: String,
     },
 }
 

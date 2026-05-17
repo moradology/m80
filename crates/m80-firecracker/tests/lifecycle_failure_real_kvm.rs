@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError, SandboxConfig, SnapshotPaths};
@@ -49,9 +49,10 @@ fn api_socket_timeout_cleans_partial_state() {
     assert_api_socket_timeout(err);
     assert!(
         !run_dir.exists(),
-        "api socket timeout must remove partial run-dir: {}",
+        "api socket timeout must move partial run-dir out of live path: {}",
         run_dir.display()
     );
+    assert_failed_launch_preserved(&discovery.run_root, &vm_id, "ApiSocketTimeout");
 
     let admitted_after_timeout = backend
         .admit(default_config("api-sock-to-reuse"))
@@ -98,9 +99,10 @@ fn cgroup_create_failure_mid_launch_cleans_partial_state_and_releases_permit() {
     assert_cgroup_error(err);
     assert!(
         !run_dir.exists(),
-        "cgroup create failure must remove partial run-dir: {}",
+        "cgroup create failure must move partial run-dir out of live path: {}",
         run_dir.display()
     );
+    assert_failed_launch_preserved(&discovery.run_root, &vm_id, "Cgroup");
     assert_no_process_cmdline_contains(&fake_name);
 
     let admitted_after_failure = backend
@@ -133,9 +135,10 @@ fn guestd_not_ready_timeout_cleans_partial_state() {
     assert_guestd_timeout(err);
     assert!(
         !run_dir.exists(),
-        "guestd ready timeout must remove partial cold-launch run-dir: {}",
+        "guestd ready timeout must move partial cold-launch run-dir out of live path: {}",
         run_dir.display()
     );
+    assert_failed_launch_preserved(&discovery.run_root, &vm_id, "GuestdReadyTimeout");
 
     let mut running = launch_healthy(&backend, "gnr-cold-r");
     assert_exec_ok(&mut running, "printf cold-reuse-ok");
@@ -188,9 +191,10 @@ fn restore_guestd_not_ready_timeout_cleans_partial_state() {
     assert_guestd_timeout(err);
     assert!(
         !restore_run_dir.exists(),
-        "guestd ready timeout must remove partial restore run-dir: {}",
+        "guestd ready timeout must move partial restore run-dir out of live path: {}",
         restore_run_dir.display()
     );
+    assert_failed_launch_preserved(&discovery.run_root, &restore_vm_id, "GuestdReadyTimeout");
 
     let mut running = launch_healthy(&backend, "gnr-rest-r");
     assert_exec_ok(&mut running, "printf restore-reuse-ok");
@@ -215,10 +219,17 @@ fn make_backend_config_with_cgroup(
     BackendConfig::builder(discovery)
         .max_concurrent_vms(1)
         .run_root(run_root)
-        .jail_uid(3000)
-        .jail_gid(3000)
+        .jail_uid(jail_id_from_env("M80_JAIL_UID", 3000))
+        .jail_gid(jail_id_from_env("M80_JAIL_GID", 3000))
         .cgroup_mode(cgroup_mode)
         .build()
+}
+
+fn jail_id_from_env(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
 }
 
 fn default_config(vm_id: &str) -> SandboxConfig {
@@ -369,6 +380,38 @@ fn assert_cgroup_error(err: FcError) {
     assert!(
         matches!(err, FcError::Cgroup(_)),
         "expected Cgroup error, got {err:?}"
+    );
+}
+
+fn assert_failed_launch_preserved(run_root: &Path, vm_id: &str, expected_variant: &str) {
+    let preserved_parent = run_root.join(".preserved");
+    let preserved = std::fs::read_dir(&preserved_parent)
+        .unwrap_or_else(|err| panic!("read {}: {err}", preserved_parent.display()))
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(vm_id))
+        })
+        .unwrap_or_else(|| panic!("no preserved run-dir found for {vm_id}"));
+
+    let summary_path = preserved.join("failure_summary.json");
+    let summary: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&summary_path)
+            .unwrap_or_else(|err| panic!("read {}: {err}", summary_path.display())),
+    )
+    .unwrap_or_else(|err| panic!("parse {}: {err}", summary_path.display()));
+    assert_eq!(summary["vm_id"], vm_id);
+    assert_eq!(summary["error_variant"], expected_variant);
+    assert!(summary["failed_phase"]
+        .as_str()
+        .is_some_and(|s| !s.is_empty()));
+    assert!(
+        summary["error_display"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()),
+        "summary missing error_display: {summary}"
     );
 }
 

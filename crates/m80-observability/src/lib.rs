@@ -11,6 +11,8 @@ mod health;
 mod probe;
 #[cfg(any(feature = "_test_internal", test))]
 mod prometheus;
+/// Canonical tracing span names and field schemas for VM-mechanics surfaces.
+pub mod spans;
 
 use std::io;
 use std::path::PathBuf;
@@ -23,7 +25,12 @@ pub use diagnostics::{
 /// so integration tests can import them without widening the default public
 /// surface.
 #[cfg(feature = "_test_internal")]
-pub use health::{aggregate_health, render_health_json, HealthSnapshot, OpsMetrics};
+pub use health::{
+    aggregate_health, render_health_json, DurationHistogram, HealthSnapshot, LeaseAttribution,
+    MetricLabelError, MetricLabelValue, OpsMetrics, PmemLayerCountBySharing, PmemSharingLabel,
+    PostRestoreHookDuration, PostRestoreHookVariantLabel, ScratchSourceLabel,
+    TemplateCountByFreshness, TemplateFreshnessLabel,
+};
 #[cfg(feature = "_test_internal")]
 pub use probe::{probe, VmHealth, VmProbeRecord};
 #[cfg(feature = "_test_internal")]

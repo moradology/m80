@@ -13,7 +13,7 @@ const VSOCK_SOCKET: &str = "vsock.sock";
 /// One per-VM probe record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct VmProbeRecord {
+pub struct VmProbeRecord {
     /// Health classification.
     pub health: VmHealth,
     /// Path of the run-dir.
@@ -35,7 +35,7 @@ pub(crate) struct VmProbeRecord {
 /// Health classification produced by the probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub(crate) enum VmHealth {
+pub enum VmHealth {
     /// Live but with degraded indicators.
     Degraded,
     /// Process tree gone; residue remains.
@@ -47,7 +47,7 @@ pub(crate) enum VmHealth {
 }
 
 /// Probe over a run-root and emit one record per owned VM.
-pub(crate) fn probe(run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError> {
+pub fn probe(run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError> {
     let mut records = Vec::new();
     if !run_root.exists() {
         return Ok(records);

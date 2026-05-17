@@ -235,7 +235,33 @@ pub fn capture(req: CaptureRequest) -> Result<(), SnapshotError> {
 /// removed for a reason other than `NotFound`.
 /// Returns [`SnapshotError::Client`] if a REST call fails.
 pub fn restore(req: RestoreRequest) -> Result<(), SnapshotError> {
-    verify_snapshot_manifest(&req.host_paths, &req.expected_firecracker_version)?;
+    restore_inner(req, RestoreVerification::VerifyManifest)
+}
+
+/// Load a snapshot whose manifest and artifact identity were already verified
+/// by a higher-level immutable store.
+///
+/// This is intended for content-addressed template bodies that were hashed at
+/// commit time and pinned before restore. It still removes stale vsock state
+/// and issues the same Firecracker load/resume calls as [`restore`], but it
+/// skips the per-restore full artifact hash.
+pub fn restore_preverified(req: RestoreRequest) -> Result<(), SnapshotError> {
+    restore_inner(req, RestoreVerification::Preverified)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RestoreVerification {
+    VerifyManifest,
+    Preverified,
+}
+
+fn restore_inner(
+    req: RestoreRequest,
+    verification: RestoreVerification,
+) -> Result<(), SnapshotError> {
+    if verification == RestoreVerification::VerifyManifest {
+        verify_snapshot_manifest(&req.host_paths, &req.expected_firecracker_version)?;
+    }
 
     match std::fs::remove_file(&req.vsock_uds) {
         Ok(()) => {}

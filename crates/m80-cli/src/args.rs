@@ -167,6 +167,20 @@ pub enum Cmd {
         action: WarmAction,
     },
 
+    /// Manage content-addressed image-store artifacts.
+    Image {
+        /// Image-store action.
+        #[command(subcommand)]
+        action: ImageAction,
+    },
+
+    /// Manage snapshot-template store artifacts.
+    Template {
+        /// Snapshot-template action.
+        #[command(subcommand)]
+        action: TemplateAction,
+    },
+
     /// Print binary version, protocol version, and Firecracker pin.
     Version,
 }
@@ -189,6 +203,187 @@ pub enum WritebackMode {
     OnSuccess,
     /// Write workspace changes back even when the guest exits non-zero.
     Always,
+}
+
+/// `m80 image` sub-actions.
+#[derive(Debug, Subcommand)]
+pub enum ImageAction {
+    /// Build or import an image artifact into an image store.
+    Build(ImageBuildArgs),
+    /// Report or execute image-store garbage collection.
+    Gc(ImageGcArgs),
+    /// List image artifacts in a store.
+    List(ImageStoreArgs),
+    /// Show one image digest.
+    Show(ImageDigestArgs),
+    /// Remove one image digest after reference checks pass.
+    Rm(ImageRmArgs),
+    /// Verify stored bytes and metadata for one image digest.
+    Verify(ImageDigestArgs),
+}
+
+/// Arguments for `m80 image build`.
+#[derive(Debug, Args)]
+pub struct ImageBuildArgs {
+    /// Operator label echoed in command output; images are stored by digest.
+    pub name: String,
+
+    /// Source directory to build, or pre-built artifact file to import.
+    #[arg(long, value_name = "PATH")]
+    pub source: PathBuf,
+
+    /// Image-store root to write.
+    #[arg(long = "out", value_name = "PATH")]
+    pub out: PathBuf,
+
+    /// Filesystem artifact kind.
+    #[arg(long, value_enum, default_value = "erofs")]
+    pub kind: ImageKindArg,
+}
+
+/// Arguments for `m80 image gc`.
+#[derive(Debug, Args)]
+pub struct ImageGcArgs {
+    /// Image-store root.
+    #[arg(long, value_name = "PATH", default_value = "/var/lib/m80-images")]
+    pub store: PathBuf,
+
+    /// Snapshot-template store root checked for committed image references.
+    #[arg(
+        long = "template-store",
+        value_name = "PATH",
+        default_value = "/var/lib/m80/templates"
+    )]
+    pub template_store: PathBuf,
+
+    /// Lowercase sha256 image digest to retain. May be repeated.
+    #[arg(long = "keep", value_name = "DIGEST")]
+    pub keep: Vec<String>,
+
+    /// Newline-delimited lowercase sha256 digests to retain.
+    #[arg(long = "pin-file", value_name = "PATH")]
+    pub pin_file: Option<PathBuf>,
+
+    /// Do not delete artifacts newer than this age, for example 30s, 10m, 6h, or 7d.
+    #[arg(long = "min-age", value_name = "DURATION")]
+    pub min_age: Option<String>,
+
+    /// Delete candidates. Omitted means report-only dry run.
+    #[arg(long)]
+    pub execute: bool,
+}
+
+/// Shared image-store path argument.
+#[derive(Debug, Args)]
+pub struct ImageStoreArgs {
+    /// Image-store root.
+    #[arg(long, value_name = "PATH", default_value = "/var/lib/m80-images")]
+    pub store: PathBuf,
+}
+
+/// Arguments for image commands that operate on one digest.
+#[derive(Debug, Args)]
+pub struct ImageDigestArgs {
+    /// Lowercase sha256 image digest.
+    pub digest: String,
+
+    /// Image-store root.
+    #[arg(long, value_name = "PATH", default_value = "/var/lib/m80-images")]
+    pub store: PathBuf,
+}
+
+/// Arguments for `m80 image rm`.
+#[derive(Debug, Args)]
+pub struct ImageRmArgs {
+    /// Lowercase sha256 image digest.
+    pub digest: String,
+
+    /// Image-store root.
+    #[arg(long, value_name = "PATH", default_value = "/var/lib/m80-images")]
+    pub store: PathBuf,
+
+    /// Snapshot-template store root checked for references before removal.
+    #[arg(
+        long = "template-store",
+        value_name = "PATH",
+        default_value = "/var/lib/m80/templates"
+    )]
+    pub template_store: PathBuf,
+}
+
+/// CLI value for image artifact kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ImageKindArg {
+    /// Erofs read-only filesystem image.
+    Erofs,
+    /// Ext4 filesystem image.
+    Ext4,
+}
+
+impl From<ImageKindArg> for m80_image_store::ImageKind {
+    fn from(value: ImageKindArg) -> Self {
+        match value {
+            ImageKindArg::Erofs => Self::Erofs,
+            ImageKindArg::Ext4 => Self::Ext4,
+        }
+    }
+}
+
+/// `m80 template` sub-actions.
+#[derive(Debug, Subcommand)]
+pub enum TemplateAction {
+    /// Build a snapshot template from a BootSpec.
+    Build(TemplateBuildArgs),
+    /// List templates in a store.
+    List(TemplateStoreArgs),
+    /// Show one committed template manifest.
+    Show(TemplateFingerprintArgs),
+    /// Prune invalidated templates when a BootSpec is supplied.
+    Prune(TemplatePruneArgs),
+    /// Remove one unpinned template.
+    Rm(TemplateFingerprintArgs),
+}
+
+/// Arguments for `m80 template build`.
+#[derive(Debug, Args)]
+pub struct TemplateBuildArgs {
+    /// Operator label echoed in command output; templates are stored by fingerprint.
+    pub name: String,
+
+    /// BootSpec YAML or JSON path.
+    #[arg(long = "boot-spec", value_name = "PATH")]
+    pub boot_spec: PathBuf,
+}
+
+/// Shared snapshot-template store path argument.
+#[derive(Debug, Args)]
+pub struct TemplateStoreArgs {
+    /// Snapshot-template store root.
+    #[arg(long, value_name = "PATH", default_value = "/var/lib/m80/templates")]
+    pub store: PathBuf,
+}
+
+/// Arguments for commands operating on one template fingerprint.
+#[derive(Debug, Args)]
+pub struct TemplateFingerprintArgs {
+    /// Lowercase 64-character template fingerprint.
+    pub fingerprint: String,
+
+    /// Snapshot-template store root.
+    #[arg(long, value_name = "PATH", default_value = "/var/lib/m80/templates")]
+    pub store: PathBuf,
+}
+
+/// Arguments for `m80 template prune`.
+#[derive(Debug, Args)]
+pub struct TemplatePruneArgs {
+    /// Snapshot-template store root.
+    #[arg(long, value_name = "PATH", default_value = "/var/lib/m80/templates")]
+    pub store: PathBuf,
+
+    /// BootSpec YAML or JSON used to compute the current live template inputs.
+    #[arg(long = "boot-spec", value_name = "PATH")]
+    pub boot_spec: Option<PathBuf>,
 }
 
 /// `m80 warm` sub-actions.

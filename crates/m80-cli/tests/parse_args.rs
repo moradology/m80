@@ -5,7 +5,10 @@
 //! Behavior capture: bead m80-lt15.1 (CLI command contract).
 
 use clap::Parser;
-use m80_cli::{Cli, Cmd, ConfigAction, EgressMode, QuickstartArgs, WarmAction, WritebackMode};
+use m80_cli::{
+    Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageKindArg, QuickstartArgs, TemplateAction,
+    WarmAction, WritebackMode,
+};
 
 // ---- run ----
 
@@ -440,6 +443,212 @@ fn parse_warm_status_drain_disable_shapes() {
         disable.subcommand,
         Cmd::Warm {
             action: WarmAction::Disable
+        }
+    ));
+}
+
+// ---- image ----
+
+#[test]
+fn parse_image_build_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "image",
+        "build",
+        "rust-toolchain",
+        "--source",
+        "/tmp/toolchain",
+        "--out",
+        "/var/lib/m80-images",
+    ])
+    .unwrap();
+
+    match cli.subcommand {
+        Cmd::Image {
+            action: ImageAction::Build(args),
+        } => {
+            assert_eq!(args.name, "rust-toolchain");
+            assert_eq!(args.source, std::path::PathBuf::from("/tmp/toolchain"));
+            assert_eq!(args.out, std::path::PathBuf::from("/var/lib/m80-images"));
+            assert_eq!(args.kind, ImageKindArg::Erofs);
+        }
+        _ => panic!("expected image build"),
+    }
+}
+
+#[test]
+fn parse_image_list_show_rm_verify_shapes() {
+    let digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    let list = Cli::try_parse_from(["m80", "image", "list", "--store", "/tmp/images"]).unwrap();
+    assert!(matches!(
+        list.subcommand,
+        Cmd::Image {
+            action: ImageAction::List(_)
+        }
+    ));
+
+    let gc = Cli::try_parse_from([
+        "m80",
+        "image",
+        "gc",
+        "--store",
+        "/tmp/images",
+        "--template-store",
+        "/tmp/templates",
+        "--keep",
+        digest,
+        "--pin-file",
+        "/tmp/pins.txt",
+        "--min-age",
+        "7d",
+        "--execute",
+    ])
+    .unwrap();
+    match gc.subcommand {
+        Cmd::Image {
+            action: ImageAction::Gc(args),
+        } => {
+            assert_eq!(args.store, std::path::PathBuf::from("/tmp/images"));
+            assert_eq!(
+                args.template_store,
+                std::path::PathBuf::from("/tmp/templates")
+            );
+            assert_eq!(args.keep, [digest]);
+            assert_eq!(
+                args.pin_file,
+                Some(std::path::PathBuf::from("/tmp/pins.txt"))
+            );
+            assert_eq!(args.min_age.as_deref(), Some("7d"));
+            assert!(args.execute);
+        }
+        _ => panic!("expected image gc"),
+    }
+
+    let show =
+        Cli::try_parse_from(["m80", "image", "show", digest, "--store", "/tmp/images"]).unwrap();
+    assert!(matches!(
+        show.subcommand,
+        Cmd::Image {
+            action: ImageAction::Show(_)
+        }
+    ));
+
+    let rm = Cli::try_parse_from([
+        "m80",
+        "image",
+        "rm",
+        digest,
+        "--store",
+        "/tmp/images",
+        "--template-store",
+        "/tmp/templates",
+    ])
+    .unwrap();
+    assert!(matches!(
+        rm.subcommand,
+        Cmd::Image {
+            action: ImageAction::Rm(_)
+        }
+    ));
+
+    let verify =
+        Cli::try_parse_from(["m80", "image", "verify", digest, "--store", "/tmp/images"]).unwrap();
+    assert!(matches!(
+        verify.subcommand,
+        Cmd::Image {
+            action: ImageAction::Verify(_)
+        }
+    ));
+}
+
+// ---- template ----
+
+#[test]
+fn parse_template_build_shape() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "template",
+        "build",
+        "rust-warm",
+        "--boot-spec",
+        "/tmp/boot-spec.yaml",
+    ])
+    .unwrap();
+
+    match cli.subcommand {
+        Cmd::Template {
+            action: TemplateAction::Build(args),
+        } => {
+            assert_eq!(args.name, "rust-warm");
+            assert_eq!(
+                args.boot_spec,
+                std::path::PathBuf::from("/tmp/boot-spec.yaml")
+            );
+        }
+        _ => panic!("expected template build"),
+    }
+}
+
+#[test]
+fn parse_template_list_show_prune_rm_shapes() {
+    let fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    let list =
+        Cli::try_parse_from(["m80", "template", "list", "--store", "/tmp/templates"]).unwrap();
+    assert!(matches!(
+        list.subcommand,
+        Cmd::Template {
+            action: TemplateAction::List(_)
+        }
+    ));
+
+    let show = Cli::try_parse_from([
+        "m80",
+        "template",
+        "show",
+        fingerprint,
+        "--store",
+        "/tmp/templates",
+    ])
+    .unwrap();
+    assert!(matches!(
+        show.subcommand,
+        Cmd::Template {
+            action: TemplateAction::Show(_)
+        }
+    ));
+
+    let prune = Cli::try_parse_from([
+        "m80",
+        "template",
+        "prune",
+        "--store",
+        "/tmp/templates",
+        "--boot-spec",
+        "/tmp/boot-spec.yaml",
+    ])
+    .unwrap();
+    assert!(matches!(
+        prune.subcommand,
+        Cmd::Template {
+            action: TemplateAction::Prune(_)
+        }
+    ));
+
+    let rm = Cli::try_parse_from([
+        "m80",
+        "template",
+        "rm",
+        fingerprint,
+        "--store",
+        "/tmp/templates",
+    ])
+    .unwrap();
+    assert!(matches!(
+        rm.subcommand,
+        Cmd::Template {
+            action: TemplateAction::Rm(_)
         }
     ));
 }

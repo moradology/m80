@@ -13,6 +13,7 @@ use std::process::ExitStatus;
 
 use serde::{Deserialize, Serialize};
 
+mod reflink;
 mod rootfs;
 mod scratch;
 

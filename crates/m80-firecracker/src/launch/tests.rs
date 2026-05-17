@@ -13,6 +13,8 @@ use super::ready::kernel_console_timestamp_range_us;
 use super::*;
 use crate::WireProtocolError;
 
+const VALID_PMEM_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 fn write_executable(path: &Path, content: &str) {
     let mut file = std::fs::File::create(path).unwrap();
     file.write_all(content.as_bytes()).unwrap();
@@ -21,6 +23,76 @@ fn write_executable(path: &Path, content: &str) {
     let mut perms = std::fs::metadata(path).unwrap().permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(path, perms).unwrap();
+}
+
+fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
+    let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
+    let rootfs_path = rootfs.path().to_path_buf();
+    let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
+    let net_helper_bin = fake_net_helper(run_root);
+    m80_preflight::Discovery {
+        firecracker_bin: PathBuf::from("/tmp/firecracker"),
+        firecracker_seccomp_filter: PathBuf::from("/tmp/firecracker-seccomp-filter.bin"),
+        jailer_bin: PathBuf::from("/tmp/jailer"),
+        jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
+        net_helper_bin,
+        kernel: PathBuf::from("/tmp/vmlinux"),
+        rootfs: PathBuf::from("/tmp/rootfs.ext4"),
+        pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
+        manifest: m80_image_manifest::Manifest::new(
+            "/tmp/m80-guestd".into(),
+            "0".repeat(64),
+            "v1.0.0".to_owned(),
+            52,
+            m80_image_manifest::ImageKind::Minimal,
+            "/tmp/vmlinux".into(),
+            "1".repeat(64),
+            m80_image_manifest::KernelKind::Stock,
+            None,
+            "/tmp/rootfs.ext4".into(),
+            "2".repeat(64),
+            "M80_READY".to_owned(),
+            m80_image_manifest::RootfsFormat::Ext4,
+            None,
+            None,
+        ),
+        run_root: run_root.to_path_buf(),
+        privilege: m80_preflight::PrivilegeStatus::Root,
+        report: Vec::new(),
+    }
+}
+
+fn fake_net_helper(run_root: &Path) -> PathBuf {
+    std::fs::create_dir_all(run_root).expect("run root");
+    let path = run_root.join("m80-net-helper-test");
+    write_executable(
+        &path,
+        r#"#!/bin/sh
+while IFS= read -r _line; do
+  printf '%s\n' '{"status":"ok","success":{"kind":"empty"}}'
+done
+"#,
+    );
+    path
+}
+
+fn fake_backend(run_root: &Path) -> Arc<crate::Backend> {
+    let config = crate::BackendConfig::builder(fake_discovery(run_root))
+        .max_concurrent_vms(1)
+        .run_root(run_root)
+        .jail_uid(3000)
+        .jail_gid(3000)
+        .cgroup_mode(crate::CgroupMode::Disabled)
+        .build();
+    Arc::new(crate::Backend::new(config).expect("Backend::new"))
+}
+
+fn pmem_layer(name: &str) -> crate::PmemLayer {
+    let digest = crate::ImageDigest::parse(VALID_PMEM_DIGEST).expect("digest");
+    let image = crate::ErofsImageRef::from_digest(digest);
+    let mount_at =
+        crate::GuestMountPath::parse(&format!("/opt/m80-layers/{name}")).expect("mount path");
+    crate::PmemLayer::new(image, crate::PmemSharing::PerVm, mount_at)
 }
 
 #[test]
@@ -44,6 +116,73 @@ fn phase_1_run_root_prep_creates_owner_only_run_dir() {
 
     let mode = std::fs::metadata(run_dir).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, RUN_DIR_MODE);
+}
+
+#[test]
+fn launch_rejects_duplicate_pmem_mounts_before_run_dir_creation() {
+    let run_root = tempfile::tempdir().expect("run root");
+    let vm_id = "pmem-dupe";
+    let backend = fake_backend(run_root.path());
+    let config = SandboxConfig {
+        vm_id: Some(vm_id.to_owned()),
+        pmem_layers: vec![pmem_layer("rust"), pmem_layer("rust")],
+        ..SandboxConfig::default()
+    };
+    let sandbox = backend.admit(config).expect("admit");
+
+    let err = match sandbox.launch() {
+        Err(err) => err,
+        Ok(_) => panic!("launch should reject duplicate pmem mounts"),
+    };
+
+    assert!(
+        matches!(
+            err,
+            FcError::Config(ConfigError::MountPathDuplicated { .. })
+        ),
+        "got {err:?}"
+    );
+    assert!(
+        !run_root.path().join(vm_id).exists(),
+        "invalid pmem launch must fail before creating the run dir"
+    );
+}
+
+#[test]
+fn phase_1_failure_preserves_existing_run_dir_with_summary() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().join("vm-phase1");
+    std::fs::create_dir(&run_dir).unwrap();
+    let err = FcError::InvalidVmId {
+        vm_id: "vm-phase1".to_owned(),
+        reason: "test failure".to_owned(),
+    };
+
+    preserve_launch_failure_artifact_if_run_dir_exists(
+        &run_dir,
+        "vm-phase1",
+        "phase_1_run_root_prep",
+        Some("req-phase1"),
+        &err,
+        false,
+    );
+
+    assert!(!run_dir.exists());
+    let preserved_parent = dir.path().join(".preserved");
+    let preserved: Vec<_> = std::fs::read_dir(&preserved_parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(preserved.len(), 1);
+
+    let summary =
+        std::fs::read_to_string(preserved[0].join(crate::diagnostics::FAILURE_SUMMARY_FILE_NAME))
+            .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&summary).unwrap();
+    assert_eq!(value["vm_id"], "vm-phase1");
+    assert_eq!(value["failed_phase"], "phase_1_run_root_prep");
+    assert_eq!(value["error_variant"], "InvalidVmId");
+    assert_eq!(value["request_id"], "req-phase1");
 }
 
 #[test]
@@ -200,6 +339,48 @@ fn snapshot_binding_creates_jail_destination_before_bind() {
     );
     assert_eq!(bindings[1].dest, PathBuf::from(SNAPSHOT_BIND_DEST));
     assert_eq!(bindings[1].mode, BindMode::Ro);
+}
+
+#[test]
+fn pmem_backings_are_bound_ro_to_slot_jail_paths() {
+    let mut bindings = Vec::new();
+    let backings = vec![crate::types::ResolvedPmemBacking {
+        host_path: PathBuf::from("/var/lib/m80-run/vm/pmem/0.img"),
+        jail_basename: "pmem.0.img".to_owned(),
+        sharing: crate::PmemSharing::PerVm,
+    }];
+
+    push_pmem_backing_bindings(&mut bindings, &backings);
+
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(
+        bindings[0].source,
+        PathBuf::from("/var/lib/m80-run/vm/pmem/0.img")
+    );
+    assert_eq!(bindings[0].dest, PathBuf::from("pmem.0.img"));
+    assert_eq!(bindings[0].mode, BindMode::Ro);
+}
+
+#[test]
+fn shared_pmem_backings_are_bound_with_image_store_ro_mode() {
+    let mut bindings = Vec::new();
+    let backings = vec![crate::types::ResolvedPmemBacking {
+        host_path: PathBuf::from("/var/lib/m80-images/58/digest/image.erofs"),
+        jail_basename: "pmem.0.img".to_owned(),
+        sharing: crate::PmemSharing::Shared(crate::TrustDomainAck::new(
+            crate::TrustReason::SameOperator,
+        )),
+    }];
+
+    push_pmem_backing_bindings(&mut bindings, &backings);
+
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(
+        bindings[0].source,
+        PathBuf::from("/var/lib/m80-images/58/digest/image.erofs")
+    );
+    assert_eq!(bindings[0].dest, PathBuf::from("pmem.0.img"));
+    assert_eq!(bindings[0].mode, BindMode::RoImageStore);
 }
 
 #[test]

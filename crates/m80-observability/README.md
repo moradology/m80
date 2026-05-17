@@ -37,7 +37,8 @@ adapter, not below.
   typed `exit_reason`.
 - Phase timings are first-class events: every instrumented phase emits
   `phase_started` and `phase_completed` records with a typed completion
-  outcome.
+  outcome. Failed phase outcomes carry an error class, optional finite variant
+  name, and display string.
 - Stop evidence uses typed `ExitReason` values such as `NormalStop`,
   `ForceKill`, and `SnapshotCapture`.
 - Lines are `serde_json`-encoded, one event per line, append-only,
@@ -71,6 +72,34 @@ adapter, not below.
   sampled from a running VM. When present, `render_prometheus` emits
   `m80_guest_cpu_*`, `m80_guest_mem_*`, `m80_guest_requests_total`, and
   `m80_guest_errors_total`.
+- Layered-rootfs and snapshot-template metric families are renderable from
+  synthetic `OpsMetrics` fields:
+  - `m80_pmem_layers_per_vm_count{sharing="per_vm"|"shared"}`
+  - `m80_template_count{freshness="fresh"|"invalidated"}`
+  - `m80_restore_latency_seconds` histogram with buckets at 50ms, 100ms,
+    150ms, 200ms, 500ms, and 1s.
+  - `m80_post_restore_hook_duration_seconds{hook_variant=...}` histogram.
+  - `m80_image_store_bytes`
+  - `m80_template_store_bytes`
+  - `m80_lease_attribution{template_fingerprint,pmem_digest_set,scratch_source}`
+- Metric labels use closed enums or bounded validated digest/fingerprint label
+  values. The render surface does not accept arbitrary caller strings as
+  labels.
+
+### Tracing span catalog
+
+- `spans::M80_SPAN_IMAGE_BUILD`
+- `spans::M80_SPAN_PMEM_ATTACH`
+- `spans::M80_SPAN_GUEST_DAX_MOUNT`
+- `spans::M80_SPAN_TEMPLATE_BUILD`
+- `spans::M80_SPAN_TEMPLATE_RESTORE`
+- `spans::M80_SPAN_POST_RESTORE_HOOK`
+- `spans::ALL_SPANS` carries the documented field schema and expected emit
+  sites for those names.
+
+The catalog is naming/schema metadata only. It does not install a subscriber,
+force a tracing backend, or turn VM-mechanics spans into adapter-level agent
+events. See `docs/behaviors/observability/spans.md`.
 
 ## Public surface
 
@@ -85,6 +114,9 @@ adapter, not below.
 - `VmEvent::with_exit_reason(reason)`.
 - `ObservabilityError` — public because diagnostics writer and
   `_test_internal` probe/health helpers return it directly.
+- `spans::{ALL_SPANS, M80_SPAN_*}` — canonical tracing span names and field
+  schema for image build, pmem attach, guest DAX mount, template build,
+  template restore, and post-restore hook execution.
 
 The following symbols have no production consumer in this workspace and are
 gated behind the `_test_internal` cargo feature. Integration tests enable the
@@ -93,6 +125,10 @@ stable default public surface.
 
 - `probe(...)`, `VmProbeRecord`, `VmHealth` (`_test_internal` only).
 - `aggregate_health(...)`, `HealthSnapshot`, `OpsMetrics` (`_test_internal` only).
+- Layered-rootfs metric support types such as `DurationHistogram`,
+  `PmemLayerCountBySharing`, `TemplateCountByFreshness`,
+  `PostRestoreHookDuration`, `LeaseAttribution`, and their closed label enums
+  (`_test_internal` only).
 - `render_prometheus(...)`, `render_health_json(...)` (`_test_internal` only).
 
 ## Non-goals
@@ -129,3 +165,8 @@ stable default public surface.
   triples for the expected VM health gauges, operational gauges, and guest-side
   counter/gauge families when a guest sample is present; no unknown metrics are
   emitted.
+- Layered-rootfs Prometheus families: synthetic `OpsMetrics` renders every
+  Phase E family, validates the 200ms restore-latency histogram bucket, and
+  rejects free-string label shapes before rendering.
+- Span catalog: default public-surface test asserts the catalog is non-empty,
+  every constant is present, and span names are unique.

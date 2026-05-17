@@ -1,4 +1,4 @@
-use m80_firecracker::{ConfigError, FcError};
+use m80_firecracker::FcError;
 
 #[test]
 fn caller_vm_id_shape_fails_before_admission_permit() {
@@ -11,6 +11,9 @@ fn caller_vm_id_shape_fails_before_admission_permit() {
         "bad/slash",
         "bad\\slash",
         "bad:colon",
+        ".",
+        "..",
+        "bad\0nul",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ] {
         let mut config = super::common::sandbox_config();
@@ -21,9 +24,12 @@ fn caller_vm_id_shape_fails_before_admission_permit() {
         assert!(
             matches!(
                 err,
-                FcError::Config(ConfigError::InvalidValue { field: "vm_id", .. })
+                FcError::InvalidVmId {
+                    vm_id: ref observed,
+                    ..
+                } if observed == vm_id
             ),
-            "expected vm_id ConfigError for {vm_id:?}, got {err:?}"
+            "expected InvalidVmId for {vm_id:?}, got {err:?}"
         );
     }
 

@@ -17,7 +17,9 @@ Open -> Data* -> Done|Error|Canceled
 
 Illegal transitions observed before the terminal frame fail closed:
 
-- A missing terminal frame before peer disconnect is `DisconnectBeforeTerminal`.
+- A missing terminal frame before peer disconnect is
+  `DisconnectBeforeTerminal` with a `DisconnectCause` naming the host-visible
+  cause after a short Firecracker PID-state confirmation.
 - A response envelope whose `request_id` is missing or belongs to another
   request is `RequestIdMismatch`.
 - Sequence gaps or repeats are `SequenceMismatch`.

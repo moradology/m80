@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 m80-proto.workspace = true
 m80-image-manifest.workspace = true
+m80-image-store.workspace = true
 m80-firecracker-client.workspace = true
 m80-vsock.workspace = true
 m80-jailer.workspace = true
@@ -22,9 +23,11 @@ m80-preflight.workspace = true
 m80-net-mode.workspace = true
 m80-net-outbound.workspace = true
 m80-snapshot.workspace = true
+m80-snapshot-template.workspace = true
 m80-observability.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 sha2.workspace = true
 hex.workspace = true
 thiserror.workspace = true
@@ -48,6 +51,10 @@ harness = false
 
 [[bench]]
 name = "warm_pool_allocation_latency"
+harness = false
+
+[[bench]]
+name = "snapshot_template_restore_latency"
 harness = false
 
 [[bench]]

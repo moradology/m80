@@ -19,6 +19,7 @@ name = "m80_guestd"
 path = "src/lib.rs"
 
 [dependencies]
+m80-guest-kernel.workspace = true
 m80-proto.workspace = true
 anyhow.workspace = true
 caps.workspace = true

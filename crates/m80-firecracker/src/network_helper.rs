@@ -198,7 +198,8 @@ struct NetworkHelperChild {
 
 impl NetworkHelperChild {
     fn spawn(path: &Path) -> Result<Self, NetworkHelperError> {
-        let mut child = Command::new(path)
+        let mut command = helper_command(path);
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -251,6 +252,18 @@ impl NetworkHelperChild {
             }),
         }
     }
+}
+
+#[cfg(test)]
+fn helper_command(path: &Path) -> Command {
+    let mut command = Command::new("sh");
+    command.arg(path);
+    command
+}
+
+#[cfg(not(test))]
+fn helper_command(path: &Path) -> Command {
+    Command::new(path)
 }
 
 impl Drop for NetworkHelperChild {
@@ -392,6 +405,7 @@ fn trim_frame_cr(frame: &mut Vec<u8>) {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write as _;
     use std::os::unix::fs::PermissionsExt as _;
 
     use m80_net_outbound::NetworkHelperFailureKind;
@@ -400,7 +414,10 @@ mod tests {
 
     fn write_helper_script(dir: &Path, body: &str) -> PathBuf {
         let path = dir.join("helper.sh");
-        std::fs::write(&path, body).unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(body.as_bytes()).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
         let mut perms = std::fs::metadata(&path).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&path, perms).unwrap();

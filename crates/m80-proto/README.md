@@ -93,6 +93,19 @@ The load-bearing wire invariants — the things consumers cannot derive from
   payload; `pong_response` carries `guest_unix_ms`, the guestd wall-clock
   timestamp in Unix milliseconds at handling time. The verb does not spawn a
   guest process.
+- **Pmem mount is a direct guest verb.** `pmem_mount_request` asks guestd to
+  mount already-attached `/dev/pmem<N>` devices at admitted guest layer paths.
+  `pmem_mount_response` returns one status per requested device, with bounded
+  `PmemMountError` values for device absence, mount failure, missing DAX,
+  invalid device path, invalid mount path, or I/O failure.
+- **Post-restore hooks are closed and host-sequenced.**
+  `post_restore_hook_request` carries a 32-byte host-generated restore nonce
+  plus ordered hook variants: reseed systemd random-seed, regenerate
+  machine-id, and set a validated hostname. Responses carry one typed result
+  per hook with bounded `HookError` values. There is no custom command, argv
+  passthrough, `Other(String)`, or generic hook payload. An empty hook list is
+  still a meaningful restore signal: guestd mixes the nonce and reseeds the
+  kernel CRNG before returning an empty success result list.
 - **No implicit event stream.** The protocol does not carry unsolicited OOM
   events or DNS proxy frames on the request/response channel. Those require
   explicit future payloads and a `PROTOCOL_VERSION` bump.
@@ -134,6 +147,18 @@ Drive hotplug types: `DriveMountRequest`, `DriveMountResponse`,
 VM-mechanics data only: Firecracker drive ids, guest mount paths, per-device
 status/error values, explicit guest block-device paths, and opaque tenant
 identity bytes.
+
+Pmem mount types: `PmemMountRequest`, `PmemMountResponse`, `PmemMountSpec`,
+`PmemMountStatus`, `PmemMountStatusKind`, `PmemMountError`, and
+`PAYLOAD_KIND_PMEM_MOUNT_REQUEST` / `PAYLOAD_KIND_PMEM_MOUNT_RESPONSE`. These
+carry VM-mechanics data only: guest pmem device path, guest mount path,
+per-device status/error values, and the opaque erofs image digest.
+
+Post-restore hook types: `PostRestoreHookRequest`,
+`PostRestoreHookResponse`, `HookKindWire`, `HookHostname`, `HookResultWire`,
+`HookStatus`, `HookError`, and `PAYLOAD_KIND_POST_RESTORE_HOOK_REQUEST` /
+`PAYLOAD_KIND_POST_RESTORE_HOOK_RESPONSE`. These carry VM-lifecycle data only:
+the restore nonce and the closed hook/result taxonomy.
 
 File-op exports: `FileReadRequest`, `FileReadChunk`,
 `FileReadResponse`, `FileWriteRequest`, `FileWriteResponse`,
@@ -191,6 +216,11 @@ that binary's sha256 before executing it. None of the other m80 crates.
   round-trips through `write_frame` + `read_frame` byte-equivalent.
 - `tests/hotplug_round_trip.rs` — drive mount/detach payloads round-trip,
   preserve partial-success statuses, and carry tenant identity as opaque bytes.
+- `tests/pmem_round_trip.rs` — pmem mount request/response payloads
+  round-trip and preserve typed failure statuses.
+- `tests/post_restore_hooks_round_trip.rs` — post-restore hook
+  request/response payloads round-trip, preserve exact 32-byte restore nonces,
+  validate hostnames on decode, and reject wrong-length nonces.
 - `tests/shutdown_round_trip.rs` — shutdown request/response payloads
   round-trip for every declared shutdown action.
 - Unit tests in-crate: `Envelope` kind/payload mismatch fails closed,

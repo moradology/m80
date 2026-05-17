@@ -45,9 +45,13 @@ base from one set of pages.
 
 - `Rootfs::prepare(base: &Path, overlay_dest: &Path, overlay_size_bytes: u64) -> Result<Rootfs, StorageError>`
   Ensures a run-root-local empty overlay template exists, then clones it
-  to `overlay_dest` with `cp --reflink=auto --sparse=always`, giving
-  reflink where available and sparse plain-copy fallback otherwise. The
-  returned `Rootfs` has `base_path()` set to the
+  to `overlay_dest` through a per-device reflink gate. Reflink-capable
+  filesystems use `cp --reflink=always --sparse=auto`; filesystems
+  classified as non-reflink, or probe failures, use
+  `cp --reflink=never --sparse=always` and emit one `m80_storage::rootfs`
+  byte-copy event per device per process. If a mandatory reflink clone is
+  rejected at runtime, `Rootfs::prepare` emits one warning for that call
+  and retries as a byte copy. The returned `Rootfs` has `base_path()` set to the
   caller-supplied shared base and `overlay_path()` set to the new
   per-VM overlay. **Caller is responsible for sha256 verification of
   `base` via `m80_image_manifest::Manifest::verify()` before calling
@@ -76,6 +80,9 @@ base from one set of pages.
   3. Walk and apply the admissibility scan: regular files and
      directories pass; symlinks → `RejectionReason::Symlink`; devices /
      fifos / sockets → `RejectionReason::SpecialFile`.
+     Extracted file and directory permissions preserve only host-visible
+     `0o777` bits; setuid, setgid, and sticky bits are stripped before
+     publishing the staged tree.
      When `max_extract_bytes` is set, the walk fails with
      `StorageError::ExtractSizeExceeded` before copying a regular file that
      would push total extracted bytes above the cap.
@@ -98,6 +105,11 @@ operates on the workspace, not the rootfs overlay.
 
 - All shell-outs (`mkfs.ext4`, `cp`, `fallocate`, `e2fsck`, `mount`, `umount`) bubble up
   exit codes as typed errors.
+- Reflink use is a runtime optimization, not a requirement. The byte-copy
+  overlay-template clone path remains permanent because ext4 production
+  hosts are valid. See
+  [`docs/behaviors/storage/reflink-rootfs.md`](../../docs/behaviors/storage/reflink-rootfs.md)
+  for the probe, memoization, and fallback observability contract.
 - Concurrency: `Rootfs` and `Scratch` are NOT thread-safe. The
   orchestrator serializes per-VM storage operations.
 
@@ -178,6 +190,11 @@ Root/loop-mount (`#[ignore]`, run with `sudo cargo test -- --ignored`):
 - `tests/scratch_image.rs` — behavior-capture fixtures for hydration.
 - `tests/change_extraction.rs` — behavior-capture fixtures for opt-in
   extraction and rollback on destination failure.
+
+Real-KVM smoke:
+- `M80_VERIFY_REFLINK_DIVERGENCE=1 ./scripts/smoke.sh launch-only` —
+  boots a VM, writes into the guest rootfs, and verifies the host overlay
+  diverges while the template allocation stays unchanged.
 
 ## Migration note (v0.1 → v0.1.x; landing in same release line)
 

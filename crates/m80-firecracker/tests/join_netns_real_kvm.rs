@@ -54,6 +54,7 @@ fn join_netns_routes_guest_traffic_through_caller_namespace() {
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })

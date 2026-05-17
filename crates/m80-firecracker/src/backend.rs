@@ -1,13 +1,15 @@
 //! [`Backend`] implementation: construction, admission, effective-config query,
 //! and stale run-root recovery.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tracing::warn;
 
+use m80_image_store::{ImageStore, DEFAULT_STORE_ROOT};
 use m80_jailer::inspect_run_dir;
+use m80_snapshot_template::{HookSpecSet, PinnedTemplate, TemplateInputs, TemplateStore};
 
 #[cfg(not(test))]
 use crate::capabilities::drop_parent_cap_net_admin;
@@ -55,6 +57,9 @@ impl Backend {
         if let Err(e) = backend.recover_stale_run_root(false) {
             warn!(err = %e, "Backend::new: stale run-root recovery failed");
         }
+        if let Err(e) = backend.sweep_stale_shared_pmem_refs() {
+            warn!(err = %e, "Backend::new: shared pmem ref sweep failed");
+        }
         Ok(backend)
     }
 
@@ -101,6 +106,7 @@ impl Backend {
             config,
             permit,
             backend: Arc::clone(self),
+            delete_run_dir_on_launch_error: false,
         })
     }
 
@@ -108,6 +114,26 @@ impl Backend {
     #[must_use]
     pub fn show_effective_config(&self) -> EffectiveConfig {
         self.effective.clone()
+    }
+
+    /// Compute the live snapshot-template input tuple for this backend and sandbox.
+    pub fn snapshot_template_inputs(
+        &self,
+        config: &SandboxConfig,
+        hooks: HookSpecSet,
+    ) -> Result<TemplateInputs, FcError> {
+        crate::warm_pool::template_inputs_for_current_host(self, config, hooks)
+    }
+
+    /// Look up or build a snapshot template for this backend and sandbox.
+    pub fn build_snapshot_template(
+        self: &Arc<Self>,
+        config: SandboxConfig,
+        hooks: HookSpecSet,
+        store: &TemplateStore,
+    ) -> Result<PinnedTemplate, FcError> {
+        let inputs = self.snapshot_template_inputs(&config, hooks)?;
+        crate::warm_pool::build_template(self, inputs, store, &config)
     }
 
     /// Walk every subdirectory of `<run_root>/` and reap orphaned run-dirs.
@@ -123,7 +149,10 @@ impl Backend {
             return Ok(());
         }
 
-        let entries = std::fs::read_dir(run_root)?;
+        let entries = std::fs::read_dir(run_root).map_err(|source| FcError::PathIo {
+            path: run_root.to_path_buf(),
+            source,
+        })?;
         for entry in entries.flatten() {
             let file_name = entry.file_name();
             let subdir = entry.path();
@@ -215,6 +244,40 @@ impl Backend {
             self.network_helper.cleanup_vm(vm_id, run_root)
         });
     }
+
+    fn sweep_stale_shared_pmem_refs(&self) -> Result<(), FcError> {
+        if !Path::new(DEFAULT_STORE_ROOT).exists() {
+            return Ok(());
+        }
+        let store = ImageStore::open_default()?;
+        let live_vm_ids = live_run_dir_names(&self.config.run_root)?;
+        store.sweep_shared_refs(live_vm_ids)?;
+        Ok(())
+    }
+}
+
+fn live_run_dir_names(run_root: &Path) -> Result<Vec<String>, FcError> {
+    if !run_root.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(run_root).map_err(|source| FcError::PathIo {
+        path: run_root.to_path_buf(),
+        source,
+    })?;
+    let mut names = Vec::new();
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        if is_reserved_run_root_child(&file_name) {
+            continue;
+        }
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if is_valid_vm_id_name(name) && entry.path().is_dir() {
+            names.push(name.to_owned());
+        }
+    }
+    Ok(names)
 }
 
 /// Reject a caller-supplied `vm_id` whose constructed AF_UNIX socket path
@@ -250,15 +313,17 @@ fn check_vm_id_name(vm_id: &str) -> Result<(), FcError> {
     if is_valid_vm_id_name(vm_id) {
         return Ok(());
     }
-    Err(FcError::Config(ConfigError::InvalidValue {
-        field: "vm_id",
-        reason: "must be 1..=64 ASCII alphanumeric, '.', '_', or '-' characters".into(),
-    }))
+    Err(invalid_vm_id(
+        vm_id,
+        "must be 1..=64 ASCII alphanumeric, '.', '_', or '-' characters and must not be '.' or '..'",
+    ))
 }
 
 fn is_valid_vm_id_name(vm_id: &str) -> bool {
     !vm_id.is_empty()
         && vm_id.len() <= 64
+        && vm_id != "."
+        && vm_id != ".."
         && vm_id
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
@@ -266,12 +331,19 @@ fn is_valid_vm_id_name(vm_id: &str) -> bool {
 
 fn check_vm_id_reserved_name(vm_id: &str) -> Result<(), FcError> {
     if is_reserved_run_root_child(std::ffi::OsStr::new(vm_id)) {
-        return Err(FcError::Config(ConfigError::InvalidValue {
-            field: "vm_id",
-            reason: format!("{vm_id:?} is reserved under run_root"),
-        }));
+        return Err(invalid_vm_id(
+            vm_id,
+            format!("{vm_id:?} is reserved under run_root"),
+        ));
     }
     Ok(())
+}
+
+fn invalid_vm_id(vm_id: &str, reason: impl Into<String>) -> FcError {
+    FcError::InvalidVmId {
+        vm_id: vm_id.to_owned(),
+        reason: reason.into(),
+    }
 }
 
 fn canonicalize_workspace_root(workspace: &std::path::Path) -> Result<PathBuf, FcError> {

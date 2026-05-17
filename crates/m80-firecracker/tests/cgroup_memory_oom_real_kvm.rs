@@ -57,6 +57,7 @@ fn cgroup_memory_limit_oom_kills_workload() {
             idle_timeout: None,
             daemonize: false,
             request_id: Some("req-cgroup-memory-oom".to_owned()),
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })

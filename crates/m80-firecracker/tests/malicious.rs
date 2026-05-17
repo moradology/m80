@@ -62,6 +62,7 @@ fn launch_malicious(
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })

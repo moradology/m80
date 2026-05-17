@@ -264,7 +264,8 @@ fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
 }
 
 fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {
-    let current = std::env::current_exe().map_err(FcError::Io)?;
+    let current = std::env::current_exe()
+        .map_err(|source| crate::errors::host_io("resolve current executable", source))?;
     let status = Command::new(current)
         .arg("run")
         .arg("--egress")

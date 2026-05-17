@@ -13,6 +13,7 @@ mod guest_seccomp;
 mod liveness;
 mod pid_one;
 mod pid_one_network;
+mod post_restore;
 mod uevent;
 mod workload_broker;
 

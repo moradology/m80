@@ -115,14 +115,22 @@ configured run-root. The default is `/var/run/m80`; on systemd hosts,
 
 tmpfs has fast metadata operations but no reflink support. When the run-root
 does not support reflinks, the overlay template clone path still works because
-storage uses:
+storage explicitly chooses the byte-copy path:
 
 ```sh
-cp --reflink=auto --sparse=always
+cp --reflink=never --sparse=always
 ```
 
-`--reflink=auto` silently falls back to a full byte copy. That is correct for
-compatibility, but it can hide avoidable launch-path cost.
+That fallback is visible: `m80-storage` emits one `m80_storage::rootfs` event
+per run-root device per process with `mode="byte_copy"`. On reflink-capable
+filesystems, storage uses:
+
+```sh
+cp --reflink=always --sparse=auto
+```
+
+If mandatory reflink is rejected at clone time, storage emits one warning for
+that call and retries with the explicit byte-copy command above.
 
 Preflight reports a non-blocking `Run-root filesystem` row by creating a small
 probe file under the run-root and running:
@@ -134,7 +142,7 @@ cp --reflink=always <probe-src> <probe-dst>
 For latency-priority cold-launch hosts, prefer a persistent Linux filesystem
 with reflinks enabled, such as XFS with reflink support or btrfs. For
 short-lived local development, tmpfs may still be a reasonable choice if RAM
-pressure and full-copy fallback are acceptable.
+pressure and byte-copy fallback are acceptable.
 
 Do not put the run-root on a mount that blocks device nodes. Preflight rejects
 `nodev` mounts because Firecracker needs device files inside the per-VM chroot.

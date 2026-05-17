@@ -90,19 +90,28 @@ fn render_warm_streaming_run(
                 let chunk = ExecChunk::Stdout { seq, bytes };
                 if let Err(e) = super::run_stream::copy_guest_chunk(chunk, &mut stdout, &mut stderr)
                 {
-                    return errors::render_error(&FcError::Io(e), false);
+                    return errors::render_error(
+                        &errors::host_io("write warm streamed stdout", e),
+                        false,
+                    );
                 }
             }
             Ok(control::WarmStreamFrame::Stderr { seq, bytes }) => {
                 let chunk = ExecChunk::Stderr { seq, bytes };
                 if let Err(e) = super::run_stream::copy_guest_chunk(chunk, &mut stdout, &mut stderr)
                 {
-                    return errors::render_error(&FcError::Io(e), false);
+                    return errors::render_error(
+                        &errors::host_io("write warm streamed stderr", e),
+                        false,
+                    );
                 }
             }
             Ok(control::WarmStreamFrame::Exit { exit, .. }) => {
                 if let Err(e) = stdout.flush().and_then(|_| stderr.flush()) {
-                    return errors::render_error(&FcError::Io(e), false);
+                    return errors::render_error(
+                        &errors::host_io("flush warm streamed output", e),
+                        false,
+                    );
                 }
                 let exit = ExecExit::from(exit);
                 return super::run_stream::process_exit_code(exit.status, exit.exit_code, None);
@@ -209,13 +218,13 @@ fn render_warm_run(response: ExecResponseJson, json_mode: bool) -> i32 {
             .write_all(&response_native.stdout)
             .and_then(|_| stdout.flush())
         {
-            return errors::render_error(&FcError::Io(e), json_mode);
+            return errors::render_error(&errors::host_io("write warm stdout", e), json_mode);
         }
         if let Err(e) = stderr
             .write_all(&response_native.stderr)
             .and_then(|_| stderr.flush())
         {
-            return errors::render_error(&FcError::Io(e), json_mode);
+            return errors::render_error(&errors::host_io("write warm stderr", e), json_mode);
         }
     }
     super::run_stream::process_exit_code(response_native.status, response_native.exit_code, None)

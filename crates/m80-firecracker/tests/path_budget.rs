@@ -84,9 +84,12 @@ fn admit_reserved_run_root_names_fail_before_permit() {
         assert!(
             matches!(
                 err,
-                FcError::Config(ConfigError::InvalidValue { field: "vm_id", .. })
+                FcError::InvalidVmId {
+                    vm_id: ref observed,
+                    ..
+                } if observed == vm_id
             ),
-            "expected invalid vm_id value for {vm_id:?}, got {err:?}"
+            "expected InvalidVmId for {vm_id:?}, got {err:?}"
         );
     }
 

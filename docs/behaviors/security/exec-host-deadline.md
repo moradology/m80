@@ -12,7 +12,9 @@ vsock channel.
 `m80-vsock` implements this with `Channel::recv_raw_with_deadline`, which
 checks the deadline before every underlying socket read. A compromised guestd
 cannot keep a host exec call alive indefinitely by writing partial frame bytes
-just under the normal five-second bridge I/O timeout.
+just under the deadline wrapper's per-read timeout. Normal channel reads have
+no bridge I/O timeout after the `CONNECT` / `OK` handshake, so a quiet but
+valid long-running exec can still complete.
 
 Tests:
 

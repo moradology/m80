@@ -55,6 +55,7 @@ fn launch_vm(discovery: &m80_preflight::Discovery) -> (m80_firecracker::RunningS
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })

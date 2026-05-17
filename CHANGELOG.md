@@ -5,6 +5,37 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — Phase B PmemLayer PerVm
+
+- Phase B (`m80-q420k.2`) added the `SandboxConfig::pmem_layers`
+  `PmemLayer` / `PmemSharing::PerVm` path: content-addressed erofs images are
+  materialized as per-VM pmem backings, bound read-only into the Firecracker
+  jail, attached through `PUT /pmem`, mounted by guestd with erofs+DAX, and
+  rejected fail-closed when validation, image-store resolution, attach, mount,
+  or DAX assertion fails.
+- The real-KVM evidence now includes `M80_PMEM_LAYERS=1` and
+  `M80_PMEM_LAYERS=2` `scripts/smoke.sh launch-only` runs plus the four
+  ignored `pmem_layer_real_kvm` scenarios covering DAX mount, distinct PerVm
+  backing inodes, host pmem mapping RSS baseline, and no-leak teardown.
+
+### Added — PmemLayer behavior capture
+
+- Added `docs/behaviors/rootfs/pmem-layers.md` covering the
+  `SandboxConfig::pmem_layers` host pipeline, PerVm inode isolation, erofs+DAX
+  assertion, read-only boundary, fail-closed points, and teardown cleanup
+  contract.
+- Added the `pmem_layers_mounted` boot-path row to the guest boot milestone
+  behavior capture, mapped to host phase `phase_13_pmem_guest_mount`.
+
+### Added — privileged E2E local-dev guide
+
+- Added `docs/operations/e2e-local-dev.md` with prerequisites, artifact/run-root
+  setup, single-test and `scripts/run-e2e.sh` workflows, cleanup recipes, and
+  the verified real-KVM launch-failure smoke command.
+- `scripts/run-e2e.sh` now passes through `M80_JAIL_UID` and `M80_JAIL_GID`
+  so local hosts without UID/GID 3000 can run the privileged subset with their
+  configured jail identity.
+
 ### Added — virtio-rng preboot device
 
 - Added a `m80-firecracker-client` `PUT /entropy` method and wired

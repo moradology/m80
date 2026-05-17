@@ -3,6 +3,7 @@
 
 mod common;
 
+use m80_image_store::DEFAULT_STORE_ROOT;
 use m80_jailer::{BindMode, Binding, JailerConfig, JailerError, JailerSocket};
 use std::path::{Path, PathBuf};
 
@@ -183,6 +184,184 @@ fn dev_dest_is_rejected() {
             &err,
             JailerError::BindDestRejected { dest, .. }
                 if dest == &PathBuf::from("dev/kvm")
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn duplicate_bind_dest_is_rejected() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![
+        Binding {
+            source: PathBuf::from("/host/kernel"),
+            dest: PathBuf::from("kernel"),
+            mode: BindMode::Ro,
+        },
+        Binding {
+            source: PathBuf::from("/host/pmem"),
+            dest: PathBuf::from("kernel"),
+            mode: BindMode::Ro,
+        },
+    ];
+
+    let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            JailerError::BindDestRejected { dest, .. }
+                if dest == &PathBuf::from("kernel")
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn pmem_dest_collisions_with_standard_assets_are_rejected() {
+    for dest in [
+        "kernel",
+        "rootfs.ext4",
+        "rootfs.overlay.ext4",
+        "scratch.ext4",
+        "hotplug-slot-0.raw",
+    ] {
+        let mut cfg = base_config();
+        cfg.bindings = vec![
+            Binding {
+                source: PathBuf::from("/host/asset"),
+                dest: PathBuf::from(dest),
+                mode: BindMode::Ro,
+            },
+            Binding {
+                source: PathBuf::from("/host/pmem.0.img"),
+                dest: PathBuf::from(dest),
+                mode: BindMode::Ro,
+            },
+        ];
+
+        let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                JailerError::BindDestRejected { dest: rejected, .. }
+                    if rejected == &PathBuf::from(dest)
+            ),
+            "{dest}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn pmem_bind_dest_at_jail_root_is_accepted() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/host/pmem.0.img"),
+        dest: PathBuf::from("pmem.0.img"),
+        mode: BindMode::Ro,
+    }];
+
+    let plan = m80_jailer::Plan::compute(&cfg).unwrap();
+    let bind_steps = common::bind_steps(&plan);
+
+    assert_eq!(bind_steps.len(), 1);
+    assert_eq!(
+        bind_steps[0].1,
+        PathBuf::from("/tmp/run/vm-1/firecracker/vm-1/root/pmem.0.img")
+    );
+    assert_eq!(bind_steps[0].2, BindMode::Ro);
+}
+
+#[test]
+fn shared_image_store_bind_source_outside_default_store_is_rejected() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/tmp/not-m80-images/image.erofs"),
+        dest: PathBuf::from("pmem.0.img"),
+        mode: BindMode::RoImageStore,
+    }];
+
+    let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            JailerError::BindSourceRejected { src, expected_root }
+                if src == &PathBuf::from("/tmp/not-m80-images/image.erofs")
+                    && expected_root == &PathBuf::from(DEFAULT_STORE_ROOT)
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn shared_image_store_bind_keeps_same_source_while_per_vm_paths_differ() {
+    let shared_source = PathBuf::from(DEFAULT_STORE_ROOT)
+        .join("58")
+        .join("589fb7cdcec07171aa6892a7c86870bac98494d4e0734154f24ae4fb9ea9cf37")
+        .join("image.erofs");
+    let mut first_shared = base_config();
+    first_shared.run_dir = PathBuf::from("/tmp/run/vm-shared-a");
+    first_shared.bindings = vec![Binding {
+        source: shared_source.clone(),
+        dest: PathBuf::from("pmem.0.img"),
+        mode: BindMode::RoImageStore,
+    }];
+    let mut second_shared = base_config();
+    second_shared.run_dir = PathBuf::from("/tmp/run/vm-shared-b");
+    second_shared.bindings = vec![Binding {
+        source: shared_source.clone(),
+        dest: PathBuf::from("pmem.0.img"),
+        mode: BindMode::RoImageStore,
+    }];
+
+    let first_shared_plan = m80_jailer::Plan::compute(&first_shared).unwrap();
+    let second_shared_plan = m80_jailer::Plan::compute(&second_shared).unwrap();
+    let first_shared_bind = common::bind_steps(&first_shared_plan);
+    let second_shared_bind = common::bind_steps(&second_shared_plan);
+
+    assert_eq!(first_shared_bind[0].0, shared_source);
+    assert_eq!(second_shared_bind[0].0, first_shared_bind[0].0);
+    assert_eq!(first_shared_bind[0].2, BindMode::RoImageStore);
+    assert_eq!(second_shared_bind[0].2, BindMode::RoImageStore);
+
+    let mut first_per_vm = base_config();
+    first_per_vm.run_dir = PathBuf::from("/tmp/run/vm-per-vm-a");
+    first_per_vm.bindings = vec![Binding {
+        source: PathBuf::from("/tmp/run/vm-per-vm-a/pmem/0.img"),
+        dest: PathBuf::from("pmem.0.img"),
+        mode: BindMode::Ro,
+    }];
+    let mut second_per_vm = base_config();
+    second_per_vm.run_dir = PathBuf::from("/tmp/run/vm-per-vm-b");
+    second_per_vm.bindings = vec![Binding {
+        source: PathBuf::from("/tmp/run/vm-per-vm-b/pmem/0.img"),
+        dest: PathBuf::from("pmem.0.img"),
+        mode: BindMode::Ro,
+    }];
+
+    let first_per_vm_bind = common::bind_steps(&m80_jailer::Plan::compute(&first_per_vm).unwrap());
+    let second_per_vm_bind =
+        common::bind_steps(&m80_jailer::Plan::compute(&second_per_vm).unwrap());
+
+    assert_ne!(first_per_vm_bind[0].0, second_per_vm_bind[0].0);
+    assert_eq!(first_per_vm_bind[0].2, BindMode::Ro);
+    assert_eq!(second_per_vm_bind[0].2, BindMode::Ro);
+}
+
+#[test]
+fn pmem_bind_dest_cannot_escape_with_parent_component() {
+    let mut cfg = base_config();
+    cfg.bindings = vec![Binding {
+        source: PathBuf::from("/host/pmem.0.img"),
+        dest: PathBuf::from("../pmem.0.img"),
+        mode: BindMode::Ro,
+    }];
+
+    let err = m80_jailer::Plan::compute(&cfg).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            JailerError::BindDestRejected { dest, .. }
+                if dest == &PathBuf::from("../pmem.0.img")
         ),
         "{err:?}"
     );

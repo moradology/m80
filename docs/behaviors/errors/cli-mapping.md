@@ -13,6 +13,11 @@ can branch on outcome class without scraping stderr:
 - `6` configuration failure
 - `7` explicit v0.x feature gap
 - `8` warm pool empty
+- `9` API/guestd/host exec timeout
+- `10` run-dir ownership failure
+- `11` idle timeout
+- `12` one-shot VM already consumed
+- `13` sandbox Firecracker process already dead
 
 predecessor source:
 `crates/sandbox/agent-sandbox-firecracker/src/errors.rs:149-948`; typed variants

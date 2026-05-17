@@ -20,6 +20,13 @@ The required built-in config surface is:
   `CONFIG_SPARSEMEM_VMEMMAP=y`, `CONFIG_MEMORY_HOTPLUG=y`,
   `CONFIG_MEMORY_HOTREMOVE=y`, `CONFIG_ZONE_DEVICE=y`
 
+`m80-image-store` mirrors that kernel floor at import time. Erofs artifacts are
+admitted only when `dump.erofs -s` reports the pinned feature/compressor set:
+`sb_csum`, `mtime`, `0padding`, and LZ4/LZ4HC compression. Newer host
+`mkfs.erofs` outputs using zstd, lzma, deflate, chunked files, or other feature
+bits are rejected before content-addressing so the mismatch cannot surface as a
+guest boot-time mount failure.
+
 The real-KVM smoke on 2026-05-16 rebuilt the stripped kernel as:
 
 ```text
@@ -56,8 +63,9 @@ Limitations:
 - The smoke proves the kernel exposes pmem, accepts erofs with `dax=always`,
   and executes binaries from the mounted image. It does not prove host page
   cache sharing or file-level DAX behavior across multiple guests.
-- The erofs image used in the PoC was compressed. Phase C/F measurement work
-  must prove the final image layout actually gives the expected sharing and
-  memory behavior before treating page sharing as a production claim.
+- The erofs image used in the PoC was compressed. The later
+  `docs/perf/erofs-dax-sharing-layout.md` gate proved that compressed erofs
+  files do not get guest-visible `STATX_ATTR_DAX`; Phase C/F density proofs
+  must use uncompressed non-inlined erofs payload files.
 - Firecracker logs show VMGenID changes on restore, but this guest kernel/rootfs
   did not expose a userspace `vmgenid` sysfs counter.

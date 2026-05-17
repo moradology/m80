@@ -10,3 +10,9 @@ the selected runtime profile already contains the requested program.
 
 Run scripts with `sh <example>/run.sh`; they are intentionally tiny so the
 exact `m80 run` invocation stays visible.
+
+## BootSpec Config
+
+Draft BootSpec YAML examples for pmem layers and snapshot-template restore live
+under [`docs/examples/`](../docs/examples/). Those files are parser targets for
+Phase E and use placeholder digests until the config-schema bead lands.

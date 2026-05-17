@@ -45,6 +45,13 @@ request over the restored vsock UDS and waiting for guestd's terminal response
 (retry loop, 50 ms sleep, 5 s cap). A bare `CONNECT 9001` is not sufficient on
 restore because the guest kernel can accept the socket while guestd itself is
 stopped.
+`Sandbox::launch_from_snapshot_with_hooks` adds the Phase D lease-handoff gate:
+after the restore exec probe, m80 sends `PostRestoreHookRequest` with a fresh
+host nonce, waits for guestd to mix it into `/dev/urandom`, issue
+`RNDRESEEDCRNG`, and run the ordered `HookSpecSet`, then returns `RunningSandbox`
+only after the success ack. Guest hook failure maps to
+`FcError::PostRestoreHook`; a missing hook response is bounded by a 5 second
+aggregate host-side read deadline and fails closed as a protocol timeout.
 
 `RunningSandbox::capture` pauses the live VM and writes a Full snapshot pair
 to caller-supplied paths, then writes `snapshot-manifest.json` beside the pair
@@ -75,7 +82,8 @@ force-kill/delete the VM and trigger pool refill before returning success. This
 lets conveyor-belt callers hand off one workload without external cleanup
 state. `WarmLease::attach_drive_verified` can run before that first workload so
 the slot receives and verifies its tenant drive while the one-shot token remains
-unconsumed.
+unconsumed. `WarmLease::detach_drive` can retarget that preallocated slot back
+to its placeholder backing file before another tenant drive is attached.
 
 `RunningSandbox::exec_streaming(&mut self, ..., on_chunk)` is the real-time
 stdout/stderr form. It forces `ExecRequest::streaming = true`, invokes
@@ -123,6 +131,9 @@ mode does not expose separated stdout/stderr streams.
 `upload_file_chunked`. These construct m80-proto file-op envelopes and map
 guest `FileError` responses to `FcError::FileOp`; callers do not need to
 spawn `bash -c`, base64 data through stdout/stderr, or build envelopes by hand.
+`WarmLease` exposes the same direct file-operation wrappers for leased warm
+slots. File operations prepare or inspect the VM; they do not consume a
+one-shot lease's workload token.
 
 `RunningSandbox::attach_drive_verified(self, HotplugDriveAttach)` retargets one
 preallocated Firecracker drive slot with `PATCH /drives/{id}`, asks guestd to
@@ -147,8 +158,13 @@ After a vsock channel is established, malformed protobuf, oversized frames,
 unsupported protocol versions, unexpected frame kinds, response `request_id`
 mismatches, stream sequence gaps, disconnects before a required terminal
 frame, and no-progress read timeouts while awaiting that terminal frame map to
-`FcError::Protocol(WireProtocolError::...)`. Transport setup
-failures remain `FcError::Vsock`.
+`FcError::Protocol(WireProtocolError::...)`. `DisconnectBeforeTerminal`
+includes a `DisconnectCause` (`FcProcessDead`, `UdsConnectFailed`,
+`MidStreamEof`, or `CleanRequestedClose`) so callers can separate a dead VMM
+from guest-side or channel-side loss. New exec and PTY requests check the
+recorded Firecracker PID before entering the UDS retry loop and return
+`FcError::SandboxDead` immediately when the process is already gone. Other
+transport setup failures remain `FcError::Vsock`.
 
 `RunningSandbox::guest_metrics()` sends a direct `MetricsRequest` to
 m80-guestd and returns the fixed-shape guest CPU, memory, and daemon counter
@@ -180,6 +196,7 @@ returns `PongResponse { guest_unix_ms }` without spawning a guest process.
 | `RunningSandbox::guest_metrics` | `(&mut self) -> Result<MetricsResponse, FcError>` | Read guest CPU, memory, and guestd counter metrics over vsock. |
 | `RunningSandbox::ping_guest` | `(&mut self) -> Result<PongResponse, FcError>` | Round-trip a guest health probe and return the guest handling timestamp. |
 | `Sandbox::launch_from_snapshot` | `(self, snapshot: SnapshotPaths, discovery: &Discovery) -> Result<RunningSandbox, FcError>` | Restore a snapshot into a new Running sandbox. |
+| `Sandbox::launch_from_snapshot_with_hooks` | `(self, snapshot: SnapshotPaths, discovery: &Discovery, hooks: HookSpecSet) -> Result<RunningSandbox, FcError>` | Restore a snapshot, run post-restore hooks under the fixed aggregate response deadline, then return the Running sandbox. |
 | `RunningSandbox::capture` | `(&mut self, paths: SnapshotPaths) -> Result<(), FcError>` | Capture the live VM; leaves VM Paused and records snapshot-capture stop evidence. |
 | `StoppedSandbox::run_dir` | `(&self) -> &Path` | Return the stopped VM run directory. |
 | `StoppedSandbox::extract_changes` | `(&self, into: &Path) -> Result<ChangeSet, FcError>` | Extract caller-requested workspace changes from the scratch image, capped at the scratch image byte length. |
@@ -262,38 +279,71 @@ generic VM cleanup surface.
 
 ### Warm pool
 
-`WarmPool` is the clean-VM latency path built on top of
-`Sandbox::launch_from_snapshot`. It owns pre-restored, guestd-ready
+`WarmPool` is the clean-VM latency path. It owns pre-restored, guestd-ready
 `RunningSandbox` slots and leases one slot at a time through `WarmLease`.
+`WarmStrategy::DirectSnapshot` restores a caller-supplied snapshot pair;
+`WarmStrategy::SnapshotRestore` looks up or builds a content-addressed template
+before restoring the committed body.
+
+Phase D of `m80-q420k` adds the typed surface for
+`WarmStrategy::SnapshotRestore` templates (`TemplateFingerprint`,
+`TemplateRef`, `HookSpec`, and related validation types). The internal
+template-build path cold-boots a stateless VM, computes the typed post-init
+digest from preflight discovery plus declared sandbox shape, captures into
+run-root-local template-capture staging, then publishes into
+`m80-snapshot-template` so the committed store can live outside `run_root`.
+Template restore binds the committed body directory read-only at `/snapshot`
+after rejecting symlinked template body paths. The fill worker never silently
+downgrades `SnapshotRestore` to a direct snapshot or cold launch: cache miss is
+explicit template-build work, and fingerprint mismatch is a fill failure.
+Template-backed restore uses the snapshot store's preverified body instead of
+rehashing the full memory snapshot on every refill.
 
 Public surface:
 
 | Type / method | Description |
 |---|---|
-| `WarmPoolConfig` | Target ready-slot count, snapshot pair, stateless `SandboxConfig`, ready-probe `ExecRequest`, VM id prefix, and optional `WarmPoolCpuAllocator`. |
+| `WarmPoolConfig` | Target ready-slot count, stateless `SandboxConfig`, `WarmStrategy`, VM id prefix, and optional `WarmPoolCpuAllocator`. |
+| `WarmStrategy::DirectSnapshot` | Existing snapshot-restore strategy: snapshot pair plus ready-probe `ExecRequest`. |
+| `WarmStrategy::SnapshotRestore` | Template strategy: `Arc<TemplateStore>`, ordered `HookSpecSet`, and ready-probe `ExecRequest`. Misses build through the template producer path; hits pin and restore the committed body. |
+| `TemplateStore` | Content-addressed snapshot-template store from `m80-snapshot-template`, re-exported for warm-pool configuration. |
+| `TemplateFingerprint` / `TemplateInputs` | ADR 0007 fingerprint tuple over host kernel, Firecracker version, guest kernel digest, pmem layer set, post-init digest, and hook-set digest. |
+| `HookSpec` / `HookSpecSet` | Closed post-restore hook set: `ReseedSystemdRandomSeed`, `RegenMachineId`, and `SetHostname(HostnameSpec)`. |
+| `HostnameSpec` | RFC-1123 hostname newtype used by post-restore hooks. |
 | `WarmPoolCpuAllocator` | Optional slot-aware cgroup pinning policy. It assigns each warm slot a disjoint contiguous `cpuset.cpus` range derived from `first_cpu`, `cpus_per_slot`, and `target_ready`. |
-| `WarmPool::new` | Constructs the pool; rejects `target_ready == 0` and workspace-backed configs. |
+| `WarmPool::new` | Constructs the pool; rejects `target_ready == 0`, `target_ready > max_concurrent_vms`, and workspace-backed configs. |
 | `WarmPool::fill_to_target_blocking` | Synchronously pre-restores ready slots before serving traffic. |
 | `WarmPool::start_background_fill` | Starts bounded background restore workers until ready plus filling slots cover the target. |
 | `WarmPool::try_lease` | Returns a ready `WarmLease` or `FcError::PoolEmpty`; never cold-boots or restores on the allocation path. |
+| `WarmPool::set_target_ready` | Updates the ready-slot target at runtime; grow starts normal background fill, shrink discards only surplus ready slots and never drops leased slots. CPU-pinned pools cannot grow beyond their initial allocator capacity. |
 | `WarmPool::wait_for_ready` | Waits until a minimum ready-slot count is available or returns `PoolEmpty` / the most recent fill error on timeout. |
 | `WarmPool::snapshot` | Returns `WarmPoolSnapshot` for status reporting and tests. |
-| `WarmPoolSnapshot` | Observable pool counts: target, ready, filling, leased, discarded. |
+| `WarmPool::take_fill_duration_samples_us` | Drains retained successful fill-duration samples. `SnapshotRestore` samples include template lookup/build, snapshot restore, post-restore hooks, and ready probes; checkout timing is measured separately by callers that need restore-to-handback latency. |
+| `WarmPoolSnapshot` | Observable pool counts: target, ready, filling, leased, discarded, consecutive fill errors, fill attempts/failures, and lease acquire/return totals. |
 | `WarmLease::exec` | Delegates one exec to the leased `RunningSandbox`. |
 | `WarmLease::exec_with_request_id` | Delegates one exec while temporarily stamping the leased slot with the caller request id. |
 | `WarmLease::exec_streaming` | Delegates one streaming exec to the leased `RunningSandbox`, preserving stdout/stderr chunks before terminal exit. |
 | `WarmLease::exec_streaming_with_request_id` | Streaming exec plus temporary caller request-id stamping. |
 | `WarmLease::attach_drive_verified` | Attaches and identity-verifies a tenant drive before the lease workload; failures release the lease and refill a replacement. |
+| `WarmLease::detach_drive` | Detaches one tenant drive and retargets the preallocated slot back to its placeholder backing file; failures release the lease and refill a replacement. |
+| `WarmLease::read_file` | Reads bytes directly from the guest through the leased slot and reports truncation. |
+| `WarmLease::write_file` | Writes one guest file directly through the leased slot. |
+| `WarmLease::list_dir` | Lists one guest directory level through the leased slot. |
+| `WarmLease::stat_file` | Stats one guest path through the leased slot without following the final symlink. |
+| `WarmLease::create_dir` | Creates one guest directory through the leased slot. |
+| `WarmLease::remove_file` | Removes one non-directory guest path through the leased slot. |
+| `WarmLease::upload_file_chunked` | Uploads via begin/chunk/commit on one vsock connection through the leased slot. |
 | `WarmLease::vm_id` | Returns the leased slot VM id for diagnostics. |
 | `WarmLease::run_dir` | Returns the leased slot run directory for diagnostics before discard. |
 | `WarmLease::discard` | Kills and deletes the slot, then starts background refill. `Drop` performs the same discard best-effort. One-shot leases perform this after the first exec. |
 
-The first implementation never infers reuse from liveness, process
-handles, socket existence, metrics, or clean-looking directories.
-Leases are discarded and replaced. A restored slot does not enter
-`Ready` until its configured
-ready-probe exec completes successfully. See `docs/design/warm-pool.md`
-for the state machine and sizing model.
+The lease path fails closed on dead ready slots: if the recorded Firecracker
+process is gone before `try_lease` returns, the slot is discarded, counted, and
+the pool refills instead of handing a known-dead VM to the caller. The first
+implementation never infers reuse from clean-looking directories or prior
+success. Leases are discarded and replaced. A restored slot does not enter
+`Ready` until its configured ready-probe exec completes successfully. See
+`docs/design/warm-pool.md` for the state machine and sizing model.
 
 ### Threat model when embedded
 
@@ -398,6 +448,61 @@ points at an empty placeholder image. The default is zero; callers that set a
 larger value get faster later tenant-drive attach at the cost of extra
 Firecracker block-device surface for the VM lifetime.
 
+### Pmem layers
+
+`PmemLayer` declares one read-only erofs image attached as a virtio-pmem device
+and mounted inside the guest at a validated `GuestMountPath`. `PmemSharing`
+has `PerVm` and `Shared(TrustDomainAck)`. `PerVm` materializes a per-VM backing
+under the run directory even when two VMs reference the same digest. `Shared`
+requires the typed trust-domain acknowledgement and binds the canonical
+content-addressed erofs artifact from the m80 image store directly, so multiple
+VMs using the same digest observe the same host inode. Missing shared artifacts
+fail as typed image-store errors; `Shared` never falls back to `PerVm`
+materialization. `Shared` also rejects erofs artifacts with compressed regular
+files before active-use marker creation, jail materialization, or Firecracker
+admission; the accepted density-proof layout is documented in
+`docs/perf/erofs-dax-sharing-layout.md`. The rustdoc `compile_fail` examples
+on `TrustDomainAck` and `PmemSharing` pin that `Shared` cannot be constructed
+without the typed witness, that `TrustDomainAck` has no `Default`, and that no
+caller-provided writability hint is accepted.
+
+Firecracker v1.15.1 derives each virtio-pmem device size from the backing file,
+rounds that size up to a 2 MiB boundary, and allocates it from a 512 GiB
+guest-physical window after the 64-bit MMIO gap. `PmemLayer::new` cannot
+validate that limit because it carries a digest, not resolved artifact
+metadata. Storage prep validates the resolved erofs artifact size before
+per-VM clone creation, Shared marker creation, jail binding, or Firecracker
+admission, and rejects oversize artifacts with
+`ConfigError::PmemImageTooLarge`. Larger payload sets must be split across
+multiple declared pmem layers, still bounded by `MAX_PMEM_LAYERS`.
+
+`ImageDigest::parse` accepts exactly one lowercase sha256 hex digest. It does
+not accept paths or caller-provided store locations. `GuestMountPath::parse`
+accepts only `/opt/m80-layers/<name>` where `<name>` is 1..=64 ASCII
+`[A-Za-z0-9._-]` characters. It rejects relative paths, `.` / `..`, reserved
+guest roots (`/`, `/proc`, `/sys`, `/dev`, `/etc`, `/workspace`, and m80-owned
+overlay roots), and deeper mount paths. `validate_pmem_layers` caps the request
+at `MAX_PMEM_LAYERS` and rejects duplicate guest mount paths.
+
+`SandboxConfig::pmem_layers` defaults to empty. Empty preserves the existing
+launch path. Non-empty declarations are validated before run-dir creation.
+Storage prep then resolves each declared erofs digest through `m80-image-store`,
+reflink-clones a per-VM backing to `<run_dir>/pmem/<slot>.img`, and asks
+`m80-jailer` to bind that host file read-only into the jail as
+`pmem.<slot>.img`. For `Shared`, storage prep uses the canonical image-store
+artifact path directly, creates an active-use marker at
+`<store>/shared/<digest>/refs/<vm_id>`, and asks `m80-jailer` to bind it with
+the image-store read-only bind mode. Markers are released after jail bind mounts
+are gone; they never delete canonical image-store artifacts. Phase 11 then
+attaches each declared layer with a read-only Firecracker
+`PUT /pmem/{pmem_<slot>}` whose `path_on_host` is the slot-derived jail path
+`/pmem.<slot>.img`. After guestd readiness, phase 13 sends
+`PmemMountRequest` over vsock so the guest mounts each `/dev/pmem<N>` as
+read-only erofs with DAX. Any guest mount failure maps to
+`FcError::PmemMount`. Snapshot-template restore resolves and binds the same
+pmem layer set before loading the snapshot; the restored guest observes the
+already-mounted erofs+DAX layer when the jail-visible backing path is stable.
+
 Boot artifact identity is verified before backend construction by
 `m80-preflight` (`Rootfs + manifest`). `Sandbox::launch` does not recompute
 kernel/rootfs/guestd sha256s in phase 3; phase 3 only prepares per-VM storage
@@ -418,6 +523,11 @@ needs Firecracker's conservative host sync behavior.
 `Some(300s)`). See "Idle timeout" below.
 `SandboxConfig::request_id` controls diagnostics and wire-frame correlation
 for callers that already minted an opaque request id.
+`SandboxConfig::pmem_layers` declares read-only erofs-over-pmem layers. The
+empty default is behavior-preserving; non-empty declarations are validated,
+resolved to store backings, bound into the jail read-only, attached to
+Firecracker during phase 11, and mounted in the guest during phase 13. Shared
+layers additionally fail closed if `dump.erofs -S` reports compressed files.
 `SandboxConfig::one_shot` controls destroy-after-use behavior for warm conveyor
 slots. It defaults to `false`.
 
@@ -427,8 +537,9 @@ slots. It defaults to `false`.
 `InstanceStart`: machine config with an optional caller-selected CPU template,
 boot source, shared read-only rootfs drive, per-VM rootfs overlay drive,
 optional workspace scratch drive, optional preallocated hotplug drive slots,
-optional network interface for an OutboundNat TAP, virtio-rng entropy device,
-then vsock. Before the first REST PUT, launch opens the Firecracker API socket
+optional read-only pmem layers, optional network interface for an OutboundNat
+TAP, virtio-rng entropy device, then vsock. Before the first REST PUT, launch
+opens the Firecracker API socket
 by watching the run directory for socket creation rather than polling on a
 fixed interval. Boot-source args append `m80.workspace=<0|1>` and
 `m80.rootfs=<ext4|erofs>` from the admitted manifest; erofs also adds
@@ -436,7 +547,9 @@ fixed interval. Boot-source args append `m80.workspace=<0|1>` and
 boot-source args append the prepared `m80.net.*` PID-1 tokens after those m80
 markers. After the plan succeeds and before `InstanceStart`, the launch path writes
 `<run_dir>/boot-identity.json` from the identity admitted by `m80-preflight`.
-See `docs/behaviors/lifecycle/preboot-wiring.md` and
+See `docs/behaviors/lifecycle/preboot-wiring.md`,
+`docs/behaviors/lifecycle/pmem-preboot.md`, and
+`docs/behaviors/guestd/pmem-dax-mount.md`, and
 `docs/behaviors/lifecycle/virtio-rng.md`.
 
 Preallocated slots are opt-in and default to zero because
@@ -453,7 +566,9 @@ for guestd readiness through an inverted host listener at
 `<vsock.sock>_<READY_PORT_DEFAULT>`, not by tailing the serial console. Guestd
 connects to that listener and writes the m80 protocol-version byte; the host
 accepts that connection through `poll(2)` readiness instead of a host-side
-sleep loop. The launch path then returns `RunningSandbox`; the caller's first
+sleep loop. If `SandboxConfig::pmem_layers` is non-empty, the launch path then
+sends `PmemMountRequest` and waits for all guest erofs+DAX mounts to succeed.
+Only after that does launch return `RunningSandbox`; the caller's first
 operation opens the normal exec channel on guest port 9001. Timeout maps to
 `FcError::GuestdReadyTimeout`. See
 `docs/behaviors/lifecycle/start-and-ready.md`.
@@ -535,11 +650,18 @@ Typed `FcError` variants tell the caller which phase failed; inner
 causes carry detail. No silent degradation — anything that compromises
 an invariant fails closed.
 
+- `FcError::kind()` returns `FcErrorKind` (`UserInput`,
+  `ResourceExhaustion`, `Transient`, `Internal`, or `GuestOutcome`) for callers
+  that need coarse recovery policy without matching every concrete variant.
+  `is_retryable()` is true for `ResourceExhaustion` and `Transient`;
+  `is_user_error()` is true for `UserInput`.
 - `FcError::Config(ConfigError)` carries structured configuration failures via
   the `ConfigError` enum (`TomlSyntax`, `MissingField`, `InvalidValue`,
-  `VmIdPathBudgetExceeded`). It is not a fallback bucket: it is reserved for
-  caller configuration, CLI flag, and config merge failures where no lower crate
-  owns a more specific typed cause.
+  `DigestInvalid`, `MountPathInvalid`, `MountPathShadowsReserved`,
+  `MountPathDuplicated`, `TooManyLayers`, `SharedPmemCompressedErofs`,
+  `SharedPmemErofsLayoutProbeInvalid`, `VmIdPathBudgetExceeded`). It is not a
+  fallback bucket: it is reserved for caller configuration, CLI flag, and config
+  merge failures where no lower crate owns a more specific typed cause.
 - `ConfigError::VmIdPathBudgetExceeded` is raised at `Backend::admit()` when a
   caller-supplied `vm_id` would produce an AF_UNIX socket path longer than the
   kernel `sun_path` cap (107 usable bytes). The path layout is
@@ -547,21 +669,36 @@ an invariant fails closed.
   appears twice because the jail layout inherits Firecracker's jailer
   convention. The check is pure arithmetic and runs before the admission
   permit is acquired — over-budget admits never consume a permit.
-- `Backend::admit()` also rejects caller-supplied `vm_id` values that collide
-  with reserved run-root children (`.preserved`, `warm`) before consuming a
-  permit.
+- `FcError::InvalidVmId` is raised at `Backend::admit()` when a
+  caller-supplied `vm_id` is not a safe single path component. The accepted
+  shape is 1..=64 ASCII alphanumeric, `.`, `_`, or `-` characters, excluding
+  `.` / `..` and reserved run-root children (`.preserved`, `warm`). Shape and
+  reserved-name rejections also run before the admission permit is acquired.
 - `FcError::ApiSocketTimeout { path, timeout }` — Firecracker did not create
   its REST API socket during launch.
 - `FcError::GuestdReadyTimeout { path, timeout }` — m80-guestd did not connect
   on the inverted-readiness socket during launch/restore.
 - `FcError::RunDirOwnershipAmbiguous`, `RunDirAlreadyOwned`, and
   `RunDirNotFound` distinguish run-root admission/walk failures.
-- `FcError::PathIo`, `Json`, `CommandSpawnFailed`, `CommandFailed`, and
-  `ArtifactMissing` preserve concrete host paths, serialization contexts, and
-  helper-command status instead of collapsing them into config strings.
+- `FcError::AdmissionRefused` is raised by `Backend::admit()` when the backend
+  has no admission permits available. Admission is non-blocking; callers decide
+  whether and when to retry.
+- `FcError::PathIo`, `HostIo`, `Json`, `CommandSpawnFailed`,
+  `CommandFailed`, and `ArtifactMissing` preserve concrete host paths,
+  operation labels, serialization contexts, and helper-command status instead
+  of collapsing them into config strings.
+- `FcError::ImageStore` preserves failures while resolving declared image
+  digests to host-side erofs/ext4 artifacts.
 - `FcError::NetworkHelper(NetworkHelperError)` preserves helper spawn,
   protocol, bounded-frame, and typed operation failures for privileged outbound
   network setup and cleanup. There is no parent-side direct mutation fallback.
+- `FcError::FileUploadReadFailed` preserves failures from the caller-provided
+  reader passed to `upload_file_chunked`; those errors are not collapsed into a
+  context-free I/O bucket.
+- `FcError::PostRestoreHook` carries guestd's typed post-restore hook failure
+  when the restored VM cannot be safely handed to a caller.
+- Missing post-restore hook responses map to a protocol read timeout; the
+  restored VM is not handed to the caller after that timeout.
 - `FcError::UnsupportedOperation` names an unavailable v0.x API surface without
   pretending the caller supplied bad configuration.
 - Warm-pool/owner failures use typed variants (`WarmPoolFillFailed`,
@@ -572,25 +709,82 @@ an invariant fails closed.
   distinguishable from configuration.
 - `FcError::IdleTimedOut` — returned by `exec` when the idle-timeout watcher
   has fired. The caller must drop or `stop()` the sandbox.
+- `FcError::SandboxDead` — returned before a new exec or PTY request when the
+  recorded Firecracker PID is already gone; the caller must discard the
+  sandbox rather than retrying the dead channel.
 - `LifecycleFailureKind::ALL` is the bounded lifecycle vocabulary used by
   behavior docs and tests. `FcError` remains the concrete public error surface.
 
 ## Public surface
 
+### Construction
+
+`BackendConfig::builder(discovery)` starts from `m80_preflight::run()` output;
+backend construction does not rerun preflight. `Backend::admit` takes
+`&Arc<Backend>` because admission permits are tied to the shared backend
+semaphore. The same chain is compile-checked in
+`crates/m80-firecracker/examples/minimal_launch.rs`.
+
+```rust,no_run
+use std::sync::Arc;
+
+use m80_firecracker::{Backend, BackendConfig, FcError, SandboxConfig};
+use m80_proto::ExecRequest;
+
+fn run_one_command() -> Result<(), FcError> {
+    let discovery = m80_preflight::run()?;
+    let backend_config = BackendConfig::builder(discovery).build();
+    let backend = Arc::new(Backend::new(backend_config)?);
+
+    let sandbox = backend.admit(SandboxConfig {
+        vm_id: Some("readme-example".to_owned()),
+        ..SandboxConfig::default()
+    })?;
+    let mut running = sandbox.launch()?;
+
+    let _response = running.exec(ExecRequest {
+        program: "/bin/true".to_owned(),
+        args: Vec::new(),
+        cwd: None,
+        env: None,
+        stdin: None,
+        timeout_ms: Some(30_000),
+        streaming: false,
+    })?;
+
+    let stopped = running.stop()?;
+    stopped.delete()?;
+    Ok(())
+}
+```
+
 Core types:
 
 - `Sandbox` — pre-launch handle; owned by `Backend::admit().launch()`.
+  Failed launches preserve their run directory under `.preserved/` by default
+  after writing `failure_summary.json`; call
+  `delete_run_dir_on_launch_error()` before launch to opt into deletion.
 - `RunningSandbox` — live VM handle; all exec/file-op/PTY methods live here.
 - `StoppedSandbox` — post-stop handle; carries `delete()` and `preserve_for_triage()`.
 - `Backend` — orchestration root: `new(BackendConfig)`,
   `new_with_effective_config(BackendConfig, EffectiveConfig)`, `config()`,
-  `admit()`, `show_effective_config()`, and `recover_stale_run_root()`.
+  `admit()`, `show_effective_config()`, `snapshot_template_inputs()`,
+  `build_snapshot_template()`, and `recover_stale_run_root()`.
 - `WarmPool` — pre-restored ready-slot pool; leases `WarmLease`.
 - `WarmPoolCpuAllocator` — optional disjoint `cpuset.cpus` range allocator for
   warm-pool slots.
-- `WarmPoolSnapshot` — observable warm-pool counts.
-- `WarmLease` — single exec slot checked out from `WarmPool`.
-- `SandboxConfig` — per-VM launch parameters (request id, cpuset pin, overlay size, idle timeout, daemonize, preallocated drive slots, one-shot mode, etc.).
+- `WarmPoolSnapshot` — observable warm-pool counts and fill/lease counters.
+- `WarmLease` — single warm slot checked out from `WarmPool`; supports exec,
+  typed file operations, and per-lease drive attach/detach.
+- `PmemLayer`, `PmemSharing`, `TrustDomainAck`, `TrustReason`,
+  `ErofsImageRef`, `GuestMountPath`, and `ImageDigest` — read-only
+  erofs-over-pmem admission vocabulary.
+- `BootSpec`, `BootSpecSandbox`, `BootSpecWarmStrategy`,
+  `BootSpecReadyProbe`, `load_boot_spec_yaml_str`, and
+  `load_boot_spec_json_str` — fail-closed YAML/JSON config parser for
+  `pmem_layers` and snapshot-template warm strategy. The parser returns typed
+  `ConfigError` variants before any host action.
+- `SandboxConfig` — per-VM launch parameters (request id, cpuset pin, overlay size, idle timeout, daemonize, pmem layers, preallocated drive slots, one-shot mode, etc.).
 - `CpuTemplate` — re-exported Firecracker CPU template enum for callers that
   opt into `SandboxConfig::cpu_template`.
 - `CacheType` — re-exported Firecracker drive cache enum for callers that opt
@@ -600,6 +794,9 @@ Core types:
 - `BackendConfig` — host-level config (run root, jail uid/gid, admission limit, etc.).
 - `EffectiveConfig` — merged snapshot returned by `load_config` and held by `Backend`.
 - `FcError` — exhaustive typed error for all phases.
+- `FcErrorKind` — coarse recovery class returned by `FcError::kind()`.
+  `FcError::variant_name()` returns the stable variant string used in CLI
+  envelopes, diagnostics, and launch failure summaries.
 - `NetworkHelperError` and `NetworkHelperOperation` — typed diagnostics for the
   privileged outbound-network helper boundary.
 
@@ -607,9 +804,11 @@ Re-exports for callers:
 
 - `SnapshotPaths` (from `m80-snapshot`; intentional lifecycle ergonomics).
 - `NetworkPolicy` and `NetnsSpec` (from `m80-net-mode`).
-- `WireProtocolError` (defined by `m80-firecracker`).
+- `WireProtocolError` and `DisconnectCause` (defined by `m80-firecracker`).
 - `ExecChunk`, `PtyHostEvent`, `PtyOutputChunk` (defined by `m80-firecracker`).
 - `ChangeSet` (from `m80-storage`; intentional stopped-sandbox ergonomics).
+- `MAX_PMEM_LAYERS` and `validate_pmem_layers` (defined by
+  `m80-firecracker`).
 
 Wire request/response types such as `ExecRequest`, `ExecResponse`,
 `ExecExit`, `ExecStatus`, `ExecTiming`, `PtyRequest`, and `FileError` are owned
@@ -619,8 +818,17 @@ Config helpers:
 
 - `load_config(flags) -> EffectiveConfig`
 - `load_config_from_paths(flags, ConfigFilePaths) -> EffectiveConfig`
+- `load_boot_spec_yaml_str(text) -> BootSpec`
+- `load_boot_spec_json_str(text) -> BootSpec`
 - `BackendConfig::builder(discovery)` for constructing backend config from
   preflight discovery plus explicit overrides.
+- `Backend::snapshot_template_inputs(&SandboxConfig, HookSpecSet) ->
+  TemplateInputs` for callers that need the live Phase D fingerprint tuple
+  without launching a VM.
+- `Backend::build_snapshot_template(SandboxConfig, HookSpecSet,
+  &TemplateStore) -> PinnedTemplate` for explicit producer flows such as
+  `m80 template build`; cache hits pin the committed template and misses
+  cold-boot, capture, commit, stop, and delete through the Phase D path.
 
 Layout helpers:
 
@@ -647,6 +855,12 @@ Cleanup vocabulary (behavior docs + regression tests):
 Warm pool:
 
 - `WarmPoolConfig`.
+- `WarmStrategy`.
+- `TemplateFingerprint`, `TemplateInputs`, `TemplateRef`.
+- `TemplateStore`, `TemplateStoreError`.
+- `TemplateDigest`, `PmemTemplateEntry`, `PmemTemplateSharing`,
+  `JailBackingPath`.
+- `HookSpec`, `HookSpecSet`, `HostnameSpec`.
 - `WarmPoolCpuAllocator`.
 - `WarmPoolSnapshot`.
 
@@ -674,7 +888,7 @@ Warm pool:
 - `m80-snapshot` — snapshot path types.
 - `m80-proto` — wire types re-exported for callers.
 - `m80-image-manifest` — image kind / kernel kind for boot-args selection.
-- `serde`, `serde_json`, `thiserror`, `tracing`, `toml`.
+- `serde`, `serde_json`, `serde_yaml`, `thiserror`, `tracing`, `toml`.
 
 ## Debug instrumentation
 

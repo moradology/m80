@@ -41,6 +41,17 @@ scratch device was sized to hold.
 
 Test: `crates/m80-storage/src/scratch.rs::tests::build_stage_rejects_extract_size_over_cap`.
 
+## mode-high-bits
+
+Extraction strips setuid, setgid, and sticky mode bits from staged regular
+files and directories. Low host-visible permission bits are preserved, so an
+extracted `04755` file is published as `0755`.
+
+Tests:
+
+- `crates/m80-storage/src/scratch.rs::tests::build_stage_strips_setuid_bits_from_extracted_file`
+- `crates/m80-storage/src/scratch.rs::tests::build_stage_strips_setgid_bits_from_extracted_dir`
+
 ## staging
 
 Extraction materializes survivors into a sibling staging directory before the

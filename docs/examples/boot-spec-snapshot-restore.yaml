@@ -1,0 +1,36 @@
+# Snapshot-template restore: no pmem layers, but restored slots run typed hooks
+# before the lease is handed to the caller.
+schema_version: 1
+name: snapshot-restore
+
+sandbox:
+  vm_id_prefix: m80-template
+  vcpu_count: 1
+  mem_size_mib: 512
+  workspace: null
+  network: none
+  overlay_size_bytes: 134217728
+  boot_args: []
+
+pmem_layers: []
+
+warm_strategy:
+  # Maps to WarmStrategy::SnapshotRestore.
+  mode: snapshot_restore
+  template:
+    # Store root for content-addressed template bodies.
+    store: /var/lib/m80/templates
+    # Synthetic valid fingerprint. Template build derives real fingerprints
+    # from typed inputs.
+    fingerprint: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  ready_probe:
+    # Probe request that must complete before a restored slot enters Ready.
+    program: /bin/true
+    args: []
+    timeout_ms: 5000
+  hooks:
+    # Closed HookSpec variants only; arbitrary shell hooks are not allowed.
+    - reseed_systemd_random_seed
+    - regen_machine_id
+    - set_hostname:
+        hostname: m80-template

@@ -46,6 +46,11 @@ pub(super) struct WarmSlots {
     pub filling: usize,
     pub leased: usize,
     pub discarded: usize,
+    pub consecutive_fill_errors: u32,
+    pub fill_attempts_total: usize,
+    pub fill_failures_total: usize,
+    pub lease_acquired_total: usize,
+    pub lease_returned_total: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -189,6 +194,11 @@ pub(super) fn available(
             filling: snapshot.filling,
             leased: snapshot.leased,
             discarded: snapshot.discarded,
+            consecutive_fill_errors: snapshot.consecutive_fill_errors,
+            fill_attempts_total: snapshot.fill_attempts_total,
+            fill_failures_total: snapshot.fill_failures_total,
+            lease_acquired_total: snapshot.lease_acquired_total,
+            lease_returned_total: snapshot.lease_returned_total,
         },
         lifecycle: WarmLifecycle {
             accepting_leases,
@@ -214,6 +224,11 @@ impl WarmSlots {
             filling: 0,
             leased: 0,
             discarded: 0,
+            consecutive_fill_errors: 0,
+            fill_attempts_total: 0,
+            fill_failures_total: 0,
+            lease_acquired_total: 0,
+            lease_returned_total: 0,
         }
     }
 }
@@ -230,15 +245,17 @@ pub(super) fn egress_label(egress: EgressMode) -> &'static str {
 }
 
 pub(super) fn write_identity(identity: &WarmOwnerIdentity) -> Result<(), FcError> {
-    fs::create_dir_all(warm_root()?).map_err(FcError::Io)?;
+    let root = warm_root()?;
+    fs::create_dir_all(&root).map_err(|source| FcError::PathIo { path: root, source })?;
+    let path = identity_path()?;
     fs::write(
-        identity_path()?,
+        &path,
         serde_json::to_vec_pretty(identity).map_err(|e| FcError::Json {
             context: "serialize warm owner identity",
             source: e,
         })?,
     )
-    .map_err(FcError::Io)
+    .map_err(|source| FcError::PathIo { path, source })
 }
 
 pub(super) fn remove_owner_state() -> Result<(), FcError> {
@@ -246,12 +263,22 @@ pub(super) fn remove_owner_state() -> Result<(), FcError> {
     match fs::remove_file(root.join(WARM_SOCKET)) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(FcError::Io(e)),
+        Err(source) => {
+            return Err(FcError::PathIo {
+                path: root.join(WARM_SOCKET),
+                source,
+            });
+        }
     }
     match fs::remove_file(root.join(WARM_IDENTITY)) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(FcError::Io(e)),
+        Err(source) => {
+            return Err(FcError::PathIo {
+                path: root.join(WARM_IDENTITY),
+                source,
+            });
+        }
     }
     Ok(())
 }
@@ -269,12 +296,17 @@ pub(super) fn format_human(status: &WarmStatus) -> String {
         status.profile.compatible
     ));
     out.push_str(&format!(
-        "slots: target_ready={} ready={} filling={} leased={} discarded={}\n",
+        "slots: target_ready={} ready={} filling={} leased={} discarded={} consecutive_fill_errors={} fill_attempts_total={} fill_failures_total={} lease_acquired_total={} lease_returned_total={}\n",
         status.slots.target_ready,
         status.slots.ready,
         status.slots.filling,
         status.slots.leased,
-        status.slots.discarded
+        status.slots.discarded,
+        status.slots.consecutive_fill_errors,
+        status.slots.fill_attempts_total,
+        status.slots.fill_failures_total,
+        status.slots.lease_acquired_total,
+        status.slots.lease_returned_total
     ));
     out.push_str(&format!(
         "lifecycle: accepting_leases={} draining={}\n",
@@ -329,6 +361,11 @@ mod tests {
                 filling: 0,
                 leased: 0,
                 discarded: 2,
+                consecutive_fill_errors: 3,
+                fill_attempts_total: 5,
+                fill_failures_total: 3,
+                lease_acquired_total: 2,
+                lease_returned_total: 2,
             },
             false,
             false,
@@ -343,6 +380,8 @@ mod tests {
         assert_eq!(status.profile.active.as_deref(), Some("ubuntu"));
         assert!(!status.profile.compatible);
         assert!(!status.lifecycle.accepting_leases);
+        assert_eq!(status.slots.consecutive_fill_errors, 3);
+        assert_eq!(status.slots.fill_failures_total, 3);
         assert_eq!(
             status.last_error.as_ref().map(|e| e.kind.as_str()),
             Some("profile_mismatch")
@@ -370,6 +409,11 @@ mod tests {
                 filling: 0,
                 leased: 1,
                 discarded: 1,
+                consecutive_fill_errors: 0,
+                fill_attempts_total: 2,
+                fill_failures_total: 0,
+                lease_acquired_total: 1,
+                lease_returned_total: 0,
             },
             false,
             true,

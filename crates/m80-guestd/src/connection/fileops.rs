@@ -23,7 +23,7 @@ use m80_proto::{
 };
 
 use super::{protocol_log, ConnectionOutcome};
-use crate::guest_log::GuestLogPhase;
+use crate::guest_log::{self, GuestLogPhase};
 use metadata::{list_dir, mkdir, remove_file, stat_file};
 use read::stream_file_read;
 
@@ -45,7 +45,20 @@ struct Upload {
 impl Drop for Uploads {
     fn drop(&mut self) {
         for (_id, upload) in self.open.drain() {
-            let _ = std::fs::remove_file(upload.temp_path);
+            match std::fs::remove_file(&upload.temp_path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    guest_log::warn(
+                        GuestLogPhase::Exec,
+                        None,
+                        &format!(
+                            "failed to remove abandoned upload temp file {}: {err}",
+                            upload.temp_path.display()
+                        ),
+                    );
+                }
+            }
         }
     }
 }

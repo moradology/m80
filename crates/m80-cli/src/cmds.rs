@@ -10,7 +10,9 @@ use m80_firecracker::{
 };
 use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
 
-use crate::args::{EgressMode, QuickstartArgs, WarmAction, WritebackMode};
+use crate::args::{
+    EgressMode, ImageAction, QuickstartArgs, TemplateAction, WarmAction, WritebackMode,
+};
 use crate::config;
 use crate::errors;
 use crate::json;
@@ -153,7 +155,10 @@ pub(crate) fn cmd_run(
     let stdin_bytes = if stdin {
         let mut bytes = Vec::new();
         if let Err(e) = std::io::stdin().read_to_end(&mut bytes) {
-            return Ok(errors::render_error(&FcError::Io(e), json));
+            return Ok(errors::render_error(
+                &errors::host_io("read stdin", e),
+                json,
+            ));
         }
         Some(bytes)
     } else {
@@ -272,22 +277,34 @@ fn extract_workspace_replacing(stopped: &StoppedSandbox, workspace: &Path) -> Re
         .transpose()?;
 
     if let Some(backup) = &backup {
-        fs::rename(workspace, backup)?;
+        fs::rename(workspace, backup).map_err(|source| FcError::PathIo {
+            path: workspace.to_path_buf(),
+            source,
+        })?;
     }
 
     match stopped.extract_changes(workspace) {
         Ok(_) => {
             if let Some(backup) = backup {
-                remove_path(&backup)?;
+                remove_path(&backup).map_err(|source| FcError::PathIo {
+                    path: backup,
+                    source,
+                })?;
             }
             Ok(())
         }
         Err(e) => {
             if let Some(backup) = backup {
                 if workspace.exists() {
-                    remove_path(workspace)?;
+                    remove_path(workspace).map_err(|source| FcError::PathIo {
+                        path: workspace.to_path_buf(),
+                        source,
+                    })?;
                 }
-                fs::rename(backup, workspace)?;
+                fs::rename(&backup, workspace).map_err(|source| FcError::PathIo {
+                    path: backup,
+                    source,
+                })?;
             }
             Err(e)
         }
@@ -420,6 +437,7 @@ fn sandbox_config_for_run(
         idle_timeout: None,
         daemonize: false,
         request_id: Some(request_id),
+        pmem_layers: Vec::new(),
         preallocated_drive_slots: 0,
         one_shot: false,
     }
@@ -630,6 +648,14 @@ pub(crate) fn cmd_warm(action: WarmAction, json: bool) -> anyhow::Result<i32> {
     warm::cmd_warm(action, json)
 }
 
+pub(crate) fn cmd_image(action: ImageAction, json: bool) -> anyhow::Result<i32> {
+    image::cmd_image(action, json)
+}
+
+pub(crate) fn cmd_template(action: TemplateAction, json: bool) -> anyhow::Result<i32> {
+    template::cmd_template(action, json)
+}
+
 pub(crate) fn cmd_quickstart(args: QuickstartArgs, json: bool) -> anyhow::Result<i32> {
     quickstart::cmd_quickstart(args, json)
 }
@@ -716,12 +742,14 @@ pub(crate) fn cmd_version(json: bool) -> anyhow::Result<i32> {
 }
 
 mod env;
+mod image;
 mod proto_json;
 mod pty;
 mod quickstart;
 mod run_request;
 mod run_stream;
 mod signal_watcher;
+mod template;
 mod version;
 mod warm;
 

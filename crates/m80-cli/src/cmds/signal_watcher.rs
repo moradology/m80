@@ -41,7 +41,9 @@ impl Drop for SignalWatcher {
     fn drop(&mut self) {
         self.handle.close();
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            if thread.join().is_err() {
+                tracing::warn!("signal watcher thread panicked during shutdown");
+            }
         }
     }
 }

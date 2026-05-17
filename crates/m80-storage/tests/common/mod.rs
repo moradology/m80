@@ -1,9 +1,12 @@
 //! Shared helpers for tests that need a real e2fsprogs / loop-mount setup.
 
+pub(crate) mod reflink_helpers;
+
 /// Returns true if the current process is root, otherwise prints a SKIP
 /// banner and returns false. The `#[ignore]` attribute is the canonical
 /// gate; this helper is a second line of defense for `--ignored` runs on
 /// hosts where the user forgot to escalate.
+#[allow(dead_code)]
 pub(crate) fn require_root(test_name: &str) -> bool {
     if nix::unistd::Uid::effective().is_root() {
         true

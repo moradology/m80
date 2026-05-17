@@ -41,15 +41,14 @@ pub(super) fn phase_11b_bind_ready_listener(
         // bind() doesn't fail with EADDRINUSE.
         let _ = std::fs::remove_file(path);
     }
-    let listener = UnixListener::bind(path).map_err(FcError::Io)?;
+    let listener = UnixListener::bind(path).map_err(|source| path_io(path, source))?;
 
     // Make the socket connect()-able by the jail uid. Both the inode
     // ownership (chown) and the directory's access bits matter; the
     // jailer materialize step already produces a jail dir owned by
     // `jail_uid`, so `chown` on the socket file alone is sufficient.
     use nix::unistd::{chown, Uid};
-    chown(path, Some(Uid::from_raw(jail_uid)), None)
-        .map_err(|e| FcError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
+    chown(path, Some(Uid::from_raw(jail_uid)), None).map_err(|e| errno_path_io(path, e))?;
 
     Ok(listener)
 }
@@ -183,16 +182,22 @@ pub(super) fn accept_ready_signal(
     ready_path: &Path,
     timeout: Duration,
 ) -> Result<(), FcError> {
-    ready_listener.set_nonblocking(true).map_err(FcError::Io)?;
+    ready_listener
+        .set_nonblocking(true)
+        .map_err(|source| path_io(ready_path, source))?;
     let deadline = Instant::now() + timeout;
     let mut stream = accept_ready_connection(ready_listener, ready_path, deadline, timeout)?;
 
-    stream.set_nonblocking(false).map_err(FcError::Io)?;
+    stream
+        .set_nonblocking(false)
+        .map_err(|source| path_io(ready_path, source))?;
     stream
         .set_read_timeout(Some(READY_VERSION_READ_TIMEOUT))
-        .map_err(FcError::Io)?;
+        .map_err(|source| path_io(ready_path, source))?;
     let mut buf = [0u8; 1];
-    stream.read_exact(&mut buf).map_err(FcError::Io)?;
+    stream
+        .read_exact(&mut buf)
+        .map_err(|source| path_io(ready_path, source))?;
     if buf[0] != m80_proto::PROTOCOL_VERSION as u8 {
         return Err(FcError::Protocol(WireProtocolError::UnsupportedVersion {
             expected: m80_proto::PROTOCOL_VERSION,
@@ -219,7 +224,7 @@ fn accept_ready_connection(
         }
 
         let mut fds = [PollFd::new(ready_listener.as_fd(), PollFlags::POLLIN)];
-        match poll(&mut fds, poll_timeout_for_duration(remaining)?) {
+        match poll(&mut fds, poll_timeout_for_duration(remaining, ready_path)?) {
             Ok(0) => {
                 return Err(FcError::GuestdReadyTimeout {
                     path: ready_path.to_path_buf(),
@@ -229,21 +234,35 @@ fn accept_ready_connection(
             Ok(_) => match ready_listener.accept() {
                 Ok((stream, _)) => return Ok(stream),
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(FcError::Io(e)),
+                Err(source) => return Err(path_io(ready_path, source)),
             },
             Err(Errno::EINTR) => continue,
             Err(errno) => {
-                return Err(FcError::Io(std::io::Error::from_raw_os_error(errno as i32)));
+                return Err(errno_path_io(ready_path, errno));
             }
         }
     }
 }
 
-fn poll_timeout_for_duration(duration: Duration) -> Result<PollTimeout, FcError> {
+fn poll_timeout_for_duration(duration: Duration, path: &Path) -> Result<PollTimeout, FcError> {
     PollTimeout::try_from(duration).map_err(|e| {
-        FcError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("poll timeout out of range: {e}"),
-        ))
+        path_io(
+            path,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("poll timeout out of range: {e}"),
+            ),
+        )
     })
+}
+
+fn errno_path_io(path: &Path, errno: Errno) -> FcError {
+    path_io(path, std::io::Error::from_raw_os_error(errno as i32))
+}
+
+fn path_io(path: &Path, source: std::io::Error) -> FcError {
+    FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    }
 }

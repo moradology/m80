@@ -28,6 +28,185 @@ m80 images.
   shell constructs.
 - Close a measured bead with `verified: <artifact-path> @ <commit-sha>`.
 
+## Q420K Close-Artifact Guard
+
+The remaining `m80-q420k` measurement leaves also have a machine-readable field
+guard:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py
+```
+
+Use `--only pmem-density` for the Phase C Shared density markdown artifact and
+its executable `scripts/smoke-pmem-shared.sh` close script, and use
+`--only snapshot-template` for the Phase D restore-latency JSON plus its
+`docs/perf/snapshot-template-restore.md` reproduction and smoke-evidence doc
+before the other artifacts exist. Repeat `--only` for a subset, for example
+`--only composed-restore --only composed-memory --only composed-residue`.
+Use `--only composed-doc` for the Phase F receipt doc plus the three composed
+JSON artifacts it interprets. Use
+`--only ext4-overlay` or `--only dax-memory-pressure` only for Phase G
+followups; they are intentionally not part of the default A-F parent close
+guard.
+
+This guard rejects missing artifacts, artifacts that do not name the real-KVM
+preflight substrate, noisy-host override artifacts, weak sample counts,
+threshold misses, teardown residue, Shared payload layout drift found by
+`m80-q420k.8.12`, a missing or non-executable Shared density smoke script,
+snapshot-template docs without the matching bench stderr paste, and a composed
+receipt doc that still carries the diagnostic banner.
+Measurement artifacts that carry source-tree cleanliness fields must record a
+clean worktree except for the artifact paths themselves. Real-KVM close
+artifacts also record empty pre-run and post-run Firecracker process lists,
+proving both a quiet starting host and no Firecracker leak after teardown.
+They also record preflight artifact identity: resolved Firecracker,
+jailer, seccomp filter, helper, kernel, and rootfs paths plus manifest
+kernel/rootfs sha256s. Each close artifact records the full measured
+`git_commit` alongside the clean-worktree flag. Add
+`--require-committed` after the artifacts are committed; that mode rejects
+artifacts absent from `HEAD` or with staged/unstaged changes. For final parent
+close, add `--require-closed-beads` and
+`--require-parent-phases-closed` so the guard also checks the verified close
+reasons, verifies that each cited commit exists in `HEAD` history and contains
+the named artifact, verifies that the cited commit descends from the
+artifact's measured `git_commit`, verifies that the artifact has not changed
+since that commit, checks Phase 0 / A-F parent statuses, and checks that the
+Phase C, Phase D, and Phase F parent close reasons reuse the matching child
+evidence commits. It is not proof of substrate by itself. The final guard also
+checks q420k blocker rows and dependency cycles so stale tracker edges cannot
+be ignored. The close still needs the real-KVM run and
+`verified: <artifact-path> @ <commit-sha>` reason.
+After `m80-q420k` itself is closed, add `--require-super-epic-closed` to check
+that the super-epic close reason reuses the same
+`verified: docs/perf/composed-e2e.md @ <commit-sha>` evidence commit as
+`m80-q420k.6`.
+
+## Q420K Shared Pmem Density
+
+Gates: `m80-q420k.3.8` and therefore parent Phase C.
+
+Purpose: prove that `PmemSharing::Shared` reuses one canonical image-store
+inode across multiple VMs and produces bounded host-memory growth after the
+guests actually fault the Shared payload.
+
+Invocation:
+
+```sh
+M80_PMEM_SHARED_VM_COUNT=4 \
+M80_PMEM_SHARED_CYCLES=10 \
+M80_PMEM_SHARED_PAYLOAD_MIB=128 \
+M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md \
+M80_RUN_ROOT=/var/lib/m80-psd \
+M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
+M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
+./scripts/smoke-pmem-shared.sh
+```
+
+Artifacts:
+
+- `docs/perf/pmem-shared-density.md`
+
+Required interpretation: quiet-host substrate, real `/dev/kvm`, sudo,
+page-cache drop before each cycle, `vm_count >= 4`, `cycles >= 10`, active-use
+marker count returns to zero after teardown, canonical Shared artifact remains
+present, stale-marker sweep removes zero markers, post-run Firecracker process
+list is empty, preflight artifact identity is present, max observed host-memory
+delta stays within the computed bound, the bound equals `image KiB + per-VM
+overhead KiB * vm_count`, the measured git commit is recorded, and the payload
+erofs dump matches the `.8.12` file-level DAX requirement (`Layout: 0` with
+equal logical and on-disk size). The verifier reads the teardown fields
+directly from the artifact:
+`max active-use markers observed`, `final active-use markers`,
+`stale markers swept after teardown`, and
+`canonical Shared artifact present after teardown`. The artifact must also
+carry the `TrustDomainAck`, same-trust-domain, DAX cache-timing side-channel,
+and read-only Shared jail-binding statements used by the parent close prose.
+Before closing, after
+committing the artifact, run:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committed
+```
+
+That selector also checks `scripts/smoke-pmem-shared.sh`; the script must be
+executable, retain the quiet-host fail-closed guard, and be committed without
+mode or content drift when `--require-committed` is present.
+
+## Q420K Ext4 Overlay-Template Clone
+
+Gates: `m80-q420k.8.16`, a Phase G followup. This does not block the A-F
+super-epic close, but it is the evidence gate for reconsidering dm-snapshot on
+ext4 run roots.
+
+Purpose: isolate the explicit byte-copy fallback for a run-root-local empty
+overlay template on ext4 and compare the result to the dm-snapshot reconsider
+threshold.
+
+Invocation:
+
+```sh
+M80_RUN_EXT4_OVERLAY_TEMPLATE_CLONE=1 \
+M80_EXT4_OVERLAY_TEMPLATE_SAMPLES=30 \
+M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=/var/tmp/m80-ext4-overlay-template-clone \
+M80_EXT4_OVERLAY_TEMPLATE_ARTIFACT=docs/perf/ext4-overlay-template-clone.md \
+cargo test -p m80-storage --test ext4_overlay_template_clone -- --ignored --nocapture
+```
+
+Artifact:
+
+- `docs/perf/ext4-overlay-template-clone.md`
+
+Required interpretation: run root filesystem is ext4, `samples >= 30`,
+`phase_3b_rootfs_prepare` P50/P95/P99 are recorded, leaked dm devices = 0,
+leaked mounts = 0, and the doc states whether dm-snapshot was prototyped. Do
+not implement a dm-snapshot prototype unless the byte-copy result exceeds 80 ms
+P50 or 100 ms P95, or an operator supplies residue/pressure evidence. Before
+closing, after committing the artifact, run:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py --only ext4-overlay --require-committed
+```
+
+## Q420K DAX Memory Pressure
+
+Gates: `m80-q420k.8.9`, a Phase G followup. This does not block the A-F
+super-epic close, but it is the evidence gate for deciding whether the existing
+same-trust-domain Shared pmem side-channel language is enough under memory
+pressure.
+
+Purpose: measure how host or sibling-VM memory pressure changes read/refault
+latency for the `.8.12`-valid Shared erofs payload layout and record whether
+that timing signal is acceptable under the explicit trust-domain assumption.
+
+Invocation:
+
+```sh
+M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 \
+M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 50% --timeout 30s' \
+M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 \
+M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 \
+M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 \
+M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT=docs/perf/pmem-dax-memory-pressure.md \
+cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
+```
+
+Artifact:
+
+- `docs/perf/pmem-dax-memory-pressure.md`
+
+Required interpretation: real-KVM substrate, actual Shared pmem guests,
+`VM count >= 2`, uncompressed non-inlined Shared payload layout (`Layout: 0`
+with equal logical and on-disk size), baseline read latency P50/P95/P99,
+post-pressure read/refault latency P50/P95/P99, cross-guest signal delta,
+host memory and page-cache deltas before/during/after pressure, leaked Shared
+markers = 0, leaked Firecracker/jailer processes = 0, leaked mounts = 0, and a
+decision output that either updates residual-risk docs or files mitigation
+beads. Before closing, after committing the artifact, run:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py --only dax-memory-pressure --require-committed
+```
+
 ## E1. Density Extended
 
 Gates: `m80-jp6ik.13`, `m80-jp6ik.20`.
@@ -354,6 +533,79 @@ Required interpretation: machine-config PUT omits `cpu_template` by default,
 phase_12a_instance_start P50 before/after, same-host snapshot/restore result,
 and the documented tradeoff that future cross-host restore needs explicit
 CPU-feature parity verification.
+
+## E13. Composed E2E
+
+Gates: `m80-q420k.6.2`, `m80-q420k.6.3`, `m80-q420k.6.4`,
+`m80-q420k.6.5`.
+
+Purpose: prove that the composed layered-rootfs path survives real-KVM
+snapshot restore with a Shared pmem layer, a PerVm pmem layer, post-restore
+hooks, bounded host-memory growth, and zero teardown residue.
+
+Invocation:
+
+```sh
+sudo -n env \
+  PATH="$PATH" HOME="$HOME" CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup" \
+  M80_RUN_ROOT=/var/lib/m80-composed-e2e \
+  M80_JAIL_UID="$(id -u)" \
+  M80_JAIL_GID="$(id -g)" \
+  M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
+  M80_KERNEL_IMAGE=<real-stripped-kernel.bin> \
+  M80_KERNEL_KIND=stripped \
+  cargo test --release -p m80-firecracker --test e2e_composed_real_kvm -- \
+    --ignored composed_e2e_layered_warm_pool --nocapture
+```
+
+Artifacts:
+
+- `crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json`
+- `crates/m80-firecracker/benches/snapshots/composed-e2e-host-memory.json`
+- `crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json`
+- `docs/perf/composed-e2e.md`
+
+Required interpretation: restore P50/P95/P99 with `p99_ms <= 200`,
+`page_cache_dropped_between_leases=false`, host-memory delta compared to a
+same-run PerVm baseline bound,
+`page_cache_dropped_between_fill_and_attach=false`, the Shared payload's
+`.8.12`-proven erofs layout (`dump.erofs --path=/payload.bin` reports
+`Layout: 0` and equal logical/on-disk size), residue scan roots covering the
+explicit run root, `/tmp/m80-*`, `/var/run/m80`, image store, and template store,
+leased-run-dir enumeration, empty unexpected-path result, exact image-store
+preservation, exact template-store preservation, empty post-run Firecracker
+process list, preflight artifact identity, measured git commit, host-memory
+bound formula `shared_image_bytes + per_vm_overhead_bytes * n_attached`, and
+the full real-KVM smoke paste that produced all three artifacts. The receipt doc must
+also retain the exact `cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`
+reproduction command, host context, page-cache statement, and green
+`composed_e2e_layered_warm_pool` test-result lines. The verifier also
+checks that the three composed JSON artifacts agree on `git_commit`,
+`substrate`, target count, and Shared image digest, and that the receipt doc
+mentions the measured git commit, substrate identity, and Shared image digest
+from those JSON artifacts. Run the composed
+JSON subset after committing artifacts and before closing `m80-q420k.6.2`,
+`.6.3`, and `.6.4`:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py \
+  --only composed-restore --only composed-memory --only composed-residue \
+  --require-committed
+```
+
+Run the verifier without `--only` before closing `.6.5` or the parent
+super-epic; that adds the `docs/perf/composed-e2e.md` receipt check. The
+`.6.5` close reason must reference the three JSON measurement `verified:`
+lines, using the same commits as the already-closed `.6.2`, `.6.3`, and
+`.6.4` close reasons, as well as the receipt doc's own verified line. For
+final parent close, use the full gate:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py \
+  --require-committed \
+  --require-closed-beads \
+  --require-parent-phases-closed
+```
 
 ## Attribution Rules
 

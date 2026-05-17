@@ -19,10 +19,10 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
 ## Black-box contract
 
 - `Channel::open_uds_only(host_uds: &Path, guest_port: u32) -> Result<Channel,
-  VsockError>` connects to the supplied Firecracker UDS, sets five-second
-  read/write timeouts, sends `CONNECT <guest_port>`, validates an `OK ...`
-  response, and returns a duplex channel that reads/writes
-  `m80-proto::Envelope` frames.
+  VsockError>` connects to the supplied Firecracker UDS, applies five-second
+  read/write timeouts only for the `CONNECT <guest_port>` / `OK ...`
+  handshake, clears those socket timeouts, and returns a duplex channel that
+  reads/writes `m80-proto::Envelope` frames.
 - The caller supplies the full host UDS path. `m80-vsock` does not construct
   run-root paths or assume layout above that socket.
 - Readiness is already established before `Channel::open_uds_only` is called.
@@ -47,15 +47,18 @@ listener, accepts `m80-guestd`'s ready connection, and only then asks
 
 ## Timeouts
 
-`BRIDGE_IO_TIMEOUT` is five seconds. It is applied as both the read timeout and
-the write timeout on every Firecracker UDS stream opened by
-`Channel::open_uds_only`.
+`BRIDGE_HANDSHAKE_TIMEOUT` is five seconds. It is applied as both the read
+timeout and write timeout while opening the Firecracker bridge and waiting for
+the `OK` acknowledgement. Before `Channel::open_uds_only` returns, normal
+application read/write timeouts are cleared. A guest process that produces no
+output for longer than five seconds can still complete; exec duration is owned
+by `ExecRequest::timeout_ms` inside guestd or by an explicit host deadline.
 
 `Channel::recv_raw_with_deadline(deadline)` lets callers impose a call-wide
-receive deadline in addition to the no-progress timeout. It returns `Ok(None)`
-when the deadline expires before a complete frame arrives, including when the
-peer keeps sending partial bytes just under the normal bridge timeout. `None`
-is terminal for that channel because partial frame bytes may already have been
+receive deadline. It returns `Ok(None)` when the deadline expires before a
+complete frame arrives, including when the peer keeps sending partial bytes
+just under the bounded per-read timeout used by the deadline wrapper. `None` is
+terminal for that channel because partial frame bytes may already have been
 consumed.
 
 ## Public surface
@@ -120,8 +123,8 @@ complete table of all recognized `M80_DEBUG_WIRE` targets across the workspace.
 - `tests/handshake.rs` checks successful handshake, bad ack to
   `HandshakeFailed`, and missing UDS to `Io`.
 - `tests/frame_round_trip.rs` checks envelope round trips and cloned-sender
-  same-connection control frames, including deadline expiry during a slow-drip
-  partial frame.
+  same-connection control frames, including application idleness past the
+  handshake timeout and deadline expiry during a slow-drip partial frame.
 - `tests/debug_wire_redaction.rs` checks that `M80_DEBUG_WIRE=vsock` does not
   log `ExecRequest.env` values while preserving the frame sent to the peer.
 - `tests/drop_cleanup.rs` checks that dropping a `Channel` leaves the

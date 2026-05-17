@@ -34,7 +34,14 @@ impl RunningSandbox {
             },
             request_id.clone(),
         );
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
+        let firecracker_pid = self.firecracker.firecracker_pid();
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            firecracker_pid,
+            "file read",
+            &envelope,
+        )?;
         let mut bytes = Vec::new();
         let mut expected_seq = 0u64;
 
@@ -42,7 +49,7 @@ impl RunningSandbox {
             let frame = match channel.recv_raw() {
                 Ok(frame) => frame,
                 Err(e) => {
-                    let err = super::protocol::recv_error(e, "file read");
+                    let err = super::protocol::recv_error(e, "file read", firecracker_pid);
                     crate::diagnostics::record_protocol_error(
                         &mut self.diagnostics,
                         &self.vm_id,
@@ -198,9 +205,16 @@ impl RunningSandbox {
             },
             request_id.clone(),
         );
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &begin)?;
+        let firecracker_pid = self.firecracker.firecracker_pid();
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            firecracker_pid,
+            "file upload begin",
+            &begin,
+        )?;
         let begin_response: Envelope<FileWriteBeginResponse> =
-            recv_fileop(&mut channel, "file upload begin")?;
+            recv_fileop(&mut channel, "file upload begin", firecracker_pid)?;
         let begin_response = begin_response.payload;
         fileop_result(begin_response.error)?;
         let upload_id =
@@ -214,7 +228,9 @@ impl RunningSandbox {
         let mut seq = 0u64;
         let mut buf = vec![0u8; chunk_size];
         loop {
-            let n = reader.read(&mut buf)?;
+            let n = reader
+                .read(&mut buf)
+                .map_err(|source| FcError::FileUploadReadFailed { source })?;
             if n == 0 {
                 break;
             }
@@ -225,7 +241,7 @@ impl RunningSandbox {
             };
             channel.send(&Envelope::with_request_id(chunk, request_id.clone()))?;
             let response: Envelope<FileWriteChunkResponse> =
-                recv_fileop(&mut channel, "file upload chunk")?;
+                recv_fileop(&mut channel, "file upload chunk", firecracker_pid)?;
             let response = response.payload;
             fileop_result(response.error)?;
             validate_chunk_ack(&upload_id, seq, &response)?;
@@ -241,7 +257,7 @@ impl RunningSandbox {
             request_id,
         ))?;
         let response: Envelope<FileWriteCommitResponse> =
-            recv_fileop(&mut channel, "file upload commit")?;
+            recv_fileop(&mut channel, "file upload commit", firecracker_pid)?;
         let response = response.payload;
         fileop_result(response.error)?;
         self.last_activity_ns
@@ -258,8 +274,15 @@ impl RunningSandbox {
         let vsock_uds = self.jail.jail_root().join(VSOCK_SOCKET);
         let request_id = request_id_for(&self.vm_id, self.request_id.as_deref(), kind);
         let envelope = Envelope::with_request_id(payload, request_id);
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
-        let frame: Envelope<U> = recv_fileop(&mut channel, "file operation")?;
+        let firecracker_pid = self.firecracker.firecracker_pid();
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            firecracker_pid,
+            "file operation",
+            &envelope,
+        )?;
+        let frame: Envelope<U> = recv_fileop(&mut channel, "file operation", firecracker_pid)?;
         let response = frame.payload;
         self.last_activity_ns
             .store(monotonic_ns(), Ordering::Relaxed);
@@ -308,13 +331,14 @@ fn validate_chunk_ack(
 fn recv_fileop<T>(
     channel: &mut m80_vsock::Channel,
     context: &'static str,
+    firecracker_pid: u32,
 ) -> Result<Envelope<T>, FcError>
 where
     T: m80_proto::Payload,
 {
     channel
         .recv()
-        .map_err(|e| super::protocol::recv_error(e, context))
+        .map_err(|e| super::protocol::recv_error(e, context, firecracker_pid))
 }
 
 #[cfg(test)]

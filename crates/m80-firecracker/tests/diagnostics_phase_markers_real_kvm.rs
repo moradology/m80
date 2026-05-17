@@ -9,6 +9,7 @@ use serde_json::Value;
 use common::RunDirDumpGuard;
 
 const REQUEST_ID: &str = "req-diagnostics-phase-e2e";
+const EXEC_REQUEST_ID_PREFIX: &str = "req-diagnostics-phase-e2e-exec-";
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
@@ -38,6 +39,7 @@ fn diagnostics_phase_markers_emitted_on_exec() {
             idle_timeout: None,
             daemonize: false,
             request_id: Some(REQUEST_ID.to_owned()),
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         })
@@ -69,7 +71,8 @@ fn diagnostics_phase_markers_emitted_on_exec() {
         "phase_started",
         "StoragePrepare",
         Some("phase_3_storage_prep"),
-        "phase_3_storage_prep started",
+        "phase_started",
+        RequestIdMatch::Exact(REQUEST_ID),
         &vm_id,
     );
     assert_event(
@@ -77,16 +80,26 @@ fn diagnostics_phase_markers_emitted_on_exec() {
         "phase_completed",
         "Ready",
         Some("phase_12b_ready_accept"),
-        "phase_12b_ready_accept completed",
+        "phase_completed",
+        RequestIdMatch::Exact(REQUEST_ID),
         &vm_id,
     );
-    assert_event(&events, "lifecycle", "Ready", None, "guestd ready", &vm_id);
+    assert_event(
+        &events,
+        "lifecycle",
+        "Ready",
+        None,
+        "guestd ready",
+        RequestIdMatch::Exact(REQUEST_ID),
+        &vm_id,
+    );
     assert_event(
         &events,
         "lifecycle",
         "Request",
         None,
         "exec request started",
+        RequestIdMatch::Prefix(EXEC_REQUEST_ID_PREFIX),
         &vm_id,
     );
     assert_event(
@@ -95,17 +108,38 @@ fn diagnostics_phase_markers_emitted_on_exec() {
         "Request",
         None,
         "exec request completed",
+        RequestIdMatch::Prefix(EXEC_REQUEST_ID_PREFIX),
         &vm_id,
     );
-    assert_event(&events, "lifecycle", "Stop", None, "stop complete", &vm_id);
+    assert_event(
+        &events,
+        "lifecycle",
+        "Stop",
+        None,
+        "stop complete",
+        RequestIdMatch::Exact(REQUEST_ID),
+        &vm_id,
+    );
 
     assert!(
         events
             .iter()
             .filter(|event| event["request_id"] == REQUEST_ID)
             .count()
-            >= 6,
-        "expected request_id to correlate launch, exec, and stop events: {events:#?}"
+            >= 4,
+        "expected request_id to correlate launch and stop events: {events:#?}"
+    );
+    assert!(
+        events
+            .iter()
+            .filter(|event| {
+                event["request_id"]
+                    .as_str()
+                    .is_some_and(|request_id| request_id.starts_with(EXEC_REQUEST_ID_PREFIX))
+            })
+            .count()
+            >= 2,
+        "expected derived exec request_id to correlate exec events: {events:#?}"
     );
 
     stopped.delete().expect("delete");
@@ -126,6 +160,7 @@ fn assert_event(
     phase: &str,
     phase_name: Option<&str>,
     message: &str,
+    request_id: RequestIdMatch<'_>,
     vm_id: &str,
 ) {
     assert!(
@@ -133,13 +168,30 @@ fn assert_event(
             event["event_kind"] == event_kind
                 && event["phase"] == phase
                 && event["message"] == message
-                && event["request_id"] == REQUEST_ID
+                && event["request_id"]
+                    .as_str()
+                    .is_some_and(|actual| request_id.matches(actual))
                 && event["context"]["vm_id"] == vm_id
                 && match phase_name {
                     Some(name) => event["context"]["phase_name"] == name,
                     None => true,
                 }
         }),
-        "missing diagnostics event kind={event_kind:?} phase={phase:?} phase_name={phase_name:?} message={message:?}; events={events:#?}"
+        "missing diagnostics event kind={event_kind:?} phase={phase:?} phase_name={phase_name:?} message={message:?} request_id={request_id:?}; events={events:#?}"
     );
+}
+
+#[derive(Clone, Copy, Debug)]
+enum RequestIdMatch<'a> {
+    Exact(&'a str),
+    Prefix(&'a str),
+}
+
+impl RequestIdMatch<'_> {
+    fn matches(self, actual: &str) -> bool {
+        match self {
+            Self::Exact(expected) => actual == expected,
+            Self::Prefix(expected) => actual.starts_with(expected),
+        }
+    }
 }

@@ -144,53 +144,32 @@ fn end_to_end_real_kvm_file_ops() {
         .expect("stat_file");
     assert_eq!(stat.size, written);
 
+    let work_dir = "/tmp/m80-fileops-work";
+    assert!(running
+        .create_dir(work_dir, Some(0o777), false)
+        .expect("create exec-visible fileops work dir"));
+    let blob_path = format!("{work_dir}/big.bin");
+    let roundtrip_path = format!("{work_dir}/roundtrip.bin");
+
     let blob = deterministic_payload((5 * 1024 * 1024) + 123);
     let expected_hash = sha256_hex_bytes(&blob);
     let uploaded = running
         .upload_file_chunked(
-            "/tmp/m80-fileops-big.bin",
-            Some(0o600),
+            blob_path.as_str(),
+            Some(0o644),
             std::io::Cursor::new(blob.clone()),
             1024 * 1024,
         )
         .expect("upload_file_chunked");
     assert_eq!(uploaded, blob.len() as u64);
     let stat = running
-        .stat_file("/tmp/m80-fileops-big.bin")
+        .stat_file(blob_path.as_str())
         .expect("stat uploaded blob");
     assert_eq!(stat.size, blob.len() as u64);
-    let guest_hash = running
+    let copy = running
         .exec(m80_proto::ExecRequest {
             program: "/bin/sh".into(),
-            args: vec![
-                "-c".into(),
-                "bytes=$(wc -c < /tmp/m80-fileops-big.bin); \
-                 hash=$(sha256sum /tmp/m80-fileops-big.bin | cut -d ' ' -f1); \
-                 printf '%s %s\\n' \"$bytes\" \"$hash\""
-                    .into(),
-            ],
-            cwd: None,
-            env: None,
-            stdin: None,
-            timeout_ms: Some(10_000),
-            streaming: false,
-        })
-        .expect("guest hash uploaded blob");
-    assert_eq!(guest_hash.status, m80_proto::ExecStatus::Completed);
-    assert_eq!(guest_hash.exit_code, Some(0));
-    let guest_hash_stdout = String::from_utf8_lossy(&guest_hash.stdout);
-    assert_eq!(
-        guest_hash_stdout.trim(),
-        format!("{} {expected_hash}", blob.len())
-    );
-
-    running
-        .exec(m80_proto::ExecRequest {
-            program: "/bin/sh".into(),
-            args: vec![
-                "-c".into(),
-                "cp /tmp/m80-fileops-big.bin /tmp/m80-fileops-roundtrip.bin".into(),
-            ],
+            args: vec!["-c".into(), format!("cp {blob_path} {roundtrip_path}")],
             cwd: None,
             env: None,
             stdin: None,
@@ -198,8 +177,15 @@ fn end_to_end_real_kvm_file_ops() {
             streaming: false,
         })
         .expect("copy uploaded blob inside guest");
+    assert_eq!(copy.status, m80_proto::ExecStatus::Completed);
+    assert_eq!(
+        copy.exit_code,
+        Some(0),
+        "copy stderr={}",
+        String::from_utf8_lossy(&copy.stderr)
+    );
     let (read_blob, truncated) = running
-        .read_file("/tmp/m80-fileops-roundtrip.bin", Some(blob.len() as u64))
+        .read_file(roundtrip_path.as_str(), Some(blob.len() as u64))
         .expect("read uploaded blob");
     assert_eq!(read_blob, blob);
     assert_eq!(sha256_hex_bytes(&read_blob), expected_hash);

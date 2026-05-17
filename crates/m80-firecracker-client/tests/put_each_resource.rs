@@ -6,7 +6,7 @@ use fixture_server::{resp_204, FixtureServer};
 
 use m80_firecracker_client::{
     BootSourceConfig, CacheType, Client, CpuTemplate, DriveConfig, IoEngine, MachineConfig,
-    PartialDriveConfig, VsockConfig,
+    PartialDriveConfig, PmemConfig, VsockConfig,
 };
 use std::path::PathBuf;
 
@@ -107,6 +107,54 @@ fn put_drive_omits_optional_drive_fields_when_unspecified() {
         !result.request.contains("\"cache_type\""),
         "None cache_type must be omitted"
     );
+}
+
+#[test]
+fn pmem_config_serializes_exact_firecracker_shape() {
+    let config = PmemConfig {
+        id: "pmem0".to_owned(),
+        path_on_host: PathBuf::from("/var/fc/toolchain.erofs"),
+        root_device: false,
+        read_only: true,
+    };
+
+    let json = serde_json::to_string(&config).expect("serialize");
+
+    assert_eq!(
+        json,
+        r#"{"id":"pmem0","path_on_host":"/var/fc/toolchain.erofs","root_device":false,"read_only":true}"#
+    );
+    let parsed: PmemConfig =
+        serde_json::from_str(r#"{"id":"pmem1","path_on_host":"/var/fc/layer.erofs"}"#)
+            .expect("defaults deserialize");
+    assert!(!parsed.root_device);
+    assert!(!parsed.read_only);
+}
+
+#[test]
+fn put_pmem_sends_correct_json_and_url() {
+    let server = FixtureServer::spawn(resp_204()).unwrap();
+    let client = Client::new(&server.socket_path).unwrap();
+    client
+        .put_pmem(&PmemConfig {
+            id: "pmem0".to_owned(),
+            path_on_host: PathBuf::from("/var/fc/toolchain.erofs"),
+            root_device: false,
+            read_only: true,
+        })
+        .unwrap();
+    let result = server.join();
+    assert!(
+        result.request.starts_with("PUT /pmem/pmem0 HTTP/1.1\r\n"),
+        "id must appear in URL: {}",
+        result.request.lines().next().unwrap()
+    );
+    assert!(result.request.contains("\"id\":\"pmem0\""));
+    assert!(result
+        .request
+        .contains("\"path_on_host\":\"/var/fc/toolchain.erofs\""));
+    assert!(result.request.contains("\"root_device\":false"));
+    assert!(result.request.contains("\"read_only\":true"));
 }
 
 #[test]

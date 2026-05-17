@@ -504,6 +504,7 @@ fn run_root_reflink_probe_reports_full_copy_fallback_on_unsupported_clone() {
         "failed reflink command should report full-copy fallback, got {result:?}"
     );
     assert!(result.detail().contains("full byte copy"));
+    assert!(result.detail().contains("cp --reflink=never"));
 }
 
 #[test]

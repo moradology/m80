@@ -22,8 +22,10 @@ The following is the normative API. IMPL leaf `m80-ovrl.2` produces code that ma
 /// shared base and the new overlay.
 ///
 /// Ensures a run-root-local empty ext4 overlay template exists, then clones it
-/// to `overlay_dest` with `cp --reflink=auto --sparse=always`, giving reflink
-/// where available and sparse plain-copy fallback otherwise. The base is NOT copied.
+/// to `overlay_dest` through the runtime reflink gate: `cp --reflink=always
+/// --sparse=always` on capable filesystems and `cp --reflink=never
+/// --sparse=always` on known non-reflink filesystems or probe failures. The
+/// base is NOT copied.
 ///
 /// Caller is responsible for sha256 verification of `base` via
 /// `m80_image_manifest::Manifest::verify()` before calling `prepare`.
@@ -356,7 +358,8 @@ loaded-cell failures persist after the pivot, so the saturation issue remains
 vsock/scheduling work rather than storage-copy work.
 
 Follow-up `m80-f2zc.10` replaced per-launch `mkfs.ext4` with a run-root-local
-empty overlay template cloned via `cp --reflink=auto --sparse=always`.
+empty overlay template cloned through the gated `cp --reflink=always` /
+`cp --reflink=never` path.
 Measured on 2026-05-05:
 
 | Metric | Minimal stock idle | Minimal stripped idle |

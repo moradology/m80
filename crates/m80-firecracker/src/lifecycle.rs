@@ -6,8 +6,11 @@ mod fileops;
 mod health;
 mod hotplug;
 mod metrics;
+mod pmem;
+mod post_restore;
 mod protocol;
 mod stopped;
+mod template_snapshot;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -30,6 +33,10 @@ use crate::error::{
 use crate::layout::{FIRECRACKER_API_SOCKET, VSOCK_SOCKET};
 use crate::types::{RunningSandbox, StoppedSandbox};
 
+pub(crate) use pmem::phase_13_pmem_guest_mount;
+pub(crate) use post_restore::phase_restore_post_restore_hooks;
+pub(crate) use template_snapshot::prepare_template_snapshot_paths;
+
 /// Per-attempt deadline for the shutdown vsock round-trip (open UDS, send
 /// request, read response). 5 s is generous relative to the sub-100 ms
 /// empirical round-trip; the headroom covers a loaded host where the guest may
@@ -50,6 +57,13 @@ fn normal_stop_disposition() -> StopDisposition {
 
 fn force_kill_disposition() -> StopDisposition {
     StopDisposition::HostForceKill
+}
+
+fn release_shared_pmem_refs(refs: Vec<m80_image_store::SharedImageRef>) -> Result<(), FcError> {
+    for shared_ref in refs {
+        shared_ref.release().map_err(FcError::ImageStore)?;
+    }
+    Ok(())
 }
 
 impl RunningSandbox {
@@ -159,7 +173,8 @@ impl RunningSandbox {
             vm_id,
             request_id,
             run_dir,
-            jail: _jail,     // Drop → unmounts bind mounts + removes jail dir.
+            jail,
+            shared_pmem_refs,
             cgroup: _cgroup, // Drop → removes cgroup subtree.
             rootfs: _rootfs,
             scratch,
@@ -190,6 +205,8 @@ impl RunningSandbox {
             let _ = handle.join();
         }
         unmount_snapshot_bind(snapshot_mount.as_deref());
+        drop(jail);
+        release_shared_pmem_refs(shared_pmem_refs)?;
         phase_event("stop_release", &vm_id, t_release.elapsed());
         crate::diagnostics::record_stop_reason(
             &mut diagnostics,
@@ -257,7 +274,8 @@ impl RunningSandbox {
             vm_id,
             request_id,
             run_dir,
-            jail: _jail,
+            jail,
+            shared_pmem_refs,
             cgroup: _cgroup,
             rootfs: _rootfs,
             scratch,
@@ -285,6 +303,8 @@ impl RunningSandbox {
             let _ = handle.join();
         }
         unmount_snapshot_bind(snapshot_mount.as_deref());
+        drop(jail);
+        release_shared_pmem_refs(shared_pmem_refs)?;
         crate::diagnostics::record_stop_reason(
             &mut diagnostics,
             &vm_id,
@@ -405,6 +425,7 @@ pub(crate) fn prepare_snapshot_paths(
     })
 }
 
+#[allow(dead_code)] // Wired into WarmStrategy::SnapshotRestore by m80-q420k.4.5.
 fn clean_snapshot_stage_files(paths: &SnapshotPaths) -> Result<(), FcError> {
     remove_file_if_exists(&paths.vm_state)?;
     remove_file_if_exists(&paths.mem)?;
@@ -514,7 +535,7 @@ pub(crate) fn unmount_snapshot_bind(mount_path: Option<&Path>) {
 fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<ExitReason, FcError> {
     match normal_stop_disposition() {
         StopDisposition::GuestdShutdownThenFirecrackerKill => {
-            let exit_reason = if let Err(e) = send_shutdown_request(vsock_uds) {
+            let exit_reason = if let Err(e) = send_shutdown_request(firecracker_pid, vsock_uds) {
                 tracing::warn!(
                     error = %e,
                     "vsock graceful-stop failed; SIGKILLing without ack"
@@ -532,14 +553,19 @@ fn bounded_stop(firecracker_pid: u32, vsock_uds: &Path) -> Result<ExitReason, Fc
 
 /// Open a fresh vsock channel, send `ShutdownRequest`, read
 /// `ShutdownResponse`. Returns the guest's chosen action.
-fn send_shutdown_request(vsock_uds: &Path) -> Result<ShutdownAction, FcError> {
+fn send_shutdown_request(
+    firecracker_pid: u32,
+    vsock_uds: &Path,
+) -> Result<ShutdownAction, FcError> {
     let deadline = Instant::now() + SHUTDOWN_RPC_TIMEOUT;
     let mut channel = Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT)?;
 
     let req = ShutdownRequest { reason: None };
     channel.send(&Envelope::new(req))?;
 
-    let resp_env: Envelope<ShutdownResponse> = channel.recv()?;
+    let resp_env: Envelope<ShutdownResponse> = channel.recv().map_err(|err| {
+        protocol::recv_error_after_clean_request(err, "shutdown_response", firecracker_pid)
+    })?;
     if Instant::now() > deadline {
         return Err(FcError::Protocol(WireProtocolError::ReadTimeout {
             context: "shutdown_response",
@@ -575,6 +601,7 @@ pub(crate) fn monotonic_ns() -> u64 {
 pub(crate) fn spawn_idle_watcher(
     timeout: Duration,
     vsock_uds: std::path::PathBuf,
+    firecracker_pid: u32,
     last_activity_ns: Arc<AtomicU64>,
     active_execs: Arc<AtomicUsize>,
     idle_timed_out: Arc<AtomicBool>,
@@ -590,6 +617,7 @@ pub(crate) fn spawn_idle_watcher(
             poll_interval,
             IdleWatcherContext {
                 vsock_uds: &vsock_uds,
+                firecracker_pid,
                 last_activity_ns: &last_activity_ns,
                 active_execs: &active_execs,
                 idle_timed_out: &idle_timed_out,
@@ -602,6 +630,7 @@ pub(crate) fn spawn_idle_watcher(
 
 pub(crate) struct IdleWatcherContext<'a> {
     pub(crate) vsock_uds: &'a std::path::Path,
+    pub(crate) firecracker_pid: u32,
     pub(crate) last_activity_ns: &'a AtomicU64,
     pub(crate) active_execs: &'a AtomicUsize,
     pub(crate) idle_timed_out: &'a AtomicBool,
@@ -638,7 +667,7 @@ pub(crate) fn idle_watcher_loop(
                 "idle timeout expired; issuing graceful shutdown"
             );
             context.idle_timed_out.store(true, Ordering::Relaxed);
-            if let Err(e) = send_shutdown_request(context.vsock_uds) {
+            if let Err(e) = send_shutdown_request(context.firecracker_pid, context.vsock_uds) {
                 tracing::warn!(
                     vm_id = context.vm_id,
                     error = %e,
@@ -924,6 +953,7 @@ mod tests {
                     Duration::from_millis(5),
                     IdleWatcherContext {
                         vsock_uds: &socket,
+                        firecracker_pid: std::process::id(),
                         last_activity_ns: &last_activity,
                         active_execs: &active_execs,
                         idle_timed_out: &idle_timed_out,

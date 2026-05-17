@@ -104,6 +104,40 @@ does constrain Phase D: post-restore hooks use a host-driven restore signal and
 explicit userspace reseed unless a future kernel profile enables
 `CONFIG_VMGENID=y`.
 
+## Phase C Shared Bind Update
+
+`PmemSharing::Shared` now uses a distinct jailer bind mode:
+`BindMode::RoImageStore`. The mode is still a read-only bind, but it adds a
+source-policy backstop: `Plan::compute` rejects sources that are not rooted
+under `/var/lib/m80-images`, and materialization rechecks the canonical source
+against the canonical image-store root before the bind mount. This keeps the
+shared path constrained to m80-owned, digest-addressed artifacts instead of
+letting an arbitrary caller path ride the shared-pmem lane.
+
+The O_RDONLY assertion for Phase C uses the guest-observable route rather than
+host-side Firecracker fd inspection. The ignored real-KVM test
+`pmem_layer_shared_reuses_backing_inode_real_kvm` launches two VMs with one
+shared backing, proves both jail paths point at the same image-store inode, and
+asserts that each guest `/proc/mounts` line for the layer includes both `ro`
+and DAX. This is the contract consumers observe: the shared erofs layer is
+mounted read-only inside every guest while retaining the shared host inode.
+
+Shared active-use tracking uses on-disk markers under the image store:
+`<store>/shared/<digest>/refs/<vm_id>`. These markers are ref-like liveness
+evidence, not ownership of the canonical artifact. The image artifact itself is
+operator-managed and remains in the content-addressed store after the final VM
+releases its marker. This is a deliberate correction to the early Phase C
+wording that implied deletion at refcount zero: deleting the canonical
+image-store input would make future launches fail and would conflate active-use
+tracking with garbage collection. Any future artifact GC must be an explicit
+operator action with its own retention policy.
+
+Storage prep acquires a marker for every `Shared` layer before launch returns a
+running VM. Stop and force-kill release markers only after the jail has been
+dropped, so the bind mount is gone before the marker disappears. Backend
+startup sweeps stale markers for VM ids that no longer exist under the run
+root, covering process-crash residue without silently deleting artifacts.
+
 ## Alternatives Considered
 
 **Free-form `pmem_layers: Vec<PmemLayer>`:** rejected. A bounded collection
@@ -127,6 +161,45 @@ the lower-level types.
 **Ship an opinionated image-build pipeline:** rejected. m80 owns VM mechanics:
 artifact admission, digest verification, and launch wiring. Build systems live
 in operator or adapter infrastructure.
+
+## Phase G Recheck: MountSpec Shape
+
+Bead `m80-q420k.8.1` rechecked the earlier `MountSpec` question after Phases
+B, C, and D had shipped. The decision remains unchanged: keep rootfs, scratch,
+and pmem as distinct lower-level surfaces. The live implementation still gives
+rootfs and rootfs overlay fixed Firecracker drive ids and exactly-one lifecycle
+roles; workspace scratch is optional, writable, tied to writeback/extraction
+semantics, and may be omitted for warm slots; pmem layers are a bounded
+zero-or-many read-only list validated as `PmemLayer`, resolved through the
+image store, attached as virtio-pmem, and guest-mounted after readiness.
+`BootSpec` mirrors that split with `sandbox` fields plus a separate
+`pmem_layers` array rather than a polymorphic mount list. The current Torpor
+adapter also wants the split: it configures rootfs as deployment artifact,
+workspace as the per-request guest workspace/writeback surface, and warm
+workspace drives as adapter-owned lease state; it has no consumer pressure for
+a single enum. If a later adapter wants a unified presentation, add it as an
+additive config/view layer that lowers into these existing types, not by
+collapsing the lifecycle primitives.
+
+## Phase G Recheck: Pmem Device Size
+
+Bead `m80-q420k.8.4` checked Firecracker v1.15.1 rather than assuming the
+limit shape. The API schema and pmem user doc do not expose a configured
+per-device maximum, but the implementation maps the backing file, rounds the
+region up to 2 MiB, and allocates that region from `past_mmio64_memory`.
+Both x86_64 and aarch64 define that post-MMIO window as 512 GiB in v1.15.1.
+The attach path currently unwraps the address allocation, so m80 must reject
+oversize artifacts before handing them to Firecracker.
+
+The validation belongs in storage prep, not `PmemLayer::new`: the public layer
+type carries an image digest and sharing/mount policy, while the byte length is
+known only after `m80-image-store` resolves the digest to an erofs artifact.
+Storage prep now rejects artifacts whose Firecracker-rounded backing length
+would exceed the 512 GiB window before clone creation, Shared marker creation,
+jail binding, or REST admission. Workloads larger than one pmem device should
+split across multiple declared layers, still bounded by `MAX_PMEM_LAYERS`; a
+future helper can automate chunking and mount-time recomposition without
+changing the VM-mechanics surface.
 
 ## References
 

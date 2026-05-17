@@ -19,6 +19,10 @@
 #   M80_IMAGE_KIND=minimal ./scripts/smoke.sh       # minimal image, full pipeline
 #   M80_IMAGE_KIND=minimal-erofs ./scripts/smoke.sh # minimal erofs image; defaults to stripped kernel
 #   M80_KERNEL_KIND=stripped ./scripts/smoke.sh     # stripped kernel smoke (m80-ci9i.6)
+#   M80_PMEM_LAYERS=2 ./scripts/smoke.sh launch-only
+#                                                    # generated pmem attach + DAX guest mount smoke
+#   M80_PMEM_EROFS_IMAGE=/path/to/layer.erofs ./scripts/smoke.sh launch-only
+#                                                    # legacy single-image pmem attach + DAX guest mount smoke
 #
 # Knobs (env vars):
 #   M80_RUN_ROOT              (default /var/lib/m80-run; do NOT use /tmp — nodev)
@@ -31,6 +35,13 @@
 #   M80_KERNEL_KIND           (default stock; or "stripped")
 #   M80_STRIPPED_KERNEL_PATH  (default: first glob match of
 #                              crates/m80-image-build/kernels/vmlinux-m80-*.bin)
+#   M80_PMEM_LAYERS           (default 0; when >0, run real-KVM pmem smoke with
+#                              that many generated erofs layers)
+#   M80_PMEM_EROFS_IMAGE      (optional; when set, run the pmem attach/mount
+#                              real-KVM smoke instead of the default exec smoke)
+#   M80_VERIFY_REFLINK_DIVERGENCE
+#                              (default 0; when 1, run the rootfs overlay
+#                              divergence real-KVM smoke)
 
 set -euo pipefail
 
@@ -59,6 +70,14 @@ JAILER_BIN="${JAILER_BIN:-/opt/firecracker/bin/jailer}"
 IMAGE_BUILD_DIR="${IMAGE_BUILD_DIR:-/tmp/m80-build/$IMAGE_KIND}"
 JAIL_UID="${M80_JAIL_UID:-$(id -u)}"
 JAIL_GID="${M80_JAIL_GID:-$(getent group kvm | cut -d: -f3 || id -g)}"
+PMEM_LAYERS="${M80_PMEM_LAYERS:-0}"
+if ! [[ "$PMEM_LAYERS" =~ ^[0-9]+$ ]]; then
+    echo "M80_PMEM_LAYERS must be a non-negative integer, got: $PMEM_LAYERS" >&2
+    exit 1
+fi
+if [[ -n "${M80_PMEM_EROFS_IMAGE:-}" && -z "${M80_PMEM_LAYERS:-}" ]]; then
+    PMEM_LAYERS=1
+fi
 
 FIRECRACKER_VERSION="${M80_FIRECRACKER_VERSION:-v1.15.1}"
 
@@ -125,6 +144,7 @@ echo "  jailer:      $JAILER_BIN"
 echo "  kernel:      $KERNEL_IMAGE"
 echo "  rootfs:      $ROOTFS_IMAGE"
 echo "  jail uid/gid: $JAIL_UID/$JAIL_GID"
+echo "  pmem-layers: $PMEM_LAYERS"
 echo
 
 # --- build the cli ---
@@ -227,6 +247,84 @@ sudo env "${M80_ENV[@]}" ./target/release/m80 preflight
 
 out_file="$(mktemp)"
 trap 'rm -f "$out_file"' EXIT
+
+# =========================================================================
+# Reflink smoke: boot, write into rootfs overlay, verify host-side divergence
+# =========================================================================
+if [[ "${M80_VERIFY_REFLINK_DIVERGENCE:-0}" == "1" ]]; then
+    echo "=== reflink rootfs divergence smoke ==="
+    cargo test -p m80-firecracker --test reflink_rootfs_real_kvm --no-run
+    reflink_test_bin="$(
+        find target/debug/deps -maxdepth 1 -type f -executable \
+            -name 'reflink_rootfs_real_kvm-*' | sort | tail -n 1
+    )"
+    if [[ -z "$reflink_test_bin" ]]; then
+        echo "reflink rootfs real-KVM test binary not found" >&2
+        exit 1
+    fi
+    if timeout 180 sudo env "${M80_ENV[@]}" \
+            M80_PHASE_TRACE=1 \
+            "$reflink_test_bin" --ignored --nocapture \
+            reflink_rootfs_real_kvm_boot_write_diverges_overlay_from_template \
+            > "$out_file" 2>&1 \
+            && rg -q "REFLINK_DIVERGENCE_OK" "$out_file"; then
+        echo "=== SMOKE PASSED ==="
+        rg "overlay_blocks_|template_blocks_|filefrag_|REFLINK_DIVERGENCE_OK" "$out_file"
+        exit 0
+    fi
+
+    echo "=== SMOKE FAILED ==="
+    tail -100 "$out_file"
+    exit 1
+fi
+
+# =========================================================================
+# Pmem smoke: real FC /pmem PUT, guest erofs+DAX mount, then workload visibility
+# =========================================================================
+if [[ "$PMEM_LAYERS" -gt 0 || -n "${M80_PMEM_EROFS_IMAGE:-}" ]]; then
+    echo "=== pmem real-kvm mount smoke ==="
+    cargo test -p m80-firecracker --test pmem_preboot_real_kvm --no-run
+    pmem_test_bin="$(
+        find target/debug/deps -maxdepth 1 -type f -executable \
+            -name 'pmem_preboot_real_kvm-*' | sort | tail -n 1
+    )"
+    if [[ -z "$pmem_test_bin" ]]; then
+        echo "pmem mount test binary not found" >&2
+        exit 1
+    fi
+    pmem_expected_layers="$PMEM_LAYERS"
+    if [[ "$pmem_expected_layers" -eq 0 ]]; then
+        pmem_expected_layers=1
+    fi
+    if timeout 120 sudo env "${M80_ENV[@]}" \
+            M80_PMEM_LAYERS="$PMEM_LAYERS" \
+            M80_PMEM_EROFS_IMAGE="${M80_PMEM_EROFS_IMAGE:-}" \
+            M80_PHASE_TRACE=1 \
+            "$pmem_test_bin" --ignored --nocapture \
+            pmem_layer_real_kvm_mounts_erofs_dax_before_workload \
+            > "$out_file" 2>&1 \
+            && rg -q "phase_13_pmem_guest_mount" "$out_file" \
+            && rg -q "pmem no-leak teardown passed" "$out_file" \
+            && rg -q "pmem layer mount smoke passed: .* layers=${pmem_expected_layers}" "$out_file"; then
+        for ((slot = 0; slot < pmem_expected_layers; slot++)); do
+            if ! rg -q "phase_11_put_pmem_pmem_${slot}" "$out_file" \
+                || ! rg -q "pmem layer digest: slot=${slot} digest=[0-9a-f]{64}" "$out_file" \
+                || ! rg -q "pmem layer jail path: slot=${slot} path=.*pmem\\.${slot}\\.img" "$out_file" \
+                || ! rg -q "pmem layer mount line: slot=${slot} mount_line=/dev/pmem${slot} .* erofs .*dax" "$out_file"; then
+                echo "=== SMOKE FAILED ==="
+                tail -80 "$out_file"
+                exit 1
+            fi
+        done
+        echo "=== SMOKE PASSED ==="
+        rg "phase_11_put_pmem_pmem_[0-9]+|phase_13_pmem_guest_mount|pmem layer digest|pmem layer jail path|pmem layer mount line|pmem no-leak teardown passed|pmem layer mount smoke passed" "$out_file"
+        exit 0
+    fi
+
+    echo "=== SMOKE FAILED ==="
+    tail -80 "$out_file"
+    exit 1
+fi
 
 # =========================================================================
 # Default smoke: cold launch + exec + stop

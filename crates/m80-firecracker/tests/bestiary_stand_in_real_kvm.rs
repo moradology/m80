@@ -11,6 +11,7 @@
 
 mod common;
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -18,8 +19,8 @@ use std::time::{Duration, Instant};
 
 use common::RunDirDumpGuard;
 use m80_firecracker::{
-    Backend, BackendConfig, CgroupMode, FcError, HotplugDriveAttach, NetworkPolicy, SandboxConfig,
-    SnapshotPaths, WarmPool, WarmPoolConfig,
+    Backend, BackendConfig, CgroupMode, FcError, HotplugDriveAttach, HotplugDriveDetach,
+    NetworkPolicy, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig, WarmStrategy,
 };
 use nix::unistd::{chown, Gid, Uid};
 
@@ -53,9 +54,8 @@ fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
         Arc::clone(&pool_backend),
         WarmPoolConfig {
             target_ready: 1,
-            snapshot: paths,
             sandbox: bestiary_sandbox_config("bestiary-template", true),
-            ready_probe: true_request(),
+            strategy: WarmStrategy::direct_snapshot(paths, true_request()),
             vm_id_prefix: prefix.into(),
             cpu_allocator: None,
         },
@@ -80,6 +80,31 @@ fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
         })
         .expect("attach and verify tenant drive");
 
+    let bytes_written = lease
+        .write_file(
+            "/tenant/warmlease-fileop.txt",
+            b"fileop-ok".to_vec(),
+            Some(0o600),
+        )
+        .expect("write through warm lease");
+    assert_eq!(bytes_written, "fileop-ok".len() as u64);
+    let (bytes, truncated) = lease
+        .read_file("/tenant/warmlease-fileop.txt", Some(64))
+        .expect("read through warm lease");
+    assert!(!truncated);
+    assert_eq!(String::from_utf8_lossy(&bytes), "fileop-ok");
+    let stat = lease
+        .stat_file("/tenant/warmlease-fileop.txt")
+        .expect("stat through warm lease");
+    assert_eq!(stat.size, "fileop-ok".len() as u64);
+    let entries = lease.list_dir("/tenant").expect("list through warm lease");
+    assert!(entries
+        .iter()
+        .any(|entry| entry.name == "warmlease-fileop.txt"));
+    lease
+        .remove_file("/tenant/warmlease-fileop.txt")
+        .expect("remove through warm lease");
+
     let response = lease
         .exec(m80_proto::ExecRequest {
             program: "/bin/sh".into(),
@@ -99,7 +124,13 @@ fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
         })
         .expect("one-shot tenant workload");
     assert_eq!(response.status, m80_proto::ExecStatus::Completed);
-    assert_eq!(response.exit_code, Some(0));
+    assert_eq!(
+        response.exit_code,
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
     assert_eq!(String::from_utf8_lossy(&response.stdout), "workload-ok");
 
     pool.wait_for_ready(1, std::time::Duration::from_secs(45))
@@ -134,6 +165,172 @@ fn bestiary_stand_in_attach_identity_run_destroy_no_residue() {
 
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary, snapshot support, and mkfs.ext4"]
+fn drive_attach_out_of_range_slot_rejects_and_refills_slot() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let snap_dir = warm_snapshot_dir(&discovery, "slot-out-of-range-snapshot");
+    let prefix = "slot-out-of-range";
+
+    let golden_backend =
+        Arc::new(Backend::new(backend_config(discovery.clone(), 1)).expect("Backend::new golden"));
+    let golden = golden_backend
+        .admit(bestiary_sandbox_config("slot-out-of-range-golden", false))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _golden_dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture golden");
+    running
+        .force_kill()
+        .expect("force-kill golden")
+        .delete()
+        .expect("delete golden");
+
+    let pool_backend =
+        Arc::new(Backend::new(backend_config(discovery.clone(), 2)).expect("Backend::new pool"));
+    let pool = WarmPool::new(
+        Arc::clone(&pool_backend),
+        WarmPoolConfig {
+            target_ready: 1,
+            sandbox: bestiary_sandbox_config("slot-out-of-range-template", true),
+            strategy: WarmStrategy::direct_snapshot(paths, true_request()),
+            vm_id_prefix: prefix.into(),
+            cpu_allocator: None,
+        },
+    )
+    .expect("WarmPool::new");
+    pool.fill_to_target_blocking().expect("prefill");
+
+    let mut lease = pool.try_lease().expect("lease tenant slot");
+    let run_dir = lease.run_dir().to_path_buf();
+    let firecracker_pid = firecracker_pid(&run_dir);
+    let err = lease
+        .attach_drive_verified(HotplugDriveAttach {
+            slot: 1,
+            path_on_host: PathBuf::from("/not-used.ext4"),
+            mount_path: "/tenant".into(),
+            identity_path: "/tenant/.tenant-identity".into(),
+            expected_identity: b"tenant".to_vec(),
+        })
+        .expect_err("out-of-range slot must reject and discard the warm slot");
+
+    assert!(
+        matches!(err, FcError::Config(_)),
+        "expected config error for out-of-range hotplug slot, got {err:?}"
+    );
+    wait_dead(firecracker_pid);
+    assert!(
+        !run_dir.exists(),
+        "out-of-range attach must delete discarded run dir: {}",
+        run_dir.display()
+    );
+    pool.wait_for_ready(1, Duration::from_secs(45))
+        .expect("pool refills after out-of-range discard");
+    assert_eq!(pool.snapshot().ready, 1);
+
+    drop(pool);
+    let _ = std::fs::remove_dir_all(&snap_dir);
+    assert_no_run_dirs_with_prefix(&discovery.run_root, prefix);
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary, snapshot support, and mkfs.ext4"]
+fn drive_attach_detach_attach_reuses_slot_placeholder_lifecycle() {
+    let discovery =
+        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
+    let snap_dir = warm_snapshot_dir(&discovery, "attach-detach-attach-snapshot");
+    let prefix = "attach-detach-attach-slot";
+
+    let golden_backend =
+        Arc::new(Backend::new(backend_config(discovery.clone(), 1)).expect("Backend::new golden"));
+    let golden = golden_backend
+        .admit(bestiary_sandbox_config(
+            "attach-detach-attach-golden",
+            false,
+        ))
+        .expect("admit golden");
+    let mut running = golden.launch().expect("launch golden");
+    let _golden_dump = RunDirDumpGuard::new(running.run_dir().to_path_buf());
+    let paths = snapshot_paths(&snap_dir);
+    running.capture(paths.clone()).expect("capture golden");
+    running
+        .force_kill()
+        .expect("force-kill golden")
+        .delete()
+        .expect("delete golden");
+
+    let pool_backend =
+        Arc::new(Backend::new(backend_config(discovery.clone(), 2)).expect("Backend::new pool"));
+    let pool = WarmPool::new(
+        Arc::clone(&pool_backend),
+        WarmPoolConfig {
+            target_ready: 1,
+            sandbox: bestiary_sandbox_config("attach-detach-attach-template", false),
+            strategy: WarmStrategy::direct_snapshot(paths, true_request()),
+            vm_id_prefix: prefix.into(),
+            cpu_allocator: None,
+        },
+    )
+    .expect("WarmPool::new");
+    pool.fill_to_target_blocking().expect("prefill");
+
+    let mut lease = pool.try_lease().expect("lease tenant slot");
+    let first_image = create_tenant_image_in_jail(
+        lease.run_dir(),
+        &discovery.firecracker_bin,
+        "tenant-first.ext4",
+        b"tenant-first",
+    );
+    let second_image = create_tenant_image_in_jail(
+        lease.run_dir(),
+        &discovery.firecracker_bin,
+        "tenant-second.ext4",
+        b"tenant-second",
+    );
+
+    lease
+        .attach_drive_verified(HotplugDriveAttach {
+            slot: 0,
+            path_on_host: PathBuf::from("/tenant-first.ext4"),
+            mount_path: "/tenant".into(),
+            identity_path: "/tenant/.tenant-identity".into(),
+            expected_identity: b"tenant-first".to_vec(),
+        })
+        .expect("attach first tenant drive");
+    lease
+        .detach_drive(HotplugDriveDetach {
+            slot: 0,
+            mount_path: "/tenant".into(),
+        })
+        .expect("detach first tenant drive");
+    lease
+        .attach_drive_verified(HotplugDriveAttach {
+            slot: 0,
+            path_on_host: PathBuf::from("/tenant-second.ext4"),
+            mount_path: "/tenant".into(),
+            identity_path: "/tenant/.tenant-identity".into(),
+            expected_identity: b"tenant-second".to_vec(),
+        })
+        .expect("attach second tenant drive");
+
+    let (bytes, truncated) = lease
+        .read_file("/tenant/.tenant-identity", Some(64))
+        .expect("read second tenant identity through warm lease");
+    assert!(!truncated);
+    assert_eq!(String::from_utf8_lossy(&bytes), "tenant-second");
+
+    lease.discard().expect("discard lease");
+    pool.wait_for_ready(1, Duration::from_secs(45))
+        .expect("pool refills after attach-detach-attach");
+    drop(pool);
+    assert_no_run_dirs_with_prefix(&discovery.run_root, prefix);
+    let _ = std::fs::remove_file(first_image);
+    let _ = std::fs::remove_file(second_image);
+    let _ = std::fs::remove_dir_all(&snap_dir);
+}
+
+#[test]
+#[ignore = "requires KVM host with real Firecracker binary, snapshot support, and mkfs.ext4"]
 fn drive_attach_identity_mismatch_kills_vm_and_refills_slot() {
     let discovery =
         m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
@@ -163,9 +360,8 @@ fn drive_attach_identity_mismatch_kills_vm_and_refills_slot() {
         Arc::clone(&pool_backend),
         WarmPoolConfig {
             target_ready: 1,
-            snapshot: paths,
             sandbox: bestiary_sandbox_config("identity-mismatch-template", true),
-            ready_probe: true_request(),
+            strategy: WarmStrategy::direct_snapshot(paths, true_request()),
             vm_id_prefix: prefix.into(),
             cpu_allocator: None,
         },
@@ -251,6 +447,7 @@ fn bestiary_sandbox_config(vm_id: impl Into<String>, one_shot: bool) -> SandboxC
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        pmem_layers: Vec::new(),
         preallocated_drive_slots: 1,
         one_shot,
     }
@@ -290,8 +487,13 @@ fn create_tenant_image_in_jail(
     let image_path = jail_root.join(image_name);
     let source = tempfile::tempdir().expect("tenant source dir");
     std::fs::write(source.path().join(".tenant-identity"), tenant_id).expect("tenant identity");
-    std::fs::write(source.path().join("workload-output"), b"stale-host-value")
-        .expect("seed workload file");
+    let workload_output = source.path().join("workload-output");
+    std::fs::write(&workload_output, b"stale-host-value").expect("seed workload file");
+    let mut perms = std::fs::metadata(&workload_output)
+        .expect("workload file metadata")
+        .permissions();
+    perms.set_mode(0o666);
+    std::fs::set_permissions(&workload_output, perms).expect("make workload file writable");
 
     let image = std::fs::File::create(&image_path).expect("create tenant ext4 image");
     image
@@ -328,26 +530,31 @@ fn firecracker_pid(run_dir: &Path) -> u32 {
         as u32
 }
 
-fn process_exists(pid: u32) -> bool {
-    match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None) {
-        Ok(()) => true,
-        Err(nix::errno::Errno::ESRCH) => false,
-        Err(e) => panic!("probe pid {pid}: {e}"),
-    }
-}
-
 fn wait_dead(pid: u32) {
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {
-        if !process_exists(pid) {
+        if !process_is_live(pid) {
             return;
         }
         std::thread::sleep(Duration::from_millis(25));
     }
     assert!(
-        !process_exists(pid),
+        !process_is_live(pid),
         "firecracker pid {pid} should be gone after identity mismatch"
     );
+}
+
+fn process_is_live(pid: u32) -> bool {
+    let proc_dir = PathBuf::from(format!("/proc/{pid}"));
+    match std::fs::read_to_string(proc_dir.join("stat")) {
+        Ok(stat) => !matches!(proc_stat_state(&stat), Some('Z' | 'X')),
+        Err(_) => proc_dir.exists(),
+    }
+}
+
+fn proc_stat_state(stat: &str) -> Option<char> {
+    let (_comm, after_comm) = stat.rsplit_once(") ")?;
+    after_comm.chars().next()
 }
 
 fn assert_no_run_dirs_with_prefix(run_root: &Path, prefix: &str) {

@@ -76,9 +76,9 @@ fn exec_sh(running: &mut m80_firecracker::RunningSandbox, cmd: &str) -> m80_prot
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
-/// /tmp persists between two sequential exec calls on the same VM.
+/// Guest filesystem state persists between two sequential exec calls on the same VM.
 ///
-/// exec1 writes `/tmp/marker`; exec2 reads it back.
+/// exec1 writes a marker; exec2 reads it back.
 #[test]
 #[ignore = "requires KVM host with real Firecracker binary"]
 fn two_execs_filesystem_state_persists() {
@@ -90,19 +90,35 @@ fn two_execs_filesystem_state_persists() {
     let sandbox = backend.admit(sandbox_config(vm_id)).expect("admit");
     let mut running = sandbox.launch().expect("launch");
 
+    let work_dir = "/tmp/persist-fs-work";
+    assert!(running
+        .create_dir(work_dir, Some(0o777), false)
+        .expect("create exec-visible persistent-state work dir"));
+    let marker = format!("{work_dir}/marker");
+
     // exec1: create the marker.
-    let r1 = exec_sh(&mut running, "touch /tmp/marker && echo created");
-    assert_eq!(r1.exit_code, Some(0), "exec1 must succeed");
+    let r1 = exec_sh(&mut running, &format!("touch {marker} && echo created"));
+    assert_eq!(
+        r1.exit_code,
+        Some(0),
+        "exec1 must succeed: stderr={}",
+        String::from_utf8_lossy(&r1.stderr)
+    );
     let out1 = String::from_utf8_lossy(&r1.stdout);
     assert!(out1.contains("created"), "exec1 stdout: {out1:?}");
 
     // exec2: verify the marker survived.
-    let r2 = exec_sh(&mut running, "ls /tmp/marker");
-    assert_eq!(r2.exit_code, Some(0), "exec2 must find /tmp/marker");
+    let r2 = exec_sh(&mut running, &format!("ls {marker}"));
+    assert_eq!(
+        r2.exit_code,
+        Some(0),
+        "exec2 must find marker: stderr={}",
+        String::from_utf8_lossy(&r2.stderr)
+    );
     let out2 = String::from_utf8_lossy(&r2.stdout);
     assert!(
-        out2.contains("/tmp/marker"),
-        "exec2 stdout should contain /tmp/marker, got: {out2:?}"
+        out2.contains(&marker),
+        "exec2 stdout should contain {marker}, got: {out2:?}"
     );
 
     let stopped = running.stop().expect("stop");

@@ -14,6 +14,14 @@ pub enum JailerError {
         /// In-jail destination path that was rejected.
         dest: PathBuf,
     },
+    /// A bind source was rejected by policy.
+    #[error("bind source rejected: src={src} expected_root={expected_root}", src = src.display(), expected_root = expected_root.display())]
+    BindSourceRejected {
+        /// Host source path that was rejected.
+        src: PathBuf,
+        /// Required host root for this source.
+        expected_root: PathBuf,
+    },
     /// A bind-mount syscall failed.
     #[error("bind-mount failed: src={src} dest={dest}: {source}", src = src.display(), dest = dest.display())]
     BindFailed {

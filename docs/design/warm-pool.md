@@ -37,8 +37,9 @@ Slot states:
 Transitions:
 
 - Pool fill starts `Filling`.
-- Successful restore plus successful `ready_probe` exec plus a short
-  restored-vsock settle delay moves `Filling -> Ready`.
+- Successful restore plus successful `ready_probe` exec moves
+  `Filling -> Ready`. The ready probe is the publication gate; there is
+  no fixed post-probe sleep in the warm-pool hot path.
 - Restore failure records `last_fill_error` and removes the filling slot.
 - `try_lease` moves `Ready -> Leased` and starts background refill.
 - `WarmLease::discard` or `Drop` moves `Leased -> Discarded` and starts
@@ -90,7 +91,6 @@ Run-root capacity must cover each ready, leased, and filling slot:
 slot_bytes ~= snapshot_mem_bytes + sparse_overlay_growth + console/log overhead
 ```
 
-Because refill, the ready probe, and the restored-vsock settle delay are
-background work, loaded restore variance affects how quickly the ready
-reserve recovers, not the allocation cost for a slot that was already
-ready.
+Because refill and the ready probe are background work, loaded restore
+variance affects how quickly the ready reserve recovers, not the
+allocation cost for a slot that was already ready.

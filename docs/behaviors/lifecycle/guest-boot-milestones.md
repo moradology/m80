@@ -17,6 +17,17 @@ console log before tearing the VM down. `scripts/bench-cold-launch.sh` records
 both `guest_elapsed_<name>` and `guest_delta_<name>` phase rows, so the same
 bench summary includes host phases and guest PID-1 milestones.
 
+## Pmem Mount Row
+
+Pmem layer mounts happen after guestd has already sent the ready signal, so
+they are not emitted as PID-1 `M80_GUEST_BOOT` rows. Bench and smoke readers
+should treat the host phase below as the boot-path milestone for pmem-enabled
+cold launches:
+
+| milestone | source row | meaning |
+|---|---|---|
+| `pmem_layers_mounted` | `M80_PHASE name=phase_13_pmem_guest_mount` | All declared pmem layers were mounted as guest erofs+DAX layers before the first caller workload. |
+
 Source snapshots:
 
 | cell | snapshot |

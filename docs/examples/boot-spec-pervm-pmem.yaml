@@ -1,0 +1,25 @@
+# Per-VM pmem layer: each VM gets its own backing inode for the erofs image.
+schema_version: 1
+name: pervm-pmem
+
+sandbox:
+  vm_id_prefix: m80-pervm
+  vcpu_count: 1
+  mem_size_mib: 512
+  workspace: null
+  network: none
+  overlay_size_bytes: 134217728
+  boot_args: []
+
+pmem_layers:
+  - image:
+      digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      format: erofs
+    # Guest mount destination validated as a typed GuestMountPath.
+    mount_at: /opt/m80-layers/rust
+    sharing:
+      # Maps to PmemSharing::PerVm.
+      mode: per_vm
+
+warm_strategy:
+  mode: boot_fill

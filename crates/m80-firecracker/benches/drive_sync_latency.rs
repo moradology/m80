@@ -104,6 +104,7 @@ fn sandbox_config(vm_id: String, cache_type: CacheMode) -> SandboxConfig {
         daemonize: false,
         request_id: None,
         preallocated_drive_slots: 0,
+        pmem_layers: Vec::new(),
         one_shot: false,
     }
 }

@@ -13,7 +13,8 @@ use fixture_server::{resp_204, resp_400, FixtureServer};
 use std::path::PathBuf;
 
 use m80_snapshot::{
-    restore, write_snapshot_manifest, RestoreRequest, SnapshotError, SnapshotPaths,
+    restore, restore_preverified, write_snapshot_manifest, RestoreRequest, SnapshotError,
+    SnapshotPaths,
 };
 
 const FC_VERSION: &str = "v1.15.1";
@@ -269,6 +270,29 @@ fn restore_rejects_tampered_memory_before_load() {
             SnapshotError::ArtifactMismatch { .. } | SnapshotError::ArtifactSetMismatch { .. }
         ),
         "tampered memory must surface as an integrity error, got {err:?}"
+    );
+}
+
+#[test]
+fn restore_preverified_skips_artifact_hash_before_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let vsock_uds = dir.path().join("vsock.sock");
+    let (_snap_dir, paths) = prepared_paths();
+    std::fs::write(&paths.mem, b"tampered-after-template-pin").unwrap();
+    let server = FixtureServer::spawn(vec![resp_204()]).unwrap();
+
+    let req = request(server.socket_path.clone(), paths, vsock_uds, false);
+    restore_preverified(req).expect("preverified restore must skip per-restore hash");
+
+    let requests = server.join();
+    assert_eq!(
+        requests.len(),
+        1,
+        "preverified restore should proceed to snapshot load"
+    );
+    assert!(
+        requests[0].starts_with("PUT /snapshot/load HTTP/1.1\r\n"),
+        "preverified restore must still issue PUT /snapshot/load"
     );
 }
 

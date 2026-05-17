@@ -24,9 +24,11 @@ use super::{
     WireFileWriteBeginResponse, WireFileWriteChunkRequest, WireFileWriteChunkResponse,
     WireFileWriteCommitRequest, WireFileWriteCommitResponse, WireFileWriteRequest,
     WireFileWriteResponse, WireGuestCpuMetrics, WireGuestMemMetrics, WireHandshakeMessage,
+    WireHookError, WireHookErrorKind, WireHookKind, WireHookKindKind, WireHookResult,
     WireMetricsRequest, WireMetricsResponse, WirePayload, WirePingRequest, WirePongResponse,
-    WirePtyBytes, WirePtyControl, WirePtyControlEvent, WirePtyExit, WirePtyRequest, WirePtyResize,
-    WirePtySize, WireShutdownRequest, WireShutdownResponse,
+    WirePostRestoreHookRequest, WirePostRestoreHookResponse, WirePtyBytes, WirePtyControl,
+    WirePtyControlEvent, WirePtyExit, WirePtyRequest, WirePtyResize, WirePtySize,
+    WireShutdownRequest, WireShutdownResponse,
 };
 
 fn env_to_wire(env: Option<Vec<(String, String)>>) -> Vec<WireEnvVar> {
@@ -261,6 +263,7 @@ macro_rules! payload_impl {
 }
 
 mod fileops;
+mod post_restore;
 
 fn payload_name(payload: &WirePayload) -> &'static str {
     match payload {
@@ -307,6 +310,10 @@ fn payload_name(payload: &WirePayload) -> &'static str {
         WirePayload::DriveDetachResponse(_) => "drive_detach_response",
         WirePayload::PingRequest(_) => "ping_request",
         WirePayload::PongResponse(_) => "pong_response",
+        WirePayload::PmemMountRequest(_) => "pmem_mount_request",
+        WirePayload::PmemMountResponse(_) => "pmem_mount_response",
+        WirePayload::PostRestoreHookRequest(_) => "post_restore_hook_request",
+        WirePayload::PostRestoreHookResponse(_) => "post_restore_hook_response",
     }
 }
 

@@ -31,9 +31,12 @@ hands a config in and gets back a launchable chroot — or a typed error.
   propagate through a shared host mount namespace. File bind mounts use
   `MS_BIND`, directory bind mounts use `MS_BIND|MS_REC`, and both are remounted
   with `MS_NODEV|MS_NOEXEC|MS_NOSUID` (`MS_RDONLY` for read-only binds).
-  Bind destinations under `dev`, `proc`, or `sys` are rejected: device nodes
-  and virtual kernel filesystems are the official jailer's responsibility,
-  not caller-provided host binds.
+  `RoImageStore` binds are read-only binds whose source must be rooted under
+  `/var/lib/m80-images`; materialization rechecks the canonical source against
+  the canonical image-store root before calling `mount(2)`. Bind destinations
+  under `dev`, `proc`, or `sys` are rejected: device nodes and virtual kernel
+  filesystems are the official jailer's responsibility, not caller-provided
+  host binds.
 - The plan is replayable: `jailer-plan.json` reproduces the chroot
   offline for triage. Reproducibility is enforced by tests.
 - `MaterializedJail::jail_root()` returns the materialized chroot root;
@@ -94,7 +97,7 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `JailerConfig`, including `resource_limits`, `new_pid_ns`, `new_net_ns`,
   `daemonize`, `new_cgroup_ns`, optional `netns_path`,
   `jailer_harden_bin`, optional `stdio_log`, `Binding { source, dest, mode }`,
-  `BindMode { Ro, Rw, CreateInsideJail }`, `JailerSocket`.
+  `BindMode { Ro, RoImageStore, Rw, CreateInsideJail }`, `JailerSocket`.
 - `JAILER_PLAN_FILE` and `JAILER_STATE_FILE` are the persisted run-dir file
   names for the replayable plan and live pid state.
 - `ResourceLimits { no_file, fsize, nproc, memlock, address_space, core, stack }`;
@@ -107,7 +110,8 @@ hands a config in and gets back a launchable chroot — or a typed error.
 - `MaterializedJail::jail_root()`, `MaterializedJail::run_dir()`.
 - `jail_root_path(run_dir, firecracker_bin)` for pure layout computation.
 - `inspect_run_dir`, `InspectionDecision`, `ReapPlan`.
-- `JailerError`: `BindDestRejected` (policy rejection), `BindFailed { source: nix::Error }` (syscall failure), `MountPropagationFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
+- `JailerError`: `BindDestRejected` (destination policy rejection),
+  `BindSourceRejected` (source policy rejection), `BindFailed { source: nix::Error }` (syscall failure), `MountPropagationFailed`, `ChrootFailed`, `FirecrackerPidTimeout`,
   `UidGidInvalid`, `InvalidNetns`, `Io { path, source }`. Privilege is verified once by
   `m80-preflight`; this crate does not run a per-launch sudo probe.
 

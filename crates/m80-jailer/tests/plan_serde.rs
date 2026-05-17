@@ -59,6 +59,10 @@ fn plan_step_kinds_tagged_correctly_in_json() {
 #[test]
 fn bind_mode_serializes_as_snake_case() {
     assert_eq!(serde_json::to_string(&BindMode::Ro).unwrap(), "\"ro\"");
+    assert_eq!(
+        serde_json::to_string(&BindMode::RoImageStore).unwrap(),
+        "\"ro_image_store\"",
+    );
     assert_eq!(serde_json::to_string(&BindMode::Rw).unwrap(), "\"rw\"");
     assert_eq!(
         serde_json::to_string(&BindMode::CreateInsideJail).unwrap(),

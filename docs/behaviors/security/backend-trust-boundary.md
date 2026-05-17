@@ -13,11 +13,13 @@ External callers construct it with `BackendConfig::builder(discovery)`, where
 accessors for diagnostics and tests.
 
 Caller-supplied VM IDs are admitted only when they are 1..=64 ASCII
-alphanumeric, `.`, `_`, or `-` characters, are not reserved run-root names, and
-fit the AF_UNIX socket path budget. Stale run-root recovery applies the same
-shape rule before treating a child directory name as a VM ID; malformed names
-are preserved for manual inspection and are not passed to cgroup or network
-cleanup.
+alphanumeric, `.`, `_`, or `-` characters, are not `.` / `..`, are not
+reserved run-root names, and fit the AF_UNIX socket path budget. Shape and
+reserved-name failures surface as `FcError::InvalidVmId`; over-budget values
+surface as `FcError::Config(ConfigError::VmIdPathBudgetExceeded)`. Stale
+run-root recovery applies the same shape rule before treating a child
+directory name as a VM ID; malformed names are preserved for manual inspection
+and are not passed to cgroup or network cleanup.
 
 Tests:
 

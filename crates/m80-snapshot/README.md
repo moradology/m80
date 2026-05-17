@@ -4,8 +4,9 @@ Snapshot capture/restore primitives plus manifest-schema helpers for
 Firecracker microVM snapshots.
 
 Capture writes a `snapshot-manifest.json` sidecar for the Firecracker snapshot
-pair. Restore reads that manifest before `PUT /snapshot/load`, recomputes the
-pair sha256s, and fails closed on artifact or Firecracker-version mismatch.
+pair. Normal restore reads that manifest before `PUT /snapshot/load`,
+recomputes the pair sha256s, and fails closed on artifact or
+Firecracker-version mismatch.
 `m80-snapshot` owns Firecracker REST calls; `m80-firecracker` owns lifecycle
 state and jail path translation.
 
@@ -77,6 +78,12 @@ as `paths` while keeping the caller's host paths in `host_paths`.
 3. PUT `/snapshot/load` with `mem_backend = File`.
 4. If `resume: true`, PATCH `/vm` -> `Resumed`.
 
+`restore_preverified(RestoreRequest)` skips step 1 for callers that already
+verified an immutable snapshot body. The v0.1 consumer is
+`m80-snapshot-template`: template commit hashes the snapshot pair, records the
+manifest in the content-addressed body, and pinning validates template identity
+before restore. Direct caller-supplied snapshots must keep using `restore`.
+
 ## Public surface
 
 ### Types
@@ -91,6 +98,7 @@ as `paths` while keeping the caller's host paths in `host_paths`.
 
 - `capture(req: CaptureRequest) -> Result<(), SnapshotError>`.
 - `restore(req: RestoreRequest) -> Result<(), SnapshotError>`.
+- `restore_preverified(req: RestoreRequest) -> Result<(), SnapshotError>`.
 - `write_snapshot_manifest(paths, expected_firecracker_version) -> Result<(), SnapshotError>`.
 - `verify_snapshot_manifest(paths, expected_firecracker_version) -> Result<SnapshotManifest, SnapshotError>`.
 - `persistence_path(store_root, workspace_id, run_id, created_at_unix_ms, artifact_set_sha256) -> Result<PathBuf, SnapshotError>`.

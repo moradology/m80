@@ -1,7 +1,36 @@
-use crate::health::{HealthSnapshot, OpsMetrics};
+use crate::health::{
+    HealthSnapshot, OpsMetrics, PmemSharingLabel, PostRestoreHookDuration, TemplateFreshnessLabel,
+};
+
+const RESTORE_LATENCY_BUCKETS: &[HistogramBucket] = &[
+    HistogramBucket {
+        upper_bound_us: 50_000,
+        le: "0.05",
+    },
+    HistogramBucket {
+        upper_bound_us: 100_000,
+        le: "0.1",
+    },
+    HistogramBucket {
+        upper_bound_us: 150_000,
+        le: "0.15",
+    },
+    HistogramBucket {
+        upper_bound_us: 200_000,
+        le: "0.2",
+    },
+    HistogramBucket {
+        upper_bound_us: 500_000,
+        le: "0.5",
+    },
+    HistogramBucket {
+        upper_bound_us: 1_000_000,
+        le: "1",
+    },
+];
 
 /// Render a Prometheus exposition-format text response.
-pub(crate) fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> String {
+pub fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -> String {
     let mut out = String::new();
     render_metric(
         &mut out,
@@ -52,6 +81,31 @@ pub(crate) fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -
         u64::from(metrics.vm_count),
         "gauge",
     );
+    render_pmem_layer_count_by_sharing(&mut out, metrics);
+    render_template_count_by_freshness(&mut out, metrics);
+    render_histogram(
+        &mut out,
+        "m80_restore_latency_seconds",
+        "Warm restore latency from template restore start to lease handback.",
+        metrics.restore_latency_seconds.observations_us(),
+        &[],
+    );
+    render_post_restore_hook_duration(&mut out, &metrics.post_restore_hook_duration_seconds);
+    render_metric(
+        &mut out,
+        "m80_image_store_bytes",
+        "Total bytes currently occupied by the m80 image store.",
+        metrics.image_store_bytes,
+        "gauge",
+    );
+    render_metric(
+        &mut out,
+        "m80_template_store_bytes",
+        "Total bytes currently occupied by the m80 snapshot-template store.",
+        metrics.template_store_bytes,
+        "gauge",
+    );
+    render_lease_attribution(&mut out, metrics);
     if let Some(guest) = &metrics.guest {
         render_metric(
             &mut out,
@@ -197,7 +251,20 @@ pub(crate) fn render_prometheus(health: &HealthSnapshot, metrics: &OpsMetrics) -
     out
 }
 
+struct HistogramBucket {
+    upper_bound_us: u64,
+    le: &'static str,
+}
+
 fn render_metric(out: &mut String, name: &str, help: &str, value: u64, kind: &str) {
+    render_family_header(out, name, help, kind);
+    out.push_str(name);
+    out.push(' ');
+    out.push_str(&value.to_string());
+    out.push('\n');
+}
+
+fn render_family_header(out: &mut String, name: &str, help: &str, kind: &str) {
     out.push_str("# HELP ");
     out.push_str(name);
     out.push(' ');
@@ -208,14 +275,174 @@ fn render_metric(out: &mut String, name: &str, help: &str, value: u64, kind: &st
     out.push(' ');
     out.push_str(kind);
     out.push('\n');
+}
+
+fn render_pmem_layer_count_by_sharing(out: &mut String, metrics: &OpsMetrics) {
+    let name = "m80_pmem_layers_per_vm_count";
+    render_family_header(
+        out,
+        name,
+        "Pmem layers per VM split by declared sharing mode.",
+        "gauge",
+    );
+    render_labeled_sample(
+        out,
+        name,
+        &[("sharing", PmemSharingLabel::PerVm.as_str())],
+        metrics.pmem_layers_per_vm_count_by_sharing.per_vm,
+    );
+    render_labeled_sample(
+        out,
+        name,
+        &[("sharing", PmemSharingLabel::Shared.as_str())],
+        metrics.pmem_layers_per_vm_count_by_sharing.shared,
+    );
+}
+
+fn render_template_count_by_freshness(out: &mut String, metrics: &OpsMetrics) {
+    let name = "m80_template_count";
+    render_family_header(
+        out,
+        name,
+        "Snapshot templates split by freshness classification.",
+        "gauge",
+    );
+    render_labeled_sample(
+        out,
+        name,
+        &[("freshness", TemplateFreshnessLabel::Fresh.as_str())],
+        metrics.template_count_by_freshness.fresh,
+    );
+    render_labeled_sample(
+        out,
+        name,
+        &[("freshness", TemplateFreshnessLabel::Invalidated.as_str())],
+        metrics.template_count_by_freshness.invalidated,
+    );
+}
+
+fn render_post_restore_hook_duration(out: &mut String, metrics: &[PostRestoreHookDuration]) {
+    let name = "m80_post_restore_hook_duration_seconds";
+    render_family_header(
+        out,
+        name,
+        "Post-restore hook execution duration split by closed HookSpec variant.",
+        "histogram",
+    );
+    for metric in metrics {
+        render_histogram_samples(
+            out,
+            name,
+            metric.duration.observations_us(),
+            &[("hook_variant", metric.hook_variant.as_str())],
+        );
+    }
+}
+
+fn render_lease_attribution(out: &mut String, metrics: &OpsMetrics) {
+    let name = "m80_lease_attribution";
+    render_family_header(
+        out,
+        name,
+        "Info-style active lease attribution by template, pmem digest set, and scratch source.",
+        "gauge",
+    );
+    for attribution in &metrics.lease_attribution {
+        render_labeled_sample(
+            out,
+            name,
+            &[
+                (
+                    "template_fingerprint",
+                    attribution.template_fingerprint.as_str(),
+                ),
+                ("pmem_digest_set", attribution.pmem_digest_set.as_str()),
+                ("scratch_source", attribution.scratch_source.as_str()),
+            ],
+            1,
+        );
+    }
+}
+
+fn render_histogram(
+    out: &mut String,
+    name: &str,
+    help: &str,
+    observations_us: &[u64],
+    labels: &[(&str, &str)],
+) {
+    render_family_header(out, name, help, "histogram");
+    render_histogram_samples(out, name, observations_us, labels);
+}
+
+fn render_histogram_samples(
+    out: &mut String,
+    name: &str,
+    observations_us: &[u64],
+    labels: &[(&str, &str)],
+) {
+    for bucket in RESTORE_LATENCY_BUCKETS {
+        let count = observations_us
+            .iter()
+            .filter(|&&sample| sample <= bucket.upper_bound_us)
+            .count();
+        let bucket_name = format!("{name}_bucket");
+        let mut bucket_labels = labels.to_vec();
+        bucket_labels.push(("le", bucket.le));
+        render_labeled_sample(out, &bucket_name, &bucket_labels, count);
+    }
+    let inf_count = observations_us.len();
+    let inf_bucket_name = format!("{name}_bucket");
+    let mut inf_labels = labels.to_vec();
+    inf_labels.push(("le", "+Inf"));
+    render_labeled_sample(out, &inf_bucket_name, &inf_labels, inf_count);
+
+    let sum_us = observations_us.iter().copied().sum::<u64>();
+    let sum_name = format!("{name}_sum");
+    render_labeled_sample(out, &sum_name, labels, format_seconds(sum_us));
+
+    let count_name = format!("{name}_count");
+    render_labeled_sample(out, &count_name, labels, inf_count);
+}
+
+fn render_labeled_sample(
+    out: &mut String,
+    name: &str,
+    labels: &[(&str, &str)],
+    value: impl ToString,
+) {
     out.push_str(name);
+    render_labels(out, labels);
     out.push(' ');
     out.push_str(&value.to_string());
     out.push('\n');
 }
 
+fn render_labels(out: &mut String, labels: &[(&str, &str)]) {
+    if labels.is_empty() {
+        return;
+    }
+    out.push('{');
+    for (index, (name, value)) in labels.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(name);
+        out.push_str("=\"");
+        out.push_str(value);
+        out.push('"');
+    }
+    out.push('}');
+}
+
+fn format_seconds(us: u64) -> String {
+    format!("{:.6}", us as f64 / 1_000_000.0)
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::health::DurationHistogram;
+
     use super::*;
 
     #[test]
@@ -235,5 +462,22 @@ mod tests {
         assert!(rendered.contains("m80_vm_health_healthy 1\n"));
         assert!(rendered.contains("m80_vm_rollout_ready 1\n"));
         assert!(rendered.contains("m80_ops_vm_count 1\n"));
+    }
+
+    #[test]
+    fn restore_latency_histogram_has_target_buckets() {
+        let rendered = render_prometheus(
+            &HealthSnapshot::default(),
+            &OpsMetrics {
+                restore_latency_seconds: DurationHistogram::from_micros([42_000, 160_000]),
+                ..OpsMetrics::default()
+            },
+        );
+
+        assert!(rendered.contains("m80_restore_latency_seconds_bucket{le=\"0.05\"} 1\n"));
+        assert!(rendered.contains("m80_restore_latency_seconds_bucket{le=\"0.2\"} 2\n"));
+        assert!(rendered.contains("m80_restore_latency_seconds_bucket{le=\"+Inf\"} 2\n"));
+        assert!(rendered.contains("m80_restore_latency_seconds_sum 0.202000\n"));
+        assert!(rendered.contains("m80_restore_latency_seconds_count 2\n"));
     }
 }

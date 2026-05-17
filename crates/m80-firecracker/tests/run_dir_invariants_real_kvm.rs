@@ -45,6 +45,7 @@ fn run_dir_invariants_post_boot() {
         idle_timeout: None,
         daemonize: false,
         request_id: Some("req-run-dir-invariants".into()),
+        pmem_layers: Vec::new(),
         preallocated_drive_slots: 0,
         one_shot: false,
     };
@@ -94,9 +95,14 @@ fn assert_top_level_run_dir_contract(run_dir: &Path, firecracker_bin: &Path) {
         m80_jailer::JAILER_PLAN_FILE.to_owned(),
         m80_jailer::JAILER_STATE_FILE.to_owned(),
         m80_observability::DIAGNOSTICS_FILE_NAME.to_owned(),
+        "snapshot".to_owned(),
         jailer_root_parent,
     ]);
     assert_eq!(top_level_names(run_dir), expected);
+    assert!(
+        run_dir.join("snapshot").is_dir(),
+        "snapshot staging path must be a directory"
+    );
 }
 
 fn top_level_names(run_dir: &Path) -> BTreeSet<String> {
@@ -132,11 +138,16 @@ fn assert_jailer_state_shape(path: &Path) {
         .and_then(Value::as_u64)
         .expect("jailer_pid");
     assert!(firecracker_pid > 0, "firecracker_pid must be nonzero");
-    assert!(jailer_pid > 0, "jailer_pid must be nonzero");
     assert!(
         PathBuf::from(format!("/proc/{firecracker_pid}")).exists(),
         "firecracker pid {firecracker_pid} must be live"
     );
+    if jailer_pid != 0 {
+        assert!(
+            PathBuf::from(format!("/proc/{jailer_pid}")).exists(),
+            "nonzero jailer pid {jailer_pid} must be live"
+        );
+    }
 }
 
 fn assert_boot_identity_shape(path: &Path) {

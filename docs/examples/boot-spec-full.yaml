@@ -1,0 +1,44 @@
+# Full layered-rootfs example: mixed pmem layers plus snapshot-template restore.
+schema_version: 1
+name: full-layered-template
+
+sandbox:
+  vm_id_prefix: m80-full
+  vcpu_count: 1
+  mem_size_mib: 512
+  workspace: null
+  network: none
+  overlay_size_bytes: 134217728
+  boot_args: []
+
+pmem_layers:
+  - image:
+      digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      format: erofs
+    mount_at: /opt/m80-layers/project
+    sharing:
+      mode: per_vm
+
+  - image:
+      digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      format: erofs
+    mount_at: /opt/m80-layers/toolchain
+    sharing:
+      mode: shared
+      trust_reason: same_operator
+      acknowledged: true
+
+warm_strategy:
+  mode: snapshot_restore
+  template:
+    store: /var/lib/m80/templates
+    fingerprint: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  ready_probe:
+    program: /bin/true
+    args: []
+    timeout_ms: 5000
+  hooks:
+    - reseed_systemd_random_seed
+    - regen_machine_id
+    - set_hostname:
+        hostname: m80-full

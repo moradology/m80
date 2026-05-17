@@ -1,8 +1,10 @@
 use super::*;
-use m80_firecracker_client::{CacheType, CpuTemplate, IoEngine};
+use m80_firecracker_client::{CacheType, CpuTemplate, IoEngine, PmemConfig};
 
 #[path = "preboot_boot_arg_tests.rs"]
 mod boot_arg_tests;
+
+const VALID_PMEM_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn plan_without_workspace() -> Vec<PrebootPut> {
     plan_preboot_puts(
@@ -12,10 +14,28 @@ fn plan_without_workspace() -> Vec<PrebootPut> {
         KernelKind::Stock,
         RootfsFormat::Ext4,
         false,
+        &[],
+        &[],
         &RealizedNetwork::NoEgress,
         &[],
     )
     .unwrap()
+}
+
+fn pmem_layer(name: &str) -> crate::PmemLayer {
+    let digest = crate::ImageDigest::parse(VALID_PMEM_DIGEST).expect("digest");
+    let image = crate::ErofsImageRef::from_digest(digest);
+    let mount_at =
+        crate::GuestMountPath::parse(&format!("/opt/m80-layers/{name}")).expect("mount path");
+    crate::PmemLayer::new(image, crate::PmemSharing::PerVm, mount_at)
+}
+
+fn resolved_pmem_backing(slot: usize) -> crate::types::ResolvedPmemBacking {
+    crate::types::ResolvedPmemBacking {
+        host_path: PathBuf::from(format!("/run/m80/vm/pmem/{slot}.img")),
+        jail_basename: format!("pmem.{slot}.img"),
+        sharing: crate::PmemSharing::PerVm,
+    }
 }
 
 #[test]
@@ -35,6 +55,8 @@ fn machine_config_put_before_boot() {
         KernelKind::Stock,
         RootfsFormat::Ext4,
         false,
+        &[],
+        &[],
         &RealizedNetwork::NoEgress,
         &[],
     )
@@ -143,6 +165,8 @@ fn writable_drive_cache_type_override_preserves_writeback() {
         KernelKind::Stock,
         RootfsFormat::Ext4,
         true,
+        &[],
+        &[],
         &RealizedNetwork::NoEgress,
         &[],
     )
@@ -172,6 +196,8 @@ fn scratch_drive_put_with_workspace_id() {
         KernelKind::Stock,
         RootfsFormat::Ext4,
         true,
+        &[],
+        &[],
         &RealizedNetwork::NoEgress,
         &[],
     )
@@ -216,6 +242,8 @@ fn preallocated_drive_slots_are_after_rootfs_overlay_and_before_vsock() {
         KernelKind::Stock,
         RootfsFormat::Ext4,
         false,
+        &[],
+        &[],
         &RealizedNetwork::NoEgress,
         &[],
     )
@@ -254,6 +282,8 @@ fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
         KernelKind::Stock,
         RootfsFormat::Ext4,
         false,
+        &[],
+        &[],
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
             vmm_netns_path: "/run/netns/m80n123456789abc".into(),
@@ -280,17 +310,23 @@ fn outbound_nat_network_interface_put_after_drives_and_before_vsock() {
 }
 
 #[test]
-fn layer_1_preboot_plan_contains_only_documented_devices() {
+fn pmem_puts_follow_hotplug_slots_and_precede_network_interface() {
+    let config = SandboxConfig {
+        preallocated_drive_slots: 2,
+        pmem_layers: vec![pmem_layer("rust"), pmem_layer("node")],
+        ..SandboxConfig::default()
+    };
+    let backings = vec![resolved_pmem_backing(0), resolved_pmem_backing(1)];
+
     let puts = plan_preboot_puts(
-        &SandboxConfig {
-            preallocated_drive_slots: 1,
-            ..SandboxConfig::default()
-        },
+        &config,
         "vm-alpha",
         ImageKind::Ubuntu,
         KernelKind::Stock,
         RootfsFormat::Ext4,
         true,
+        &config.pmem_layers,
+        &backings,
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
             vmm_netns_path: "/run/netns/m80n123456789abc".into(),
@@ -306,6 +342,158 @@ fn layer_1_preboot_plan_contains_only_documented_devices() {
             PrebootPut::MachineConfig(_) => "machine",
             PrebootPut::BootSource(_) => "boot",
             PrebootPut::Drive(DriveConfig { drive_id, .. }) => drive_id.as_str(),
+            PrebootPut::Pmem(PmemConfig { id, .. }) => id.as_str(),
+            PrebootPut::NetworkInterface(_) => "network-interface",
+            PrebootPut::EntropyDevice => "entropy",
+            PrebootPut::Vsock(_) => "vsock",
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds,
+        [
+            "machine",
+            "boot",
+            "rootfs",
+            "rootfs_overlay",
+            "workspace",
+            "hotplug_slot_0",
+            "hotplug_slot_1",
+            "pmem_0",
+            "pmem_1",
+            "network-interface",
+            "entropy",
+            "vsock",
+        ]
+    );
+
+    let PrebootPut::Pmem(pmem0) = &puts[7] else {
+        panic!("first pmem PUT must follow hotplug slots");
+    };
+    assert_eq!(pmem0.id, "pmem_0");
+    assert_eq!(pmem0.path_on_host, PathBuf::from("/pmem.0.img"));
+    assert!(!pmem0.root_device);
+    assert!(pmem0.read_only);
+    assert_eq!(puts[7].phase_name(), "phase_11_put_pmem_pmem_0");
+
+    let PrebootPut::Pmem(pmem1) = &puts[8] else {
+        panic!("second pmem PUT must follow first pmem PUT");
+    };
+    assert_eq!(pmem1.id, "pmem_1");
+    assert_eq!(pmem1.path_on_host, PathBuf::from("/pmem.1.img"));
+}
+
+#[test]
+fn pmem_puts_are_omitted_when_layers_are_empty() {
+    let puts = plan_without_workspace();
+
+    assert!(!puts.iter().any(|put| matches!(put, PrebootPut::Pmem(_))));
+}
+
+#[test]
+fn pmem_plan_requires_resolved_backings() {
+    let config = SandboxConfig {
+        pmem_layers: vec![pmem_layer("rust")],
+        ..SandboxConfig::default()
+    };
+
+    let err = match plan_preboot_puts(
+        &config,
+        "vm-alpha",
+        ImageKind::Ubuntu,
+        KernelKind::Stock,
+        RootfsFormat::Ext4,
+        false,
+        &config.pmem_layers,
+        &[],
+        &RealizedNetwork::NoEgress,
+        &[],
+    ) {
+        Err(err) => err,
+        Ok(_) => panic!("pmem plan should require resolved backings"),
+    };
+
+    assert!(
+        matches!(err, FcError::InvalidState { .. }),
+        "expected InvalidState, got {err:?}"
+    );
+}
+
+#[test]
+fn pmem_plan_does_not_add_kernel_cmdline_pmem_tokens_or_size() {
+    let config = SandboxConfig {
+        pmem_layers: vec![pmem_layer("rust")],
+        ..SandboxConfig::default()
+    };
+    let backings = vec![resolved_pmem_backing(0)];
+
+    let puts = plan_preboot_puts(
+        &config,
+        "vm-alpha",
+        ImageKind::Ubuntu,
+        KernelKind::Stock,
+        RootfsFormat::Ext4,
+        false,
+        &config.pmem_layers,
+        &backings,
+        &RealizedNetwork::NoEgress,
+        &[],
+    )
+    .unwrap();
+
+    let boot_args = puts
+        .iter()
+        .find_map(|put| match put {
+            PrebootPut::BootSource(config) => config.boot_args.as_deref(),
+            _ => None,
+        })
+        .expect("boot source args");
+    assert!(
+        !boot_args.contains("pmem"),
+        "pmem config must not be threaded through kernel cmdline: {boot_args}"
+    );
+
+    let PrebootPut::Pmem(pmem) = &puts[4] else {
+        panic!("pmem PUT must follow rootfs drives");
+    };
+    let json = serde_json::to_value(pmem).expect("pmem config serializes");
+    assert_eq!(json.get("size"), None);
+    assert_eq!(
+        json.get("path_on_host").and_then(|v| v.as_str()),
+        Some("/pmem.0.img")
+    );
+}
+
+#[test]
+fn layer_1_preboot_plan_contains_only_documented_devices() {
+    let puts = plan_preboot_puts(
+        &SandboxConfig {
+            preallocated_drive_slots: 1,
+            ..SandboxConfig::default()
+        },
+        "vm-alpha",
+        ImageKind::Ubuntu,
+        KernelKind::Stock,
+        RootfsFormat::Ext4,
+        true,
+        &[],
+        &[],
+        &RealizedNetwork::OutboundNat {
+            tap_name: "tfc123456789abc".to_owned(),
+            vmm_netns_path: "/run/netns/m80n123456789abc".into(),
+            guest_mac: "02:00:00:00:00:02".to_owned(),
+        },
+        &[],
+    )
+    .unwrap();
+
+    let kinds = puts
+        .iter()
+        .map(|put| match put {
+            PrebootPut::MachineConfig(_) => "machine",
+            PrebootPut::BootSource(_) => "boot",
+            PrebootPut::Drive(DriveConfig { drive_id, .. }) => drive_id.as_str(),
+            PrebootPut::Pmem(PmemConfig { id, .. }) => id.as_str(),
             PrebootPut::NetworkInterface(_) => "network-interface",
             PrebootPut::EntropyDevice => "entropy",
             PrebootPut::Vsock(_) => "vsock",
@@ -364,6 +552,8 @@ fn preboot_put_phase_names_include_individual_devices() {
         KernelKind::Stock,
         RootfsFormat::Ext4,
         true,
+        &[],
+        &[],
         &RealizedNetwork::OutboundNat {
             tap_name: "tfc123456789abc".to_owned(),
             vmm_netns_path: "/run/netns/m80n123456789abc".into(),

@@ -13,9 +13,9 @@ cp --reflink=always <probe-src> <probe-dst>
 
 If the command succeeds, the row reports that overlay template clones can use
 metadata-only CoW. If the command exits non-zero, the row reports that storage
-will fall back to a full byte copy through the existing launch-path
-`cp --reflink=auto --sparse=always` command. If the probe itself cannot run or
-write its temporary source, the row remains passing but says the advisory is
+will fall back to a full byte copy through the runtime clone gate's explicit
+`cp --reflink=never --sparse=always` command. If the probe itself cannot run
+or write its temporary source, the row remains passing but says the advisory is
 inconclusive.
 
 This row does not change launch behavior. It makes the fallback visible so

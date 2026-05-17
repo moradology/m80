@@ -1,0 +1,11 @@
+[package]
+name = "m80-guest-kernel"
+description = "Safe Linux guest-kernel syscall wrappers for m80-guestd"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/nathanp/m80"
+rust-version = "1.82"
+
+[dependencies]
+libc = "0.2"

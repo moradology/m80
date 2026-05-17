@@ -117,6 +117,45 @@ fn help_warm_enable() {
 }
 
 #[test]
+fn help_image() {
+    let output = m80().args(["image", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("Manage content-addressed image-store artifacts"),
+        "image help should frame the image-store surface, got: {stdout}"
+    );
+}
+
+#[test]
+fn help_image_actions() {
+    for action in ["build", "gc", "list", "show", "rm", "verify"] {
+        m80().args(["image", action, "--help"]).assert().success();
+    }
+}
+
+#[test]
+fn help_template() {
+    let output = m80().args(["template", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("Manage snapshot-template store artifacts"),
+        "template help should frame the snapshot-template surface, got: {stdout}"
+    );
+}
+
+#[test]
+fn help_template_actions() {
+    for action in ["build", "list", "show", "prune", "rm"] {
+        m80()
+            .args(["template", action, "--help"])
+            .assert()
+            .success();
+    }
+}
+
+#[test]
 fn help_version() {
     m80().args(["version", "--help"]).assert().success();
 }

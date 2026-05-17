@@ -52,6 +52,10 @@ message WireEnvelope {
     WireDriveDetachResponse drive_detach_response = 50;
     WirePingRequest ping_request = 51;
     WirePongResponse pong_response = 52;
+    WirePmemMountRequest pmem_mount_request = 53;
+    WirePmemMountResponse pmem_mount_response = 54;
+    WirePostRestoreHookRequest post_restore_hook_request = 55;
+    WirePostRestoreHookResponse post_restore_hook_response = 56;
   }
 }
 
@@ -358,6 +362,61 @@ message WireDriveDetachStatus {
 
 message WireDriveDetachResponse {
   repeated WireDriveDetachStatus statuses = 1;
+}
+
+message WirePmemMountSpec {
+  string device_path = 1;
+  string mount_path = 2;
+  string digest_hex = 3;
+}
+
+message WirePmemMountRequest {
+  repeated WirePmemMountSpec devices = 1;
+}
+
+message WirePmemMountStatus {
+  string device_path = 1;
+  string mount_path = 2;
+  int32 status = 3;
+  optional int32 error = 4;
+}
+
+message WirePmemMountResponse {
+  repeated WirePmemMountStatus statuses = 1;
+}
+
+message WirePostRestoreHookRequest {
+  bytes restore_nonce = 1;
+  repeated WireHookKind hooks = 2;
+}
+
+message WirePostRestoreHookResponse {
+  repeated WireHookResult results = 1;
+}
+
+message WireHookKind {
+  oneof kind {
+    bool reseed_systemd_random_seed = 1;
+    bool regen_machine_id = 2;
+    string set_hostname = 3;
+  }
+}
+
+message WireHookResult {
+  WireHookKind kind = 1;
+  int32 status = 2;
+  optional WireHookError error = 3;
+}
+
+message WireHookError {
+  oneof error {
+    bool reseed_failed = 1;
+    bool machine_id_write_failed = 2;
+    int32 hostname_syscall_failed_errno = 3;
+    bool hostname_write_failed = 4;
+    bool random_seed_write_failed = 5;
+    bool invalid_hostname = 6;
+  }
 }
 
 message WirePingRequest {}

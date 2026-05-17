@@ -163,11 +163,12 @@ fn write_error(stream: &mut UnixStream, err: &FcError, request_id: Option<String
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt as _;
     use std::sync::Arc;
 
     use m80_firecracker::{
         Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig, SnapshotPaths,
-        WarmPoolConfig,
+        WarmPoolConfig, WarmStrategy,
     };
     use m80_proto::ExecRequest;
 
@@ -237,12 +238,14 @@ mod tests {
             backend,
             WarmPoolConfig {
                 target_ready: 1,
-                snapshot: SnapshotPaths {
-                    vm_state: dir.path().join("vm.snap"),
-                    mem: dir.path().join("mem.snap"),
-                },
                 sandbox: sandbox_config("fixture"),
-                ready_probe: ready_probe(),
+                strategy: WarmStrategy::direct_snapshot(
+                    SnapshotPaths {
+                        vm_state: dir.path().join("vm.snap"),
+                        mem: dir.path().join("mem.snap"),
+                    },
+                    ready_probe(),
+                ),
                 vm_id_prefix: "fixture".to_owned(),
                 cpu_allocator: None,
             },
@@ -265,6 +268,7 @@ mod tests {
             idle_timeout: None,
             daemonize: false,
             request_id: None,
+            pmem_layers: Vec::new(),
             preallocated_drive_slots: 0,
             one_shot: false,
         }
@@ -286,12 +290,13 @@ mod tests {
         let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
         let rootfs_path = rootfs.path().to_path_buf();
         let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
+        let net_helper_bin = fake_net_helper(run_root);
         m80_preflight::Discovery {
             firecracker_bin: "/tmp/firecracker".into(),
             firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.bin".into(),
             jailer_bin: "/tmp/jailer".into(),
             jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
-            net_helper_bin: "/tmp/m80-net-helper".into(),
+            net_helper_bin,
             kernel: "/tmp/vmlinux".into(),
             rootfs: "/tmp/rootfs.ext4".into(),
             pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
@@ -300,6 +305,18 @@ mod tests {
             privilege: m80_preflight::PrivilegeStatus::Root,
             report: Vec::new(),
         }
+    }
+
+    fn fake_net_helper(run_root: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(run_root).expect("run root");
+        let path = run_root.join("m80-net-helper");
+        std::fs::write(&path, b"#!/bin/sh\nexit 0\n").expect("fake net helper");
+        let mut perms = std::fs::metadata(&path)
+            .expect("fake net helper metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).expect("fake net helper executable");
+        path
     }
 
     fn fake_manifest() -> m80_image_manifest::Manifest {

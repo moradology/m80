@@ -32,6 +32,10 @@ const CANCEL_FORWARDER_POLL: Duration = Duration::from_millis(50);
 const FORWARDER_JOIN_TIMEOUT: Duration = Duration::from_millis(100);
 
 impl RunningSandbox {
+    fn ensure_firecracker_live(&self) -> Result<(), FcError> {
+        super::protocol::ensure_firecracker_live(&self.vm_id, self.firecracker.firecracker_pid())
+    }
+
     fn begin_exec_activity(&self) -> Result<ExecActivityGuard, FcError> {
         if self.idle_timed_out.load(Ordering::Relaxed) {
             return Err(FcError::IdleTimedOut);
@@ -181,6 +185,7 @@ impl RunningSandbox {
         event_rx: mpsc::Receiver<PtyHostEvent>,
         mut on_output: impl FnMut(PtyOutputChunk) -> Result<(), FcError>,
     ) -> Result<PtyExit, FcError> {
+        self.ensure_firecracker_live()?;
         self.claim_one_shot_exec()?;
         let _activity = self.begin_exec_activity()?;
 
@@ -194,7 +199,13 @@ impl RunningSandbox {
             "pty request started",
         );
         let envelope = Envelope::with_request_id(req, request_id.clone());
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            self.firecracker.firecracker_pid(),
+            "pty send",
+            &envelope,
+        )?;
         let started_at_unix_ms = unix_ms_now();
         let _event_forwarder = spawn_pty_event_forwarder(&channel, request_id.clone(), event_rx)?;
         let t = Instant::now();
@@ -205,7 +216,11 @@ impl RunningSandbox {
             let frame = match channel.recv_raw() {
                 Ok(frame) => frame,
                 Err(e) => {
-                    let err = super::protocol::recv_error(e, "pty exec");
+                    let err = super::protocol::recv_error(
+                        e,
+                        "pty exec",
+                        self.firecracker.firecracker_pid(),
+                    );
                     crate::diagnostics::record_protocol_error(
                         &mut self.diagnostics,
                         &self.vm_id,
@@ -311,6 +326,7 @@ impl RunningSandbox {
         consume_one_shot: bool,
         max_duration_ms: Option<u64>,
     ) -> Result<ExecExit, FcError> {
+        self.ensure_firecracker_live()?;
         if consume_one_shot {
             self.claim_one_shot_exec()?;
         }
@@ -331,7 +347,14 @@ impl RunningSandbox {
             envelope = envelope.with_max_duration_ms(max_duration_ms);
         }
         let host_deadline = max_duration_ms.map(host_exec_deadline);
-        let mut channel = send_envelope_with_open_retry(&vsock_uds, &self.vm_id, &envelope)?;
+        let firecracker_pid = self.firecracker.firecracker_pid();
+        let mut channel = send_envelope_with_open_retry(
+            &vsock_uds,
+            &self.vm_id,
+            firecracker_pid,
+            "exec send",
+            &envelope,
+        )?;
         let started_at_unix_ms = unix_ms_now();
         // NOTE — BufReader + cloned-stream concurrency model
         //
@@ -393,7 +416,7 @@ impl RunningSandbox {
         let mut expected_stderr_seq = 0u32;
 
         loop {
-            let frame = match recv_raw_for_exec(&mut channel, host_deadline) {
+            let frame = match recv_raw_for_exec(&mut channel, host_deadline, firecracker_pid) {
                 Ok(frame) => frame,
                 Err(e) => {
                     crate::diagnostics::record_protocol_error(
@@ -568,18 +591,23 @@ fn host_exec_deadline(max_duration_ms: u64) -> HostExecDeadline {
 fn recv_raw_for_exec(
     channel: &mut Channel,
     host_deadline: Option<HostExecDeadline>,
+    firecracker_pid: u32,
 ) -> Result<RawEnvelope, FcError> {
     let Some(host_deadline) = host_deadline else {
         return channel
             .recv_raw()
-            .map_err(|err| super::protocol::recv_error(err, "streaming exec"));
+            .map_err(|err| super::protocol::recv_error(err, "streaming exec", firecracker_pid));
     };
     match channel.recv_raw_with_deadline(host_deadline.deadline) {
         Ok(Some(frame)) => Ok(frame),
         Ok(None) => Err(FcError::ExecTimeoutHost {
             timeout: host_deadline.timeout,
         }),
-        Err(err) => Err(super::protocol::recv_error(err, "streaming exec")),
+        Err(err) => Err(super::protocol::recv_error(
+            err,
+            "streaming exec",
+            firecracker_pid,
+        )),
     }
 }
 
@@ -871,6 +899,8 @@ fn cancelled_pty_exit(started_at_unix_ms: u64, output_total: u64) -> PtyExit {
 pub(super) fn send_envelope_with_open_retry<T>(
     vsock_uds: &Path,
     vm_id: &str,
+    firecracker_pid: u32,
+    context: &'static str,
     envelope: &Envelope<T>,
 ) -> Result<Channel, FcError>
 where
@@ -878,14 +908,21 @@ where
 {
     let mut last_error = None;
     for attempt in 1..=EXEC_OPEN_SEND_RETRIES {
+        super::protocol::ensure_firecracker_live(vm_id, firecracker_pid)?;
         let mut channel = match Channel::open_uds_only(vsock_uds, GUEST_PORT_DEFAULT) {
             Ok(channel) => channel,
             Err(e) if is_transient_exec_open_send_error(&e) && attempt < EXEC_OPEN_SEND_RETRIES => {
-                last_error = Some(FcError::Vsock(e));
+                last_error = Some(e);
                 std::thread::sleep(EXEC_OPEN_SEND_RETRY_SLEEP);
                 continue;
             }
-            Err(e) => return Err(FcError::Vsock(e)),
+            Err(e) => {
+                return Err(super::protocol::open_send_error(
+                    e,
+                    context,
+                    firecracker_pid,
+                ))
+            }
         };
         let t = Instant::now();
         match channel.send(envelope) {
@@ -894,18 +931,25 @@ where
                 return Ok(channel);
             }
             Err(e) if is_transient_exec_open_send_error(&e) && attempt < EXEC_OPEN_SEND_RETRIES => {
-                last_error = Some(FcError::Vsock(e));
+                last_error = Some(e);
                 std::thread::sleep(EXEC_OPEN_SEND_RETRY_SLEEP);
             }
-            Err(e) => return Err(FcError::Vsock(e)),
+            Err(e) => {
+                return Err(super::protocol::open_send_error(
+                    e,
+                    context,
+                    firecracker_pid,
+                ))
+            }
         }
     }
-    Err(last_error.unwrap_or_else(|| {
-        FcError::Protocol(WireProtocolError::PeerRejected {
+    Err(match last_error {
+        Some(err) => super::protocol::open_send_error(err, context, firecracker_pid),
+        None => FcError::Protocol(WireProtocolError::PeerRejected {
             context: "exec send retry",
             detail: "retry exhausted without an error".to_owned(),
-        })
-    }))
+        }),
+    })
 }
 
 fn is_transient_exec_open_send_error(err: &m80_vsock::VsockError) -> bool {

@@ -13,6 +13,7 @@ use terminal_size::{terminal_size, Height, Width};
 
 use super::run_stream::{process_exit_code, RunOutcome};
 use super::signal_watcher::SignalWatcher;
+use crate::errors;
 
 pub(super) fn exec_pty_streaming(
     running: &mut RunningSandbox,
@@ -23,7 +24,10 @@ pub(super) fn exec_pty_streaming(
     let signal_guard = PtySignalForwarder::install(event_tx.clone())?;
     let mut terminal = HostTerminalMode::default();
     let _raw_guard = if interactive {
-        Some(RawModeGuard::enter(&mut terminal).map_err(FcError::Io)?)
+        Some(
+            RawModeGuard::enter(&mut terminal)
+                .map_err(|source| errors::host_io("enable pty raw mode", source))?,
+        )
     } else {
         None
     };
@@ -34,10 +38,13 @@ pub(super) fn exec_pty_streaming(
     };
     let mut stdout = std::io::stdout().lock();
     let exit = running.exec_pty(req, event_rx, |chunk| {
-        copy_terminal_output(chunk, &mut stdout).map_err(FcError::Io)
+        copy_terminal_output(chunk, &mut stdout)
+            .map_err(|source| errors::host_io("write pty stdout", source))
     })?;
     let signal = signal_guard.observed_signal();
-    stdout.flush().map_err(FcError::Io)?;
+    stdout
+        .flush()
+        .map_err(|source| errors::host_io("flush pty stdout", source))?;
     Ok(RunOutcome {
         payload: exit,
         signal,
@@ -169,7 +176,8 @@ struct PtySignalForwarder(SignalWatcher);
 
 impl PtySignalForwarder {
     fn install(event_tx: mpsc::Sender<PtyHostEvent>) -> Result<Self, FcError> {
-        let mut signals = Signals::new([SIGWINCH, SIGINT, SIGTERM, SIGHUP]).map_err(FcError::Io)?;
+        let mut signals = Signals::new([SIGWINCH, SIGINT, SIGTERM, SIGHUP])
+            .map_err(|source| errors::host_io("install pty signal handler", source))?;
         let handle = signals.handle();
         let first_signal = Arc::new(AtomicI32::new(0));
         let first_signal_for_thread = Arc::clone(&first_signal);
@@ -268,7 +276,8 @@ mod tests {
     fn raw_mode_guard_restores_during_wrapper_error_unwind_path() {
         let mut terminal = FakeTerminalMode::default();
         let result = (|| -> Result<(), FcError> {
-            let _guard = RawModeGuard::enter(&mut terminal).map_err(FcError::Io)?;
+            let _guard = RawModeGuard::enter(&mut terminal)
+                .map_err(|source| errors::host_io("enable pty raw mode", source))?;
             Err(FcError::InvalidState {
                 expected: "pty wrapper success",
                 actual: "wrapper error",

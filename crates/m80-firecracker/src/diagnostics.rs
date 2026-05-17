@@ -2,10 +2,19 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs;
+use std::io::Write as _;
+use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
 use std::time::Instant;
 
 use m80_observability::{Diagnostics, ExitReason, Phase, PhaseOutcome, VmEvent};
+use serde::Serialize;
+
+use crate::error::FcError;
+
+pub(crate) const FAILURE_SUMMARY_FILE_NAME: &str = "failure_summary.json";
+const FAILURE_SUMMARY_TMP_MODE: u32 = 0o600;
 
 /// Open diagnostics for one VM run-dir.
 pub(crate) fn open(run_dir: &Path, vm_id: &str, request_id: Option<&str>) -> Option<Diagnostics> {
@@ -137,6 +146,84 @@ pub(crate) fn record_stop_reason(
     }
 }
 
+#[derive(Serialize)]
+struct FailureSummary<'a> {
+    vm_id: &'a str,
+    failed_phase: &'a str,
+    error_variant: &'static str,
+    error_display: String,
+    timestamp_unix_ms: u64,
+    request_id: Option<&'a str>,
+}
+
+pub(crate) fn record_failure_summary_best_effort(
+    run_dir: &Path,
+    vm_id: &str,
+    failed_phase: &str,
+    request_id: Option<&str>,
+    error: &FcError,
+) {
+    if let Err(write_err) = record_failure_summary(run_dir, vm_id, failed_phase, request_id, error)
+    {
+        tracing::warn!(
+            vm_id,
+            path = %run_dir.join(FAILURE_SUMMARY_FILE_NAME).display(),
+            error = %write_err,
+            "failed to write launch failure summary"
+        );
+    }
+}
+
+fn record_failure_summary(
+    run_dir: &Path,
+    vm_id: &str,
+    failed_phase: &str,
+    request_id: Option<&str>,
+    error: &FcError,
+) -> Result<(), FcError> {
+    let summary = FailureSummary {
+        vm_id,
+        failed_phase,
+        error_variant: error.variant_name(),
+        error_display: error.to_string(),
+        timestamp_unix_ms: crate::runroot::unix_ms_now(),
+        request_id,
+    };
+    let bytes = serde_json::to_vec_pretty(&summary).map_err(|source| FcError::Json {
+        context: "failure_summary",
+        source,
+    })?;
+    let path = run_dir.join(FAILURE_SUMMARY_FILE_NAME);
+    let tmp_path = run_dir.join(format!(
+        ".{FAILURE_SUMMARY_FILE_NAME}.{}.tmp",
+        std::process::id()
+    ));
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(FAILURE_SUMMARY_TMP_MODE)
+        .open(&tmp_path)
+        .map_err(|source| FcError::PathIo {
+            path: tmp_path.clone(),
+            source,
+        })?;
+    file.write_all(&bytes).map_err(|source| FcError::PathIo {
+        path: tmp_path.clone(),
+        source,
+    })?;
+    file.write_all(b"\n").map_err(|source| FcError::PathIo {
+        path: tmp_path.clone(),
+        source,
+    })?;
+    file.sync_all().map_err(|source| FcError::PathIo {
+        path: tmp_path.clone(),
+        source,
+    })?;
+    drop(file);
+    fs::rename(&tmp_path, &path).map_err(|source| FcError::PathIo { path, source })
+}
+
 /// Record a timed phase start/completion pair around a fallible operation.
 pub(crate) fn phase_result<T, E, F>(
     diagnostics: &mut Option<Diagnostics>,
@@ -148,6 +235,7 @@ pub(crate) fn phase_result<T, E, F>(
 ) -> Result<T, E>
 where
     F: FnOnce() -> Result<T, E>,
+    E: PhaseErrorDetails,
 {
     record_phase_started(diagnostics.as_mut(), phase, phase_name, vm_id, request_id);
     let started = Instant::now();
@@ -156,8 +244,10 @@ where
     phase_event(phase_name, vm_id, elapsed);
     let outcome = match &result {
         Ok(_) => PhaseOutcome::Ok,
-        Err(_) => PhaseOutcome::Err {
-            class: std::any::type_name::<E>().to_owned(),
+        Err(err) => PhaseOutcome::Err {
+            class: err.phase_error_class(),
+            variant: err.phase_error_variant().map(str::to_owned),
+            display: err.to_string(),
         },
     };
     record_phase_completed(
@@ -171,6 +261,28 @@ where
     );
     result
 }
+
+pub(crate) trait PhaseErrorDetails: fmt::Display {
+    fn phase_error_class(&self) -> String {
+        std::any::type_name::<Self>().to_owned()
+    }
+
+    fn phase_error_variant(&self) -> Option<&'static str> {
+        None
+    }
+}
+
+impl PhaseErrorDetails for FcError {
+    fn phase_error_class(&self) -> String {
+        "m80_firecracker::FcError".to_owned()
+    }
+
+    fn phase_error_variant(&self) -> Option<&'static str> {
+        Some(self.variant_name())
+    }
+}
+
+impl PhaseErrorDetails for std::io::Error {}
 
 fn record_phase_started(
     diagnostics: Option<&mut Diagnostics>,
@@ -292,6 +404,84 @@ mod tests {
         assert_eq!(events[1]["event_kind"], "phase_completed");
         assert!(events[1]["duration_us"].is_u64());
         assert_eq!(events[1]["outcome"]["status"], "ok");
+    }
+
+    #[test]
+    fn phase_result_records_fc_error_variant_and_display() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut diagnostics = Some(Diagnostics::open(dir.path()).unwrap());
+
+        let result: Result<(), FcError> = phase_result(
+            &mut diagnostics,
+            Phase::Boot,
+            "phase_test_fail",
+            "vm-test",
+            Some("req-test"),
+            || Err(FcError::AdmissionRefused { limit: 1 }),
+        );
+        assert!(matches!(result, Err(FcError::AdmissionRefused { .. })));
+
+        drop(diagnostics);
+        let text =
+            std::fs::read_to_string(dir.path().join(m80_observability::DIAGNOSTICS_FILE_NAME))
+                .unwrap();
+        let events: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let outcome = &events[1]["outcome"];
+        assert_eq!(outcome["status"], "err");
+        assert_eq!(outcome["class"], "m80_firecracker::FcError");
+        assert_eq!(outcome["variant"], "AdmissionRefused");
+        assert!(
+            outcome["display"]
+                .as_str()
+                .unwrap()
+                .contains("admission refused"),
+            "got outcome {outcome}"
+        );
+    }
+
+    #[test]
+    fn failure_summary_is_written_atomically_with_variant() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = FcError::GuestdReadyTimeout {
+            path: dir.path().join("vsock.sock_52525"),
+            timeout: std::time::Duration::from_secs(60),
+        };
+
+        record_failure_summary(
+            dir.path(),
+            "vm-test",
+            "phase_12b_ready_accept",
+            Some("req-test"),
+            &err,
+        )
+        .unwrap();
+
+        let text = std::fs::read_to_string(dir.path().join(FAILURE_SUMMARY_FILE_NAME)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["vm_id"], "vm-test");
+        assert_eq!(value["failed_phase"], "phase_12b_ready_accept");
+        assert_eq!(value["error_variant"], "GuestdReadyTimeout");
+        assert_eq!(value["request_id"], "req-test");
+        assert!(value["timestamp_unix_ms"].is_u64());
+        assert!(
+            value["error_display"]
+                .as_str()
+                .unwrap()
+                .contains("guestd ready"),
+            "got {value}"
+        );
+        assert!(
+            !dir.path()
+                .join(format!(
+                    ".{FAILURE_SUMMARY_FILE_NAME}.{}.tmp",
+                    std::process::id()
+                ))
+                .exists(),
+            "temporary summary path must be renamed away"
+        );
     }
 
     #[test]

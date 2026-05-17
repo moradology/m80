@@ -1,4 +1,8 @@
-use m80_observability::{render_prometheus, HealthSnapshot, OpsMetrics};
+use m80_observability::{
+    render_prometheus, DurationHistogram, HealthSnapshot, LeaseAttribution, MetricLabelValue,
+    OpsMetrics, PmemLayerCountBySharing, PostRestoreHookDuration, PostRestoreHookVariantLabel,
+    ScratchSourceLabel, TemplateCountByFreshness,
+};
 use m80_proto::{GuestCpuMetrics, GuestMemMetrics, MetricsResponse};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,6 +42,7 @@ fn prometheus_render_includes_guest_metrics() {
             requests_total: 7,
             errors_total: 1,
         }),
+        ..OpsMetrics::default()
     };
 
     let rendered = render_prometheus(&health, &metrics);
@@ -88,13 +93,33 @@ fn prometheus_render_spec_compliant() {
             requests_total: 7,
             errors_total: 1,
         }),
+        pmem_layers_per_vm_count_by_sharing: PmemLayerCountBySharing {
+            per_vm: 3,
+            shared: 2,
+        },
+        template_count_by_freshness: TemplateCountByFreshness {
+            fresh: 4,
+            invalidated: 1,
+        },
+        restore_latency_seconds: DurationHistogram::from_micros([42_000, 150_000, 210_000]),
+        post_restore_hook_duration_seconds: vec![PostRestoreHookDuration {
+            hook_variant: PostRestoreHookVariantLabel::SetHostname,
+            duration: DurationHistogram::from_micros([2_000, 4_000]),
+        }],
+        image_store_bytes: 4096,
+        template_store_bytes: 8192,
+        lease_attribution: vec![LeaseAttribution {
+            template_fingerprint: MetricLabelValue::new("sha256:template").unwrap(),
+            pmem_digest_set: MetricLabelValue::new("sha256:pmem-a,sha256:pmem-b").unwrap(),
+            scratch_source: ScratchSourceLabel::Workspace,
+        }],
     };
-    let expected = expected_metrics();
+    let expected = expected_metric_families();
 
     let rendered = render_prometheus(&health, &metrics);
     let mut help_names = BTreeSet::new();
     let mut type_names = BTreeMap::new();
-    let mut sample_names = BTreeSet::new();
+    let mut sample_families = BTreeSet::new();
 
     for line in rendered.lines() {
         if let Some(rest) = line.strip_prefix("# HELP ") {
@@ -124,20 +149,21 @@ fn prometheus_render_spec_compliant() {
             );
         } else {
             let mut parts = line.split_whitespace();
-            let name = parts.next().expect("sample metric name");
+            let token = parts.next().expect("sample metric name");
             let value = parts.next().expect("sample metric value");
             assert!(
                 parts.next().is_none(),
                 "sample line must contain exactly name and value: {line:?}"
             );
-            assert!(expected.contains_key(name), "unknown sample metric: {name}");
-            value
-                .parse::<u64>()
-                .unwrap_or_else(|e| panic!("sample value for {name} must parse: {e}"));
+            let family = sample_family(token, &expected);
             assert!(
-                sample_names.insert(name.to_owned()),
-                "duplicate sample for {name}"
+                expected.contains_key(family),
+                "unknown sample metric: {token}"
             );
+            value
+                .parse::<f64>()
+                .unwrap_or_else(|e| panic!("sample value for {token} must parse: {e}"));
+            sample_families.insert(family.to_owned());
         }
     }
 
@@ -150,10 +176,24 @@ fn prometheus_render_spec_compliant() {
         type_names.keys().cloned().collect::<BTreeSet<_>>(),
         expected_names
     );
-    assert_eq!(sample_names, expected_names);
+    assert_eq!(sample_families, expected_names);
+
+    assert!(rendered.contains("m80_pmem_layers_per_vm_count{sharing=\"per_vm\"} 3\n"));
+    assert!(rendered.contains("m80_pmem_layers_per_vm_count{sharing=\"shared\"} 2\n"));
+    assert!(rendered.contains("m80_template_count{freshness=\"fresh\"} 4\n"));
+    assert!(rendered.contains("m80_template_count{freshness=\"invalidated\"} 1\n"));
+    assert!(rendered.contains("m80_restore_latency_seconds_bucket{le=\"0.2\"} 2\n"));
+    assert!(rendered.contains(
+        "m80_post_restore_hook_duration_seconds_bucket{hook_variant=\"set_hostname\",le=\"0.05\"} 2\n"
+    ));
+    assert!(rendered.contains("m80_image_store_bytes 4096\n"));
+    assert!(rendered.contains("m80_template_store_bytes 8192\n"));
+    assert!(rendered.contains(
+        "m80_lease_attribution{template_fingerprint=\"sha256:template\",pmem_digest_set=\"sha256:pmem-a,sha256:pmem-b\",scratch_source=\"workspace\"} 1\n"
+    ));
 }
 
-fn expected_metrics() -> BTreeMap<&'static str, &'static str> {
+fn expected_metric_families() -> BTreeMap<&'static str, &'static str> {
     BTreeMap::from([
         ("m80_vm_health_healthy", "gauge"),
         ("m80_vm_health_degraded", "gauge"),
@@ -162,6 +202,13 @@ fn expected_metrics() -> BTreeMap<&'static str, &'static str> {
         ("m80_vm_health_total", "gauge"),
         ("m80_vm_rollout_ready", "gauge"),
         ("m80_ops_vm_count", "gauge"),
+        ("m80_pmem_layers_per_vm_count", "gauge"),
+        ("m80_template_count", "gauge"),
+        ("m80_restore_latency_seconds", "histogram"),
+        ("m80_post_restore_hook_duration_seconds", "histogram"),
+        ("m80_image_store_bytes", "gauge"),
+        ("m80_template_store_bytes", "gauge"),
+        ("m80_lease_attribution", "gauge"),
         ("m80_guest_cpu_total_ticks", "counter"),
         ("m80_guest_cpu_user_ticks", "counter"),
         ("m80_guest_cpu_nice_ticks", "counter"),
@@ -183,4 +230,16 @@ fn expected_metrics() -> BTreeMap<&'static str, &'static str> {
         ("m80_guest_requests_total", "counter"),
         ("m80_guest_errors_total", "counter"),
     ])
+}
+
+fn sample_family<'a>(token: &'a str, expected: &BTreeMap<&'static str, &'static str>) -> &'a str {
+    let name = token.split_once('{').map_or(token, |(name, _)| name);
+    for suffix in ["_bucket", "_sum", "_count"] {
+        if let Some(base) = name.strip_suffix(suffix) {
+            if expected.get(base).copied() == Some("histogram") {
+                return base;
+            }
+        }
+    }
+    name
 }

@@ -25,8 +25,10 @@ fn main() {
     let output = std::env::var_os("M80_SNAPSHOT_BENCH_OUTPUT").map(PathBuf::from);
     let started_at = unix_timestamp();
     let discovery = m80_preflight::run().expect("preflight");
-    let snapshot_dir =
-        std::env::temp_dir().join(format!("m80-snapshot-restore-bench-{}", std::process::id()));
+    let snapshot_dir = discovery
+        .run_root
+        .join("warm")
+        .join(format!("m80-snapshot-restore-bench-{}", std::process::id()));
     let paths = snapshot_paths(&snapshot_dir);
 
     let golden_backend = make_backend(discovery.clone(), 1);
@@ -233,6 +235,7 @@ fn sandbox_config(vm_id: String, vcpu_count: u32, mem_size_mib: u32) -> SandboxC
         daemonize: false,
         request_id: None,
         preallocated_drive_slots: 0,
+        pmem_layers: Vec::new(),
         one_shot: false,
     }
 }

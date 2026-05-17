@@ -8,7 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
     Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig, SnapshotPaths, WarmPool,
-    WarmPoolConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
+    WarmPoolConfig, WarmStrategy, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT,
 };
 
 fn main() {
@@ -20,6 +20,7 @@ fn main() {
     let discovery = m80_preflight::run().expect("preflight");
     let snapshot_dir = discovery
         .run_root
+        .join("warm")
         .join(format!("warm-pool-bench-snapshot-{}", std::process::id()));
     let paths = snapshot_paths(&snapshot_dir);
 
@@ -46,9 +47,8 @@ fn main() {
         Arc::clone(&pool_backend),
         WarmPoolConfig {
             target_ready,
-            snapshot: paths.clone(),
             sandbox: sandbox_config("warm-slot-template"),
-            ready_probe: true_request(),
+            strategy: WarmStrategy::direct_snapshot(paths.clone(), true_request()),
             vm_id_prefix: format!("wp-slot-{}", std::process::id()),
             cpu_allocator: None,
         },
@@ -187,6 +187,7 @@ fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
         daemonize: false,
         request_id: None,
         preallocated_drive_slots: 0,
+        pmem_layers: Vec::new(),
         one_shot: false,
     }
 }

@@ -5,10 +5,9 @@
 The system exposes `WarmPool` as the clean stateless allocation path. A
 pool owns pre-restored, guestd-ready slots and `try_lease()` hands out one
 ready `WarmLease` without issuing a cold boot, synchronous restore, or
-readiness exec on the request path. A restored slot enters `Ready` only
-after its configured `ready_probe` request completes with status
-`Completed` and exit code `0`, then waits through the restored-vsock
-settle delay before publication.
+readiness exec on the request path. A restored slot enters `Ready` when
+its configured `ready_probe` request completes with status `Completed`
+and exit code `0`; the probe response is the publication gate.
 
 An empty pool returns `FcError::PoolEmpty`. This is intentional: callers
 must size and prefill the pool, or handle unavailability explicitly.

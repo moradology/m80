@@ -73,6 +73,10 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
 
         Cmd::Warm { action } => cmds::cmd_warm(action, json),
 
+        Cmd::Image { action } => cmds::cmd_image(action, json),
+
+        Cmd::Template { action } => cmds::cmd_template(action, json),
+
         Cmd::Version => cmds::cmd_version(json),
     }
 }

@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{
     FcError, NetworkPolicy, SandboxConfig, SnapshotPaths, WarmPool, WarmPoolConfig,
-    WarmPoolSnapshot,
+    WarmPoolSnapshot, WarmStrategy,
 };
 use m80_proto::ExecRequest;
 use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
@@ -49,15 +49,24 @@ fn run_foreground_inner(
     if socket_path.exists() {
         return Err(FcError::WarmOwnerSocketExists { socket_path });
     }
-    fs::create_dir_all(&warm_root).map_err(FcError::Io)?;
+    fs::create_dir_all(&warm_root).map_err(|source| FcError::PathIo {
+        path: warm_root.clone(),
+        source,
+    })?;
     let identity_path = status::identity_path()?;
 
     let (backend, _effective) = super::super::build_run_backend(profile.clone())?;
     let snapshot_dir = status::snapshot_dir()?;
     if snapshot_dir.exists() {
-        fs::remove_dir_all(&snapshot_dir).map_err(FcError::Io)?;
+        fs::remove_dir_all(&snapshot_dir).map_err(|source| FcError::PathIo {
+            path: snapshot_dir.clone(),
+            source,
+        })?;
     }
-    fs::create_dir_all(&snapshot_dir).map_err(FcError::Io)?;
+    fs::create_dir_all(&snapshot_dir).map_err(|source| FcError::PathIo {
+        path: snapshot_dir.clone(),
+        source,
+    })?;
 
     let snapshot = SnapshotPaths {
         vm_state: snapshot_dir.join("vm.snap"),
@@ -76,16 +85,18 @@ fn run_foreground_inner(
         Arc::clone(&backend),
         WarmPoolConfig {
             target_ready: size,
-            snapshot,
             sandbox: warm_sandbox_config("warm-template", egress),
-            ready_probe: ready_probe(),
+            strategy: WarmStrategy::direct_snapshot(snapshot, ready_probe()),
             vm_id_prefix: "warm-slot".to_owned(),
             cpu_allocator: None,
         },
     )?;
     pool.fill_to_target_blocking()?;
 
-    let listener = UnixListener::bind(&socket_path).map_err(FcError::Io)?;
+    let listener = UnixListener::bind(&socket_path).map_err(|source| FcError::PathIo {
+        path: socket_path.clone(),
+        source,
+    })?;
     let mut owner_state_guard = WarmOwnerStateGuard::new(socket_path.clone(), identity_path);
     restrict_owner_socket(&socket_path)?;
     let identity = WarmOwnerIdentity {
@@ -115,7 +126,8 @@ fn run_foreground_inner(
     let mut shutdown = false;
 
     for incoming in listener.incoming() {
-        let mut stream = incoming.map_err(FcError::Io)?;
+        let mut stream =
+            incoming.map_err(|source| errors::host_io("accept warm owner connection", source))?;
         let request =
             prepare_owner_stream(&stream).and_then(|()| control::read_request(&mut stream));
         let response = match request {
@@ -206,15 +218,19 @@ fn run_foreground_inner(
 }
 
 fn restrict_owner_socket(socket_path: &Path) -> Result<(), FcError> {
-    fs::set_permissions(socket_path, fs::Permissions::from_mode(OWNER_SOCKET_MODE))
-        .map_err(FcError::Io)
+    fs::set_permissions(socket_path, fs::Permissions::from_mode(OWNER_SOCKET_MODE)).map_err(
+        |source| FcError::PathIo {
+            path: socket_path.to_path_buf(),
+            source,
+        },
+    )
 }
 
 fn prepare_owner_stream(stream: &UnixStream) -> Result<(), FcError> {
     authorize_owner_peer(stream)?;
     stream
         .set_read_timeout(Some(OWNER_REQUEST_READ_TIMEOUT))
-        .map_err(FcError::Io)
+        .map_err(|source| errors::host_io("set warm owner read timeout", source))
 }
 
 fn authorize_owner_peer(stream: &UnixStream) -> Result<(), FcError> {
@@ -222,16 +238,22 @@ fn authorize_owner_peer(stream: &UnixStream) -> Result<(), FcError> {
     let owner_uid = Uid::effective().as_raw();
     let peer_uid = peer.uid();
     if peer_uid != owner_uid {
-        return Err(FcError::Io(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!("warm owner peer uid {peer_uid} does not match owner uid {owner_uid}"),
-        )));
+        return Err(errors::host_io(
+            "authorize warm owner peer",
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("warm owner peer uid {peer_uid} does not match owner uid {owner_uid}"),
+            ),
+        ));
     }
     Ok(())
 }
 
 fn nix_to_io(err: nix::errno::Errno) -> FcError {
-    FcError::Io(io::Error::from_raw_os_error(err as i32))
+    errors::host_io(
+        "read warm owner peer credentials",
+        io::Error::from_raw_os_error(err as i32),
+    )
 }
 
 #[derive(Debug)]
@@ -281,10 +303,13 @@ fn lock_warm_snapshot_files(paths: &SnapshotPaths) -> Result<(), FcError> {
 
 fn snapshot_manifest_path(paths: &SnapshotPaths) -> Result<PathBuf, FcError> {
     let Some(parent) = paths.vm_state.parent() else {
-        return Err(FcError::Io(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "snapshot vm_state path must have a parent directory",
-        )));
+        return Err(errors::host_io(
+            "resolve warm snapshot manifest parent",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "snapshot vm_state path must have a parent directory",
+            ),
+        ));
     };
     Ok(parent.join(m80_snapshot::SNAPSHOT_MANIFEST_FILE))
 }
@@ -327,6 +352,7 @@ fn warm_sandbox_config(vm_id: impl Into<String>, egress: EgressMode) -> SandboxC
         idle_timeout: None,
         daemonize: false,
         request_id: None,
+        pmem_layers: Vec::new(),
         preallocated_drive_slots: 0,
         one_shot: false,
     }

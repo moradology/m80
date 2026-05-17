@@ -62,7 +62,7 @@ memory bounds for repeated unsolicited guest output.
 
 `slowloris` writes an in-cap frame prefix plus a short partial body, flushes,
 and then stops making progress while keeping the channel open. This exercises
-host no-progress timeout handling.
+host-deadline no-progress handling.
 
 ## Evidence
 

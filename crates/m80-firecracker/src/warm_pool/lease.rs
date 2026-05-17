@@ -3,11 +3,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use m80_proto::{ExecExit, ExecRequest, ExecResponse};
+use m80_proto::{DirEntry, ExecExit, ExecRequest, ExecResponse, FileStat};
 
 use super::{discard_sandbox, discard_sandbox_with_diagnostics, WarmPoolInner, WarmSlot};
 use crate::error::FcError;
-use crate::hotplug_types::HotplugDriveAttach;
+use crate::hotplug_types::{HotplugDriveAttach, HotplugDriveDetach};
 use crate::types::{ExecChunk, RunningSandbox};
 
 /// A leased warm-pool slot.
@@ -113,6 +113,89 @@ impl WarmLease {
         }
     }
 
+    /// Detach one previously attached tenant drive and retarget the slot back
+    /// to its placeholder backing file. Failure discards the underlying VM and
+    /// releases the lease.
+    pub fn detach_drive(&mut self, request: HotplugDriveDetach) -> Result<(), FcError> {
+        let Some(slot) = self.slot.take() else {
+            return Err(FcError::OneShotConsumed);
+        };
+        let WarmSlot {
+            sandbox,
+            cpuset_cpus,
+        } = slot;
+        match sandbox.detach_drive(request) {
+            Ok(sandbox) => {
+                self.slot = Some(WarmSlot {
+                    sandbox,
+                    cpuset_cpus,
+                });
+                Ok(())
+            }
+            Err(err) => {
+                self.release_and_refill(cpuset_cpus);
+                Err(err)
+            }
+        }
+    }
+
+    /// Read a guest file directly through the leased slot.
+    pub fn read_file(
+        &mut self,
+        path: impl Into<String>,
+        max_bytes: Option<u64>,
+    ) -> Result<(Vec<u8>, bool), FcError> {
+        self.sandbox_mut()?.read_file(path, max_bytes)
+    }
+
+    /// Write one guest file directly through the leased slot.
+    pub fn write_file(
+        &mut self,
+        path: impl Into<String>,
+        bytes: Vec<u8>,
+        mode: Option<u32>,
+    ) -> Result<u64, FcError> {
+        self.sandbox_mut()?.write_file(path, bytes, mode)
+    }
+
+    /// List one guest directory level through the leased slot.
+    pub fn list_dir(&mut self, path: impl Into<String>) -> Result<Vec<DirEntry>, FcError> {
+        self.sandbox_mut()?.list_dir(path)
+    }
+
+    /// Stat one guest path through the leased slot without following the final
+    /// symlink component.
+    pub fn stat_file(&mut self, path: impl Into<String>) -> Result<FileStat, FcError> {
+        self.sandbox_mut()?.stat_file(path)
+    }
+
+    /// Create one guest directory through the leased slot.
+    pub fn create_dir(
+        &mut self,
+        path: impl Into<String>,
+        mode: Option<u32>,
+        recursive: bool,
+    ) -> Result<bool, FcError> {
+        self.sandbox_mut()?.create_dir(path, mode, recursive)
+    }
+
+    /// Remove one non-directory guest path through the leased slot.
+    pub fn remove_file(&mut self, path: impl Into<String>) -> Result<(), FcError> {
+        self.sandbox_mut()?.remove_file(path)
+    }
+
+    /// Upload a guest file through the chunked file-write protocol.
+    pub fn upload_file_chunked(
+        &mut self,
+        path: impl Into<String>,
+        mode: Option<u32>,
+        reader: impl std::io::Read,
+        chunk_size: usize,
+    ) -> Result<u64, FcError> {
+        self.sandbox_mut()?
+            .upload_file_chunked(path, mode, reader, chunk_size)
+    }
+
     /// VM id for the leased slot.
     pub fn vm_id(&self) -> &str {
         self.slot
@@ -214,7 +297,9 @@ impl Drop for WarmLease {
                 sandbox,
                 cpuset_cpus,
             } = slot;
-            let _ = discard_sandbox(sandbox);
+            if let Err(err) = discard_sandbox(sandbox) {
+                tracing::error!(error = %err, "failed to discard warm lease during drop");
+            }
             self.release_and_refill(cpuset_cpus);
         }
     }

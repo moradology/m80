@@ -6,7 +6,7 @@ use fixture_server::{resp_400, FixtureServer};
 
 use m80_firecracker_client::{
     BootSourceConfig, Client, ClientError, CpuTemplate, DriveConfig, InstanceAction, MachineConfig,
-    PartialDriveConfig, VsockConfig,
+    PartialDriveConfig, PmemConfig, VsockConfig,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -91,6 +91,22 @@ fn patch_drive_400_returns_drive_write_failed() {
             })
         },
         |e| matches!(e, ClientError::DriveWriteFailed { fault } if fault.contains("drive slot update failed")),
+    );
+}
+
+#[test]
+fn pmem_400_returns_pmem_write_failed() {
+    assert_error(
+        "pmem backing not found",
+        |c| {
+            c.put_pmem(&PmemConfig {
+                id: "pmem0".to_owned(),
+                path_on_host: PathBuf::from("/missing.erofs"),
+                root_device: false,
+                read_only: true,
+            })
+        },
+        |e| matches!(e, ClientError::PmemWriteFailed { fault } if fault.contains("pmem backing not found")),
     );
 }
 

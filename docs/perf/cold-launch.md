@@ -15,6 +15,18 @@ For new measurement-track perf beads, use
 index. It defines the real-substrate artifact, sample-count, and close-reason
 rules used by the `m80-jp6ik` gated measurements.
 
+Phase B pmem smoke uses the same real-KVM launch path, but it is a gate rather
+than a latency benchmark:
+
+```sh
+M80_PMEM_LAYERS=1 ./scripts/smoke.sh launch-only
+M80_PMEM_LAYERS=2 ./scripts/smoke.sh launch-only
+```
+
+Those modes generate tiny erofs pmem layers, mount them through virtio-pmem
+with DAX, and assert teardown leaves no pmem backing directory under the VM
+run dir.
+
 Cells (4 total):
 
 | kind    | load   | Notes                                           |
