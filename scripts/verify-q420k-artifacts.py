@@ -592,6 +592,7 @@ def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
     check = Check()
     check.require(path.is_file(), f"pmem density instruction doc: missing {path}")
     for required in [
+        "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0",
         "M80_PMEM_SHARED_VM_COUNT=4",
         "M80_PMEM_SHARED_CYCLES=10",
         "M80_PMEM_SHARED_PAYLOAD_MIB=128",
@@ -1974,6 +1975,7 @@ sudo -n env \
         density_instruction = """# Shared Pmem Density
 
 ```sh
+M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 \
 M80_PMEM_SHARED_VM_COUNT=4 \
 M80_PMEM_SHARED_CYCLES=10 \
 M80_PMEM_SHARED_PAYLOAD_MIB=128 \
@@ -2480,6 +2482,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
         density_smoke.chmod(0o755)
         args.only = ["pmem-density-runbook"]
         density_runbook_status = quiet_run_checks(args)
+        density_runbook_bad_allow_other = close_runbook.read_text().replace(
+            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 ",
+            "",
+        )
+        close_runbook.write_text(density_runbook_bad_allow_other)
+        density_runbook_bad_allow_other_status = quiet_run_checks(args)
+        close_runbook.write_text(density_runbook_bad_allow_other.replace(
+            "M80_PMEM_SHARED_VM_COUNT=4",
+            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4",
+        ))
         density_runbook_bad = close_runbook.read_text().replace(
             "M80_KERNEL_KIND=stripped",
             "M80_KERNEL_KIND=stock",
@@ -2754,6 +2766,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0
             or density_runbook_status != 0
+            or density_runbook_bad_allow_other_status == 0
             or density_runbook_bad_kernel_kind_status == 0
             or quiet_host_inventory_status != 0
             or quiet_host_inventory_not_executable_status == 0

@@ -100,6 +100,7 @@ uncommitted source changes.
 Run from the repository root:
 
 ```sh
+M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 \
 M80_PMEM_SHARED_VM_COUNT=4 \
 M80_PMEM_SHARED_CYCLES=10 \
 M80_PMEM_SHARED_PAYLOAD_MIB=128 \
