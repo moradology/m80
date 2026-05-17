@@ -45,6 +45,7 @@ DEFAULT_DAX_MEMORY_PRESSURE = ROOT / "docs/perf/pmem-dax-memory-pressure.md"
 SNAPSHOT_TEMPLATE_N_PER_RUN = 20
 SNAPSHOT_TEMPLATE_RUNS = 3
 SNAPSHOT_TEMPLATE_SAMPLES_TOTAL = SNAPSHOT_TEMPLATE_N_PER_RUN * SNAPSHOT_TEMPLATE_RUNS
+COMPOSED_E2E_N = 10
 REQUIRED_CLOSE_BEADS = {
     "snapshot-template": "m80-q420k.4.15",
     "pmem-density": "m80-q420k.3.8",
@@ -164,6 +165,12 @@ def require_number_at_least(check: Check, label: str, value: Any, minimum: float
     check.require(is_number(value), f"{label} must be numeric")
     if is_number(value):
         check.require(value >= minimum, f"{label} must be >= {minimum:g}")
+
+
+def require_int_equal(check: Check, label: str, value: Any, expected: int) -> None:
+    check.require(is_non_negative_int(value), f"{label} must be a non-negative integer")
+    if is_non_negative_int(value):
+        check.require(value == expected, f"{label} must equal {expected}")
 
 
 def require_list_len(check: Check, label: str, value: Any, expected: Any) -> None:
@@ -999,8 +1006,13 @@ def verify_composed_restore(path: Path) -> list[str]:
     restore = at(data, "data.restore_latency")
     check.require(isinstance(restore, dict), "composed restore: missing restore_latency")
     if isinstance(restore, dict):
-        require_number_at_least(check, "composed restore: count", restore.get("count"), 10)
-        require_number_at_least(check, "composed restore: target_ready", restore.get("target_ready"), 10)
+        require_int_equal(check, "composed restore: count", restore.get("count"), COMPOSED_E2E_N)
+        require_int_equal(
+            check,
+            "composed restore: target_ready",
+            restore.get("target_ready"),
+            COMPOSED_E2E_N,
+        )
         if is_number(restore.get("count")) and is_number(restore.get("target_ready")):
             check.require(
                 restore.get("target_ready") == restore.get("count"),
@@ -1059,7 +1071,7 @@ def verify_composed_memory(path: Path) -> list[str]:
     memory = at(data, "data.host_memory")
     check.require(isinstance(memory, dict), "composed memory: missing host_memory")
     if isinstance(memory, dict):
-        require_number_at_least(check, "composed memory: n_attached", memory.get("n_attached"), 10)
+        require_int_equal(check, "composed memory: n_attached", memory.get("n_attached"), COMPOSED_E2E_N)
         check.require(
             memory.get("per_vm_overhead_source") == "per_vm_baseline_same_run",
             "composed memory: per_vm_overhead_source must be per_vm_baseline_same_run",
@@ -1257,7 +1269,7 @@ def verify_composed_residue(path: Path) -> list[str]:
     residue = at(data, "data.residue")
     check.require(isinstance(residue, dict), "composed residue: missing residue")
     if isinstance(residue, dict):
-        require_number_at_least(check, "composed residue: n_leases", residue.get("n_leases"), 10)
+        require_int_equal(check, "composed residue: n_leases", residue.get("n_leases"), COMPOSED_E2E_N)
         check.require(residue.get("unexpected_paths") == [], "composed residue: unexpected_paths must be []")
         roots = residue.get("scanned_roots")
         check.require(isinstance(roots, list) and roots, "composed residue: scanned_roots must be non-empty")
@@ -1360,6 +1372,10 @@ def verify_composed_consistency(
     check.require(
         target_ready == restore_count == n_attached == n_leases,
         "composed consistency: target_ready, restore count, n_attached, and n_leases must match",
+    )
+    check.require(
+        target_ready == COMPOSED_E2E_N,
+        f"composed consistency: target_ready must equal {COMPOSED_E2E_N}",
     )
 
     memory_shared = at(memory, "data.host_memory.shared_image_digest")
@@ -3667,6 +3683,21 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore_bad_target_ready_status = quiet_run_checks(args)
         restore_bad["data"]["restore_latency"]["target_ready"] = 10
         restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["restore_latency"]["count"] = 11
+        restore_bad["data"]["restore_latency"]["target_ready"] = 11
+        restore_bad["data"]["restore_latency"]["samples_ms"] = [100.0 + index for index in range(11)]
+        restore_bad["data"]["restore_latency"]["p50_ms"] = 105.0
+        restore_bad["data"]["restore_latency"]["p95_ms"] = 110.0
+        restore_bad["data"]["restore_latency"]["p99_ms"] = 110.0
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_exact_n_status = quiet_run_checks(args)
+        restore_bad["data"]["restore_latency"]["count"] = 10
+        restore_bad["data"]["restore_latency"]["target_ready"] = 10
+        restore_bad["data"]["restore_latency"]["samples_ms"] = [100.0 + index for index in range(10)]
+        restore_bad["data"]["restore_latency"]["p50_ms"] = 104.0
+        restore_bad["data"]["restore_latency"]["p95_ms"] = 109.0
+        restore_bad["data"]["restore_latency"]["p99_ms"] = 109.0
+        restore.write_text(json.dumps(restore_bad))
         restore_bad["data"]["restore_latency"]["samples_ms"] = restore_bad["data"]["restore_latency"]["samples_ms"][:9]
         restore.write_text(json.dumps(restore_bad))
         restore_bad_sample_count_status = quiet_run_checks(args)
@@ -3684,6 +3715,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
         memory_bad_bound_status = quiet_run_checks(args)
         memory_bad_bound["data"]["host_memory"]["bound_bytes"] = 20
         memory.write_text(json.dumps(memory_bad_bound))
+        memory_bad_n = json.loads(memory.read_text())
+        memory_bad_n["data"]["host_memory"]["n_attached"] = 11
+        memory_bad_n["data"]["host_memory"]["per_vm_baseline"]["n_attached"] = 11
+        memory_bad_n["data"]["host_memory"]["per_vm_baseline"]["attached_snapshot"]["target_ready"] = 11
+        memory_bad_n["data"]["host_memory"]["per_vm_baseline"]["attached_snapshot"]["leased"] = 11
+        memory.write_text(json.dumps(memory_bad_n))
+        memory_bad_n_status = quiet_run_checks(args)
+        memory_bad_n["data"]["host_memory"]["n_attached"] = 10
+        memory_bad_n["data"]["host_memory"]["per_vm_baseline"]["n_attached"] = 10
+        memory_bad_n["data"]["host_memory"]["per_vm_baseline"]["attached_snapshot"]["target_ready"] = 10
+        memory_bad_n["data"]["host_memory"]["per_vm_baseline"]["attached_snapshot"]["leased"] = 10
+        memory.write_text(json.dumps(memory_bad_n))
         memory_bad_digest = json.loads(memory.read_text())
         memory_bad_digest["data"]["host_memory"]["shared_image_digest"] = f"sha256:{shared_digest}"
         memory.write_text(json.dumps(memory_bad_digest))
@@ -3739,6 +3782,17 @@ The measured signal is acceptable under the same-trust-domain assumption.
         residue.write_text(json.dumps(residue_bad))
         residue_bad_digest_status = quiet_run_checks(args)
         residue_bad["data"]["residue"]["image_store"]["shared_digest"] = shared_digest
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad["data"]["residue"]["n_leases"] = 11
+        residue_bad["data"]["residue"]["leased_run_dirs"] = [
+            f"{composed_run_root}/lease-{idx}" for idx in range(11)
+        ]
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad_exact_n_status = quiet_run_checks(args)
+        residue_bad["data"]["residue"]["n_leases"] = 10
+        residue_bad["data"]["residue"]["leased_run_dirs"] = [
+            f"{composed_run_root}/lease-{idx}" for idx in range(10)
+        ]
         residue.write_text(json.dumps(residue_bad))
         residue_bad["data"]["residue"]["scanned_roots"] = ["/tmp/m80-*"]
         residue.write_text(json.dumps(residue_bad))
@@ -4066,15 +4120,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
             or restore_bad_target_ready_status == 0
+            or restore_bad_exact_n_status == 0
             or restore_bad_sample_count_status == 0
             or restore_bad_percentile_status == 0
             or memory_bad_bound_status == 0
+            or memory_bad_n_status == 0
             or memory_bad_digest_status == 0
             or memory_bad_delta_status == 0
             or memory_bad_path_status == 0
             or memory_bad_per_vm_baseline_status == 0
             or memory_bad_per_vm_baseline_overhead_status == 0
             or residue_bad_digest_status == 0
+            or residue_bad_exact_n_status == 0
             or residue_bad_roots_status == 0
             or residue_bad_run_root_status == 0
             or residue_bad_leased_run_dir_status == 0
