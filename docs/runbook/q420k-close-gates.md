@@ -132,7 +132,9 @@ The `pmem-density` selector verifies both
 script must be executable and retain the quiet-host fail-closed guard. The
 artifact guard also requires the trust-model text that the parent close/PR
 description must paste or cite: `TrustDomainAck`, same trust domain, DAX
-cache-timing side channel, and read-only Shared pmem jail bindings.
+cache-timing side channel, and read-only Shared pmem jail bindings. It also
+requires the measured Shared image digest to be a lowercase sha256 and its
+image path to be absolute.
 
 After committing the artifact, rerun the close guard with git-state checks:
 

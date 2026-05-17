@@ -170,6 +170,13 @@ def require_git_commit(check: Check, label: str, value: Any) -> None:
     )
 
 
+def require_sha256_hex(check: Check, label: str, value: Any) -> None:
+    check.require(
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None,
+        f"{label}: must be a 64-character lowercase sha256 hex digest",
+    )
+
+
 def quiet_substrate(data: Any, label: str, check: Check) -> None:
     substrate = at(data, "substrate")
     check.require(isinstance(substrate, dict), f"{label}: missing substrate object")
@@ -424,6 +431,8 @@ def verify_pmem_density(path: Path) -> list[str]:
     vm_count = markdown_int(text, r"- field: host memory delta after (\d+) attached Shared VMs")
     cycles = markdown_int(text, r"- cycles: `(\d+)`")
     payload_mib = markdown_int(text, r"- payload size: `(\d+) MiB`")
+    image_digest = markdown_text(text, r"- image digest: `([^`]+)`")
+    image_path = markdown_text(text, r"- image path: `([^`]+)`")
     layout = markdown_int(text, r"- payload erofs layout: `Layout: (\d+)`,")
     payload_size = markdown_int(text, r"size `(\d+)` bytes, on-disk size")
     payload_on_disk = markdown_int(text, r"on-disk size `(\d+)` bytes")
@@ -491,6 +500,11 @@ def verify_pmem_density(path: Path) -> list[str]:
     require_number_at_least(check, "pmem density: vm_count", vm_count, 4)
     require_number_at_least(check, "pmem density: cycles", cycles, 10)
     require_number_at_least(check, "pmem density: payload MiB", payload_mib, 1)
+    require_sha256_hex(check, "pmem density: image digest", image_digest)
+    check.require(
+        isinstance(image_path, str) and image_path.startswith("/"),
+        "pmem density: image path must be absolute",
+    )
     check.require(layout == 0, "pmem density: payload erofs layout must be 0")
     require_number_at_least(check, "pmem density: payload size", payload_size, 1)
     require_number_at_least(check, "pmem density: payload on-disk size", payload_on_disk, 1)
@@ -1908,6 +1922,8 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
 - field: host memory delta after 4 attached Shared VMs
 - cycles: `10`
 - payload size: `128 MiB`
+- image digest: `1111111111111111111111111111111111111111111111111111111111111111`
+- image path: `/var/lib/m80-images/11/1111111111111111111111111111111111111111111111111111111111111111/image.erofs`
 - payload erofs layout: `Layout: 0`, size `4096` bytes, on-disk size `4096` bytes, compression ratio `0.00%`
 - image KiB: `4096`
 - per-VM overhead bound: `1024 KiB`
@@ -2479,6 +2495,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- bound: `8193 KiB`",
             "- bound: `8192 KiB`",
         ))
+        density_bad_digest = density.read_text().replace(
+            "- image digest: `1111111111111111111111111111111111111111111111111111111111111111`",
+            "- image digest: `sha256:1111111111111111111111111111111111111111111111111111111111111111`",
+        )
+        density.write_text(density_bad_digest)
+        density_bad_digest_status = quiet_run_checks(args)
+        density.write_text(density_bad_digest.replace(
+            "- image digest: `sha256:1111111111111111111111111111111111111111111111111111111111111111`",
+            "- image digest: `1111111111111111111111111111111111111111111111111111111111111111`",
+        ))
         density_bad_repro = density.read_text().replace(
             "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 ",
             "",
@@ -2798,6 +2824,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or snapshot_doc_bad_identity_status == 0
             or density_bad_teardown_status == 0
             or density_bad_bound_status == 0
+            or density_bad_digest_status == 0
             or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0

@@ -133,7 +133,8 @@ marker count returns to zero after teardown, canonical Shared artifact remains
 present, stale-marker sweep removes zero markers, post-run Firecracker process
 list is empty, preflight artifact identity is present, max observed host-memory
 delta stays within the computed bound, the bound equals `image KiB + per-VM
-overhead KiB * vm_count`, the measured git commit is recorded, and the payload
+overhead KiB * vm_count`, the measured git commit is recorded, the Shared
+image digest is a lowercase sha256 with an absolute image path, and the payload
 erofs dump matches the `.8.12` file-level DAX requirement (`Layout: 0` with
 equal logical and on-disk size). The verifier reads the teardown fields
 directly from the artifact:
