@@ -173,13 +173,13 @@ semantics, and may be omitted for warm slots; pmem layers are a bounded
 zero-or-many read-only list validated as `PmemLayer`, resolved through the
 image store, attached as virtio-pmem, and guest-mounted after readiness.
 `BootSpec` mirrors that split with `sandbox` fields plus a separate
-`pmem_layers` array rather than a polymorphic mount list. The current Torpor
-adapter also wants the split: it configures rootfs as deployment artifact,
-workspace as the per-request guest workspace/writeback surface, and warm
-workspace drives as adapter-owned lease state; it has no consumer pressure for
-a single enum. If a later adapter wants a unified presentation, add it as an
-additive config/view layer that lowers into these existing types, not by
-collapsing the lifecycle primitives.
+`pmem_layers` array rather than a polymorphic mount list. Current adapter
+usage also wants the split: rootfs is a deployment artifact, workspace is the
+per-request guest workspace/writeback surface, and warm workspace drives are
+adapter-owned lease state; there is no consumer pressure for a single enum. If
+a later adapter wants a unified presentation, add it as an additive config/view
+layer that lowers into these existing types, not by collapsing the lifecycle
+primitives.
 
 ## Phase G Recheck: Pmem Device Size
 
