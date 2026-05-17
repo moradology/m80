@@ -12,7 +12,6 @@ use m80_firecracker::{
 };
 use m80_proto::ExecRequest;
 use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
-use nix::unistd::Uid;
 
 use crate::args::EgressMode;
 use crate::errors;
@@ -235,7 +234,7 @@ fn prepare_owner_stream(stream: &UnixStream) -> Result<(), FcError> {
 
 fn authorize_owner_peer(stream: &UnixStream) -> Result<(), FcError> {
     let peer = getsockopt(stream, PeerCredentials).map_err(nix_to_io)?;
-    let owner_uid = Uid::effective().as_raw();
+    let owner_uid = nix::unistd::Uid::effective().as_raw();
     let peer_uid = peer.uid();
     if peer_uid != owner_uid {
         return Err(errors::host_io(

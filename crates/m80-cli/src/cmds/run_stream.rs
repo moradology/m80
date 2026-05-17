@@ -57,14 +57,10 @@ pub(super) fn process_exit_code(
     signal: Option<i32>,
 ) -> i32 {
     if status == ExecStatus::Cancelled {
-        signal.map(signal_exit_code).unwrap_or(1)
+        signal.map(|s| 128 + s).unwrap_or(1)
     } else {
         guest_exit_code.unwrap_or(1)
     }
-}
-
-fn signal_exit_code(signal: i32) -> i32 {
-    128 + signal
 }
 
 pub(super) fn copy_guest_chunk<W, E>(

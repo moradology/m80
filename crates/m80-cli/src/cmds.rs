@@ -233,8 +233,11 @@ pub(crate) fn cmd_run(
                 return Ok(errors::render_error(&e, json));
             }
         };
-        let exit = outcome.payload;
-        run_stream::process_exit_code(exit.status, exit.exit_code, outcome.signal)
+        run_stream::process_exit_code(
+            outcome.payload.status,
+            outcome.payload.exit_code,
+            outcome.signal,
+        )
     };
 
     emit_guest_boot_trace_if_enabled(running.run_dir());

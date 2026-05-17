@@ -8,8 +8,6 @@ use serde::Serialize;
 use crate::errors;
 use crate::json;
 
-const DATA_VERSION: u16 = 1;
-
 #[derive(Debug, Clone, Serialize)]
 struct LogsOutput {
     version: u16,
@@ -124,7 +122,7 @@ fn logs_output(
     records.extend(read_console_records(run_dir, filter, cursor)?);
     records.sort_by_key(|record| record.timestamp_unix_ms.unwrap_or(u64::MAX));
     Ok(LogsOutput {
-        version: DATA_VERSION,
+        version: 1,
         vm_id: vm_id.to_owned(),
         run_dir: run_dir.to_path_buf(),
         records,

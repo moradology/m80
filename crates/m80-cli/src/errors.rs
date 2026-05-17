@@ -145,16 +145,11 @@ pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
         _ => None,
     };
     ErrorEnvelope {
-        variant: variant_name(err),
+        variant: err.variant_name(),
         detail: err.to_string(),
         exit_code: exit_code_for(err),
         target_ready,
     }
-}
-
-/// Return the stable variant name string for an [`FcError`].
-fn variant_name(err: &FcError) -> &'static str {
-    err.variant_name()
 }
 
 /// Render the error to stderr (shared JSON envelope when `json` is true;
@@ -208,7 +203,7 @@ mod tests {
     fn pool_empty_is_8() {
         let err = FcError::PoolEmpty { target_ready: 1 };
         assert_eq!(exit_code_for(&err), EXIT_POOL_EMPTY);
-        assert_eq!(variant_name(&err), "PoolEmpty");
+        assert_eq!(err.variant_name(), "PoolEmpty");
     }
 
     #[test]

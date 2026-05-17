@@ -12,8 +12,6 @@ use crate::profile::{self, ProfileBodySource, ProfileFilePaths};
 
 mod render;
 
-const DATA_VERSION: u16 = 1;
-
 #[derive(Serialize)]
 struct EnvDump {
     version: u16,
@@ -127,7 +125,7 @@ fn collect_env_dump() -> EnvDump {
     let preflight = preflight_dump();
 
     EnvDump {
-        version: DATA_VERSION,
+        version: 1,
         cli_version: env!("CARGO_PKG_VERSION"),
         protocol_version: m80_proto::PROTOCOL_VERSION,
         host: host_dump(),

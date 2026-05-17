@@ -12,8 +12,6 @@ use crate::args::{
 };
 use crate::{errors, json};
 
-const DEFAULT_TEMPLATE_STORE_CAPACITY_FOR_REFERENCE_CHECK: usize = usize::MAX;
-
 pub(super) fn cmd_image(action: ImageAction, json_mode: bool) -> anyhow::Result<i32> {
     match action {
         ImageAction::Build(args) => cmd_build(args, json_mode),
@@ -238,10 +236,7 @@ fn template_references(
     if !template_store_root.exists() {
         return Ok(Vec::new());
     }
-    let store = TemplateStore::open(
-        template_store_root,
-        DEFAULT_TEMPLATE_STORE_CAPACITY_FOR_REFERENCE_CHECK,
-    )?;
+    let store = TemplateStore::open(template_store_root, usize::MAX)?;
     let template_digest = m80_snapshot_template::ImageDigest::parse(digest.as_str())
         .map_err(FcError::TemplateStore)?;
     Ok(store

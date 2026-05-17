@@ -4,8 +4,6 @@ use serde::Serialize;
 
 use crate::request_id;
 
-const ENVELOPE_VERSION: u16 = 1;
-
 #[derive(Serialize)]
 struct Envelope<'a, T: ?Sized> {
     version: u16,
@@ -16,7 +14,7 @@ struct Envelope<'a, T: ?Sized> {
 
 pub(crate) fn to_pretty<T: Serialize + ?Sized>(data: &T) -> String {
     let envelope = Envelope {
-        version: ENVELOPE_VERSION,
+        version: 1,
         request_id: request_id::current(),
         data,
     };
