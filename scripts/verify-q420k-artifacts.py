@@ -733,16 +733,19 @@ def verify_pmem_density(path: Path) -> list[str]:
             artifact_rel = path.resolve().relative_to(ROOT).as_posix()
         except ValueError:
             artifact_rel = path.as_posix()
+        for env, expected in [
+            ("M80_PMEM_SHARED_ALLOW_OTHER_VMS", 0),
+            ("M80_PMEM_SHARED_DENSITY_ARTIFACT", artifact_rel),
+            ("M80_KERNEL_KIND", "stripped"),
+        ]:
+            require_command_env_value(check, "pmem density", command, env, expected)
         for required in [
-            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0",
             "M80_PMEM_SHARED_VM_COUNT=",
             "M80_PMEM_SHARED_CYCLES=",
             "M80_PMEM_SHARED_PAYLOAD_MIB=",
             "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=",
-            f"M80_PMEM_SHARED_DENSITY_ARTIFACT={artifact_rel}",
             "M80_RUN_ROOT=",
             "M80_KERNEL_IMAGE=",
-            "M80_KERNEL_KIND=stripped",
             "M80_ROOTFS_IMAGE=",
             "M80_FIRECRACKER_BIN=",
             "M80_JAILER_BIN=",
@@ -762,10 +765,7 @@ def verify_pmem_density(path: Path) -> list[str]:
             ("M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB", per_vm_overhead),
         ]:
             if is_number(value):
-                check.require(
-                    f"{env}={int(value)}" in command,
-                    f"pmem density: reproduction command missing {env}={int(value)}",
-                )
+                require_command_env_value(check, "pmem density", command, env, int(value))
 
     check.require(
         markdown_text(text, r"- git worktree dirty excluding this artifact: `([^`]+)`") == "false",
@@ -903,10 +903,7 @@ def verify_pmem_density(path: Path) -> list[str]:
             ]:
                 value = preflight.get(field)
                 if isinstance(value, str):
-                    check.require(
-                        f"{env}={value}" in command,
-                        f"pmem density: reproduction command missing {env} from preflight {field}",
-                    )
+                    require_command_env_value(check, "pmem density", command, env, value)
     return check.errors
 
 
@@ -3899,6 +3896,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "| 10 | 8192 | 4096 | 4097 | 8192 |",
             "| 10 | 8192 | 4096 | 4096 | 8192 |",
         ))
+        density_bad_exact_command = density.read_text().replace(
+            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4",
+            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=00 M80_PMEM_SHARED_VM_COUNT=40",
+        )
+        density.write_text(density_bad_exact_command)
+        density_bad_exact_command_status = quiet_run_checks(args)
+        density.write_text(density_bad_exact_command.replace(
+            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=00 M80_PMEM_SHARED_VM_COUNT=40",
+            "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4",
+        ))
         density_bad_repro = density.read_text().replace(
             "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 ",
             "",
@@ -4473,6 +4480,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_preflight_command_status == 0
             or density_duplicate_substrate_status == 0
             or density_bad_sample_status == 0
+            or density_bad_exact_command_status == 0
             or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0

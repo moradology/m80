@@ -141,8 +141,10 @@ and Firecracker version output matching preflight. The measured Shared image
 digest must be a lowercase sha256 and its image path must be absolute and must
 contain that digest. The reproduction command must also match the Firecracker,
 jailer, helper, kernel, rootfs, version, and kernel-kind values in the
-artifact's `preflight_artifacts` block. The `Samples` table must contain
-exactly one row per cycle, each row's delta must recompute from the
+artifact's `preflight_artifacts` block. Those command checks parse exact env
+assignments; prefix values such as `VM_COUNT=40` do not satisfy an expected
+`VM_COUNT=4`. The `Samples` table must contain exactly one row per cycle, each
+row's delta must recompute from the
 MemAvailable before/after values, and the summary max delta must equal the
 table max.
 
