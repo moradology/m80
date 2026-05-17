@@ -85,9 +85,13 @@ jailer, seccomp filter, helper, kernel, and rootfs paths plus manifest
 kernel/rootfs sha256s. Each close artifact records the full measured
 `git_commit` alongside the clean-worktree flag. The snapshot-template receipt
 doc is cross-checked against its JSON artifact for measured git commit and
-preflight identity in `## Artifact identity`, command-block env assignments,
-and smoke-section p99; prose outside those sections does not satisfy those
-requirements.
+runtime substrate/preflight identity in `## Artifact identity`, command-block
+env assignments, and smoke-section p99; prose outside those sections does not
+satisfy those requirements.
+Snapshot-template JSON also records runtime substrate fields: host kernel
+release, `/dev/kvm` stat output, sudo uid, and actual Firecracker version. The
+close guard requires kernel >= 6.5, writable `/dev/kvm`, sudo uid `0`, and
+Firecracker version output matching preflight.
 Add
 `--require-committed` after the artifacts are committed; that mode rejects
 artifacts absent from `HEAD` or with staged/unstaged changes. For final parent

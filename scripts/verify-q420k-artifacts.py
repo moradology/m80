@@ -287,7 +287,7 @@ def quiet_substrate(data: Any, label: str, check: Check) -> None:
     verify_preflight_artifacts(substrate.get("preflight_artifacts"), label, check)
 
 
-def composed_runtime_substrate(data: Any, label: str, check: Check) -> None:
+def runtime_substrate(data: Any, label: str, check: Check) -> None:
     substrate = at(data, "substrate")
     if not isinstance(substrate, dict):
         return
@@ -543,6 +543,7 @@ def verify_snapshot_template(path: Path) -> list[str]:
     if is_number(p99):
         check.require(p99 <= 200.0, f"snapshot: p99 {p99} exceeds 200 ms")
     quiet_substrate(data, "snapshot", check)
+    runtime_substrate(data, "snapshot", check)
     require_snapshot_reproduction_command(data, check)
     return check.errors
 
@@ -778,6 +779,19 @@ def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list
             commit in identity_text,
             "snapshot doc: Artifact identity section missing measured git_commit from JSON artifact",
         )
+    for field in [
+        "host_kernel_release",
+        "firecracker_version",
+        "dev_kvm_stat",
+        "sudo_uid",
+    ]:
+        value = at(data, f"substrate.{field}")
+        if isinstance(value, str) and value:
+            check.require(
+                value in identity_text,
+                f"snapshot doc: Artifact identity section missing "
+                f"substrate.{field} from JSON artifact",
+            )
     p99_us = at(data, "data.warm.restore_to_handback_us.p99")
     p99_ms = at(data, "data.warm.restore_to_handback_ms.p99")
     if is_number(p99_us) or is_number(p99_ms):
@@ -1408,7 +1422,7 @@ def verify_composed_restore(path: Path) -> list[str]:
                     5,
                 )
     quiet_substrate(data, "composed restore", check)
-    composed_runtime_substrate(data, "composed restore", check)
+    runtime_substrate(data, "composed restore", check)
     return check.errors
 
 
@@ -1612,7 +1626,7 @@ def verify_composed_memory(path: Path) -> list[str]:
                     "composed memory: layout logical and on-disk size must match",
                 )
     quiet_substrate(data, "composed memory", check)
-    composed_runtime_substrate(data, "composed memory", check)
+    runtime_substrate(data, "composed memory", check)
     return check.errors
 
 
@@ -1741,7 +1755,7 @@ def verify_composed_residue(path: Path) -> list[str]:
                 "composed residue: template_store preserved must equal expected_fingerprint",
             )
     quiet_substrate(data, "composed residue", check)
-    composed_runtime_substrate(data, "composed residue", check)
+    runtime_substrate(data, "composed residue", check)
     return check.errors
 
 
@@ -2379,7 +2393,7 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     if isinstance(substrate, dict):
         substrate_data = {"substrate": substrate}
         quiet_substrate(substrate_data, "dax memory pressure", check)
-        composed_runtime_substrate(substrate_data, "dax memory pressure", check)
+        runtime_substrate(substrate_data, "dax memory pressure", check)
         preflight = substrate.get("preflight_artifacts")
         if command is not None and isinstance(preflight, dict):
             for env, field in [
@@ -3164,6 +3178,13 @@ Observable: `target_ready=1`
 
 Measured git commit:
 `cccccccccccccccccccccccccccccccccccccccc`
+
+Runtime substrate:
+
+- host_kernel_release: `6.17.0-23-generic`
+- firecracker_version: `Firecracker v1.15.1`
+- dev_kvm_stat: `crw-rw---- root:kvm /dev/kvm`
+- sudo_uid: `0`
 
 Preflight artifacts:
 
@@ -4023,6 +4044,26 @@ The measured signal is acceptable under the same-trust-domain assumption.
         leaked_firecracker_status = quiet_run_checks(args)
         snapshot_bad["substrate"]["post_run_firecracker_processes"] = []
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["substrate"]["host_kernel_release"] = "6.1.0"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_host_kernel_status = quiet_run_checks(args)
+        snapshot_bad["substrate"]["host_kernel_release"] = "6.17.0-23-generic"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["substrate"]["dev_kvm_stat"] = "cr-------- root:kvm /dev/kvm"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_kvm_status = quiet_run_checks(args)
+        snapshot_bad["substrate"]["dev_kvm_stat"] = "crw-rw---- root:kvm /dev/kvm"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["substrate"]["sudo_uid"] = "1000"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_sudo_status = quiet_run_checks(args)
+        snapshot_bad["substrate"]["sudo_uid"] = "0"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["substrate"]["firecracker_version"] = "Firecracker v9.99.0"
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_firecracker_version_status = quiet_run_checks(args)
+        snapshot_bad["substrate"]["firecracker_version"] = "Firecracker v1.15.1"
+        snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["substrate"]["preflight_artifacts"]["kernel_image_sha256"] = "not-a-sha"
         snapshot.write_text(json.dumps(snapshot_bad))
         bad_preflight_artifacts_status = quiet_run_checks(args)
@@ -4312,6 +4353,32 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "Preflight artifacts:\n\n",
                 "Preflight artifacts:\n\n"
                 "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                1,
+            )
+        )
+        snapshot_doc_runtime_outside_section = (
+            snapshot_doc.read_text()
+            .replace("- host_kernel_release: `6.17.0-23-generic`\n", "", 1)
+            .replace(
+                "# Snapshot-Template Restore Latency\n\n",
+                "# Snapshot-Template Restore Latency\n\n"
+                "- host_kernel_release: `6.17.0-23-generic`\n\n",
+                1,
+            )
+        )
+        snapshot_doc.write_text(snapshot_doc_runtime_outside_section)
+        snapshot_doc_runtime_outside_section_status = quiet_run_checks(args)
+        snapshot_doc.write_text(
+            snapshot_doc_runtime_outside_section
+            .replace(
+                "# Snapshot-Template Restore Latency\n\n"
+                "- host_kernel_release: `6.17.0-23-generic`\n\n",
+                "# Snapshot-Template Restore Latency\n\n",
+                1,
+            )
+            .replace(
+                "Runtime substrate:\n\n",
+                "Runtime substrate:\n\n- host_kernel_release: `6.17.0-23-generic`\n",
                 1,
             )
         )
@@ -5322,6 +5389,10 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or dax_bad_preflight_command_status == 0
             or bad_substrate_status == 0
             or leaked_firecracker_status == 0
+            or bad_snapshot_host_kernel_status == 0
+            or bad_snapshot_kvm_status == 0
+            or bad_snapshot_sudo_status == 0
+            or bad_snapshot_firecracker_version_status == 0
             or bad_preflight_artifacts_status == 0
             or stock_kernel_status == 0
             or bad_git_commit_status == 0
@@ -5345,6 +5416,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or snapshot_doc_bad_identity_status == 0
             or snapshot_doc_identity_outside_section_status == 0
             or snapshot_doc_preflight_outside_section_status == 0
+            or snapshot_doc_runtime_outside_section_status == 0
             or density_bad_teardown_status == 0
             or density_bad_host_kernel_status == 0
             or density_bad_kvm_status == 0

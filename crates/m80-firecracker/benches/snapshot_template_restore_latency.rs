@@ -433,6 +433,10 @@ fn render_json(report: &BenchReport<'_>) -> String {
                 .iter()
                 .map(firecracker_process_json)
                 .collect::<Vec<_>>(),
+            "host_kernel_release": command_output("uname", &["-r"]),
+            "dev_kvm_stat": command_output("stat", &["-c", "%A %U:%G %n", "/dev/kvm"]),
+            "sudo_uid": command_output("id", &["-u"]),
+            "firecracker_version": command_output(report.discovery.firecracker_bin.as_os_str(), &["--version"]),
             "preflight_artifacts": preflight_artifacts_json(report.discovery),
         },
         "data": {
@@ -577,6 +581,16 @@ fn preflight_artifacts_json(discovery: &m80_preflight::Discovery) -> serde_json:
         "rootfs_format": discovery.manifest.rootfs_format,
         "expected_firecracker_version": discovery.manifest.expected_firecracker_version,
     })
+}
+
+fn command_output(command: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> String {
+    match Command::new(command).args(args).output() {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim().to_owned()
+        }
+        Ok(output) => format!("exit status {}", output.status),
+        Err(err) => format!("error: {err}"),
+    }
 }
 
 #[derive(Debug)]

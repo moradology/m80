@@ -34,15 +34,19 @@ Firecracker/jailer/kernel/rootfs inputs and manifest sha256s. The JSON also
 records the full measured `git_commit` and a `reproduction_command` that
 includes the measured Firecracker, jailer, helper, kernel, rootfs, run-root,
 jail UID/GID, and disabled cgroup-mode inputs.
+Close-quality JSON also records runtime substrate values: host kernel release,
+actual Firecracker version, `/dev/kvm` stat output, and sudo uid. The verifier
+requires host kernel >= 6.5, `/dev/kvm` writable, sudo uid `0`, and actual
+Firecracker version matching preflight.
 
 ## Artifact identity
 
 The close-quality update must record the JSON artifact's measured `git_commit`
-and each `substrate.preflight_artifacts` value here, including the resolved
-Firecracker, seccomp filter, jailer, harden helper, net helper, kernel, rootfs,
-kernel/rootfs sha256, and expected Firecracker version. The verifier requires
-these JSON-derived values in this section; copies elsewhere in the document do
-not satisfy the close receipt.
+each runtime substrate value, and each `substrate.preflight_artifacts` value
+here, including the resolved Firecracker, seccomp filter, jailer, harden
+helper, net helper, kernel, rootfs, kernel/rootfs sha256, and expected
+Firecracker version. The verifier requires these JSON-derived values in this
+section; copies elsewhere in the document do not satisfy the close receipt.
 
 ## Command
 
@@ -85,8 +89,9 @@ python3 scripts/verify-q420k-artifacts.py --only snapshot-template --require-com
 
 The `--only snapshot-template` selector also checks this reproduction doc.
 The verifier checks the named JSON fields, quiet-host substrate markers,
-post-run Firecracker leak marker, preflight artifact identity, committed git
-state, and the committed command/close-reason text above. It also requires
+post-run Firecracker leak marker, preflight artifact identity, runtime
+substrate fields, committed git state, and the committed command/close-reason
+text above. It also requires
 exact `n_per_run=20`, `runs=3`, and `samples_total=60`, a full 40-character
 `git_commit`, `samples_us` and `sample_details` arrays whose lengths match
 `samples_total`, one `runs_detail` entry per run, exact `sample_details`

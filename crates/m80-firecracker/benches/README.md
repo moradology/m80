@@ -37,7 +37,9 @@ and empty `substrate.preexisting_firecracker_processes` and
 `substrate.post_run_firecracker_processes` arrays. It also records
 `substrate.preflight_artifacts` with the resolved Firecracker, jailer, helper,
 kernel, and rootfs identities measured by the run, plus a top-level
-`git_commit`.
+`git_commit`. Snapshot-template JSON also records runtime substrate fields for
+host kernel release, `/dev/kvm` stat output, sudo uid, and actual Firecracker
+version.
 
 Before starting the close-quality run, use
 `./scripts/q420k-quiet-host-inventory.sh` from the repository root. It exits 0
@@ -56,8 +58,11 @@ The `snapshot-template` selector also checks
 `docs/perf/snapshot-template-restore.md`; the doc must include the bench stderr
 line from the close-quality run that wrote the JSON artifact. The verifier also
 cross-checks the doc against the JSON artifact's measured git commit, preflight
-identity, and smoke p99, and it requires the snapshot reproduction command to
-pin the noisy-host override, VM sizing, target-ready count, and run root.
+identity, runtime substrate identity, and smoke p99, and it requires the
+snapshot reproduction command to pin the noisy-host override, VM sizing,
+target-ready count, and run root. The snapshot JSON must prove host kernel
+>= 6.5, writable `/dev/kvm`, sudo uid `0`, and Firecracker version output
+matching preflight.
 
 The Phase C Shared density artifact lives outside this benches directory at
 `docs/perf/pmem-shared-density.md`; check it with `--only pmem-density`. That

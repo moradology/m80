@@ -45,9 +45,9 @@ For q420k close artifacts, the preflight artifact identity must report
 `kernel_kind=stripped`. Do not pair a stock kernel path with
 `M80_KERNEL_KIND=stripped`; the close verifier rejects stock-kernel
 measurement artifacts for the Phase C, Phase D, and Phase F close gates.
-Phase F composed artifacts also carry runtime substrate details; the verifier
-requires host kernel >= 6.5, `/dev/kvm` rw stat output, sudo uid `0`, and
-actual Firecracker version matching preflight.
+The snapshot-template and Phase F composed artifacts also carry runtime
+substrate details; the verifier requires host kernel >= 6.5, `/dev/kvm` rw
+stat output, sudo uid `0`, and actual Firecracker version matching preflight.
 
 The helper is equivalent to this manual inventory. To identify the owner
 without changing host state, capture the process tree and cgroup first:
@@ -193,9 +193,11 @@ exactly one `sample_details` row for every `(run, cycle)` in the N x runs
 matrix. The recorded `p99` must recompute from those samples. Remove pending or
 diagnostic-only text from the receipt doc before close; the verifier rejects
 stale diagnostic markers and cross-checks the doc against the JSON artifact's
-measured git commit and preflight identity in `## Artifact identity`,
-command-block env assignments, and smoke-section p99. Prose outside those
-sections does not satisfy those requirements.
+measured git commit, runtime substrate values, and preflight identity in
+`## Artifact identity`, command-block env assignments, and smoke-section p99.
+Prose outside those sections does not satisfy those requirements. The JSON
+must carry runtime substrate values proving host kernel >= 6.5, `/dev/kvm` rw,
+sudo uid `0`, and actual Firecracker version matching preflight.
 
 Then verify the artifact:
 
