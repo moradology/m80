@@ -103,6 +103,14 @@ REQUIRED_STRIPPED_KERNEL_LABELS = {
     "composed memory",
     "composed residue",
 }
+REQUIRED_CLOSE_ARTIFACT_PATHS = [
+    DEFAULT_DENSITY,
+    DEFAULT_SNAPSHOT,
+    DEFAULT_COMPOSED_RESTORE,
+    DEFAULT_COMPOSED_MEMORY,
+    DEFAULT_COMPOSED_RESIDUE,
+    DEFAULT_COMPOSED_DOC,
+]
 
 
 class Check:
@@ -1008,7 +1016,9 @@ def is_number(value: Any) -> bool:
 
 def verify_committed_artifacts(check_specs: list[tuple[str, str, Any, Path]]) -> list[str]:
     errors: list[str] = []
-    for _, label, _, path in check_specs:
+    for key, label, _, path in check_specs:
+        if key == "close-artifact-paths":
+            continue
         try:
             rel_path = path.resolve().relative_to(ROOT)
         except ValueError:
@@ -1021,6 +1031,22 @@ def verify_committed_artifacts(check_specs: list[tuple[str, str, Any, Path]]) ->
             errors.append(f"{label}: path has unstaged changes: {rel}")
         if git_ok(["diff", "--cached", "--quiet", "--", rel]) is False:
             errors.append(f"{label}: path has staged changes: {rel}")
+    return errors
+
+
+def verify_close_artifact_paths(_: Path) -> list[str]:
+    errors: list[str] = []
+    for path in REQUIRED_CLOSE_ARTIFACT_PATHS:
+        try:
+            rel_path = path.resolve().relative_to(ROOT)
+        except ValueError:
+            errors.append(f"close artifact path: path must be under repository root: {path}")
+            continue
+        rel = rel_path.as_posix()
+        if not path.parent.is_dir():
+            errors.append(f"close artifact path: parent directory is missing: {path.parent}")
+        if git_ok(["check-ignore", "-q", "--", rel]):
+            errors.append(f"close artifact path: path is ignored by git: {rel}")
     return errors
 
 
@@ -1358,6 +1384,12 @@ def git_stdout(args: list[str]) -> str | None:
 
 def run_checks(args: argparse.Namespace) -> int:
     check_specs = [
+        (
+            "close-artifact-paths",
+            "close artifact path trackability",
+            verify_close_artifact_paths,
+            ROOT,
+        ),
         (
             "quiet-host-inventory",
             "quiet-host inventory helper",
@@ -2383,6 +2415,7 @@ def parser() -> argparse.ArgumentParser:
         choices=[
             "snapshot-template",
             "snapshot-doc",
+            "close-artifact-paths",
             "quiet-host-inventory",
             "pmem-density",
             "pmem-density-smoke",
