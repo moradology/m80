@@ -54,6 +54,12 @@ PREPARED_STRIPPED_KERNEL_IMAGE = (
     "vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin"
 )
 PREPARED_ROOTFS_IMAGE = "/tank/tmp/m80-build/post-restore-current/output.ext4"
+PREPARED_STRIPPED_KERNEL_SHA256 = (
+    "143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3"
+)
+PREPARED_ROOTFS_SHA256 = (
+    "bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d"
+)
 REQUIRED_CLOSE_BEADS = {
     "snapshot-template": "m80-q420k.4.15",
     "pmem-density": "m80-q420k.3.8",
@@ -1202,7 +1208,26 @@ def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
             section is not None and required in section,
             f"pmem density instruction doc: missing {required}",
         )
+    if path.name == "q420k-close-gates.md":
+        verify_prepared_close_input_text(text, check)
     return check.errors
+
+
+def verify_prepared_close_input_text(text: str, check: Check) -> None:
+    for required in [
+        "Prepared `vulcan` close inputs",
+        PREPARED_STRIPPED_KERNEL_IMAGE,
+        PREPARED_STRIPPED_KERNEL_SHA256,
+        PREPARED_ROOTFS_IMAGE,
+        PREPARED_ROOTFS_SHA256,
+        "M80_KERNEL_KIND=stripped",
+        "`m80-preflight`",
+        "applies that override to the emitted `preflight_artifacts`",
+    ]:
+        check.require(
+            required in text,
+            f"prepared close inputs: missing {required}",
+        )
 
 
 def verify_quiet_host_inventory(path: Path) -> list[str]:
@@ -3427,7 +3452,26 @@ timeout 1800 sudo -n env \
 """
         )
         density_smoke.chmod(0o755)
-        density_instruction = f"""## Q420K Shared Pmem Density
+        density_instruction = f"""# Q420K Close Gates
+
+Prepared `vulcan` close inputs:
+
+- stripped kernel:
+  `{PREPARED_STRIPPED_KERNEL_IMAGE}`
+- stripped kernel sha256:
+  `{PREPARED_STRIPPED_KERNEL_SHA256}`
+- rootfs:
+  `{PREPARED_ROOTFS_IMAGE}`
+- rootfs sha256:
+  `{PREPARED_ROOTFS_SHA256}`
+
+The rootfs manifest may still record the stock kernel used when that rootfs was
+built. For q420k close-quality runs, the runtime kernel is the stripped kernel
+above and the command must set `M80_KERNEL_KIND=stripped`. `m80-preflight`
+applies that override to the emitted `preflight_artifacts`; verified-close
+artifacts must report the stripped runtime kernel and the rootfs sha256 above.
+
+## Q420K Shared Pmem Density
 
 ```sh
 M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 \
@@ -4648,6 +4692,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_KERNEL_KIND=stock",
             "M80_KERNEL_KIND=stripped",
         ))
+        density_runbook_bad_prepared_sha = close_runbook.read_text().replace(
+            PREPARED_ROOTFS_SHA256,
+            "0" * 64,
+            1,
+        )
+        close_runbook.write_text(density_runbook_bad_prepared_sha)
+        density_runbook_bad_prepared_sha_status = quiet_run_checks(args)
+        close_runbook.write_text(density_runbook_bad_prepared_sha.replace(
+            "0" * 64,
+            PREPARED_ROOTFS_SHA256,
+            1,
+        ))
         density_runbook_outside_command = (
             close_runbook.read_text()
             .replace("M80_RUN_ROOT=/var/lib/m80-psd ", "", 1)
@@ -5460,6 +5516,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_runbook_status != 0
             or density_runbook_bad_allow_other_status == 0
             or density_runbook_bad_kernel_kind_status == 0
+            or density_runbook_bad_prepared_sha_status == 0
             or density_runbook_outside_command_status == 0
             or quiet_host_inventory_status != 0
             or quiet_host_inventory_not_executable_status == 0

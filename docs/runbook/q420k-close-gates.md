@@ -66,6 +66,23 @@ A host that merely exposes `/dev/kvm` is not enough. If the repo, helper
 binaries, artifact stack, or noninteractive privilege path is missing, stage
 those first or use the current prepared host after explicit quieting approval.
 
+Prepared `vulcan` close inputs:
+
+- stripped kernel:
+  `/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin`
+- stripped kernel sha256:
+  `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`
+- rootfs:
+  `/tank/tmp/m80-build/post-restore-current/output.ext4`
+- rootfs sha256:
+  `bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d`
+
+The rootfs manifest may still record the stock kernel used when that rootfs was
+built. For q420k close-quality runs, the runtime kernel is the stripped kernel
+above and the command must set `M80_KERNEL_KIND=stripped`. `m80-preflight`
+applies that override to the emitted `preflight_artifacts`; verified-close
+artifacts must report the stripped runtime kernel and the rootfs sha256 above.
+
 The helper is equivalent to this manual inventory. To identify the owner
 without changing host state, capture the process tree and cgroup first:
 
