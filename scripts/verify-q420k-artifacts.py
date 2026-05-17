@@ -2383,6 +2383,7 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     payload_size = markdown_int(text, r"size `(\d+)` bytes, on-disk size")
     payload_on_disk = markdown_int(text, r"on-disk size `(\d+)` bytes")
     pressure_command = markdown_text(text, r"- pressure command: `([^`]+)`")
+    pressure_settle_ms = markdown_int(text, r"- pressure settle ms: `(\d+)`")
     unrelated_vms = markdown_text(text, r"- unrelated VMs running: `([^`]+)`")
     try:
         artifact_path = path.resolve().relative_to(ROOT).as_posix()
@@ -2396,6 +2397,12 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     )
     require_number_at_least(check, "dax memory pressure: VM count", vm_count, 2)
     require_number_at_least(check, "dax memory pressure: samples per guest", samples, 3)
+    require_number_at_least(
+        check,
+        "dax memory pressure: pressure settle ms",
+        pressure_settle_ms,
+        1_000,
+    )
     check.require(
         timing_source
         == "host monotonic Instant around one guest dd exec per sample (includes exec/vsock overhead)",
@@ -2432,6 +2439,7 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
             f"M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT={vm_count}",
             f"M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES={samples}",
             f"M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB={payload_mib}",
+            f"M80_PMEM_DAX_MEMORY_PRESSURE_SETTLE_MS={pressure_settle_ms}",
             f"M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={artifact_path}",
             "cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm",
             "--ignored --nocapture",
@@ -4169,6 +4177,7 @@ Bead: `m80-q420k.8.9`.
 - host filesystem: `zfs`
 - host memory: `128 GiB`
 - pressure command: `stress-ng --vm 1 --vm-bytes 64G --timeout 30s`
+- pressure settle ms: `1000`
 - VM count: `2`
 - samples per guest: `5`
 - latency timing source: `host monotonic Instant around one guest dd exec per sample (includes exec/vsock overhead)`
@@ -4181,7 +4190,7 @@ Bead: `m80-q420k.8.9`.
 - command:
 
 ```sh
-M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
+M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_SETTLE_MS=1000 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
 ```
 
 ### Firecracker process substrate

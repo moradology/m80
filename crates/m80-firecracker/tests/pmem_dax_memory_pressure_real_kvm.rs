@@ -53,10 +53,8 @@ fn pmem_dax_memory_pressure_real_kvm() {
         "M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB",
         DEFAULT_PAYLOAD_MIB,
     );
-    let settle = Duration::from_millis(env_u64(
-        "M80_PMEM_DAX_MEMORY_PRESSURE_SETTLE_MS",
-        DEFAULT_SETTLE_MS,
-    ));
+    let settle_ms = env_u64("M80_PMEM_DAX_MEMORY_PRESSURE_SETTLE_MS", DEFAULT_SETTLE_MS);
+    let settle = Duration::from_millis(settle_ms);
     assert!(
         vm_count >= 2,
         "memory-pressure measurement requires >=2 VMs"
@@ -147,6 +145,7 @@ fn pmem_dax_memory_pressure_real_kvm() {
         git_worktree_dirty,
         git_commit,
         pressure_command,
+        settle_ms,
         baseline,
         post_pressure,
         mem_before,
@@ -248,6 +247,7 @@ struct PressureReport {
     git_worktree_dirty: bool,
     git_commit: String,
     pressure_command: String,
+    settle_ms: u64,
     baseline: Vec<LatencyStats>,
     post_pressure: Vec<LatencyStats>,
     mem_before: MemInfo,
@@ -441,6 +441,7 @@ fn write_artifact(path: &Path, report: &PressureReport) {
     )
     .unwrap();
     writeln!(out, "- pressure command: `{}`", report.pressure_command).unwrap();
+    writeln!(out, "- pressure settle ms: `{}`", report.settle_ms).unwrap();
     writeln!(out, "- VM count: `{}`", report.vm_count).unwrap();
     writeln!(out, "- samples per guest: `{}`", report.samples).unwrap();
     writeln!(out, "- latency timing source: `{LATENCY_TIMING_SOURCE}`").unwrap();
@@ -623,6 +624,10 @@ fn reproduction_command(path: &Path, report: &PressureReport) -> String {
         format!("M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT={vm_count}"),
         format!("M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES={samples}"),
         format!("M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB={payload_mib}"),
+        format!(
+            "M80_PMEM_DAX_MEMORY_PRESSURE_SETTLE_MS={}",
+            report.settle_ms
+        ),
         format!(
             "M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={}",
             shell_quote(&artifact)
