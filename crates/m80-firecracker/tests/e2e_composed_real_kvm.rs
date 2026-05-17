@@ -59,7 +59,7 @@ fn composed_e2e_layered_warm_pool() {
     ]);
     let git_commit = quiet_host::git_head_commit();
 
-    let discovery = snapshot_template_support::real_kvm_discovery();
+    let discovery = snapshot_template_support::real_kvm_discovery_with_real_net_helper();
     quiet_host::record_preflight_artifacts(&mut substrate, &discovery);
     let store = open_default_image_store();
     let shared_digest = pmem_shared_support::build_payload_image_digest(&store, shared_payload_mib);

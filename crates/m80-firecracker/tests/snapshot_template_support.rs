@@ -390,13 +390,16 @@ fn jail_id_from_env(name: &str, default: u32) -> u32 {
 }
 
 pub(crate) fn real_kvm_discovery() -> m80_preflight::Discovery {
+    let mut discovery = real_kvm_discovery_with_real_net_helper();
+    discovery.net_helper_bin = fake_net_helper();
+    discovery
+}
+
+pub(crate) fn real_kvm_discovery_with_real_net_helper() -> m80_preflight::Discovery {
     if let Ok(run_root) = std::env::var("M80_RUN_ROOT") {
         std::fs::create_dir_all(&run_root).expect("create M80_RUN_ROOT");
     }
-    let mut discovery =
-        m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts");
-    discovery.net_helper_bin = fake_net_helper();
-    discovery
+    m80_preflight::run().expect("preflight must pass on a KVM-capable host with m80 artifacts")
 }
 
 fn fake_net_helper() -> PathBuf {
