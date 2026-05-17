@@ -1,7 +1,7 @@
 # m80 — Current Target
 
 This file is the single source of truth for **what m80 is working toward right
-now**. It complements (does not replace) the scope boundary in `CLAUDE.md`,
+now**. It complements (does not replace) the scope boundary in `AGENTS.md`,
 the per-crate contracts in `crates/<name>/README.md`, and the granular work
 in `.beads/`. It is meant to be edited freely as priorities shift; treat
 drift here as a bug.
@@ -112,7 +112,7 @@ profile changes — update here in the same diff that changes the work.
 
 ## Where this fits
 
-- `CLAUDE.md` — workspace doctrine + scope boundary (stable; rarely changes)
+- `AGENTS.md` — workspace doctrine + scope boundary (stable; rarely changes)
 - `README.md` — user-facing capability surface (stable until public API moves)
 - `TARGET.md` (this file) — current focus + ship bar (volatile; expect edits)
 - `.beads/` — granular work + per-leaf priority (live planning)
