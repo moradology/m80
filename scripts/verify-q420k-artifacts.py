@@ -3143,6 +3143,12 @@ def artifact_measured_git_commit(key: str, path: Path) -> str | None:
         except FileNotFoundError:
             return None
         commit = markdown_text(substrate_section, r"- git commit: `([^`]+)`")
+    elif key in {"ext4-overlay", "dax-memory-pressure"}:
+        try:
+            substrate_section = markdown_section(path.read_text(), "Substrate") or ""
+        except FileNotFoundError:
+            return None
+        commit = markdown_text(substrate_section, r"- commit: `([^`]+)`")
     elif key in {
         "snapshot-template",
         "composed-restore",
@@ -5793,6 +5799,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             artifact_measured_git_commit("snapshot-template", snapshot) == git_commit
             and artifact_measured_git_commit("pmem-density", density) == git_commit
             and artifact_measured_git_commit("composed-restore", restore) == git_commit
+            and artifact_measured_git_commit("ext4-overlay", ext4_overlay) == git_commit
+            and artifact_measured_git_commit("dax-memory-pressure", dax_pressure) == git_commit
             and artifact_measured_git_commit("composed-doc", composed_doc) is None
         )
         density_commit_outside_substrate = (
