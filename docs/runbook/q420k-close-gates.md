@@ -33,14 +33,16 @@ binaries, and real rootfs/kernel artifacts. Before measuring, verify that no
 unrelated Firecracker process is live:
 
 ```sh
-pgrep -a firecracker
+./scripts/q420k-quiet-host-inventory.sh
 ```
 
-If any process appears, stop and ask the owner of those VMs before draining or
-killing them. The measurement harnesses fail closed on a noisy host.
+The helper exits 0 only when no Firecracker process is present. If any process
+appears, it prints owner inventory and exits 1. Stop there and ask the owner of
+those VMs before draining or killing them. The measurement harnesses fail
+closed on a noisy host.
 
-To identify the owner without changing host state, capture the process tree and
-cgroup first:
+The helper is equivalent to this manual inventory. To identify the owner
+without changing host state, capture the process tree and cgroup first:
 
 ```sh
 ps -eo pid,ppid,user,comm,args | rg 'firecracker|sandbox-executor-rs'
