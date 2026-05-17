@@ -774,6 +774,20 @@ def verify_composed_doc_consistency(
     residue_shared = at(residue, "data.residue.image_store.shared_digest")
     if isinstance(shared_digest, str) and shared_digest == residue_shared:
         check.require(shared_digest in text, "composed doc: missing Shared image digest from JSON artifacts")
+    scanned_roots = at(residue, "data.residue.scanned_roots")
+    if isinstance(scanned_roots, list):
+        for root in [root for root in scanned_roots if isinstance(root, str)]:
+            display_root = root
+            if "/composed-e2e-templates-" in root and root.endswith("/templates"):
+                display_root = re.sub(
+                    r"composed-e2e-templates-[^/]+",
+                    "composed-e2e-templates-*",
+                    root,
+                )
+            check.require(
+                f"`{root}`" in text or f"`{display_root}`" in text,
+                f"composed doc: missing residue scanned root from JSON artifacts: {display_root}",
+            )
     return check.errors
 
 
@@ -1562,6 +1576,8 @@ def run_self_tests() -> int:
         git_commit = "c" * 40
         shared_digest = "1" * 64
         per_vm_digest = "2" * 64
+        composed_run_root = "/var/lib/m80-composed-e2e"
+        composed_template_root = f"{composed_run_root}/composed-e2e-templates-1/templates"
         substrate = {
             "substrate_kind": "real-kvm",
             "preflight_required": True,
@@ -1847,13 +1863,13 @@ exit 1
                 "n_leases": 10,
                 "unexpected_paths": [],
                 "scanned_roots": [
-                    "/var/lib/m80-runs",
+                    composed_run_root,
                     "/tmp/m80-*",
                     "/var/run/m80",
                     "/var/lib/m80-images",
-                    "/var/lib/m80-runs/templates",
+                    composed_template_root,
                 ],
-                "leased_run_dirs": [f"/var/lib/m80-runs/lease-{idx}" for idx in range(10)],
+                "leased_run_dirs": [f"{composed_run_root}/lease-{idx}" for idx in range(10)],
                 "image_store": {
                     "expected": [shared_digest, per_vm_digest],
                     "preserved": [shared_digest, per_vm_digest],
@@ -1917,11 +1933,11 @@ Raw artifacts:
 
 Scanned roots:
 
-- `/var/lib/m80-runs`
+- `/var/lib/m80-composed-e2e`
 - `/tmp/m80-*`
 - `/var/run/m80`
 - `/var/lib/m80-images`
-- `/var/lib/m80-runs/templates`
+- `/var/lib/m80-composed-e2e/composed-e2e-templates-*/templates`
 
 ## Smoke evidence
 
@@ -2219,28 +2235,28 @@ The measured signal is acceptable under the same-trust-domain assumption.
         residue.write_text(json.dumps(residue_bad))
         residue_bad_roots_status = quiet_run_checks(args)
         residue_bad["data"]["residue"]["scanned_roots"] = [
-            "/var/lib/m80-runs",
+            composed_run_root,
             "/tmp/m80-*",
             "/var/run/m80",
             "/var/lib/m80-images",
-            "/var/lib/m80-runs/templates",
+            composed_template_root,
         ]
         residue.write_text(json.dumps(residue_bad))
         residue_bad["data"]["residue"]["scanned_roots"] = [
             "/tmp/m80-*",
             "/var/run/m80",
             "/var/lib/m80-images",
-            "/var/lib/m80-runs/templates",
+            composed_template_root,
             "/var/lib/m80-other/templates",
         ]
         residue.write_text(json.dumps(residue_bad))
         residue_bad_run_root_status = quiet_run_checks(args)
         residue_bad["data"]["residue"]["scanned_roots"] = [
-            "/var/lib/m80-runs",
+            composed_run_root,
             "/tmp/m80-*",
             "/var/run/m80",
             "/var/lib/m80-images",
-            "/var/lib/m80-runs/templates",
+            composed_template_root,
         ]
         residue.write_text(json.dumps(residue_bad))
         args.only = ["composed-restore", "composed-memory", "composed-residue"]
@@ -2320,6 +2336,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
             composed_doc_bad.replace(
                 "Preflight artifacts:",
                 "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\nPreflight artifacts:",
+            )
+        )
+        composed_doc_bad_residue_root = composed_doc.read_text().replace(
+            "- `/var/lib/m80-composed-e2e`",
+            "- `/var/lib/m80-runs`",
+        )
+        composed_doc.write_text(composed_doc_bad_residue_root)
+        missing_doc_residue_root_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_bad_residue_root.replace(
+                "- `/var/lib/m80-runs`",
+                "- `/var/lib/m80-composed-e2e`",
             )
         )
         args.only = ["snapshot-template"]
@@ -2447,6 +2475,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or composed_playbook_status != 0
             or composed_playbook_bad_helper_status == 0
             or missing_doc_json_identity_status == 0
+            or missing_doc_residue_root_status == 0
             or bad_status == 0
             or not valid_head_close_reason
             or not short_full_commit_match
