@@ -621,6 +621,11 @@ def verify_pmem_density(path: Path) -> list[str]:
         isinstance(image_path, str) and image_path.startswith("/"),
         "pmem density: image path must be absolute",
     )
+    if isinstance(image_path, str) and isinstance(image_digest, str):
+        check.require(
+            image_digest in image_path,
+            "pmem density: image path must contain the measured image digest",
+        )
     check.require(layout == 0, "pmem density: payload erofs layout must be 0")
     require_number_at_least(check, "pmem density: payload size", payload_size, 1)
     require_number_at_least(check, "pmem density: payload on-disk size", payload_on_disk, 1)
@@ -2747,6 +2752,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- image digest: `sha256:1111111111111111111111111111111111111111111111111111111111111111`",
             "- image digest: `1111111111111111111111111111111111111111111111111111111111111111`",
         ))
+        density_bad_image_path = density.read_text().replace(
+            "- image path: `/var/lib/m80-images/11/1111111111111111111111111111111111111111111111111111111111111111/image.erofs`",
+            "- image path: `/var/lib/m80-images/22/2222222222222222222222222222222222222222222222222222222222222222/image.erofs`",
+        )
+        density.write_text(density_bad_image_path)
+        density_bad_image_path_status = quiet_run_checks(args)
+        density.write_text(density_bad_image_path.replace(
+            "- image path: `/var/lib/m80-images/22/2222222222222222222222222222222222222222222222222222222222222222/image.erofs`",
+            "- image path: `/var/lib/m80-images/11/1111111111111111111111111111111111111111111111111111111111111111/image.erofs`",
+        ))
         density_bad_repro = density.read_text().replace(
             "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 ",
             "",
@@ -3105,6 +3120,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_teardown_status == 0
             or density_bad_bound_status == 0
             or density_bad_digest_status == 0
+            or density_bad_image_path_status == 0
             or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0
