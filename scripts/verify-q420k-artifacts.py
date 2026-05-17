@@ -1487,11 +1487,39 @@ def verify_composed_residue(path: Path) -> list[str]:
                 sorted(image_store.get("preserved", [])) == sorted(image_store.get("expected", [])),
                 "composed residue: image_store preserved must equal expected",
             )
+            expected_images = image_store.get("expected")
+            shared_digest = image_store.get("shared_digest")
+            per_vm_digest = image_store.get("per_vm_digest")
+            if (
+                isinstance(expected_images, list)
+                and isinstance(shared_digest, str)
+                and isinstance(per_vm_digest, str)
+            ):
+                check.require(
+                    sorted(expected_images) == sorted([shared_digest, per_vm_digest]),
+                    "composed residue: image_store expected must be exactly Shared and PerVm digests",
+                )
         template_store = residue.get("template_store")
         check.require(isinstance(template_store, dict), "composed residue: missing template_store")
         if isinstance(template_store, dict):
             expected = template_store.get("expected_fingerprint")
             preserved = template_store.get("preserved")
+            require_sha256_hex(
+                check,
+                "composed residue: template_store.expected_fingerprint",
+                expected,
+            )
+            check.require(
+                isinstance(preserved, list) and preserved,
+                "composed residue: template_store.preserved must be a non-empty list",
+            )
+            if isinstance(preserved, list):
+                for fingerprint in preserved:
+                    require_sha256_hex(
+                        check,
+                        "composed residue: template_store.preserved fingerprint",
+                        fingerprint,
+                    )
             check.require(
                 sorted(preserved) == [expected] if isinstance(preserved, list) else False,
                 "composed residue: template_store preserved must equal expected_fingerprint",
@@ -3197,7 +3225,7 @@ exit 1
                     "shared_digest": shared_digest,
                     "per_vm_digest": per_vm_digest,
                 },
-                "template_store": {"expected_fingerprint": "f", "preserved": ["f"]},
+                "template_store": {"expected_fingerprint": "f" * 64, "preserved": ["f" * 64]},
             }},
         }))
         composed_doc.write_text(
@@ -4071,6 +4099,20 @@ The measured signal is acceptable under the same-trust-domain assumption.
         residue_bad_digest_status = quiet_run_checks(args)
         residue_bad["data"]["residue"]["image_store"]["shared_digest"] = shared_digest
         residue.write_text(json.dumps(residue_bad))
+        residue_bad["data"]["residue"]["image_store"]["expected"] = [shared_digest]
+        residue_bad["data"]["residue"]["image_store"]["preserved"] = [shared_digest]
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad_image_expected_status = quiet_run_checks(args)
+        residue_bad["data"]["residue"]["image_store"]["expected"] = [shared_digest, per_vm_digest]
+        residue_bad["data"]["residue"]["image_store"]["preserved"] = [shared_digest, per_vm_digest]
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad["data"]["residue"]["template_store"]["expected_fingerprint"] = "not-a-fingerprint"
+        residue_bad["data"]["residue"]["template_store"]["preserved"] = ["not-a-fingerprint"]
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad_template_fingerprint_status = quiet_run_checks(args)
+        residue_bad["data"]["residue"]["template_store"]["expected_fingerprint"] = "f" * 64
+        residue_bad["data"]["residue"]["template_store"]["preserved"] = ["f" * 64]
+        residue.write_text(json.dumps(residue_bad))
         residue_bad["data"]["residue"]["n_leases"] = 11
         residue_bad["data"]["residue"]["leased_run_dirs"] = [
             f"{composed_run_root}/lease-{idx}" for idx in range(11)
@@ -4439,6 +4481,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or memory_bad_per_vm_baseline_status == 0
             or memory_bad_per_vm_baseline_overhead_status == 0
             or residue_bad_digest_status == 0
+            or residue_bad_image_expected_status == 0
+            or residue_bad_template_fingerprint_status == 0
             or residue_bad_exact_n_status == 0
             or residue_bad_roots_status == 0
             or residue_bad_run_root_status == 0

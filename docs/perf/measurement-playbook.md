@@ -630,8 +630,10 @@ empty post-run Firecracker process list, preflight artifact identity, measured
 git commit, exact N=10 cardinality, runtime host kernel >= 6.5, `/dev/kvm` rw
 stat output, sudo uid `0`, actual Firecracker version matching preflight,
 host-memory bound formula `shared_image_bytes + per_vm_overhead_bytes *
-n_attached`, and lowercase sha256 Shared and PerVm image-store digests. The
-restore artifact's `samples_ms` array must match `count`, and
+n_attached`, image-store expected set exactly equal to the Shared and PerVm
+digests, lowercase sha256 Shared and PerVm image-store digests, and lowercase
+sha256 template-store fingerprints. The restore artifact's `samples_ms` array
+must match `count`, and
 `template_build_warmup_ms` must be non-empty. Its `target_ready` must equal
 `count`, P50/P95/P99 values must recompute from `samples_ms`, warm-pool
 snapshots must prove all 10 slots filled and then all 10 slots leased, and

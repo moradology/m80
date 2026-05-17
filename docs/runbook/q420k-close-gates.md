@@ -232,7 +232,8 @@ matching preflight. The restore JSON must also prove all 10 warm-pool slots
 filled, all 10 were leased concurrently, each lease recorded restore/load/probe
 and post-restore-hook diagnostics, and workload exec completions were observed.
 The residue artifact must also record lowercase sha256 Shared and PerVm
-image-store digests. The full guard
+image-store digests, make the expected image set exactly those two digests, and
+use lowercase sha256 template-store fingerprints. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate
 identity, Shared image digest from those JSON artifacts, and green
 `composed_e2e_layered_warm_pool` test-result lines. It also cross-checks the
