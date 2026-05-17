@@ -720,12 +720,28 @@ def verify_snapshot_doc(path: Path) -> list[str]:
     smoke = markdown_section(text, "Smoke evidence")
     check.require(smoke is not None, "snapshot doc: missing ## Smoke evidence")
     if smoke is not None:
+        smoke_lines = re.findall(r"^snapshot-template restore: .*$", smoke, flags=re.MULTILINE)
+        check.require(
+            len(smoke_lines) == 1,
+            "snapshot doc: smoke evidence must contain exactly one snapshot-template restore line",
+        )
         for required in [
             "snapshot-template restore: load=idle runs=3 n=20",
             "p99=",
             "output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         ]:
             check.require(required in smoke, f"snapshot doc: smoke evidence missing {required}")
+        if smoke_lines:
+            check.require(
+                re.fullmatch(
+                    r"snapshot-template restore: load=idle runs=3 n=20 "
+                    r"p99=\d+us "
+                    r"output=crates/m80-firecracker/benches/snapshot_template_restore_latency\.json",
+                    smoke_lines[0],
+                )
+                is not None,
+                "snapshot doc: smoke evidence line must be the canonical close-quality shape",
+            )
     for marker in [
         "Pending quiet-host close run",
         "## Diagnostic Run",
@@ -4046,6 +4062,17 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "snapshot-template restore: load=idle runs=3 n=5 p99=199000us output=/tmp/diagnostic.json",
             "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         ))
+        snapshot_doc_duplicate_smoke = snapshot_doc.read_text().replace(
+            "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+            "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json\n"
+            "snapshot-template restore: load=idle runs=3 n=20 p99=198000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+        )
+        snapshot_doc.write_text(snapshot_doc_duplicate_smoke)
+        snapshot_doc_duplicate_smoke_status = quiet_run_checks(args)
+        snapshot_doc.write_text(snapshot_doc_duplicate_smoke.replace(
+            "\nsnapshot-template restore: load=idle runs=3 n=20 p99=198000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+            "",
+        ))
         snapshot_doc_bad_kernel_kind = snapshot_doc.read_text().replace(
             "M80_KERNEL_KIND=stripped",
             "M80_KERNEL_KIND=stock",
@@ -4794,6 +4821,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or bad_snapshot_reproduction_command_status == 0
             or bad_snapshot_jail_uid_reproduction_command_status == 0
             or snapshot_doc_bad_smoke_status == 0
+            or snapshot_doc_duplicate_smoke_status == 0
             or snapshot_doc_bad_kernel_kind_status == 0
             or snapshot_doc_bad_command_identity_status == 0
             or snapshot_doc_bad_identity_status == 0

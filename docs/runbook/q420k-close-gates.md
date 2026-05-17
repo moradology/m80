@@ -174,8 +174,8 @@ Run the N=20 x 3 snapshot-template bench described in
 crates/m80-firecracker/benches/snapshot_template_restore_latency.json
 ```
 
-Replace that doc's pending `## Smoke evidence` section with the bench stderr
-line from the same quiet-host run, including
+Replace that doc's pending `## Smoke evidence` section with exactly one bench
+stderr line from the same quiet-host run, including
 `snapshot-template restore: load=idle runs=3 n=20`, the recorded `p99=...`,
 and `output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json`.
 The JSON and doc must also pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,

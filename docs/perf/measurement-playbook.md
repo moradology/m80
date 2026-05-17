@@ -72,7 +72,9 @@ artifact commands that do not pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
 `target_ready=1`, vCPU/memory sizing, run-root inputs, and sample arrays that
 back the exact `n_per_run=20`, `runs=3`, `samples_total=60` matrix and its
 `p99`, missing or duplicated snapshot-template `(run, cycle)` sample coverage,
-missing per-run detail, and a composed receipt doc that still carries the
+missing per-run detail, snapshot-template docs whose `## Smoke evidence`
+section does not contain exactly one canonical restore line, and a composed
+receipt doc that still carries the
 diagnostic banner.
 Measurement artifacts that carry source-tree cleanliness fields must record a
 clean worktree except for the artifact paths themselves. Real-KVM close
