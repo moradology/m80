@@ -28,7 +28,6 @@ single_use_lifetimes = "warn"
 unused_must_use = "deny"
 
 [workspace.lints.clippy]
-needless_borrow = "warn"
 clone_on_ref_ptr = "warn"
 # Pre-1.0 internal: no scratch markers in committed code.
 dbg_macro = "deny"
@@ -43,9 +42,8 @@ redundant_clone = "warn"
 unwrap_used = "warn"
 # String-bytes slicing is a UTF-8 footgun.
 string_slice = "warn"
-# These cluster with the "no Other(String) prose errors" doctrine.
+# Clusters with the "no Other(String) prose errors" doctrine.
 result_large_err = "allow"
-large_enum_variant = "warn"
 # Surface hygiene.
 must_use_candidate = "warn"
 semicolon_if_nothing_returned = "warn"
@@ -76,10 +74,8 @@ ulid = "1"
 tempfile = "3"
 toml = "0.5"
 prost = "0.13"
-prost-derive = "0.13"
 prost-build = "0.13"
 protoc-bin-vendored = "3"
-indexmap = "2"
 assert_cmd = "2"
 caps = "0.5"
 seccompiler = "0.5"

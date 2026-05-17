@@ -12,7 +12,6 @@ workspace = true
 
 [dependencies]
 prost.workspace = true
-prost-derive.workspace = true
 thiserror.workspace = true
 
 [build-dependencies]
