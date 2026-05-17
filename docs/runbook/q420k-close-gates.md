@@ -168,10 +168,11 @@ The JSON and doc must also pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
 `target_ready=1`, `M80_SNAPSHOT_BENCH_VCPU_COUNT`,
 `M80_SNAPSHOT_BENCH_MEM_SIZE_MIB`, and `M80_RUN_ROOT` rather than relying on
 defaults. The JSON must include `samples_us` and `sample_details` arrays whose
-lengths match `samples_total`. Remove pending or diagnostic-only text from the
-receipt doc before close; the verifier rejects stale diagnostic markers and
-cross-checks the doc against the JSON artifact's measured git commit,
-preflight identity, and smoke p99.
+lengths match `samples_total`, and the recorded `p99` must recompute from those
+samples. Remove pending or diagnostic-only text from the receipt doc before
+close; the verifier rejects stale diagnostic markers and cross-checks the doc
+against the JSON artifact's measured git commit, preflight identity, and smoke
+p99.
 
 Then verify the artifact:
 
@@ -211,6 +212,7 @@ close-quality host context, tables, and smoke paste from that run. Then verify
 the composed subset. This also checks that the three JSON artifacts agree on
 `git_commit`, substrate, target count, and lowercase sha256 Shared image
 digest, and that the restore artifact's `samples_ms` array backs its `count`.
+The restore P50/P95/P99 values must recompute from that same sample array.
 The residue artifact must also record lowercase sha256 Shared and PerVm
 image-store digests. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate

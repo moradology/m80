@@ -62,8 +62,8 @@ a missing or non-executable Shared density smoke script,
 snapshot-template docs without the matching bench stderr paste, snapshot
 artifact commands that do not pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
 `target_ready=1`, vCPU/memory sizing, run-root inputs, and sample arrays that
-back `samples_total`, and a composed receipt doc that still carries the
-diagnostic banner.
+back `samples_total` and its `p99`, and a composed receipt doc that still
+carries the diagnostic banner.
 Measurement artifacts that carry source-tree cleanliness fields must record a
 clean worktree except for the artifact paths themselves. Real-KVM close
 artifacts also record empty pre-run and post-run Firecracker process lists,
@@ -610,7 +610,8 @@ process list, preflight artifact identity, measured git commit, host-memory
 bound formula `shared_image_bytes + per_vm_overhead_bytes * n_attached`, and
 lowercase sha256 Shared and PerVm image-store digests. The restore artifact's
 `samples_ms` array must match `count`, and `template_build_warmup_ms` must be
-non-empty. The receipt doc must also retain the exact
+non-empty. Its P50/P95/P99 values must recompute from `samples_ms`. The receipt
+doc must also retain the exact
 `cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`
 reproduction command, host context, page-cache statement, and green
 `composed_e2e_layered_warm_pool` test-result lines. The verifier also

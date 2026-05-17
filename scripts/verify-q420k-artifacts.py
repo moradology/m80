@@ -183,6 +183,33 @@ def require_positive_number_list(check: Check, label: str, value: Any) -> None:
         )
 
 
+def numeric_list(value: Any) -> list[float] | None:
+    if not isinstance(value, list) or not all(is_number(item) for item in value):
+        return None
+    return [float(item) for item in value]
+
+
+def percentile(values: list[float], pct: int) -> float:
+    sorted_values = sorted(values)
+    rank = ((len(sorted_values) * pct + 99) // 100) - 1
+    return sorted_values[max(0, min(rank, len(sorted_values) - 1))]
+
+
+def require_number_close(
+    check: Check,
+    label: str,
+    actual: Any,
+    expected: float,
+    tolerance: float,
+) -> None:
+    check.require(is_number(actual), f"{label} must be numeric")
+    if is_number(actual):
+        check.require(
+            abs(float(actual) - expected) <= tolerance,
+            f"{label} {actual} must equal recomputed {expected:g}",
+        )
+
+
 def require_git_commit(check: Check, label: str, value: Any) -> None:
     check.require(
         isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None,
@@ -330,6 +357,23 @@ def verify_snapshot_template(path: Path) -> list[str]:
                         samples[index] == restore_us,
                         f"snapshot: data.warm.sample_details[{index}].restore_to_handback_us must match samples_us[{index}]",
                     )
+    numeric_samples = numeric_list(samples)
+    if numeric_samples:
+        expected_p99_us = percentile(numeric_samples, 99)
+        require_number_close(
+            check,
+            "snapshot: data.warm.restore_to_handback_us.p99",
+            at(data, "data.warm.restore_to_handback_us.p99"),
+            expected_p99_us,
+            0.0,
+        )
+        require_number_close(
+            check,
+            "snapshot: data.warm.restore_to_handback_ms.p99",
+            at(data, "data.warm.restore_to_handback_ms.p99"),
+            expected_p99_us / 1000.0,
+            0.001,
+        )
     require_number_at_least(check, "snapshot: vcpu_count", data.get("vcpu_count"), 1)
     require_number_at_least(check, "snapshot: mem_size_mib", data.get("mem_size_mib"), 1)
     require_number_at_least(check, "snapshot: jail_uid", data.get("jail_uid"), 1)
@@ -748,6 +792,16 @@ def verify_composed_restore(path: Path) -> list[str]:
         samples_ms = restore.get("samples_ms")
         require_list_len(check, "composed restore: samples_ms", samples_ms, restore.get("count"))
         require_positive_number_list(check, "composed restore: samples_ms", samples_ms)
+        numeric_samples = numeric_list(samples_ms)
+        if numeric_samples:
+            for pct in [50, 95, 99]:
+                require_number_close(
+                    check,
+                    f"composed restore: p{pct}_ms",
+                    restore.get(f"p{pct}_ms"),
+                    percentile(numeric_samples, pct),
+                    0.001,
+                )
         template_build_warmup_ms = restore.get("template_build_warmup_ms")
         check.require(
             isinstance(template_build_warmup_ms, list) and template_build_warmup_ms,
@@ -1864,7 +1918,7 @@ def run_self_tests() -> int:
         git_commit = "c" * 40
         shared_digest = "1" * 64
         per_vm_digest = "2" * 64
-        snapshot_samples_us = [190_000 + index for index in range(60)]
+        snapshot_samples_us = [199_000 for _ in range(60)]
         composed_run_root = "/var/lib/m80-composed-e2e"
         composed_template_root = f"{composed_run_root}/composed-e2e-templates-1/templates"
         substrate = {
@@ -1917,6 +1971,7 @@ def run_self_tests() -> int:
             "substrate": substrate,
             "data": {"warm": {
                 "restore_to_handback_ms": {"p99": 199.0},
+                "restore_to_handback_us": {"p99": 199_000},
                 "samples_us": snapshot_samples_us,
                 "sample_details": [
                     {
@@ -2191,9 +2246,11 @@ exit 1
             "data": {"restore_latency": {
                 "count": 10,
                 "target_ready": 10,
-                "samples_ms": [100.0 + index for index in range(10)],
+                "samples_ms": [199.0 for _ in range(10)],
                 "template_build_warmup_ms": [150.0],
                 "fail_count": 0,
+                "p50_ms": 199.0,
+                "p95_ms": 199.0,
                 "p99_ms": 199.0,
             }},
         }))
@@ -2543,6 +2600,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
         bad_snapshot_sample_detail_status = quiet_run_checks(args)
         snapshot_bad["data"]["warm"]["sample_details"][0]["restore_to_handback_us"] = snapshot_samples_us[0]
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["data"]["warm"]["restore_to_handback_ms"]["p99"] = 100.0
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_percentile_status = quiet_run_checks(args)
+        snapshot_bad["data"]["warm"]["restore_to_handback_ms"]["p99"] = 199.0
+        snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
             "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 ",
             "",
@@ -2705,7 +2767,12 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore_bad["data"]["restore_latency"]["samples_ms"] = restore_bad["data"]["restore_latency"]["samples_ms"][:9]
         restore.write_text(json.dumps(restore_bad))
         restore_bad_sample_count_status = quiet_run_checks(args)
-        restore_bad["data"]["restore_latency"]["samples_ms"] = [100.0 + index for index in range(10)]
+        restore_bad["data"]["restore_latency"]["samples_ms"] = [199.0 for _ in range(10)]
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["restore_latency"]["p99_ms"] = 100.0
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_percentile_status = quiet_run_checks(args)
+        restore_bad["data"]["restore_latency"]["p99_ms"] = 199.0
         restore.write_text(json.dumps(restore_bad))
         args.only = ["composed-memory"]
         memory_bad_bound = json.loads(memory.read_text())
@@ -2970,6 +3037,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or bad_snapshot_target_ready_status == 0
             or bad_snapshot_sample_count_status == 0
             or bad_snapshot_sample_detail_status == 0
+            or bad_snapshot_percentile_status == 0
             or bad_snapshot_allow_other_reproduction_command_status == 0
             or bad_snapshot_reproduction_command_status == 0
             or bad_snapshot_jail_uid_reproduction_command_status == 0
@@ -2990,6 +3058,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
             or restore_bad_sample_count_status == 0
+            or restore_bad_percentile_status == 0
             or memory_bad_bound_status == 0
             or memory_bad_digest_status == 0
             or residue_bad_digest_status == 0
