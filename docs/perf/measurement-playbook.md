@@ -219,14 +219,18 @@ Artifact:
 
 - `docs/perf/pmem-dax-memory-pressure.md`
 
-Required interpretation: real-KVM substrate, actual Shared pmem guests,
-`VM count >= 2`, uncompressed non-inlined Shared payload layout (`Layout: 0`
-with equal logical and on-disk size), baseline read latency P50/P95/P99,
-post-pressure read/refault latency P50/P95/P99, cross-guest signal delta,
-host memory and page-cache deltas before/during/after pressure, leaked Shared
-markers = 0, leaked Firecracker/jailer processes = 0, leaked mounts = 0, and a
-decision output that either updates residual-risk docs or files mitigation
-beads. Before closing, after committing the artifact, run:
+Required interpretation: real-KVM substrate, actual Shared pmem guests, full
+measured commit, quiet-host Firecracker substrate JSON, `VM count >= 2`,
+`samples per guest >= 3`, payload size, lowercase sha256 image digest with an
+absolute image path containing that digest, uncompressed non-inlined Shared
+payload layout (`Layout: 0` with equal logical and on-disk size), baseline read
+latency P50/P95/P99, post-pressure read/refault latency P50/P95/P99,
+cross-guest signal delta recomputed from the P50 values, host memory and
+page-cache deltas before/during/after pressure, leaked Shared markers = 0,
+leaked Firecracker/jailer processes = 0, leaked mounts = 0, and a decision
+output that mentions the same-trust-domain interpretation and either updates
+residual-risk docs or files mitigation beads. Before closing, after committing
+the artifact, run:
 
 ```sh
 python3 scripts/verify-q420k-artifacts.py --only dax-memory-pressure --require-committed

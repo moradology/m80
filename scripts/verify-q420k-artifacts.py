@@ -1521,26 +1521,49 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     )
 
     substrate_kind = markdown_text(text, r"- substrate kind: `([^`]+)`")
+    commit = markdown_text(text, r"- commit: `([^`]+)`")
     vm_count = markdown_int(text, r"- VM count: `(\d+)`")
+    samples = markdown_int(text, r"- samples per guest: `(\d+)`")
+    payload_mib = markdown_int(text, r"- payload size: `(\d+) MiB`")
     fs = markdown_text(text, r"- host filesystem: `([^`]+)`")
+    kernel = markdown_text(text, r"- host kernel: `([^`]+)`")
     memory = markdown_text(text, r"- host memory: `([^`]+)`")
     firecracker = markdown_text(text, r"- Firecracker version: `([^`]+)`")
     digest = markdown_text(text, r"- image digest: `([^`]+)`")
+    image_path = markdown_text(text, r"- image path: `([^`]+)`")
     layout = markdown_int(text, r"- payload erofs layout: `Layout: (\d+)`,")
     payload_size = markdown_int(text, r"size `(\d+)` bytes, on-disk size")
     payload_on_disk = markdown_int(text, r"on-disk size `(\d+)` bytes")
     pressure_command = markdown_text(text, r"- pressure command: `([^`]+)`")
+    unrelated_vms = markdown_text(text, r"- unrelated VMs running: `([^`]+)`")
     try:
         artifact_path = path.resolve().relative_to(ROOT).as_posix()
     except ValueError:
         artifact_path = path.as_posix()
 
     check.require(substrate_kind == "real-kvm", "dax memory pressure: substrate kind must be real-kvm")
+    check.require(
+        isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit) is not None,
+        "dax memory pressure: commit must be a full 40-character commit sha",
+    )
     require_number_at_least(check, "dax memory pressure: VM count", vm_count, 2)
+    require_number_at_least(check, "dax memory pressure: samples per guest", samples, 3)
+    require_number_at_least(check, "dax memory pressure: payload size MiB", payload_mib, 1)
+    check.require(bool(kernel), "dax memory pressure: missing host kernel")
     check.require(bool(fs), "dax memory pressure: missing host filesystem")
     check.require(bool(memory), "dax memory pressure: missing host memory")
     check.require(bool(firecracker), "dax memory pressure: missing Firecracker version")
-    check.require(bool(digest), "dax memory pressure: missing image digest")
+    require_sha256_hex(check, "dax memory pressure: image digest", digest)
+    check.require(
+        isinstance(image_path, str) and image_path.startswith("/"),
+        "dax memory pressure: image path must be absolute",
+    )
+    if isinstance(image_path, str) and isinstance(digest, str):
+        check.require(
+            digest in image_path,
+            "dax memory pressure: image path must contain image digest",
+        )
+    check.require(unrelated_vms == "false", "dax memory pressure: unrelated VMs running must be false")
     check.require(layout == 0, "dax memory pressure: payload erofs layout must be 0")
     require_number_at_least(check, "dax memory pressure: payload size", payload_size, 1)
     require_number_at_least(check, "dax memory pressure: payload on-disk size", payload_on_disk, 1)
@@ -1553,9 +1576,9 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
         for required in [
             "M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1",
             "M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND=",
-            "M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=",
-            "M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=",
-            "M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=",
+            f"M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT={vm_count}",
+            f"M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES={samples}",
+            f"M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB={payload_mib}",
             f"M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={artifact_path}",
             "cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm",
             "--ignored --nocapture",
@@ -1567,22 +1590,60 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
                 "dax memory pressure: reproduction command missing pressure command",
             )
 
-    for label in [
-        "baseline Shared-payload read latency p50_ms",
-        "baseline Shared-payload read latency p95_ms",
-        "baseline Shared-payload read latency p99_ms",
-        "post-pressure Shared-payload read latency p50_ms",
-        "post-pressure Shared-payload read latency p95_ms",
-        "post-pressure Shared-payload read latency p99_ms",
-        "cross-guest signal delta p50_ms",
-        "host memory delta during pressure bytes",
-        "host page-cache delta during pressure bytes",
-        "host memory delta after refault bytes",
-        "host page-cache delta after refault bytes",
+    baseline_p50 = markdown_float(text, r"- baseline Shared-payload read latency p50_ms: `([^`]+)`")
+    baseline_p95 = markdown_float(text, r"- baseline Shared-payload read latency p95_ms: `([^`]+)`")
+    baseline_p99 = markdown_float(text, r"- baseline Shared-payload read latency p99_ms: `([^`]+)`")
+    post_p50 = markdown_float(text, r"- post-pressure Shared-payload read latency p50_ms: `([^`]+)`")
+    post_p95 = markdown_float(text, r"- post-pressure Shared-payload read latency p95_ms: `([^`]+)`")
+    post_p99 = markdown_float(text, r"- post-pressure Shared-payload read latency p99_ms: `([^`]+)`")
+    signal_delta = markdown_float(text, r"- cross-guest signal delta p50_ms: `([^`]+)`")
+    for label, value in [
+        ("baseline Shared-payload read latency p50_ms", baseline_p50),
+        ("baseline Shared-payload read latency p95_ms", baseline_p95),
+        ("baseline Shared-payload read latency p99_ms", baseline_p99),
+        ("post-pressure Shared-payload read latency p50_ms", post_p50),
+        ("post-pressure Shared-payload read latency p95_ms", post_p95),
+        ("post-pressure Shared-payload read latency p99_ms", post_p99),
+        ("cross-guest signal delta p50_ms", signal_delta),
+        ("host memory delta during pressure bytes", markdown_float(text, r"- host memory delta during pressure bytes: `([^`]+)`")),
+        ("host page-cache delta during pressure bytes", markdown_float(text, r"- host page-cache delta during pressure bytes: `([^`]+)`")),
+        ("host memory delta after refault bytes", markdown_float(text, r"- host memory delta after refault bytes: `([^`]+)`")),
+        ("host page-cache delta after refault bytes", markdown_float(text, r"- host page-cache delta after refault bytes: `([^`]+)`")),
     ]:
         check.require(
-            is_number(markdown_float(text, rf"- {re.escape(label)}: `([^`]+)`")),
+            is_number(value) and value >= 0,
             f"dax memory pressure: {label} must be numeric",
+        )
+    if all(is_number(value) for value in [baseline_p50, baseline_p95, baseline_p99]):
+        check.require(
+            baseline_p50 <= baseline_p95 <= baseline_p99,
+            "dax memory pressure: baseline latency percentiles must be ordered p50 <= p95 <= p99",
+        )
+    if all(is_number(value) for value in [post_p50, post_p95, post_p99]):
+        check.require(
+            post_p50 <= post_p95 <= post_p99,
+            "dax memory pressure: post-pressure latency percentiles must be ordered p50 <= p95 <= p99",
+        )
+    if is_number(baseline_p50) and is_number(post_p50) and is_number(signal_delta):
+        expected_delta = max(0.0, post_p50 - baseline_p50)
+        require_number_close(
+            check,
+            "dax memory pressure: cross-guest signal delta p50_ms",
+            signal_delta,
+            expected_delta,
+            0.001,
+        )
+
+    substrate = markdown_json_block(text, "Firecracker process substrate")
+    check.require(isinstance(substrate, dict), "dax memory pressure: missing Firecracker process substrate JSON")
+    if isinstance(substrate, dict):
+        check.require(
+            substrate.get("allow_other_firecracker_vms") is False,
+            "dax memory pressure: substrate allow_other_firecracker_vms must be false",
+        )
+        check.require(
+            substrate.get("preexisting_firecracker_processes") == [],
+            "dax memory pressure: preexisting Firecracker process list must be empty",
         )
 
     check.require(
@@ -1600,6 +1661,11 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     check.require(
         "## Decision Output" in text,
         "dax memory pressure: missing Decision Output section",
+    )
+    decision = markdown_section(text, "Decision Output") or ""
+    check.require(
+        "same-trust-domain" in decision,
+        "dax memory pressure: Decision Output must mention same-trust-domain interpretation",
     )
     return check.errors
 
@@ -2767,13 +2833,17 @@ Bead: `m80-q420k.8.9`.
 ## Substrate
 
 - substrate kind: `real-kvm`
+- commit: `cccccccccccccccccccccccccccccccccccccccc`
 - git worktree dirty excluding this artifact: `false`
 - host kernel: `6.17.0-23-generic`
 - host filesystem: `zfs`
 - host memory: `128 GiB`
 - pressure command: `stress-ng --vm 1 --vm-bytes 64G --timeout 30s`
 - VM count: `2`
-- image digest: `sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+- samples per guest: `5`
+- payload size: `32 MiB`
+- image digest: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+- image path: `/var/lib/m80-images/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/image.erofs`
 - payload erofs layout: `Layout: 0`, size `4096` bytes, on-disk size `4096` bytes
 - Firecracker version: `v1.15.1`
 - unrelated VMs running: `false`
@@ -2781,6 +2851,15 @@ Bead: `m80-q420k.8.9`.
 
 ```sh
 M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
+```
+
+### Firecracker process substrate
+
+```json
+{{
+  "allow_other_firecracker_vms": false,
+  "preexisting_firecracker_processes": []
+}}
 ```
 
 ## Observable
@@ -2894,6 +2973,36 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' ",
             )
         )
+        dax_bad_digest = dax_pressure.read_text().replace(
+            "- image digest: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`",
+            "- image digest: `sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`",
+        )
+        dax_pressure.write_text(dax_bad_digest)
+        dax_bad_digest_status = quiet_run_checks(args)
+        dax_pressure.write_text(dax_bad_digest.replace(
+            "- image digest: `sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`",
+            "- image digest: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`",
+        ))
+        dax_bad_delta = dax_pressure.read_text().replace(
+            "- cross-guest signal delta p50_ms: `3.000`",
+            "- cross-guest signal delta p50_ms: `2.000`",
+        )
+        dax_pressure.write_text(dax_bad_delta)
+        dax_bad_delta_status = quiet_run_checks(args)
+        dax_pressure.write_text(dax_bad_delta.replace(
+            "- cross-guest signal delta p50_ms: `2.000`",
+            "- cross-guest signal delta p50_ms: `3.000`",
+        ))
+        dax_bad_substrate = dax_pressure.read_text().replace(
+            '"allow_other_firecracker_vms": false',
+            '"allow_other_firecracker_vms": true',
+        )
+        dax_pressure.write_text(dax_bad_substrate)
+        dax_bad_substrate_status = quiet_run_checks(args)
+        dax_pressure.write_text(dax_bad_substrate.replace(
+            '"allow_other_firecracker_vms": true',
+            '"allow_other_firecracker_vms": false',
+        ))
         args.only = ["snapshot-template"]
         snapshot_bad = json.loads(snapshot.read_text())
         snapshot_bad["substrate"]["substrate_kind"] = "mock"
@@ -3455,6 +3564,9 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or dax_status != 0
             or dax_bad_status == 0
             or dax_bad_reproduction_command_status == 0
+            or dax_bad_digest_status == 0
+            or dax_bad_delta_status == 0
+            or dax_bad_substrate_status == 0
             or bad_substrate_status == 0
             or leaked_firecracker_status == 0
             or bad_preflight_artifacts_status == 0
