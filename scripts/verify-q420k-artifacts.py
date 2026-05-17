@@ -889,16 +889,42 @@ def verify_composed_memory(path: Path) -> list[str]:
             memory.get("per_vm_overhead_source") == "per_vm_baseline_same_run",
             "composed memory: per_vm_overhead_source must be per_vm_baseline_same_run",
         )
+        baseline = memory.get("baseline_before_fill_bytes")
+        after_attached = memory.get("after_n_attached_bytes")
+        shared_image_path = memory.get("shared_image_path")
         delta = memory.get("after_n_attached_delta_bytes")
         bound = memory.get("bound_bytes")
         shared_image_bytes = memory.get("shared_image_bytes")
         per_vm_overhead_bytes = memory.get("per_vm_overhead_bytes")
         shared_image_digest = memory.get("shared_image_digest")
+        for field, value in [
+            ("baseline_before_fill_bytes", baseline),
+            ("after_fill_bytes", memory.get("after_fill_bytes")),
+            ("after_n_attached_bytes", after_attached),
+            ("after_teardown_bytes", memory.get("after_teardown_bytes")),
+        ]:
+            check.require(is_number(value) and value > 0, f"composed memory: {field} must be > 0")
         check.require(is_number(delta), "composed memory: after_n_attached_delta_bytes missing")
         check.require(is_number(bound), "composed memory: bound_bytes missing")
         check.require(is_number(shared_image_bytes), "composed memory: shared_image_bytes missing")
         check.require(is_number(per_vm_overhead_bytes), "composed memory: per_vm_overhead_bytes missing")
         require_sha256_hex(check, "composed memory: shared_image_digest", shared_image_digest)
+        check.require(
+            isinstance(shared_image_path, str) and shared_image_path.startswith("/"),
+            "composed memory: shared_image_path must be absolute",
+        )
+        if isinstance(shared_image_path, str) and isinstance(shared_image_digest, str):
+            check.require(
+                shared_image_digest in shared_image_path,
+                "composed memory: shared_image_path must contain shared_image_digest",
+            )
+        check.require(is_number(memory.get("shared_image_dev")), "composed memory: shared_image_dev missing")
+        check.require(is_number(memory.get("shared_image_ino")), "composed memory: shared_image_ino missing")
+        if is_number(baseline) and is_number(after_attached) and is_number(delta):
+            check.require(
+                baseline - after_attached == delta,
+                "composed memory: after_n_attached_delta_bytes must equal baseline_before_fill_bytes - after_n_attached_bytes",
+            )
         if (
             is_number(bound)
             and is_number(shared_image_bytes)
@@ -2336,12 +2362,19 @@ exit 1
             "data": {"host_memory": {
                 "n_attached": 10,
                 "per_vm_overhead_source": "per_vm_baseline_same_run",
+                "baseline_before_fill_bytes": 1000,
+                "after_fill_bytes": 995,
+                "after_n_attached_bytes": 990,
+                "after_teardown_bytes": 1000,
                 "after_n_attached_delta_bytes": 10,
                 "shared_image_bytes": 10,
                 "per_vm_overhead_bytes": 1,
                 "bound_bytes": 20,
                 "bound_satisfied": True,
                 "shared_image_digest": shared_digest,
+                "shared_image_path": f"/var/lib/m80-images/11/{shared_digest}/image.erofs",
+                "shared_image_dev": 1,
+                "shared_image_ino": 2,
                 "shared_payload_layout": {
                     "erofs_layout": 0,
                     "size_bytes": 4096,
@@ -2891,6 +2924,23 @@ The measured signal is acceptable under the same-trust-domain assumption.
         memory_bad_digest_status = quiet_run_checks(args)
         memory_bad_digest["data"]["host_memory"]["shared_image_digest"] = shared_digest
         memory.write_text(json.dumps(memory_bad_digest))
+        memory_bad_delta = json.loads(memory.read_text())
+        memory_bad_delta["data"]["host_memory"]["after_n_attached_delta_bytes"] = 9
+        memory.write_text(json.dumps(memory_bad_delta))
+        memory_bad_delta_status = quiet_run_checks(args)
+        memory_bad_delta["data"]["host_memory"]["after_n_attached_delta_bytes"] = 10
+        memory.write_text(json.dumps(memory_bad_delta))
+        memory_bad_path = json.loads(memory.read_text())
+        memory_bad_path["data"]["host_memory"]["shared_image_path"] = (
+            "/var/lib/m80-images/22/"
+            "2222222222222222222222222222222222222222222222222222222222222222/image.erofs"
+        )
+        memory.write_text(json.dumps(memory_bad_path))
+        memory_bad_path_status = quiet_run_checks(args)
+        memory_bad_path["data"]["host_memory"]["shared_image_path"] = (
+            f"/var/lib/m80-images/11/{shared_digest}/image.erofs"
+        )
+        memory.write_text(json.dumps(memory_bad_path))
         args.only = ["composed-residue"]
         residue_bad = json.loads(residue.read_text())
         residue_bad["data"]["residue"]["image_store"]["shared_digest"] = f"sha256:{shared_digest}"
@@ -3187,6 +3237,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or restore_bad_percentile_status == 0
             or memory_bad_bound_status == 0
             or memory_bad_digest_status == 0
+            or memory_bad_delta_status == 0
+            or memory_bad_path_status == 0
             or residue_bad_digest_status == 0
             or residue_bad_roots_status == 0
             or residue_bad_run_root_status == 0

@@ -613,7 +613,9 @@ bound formula `shared_image_bytes + per_vm_overhead_bytes * n_attached`, and
 lowercase sha256 Shared and PerVm image-store digests. The restore artifact's
 `samples_ms` array must match `count`, and `template_build_warmup_ms` must be
 non-empty. Its `target_ready` must equal `count`, and P50/P95/P99 values must
-recompute from `samples_ms`. The receipt doc must also retain the exact
+recompute from `samples_ms`. The host-memory artifact must carry raw
+MemAvailable checkpoints that derive `after_n_attached_delta_bytes`, and its
+Shared image path must contain the Shared digest. The receipt doc must also retain the exact
 `cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`
 reproduction command, host context, page-cache statement, and green
 `composed_e2e_layered_warm_pool` test-result lines. The verifier also

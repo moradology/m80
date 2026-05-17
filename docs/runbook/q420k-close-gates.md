@@ -224,7 +224,9 @@ identity, Shared image digest from those JSON artifacts, and green
 receipt's restore P50/P95/P99 and host-memory byte values against the JSON
 artifacts. The host-memory subset check also recomputes `bound_bytes` from
 `shared_image_bytes`,
-`per_vm_overhead_bytes`, and `n_attached`. The residue subset requires an
+`per_vm_overhead_bytes`, and `n_attached`, verifies the attached-memory delta
+from the raw MemAvailable checkpoints, and requires the Shared image path to
+contain the Shared digest. The residue subset requires an
 explicit scanned run-root entry alongside `/tmp/m80-*`, `/var/run/m80`, the
 image store, and the template store; its `leased_run_dirs` entries must be
 absolute path strings:
