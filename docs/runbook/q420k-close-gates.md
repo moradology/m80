@@ -111,6 +111,40 @@ pause, the measurement window, and the restore plan. The request should include:
 - a reminder that q420k agents must not drain, signal, kill, or scale these
   workloads without explicit operator approval.
 
+Approval request template:
+
+```text
+Request: approve a temporary quiet-host window for q420k close measurements.
+
+Host: <host>
+Window: <start/end or duration>
+
+Workloads to pause:
+- Kubernetes: <namespace>/<pod> on <node>, owner <controller>,
+  Firecracker PIDs <pids>
+- User scope: <scope>, owning processes <names>,
+  Firecracker PIDs <pids>
+
+Measurements to run while quiet:
+- m80-q420k.3.8 Shared pmem density
+  -> docs/perf/pmem-shared-density.md
+- m80-q420k.4.15 snapshot-template restore latency
+  -> crates/m80-firecracker/benches/snapshot_template_restore_latency.json
+- m80-q420k.6.2-.6.5 composed e2e
+  -> crates/m80-firecracker/benches/snapshots/composed-e2e-*.json
+  -> docs/perf/composed-e2e.md
+
+Restore plan:
+- restore Kubernetes workloads to their pre-window state;
+- confirm ./scripts/q420k-quiet-host-inventory.sh exits nonzero again only if
+  expected workloads are back;
+- rerun the q420k final verifier after artifacts are committed:
+  python3 scripts/verify-q420k-artifacts.py --require-committed --require-closed-beads --require-parent-phases-closed
+
+No q420k agent will drain, signal, kill, or scale these workloads until this
+approval is explicit.
+```
+
 Run close-quality measurements from a clean worktree except for the artifact
 path being produced. The artifact guards reject measurements that record
 uncommitted source changes.
