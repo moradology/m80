@@ -1,0 +1,89 @@
+{
+  "data": {
+    "host_memory": {
+      "after_fill_bytes": 153866887168,
+      "after_n_attached_bytes": 153841803264,
+      "after_n_attached_delta_bytes": 17211392,
+      "after_teardown_bytes": 153977319424,
+      "baseline_before_fill_bytes": 153859014656,
+      "bound_bytes": 486858758,
+      "bound_satisfied": true,
+      "n_attached": 10,
+      "per_vm_baseline": {
+        "after_fill_bytes": 154001739776,
+        "after_n_attached_bytes": 153997627392,
+        "after_n_attached_delta_bytes": 453300224,
+        "after_teardown_bytes": 154093367296,
+        "attached_snapshot": {
+          "consecutive_fill_errors": 0,
+          "discarded": 0,
+          "fill_attempts_total": 10,
+          "fill_failures_total": 0,
+          "filling": 0,
+          "lease_acquired_total": 10,
+          "lease_returned_total": 0,
+          "leased": 10,
+          "ready": 0,
+          "target_ready": 10
+        },
+        "before_fill_bytes": 154450927616,
+        "image_bytes": 4194304,
+        "image_digest": "591aa08af783982da87fb19113fe2841068ccdfcd5dcfd2bc8a7d2ee0f580c9e",
+        "n_attached": 10,
+        "per_vm_overhead_bytes": 45330023,
+        "per_vm_payload_bytes": 335585280,
+        "shared_payload_bytes": 33558528,
+        "shared_payload_digest": "51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd",
+        "template_fingerprint": "100b8097894ea32dfb2d65fa983e46ea42cffbe4db46be0201784214680de076"
+      },
+      "per_vm_overhead_bytes": 45330023,
+      "per_vm_overhead_source": "per_vm_baseline_same_run",
+      "shared_image_bytes": 33558528,
+      "shared_image_dev": 66308,
+      "shared_image_digest": "51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd",
+      "shared_image_ino": 5636700,
+      "shared_image_path": "/var/lib/m80-images/51/51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd/image.erofs",
+      "shared_payload_layout": {
+        "compression_ratio": "100.00%",
+        "erofs_layout": 0,
+        "on_disk_size_bytes": 33554432,
+        "path": "payload.bin",
+        "raw_dump": "Path : /payload.bin\nSize: 33554432  On-disk size: 33554432  regular file\nNID: 40   Links: 1   Layout: 0   Compression ratio: 100.00%\nInode size: 32   Xattr size: 0\nUid: 0   Gid: 0  Access: 0644/rw-r--r--\nTimestamp: 1970-01-01 00:00:00.000000000\n",
+        "size_bytes": 33554432
+      }
+    }
+  },
+  "git_commit": "629c0c03ae0db24e1cab33f0c5f9e57df2de0880",
+  "git_worktree_dirty_excluding_artifacts": false,
+  "page_cache_dropped_between_fill_and_attach": false,
+  "run_id": "composed-d5ee",
+  "scenario": "composed_e2e_layered_warm_pool",
+  "schema_version": 1,
+  "substrate": {
+    "allow_other_firecracker_vms": false,
+    "dev_kvm_stat": "crw-rw---- root:kvm /dev/kvm",
+    "firecracker_version": "Firecracker v1.15.1\n\n2026-05-17T11:44:58.005793166 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0",
+    "host_kernel_release": "6.17.0-23-generic",
+    "post_run_firecracker_processes": [],
+    "preexisting_firecracker_processes": [],
+    "preflight_artifacts": {
+      "expected_firecracker_version": "v1.15.1",
+      "firecracker_bin": "/opt/firecracker/bin/firecracker",
+      "firecracker_seccomp_filter": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+      "image_kind": "minimal",
+      "jailer_bin": "/opt/firecracker/bin/jailer",
+      "jailer_harden_bin": "/opt/m80/bin/m80-jailer-harden",
+      "kernel_image": "/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
+      "kernel_image_sha256": "143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3",
+      "kernel_kind": "stripped",
+      "net_helper_bin": "/opt/m80/bin/m80-net-helper",
+      "rootfs_format": "ext4",
+      "rootfs_image": "/tank/tmp/m80-build/post-restore-current/output.ext4",
+      "rootfs_image_sha256": "bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d"
+    },
+    "preflight_required": true,
+    "quiet_host_checked": true,
+    "substrate_kind": "real-kvm",
+    "sudo_uid": "0"
+  }
+}

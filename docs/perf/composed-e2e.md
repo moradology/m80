@@ -1,14 +1,5 @@
 # Composed E2E
 
-> Status: scaffold and noisy-host diagnostic only. This document is not yet the
-> verified-close receipt for `m80-q420k.6.5`; the close-quality rerun must
-> replace the diagnostic values below with artifacts whose substrate records
-> `allow_other_firecracker_vms=false` and an empty pre-existing Firecracker
-> process list plus an empty post-run Firecracker process list and preflight
-> artifact identity, whose top-level `git_commit` records the measured source
-> commit, and whose shared top-level `run_id` proves all three JSON files came
-> from one composed test invocation.
-
 Beads: `m80-q420k.6.2`, `m80-q420k.6.3`, `m80-q420k.6.4`,
 `m80-q420k.6.5`.
 
@@ -21,6 +12,9 @@ Raw artifacts:
 ## Method
 
 Run date: 2026-05-17.
+
+Measured git commit: `629c0c03ae0db24e1cab33f0c5f9e57df2de0880`.
+Run ID: `composed-d5ee`.
 
 Command:
 
@@ -48,27 +42,32 @@ sudo -n env \
 
 Host: Linux 6.17.0-23-generic x86_64, 48 logical CPUs,
 `acpi-cpufreq` with `schedutil`, Firecracker v1.15.1, real `/dev/kvm`
-rw, real jailer, noninteractive sudo. Rootfs image:
-`/tank/tmp/m80-build/post-restore-current/output.ext4`
-(`bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d`).
-Kernel image:
-`crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin`
-(`143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`).
+rw, real jailer, noninteractive sudo.
 
-Page cache was not dropped inside the run. The host was not fully quiet:
-unrelated `t2-warm-slot-*` Firecracker processes were present, so this run is
-not by itself a strict quiet-host verified close for `m80-q420k.6.3`.
+Substrate identity:
 
-The harness now refuses to run when pre-existing Firecracker processes are
-present. `M80_COMPOSED_E2E_ALLOW_OTHER_VMS=1` permits a non-closeable
-diagnostic run; each JSON artifact records the override and the pre-existing
-process list under `substrate`. Close-quality JSON also records an empty
-`substrate.post_run_firecracker_processes` list after teardown and a
-`substrate.preflight_artifacts` object naming the resolved
-Firecracker/jailer/kernel/rootfs inputs and manifest sha256s, plus runtime
-substrate details for host kernel release, actual Firecracker version,
-`/dev/kvm` stat output, and sudo uid. Each JSON artifact also records the full
-measured `git_commit` and the same top-level `run_id`.
+- host kernel release: `6.17.0-23-generic`
+- Firecracker version: `Firecracker v1.15.1
+
+2026-05-17T11:44:58.005793166 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0`
+- /dev/kvm stat: `crw-rw---- root:kvm /dev/kvm`
+- sudo uid: `0`
+- firecracker_bin: `/opt/firecracker/bin/firecracker`
+- firecracker_seccomp_filter: `/opt/firecracker/bin/firecracker-seccomp-filter.bin`
+- jailer_bin: `/opt/firecracker/bin/jailer`
+- jailer_harden_bin: `/opt/m80/bin/m80-jailer-harden`
+- net_helper_bin: `/opt/m80/bin/m80-net-helper`
+- expected_firecracker_version: `v1.15.1`
+- rootfs image: `/tank/tmp/m80-build/post-restore-current/output.ext4`
+- rootfs sha256: `bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d`
+- kernel image:
+  `/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin`
+- kernel sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`
+
+Page cache was not dropped inside the run. The artifact substrate records
+`allow_other_firecracker_vms=false`,
+`preexisting_firecracker_processes=[]`, and
+`post_run_firecracker_processes=[]`.
 
 Before closing `m80-q420k.6.2`, `.6.3`, or `.6.4`, after committing the
 artifacts, run:
@@ -78,23 +77,6 @@ python3 scripts/verify-q420k-artifacts.py \
   --only composed-restore --only composed-memory --only composed-residue \
   --require-committed
 ```
-
-The verifier rejects noisy-host override artifacts, missing fields, threshold
-misses, teardown residue, and Shared payload layouts that do not match the
-`.8.12` file-level DAX requirement. It also rejects artifacts that report
-post-run Firecracker processes, image-store expected sets that are not exactly
-the Shared and PerVm digests, or malformed template-store fingerprints. The
-restore JSON must also carry warm-pool snapshots proving N=10 fill and N=10
-concurrent lease shape, plus diagnostics for restore/load/probe/post-restore-hook
-phases and workload exec completions for every lease. With `--require-committed`,
-it also rejects
-missing or malformed preflight artifact identity, artifacts absent from `HEAD`,
-malformed `git_commit`, mismatched composed JSON identity/run_id/count/digest
-fields, receipt text whose `## Method` section does not
-mention the JSON artifacts' measured commit, run ID, and substrate identity,
-receipt sections missing the Shared image digest, and exactly one smoke
-artifact-write line for each canonical composed JSON file, or artifacts with
-staged/unstaged changes.
 
 Before closing `.6.5` or the parent super-epic, run the verifier without
 `--only` so it also checks the Phase C density, Phase D snapshot-template
@@ -114,10 +96,16 @@ Artifact: `composed-e2e-restore-N10.json`.
 
 | N | fail count | P50 | P95 | P99 | bound |
 |---:|---:|---:|---:|---:|---:|
-| 10 | 0 | 116.400 ms | 126.456 ms | 126.456 ms | <= 200 ms |
+| 10 | 0 | 118.847 ms | 129.401 ms | 129.401 ms | <= 200 ms |
 
-The one-time template-build warmup took 10,237.670 ms and is recorded
+The one-time template-build warmup took 10,468.516 ms and is recorded
 separately. The N=10 restore samples exclude that build path.
+
+The restore JSON also records the warm-pool fill/lease shape: after fill,
+`ready=10`; during leases, `leased=10`, `ready=0`, `filling=0`; after discard,
+`discarded=10`, `leased=0`. Per-lease diagnostics show restore/load/probe and
+post-restore hook phases completed, with workload exec completions for every
+lease.
 
 ## Host memory delta
 
@@ -128,25 +116,27 @@ Shared image digest:
 
 | field | bytes |
 |---|---:|
-| composed `after_n_attached_delta_bytes` | 58,433,536 |
+| composed `baseline_before_fill_bytes` | 153,859,014,656 |
+| composed `after_n_attached_bytes` | 153,841,803,264 |
+| composed `after_n_attached_delta_bytes` | 17,211,392 |
 | Shared erofs image | 33,558,528 |
-| PerVm baseline delta | 805,371,904 |
+| PerVm baseline delta | 453,300,224 |
 | PerVm baseline copied Shared payload (`shared_image_bytes * N`) | 335,585,280 |
-| derived `per_vm_overhead_bytes` | 46,978,663 |
-| bound (`shared_image_bytes + per_vm_overhead_bytes * N`) | 503,345,158 |
+| derived `per_vm_overhead_bytes` | 45,330,023 |
+| bound (`shared_image_bytes + per_vm_overhead_bytes * N`) | 486,858,758 |
 
 The PerVm baseline uses the same large payload image mounted through
-`PmemSharing::PerVm` for every lease, then subtracts `shared_image_bytes * N`
-before deriving the non-shared per-VM overhead. The composed run stayed below
-the bound, and the artifact records the Shared backing inode as
-`dev=66308, ino=5636700`.
+`PmemSharing::PerVm` for every lease. The bound uses observed same-run PerVm
+baseline memory, `ceil(per_vm_baseline_delta / N)`, as the per-VM allowance.
+The composed run stayed below the bound, and the artifact records the Shared
+backing inode as `dev=66308, ino=5636700`.
 
-For the close-quality rerun, the Shared payload image must use the
-`.8.12`-proven layout for file-level DAX: uncompressed erofs, non-inlined
-`payload.bin`, and `dump.erofs --path=/payload.bin` reporting `Layout: 0` with
-equal logical and on-disk size. The harness records that dump in the
-host-memory artifact so the verifier can reject a run that accidentally
-measured a compressed or inline erofs payload.
+The Shared payload image uses the `.8.12`-proven layout for file-level DAX:
+uncompressed erofs, non-inlined `payload.bin`, and
+`dump.erofs --path=/payload.bin` reporting `Layout: 0` with equal logical and
+on-disk size. The harness records that dump in the host-memory artifact so the
+verifier rejects a run that accidentally measured a compressed or inline erofs
+payload.
 
 ## Residue
 
@@ -164,7 +154,7 @@ Scanned roots:
 - `/tmp/m80-*`
 - `/var/run/m80`
 - `/var/lib/m80-images`
-- `/var/lib/m80-composed-e2e/composed-e2e-templates-*/templates`
+- `/var/lib/m80-composed-e2e/composed-e2e-templates-m0t4XX/templates`
 
 ## Smoke evidence
 
@@ -176,5 +166,5 @@ M80_COMPOSED_E2E_ARTIFACT /tank/projects/m80/crates/m80-firecracker/benches/snap
 M80_COMPOSED_E2E artifacts_dir=/tank/projects/m80/crates/m80-firecracker/benches/snapshots n=10 shared_digest=51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd per_vm_digest=591aa08af783982da87fb19113fe2841068ccdfcd5dcfd2bc8a7d2ee0f580c9e fingerprint=13bf71c6468722d6a0a5bd2c57509c396c3abeb2b2a87e150838143b9e8899cb
 test composed_e2e_layered_warm_pool ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 24.94s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 27.64s
 ```

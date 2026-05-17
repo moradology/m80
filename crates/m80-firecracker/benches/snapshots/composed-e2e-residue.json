@@ -1,0 +1,77 @@
+{
+  "data": {
+    "residue": {
+      "image_store": {
+        "expected": [
+          "51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd",
+          "591aa08af783982da87fb19113fe2841068ccdfcd5dcfd2bc8a7d2ee0f580c9e"
+        ],
+        "per_vm_digest": "591aa08af783982da87fb19113fe2841068ccdfcd5dcfd2bc8a7d2ee0f580c9e",
+        "preserved": [
+          "51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd",
+          "591aa08af783982da87fb19113fe2841068ccdfcd5dcfd2bc8a7d2ee0f580c9e"
+        ],
+        "shared_digest": "51453c4b9046488a66c1b5362466fc123f74bbf9a56284af4dc189e47775b2dd"
+      },
+      "leased_run_dirs": [
+        "/var/lib/m80-composed-e2e/composed-d5ee-3",
+        "/var/lib/m80-composed-e2e/composed-d5ee-0",
+        "/var/lib/m80-composed-e2e/composed-d5ee-6",
+        "/var/lib/m80-composed-e2e/composed-d5ee-7",
+        "/var/lib/m80-composed-e2e/composed-d5ee-5",
+        "/var/lib/m80-composed-e2e/composed-d5ee-4",
+        "/var/lib/m80-composed-e2e/composed-d5ee-9",
+        "/var/lib/m80-composed-e2e/composed-d5ee-1",
+        "/var/lib/m80-composed-e2e/composed-d5ee-8",
+        "/var/lib/m80-composed-e2e/composed-d5ee-2"
+      ],
+      "n_leases": 10,
+      "scanned_roots": [
+        "/var/lib/m80-composed-e2e",
+        "/tmp/m80-*",
+        "/var/run/m80",
+        "/var/lib/m80-images",
+        "/var/lib/m80-composed-e2e/composed-e2e-templates-m0t4XX/templates"
+      ],
+      "template_store": {
+        "expected_fingerprint": "13bf71c6468722d6a0a5bd2c57509c396c3abeb2b2a87e150838143b9e8899cb",
+        "preserved": [
+          "13bf71c6468722d6a0a5bd2c57509c396c3abeb2b2a87e150838143b9e8899cb"
+        ]
+      },
+      "unexpected_paths": []
+    }
+  },
+  "git_commit": "629c0c03ae0db24e1cab33f0c5f9e57df2de0880",
+  "git_worktree_dirty_excluding_artifacts": false,
+  "run_id": "composed-d5ee",
+  "scenario": "composed_e2e_layered_warm_pool",
+  "schema_version": 1,
+  "substrate": {
+    "allow_other_firecracker_vms": false,
+    "dev_kvm_stat": "crw-rw---- root:kvm /dev/kvm",
+    "firecracker_version": "Firecracker v1.15.1\n\n2026-05-17T11:44:58.005793166 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0",
+    "host_kernel_release": "6.17.0-23-generic",
+    "post_run_firecracker_processes": [],
+    "preexisting_firecracker_processes": [],
+    "preflight_artifacts": {
+      "expected_firecracker_version": "v1.15.1",
+      "firecracker_bin": "/opt/firecracker/bin/firecracker",
+      "firecracker_seccomp_filter": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+      "image_kind": "minimal",
+      "jailer_bin": "/opt/firecracker/bin/jailer",
+      "jailer_harden_bin": "/opt/m80/bin/m80-jailer-harden",
+      "kernel_image": "/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
+      "kernel_image_sha256": "143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3",
+      "kernel_kind": "stripped",
+      "net_helper_bin": "/opt/m80/bin/m80-net-helper",
+      "rootfs_format": "ext4",
+      "rootfs_image": "/tank/tmp/m80-build/post-restore-current/output.ext4",
+      "rootfs_image_sha256": "bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d"
+    },
+    "preflight_required": true,
+    "quiet_host_checked": true,
+    "substrate_kind": "real-kvm",
+    "sudo_uid": "0"
+  }
+}

@@ -1,0 +1,366 @@
+{
+  "data": {
+    "observability": {
+      "diagnostics": [
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-3",
+          "vm_id": "composed-d5ee-3"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-0",
+          "vm_id": "composed-d5ee-0"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-6",
+          "vm_id": "composed-d5ee-6"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-7",
+          "vm_id": "composed-d5ee-7"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-5",
+          "vm_id": "composed-d5ee-5"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-4",
+          "vm_id": "composed-d5ee-4"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-9",
+          "vm_id": "composed-d5ee-9"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-1",
+          "vm_id": "composed-d5ee-1"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-8",
+          "vm_id": "composed-d5ee-8"
+        },
+        {
+          "exec_completed_count": 7,
+          "lifecycle_messages": [
+            "diagnostics opened",
+            "exec request completed",
+            "exec request started",
+            "restored guestd ready",
+            "snapshot restored",
+            "storage prepared for restore"
+          ],
+          "phase_completed": [
+            "phase_10_open_uds",
+            "phase_3_storage_prep",
+            "phase_4_jailer_materialize",
+            "phase_5_cgroup_probe",
+            "phase_5b_cgroup_create",
+            "phase_9_jailer_launch",
+            "phase_restore_load",
+            "phase_restore_post_restore_hooks",
+            "phase_restore_probe_exec_channel",
+            "phase_restore_snapshot_bind",
+            "phase_restore_snapshot_prime"
+          ],
+          "run_dir": "/var/lib/m80-composed-e2e/composed-d5ee-2",
+          "vm_id": "composed-d5ee-2"
+        }
+      ],
+      "pmem_layers_by_sharing": {
+        "PerVm": 1,
+        "Shared": 1
+      }
+    },
+    "restore_latency": {
+      "count": 10,
+      "fail_count": 0,
+      "p50_ms": 118.847,
+      "p95_ms": 129.401,
+      "p99_ms": 129.401,
+      "samples_ms": [
+        97.875,
+        105.396,
+        111.411,
+        116.5,
+        129.401,
+        129.029,
+        118.847,
+        120.24,
+        124.931,
+        118.927
+      ],
+      "target_ready": 10,
+      "template_build_warmup_ms": [
+        10468.516
+      ]
+    },
+    "warm_pool": {
+      "after_discard": {
+        "consecutive_fill_errors": 0,
+        "discarded": 10,
+        "fill_attempts_total": 14,
+        "fill_failures_total": 0,
+        "filling": 0,
+        "lease_acquired_total": 10,
+        "lease_returned_total": 10,
+        "leased": 0,
+        "ready": 4,
+        "target_ready": 10
+      },
+      "after_fill": {
+        "consecutive_fill_errors": 0,
+        "discarded": 0,
+        "fill_attempts_total": 10,
+        "fill_failures_total": 0,
+        "filling": 0,
+        "lease_acquired_total": 0,
+        "lease_returned_total": 0,
+        "leased": 0,
+        "ready": 10,
+        "target_ready": 10
+      },
+      "during_leases": {
+        "consecutive_fill_errors": 0,
+        "discarded": 0,
+        "fill_attempts_total": 10,
+        "fill_failures_total": 0,
+        "filling": 0,
+        "lease_acquired_total": 10,
+        "lease_returned_total": 0,
+        "leased": 10,
+        "ready": 0,
+        "target_ready": 10
+      }
+    }
+  },
+  "git_commit": "629c0c03ae0db24e1cab33f0c5f9e57df2de0880",
+  "git_worktree_dirty_excluding_artifacts": false,
+  "page_cache_dropped_between_leases": false,
+  "run_id": "composed-d5ee",
+  "scenario": "composed_e2e_layered_warm_pool",
+  "schema_version": 1,
+  "substrate": {
+    "allow_other_firecracker_vms": false,
+    "dev_kvm_stat": "crw-rw---- root:kvm /dev/kvm",
+    "firecracker_version": "Firecracker v1.15.1\n\n2026-05-17T11:44:58.005793166 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0",
+    "host_kernel_release": "6.17.0-23-generic",
+    "post_run_firecracker_processes": [],
+    "preexisting_firecracker_processes": [],
+    "preflight_artifacts": {
+      "expected_firecracker_version": "v1.15.1",
+      "firecracker_bin": "/opt/firecracker/bin/firecracker",
+      "firecracker_seccomp_filter": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+      "image_kind": "minimal",
+      "jailer_bin": "/opt/firecracker/bin/jailer",
+      "jailer_harden_bin": "/opt/m80/bin/m80-jailer-harden",
+      "kernel_image": "/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
+      "kernel_image_sha256": "143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3",
+      "kernel_kind": "stripped",
+      "net_helper_bin": "/opt/m80/bin/m80-net-helper",
+      "rootfs_format": "ext4",
+      "rootfs_image": "/tank/tmp/m80-build/post-restore-current/output.ext4",
+      "rootfs_image_sha256": "bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d"
+    },
+    "preflight_required": true,
+    "quiet_host_checked": true,
+    "substrate_kind": "real-kvm",
+    "sudo_uid": "0"
+  }
+}
