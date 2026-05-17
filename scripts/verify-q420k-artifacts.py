@@ -163,6 +163,26 @@ def require_number_at_least(check: Check, label: str, value: Any, minimum: float
         check.require(value >= minimum, f"{label} must be >= {minimum:g}")
 
 
+def require_list_len(check: Check, label: str, value: Any, expected: Any) -> None:
+    check.require(isinstance(value, list), f"{label} must be a list")
+    if isinstance(value, list) and is_number(expected):
+        check.require(
+            len(value) == int(expected),
+            f"{label} length must equal {int(expected)}",
+        )
+
+
+def require_positive_number_list(check: Check, label: str, value: Any) -> None:
+    if not isinstance(value, list):
+        check.require(False, f"{label} must be a list")
+        return
+    for index, item in enumerate(value):
+        check.require(
+            is_number(item) and item > 0,
+            f"{label}[{index}] must be a positive number",
+        )
+
+
 def require_git_commit(check: Check, label: str, value: Any) -> None:
     check.require(
         isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None,
@@ -270,6 +290,46 @@ def verify_snapshot_template(path: Path) -> list[str]:
     require_number_at_least(check, "snapshot: n_per_run", data.get("n_per_run"), 20)
     require_number_at_least(check, "snapshot: runs", data.get("runs"), 3)
     require_number_at_least(check, "snapshot: samples_total", data.get("samples_total"), 60)
+    samples = at(data, "data.warm.samples_us")
+    sample_details = at(data, "data.warm.sample_details")
+    require_list_len(check, "snapshot: data.warm.samples_us", samples, data.get("samples_total"))
+    require_list_len(
+        check,
+        "snapshot: data.warm.sample_details",
+        sample_details,
+        data.get("samples_total"),
+    )
+    require_positive_number_list(check, "snapshot: data.warm.samples_us", samples)
+    if isinstance(sample_details, list):
+        for index, detail in enumerate(sample_details):
+            check.require(
+                isinstance(detail, dict),
+                f"snapshot: data.warm.sample_details[{index}] must be an object",
+            )
+            if isinstance(detail, dict):
+                for field in ["run", "cycle", "fill_us", "handoff_us", "restore_to_handback_us"]:
+                    check.require(
+                        is_number(detail.get(field)) and detail.get(field) >= 0,
+                        f"snapshot: data.warm.sample_details[{index}].{field} must be numeric",
+                    )
+                fill_us = detail.get("fill_us")
+                handoff_us = detail.get("handoff_us")
+                restore_us = detail.get("restore_to_handback_us")
+                if is_number(fill_us) and is_number(handoff_us) and is_number(restore_us):
+                    check.require(
+                        fill_us + handoff_us == restore_us,
+                        f"snapshot: data.warm.sample_details[{index}] fill_us + handoff_us must equal restore_to_handback_us",
+                    )
+                if (
+                    isinstance(samples, list)
+                    and index < len(samples)
+                    and is_number(samples[index])
+                    and is_number(restore_us)
+                ):
+                    check.require(
+                        samples[index] == restore_us,
+                        f"snapshot: data.warm.sample_details[{index}].restore_to_handback_us must match samples_us[{index}]",
+                    )
     require_number_at_least(check, "snapshot: vcpu_count", data.get("vcpu_count"), 1)
     require_number_at_least(check, "snapshot: mem_size_mib", data.get("mem_size_mib"), 1)
     require_number_at_least(check, "snapshot: jail_uid", data.get("jail_uid"), 1)
@@ -685,6 +745,20 @@ def verify_composed_restore(path: Path) -> list[str]:
     check.require(isinstance(restore, dict), "composed restore: missing restore_latency")
     if isinstance(restore, dict):
         require_number_at_least(check, "composed restore: count", restore.get("count"), 10)
+        samples_ms = restore.get("samples_ms")
+        require_list_len(check, "composed restore: samples_ms", samples_ms, restore.get("count"))
+        require_positive_number_list(check, "composed restore: samples_ms", samples_ms)
+        template_build_warmup_ms = restore.get("template_build_warmup_ms")
+        check.require(
+            isinstance(template_build_warmup_ms, list) and template_build_warmup_ms,
+            "composed restore: template_build_warmup_ms must be a non-empty list",
+        )
+        if isinstance(template_build_warmup_ms, list):
+            require_positive_number_list(
+                check,
+                "composed restore: template_build_warmup_ms",
+                template_build_warmup_ms,
+            )
         check.require(restore.get("fail_count") == 0, "composed restore: fail_count must be 0")
         p99 = restore.get("p99_ms")
         check.require(is_number(p99), "composed restore: p99_ms missing")
@@ -1790,6 +1864,7 @@ def run_self_tests() -> int:
         git_commit = "c" * 40
         shared_digest = "1" * 64
         per_vm_digest = "2" * 64
+        snapshot_samples_us = [190_000 + index for index in range(60)]
         composed_run_root = "/var/lib/m80-composed-e2e"
         composed_template_root = f"{composed_run_root}/composed-e2e-templates-1/templates"
         substrate = {
@@ -1840,7 +1915,20 @@ def run_self_tests() -> int:
                 "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency"
             ),
             "substrate": substrate,
-            "data": {"warm": {"restore_to_handback_ms": {"p99": 199.0}}},
+            "data": {"warm": {
+                "restore_to_handback_ms": {"p99": 199.0},
+                "samples_us": snapshot_samples_us,
+                "sample_details": [
+                    {
+                        "run": index // 20,
+                        "cycle": index % 20,
+                        "fill_us": value - 1000,
+                        "handoff_us": 1000,
+                        "restore_to_handback_us": value,
+                    }
+                    for index, value in enumerate(snapshot_samples_us)
+                ],
+            }},
         }))
         snapshot_doc.write_text(
             """# Snapshot-Template Restore Latency
@@ -2103,6 +2191,8 @@ exit 1
             "data": {"restore_latency": {
                 "count": 10,
                 "target_ready": 10,
+                "samples_ms": [100.0 + index for index in range(10)],
+                "template_build_warmup_ms": [150.0],
                 "fail_count": 0,
                 "p99_ms": 199.0,
             }},
@@ -2443,6 +2533,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
         bad_snapshot_target_ready_status = quiet_run_checks(args)
         snapshot_bad["target_ready"] = 1
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["data"]["warm"]["samples_us"] = snapshot_bad["data"]["warm"]["samples_us"][:59]
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_sample_count_status = quiet_run_checks(args)
+        snapshot_bad["data"]["warm"]["samples_us"] = snapshot_samples_us
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["data"]["warm"]["sample_details"][0]["restore_to_handback_us"] += 1
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_sample_detail_status = quiet_run_checks(args)
+        snapshot_bad["data"]["warm"]["sample_details"][0]["restore_to_handback_us"] = snapshot_samples_us[0]
+        snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
             "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 ",
             "",
@@ -2601,6 +2701,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore.write_text(json.dumps(restore_bad))
         restore_bad_page_cache_status = quiet_run_checks(args)
         restore_bad["page_cache_dropped_between_leases"] = False
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["restore_latency"]["samples_ms"] = restore_bad["data"]["restore_latency"]["samples_ms"][:9]
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_sample_count_status = quiet_run_checks(args)
+        restore_bad["data"]["restore_latency"]["samples_ms"] = [100.0 + index for index in range(10)]
         restore.write_text(json.dumps(restore_bad))
         args.only = ["composed-memory"]
         memory_bad_bound = json.loads(memory.read_text())
@@ -2863,6 +2968,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or stock_kernel_status == 0
             or bad_git_commit_status == 0
             or bad_snapshot_target_ready_status == 0
+            or bad_snapshot_sample_count_status == 0
+            or bad_snapshot_sample_detail_status == 0
             or bad_snapshot_allow_other_reproduction_command_status == 0
             or bad_snapshot_reproduction_command_status == 0
             or bad_snapshot_jail_uid_reproduction_command_status == 0
@@ -2882,6 +2989,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or quiet_host_inventory_not_executable_status == 0
             or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
+            or restore_bad_sample_count_status == 0
             or memory_bad_bound_status == 0
             or memory_bad_digest_status == 0
             or residue_bad_digest_status == 0

@@ -167,10 +167,11 @@ and `output=crates/m80-firecracker/benches/snapshot_template_restore_latency.jso
 The JSON and doc must also pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
 `target_ready=1`, `M80_SNAPSHOT_BENCH_VCPU_COUNT`,
 `M80_SNAPSHOT_BENCH_MEM_SIZE_MIB`, and `M80_RUN_ROOT` rather than relying on
-defaults. Remove pending or diagnostic-only text from the receipt doc before
-close; the verifier rejects stale diagnostic markers and cross-checks the doc
-against the JSON artifact's measured git commit, preflight identity, and smoke
-p99.
+defaults. The JSON must include `samples_us` and `sample_details` arrays whose
+lengths match `samples_total`. Remove pending or diagnostic-only text from the
+receipt doc before close; the verifier rejects stale diagnostic markers and
+cross-checks the doc against the JSON artifact's measured git commit,
+preflight identity, and smoke p99.
 
 Then verify the artifact:
 
@@ -209,7 +210,8 @@ Replace the diagnostic values in `docs/perf/composed-e2e.md` with the
 close-quality host context, tables, and smoke paste from that run. Then verify
 the composed subset. This also checks that the three JSON artifacts agree on
 `git_commit`, substrate, target count, and lowercase sha256 Shared image
-digest. The residue artifact must also record lowercase sha256 Shared and PerVm
+digest, and that the restore artifact's `samples_ms` array backs its `count`.
+The residue artifact must also record lowercase sha256 Shared and PerVm
 image-store digests. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate
 identity, Shared image digest from those JSON artifacts, and green
