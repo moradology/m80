@@ -52,6 +52,16 @@ shared DAX-backed pages. Cross-tenant isolation between Shared-pmem-sharing
 guests is out of scope; the trust-domain assumption is documented in
 `docs/positioning.md` "Trust-Domain Assumption for Shared Pmem".
 
+Residual memory-pressure risk is tracked as an operator constraint, not a
+runtime mitigation. The verified artifact
+`docs/perf/pmem-dax-memory-pressure.md` measured a quiet-host real-KVM run with
+two Shared-pmem guests and found p50 cross-guest signal delta `0.000 ms` with
+zero teardown residue. Keep using `Shared` only inside a same-trust-domain
+boundary; do not add `mlock`, `MAP_POPULATE`, or `madvise(MADV_WILLNEED)`
+runtime mitigation from q420k. If a future committed measurement on the target
+substrate shows a durable positive signal, file a single-purpose mitigation
+bead instead of changing this operator rule inline.
+
 Decision tree:
 
 1. Different tenants or unclear trust boundary: use `PerVm`.

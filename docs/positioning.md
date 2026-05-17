@@ -164,6 +164,18 @@ side channel between those guests. Cross-tenant isolation between
 Shared-pmem-sharing guests is out of scope for m80; callers that need
 cross-tenant isolation must use per-VM backing instead.
 
+The Phase G memory-pressure measurement in
+`docs/perf/pmem-dax-memory-pressure.md` exercised two real-KVM Shared-pmem
+guests with a 32 MiB uncompressed erofs DAX payload and a host
+`stress-ng --vm 1 --vm-bytes 50% --timeout 30s` workload on a quiet substrate.
+It measured baseline p50/p95/p99 read latency of `10.000/40.000/40.000 ms`,
+post-pressure p50/p95/p99 of `10.000/10.000/10.000 ms`, p50 cross-guest
+signal delta `0.000 ms`, and zero leaked Shared markers, Firecracker/jailer
+processes, or mounts. That result does not promote Shared pmem into a tenant
+isolation mechanism; it only means q420k did not justify a runtime mitigation
+such as `mlock`, `MAP_POPULATE`, or `madvise(MADV_WILLNEED)` under the existing
+same-trust-domain contract.
+
 The acknowledgement for this tradeoff is part of construction, not prose in a
 config comment. The shared mode is gated by a typed witness with finite
 `TrustReason` variants; free strings and implicit defaults are deliberately not
