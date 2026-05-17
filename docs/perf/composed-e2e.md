@@ -90,7 +90,8 @@ it also rejects
 missing or malformed preflight artifact identity, artifacts absent from `HEAD`,
 malformed `git_commit`, mismatched composed JSON identity/count/digest fields,
 receipt text that does not mention the JSON artifacts' measured commit,
-substrate identity, and Shared image digest, or artifacts with staged/unstaged
+substrate identity, Shared image digest, and exactly one smoke artifact-write
+line for each canonical composed JSON file, or artifacts with staged/unstaged
 changes.
 
 Before closing `.6.5` or the parent super-epic, run the verifier without

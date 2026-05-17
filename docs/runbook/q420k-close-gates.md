@@ -236,7 +236,9 @@ image-store digests, make the expected image set exactly those two digests, and
 use lowercase sha256 template-store fingerprints. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate
 identity, Shared image digest from those JSON artifacts, and green
-`composed_e2e_layered_warm_pool` test-result lines. It also cross-checks the
+`composed_e2e_layered_warm_pool` test-result lines, with exactly one
+`M80_COMPOSED_E2E_ARTIFACT` smoke line for each canonical composed JSON
+artifact. It also cross-checks the
 receipt's restore P50/P95/P99 and host-memory byte values against the JSON
 artifacts. The host-memory subset check also recomputes `bound_bytes` from
 `shared_image_bytes`,

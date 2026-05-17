@@ -1695,10 +1695,20 @@ def verify_composed_doc(path: Path) -> list[str]:
         "composed-e2e-residue.json",
     ]:
         check.require(artifact in text, f"composed doc: missing {artifact}")
+    smoke_artifact_paths = re.findall(r"^M80_COMPOSED_E2E_ARTIFACT\s+(\S+)$", text, re.MULTILINE)
     check.require(
-        text.count("M80_COMPOSED_E2E_ARTIFACT") >= 3,
-        "composed doc: smoke evidence must list all three artifact writes",
+        len(smoke_artifact_paths) == 3,
+        "composed doc: smoke evidence must list exactly three artifact writes",
     )
+    for suffix in [
+        "crates/m80-firecracker/benches/snapshots/composed-e2e-restore-N10.json",
+        "crates/m80-firecracker/benches/snapshots/composed-e2e-host-memory.json",
+        "crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json",
+    ]:
+        check.require(
+            any(path.endswith(suffix) for path in smoke_artifact_paths),
+            f"composed doc: smoke evidence missing artifact write {suffix}",
+        )
     check.require(
         "test composed_e2e_layered_warm_pool ... ok" in text,
         "composed doc: smoke evidence must show composed_e2e_layered_warm_pool passed",
@@ -4181,6 +4191,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "",
             )
         )
+        composed_doc_bad_artifact_marker = composed_doc.read_text().replace(
+            "M80_COMPOSED_E2E_ARTIFACT /repo/crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json",
+            "M80_COMPOSED_E2E_ARTIFACT /tmp/composed-e2e-residue.json",
+        )
+        composed_doc.write_text(composed_doc_bad_artifact_marker)
+        composed_doc_bad_artifact_marker_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_bad_artifact_marker.replace(
+                "M80_COMPOSED_E2E_ARTIFACT /tmp/composed-e2e-residue.json",
+                "M80_COMPOSED_E2E_ARTIFACT /repo/crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json",
+            )
+        )
         composed_doc_bad = composed_doc.read_text().replace(
             "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
             "cargo test --release -p m80-firecracker --test wrong_test",
@@ -4490,6 +4512,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or composed_bad_consistency_status == 0
             or uncommitted_status == 0
             or diagnostic_doc_status == 0
+            or composed_doc_bad_artifact_marker_status == 0
             or missing_doc_command_status == 0
             or composed_doc_bad_helper_status == 0
             or composed_doc_bad_run_root_status == 0
