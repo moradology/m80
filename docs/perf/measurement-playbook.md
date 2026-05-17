@@ -164,6 +164,10 @@ directly from the artifact:
 `canonical Shared artifact present after teardown`. The artifact must also
 carry the `TrustDomainAck`, same-trust-domain, DAX cache-timing side-channel,
 and read-only Shared jail-binding statements in its `## Trust model` section.
+The verifier reads the reproduction command from `## Reproduction`, host
+substrate fields from `## Substrate`, numeric bounds and image identity from
+`## Observable`, and teardown marker fields from `## Teardown`; copies outside
+those sections do not satisfy the artifact.
 Before closing, after
 committing the artifact, run:
 

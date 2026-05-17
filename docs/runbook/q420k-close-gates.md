@@ -150,7 +150,10 @@ assignments; prefix values such as `VM_COUNT=40` do not satisfy an expected
 `VM_COUNT=4`. The `Samples` table must contain exactly one row per cycle, each
 row's delta must recompute from the
 MemAvailable before/after values, and the summary max delta must equal the
-table max.
+table max. The artifact parser reads the reproduction command from
+`## Reproduction`, host substrate fields from `## Substrate`, numeric bounds
+and image identity from `## Observable`, and teardown marker fields from
+`## Teardown`; copies outside those sections do not satisfy the close artifact.
 
 After committing the artifact, rerun the close guard with git-state checks:
 

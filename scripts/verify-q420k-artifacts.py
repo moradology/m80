@@ -829,32 +829,39 @@ def verify_pmem_density(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
     check.require(text.startswith("# Shared pmem density"), "pmem density: title mismatch")
+    reproduction_section = markdown_section(text, "Reproduction") or ""
     substrate_section = markdown_section(text, "Substrate") or ""
+    observable_section = markdown_section(text, "Observable") or ""
+    teardown_section = markdown_section(text, "Teardown") or ""
     layout_section = markdown_section(text, "Payload erofs layout") or ""
     trust_section = markdown_section(text, "Trust model") or ""
-    command = markdown_text(text, r"Command: `([^`]+)`")
-    host_kernel = markdown_text(text, r"- host kernel: `([^`]+)`")
-    firecracker_version = markdown_text(text, r"- firecracker: `([^`]+)`")
-    kvm_stat = markdown_text(text, r"- `/dev/kvm`: `([^`]+)`")
-    sudo_uid = markdown_text(text, r"- sudo: required; test ran as uid `([^`]+)`")
-    vm_count = markdown_int(text, r"- field: host memory delta after (\d+) attached Shared VMs")
-    cycles = markdown_int(text, r"- cycles: `(\d+)`")
-    payload_mib = markdown_int(text, r"- payload size: `(\d+) MiB`")
-    image_digest = markdown_text(text, r"- image digest: `([^`]+)`")
-    image_path = markdown_text(text, r"- image path: `([^`]+)`")
-    layout = markdown_int(text, r"- payload erofs layout: `Layout: (\d+)`,")
-    payload_size = markdown_int(text, r"size `(\d+)` bytes, on-disk size")
-    payload_on_disk = markdown_int(text, r"on-disk size `(\d+)` bytes")
-    image_kib = markdown_int(text, r"- image KiB: `(\d+)`")
-    per_vm_overhead = markdown_int(text, r"- per-VM overhead bound: `(\d+) KiB`")
-    bound = markdown_int(text, r"- bound: `(\d+) KiB`")
-    max_delta = markdown_int(text, r"- max observed delta: `(\d+) KiB`")
-    result = markdown_text(text, r"- result: `([^`]+)`")
-    max_active_markers = markdown_int(text, r"- max active-use markers observed: `(\d+)`")
-    final_active_markers = markdown_int(text, r"- final active-use markers: `(\d+)`")
-    stale_swept = markdown_int(text, r"- stale markers swept after teardown: `(\d+)`")
+    check.require(reproduction_section != "", "pmem density: missing Reproduction section")
+    check.require(substrate_section != "", "pmem density: missing Substrate section")
+    check.require(observable_section != "", "pmem density: missing Observable section")
+    check.require(teardown_section != "", "pmem density: missing Teardown section")
+    command = markdown_text(reproduction_section, r"Command: `([^`]+)`")
+    host_kernel = markdown_text(substrate_section, r"- host kernel: `([^`]+)`")
+    firecracker_version = markdown_text(substrate_section, r"- firecracker: `([^`]+)`")
+    kvm_stat = markdown_text(substrate_section, r"- `/dev/kvm`: `([^`]+)`")
+    sudo_uid = markdown_text(substrate_section, r"- sudo: required; test ran as uid `([^`]+)`")
+    vm_count = markdown_int(observable_section, r"- field: host memory delta after (\d+) attached Shared VMs")
+    cycles = markdown_int(observable_section, r"- cycles: `(\d+)`")
+    payload_mib = markdown_int(observable_section, r"- payload size: `(\d+) MiB`")
+    image_digest = markdown_text(observable_section, r"- image digest: `([^`]+)`")
+    image_path = markdown_text(observable_section, r"- image path: `([^`]+)`")
+    layout = markdown_int(observable_section, r"- payload erofs layout: `Layout: (\d+)`,")
+    payload_size = markdown_int(observable_section, r"size `(\d+)` bytes, on-disk size")
+    payload_on_disk = markdown_int(observable_section, r"on-disk size `(\d+)` bytes")
+    image_kib = markdown_int(observable_section, r"- image KiB: `(\d+)`")
+    per_vm_overhead = markdown_int(observable_section, r"- per-VM overhead bound: `(\d+) KiB`")
+    bound = markdown_int(observable_section, r"- bound: `(\d+) KiB`")
+    max_delta = markdown_int(observable_section, r"- max observed delta: `(\d+) KiB`")
+    result = markdown_text(observable_section, r"- result: `([^`]+)`")
+    max_active_markers = markdown_int(teardown_section, r"- max active-use markers observed: `(\d+)`")
+    final_active_markers = markdown_int(teardown_section, r"- final active-use markers: `(\d+)`")
+    stale_swept = markdown_int(teardown_section, r"- stale markers swept after teardown: `(\d+)`")
     canonical_present = markdown_text(
-        text,
+        teardown_section,
         r"- canonical Shared artifact present after teardown: `([^`]+)`",
     )
     samples = pmem_density_samples(text)
@@ -903,10 +910,10 @@ def verify_pmem_density(path: Path) -> list[str]:
                 require_command_env_value(check, "pmem density", command, env, int(value))
 
     check.require(
-        markdown_text(text, r"- git worktree dirty excluding this artifact: `([^`]+)`") == "false",
+        markdown_text(substrate_section, r"- git worktree dirty excluding this artifact: `([^`]+)`") == "false",
         "pmem density: measured source worktree must be clean except for the artifact",
     )
-    require_git_commit(check, "pmem density", markdown_text(text, r"- git commit: `([^`]+)`"))
+    require_git_commit(check, "pmem density", markdown_text(substrate_section, r"- git commit: `([^`]+)`"))
     check.require(
         kernel_version_at_least(host_kernel, 6, 5),
         "pmem density: host kernel must be recorded and >= 6.5",
@@ -1012,7 +1019,7 @@ def verify_pmem_density(path: Path) -> list[str]:
     ]:
         check.require(required in trust_section, f"pmem density: missing trust-model statement: {required}")
 
-    substrate = markdown_json_block(text, "Firecracker process substrate")
+    substrate = markdown_json_block(substrate_section, "Firecracker process substrate")
     if substrate is None:
         check.require(False, "pmem density: missing Firecracker process substrate JSON block")
     else:
@@ -4382,6 +4389,61 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 M80_PMEM_SHARED_DENSITY_ARTIFACT=",
             )
         )
+        density_command = markdown_text(density.read_text(), r"Command: `([^`]+)`")
+        if density_command is None:
+            density_command_outside_reproduction_status = 0
+        else:
+            density_command_outside_reproduction = (
+                density.read_text()
+                .replace(f"Command: `{density_command}`\n\n", "", 1)
+                .replace(
+                    "# Shared pmem density\n\n",
+                    f"# Shared pmem density\n\nCommand: `{density_command}`\n\n",
+                    1,
+                )
+            )
+            density.write_text(density_command_outside_reproduction)
+            density_command_outside_reproduction_status = quiet_run_checks(args)
+            density.write_text(
+                density_command_outside_reproduction
+                .replace(f"Command: `{density_command}`\n\n", "", 1)
+                .replace(
+                    "## Reproduction\n\n",
+                    f"## Reproduction\n\nCommand: `{density_command}`\n\n",
+                    1,
+                )
+            )
+        density_observable_outside_section = (
+            density.read_text()
+            .replace(
+                "- image digest: `1111111111111111111111111111111111111111111111111111111111111111`\n",
+                "",
+                1,
+            )
+            .replace(
+                "# Shared pmem density\n\n",
+                "# Shared pmem density\n\n"
+                "- image digest: `1111111111111111111111111111111111111111111111111111111111111111`\n\n",
+                1,
+            )
+        )
+        density.write_text(density_observable_outside_section)
+        density_observable_outside_section_status = quiet_run_checks(args)
+        density.write_text(
+            density_observable_outside_section
+            .replace(
+                "# Shared pmem density\n\n"
+                "- image digest: `1111111111111111111111111111111111111111111111111111111111111111`\n\n",
+                "# Shared pmem density\n\n",
+                1,
+            )
+            .replace(
+                "- payload size: `128 MiB`\n",
+                "- payload size: `128 MiB`\n"
+                "- image digest: `1111111111111111111111111111111111111111111111111111111111111111`\n",
+                1,
+            )
+        )
         density_bad_trust_section = (
             density.read_text()
             .replace(
@@ -5128,6 +5190,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_sample_status == 0
             or density_bad_exact_command_status == 0
             or density_bad_reproduction_command_status == 0
+            or density_command_outside_reproduction_status == 0
+            or density_observable_outside_section_status == 0
             or density_bad_trust_section_status == 0
             or density_smoke_status != 0
             or density_smoke_bad_repro_command_status == 0
