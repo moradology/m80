@@ -413,6 +413,22 @@ def verify_preflight_artifacts(artifacts: Any, label: str, check: Check) -> None
             artifacts.get("kernel_kind") == "stripped",
             f"{label}: substrate.preflight_artifacts.kernel_kind must be stripped",
         )
+        check.require(
+            artifacts.get("kernel_image") == PREPARED_STRIPPED_KERNEL_IMAGE,
+            f"{label}: substrate.preflight_artifacts.kernel_image must be the prepared stripped kernel",
+        )
+        check.require(
+            artifacts.get("kernel_image_sha256") == PREPARED_STRIPPED_KERNEL_SHA256,
+            f"{label}: substrate.preflight_artifacts.kernel_image_sha256 must match the prepared stripped kernel",
+        )
+        check.require(
+            artifacts.get("rootfs_image") == PREPARED_ROOTFS_IMAGE,
+            f"{label}: substrate.preflight_artifacts.rootfs_image must be the prepared rootfs",
+        )
+        check.require(
+            artifacts.get("rootfs_image_sha256") == PREPARED_ROOTFS_SHA256,
+            f"{label}: substrate.preflight_artifacts.rootfs_image_sha256 must match the prepared rootfs",
+        )
     check.require(
         artifacts.get("image_kind") in {"ubuntu", "minimal"},
         f"{label}: substrate.preflight_artifacts.image_kind must be ubuntu or minimal",
@@ -3343,10 +3359,10 @@ def run_self_tests() -> int:
             "jailer_bin": "/opt/firecracker/bin/jailer",
             "jailer_harden_bin": "/opt/m80/bin/m80-jailer-harden",
             "net_helper_bin": "/opt/m80/bin/m80-net-helper",
-            "kernel_image": "/var/lib/m80/kernels/vmlinux",
-            "rootfs_image": "/var/lib/m80/rootfs.ext4",
-            "kernel_image_sha256": "a" * 64,
-            "rootfs_image_sha256": "b" * 64,
+            "kernel_image": PREPARED_STRIPPED_KERNEL_IMAGE,
+            "rootfs_image": PREPARED_ROOTFS_IMAGE,
+            "kernel_image_sha256": PREPARED_STRIPPED_KERNEL_SHA256,
+            "rootfs_image_sha256": PREPARED_ROOTFS_SHA256,
             "kernel_kind": "stripped",
             "image_kind": "minimal",
             "rootfs_format": "ext4",
@@ -3404,9 +3420,9 @@ def run_self_tests() -> int:
                 "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin "
                 "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden "
                 "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper "
-                "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux "
+                "M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin "
                 "M80_KERNEL_KIND=stripped "
-                "M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 "
+                "M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 "
                 "M80_RUN_ROOT=/var/lib/m80/run "
                 "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency"
             ),
@@ -3462,10 +3478,10 @@ Preflight artifacts:
 - jailer_bin: `/opt/firecracker/bin/jailer`
 - jailer_harden_bin: `/opt/m80/bin/m80-jailer-harden`
 - net_helper_bin: `/opt/m80/bin/m80-net-helper`
-- kernel_image: `/var/lib/m80/kernels/vmlinux`
-- rootfs_image: `/var/lib/m80/rootfs.ext4`
-- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
-- rootfs_image_sha256: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`
+- kernel_image: `/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin`
+- rootfs_image: `/tank/tmp/m80-build/post-restore-current/output.ext4`
+- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`
+- rootfs_image_sha256: `bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d`
 - expected_firecracker_version: `v1.15.1`
 
 ## Command
@@ -3480,8 +3496,8 @@ sudo -n env \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
   M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
   M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
-  M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux \
-  M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 \
+  M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin \
+  M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 \
   M80_SNAPSHOT_BENCH_LOAD=idle \
   M80_SNAPSHOT_BENCH_VCPU_COUNT=1 M80_SNAPSHOT_BENCH_MEM_SIZE_MIB=512 \
   M80_KERNEL_KIND=stripped \
@@ -3519,7 +3535,7 @@ snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-
 
 ## Reproduction
 
-Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_SHARED_CYCLES=10 M80_PMEM_SHARED_PAYLOAD_MIB=128 M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 M80_PMEM_SHARED_DENSITY_ARTIFACT={density_path} M80_RUN_ROOT=/var/lib/m80-psd M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_FIRECRACKER_VERSION=v1.15.1 M80_JAIL_UID=1000 M80_JAIL_GID=1000 scripts/smoke-pmem-shared.sh`
+Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_SHARED_CYCLES=10 M80_PMEM_SHARED_PAYLOAD_MIB=128 M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 M80_PMEM_SHARED_DENSITY_ARTIFACT={density_path} M80_RUN_ROOT=/var/lib/m80-psd M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_FIRECRACKER_VERSION=v1.15.1 M80_JAIL_UID=1000 M80_JAIL_GID=1000 scripts/smoke-pmem-shared.sh`
 
 ## Substrate
 
@@ -3551,10 +3567,10 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
     "jailer_bin": "/opt/firecracker/bin/jailer",
     "jailer_harden_bin": "/opt/m80/bin/m80-jailer-harden",
     "net_helper_bin": "/opt/m80/bin/m80-net-helper",
-    "kernel_image": "/var/lib/m80/kernels/vmlinux",
-    "rootfs_image": "/var/lib/m80/rootfs.ext4",
-    "kernel_image_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "rootfs_image_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "kernel_image": "/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
+    "rootfs_image": "/tank/tmp/m80-build/post-restore-current/output.ext4",
+    "kernel_image_sha256": "143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3",
+    "rootfs_image_sha256": "bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d",
     "kernel_kind": "stripped",
     "image_kind": "minimal",
     "rootfs_format": "ext4",
@@ -3629,8 +3645,8 @@ KERNEL_KIND="${M80_KERNEL_KIND:-stripped}"
 FIRECRACKER_SECCOMP_FILTER="${M80_FIRECRACKER_SECCOMP_FILTER:-/opt/firecracker/bin/firecracker-seccomp-filter.bin}"
 JAILER_HARDEN_BIN="${M80_JAILER_HARDEN_BIN:-/opt/m80/bin/m80-jailer-harden}"
 NET_HELPER_BIN="${M80_NET_HELPER_BIN:-/opt/m80/bin/m80-net-helper}"
-KERNEL_IMAGE="${M80_KERNEL_IMAGE:-/var/lib/m80/kernels/vmlinux}"
-ROOTFS_IMAGE="${M80_ROOTFS_IMAGE:-/var/lib/m80/rootfs.ext4}"
+KERNEL_IMAGE="${M80_KERNEL_IMAGE:-/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin}"
+ROOTFS_IMAGE="${M80_ROOTFS_IMAGE:-/tank/tmp/m80-build/post-restore-current/output.ext4}"
 FIRECRACKER_VERSION="${M80_FIRECRACKER_VERSION:-v1.15.1}"
 JAIL_UID="${M80_JAIL_UID:-1000}"
 JAIL_GID="${M80_JAIL_GID:-1000}"
@@ -3983,8 +3999,8 @@ sudo -n env \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
   M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
   M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
-  M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 \
-  M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux \
+  M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 \
+  M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin \
   M80_KERNEL_KIND=stripped \
   cargo test --release -p m80-firecracker --test e2e_composed_real_kvm -- \
     --ignored composed_e2e_layered_warm_pool --nocapture
@@ -4015,11 +4031,11 @@ Preflight artifacts:
 - jailer_bin: `/opt/firecracker/bin/jailer`
 - jailer_harden_bin: `/opt/m80/bin/m80-jailer-harden`
 - net_helper_bin: `/opt/m80/bin/m80-net-helper`
-- kernel_image: `/var/lib/m80/kernels/vmlinux`
-- rootfs_image: `/var/lib/m80/rootfs.ext4`
+- kernel_image: `/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin`
+- rootfs_image: `/tank/tmp/m80-build/post-restore-current/output.ext4`
 - expected_firecracker_version: `v1.15.1`
-- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
-- rootfs_image_sha256: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`
+- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`
+- rootfs_image_sha256: `bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d`
 
 Shared image digest:
 `1111111111111111111111111111111111111111111111111111111111111111`
@@ -4153,7 +4169,7 @@ Bead: `m80-q420k.8.9`.
 - command:
 
 ```sh
-M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
+M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-ng --vm 1 --vm-bytes 64G --timeout 30s' M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT=2 M80_PMEM_DAX_MEMORY_PRESSURE_SAMPLES=5 M80_PMEM_DAX_MEMORY_PRESSURE_PAYLOAD_MIB=32 M80_PMEM_DAX_MEMORY_PRESSURE_ARTIFACT={dax_pressure.as_posix()} M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker M80_JAILER_BIN=/opt/firecracker/bin/jailer M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin M80_KERNEL_KIND=stripped M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 cargo test -p m80-firecracker --test pmem_dax_memory_pressure_real_kvm -- --ignored --nocapture
 ```
 
 ### Firecracker process substrate
@@ -4694,14 +4710,14 @@ The measured signal is acceptable under the same-trust-domain assumption.
         snapshot_doc_preflight_outside_section = (
             snapshot_doc.read_text()
             .replace(
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n",
                 "",
                 1,
             )
             .replace(
                 "# Snapshot-Template Restore Latency\n\n",
                 "# Snapshot-Template Restore Latency\n\n"
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n\n",
                 1,
             )
         )
@@ -4711,14 +4727,14 @@ The measured signal is acceptable under the same-trust-domain assumption.
             snapshot_doc_preflight_outside_section
             .replace(
                 "# Snapshot-Template Restore Latency\n\n"
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n\n",
                 "# Snapshot-Template Restore Latency\n\n",
                 1,
             )
             .replace(
                 "Preflight artifacts:\n\n",
                 "Preflight artifacts:\n\n"
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n",
                 1,
             )
         )
@@ -4870,14 +4886,14 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- image path: `/var/lib/m80-images/11/1111111111111111111111111111111111111111111111111111111111111111/image.erofs`",
         ))
         density_bad_preflight_command = density.read_text().replace(
-            "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux",
+            "M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
             "M80_KERNEL_IMAGE=/tmp/vmlinux",
         )
         density.write_text(density_bad_preflight_command)
         density_bad_preflight_command_status = quiet_run_checks(args)
         density.write_text(density_bad_preflight_command.replace(
             "M80_KERNEL_IMAGE=/tmp/vmlinux",
-            "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux",
+            "M80_KERNEL_IMAGE=/tank/projects/m80/crates/m80-image-build/kernels/vmlinux-m80-613988fdb6a6aaa0f806ec27e6f6e66875e2f768b28a2c0244aa4af3d8e2ac19.bin",
         ))
         density_duplicate_substrate = density.read_text().replace(
             "### Firecracker process substrate",
@@ -5566,14 +5582,14 @@ The measured signal is acceptable under the same-trust-domain assumption.
         composed_doc_preflight_outside_method = (
             composed_doc.read_text()
             .replace(
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n",
                 "",
                 1,
             )
             .replace(
                 "# Composed E2E\n\n",
                 "# Composed E2E\n\n"
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n\n",
                 1,
             )
         )
@@ -5583,14 +5599,14 @@ The measured signal is acceptable under the same-trust-domain assumption.
             composed_doc_preflight_outside_method
             .replace(
                 "# Composed E2E\n\n"
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n\n",
                 "# Composed E2E\n\n",
                 1,
             )
             .replace(
                 "Preflight artifacts:\n\n",
                 "Preflight artifacts:\n\n"
-                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                "- kernel_image_sha256: `143b2784a434cdf5de10920a59e2c875b66be63bacfa9ba8ddf93ac60f2bc6e3`\n",
                 1,
             )
         )

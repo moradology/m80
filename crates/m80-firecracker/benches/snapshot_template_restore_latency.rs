@@ -14,6 +14,7 @@ use m80_firecracker::{
 };
 use m80_image_manifest::KernelKind;
 use m80_proto::ExecRequest;
+use sha2::{Digest as _, Sha256};
 
 const DEFAULT_N: usize = 20;
 const DEFAULT_RUNS: usize = 3;
@@ -574,13 +575,22 @@ fn preflight_artifacts_json(discovery: &m80_preflight::Discovery) -> serde_json:
         "net_helper_bin": discovery.net_helper_bin,
         "kernel_image": discovery.kernel,
         "rootfs_image": discovery.rootfs,
-        "kernel_image_sha256": discovery.manifest.kernel_image_sha256,
-        "rootfs_image_sha256": discovery.manifest.output_rootfs_sha256,
+        "kernel_image_sha256": sha256_file_hex(&discovery.kernel),
+        "rootfs_image_sha256": sha256_file_hex(&discovery.rootfs),
         "kernel_kind": discovery.manifest.kernel_kind,
         "image_kind": discovery.manifest.image_kind,
         "rootfs_format": discovery.manifest.rootfs_format,
         "expected_firecracker_version": discovery.manifest.expected_firecracker_version,
     })
+}
+
+fn sha256_file_hex(path: &Path) -> String {
+    let mut file = fs::File::open(path)
+        .unwrap_or_else(|err| panic!("open {} for sha256: {err}", path.display()));
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)
+        .unwrap_or_else(|err| panic!("hash {} for sha256: {err}", path.display()));
+    hex::encode(hasher.finalize())
 }
 
 fn command_output(command: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> String {
