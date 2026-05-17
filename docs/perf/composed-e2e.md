@@ -64,8 +64,10 @@ diagnostic run; each JSON artifact records the override and the pre-existing
 process list under `substrate`. Close-quality JSON also records an empty
 `substrate.post_run_firecracker_processes` list after teardown and a
 `substrate.preflight_artifacts` object naming the resolved
-Firecracker/jailer/kernel/rootfs inputs and manifest sha256s. Each JSON
-artifact also records the full measured `git_commit`.
+Firecracker/jailer/kernel/rootfs inputs and manifest sha256s, plus runtime
+substrate details for host kernel release, actual Firecracker version,
+`/dev/kvm` stat output, and sudo uid. Each JSON artifact also records the full
+measured `git_commit`.
 
 Before closing `m80-q420k.6.2`, `.6.3`, or `.6.4`, after committing the
 artifacts, run:

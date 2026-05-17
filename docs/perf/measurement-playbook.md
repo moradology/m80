@@ -626,12 +626,15 @@ same-run PerVm baseline bound,
 explicit run root, `/tmp/m80-*`, `/var/run/m80`, image store, and template store,
 leased-run-dir enumeration as absolute path strings, empty unexpected-path
 result, exact image-store preservation, exact template-store preservation,
-empty post-run Firecracker process list, preflight artifact identity, measured git commit, host-memory
-bound formula `shared_image_bytes + per_vm_overhead_bytes * n_attached`, and
-lowercase sha256 Shared and PerVm image-store digests. The restore artifact's
-`samples_ms` array must match `count`, and `template_build_warmup_ms` must be
-non-empty. Its `target_ready` must equal `count`, and P50/P95/P99 values must
-recompute from `samples_ms`. The host-memory artifact must carry raw
+empty post-run Firecracker process list, preflight artifact identity, measured
+git commit, exact N=10 cardinality, runtime host kernel >= 6.5, `/dev/kvm` rw
+stat output, sudo uid `0`, actual Firecracker version matching preflight,
+host-memory bound formula `shared_image_bytes + per_vm_overhead_bytes *
+n_attached`, and lowercase sha256 Shared and PerVm image-store digests. The
+restore artifact's `samples_ms` array must match `count`, and
+`template_build_warmup_ms` must be non-empty. Its `target_ready` must equal
+`count`, and P50/P95/P99 values must recompute from `samples_ms`. The
+host-memory artifact must carry raw
 MemAvailable checkpoints that derive `after_n_attached_delta_bytes`, and its
 Shared image path must contain the Shared digest. The same-run PerVm baseline
 section must agree with the top-level Shared digest, Shared bytes, attached

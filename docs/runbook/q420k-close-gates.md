@@ -45,6 +45,9 @@ For q420k close artifacts, the preflight artifact identity must report
 `kernel_kind=stripped`. Do not pair a stock kernel path with
 `M80_KERNEL_KIND=stripped`; the close verifier rejects stock-kernel
 measurement artifacts for the Phase C, Phase D, and Phase F close gates.
+Phase F composed artifacts also carry runtime substrate details; the verifier
+requires host kernel >= 6.5, `/dev/kvm` rw stat output, sudo uid `0`, and
+actual Firecracker version matching preflight.
 
 The helper is equivalent to this manual inventory. To identify the owner
 without changing host state, capture the process tree and cgroup first:
@@ -220,9 +223,12 @@ Replace the diagnostic values in `docs/perf/composed-e2e.md` with the
 close-quality host context, tables, and smoke paste from that run. Then verify
 the composed subset. This also checks that the three JSON artifacts agree on
 `git_commit`, substrate, target count, and lowercase sha256 Shared image
-digest, and that the restore artifact's `samples_ms` array backs its `count`.
-The restore artifact's `target_ready` must equal `count`, and its P50/P95/P99
-values must recompute from that same sample array.
+digest, and that the Phase F cardinality is exactly N=10 across restore,
+host-memory, and residue. The restore artifact's `samples_ms` array must back
+its `count`, `target_ready` must equal `count`, and P50/P95/P99 values must
+recompute from that same sample array. Runtime substrate fields must show host
+kernel >= 6.5, `/dev/kvm` rw, sudo uid `0`, and actual Firecracker version
+matching preflight.
 The residue artifact must also record lowercase sha256 Shared and PerVm
 image-store digests. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate

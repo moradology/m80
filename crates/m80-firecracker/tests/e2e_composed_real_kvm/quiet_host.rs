@@ -50,6 +50,9 @@ pub(super) fn substrate_json(
             .iter()
             .map(FirecrackerProcess::to_json)
             .collect::<Vec<_>>(),
+        "host_kernel_release": command_output("uname", &["-r"]),
+        "dev_kvm_stat": command_output("stat", &["-c", "%A %U:%G %n", "/dev/kvm"]),
+        "sudo_uid": command_output("id", &["-u"]),
     })
 }
 
@@ -69,6 +72,8 @@ pub(super) fn record_preflight_artifacts(
     discovery: &m80_preflight::Discovery,
 ) {
     substrate["preflight_artifacts"] = preflight_artifacts_json(discovery);
+    substrate["firecracker_version"] =
+        command_output(discovery.firecracker_bin.as_path(), &["--version"]).into();
 }
 
 fn preflight_artifacts_json(discovery: &m80_preflight::Discovery) -> serde_json::Value {
@@ -87,6 +92,16 @@ fn preflight_artifacts_json(discovery: &m80_preflight::Discovery) -> serde_json:
         "rootfs_format": discovery.manifest.rootfs_format,
         "expected_firecracker_version": discovery.manifest.expected_firecracker_version,
     })
+}
+
+fn command_output(command: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> String {
+    match std::process::Command::new(command).args(args).output() {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim().to_owned()
+        }
+        Ok(output) => format!("exit status {}", output.status),
+        Err(err) => format!("error: {err}"),
+    }
 }
 
 pub(super) fn git_worktree_dirty_excluding(paths: &[PathBuf]) -> bool {

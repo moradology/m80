@@ -278,6 +278,34 @@ def quiet_substrate(data: Any, label: str, check: Check) -> None:
     verify_preflight_artifacts(substrate.get("preflight_artifacts"), label, check)
 
 
+def composed_runtime_substrate(data: Any, label: str, check: Check) -> None:
+    substrate = at(data, "substrate")
+    if not isinstance(substrate, dict):
+        return
+    host_kernel = substrate.get("host_kernel_release")
+    check.require(
+        kernel_version_at_least(host_kernel, 6, 5),
+        f"{label}: substrate.host_kernel_release must be >= 6.5",
+    )
+    firecracker_version = substrate.get("firecracker_version")
+    expected_version = at(data, "substrate.preflight_artifacts.expected_firecracker_version")
+    check.require(
+        isinstance(firecracker_version, str)
+        and isinstance(expected_version, str)
+        and expected_version in firecracker_version,
+        f"{label}: substrate.firecracker_version must include expected Firecracker version",
+    )
+    dev_kvm_stat = substrate.get("dev_kvm_stat")
+    check.require(
+        isinstance(dev_kvm_stat, str) and "/dev/kvm" in dev_kvm_stat and "rw" in dev_kvm_stat,
+        f"{label}: substrate.dev_kvm_stat must prove /dev/kvm is rw",
+    )
+    check.require(
+        substrate.get("sudo_uid") == "0",
+        f"{label}: substrate.sudo_uid must be 0",
+    )
+
+
 def verify_preflight_artifacts(artifacts: Any, label: str, check: Check) -> None:
     check.require(isinstance(artifacts, dict), f"{label}: missing substrate.preflight_artifacts object")
     if not isinstance(artifacts, dict):
@@ -1048,6 +1076,7 @@ def verify_composed_restore(path: Path) -> list[str]:
         if is_number(p99):
             check.require(p99 <= 200.0, f"composed restore: p99_ms {p99} exceeds 200")
     quiet_substrate(data, "composed restore", check)
+    composed_runtime_substrate(data, "composed restore", check)
     return check.errors
 
 
@@ -1250,6 +1279,7 @@ def verify_composed_memory(path: Path) -> list[str]:
                     "composed memory: layout logical and on-disk size must match",
                 )
     quiet_substrate(data, "composed memory", check)
+    composed_runtime_substrate(data, "composed memory", check)
     return check.errors
 
 
@@ -1340,6 +1370,7 @@ def verify_composed_residue(path: Path) -> list[str]:
                 "composed residue: template_store preserved must equal expected_fingerprint",
             )
     quiet_substrate(data, "composed residue", check)
+    composed_runtime_substrate(data, "composed residue", check)
     return check.errors
 
 
@@ -1429,6 +1460,20 @@ def verify_composed_doc_consistency(
             check.require(
                 isinstance(value, str) and value in text,
                 f"composed doc: missing substrate.preflight_artifacts.{field} from JSON artifacts",
+            )
+
+    substrate_fields = [
+        ("host_kernel_release", "host kernel release"),
+        ("firecracker_version", "Firecracker version"),
+        ("dev_kvm_stat", "/dev/kvm stat"),
+        ("sudo_uid", "sudo uid"),
+    ]
+    for field, label in substrate_fields:
+        value = at(restore, f"substrate.{field}")
+        if isinstance(value, str):
+            check.require(
+                f"{label}: `{value}`" in text,
+                f"composed doc: missing substrate.{field} from JSON artifact",
             )
 
     shared_digest = at(memory, "data.host_memory.shared_image_digest")
@@ -2527,6 +2572,10 @@ def run_self_tests() -> int:
             "preexisting_firecracker_processes": [],
             "post_run_firecracker_processes": [],
             "preflight_artifacts": preflight_artifacts,
+            "host_kernel_release": "6.17.0-23-generic",
+            "firecracker_version": "Firecracker v1.15.1",
+            "dev_kvm_stat": "crw-rw---- root:kvm /dev/kvm",
+            "sudo_uid": "0",
         }
         snapshot.write_text(json.dumps({
             "schema_version": 1,
@@ -2993,6 +3042,13 @@ sudo -n env \
 
 Host: Linux 6.17.0 x86_64, Firecracker v1.15.1, real `/dev/kvm` rw,
 real jailer, noninteractive sudo.
+
+Substrate details:
+
+- host kernel release: `6.17.0-23-generic`
+- Firecracker version: `Firecracker v1.15.1`
+- /dev/kvm stat: `crw-rw---- root:kvm /dev/kvm`
+- sudo uid: `0`
 
 Page cache was not dropped inside the run.
 
@@ -3678,6 +3734,26 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore_bad_page_cache_status = quiet_run_checks(args)
         restore_bad["page_cache_dropped_between_leases"] = False
         restore.write_text(json.dumps(restore_bad))
+        restore_bad["substrate"]["host_kernel_release"] = "6.1.0"
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_host_kernel_status = quiet_run_checks(args)
+        restore_bad["substrate"]["host_kernel_release"] = "6.17.0-23-generic"
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["substrate"]["dev_kvm_stat"] = "cr-------- root:kvm /dev/kvm"
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_kvm_status = quiet_run_checks(args)
+        restore_bad["substrate"]["dev_kvm_stat"] = "crw-rw---- root:kvm /dev/kvm"
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["substrate"]["sudo_uid"] = "1000"
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_sudo_status = quiet_run_checks(args)
+        restore_bad["substrate"]["sudo_uid"] = "0"
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad["substrate"]["firecracker_version"] = "Firecracker v9.99.0"
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_firecracker_version_status = quiet_run_checks(args)
+        restore_bad["substrate"]["firecracker_version"] = "Firecracker v1.15.1"
+        restore.write_text(json.dumps(restore_bad))
         restore_bad["data"]["restore_latency"]["target_ready"] = 9
         restore.write_text(json.dumps(restore_bad))
         restore_bad_target_ready_status = quiet_run_checks(args)
@@ -3952,6 +4028,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 1,
             )
         )
+        composed_doc_bad_substrate = composed_doc.read_text().replace(
+            "- host kernel release: `6.17.0-23-generic`",
+            "- host kernel release: `6.1.0`",
+        )
+        composed_doc.write_text(composed_doc_bad_substrate)
+        missing_doc_substrate_status = quiet_run_checks(args)
+        composed_doc.write_text(
+            composed_doc_bad_substrate.replace(
+                "- host kernel release: `6.1.0`",
+                "- host kernel release: `6.17.0-23-generic`",
+            )
+        )
         args.only = ["snapshot-template"]
         bad = json.loads(snapshot.read_text())
         bad["substrate"]["allow_other_firecracker_vms"] = True
@@ -4119,6 +4207,10 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or quiet_host_inventory_not_executable_status == 0
             or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
+            or restore_bad_host_kernel_status == 0
+            or restore_bad_kvm_status == 0
+            or restore_bad_sudo_status == 0
+            or restore_bad_firecracker_version_status == 0
             or restore_bad_target_ready_status == 0
             or restore_bad_exact_n_status == 0
             or restore_bad_sample_count_status == 0
@@ -4148,6 +4240,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or missing_doc_json_identity_status == 0
             or missing_doc_residue_root_status == 0
             or missing_doc_restore_number_status == 0
+            or missing_doc_substrate_status == 0
             or bad_status == 0
             or not valid_head_close_reason
             or not short_full_commit_match
