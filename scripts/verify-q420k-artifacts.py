@@ -678,6 +678,25 @@ def verify_pmem_density(path: Path) -> list[str]:
         check.require(False, "pmem density: missing Firecracker process substrate JSON block")
     else:
         quiet_substrate({"substrate": substrate}, "pmem density", check)
+        preflight = substrate.get("preflight_artifacts")
+        if command is not None and isinstance(preflight, dict):
+            for env, field in [
+                ("M80_FIRECRACKER_BIN", "firecracker_bin"),
+                ("M80_JAILER_BIN", "jailer_bin"),
+                ("M80_FIRECRACKER_SECCOMP_FILTER", "firecracker_seccomp_filter"),
+                ("M80_JAILER_HARDEN_BIN", "jailer_harden_bin"),
+                ("M80_NET_HELPER_BIN", "net_helper_bin"),
+                ("M80_KERNEL_IMAGE", "kernel_image"),
+                ("M80_ROOTFS_IMAGE", "rootfs_image"),
+                ("M80_FIRECRACKER_VERSION", "expected_firecracker_version"),
+                ("M80_KERNEL_KIND", "kernel_kind"),
+            ]:
+                value = preflight.get(field)
+                if isinstance(value, str):
+                    check.require(
+                        f"{env}={value}" in command,
+                        f"pmem density: reproduction command missing {env} from preflight {field}",
+                    )
     return check.errors
 
 
@@ -2762,6 +2781,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- image path: `/var/lib/m80-images/22/2222222222222222222222222222222222222222222222222222222222222222/image.erofs`",
             "- image path: `/var/lib/m80-images/11/1111111111111111111111111111111111111111111111111111111111111111/image.erofs`",
         ))
+        density_bad_preflight_command = density.read_text().replace(
+            "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux",
+            "M80_KERNEL_IMAGE=/tmp/vmlinux",
+        )
+        density.write_text(density_bad_preflight_command)
+        density_bad_preflight_command_status = quiet_run_checks(args)
+        density.write_text(density_bad_preflight_command.replace(
+            "M80_KERNEL_IMAGE=/tmp/vmlinux",
+            "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux",
+        ))
         density_bad_repro = density.read_text().replace(
             "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 ",
             "",
@@ -3121,6 +3150,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_bound_status == 0
             or density_bad_digest_status == 0
             or density_bad_image_path_status == 0
+            or density_bad_preflight_command_status == 0
             or density_bad_reproduction_command_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0

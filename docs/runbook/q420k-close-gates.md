@@ -134,7 +134,9 @@ artifact guard also requires the trust-model text that the parent close/PR
 description must paste or cite: `TrustDomainAck`, same trust domain, DAX
 cache-timing side channel, and read-only Shared pmem jail bindings. It also
 requires the measured Shared image digest to be a lowercase sha256 and its
-image path to be absolute and to contain that digest.
+image path to be absolute and to contain that digest. The reproduction command
+must also match the Firecracker, jailer, helper, kernel, rootfs, version, and
+kernel-kind values in the artifact's `preflight_artifacts` block.
 
 After committing the artifact, rerun the close guard with git-state checks:
 
