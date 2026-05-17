@@ -43,6 +43,8 @@ fn main() {
     let git_commit = git_head_commit();
     let vcpu_count = env_nonzero_u32("M80_SNAPSHOT_BENCH_VCPU_COUNT", FIRST_LINE_VCPU_COUNT);
     let mem_size_mib = env_nonzero_u32("M80_SNAPSHOT_BENCH_MEM_SIZE_MIB", FIRST_LINE_MEM_SIZE_MIB);
+    let jail_uid = env_u32("M80_JAIL_UID", 3000);
+    let jail_gid = env_u32("M80_JAIL_GID", 3000);
     let started_at = unix_timestamp();
     let discovery = m80_preflight::run().expect("preflight");
     let store_root = discovery.run_root.join("warm").join(format!(
@@ -68,6 +70,8 @@ fn main() {
             n,
             vcpu_count,
             mem_size_mib,
+            jail_uid,
+            jail_gid,
         ));
     }
 
@@ -85,6 +89,8 @@ fn main() {
         target_ready: 1,
         vcpu_count,
         mem_size_mib,
+        jail_uid,
+        jail_gid,
         store_root: &store_root,
         discovery: &discovery,
         allow_other_firecracker_vms,
@@ -116,8 +122,10 @@ fn run_one(
     n: usize,
     vcpu_count: u32,
     mem_size_mib: u32,
+    jail_uid: u32,
+    jail_gid: u32,
 ) -> RunResult {
-    let backend = make_backend(discovery, 4);
+    let backend = make_backend(discovery, 4, jail_uid, jail_gid);
     let hooks = measurement_hooks();
     let pool = WarmPool::new(
         Arc::clone(&backend),
@@ -201,15 +209,20 @@ fn true_request() -> ExecRequest {
     }
 }
 
-fn make_backend(discovery: m80_preflight::Discovery, max_concurrent_vms: u32) -> Arc<Backend> {
+fn make_backend(
+    discovery: m80_preflight::Discovery,
+    max_concurrent_vms: u32,
+    jail_uid: u32,
+    jail_gid: u32,
+) -> Arc<Backend> {
     let run_root = discovery.run_root.clone();
     Arc::new(
         Backend::new(
             BackendConfig::builder(discovery)
                 .max_concurrent_vms(max_concurrent_vms)
                 .run_root(run_root)
-                .jail_uid(env_u32("M80_JAIL_UID", 3000))
-                .jail_gid(env_u32("M80_JAIL_GID", 3000))
+                .jail_uid(jail_uid)
+                .jail_gid(jail_gid)
                 .cgroup_mode(CgroupMode::Disabled)
                 .build(),
         )
@@ -365,6 +378,8 @@ struct BenchReport<'a> {
     target_ready: usize,
     vcpu_count: u32,
     mem_size_mib: u32,
+    jail_uid: u32,
+    jail_gid: u32,
     store_root: &'a Path,
     discovery: &'a m80_preflight::Discovery,
     allow_other_firecracker_vms: bool,
@@ -395,6 +410,9 @@ fn render_json(report: &BenchReport<'_>) -> String {
         "target_ready": report.target_ready,
         "vcpu_count": report.vcpu_count,
         "mem_size_mib": report.mem_size_mib,
+        "jail_uid": report.jail_uid,
+        "jail_gid": report.jail_gid,
+        "cgroup_mode": "disabled",
         "page_cache_dropped_between_samples": true,
         "git_worktree_dirty_excluding_artifact": report.git_worktree_dirty_excluding_artifact,
         "git_commit": report.git_commit,
@@ -467,6 +485,9 @@ fn reproduction_command(report: &BenchReport<'_>) -> String {
             "M80_SNAPSHOT_BENCH_MEM_SIZE_MIB",
             &report.mem_size_mib.to_string(),
         ),
+        env_assignment("M80_JAIL_UID", &report.jail_uid.to_string()),
+        env_assignment("M80_JAIL_GID", &report.jail_gid.to_string()),
+        env_assignment("M80_CGROUP_MODE", "disabled"),
         env_assignment(
             "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT",
             &report.output.display().to_string(),

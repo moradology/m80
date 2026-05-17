@@ -262,6 +262,9 @@ def verify_snapshot_template(path: Path) -> list[str]:
     require_number_at_least(check, "snapshot: n_per_run", data.get("n_per_run"), 20)
     require_number_at_least(check, "snapshot: runs", data.get("runs"), 3)
     require_number_at_least(check, "snapshot: samples_total", data.get("samples_total"), 60)
+    require_number_at_least(check, "snapshot: jail_uid", data.get("jail_uid"), 1)
+    require_number_at_least(check, "snapshot: jail_gid", data.get("jail_gid"), 1)
+    check.require(data.get("cgroup_mode") == "disabled", "snapshot: cgroup_mode must be disabled")
     check.require(
         data.get("page_cache_dropped_between_samples") is True,
         "snapshot: page_cache_dropped_between_samples must be true",
@@ -291,9 +294,17 @@ def require_snapshot_reproduction_command(data: dict[str, Any], check: Check) ->
         "M80_SNAPSHOT_TEMPLATE_RUNS=3",
         "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         "M80_KERNEL_KIND=stripped",
+        "M80_CGROUP_MODE=disabled",
         "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
     ]:
         check.require(required in command, f"snapshot: reproduction_command missing {required}")
+    for env, field in [
+        ("M80_JAIL_UID", "jail_uid"),
+        ("M80_JAIL_GID", "jail_gid"),
+    ]:
+        value = data.get(field)
+        if is_number(value):
+            check.require(f"{env}={int(value)}" in command, f"snapshot: reproduction_command missing {env}")
     preflight = at(data, "substrate.preflight_artifacts")
     if isinstance(preflight, dict):
         for env, field in [
@@ -325,6 +336,9 @@ def verify_snapshot_doc(path: Path) -> list[str]:
         "data.warm.restore_to_handback_ms.p99",
         "M80_SNAPSHOT_BENCH_LOAD=idle",
         "M80_KERNEL_KIND=stripped",
+        "M80_JAIL_UID=",
+        "M80_JAIL_GID=",
+        "M80_CGROUP_MODE=disabled",
         "N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3",
         "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
@@ -1621,6 +1635,9 @@ def run_self_tests() -> int:
             "n_per_run": 20,
             "runs": 3,
             "samples_total": 60,
+            "jail_uid": 1000,
+            "jail_gid": 1000,
+            "cgroup_mode": "disabled",
             "page_cache_dropped_between_samples": True,
             "git_worktree_dirty_excluding_artifact": False,
             "git_commit": git_commit,
@@ -1628,6 +1645,9 @@ def run_self_tests() -> int:
                 "M80_SNAPSHOT_BENCH_LOAD=idle "
                 "N=20 "
                 "M80_SNAPSHOT_TEMPLATE_RUNS=3 "
+                "M80_JAIL_UID=1000 "
+                "M80_JAIL_GID=1000 "
+                "M80_CGROUP_MODE=disabled "
                 "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json "
                 "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker "
                 "M80_JAILER_BIN=/opt/firecracker/bin/jailer "
@@ -1654,6 +1674,7 @@ Command:
 sudo -n env \
   M80_SNAPSHOT_BENCH_LOAD=idle \
   M80_KERNEL_KIND=stripped \
+  M80_JAIL_UID=1000 M80_JAIL_GID=1000 M80_CGROUP_MODE=disabled \
   N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3 \
   M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json \
   cargo bench -p m80-firecracker --bench snapshot_template_restore_latency
@@ -2181,6 +2202,17 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_KERNEL_KIND=stripped",
         )
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_JAIL_UID=1000 ",
+            "",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_jail_uid_reproduction_command_status = quiet_run_checks(args)
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=",
+            "M80_JAIL_UID=1000 M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
         args.only = ["snapshot-doc"]
         snapshot_doc_bad = snapshot_doc.read_text().replace(
             "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
@@ -2492,6 +2524,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or stock_kernel_status == 0
             or bad_git_commit_status == 0
             or bad_snapshot_reproduction_command_status == 0
+            or bad_snapshot_jail_uid_reproduction_command_status == 0
             or snapshot_doc_bad_smoke_status == 0
             or snapshot_doc_bad_kernel_kind_status == 0
             or density_bad_teardown_status == 0

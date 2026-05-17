@@ -31,7 +31,8 @@ under `substrate`. Close-quality JSON also records an empty
 and a `substrate.preflight_artifacts` object naming the resolved
 Firecracker/jailer/kernel/rootfs inputs and manifest sha256s. The JSON also
 records the full measured `git_commit` and a `reproduction_command` that
-includes the measured Firecracker, jailer, helper, kernel, and rootfs paths.
+includes the measured Firecracker, jailer, helper, kernel, rootfs, run-root,
+jail UID/GID, and disabled cgroup-mode inputs.
 
 ## Command
 
