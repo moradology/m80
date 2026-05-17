@@ -915,6 +915,13 @@ def verify_composed_doc_consistency(
     preflight = at(restore, "substrate.preflight_artifacts")
     if isinstance(preflight, dict):
         for field in [
+            "firecracker_bin",
+            "firecracker_seccomp_filter",
+            "jailer_bin",
+            "jailer_harden_bin",
+            "net_helper_bin",
+            "kernel_image",
+            "rootfs_image",
             "expected_firecracker_version",
             "kernel_image_sha256",
             "rootfs_image_sha256",
@@ -988,6 +995,7 @@ def verify_composed_doc(path: Path) -> list[str]:
         "M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden",
         "M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper",
         "M80_ROOTFS_IMAGE=",
+        "M80_KERNEL_IMAGE=",
         "M80_KERNEL_KIND=stripped",
         "--ignored composed_e2e_layered_warm_pool --nocapture",
         "Host:",
@@ -2169,7 +2177,8 @@ sudo -n env \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
   M80_JAILER_HARDEN_BIN=/opt/m80/bin/m80-jailer-harden \
   M80_NET_HELPER_BIN=/opt/m80/bin/m80-net-helper \
-  M80_ROOTFS_IMAGE=<real-rootfs.ext4> \
+  M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 \
+  M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux \
   M80_KERNEL_KIND=stripped \
   cargo test --release -p m80-firecracker --test e2e_composed_real_kvm -- \
     --ignored composed_e2e_layered_warm_pool --nocapture
@@ -2183,9 +2192,18 @@ Page cache was not dropped inside the run.
 Measured git commit:
 `cccccccccccccccccccccccccccccccccccccccc`
 
-Preflight artifacts: Firecracker `v1.15.1`, kernel
-`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`, rootfs
-`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`.
+Preflight artifacts:
+
+- firecracker_bin: `/opt/firecracker/bin/firecracker`
+- firecracker_seccomp_filter: `/opt/firecracker/bin/firecracker-seccomp-filter.bin`
+- jailer_bin: `/opt/firecracker/bin/jailer`
+- jailer_harden_bin: `/opt/m80/bin/m80-jailer-harden`
+- net_helper_bin: `/opt/m80/bin/m80-net-helper`
+- kernel_image: `/var/lib/m80/kernels/vmlinux`
+- rootfs_image: `/var/lib/m80/rootfs.ext4`
+- expected_firecracker_version: `v1.15.1`
+- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+- rootfs_image_sha256: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`
 
 Shared image digest:
 `1111111111111111111111111111111111111111111111111111111111111111`
