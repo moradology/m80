@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import re
@@ -2599,7 +2600,7 @@ def kernel_version_at_least(value: Any, major: int, minor: int) -> bool:
 def verify_committed_artifacts(check_specs: list[tuple[str, str, Any, Path]]) -> list[str]:
     errors: list[str] = []
     for key, label, _, path in check_specs:
-        if key == "close-artifact-paths":
+        if key in {"close-artifact-paths", "prepared-inputs"}:
             continue
         try:
             rel_path = path.resolve().relative_to(ROOT)
@@ -2630,6 +2631,117 @@ def verify_close_artifact_paths(_: Path) -> list[str]:
         if git_ok(["check-ignore", "-q", "--", rel]):
             errors.append(f"close artifact path: path is ignored by git: {rel}")
     return errors
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def run_stdout(argv: list[str]) -> str | None:
+    try:
+        result = subprocess.run(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def require_prepared_input(
+    check: Check,
+    label: str,
+    raw_path: str,
+    expected_sha256: str,
+    executable: bool,
+) -> None:
+    path = Path(raw_path)
+    check.require(path.is_file(), f"prepared input {label}: missing file {raw_path}")
+    if not path.is_file():
+        return
+    if executable:
+        check.require(
+            path.stat().st_mode & 0o111 != 0,
+            f"prepared input {label}: file must be executable",
+        )
+    actual = sha256_file(path)
+    check.require(
+        actual == expected_sha256,
+        f"prepared input {label}: sha256 {actual} != {expected_sha256}",
+    )
+
+
+def verify_prepared_inputs(_: Path) -> list[str]:
+    check = Check()
+    require_prepared_input(
+        check,
+        "stripped kernel",
+        PREPARED_STRIPPED_KERNEL_IMAGE,
+        PREPARED_STRIPPED_KERNEL_SHA256,
+        executable=True,
+    )
+    require_prepared_input(
+        check,
+        "rootfs",
+        PREPARED_ROOTFS_IMAGE,
+        PREPARED_ROOTFS_SHA256,
+        executable=False,
+    )
+    require_prepared_input(
+        check,
+        "Firecracker",
+        "/opt/firecracker/bin/firecracker",
+        PREPARED_FIRECRACKER_SHA256,
+        executable=True,
+    )
+    require_prepared_input(
+        check,
+        "jailer",
+        "/opt/firecracker/bin/jailer",
+        PREPARED_JAILER_SHA256,
+        executable=True,
+    )
+    require_prepared_input(
+        check,
+        "seccomp filter",
+        "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+        PREPARED_SECCOMP_SHA256,
+        executable=False,
+    )
+    require_prepared_input(
+        check,
+        "jailer harden helper",
+        "/opt/m80/bin/m80-jailer-harden",
+        PREPARED_JAILER_HARDEN_SHA256,
+        executable=True,
+    )
+    require_prepared_input(
+        check,
+        "network helper",
+        "/opt/m80/bin/m80-net-helper",
+        PREPARED_NET_HELPER_SHA256,
+        executable=True,
+    )
+    firecracker_version = run_stdout(["/opt/firecracker/bin/firecracker", "--version"])
+    check.require(
+        isinstance(firecracker_version, str) and "Firecracker v1.15.1" in firecracker_version,
+        "prepared input Firecracker: --version must include Firecracker v1.15.1",
+    )
+    jailer_version = run_stdout(["/opt/firecracker/bin/jailer", "--version"])
+    check.require(
+        isinstance(jailer_version, str) and "Jailer v1.15.1" in jailer_version,
+        "prepared input jailer: --version must include Jailer v1.15.1",
+    )
+    return check.errors
 
 
 def verify_closed_beads(check_specs: list[tuple[str, str, Any, Path]]) -> list[str]:
@@ -3012,6 +3124,7 @@ def run_checks(args: argparse.Namespace) -> int:
         ),
     ]
     optional_check_specs = [
+        ("prepared-inputs", "prepared host inputs", verify_prepared_inputs, ROOT),
         ("ext4-overlay", "ext4 overlay", verify_ext4_overlay, artifact_path(args.ext4_overlay)),
         (
             "dax-memory-pressure",
@@ -5686,6 +5799,7 @@ def parser() -> argparse.ArgumentParser:
             "snapshot-doc",
             "close-artifact-paths",
             "quiet-host-inventory",
+            "prepared-inputs",
             "pmem-density",
             "pmem-density-smoke",
             "pmem-density-runbook",

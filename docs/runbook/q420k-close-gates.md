@@ -100,6 +100,17 @@ above and the command must set `M80_KERNEL_KIND=stripped`. `m80-preflight`
 applies that override to the emitted `preflight_artifacts`; verified-close
 artifacts must report the stripped runtime kernel and the rootfs sha256 above.
 
+Before requesting the quiet window on `vulcan`, validate these staged inputs on
+that host:
+
+```sh
+python3 scripts/verify-q420k-artifacts.py --only prepared-inputs
+```
+
+This is a host-local staging check, not final close evidence. The final close
+still depends on the quiet-host measurement artifacts and verified close
+reasons below.
+
 The helper is equivalent to this manual inventory. To identify the owner
 without changing host state, capture the process tree and cgroup first:
 
