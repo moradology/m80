@@ -1388,12 +1388,13 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
 def verify_ext4_overlay(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
+    command = markdown_shell_block(text)
     check.require(
         text.startswith("# Ext4 Overlay-Template Clone Measurement"),
         "ext4 overlay: title mismatch",
     )
     check.require(
-        "```sh\nM80_RUN_EXT4_OVERLAY_TEMPLATE_CLONE=1" in text,
+        command is not None,
         "ext4 overlay: missing reproduction command block",
     )
     check.require(
@@ -1410,34 +1411,98 @@ def verify_ext4_overlay(path: Path) -> list[str]:
     )
 
     fstype = markdown_text(text, r"- host filesystem: `([^`]+)` mounted")
+    kernel = markdown_text(text, r"- kernel: `([^`]+)`")
+    run_root = markdown_text(text, r"- run root: `([^`]+)`")
+    artifact = markdown_text(text, r"- artifact: `([^`]+)`")
+    commit = markdown_text(text, r"- commit: `([^`]+)`")
     substrate_kind = markdown_text(text, r"- substrate kind: `([^`]+)`")
+    overlay_size = markdown_int(text, r"- overlay size bytes: `(\d+)`")
+    template_size = markdown_int(text, r"- template logical size bytes: `(\d+)`")
+    template_allocated = markdown_int(text, r"- template allocated bytes after hole digging: `(\d+)`")
+    clone_mode = markdown_text(text, r"- clone mode: `([^`]+)`")
     samples = markdown_int(text, r"- samples: `(\d+)`")
     p50 = markdown_float(text, r"- phase_3b_rootfs_prepare p50_ms: `([^`]+)`")
     p95 = markdown_float(text, r"- phase_3b_rootfs_prepare p95_ms: `([^`]+)`")
     p99 = markdown_float(text, r"- phase_3b_rootfs_prepare p99_ms: `([^`]+)`")
+    min_ms = markdown_float(text, r"- phase_3b_rootfs_prepare min_ms: `([^`]+)`")
+    max_ms = markdown_float(text, r"- phase_3b_rootfs_prepare max_ms: `([^`]+)`")
     leaked_dm = markdown_int(text, r"- leaked dm devices: `(\d+)`")
+    mounts_before = markdown_int(text, r"- mount entries under run root before: `(\d+)`")
+    mounts_after = markdown_int(text, r"- mount entries under run root after: `(\d+)`")
     leaked_mounts = markdown_int(text, r"- leaked mounts: `(\d+)`")
+    run_root_removed = markdown_text(text, r"- run root removed: `([^`]+)`")
     threshold_result = markdown_text(text, r"- threshold result: `([^`]+)`")
 
     check.require(fstype == "ext4", "ext4 overlay: host filesystem must be ext4")
+    check.require(isinstance(kernel, str) and bool(kernel), "ext4 overlay: kernel missing")
+    check.require(
+        isinstance(run_root, str) and run_root.startswith("/"),
+        "ext4 overlay: run root must be an absolute path",
+    )
+    check.require(
+        isinstance(artifact, str) and artifact.endswith("docs/perf/ext4-overlay-template-clone.md"),
+        "ext4 overlay: artifact path must name docs/perf/ext4-overlay-template-clone.md",
+    )
+    check.require(
+        isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit) is not None,
+        "ext4 overlay: commit must be a full 40-character commit sha",
+    )
     check.require(
         substrate_kind in {"storage-only", "real-kvm"},
         "ext4 overlay: substrate kind must be storage-only or real-kvm",
     )
+    check.require(
+        clone_mode == "byte-copy fallback",
+        "ext4 overlay: clone mode must be byte-copy fallback",
+    )
+    check.require(is_number(overlay_size) and overlay_size > 0, "ext4 overlay: overlay size must be > 0")
+    check.require(is_number(template_size) and template_size > 0, "ext4 overlay: template size must be > 0")
+    check.require(
+        is_number(template_allocated) and template_allocated > 0,
+        "ext4 overlay: template allocated bytes must be > 0",
+    )
+    if is_number(template_size) and is_number(template_allocated):
+        check.require(
+            template_allocated <= template_size,
+            "ext4 overlay: template allocated bytes must not exceed logical size",
+        )
     require_number_at_least(check, "ext4 overlay: samples", samples, 30)
     check.require(is_number(p50), "ext4 overlay: p50_ms must be numeric")
     check.require(is_number(p95), "ext4 overlay: p95_ms must be numeric")
     check.require(is_number(p99), "ext4 overlay: p99_ms must be numeric")
+    check.require(is_number(min_ms), "ext4 overlay: min_ms must be numeric")
+    check.require(is_number(max_ms), "ext4 overlay: max_ms must be numeric")
+    if all(is_number(value) for value in [min_ms, p50, p95, p99, max_ms]):
+        check.require(
+            min_ms <= p50 <= p95 <= p99 <= max_ms,
+            "ext4 overlay: latency percentiles must be ordered min <= p50 <= p95 <= p99 <= max",
+        )
     if is_number(p50):
         check.require(p50 <= 80.0, f"ext4 overlay: p50_ms {p50} exceeds 80")
     if is_number(p95):
         check.require(p95 <= 100.0, f"ext4 overlay: p95_ms {p95} exceeds 100")
     check.require(leaked_dm == 0, "ext4 overlay: leaked dm devices must be 0")
+    check.require(is_number(mounts_before), "ext4 overlay: mount entries before must be numeric")
+    check.require(is_number(mounts_after), "ext4 overlay: mount entries after must be numeric")
     check.require(leaked_mounts == 0, "ext4 overlay: leaked mounts must be 0")
+    check.require(run_root_removed == "true", "ext4 overlay: run root removed must be true")
     check.require(
         threshold_result == "keep byte-copy fallback",
         "ext4 overlay: threshold result must be keep byte-copy fallback",
     )
+    if command is not None:
+        for token in [
+            "M80_RUN_EXT4_OVERLAY_TEMPLATE_CLONE=1",
+            f"M80_EXT4_OVERLAY_TEMPLATE_SAMPLES={samples}",
+            "M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=",
+            "M80_EXT4_OVERLAY_TEMPLATE_ARTIFACT=",
+            "cargo test -p m80-storage --test ext4_overlay_template_clone -- --ignored --nocapture",
+        ]:
+            check.require(token in command, f"ext4 overlay: reproduction command missing {token}")
+        if isinstance(run_root, str):
+            check.require(run_root in command, "ext4 overlay: reproduction command missing measured run root")
+        if isinstance(artifact, str):
+            check.require(artifact in command, "ext4 overlay: reproduction command missing measured artifact path")
     return check.errors
 
 
@@ -2646,6 +2711,11 @@ Bead: `m80-q420k.8.16`.
 ## Substrate
 
 - host filesystem: `ext4` mounted at `/` from `/dev/nvme1n1p2`
+- filesystem options: `rw,relatime`
+- kernel: `6.17.0-23-generic`
+- run root: `/var/tmp/m80-ext4-overlay-template-clone`
+- artifact: `docs/perf/ext4-overlay-template-clone.md`
+- commit: `cccccccccccccccccccccccccccccccccccccccc`
 - git worktree dirty excluding this artifact: `false`
 - substrate kind: `storage-only`
 - command:
@@ -2658,12 +2728,21 @@ M80_EXT4_OVERLAY_TEMPLATE_ARTIFACT=docs/perf/ext4-overlay-template-clone.md \
 cargo test -p m80-storage --test ext4_overlay_template_clone -- --ignored --nocapture
 ```
 
+## Overlay Template
+
+- overlay size bytes: `67108864`
+- template logical size bytes: `67108864`
+- template allocated bytes after hole digging: `4440064`
+- clone mode: `byte-copy fallback` (`ext4` is classified non-reflink by the runtime gate)
+
 ## Observable
 
 - samples: `30`
 - phase_3b_rootfs_prepare p50_ms: `7.000`
 - phase_3b_rootfs_prepare p95_ms: `8.000`
 - phase_3b_rootfs_prepare p99_ms: `9.000`
+- phase_3b_rootfs_prepare min_ms: `6.000`
+- phase_3b_rootfs_prepare max_ms: `9.000`
 - threshold result: `keep byte-copy fallback`
 
 ## Device-Mapper Comparison
@@ -2674,7 +2753,10 @@ dm-snapshot was not prototyped in this run.
 
 ## Teardown Residue
 
+- mount entries under run root before: `0`
+- mount entries under run root after: `0`
 - leaked mounts: `0`
+- run root removed: `true`
 """
         )
         dax_pressure.write_text(
@@ -2776,6 +2858,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
         ext4_overlay.write_text(ext4_bad.replace(
             "- phase_3b_rootfs_prepare p95_ms: `101.000`",
             "- phase_3b_rootfs_prepare p95_ms: `8.000`",
+        ))
+        ext4_bad_command = ext4_overlay.read_text().replace(
+            "M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=/var/tmp/m80-ext4-overlay-template-clone",
+            "M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=/var/tmp/m80-other-root",
+        )
+        ext4_overlay.write_text(ext4_bad_command)
+        ext4_bad_command_status = quiet_run_checks(args)
+        ext4_overlay.write_text(ext4_bad_command.replace(
+            "M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=/var/tmp/m80-other-root",
+            "M80_EXT4_OVERLAY_TEMPLATE_RUN_ROOT=/var/tmp/m80-ext4-overlay-template-clone",
         ))
         args.only = ["dax-memory-pressure"]
         dax_status = quiet_run_checks(args)
@@ -3359,6 +3451,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or close_artifact_paths_ignored_status == 0
             or ext4_status != 0
             or ext4_bad_status == 0
+            or ext4_bad_command_status == 0
             or dax_status != 0
             or dax_bad_status == 0
             or dax_bad_reproduction_command_status == 0
