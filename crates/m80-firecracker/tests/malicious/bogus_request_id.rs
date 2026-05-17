@@ -34,22 +34,19 @@ fn bogus_request_id_returns_request_id_mismatch_with_expected_and_observed_ids()
         ),
         "expected request-id mismatch, got {err:?}"
     );
-    assert_diagnostics_contain(&run_dir, "request_id mismatch in exec exit");
-    assert_diagnostics_contain(&run_dir, "malicious-stale-request-id");
+    let diagnostics_path = run_dir.join("diagnostics.jsonl");
+    let diagnostics = std::fs::read_to_string(&diagnostics_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", diagnostics_path.display()));
+    for needle in ["request_id mismatch in exec exit", "malicious-stale-request-id"] {
+        assert!(
+            diagnostics.contains(needle),
+            "diagnostics did not contain {needle:?}:\n{diagnostics}"
+        );
+    }
 
     running
         .force_kill()
         .expect("force kill bogus-request-id malicious VM")
         .delete()
         .expect("delete bogus-request-id malicious VM");
-}
-
-fn assert_diagnostics_contain(run_dir: &std::path::Path, needle: &str) {
-    let path = run_dir.join("diagnostics.jsonl");
-    let diagnostics =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    assert!(
-        diagnostics.contains(needle),
-        "diagnostics did not contain {needle:?}:\n{diagnostics}"
-    );
 }

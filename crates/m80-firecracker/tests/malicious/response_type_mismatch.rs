@@ -29,9 +29,13 @@ fn response_type_mismatch_returns_malformed_peer_with_expected_and_observed_kind
         ),
         "expected malformed-peer response type mismatch, got {err:?}"
     );
-    assert_diagnostics_contain(
-        &run_dir,
-        "unexpected protobuf payload for exec_exit: file_read_response",
+    let diagnostics_path = run_dir.join("diagnostics.jsonl");
+    let diagnostics = std::fs::read_to_string(&diagnostics_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", diagnostics_path.display()));
+    let needle = "unexpected protobuf payload for exec_exit: file_read_response";
+    assert!(
+        diagnostics.contains(needle),
+        "diagnostics did not contain {needle:?}:\n{diagnostics}"
     );
 
     running
@@ -39,14 +43,4 @@ fn response_type_mismatch_returns_malformed_peer_with_expected_and_observed_kind
         .expect("force kill response-type-mismatch malicious VM")
         .delete()
         .expect("delete response-type-mismatch malicious VM");
-}
-
-fn assert_diagnostics_contain(run_dir: &std::path::Path, needle: &str) {
-    let path = run_dir.join("diagnostics.jsonl");
-    let diagnostics =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    assert!(
-        diagnostics.contains(needle),
-        "diagnostics did not contain {needle:?}:\n{diagnostics}"
-    );
 }

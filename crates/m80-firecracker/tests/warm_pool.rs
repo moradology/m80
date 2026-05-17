@@ -556,7 +556,7 @@ fn assert_no_run_dirs_with_prefix(run_root: &std::path::Path, prefix: &str) {
 }
 
 fn only_run_dir_with_prefix(run_root: &std::path::Path, prefix: &str) -> std::path::PathBuf {
-    let matches = std::fs::read_dir(run_root)
+    let mut matches = std::fs::read_dir(run_root)
         .unwrap_or_else(|e| panic!("read run root {}: {e}", run_root.display()))
         .filter_map(Result::ok)
         .filter(|entry| entry.file_name().to_string_lossy().starts_with(prefix))
@@ -567,7 +567,7 @@ fn only_run_dir_with_prefix(run_root: &std::path::Path, prefix: &str) -> std::pa
         1,
         "expected one run dir for {prefix}, got {matches:?}"
     );
-    matches.into_iter().next().expect("one match")
+    matches.remove(0)
 }
 
 fn firecracker_pid(run_dir: &std::path::Path) -> u32 {

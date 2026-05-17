@@ -29,21 +29,18 @@ fn unknown_variant_tag_returns_malformed_peer_with_field_number() {
         ),
         "expected malformed peer with unknown field detail, got {err:?}"
     );
-    assert_diagnostics_contain(&run_dir, "unknown envelope field: 255");
+    let diagnostics_path = run_dir.join("diagnostics.jsonl");
+    let diagnostics = std::fs::read_to_string(&diagnostics_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", diagnostics_path.display()));
+    let needle = "unknown envelope field: 255";
+    assert!(
+        diagnostics.contains(needle),
+        "diagnostics did not contain {needle:?}:\n{diagnostics}"
+    );
 
     running
         .force_kill()
         .expect("force kill unknown-variant malicious VM")
         .delete()
         .expect("delete unknown-variant malicious VM");
-}
-
-fn assert_diagnostics_contain(run_dir: &std::path::Path, needle: &str) {
-    let path = run_dir.join("diagnostics.jsonl");
-    let diagnostics =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    assert!(
-        diagnostics.contains(needle),
-        "diagnostics did not contain {needle:?}:\n{diagnostics}"
-    );
 }

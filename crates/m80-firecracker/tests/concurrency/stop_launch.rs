@@ -1,5 +1,4 @@
 use std::sync::{mpsc, Arc, Barrier};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_firecracker::{Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig};
 use m80_proto::{ExecRequest, ExecStatus};
@@ -25,7 +24,7 @@ fn concurrent_stop_launch_run_dir_race() {
 
     // vm_id stays short: AF_UNIX path budget is 107 bytes and m80-jailer's
     // nested layout uses vm_id twice.
-    let vm_id = format!("slr-{:04x}", unique_suffix() % 0x10000);
+    let vm_id = format!("slr-{:04x}", crate::common::unique_suffix() % 0x10000);
     let sandbox = backend.admit(config(&vm_id)).expect("admit first sandbox");
     let mut running = sandbox.launch().expect("launch first sandbox");
     let response = running.exec(true_request()).expect("exec true");
@@ -97,11 +96,4 @@ fn true_request() -> ExecRequest {
         timeout_ms: Some(5_000),
         streaming: false,
     }
-}
-
-fn unique_suffix() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before unix epoch")
-        .as_nanos()
 }

@@ -3,8 +3,6 @@
 //! We send an `Envelope<ExecRequest>` from the server side after the
 //! handshake, and receive it via `Channel::recv`.
 
-mod common;
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::time::{Duration, Instant};

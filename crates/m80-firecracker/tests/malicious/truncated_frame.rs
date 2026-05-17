@@ -44,20 +44,17 @@ fn truncated_frame_returns_disconnect_before_terminal_without_stuck_reader() {
         );
     });
 
-    assert_diagnostics_contain(&run_dir, "disconnect before terminal frame");
+    let diagnostics_path = run_dir.join("diagnostics.jsonl");
+    let diagnostics = std::fs::read_to_string(&diagnostics_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", diagnostics_path.display()));
+    let needle = "disconnect before terminal frame";
+    assert!(
+        diagnostics.contains(needle),
+        "diagnostics did not contain {needle:?}:\n{diagnostics}"
+    );
     running
         .force_kill()
         .expect("force kill truncated malicious VM")
         .delete()
         .expect("delete truncated malicious VM");
-}
-
-fn assert_diagnostics_contain(run_dir: &std::path::Path, needle: &str) {
-    let path = run_dir.join("diagnostics.jsonl");
-    let diagnostics =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    assert!(
-        diagnostics.contains(needle),
-        "diagnostics did not contain {needle:?}:\n{diagnostics}"
-    );
 }
