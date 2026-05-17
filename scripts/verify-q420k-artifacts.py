@@ -1046,6 +1046,7 @@ def verify_pmem_density(path: Path) -> list[str]:
         check.require(False, "pmem density: missing Firecracker process substrate JSON block")
     else:
         quiet_substrate({"substrate": substrate}, "pmem density", check)
+        runtime_substrate({"substrate": substrate}, "pmem density", check)
         preflight = substrate.get("preflight_artifacts")
         if command is not None and isinstance(preflight, dict):
             expected_version = preflight.get("expected_firecracker_version")
@@ -3272,6 +3273,10 @@ Command: `M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 M80_PMEM_SHARED_VM_COUNT=4 M80_PMEM_
   "allow_other_firecracker_vms": false,
   "preexisting_firecracker_processes": [],
   "post_run_firecracker_processes": [],
+  "host_kernel_release": "6.17.0-23-generic",
+  "firecracker_version": "Firecracker v1.15.1",
+  "dev_kvm_stat": "crw-rw---- root:kvm /dev/kvm",
+  "sudo_uid": "0",
   "preflight_artifacts": {
     "firecracker_bin": "/opt/firecracker/bin/firecracker",
     "firecracker_seccomp_filter": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
@@ -4423,6 +4428,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "- sudo: required; test ran as uid `1000`",
             "- sudo: required; test ran as uid `0`",
         ))
+        density_bad_substrate_runtime = density.read_text().replace(
+            '"host_kernel_release": "6.17.0-23-generic"',
+            '"host_kernel_release": "6.1.0"',
+        )
+        density.write_text(density_bad_substrate_runtime)
+        density_bad_substrate_runtime_status = quiet_run_checks(args)
+        density.write_text(density_bad_substrate_runtime.replace(
+            '"host_kernel_release": "6.1.0"',
+            '"host_kernel_release": "6.17.0-23-generic"',
+        ))
         density_bad_bound = density.read_text().replace(
             "- bound: `8192 KiB`",
             "- bound: `8193 KiB`",
@@ -5421,6 +5436,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_host_kernel_status == 0
             or density_bad_kvm_status == 0
             or density_bad_sudo_status == 0
+            or density_bad_substrate_runtime_status == 0
             or density_bad_bound_status == 0
             or density_bad_digest_status == 0
             or density_bad_image_path_status == 0

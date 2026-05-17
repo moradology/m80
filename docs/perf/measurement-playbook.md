@@ -149,7 +149,9 @@ Artifacts:
 
 Required interpretation: quiet-host substrate, host kernel >= 6.5, real
 `/dev/kvm` rw, sudo/root uid evidence, Firecracker version output matching
-preflight, page-cache drop before each cycle, `vm_count >= 4`, `cycles >= 10`,
+preflight in both the prose substrate lines and the Firecracker process
+substrate JSON block, page-cache drop before each cycle, `vm_count >= 4`,
+`cycles >= 10`,
 active-use marker count returns to zero after teardown, canonical Shared
 artifact remains present, stale-marker sweep removes zero markers, post-run
 Firecracker process list is empty, preflight artifact identity is present, max

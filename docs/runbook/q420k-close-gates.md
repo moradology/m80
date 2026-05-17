@@ -141,7 +141,8 @@ requires the `## Trust model` text that the parent close/PR description must
 paste or cite: `TrustDomainAck`, same trust domain, DAX cache-timing side
 channel, and read-only Shared pmem jail bindings. It also requires host kernel
 >= 6.5, `/dev/kvm` rw stat output, sudo/root uid evidence, and Firecracker
-version output matching preflight. The measured Shared image
+version output matching preflight in both the prose substrate lines and the
+Firecracker process substrate JSON block. The measured Shared image
 digest must be a lowercase sha256 and its image path must be absolute and must
 contain that digest. The reproduction command must also match the Firecracker,
 jailer, helper, kernel, rootfs, version, and kernel-kind values in the
