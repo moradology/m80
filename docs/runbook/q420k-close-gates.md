@@ -134,7 +134,9 @@ The `pmem-density` selector verifies both
 `docs/perf/pmem-shared-density.md` and `scripts/smoke-pmem-shared.sh`. The
 script must be executable, retain the quiet-host fail-closed guard in
 uncommented code, pass the exact helper/kernel/rootfs/run-root paths through
-sudo, and emit the artifact's reproduction command. The artifact guard also
+sudo, and emit the artifact's reproduction command. The selector also
+parses this section's shell command block, so env values copied elsewhere in
+the runbook do not satisfy the runnable close command. The artifact guard
 requires the `## Trust model` text that the parent close/PR description must
 paste or cite: `TrustDomainAck`, same trust domain, DAX cache-timing side
 channel, and read-only Shared pmem jail bindings. It also requires host kernel

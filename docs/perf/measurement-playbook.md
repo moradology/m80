@@ -175,8 +175,10 @@ That selector also checks `scripts/smoke-pmem-shared.sh`; the script must be
 executable, retain the quiet-host fail-closed guard in uncommented code, pass
 the exact helper/kernel/rootfs/run-root paths through sudo, emit the artifact's
 reproduction command, and be committed without mode or content drift when
-`--require-committed` is present. The density artifact's reproduction command
-is parsed as exact env assignments; prefix matches such as
+`--require-committed` is present. The runbook/playbook instruction checks parse
+the Shared-density shell command block; copies of env values elsewhere in the
+doc do not satisfy the runnable command. The density artifact's reproduction
+command is parsed as exact env assignments; prefix matches such as
 `M80_PMEM_SHARED_VM_COUNT=40` do not satisfy an expected
 `M80_PMEM_SHARED_VM_COUNT=4`.
 

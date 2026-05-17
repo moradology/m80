@@ -1128,7 +1128,13 @@ def verify_pmem_density_smoke(path: Path) -> list[str]:
 def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
+    section = markdown_section(text, "1. Shared Pmem Density")
+    if section is None:
+        section = markdown_section(text, "Q420K Shared Pmem Density")
+    command = markdown_shell_block(section) if section is not None else None
     check.require(path.is_file(), f"pmem density instruction doc: missing {path}")
+    check.require(section is not None, "pmem density instruction doc: missing Shared Pmem Density section")
+    check.require(command is not None, "pmem density instruction doc: missing command shell block")
     for required in [
         "M80_PMEM_SHARED_ALLOW_OTHER_VMS=0",
         "M80_PMEM_SHARED_VM_COUNT=4",
@@ -1149,9 +1155,18 @@ def verify_pmem_density_instruction_doc(path: Path) -> list[str]:
         "M80_JAIL_UID=",
         "M80_JAIL_GID=",
         "./scripts/smoke-pmem-shared.sh",
+    ]:
+        check.require(
+            command is not None and required in command,
+            f"pmem density instruction command: missing {required}",
+        )
+    for required in [
         "python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committed",
     ]:
-        check.require(required in text, f"pmem density instruction doc: missing {required}")
+        check.require(
+            section is not None and required in section,
+            f"pmem density instruction doc: missing {required}",
+        )
     return check.errors
 
 
@@ -3341,7 +3356,7 @@ timeout 1800 sudo -n env \
 """
         )
         density_smoke.chmod(0o755)
-        density_instruction = """# Shared Pmem Density
+        density_instruction = """## Q420K Shared Pmem Density
 
 ```sh
 M80_PMEM_SHARED_ALLOW_OTHER_VMS=0 \
@@ -4429,6 +4444,27 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_KERNEL_KIND=stock",
             "M80_KERNEL_KIND=stripped",
         ))
+        density_runbook_outside_command = (
+            close_runbook.read_text()
+            .replace("M80_RUN_ROOT=/var/lib/m80-psd ", "", 1)
+            .replace(
+                "## Q420K Shared Pmem Density\n\n",
+                "M80_RUN_ROOT=/var/lib/m80-psd\n\n## Q420K Shared Pmem Density\n\n",
+                1,
+            )
+        )
+        close_runbook.write_text(density_runbook_outside_command)
+        density_runbook_outside_command_status = quiet_run_checks(args)
+        close_runbook.write_text(
+            density_runbook_outside_command
+            .replace("M80_RUN_ROOT=/var/lib/m80-psd\n\n", "", 1)
+            .replace(
+                "M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md ",
+                "M80_PMEM_SHARED_DENSITY_ARTIFACT=docs/perf/pmem-shared-density.md "
+                "M80_RUN_ROOT=/var/lib/m80-psd ",
+                1,
+            )
+        )
         args.only = ["quiet-host-inventory"]
         quiet_host_inventory_status = quiet_run_checks(args)
         quiet_host_inventory.chmod(0o644)
@@ -5100,6 +5136,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_runbook_status != 0
             or density_runbook_bad_allow_other_status == 0
             or density_runbook_bad_kernel_kind_status == 0
+            or density_runbook_outside_command_status == 0
             or quiet_host_inventory_status != 0
             or quiet_host_inventory_not_executable_status == 0
             or quiet_host_inventory_mutating_status == 0
