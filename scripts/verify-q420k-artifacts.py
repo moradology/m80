@@ -888,6 +888,10 @@ def verify_composed_doc(path: Path) -> list[str]:
     check.require("test result: ok." in text, "composed doc: smoke evidence must show green test result")
     for required in [
         "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
+        "M80_COMPOSED_E2E_ALLOW_OTHER_VMS=0",
+        "M80_COMPOSED_E2E_N=10",
+        "M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32",
+        "M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots",
         "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
         "M80_JAILER_BIN=/opt/firecracker/bin/jailer",
         "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
@@ -925,6 +929,10 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
     check.require(path.is_file(), f"composed instruction doc: missing {path}")
     for required in [
         "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
+        "M80_COMPOSED_E2E_ALLOW_OTHER_VMS=0",
+        "M80_COMPOSED_E2E_N=10",
+        "M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32",
+        "M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots",
         "M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker",
         "M80_JAILER_BIN=/opt/firecracker/bin/jailer",
         "M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin",
@@ -1906,6 +1914,10 @@ python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committe
 
 ```sh
 sudo -n env \
+  M80_COMPOSED_E2E_ALLOW_OTHER_VMS=0 \
+  M80_COMPOSED_E2E_N=10 \
+  M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32 \
+  M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots \
   M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
   M80_JAILER_BIN=/opt/firecracker/bin/jailer \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
@@ -2008,6 +2020,10 @@ Command:
 
 ```sh
 sudo -n env \
+  M80_COMPOSED_E2E_ALLOW_OTHER_VMS=0 \
+  M80_COMPOSED_E2E_N=10 \
+  M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32 \
+  M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots \
   M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
   M80_JAILER_BIN=/opt/firecracker/bin/jailer \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \

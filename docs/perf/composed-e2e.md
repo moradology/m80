@@ -26,6 +26,10 @@ Command:
 ```sh
 sudo -n env \
   PATH="$PATH" HOME="$HOME" CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup" \
+  M80_COMPOSED_E2E_ALLOW_OTHER_VMS=0 \
+  M80_COMPOSED_E2E_N=10 \
+  M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB=32 \
+  M80_COMPOSED_E2E_OUT_DIR=/tank/projects/m80/crates/m80-firecracker/benches/snapshots \
   M80_RUN_ROOT=/var/lib/m80-composed-e2e \
   M80_JAIL_UID="$(id -u)" \
   M80_JAIL_GID="$(id -g)" \
