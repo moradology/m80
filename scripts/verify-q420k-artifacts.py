@@ -820,6 +820,9 @@ def verify_pmem_density(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
     check.require(text.startswith("# Shared pmem density"), "pmem density: title mismatch")
+    substrate_section = markdown_section(text, "Substrate") or ""
+    layout_section = markdown_section(text, "Payload erofs layout") or ""
+    trust_section = markdown_section(text, "Trust model") or ""
     command = markdown_text(text, r"Command: `([^`]+)`")
     host_kernel = markdown_text(text, r"- host kernel: `([^`]+)`")
     firecracker_version = markdown_text(text, r"- firecracker: `([^`]+)`")
@@ -985,11 +988,11 @@ def verify_pmem_density(path: Path) -> list[str]:
         "pmem density: canonical Shared artifact must remain after teardown",
     )
     check.require(
-        "dropped page cache before each cycle" in text,
+        "dropped page cache before each cycle" in substrate_section,
         "pmem density: missing page-cache-drop substrate statement",
     )
     check.require(
-        "The measured file is required to match the `.8.12` file-level DAX result" in text,
+        "The measured file is required to match the `.8.12` file-level DAX result" in layout_section,
         "pmem density: missing .8.12 layout interpretation",
     )
     for required in [
@@ -998,7 +1001,7 @@ def verify_pmem_density(path: Path) -> list[str]:
         "DAX cache-timing side channel",
         "Shared pmem jail bindings are read-only",
     ]:
-        check.require(required in text, f"pmem density: missing trust-model statement: {required}")
+        check.require(required in trust_section, f"pmem density: missing trust-model statement: {required}")
 
     substrate = markdown_json_block(text, "Firecracker process substrate")
     if substrate is None:
@@ -4286,6 +4289,21 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "M80_PMEM_SHARED_PER_VM_OVERHEAD_KIB=1024 M80_PMEM_SHARED_DENSITY_ARTIFACT=",
             )
         )
+        density_bad_trust_section = (
+            density.read_text()
+            .replace(
+                "## Trust model\n\nShared pmem is admitted only with `TrustDomainAck` in the same trust domain.\n",
+                "Outside trust: Shared pmem is admitted only with `TrustDomainAck` in the same trust domain.\n\n## Trust model\n\n",
+            )
+        )
+        density.write_text(density_bad_trust_section)
+        density_bad_trust_section_status = quiet_run_checks(args)
+        density.write_text(
+            density_bad_trust_section.replace(
+                "Outside trust: Shared pmem is admitted only with `TrustDomainAck` in the same trust domain.\n\n## Trust model\n\n",
+                "## Trust model\n\nShared pmem is admitted only with `TrustDomainAck` in the same trust domain.\n",
+            )
+        )
         args.only = ["pmem-density-smoke"]
         density_smoke_status = quiet_run_checks(args)
         density_smoke_bad_repro_command = density_smoke.read_text().replace(
@@ -4908,6 +4926,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_sample_status == 0
             or density_bad_exact_command_status == 0
             or density_bad_reproduction_command_status == 0
+            or density_bad_trust_section_status == 0
             or density_smoke_status != 0
             or density_smoke_bad_repro_command_status == 0
             or density_smoke_commented_guard_status == 0

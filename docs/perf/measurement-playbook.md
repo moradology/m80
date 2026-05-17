@@ -162,7 +162,7 @@ directly from the artifact:
 `stale markers swept after teardown`, and
 `canonical Shared artifact present after teardown`. The artifact must also
 carry the `TrustDomainAck`, same-trust-domain, DAX cache-timing side-channel,
-and read-only Shared jail-binding statements used by the parent close prose.
+and read-only Shared jail-binding statements in its `## Trust model` section.
 Before closing, after
 committing the artifact, run:
 
