@@ -60,6 +60,21 @@ PREPARED_STRIPPED_KERNEL_SHA256 = (
 PREPARED_ROOTFS_SHA256 = (
     "bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d"
 )
+PREPARED_FIRECRACKER_SHA256 = (
+    "7e8b57e88c459396d4680d83dcdd8c7f72305447cb55b11f4ac98ad70a3f7825"
+)
+PREPARED_JAILER_SHA256 = (
+    "4830a9b1fc6cece036d8992ff12f1fe9c5247aacad77f42c7aba683c7a08622e"
+)
+PREPARED_SECCOMP_SHA256 = (
+    "bf0485c9e016e69d26c478c605c52a47a3ddf2b148749898031f42cf379228c0"
+)
+PREPARED_JAILER_HARDEN_SHA256 = (
+    "bf01e083ea2ac36d73ed1ac00cd4dd3bde06b8a0c1b037efe88dd468696006ab"
+)
+PREPARED_NET_HELPER_SHA256 = (
+    "09d732c1fda809d76f13e6b931ec196112afe81ac370b286a6801d4d745d4b3b"
+)
 REQUIRED_CLOSE_BEADS = {
     "snapshot-template": "m80-q420k.4.15",
     "pmem-density": "m80-q420k.3.8",
@@ -1220,6 +1235,18 @@ def verify_prepared_close_input_text(text: str, check: Check) -> None:
         PREPARED_STRIPPED_KERNEL_SHA256,
         PREPARED_ROOTFS_IMAGE,
         PREPARED_ROOTFS_SHA256,
+        "/opt/firecracker/bin/firecracker",
+        PREPARED_FIRECRACKER_SHA256,
+        "Firecracker v1.15.1",
+        "/opt/firecracker/bin/jailer",
+        PREPARED_JAILER_SHA256,
+        "Jailer v1.15.1",
+        "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+        PREPARED_SECCOMP_SHA256,
+        "/opt/m80/bin/m80-jailer-harden",
+        PREPARED_JAILER_HARDEN_SHA256,
+        "/opt/m80/bin/m80-net-helper",
+        PREPARED_NET_HELPER_SHA256,
         "M80_KERNEL_KIND=stripped",
         "`m80-preflight`",
         "applies that override to the emitted `preflight_artifacts`",
@@ -3464,6 +3491,23 @@ Prepared `vulcan` close inputs:
   `{PREPARED_ROOTFS_IMAGE}`
 - rootfs sha256:
   `{PREPARED_ROOTFS_SHA256}`
+- Firecracker:
+  `/opt/firecracker/bin/firecracker`
+  `{PREPARED_FIRECRACKER_SHA256}`
+  `Firecracker v1.15.1`
+- jailer:
+  `/opt/firecracker/bin/jailer`
+  `{PREPARED_JAILER_SHA256}`
+  `Jailer v1.15.1`
+- seccomp filter:
+  `/opt/firecracker/bin/firecracker-seccomp-filter.bin`
+  `{PREPARED_SECCOMP_SHA256}`
+- jailer harden helper:
+  `/opt/m80/bin/m80-jailer-harden`
+  `{PREPARED_JAILER_HARDEN_SHA256}`
+- network helper:
+  `/opt/m80/bin/m80-net-helper`
+  `{PREPARED_NET_HELPER_SHA256}`
 
 The rootfs manifest may still record the stock kernel used when that rootfs was
 built. For q420k close-quality runs, the runtime kernel is the stripped kernel
@@ -4704,6 +4748,18 @@ The measured signal is acceptable under the same-trust-domain assumption.
             PREPARED_ROOTFS_SHA256,
             1,
         ))
+        density_runbook_bad_firecracker_sha = close_runbook.read_text().replace(
+            PREPARED_FIRECRACKER_SHA256,
+            "1" * 64,
+            1,
+        )
+        close_runbook.write_text(density_runbook_bad_firecracker_sha)
+        density_runbook_bad_firecracker_sha_status = quiet_run_checks(args)
+        close_runbook.write_text(density_runbook_bad_firecracker_sha.replace(
+            "1" * 64,
+            PREPARED_FIRECRACKER_SHA256,
+            1,
+        ))
         density_runbook_outside_command = (
             close_runbook.read_text()
             .replace("M80_RUN_ROOT=/var/lib/m80-psd ", "", 1)
@@ -5517,6 +5573,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_runbook_bad_allow_other_status == 0
             or density_runbook_bad_kernel_kind_status == 0
             or density_runbook_bad_prepared_sha_status == 0
+            or density_runbook_bad_firecracker_sha_status == 0
             or density_runbook_outside_command_status == 0
             or quiet_host_inventory_status != 0
             or quiet_host_inventory_not_executable_status == 0

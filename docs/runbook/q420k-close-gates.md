@@ -76,6 +76,23 @@ Prepared `vulcan` close inputs:
   `/tank/tmp/m80-build/post-restore-current/output.ext4`
 - rootfs sha256:
   `bfa35731760b9fbf06d41ffbfe500153d3247869dee75443dc836184b253613d`
+- Firecracker:
+  `/opt/firecracker/bin/firecracker`
+  `7e8b57e88c459396d4680d83dcdd8c7f72305447cb55b11f4ac98ad70a3f7825`
+  `Firecracker v1.15.1`
+- jailer:
+  `/opt/firecracker/bin/jailer`
+  `4830a9b1fc6cece036d8992ff12f1fe9c5247aacad77f42c7aba683c7a08622e`
+  `Jailer v1.15.1`
+- seccomp filter:
+  `/opt/firecracker/bin/firecracker-seccomp-filter.bin`
+  `bf0485c9e016e69d26c478c605c52a47a3ddf2b148749898031f42cf379228c0`
+- jailer harden helper:
+  `/opt/m80/bin/m80-jailer-harden`
+  `bf01e083ea2ac36d73ed1ac00cd4dd3bde06b8a0c1b037efe88dd468696006ab`
+- network helper:
+  `/opt/m80/bin/m80-net-helper`
+  `09d732c1fda809d76f13e6b931ec196112afe81ac370b286a6801d4d745d4b3b`
 
 The rootfs manifest may still record the stock kernel used when that rootfs was
 built. For q420k close-quality runs, the runtime kernel is the stripped kernel
