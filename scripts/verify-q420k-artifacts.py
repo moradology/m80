@@ -825,6 +825,12 @@ def verify_composed_restore(path: Path) -> list[str]:
     check.require(isinstance(restore, dict), "composed restore: missing restore_latency")
     if isinstance(restore, dict):
         require_number_at_least(check, "composed restore: count", restore.get("count"), 10)
+        require_number_at_least(check, "composed restore: target_ready", restore.get("target_ready"), 10)
+        if is_number(restore.get("count")) and is_number(restore.get("target_ready")):
+            check.require(
+                restore.get("target_ready") == restore.get("count"),
+                "composed restore: target_ready must equal count",
+            )
         samples_ms = restore.get("samples_ms")
         require_list_len(check, "composed restore: samples_ms", samples_ms, restore.get("count"))
         require_positive_number_list(check, "composed restore: samples_ms", samples_ms)
@@ -2852,6 +2858,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
         restore_bad_page_cache_status = quiet_run_checks(args)
         restore_bad["page_cache_dropped_between_leases"] = False
         restore.write_text(json.dumps(restore_bad))
+        restore_bad["data"]["restore_latency"]["target_ready"] = 9
+        restore.write_text(json.dumps(restore_bad))
+        restore_bad_target_ready_status = quiet_run_checks(args)
+        restore_bad["data"]["restore_latency"]["target_ready"] = 10
+        restore.write_text(json.dumps(restore_bad))
         restore_bad["data"]["restore_latency"]["samples_ms"] = restore_bad["data"]["restore_latency"]["samples_ms"][:9]
         restore.write_text(json.dumps(restore_bad))
         restore_bad_sample_count_status = quiet_run_checks(args)
@@ -3161,6 +3172,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or quiet_host_inventory_not_executable_status == 0
             or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
+            or restore_bad_target_ready_status == 0
             or restore_bad_sample_count_status == 0
             or restore_bad_percentile_status == 0
             or memory_bad_bound_status == 0
