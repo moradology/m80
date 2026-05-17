@@ -1645,6 +1645,10 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
             substrate.get("preexisting_firecracker_processes") == [],
             "dax memory pressure: preexisting Firecracker process list must be empty",
         )
+        check.require(
+            substrate.get("post_run_firecracker_processes") == [],
+            "dax memory pressure: post-run Firecracker process list must be empty",
+        )
 
     check.require(
         markdown_int(text, r"- leaked Shared markers: `(\d+)`") == 0,
@@ -2858,7 +2862,8 @@ M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-
 ```json
 {{
   "allow_other_firecracker_vms": false,
-  "preexisting_firecracker_processes": []
+  "preexisting_firecracker_processes": [],
+  "post_run_firecracker_processes": []
 }}
 ```
 
@@ -3002,6 +3007,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
         dax_pressure.write_text(dax_bad_substrate.replace(
             '"allow_other_firecracker_vms": true',
             '"allow_other_firecracker_vms": false',
+        ))
+        dax_bad_post_run = dax_pressure.read_text().replace(
+            '"post_run_firecracker_processes": []',
+            '"post_run_firecracker_processes": [{"pid": 1234, "argv": ["firecracker"]}]',
+        )
+        dax_pressure.write_text(dax_bad_post_run)
+        dax_bad_post_run_status = quiet_run_checks(args)
+        dax_pressure.write_text(dax_bad_post_run.replace(
+            '"post_run_firecracker_processes": [{"pid": 1234, "argv": ["firecracker"]}]',
+            '"post_run_firecracker_processes": []',
         ))
         args.only = ["snapshot-template"]
         snapshot_bad = json.loads(snapshot.read_text())
@@ -3567,6 +3582,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or dax_bad_digest_status == 0
             or dax_bad_delta_status == 0
             or dax_bad_substrate_status == 0
+            or dax_bad_post_run_status == 0
             or bad_substrate_status == 0
             or leaked_firecracker_status == 0
             or bad_preflight_artifacts_status == 0

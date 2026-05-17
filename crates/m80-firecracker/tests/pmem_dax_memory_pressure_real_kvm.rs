@@ -41,7 +41,7 @@ fn pmem_dax_memory_pressure_real_kvm() {
             "pmem DAX memory pressure",
             "M80_PMEM_DAX_MEMORY_PRESSURE_ALLOW_OTHER_VMS",
         );
-    let substrate =
+    let mut substrate =
         quiet_host::substrate_json(allow_other_firecracker_vms, &preexisting_firecrackers);
 
     let vm_count = env_usize("M80_PMEM_DAX_MEMORY_PRESSURE_VM_COUNT", DEFAULT_VM_COUNT);
@@ -123,6 +123,10 @@ fn pmem_dax_memory_pressure_real_kvm() {
         .expect("post-pressure stale marker sweep");
     let process_count_after = process_count_by_basename(&["firecracker", "jailer"]);
     let mount_count_after = mount_count_under(&run_root);
+    quiet_host::record_post_run_firecracker_processes(
+        &mut substrate,
+        &quiet_host::firecracker_processes(),
+    );
 
     let report = PressureReport {
         vm_count,
