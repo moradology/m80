@@ -67,7 +67,7 @@ the produced artifact imports and verifies.
   remove.
 - `ImageTemplateCoordinationGuard` — RAII guard for the shared/exclusive
   coordination lock between template build/commit and executable image GC.
-- `ImageArtifact` / `ResolvedImage` — enum over resolved artifact types.
+- `ImageArtifact` — enum over resolved artifact types.
 - `ErofsImage` and `Ext4Image` — canonical path, byte size, and digest.
 - `SharedImageRef` — active-use marker handle for shared pmem artifact users.
 - `StoreError` — finite typed error variants. There is no generic string

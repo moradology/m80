@@ -120,7 +120,7 @@ Sequestering it has three benefits:
   connections from the m80 bridge plus guest `/32`, and appends NAT POSTROUTING
   masquerade.
 - iptables rules are tagged with a per-VM comment prefix (rooted in
-  `M80_RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
+  `RULE_COMMENT_PREFIX`). Cleanup finds rules by comment match —
   never by index — so concurrent rule additions by other tools don't
   break our teardown.
 - The per-VM filter chain accepts configured DNS resolvers on UDP/TCP 53,
@@ -181,7 +181,7 @@ Sequestering it has three benefits:
   `encode_network_helper_response(...)`, and
   `serve_network_helper_stdio(...)` — finite JSON protocol used by
   `m80-net-helper` for privileged network operations.
-- `M80_RULE_COMMENT_PREFIX`, `outbound_nat_filter_chain(...)`,
+- `RULE_COMMENT_PREFIX`, `outbound_nat_filter_chain(...)`,
   `outbound_nat_rule_comment(...)`, and `permanent_deny_cidrs(...)` —
   public deterministic helpers for policy identity and tests.
 - `NETWORK_STATE_FILE` — per-VM network state filename under each VM run

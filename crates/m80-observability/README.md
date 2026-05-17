@@ -58,7 +58,7 @@ adapter, not below.
 
 ### Health rollup
 
-- `aggregate_health(records: &[VmProbeRecord]) -> Result<HealthSnapshot, ObservabilityError>`
+- `aggregate_health(records: &[VmProbeRecord]) -> HealthSnapshot`
   (free function) produces per-health counts and a structural
   `rollout_ready` boolean.
 
