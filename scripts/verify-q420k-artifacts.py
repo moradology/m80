@@ -1877,6 +1877,21 @@ The measured signal is acceptable under the same-trust-domain assumption.
         density_smoke.chmod(0o644)
         density_smoke_not_executable_status = quiet_run_checks(args)
         density_smoke.chmod(0o755)
+        args.only = ["quiet-host-inventory"]
+        quiet_host_inventory_status = quiet_run_checks(args)
+        quiet_host_inventory.chmod(0o644)
+        quiet_host_inventory_not_executable_status = quiet_run_checks(args)
+        quiet_host_inventory.chmod(0o755)
+        quiet_host_inventory_bad = quiet_host_inventory.read_text().replace(
+            "exit 1",
+            'kill -9 "$pid"\nexit 1',
+        )
+        quiet_host_inventory.write_text(quiet_host_inventory_bad)
+        quiet_host_inventory_mutating_status = quiet_run_checks(args)
+        quiet_host_inventory.write_text(quiet_host_inventory_bad.replace(
+            'kill -9 "$pid"\n',
+            "",
+        ))
         args.only = ["composed-restore"]
         restore_bad = json.loads(restore.read_text())
         restore_bad["page_cache_dropped_between_leases"] = True
@@ -2068,6 +2083,9 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or density_bad_bound_status == 0
             or density_smoke_status != 0
             or density_smoke_not_executable_status == 0
+            or quiet_host_inventory_status != 0
+            or quiet_host_inventory_not_executable_status == 0
+            or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
             or memory_bad_bound_status == 0
             or residue_bad_roots_status == 0
