@@ -259,7 +259,7 @@ payload-copy bytes, attached-memory delta, derived per-VM overhead, and
 all-slots-leased snapshot. The residue subset requires an
 explicit scanned run-root entry alongside `/tmp/m80-*`, `/var/run/m80`, the
 image store, and the template store; its `leased_run_dirs` entries must be
-absolute path strings:
+absolute path strings under the scanned run root:
 
 ```sh
 python3 scripts/verify-q420k-artifacts.py \

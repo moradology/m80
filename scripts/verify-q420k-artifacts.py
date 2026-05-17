@@ -1587,6 +1587,7 @@ def verify_composed_residue(path: Path) -> list[str]:
         require_int_equal(check, "composed residue: n_leases", residue.get("n_leases"), COMPOSED_E2E_N)
         check.require(residue.get("unexpected_paths") == [], "composed residue: unexpected_paths must be []")
         roots = residue.get("scanned_roots")
+        dynamic_run_roots: list[str] = []
         check.require(isinstance(roots, list) and roots, "composed residue: scanned_roots must be non-empty")
         if isinstance(roots, list):
             root_strings = [root for root in roots if isinstance(root, str)]
@@ -1621,6 +1622,14 @@ def verify_composed_residue(path: Path) -> list[str]:
                     isinstance(run_dir, str) and run_dir.startswith("/"),
                     f"composed residue: leased_run_dirs[{index}] must be an absolute path string",
                 )
+                if isinstance(run_dir, str) and dynamic_run_roots:
+                    check.require(
+                        any(
+                            run_dir == run_root or run_dir.startswith(f"{run_root}/")
+                            for run_root in dynamic_run_roots
+                        ),
+                        f"composed residue: leased_run_dirs[{index}] must live under a scanned run root",
+                    )
         else:
             check.require(False, "composed residue: leased_run_dirs must be a list")
         image_store = residue.get("image_store")
@@ -4527,6 +4536,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
         residue_bad_leased_run_dir_status = quiet_run_checks(args)
         residue_bad["data"]["residue"]["leased_run_dirs"][0] = f"{composed_run_root}/lease-0"
         residue.write_text(json.dumps(residue_bad))
+        residue_bad["data"]["residue"]["leased_run_dirs"][0] = "/var/lib/m80-other/lease-0"
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad_leased_run_dir_root_status = quiet_run_checks(args)
+        residue_bad["data"]["residue"]["leased_run_dirs"][0] = f"{composed_run_root}/lease-0"
+        residue.write_text(json.dumps(residue_bad))
         args.only = ["composed-restore", "composed-memory", "composed-residue"]
         memory_bad = json.loads(memory.read_text())
         memory_bad["git_commit"] = "d" * 40
@@ -4904,6 +4918,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or residue_bad_roots_status == 0
             or residue_bad_run_root_status == 0
             or residue_bad_leased_run_dir_status == 0
+            or residue_bad_leased_run_dir_root_status == 0
             or composed_bad_consistency_status == 0
             or uncommitted_status == 0
             or diagnostic_doc_status == 0

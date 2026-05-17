@@ -634,7 +634,8 @@ same-run PerVm baseline bound,
 explicit run root, `/tmp/m80-*`, `/var/run/m80`, image store, and template store,
 leased-run-dir enumeration as absolute path strings, empty unexpected-path
 result, exact image-store preservation, exact template-store preservation,
-empty post-run Firecracker process list, preflight artifact identity, measured
+leased-run-dir entries under the scanned run root, empty post-run Firecracker
+process list, preflight artifact identity, measured
 git commit, exact N=10 cardinality, runtime host kernel >= 6.5, `/dev/kvm` rw
 stat output, sudo uid `0`, actual Firecracker version matching preflight,
 host-memory bound formula `shared_image_bytes + per_vm_overhead_bytes *
