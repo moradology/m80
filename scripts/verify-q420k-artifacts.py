@@ -101,6 +101,21 @@ REQUIRED_VERIFIED_CLOSE_LABEL_ISSUES = [
     "m80-q420k.8.9",
     "m80-q420k.8.16",
 ]
+REQUIRED_TRACKER_TEMPLATE_SECTIONS = {
+    "m80-q420k": "## Success Criteria",
+    "m80-q420k.3": "## Success Criteria",
+    "m80-q420k.4": "## Success Criteria",
+    "m80-q420k.6": "## Success Criteria",
+    "m80-q420k.8": "## Success Criteria",
+    "m80-q420k.3.8": "## Acceptance Criteria",
+    "m80-q420k.4.15": "## Acceptance Criteria",
+    "m80-q420k.6.2": "## Acceptance Criteria",
+    "m80-q420k.6.3": "## Acceptance Criteria",
+    "m80-q420k.6.4": "## Acceptance Criteria",
+    "m80-q420k.6.5": "## Acceptance Criteria",
+    "m80-q420k.8.9": "## Acceptance Criteria",
+    "m80-q420k.8.16": "## Acceptance Criteria",
+}
 REQUIRED_PARENT_PHASES = [
     "m80-q420k.7",
     "m80-q420k.1",
@@ -2615,7 +2630,12 @@ def kernel_version_at_least(value: Any, major: int, minor: int) -> bool:
 def verify_committed_artifacts(check_specs: list[tuple[str, str, Any, Path]]) -> list[str]:
     errors: list[str] = []
     for key, label, _, path in check_specs:
-        if key in {"tracker-labels", "close-artifact-paths", "prepared-inputs"}:
+        if key in {
+            "tracker-labels",
+            "tracker-templates",
+            "close-artifact-paths",
+            "prepared-inputs",
+        }:
             continue
         try:
             rel_path = path.resolve().relative_to(ROOT)
@@ -2669,6 +2689,33 @@ def verify_verified_close_labels(_: Path) -> list[str]:
         if issue is not None:
             issues_by_id[bead_id] = issue
     errors.extend(required_verified_close_label_errors(issues_by_id))
+    return errors
+
+
+def required_tracker_template_errors(issues_by_id: dict[str, dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    for bead_id, required_heading in REQUIRED_TRACKER_TEMPLATE_SECTIONS.items():
+        issue = issues_by_id.get(bead_id)
+        if issue is None:
+            errors.append(f"tracker templates: {bead_id} missing from template check")
+            continue
+        description = issue.get("description")
+        if not isinstance(description, str):
+            errors.append(f"tracker templates: {bead_id} description must be text")
+            continue
+        if required_heading not in description.splitlines():
+            errors.append(f"tracker templates: {bead_id} must include {required_heading}")
+    return errors
+
+
+def verify_tracker_templates(_: Path) -> list[str]:
+    errors: list[str] = []
+    issues_by_id: dict[str, dict[str, Any]] = {}
+    for bead_id in REQUIRED_TRACKER_TEMPLATE_SECTIONS:
+        issue = load_bead(bead_id, "tracker templates", errors)
+        if issue is not None:
+            issues_by_id[bead_id] = issue
+    errors.extend(required_tracker_template_errors(issues_by_id))
     return errors
 
 
@@ -3122,6 +3169,12 @@ def run_checks(args: argparse.Namespace) -> int:
             "tracker-labels",
             "verified-close tracker labels",
             verify_verified_close_labels,
+            ROOT,
+        ),
+        (
+            "tracker-templates",
+            "q420k tracker template sections",
+            verify_tracker_templates,
             ROOT,
         ),
         (
@@ -4713,6 +4766,28 @@ The measured signal is acceptable under the same-trust-domain assumption.
         label_missing_issue_status = (
             0 if not required_verified_close_label_errors({}) else 1
         )
+        template_ok_issues = {
+            bead_id: {"description": f"{required_heading}\n\n- checked"}
+            for bead_id, required_heading in REQUIRED_TRACKER_TEMPLATE_SECTIONS.items()
+        }
+        tracker_template_status = (
+            0 if not required_tracker_template_errors(template_ok_issues) else 1
+        )
+        template_missing_heading_issues = {
+            bead_id: {"description": f"{required_heading}\n\n- checked"}
+            for bead_id, required_heading in REQUIRED_TRACKER_TEMPLATE_SECTIONS.items()
+        }
+        template_missing_heading_issues["m80-q420k.6.2"] = {
+            "description": "## Acceptance\n\n- stale heading"
+        }
+        tracker_template_missing_heading_status = (
+            0
+            if not required_tracker_template_errors(template_missing_heading_issues)
+            else 1
+        )
+        tracker_template_missing_issue_status = (
+            0 if not required_tracker_template_errors({}) else 1
+        )
         args.only = ["pmem-density"]
         density_bad = density.read_text().replace(
             "- final active-use markers: `0`",
@@ -5790,6 +5865,9 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or verified_close_labels_status != 0
             or verified_close_labels_missing_status == 0
             or label_missing_issue_status == 0
+            or tracker_template_status != 0
+            or tracker_template_missing_heading_status == 0
+            or tracker_template_missing_issue_status == 0
             or density_bad_teardown_status == 0
             or density_bad_host_kernel_status == 0
             or density_bad_kvm_status == 0
@@ -5924,6 +6002,7 @@ def parser() -> argparse.ArgumentParser:
         action="append",
         choices=[
             "tracker-labels",
+            "tracker-templates",
             "snapshot-template",
             "snapshot-doc",
             "close-artifact-paths",
