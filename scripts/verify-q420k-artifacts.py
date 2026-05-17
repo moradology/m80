@@ -46,6 +46,9 @@ SNAPSHOT_TEMPLATE_N_PER_RUN = 20
 SNAPSHOT_TEMPLATE_RUNS = 3
 SNAPSHOT_TEMPLATE_SAMPLES_TOTAL = SNAPSHOT_TEMPLATE_N_PER_RUN * SNAPSHOT_TEMPLATE_RUNS
 COMPOSED_E2E_N = 10
+COMPOSED_E2E_SHARED_PAYLOAD_MIB = 32
+COMPOSED_E2E_OUT_DIR = "crates/m80-firecracker/benches/snapshots"
+COMPOSED_E2E_RUN_ROOT = "/var/lib/m80-composed-e2e"
 REQUIRED_CLOSE_BEADS = {
     "snapshot-template": "m80-q420k.4.15",
     "pmem-density": "m80-q420k.3.8",
@@ -1720,6 +1723,49 @@ def verify_composed_consistency(
     return check.errors
 
 
+def verify_composed_command(
+    check: Check,
+    label: str,
+    command: str,
+    *,
+    kernel_image: str | None = None,
+    rootfs_image: str | None = None,
+) -> None:
+    for required in [
+        "sudo -n env",
+        "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
+        "--ignored composed_e2e_layered_warm_pool --nocapture",
+    ]:
+        check.require(required in command, f"{label}: command missing {required}")
+    for env, expected in [
+        ("M80_COMPOSED_E2E_ALLOW_OTHER_VMS", 0),
+        ("M80_COMPOSED_E2E_N", COMPOSED_E2E_N),
+        ("M80_COMPOSED_E2E_SHARED_PAYLOAD_MIB", COMPOSED_E2E_SHARED_PAYLOAD_MIB),
+        ("M80_COMPOSED_E2E_OUT_DIR", f"{ROOT}/{COMPOSED_E2E_OUT_DIR}"),
+        ("M80_RUN_ROOT", COMPOSED_E2E_RUN_ROOT),
+        ("M80_FIRECRACKER_BIN", "/opt/firecracker/bin/firecracker"),
+        ("M80_JAILER_BIN", "/opt/firecracker/bin/jailer"),
+        (
+            "M80_FIRECRACKER_SECCOMP_FILTER",
+            "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+        ),
+        ("M80_JAILER_HARDEN_BIN", "/opt/m80/bin/m80-jailer-harden"),
+        ("M80_NET_HELPER_BIN", "/opt/m80/bin/m80-net-helper"),
+        ("M80_KERNEL_KIND", "stripped"),
+    ]:
+        require_command_env_value(check, label, command, env, expected)
+    for env in ["M80_JAIL_UID", "M80_JAIL_GID"]:
+        check.require(f"{env}=" in command, f"{label}: command must set {env}")
+    if kernel_image is None:
+        require_command_env_absolute_path(check, label, command, "M80_KERNEL_IMAGE")
+    else:
+        require_command_env_value(check, label, command, "M80_KERNEL_IMAGE", kernel_image)
+    if rootfs_image is None:
+        require_command_env_absolute_path(check, label, command, "M80_ROOTFS_IMAGE")
+    else:
+        require_command_env_value(check, label, command, "M80_ROOTFS_IMAGE", rootfs_image)
+
+
 def verify_composed_doc_consistency(
     doc_path: Path,
     restore_path: Path,
@@ -1731,6 +1777,8 @@ def verify_composed_doc_consistency(
     memory = load_json(memory_path)
     residue = load_json(residue_path)
     check = Check()
+    method = markdown_section(text, "Method")
+    command = markdown_shell_block(method) if method is not None else None
 
     commit = restore.get("git_commit")
     if isinstance(commit, str):
@@ -1755,6 +1803,19 @@ def verify_composed_doc_consistency(
                 isinstance(value, str) and value in text,
                 f"composed doc: missing substrate.preflight_artifacts.{field} from JSON artifacts",
             )
+        if command is not None:
+            for env, field in [
+                ("M80_FIRECRACKER_BIN", "firecracker_bin"),
+                ("M80_JAILER_BIN", "jailer_bin"),
+                ("M80_FIRECRACKER_SECCOMP_FILTER", "firecracker_seccomp_filter"),
+                ("M80_JAILER_HARDEN_BIN", "jailer_harden_bin"),
+                ("M80_NET_HELPER_BIN", "net_helper_bin"),
+                ("M80_KERNEL_IMAGE", "kernel_image"),
+                ("M80_ROOTFS_IMAGE", "rootfs_image"),
+            ]:
+                value = preflight.get(field)
+                if isinstance(value, str) and value:
+                    require_command_env_value(check, "composed doc command", command, env, value)
 
     substrate_fields = [
         ("host_kernel_release", "host kernel release"),
@@ -1801,6 +1862,14 @@ def verify_composed_doc_consistency(
             )
     scanned_roots = at(residue, "data.residue.scanned_roots")
     if isinstance(scanned_roots, list):
+        if command is not None and scanned_roots and isinstance(scanned_roots[0], str):
+            require_command_env_value(
+                check,
+                "composed doc command",
+                command,
+                "M80_RUN_ROOT",
+                scanned_roots[0],
+            )
         for root in [root for root in scanned_roots if isinstance(root, str)]:
             display_root = root
             if "/composed-e2e-templates-" in root and root.endswith("/templates"):
@@ -1819,6 +1888,8 @@ def verify_composed_doc_consistency(
 def verify_composed_doc(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
+    method = markdown_section(text, "Method")
+    command = markdown_shell_block(method) if method is not None else None
     check.require(text.startswith("# Composed E2E"), "composed doc: title mismatch")
     for heading in [
         "## Method",
@@ -1884,6 +1955,9 @@ def verify_composed_doc(path: Path) -> list[str]:
         "Scanned roots:",
     ]:
         check.require(required in text, f"composed doc: missing {required}")
+    check.require(command is not None, "composed doc: missing Method command shell block")
+    if command is not None:
+        verify_composed_command(check, "composed doc command", command)
     for marker in [
         "Status: scaffold and noisy-host diagnostic only",
         "verified-close receipt for `m80-q420k.6.5`; the close-quality rerun",
@@ -1898,7 +1972,10 @@ def verify_composed_doc(path: Path) -> list[str]:
 def verify_composed_instruction_doc(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
+    section = markdown_section(text, "E13. Composed E2E")
+    command = markdown_shell_block(section) if section is not None else None
     check.require(path.is_file(), f"composed instruction doc: missing {path}")
+    check.require(section is not None, "composed instruction doc: missing E13. Composed E2E section")
     for required in [
         "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
         "M80_COMPOSED_E2E_ALLOW_OTHER_VMS=0",
@@ -1922,6 +1999,15 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
         "crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json",
     ]:
         check.require(required in text, f"composed instruction doc: missing {required}")
+    check.require(command is not None, "composed instruction doc: missing E13 command shell block")
+    if command is not None:
+        verify_composed_command(
+            check,
+            "composed instruction command",
+            command,
+            kernel_image="<real-stripped-kernel.bin>",
+            rootfs_image="<real-rootfs.ext4>",
+        )
     return check.errors
 
 
@@ -3215,7 +3301,7 @@ python3 scripts/verify-q420k-artifacts.py --only pmem-density --require-committe
 ```
 """
         composed_instruction = """
-# Composed E2E
+## E13. Composed E2E
 
 ```sh
 sudo -n env \

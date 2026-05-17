@@ -649,16 +649,17 @@ MemAvailable checkpoints that derive `after_n_attached_delta_bytes`, and its
 Shared image path must contain the Shared digest. The same-run PerVm baseline
 section must agree with the top-level Shared digest, Shared bytes, attached
 count, payload-copy bytes, attached-memory delta, derived per-VM overhead, and
-all-slots-leased snapshot. The receipt doc must also retain the exact
-`cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`
-reproduction command, host context, page-cache statement, and green
-`composed_e2e_layered_warm_pool` test-result lines, with exactly one
-`M80_COMPOSED_E2E_ARTIFACT` smoke line for each canonical composed JSON
-artifact. The verifier also checks that the three composed JSON artifacts agree
-on `git_commit`, `substrate`, target count, and lowercase sha256 Shared image
-digest, and that the receipt doc mentions the measured git commit, substrate
-identity, Shared image digest, restore P50/P95/P99, and host-memory byte values
-from those JSON artifacts. Run the composed
+all-slots-leased snapshot. The receipt doc must also retain the exact command
+block env contract for
+`cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`, host
+context, page-cache statement, and green `composed_e2e_layered_warm_pool`
+test-result lines, with exactly one `M80_COMPOSED_E2E_ARTIFACT` smoke line for
+each canonical composed JSON artifact. The verifier also checks that the three
+composed JSON artifacts agree on `git_commit`, `substrate`, target count, and
+lowercase sha256 Shared image digest, and that the receipt doc mentions the
+measured git commit, substrate identity, Shared image digest, restore
+P50/P95/P99, host-memory byte values, and command-block helper/kernel/rootfs/run
+root assignments from those JSON artifacts. Run the composed
 JSON subset after committing artifacts and before closing `m80-q420k.6.2`,
 `.6.3`, and `.6.4`:
 
