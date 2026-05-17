@@ -35,6 +35,15 @@ records the full measured `git_commit` and a `reproduction_command` that
 includes the measured Firecracker, jailer, helper, kernel, rootfs, run-root,
 jail UID/GID, and disabled cgroup-mode inputs.
 
+## Artifact identity
+
+The close-quality update must record the JSON artifact's measured `git_commit`
+and each `substrate.preflight_artifacts` value here, including the resolved
+Firecracker, seccomp filter, jailer, harden helper, net helper, kernel, rootfs,
+kernel/rootfs sha256, and expected Firecracker version. The verifier requires
+these JSON-derived values in this section; copies elsewhere in the document do
+not satisfy the close receipt.
+
 ## Command
 
 From the repository root:

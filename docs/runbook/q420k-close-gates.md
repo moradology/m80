@@ -188,9 +188,9 @@ exactly one `sample_details` row for every `(run, cycle)` in the N x runs
 matrix. The recorded `p99` must recompute from those samples. Remove pending or
 diagnostic-only text from the receipt doc before close; the verifier rejects
 stale diagnostic markers and cross-checks the doc against the JSON artifact's
-measured git commit, preflight identity, command-block env assignments, and
-smoke-section p99. Prose outside the command block or smoke section does not
-satisfy those requirements.
+measured git commit and preflight identity in `## Artifact identity`,
+command-block env assignments, and smoke-section p99. Prose outside those
+sections does not satisfy those requirements.
 
 Then verify the artifact:
 

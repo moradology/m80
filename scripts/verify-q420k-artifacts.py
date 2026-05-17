@@ -646,6 +646,7 @@ def command_env_value(command: str, env: str) -> str | None:
 def verify_snapshot_doc(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
+    identity_section = markdown_section(text, "Artifact identity")
     command_section = markdown_section(text, "Command")
     command = markdown_shell_block(command_section) if command_section is not None else None
     check.require(
@@ -676,6 +677,7 @@ def verify_snapshot_doc(path: Path) -> list[str]:
         "substrate.post_run_firecracker_processes",
     ]:
         check.require(required in text, f"snapshot doc: missing {required}")
+    check.require(identity_section is not None, "snapshot doc: missing ## Artifact identity")
     check.require(command is not None, "snapshot doc: missing ## Command shell block")
     if command is not None:
         for required in [
@@ -756,12 +758,18 @@ def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list
     text = load_text(doc_path)
     data = load_json(snapshot_path)
     check = Check()
+    identity_section = markdown_section(text, "Artifact identity")
+    identity_text = identity_section or ""
+    check.require(identity_section is not None, "snapshot doc: missing ## Artifact identity")
     command_section = markdown_section(text, "Command")
     command = markdown_shell_block(command_section) if command_section is not None else None
     smoke = markdown_section(text, "Smoke evidence")
     commit = data.get("git_commit")
     if isinstance(commit, str):
-        check.require(commit in text, "snapshot doc: missing measured git_commit from JSON artifact")
+        check.require(
+            commit in identity_text,
+            "snapshot doc: Artifact identity section missing measured git_commit from JSON artifact",
+        )
     p99_us = at(data, "data.warm.restore_to_handback_us.p99")
     p99_ms = at(data, "data.warm.restore_to_handback_ms.p99")
     if is_number(p99_us) or is_number(p99_ms):
@@ -787,8 +795,9 @@ def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list
             value = preflight.get(field)
             if isinstance(value, str) and value:
                 check.require(
-                    value in text,
-                    f"snapshot doc: missing substrate.preflight_artifacts.{field} from JSON artifact",
+                    value in identity_text,
+                    f"snapshot doc: Artifact identity section missing "
+                    f"substrate.preflight_artifacts.{field} from JSON artifact",
                 )
         if command is not None:
             for env, field in [
@@ -3096,6 +3105,8 @@ Artifact: `crates/m80-firecracker/benches/snapshot_template_restore_latency.json
 Field: `data.warm.restore_to_handback_ms.p99`
 Observable: `target_ready=1`
 
+## Artifact identity
+
 Measured git commit:
 `cccccccccccccccccccccccccccccccccccccccc`
 
@@ -4165,6 +4176,68 @@ The measured signal is acceptable under the same-trust-domain assumption.
                 "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\nPreflight artifacts:",
             )
         )
+        snapshot_doc_identity_outside_section = (
+            snapshot_doc.read_text()
+            .replace(
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                "",
+                1,
+            )
+            .replace(
+                "# Snapshot-Template Restore Latency\n\n",
+                "# Snapshot-Template Restore Latency\n\n"
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                1,
+            )
+        )
+        snapshot_doc.write_text(snapshot_doc_identity_outside_section)
+        snapshot_doc_identity_outside_section_status = quiet_run_checks(args)
+        snapshot_doc.write_text(
+            snapshot_doc_identity_outside_section
+            .replace(
+                "# Snapshot-Template Restore Latency\n\n"
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
+                "# Snapshot-Template Restore Latency\n\n",
+                1,
+            )
+            .replace(
+                "Preflight artifacts:",
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n"
+                "Preflight artifacts:",
+                1,
+            )
+        )
+        snapshot_doc_preflight_outside_section = (
+            snapshot_doc.read_text()
+            .replace(
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                "",
+                1,
+            )
+            .replace(
+                "# Snapshot-Template Restore Latency\n\n",
+                "# Snapshot-Template Restore Latency\n\n"
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                1,
+            )
+        )
+        snapshot_doc.write_text(snapshot_doc_preflight_outside_section)
+        snapshot_doc_preflight_outside_section_status = quiet_run_checks(args)
+        snapshot_doc.write_text(
+            snapshot_doc_preflight_outside_section
+            .replace(
+                "# Snapshot-Template Restore Latency\n\n"
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n\n",
+                "# Snapshot-Template Restore Latency\n\n",
+                1,
+            )
+            .replace(
+                "Preflight artifacts:\n\n",
+                "Preflight artifacts:\n\n"
+                "- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+                1,
+            )
+        )
         args.only = ["pmem-density"]
         density_bad = density.read_text().replace(
             "- final active-use markers: `0`",
@@ -5005,6 +5078,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or snapshot_doc_bad_command_identity_status == 0
             or snapshot_doc_bad_p99_scope_status == 0
             or snapshot_doc_bad_identity_status == 0
+            or snapshot_doc_identity_outside_section_status == 0
+            or snapshot_doc_preflight_outside_section_status == 0
             or density_bad_teardown_status == 0
             or density_bad_host_kernel_status == 0
             or density_bad_kvm_status == 0
