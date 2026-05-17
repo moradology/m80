@@ -226,7 +226,8 @@ artifacts. The host-memory subset check also recomputes `bound_bytes` from
 `shared_image_bytes`,
 `per_vm_overhead_bytes`, and `n_attached`. The residue subset requires an
 explicit scanned run-root entry alongside `/tmp/m80-*`, `/var/run/m80`, the
-image store, and the template store:
+image store, and the template store; its `leased_run_dirs` entries must be
+absolute path strings:
 
 ```sh
 python3 scripts/verify-q420k-artifacts.py \

@@ -981,6 +981,11 @@ def verify_composed_residue(path: Path) -> list[str]:
                 len(leased_run_dirs) >= residue.get("n_leases", 0),
                 "composed residue: leased_run_dirs must enumerate every lease",
             )
+            for index, run_dir in enumerate(leased_run_dirs):
+                check.require(
+                    isinstance(run_dir, str) and run_dir.startswith("/"),
+                    f"composed residue: leased_run_dirs[{index}] must be an absolute path string",
+                )
         else:
             check.require(False, "composed residue: leased_run_dirs must be a list")
         image_store = residue.get("image_store")
@@ -2921,6 +2926,11 @@ The measured signal is acceptable under the same-trust-domain assumption.
             composed_template_root,
         ]
         residue.write_text(json.dumps(residue_bad))
+        residue_bad["data"]["residue"]["leased_run_dirs"][0] = "relative-lease-dir"
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad_leased_run_dir_status = quiet_run_checks(args)
+        residue_bad["data"]["residue"]["leased_run_dirs"][0] = f"{composed_run_root}/lease-0"
+        residue.write_text(json.dumps(residue_bad))
         args.only = ["composed-restore", "composed-memory", "composed-residue"]
         memory_bad = json.loads(memory.read_text())
         memory_bad["git_commit"] = "d" * 40
@@ -3180,6 +3190,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or residue_bad_digest_status == 0
             or residue_bad_roots_status == 0
             or residue_bad_run_root_status == 0
+            or residue_bad_leased_run_dir_status == 0
             or composed_bad_consistency_status == 0
             or uncommitted_status == 0
             or diagnostic_doc_status == 0

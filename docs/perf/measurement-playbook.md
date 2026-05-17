@@ -606,9 +606,9 @@ same-run PerVm baseline bound,
 `.8.12`-proven erofs layout (`dump.erofs --path=/payload.bin` reports
 `Layout: 0` and equal logical/on-disk size), residue scan roots covering the
 explicit run root, `/tmp/m80-*`, `/var/run/m80`, image store, and template store,
-leased-run-dir enumeration, empty unexpected-path result, exact image-store
-preservation, exact template-store preservation, empty post-run Firecracker
-process list, preflight artifact identity, measured git commit, host-memory
+leased-run-dir enumeration as absolute path strings, empty unexpected-path
+result, exact image-store preservation, exact template-store preservation,
+empty post-run Firecracker process list, preflight artifact identity, measured git commit, host-memory
 bound formula `shared_image_bytes + per_vm_overhead_bytes * n_attached`, and
 lowercase sha256 Shared and PerVm image-store digests. The restore artifact's
 `samples_ms` array must match `count`, and `template_build_warmup_ms` must be
