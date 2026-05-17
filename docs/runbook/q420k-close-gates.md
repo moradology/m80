@@ -302,7 +302,9 @@ br dep cycles --json
 Do not add `--only` to the parent or super-epic close commands. Subset checks
 are only for leaf preflight/debugging, and the verifier rejects `--only` when
 combined with `--require-parent-phases-closed` or
-`--require-super-epic-closed`.
+`--require-super-epic-closed`. It also rejects parent-close mode without both
+`--require-committed` and `--require-closed-beads`, and rejects super-epic
+close mode without parent-close mode.
 
 `m80-q420k` is ready to close only when the verifier passes and the filtered
 `br blocked` command shows no remaining blockers for `m80-q420k`, `.3`, `.4`,

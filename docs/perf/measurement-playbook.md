@@ -57,7 +57,10 @@ guard.
 Subset checks are leaf/preflight tools, not final-close evidence. Do not
 combine `--only` with `--require-parent-phases-closed` or
 `--require-super-epic-closed`; the verifier rejects that combination so a
-narrow green check cannot be mistaken for the full A-F close gate.
+narrow green check cannot be mistaken for the full A-F close gate. The parent
+close flag also requires both `--require-committed` and
+`--require-closed-beads`; the super-epic close flag requires the parent close
+flag.
 
 This guard rejects missing artifacts, artifacts that do not name the real-KVM
 preflight substrate, noisy-host override artifacts, weak sample counts,

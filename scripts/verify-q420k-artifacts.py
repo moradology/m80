@@ -2179,16 +2179,7 @@ def run_checks(args: argparse.Namespace) -> int:
         except AssertionError as exc:
             checks.append((label, [f"{label}: {exc}"]))
     errors = [error for _, group in checks for error in group]
-    if selected and getattr(args, "require_parent_phases_closed", False):
-        errors.append(
-            "--require-parent-phases-closed cannot be combined with --only; "
-            "run the full A-F guard for parent close"
-        )
-    if selected and getattr(args, "require_super_epic_closed", False):
-        errors.append(
-            "--require-super-epic-closed cannot be combined with --only; "
-            "run the full A-F guard for super-epic close"
-        )
+    errors.extend(verify_flag_composition(args, selected))
     selected_keys = {key for key, _, _, _ in check_specs}
     if {"snapshot-template", "snapshot-doc"}.issubset(selected_keys):
         snapshot_path = artifact_path(args.snapshot_template)
@@ -2231,6 +2222,31 @@ def run_checks(args: argparse.Namespace) -> int:
     for label, _ in checks:
         print(f"ok: {label}")
     return 0
+
+
+def verify_flag_composition(args: argparse.Namespace, selected: set[str]) -> list[str]:
+    errors: list[str] = []
+    require_committed = getattr(args, "require_committed", False)
+    require_closed_beads = getattr(args, "require_closed_beads", False)
+    require_parent = getattr(args, "require_parent_phases_closed", False)
+    require_super = getattr(args, "require_super_epic_closed", False)
+    if selected and require_parent:
+        errors.append(
+            "--require-parent-phases-closed cannot be combined with --only; "
+            "run the full A-F guard for parent close"
+        )
+    if selected and require_super:
+        errors.append(
+            "--require-super-epic-closed cannot be combined with --only; "
+            "run the full A-F guard for super-epic close"
+        )
+    if require_parent and not require_committed:
+        errors.append("--require-parent-phases-closed requires --require-committed")
+    if require_parent and not require_closed_beads:
+        errors.append("--require-parent-phases-closed requires --require-closed-beads")
+    if require_super and not require_parent:
+        errors.append("--require-super-epic-closed requires --require-parent-phases-closed")
+    return errors
 
 
 def run_self_tests() -> int:
@@ -3584,6 +3600,30 @@ The measured signal is acceptable under the same-trust-domain assumption.
             and artifact_measured_git_commit("composed-restore", restore) == git_commit
             and artifact_measured_git_commit("composed-doc", composed_doc) is None
         )
+        full_close_flags = argparse.Namespace(
+            require_committed=True,
+            require_closed_beads=True,
+            require_parent_phases_closed=True,
+            require_super_epic_closed=True,
+        )
+        missing_parent_support_flags = argparse.Namespace(
+            require_committed=False,
+            require_closed_beads=False,
+            require_parent_phases_closed=True,
+            require_super_epic_closed=False,
+        )
+        missing_super_support_flags = argparse.Namespace(
+            require_committed=True,
+            require_closed_beads=True,
+            require_parent_phases_closed=False,
+            require_super_epic_closed=True,
+        )
+        final_flag_composition = (
+            not verify_flag_composition(full_close_flags, set())
+            and verify_flag_composition(missing_parent_support_flags, set())
+            and verify_flag_composition(missing_super_support_flags, set())
+            and verify_flag_composition(full_close_flags, {"ext4-overlay"})
+        )
         if (
             ok_status != 0
             or composed_doc_subset_status != 0
@@ -3667,6 +3707,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or not super_epic_close_reason_valid
             or not super_epic_close_reason_bad
             or not measured_commit_extraction
+            or not final_flag_composition
             or not close_reason_matches(
                 "verified: docs/perf/pmem-shared-density.md @ 0123abc",
                 "docs/perf/pmem-shared-density.md",
