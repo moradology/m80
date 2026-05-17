@@ -55,12 +55,16 @@ guests is out of scope; the trust-domain assumption is documented in
 Residual memory-pressure risk is tracked as an operator constraint, not a
 runtime mitigation. The verified artifact
 `docs/perf/pmem-dax-memory-pressure.md` measured a quiet-host real-KVM run with
-two Shared-pmem guests and found p50 cross-guest signal delta `0.000 ms` with
-zero teardown residue. Keep using `Shared` only inside a same-trust-domain
-boundary; do not add `mlock`, `MAP_POPULATE`, or `madvise(MADV_WILLNEED)`
-runtime mitigation from q420k. If a future committed measurement on the target
-substrate shows a durable positive signal, file a single-purpose mitigation
-bead instead of changing this operator rule inline.
+two Shared-pmem guests, a 256 MiB uncompressed erofs DAX payload, host
+monotonic timing around each guest read command, and a
+`stress-ng --vm 1 --vm-bytes 85% --vm-keep --timeout 60s` pressure workload.
+It found p50 cross-guest signal delta `0.000 ms`, a settled host
+`MemAvailable` drop of `24031440896` bytes during pressure, and zero teardown
+residue. Keep using `Shared` only inside a same-trust-domain boundary; do not
+add `mlock`, `MAP_POPULATE`, or `madvise(MADV_WILLNEED)` runtime mitigation
+from q420k. If a future committed measurement on the target substrate shows a
+durable positive signal, file a single-purpose mitigation bead instead of
+changing this operator rule inline.
 
 Decision tree:
 

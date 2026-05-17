@@ -166,14 +166,17 @@ cross-tenant isolation must use per-VM backing instead.
 
 The Phase G memory-pressure measurement in
 `docs/perf/pmem-dax-memory-pressure.md` exercised two real-KVM Shared-pmem
-guests with a 32 MiB uncompressed erofs DAX payload and a host
-`stress-ng --vm 1 --vm-bytes 50% --timeout 30s` workload on a quiet substrate.
-It measured baseline p50/p95/p99 read latency of `10.000/40.000/40.000 ms`,
-post-pressure p50/p95/p99 of `10.000/10.000/10.000 ms`, p50 cross-guest
-signal delta `0.000 ms`, and zero leaked Shared markers, Firecracker/jailer
-processes, or mounts. That result does not promote Shared pmem into a tenant
-isolation mechanism; it only means q420k did not justify a runtime mitigation
-such as `mlock`, `MAP_POPULATE`, or `madvise(MADV_WILLNEED)` under the existing
+guests with a 256 MiB uncompressed erofs DAX payload and a host
+`stress-ng --vm 1 --vm-bytes 85% --vm-keep --timeout 60s` workload on a quiet
+substrate. The probe used host monotonic timing around each guest read command
+and recorded the raw per-guest samples. It measured baseline p50/p95/p99 read
+latency of `39.994/173.251/173.251 ms`, post-pressure p50/p95/p99 of
+`39.986/40.029/40.029 ms`, p50 cross-guest signal delta `0.000 ms`, a settled
+host `MemAvailable` drop of `24031440896` bytes during pressure, and zero
+leaked Shared markers, Firecracker/jailer processes, or mounts. That result
+does not promote Shared pmem into a tenant isolation mechanism; it only means
+this q420k substrate did not justify a runtime mitigation such as `mlock`,
+`MAP_POPULATE`, or `madvise(MADV_WILLNEED)` under the existing
 same-trust-domain contract.
 
 The acknowledgement for this tradeoff is part of construction, not prose in a
