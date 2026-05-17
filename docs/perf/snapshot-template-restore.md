@@ -77,12 +77,13 @@ python3 scripts/verify-q420k-artifacts.py --only snapshot-template --require-com
 The `--only snapshot-template` selector also checks this reproduction doc.
 The verifier checks the named JSON fields, quiet-host substrate markers,
 post-run Firecracker leak marker, preflight artifact identity, committed git
-state, and the committed command/close-reason text above. It also requires a
-full 40-character `git_commit`, `samples_us` and `sample_details` arrays whose
-lengths match `samples_total`, one `runs_detail` entry per run, exact
-`sample_details` coverage for every `(run, cycle)` in the N x runs matrix, a
-`p99` value recomputed from those samples, and a close-quality smoke paste in
-the section below. It does not replace the verified-close reason.
+state, and the committed command/close-reason text above. It also requires
+exact `n_per_run=20`, `runs=3`, and `samples_total=60`, a full 40-character
+`git_commit`, `samples_us` and `sample_details` arrays whose lengths match
+`samples_total`, one `runs_detail` entry per run, exact `sample_details`
+coverage for every `(run, cycle)` in the N x runs matrix, a `p99` value
+recomputed from those samples, and a close-quality smoke paste in the section
+below. It does not replace the verified-close reason.
 
 ## Smoke evidence
 

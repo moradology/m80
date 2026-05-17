@@ -42,6 +42,9 @@ DEFAULT_COMPOSED_RESIDUE = (
 DEFAULT_COMPOSED_DOC = ROOT / "docs/perf/composed-e2e.md"
 DEFAULT_EXT4_OVERLAY = ROOT / "docs/perf/ext4-overlay-template-clone.md"
 DEFAULT_DAX_MEMORY_PRESSURE = ROOT / "docs/perf/pmem-dax-memory-pressure.md"
+SNAPSHOT_TEMPLATE_N_PER_RUN = 20
+SNAPSHOT_TEMPLATE_RUNS = 3
+SNAPSHOT_TEMPLATE_SAMPLES_TOTAL = SNAPSHOT_TEMPLATE_N_PER_RUN * SNAPSHOT_TEMPLATE_RUNS
 REQUIRED_CLOSE_BEADS = {
     "snapshot-template": "m80-q420k.4.15",
     "pmem-density": "m80-q420k.3.8",
@@ -326,9 +329,6 @@ def verify_snapshot_template(path: Path) -> list[str]:
     )
     check.require(data.get("load") == "idle", "snapshot: load must be idle")
     check.require(data.get("target_ready") == 1, "snapshot: target_ready must be 1")
-    require_number_at_least(check, "snapshot: n_per_run", data.get("n_per_run"), 20)
-    require_number_at_least(check, "snapshot: runs", data.get("runs"), 3)
-    require_number_at_least(check, "snapshot: samples_total", data.get("samples_total"), 60)
     n_per_run = data.get("n_per_run")
     runs = data.get("runs")
     samples_total = data.get("samples_total")
@@ -343,6 +343,18 @@ def verify_snapshot_template(path: Path) -> list[str]:
     check.require(
         is_non_negative_int(samples_total),
         "snapshot: samples_total must be a non-negative integer",
+    )
+    check.require(
+        n_per_run == SNAPSHOT_TEMPLATE_N_PER_RUN,
+        f"snapshot: n_per_run must equal {SNAPSHOT_TEMPLATE_N_PER_RUN}",
+    )
+    check.require(
+        runs == SNAPSHOT_TEMPLATE_RUNS,
+        f"snapshot: runs must equal {SNAPSHOT_TEMPLATE_RUNS}",
+    )
+    check.require(
+        samples_total == SNAPSHOT_TEMPLATE_SAMPLES_TOTAL,
+        f"snapshot: samples_total must equal {SNAPSHOT_TEMPLATE_SAMPLES_TOTAL}",
     )
     if (
         is_non_negative_int(n_per_run)
@@ -489,17 +501,29 @@ def require_snapshot_reproduction_command(data: dict[str, Any], check: Check) ->
     if not isinstance(command, str):
         return
     for required in [
-        "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0",
-        "M80_SNAPSHOT_BENCH_LOAD=idle",
-        "N=20",
-        "M80_SNAPSHOT_TEMPLATE_RUNS=3",
         "M80_RUN_ROOT=",
-        "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
-        "M80_KERNEL_KIND=stripped",
-        "M80_CGROUP_MODE=disabled",
         "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
     ]:
         check.require(required in command, f"snapshot: reproduction_command missing {required}")
+    for env, expected in [
+        ("M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS", 0),
+        ("M80_SNAPSHOT_BENCH_LOAD", "idle"),
+        (
+            "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT",
+            "crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
+        ),
+        ("M80_KERNEL_KIND", "stripped"),
+        ("M80_CGROUP_MODE", "disabled"),
+    ]:
+        require_command_env_value(check, "snapshot", command, env, expected)
+    require_command_env_value(check, "snapshot", command, "N", SNAPSHOT_TEMPLATE_N_PER_RUN)
+    require_command_env_value(
+        check,
+        "snapshot",
+        command,
+        "M80_SNAPSHOT_TEMPLATE_RUNS",
+        SNAPSHOT_TEMPLATE_RUNS,
+    )
     for env, field in [
         ("M80_SNAPSHOT_BENCH_VCPU_COUNT", "vcpu_count"),
         ("M80_SNAPSHOT_BENCH_MEM_SIZE_MIB", "mem_size_mib"),
@@ -508,7 +532,7 @@ def require_snapshot_reproduction_command(data: dict[str, Any], check: Check) ->
     ]:
         value = data.get(field)
         if is_number(value):
-            check.require(f"{env}={int(value)}" in command, f"snapshot: reproduction_command missing {env}")
+            require_command_env_value(check, "snapshot", command, env, int(value))
     preflight = at(data, "substrate.preflight_artifacts")
     if isinstance(preflight, dict):
         for env, field in [
@@ -522,10 +546,31 @@ def require_snapshot_reproduction_command(data: dict[str, Any], check: Check) ->
         ]:
             value = preflight.get(field)
             if isinstance(value, str):
-                check.require(
-                    f"{env}={value}" in command,
-                    f"snapshot: reproduction_command missing {env} from preflight {field}",
-                )
+                require_command_env_value(check, "snapshot", command, env, value)
+
+
+def require_command_env_value(
+    check: Check,
+    label: str,
+    command: str,
+    env: str,
+    expected: Any,
+) -> None:
+    value = command_env_value(command, env)
+    check.require(
+        value == str(expected),
+        f"{label}: reproduction_command must set {env}={expected}",
+    )
+
+
+def command_env_value(command: str, env: str) -> str | None:
+    match = re.search(rf"(?:^|\s){re.escape(env)}=(?P<value>[^\s\\]+)", command)
+    if match is None:
+        return None
+    value = match.group("value")
+    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
+        return value[1:-1].replace("'\\''", "'")
+    return value
 
 
 def verify_snapshot_doc(path: Path) -> list[str]:
@@ -2362,7 +2407,7 @@ def run_self_tests() -> int:
         git_commit = "c" * 40
         shared_digest = "1" * 64
         per_vm_digest = "2" * 64
-        snapshot_samples_us = [199_000 for _ in range(60)]
+        snapshot_samples_us = [199_000 for _ in range(SNAPSHOT_TEMPLATE_SAMPLES_TOTAL)]
         composed_run_root = "/var/lib/m80-composed-e2e"
         composed_template_root = f"{composed_run_root}/composed-e2e-templates-1/templates"
         substrate = {
@@ -2379,9 +2424,9 @@ def run_self_tests() -> int:
             "bench": "snapshot_template_restore_latency",
             "load": "idle",
             "target_ready": 1,
-            "n_per_run": 20,
-            "runs": 3,
-            "samples_total": 60,
+            "n_per_run": SNAPSHOT_TEMPLATE_N_PER_RUN,
+            "runs": SNAPSHOT_TEMPLATE_RUNS,
+            "samples_total": SNAPSHOT_TEMPLATE_SAMPLES_TOTAL,
             "vcpu_count": 1,
             "mem_size_mib": 512,
             "jail_uid": 1000,
@@ -2419,8 +2464,8 @@ def run_self_tests() -> int:
                 "samples_us": snapshot_samples_us,
                 "sample_details": [
                     {
-                        "run": index // 20,
-                        "cycle": index % 20,
+                        "run": index // SNAPSHOT_TEMPLATE_N_PER_RUN,
+                        "cycle": index % SNAPSHOT_TEMPLATE_N_PER_RUN,
                         "fill_us": value - 1000,
                         "handoff_us": 1000,
                         "restore_to_handback_us": value,
@@ -2433,9 +2478,9 @@ def run_self_tests() -> int:
                     "run": run,
                     "initial_fill_samples_us": [50_000],
                     "restore_to_handback_us": {"p99": 199_000},
-                    "samples_us": [199_000 for _ in range(20)],
+                    "samples_us": [199_000 for _ in range(SNAPSHOT_TEMPLATE_N_PER_RUN)],
                 }
-                for run in range(3)
+                for run in range(SNAPSHOT_TEMPLATE_RUNS)
             ],
         }))
         snapshot_doc.write_text(
@@ -3171,6 +3216,56 @@ The measured signal is acceptable under the same-trust-domain assumption.
         bad_snapshot_target_ready_status = quiet_run_checks(args)
         snapshot_bad["target_ready"] = 1
         snapshot.write_text(json.dumps(snapshot_bad))
+        widened_n_per_run = SNAPSHOT_TEMPLATE_N_PER_RUN + 1
+        widened_samples_total = widened_n_per_run * SNAPSHOT_TEMPLATE_RUNS
+        widened_samples_us = [199_000 for _ in range(widened_samples_total)]
+        snapshot_bad["n_per_run"] = widened_n_per_run
+        snapshot_bad["samples_total"] = widened_samples_total
+        snapshot_bad["data"]["warm"]["samples_us"] = widened_samples_us
+        snapshot_bad["data"]["warm"]["sample_details"] = [
+            {
+                "run": index // widened_n_per_run,
+                "cycle": index % widened_n_per_run,
+                "fill_us": value - 1000,
+                "handoff_us": 1000,
+                "restore_to_handback_us": value,
+            }
+            for index, value in enumerate(widened_samples_us)
+        ]
+        snapshot_bad["runs_detail"] = [
+            {
+                "run": run,
+                "initial_fill_samples_us": [50_000],
+                "restore_to_handback_us": {"p99": 199_000},
+                "samples_us": [199_000 for _ in range(widened_n_per_run)],
+            }
+            for run in range(SNAPSHOT_TEMPLATE_RUNS)
+        ]
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_exact_shape_status = quiet_run_checks(args)
+        snapshot_bad["n_per_run"] = SNAPSHOT_TEMPLATE_N_PER_RUN
+        snapshot_bad["samples_total"] = SNAPSHOT_TEMPLATE_SAMPLES_TOTAL
+        snapshot_bad["data"]["warm"]["samples_us"] = snapshot_samples_us
+        snapshot_bad["data"]["warm"]["sample_details"] = [
+            {
+                "run": index // SNAPSHOT_TEMPLATE_N_PER_RUN,
+                "cycle": index % SNAPSHOT_TEMPLATE_N_PER_RUN,
+                "fill_us": value - 1000,
+                "handoff_us": 1000,
+                "restore_to_handback_us": value,
+            }
+            for index, value in enumerate(snapshot_samples_us)
+        ]
+        snapshot_bad["runs_detail"] = [
+            {
+                "run": run,
+                "initial_fill_samples_us": [50_000],
+                "restore_to_handback_us": {"p99": 199_000},
+                "samples_us": [199_000 for _ in range(SNAPSHOT_TEMPLATE_N_PER_RUN)],
+            }
+            for run in range(SNAPSHOT_TEMPLATE_RUNS)
+        ]
+        snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["data"]["warm"]["samples_us"] = snapshot_bad["data"]["warm"]["samples_us"][:59]
         snapshot.write_text(json.dumps(snapshot_bad))
         bad_snapshot_sample_count_status = quiet_run_checks(args)
@@ -3205,6 +3300,28 @@ The measured signal is acceptable under the same-trust-domain assumption.
         snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
             "M80_SNAPSHOT_BENCH_LOAD=idle",
             "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 M80_SNAPSHOT_BENCH_LOAD=idle",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "N=20 ",
+            "N=200 ",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_n_reproduction_command_status = quiet_run_checks(args)
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "N=200 ",
+            "N=20 ",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_SNAPSHOT_TEMPLATE_RUNS=3 ",
+            "M80_SNAPSHOT_TEMPLATE_RUNS=30 ",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_runs_reproduction_command_status = quiet_run_checks(args)
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_SNAPSHOT_TEMPLATE_RUNS=30 ",
+            "M80_SNAPSHOT_TEMPLATE_RUNS=3 ",
         )
         snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
@@ -3744,12 +3861,15 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or stock_kernel_status == 0
             or bad_git_commit_status == 0
             or bad_snapshot_target_ready_status == 0
+            or bad_snapshot_exact_shape_status == 0
             or bad_snapshot_sample_count_status == 0
             or bad_snapshot_sample_detail_status == 0
             or bad_snapshot_run_cycle_status == 0
             or bad_snapshot_runs_detail_status == 0
             or bad_snapshot_percentile_status == 0
             or bad_snapshot_allow_other_reproduction_command_status == 0
+            or bad_snapshot_n_reproduction_command_status == 0
+            or bad_snapshot_runs_reproduction_command_status == 0
             or bad_snapshot_reproduction_command_status == 0
             or bad_snapshot_jail_uid_reproduction_command_status == 0
             or snapshot_doc_bad_smoke_status == 0
