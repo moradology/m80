@@ -39,6 +39,39 @@ pgrep -a firecracker
 If any process appears, stop and ask the owner of those VMs before draining or
 killing them. The measurement harnesses fail closed on a noisy host.
 
+To identify the owner without changing host state, capture the process tree and
+cgroup first:
+
+```sh
+ps -eo pid,ppid,user,comm,args | rg 'firecracker|sandbox-executor-rs'
+for p in $(pgrep firecracker); do
+  printf '\nPID %s cgroup:\n' "$p"
+  sed -n '1,5p' "/proc/$p/cgroup"
+done
+```
+
+If a Firecracker process belongs to a Kubernetes pod cgroup, map the pod UID
+back to its controller before requesting a drain:
+
+```sh
+kubectl get pod -A -o json \
+  | jq -r '.items[]
+    | select(.metadata.uid=="<pod-uid-from-cgroup>")
+    | {namespace:.metadata.namespace,name:.metadata.name,node:.spec.nodeName,
+       ownerReferences:.metadata.ownerReferences,
+       containerStatuses:.status.containerStatuses} | @json'
+```
+
+If a Firecracker process is under a user systemd or tmux scope, capture the
+scope status for the owner instead:
+
+```sh
+systemctl --user status '<scope-name>.scope' --no-pager
+```
+
+These commands are inventory only. Do not use them as approval to terminate the
+processes.
+
 Run close-quality measurements from a clean worktree except for the artifact
 path being produced. The artifact guards reject measurements that record
 uncommitted source changes.
