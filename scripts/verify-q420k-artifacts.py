@@ -2062,6 +2062,7 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
     text = load_text(path)
     check = Check()
     section = markdown_section(text, "E13. Composed E2E")
+    section_text = section or ""
     command = markdown_shell_block(section) if section is not None else None
     check.require(path.is_file(), f"composed instruction doc: missing {path}")
     check.require(section is not None, "composed instruction doc: missing E13. Composed E2E section")
@@ -2087,7 +2088,7 @@ def verify_composed_instruction_doc(path: Path) -> list[str]:
         "crates/m80-firecracker/benches/snapshots/composed-e2e-host-memory.json",
         "crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json",
     ]:
-        check.require(required in text, f"composed instruction doc: missing {required}")
+        check.require(required in section_text, f"composed instruction doc: missing {required}")
     check.require(command is not None, "composed instruction doc: missing E13 command shell block")
     if command is not None:
         verify_composed_command(
@@ -4874,6 +4875,37 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_RUN_ROOT=/tmp/m80-composed-e2e",
             "M80_RUN_ROOT=/var/lib/m80-composed-e2e",
         ))
+        composed_playbook_artifact_outside_section = (
+            measurement_playbook.read_text()
+            .replace(
+                "- `crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json`\n",
+                "",
+                1,
+            )
+            .replace(
+                "# Perf measurement playbook\n\n",
+                "# Perf measurement playbook\n\n"
+                "- `crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json`\n\n",
+                1,
+            )
+        )
+        measurement_playbook.write_text(composed_playbook_artifact_outside_section)
+        composed_playbook_artifact_outside_section_status = quiet_run_checks(args)
+        measurement_playbook.write_text(
+            composed_playbook_artifact_outside_section
+            .replace(
+                "# Perf measurement playbook\n\n"
+                "- `crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json`\n\n",
+                "# Perf measurement playbook\n\n",
+                1,
+            )
+            .replace(
+                "- `crates/m80-firecracker/benches/snapshots/composed-e2e-host-memory.json`\n",
+                "- `crates/m80-firecracker/benches/snapshots/composed-e2e-host-memory.json`\n"
+                "- `crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json`\n",
+                1,
+            )
+        )
         args.only = ["composed-doc"]
         composed_doc_bad = composed_doc.read_text().replace(
             "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
@@ -5244,6 +5276,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or composed_playbook_status != 0
             or composed_playbook_bad_helper_status == 0
             or composed_playbook_bad_run_root_status == 0
+            or composed_playbook_artifact_outside_section_status == 0
             or missing_doc_json_identity_status == 0
             or composed_doc_identity_outside_method_status == 0
             or composed_doc_preflight_outside_method_status == 0
