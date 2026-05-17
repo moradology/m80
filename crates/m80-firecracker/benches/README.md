@@ -54,7 +54,10 @@ python3 scripts/verify-q420k-artifacts.py --only snapshot-template --require-com
 
 The `snapshot-template` selector also checks
 `docs/perf/snapshot-template-restore.md`; the doc must include the bench stderr
-line from the close-quality run that wrote the JSON artifact.
+line from the close-quality run that wrote the JSON artifact. The verifier also
+cross-checks the doc against the JSON artifact's measured git commit, preflight
+identity, and smoke p99, and it requires the snapshot reproduction command to
+pin the noisy-host override, VM sizing, target-ready count, and run root.
 
 The Phase C Shared density artifact lives outside this benches directory at
 `docs/perf/pmem-shared-density.md`; check it with `--only pmem-density`. That

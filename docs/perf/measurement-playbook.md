@@ -59,7 +59,9 @@ preflight substrate, noisy-host override artifacts, weak sample counts,
 threshold misses, teardown residue, Shared payload layout drift found by
 `m80-q420k.8.12`, a missing or non-executable quiet-host inventory helper,
 a missing or non-executable Shared density smoke script,
-snapshot-template docs without the matching bench stderr paste, and a composed
+snapshot-template docs without the matching bench stderr paste, snapshot
+artifact commands that do not pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
+`target_ready=1`, vCPU/memory sizing, and run-root inputs, and a composed
 receipt doc that still carries the diagnostic banner.
 Measurement artifacts that carry source-tree cleanliness fields must record a
 clean worktree except for the artifact paths themselves. Real-KVM close
@@ -68,7 +70,9 @@ proving both a quiet starting host and no Firecracker leak after teardown.
 They also record preflight artifact identity: resolved Firecracker,
 jailer, seccomp filter, helper, kernel, and rootfs paths plus manifest
 kernel/rootfs sha256s. Each close artifact records the full measured
-`git_commit` alongside the clean-worktree flag. Add
+`git_commit` alongside the clean-worktree flag. The snapshot-template receipt
+doc is cross-checked against its JSON artifact for measured git commit,
+preflight identity, and smoke p99. Add
 `--require-committed` after the artifacts are committed; that mode rejects
 artifacts absent from `HEAD` or with staged/unstaged changes. For final parent
 close, add `--require-closed-beads` and

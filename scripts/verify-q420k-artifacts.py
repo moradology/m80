@@ -259,9 +259,12 @@ def verify_snapshot_template(path: Path) -> list[str]:
         "snapshot: bench must be snapshot_template_restore_latency",
     )
     check.require(data.get("load") == "idle", "snapshot: load must be idle")
+    check.require(data.get("target_ready") == 1, "snapshot: target_ready must be 1")
     require_number_at_least(check, "snapshot: n_per_run", data.get("n_per_run"), 20)
     require_number_at_least(check, "snapshot: runs", data.get("runs"), 3)
     require_number_at_least(check, "snapshot: samples_total", data.get("samples_total"), 60)
+    require_number_at_least(check, "snapshot: vcpu_count", data.get("vcpu_count"), 1)
+    require_number_at_least(check, "snapshot: mem_size_mib", data.get("mem_size_mib"), 1)
     require_number_at_least(check, "snapshot: jail_uid", data.get("jail_uid"), 1)
     require_number_at_least(check, "snapshot: jail_gid", data.get("jail_gid"), 1)
     check.require(data.get("cgroup_mode") == "disabled", "snapshot: cgroup_mode must be disabled")
@@ -289,9 +292,11 @@ def require_snapshot_reproduction_command(data: dict[str, Any], check: Check) ->
     if not isinstance(command, str):
         return
     for required in [
+        "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0",
         "M80_SNAPSHOT_BENCH_LOAD=idle",
         "N=20",
         "M80_SNAPSHOT_TEMPLATE_RUNS=3",
+        "M80_RUN_ROOT=",
         "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         "M80_KERNEL_KIND=stripped",
         "M80_CGROUP_MODE=disabled",
@@ -299,6 +304,8 @@ def require_snapshot_reproduction_command(data: dict[str, Any], check: Check) ->
     ]:
         check.require(required in command, f"snapshot: reproduction_command missing {required}")
     for env, field in [
+        ("M80_SNAPSHOT_BENCH_VCPU_COUNT", "vcpu_count"),
+        ("M80_SNAPSHOT_BENCH_MEM_SIZE_MIB", "mem_size_mib"),
         ("M80_JAIL_UID", "jail_uid"),
         ("M80_JAIL_GID", "jail_gid"),
     ]:
@@ -334,8 +341,13 @@ def verify_snapshot_doc(path: Path) -> list[str]:
     for required in [
         "crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         "data.warm.restore_to_handback_ms.p99",
+        "target_ready=1",
+        "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0",
         "M80_SNAPSHOT_BENCH_LOAD=idle",
+        "M80_SNAPSHOT_BENCH_VCPU_COUNT=",
+        "M80_SNAPSHOT_BENCH_MEM_SIZE_MIB=",
         "M80_KERNEL_KIND=stripped",
+        "M80_RUN_ROOT=",
         "M80_JAIL_UID=",
         "M80_JAIL_GID=",
         "M80_CGROUP_MODE=disabled",
@@ -359,6 +371,48 @@ def verify_snapshot_doc(path: Path) -> list[str]:
             "output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         ]:
             check.require(required in smoke, f"snapshot doc: smoke evidence missing {required}")
+    for marker in [
+        "Pending quiet-host close run",
+        "## Diagnostic Run",
+        "This does not close `m80-q420k.4.15`",
+        "unrelated `t2-warm-slot-*` Firecracker processes",
+    ]:
+        check.require(marker not in text, f"snapshot doc: diagnostic marker remains: {marker}")
+    return check.errors
+
+
+def verify_snapshot_doc_consistency(doc_path: Path, snapshot_path: Path) -> list[str]:
+    text = load_text(doc_path)
+    data = load_json(snapshot_path)
+    check = Check()
+    commit = data.get("git_commit")
+    if isinstance(commit, str):
+        check.require(commit in text, "snapshot doc: missing measured git_commit from JSON artifact")
+    p99_us = at(data, "data.warm.restore_to_handback_us.p99")
+    p99_ms = at(data, "data.warm.restore_to_handback_ms.p99")
+    if is_number(p99_us) or is_number(p99_ms):
+        p99_us = int(p99_us if is_number(p99_us) else round(p99_ms * 1000))
+        check.require(f"p99={p99_us}us" in text, "snapshot doc: smoke p99 does not match JSON artifact")
+    preflight = at(data, "substrate.preflight_artifacts")
+    if isinstance(preflight, dict):
+        for field in [
+            "firecracker_bin",
+            "firecracker_seccomp_filter",
+            "jailer_bin",
+            "jailer_harden_bin",
+            "net_helper_bin",
+            "kernel_image",
+            "rootfs_image",
+            "kernel_image_sha256",
+            "rootfs_image_sha256",
+            "expected_firecracker_version",
+        ]:
+            value = preflight.get(field)
+            if isinstance(value, str) and value:
+                check.require(
+                    value in text,
+                    f"snapshot doc: missing substrate.preflight_artifacts.{field} from JSON artifact",
+                )
     return check.errors
 
 
@@ -1609,6 +1663,14 @@ def run_checks(args: argparse.Namespace) -> int:
             checks.append((label, [f"{label}: {exc}"]))
     errors = [error for _, group in checks for error in group]
     selected_keys = {key for key, _, _, _ in check_specs}
+    if {"snapshot-template", "snapshot-doc"}.issubset(selected_keys):
+        snapshot_path = artifact_path(args.snapshot_template)
+        doc_path = artifact_path(args.snapshot_doc)
+        if snapshot_path.is_file() and doc_path.is_file():
+            try:
+                errors.extend(verify_snapshot_doc_consistency(doc_path, snapshot_path))
+            except AssertionError as exc:
+                errors.append(f"snapshot doc consistency: {exc}")
     if {"composed-restore", "composed-memory", "composed-residue"}.issubset(selected_keys):
         composed_paths = [
             artifact_path(args.composed_restore),
@@ -1694,9 +1756,12 @@ def run_self_tests() -> int:
             "schema_version": 1,
             "bench": "snapshot_template_restore_latency",
             "load": "idle",
+            "target_ready": 1,
             "n_per_run": 20,
             "runs": 3,
             "samples_total": 60,
+            "vcpu_count": 1,
+            "mem_size_mib": 512,
             "jail_uid": 1000,
             "jail_gid": 1000,
             "cgroup_mode": "disabled",
@@ -1704,9 +1769,12 @@ def run_self_tests() -> int:
             "git_worktree_dirty_excluding_artifact": False,
             "git_commit": git_commit,
             "reproduction_command": (
+                "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 "
                 "M80_SNAPSHOT_BENCH_LOAD=idle "
                 "N=20 "
                 "M80_SNAPSHOT_TEMPLATE_RUNS=3 "
+                "M80_SNAPSHOT_BENCH_VCPU_COUNT=1 "
+                "M80_SNAPSHOT_BENCH_MEM_SIZE_MIB=512 "
                 "M80_JAIL_UID=1000 "
                 "M80_JAIL_GID=1000 "
                 "M80_CGROUP_MODE=disabled "
@@ -1719,6 +1787,7 @@ def run_self_tests() -> int:
                 "M80_KERNEL_IMAGE=/var/lib/m80/kernels/vmlinux "
                 "M80_KERNEL_KIND=stripped "
                 "M80_ROOTFS_IMAGE=/var/lib/m80/rootfs.ext4 "
+                "M80_RUN_ROOT=/var/lib/m80/run "
                 "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency"
             ),
             "substrate": substrate,
@@ -1729,13 +1798,33 @@ def run_self_tests() -> int:
 
 Artifact: `crates/m80-firecracker/benches/snapshot_template_restore_latency.json`
 Field: `data.warm.restore_to_handback_ms.p99`
+Observable: `target_ready=1`
+
+Measured git commit:
+`cccccccccccccccccccccccccccccccccccccccc`
+
+Preflight artifacts:
+
+- firecracker_bin: `/opt/firecracker/bin/firecracker`
+- firecracker_seccomp_filter: `/opt/firecracker/bin/firecracker-seccomp-filter.bin`
+- jailer_bin: `/opt/firecracker/bin/jailer`
+- jailer_harden_bin: `/opt/m80/bin/m80-jailer-harden`
+- net_helper_bin: `/opt/m80/bin/m80-net-helper`
+- kernel_image: `/var/lib/m80/kernels/vmlinux`
+- rootfs_image: `/var/lib/m80/rootfs.ext4`
+- kernel_image_sha256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+- rootfs_image_sha256: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`
+- expected_firecracker_version: `v1.15.1`
 
 Command:
 
 ```sh
 sudo -n env \
+  M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 \
   M80_SNAPSHOT_BENCH_LOAD=idle \
+  M80_SNAPSHOT_BENCH_VCPU_COUNT=1 M80_SNAPSHOT_BENCH_MEM_SIZE_MIB=512 \
   M80_KERNEL_KIND=stripped \
+  M80_RUN_ROOT=/var/lib/m80/run \
   M80_JAIL_UID=1000 M80_JAIL_GID=1000 M80_CGROUP_MODE=disabled \
   N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3 \
   M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json \
@@ -2279,6 +2368,22 @@ The measured signal is acceptable under the same-trust-domain assumption.
         bad_git_commit_status = quiet_run_checks(args)
         snapshot_bad["git_commit"] = git_commit
         snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["target_ready"] = 2
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_target_ready_status = quiet_run_checks(args)
+        snapshot_bad["target_ready"] = 1
+        snapshot.write_text(json.dumps(snapshot_bad))
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 ",
+            "",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
+        bad_snapshot_allow_other_reproduction_command_status = quiet_run_checks(args)
+        snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
+            "M80_SNAPSHOT_BENCH_LOAD=idle",
+            "M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 M80_SNAPSHOT_BENCH_LOAD=idle",
+        )
+        snapshot.write_text(json.dumps(snapshot_bad))
         snapshot_bad["reproduction_command"] = snapshot_bad["reproduction_command"].replace(
             "M80_KERNEL_KIND=stripped",
             "M80_KERNEL_KIND=stock",
@@ -2322,6 +2427,19 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "M80_KERNEL_KIND=stock",
             "M80_KERNEL_KIND=stripped",
         ))
+        args.only = ["snapshot-template"]
+        snapshot_doc_bad_identity = snapshot_doc.read_text().replace(
+            "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
+            "",
+        )
+        snapshot_doc.write_text(snapshot_doc_bad_identity)
+        snapshot_doc_bad_identity_status = quiet_run_checks(args)
+        snapshot_doc.write_text(
+            snapshot_doc_bad_identity.replace(
+                "Preflight artifacts:",
+                "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\nPreflight artifacts:",
+            )
+        )
         args.only = ["pmem-density"]
         density_bad = density.read_text().replace(
             "- final active-use markers: `0`",
@@ -2623,10 +2741,13 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or bad_preflight_artifacts_status == 0
             or stock_kernel_status == 0
             or bad_git_commit_status == 0
+            or bad_snapshot_target_ready_status == 0
+            or bad_snapshot_allow_other_reproduction_command_status == 0
             or bad_snapshot_reproduction_command_status == 0
             or bad_snapshot_jail_uid_reproduction_command_status == 0
             or snapshot_doc_bad_smoke_status == 0
             or snapshot_doc_bad_kernel_kind_status == 0
+            or snapshot_doc_bad_identity_status == 0
             or density_bad_teardown_status == 0
             or density_bad_bound_status == 0
             or density_bad_reproduction_command_status == 0

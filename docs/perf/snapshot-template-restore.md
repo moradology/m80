@@ -10,6 +10,7 @@ does not satisfy the bead.
   `crates/m80-firecracker/benches/snapshot_template_restore_latency.json`
 - Field: `data.warm.restore_to_handback_ms.p99`
 - Bound: `<= 200.0`
+- Target ready count: `target_ready=1`
 - Substrate: real KVM, `/dev/kvm` writable, sudo available, no other admitted
   VMs, `M80_SNAPSHOT_BENCH_LOAD=idle`
 - Samples: `N=20` lease cycles per run, `M80_SNAPSHOT_TEMPLATE_RUNS=3`,
@@ -43,6 +44,7 @@ sync && echo 3 | sudo tee /proc/sys/vm/drop_caches
 
 sudo -n env PATH=/home/nathan/.cargo/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   CARGO_TARGET_DIR=/tank/tmp/m80-sudo-target \
+  M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0 \
   M80_FIRECRACKER_BIN=/opt/firecracker/bin/firecracker \
   M80_JAILER_BIN=/opt/firecracker/bin/jailer \
   M80_FIRECRACKER_SECCOMP_FILTER=/opt/firecracker/bin/firecracker-seccomp-filter.bin \
@@ -52,6 +54,7 @@ sudo -n env PATH=/home/nathan/.cargo/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   M80_KERNEL_KIND=stripped \
   M80_ROOTFS_IMAGE=/tank/tmp/m80-build/post-restore-current/output.ext4 \
   M80_RUN_ROOT=/tank/tmp/m80-template-build-test \
+  M80_SNAPSHOT_BENCH_VCPU_COUNT=1 M80_SNAPSHOT_BENCH_MEM_SIZE_MIB=512 \
   M80_JAIL_UID=1000 M80_JAIL_GID=1000 M80_CGROUP_MODE=disabled \
   M80_SNAPSHOT_BENCH_LOAD=idle \
   N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3 \

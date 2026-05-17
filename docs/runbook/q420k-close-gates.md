@@ -161,6 +161,13 @@ Replace that doc's pending `## Smoke evidence` section with the bench stderr
 line from the same quiet-host run, including
 `snapshot-template restore: load=idle runs=3 n=20`, the recorded `p99=...`,
 and `output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json`.
+The JSON and doc must also pin `M80_SNAPSHOT_TEMPLATE_ALLOW_OTHER_VMS=0`,
+`target_ready=1`, `M80_SNAPSHOT_BENCH_VCPU_COUNT`,
+`M80_SNAPSHOT_BENCH_MEM_SIZE_MIB`, and `M80_RUN_ROOT` rather than relying on
+defaults. Remove pending or diagnostic-only text from the receipt doc before
+close; the verifier rejects stale diagnostic markers and cross-checks the doc
+against the JSON artifact's measured git commit, preflight identity, and smoke
+p99.
 
 Then verify the artifact:
 
