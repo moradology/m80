@@ -7,12 +7,6 @@ use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-#[cfg(all(
-    target_os = "linux",
-    not(target_env = "musl"),
-    not(target_env = "ohos")
-))]
-use nix::sys::statfs::XFS_SUPER_MAGIC;
 use nix::sys::statfs::{
     statfs, FsType, BTRFS_SUPER_MAGIC, EXT2_SUPER_MAGIC, EXT3_SUPER_MAGIC, EXT4_SUPER_MAGIC,
     FUSE_SUPER_MAGIC, OVERLAYFS_SUPER_MAGIC, TMPFS_MAGIC,
@@ -183,7 +177,7 @@ fn fs_kind(fs_type: FsType) -> FsKind {
     not(target_env = "ohos")
 ))]
 fn is_xfs(fs_type: FsType) -> bool {
-    fs_type == XFS_SUPER_MAGIC
+    fs_type == nix::sys::statfs::XFS_SUPER_MAGIC
 }
 
 #[cfg(not(all(

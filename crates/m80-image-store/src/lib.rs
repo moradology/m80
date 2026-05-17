@@ -66,9 +66,6 @@ pub enum ImageArtifact {
     Ext4(Ext4Image),
 }
 
-/// Alias used by [`ImageStore::resolve`].
-pub type ResolvedImage = ImageArtifact;
-
 impl ImageArtifact {
     /// Return the artifact kind.
     #[must_use]
@@ -305,12 +302,6 @@ pub enum StoreError {
         path: PathBuf,
         /// Finite rejection reason.
         reason: &'static str,
-    },
-    /// The selected helper is unavailable for this artifact kind.
-    #[error("unsupported image kind {kind}")]
-    UnsupportedKind {
-        /// Unsupported kind.
-        kind: ImageKind,
     },
     /// A filesystem creation helper failed.
     #[error("mkfs for {kind} failed: {detail}")]

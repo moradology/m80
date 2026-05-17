@@ -141,7 +141,7 @@ pub enum SnapshotKind {
 }
 
 /// Parameters for [`capture`].
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CaptureRequest {
     /// Path to the Firecracker API socket.
     pub api_socket: PathBuf,
@@ -156,7 +156,7 @@ pub struct CaptureRequest {
 }
 
 /// Parameters for [`restore`].
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RestoreRequest {
     /// Path to the Firecracker API socket for the **new** (restore-target) process.
     pub api_socket: PathBuf,

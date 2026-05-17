@@ -31,9 +31,6 @@ pub struct OpsMetrics {
     pub vm_count: u32,
     /// Guest metrics sampled from one running VM at scrape time.
     pub guest: Option<MetricsResponse>,
-    // TODO(m80-q420k.5.8): producer-side wiring for the layered-rootfs
-    // families belongs with the real-run E2E surface; zero defaults keep the
-    // render contract available until then.
     /// Pmem layer count by declared sharing mode.
     pub pmem_layers_per_vm_count_by_sharing: PmemLayerCountBySharing,
     /// Snapshot-template count by freshness classification.

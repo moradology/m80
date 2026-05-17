@@ -9,8 +9,6 @@ use tracing::warn;
 use crate::error::JailerError;
 use crate::types::{JailerState, Plan, PlanStep, JAILER_PLAN_FILE, JAILER_STATE_FILE};
 
-/// Map an [`std::io::Error`] (or a serde error wrapped in one) to
-/// [`JailerError::Io`] for the given `path`. Used as `.map_err(io_err(path))`.
 fn io_err(path: std::path::PathBuf) -> impl Fn(io::Error) -> JailerError {
     move |source| JailerError::Io {
         path: path.clone(),

@@ -220,11 +220,15 @@ fn verify_rootfs_and_manifest(
 }
 
 pub(crate) fn manifest_path_for_rootfs(rootfs: &Path) -> PathBuf {
-    PathBuf::from(format!("{}.manifest.json", rootfs.display()))
+    let mut s = rootfs.as_os_str().to_owned();
+    s.push(".manifest.json");
+    PathBuf::from(s)
 }
 
 pub(crate) fn build_receipt_path_for_rootfs(rootfs: &Path) -> PathBuf {
-    PathBuf::from(format!("{}.build-receipt.json", rootfs.display()))
+    let mut s = rootfs.as_os_str().to_owned();
+    s.push(".build-receipt.json");
+    PathBuf::from(s)
 }
 
 fn parse_kernel_kind(raw: &str) -> Result<KernelKind, PreflightError> {

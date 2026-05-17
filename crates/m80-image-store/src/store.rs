@@ -13,8 +13,7 @@ use sha2::{Digest as _, Sha256};
 use crate::build::build_image;
 use crate::lock::{StoreLock, TEMPLATE_COORDINATION_LOCK_FILE_NAME};
 use crate::{
-    ErofsImage, Ext4Image, ImageArtifact, ImageDigest, ImageKind, ResolvedImage, StoreError,
-    DEFAULT_STORE_ROOT,
+    ErofsImage, Ext4Image, ImageArtifact, ImageDigest, ImageKind, StoreError, DEFAULT_STORE_ROOT,
 };
 
 const METADATA_SCHEMA_VERSION: u32 = 1;
@@ -285,16 +284,15 @@ impl ImageStore {
     ///
     /// Resolution takes a shared store lock and verifies the final path is a
     /// regular file opened with `O_NOFOLLOW`.
-    pub fn resolve(&self, digest: &ImageDigest) -> Result<ResolvedImage, StoreError> {
+    pub fn resolve(&self, digest: &ImageDigest) -> Result<ImageArtifact, StoreError> {
         let _lock = StoreLock::shared(&self.root)?;
         let entry = self.entry_paths(digest);
         let metadata = read_metadata(&entry.metadata, digest)?;
-        let artifact = metadata
-            .artifacts
-            .single()
-            .ok_or_else(|| StoreError::AmbiguousDigest {
+        let [artifact] = metadata.artifacts.as_slice() else {
+            return Err(StoreError::AmbiguousDigest {
                 digest: digest.clone(),
-            })?;
+            });
+        };
         self.resolve_kind(digest, artifact.kind, artifact.size_bytes)
     }
 
@@ -303,7 +301,7 @@ impl ImageStore {
         &self,
         digest: &ImageDigest,
         kind: ImageKind,
-    ) -> Result<ResolvedImage, StoreError> {
+    ) -> Result<ImageArtifact, StoreError> {
         let _lock = StoreLock::shared(&self.root)?;
         let entry = self.entry_paths(digest);
         let metadata = read_metadata(&entry.metadata, digest)?;
@@ -332,7 +330,7 @@ impl ImageStore {
         validate_vm_marker_name(vm_id)?;
         let _lock = StoreLock::exclusive(&self.root)?;
         let entry = self.entry_paths(digest);
-        let _metadata = read_metadata(&entry.metadata, digest)?;
+        read_metadata(&entry.metadata, digest)?;
         let refs_dir = shared_refs_dir(&self.root, digest);
         std::fs::create_dir_all(&refs_dir).map_err(|source| StoreError::Io {
             path: refs_dir.clone(),
@@ -520,7 +518,7 @@ impl ImageStore {
         digest: &ImageDigest,
         kind: ImageKind,
         size_bytes: u64,
-    ) -> Result<ResolvedImage, StoreError> {
+    ) -> Result<ImageArtifact, StoreError> {
         let entry = self.entry_paths(digest);
         let path = entry.artifact_path(kind);
         open_regular_nofollow(&path)?;
@@ -568,11 +566,11 @@ impl ImageStore {
     }
 
     fn entry_paths(&self, digest: &ImageDigest) -> EntryPaths {
-        let shard = &digest.as_str()[0..2];
-        let dir = self.root.join(shard).join(digest.as_str());
+        let s = digest.as_str();
+        let dir = self.root.join(&s[..2]).join(s);
         EntryPaths {
-            dir: dir.clone(),
             metadata: dir.join(METADATA_FILE_NAME),
+            dir,
         }
     }
 }
@@ -691,7 +689,6 @@ fn release_shared_ref_marker(
     digest: &ImageDigest,
     vm_id: &str,
 ) -> Result<(), StoreError> {
-    validate_vm_marker_name(vm_id)?;
     let _lock = StoreLock::exclusive(root)?;
     let marker = shared_ref_marker_path(root, digest, vm_id);
     match std::fs::remove_file(&marker) {
@@ -767,15 +764,6 @@ struct StoreMetadata {
     artifacts: Vec<ArtifactMetadata>,
 }
 
-impl StoreMetadata {
-    fn new() -> Self {
-        Self {
-            schema_version: METADATA_SCHEMA_VERSION,
-            artifacts: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ArtifactMetadata {
@@ -783,19 +771,6 @@ struct ArtifactMetadata {
     digest: String,
     size_bytes: u64,
     file_name: String,
-}
-
-trait SingleArtifact {
-    fn single(&self) -> Option<&ArtifactMetadata>;
-}
-
-impl SingleArtifact for [ArtifactMetadata] {
-    fn single(&self) -> Option<&ArtifactMetadata> {
-        match self {
-            [artifact] => Some(artifact),
-            _ => None,
-        }
-    }
 }
 
 fn ensure_entry_dirs(entry: &EntryPaths) -> Result<(), StoreError> {
@@ -884,7 +859,10 @@ fn write_metadata_entry(
     let mut metadata = if path.exists() {
         read_metadata_file(path)?
     } else {
-        StoreMetadata::new()
+        StoreMetadata {
+            schema_version: METADATA_SCHEMA_VERSION,
+            artifacts: Vec::new(),
+        }
     };
     metadata.artifacts.retain(|artifact| artifact.kind != kind);
     metadata.artifacts.push(ArtifactMetadata {

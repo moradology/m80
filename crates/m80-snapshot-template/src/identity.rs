@@ -79,7 +79,11 @@ impl TemplateFingerprint {
 
         let mut pmem_layers = inputs.pmem_image_digest_set.clone();
         pmem_layers.sort_by(PmemTemplateEntry::canonical_cmp);
-        hash_usize(&mut hasher, "pmem_len", pmem_layers.len());
+        hash_field(
+            &mut hasher,
+            "pmem_len",
+            &(pmem_layers.len() as u64).to_be_bytes(),
+        );
         for layer in &pmem_layers {
             hash_field(
                 &mut hasher,
@@ -426,6 +430,3 @@ fn hash_field(hasher: &mut Sha256, label: &str, value: &[u8]) {
     hasher.update(value);
 }
 
-fn hash_usize(hasher: &mut Sha256, label: &str, value: usize) {
-    hash_field(hasher, label, &(value as u64).to_be_bytes());
-}

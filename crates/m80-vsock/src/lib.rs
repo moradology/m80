@@ -140,12 +140,10 @@ impl Channel {
         // Write CONNECT line.
         {
             let mut w = &stream;
-            let line = format!("CONNECT {guest_port}\n");
-            w.write_all(line.as_bytes())
-                .map_err(|e| io_err(&host_uds_arc, e))?;
+            write!(w, "CONNECT {guest_port}\n").map_err(|e| io_err(&host_uds_arc, e))?;
             w.flush().map_err(|e| io_err(&host_uds_arc, e))?;
             if debug_wire::is_enabled("vsock") {
-                tracing::trace!(direction = "out", msg = line.trim(), "vsock handshake");
+                tracing::trace!(direction = "out", msg = format!("CONNECT {guest_port}"), "vsock handshake");
             }
         }
 
@@ -183,7 +181,7 @@ impl Channel {
     /// Send one [`Envelope`] over the channel.
     pub fn send<T>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError>
     where
-        T: Payload + Clone,
+        T: Payload,
     {
         send_envelope(&mut self.stream, envelope)
     }
@@ -315,27 +313,13 @@ fn is_read_timeout(kind: io::ErrorKind) -> bool {
     matches!(kind, io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock)
 }
 
-impl Drop for Channel {
-    fn drop(&mut self) {
-        // Nothing to flush: stream is a raw UnixStream; the kernel owns the
-        // send buffer. Dropping closes the fd and signals EOF to the peer.
-    }
-}
-
 impl ChannelSender {
     /// Send one [`Envelope`] over the cloned write half.
     pub fn send<T>(&mut self, envelope: &Envelope<T>) -> Result<(), VsockError>
     where
-        T: Payload + Clone,
+        T: Payload,
     {
         send_envelope(&mut self.stream, envelope)
-    }
-}
-
-impl Drop for ChannelSender {
-    fn drop(&mut self) {
-        // Nothing to flush: stream is a raw UnixStream clone; dropping closes
-        // the fd. No userspace buffer exists to drain.
     }
 }
 

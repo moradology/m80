@@ -337,7 +337,7 @@ fn build_stage(
 fn stage_parent(into: &Path) -> PathBuf {
     into.parent()
         .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."))
+        .unwrap_or(Path::new("."))
         .to_path_buf()
 }
 

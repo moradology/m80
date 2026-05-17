@@ -38,7 +38,7 @@ const BUSYBOX_APPLETS: &[&str] = &[
 ];
 
 pub(crate) fn run_build_minimal_erofs(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
-    let _size_bytes = parse_size(&cfg.rootfs.size)
+    parse_size(&cfg.rootfs.size)
         .with_context(|| format!("parsing rootfs.size '{}'", cfg.rootfs.size))?;
     let kernel = cfg.output.dir.join("vmlinux");
     let output_rootfs = cfg.output.dir.join("output.erofs");

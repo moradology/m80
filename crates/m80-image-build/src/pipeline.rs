@@ -89,13 +89,6 @@ pub(crate) const PID_ONE_MOUNTPOINT_DIRS: &[&str] = &[
     "merged",
 ];
 
-/// Resolved paths for a completed build.
-struct BuildPaths {
-    kernel: PathBuf,
-    source_rootfs: PathBuf,
-    output_rootfs: PathBuf,
-}
-
 /// Run the full build pipeline or print a dry-run plan. Dispatches on
 /// `cfg.rootfs.kind`: `"ubuntu"` (default) builds from the firecracker-ci
 /// squashfs; `"minimal"` builds an empty ext4 with busybox + static
@@ -184,12 +177,6 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
     std::fs::create_dir_all(&cfg.output.dir)
         .with_context(|| format!("creating output dir {}", cfg.output.dir.display()))?;
 
-    let paths = BuildPaths {
-        kernel: kernel.clone(),
-        source_rootfs: source_rootfs.clone(),
-        output_rootfs: output_rootfs.clone(),
-    };
-
     // Step 1: download kernel.
     run_curl(&kernel_url, &kernel).context("step 1: download kernel")?;
 
@@ -230,9 +217,9 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         .context("copying m80-guestd to output dir")?;
 
     // Step 9: hash all four artifacts.
-    let kernel_sha = sha256_file(&paths.kernel).context("sha256 kernel")?;
-    let source_sha = sha256_file(&paths.source_rootfs).context("sha256 source rootfs")?;
-    let output_sha = sha256_file(&paths.output_rootfs).context("sha256 output rootfs")?;
+    let kernel_sha = sha256_file(&kernel).context("sha256 kernel")?;
+    let source_sha = sha256_file(&source_rootfs).context("sha256 source rootfs")?;
+    let output_sha = sha256_file(&output_rootfs).context("sha256 output rootfs")?;
     let daemon_sha = sha256_file(&cfg.guestd.binary).context("sha256 daemon binary")?;
 
     // Step 10: emit manifest.
@@ -241,12 +228,12 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         daemon_sha,
         cfg.kernel.version,
         m80_image_manifest::ImageKind::Ubuntu,
-        paths.kernel.clone(),
+        kernel.clone(),
         kernel_sha,
-        paths.output_rootfs.clone(),
+        output_rootfs.clone(),
         output_sha,
         m80_image_manifest::RootfsFormat::Ext4,
-        Some(paths.source_rootfs.clone()),
+        Some(source_rootfs.clone()),
         Some(source_sha),
     );
     manifest
@@ -258,12 +245,12 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         vec![
             BuildReceiptArtifact {
                 kind: BuildReceiptArtifactKind::KernelImage,
-                path: paths.kernel.clone(),
+                path: kernel.clone(),
                 sha256: manifest.kernel_image_sha256.clone(),
             },
             BuildReceiptArtifact {
                 kind: BuildReceiptArtifactKind::SourceRootfsImage,
-                path: paths.source_rootfs.clone(),
+                path: source_rootfs.clone(),
                 sha256: manifest
                     .source_rootfs_sha256
                     .clone()
@@ -271,7 +258,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
             },
             BuildReceiptArtifact {
                 kind: BuildReceiptArtifactKind::OutputRootfsImage,
-                path: paths.output_rootfs.clone(),
+                path: output_rootfs.clone(),
                 sha256: manifest.output_rootfs_sha256.clone(),
             },
             BuildReceiptArtifact {
@@ -282,9 +269,9 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
         ],
     )?;
 
-    println!("kernel:        {}", paths.kernel.display());
-    println!("source_rootfs: {}", paths.source_rootfs.display());
-    println!("output_rootfs: {}", paths.output_rootfs.display());
+    println!("kernel:        {}", kernel.display());
+    println!("source_rootfs: {}", source_rootfs.display());
+    println!("output_rootfs: {}", output_rootfs.display());
     println!("manifest:      {}", manifest_path.display());
     println!("receipt:       {}", build_receipt_path.display());
     Ok(())

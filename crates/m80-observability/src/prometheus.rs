@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use crate::health::{
     HealthSnapshot, OpsMetrics, PmemSharingLabel, PostRestoreHookDuration, TemplateFreshnessLabel,
 };
@@ -260,7 +262,7 @@ fn render_metric(out: &mut String, name: &str, help: &str, value: u64, kind: &st
     render_family_header(out, name, help, kind);
     out.push_str(name);
     out.push(' ');
-    out.push_str(&value.to_string());
+    write!(out, "{value}").unwrap();
     out.push('\n');
 }
 
@@ -381,21 +383,20 @@ fn render_histogram_samples(
     observations_us: &[u64],
     labels: &[(&str, &str)],
 ) {
+    let bucket_name = format!("{name}_bucket");
     for bucket in RESTORE_LATENCY_BUCKETS {
         let count = observations_us
             .iter()
             .filter(|&&sample| sample <= bucket.upper_bound_us)
             .count();
-        let bucket_name = format!("{name}_bucket");
         let mut bucket_labels = labels.to_vec();
         bucket_labels.push(("le", bucket.le));
         render_labeled_sample(out, &bucket_name, &bucket_labels, count);
     }
     let inf_count = observations_us.len();
-    let inf_bucket_name = format!("{name}_bucket");
     let mut inf_labels = labels.to_vec();
     inf_labels.push(("le", "+Inf"));
-    render_labeled_sample(out, &inf_bucket_name, &inf_labels, inf_count);
+    render_labeled_sample(out, &bucket_name, &inf_labels, inf_count);
 
     let sum_us = observations_us.iter().copied().sum::<u64>();
     let sum_name = format!("{name}_sum");
@@ -409,12 +410,12 @@ fn render_labeled_sample(
     out: &mut String,
     name: &str,
     labels: &[(&str, &str)],
-    value: impl ToString,
+    value: impl std::fmt::Display,
 ) {
     out.push_str(name);
     render_labels(out, labels);
     out.push(' ');
-    out.push_str(&value.to_string());
+    write!(out, "{value}").unwrap();
     out.push('\n');
 }
 

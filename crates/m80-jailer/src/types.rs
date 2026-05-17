@@ -115,8 +115,6 @@ pub fn jail_root_path(run_dir: &Path, firecracker_bin: &Path) -> PathBuf {
     run_dir.join(exec_basename).join(id_basename).join("root")
 }
 
-/// Validate that both paths required by [`jail_root_path`] have a final
-/// component. Returns [`JailerError::NoBasename`] for the first offender.
 pub(crate) fn check_plan_basenames(
     run_dir: &Path,
     firecracker_bin: &Path,
@@ -208,31 +206,17 @@ fn plan_version() -> u32 {
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub(crate) enum PlanStep {
     /// Create a directory at `path` with the given mode.
-    CreateDir {
-        /// Path to create.
-        path: PathBuf,
-        /// Unix mode bits.
-        mode: u32,
-    },
+    CreateDir { path: PathBuf, mode: u32 },
     /// Bind-mount `source` at `dest` with `mode`.
     Bind {
-        /// Host source path.
         source: PathBuf,
-        /// In-jail destination path.
         dest: PathBuf,
-        /// Bind mode (RO/RW).
         mode: BindMode,
     },
     /// Reserve a UDS socket path inside the jail.
-    Socket {
-        /// In-jail socket path.
-        path: PathBuf,
-    },
+    Socket { path: PathBuf },
 }
 
-/// Serialized state for `jailer-state.json`. Crate-internal — the
-/// public surface uses [`JailedFirecracker`](super::JailedFirecracker)
-/// and [`InspectionDecision`](super::InspectionDecision).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JailerState {

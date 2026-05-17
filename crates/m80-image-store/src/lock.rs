@@ -33,7 +33,7 @@ impl StoreLock {
     }
 
     fn lock(root: &Path, name: &str, mode: FlockArg) -> Result<Self, StoreError> {
-        let path = lock_path(root, name);
+        let path = root.join(name);
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -49,10 +49,6 @@ impl StoreLock {
         })?;
         Ok(Self { file })
     }
-}
-
-fn lock_path(root: &Path, name: &str) -> PathBuf {
-    root.join(name)
 }
 
 #[cfg(test)]

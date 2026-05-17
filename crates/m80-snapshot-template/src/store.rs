@@ -29,7 +29,7 @@ pub struct TemplateStore {
 }
 
 /// One snapshot-template entry recorded in the store index.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct TemplateSummary {
     /// Template fingerprint.
     pub fingerprint: TemplateFingerprint,
@@ -40,7 +40,7 @@ pub struct TemplateSummary {
 }
 
 /// Build reservation for a cache miss.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TemplateBuildPlan {
     fingerprint: TemplateFingerprint,
     staging_dir: PathBuf,

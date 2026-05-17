@@ -868,15 +868,15 @@ fn classify_bridge_nf_call_iptables(raw: &str) -> Result<(), PreflightError> {
 }
 
 fn classify_required_modules(loaded: &HashSet<&str>) -> Result<(), PreflightError> {
-    if REQUIRED_KERNEL_MODULES.iter().any(|m| !loaded.contains(m)) {
-        let missing = REQUIRED_KERNEL_MODULES
-            .iter()
-            .filter(|m| !loaded.contains(*m))
-            .map(|m| m.to_string())
-            .collect::<Vec<_>>();
-        return Err(PreflightError::KernelModulesMissing { missing });
+    let missing: Vec<_> = REQUIRED_KERNEL_MODULES
+        .iter()
+        .filter(|m| !loaded.contains(*m))
+        .map(|m| m.to_string())
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
     }
-    Ok(())
+    Err(PreflightError::KernelModulesMissing { missing })
 }
 
 fn check_cgroup_mode(

@@ -37,12 +37,6 @@ pub enum JailerError {
     /// pre-jailer bind plan.
     #[error("make host mount namespace private: {0}")]
     MountPropagationFailed(#[source] nix::Error),
-    /// `chroot` syscall (or jailer's chroot step) failed.
-    #[error("chroot failed in {jail_path}", jail_path = jail_path.display())]
-    ChrootFailed {
-        /// Jail path that failed to chroot.
-        jail_path: PathBuf,
-    },
     /// `firecracker.pid` did not appear within the poll deadline after launch.
     #[error("timed out waiting for firecracker.pid in {jail_path}", jail_path = jail_path.display())]
     FirecrackerPidTimeout {
