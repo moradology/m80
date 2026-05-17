@@ -607,14 +607,14 @@ leased-run-dir enumeration, empty unexpected-path result, exact image-store
 preservation, exact template-store preservation, empty post-run Firecracker
 process list, preflight artifact identity, measured git commit, host-memory
 bound formula `shared_image_bytes + per_vm_overhead_bytes * n_attached`, and
-the full real-KVM smoke paste that produced all three artifacts. The receipt doc must
+lowercase sha256 Shared and PerVm image-store digests. The receipt doc must
 also retain the exact `cargo test --release -p m80-firecracker --test e2e_composed_real_kvm`
 reproduction command, host context, page-cache statement, and green
 `composed_e2e_layered_warm_pool` test-result lines. The verifier also
 checks that the three composed JSON artifacts agree on `git_commit`,
-`substrate`, target count, and Shared image digest, and that the receipt doc
-mentions the measured git commit, substrate identity, and Shared image digest
-from those JSON artifacts. Run the composed
+`substrate`, target count, and lowercase sha256 Shared image digest, and that
+the receipt doc mentions the measured git commit, substrate identity, and
+Shared image digest from those JSON artifacts. Run the composed
 JSON subset after committing artifacts and before closing `m80-q420k.6.2`,
 `.6.3`, and `.6.4`:
 

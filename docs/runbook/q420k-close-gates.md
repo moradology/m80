@@ -208,7 +208,9 @@ crates/m80-firecracker/benches/snapshots/composed-e2e-residue.json
 Replace the diagnostic values in `docs/perf/composed-e2e.md` with the
 close-quality host context, tables, and smoke paste from that run. Then verify
 the composed subset. This also checks that the three JSON artifacts agree on
-`git_commit`, substrate, target count, and Shared image digest. The full guard
+`git_commit`, substrate, target count, and lowercase sha256 Shared image
+digest. The residue artifact must also record lowercase sha256 Shared and PerVm
+image-store digests. The full guard
 also checks that the receipt doc mentions the measured git commit, substrate
 identity, Shared image digest from those JSON artifacts, and green
 `composed_e2e_layered_warm_pool` test-result lines. The host-memory subset

@@ -723,10 +723,12 @@ def verify_composed_memory(path: Path) -> list[str]:
         bound = memory.get("bound_bytes")
         shared_image_bytes = memory.get("shared_image_bytes")
         per_vm_overhead_bytes = memory.get("per_vm_overhead_bytes")
+        shared_image_digest = memory.get("shared_image_digest")
         check.require(is_number(delta), "composed memory: after_n_attached_delta_bytes missing")
         check.require(is_number(bound), "composed memory: bound_bytes missing")
         check.require(is_number(shared_image_bytes), "composed memory: shared_image_bytes missing")
         check.require(is_number(per_vm_overhead_bytes), "composed memory: per_vm_overhead_bytes missing")
+        require_sha256_hex(check, "composed memory: shared_image_digest", shared_image_digest)
         if (
             is_number(bound)
             and is_number(shared_image_bytes)
@@ -814,6 +816,21 @@ def verify_composed_residue(path: Path) -> list[str]:
         image_store = residue.get("image_store")
         check.require(isinstance(image_store, dict), "composed residue: missing image_store")
         if isinstance(image_store, dict):
+            for field in ["shared_digest", "per_vm_digest"]:
+                require_sha256_hex(
+                    check,
+                    f"composed residue: image_store.{field}",
+                    image_store.get(field),
+                )
+            for field in ["expected", "preserved"]:
+                digests = image_store.get(field)
+                check.require(
+                    isinstance(digests, list) and digests,
+                    f"composed residue: image_store.{field} must be a non-empty list",
+                )
+                if isinstance(digests, list):
+                    for digest in digests:
+                        require_sha256_hex(check, f"composed residue: image_store.{field} digest", digest)
             check.require(
                 sorted(image_store.get("preserved", [])) == sorted(image_store.get("expected", [])),
                 "composed residue: image_store preserved must equal expected",
@@ -864,6 +881,7 @@ def verify_composed_consistency(
 
     memory_shared = at(memory, "data.host_memory.shared_image_digest")
     residue_shared = at(residue, "data.residue.image_store.shared_digest")
+    require_sha256_hex(check, "composed consistency: Shared image digest", memory_shared)
     check.require(
         isinstance(memory_shared, str) and memory_shared == residue_shared,
         "composed consistency: memory and residue Shared image digests must match",
@@ -2573,8 +2591,19 @@ The measured signal is acceptable under the same-trust-domain assumption.
         memory_bad_bound_status = quiet_run_checks(args)
         memory_bad_bound["data"]["host_memory"]["bound_bytes"] = 20
         memory.write_text(json.dumps(memory_bad_bound))
+        memory_bad_digest = json.loads(memory.read_text())
+        memory_bad_digest["data"]["host_memory"]["shared_image_digest"] = f"sha256:{shared_digest}"
+        memory.write_text(json.dumps(memory_bad_digest))
+        memory_bad_digest_status = quiet_run_checks(args)
+        memory_bad_digest["data"]["host_memory"]["shared_image_digest"] = shared_digest
+        memory.write_text(json.dumps(memory_bad_digest))
         args.only = ["composed-residue"]
         residue_bad = json.loads(residue.read_text())
+        residue_bad["data"]["residue"]["image_store"]["shared_digest"] = f"sha256:{shared_digest}"
+        residue.write_text(json.dumps(residue_bad))
+        residue_bad_digest_status = quiet_run_checks(args)
+        residue_bad["data"]["residue"]["image_store"]["shared_digest"] = shared_digest
+        residue.write_text(json.dumps(residue_bad))
         residue_bad["data"]["residue"]["scanned_roots"] = ["/tmp/m80-*"]
         residue.write_text(json.dumps(residue_bad))
         residue_bad_roots_status = quiet_run_checks(args)
@@ -2836,6 +2865,8 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or quiet_host_inventory_mutating_status == 0
             or restore_bad_page_cache_status == 0
             or memory_bad_bound_status == 0
+            or memory_bad_digest_status == 0
+            or residue_bad_digest_status == 0
             or residue_bad_roots_status == 0
             or residue_bad_run_root_status == 0
             or composed_bad_consistency_status == 0
