@@ -39,6 +39,11 @@ and empty `substrate.preexisting_firecracker_processes` and
 kernel, and rootfs identities measured by the run, plus a top-level
 `git_commit`.
 
+Before starting the close-quality run, use
+`./scripts/q420k-quiet-host-inventory.sh` from the repository root. It exits 0
+only when no Firecracker process is already present and otherwise prints
+owner inventory without draining or killing anything.
+
 After writing a close-quality artifact, run the close guard before committing.
 After committing the artifact, add `--require-committed` before closing the
 bead, for example:

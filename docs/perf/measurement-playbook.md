@@ -37,6 +37,11 @@ guard:
 python3 scripts/verify-q420k-artifacts.py
 ```
 
+Before producing any close-quality real-KVM artifact, run
+`./scripts/q420k-quiet-host-inventory.sh`. It exits 0 only on a quiet host and
+prints owner inventory without terminating anything when unrelated Firecracker
+processes are present.
+
 Use `--only pmem-density` for the Phase C Shared density markdown artifact and
 its executable `scripts/smoke-pmem-shared.sh` close script, and use
 `--only snapshot-template` for the Phase D restore-latency JSON plus its
