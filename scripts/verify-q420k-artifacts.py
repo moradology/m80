@@ -282,6 +282,7 @@ def verify_snapshot_doc(path: Path) -> list[str]:
         "crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         "data.warm.restore_to_handback_ms.p99",
         "M80_SNAPSHOT_BENCH_LOAD=idle",
+        "M80_KERNEL_KIND=stripped",
         "N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3",
         "M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         "cargo bench -p m80-firecracker --bench snapshot_template_restore_latency",
@@ -748,6 +749,7 @@ def verify_composed_doc(path: Path) -> list[str]:
     check.require("test result: ok." in text, "composed doc: smoke evidence must show green test result")
     for required in [
         "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
+        "M80_KERNEL_KIND=stripped",
         "--ignored composed_e2e_layered_warm_pool --nocapture",
         "Host:",
         "Firecracker",
@@ -1477,6 +1479,7 @@ Command:
 ```sh
 sudo -n env \
   M80_SNAPSHOT_BENCH_LOAD=idle \
+  M80_KERNEL_KIND=stripped \
   N=20 M80_SNAPSHOT_TEMPLATE_RUNS=3 \
   M80_SNAPSHOT_TEMPLATE_BENCH_OUTPUT=crates/m80-firecracker/benches/snapshot_template_restore_latency.json \
   cargo bench -p m80-firecracker --bench snapshot_template_restore_latency
@@ -1704,6 +1707,7 @@ Command:
 
 ```sh
 sudo -n env \
+  M80_KERNEL_KIND=stripped \
   cargo test --release -p m80-firecracker --test e2e_composed_real_kvm -- \
     --ignored composed_e2e_layered_warm_pool --nocapture
 ```
@@ -1933,6 +1937,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "snapshot-template restore: load=idle runs=3 n=5 p99=199000us output=/tmp/diagnostic.json",
             "snapshot-template restore: load=idle runs=3 n=20 p99=199000us output=crates/m80-firecracker/benches/snapshot_template_restore_latency.json",
         ))
+        snapshot_doc_bad_kernel_kind = snapshot_doc.read_text().replace(
+            "M80_KERNEL_KIND=stripped",
+            "M80_KERNEL_KIND=stock",
+        )
+        snapshot_doc.write_text(snapshot_doc_bad_kernel_kind)
+        snapshot_doc_bad_kernel_kind_status = quiet_run_checks(args)
+        snapshot_doc.write_text(snapshot_doc_bad_kernel_kind.replace(
+            "M80_KERNEL_KIND=stock",
+            "M80_KERNEL_KIND=stripped",
+        ))
         args.only = ["pmem-density"]
         density_bad = density.read_text().replace(
             "- final active-use markers: `0`",
@@ -2064,6 +2078,16 @@ The measured signal is acceptable under the same-trust-domain assumption.
             "cargo test --release -p m80-firecracker --test wrong_test",
             "cargo test --release -p m80-firecracker --test e2e_composed_real_kvm",
         ))
+        composed_doc_bad_kernel_kind = composed_doc.read_text().replace(
+            "M80_KERNEL_KIND=stripped",
+            "M80_KERNEL_KIND=stock",
+        )
+        composed_doc.write_text(composed_doc_bad_kernel_kind)
+        composed_doc_bad_kernel_kind_status = quiet_run_checks(args)
+        composed_doc.write_text(composed_doc_bad_kernel_kind.replace(
+            "M80_KERNEL_KIND=stock",
+            "M80_KERNEL_KIND=stripped",
+        ))
         composed_doc_bad = composed_doc.read_text().replace(
             "Measured git commit:\n`cccccccccccccccccccccccccccccccccccccccc`\n\n",
             "",
@@ -2174,6 +2198,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or stock_kernel_status == 0
             or bad_git_commit_status == 0
             or snapshot_doc_bad_smoke_status == 0
+            or snapshot_doc_bad_kernel_kind_status == 0
             or density_bad_teardown_status == 0
             or density_bad_bound_status == 0
             or density_smoke_status != 0
@@ -2191,6 +2216,7 @@ The measured signal is acceptable under the same-trust-domain assumption.
             or uncommitted_status == 0
             or diagnostic_doc_status == 0
             or missing_doc_command_status == 0
+            or composed_doc_bad_kernel_kind_status == 0
             or missing_doc_json_identity_status == 0
             or bad_status == 0
             or not valid_head_close_reason
