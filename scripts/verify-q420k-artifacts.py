@@ -2371,6 +2371,7 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     commit = markdown_text(text, r"- commit: `([^`]+)`")
     vm_count = markdown_int(text, r"- VM count: `(\d+)`")
     samples = markdown_int(text, r"- samples per guest: `(\d+)`")
+    timing_source = markdown_text(text, r"- latency timing source: `([^`]+)`")
     payload_mib = markdown_int(text, r"- payload size: `(\d+) MiB`")
     fs = markdown_text(text, r"- host filesystem: `([^`]+)`")
     kernel = markdown_text(text, r"- host kernel: `([^`]+)`")
@@ -2395,6 +2396,11 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
     )
     require_number_at_least(check, "dax memory pressure: VM count", vm_count, 2)
     require_number_at_least(check, "dax memory pressure: samples per guest", samples, 3)
+    check.require(
+        timing_source
+        == "host monotonic Instant around one guest dd exec per sample (includes exec/vsock overhead)",
+        "dax memory pressure: latency timing source must use host monotonic Instant, not coarse guest uptime",
+    )
     require_number_at_least(check, "dax memory pressure: payload size MiB", payload_mib, 1)
     check.require(bool(kernel), "dax memory pressure: missing host kernel")
     check.require(bool(fs), "dax memory pressure: missing host filesystem")
@@ -2479,6 +2485,23 @@ def verify_dax_memory_pressure(path: Path) -> list[str]:
             signal_delta,
             expected_delta,
             0.001,
+        )
+    baseline_sample_lines = re.findall(
+        r"- baseline guest \d+ sorted_samples_ms: `\[[^`]+\]`",
+        text,
+    )
+    post_sample_lines = re.findall(
+        r"- post-pressure guest \d+ sorted_samples_ms: `\[[^`]+\]`",
+        text,
+    )
+    if is_number(vm_count):
+        check.require(
+            len(baseline_sample_lines) == vm_count,
+            "dax memory pressure: baseline per-guest sample lines must match VM count",
+        )
+        check.require(
+            len(post_sample_lines) == vm_count,
+            "dax memory pressure: post-pressure per-guest sample lines must match VM count",
         )
 
     substrate = markdown_json_block(text, "Firecracker process substrate")
@@ -4148,6 +4171,7 @@ Bead: `m80-q420k.8.9`.
 - pressure command: `stress-ng --vm 1 --vm-bytes 64G --timeout 30s`
 - VM count: `2`
 - samples per guest: `5`
+- latency timing source: `host monotonic Instant around one guest dd exec per sample (includes exec/vsock overhead)`
 - payload size: `32 MiB`
 - image digest: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 - image path: `/var/lib/m80-images/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/image.erofs`
@@ -4179,6 +4203,13 @@ M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1 M80_PMEM_DAX_MEMORY_PRESSURE_COMMAND='stress-
 - host page-cache delta during pressure bytes: `2000`
 - host memory delta after refault bytes: `3000`
 - host page-cache delta after refault bytes: `4000`
+
+### Per-guest Latency Samples
+
+- baseline guest 0 sorted_samples_ms: `[1.000, 1.200, 1.400, 2.000, 3.000]`
+- baseline guest 1 sorted_samples_ms: `[1.100, 1.300, 1.500, 2.100, 3.100]`
+- post-pressure guest 0 sorted_samples_ms: `[4.000, 4.200, 4.400, 5.000, 6.000]`
+- post-pressure guest 1 sorted_samples_ms: `[4.100, 4.300, 4.500, 5.100, 6.100]`
 
 ## Teardown Residue
 

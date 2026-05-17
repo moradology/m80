@@ -7,9 +7,10 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use m80_image_store::DEFAULT_STORE_ROOT;
+use m80_proto::{ExecRequest, ExecStatus};
 
 mod common;
 mod pmem_shared_support;
@@ -22,6 +23,8 @@ const DEFAULT_VM_COUNT: usize = 2;
 const DEFAULT_SAMPLES: usize = 5;
 const DEFAULT_PAYLOAD_MIB: usize = 32;
 const DEFAULT_SETTLE_MS: u64 = 1_000;
+const LATENCY_TIMING_SOURCE: &str =
+    "host monotonic Instant around one guest dd exec per sample (includes exec/vsock overhead)";
 
 #[test]
 #[ignore = "measurement-shaped; set M80_RUN_PMEM_DAX_MEMORY_PRESSURE=1"]
@@ -174,70 +177,56 @@ fn measure_guest_reads(
     running: &mut m80_firecracker::RunningSandbox,
     samples: usize,
 ) -> LatencyStats {
-    let command = format!(
-        "i=0; while [ \"$i\" -lt {samples} ]; do \
-         read start _ < /proc/uptime; \
-         dd if=/opt/m80-layers/smoke-0/payload.bin of=/dev/null bs=4M status=none; \
-         read end _ < /proc/uptime; \
-         echo \"$start $end\"; \
-         i=$((i + 1)); \
-         done"
-    );
-    let stdout = support::exec_stdout(running, &command);
-    let mut values_ms = stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(guest_uptime_delta_ms)
-        .collect::<Vec<_>>();
-    values_ms.sort_by(f64::total_cmp);
-    LatencyStats::from_sorted(&values_ms)
-}
-
-fn guest_uptime_delta_ms(line: &str) -> f64 {
-    let mut fields = line.split_whitespace();
-    let start = fields
-        .next()
-        .unwrap_or_else(|| panic!("guest latency line must contain start uptime: {line:?}"))
-        .parse::<f64>()
-        .unwrap_or_else(|_| panic!("guest start uptime must be numeric: {line:?}"));
-    let end = fields
-        .next()
-        .unwrap_or_else(|| panic!("guest latency line must contain end uptime: {line:?}"))
-        .parse::<f64>()
-        .unwrap_or_else(|_| panic!("guest end uptime must be numeric: {line:?}"));
-    assert!(
-        end >= start,
-        "guest uptime must be monotonic in latency line: {line:?}"
-    );
-    (end - start) * 1_000.0
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn guest_uptime_delta_uses_proc_uptime_fields() {
-        let delta = guest_uptime_delta_ms("12.34 12.37");
-        assert!((delta - 30.0).abs() < 1e-9);
+    let mut values_ms = Vec::with_capacity(samples);
+    for _ in 0..samples {
+        values_ms.push(measure_guest_read_once_ms(running));
     }
+    values_ms.sort_by(f64::total_cmp);
+    LatencyStats::from_sorted(values_ms)
 }
 
-#[derive(Clone, Copy)]
+fn measure_guest_read_once_ms(running: &mut m80_firecracker::RunningSandbox) -> f64 {
+    let command = "dd if=/opt/m80-layers/smoke-0/payload.bin of=/dev/null bs=4M status=none";
+    let started = Instant::now();
+    let response = running
+        .exec(ExecRequest {
+            program: "/bin/sh".to_owned(),
+            args: vec!["-c".to_owned(), command.to_owned()],
+            cwd: None,
+            env: None,
+            stdin: None,
+            timeout_ms: Some(30_000),
+            streaming: false,
+        })
+        .expect("exec DAX read probe in pmem VM");
+    let elapsed = started.elapsed();
+    assert!(
+        response.status == ExecStatus::Completed && response.exit_code == Some(0),
+        "exec failed for {command:?}: status={:?} exit={:?} stdout={} stderr={}",
+        response.status,
+        response.exit_code,
+        String::from_utf8_lossy(&response.stdout),
+        String::from_utf8_lossy(&response.stderr)
+    );
+    elapsed.as_secs_f64() * 1_000.0
+}
+
+#[derive(Clone)]
 struct LatencyStats {
+    sorted_samples_ms: Vec<f64>,
     p50_ms: f64,
     p95_ms: f64,
     p99_ms: f64,
 }
 
 impl LatencyStats {
-    fn from_sorted(values: &[f64]) -> Self {
+    fn from_sorted(values: Vec<f64>) -> Self {
         assert!(!values.is_empty(), "latency sample set must be non-empty");
         Self {
-            p50_ms: percentile(values, 50.0),
-            p95_ms: percentile(values, 95.0),
-            p99_ms: percentile(values, 99.0),
+            p50_ms: percentile(&values, 50.0),
+            p95_ms: percentile(&values, 95.0),
+            p99_ms: percentile(&values, 99.0),
+            sorted_samples_ms: values,
         }
     }
 }
@@ -274,8 +263,8 @@ fn percentile(sorted: &[f64], percentile: f64) -> f64 {
     sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
 }
 
-fn combined_stats(stats: &[LatencyStats], pick: fn(LatencyStats) -> f64) -> f64 {
-    let mut values = stats.iter().copied().map(pick).collect::<Vec<_>>();
+fn combined_stats(stats: &[LatencyStats], pick: impl Fn(&LatencyStats) -> f64) -> f64 {
+    let mut values = stats.iter().map(pick).collect::<Vec<_>>();
     values.sort_by(f64::total_cmp);
     percentile(&values, 50.0)
 }
@@ -454,6 +443,7 @@ fn write_artifact(path: &Path, report: &PressureReport) {
     writeln!(out, "- pressure command: `{}`", report.pressure_command).unwrap();
     writeln!(out, "- VM count: `{}`", report.vm_count).unwrap();
     writeln!(out, "- samples per guest: `{}`", report.samples).unwrap();
+    writeln!(out, "- latency timing source: `{LATENCY_TIMING_SOURCE}`").unwrap();
     writeln!(out, "- payload size: `{} MiB`", report.payload_mib).unwrap();
     writeln!(out, "- image digest: `{}`", report.digest).unwrap();
     writeln!(out, "- image path: `{}`", report.store_path.display()).unwrap();
@@ -565,6 +555,23 @@ fn write_artifact(path: &Path, report: &PressureReport) {
             .saturating_sub(report.mem_after.cached_bytes)
     )
     .unwrap();
+    writeln!(out, "\n### Per-guest Latency Samples\n").unwrap();
+    for (idx, stats) in report.baseline.iter().enumerate() {
+        writeln!(
+            out,
+            "- baseline guest {idx} sorted_samples_ms: `{}`",
+            format_samples_ms(&stats.sorted_samples_ms)
+        )
+        .unwrap();
+    }
+    for (idx, stats) in report.post_pressure.iter().enumerate() {
+        writeln!(
+            out,
+            "- post-pressure guest {idx} sorted_samples_ms: `{}`",
+            format_samples_ms(&stats.sorted_samples_ms)
+        )
+        .unwrap();
+    }
     writeln!(out, "\n## Teardown Residue\n").unwrap();
     writeln!(out, "- leaked Shared markers: `{}`", report.leaked_markers).unwrap();
     writeln!(
@@ -583,6 +590,15 @@ fn write_artifact(path: &Path, report: &PressureReport) {
     .unwrap();
 
     std::fs::write(path, out).expect("write memory-pressure artifact");
+}
+
+fn format_samples_ms(values: &[f64]) -> String {
+    let formatted = values
+        .iter()
+        .map(|value| format!("{value:.3}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{formatted}]")
 }
 
 fn reproduction_command(path: &Path, report: &PressureReport) -> String {
