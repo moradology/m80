@@ -623,19 +623,11 @@ fn run_root_reflink_probe_failures_are_non_blocking() {
 #[cfg(unix)]
 fn run_root_reflink_probe_reports_unavailable_reflink_on_unsupported_clone() {
     let dir = tempfile::tempdir().unwrap();
-    let cp = dir.path().join("cp");
-    fs::write(
-        &cp,
-        b"#!/bin/sh\nprintf 'Operation not supported' >&2\nexit 1\n",
-    )
-    .unwrap();
-    let mut perms = fs::metadata(&cp).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&cp, perms).unwrap();
+    let cp = Path::new("/bin/false");
 
     let source = dir.path().join("source");
     let dest = dir.path().join("dest");
-    let result = super::probe_run_root_reflink_at_with_cp(&cp, &source, &dest);
+    let result = super::probe_run_root_reflink_at_with_cp(cp, &source, &dest);
 
     assert!(
         matches!(result, RunRootReflink::Unsupported { .. }),

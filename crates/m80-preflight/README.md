@@ -21,6 +21,14 @@ which is the right place for a security review to start.
   list and returns a `Discovery` carrying every resolved path, version,
   and capability the rest of the system needs. Any missing or invalid
   capability returns a typed error; there's no partial-success mode.
+- `verify_host_substrate(host_feature_config) -> Result<HostSubstrateDiscovery,
+  PreflightError>` runs the non-mutating Linux/KVM/cgroup/jail-identity/
+  privilege subset used before install finalization and before launch.
+  `verify_host_substrate_fixture(host_feature_config, fixture)` runs the same
+  classifier against `HostSubstrateFixture` without touching host `/dev/kvm`,
+  cgroups, passwd/group databases, or real capabilities. Both return a
+  proof-kind row so hostless fixtures cannot be mistaken for a real-KVM run
+  smoke.
 - The check list is fixed and ordered:
   1. **OS gate** — `Linux` from `uname -s`; macOS rejects.
   2. **Host kernel floor** — `uname -r` must parse as Linux kernel 6.1 or
@@ -81,6 +89,9 @@ which is the right place for a security review to start.
      from the backend thread after `m80-net-helper` starts. Probed via the
      `caps` crate against the process's effective set. Returns
      `PrivilegeStatus::Root` or `PrivilegeStatus::CapabilityBearing`.
+  13b. **Host substrate proof** — records whether the substrate rows came
+      from live preflight or a hostless fixture. Neither value is a real-KVM
+      `m80 run -- echo hello` smoke by itself.
   14. **Firecracker binary** — discovered via env override or default. The
      path must be absolute, and `--version` must clear the documented CVE floor
      before any configured exact version pin is accepted. After artifact
@@ -161,6 +172,12 @@ which is the right place for a security review to start.
 
 - `run() -> Result<Discovery, PreflightError>`.
 - `run_with_configs(binary_config: BinaryDiscoveryConfig, artifact_config: ArtifactPreflightConfig, host_feature_config: HostFeaturePreflightConfig) -> Result<Discovery, PreflightError>` — composable entry point that accepts pre-built config structs rather than reading env vars internally.
+- `verify_host_substrate(host_feature_config: HostFeaturePreflightConfig)
+  -> Result<HostSubstrateDiscovery, PreflightError>` — reusable non-mutating
+  substrate verifier for install and preflight.
+- `verify_host_substrate_fixture(host_feature_config: HostFeaturePreflightConfig,
+  fixture: &HostSubstrateFixture) -> Result<HostSubstrateDiscovery,
+  PreflightError>` — hostless fixture verifier for release/install CI.
 - `BinaryDiscoveryConfig { firecracker_bin, firecracker_seccomp_filter,
   jailer_bin, jailer_harden_bin, net_helper_bin, expected_firecracker_version }` and
   `BinaryDiscoveryConfig::from_env()` for
@@ -185,6 +202,12 @@ which is the right place for a security review to start.
   `HostFeaturePreflightConfig::from_env() -> Result<Self, PreflightError>`,
   plus `CgroupPreflightMode { UnifiedV2, Disabled }`, for checks whose
   required host features depend on effective config.
+- `HostSubstrateDiscovery { proof_kind, privilege, report }` and
+  `HostSubstrateProofKind { LivePreflight, HostlessFixture }`.
+- `HostSubstrateFixture { sysname, kernel_release, kvm, cgroup_v2_available,
+  jail_user, jail_group, euid, effective_caps }` plus
+  `HostSubstrateFixture::supported_root()` and
+  `HostSubstrateFixtureKvm { Writable, Missing, NotWritable }`.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.

@@ -151,6 +151,15 @@ fn run_quickstart(
         }
     }
 
+    if !no_run {
+        if !json_output {
+            eprintln!("checking host substrate before installing active artifacts");
+        }
+        m80_preflight::verify_host_substrate(
+            m80_preflight::HostFeaturePreflightConfig::from_env()?
+        )?;
+    }
+
     fs::create_dir_all(artifact_dir).map_err(|e| FcError::PathIo {
         path: artifact_dir.to_path_buf(),
         source: e,

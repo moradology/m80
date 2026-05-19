@@ -5,12 +5,8 @@
 
 #![deny(missing_docs)]
 
-use std::fs::File;
 use std::io;
-use std::os::fd::AsRawFd;
-use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use caps::Capability;
 use caps::CapsHashSet;
@@ -26,6 +22,7 @@ mod cache;
 mod checks;
 mod cve_floor;
 mod firecracker_train;
+mod pinned_rootfs;
 mod table;
 
 /// Linux capabilities m80 needs when `euid != 0`; a process holding all of
@@ -127,55 +124,17 @@ impl Discovery {
     }
 }
 
-/// Rootfs artifact opened and held by preflight after sha256 verification.
-#[derive(Debug, Clone)]
-pub struct PinnedRootfs {
-    path: PathBuf,
-    file: Arc<File>,
-}
-
-impl PinnedRootfs {
-    /// Build a pinned rootfs handle from an already-open file.
-    ///
-    /// The caller is responsible for verifying the file contents before
-    /// placing this handle in a [`Discovery`].
-    #[must_use]
-    pub fn from_file(path: PathBuf, file: File) -> Self {
-        Self {
-            path,
-            file: Arc::new(file),
-        }
-    }
-
-    /// Original resolved rootfs path used for diagnostics and identity files.
-    #[must_use]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// Process-qualified procfs path for this pinned rootfs descriptor.
-    ///
-    /// The path uses `/proc/<pid>/fd/<fd>` rather than `/proc/self/fd/<fd>`
-    /// because launch passes it through subprocess and mount-planning
-    /// boundaries. Consumers can open or bind this path while this handle is
-    /// alive without re-resolving the original rootfs pathname.
-    #[must_use]
-    pub fn proc_fd_path(&self) -> PathBuf {
-        PathBuf::from(format!(
-            "/proc/{}/fd/{}",
-            std::process::id(),
-            self.file.as_raw_fd()
-        ))
-    }
-}
-
 pub use artifacts::{ArtifactPreflightConfig, ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE};
 pub use binary::{
     generate_host_binaries_manifest, write_host_binaries_manifest, BinaryDiscoveryConfig,
     HostBinariesManifestConfig, DEFAULT_FIRECRACKER_BIN, DEFAULT_FIRECRACKER_SECCOMP_FILTER,
     DEFAULT_M80_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER, ENV_FIRECRACKER_VERSION,
 };
-pub use checks::{run, run_with_configs, CgroupPreflightMode, HostFeaturePreflightConfig};
+pub use checks::{
+    run, run_with_configs, verify_host_substrate, verify_host_substrate_fixture,
+    CgroupPreflightMode, HostFeaturePreflightConfig, HostSubstrateDiscovery, HostSubstrateFixture,
+    HostSubstrateFixtureKvm, HostSubstrateProofKind,
+};
 pub use cve_floor::{
     active_firecracker_cve_floors, FirecrackerCveFloor, FIRECRACKER_CVE_FLOOR_SOURCE,
 };
@@ -183,6 +142,7 @@ pub use firecracker_train::{
     FirecrackerTrainPolicy, FIRECRACKER_TRAIN_POLICY_SOURCE, HOST_PREREQUISITE_POLICY_DOC,
     JAILER_PAIRING_RULE,
 };
+pub use pinned_rootfs::PinnedRootfs;
 
 /// Errors surfaced by preflight. `Display` is lowercase, no trailing period,
 /// no embedded hint text. Actionable hints live in [`PreflightError::hint`].

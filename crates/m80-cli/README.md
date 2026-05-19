@@ -44,10 +44,12 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 quickstart --artifact-url <url>` - downloads a release artifact tarball
   plus `<url>.sha256`, verifies the tarball before extraction, verifies the
   extracted `SHA256SUMS`, installs the kernel/rootfs/manifest/guestd artifacts,
-  rejects bundled host-binaries manifests, generates the installed host
-  manifest from final host TCB paths before the probe, and runs
-  `m80 run -- echo hello` unless `--no-run` is set. `--json` requires `--no-run`
-  so guest probe stdout cannot pollute the machine-readable summary.
+  rejects bundled host-binaries manifests, checks the non-mutating host
+  substrate before changing active artifacts when the probe will run, generates
+  the installed host manifest from final host TCB paths before the probe, and
+  runs `m80 run -- echo hello` unless `--no-run` is set. `--json` requires
+  `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
+  `--no-run` does not prove host substrate readiness or real-KVM launch.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling

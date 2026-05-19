@@ -36,12 +36,16 @@ m80 quickstart \
 ```
 
 `quickstart` downloads the matching guest artifact tarball, verifies the
-published checksum and extracted `SHA256SUMS`, installs the guest artifact set,
-generates `host-binaries.manifest.json` from the installed host TCB paths when
-running the probe, then runs `m80 run -- echo hello`. Host TCB binaries are
-installed separately from final host paths; release tarballs must not bundle
-the host manifest. The bundle shape is pinned in
+published checksum and extracted `SHA256SUMS`, checks the non-mutating host
+substrate before changing active artifacts when it will run the probe, installs
+the guest artifact set, and when it runs the probe generates
+`host-binaries.manifest.json` from the installed host TCB paths before
+`m80 run -- echo hello`. Host TCB binaries are installed separately from final
+host paths; release tarballs must not bundle the host manifest. The bundle shape
+is pinned in
 [`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
+`--no-run` is a hostless artifact verification/install path; it does not claim
+host substrate readiness or real-KVM smoke proof.
 
 After that, wrap any process the same way:
 

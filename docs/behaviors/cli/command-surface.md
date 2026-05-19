@@ -113,11 +113,14 @@ Implemented warm flag:
 `<url>.sha256`, verifies the tarball before extraction, verifies the extracted
 `SHA256SUMS`, installs `vmlinux`, `output.ext4`, `output.ext4.manifest.json`,
 and `m80-guestd`, creates the run-root, and runs `m80 run -- echo hello` unless
-`--no-run` is set.
+`--no-run` is set. When the probe will run, quickstart checks the non-mutating
+host substrate before changing active artifact paths.
 The tarball must not contain `host-binaries.manifest.json`; that manifest is
 generated from final host TCB paths before the probe run.
 Global `--json` requires `--no-run` because the successful probe writes guest
 stdout; the install-only JSON path emits a machine-readable artifact summary.
+That JSON/install-only path is hostless: it does not claim host substrate
+readiness or real-KVM launch proof.
 
 Defaults:
 

@@ -1,8 +1,10 @@
 # KVM and OS Gates
 
 `m80-preflight` performs host gates before boot artifacts are accepted or a VM is
-launched. The live `run()` path checks these once per preflight invocation and
-fails closed on the first missing capability.
+launched. The live `run()` path starts with the reusable
+`verify_host_substrate()` verifier, then continues into CPU, module, binary,
+artifact, and run-root checks. Any missing capability fails closed before launch
+work begins.
 
 ## Linux Host
 
@@ -117,9 +119,17 @@ There is no passwordless-sudo fallback and no per-call privilege shim in m80.
 Operators must run as root, set capabilities on the binary, or provide the
 capabilities through the container runtime.
 
+## Proof Kind
+
+The substrate verifier emits a `Host substrate proof` row. Live preflight rows
+are only a host-substrate proof; they are not a real-KVM run smoke. Hostless
+fixture rows are explicitly labeled `hostless fixture only` so release fixture
+CI cannot be confused with proof that Firecracker booted and ran a command.
+
 ## Evidence
 
 - `crates/m80-preflight/src/checks.rs`
+- `crates/m80-preflight/src/substrate.rs`
 - `crates/m80-preflight/src/lib.rs::classify_privilege`
 - `crates/m80-preflight/tests/preflight/kvm_and_os_gates.rs`
 - `crates/m80-preflight/src/checks_tests.rs::host_kernel_floor_rejects_old_release`
