@@ -11,10 +11,11 @@ missing paths, non-regular files, and empty files, and records the resolved path
 in `Discovery::firecracker_seccomp_filter`.
 
 The installed `host-binaries.manifest.json` records the same path and sha256
-under `launch_material.firecracker_seccomp_filter`. Preflight verifies that
-entry on every invocation: path match, `O_NOFOLLOW` open, regular file,
-non-empty contents, `root:root` ownership, safe mode bits, and sha256 match.
-The seccomp filter is launch material, not a host binary.
+under `launch_material.firecracker_seccomp_filter`, along with the Firecracker
+train the filter belongs to. Preflight verifies that entry on every invocation:
+path match, `O_NOFOLLOW` open, regular file, non-empty contents, `root:root`
+ownership, safe mode bits, sha256 match, and version match against the accepted
+Firecracker train. The seccomp filter is launch material, not a host binary.
 
 `m80-firecracker` treats that path as launch material. Phase 4 binds it
 read-only into the jail as `firecracker-seccomp-filter.bin`, and
@@ -36,5 +37,6 @@ guestd/exec-shim hardening surface. The required broker split is captured in
 - `crates/m80-preflight/src/binary.rs::tests::empty_firecracker_seccomp_filter_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::relative_firecracker_seccomp_filter_path_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_launch_material_hash_mismatch_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::host_launch_material_version_mismatch_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_launch_material_symlink_fails_no_follow_open`
 - `crates/m80-jailer/src/materialized.rs::tests::launch_redirects_stdio_and_passes_hardening_args`

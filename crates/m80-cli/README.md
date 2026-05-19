@@ -44,8 +44,10 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 quickstart --artifact-url <url>` - downloads a release artifact tarball
   plus `<url>.sha256`, verifies the tarball before extraction, verifies the
   extracted `SHA256SUMS`, installs the kernel/rootfs/manifest/guestd artifacts,
-  and runs `m80 run -- echo hello` unless `--no-run` is set. `--json` requires
-  `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
+  rejects bundled host-binaries manifests, generates the installed host
+  manifest from final host TCB paths before the probe, and runs
+  `m80 run -- echo hello` unless `--no-run` is set. `--json` requires `--no-run`
+  so guest probe stdout cannot pollute the machine-readable summary.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -352,7 +354,9 @@ Stable surfaces:
 - The JSON output envelope version.
 - Exit codes per error class.
 - Quickstart artifact tarball contents: `vmlinux`, `output.ext4`,
-  `output.ext4.manifest.json`, `m80-guestd`, and `SHA256SUMS`.
+  `output.ext4.manifest.json`, `output.ext4.build-receipt.json`,
+  `m80-guestd`, and `SHA256SUMS`. The tarball must not contain
+  `host-binaries.manifest.json`.
 
 ## Non-goals
 

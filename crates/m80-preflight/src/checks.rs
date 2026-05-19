@@ -264,7 +264,7 @@ pub fn run_with_configs(
     let host_binary_manifest = artifact_config
         .artifact_dir
         .join("host-binaries.manifest.json");
-    verify_host_binaries(&binary_config, &host_binary_manifest)?;
+    verify_host_binaries(&binary_config, &binaries, &host_binary_manifest)?;
     report.push(CheckRow {
         label: "Firecracker binary".to_string(),
         passed: true,

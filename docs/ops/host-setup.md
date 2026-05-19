@@ -46,7 +46,6 @@ Required runtime artifacts:
 - `/opt/m80/bin/m80-jailer-harden`
 - `/opt/m80/bin/m80-net-helper`
 - `/opt/m80/bin/m80`
-- `/opt/m80/bin/m80-cli`
 - `/opt/m80/artifacts/host-binaries.manifest.json`
 - kernel/rootfs/manifest/build-receipt artifacts under `/opt/m80/artifacts`
 

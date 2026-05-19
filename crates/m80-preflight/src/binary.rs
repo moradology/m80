@@ -46,6 +46,8 @@ pub(crate) const DEFAULT_JAILER_BIN: &str = "/opt/firecracker/bin/jailer";
 pub(crate) const DEFAULT_JAILER_HARDEN_BIN: &str = "/opt/m80/bin/m80-jailer-harden";
 /// Default m80 network helper location when no env override is present.
 pub(crate) const DEFAULT_NET_HELPER_BIN: &str = "/opt/m80/bin/m80-net-helper";
+/// Default installed m80 CLI location.
+pub const DEFAULT_M80_BIN: &str = "/opt/m80/bin/m80";
 
 /// Inputs for the binary discovery preflight step.
 #[derive(Debug, Clone)]
@@ -60,6 +62,25 @@ pub struct BinaryDiscoveryConfig {
     pub jailer_harden_bin: PathBuf,
     /// m80 network helper path to require on disk.
     pub net_helper_bin: PathBuf,
+    /// Optional exact Firecracker version pin.
+    pub expected_firecracker_version: Option<String>,
+}
+
+/// Inputs for generating the installed host-binaries manifest.
+#[derive(Debug, Clone)]
+pub struct HostBinariesManifestConfig {
+    /// Firecracker binary path to probe with `--version`.
+    pub firecracker_bin: PathBuf,
+    /// Firecracker advanced seccomp filter path.
+    pub firecracker_seccomp_filter: PathBuf,
+    /// Jailer binary path to probe with `--version`.
+    pub jailer_bin: PathBuf,
+    /// m80 jailer hardening wrapper path.
+    pub jailer_harden_bin: PathBuf,
+    /// m80 network helper path.
+    pub net_helper_bin: PathBuf,
+    /// Installed m80 CLI executable path.
+    pub m80_bin: PathBuf,
     /// Optional exact Firecracker version pin.
     pub expected_firecracker_version: Option<String>,
 }
@@ -84,6 +105,38 @@ impl BinaryDiscoveryConfig {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_NET_HELPER_BIN)),
             expected_firecracker_version: env::var(ENV_FIRECRACKER_VERSION).ok(),
+        }
+    }
+}
+
+impl HostBinariesManifestConfig {
+    /// Build a manifest-generation config from the exact m80 environment keys.
+    ///
+    /// `M80_FIRECRACKER_*`, `M80_JAILER_*`, and `M80_NET_HELPER_BIN` follow
+    /// [`BinaryDiscoveryConfig::from_env`]. The installed `m80` binary defaults
+    /// to `/opt/m80/bin/m80`.
+    #[must_use]
+    pub fn from_env() -> Self {
+        let binary = BinaryDiscoveryConfig::from_env();
+        Self {
+            firecracker_bin: binary.firecracker_bin,
+            firecracker_seccomp_filter: binary.firecracker_seccomp_filter,
+            jailer_bin: binary.jailer_bin,
+            jailer_harden_bin: binary.jailer_harden_bin,
+            net_helper_bin: binary.net_helper_bin,
+            m80_bin: PathBuf::from(DEFAULT_M80_BIN),
+            expected_firecracker_version: binary.expected_firecracker_version,
+        }
+    }
+
+    fn binary_discovery_config(&self) -> BinaryDiscoveryConfig {
+        BinaryDiscoveryConfig {
+            firecracker_bin: self.firecracker_bin.clone(),
+            firecracker_seccomp_filter: self.firecracker_seccomp_filter.clone(),
+            jailer_bin: self.jailer_bin.clone(),
+            jailer_harden_bin: self.jailer_harden_bin.clone(),
+            net_helper_bin: self.net_helper_bin.clone(),
+            expected_firecracker_version: self.expected_firecracker_version.clone(),
         }
     }
 }
@@ -164,6 +217,66 @@ pub(crate) fn discover_binaries(
     })
 }
 
+/// Generate the installed host-binaries manifest from final host paths.
+///
+/// The generated manifest records the bytes at the supplied paths after
+/// Firecracker/jailer discovery has accepted their release train. It is an
+/// install-time artifact: release bundles must not carry it precomputed.
+pub fn generate_host_binaries_manifest(
+    config: &HostBinariesManifestConfig,
+) -> Result<HostBinariesManifest, PreflightError> {
+    require_absolute_binary("m80", &config.m80_bin)?;
+    let discovery = discover_binaries(&config.binary_discovery_config(), None, None)?;
+
+    Ok(HostBinariesManifest::new(
+        vec![
+            record_host_binary(
+                HostBinaryName::Firecracker,
+                &discovery.firecracker_bin,
+                discovery.firecracker_version.clone(),
+            )?,
+            record_host_binary(
+                HostBinaryName::Jailer,
+                &discovery.jailer_bin,
+                discovery.jailer_version.clone(),
+            )?,
+            record_host_binary(
+                HostBinaryName::M80,
+                &config.m80_bin,
+                host_binary_version(HostBinaryName::M80, &config.m80_bin)?,
+            )?,
+            record_host_binary(
+                HostBinaryName::M80JailerHarden,
+                &discovery.jailer_harden_bin,
+                host_binary_version(
+                    HostBinaryName::M80JailerHarden,
+                    &discovery.jailer_harden_bin,
+                )?,
+            )?,
+            record_host_binary(
+                HostBinaryName::M80NetHelper,
+                &discovery.net_helper_bin,
+                host_binary_version(HostBinaryName::M80NetHelper, &discovery.net_helper_bin)?,
+            )?,
+        ],
+        vec![record_host_launch_material(
+            HostLaunchMaterialName::FirecrackerSeccompFilter,
+            &discovery.firecracker_seccomp_filter,
+            discovery.firecracker_version,
+        )?],
+    ))
+}
+
+/// Generate and write the installed host-binaries manifest.
+pub fn write_host_binaries_manifest(
+    config: &HostBinariesManifestConfig,
+    path: &Path,
+) -> Result<(), PreflightError> {
+    generate_host_binaries_manifest(config)?
+        .write(path)
+        .map_err(PreflightError::HostBinaryManifest)
+}
+
 fn verify_seccomp_filter_path(path: &Path) -> Result<(), PreflightError> {
     let mut file = std::fs::OpenOptions::new()
         .read(true)
@@ -207,26 +320,33 @@ fn verify_seccomp_filter_path(path: &Path) -> Result<(), PreflightError> {
 
 pub(crate) fn verify_host_binaries(
     config: &BinaryDiscoveryConfig,
+    discovery: &BinaryDiscovery,
     manifest_path: &Path,
 ) -> Result<(), PreflightError> {
     let manifest =
         HostBinariesManifest::read(manifest_path).map_err(PreflightError::HostBinaryManifest)?;
-    for (name, configured_path) in [
+    for (name, configured_path, expected_version) in [
         (
             HostBinaryName::Firecracker,
             Some(config.firecracker_bin.as_path()),
+            Some(discovery.firecracker_version.as_str()),
         ),
-        (HostBinaryName::Jailer, Some(config.jailer_bin.as_path())),
+        (
+            HostBinaryName::Jailer,
+            Some(config.jailer_bin.as_path()),
+            Some(discovery.jailer_version.as_str()),
+        ),
         (
             HostBinaryName::M80JailerHarden,
             Some(config.jailer_harden_bin.as_path()),
+            None,
         ),
         (
             HostBinaryName::M80NetHelper,
             Some(config.net_helper_bin.as_path()),
+            None,
         ),
-        (HostBinaryName::M80, None),
-        (HostBinaryName::M80Cli, None),
+        (HostBinaryName::M80, None, None),
     ] {
         let entry = one_host_binary_entry(&manifest, name)?;
         if let Some(expected_path) = configured_path {
@@ -239,6 +359,7 @@ pub(crate) fn verify_host_binaries(
             }
         }
         verify_host_binary_entry(entry)?;
+        verify_host_binary_version(entry, expected_version)?;
     }
     let seccomp_filter = one_host_launch_material_entry(
         &manifest,
@@ -252,6 +373,7 @@ pub(crate) fn verify_host_binaries(
         });
     }
     verify_host_launch_material_entry(seccomp_filter)?;
+    verify_host_launch_material_version(seccomp_filter, &discovery.firecracker_version)?;
     Ok(())
 }
 
@@ -439,6 +561,81 @@ fn verify_host_launch_material_sha256(
     Ok(())
 }
 
+fn verify_host_binary_version(
+    entry: &HostBinaryEntry,
+    expected_version: Option<&str>,
+) -> Result<(), PreflightError> {
+    let actual = match expected_version {
+        Some(version) => version.to_owned(),
+        None => host_binary_version(entry.name, &entry.path)?,
+    };
+    if entry.version != actual {
+        return Err(PreflightError::HostBinaryVersionMismatch {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            expected: entry.version.clone(),
+            actual,
+        });
+    }
+    Ok(())
+}
+
+fn verify_host_launch_material_version(
+    entry: &HostLaunchMaterialEntry,
+    actual: &str,
+) -> Result<(), PreflightError> {
+    if entry.version != actual {
+        return Err(PreflightError::HostLaunchMaterialVersionMismatch {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            expected: entry.version.clone(),
+            actual: actual.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn record_host_binary(
+    name: HostBinaryName,
+    path: &Path,
+    version: String,
+) -> Result<HostBinaryEntry, PreflightError> {
+    require_absolute_binary(name.as_str(), path)?;
+    let mut file = open_no_follow(path)?;
+    Ok(HostBinaryEntry {
+        name,
+        path: path.to_path_buf(),
+        sha256: file_sha256(path, &mut file)?,
+        version,
+    })
+}
+
+fn record_host_launch_material(
+    name: HostLaunchMaterialName,
+    path: &Path,
+    version: String,
+) -> Result<HostLaunchMaterialEntry, PreflightError> {
+    require_absolute_binary(name.as_str(), path)?;
+    let mut file = open_no_follow(path)?;
+    Ok(HostLaunchMaterialEntry {
+        name,
+        path: path.to_path_buf(),
+        sha256: file_sha256(path, &mut file)?,
+        version,
+    })
+}
+
+fn open_no_follow(path: &Path) -> Result<File, PreflightError> {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(path)
+        .map_err(|source| PreflightError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        })
+}
+
 fn file_sha256(path: &Path, file: &mut File) -> Result<String, PreflightError> {
     file.seek(SeekFrom::Start(0))
         .map_err(|source| PreflightError::PathIo {
@@ -498,6 +695,23 @@ fn jailer_version(bin: &std::path::Path) -> Result<String, PreflightError> {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     parse_jailer_version_output(&stdout)
+}
+
+fn host_binary_version(
+    name: HostBinaryName,
+    bin: &std::path::Path,
+) -> Result<String, PreflightError> {
+    let out = version_command_output(bin)?;
+
+    if !out.status.success() {
+        return Err(PreflightError::HostBinaryVersionCommandFailed {
+            name: name.as_str(),
+            path: bin.to_path_buf(),
+            status: out.status.to_string(),
+        });
+    }
+
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
 fn version_command_output(bin: &std::path::Path) -> Result<std::process::Output, PreflightError> {

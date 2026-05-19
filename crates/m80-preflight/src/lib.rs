@@ -171,8 +171,9 @@ impl PinnedRootfs {
 
 pub use artifacts::{ArtifactPreflightConfig, ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE};
 pub use binary::{
-    BinaryDiscoveryConfig, DEFAULT_FIRECRACKER_BIN, DEFAULT_FIRECRACKER_SECCOMP_FILTER,
-    ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER, ENV_FIRECRACKER_VERSION,
+    generate_host_binaries_manifest, write_host_binaries_manifest, BinaryDiscoveryConfig,
+    HostBinariesManifestConfig, DEFAULT_FIRECRACKER_BIN, DEFAULT_FIRECRACKER_SECCOMP_FILTER,
+    DEFAULT_M80_BIN, ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER, ENV_FIRECRACKER_VERSION,
 };
 pub use checks::{run, run_with_configs, CgroupPreflightMode, HostFeaturePreflightConfig};
 pub use cve_floor::{
@@ -509,6 +510,30 @@ pub enum PreflightError {
         reason: &'static str,
     },
 
+    /// A host binary version command failed.
+    #[error("host binary version command failed for {name} at {}: {status}", path.display())]
+    HostBinaryVersionCommandFailed {
+        /// Logical binary name.
+        name: &'static str,
+        /// Manifest-recorded path.
+        path: PathBuf,
+        /// Process exit status.
+        status: String,
+    },
+
+    /// A host binary version changed after install-time recording.
+    #[error("host binary version mismatch for {name} at {}: expected {expected}, got {actual}", path.display())]
+    HostBinaryVersionMismatch {
+        /// Logical binary name.
+        name: &'static str,
+        /// Manifest-recorded path.
+        path: PathBuf,
+        /// Manifest-recorded version.
+        expected: String,
+        /// Live observed version.
+        actual: String,
+    },
+
     /// Required non-executable launch material is absent from
     /// `host-binaries.manifest.json`.
     #[error("host launch material manifest missing required entry: {name}")]
@@ -565,6 +590,19 @@ pub enum PreflightError {
         path: PathBuf,
         /// Rejection reason.
         reason: &'static str,
+    },
+
+    /// A launch-material version changed after install-time recording.
+    #[error("host launch material version mismatch for {name} at {}: expected {expected}, got {actual}", path.display())]
+    HostLaunchMaterialVersionMismatch {
+        /// Logical launch material name.
+        name: &'static str,
+        /// Manifest-recorded path.
+        path: PathBuf,
+        /// Manifest-recorded version.
+        expected: String,
+        /// Live expected owning train.
+        actual: String,
     },
 
     /// A host artifact path was present but was not absolute.
@@ -905,6 +943,12 @@ impl PreflightError {
             Self::HostBinaryPermission { .. } => {
                 "install host binaries as root:root with mode no broader than 0755 and no group/world write bits"
             }
+            Self::HostBinaryVersionCommandFailed { .. } => {
+                "run the host binary manually with --version and regenerate host-binaries.manifest.json after reinstalling it"
+            }
+            Self::HostBinaryVersionMismatch { .. } => {
+                "regenerate host-binaries.manifest.json from the installed binaries, or reinstall the matching host binary"
+            }
             Self::HostLaunchMaterialMissing { .. } => {
                 "regenerate host-binaries.manifest.json so it covers every required launch-material file"
             }
@@ -919,6 +963,9 @@ impl PreflightError {
             }
             Self::HostLaunchMaterialPermission { .. } => {
                 "install launch material as root:root, regular, non-empty, mode no broader than 0755, and without group/world write bits"
+            }
+            Self::HostLaunchMaterialVersionMismatch { .. } => {
+                "install the Firecracker seccomp filter matching the accepted Firecracker train and regenerate host-binaries.manifest.json"
             }
             Self::NonAbsolutePath { .. } => {
                 "set the corresponding M80_* path env var to an absolute host path"

@@ -95,13 +95,15 @@ which is the right place for a security review to start.
      `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`.
   16c. **Host binary manifest** — reads
       `<artifact_dir>/host-binaries.manifest.json`, requires entries for
-      `firecracker`, `jailer`, `m80`, `m80_cli`, `m80_jailer_harden`, and
+      `firecracker`, `jailer`, `m80`, `m80_jailer_harden`, and
       `m80_net_helper`, plus a `launch_material` entry for
       `firecracker_seccomp_filter`. It checks the configured paths for the
       runtime-selected binaries and seccomp filter, opens every recorded path
       with `O_NOFOLLOW`, hashes the opened file descriptor, rejects
       non-root-owned or group/world-writable binaries and launch material, and
-      rejects empty launch-material files.
+      rejects empty launch-material files. It also compares recorded versions
+      against live Firecracker/jailer discovery, m80 helper `--version`
+      output, and the seccomp filter's owning Firecracker train.
   17. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
@@ -167,6 +169,12 @@ which is the right place for a security review to start.
   Firecracker version against the verified guest manifest. There is no
   `Default`; callers must use `from_env()` or construct the full effective
   config.
+- `HostBinariesManifestConfig { firecracker_bin, firecracker_seccomp_filter,
+  jailer_bin, jailer_harden_bin, net_helper_bin, m80_bin,
+  expected_firecracker_version }`, `HostBinariesManifestConfig::from_env()`,
+  `generate_host_binaries_manifest(&config)`, and
+  `write_host_binaries_manifest(&config, path)` for install-time manifest
+  generation from final host paths.
 - `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
   kernel_kind, run_root, helper_search_path }` and
   `ArtifactPreflightConfig::from_env()` for explicit `run_with_configs`

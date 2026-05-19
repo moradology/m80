@@ -48,7 +48,8 @@ CVE-floor table used by preflight and installer/release verification. Preflight
 probes both `firecracker --version` and `jailer --version`; malformed output or
 version disagreement returns a typed failure before launch. The installed-byte
 identity check remains `host-binaries.manifest.json`; that manifest records the
-Firecracker seccomp filter as launch material rather than as a host binary.
+Firecracker seccomp filter as launch material rather than as a host binary, and
+records the Firecracker train that seccomp filter is expected to match.
 
 Firecracker CVE floors live in `crates/m80-preflight/src/cve_floor.rs` and are
 documented in `docs/security/firecracker-cve-floor.md`. That code is the

@@ -297,9 +297,28 @@ fn binary_hash_mismatch_has_hint() {
 #[test]
 fn host_binary_permission_has_hint() {
     assert_hint(&PreflightError::HostBinaryPermission {
-        name: "m80-cli",
-        path: "/opt/m80/bin/m80-cli".into(),
+        name: "m80_net_helper",
+        path: "/opt/m80/bin/m80-net-helper".into(),
         reason: "owner is not root:root",
+    });
+}
+
+#[test]
+fn host_binary_version_command_failed_has_hint() {
+    assert_hint(&PreflightError::HostBinaryVersionCommandFailed {
+        name: "m80_net_helper",
+        path: "/opt/m80/bin/m80-net-helper".into(),
+        status: "exit status: 1".into(),
+    });
+}
+
+#[test]
+fn host_binary_version_mismatch_has_hint() {
+    assert_hint(&PreflightError::HostBinaryVersionMismatch {
+        name: "firecracker",
+        path: "/opt/firecracker/bin/firecracker".into(),
+        expected: "v1.15.1".into(),
+        actual: "v1.15.2".into(),
     });
 }
 
@@ -342,6 +361,16 @@ fn host_launch_material_permission_has_hint() {
         name: "firecracker_seccomp_filter",
         path: "/opt/firecracker/bin/firecracker-seccomp-filter.bin".into(),
         reason: "owner is not root:root",
+    });
+}
+
+#[test]
+fn host_launch_material_version_mismatch_has_hint() {
+    assert_hint(&PreflightError::HostLaunchMaterialVersionMismatch {
+        name: "firecracker_seccomp_filter",
+        path: "/opt/firecracker/bin/firecracker-seccomp-filter.bin".into(),
+        expected: "v1.15.1".into(),
+        actual: "v1.15.2".into(),
     });
 }
 

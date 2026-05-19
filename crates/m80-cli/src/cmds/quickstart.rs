@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -19,8 +20,8 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
     "output.ext4.manifest.json",
     "output.ext4.build-receipt.json",
     "m80-guestd",
-    "host-binaries.manifest.json",
 ];
+const FORBIDDEN_ARTIFACTS: &[&str] = &["host-binaries.manifest.json"];
 const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
 
 pub(crate) fn cmd_quickstart(args: QuickstartArgs, json_output: bool) -> anyhow::Result<i32> {
@@ -128,6 +129,21 @@ fn run_quickstart(
         json_output,
     )?;
 
+    if let Some(path) = find_forbidden_artifact(&extract_dir)? {
+        let name = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or("forbidden artifact");
+        return Err(FcError::Config(
+            m80_firecracker::ConfigError::InvalidValue {
+                field: "artifact_url",
+                reason: format!(
+                    "artifact tarball must not contain {name}; generate it after final host install paths are known"
+                ),
+            },
+        ));
+    }
+
     for file in REQUIRED_ARTIFACTS {
         let path = extract_dir.join(file);
         if !path.is_file() {
@@ -173,6 +189,7 @@ fn run_quickstart(
     )?;
 
     if !no_run {
+        write_host_binaries_manifest_for_probe(artifact_dir)?;
         run_echo_probe(artifact_dir, run_root)?;
     }
 
@@ -402,6 +419,47 @@ fn sha256_file(path: &Path) -> Result<String, FcError> {
         })
     })?;
     Ok(digest.to_owned())
+}
+
+fn find_forbidden_artifact(root: &Path) -> Result<Option<PathBuf>, FcError> {
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir).map_err(|source| FcError::PathIo {
+            path: dir.clone(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| FcError::PathIo {
+                path: dir.clone(),
+                source,
+            })?;
+            let path = entry.path();
+            let file_name = entry.file_name();
+            if FORBIDDEN_ARTIFACTS
+                .iter()
+                .any(|forbidden| file_name == OsStr::new(forbidden))
+            {
+                return Ok(Some(path));
+            }
+            let file_type = entry.file_type().map_err(|source| FcError::PathIo {
+                path: path.clone(),
+                source,
+            })?;
+            if file_type.is_dir() {
+                dirs.push(path);
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn write_host_binaries_manifest_for_probe(artifact_dir: &Path) -> Result<(), FcError> {
+    let current = std::env::current_exe()
+        .map_err(|source| crate::errors::host_io("resolve current executable", source))?;
+    let mut config = m80_preflight::HostBinariesManifestConfig::from_env();
+    config.m80_bin = current;
+    let manifest_path = artifact_dir.join("host-binaries.manifest.json");
+    m80_preflight::write_host_binaries_manifest(&config, &manifest_path)?;
+    Ok(())
 }
 
 fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {

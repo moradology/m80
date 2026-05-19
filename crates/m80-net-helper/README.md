@@ -21,10 +21,18 @@ those operations.
 - Operation failures return typed helper error frames with diagnostic text; the
   caller decides whether a failed launch or cleanup is fatal.
 - The helper is a host TCB binary. `m80-preflight` discovers it through
-  `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`, and
-  `host-binaries.manifest.json` pins its path and sha256.
+  `M80_NET_HELPER_BIN` or `/opt/m80/bin/m80-net-helper`.
+- `m80-net-helper --version` prints `m80-net-helper <package-version>` and
+  exits without reading protocol input. `host-binaries.manifest.json` pins its
+  path, sha256, and version.
 
 ## Public Surface
 
 This crate exposes only the `m80-net-helper` binary. The protocol types and
-stdio server live in `m80-net-outbound`.
+stdio server live in `m80-net-outbound`. `--version` is reserved for
+install-time identity capture and does not enter the stdio protocol loop.
+
+## Tests
+
+- `tests/version.rs` proves `--version` reports the package version without
+  requiring protocol input.

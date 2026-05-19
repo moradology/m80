@@ -35,9 +35,12 @@ m80 quickstart \
   --artifact-url https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
 ```
 
-`quickstart` downloads the matching release bundle, verifies the published
-checksum, installs the m80 binary/helper and guest artifact set, then runs
-`m80 run -- echo hello`. The bundle shape is pinned in
+`quickstart` downloads the matching guest artifact tarball, verifies the
+published checksum and extracted `SHA256SUMS`, installs the guest artifact set,
+generates `host-binaries.manifest.json` from the installed host TCB paths when
+running the probe, then runs `m80 run -- echo hello`. Host TCB binaries are
+installed separately from final host paths; release tarballs must not bundle
+the host manifest. The bundle shape is pinned in
 [`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
 
 After that, wrap any process the same way:

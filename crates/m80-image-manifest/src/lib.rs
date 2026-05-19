@@ -38,7 +38,11 @@ pub const SCHEMA_VERSION: u32 = 5;
 /// `3` — adds `launch_material` entries so Firecracker's seccomp filter is
 /// recorded as launch-critical material without pretending it is an
 /// executable binary.
-pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 3;
+///
+/// `4` — records version strings for every host binary and launch-material
+/// entry, and removes the stale `m80_cli` entry. The shipped CLI executable is
+/// `m80`; there is no second installed `m80-cli` binary in the release bundle.
+pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 4;
 
 /// Schema version for m80 build receipts.
 pub const BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1;
@@ -95,8 +99,6 @@ pub enum HostBinaryName {
     Jailer,
     /// Installed m80 CLI executable.
     M80,
-    /// Installed m80-cli release artifact.
-    M80Cli,
     /// m80 hardening wrapper that execs the official jailer.
     M80JailerHarden,
     /// m80 helper that owns privileged outbound network operations.
@@ -111,7 +113,6 @@ impl HostBinaryName {
             Self::Firecracker => "firecracker",
             Self::Jailer => "jailer",
             Self::M80 => "m80",
-            Self::M80Cli => "m80_cli",
             Self::M80JailerHarden => "m80_jailer_harden",
             Self::M80NetHelper => "m80_net_helper",
         }
@@ -146,6 +147,8 @@ pub struct HostBinaryEntry {
     pub path: PathBuf,
     /// sha256 hex digest of the installed binary bytes.
     pub sha256: String,
+    /// Version string recorded from the installed binary.
+    pub version: String,
 }
 
 /// One non-executable host launch material file recorded at install time.
@@ -158,6 +161,8 @@ pub struct HostLaunchMaterialEntry {
     pub path: PathBuf,
     /// sha256 hex digest of the installed launch material bytes.
     pub sha256: String,
+    /// Version string for the launch material's owning release train.
+    pub version: String,
 }
 
 /// Install-time manifest for host-side TCB binaries.

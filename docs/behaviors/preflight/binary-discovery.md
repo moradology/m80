@@ -64,7 +64,6 @@ one entry for each TCB binary:
 - `firecracker`
 - `jailer`
 - `m80`
-- `m80_cli`
 - `m80_jailer_harden`
 - `m80_net_helper`
 
@@ -80,7 +79,10 @@ recorded path is opened with `O_NOFOLLOW`; preflight hashes the opened file
 descriptor and compares it to the manifest sha256. Each binary and launch
 material file must be a regular file owned `root:root`, with mode no broader
 than `0755`, and without group/world write bits. Launch material must also be
-non-empty.
+non-empty. The same manifest records versions; preflight compares
+Firecracker/jailer entries to the accepted train, m80 helper entries to live
+`--version` output, and seccomp launch material to the accepted Firecracker
+train.
 
 The boot-scoped sentinel cache can skip the Firecracker and jailer version
 subprocesses and guest-image manifest verification, but it does not skip
@@ -96,6 +98,8 @@ host-binary or launch-material sha256 verification.
 - `crates/m80-preflight/src/binary.rs::tests::jailer_version_mismatch_fails_closed`
 - `crates/m80-preflight/src/firecracker_train.rs::tests::rejects_malformed_jailer_version_output`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_hash_mismatch_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_firecracker_version_mismatch_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_helper_hash_mismatch_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_requires_seccomp_launch_material`

@@ -114,6 +114,8 @@ Implemented warm flag:
 `SHA256SUMS`, installs `vmlinux`, `output.ext4`, `output.ext4.manifest.json`,
 and `m80-guestd`, creates the run-root, and runs `m80 run -- echo hello` unless
 `--no-run` is set.
+The tarball must not contain `host-binaries.manifest.json`; that manifest is
+generated from final host TCB paths before the probe run.
 Global `--json` requires `--no-run` because the successful probe writes guest
 stdout; the install-only JSON path emits a machine-readable artifact summary.
 

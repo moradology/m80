@@ -34,6 +34,23 @@ fn output_checked(cmd: &mut StdCommand, label: &str) -> std::process::Output {
 }
 
 fn write_release_tarball(dir: &tempfile::TempDir) -> std::path::PathBuf {
+    write_release_tarball_inner(dir, None)
+}
+
+fn write_release_tarball_with_bundled_host_manifest(dir: &tempfile::TempDir) -> std::path::PathBuf {
+    write_release_tarball_inner(dir, Some("host-binaries.manifest.json"))
+}
+
+fn write_release_tarball_with_nested_bundled_host_manifest(
+    dir: &tempfile::TempDir,
+) -> std::path::PathBuf {
+    write_release_tarball_inner(dir, Some("nested/host-binaries.manifest.json"))
+}
+
+fn write_release_tarball_inner(
+    dir: &tempfile::TempDir,
+    host_manifest_relpath: Option<&str>,
+) -> std::path::PathBuf {
     let src = dir.path().join("src");
     std::fs::create_dir(&src).unwrap();
     std::fs::write(src.join("vmlinux"), b"kernel").unwrap();
@@ -41,33 +58,39 @@ fn write_release_tarball(dir: &tempfile::TempDir) -> std::path::PathBuf {
     std::fs::write(src.join("m80-guestd"), b"guestd").unwrap();
     write_manifest_with_stale_paths(&src);
     write_build_receipt_with_stale_paths(&src);
-    std::fs::write(
-        src.join("host-binaries.manifest.json"),
-        br#"{
+    let mut checksum_inputs = vec![
+        "vmlinux",
+        "output.ext4",
+        "output.ext4.manifest.json",
+        "output.ext4.build-receipt.json",
+        "m80-guestd",
+    ];
+    if let Some(relpath) = host_manifest_relpath {
+        let host_manifest = src.join(relpath);
+        std::fs::create_dir_all(host_manifest.parent().unwrap()).unwrap();
+        std::fs::write(
+            &host_manifest,
+            br#"{
   "binaries": [],
   "launch_material": [
     {
       "name": "firecracker_seccomp_filter",
       "path": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "version": "v1.15.1"
     }
   ],
-  "schema_version": 3
+  "schema_version": 4
 }
 "#,
-    )
-    .unwrap();
+        )
+        .unwrap();
+        checksum_inputs.push(relpath);
+    }
 
     let sums = output_checked(
         StdCommand::new("sha256sum")
-            .args([
-                "vmlinux",
-                "output.ext4",
-                "output.ext4.manifest.json",
-                "output.ext4.build-receipt.json",
-                "m80-guestd",
-                "host-binaries.manifest.json",
-            ])
+            .args(checksum_inputs)
             .current_dir(&src),
         "sha256sum",
     );
@@ -189,7 +212,10 @@ fn quickstart_no_run_installs_verified_artifacts() {
         "output.ext4.build-receipt.json",
         &dst.join("output.ext4.build-receipt.json"),
     );
-    assert!(dst.join("host-binaries.manifest.json").is_file());
+    assert!(
+        !dst.join("host-binaries.manifest.json").exists(),
+        "quickstart must not install a bundled host-binaries manifest"
+    );
 }
 
 fn assert_rewrite_record(
@@ -313,6 +339,72 @@ fn quickstart_rejects_tarball_when_external_checksum_mismatches() {
     assert!(
         !dst.exists(),
         "quickstart must not install artifacts after checksum mismatch"
+    );
+}
+
+#[test]
+fn quickstart_rejects_bundled_host_binaries_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball_with_bundled_host_manifest(&dir);
+    let dst = dir.path().join("host-manifest-dst");
+    let run_root = dir.path().join("host-manifest-run");
+
+    let output = m80()
+        .args([
+            "quickstart",
+            "--artifact-url",
+            &format!("file://{}", tarball.display()),
+            "--artifact-dir",
+            dst.to_str().unwrap(),
+            "--run-root",
+            run_root.to_str().unwrap(),
+            "--no-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("host-binaries.manifest.json"),
+        "quickstart should explain the forbidden bundled host manifest; stderr={stderr}"
+    );
+    assert!(
+        !dst.exists(),
+        "quickstart must not install artifacts after seeing a bundled host manifest"
+    );
+}
+
+#[test]
+fn quickstart_rejects_nested_bundled_host_binaries_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball_with_nested_bundled_host_manifest(&dir);
+    let dst = dir.path().join("nested-host-manifest-dst");
+    let run_root = dir.path().join("nested-host-manifest-run");
+
+    let output = m80()
+        .args([
+            "quickstart",
+            "--artifact-url",
+            &format!("file://{}", tarball.display()),
+            "--artifact-dir",
+            dst.to_str().unwrap(),
+            "--run-root",
+            run_root.to_str().unwrap(),
+            "--no-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("host-binaries.manifest.json"),
+        "quickstart should reject nested bundled host manifests; stderr={stderr}"
+    );
+    assert!(
+        !dst.exists(),
+        "quickstart must not install artifacts after seeing a nested host manifest"
     );
 }
 

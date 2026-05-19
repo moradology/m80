@@ -40,6 +40,11 @@ does this, in order:
 The wrapper does not perform chroot, pivot_root, mknod, cgroup placement, setuid,
 or setgid. Those stay owned by Firecracker's official jailer and `m80-cgroup`.
 
+`m80-jailer-harden --version` prints `m80-jailer-harden <package-version>` and
+exits before parsing hardening arguments or touching process state. The
+install-time host-binaries manifest records that version string beside the
+binary hash.
+
 The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 `m80-preflight` and launch configuration may override that path with
 `M80_JAILER_HARDEN_BIN`.
@@ -48,7 +53,7 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 
 | Public item | Contract |
 | --- | --- |
-| Binary `m80-jailer-harden` | Parses wrapper arguments, applies process hardening, clears the environment, and execs the official jailer. |
+| Binary `m80-jailer-harden` | Parses wrapper arguments, applies process hardening, clears the environment, and execs the official jailer. `--version` prints package identity without hardening side effects. |
 | `HardenArgs` | Opaque parsed argument bundle returned by `parse_args` and consumed by `exec_jailer`. It carries the official jailer path, forwarded jailer args, requested `ResourceLimit` rows, and requested namespace flags; fields are crate-private. `--uid` and `--gid` remain required parse-time validation inputs but are not stored because the official jailer receives its own uid/gid through the forwarded args after `--`. |
 | `HardenArgs::resource_limits()` | Read-only view of the parsed resource-limit rows for `apply_process_hardening`. |
 | `HardenArgs::new_cgroup_ns()` | Parsed `--new-cgroup-ns` flag for `apply_process_hardening`. |
@@ -74,6 +79,8 @@ The default installed wrapper path is `/opt/m80/bin/m80-jailer-harden`.
 
 - Unit tests cover CLI parsing, missing argument errors, and the official
   jailer capability allowlist so future audits see any drift.
+- `tests/version.rs` proves `--version` returns the package version without
+  entering the hardening path.
 - Ignored root integration tests verify the wrapper's inherited process state
   via `/proc/self/status` including `CapBnd`, `CapPrm`, and `CapEff`,
   environment clearing, and inherited-fd closure inside the exec target. They
