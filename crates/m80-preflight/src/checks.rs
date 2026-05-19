@@ -12,6 +12,7 @@ use nix::unistd::{geteuid, Gid, Group, Uid, User};
 use crate::artifacts::{verify_artifacts, ArtifactPreflightConfig};
 use crate::binary::{discover_binaries, verify_host_binaries, BinaryDiscoveryConfig};
 use crate::cache::PreflightCache;
+use crate::firecracker_train::enforce_firecracker_version;
 use crate::{
     classify_privilege, CheckRow, Discovery, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES,
 };
@@ -258,6 +259,7 @@ pub fn run_with_configs(
     let binaries = discover_binaries(
         &binary_config,
         cache.hit().map(|hit| hit.firecracker_version.as_str()),
+        cache.hit().map(|hit| hit.jailer_version.as_str()),
     )?;
     let host_binary_manifest = artifact_config
         .artifact_dir
@@ -267,9 +269,13 @@ pub fn run_with_configs(
         label: "Firecracker binary".to_string(),
         passed: true,
         detail: format!(
-            "{} ({})",
+            "{} (observed {}, configured expected {})",
             binaries.firecracker_bin.display(),
-            binaries.firecracker_version
+            binaries.firecracker_version,
+            binary_config
+                .expected_firecracker_version
+                .as_deref()
+                .unwrap_or("from guest manifest")
         ),
     });
     report.push(CheckRow {
@@ -281,7 +287,12 @@ pub fn run_with_configs(
     report.push(CheckRow {
         label: "Jailer binary".to_string(),
         passed: true,
-        detail: binaries.jailer_bin.display().to_string(),
+        detail: format!(
+            "{} (observed {}, expected {})",
+            binaries.jailer_bin.display(),
+            binaries.jailer_version,
+            binaries.firecracker_version
+        ),
     });
     report.push(CheckRow {
         label: "Jailer hardening wrapper".to_string(),
@@ -301,6 +312,21 @@ pub fn run_with_configs(
 
     // 14-18. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config, cache.hit().map(|hit| &hit.manifest))?;
+    check_manifest_firecracker_train(
+        &artifacts.manifest.expected_firecracker_version,
+        &binaries.firecracker_version,
+    )?;
+    if let Some(row) = report
+        .iter_mut()
+        .find(|row| row.label == "Firecracker binary")
+    {
+        row.detail = format!(
+            "{} (observed {}, expected {})",
+            binaries.firecracker_bin.display(),
+            binaries.firecracker_version,
+            artifacts.manifest.expected_firecracker_version
+        );
+    }
     report.push(CheckRow {
         label: "Kernel image".to_string(),
         passed: true,
@@ -331,7 +357,11 @@ pub fn run_with_configs(
         detail: artifacts.storage_helpers.join(", "),
     });
 
-    cache.store(&binaries.firecracker_version, &artifacts.manifest);
+    cache.store(
+        &binaries.firecracker_version,
+        &binaries.jailer_version,
+        &artifacts.manifest,
+    );
 
     Ok(Discovery {
         firecracker_bin: binaries.firecracker_bin,
@@ -347,6 +377,13 @@ pub fn run_with_configs(
         privilege,
         report,
     })
+}
+
+fn check_manifest_firecracker_train(
+    expected_firecracker_version: &str,
+    actual_firecracker_version: &str,
+) -> Result<(), PreflightError> {
+    enforce_firecracker_version(expected_firecracker_version, actual_firecracker_version)
 }
 
 fn check_os(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {

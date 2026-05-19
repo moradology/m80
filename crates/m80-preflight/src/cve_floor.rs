@@ -2,6 +2,18 @@
 
 use crate::PreflightError;
 
+/// File that owns the active Firecracker CVE floor table.
+pub const FIRECRACKER_CVE_FLOOR_SOURCE: &str = "crates/m80-preflight/src/cve_floor.rs";
+
+/// One Firecracker CVE floor enforced by preflight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirecrackerCveFloor {
+    /// CVE identifier tracked by m80.
+    pub cve_id: &'static str,
+    /// Fixed version set that satisfies this floor.
+    pub expected: &'static str,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Version {
     major: u16,
@@ -33,26 +45,46 @@ impl Version {
 }
 
 struct TrackedCve {
-    id: &'static str,
-    fixed_versions: &'static str,
+    floor: FirecrackerCveFloor,
     affected: fn(Version) -> bool,
 }
 
+const CVE_2026_5747: FirecrackerCveFloor = FirecrackerCveFloor {
+    cve_id: "CVE-2026-5747",
+    expected: "v1.14.4 or v1.15.1",
+};
+
+const CVE_2026_1386: FirecrackerCveFloor = FirecrackerCveFloor {
+    cve_id: "CVE-2026-1386",
+    expected: "v1.13.2 or v1.14.1",
+};
+
+const FIRECRACKER_VERSION_FORMAT: FirecrackerCveFloor = FirecrackerCveFloor {
+    cve_id: "firecracker-version-format",
+    expected: "release versions like v1.14.4 or v1.15.1",
+};
+
+const ACTIVE_FIRECRACKER_CVE_FLOORS: &[FirecrackerCveFloor] = &[CVE_2026_5747, CVE_2026_1386];
+
 const TRACKED_FIRECRACKER_CVES: &[TrackedCve] = &[
     TrackedCve {
-        id: "CVE-2026-5747",
-        fixed_versions: "v1.14.4 or v1.15.1",
+        floor: CVE_2026_5747,
         affected: |version| {
             (version >= Version::new(1, 13, 0) && version <= Version::new(1, 14, 3))
                 || version == Version::new(1, 15, 0)
         },
     },
     TrackedCve {
-        id: "CVE-2026-1386",
-        fixed_versions: "v1.13.2 or v1.14.1",
+        floor: CVE_2026_1386,
         affected: |version| version <= Version::new(1, 13, 1) || version == Version::new(1, 14, 0),
     },
 ];
+
+/// Return the active Firecracker CVE floors enforced by preflight.
+#[must_use]
+pub fn active_firecracker_cve_floors() -> &'static [FirecrackerCveFloor] {
+    ACTIVE_FIRECRACKER_CVE_FLOORS
+}
 
 pub(crate) fn verify_firecracker_cve_floor(version: &str) -> Result<(), PreflightError> {
     let parsed = Version::parse(version)?;
@@ -61,9 +93,10 @@ pub(crate) fn verify_firecracker_cve_floor(version: &str) -> Result<(), Prefligh
         .find(|cve| (cve.affected)(parsed))
     {
         return Err(PreflightError::FirecrackerCveFloorViolation {
-            cve_id: cve.id.to_owned(),
+            cve_id: cve.floor.cve_id.to_owned(),
             actual: version.to_owned(),
-            fixed_versions: cve.fixed_versions.to_owned(),
+            expected: cve.floor.expected.to_owned(),
+            policy_source: FIRECRACKER_CVE_FLOOR_SOURCE,
         });
     }
 
@@ -77,9 +110,10 @@ fn parse_component(part: Option<&str>, original: &str) -> Result<u16, PreflightE
 
 fn format_error(version: &str) -> PreflightError {
     PreflightError::FirecrackerCveFloorViolation {
-        cve_id: "firecracker-version-format".to_owned(),
+        cve_id: FIRECRACKER_VERSION_FORMAT.cve_id.to_owned(),
         actual: version.to_owned(),
-        fixed_versions: "release versions like v1.14.4 or v1.15.1".to_owned(),
+        expected: FIRECRACKER_VERSION_FORMAT.expected.to_owned(),
+        policy_source: FIRECRACKER_CVE_FLOOR_SOURCE,
     }
 }
 
@@ -96,11 +130,13 @@ mod tests {
             PreflightError::FirecrackerCveFloorViolation {
                 cve_id,
                 actual,
-                fixed_versions,
+                expected,
+                policy_source,
             } => {
                 assert_eq!(cve_id, "CVE-2026-5747");
                 assert_eq!(actual, "v1.15.0");
-                assert_eq!(fixed_versions, "v1.14.4 or v1.15.1");
+                assert_eq!(expected, "v1.14.4 or v1.15.1");
+                assert_eq!(policy_source, "crates/m80-preflight/src/cve_floor.rs");
             }
             other => panic!("expected CVE floor violation, got {other:?}"),
         }
@@ -142,11 +178,13 @@ mod tests {
             PreflightError::FirecrackerCveFloorViolation {
                 cve_id,
                 actual,
-                fixed_versions,
+                expected,
+                policy_source,
             } => {
                 assert_eq!(cve_id, "firecracker-version-format");
                 assert_eq!(actual, "dev-build");
-                assert_eq!(fixed_versions, "release versions like v1.14.4 or v1.15.1");
+                assert_eq!(expected, "release versions like v1.14.4 or v1.15.1");
+                assert_eq!(policy_source, "crates/m80-preflight/src/cve_floor.rs");
             }
             other => panic!("expected CVE floor violation, got {other:?}"),
         }

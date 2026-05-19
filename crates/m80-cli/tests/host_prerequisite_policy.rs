@@ -71,12 +71,33 @@ fn policy_doc_names_version_and_cve_sources_of_truth() {
         "`M80_FIRECRACKER_VERSION`",
         "jailer version source of truth is the accepted Firecracker train",
         "same Firecracker release train",
+        "`crates/m80-preflight/src/firecracker_train.rs`",
+        "`FirecrackerTrainPolicy::from_expected_firecracker_version`",
         "`host-binaries.manifest.json`",
         "`crates/m80-preflight/src/cve_floor.rs`",
         "`docs/security/firecracker-cve-floor.md`",
     ] {
         assert_contains(&policy, required);
     }
+}
+
+#[test]
+fn policy_doc_requires_preflight_proof_rows_for_release_artifacts() {
+    let policy = read_repo_file("docs/behaviors/release/host-prerequisite-policy.md");
+
+    assert_contains(&policy, "`m80 preflight --json`");
+    assert_contains_words(
+        &policy,
+        "`Firecracker binary` row records the expected and observed Firecracker version",
+    );
+    assert_contains_words(
+        &policy,
+        "`Jailer binary` row records the expected jailer version and the observed jailer version",
+    );
+    assert_contains_words(
+        &policy,
+        "operator-provided train matches the guest artifact set",
+    );
 }
 
 #[test]

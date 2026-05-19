@@ -83,3 +83,17 @@ The package step emits a deterministic tarball, checksum sidecars, an
 inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, and a public
 `SHA256SUMS` for the tarball, installer, and metadata sidecar. The exact builder
 contract is captured in `docs/behaviors/release/bundle-builder.md`.
+
+## Host Train Proof
+
+Before promoting a release on a target host, save a preflight proof:
+
+```sh
+m80 preflight --json > release-preflight-proof.json
+```
+
+The proof must contain a `Firecracker binary` row whose detail records the
+expected and observed Firecracker version, and a `Jailer binary` row whose
+detail records the expected and observed jailer version. The train policy source
+is `crates/m80-preflight/src/firecracker_train.rs`; the CVE-floor table source
+is `crates/m80-preflight/src/cve_floor.rs`.

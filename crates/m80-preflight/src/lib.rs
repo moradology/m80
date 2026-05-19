@@ -25,6 +25,7 @@ mod binary;
 mod cache;
 mod checks;
 mod cve_floor;
+mod firecracker_train;
 mod table;
 
 /// Linux capabilities m80 needs when `euid != 0`; a process holding all of
@@ -174,6 +175,13 @@ pub use binary::{
     ENV_FIRECRACKER_BIN, ENV_FIRECRACKER_SECCOMP_FILTER, ENV_FIRECRACKER_VERSION,
 };
 pub use checks::{run, run_with_configs, CgroupPreflightMode, HostFeaturePreflightConfig};
+pub use cve_floor::{
+    active_firecracker_cve_floors, FirecrackerCveFloor, FIRECRACKER_CVE_FLOOR_SOURCE,
+};
+pub use firecracker_train::{
+    FirecrackerTrainPolicy, FIRECRACKER_TRAIN_POLICY_SOURCE, HOST_PREREQUISITE_POLICY_DOC,
+    JAILER_PAIRING_RULE,
+};
 
 /// Errors surfaced by preflight. `Display` is lowercase, no trailing period,
 /// no embedded hint text. Actionable hints live in [`PreflightError::hint`].
@@ -336,13 +344,17 @@ pub enum PreflightError {
     #[error("firecracker binary not found")]
     FirecrackerBinaryNotFound,
 
-    /// `firecracker --version` did not match the configured pin.
-    #[error("firecracker version mismatch: expected {expected}, got {actual}")]
+    /// `firecracker --version` did not match the expected train.
+    #[error(
+        "firecracker version mismatch: expected {expected}, got {actual}; source {policy_source}"
+    )]
     FirecrackerVersionMismatch {
-        /// Pinned version (from env).
+        /// Expected version.
         expected: String,
         /// Reported version.
         actual: String,
+        /// File/module that owns the train policy.
+        policy_source: &'static str,
     },
 
     /// `firecracker --version` exited non-zero.
@@ -354,10 +366,20 @@ pub enum PreflightError {
         status: String,
     },
 
+    /// `firecracker --version` output did not match the official release
+    /// output shape.
+    #[error("firecracker --version output malformed: actual {actual:?}; source {policy_source}")]
+    FirecrackerVersionOutputMalformed {
+        /// Raw stdout after trimming.
+        actual: String,
+        /// File/module that owns accepted version parsing.
+        policy_source: &'static str,
+    },
+
     /// `firecracker --version` matched a version affected by a documented
     /// security advisory or did not parse as a release version.
     #[error(
-        "firecracker version fails CVE floor for {cve_id}: actual {actual}, fixed versions {fixed_versions}"
+        "firecracker version fails CVE floor for {cve_id}: expected {expected}, got {actual}; source {policy_source}"
     )]
     FirecrackerCveFloorViolation {
         /// CVE identifier, or `firecracker-version-format` for malformed versions.
@@ -365,7 +387,9 @@ pub enum PreflightError {
         /// Reported version.
         actual: String,
         /// Documented fixed version set.
-        fixed_versions: String,
+        expected: String,
+        /// File/module that owns the active CVE floor table.
+        policy_source: &'static str,
     },
 
     /// The configured Firecracker advanced seccomp filter is missing or is
@@ -386,6 +410,36 @@ pub enum PreflightError {
     /// `jailer` binary not found.
     #[error("jailer binary not found")]
     JailerBinaryNotFound,
+
+    /// `jailer --version` exited non-zero.
+    #[error("jailer --version at {} exited with {status}", path.display())]
+    JailerVersionCommandFailed {
+        /// Binary path that was executed.
+        path: PathBuf,
+        /// Exit status string.
+        status: String,
+    },
+
+    /// `jailer --version` output did not match the official release output
+    /// shape.
+    #[error("jailer --version output malformed: actual {actual:?}; source {policy_source}")]
+    JailerVersionOutputMalformed {
+        /// Raw stdout after trimming.
+        actual: String,
+        /// File/module that owns accepted version parsing.
+        policy_source: &'static str,
+    },
+
+    /// The official jailer train did not match the accepted Firecracker train.
+    #[error("jailer version mismatch: expected {expected}, got {actual}; source {policy_source}")]
+    JailerVersionMismatch {
+        /// Expected jailer version, equal to the accepted Firecracker version.
+        expected: String,
+        /// Reported jailer version.
+        actual: String,
+        /// File/module that owns the pairing policy.
+        policy_source: &'static str,
+    },
 
     /// `m80-jailer-harden` binary not found.
     #[error("jailer hardening wrapper not found")]
@@ -740,13 +794,16 @@ impl PreflightError {
                 "install firecracker to /opt/firecracker/bin/firecracker or set M80_FIRECRACKER_BIN to the binary path"
             }
             Self::FirecrackerVersionMismatch { .. } => {
-                "install the expected version or set M80_FIRECRACKER_VERSION to the installed version to skip the version pin"
+                "install the expected official Firecracker/jailer train or update M80_FIRECRACKER_VERSION to the verified guest manifest version; see docs/behaviors/release/host-prerequisite-policy.md"
             }
             Self::FirecrackerVersionCommandFailed { .. } => {
                 "run the firecracker binary manually with --version and inspect stderr"
             }
+            Self::FirecrackerVersionOutputMalformed { .. } => {
+                "install an official Firecracker release whose --version prints `Firecracker vMAJOR.MINOR.PATCH`; see docs/behaviors/release/host-prerequisite-policy.md"
+            }
             Self::FirecrackerCveFloorViolation { .. } => {
-                "upgrade firecracker to a version fixed for every advisory tracked by m80-preflight"
+                "upgrade Firecracker and the matching official jailer to a fixed train tracked in crates/m80-preflight/src/cve_floor.rs; see docs/security/firecracker-cve-floor.md"
             }
             Self::FirecrackerSeccompFilterNotFound { .. } => {
                 "install the Firecracker advanced seccomp filter bitcode or set M80_FIRECRACKER_SECCOMP_FILTER to its absolute path"
@@ -756,6 +813,15 @@ impl PreflightError {
             }
             Self::JailerBinaryNotFound => {
                 "install jailer to /opt/firecracker/bin/jailer (it ships alongside firecracker) or set M80_JAILER_BIN to the binary path"
+            }
+            Self::JailerVersionCommandFailed { .. } => {
+                "run the jailer binary manually with --version and inspect stderr"
+            }
+            Self::JailerVersionOutputMalformed { .. } => {
+                "install an official Firecracker jailer whose --version prints `Jailer vMAJOR.MINOR.PATCH`; see docs/behaviors/release/host-prerequisite-policy.md"
+            }
+            Self::JailerVersionMismatch { .. } => {
+                "install the official jailer from the same Firecracker release train as the accepted firecracker binary; see docs/behaviors/release/host-prerequisite-policy.md"
             }
             Self::JailerHardenBinaryNotFound => {
                 "install m80-jailer-harden to /opt/m80/bin/m80-jailer-harden or set M80_JAILER_HARDEN_BIN to the binary path"

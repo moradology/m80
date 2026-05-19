@@ -10,6 +10,10 @@ use std::thread;
 use std::time::Duration;
 
 use crate::cve_floor::verify_firecracker_cve_floor;
+use crate::firecracker_train::{
+    enforce_configured_firecracker_version, enforce_jailer_pairing,
+    parse_firecracker_version_output, parse_jailer_version_output, FirecrackerTrainPolicy,
+};
 use crate::PreflightError;
 use m80_image_manifest::{HostBinariesManifest, HostBinaryEntry, HostBinaryName};
 use nix::libc::O_NOFOLLOW;
@@ -92,6 +96,8 @@ pub(crate) struct BinaryDiscovery {
     pub(crate) firecracker_version: String,
     /// Resolved jailer binary path.
     pub(crate) jailer_bin: PathBuf,
+    /// Version parsed from `jailer --version`.
+    pub(crate) jailer_version: String,
     /// Resolved m80 jailer hardening wrapper path.
     pub(crate) jailer_harden_bin: PathBuf,
     /// Resolved m80 network helper path.
@@ -102,6 +108,7 @@ pub(crate) struct BinaryDiscovery {
 pub(crate) fn discover_binaries(
     config: &BinaryDiscoveryConfig,
     cached_firecracker_version: Option<&str>,
+    cached_jailer_version: Option<&str>,
 ) -> Result<BinaryDiscovery, PreflightError> {
     require_absolute_binary("firecracker", &config.firecracker_bin)?;
     require_absolute_binary(
@@ -122,18 +129,20 @@ pub(crate) fn discover_binaries(
         None => firecracker_version(&config.firecracker_bin)?,
     };
     verify_firecracker_cve_floor(&actual_version)?;
-    if let Some(expected) = &config.expected_firecracker_version {
-        if &actual_version != expected {
-            return Err(PreflightError::FirecrackerVersionMismatch {
-                expected: expected.clone(),
-                actual: actual_version,
-            });
-        }
-    }
+    let train_policy = FirecrackerTrainPolicy::from_expected_firecracker_version(
+        config.expected_firecracker_version.clone(),
+    );
+    enforce_configured_firecracker_version(&train_policy, &actual_version)?;
 
     if !config.jailer_bin.exists() {
         return Err(PreflightError::JailerBinaryNotFound);
     }
+    let jailer_version = match cached_jailer_version {
+        Some(version) => version.to_owned(),
+        None => jailer_version(&config.jailer_bin)?,
+    };
+    enforce_jailer_pairing(&actual_version, &jailer_version)?;
+
     if !config.jailer_harden_bin.exists() {
         return Err(PreflightError::JailerHardenBinaryNotFound);
     }
@@ -146,6 +155,7 @@ pub(crate) fn discover_binaries(
         firecracker_seccomp_filter: config.firecracker_seccomp_filter.clone(),
         firecracker_version: actual_version,
         jailer_bin: config.jailer_bin.clone(),
+        jailer_version,
         jailer_harden_bin: config.jailer_harden_bin.clone(),
         net_helper_bin: config.net_helper_bin.clone(),
     })
@@ -346,9 +356,37 @@ fn require_absolute_binary(kind: &str, path: &Path) -> Result<(), PreflightError
 }
 
 fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> {
+    let out = version_command_output(bin)?;
+
+    if !out.status.success() {
+        return Err(PreflightError::FirecrackerVersionCommandFailed {
+            path: bin.to_path_buf(),
+            status: out.status.to_string(),
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    parse_firecracker_version_output(&stdout)
+}
+
+fn jailer_version(bin: &std::path::Path) -> Result<String, PreflightError> {
+    let out = version_command_output(bin)?;
+
+    if !out.status.success() {
+        return Err(PreflightError::JailerVersionCommandFailed {
+            path: bin.to_path_buf(),
+            status: out.status.to_string(),
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    parse_jailer_version_output(&stdout)
+}
+
+fn version_command_output(bin: &std::path::Path) -> Result<std::process::Output, PreflightError> {
     // Retry up to 5 times on ETXTBSY (binary still being written to disk).
     let mut last_text_busy = None;
-    let out = 'retry: {
+    Ok('retry: {
         for attempt in 0..5 {
             match Command::new(bin).arg("--version").output() {
                 Ok(out) => break 'retry out,
@@ -368,22 +406,7 @@ fn firecracker_version(bin: &std::path::Path) -> Result<String, PreflightError> 
             path: bin.to_path_buf(),
             source: last_text_busy.expect("ETXTBSY retry loop records the last error"),
         });
-    };
-
-    if !out.status.success() {
-        return Err(PreflightError::FirecrackerVersionCommandFailed {
-            path: bin.to_path_buf(),
-            status: out.status.to_string(),
-        });
-    }
-
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let first_line = stdout.lines().next().unwrap_or("").trim();
-    Ok(first_line
-        .split_whitespace()
-        .last()
-        .unwrap_or(first_line)
-        .to_string())
+    })
 }
 
 #[cfg(test)]

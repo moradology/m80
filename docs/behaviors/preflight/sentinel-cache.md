@@ -7,13 +7,14 @@ metadata are unchanged.
 After a successful full preflight, m80 writes
 `/run/m80-preflight-ok-<sha256>`. The hash input includes the kernel boot id,
 the configured Firecracker version pin, the optional kernel-kind override, and
-file identity metadata for the Firecracker binary, jailer binary,
-`m80-jailer-harden`, selected kernel, selected rootfs, and rootfs manifest.
+file identity metadata for the Firecracker binary, Firecracker seccomp filter,
+jailer binary, `m80-jailer-harden`, `m80-net-helper`, selected kernel,
+selected rootfs, and rootfs manifest.
 
-On a matching sentinel, m80 reuses the cached Firecracker version and manifest,
-skipping `firecracker --version` and `Manifest::verify(parent)`. It still runs
-OS, KVM, module, cgroup, privilege, run-root, run-root filesystem, and storage
-helper checks.
+On a matching sentinel, m80 reuses the cached Firecracker version, jailer
+version, and manifest, skipping `firecracker --version`, `jailer --version`,
+and `Manifest::verify(parent)`. It still runs OS, KVM, module, cgroup,
+privilege, run-root, run-root filesystem, and storage helper checks.
 
 Corrupt sentinels, boot-id changes, rootfs metadata changes, manifest metadata
 changes, binary metadata changes, version-pin changes, and kernel-kind override
@@ -28,5 +29,5 @@ Tests:
 - `crates/m80-preflight/src/cache.rs::tests::boot_id_change_invalidates_sentinel`
 - `crates/m80-preflight/src/cache.rs::tests::matching_sentinel_reuses_cached_manifest`
 - `crates/m80-preflight/src/cache.rs::tests::force_preflight_env_disables_cache_reads_and_writes`
-- `crates/m80-preflight/src/binary/tests.rs::cached_firecracker_version_skips_version_subprocess`
+- `crates/m80-preflight/src/binary/tests.rs::cached_train_versions_skip_version_subprocesses`
 - `crates/m80-preflight/src/artifacts/tests.rs::cached_manifest_skips_sha256_verification`

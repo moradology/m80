@@ -181,6 +181,15 @@ fn firecracker_version_mismatch_has_hint() {
     assert_hint(&PreflightError::FirecrackerVersionMismatch {
         expected: "v1.15.1".into(),
         actual: "v1.14.0".into(),
+        policy_source: "crates/m80-preflight/src/firecracker_train.rs",
+    });
+}
+
+#[test]
+fn firecracker_version_output_malformed_has_hint() {
+    assert_hint(&PreflightError::FirecrackerVersionOutputMalformed {
+        actual: "not-firecracker".into(),
+        policy_source: "crates/m80-preflight/src/firecracker_train.rs",
     });
 }
 
@@ -189,7 +198,8 @@ fn firecracker_cve_floor_violation_has_hint() {
     assert_hint(&PreflightError::FirecrackerCveFloorViolation {
         cve_id: "CVE-2026-5747".into(),
         actual: "v1.15.0".into(),
-        fixed_versions: "v1.14.4 or v1.15.1".into(),
+        expected: "v1.14.4 or v1.15.1".into(),
+        policy_source: "crates/m80-preflight/src/cve_floor.rs",
     });
 }
 
@@ -210,6 +220,31 @@ fn firecracker_seccomp_filter_empty_has_hint() {
 #[test]
 fn jailer_binary_not_found_has_hint() {
     assert_hint(&PreflightError::JailerBinaryNotFound);
+}
+
+#[test]
+fn jailer_version_command_failed_has_hint() {
+    assert_hint(&PreflightError::JailerVersionCommandFailed {
+        path: "/opt/firecracker/bin/jailer".into(),
+        status: "exit status: 1".into(),
+    });
+}
+
+#[test]
+fn jailer_version_output_malformed_has_hint() {
+    assert_hint(&PreflightError::JailerVersionOutputMalformed {
+        actual: "not-jailer".into(),
+        policy_source: "crates/m80-preflight/src/firecracker_train.rs",
+    });
+}
+
+#[test]
+fn jailer_version_mismatch_has_hint() {
+    assert_hint(&PreflightError::JailerVersionMismatch {
+        expected: "v1.15.1".into(),
+        actual: "v1.14.4".into(),
+        policy_source: "crates/m80-preflight/src/firecracker_train.rs",
+    });
 }
 
 #[test]

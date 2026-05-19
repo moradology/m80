@@ -33,16 +33,21 @@ compatibility mode.
 The expected Firecracker train for a guest artifact set comes from the verified
 guest manifest field `expected_firecracker_version`. Release packaging mirrors
 that value into `bundle.json` and rejects bundle/manifest disagreement. Runtime
-preflight compares the installed `firecracker --version` output to
-`M80_FIRECRACKER_VERSION` when that exact pin is configured.
+preflight compares the installed `firecracker --version` output to the verified
+guest manifest value before launch. `M80_FIRECRACKER_VERSION` is an optional
+pre-artifact pin for installer and operator verification, but it is not a
+replacement for the manifest check.
 
 The jailer version source of truth is the accepted Firecracker train: the
 official jailer must come from the same Firecracker release train and exact
-release as the accepted Firecracker binary. Current preflight validates the
-configured jailer path and installed-byte identity through
-`host-binaries.manifest.json`; the follow-up source-of-truth leaf
-`m80-o3uh9.8.4` owns making jailer version parsing and train enforcement a
-shared verifier input.
+release as the accepted Firecracker binary. The train policy source is
+`crates/m80-preflight/src/firecracker_train.rs`; its
+`FirecrackerTrainPolicy::from_expected_firecracker_version` returns the
+expected Firecracker version, the official jailer pairing rule, and the active
+CVE-floor table used by preflight and installer/release verification. Preflight
+probes both `firecracker --version` and `jailer --version`; malformed output or
+version disagreement returns a typed failure before launch. The installed-byte
+identity check remains `host-binaries.manifest.json`.
 
 Firecracker CVE floors live in `crates/m80-preflight/src/cve_floor.rs` and are
 documented in `docs/security/firecracker-cve-floor.md`. That code is the
@@ -75,6 +80,12 @@ document:
   host-binaries manifest generation;
 - `docs/behaviors/preflight/binary-discovery.md` for current preflight
   discovery and identity checks.
+
+Release proof artifacts should include a saved `m80 preflight --json` result.
+The `Firecracker binary` row records the expected and observed Firecracker
+version. The `Jailer binary` row records the expected jailer version and the
+observed jailer version. Those rows are the host-local proof that the
+operator-provided train matches the guest artifact set.
 
 The user-facing rule is short: install the m80 bundle, provide the official
 Firecracker host prerequisites at their configured paths, run `m80 preflight`,

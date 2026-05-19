@@ -107,7 +107,10 @@ fn fixture_config(version: &str) -> (tempfile::TempDir, BinaryDiscoveryConfig) {
         &firecracker,
         &format!("#!/bin/sh\nprintf 'Firecracker {version}\\n'\n"),
     );
-    write_executable(&jailer, "#!/bin/sh\nexit 0\n");
+    write_executable(
+        &jailer,
+        &format!("#!/bin/sh\nprintf 'Jailer {version}\\n'\n"),
+    );
     write_executable(&jailer_harden, "#!/bin/sh\nexit 0\n");
     write_executable(&net_helper, "#!/bin/sh\nexit 0\n");
     write_seccomp_filter(&firecracker_seccomp_filter);
@@ -182,7 +185,7 @@ fn env_config_defaults_to_opt_firecracker_paths_without_version_pin() {
 fn discovery_returns_resolved_paths_and_probed_firecracker_version() {
     let (_dir, config) = fixture_config("v1.15.1");
 
-    let discovery = discover_binaries(&config, None).unwrap();
+    let discovery = discover_binaries(&config, None, None).unwrap();
 
     assert_eq!(discovery.firecracker_bin, config.firecracker_bin);
     assert_eq!(
@@ -191,12 +194,13 @@ fn discovery_returns_resolved_paths_and_probed_firecracker_version() {
     );
     assert_eq!(discovery.firecracker_version, "v1.15.1");
     assert_eq!(discovery.jailer_bin, config.jailer_bin);
+    assert_eq!(discovery.jailer_version, "v1.15.1");
     assert_eq!(discovery.jailer_harden_bin, config.jailer_harden_bin);
     assert_eq!(discovery.net_helper_bin, config.net_helper_bin);
 }
 
 #[test]
-fn cached_firecracker_version_skips_version_subprocess() {
+fn cached_train_versions_skip_version_subprocesses() {
     let (_dir, config) = fixture_config("v1.15.1");
     fs::write(
         &config.firecracker_bin,
@@ -204,9 +208,10 @@ fn cached_firecracker_version_skips_version_subprocess() {
     )
     .unwrap();
 
-    let discovery = discover_binaries(&config, Some("v1.15.1")).unwrap();
+    let discovery = discover_binaries(&config, Some("v1.15.1"), Some("v1.15.1")).unwrap();
 
     assert_eq!(discovery.firecracker_version, "v1.15.1");
+    assert_eq!(discovery.jailer_version, "v1.15.1");
 }
 
 #[test]
@@ -222,7 +227,7 @@ fn missing_firecracker_binary_fails_closed() {
     };
     write_seccomp_filter(&config.firecracker_seccomp_filter);
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     assert!(matches!(err, PreflightError::FirecrackerBinaryNotFound));
 }
@@ -240,7 +245,7 @@ fn relative_firecracker_binary_path_fails_closed() {
     };
     write_seccomp_filter(&config.firecracker_seccomp_filter);
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     match err {
         PreflightError::NonAbsolutePath { kind, path } => {
@@ -256,7 +261,7 @@ fn missing_firecracker_seccomp_filter_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.firecracker_seccomp_filter = dir.path().join("missing-seccomp-filter.json");
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     match err {
         PreflightError::FirecrackerSeccompFilterNotFound { path } => {
@@ -272,7 +277,7 @@ fn empty_firecracker_seccomp_filter_fails_closed() {
     config.firecracker_seccomp_filter = dir.path().join("empty-seccomp-filter.json");
     fs::write(&config.firecracker_seccomp_filter, b"").unwrap();
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     match err {
         PreflightError::FirecrackerSeccompFilterEmpty { path } => {
@@ -287,7 +292,7 @@ fn relative_firecracker_seccomp_filter_path_fails_closed() {
     let (_dir, mut config) = fixture_config("v1.15.1");
     config.firecracker_seccomp_filter = Path::new("firecracker-seccomp-filter.bin").to_path_buf();
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     match err {
         PreflightError::NonAbsolutePath { kind, path } => {
@@ -303,7 +308,7 @@ fn missing_jailer_binary_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.jailer_bin = dir.path().join("missing-jailer");
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     assert!(matches!(err, PreflightError::JailerBinaryNotFound));
 }
@@ -313,7 +318,7 @@ fn missing_jailer_hardening_wrapper_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.jailer_harden_bin = dir.path().join("missing-m80-jailer-harden");
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     assert!(matches!(err, PreflightError::JailerHardenBinaryNotFound));
 }
@@ -323,7 +328,7 @@ fn missing_network_helper_fails_closed() {
     let (dir, mut config) = fixture_config("v1.15.1");
     config.net_helper_bin = dir.path().join("missing-m80-net-helper");
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     assert!(matches!(err, PreflightError::NetHelperBinaryNotFound));
 }
@@ -333,14 +338,50 @@ fn firecracker_version_mismatch_fails_closed() {
     let (_dir, mut config) = fixture_config("v1.15.1");
     config.expected_firecracker_version = Some("v1.14.0".to_owned());
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     match err {
-        PreflightError::FirecrackerVersionMismatch { expected, actual } => {
+        PreflightError::FirecrackerVersionMismatch {
+            expected,
+            actual,
+            policy_source,
+        } => {
             assert_eq!(expected, "v1.14.0");
             assert_eq!(actual, "v1.15.1");
+            assert_eq!(
+                policy_source,
+                "crates/m80-preflight/src/firecracker_train.rs"
+            );
         }
         other => panic!("expected version mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn jailer_version_mismatch_fails_closed() {
+    let (_dir, config) = fixture_config("v1.15.1");
+    fs::write(
+        &config.jailer_bin,
+        "#!/bin/sh\nprintf 'Jailer v1.14.4\\n'\n",
+    )
+    .unwrap();
+
+    let err = discover_binaries(&config, None, None).unwrap_err();
+
+    match err {
+        PreflightError::JailerVersionMismatch {
+            expected,
+            actual,
+            policy_source,
+        } => {
+            assert_eq!(expected, "v1.15.1");
+            assert_eq!(actual, "v1.14.4");
+            assert_eq!(
+                policy_source,
+                "crates/m80-preflight/src/firecracker_train.rs"
+            );
+        }
+        other => panic!("expected jailer version mismatch, got {other:?}"),
     }
 }
 
@@ -348,17 +389,19 @@ fn firecracker_version_mismatch_fails_closed() {
 fn firecracker_cve_floor_rejects_known_affected_version() {
     let (_dir, config) = fixture_config("v1.15.0");
 
-    let err = discover_binaries(&config, None).unwrap_err();
+    let err = discover_binaries(&config, None, None).unwrap_err();
 
     match err {
         PreflightError::FirecrackerCveFloorViolation {
             cve_id,
             actual,
-            fixed_versions,
+            expected,
+            policy_source,
         } => {
             assert_eq!(cve_id, "CVE-2026-5747");
             assert_eq!(actual, "v1.15.0");
-            assert_eq!(fixed_versions, "v1.14.4 or v1.15.1");
+            assert_eq!(expected, "v1.14.4 or v1.15.1");
+            assert_eq!(policy_source, "crates/m80-preflight/src/cve_floor.rs");
         }
         other => panic!("expected CVE floor violation, got {other:?}"),
     }

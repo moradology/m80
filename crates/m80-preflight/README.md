@@ -83,9 +83,12 @@ which is the right place for a security review to start.
      `PrivilegeStatus::Root` or `PrivilegeStatus::CapabilityBearing`.
   14. **Firecracker binary** — discovered via env override or default. The
      path must be absolute, and `--version` must clear the documented CVE floor
-     before any configured exact version pin is accepted.
+     before any configured exact version pin is accepted. After artifact
+     verification, the probed version must also match the guest manifest
+     `expected_firecracker_version`.
   15. **Jailer binary** — absolute path, discovered via env override or
-      default.
+      default. `jailer --version` must parse as an official release and match
+      the accepted Firecracker version exactly.
   16. **Jailer hardening wrapper** — `m80-jailer-harden`, discovered via
      `M80_JAILER_HARDEN_BIN` or `/opt/m80/bin/m80-jailer-harden`.
   16b. **Network helper** — `m80-net-helper`, discovered via
@@ -121,11 +124,12 @@ which is the right place for a security review to start.
   21. **Storage helpers** — `mkfs.ext4`, `cp`, `fallocate`, `debugfs`,
       `e2fsck` on PATH.
 - A boot-scoped sentinel under `/run/m80-preflight-ok-<sha256>` caches only
-  the two expensive immutable-artifact checks: `firecracker --version` and
+  immutable-artifact outputs: `firecracker --version`, `jailer --version`, and
   `m80-image-manifest::verify`. Host binary sha256 verification still runs on
   every preflight invocation. The key includes the kernel boot id, configured
   Firecracker version pin, kernel kind override, and metadata for the
-  Firecracker, jailer, hardening wrapper, network helper, kernel, rootfs, and manifest files.
+  Firecracker, Firecracker seccomp filter, jailer, hardening wrapper, network
+  helper, kernel, rootfs, and manifest files.
   Corrupt or mismatched sentinels are ignored and rewritten after a successful
   full check. `M80_FORCE_PREFLIGHT=1` disables the cache for that invocation.
 - Env keys are exact and case-sensitive. Preflight recognizes
@@ -144,7 +148,7 @@ which is the right place for a security review to start.
   `KvmUnavailable { path }` names the missing device, `KvmNotWritable { path }`
   includes the suggestion to add the user to the `kvm` group, and
   `FirecrackerVersionMismatch` includes both the expected and actual versions
-  plus the env var to override.
+  plus the source-of-truth file and policy doc to repair from.
 - Firecracker CVE floor maintenance is documented in
   `docs/security/firecracker-cve-floor.md` and
   `docs/decisions/0004-firecracker-cve-floor-bump-process.md`.
@@ -156,8 +160,11 @@ which is the right place for a security review to start.
 - `BinaryDiscoveryConfig { firecracker_bin, firecracker_seccomp_filter,
   jailer_bin, jailer_harden_bin, net_helper_bin, expected_firecracker_version }` and
   `BinaryDiscoveryConfig::from_env()` for
-  explicit `run_with_configs` callers. There is no `Default`; callers must use
-  `from_env()` or construct the full effective config.
+  explicit `run_with_configs` callers. `expected_firecracker_version` is an
+  optional pre-artifact pin; `run_with_configs` always rechecks the probed
+  Firecracker version against the verified guest manifest. There is no
+  `Default`; callers must use `from_env()` or construct the full effective
+  config.
 - `ArtifactPreflightConfig { kernel_image, artifact_dir, rootfs_image,
   kernel_kind, run_root, helper_search_path }` and
   `ArtifactPreflightConfig::from_env()` for explicit `run_with_configs`
@@ -181,6 +188,14 @@ which is the right place for a security review to start.
 - `Discovery::render_table()` → `String`.
 - `CheckRow { label, passed, detail }`.
 - `PrivilegeStatus { Root, CapabilityBearing }`.
+- `FirecrackerTrainPolicy::from_expected_firecracker_version`, plus
+  `expected_firecracker_version()`, `jailer_pairing_rule()`, `cve_floor()`,
+  `source()`, `cve_floor_source()`, and `policy_doc()` — the shared source for
+  Firecracker train, official jailer pairing, and CVE-floor metadata.
+- `active_firecracker_cve_floors() -> &'static [FirecrackerCveFloor]` and
+  `FirecrackerCveFloor { cve_id, expected }`.
+- `FIRECRACKER_TRAIN_POLICY_SOURCE`, `FIRECRACKER_CVE_FLOOR_SOURCE`,
+  `HOST_PREREQUISITE_POLICY_DOC`, and `JAILER_PAIRING_RULE`.
 - `REQUIRED_CAPABILITIES: &[caps::Capability]` — the per-call cap list
   (`CAP_NET_ADMIN`, `CAP_SYS_ADMIN`, `CAP_MKNOD`, `CAP_CHOWN`,
   `CAP_FOWNER`, `CAP_KILL`, `CAP_SETUID`, `CAP_SETGID`, `CAP_SETPCAP`).
@@ -206,13 +221,19 @@ which is the right place for a security review to start.
   `KernelModulesMissing { missing: Vec<String> }`,
   `PrivilegeUnavailable { missing_caps: Vec<caps::Capability> }`,
   `FirecrackerBinaryNotFound`,
-  `FirecrackerVersionMismatch { expected, actual }`,
-  `FirecrackerCveFloorViolation { cve_id, actual, fixed_versions }`,
+  `FirecrackerVersionMismatch { expected, actual, policy_source }`,
+  `FirecrackerVersionCommandFailed { path, status }`,
+  `FirecrackerVersionOutputMalformed { actual, policy_source }`,
+  `FirecrackerCveFloorViolation { cve_id, actual, expected, policy_source }`,
   `FirecrackerSeccompFilterNotFound { path }`,
   `FirecrackerSeccompFilterEmpty { path }`,
   `CapabilityRead(caps::errors::CapsError)` (failed to read the process's
   effective capability set),
-  `JailerBinaryNotFound`, `JailerHardenBinaryNotFound`,
+  `JailerBinaryNotFound`,
+  `JailerVersionCommandFailed { path, status }`,
+  `JailerVersionOutputMalformed { actual, policy_source }`,
+  `JailerVersionMismatch { expected, actual, policy_source }`,
+  `JailerHardenBinaryNotFound`,
   `HostBinaryManifest(m80_image_manifest::ManifestError)`,
   `HostBinaryMissing { name }`, `HostBinaryDuplicate { name }`,
   `HostBinaryPathMismatch { name, expected, actual }`,

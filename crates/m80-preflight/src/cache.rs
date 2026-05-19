@@ -27,6 +27,7 @@ pub(crate) struct PreflightCache {
 #[serde(deny_unknown_fields)]
 pub(crate) struct PreflightCacheHit {
     pub(crate) firecracker_version: String,
+    pub(crate) jailer_version: String,
     pub(crate) manifest: Manifest,
 }
 
@@ -84,7 +85,12 @@ impl PreflightCache {
         self.hit.as_ref()
     }
 
-    pub(crate) fn store(&self, firecracker_version: &str, manifest: &Manifest) {
+    pub(crate) fn store(
+        &self,
+        firecracker_version: &str,
+        jailer_version: &str,
+        manifest: &Manifest,
+    ) {
         let (Some(key), Some(path)) = (&self.key, &self.path) else {
             return;
         };
@@ -95,6 +101,7 @@ impl PreflightCache {
             key: key.clone(),
             hit: PreflightCacheHit {
                 firecracker_version: firecracker_version.to_owned(),
+                jailer_version: jailer_version.to_owned(),
                 manifest: manifest.clone(),
             },
         };
@@ -294,7 +301,7 @@ mod tests {
         );
 
         assert!(cache.hit().is_none());
-        cache.store("v1.15.1", &manifest);
+        cache.store("v1.15.1", "v1.15.1", &manifest);
 
         let cache = PreflightCache::load_from_dir(
             &sentinel_dir,
@@ -303,6 +310,7 @@ mod tests {
             &artifact_config,
         );
         assert_eq!(cache.hit().unwrap().firecracker_version, "v1.15.1");
+        assert_eq!(cache.hit().unwrap().jailer_version, "v1.15.1");
     }
 
     #[test]
@@ -316,7 +324,7 @@ mod tests {
             &binary_config,
             &artifact_config,
         );
-        cache.store("v1.15.1", &manifest);
+        cache.store("v1.15.1", "v1.15.1", &manifest);
 
         fs::write(artifact_config.rootfs_image.as_ref().unwrap(), b"changed").unwrap();
 
@@ -340,7 +348,7 @@ mod tests {
             &binary_config,
             &artifact_config,
         );
-        cache.store("v1.15.1", &manifest);
+        cache.store("v1.15.1", "v1.15.1", &manifest);
 
         fs::write(&boot_id, "boot-2\n").unwrap();
 
@@ -364,7 +372,7 @@ mod tests {
             &binary_config,
             &artifact_config,
         );
-        cache.store("v1.15.1", &manifest);
+        cache.store("v1.15.1", "v1.15.1", &manifest);
 
         let cache = PreflightCache::load_from_dir(
             &sentinel_dir,
@@ -375,6 +383,7 @@ mod tests {
 
         let hit = cache.hit().unwrap();
         assert_eq!(hit.firecracker_version, "v1.15.1");
+        assert_eq!(hit.jailer_version, "v1.15.1");
         assert_eq!(
             hit.manifest.output_rootfs_image,
             manifest.output_rootfs_image
@@ -390,7 +399,7 @@ mod tests {
         let _force = EnvGuard::set_str(ENV_FORCE_PREFLIGHT, "1");
 
         let cache = PreflightCache::load(&binary_config, &artifact_config);
-        cache.store("v1.15.1", &manifest);
+        cache.store("v1.15.1", "v1.15.1", &manifest);
 
         assert!(cache.key.is_none());
         assert!(cache.path.is_none());

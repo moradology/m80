@@ -2,9 +2,10 @@
 
 `m80-preflight` resolves the Firecracker and jailer binaries before any VM
 launch work begins. Discovery is fail-closed: a relative path, missing binary,
-a failed `firecracker --version` probe, a configured version mismatch, or a
-host-binary manifest violation returns a typed `PreflightError` and does not
-append a success row to the host preflight report.
+a failed or malformed version probe, a configured version mismatch, a jailer
+train mismatch, or a host-binary manifest violation returns a typed
+`PreflightError` and does not append a success row to the host preflight
+report.
 
 ## Resolution
 
@@ -34,19 +35,29 @@ preflight before any launch can reach Firecracker.
 
 ## Version Probe
 
-`discover_binaries(&config)` executes `firecracker --version`, parses the last
-whitespace-separated token on the first stdout line, and reports it as
-`BinaryDiscovery::firecracker_version`. Typical Firecracker output is
-`Firecracker v1.15.1`, which yields `v1.15.1`.
+`discover_binaries(&config)` executes `firecracker --version` and
+`jailer --version`. Both outputs must be the official first-line form:
+`Firecracker vMAJOR.MINOR.PATCH` and `Jailer vMAJOR.MINOR.PATCH`.
+Unsupported, empty, or malformed output fails closed.
 
 If `M80_FIRECRACKER_VERSION` is set through `BinaryDiscoveryConfig::from_env()`
 or `expected_firecracker_version` is set directly, the probed version must match
 exactly. A mismatch returns
-`PreflightError::FirecrackerVersionMismatch { expected, actual }`.
+`PreflightError::FirecrackerVersionMismatch { expected, actual, policy_source }`.
+After guest artifact verification, preflight also compares the probed
+Firecracker version to the verified guest manifest
+`expected_firecracker_version`; the manifest is the runtime train source for a
+launch.
+
+The official jailer version must exactly match the accepted Firecracker
+version. A mismatch returns
+`PreflightError::JailerVersionMismatch { expected, actual, policy_source }`.
+The pairing rule is owned by
+`crates/m80-preflight/src/firecracker_train.rs`.
 
 ## Host Binary Integrity
 
-After path discovery and Firecracker version probing, preflight reads
+After path discovery and version probing, preflight reads
 `<artifact_dir>/host-binaries.manifest.json`. The manifest must contain exactly
 one entry for each TCB binary:
 
@@ -63,16 +74,19 @@ manifest path must match the runtime-configured path. Every recorded path is ope
 the manifest sha256. Each binary must be a regular file owned `root:root`, with
 mode no broader than `0755`, and without group/world write bits.
 
-The boot-scoped sentinel cache can skip the Firecracker version subprocess and
-guest-image manifest verification, but it does not skip host-binary sha256
-verification or seccomp-filter path validation.
+The boot-scoped sentinel cache can skip the Firecracker and jailer version
+subprocesses and guest-image manifest verification, but it does not skip
+host-binary sha256 verification or seccomp-filter path validation.
 
 ## Evidence
 
 - `crates/m80-preflight/src/binary.rs`
+- `crates/m80-preflight/src/firecracker_train.rs`
 - `crates/m80-preflight/src/binary.rs::tests::relative_firecracker_binary_path_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::missing_firecracker_seccomp_filter_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::empty_firecracker_seccomp_filter_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::jailer_version_mismatch_fails_closed`
+- `crates/m80-preflight/src/firecracker_train.rs::tests::rejects_malformed_jailer_version_output`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_hash_mismatch_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`

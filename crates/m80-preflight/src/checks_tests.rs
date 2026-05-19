@@ -8,6 +8,32 @@ fn cgroup_mode_parser_accepts_disabled() {
 }
 
 #[test]
+fn manifest_firecracker_train_accepts_matching_version() {
+    check_manifest_firecracker_train("v1.15.1", "v1.15.1").unwrap();
+}
+
+#[test]
+fn manifest_firecracker_train_rejects_mismatch() {
+    let err = check_manifest_firecracker_train("v1.15.1", "v1.14.4").unwrap_err();
+
+    match err {
+        PreflightError::FirecrackerVersionMismatch {
+            expected,
+            actual,
+            policy_source,
+        } => {
+            assert_eq!(expected, "v1.15.1");
+            assert_eq!(actual, "v1.14.4");
+            assert_eq!(
+                policy_source,
+                "crates/m80-preflight/src/firecracker_train.rs"
+            );
+        }
+        other => panic!("expected FirecrackerVersionMismatch, got {other:?}"),
+    }
+}
+
+#[test]
 fn cgroup_mode_parser_accepts_unified_v2() {
     let mode = parse_cgroup_mode("unified-v2").unwrap();
 
