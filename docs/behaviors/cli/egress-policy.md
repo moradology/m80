@@ -17,6 +17,23 @@ Verification:
 and
 `crates/m80-cli/src/cmds/tests.rs::run_egress_mode_maps_to_sandbox_network_policy`.
 
+## Quickstart Probe
+
+The runnable `m80 quickstart` probe uses the same public command as the README
+follow-up:
+
+```sh
+m80 run -- echo hello
+```
+
+It intentionally omits `--egress none`. That means the proof uses the CLI
+default outbound policy and exercises the default host prerequisite path:
+profile/config resolution, host-binaries manifest, Firecracker/jailer launch,
+and outbound network setup where the selected policy requires it.
+
+Verification:
+`crates/m80-cli/src/cmds/quickstart.rs::tests::echo_probe_command_is_plain_public_target`.
+
 ## Lockdown
 
 `m80 run --egress none -- <program>` selects `NetworkPolicy::NoEgress`. That

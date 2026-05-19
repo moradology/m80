@@ -27,7 +27,8 @@ visibility and effects:
 - lifetime acceleration: explicit `m80 warm` owner plus `m80 run --warm`
 - first-run setup: `m80 quickstart --artifact-url <release-tarball>` installs
   the selected image/profile artifacts, writes the installed default
-  profile/config, and runs `m80 run -- echo hello`
+  profile/config, and runs `m80 run -- echo hello` with the CLI default
+  outbound egress policy
 - diagnostics: typed errors, JSON envelopes, run-root `list`/`inspect`, and
   guest console capture, all correlated by the run-scoped opaque `request_id`
 

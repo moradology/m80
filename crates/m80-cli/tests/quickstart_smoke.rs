@@ -574,6 +574,14 @@ fn quickstart_json_no_run_keeps_stdout_machine_readable() {
         value["data"]["config_path"].as_str(),
         Some(paths.config_path.to_str().unwrap())
     );
+    assert_eq!(
+        value["data"]["probe_command"].as_str(),
+        Some("m80 run -- echo hello")
+    );
+    assert_eq!(
+        value["data"]["probe_egress_policy"].as_str(),
+        Some("default-outbound")
+    );
 }
 
 #[test]

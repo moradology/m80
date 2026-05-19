@@ -114,6 +114,8 @@ Implemented warm flag:
 `SHA256SUMS`, installs `vmlinux`, `output.ext4`, `output.ext4.manifest.json`,
 and `m80-guestd`, creates the run-root, writes the installed default
 profile/config, and runs plain `m80 run -- echo hello` unless `--no-run` is set.
+The probe intentionally uses the CLI default outbound egress policy, matching
+the public follow-up command instead of proving only the no-egress variant.
 When the probe will run, quickstart checks the non-mutating host substrate
 before changing active artifact paths.
 The tarball must not contain `host-binaries.manifest.json`; that manifest is

@@ -48,7 +48,9 @@ binaries, pull OCI images, or install packages implicitly.
   substrate before changing active artifacts when the probe will run, generates
   the installed default runtime profile/config, generates the installed host
   manifest from final host TCB paths before the probe, and runs plain
-  `m80 run -- echo hello` unless `--no-run` is set. `--json` requires
+  `m80 run -- echo hello` unless `--no-run` is set. The probe intentionally
+  uses the CLI default outbound egress so it matches the public quickstart
+  target and proves the default host prerequisite path. `--json` requires
   `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
   `--no-run` does not prove host substrate readiness or real-KVM launch.
 - `m80 config show` - prints the merged effective config and labels each field's

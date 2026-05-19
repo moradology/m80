@@ -28,6 +28,9 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
 ];
 const FORBIDDEN_ARTIFACTS: &[&str] = &["host-binaries.manifest.json"];
 const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
+const RUN_ECHO_PROBE_COMMAND: &str = "m80 run -- echo hello";
+const RUN_ECHO_PROBE_ARGS: &[&str] = &["run", "--", "echo", "hello"];
+const RUN_ECHO_PROBE_EGRESS_POLICY: &str = "default-outbound";
 const RUN_ECHO_PROBE_ENV_REMOVALS: &[&str] = &[
     "M80_ARTIFACT_DIR",
     "M80_KERNEL_IMAGE",
@@ -102,6 +105,8 @@ struct QuickstartSummary {
     run_root: PathBuf,
     profile_path: PathBuf,
     config_path: PathBuf,
+    probe_command: &'static str,
+    probe_egress_policy: &'static str,
     ran_probe: bool,
 }
 
@@ -266,6 +271,8 @@ fn run_quickstart(
         run_root: run_root.to_path_buf(),
         profile_path,
         config_path: config_path.to_path_buf(),
+        probe_command: RUN_ECHO_PROBE_COMMAND,
+        probe_egress_policy: RUN_ECHO_PROBE_EGRESS_POLICY,
         ran_probe: !no_run,
     })
 }
@@ -548,19 +555,19 @@ fn run_echo_probe() -> Result<(), FcError> {
     let current = std::env::current_exe()
         .map_err(|source| crate::errors::host_io("resolve current executable", source))?;
     let mut command = Command::new(current);
-    command.arg("run").arg("--").arg("echo").arg("hello");
+    command.args(RUN_ECHO_PROBE_ARGS);
     for key in RUN_ECHO_PROBE_ENV_REMOVALS {
         command.env_remove(key);
     }
     let status = command
         .status()
         .map_err(|source| FcError::CommandSpawnFailed {
-            command: "m80 run -- echo hello",
+            command: RUN_ECHO_PROBE_COMMAND,
             source,
         })?;
     if !status.success() {
         return Err(FcError::CommandFailed {
-            command: "m80 run -- echo hello",
+            command: RUN_ECHO_PROBE_COMMAND,
             status,
             output: String::new(),
         });
@@ -570,7 +577,18 @@ fn run_echo_probe() -> Result<(), FcError> {
 
 #[cfg(test)]
 mod tests {
-    use super::RUN_ECHO_PROBE_ENV_REMOVALS;
+    use super::{
+        RUN_ECHO_PROBE_ARGS, RUN_ECHO_PROBE_COMMAND, RUN_ECHO_PROBE_EGRESS_POLICY,
+        RUN_ECHO_PROBE_ENV_REMOVALS,
+    };
+
+    #[test]
+    fn echo_probe_command_is_plain_public_target() {
+        assert_eq!(RUN_ECHO_PROBE_COMMAND, "m80 run -- echo hello");
+        assert_eq!(RUN_ECHO_PROBE_ARGS, ["run", "--", "echo", "hello"]);
+        assert!(!RUN_ECHO_PROBE_ARGS.contains(&"--egress"));
+        assert_eq!(RUN_ECHO_PROBE_EGRESS_POLICY, "default-outbound");
+    }
 
     #[test]
     fn echo_probe_scrubs_runtime_env_overrides() {
@@ -686,16 +704,26 @@ fn summary_json(summary: &QuickstartSummary) -> String {
         "run_root": summary.run_root.display().to_string(),
         "profile_path": summary.profile_path.display().to_string(),
         "config_path": summary.config_path.display().to_string(),
+        "probe_command": summary.probe_command,
+        "probe_egress_policy": summary.probe_egress_policy,
         "ran_probe": summary.ran_probe,
     });
     json::to_pretty(&obj)
 }
 
 fn print_next_steps(summary: &QuickstartSummary) {
+    let probe_status = if summary.ran_probe {
+        "probe"
+    } else {
+        "probe skipped"
+    };
     eprintln!(
-        "default profile: {}\nconfig: {}\n\nNext:\n  m80 run --workspace . --cwd /workspace -- ls\n  m80 run --egress none -- echo isolated\n  m80 run -it --workspace . -- sh",
+        "default profile: {}\nconfig: {}\n{}: {} ({})\n\nNext:\n  m80 run --workspace . --cwd /workspace -- ls\n  m80 run --egress none -- echo isolated\n  m80 run -it --workspace . -- sh",
         summary.profile_path.display(),
         summary.config_path.display(),
+        probe_status,
+        summary.probe_command,
+        summary.probe_egress_policy,
     );
 }
 

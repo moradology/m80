@@ -1,6 +1,6 @@
 # Installed Default Profile
 
-Behavior capture for bead `m80-o3uh9.9.2`.
+Behavior capture for beads `m80-o3uh9.9.2` and `m80-o3uh9.9.4`.
 
 ## Contract
 
@@ -13,6 +13,10 @@ m80 run -- echo hello
 
 No `M80_KERNEL_IMAGE`, `M80_ROOTFS_IMAGE`, or `M80_ARTIFACT_DIR` export is part
 of the common path.
+The runnable quickstart probe uses this exact command. It does not add
+`--egress none`; omitted `--egress` means the CLI default outbound policy, so
+the probe exercises the same host prerequisite path as the public follow-up
+command.
 
 Quickstart writes two host files after the artifact tarball checksum, extracted
 `SHA256SUMS`, required artifact presence, install-path relocation, and install
@@ -23,9 +27,11 @@ provenance write have all succeeded:
 
 Install-root fixture overrides can direct those writes to temporary paths, but
 the runnable probe uses the host config/profile locations.
-The runnable probe starts its child `m80 run -- echo hello` with known m80
-artifact, profile, helper, config, preflight-cache, and trace environment
-overrides removed so the installed host files are what the probe exercises.
+The runnable probe records `probe_command = "m80 run -- echo hello"` and
+`probe_egress_policy = "default-outbound"` in quickstart summaries. It starts
+its child with known m80 artifact, profile, helper, config, preflight-cache,
+and trace environment overrides removed so the installed host files are what
+the probe exercises.
 
 ## Generated Profile
 
@@ -103,3 +109,5 @@ and config contents where they existed. Missing files are removed again.
   artifact/helper env overlay.
 - `crates/m80-cli/src/cmds/quickstart.rs` unit tests pin the m80 environment
   overrides removed from the runnable probe.
+- `crates/m80-cli/src/cmds/quickstart.rs::tests::echo_probe_command_is_plain_public_target`
+  pins the probe argv as exactly `m80 run -- echo hello`.
