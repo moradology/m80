@@ -4,6 +4,8 @@ The schema, validator, and sha256 verifier for m80 provenance records:
 `<rootfs>.manifest.json` travels beside every guest image, and
 `<rootfs>.build-receipt.json` pins the manifest itself. Separately,
 `host-binaries.manifest.json` records the installed host-side TCB binaries.
+`install-provenance.json` records any install-time manifest/build-receipt
+rewrites performed after bundle checksum verification.
 
 ## Reason for being
 
@@ -57,6 +59,12 @@ once.
 - `<rootfs>.build-receipt.json` is a deploy-time receipt with
   `schema_version: 1`. It records the sha256 of `<rootfs>.manifest.json` plus
   the artifact path/hash tuples that the manifest described.
+- `install-provenance.json` is an install-time receipt with
+  `schema_version: 1`. It records the concrete release tag when known plus one
+  transform per rewritten payload. Each transform names the logical artifact
+  (`guest_manifest` or `build_receipt`), source path/hash, installed path/hash,
+  and rewrite kind. Build outputs that are not relocated do not need this file;
+  installers that rewrite verified bundle payloads must emit it.
 
 ## Schema
 
@@ -70,6 +78,11 @@ binary. Unknown fields fail closed. Existing v1 manifests must be regenerated.
 
 `schema_version: 1`. Records `manifest_path`, `manifest_sha256`, and
 `artifacts: Vec<BuildReceiptArtifact>`. Unknown fields fail closed.
+
+### install-provenance v1
+
+`schema_version: 1`. Records `release_tag: Option<String>` and
+`transforms: Vec<InstallProvenanceTransform>`. Unknown fields fail closed.
 
 ### v5 (current)
 
@@ -122,6 +135,11 @@ artifacts.
   `write`, `from_bytes`, and `schema_version`.
 - `BuildReceiptArtifact { kind, path, sha256 }`.
 - `BuildReceiptArtifactKind { KernelImage, SourceRootfsImage, OutputRootfsImage, DaemonBinaryPath }`.
+- `InstallProvenance::new(release_tag, transforms)`, `read`, `write`,
+  `from_bytes`, and `schema_version`.
+- `InstallProvenanceTransform { artifact, source_sha256, source_path, installed_sha256, installed_path, rewrite }`.
+- `InstallProvenanceArtifact { GuestManifest, BuildReceipt }`.
+- `InstallProvenanceRewrite { InstallPathRewrite }`.
 - `Manifest::read(path: &Path) -> Result<Manifest, ManifestError>` — peek
   `schema_version` first via a probe struct, then deserialize the full
   struct, then enforce the kind/field invariant.
@@ -134,6 +152,7 @@ artifacts.
 - `SCHEMA_VERSION: u32 = 5`.
 - `HOST_BINARIES_SCHEMA_VERSION: u32 = 2`.
 - `BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1`.
+- `INSTALL_PROVENANCE_SCHEMA_VERSION: u32 = 1`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for
   m80-built network-neutral images.
 - `ManifestError`: `UnsupportedSchemaVersion(u32)`,
@@ -180,4 +199,6 @@ artifacts.
 - Host-binaries v1: read/write roundtrip, unknown schema rejection, and
   unknown-field rejection.
 - Build-receipt v1: read/write roundtrip, unknown schema rejection, and
+  unknown-field rejection.
+- Install-provenance v1: read/write roundtrip, unknown schema rejection, and
   unknown-field rejection.

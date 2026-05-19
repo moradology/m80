@@ -8,12 +8,14 @@ use std::path::{Path, PathBuf};
 
 use super::{
     build_receipt_path_for_rootfs, manifest_path_for_rootfs, probe_run_root_reflink_at,
-    verify_artifacts, ArtifactPreflightConfig, RunRootReflink, REQUIRED_STORAGE_HELPERS,
+    verify_artifacts, ArtifactPreflightConfig, RunRootReflink, INSTALL_PROVENANCE_FILE,
+    REQUIRED_STORAGE_HELPERS,
 };
 use crate::PreflightError;
 use m80_image_manifest::{
-    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, ImageKind, KernelKind, Manifest,
-    ManifestError, RootfsFormat, SCHEMA_VERSION,
+    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, ImageKind, InstallProvenance,
+    InstallProvenanceArtifact, InstallProvenanceRewrite, InstallProvenanceTransform, KernelKind,
+    Manifest, ManifestError, RootfsFormat, SCHEMA_VERSION,
 };
 
 const SHA256_EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -94,6 +96,41 @@ fn write_build_receipt(rootfs: &Path, manifest_path: &Path, manifest: &Manifest)
     )
     .write(&receipt_path)
     .unwrap();
+}
+
+fn write_install_provenance(config: &ArtifactPreflightConfig) {
+    let manifest_path = manifest_path(config);
+    let receipt_path = build_receipt_path(config);
+    write_install_provenance_with_transforms(
+        config,
+        vec![
+            InstallProvenanceTransform {
+                artifact: InstallProvenanceArtifact::GuestManifest,
+                source_sha256: "a".repeat(64),
+                source_path: PathBuf::from("output.ext4.manifest.json"),
+                installed_sha256: sha256_file(&manifest_path),
+                installed_path: manifest_path,
+                rewrite: InstallProvenanceRewrite::InstallPathRewrite,
+            },
+            InstallProvenanceTransform {
+                artifact: InstallProvenanceArtifact::BuildReceipt,
+                source_sha256: "b".repeat(64),
+                source_path: PathBuf::from("output.ext4.build-receipt.json"),
+                installed_sha256: sha256_file(&receipt_path),
+                installed_path: receipt_path,
+                rewrite: InstallProvenanceRewrite::InstallPathRewrite,
+            },
+        ],
+    );
+}
+
+fn write_install_provenance_with_transforms(
+    config: &ArtifactPreflightConfig,
+    transforms: Vec<InstallProvenanceTransform>,
+) {
+    InstallProvenance::new(Some("v0.1.2".to_owned()), transforms)
+        .write(&config.artifact_dir.join(INSTALL_PROVENANCE_FILE))
+        .unwrap();
 }
 
 fn fixture_config() -> (
@@ -427,6 +464,113 @@ fn build_receipt_artifact_hash_must_match_manifest() {
             assert_eq!(actual, "1".repeat(64));
         }
         other => panic!("expected receipt artifact hash mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn install_provenance_covering_rewritten_manifest_and_receipt_passes() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    fs::write(
+        config.artifact_dir.join("host-binaries.manifest.json"),
+        b"{}",
+    )
+    .unwrap();
+    write_install_provenance(&config);
+
+    verify_artifacts(&config, None).unwrap();
+}
+
+#[test]
+fn install_provenance_missing_for_installed_artifacts_fails_preflight() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    let provenance_path = config.artifact_dir.join(INSTALL_PROVENANCE_FILE);
+    fs::write(
+        config.artifact_dir.join("host-binaries.manifest.json"),
+        b"{}",
+    )
+    .unwrap();
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::InstallProvenanceMissing { path } => {
+            assert_eq!(path, provenance_path);
+        }
+        other => panic!("expected missing install provenance, got {other:?}"),
+    }
+}
+
+#[test]
+fn install_provenance_manifest_hash_mismatch_fails_preflight() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    fs::write(
+        config.artifact_dir.join("host-binaries.manifest.json"),
+        b"{}",
+    )
+    .unwrap();
+    let manifest_path = manifest_path(&config);
+    let receipt_path = build_receipt_path(&config);
+    write_install_provenance_with_transforms(
+        &config,
+        vec![
+            InstallProvenanceTransform {
+                artifact: InstallProvenanceArtifact::GuestManifest,
+                source_sha256: "a".repeat(64),
+                source_path: PathBuf::from("output.ext4.manifest.json"),
+                installed_sha256: "0".repeat(64),
+                installed_path: manifest_path.clone(),
+                rewrite: InstallProvenanceRewrite::InstallPathRewrite,
+            },
+            InstallProvenanceTransform {
+                artifact: InstallProvenanceArtifact::BuildReceipt,
+                source_sha256: "b".repeat(64),
+                source_path: PathBuf::from("output.ext4.build-receipt.json"),
+                installed_sha256: sha256_file(&receipt_path),
+                installed_path: receipt_path,
+                rewrite: InstallProvenanceRewrite::InstallPathRewrite,
+            },
+        ],
+    );
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::InstallProvenanceHashMismatch { path, expected, .. } => {
+            assert_eq!(path, manifest_path);
+            assert_eq!(expected, "0".repeat(64));
+        }
+        other => panic!("expected install provenance hash mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn install_provenance_missing_receipt_transform_fails_preflight() {
+    let (_artifact_dir, _helper_dir, config) = fixture_config();
+    fs::write(
+        config.artifact_dir.join("host-binaries.manifest.json"),
+        b"{}",
+    )
+    .unwrap();
+    let manifest_path = manifest_path(&config);
+    write_install_provenance_with_transforms(
+        &config,
+        vec![InstallProvenanceTransform {
+            artifact: InstallProvenanceArtifact::GuestManifest,
+            source_sha256: "a".repeat(64),
+            source_path: PathBuf::from("output.ext4.manifest.json"),
+            installed_sha256: sha256_file(&manifest_path),
+            installed_path: manifest_path,
+            rewrite: InstallProvenanceRewrite::InstallPathRewrite,
+        }],
+    );
+
+    let err = verify_artifacts(&config, None).unwrap_err();
+
+    match err {
+        PreflightError::InstallProvenanceTransformMissing { artifact } => {
+            assert_eq!(artifact, InstallProvenanceArtifact::BuildReceipt);
+        }
+        other => panic!("expected missing install provenance transform, got {other:?}"),
     }
 }
 

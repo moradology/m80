@@ -1,7 +1,7 @@
 //! Each PreflightError variant must expose a non-empty hint via `hint()`.
 
 use caps::Capability;
-use m80_image_manifest::{BuildReceiptArtifactKind, ManifestError};
+use m80_image_manifest::{BuildReceiptArtifactKind, InstallProvenanceArtifact, ManifestError};
 use m80_preflight::PreflightError;
 
 fn assert_hint(err: &PreflightError) {
@@ -312,6 +312,31 @@ fn manifest_error_has_hint() {
 fn build_receipt_error_has_hint() {
     let inner = ManifestError::UnsupportedBuildReceiptSchemaVersion(99);
     assert_hint(&PreflightError::BuildReceipt(inner));
+}
+
+#[test]
+fn install_provenance_errors_have_hints() {
+    let inner = ManifestError::UnsupportedInstallProvenanceSchemaVersion(99);
+    assert_hint(&PreflightError::InstallProvenance(inner));
+    assert_hint(&PreflightError::InstallProvenanceMissing {
+        path: "/opt/m80/artifacts/install-provenance.json".into(),
+    });
+    assert_hint(&PreflightError::InstallProvenanceTransformMissing {
+        artifact: InstallProvenanceArtifact::GuestManifest,
+    });
+    assert_hint(&PreflightError::InstallProvenanceTransformDuplicate {
+        artifact: InstallProvenanceArtifact::GuestManifest,
+    });
+    assert_hint(&PreflightError::InstallProvenancePathMismatch {
+        artifact: InstallProvenanceArtifact::GuestManifest,
+        expected: "/opt/m80/artifacts/output.ext4.manifest.json".into(),
+        actual: "/tmp/output.ext4.manifest.json".into(),
+    });
+    assert_hint(&PreflightError::InstallProvenanceHashMismatch {
+        path: "/opt/m80/artifacts/output.ext4.manifest.json".into(),
+        expected: "a".repeat(64),
+        actual: "b".repeat(64),
+    });
 }
 
 #[test]

@@ -12,7 +12,8 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_image_manifest::{
-    BuildReceipt, BuildReceiptArtifactKind, KernelKind, Manifest, ManifestError,
+    BuildReceipt, BuildReceiptArtifactKind, InstallProvenance, InstallProvenanceArtifact,
+    KernelKind, Manifest, ManifestError,
 };
 use nix::libc::O_NOFOLLOW;
 use nix::sys::statvfs::statvfs;
@@ -35,6 +36,8 @@ pub(crate) const ENV_RUN_ROOT: &str = "M80_RUN_ROOT";
 pub(crate) const DEFAULT_ARTIFACT_DIR: &str = "/opt/m80/artifacts";
 /// Default run-root directory.
 pub(crate) const DEFAULT_RUN_ROOT: &str = "/var/run/m80";
+/// Install-time provenance emitted by the release installer/quickstart path.
+pub(crate) const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
 
 /// 100 MiB minimum free space for the run-root.
 pub(crate) const MIN_RUN_ROOT_FREE_BYTES: u64 = 100 * 1024 * 1024;
@@ -214,6 +217,11 @@ fn verify_rootfs_and_manifest(
     };
     let parent = rootfs.parent().unwrap_or_else(|| Path::new("/"));
     verify_build_receipt(&rootfs, &manifest_path, parent, &manifest)?;
+    verify_install_provenance(
+        parent,
+        &manifest_path,
+        &build_receipt_path_for_rootfs(&rootfs),
+    )?;
     verify_rootfs_fd_sha256(&mut rootfs_file, &rootfs, &manifest.output_rootfs_sha256)?;
 
     Ok((PinnedRootfs::from_file(rootfs, rootfs_file), manifest))
@@ -380,6 +388,73 @@ fn verify_receipt_artifact(
             kind,
             expected: sha256.to_owned(),
             actual: artifact.sha256.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn verify_install_provenance(
+    root: &Path,
+    manifest_path: &Path,
+    receipt_path: &Path,
+) -> Result<(), PreflightError> {
+    let provenance_path = root.join(INSTALL_PROVENANCE_FILE);
+    if !provenance_path.exists() {
+        let host_binaries_manifest = root.join("host-binaries.manifest.json");
+        if host_binaries_manifest.exists() {
+            return Err(PreflightError::InstallProvenanceMissing {
+                path: provenance_path,
+            });
+        }
+        return Ok(());
+    }
+
+    let provenance =
+        InstallProvenance::read(&provenance_path).map_err(PreflightError::InstallProvenance)?;
+    verify_install_provenance_transform(
+        &provenance,
+        InstallProvenanceArtifact::GuestManifest,
+        manifest_path,
+    )?;
+    verify_install_provenance_transform(
+        &provenance,
+        InstallProvenanceArtifact::BuildReceipt,
+        receipt_path,
+    )?;
+    Ok(())
+}
+
+fn verify_install_provenance_transform(
+    provenance: &InstallProvenance,
+    artifact: InstallProvenanceArtifact,
+    path: &Path,
+) -> Result<(), PreflightError> {
+    let mut matches = provenance
+        .transforms
+        .iter()
+        .filter(|transform| transform.artifact == artifact);
+    let Some(transform) = matches.next() else {
+        return Err(PreflightError::InstallProvenanceTransformMissing { artifact });
+    };
+    if matches.next().is_some() {
+        return Err(PreflightError::InstallProvenanceTransformDuplicate { artifact });
+    }
+    if transform.installed_path != path {
+        return Err(PreflightError::InstallProvenancePathMismatch {
+            artifact,
+            expected: path.to_path_buf(),
+            actual: transform.installed_path.clone(),
+        });
+    }
+    let actual = sha256_path(path).map_err(|source| PreflightError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if actual != transform.installed_sha256 {
+        return Err(PreflightError::InstallProvenanceHashMismatch {
+            path: path.to_path_buf(),
+            expected: transform.installed_sha256.clone(),
+            actual,
         });
     }
     Ok(())

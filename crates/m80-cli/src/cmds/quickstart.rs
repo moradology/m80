@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use m80_firecracker::FcError;
-use m80_image_manifest::{BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind};
+use m80_image_manifest::{
+    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, InstallProvenance,
+    InstallProvenanceArtifact, InstallProvenanceRewrite, InstallProvenanceTransform,
+};
 
 use crate::args::QuickstartArgs;
 use crate::errors;
@@ -18,6 +21,7 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
     "m80-guestd",
     "host-binaries.manifest.json",
 ];
+const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
 
 pub(crate) fn cmd_quickstart(args: QuickstartArgs, json_output: bool) -> anyhow::Result<i32> {
     if json_output && !args.no_run {
@@ -160,8 +164,13 @@ fn run_quickstart(
             }
         })?;
     }
-    relocate_manifest(artifact_dir)?;
-    relocate_build_receipt(artifact_dir)?;
+    let manifest_transform = relocate_manifest(artifact_dir)?;
+    let receipt_transform = relocate_build_receipt(artifact_dir)?;
+    write_install_provenance(
+        artifact_url,
+        artifact_dir,
+        vec![manifest_transform, receipt_transform],
+    )?;
 
     if !no_run {
         run_echo_probe(artifact_dir, run_root)?;
@@ -253,8 +262,9 @@ fn read_expected_sha256(checksum_file: &Path) -> Result<String, FcError> {
     Ok(expected.to_ascii_lowercase())
 }
 
-fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
+fn relocate_manifest(artifact_dir: &Path) -> Result<InstallProvenanceTransform, FcError> {
     let manifest_path = artifact_dir.join("output.ext4.manifest.json");
+    let source_sha256 = sha256_file(&manifest_path)?;
     let mut manifest = m80_image_manifest::Manifest::read(&manifest_path)?;
     manifest.kernel_image = artifact_dir.join("vmlinux");
     manifest.output_rootfs_image = artifact_dir.join("output.ext4");
@@ -264,12 +274,20 @@ fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
     }
     manifest.write(&manifest_path).map_err(FcError::Manifest)?;
     manifest.verify(artifact_dir).map_err(FcError::Manifest)?;
-    Ok(())
+    let installed_sha256 = sha256_file(&manifest_path)?;
+    Ok(install_path_rewrite_transform(
+        InstallProvenanceArtifact::GuestManifest,
+        "output.ext4.manifest.json",
+        manifest_path,
+        source_sha256,
+        installed_sha256,
+    ))
 }
 
-fn relocate_build_receipt(artifact_dir: &Path) -> Result<(), FcError> {
+fn relocate_build_receipt(artifact_dir: &Path) -> Result<InstallProvenanceTransform, FcError> {
     let manifest_path = artifact_dir.join("output.ext4.manifest.json");
     let receipt_path = artifact_dir.join("output.ext4.build-receipt.json");
+    let source_sha256 = sha256_file(&receipt_path)?;
     let manifest = m80_image_manifest::Manifest::read(&manifest_path)?;
     let manifest_sha256 = sha256_file(&manifest_path)?;
     let mut artifacts = vec![
@@ -302,7 +320,14 @@ fn relocate_build_receipt(artifact_dir: &Path) -> Result<(), FcError> {
     BuildReceipt::new(manifest_path, manifest_sha256, artifacts)
         .write(&receipt_path)
         .map_err(FcError::Manifest)?;
-    Ok(())
+    let installed_sha256 = sha256_file(&receipt_path)?;
+    Ok(install_path_rewrite_transform(
+        InstallProvenanceArtifact::BuildReceipt,
+        "output.ext4.build-receipt.json",
+        receipt_path,
+        source_sha256,
+        installed_sha256,
+    ))
 }
 
 fn receipt_artifact(
@@ -311,6 +336,43 @@ fn receipt_artifact(
     sha256: String,
 ) -> BuildReceiptArtifact {
     BuildReceiptArtifact { kind, path, sha256 }
+}
+
+fn install_path_rewrite_transform(
+    artifact: InstallProvenanceArtifact,
+    source_name: &str,
+    installed_path: PathBuf,
+    source_sha256: String,
+    installed_sha256: String,
+) -> InstallProvenanceTransform {
+    InstallProvenanceTransform {
+        artifact,
+        source_sha256,
+        source_path: PathBuf::from(source_name),
+        installed_sha256,
+        installed_path,
+        rewrite: InstallProvenanceRewrite::InstallPathRewrite,
+    }
+}
+
+fn write_install_provenance(
+    artifact_url: &str,
+    artifact_dir: &Path,
+    transforms: Vec<InstallProvenanceTransform>,
+) -> Result<(), FcError> {
+    InstallProvenance::new(release_tag_from_artifact_url(artifact_url), transforms)
+        .write(&artifact_dir.join(INSTALL_PROVENANCE_FILE))
+        .map_err(FcError::Manifest)
+}
+
+fn release_tag_from_artifact_url(artifact_url: &str) -> Option<String> {
+    let (_, tail) = artifact_url.split_once("/releases/download/")?;
+    let tag = tail.split('/').next()?;
+    if tag.is_empty() || tag == "latest" {
+        None
+    } else {
+        Some(tag.to_owned())
+    }
 }
 
 fn sha256_file(path: &Path) -> Result<String, FcError> {

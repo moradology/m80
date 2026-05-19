@@ -42,7 +42,8 @@ metadata bytes are checked before use.
 Guest manifest and build-receipt bytes are release payloads. Installers must not
 rewrite them silently after bundle verification. If install-time relocation is
 needed, it must produce a separate installed-provenance record that names the
-original hash, installed hash, path rewrite, and release tag.
+original hash, installed hash, path rewrite, and release tag. See
+[`install-provenance.md`](install-provenance.md).
 
 ## Verification
 

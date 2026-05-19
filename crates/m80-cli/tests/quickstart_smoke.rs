@@ -7,8 +7,8 @@ use common::m80;
 use std::process::Command as StdCommand;
 
 use m80_image_manifest::{
-    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, ImageKind, KernelKind, Manifest,
-    RootfsFormat,
+    BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind, ImageKind, InstallProvenance,
+    InstallProvenanceArtifact, InstallProvenanceRewrite, KernelKind, Manifest, RootfsFormat,
 };
 use serde_json::Value;
 
@@ -167,7 +167,43 @@ fn quickstart_no_run_installs_verified_artifacts() {
         receipt.manifest_sha256,
         sha256_hex(&dst.join("output.ext4.manifest.json"))
     );
+    let provenance = InstallProvenance::read(&dst.join("install-provenance.json")).unwrap();
+    assert_eq!(provenance.release_tag, None);
+    assert_eq!(provenance.transforms.len(), 2);
+    assert_rewrite_record(
+        &provenance,
+        InstallProvenanceArtifact::GuestManifest,
+        "output.ext4.manifest.json",
+        &dst.join("output.ext4.manifest.json"),
+    );
+    assert_rewrite_record(
+        &provenance,
+        InstallProvenanceArtifact::BuildReceipt,
+        "output.ext4.build-receipt.json",
+        &dst.join("output.ext4.build-receipt.json"),
+    );
     assert!(dst.join("host-binaries.manifest.json").is_file());
+}
+
+fn assert_rewrite_record(
+    provenance: &InstallProvenance,
+    artifact: InstallProvenanceArtifact,
+    source_name: &str,
+    installed_path: &std::path::Path,
+) {
+    let transform = provenance
+        .transforms
+        .iter()
+        .find(|transform| transform.artifact == artifact)
+        .unwrap_or_else(|| panic!("missing provenance transform for {artifact:?}"));
+    assert_eq!(transform.source_path, std::path::PathBuf::from(source_name));
+    assert_eq!(transform.installed_path, installed_path);
+    assert_eq!(
+        transform.rewrite,
+        InstallProvenanceRewrite::InstallPathRewrite
+    );
+    assert_eq!(transform.installed_sha256, sha256_hex(installed_path));
+    assert_ne!(transform.source_sha256, transform.installed_sha256);
 }
 
 fn write_build_receipt_with_stale_paths(src: &std::path::Path) {

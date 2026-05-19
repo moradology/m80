@@ -39,6 +39,9 @@ pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 2;
 /// Schema version for m80 build receipts.
 pub const BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1;
 
+/// Schema version for install-time artifact provenance records.
+pub const INSTALL_PROVENANCE_SCHEMA_VERSION: u32 = 1;
+
 /// Human-readable audit reason recorded in m80-built images that do not bake
 /// an outbound network posture into the image itself.
 pub const DEFAULT_NO_EGRESS_REASON: &str =
@@ -293,6 +296,127 @@ impl BuildReceipt {
     pub fn write(&self, path: &Path) -> Result<(), ManifestError> {
         if self.schema_version != BUILD_RECEIPT_SCHEMA_VERSION {
             return Err(ManifestError::UnsupportedBuildReceiptSchemaVersion(
+                self.schema_version,
+            ));
+        }
+        let mut json = serde_json::to_string_pretty(self)?;
+        json.push('\n');
+        std::fs::write(path, json.as_bytes()).map_err(|source| ManifestError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o644);
+            std::fs::set_permissions(path, perms).map_err(|source| ManifestError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// Install-time artifact whose bytes can be rewritten from a verified bundle
+/// payload into an installed host-local record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum InstallProvenanceArtifact {
+    /// `<rootfs>.manifest.json`.
+    GuestManifest,
+    /// `<rootfs>.build-receipt.json`.
+    BuildReceipt,
+}
+
+/// Kind of install-time transform applied to a verified bundle payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum InstallProvenanceRewrite {
+    /// The installed JSON rewrites release-local paths to final host paths.
+    InstallPathRewrite,
+}
+
+/// One install-time rewrite of a verified bundle payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstallProvenanceTransform {
+    /// Logical artifact that was rewritten.
+    pub artifact: InstallProvenanceArtifact,
+    /// sha256 of the verified source bytes before install-time rewriting.
+    pub source_sha256: String,
+    /// Path of the verified source payload inside the release bundle or
+    /// artifact tarball.
+    pub source_path: PathBuf,
+    /// sha256 of the installed bytes after rewriting.
+    pub installed_sha256: String,
+    /// Final installed host path of the rewritten artifact.
+    pub installed_path: PathBuf,
+    /// Rewrite class.
+    pub rewrite: InstallProvenanceRewrite,
+}
+
+/// Install-time provenance for manifest/build-receipt rewrites performed after
+/// bundle checksum verification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstallProvenance {
+    /// Concrete release tag that supplied the verified payloads. Legacy
+    /// artifact-only installs that did not resolve a tag record `None`.
+    pub release_tag: Option<String>,
+    /// Transform records for every verified payload rewritten at install time.
+    pub transforms: Vec<InstallProvenanceTransform>,
+    /// Always [`INSTALL_PROVENANCE_SCHEMA_VERSION`].
+    schema_version: u32,
+}
+
+/// Probes only `schema_version` for `install-provenance.json`.
+#[derive(Deserialize)]
+struct InstallProvenanceSchemaVersionProbe {
+    schema_version: u32,
+}
+
+impl InstallProvenance {
+    /// Construct an install provenance record with the current schema version.
+    #[must_use]
+    pub fn new(release_tag: Option<String>, transforms: Vec<InstallProvenanceTransform>) -> Self {
+        Self {
+            release_tag,
+            transforms,
+            schema_version: INSTALL_PROVENANCE_SCHEMA_VERSION,
+        }
+    }
+
+    /// Returns the install provenance schema version.
+    #[must_use]
+    pub fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    /// Parse an install provenance record from raw bytes.
+    pub fn from_bytes(raw: &[u8]) -> Result<Self, ManifestError> {
+        let probe: InstallProvenanceSchemaVersionProbe = serde_json::from_slice(raw)?;
+        if probe.schema_version != INSTALL_PROVENANCE_SCHEMA_VERSION {
+            return Err(ManifestError::UnsupportedInstallProvenanceSchemaVersion(
+                probe.schema_version,
+            ));
+        }
+        Ok(serde_json::from_slice(raw)?)
+    }
+
+    /// Read and structurally validate an install provenance record.
+    pub fn read(path: &Path) -> Result<Self, ManifestError> {
+        let raw = std::fs::read(path).map_err(|source| ManifestError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Self::from_bytes(&raw)
+    }
+
+    /// Write this install provenance record as pretty JSON with mode 0644.
+    pub fn write(&self, path: &Path) -> Result<(), ManifestError> {
+        if self.schema_version != INSTALL_PROVENANCE_SCHEMA_VERSION {
+            return Err(ManifestError::UnsupportedInstallProvenanceSchemaVersion(
                 self.schema_version,
             ));
         }
@@ -603,6 +727,11 @@ pub enum ManifestError {
         "unsupported build receipt schema version: got {0}, expected {BUILD_RECEIPT_SCHEMA_VERSION}"
     )]
     UnsupportedBuildReceiptSchemaVersion(u32),
+    /// `install-provenance.json` carried an unsupported schema version.
+    #[error(
+        "unsupported install provenance schema version: got {0}, expected {INSTALL_PROVENANCE_SCHEMA_VERSION}"
+    )]
+    UnsupportedInstallProvenanceSchemaVersion(u32),
     /// A recomputed sha256 did not match the recorded value.
     #[error("sha256 mismatch on {field}: expected {expected}, got {actual}")]
     Sha256Mismatch {

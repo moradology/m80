@@ -16,7 +16,9 @@ use caps::Capability;
 use caps::CapsHashSet;
 use serde::{Deserialize, Serialize};
 
-use m80_image_manifest::{BuildReceiptArtifactKind, Manifest, ManifestError};
+use m80_image_manifest::{
+    BuildReceiptArtifactKind, InstallProvenanceArtifact, Manifest, ManifestError,
+};
 
 mod artifacts;
 mod binary;
@@ -498,6 +500,60 @@ pub enum PreflightError {
     #[error("build receipt: {0}")]
     BuildReceipt(#[source] ManifestError),
 
+    /// Install-time provenance read/validate failed.
+    #[error("install provenance: {0}")]
+    InstallProvenance(#[source] ManifestError),
+
+    /// Installed artifacts are missing the required install-time provenance.
+    #[error("install provenance missing at {}", path.display())]
+    InstallProvenanceMissing {
+        /// Expected install provenance path.
+        path: PathBuf,
+    },
+
+    /// Install-time provenance omitted a required transform.
+    #[error("install provenance missing transform for {artifact:?}")]
+    InstallProvenanceTransformMissing {
+        /// Required artifact transform.
+        artifact: InstallProvenanceArtifact,
+    },
+
+    /// Install-time provenance duplicated an artifact transform.
+    #[error("install provenance duplicate transform for {artifact:?}")]
+    InstallProvenanceTransformDuplicate {
+        /// Duplicated artifact transform.
+        artifact: InstallProvenanceArtifact,
+    },
+
+    /// Install-time provenance points at a different installed path.
+    #[error(
+        "install provenance path mismatch for {artifact:?}: expected {}, got {}",
+        expected.display(),
+        actual.display()
+    )]
+    InstallProvenancePathMismatch {
+        /// Artifact whose installed path disagreed.
+        artifact: InstallProvenanceArtifact,
+        /// Preflight-selected installed path.
+        expected: PathBuf,
+        /// Provenance-recorded installed path.
+        actual: PathBuf,
+    },
+
+    /// Install-time provenance digest does not match current installed bytes.
+    #[error(
+        "install provenance sha256 mismatch at {}: expected {expected}, got {actual}",
+        path.display()
+    )]
+    InstallProvenanceHashMismatch {
+        /// Installed path read by preflight.
+        path: PathBuf,
+        /// Provenance-recorded installed digest.
+        expected: String,
+        /// Recomputed installed digest.
+        actual: String,
+    },
+
     /// Build receipt points at a different guest manifest than preflight read.
     #[error(
         "build receipt manifest path mismatch: expected {}, got {}",
@@ -744,13 +800,19 @@ impl PreflightError {
                 "rebuild the guest image with `m80-image-build` to regenerate a valid manifest"
             }
             Self::BuildReceipt(_)
+            | Self::InstallProvenance(_)
+            | Self::InstallProvenanceMissing { .. }
+            | Self::InstallProvenanceTransformMissing { .. }
+            | Self::InstallProvenanceTransformDuplicate { .. }
+            | Self::InstallProvenancePathMismatch { .. }
+            | Self::InstallProvenanceHashMismatch { .. }
             | Self::BuildReceiptPathMismatch { .. }
             | Self::BuildReceiptManifestMismatch { .. }
             | Self::BuildReceiptArtifactMissing { .. }
             | Self::BuildReceiptArtifactDuplicate { .. }
             | Self::BuildReceiptArtifactPathMismatch { .. }
             | Self::BuildReceiptArtifactHashMismatch { .. } => {
-                "rebuild or reinstall the guest artifacts and deploy the matching build receipt"
+                "rebuild or reinstall the guest artifacts and deploy the matching build receipt and install-provenance.json"
             }
             Self::RunRootUnavailable { .. } => {
                 "create the directory (`sudo mkdir -p /var/run/m80`) and ensure at least 100 MiB of free space is available, or set M80_RUN_ROOT to a different path"
