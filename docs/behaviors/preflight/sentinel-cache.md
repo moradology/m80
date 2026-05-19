@@ -14,7 +14,8 @@ selected rootfs, and rootfs manifest.
 On a matching sentinel, m80 reuses the cached Firecracker version, jailer
 version, and manifest, skipping `firecracker --version`, `jailer --version`,
 and `Manifest::verify(parent)`. It still runs OS, KVM, module, cgroup,
-privilege, run-root, run-root filesystem, and storage helper checks.
+privilege, host-binaries manifest validation, launch-material validation,
+run-root, run-root filesystem, and storage helper checks.
 
 Corrupt sentinels, boot-id changes, rootfs metadata changes, manifest metadata
 changes, binary metadata changes, version-pin changes, and kernel-kind override

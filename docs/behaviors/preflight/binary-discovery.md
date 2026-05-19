@@ -68,15 +68,23 @@ one entry for each TCB binary:
 - `m80_jailer_harden`
 - `m80_net_helper`
 
+The manifest must also contain exactly one `launch_material` entry for
+`firecracker_seccomp_filter`. That file is launch-critical Firecracker material
+but not an executable host binary.
+
 For `firecracker`, `jailer`, `m80_jailer_harden`, and `m80_net_helper`, the
-manifest path must match the runtime-configured path. Every recorded path is opened with
-`O_NOFOLLOW`; preflight hashes the opened file descriptor and compares it to
-the manifest sha256. Each binary must be a regular file owned `root:root`, with
-mode no broader than `0755`, and without group/world write bits.
+manifest path must match the runtime-configured path. The
+`firecracker_seccomp_filter` launch-material path must match
+`M80_FIRECRACKER_SECCOMP_FILTER` or the default seccomp-filter path. Every
+recorded path is opened with `O_NOFOLLOW`; preflight hashes the opened file
+descriptor and compares it to the manifest sha256. Each binary and launch
+material file must be a regular file owned `root:root`, with mode no broader
+than `0755`, and without group/world write bits. Launch material must also be
+non-empty.
 
 The boot-scoped sentinel cache can skip the Firecracker and jailer version
 subprocesses and guest-image manifest verification, but it does not skip
-host-binary sha256 verification or seccomp-filter path validation.
+host-binary or launch-material sha256 verification.
 
 ## Evidence
 
@@ -90,3 +98,6 @@ host-binary sha256 verification or seccomp-filter path validation.
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_hash_mismatch_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`
+- `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_requires_seccomp_launch_material`
+- `crates/m80-preflight/src/binary.rs::tests::host_launch_material_hash_mismatch_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::host_launch_material_symlink_fails_no_follow_open`

@@ -20,7 +20,9 @@ SHA256SUMS
 
 `artifacts/host-binaries.manifest.json` is not a bundled file. It is generated
 by the installer after the final host paths for m80, m80 helpers,
-Firecracker, jailer, and the Firecracker seccomp filter are known.
+Firecracker, jailer, and the Firecracker seccomp filter are known. That
+installed manifest records the seccomp filter under `launch_material`, not as a
+host binary.
 
 ## Metadata
 

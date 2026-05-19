@@ -3,7 +3,8 @@
 The schema, validator, and sha256 verifier for m80 provenance records:
 `<rootfs>.manifest.json` travels beside every guest image, and
 `<rootfs>.build-receipt.json` pins the manifest itself. Separately,
-`host-binaries.manifest.json` records the installed host-side TCB binaries.
+`host-binaries.manifest.json` records installed host-side TCB binaries and
+launch material.
 `install-provenance.json` records any install-time manifest/build-receipt
 rewrites performed after bundle checksum verification.
 
@@ -51,11 +52,12 @@ once.
 - The manifest is **side-by-side** with the rootfs (`<rootfs>.manifest.json`).
   This crate does not look up a manifest by some registry or env var.
 - `host-binaries.manifest.json` is a separate install-time manifest with
-  `schema_version: 2`. It records logical binary names, absolute paths, and
-  sha256 digests for `firecracker`, `jailer`, `m80`, `m80_cli`,
-  `m80_jailer_harden`, and `m80_net_helper`. `m80-preflight` owns live path
-  matching, open-by-fd hashing, and root-owned/mode checks because those are
-  host state, not guest image state.
+  `schema_version: 3`. It records logical binary names, launch-material names,
+  absolute paths, and sha256 digests for `firecracker`, `jailer`, `m80`,
+  `m80_cli`, `m80_jailer_harden`, `m80_net_helper`, and the
+  `firecracker_seccomp_filter`. `m80-preflight` owns live path matching,
+  open-by-fd hashing, and root-owned/mode checks because those are host state,
+  not guest image state.
 - `<rootfs>.build-receipt.json` is a deploy-time receipt with
   `schema_version: 1`. It records the sha256 of `<rootfs>.manifest.json` plus
   the artifact path/hash tuples that the manifest described.
@@ -68,11 +70,13 @@ once.
 
 ## Schema
 
-### host-binaries v2
+### host-binaries v3
 
-`schema_version: 2`. Records `binaries: Vec<HostBinaryEntry>`, where each entry
-has `name`, `path`, and `sha256`. Adds `m80_net_helper` as a required host TCB
-binary. Unknown fields fail closed. Existing v1 manifests must be regenerated.
+`schema_version: 3`. Records `binaries: Vec<HostBinaryEntry>` for executable
+host-side TCB files and `launch_material: Vec<HostLaunchMaterialEntry>` for
+non-executable launch inputs. v3 adds `firecracker_seccomp_filter` as launch
+material with `name`, `path`, and `sha256`; it is not a host binary. Unknown
+fields fail closed. Existing v1/v2 manifests must be regenerated.
 
 ### build-receipt v1
 
@@ -127,10 +131,12 @@ artifacts.
   `Default = Stock`. Serializes as `"stock"` / `"stripped"`.
 - `RootfsFormat { Ext4, Erofs }` — read-only base rootfs filesystem
   discriminator. Serializes as `"ext4"` / `"erofs"`.
-- `HostBinariesManifest::new(Vec<HostBinaryEntry>)`, `read`, `write`,
-  `from_bytes`, and `schema_version`.
+- `HostBinariesManifest::new(Vec<HostBinaryEntry>, Vec<HostLaunchMaterialEntry>)`,
+  `read`, `write`, `from_bytes`, and `schema_version`.
 - `HostBinaryEntry { name, path, sha256 }`.
 - `HostBinaryName { Firecracker, Jailer, M80, M80Cli, M80JailerHarden, M80NetHelper }`.
+- `HostLaunchMaterialEntry { name, path, sha256 }`.
+- `HostLaunchMaterialName { FirecrackerSeccompFilter }`.
 - `BuildReceipt::new(manifest_path, manifest_sha256, artifacts)`, `read`,
   `write`, `from_bytes`, and `schema_version`.
 - `BuildReceiptArtifact { kind, path, sha256 }`.
@@ -150,7 +156,7 @@ artifacts.
   recompute sha256 for every populated artifact and compare; skip
   `None`-valued fields.
 - `SCHEMA_VERSION: u32 = 5`.
-- `HOST_BINARIES_SCHEMA_VERSION: u32 = 2`.
+- `HOST_BINARIES_SCHEMA_VERSION: u32 = 3`.
 - `BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1`.
 - `INSTALL_PROVENANCE_SCHEMA_VERSION: u32 = 1`.
 - `DEFAULT_NO_EGRESS_REASON: &str` — default human-readable audit string for

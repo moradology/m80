@@ -304,6 +304,48 @@ fn host_binary_permission_has_hint() {
 }
 
 #[test]
+fn host_launch_material_missing_has_hint() {
+    assert_hint(&PreflightError::HostLaunchMaterialMissing {
+        name: "firecracker_seccomp_filter",
+    });
+}
+
+#[test]
+fn host_launch_material_duplicate_has_hint() {
+    assert_hint(&PreflightError::HostLaunchMaterialDuplicate {
+        name: "firecracker_seccomp_filter",
+    });
+}
+
+#[test]
+fn host_launch_material_path_mismatch_has_hint() {
+    assert_hint(&PreflightError::HostLaunchMaterialPathMismatch {
+        name: "firecracker_seccomp_filter",
+        expected: "/opt/firecracker/bin/firecracker-seccomp-filter.bin".into(),
+        actual: "/tmp/firecracker-seccomp-filter.bin".into(),
+    });
+}
+
+#[test]
+fn host_launch_material_hash_mismatch_has_hint() {
+    assert_hint(&PreflightError::HostLaunchMaterialHashMismatch {
+        name: "firecracker_seccomp_filter",
+        path: "/opt/firecracker/bin/firecracker-seccomp-filter.bin".into(),
+        expected: "a".repeat(64),
+        actual: "b".repeat(64),
+    });
+}
+
+#[test]
+fn host_launch_material_permission_has_hint() {
+    assert_hint(&PreflightError::HostLaunchMaterialPermission {
+        name: "firecracker_seccomp_filter",
+        path: "/opt/firecracker/bin/firecracker-seccomp-filter.bin".into(),
+        reason: "owner is not root:root",
+    });
+}
+
+#[test]
 fn non_absolute_path_has_hint() {
     assert_hint(&PreflightError::NonAbsolutePath {
         kind: "rootfs".into(),

@@ -509,6 +509,64 @@ pub enum PreflightError {
         reason: &'static str,
     },
 
+    /// Required non-executable launch material is absent from
+    /// `host-binaries.manifest.json`.
+    #[error("host launch material manifest missing required entry: {name}")]
+    HostLaunchMaterialMissing {
+        /// Required logical launch material name.
+        name: &'static str,
+    },
+
+    /// `host-binaries.manifest.json` contains duplicate launch material.
+    #[error("host launch material manifest duplicate entry: {name}")]
+    HostLaunchMaterialDuplicate {
+        /// Duplicated logical launch material name.
+        name: &'static str,
+    },
+
+    /// A configured launch-material path differs from the install-time
+    /// manifest.
+    #[error(
+        "host launch material path mismatch for {name}: expected {}, got {}",
+        expected.display(),
+        actual.display()
+    )]
+    HostLaunchMaterialPathMismatch {
+        /// Logical launch material name.
+        name: &'static str,
+        /// Runtime-configured path.
+        expected: PathBuf,
+        /// Manifest-recorded path.
+        actual: PathBuf,
+    },
+
+    /// A launch-material digest changed after install-time recording.
+    #[error(
+        "host launch material sha256 mismatch for {name} at {}: expected {expected}, got {actual}",
+        path.display()
+    )]
+    HostLaunchMaterialHashMismatch {
+        /// Logical launch material name.
+        name: &'static str,
+        /// Manifest-recorded path.
+        path: PathBuf,
+        /// Manifest-recorded digest.
+        expected: String,
+        /// Recomputed digest.
+        actual: String,
+    },
+
+    /// A launch-material file's ownership, mode, type, or contents are unsafe.
+    #[error("host launch material permission rejected for {name} at {}: {reason}", path.display())]
+    HostLaunchMaterialPermission {
+        /// Logical launch material name.
+        name: &'static str,
+        /// Manifest-recorded path.
+        path: PathBuf,
+        /// Rejection reason.
+        reason: &'static str,
+    },
+
     /// A host artifact path was present but was not absolute.
     #[error("{kind} path is not absolute: {}", path.display())]
     NonAbsolutePath {
@@ -846,6 +904,21 @@ impl PreflightError {
             }
             Self::HostBinaryPermission { .. } => {
                 "install host binaries as root:root with mode no broader than 0755 and no group/world write bits"
+            }
+            Self::HostLaunchMaterialMissing { .. } => {
+                "regenerate host-binaries.manifest.json so it covers every required launch-material file"
+            }
+            Self::HostLaunchMaterialDuplicate { .. } => {
+                "remove duplicate launch-material entries from host-binaries.manifest.json and reinstall it"
+            }
+            Self::HostLaunchMaterialPathMismatch { .. } => {
+                "make the configured launch-material path match host-binaries.manifest.json or regenerate the manifest after reinstalling launch material"
+            }
+            Self::HostLaunchMaterialHashMismatch { .. } => {
+                "reinstall the launch-material file from a trusted source and regenerate host-binaries.manifest.json"
+            }
+            Self::HostLaunchMaterialPermission { .. } => {
+                "install launch material as root:root, regular, non-empty, mode no broader than 0755, and without group/world write bits"
             }
             Self::NonAbsolutePath { .. } => {
                 "set the corresponding M80_* path env var to an absolute host path"

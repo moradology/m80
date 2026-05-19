@@ -45,7 +45,14 @@ fn write_release_tarball(dir: &tempfile::TempDir) -> std::path::PathBuf {
         src.join("host-binaries.manifest.json"),
         br#"{
   "binaries": [],
-  "schema_version": 2
+  "launch_material": [
+    {
+      "name": "firecracker_seccomp_filter",
+      "path": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "schema_version": 3
 }
 "#,
     )

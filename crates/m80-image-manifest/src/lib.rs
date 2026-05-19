@@ -34,7 +34,11 @@ pub const SCHEMA_VERSION: u32 = 5;
 /// Schema version for `host-binaries.manifest.json`.
 ///
 /// `2` — adds `m80_net_helper` as a required host TCB binary.
-pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 2;
+///
+/// `3` — adds `launch_material` entries so Firecracker's seccomp filter is
+/// recorded as launch-critical material without pretending it is an
+/// executable binary.
+pub const HOST_BINARIES_SCHEMA_VERSION: u32 = 3;
 
 /// Schema version for m80 build receipts.
 pub const BUILD_RECEIPT_SCHEMA_VERSION: u32 = 1;
@@ -114,6 +118,24 @@ impl HostBinaryName {
     }
 }
 
+/// Non-executable host launch material covered by `host-binaries.manifest.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum HostLaunchMaterialName {
+    /// Firecracker advanced seccomp filter bitcode.
+    FirecrackerSeccompFilter,
+}
+
+impl HostLaunchMaterialName {
+    /// Stable manifest spelling for diagnostics.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FirecrackerSeccompFilter => "firecracker_seccomp_filter",
+        }
+    }
+}
+
 /// One host-side TCB binary recorded at install time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -126,12 +148,26 @@ pub struct HostBinaryEntry {
     pub sha256: String,
 }
 
+/// One non-executable host launch material file recorded at install time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostLaunchMaterialEntry {
+    /// Logical launch material name.
+    pub name: HostLaunchMaterialName,
+    /// Absolute installed path.
+    pub path: PathBuf,
+    /// sha256 hex digest of the installed launch material bytes.
+    pub sha256: String,
+}
+
 /// Install-time manifest for host-side TCB binaries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostBinariesManifest {
     /// Host TCB binaries covered by this manifest.
     pub binaries: Vec<HostBinaryEntry>,
+    /// Host launch material files covered by this manifest.
+    pub launch_material: Vec<HostLaunchMaterialEntry>,
     /// Always [`HOST_BINARIES_SCHEMA_VERSION`].
     schema_version: u32,
 }
@@ -145,9 +181,13 @@ struct HostBinariesSchemaVersionProbe {
 impl HostBinariesManifest {
     /// Construct a host-binaries manifest with the current schema version.
     #[must_use]
-    pub fn new(binaries: Vec<HostBinaryEntry>) -> Self {
+    pub fn new(
+        binaries: Vec<HostBinaryEntry>,
+        launch_material: Vec<HostLaunchMaterialEntry>,
+    ) -> Self {
         Self {
             binaries,
+            launch_material,
             schema_version: HOST_BINARIES_SCHEMA_VERSION,
         }
     }

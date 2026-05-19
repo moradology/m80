@@ -3,18 +3,24 @@
 `m80-preflight` verifies the host-side TCB binaries against an install-time
 manifest before launch can proceed. The manifest lives at
 `<artifact_dir>/host-binaries.manifest.json` and records `firecracker`,
-`jailer`, `m80`, `m80_cli`, `m80_jailer_harden`, and `m80_net_helper`.
+`jailer`, `m80`, `m80_cli`, `m80_jailer_harden`, and `m80_net_helper`. The
+same manifest records `firecracker_seccomp_filter` under `launch_material`
+because it is launch-critical input but not an executable binary.
 
 The Firecracker, jailer, and hardening-wrapper manifest paths must match the
-runtime-configured paths. m80 and m80-cli are verified from the manifest paths
-because they are install artifacts, not per-launch path knobs.
+runtime-configured paths. The Firecracker seccomp-filter launch-material path
+must match the runtime-configured seccomp-filter path. m80 and m80-cli are
+verified from the manifest paths because they are install artifacts, not
+per-launch path knobs.
 
-Each binary is opened with `O_NOFOLLOW`, hashed from the opened file
-descriptor, and compared with the manifest sha256. Preflight also rejects
-non-regular files, anything not owned `root:root`, modes broader than `0755`,
-and group/world write bits. A binary that returns the expected
+Each binary and launch-material file is opened with `O_NOFOLLOW`, hashed from
+the opened file descriptor, and compared with the manifest sha256. Preflight
+also rejects non-regular files, anything not owned `root:root`, modes broader
+than `0755`, and group/world write bits. Launch-material files must also be
+non-empty. A binary that returns the expected
 `firecracker --version` string but has different bytes fails with
-`PreflightError::BinaryHashMismatch`.
+`PreflightError::BinaryHashMismatch`; a seccomp filter whose bytes changed
+fails with `PreflightError::HostLaunchMaterialHashMismatch`.
 
 The preflight sentinel cache does not bypass this check. Host binary integrity
 is recomputed on every preflight invocation.
@@ -25,3 +31,5 @@ Evidence:
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_hash_mismatch_fails_closed`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_path_mismatch`
 - `crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_rejects_unsafe_permissions`
+- `crates/m80-preflight/src/binary.rs::tests::host_launch_material_hash_mismatch_fails_closed`
+- `crates/m80-preflight/src/binary.rs::tests::host_launch_material_symlink_fails_no_follow_open`

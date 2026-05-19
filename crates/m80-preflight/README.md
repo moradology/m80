@@ -96,10 +96,12 @@ which is the right place for a security review to start.
   16c. **Host binary manifest** — reads
       `<artifact_dir>/host-binaries.manifest.json`, requires entries for
       `firecracker`, `jailer`, `m80`, `m80_cli`, `m80_jailer_harden`, and
-      `m80_net_helper`,
-      checks the configured paths for the runtime-selected binaries,
-      opens every recorded path with `O_NOFOLLOW`, hashes the opened file
-      descriptor, and rejects non-root-owned or group/world-writable binaries.
+      `m80_net_helper`, plus a `launch_material` entry for
+      `firecracker_seccomp_filter`. It checks the configured paths for the
+      runtime-selected binaries and seccomp filter, opens every recorded path
+      with `O_NOFOLLOW`, hashes the opened file descriptor, rejects
+      non-root-owned or group/world-writable binaries and launch material, and
+      rejects empty launch-material files.
   17. **Kernel artifact** — auto-discovered as the latest `vmlinux-*`
      under `<artifact_dir>`, or the env-overridden absolute path. When
      `M80_KERNEL_KIND=stock|stripped` is set, the discovered manifest's
@@ -239,6 +241,11 @@ which is the right place for a security review to start.
   `HostBinaryPathMismatch { name, expected, actual }`,
   `BinaryHashMismatch { name, path, expected, actual }`,
   `HostBinaryPermission { name, path, reason }`,
+  `HostLaunchMaterialMissing { name }`,
+  `HostLaunchMaterialDuplicate { name }`,
+  `HostLaunchMaterialPathMismatch { name, expected, actual }`,
+  `HostLaunchMaterialHashMismatch { name, path, expected, actual }`,
+  `HostLaunchMaterialPermission { name, path, reason }`,
   `NonAbsolutePath { kind, path }`,
   `KernelNotFound`, `RootfsNotFound`,
   `ArtifactDirectoryWritable { path, mode }`,

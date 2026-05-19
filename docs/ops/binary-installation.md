@@ -17,9 +17,8 @@ sudo install -o root -g root -m 0644 firecracker-seccomp-filter.bin /opt/firecra
 ```
 
 Write `/opt/m80/artifacts/host-binaries.manifest.json` from the exact installed
-binary bytes. The seccomp filter is validated as launch material by path and
-file identity during preflight; it is not a host-binary manifest entry. The
-manifest schema is:
+binary and launch-material bytes. The seccomp filter is recorded as launch
+material, not as an executable host binary. The manifest schema is:
 
 ```json
 {
@@ -55,7 +54,14 @@ manifest schema is:
       "sha256": "<64 lowercase hex chars>"
     }
   ],
-  "schema_version": 2
+  "launch_material": [
+    {
+      "name": "firecracker_seccomp_filter",
+      "path": "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
+      "sha256": "<64 lowercase hex chars>"
+    }
+  ],
+  "schema_version": 3
 }
 ```
 
@@ -64,6 +70,7 @@ fields. Do not hand-edit the digest after copying a replacement binary; replace
 the binary and regenerate the manifest from the installed bytes.
 
 `m80-preflight` checks the configured Firecracker, jailer, hardening-wrapper,
-and network-helper paths against this manifest. It opens every manifest path with `O_NOFOLLOW`,
-hashes the opened file descriptor, and rejects non-root-owned or writable
-binaries. A version string alone is not accepted as binary identity.
+network-helper, and Firecracker seccomp-filter paths against this manifest. It
+opens every manifest path with `O_NOFOLLOW`, hashes the opened file
+descriptor, and rejects non-root-owned or writable binaries and launch
+material. A version string alone is not accepted as binary identity.

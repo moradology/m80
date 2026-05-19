@@ -42,6 +42,7 @@ Required runtime artifacts:
 
 - `/opt/firecracker/bin/firecracker`
 - `/opt/firecracker/bin/jailer`
+- `/opt/firecracker/bin/firecracker-seccomp-filter.bin`
 - `/opt/m80/bin/m80-jailer-harden`
 - `/opt/m80/bin/m80-net-helper`
 - `/opt/m80/bin/m80`
@@ -54,10 +55,13 @@ identity or untrusted build jobs to replace files there after preflight has
 accepted them. The run root must not be world-writable; it holds VM sockets,
 diagnostics, overlays, and stopped-VM residue.
 
-Host binaries are also part of the launch TCB. Install them as `root:root`,
-mode `0755` or narrower, then generate
+Host binaries and Firecracker launch material are also part of the launch TCB.
+Install binaries as `root:root`, mode `0755` or narrower; install the
+Firecracker seccomp filter as `root:root`, non-empty, regular, and not
+group/world writable. Then generate
 `/opt/m80/artifacts/host-binaries.manifest.json` from the installed bytes. The
-exact manifest schema and install commands are in `docs/ops/binary-installation.md`.
+exact manifest schema and install commands are in
+`docs/ops/binary-installation.md`.
 
 Each built rootfs must travel with `<rootfs>.manifest.json` and
 `<rootfs>.build-receipt.json`. The receipt pins the manifest sha256; it is only

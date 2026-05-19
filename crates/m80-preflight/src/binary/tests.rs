@@ -9,7 +9,10 @@ use super::{
     ENV_FIRECRACKER_VERSION, ENV_JAILER_BIN, ENV_JAILER_HARDEN_BIN, ENV_NET_HELPER_BIN,
 };
 use crate::PreflightError;
-use m80_image_manifest::{HostBinariesManifest, HostBinaryEntry, HostBinaryName};
+use m80_image_manifest::{
+    HostBinariesManifest, HostBinaryEntry, HostBinaryName, HostLaunchMaterialEntry,
+    HostLaunchMaterialName,
+};
 
 fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
@@ -53,44 +56,52 @@ fn system_root_owned_executable() -> &'static Path {
 fn write_host_binary_manifest(
     path: &Path,
     firecracker: &Path,
+    firecracker_seccomp_filter: &Path,
     jailer: &Path,
     jailer_harden: &Path,
     net_helper: &Path,
     m80: &Path,
     m80_cli: &Path,
 ) {
-    HostBinariesManifest::new(vec![
-        HostBinaryEntry {
-            name: HostBinaryName::Firecracker,
-            path: firecracker.to_path_buf(),
-            sha256: sha256_file(firecracker),
-        },
-        HostBinaryEntry {
-            name: HostBinaryName::Jailer,
-            path: jailer.to_path_buf(),
-            sha256: sha256_file(jailer),
-        },
-        HostBinaryEntry {
-            name: HostBinaryName::M80,
-            path: m80.to_path_buf(),
-            sha256: sha256_file(m80),
-        },
-        HostBinaryEntry {
-            name: HostBinaryName::M80Cli,
-            path: m80_cli.to_path_buf(),
-            sha256: sha256_file(m80_cli),
-        },
-        HostBinaryEntry {
-            name: HostBinaryName::M80JailerHarden,
-            path: jailer_harden.to_path_buf(),
-            sha256: sha256_file(jailer_harden),
-        },
-        HostBinaryEntry {
-            name: HostBinaryName::M80NetHelper,
-            path: net_helper.to_path_buf(),
-            sha256: sha256_file(net_helper),
-        },
-    ])
+    HostBinariesManifest::new(
+        vec![
+            HostBinaryEntry {
+                name: HostBinaryName::Firecracker,
+                path: firecracker.to_path_buf(),
+                sha256: sha256_file(firecracker),
+            },
+            HostBinaryEntry {
+                name: HostBinaryName::Jailer,
+                path: jailer.to_path_buf(),
+                sha256: sha256_file(jailer),
+            },
+            HostBinaryEntry {
+                name: HostBinaryName::M80,
+                path: m80.to_path_buf(),
+                sha256: sha256_file(m80),
+            },
+            HostBinaryEntry {
+                name: HostBinaryName::M80Cli,
+                path: m80_cli.to_path_buf(),
+                sha256: sha256_file(m80_cli),
+            },
+            HostBinaryEntry {
+                name: HostBinaryName::M80JailerHarden,
+                path: jailer_harden.to_path_buf(),
+                sha256: sha256_file(jailer_harden),
+            },
+            HostBinaryEntry {
+                name: HostBinaryName::M80NetHelper,
+                path: net_helper.to_path_buf(),
+                sha256: sha256_file(net_helper),
+            },
+        ],
+        vec![HostLaunchMaterialEntry {
+            name: HostLaunchMaterialName::FirecrackerSeccompFilter,
+            path: firecracker_seccomp_filter.to_path_buf(),
+            sha256: sha256_file(firecracker_seccomp_filter),
+        }],
+    )
     .write(path)
     .unwrap();
 }
@@ -421,19 +432,19 @@ fn host_binary_manifest_hash_mismatch_fails_closed() {
         system_binary,
         system_binary,
         system_binary,
+        system_binary,
     );
     let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
     manifest.binaries[0].sha256 = "0".repeat(64);
     manifest.write(&manifest_path).unwrap();
     let config = BinaryDiscoveryConfig {
         firecracker_bin: system_binary.to_path_buf(),
-        firecracker_seccomp_filter: dir.path().join("firecracker-seccomp-filter.bin"),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
         jailer_bin: system_binary.to_path_buf(),
         jailer_harden_bin: system_binary.to_path_buf(),
         net_helper_bin: system_binary.to_path_buf(),
         expected_firecracker_version: None,
     };
-    write_seccomp_filter(&config.firecracker_seccomp_filter);
 
     let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
 
@@ -455,6 +466,7 @@ fn host_binary_manifest_rejects_path_mismatch() {
     write_host_binary_manifest(
         &manifest_path,
         &other_firecracker,
+        &config.firecracker_seccomp_filter,
         &config.jailer_bin,
         &config.jailer_harden_bin,
         &config.net_helper_bin,
@@ -485,6 +497,7 @@ fn host_binary_manifest_rejects_unsafe_permissions() {
     write_host_binary_manifest(
         &manifest_path,
         &config.firecracker_bin,
+        &config.firecracker_seccomp_filter,
         &config.jailer_bin,
         &config.jailer_harden_bin,
         &config.net_helper_bin,
@@ -500,6 +513,284 @@ fn host_binary_manifest_rejects_unsafe_permissions() {
             assert_eq!(path, config.firecracker_bin);
         }
         other => panic!("expected host binary permission rejection, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_binary_manifest_requires_seccomp_launch_material() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    manifest.launch_material.clear();
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostLaunchMaterialMissing { name } => {
+            assert_eq!(name, "firecracker_seccomp_filter");
+        }
+        other => panic!("expected launch material missing, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_binary_manifest_rejects_duplicate_seccomp_launch_material() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    manifest
+        .launch_material
+        .push(manifest.launch_material[0].clone());
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostLaunchMaterialDuplicate { name } => {
+            assert_eq!(name, "firecracker_seccomp_filter");
+        }
+        other => panic!("expected launch material duplicate, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_launch_material_hash_mismatch_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let mut manifest = HostBinariesManifest::read(&manifest_path).unwrap();
+    manifest.launch_material[0].sha256 = "0".repeat(64);
+    manifest.write(&manifest_path).unwrap();
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostLaunchMaterialHashMismatch { name, path, .. } => {
+            assert_eq!(name, "firecracker_seccomp_filter");
+            assert_eq!(path, system_binary);
+        }
+        other => panic!("expected launch material hash mismatch, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_launch_material_rejects_path_mismatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let other_seccomp = dir.path().join("other-seccomp-filter.bin");
+    write_seccomp_filter(&other_seccomp);
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        &other_seccomp,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: system_binary.to_path_buf(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostLaunchMaterialPathMismatch {
+            name,
+            expected,
+            actual,
+        } => {
+            assert_eq!(name, "firecracker_seccomp_filter");
+            assert_eq!(expected, system_binary);
+            assert_eq!(actual, other_seccomp);
+        }
+        other => panic!("expected launch material path mismatch, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_launch_material_rejects_empty_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let seccomp = dir.path().join("empty-seccomp-filter.bin");
+    fs::write(&seccomp, b"").unwrap();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        &seccomp,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: seccomp.clone(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostLaunchMaterialPermission { name, path, reason } => {
+            assert_eq!(name, "firecracker_seccomp_filter");
+            assert_eq!(path, seccomp);
+            assert_eq!(reason, "empty file");
+        }
+        other => panic!("expected launch material empty-file rejection, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_launch_material_rejects_unsafe_permissions() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let seccomp = dir.path().join("user-owned-seccomp-filter.bin");
+    write_seccomp_filter(&seccomp);
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        &seccomp,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: seccomp.clone(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::HostLaunchMaterialPermission { name, path, reason } => {
+            assert_eq!(name, "firecracker_seccomp_filter");
+            assert_eq!(path, seccomp);
+            assert_eq!(reason, "owner is not root:root");
+        }
+        other => panic!("expected launch material permission rejection, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn host_launch_material_symlink_fails_no_follow_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let system_binary = system_root_owned_executable();
+    let target = dir.path().join("seccomp-filter-target.bin");
+    let seccomp = dir.path().join("seccomp-filter-link.bin");
+    write_seccomp_filter(&target);
+    std::os::unix::fs::symlink(&target, &seccomp).unwrap();
+    let manifest_path = dir.path().join("host-binaries.manifest.json");
+    write_host_binary_manifest(
+        &manifest_path,
+        system_binary,
+        &seccomp,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+        system_binary,
+    );
+    let config = BinaryDiscoveryConfig {
+        firecracker_bin: system_binary.to_path_buf(),
+        firecracker_seccomp_filter: seccomp.clone(),
+        jailer_bin: system_binary.to_path_buf(),
+        jailer_harden_bin: system_binary.to_path_buf(),
+        net_helper_bin: system_binary.to_path_buf(),
+        expected_firecracker_version: None,
+    };
+
+    let err = verify_host_binaries(&config, &manifest_path).unwrap_err();
+
+    match err {
+        PreflightError::PathIo { path, source } => {
+            assert_eq!(path, seccomp);
+            assert_eq!(source.raw_os_error(), Some(nix::libc::ELOOP));
+        }
+        other => panic!("expected O_NOFOLLOW symlink failure, got {other:?}"),
     }
 }
 

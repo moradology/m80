@@ -17,12 +17,21 @@ Test: `crates/m80-preflight/tests/error_hints.rs::firecracker_binary_not_found_h
 seccomp filter before launch. Missing and non-file paths return
 `PreflightError::FirecrackerSeccompFilterNotFound { path }`; empty regular
 files return `PreflightError::FirecrackerSeccompFilterEmpty { path }`.
+After binary discovery, the installed host manifest must also contain a
+`launch_material.firecracker_seccomp_filter` entry with matching path, sha256,
+ownership, mode, and non-empty contents. Manifest-side failures use the
+`HostLaunchMaterial*` variants instead of host-binary variants because the
+filter is not executable.
 
 Test:
 `crates/m80-preflight/tests/error_hints.rs::firecracker_seccomp_filter_not_found_has_hint`,
 `crates/m80-preflight/tests/error_hints.rs::firecracker_seccomp_filter_empty_has_hint`,
 `crates/m80-preflight/src/binary.rs::tests::missing_firecracker_seccomp_filter_fails_closed`, and
 `crates/m80-preflight/src/binary.rs::tests::empty_firecracker_seccomp_filter_fails_closed`.
+Manifest coverage:
+`crates/m80-preflight/src/binary.rs::tests::host_binary_manifest_requires_seccomp_launch_material`,
+`crates/m80-preflight/src/binary.rs::tests::host_launch_material_hash_mismatch_fails_closed`, and
+`crates/m80-preflight/tests/error_hints.rs::host_launch_material_hash_mismatch_has_hint`.
 
 ## net-helper-binary-not-found
 

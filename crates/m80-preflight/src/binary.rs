@@ -15,7 +15,10 @@ use crate::firecracker_train::{
     parse_firecracker_version_output, parse_jailer_version_output, FirecrackerTrainPolicy,
 };
 use crate::PreflightError;
-use m80_image_manifest::{HostBinariesManifest, HostBinaryEntry, HostBinaryName};
+use m80_image_manifest::{
+    HostBinariesManifest, HostBinaryEntry, HostBinaryName, HostLaunchMaterialEntry,
+    HostLaunchMaterialName,
+};
 use nix::libc::O_NOFOLLOW;
 use sha2::{Digest, Sha256};
 
@@ -237,6 +240,18 @@ pub(crate) fn verify_host_binaries(
         }
         verify_host_binary_entry(entry)?;
     }
+    let seccomp_filter = one_host_launch_material_entry(
+        &manifest,
+        HostLaunchMaterialName::FirecrackerSeccompFilter,
+    )?;
+    if seccomp_filter.path != config.firecracker_seccomp_filter {
+        return Err(PreflightError::HostLaunchMaterialPathMismatch {
+            name: HostLaunchMaterialName::FirecrackerSeccompFilter.as_str(),
+            expected: config.firecracker_seccomp_filter.clone(),
+            actual: seccomp_filter.path.clone(),
+        });
+    }
+    verify_host_launch_material_entry(seccomp_filter)?;
     Ok(())
 }
 
@@ -252,6 +267,27 @@ fn one_host_binary_entry(
     };
     if matches.next().is_some() {
         return Err(PreflightError::HostBinaryDuplicate {
+            name: name.as_str(),
+        });
+    }
+    Ok(entry)
+}
+
+fn one_host_launch_material_entry(
+    manifest: &HostBinariesManifest,
+    name: HostLaunchMaterialName,
+) -> Result<&HostLaunchMaterialEntry, PreflightError> {
+    let mut matches = manifest
+        .launch_material
+        .iter()
+        .filter(|entry| entry.name == name);
+    let Some(entry) = matches.next() else {
+        return Err(PreflightError::HostLaunchMaterialMissing {
+            name: name.as_str(),
+        });
+    };
+    if matches.next().is_some() {
+        return Err(PreflightError::HostLaunchMaterialDuplicate {
             name: name.as_str(),
         });
     }
@@ -275,6 +311,27 @@ fn verify_host_binary_entry(entry: &HostBinaryEntry) -> Result<(), PreflightErro
         })?;
     verify_host_binary_permissions(entry, &file)?;
     verify_host_binary_sha256(entry, &mut file)
+}
+
+fn verify_host_launch_material_entry(
+    entry: &HostLaunchMaterialEntry,
+) -> Result<(), PreflightError> {
+    if !entry.path.is_absolute() {
+        return Err(PreflightError::NonAbsolutePath {
+            kind: format!("host launch material {}", entry.name.as_str()),
+            path: entry.path.clone(),
+        });
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(&entry.path)
+        .map_err(|source| PreflightError::PathIo {
+            path: entry.path.clone(),
+            source,
+        })?;
+    verify_host_launch_material_permissions(entry, &file)?;
+    verify_host_launch_material_sha256(entry, &mut file)
 }
 
 fn verify_host_binary_permissions(
@@ -310,30 +367,51 @@ fn verify_host_binary_permissions(
     Ok(())
 }
 
+fn verify_host_launch_material_permissions(
+    entry: &HostLaunchMaterialEntry,
+    file: &File,
+) -> Result<(), PreflightError> {
+    let metadata = file.metadata().map_err(|source| PreflightError::PathIo {
+        path: entry.path.clone(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(PreflightError::HostLaunchMaterialPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "not a regular file",
+        });
+    }
+    if metadata.len() == 0 {
+        return Err(PreflightError::HostLaunchMaterialPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "empty file",
+        });
+    }
+    if metadata.uid() != 0 || metadata.gid() != 0 {
+        return Err(PreflightError::HostLaunchMaterialPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "owner is not root:root",
+        });
+    }
+    let mode = metadata.permissions().mode() & 0o7777;
+    if mode > 0o755 || mode & 0o022 != 0 {
+        return Err(PreflightError::HostLaunchMaterialPermission {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            reason: "mode is broader than 0755 or group/world-writable",
+        });
+    }
+    Ok(())
+}
+
 fn verify_host_binary_sha256(
     entry: &HostBinaryEntry,
     file: &mut File,
 ) -> Result<(), PreflightError> {
-    file.seek(SeekFrom::Start(0))
-        .map_err(|source| PreflightError::PathIo {
-            path: entry.path.clone(),
-            source,
-        })?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .map_err(|source| PreflightError::PathIo {
-                path: entry.path.clone(),
-                source,
-            })?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let actual = hex::encode(hasher.finalize());
+    let actual = file_sha256(&entry.path, file)?;
     if actual != entry.sha256 {
         return Err(PreflightError::BinaryHashMismatch {
             name: entry.name.as_str(),
@@ -343,6 +421,45 @@ fn verify_host_binary_sha256(
         });
     }
     Ok(())
+}
+
+fn verify_host_launch_material_sha256(
+    entry: &HostLaunchMaterialEntry,
+    file: &mut File,
+) -> Result<(), PreflightError> {
+    let actual = file_sha256(&entry.path, file)?;
+    if actual != entry.sha256 {
+        return Err(PreflightError::HostLaunchMaterialHashMismatch {
+            name: entry.name.as_str(),
+            path: entry.path.clone(),
+            expected: entry.sha256.clone(),
+            actual,
+        });
+    }
+    Ok(())
+}
+
+fn file_sha256(path: &Path, file: &mut File) -> Result<String, PreflightError> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|source| PreflightError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|source| PreflightError::PathIo {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn require_absolute_binary(kind: &str, path: &Path) -> Result<(), PreflightError> {
