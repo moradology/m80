@@ -27,8 +27,9 @@ which is the right place for a security review to start.
   `verify_host_substrate_fixture(host_feature_config, fixture)` runs the same
   classifier against `HostSubstrateFixture` without touching host `/dev/kvm`,
   cgroups, passwd/group databases, or real capabilities. Both return a
-  proof-kind row so hostless fixtures cannot be mistaken for a real-KVM run
-  smoke.
+  proof-kind row and a schema-versioned `HostPrerequisiteResult` so hostless
+  fixtures cannot be mistaken for a real-KVM run smoke and machine consumers
+  do not re-derive prerequisite facts from table text.
 - The check list is fixed and ordered:
   1. **OS gate** — `Linux` from `uname -s`; macOS rejects.
   2. **Host kernel floor** — `uname -r` must parse as Linux kernel 6.1 or
@@ -202,17 +203,25 @@ which is the right place for a security review to start.
   `HostFeaturePreflightConfig::from_env() -> Result<Self, PreflightError>`,
   plus `CgroupPreflightMode { UnifiedV2, Disabled }`, for checks whose
   required host features depend on effective config.
-- `HostSubstrateDiscovery { proof_kind, privilege, report }` and
+- `HostSubstrateDiscovery { proof_kind, privilege, report,
+  host_prerequisites }` and
   `HostSubstrateProofKind { LivePreflight, HostlessFixture }`.
 - `HostSubstrateFixture { sysname, kernel_release, kvm, cgroup_v2_available,
   jail_user, jail_group, euid, effective_caps }` plus
   `HostSubstrateFixture::supported_root()` and
   `HostSubstrateFixtureKvm { Writable, Missing, NotWritable }`.
+- `HostPrerequisiteResult { schema_version, checks }`,
+  `HostPrerequisiteCheck`, `HostPrerequisiteStatus`,
+  `HostPrerequisiteFailureKind`, `HostPrerequisiteRemediation`,
+  `HostPrerequisiteOwner`, and
+  `HOST_PREREQUISITE_RESULT_SCHEMA_VERSION` — the versioned proof contract
+  for install, preflight JSON, diagnostics, and release evidence.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.
 - `Discovery { firecracker_bin, firecracker_seccomp_filter, jailer_bin,
-  jailer_harden_bin, net_helper_bin, kernel: PathBuf, rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
+  firecracker_version, jailer_version, jailer_harden_bin, net_helper_bin,
+  kernel: PathBuf, rootfs: PathBuf, pinned_rootfs: PinnedRootfs,
   manifest: m80_image_manifest::Manifest, run_root: PathBuf,
   privilege: PrivilegeStatus, report: Vec<CheckRow> }`.
 - `PinnedRootfs::from_file(path, file) -> PinnedRootfs`,

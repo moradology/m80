@@ -6,7 +6,10 @@ use caps::{CapSet, CapsHashSet};
 use nix::sys::utsname::uname;
 use nix::unistd::{geteuid, Gid, Group, Uid, User};
 
-use crate::{classify_privilege, CheckRow, PreflightError, PrivilegeStatus, REQUIRED_CAPABILITIES};
+use crate::{
+    classify_privilege, CheckRow, HostPrerequisiteCheck, HostPrerequisiteResult, PreflightError,
+    PrivilegeStatus, REQUIRED_CAPABILITIES,
+};
 
 const KVM_PATH: &str = "/dev/kvm";
 const ENV_JAIL_UID: &str = "M80_JAIL_UID";
@@ -86,6 +89,8 @@ pub struct HostSubstrateDiscovery {
     pub privilege: PrivilegeStatus,
     /// Check rows produced by the substrate verifier.
     pub report: Vec<CheckRow>,
+    /// Versioned machine-readable prerequisite result for the substrate rows.
+    pub host_prerequisites: HostPrerequisiteResult,
 }
 
 /// KVM state exposed by a hostless substrate fixture.
@@ -290,10 +295,18 @@ fn verify_host_substrate_with_probe<P: HostSubstrateProbe>(
     let privilege = classify_privilege(euid, &effective)?;
     report.push(privilege_row(privilege));
     report.push(proof_kind_row(proof_kind));
+    debug_assert!(report.iter().all(|row| row.passed));
+    let host_prerequisites = HostPrerequisiteResult::new(
+        report
+            .iter()
+            .map(|row| HostPrerequisiteCheck::pass(row.label.clone()))
+            .collect(),
+    );
     Ok(HostSubstrateDiscovery {
         proof_kind,
         privilege,
         report,
+        host_prerequisites,
     })
 }
 

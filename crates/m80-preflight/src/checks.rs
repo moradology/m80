@@ -249,6 +249,8 @@ pub fn run_with_configs(
         firecracker_bin: binaries.firecracker_bin,
         firecracker_seccomp_filter: binaries.firecracker_seccomp_filter,
         jailer_bin: binaries.jailer_bin,
+        firecracker_version: binaries.firecracker_version,
+        jailer_version: binaries.jailer_version,
         jailer_harden_bin: binaries.jailer_harden_bin,
         net_helper_bin: binaries.net_helper_bin,
         kernel: artifacts.kernel,

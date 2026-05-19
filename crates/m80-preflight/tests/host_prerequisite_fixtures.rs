@@ -10,7 +10,8 @@ use m80_image_manifest::{
 use m80_preflight::{
     verify_host_substrate_fixture, write_host_binaries_manifest, BinaryDiscoveryConfig,
     CgroupPreflightMode, HostBinariesManifestConfig, HostFeaturePreflightConfig,
-    HostSubstrateDiscovery, HostSubstrateFixture, HostSubstrateProofKind, PreflightError,
+    HostPrerequisiteStatus, HostSubstrateDiscovery, HostSubstrateFixture, HostSubstrateProofKind,
+    PreflightError, HOST_PREREQUISITE_RESULT_SCHEMA_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -208,6 +209,17 @@ fn install_root_fixture_success_emits_substrate_and_manifest_shapes() {
         .iter()
         .any(|row| row.label == "Host substrate proof"
             && row.detail.contains("hostless fixture only")));
+    assert_eq!(
+        proof.substrate.host_prerequisites.schema_version,
+        HOST_PREREQUISITE_RESULT_SCHEMA_VERSION
+    );
+    assert!(proof
+        .substrate
+        .host_prerequisites
+        .checks
+        .iter()
+        .any(|check| check.check_name == "Host substrate proof"
+            && check.status == HostPrerequisiteStatus::Pass));
     assert_eq!(
         proof.host_binaries_manifest.schema_version(),
         HOST_BINARIES_SCHEMA_VERSION

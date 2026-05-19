@@ -4,7 +4,7 @@ use super::{
     sandbox_config_for_run, should_writeback, validate_run_flags,
 };
 use crate::args::{EgressMode, OverlayCloneModeArg, WritebackMode};
-use crate::errors::EXIT_PREFLIGHT;
+use crate::errors::{EXIT_CONFIG, EXIT_PREFLIGHT};
 use crate::json;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
 use m80_preflight::{CgroupPreflightMode, CheckRow, Discovery, PreflightError};
@@ -18,6 +18,8 @@ fn fake_discovery() -> Discovery {
         firecracker_bin: "/tmp/firecracker".into(),
         firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.bin".into(),
         jailer_bin: "/tmp/jailer".into(),
+        firecracker_version: "v1.0.0".to_owned(),
+        jailer_version: "v1.0.0".to_owned(),
         jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
         net_helper_bin: "/tmp/m80-net-helper".into(),
         kernel: "/tmp/vmlinux".into(),
@@ -396,14 +398,46 @@ fn preflight_success_fixture_needs_no_kvm() {
 }
 
 #[test]
-fn preflight_json_formats_report_rows_without_kvm() {
+fn preflight_json_formats_host_prerequisite_result_without_kvm() {
     let rows = fake_discovery().report;
-    let json = json::to_pretty(rows.as_slice());
+    let proof = m80_preflight::HostPrerequisiteResult::from_success_rows(&rows).unwrap();
+    let json = json::to_pretty(&proof);
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
     assert_eq!(parsed["version"], 1);
-    assert_eq!(parsed["data"][0]["label"], "kvm");
-    assert_eq!(parsed["data"][0]["passed"], true);
+    assert_eq!(parsed["data"]["schema_version"], 1);
+    assert_eq!(parsed["data"]["checks"][0]["check_name"], "kvm");
+    assert_eq!(parsed["data"]["checks"][0]["status"], "pass");
+}
+
+#[test]
+fn preflight_json_formats_discovery_version_fields() {
+    let mut discovery = fake_discovery();
+    discovery.report = vec![CheckRow {
+        label: "Firecracker binary".to_owned(),
+        passed: true,
+        detail: "fixture".to_owned(),
+    }];
+    let proof = m80_preflight::HostPrerequisiteResult::from_discovery(&discovery).unwrap();
+    let json = json::to_pretty(&proof);
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(
+        parsed["data"]["checks"][0]["final_path"],
+        "/tmp/firecracker"
+    );
+    assert_eq!(parsed["data"]["checks"][0]["expected_version"], "v1.0.0");
+    assert_eq!(parsed["data"]["checks"][0]["actual_version"], "v1.0.0");
+}
+
+#[test]
+fn preflight_json_rejects_failed_success_rows_without_panicking() {
+    let mut discovery = fake_discovery();
+    discovery.report[0].passed = false;
+
+    let code = render_preflight_result(Ok(discovery), true);
+
+    assert_eq!(code, EXIT_CONFIG);
 }
 
 #[test]

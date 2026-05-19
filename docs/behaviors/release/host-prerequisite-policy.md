@@ -87,11 +87,12 @@ document:
 - `docs/behaviors/preflight/binary-discovery.md` for current preflight
   discovery and identity checks.
 
-Release proof artifacts should include a saved `m80 preflight --json` result.
-The `Firecracker binary` row records the expected and observed Firecracker
-version. The `Jailer binary` row records the expected jailer version and the
-observed jailer version. Those rows are the host-local proof that the
-operator-provided train matches the guest artifact set.
+Release proof artifacts should include a saved `m80 preflight --json`
+`HostPrerequisiteResult`. The `Firecracker binary` check records the expected
+and observed Firecracker version. The `Jailer binary` check records the
+expected jailer version and the observed jailer version. Those checks are the
+host-local proof that the operator-provided train matches the guest artifact
+set.
 
 The user-facing rule is short: install the m80 bundle, provide the official
 Firecracker host prerequisites at their configured paths, run `m80 preflight`,

@@ -27,6 +27,26 @@ KVM, unavailable cgroup v2, missing jail identity, and insufficient privilege
 all have distinct `PreflightError` variants. The human repair text comes from
 the same `hint()` mapping used by `m80 preflight`.
 
+## Result Contract
+
+Host prerequisite proof uses `HostPrerequisiteResult` with
+`HOST_PREREQUISITE_RESULT_SCHEMA_VERSION`. The result records ordered checks in
+a schema-versioned structure instead of asking installers, diagnostics, release
+proofs, or docs tests to scrape table rows. Each check has:
+
+- `check_name`;
+- optional final path;
+- optional expected/actual version, sha256, mode, and owner facts;
+- pass/fail status;
+- a typed `failure_variant` for failed checks;
+- a remediation id plus either an exact command or a policy/runbook link.
+
+Readers fail closed on unknown schema versions, missing required fields,
+unknown failure variants, and failed checks without a remediation token. The
+host substrate verifier emits this result for its rows today. Full host-binary
+path/hash/mode population is owned by `m80-o3uh9.8.3.2`; diagnostics rendering
+of these fields is owned by `m80-o3uh9.8.3.3`.
+
 ## Fixture Knobs
 
 `HostSubstrateFixture` can simulate the substrate without touching `/opt`,
@@ -45,7 +65,9 @@ release `m80 run -- echo hello` smoke.
 ## Evidence
 
 - `crates/m80-preflight/src/substrate.rs`
+- `crates/m80-preflight/src/host_prerequisite_result.rs`
 - `crates/m80-preflight/src/checks.rs`
+- `crates/m80-preflight/tests/host_prerequisite_result.rs`
 - `crates/m80-preflight/src/substrate.rs::tests::hostless_fixture_success_is_not_real_kvm_smoke`
 - `crates/m80-preflight/src/substrate.rs::tests::substrate_fixture_rejects_missing_kvm`
 - `crates/m80-preflight/src/substrate.rs::tests::substrate_fixture_rejects_bad_kvm_permissions`

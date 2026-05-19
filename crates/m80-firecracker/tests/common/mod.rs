@@ -36,6 +36,8 @@ pub(crate) fn fake_discovery(run_root: &Path) -> m80_preflight::Discovery {
         firecracker_bin: PathBuf::from("/tmp/firecracker"),
         firecracker_seccomp_filter: PathBuf::from("/tmp/firecracker-seccomp-filter.bin"),
         jailer_bin: PathBuf::from("/tmp/jailer"),
+        firecracker_version: "v1.0.0".to_owned(),
+        jailer_version: "v1.0.0".to_owned(),
         jailer_harden_bin: PathBuf::from("/tmp/m80-jailer-harden"),
         net_helper_bin,
         kernel: PathBuf::from("/tmp/vmlinux"),

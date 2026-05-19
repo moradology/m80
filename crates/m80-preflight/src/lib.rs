@@ -22,6 +22,7 @@ mod cache;
 mod checks;
 mod cve_floor;
 mod firecracker_train;
+mod host_prerequisite_result;
 mod pinned_rootfs;
 mod table;
 
@@ -95,6 +96,10 @@ pub struct Discovery {
     pub firecracker_seccomp_filter: PathBuf,
     /// Resolved jailer binary path.
     pub jailer_bin: PathBuf,
+    /// Observed Firecracker version accepted by preflight.
+    pub firecracker_version: String,
+    /// Observed official jailer version accepted by preflight.
+    pub jailer_version: String,
     /// Resolved m80 jailer hardening wrapper path.
     pub jailer_harden_bin: PathBuf,
     /// Resolved m80 network helper path.
@@ -141,6 +146,11 @@ pub use cve_floor::{
 pub use firecracker_train::{
     FirecrackerTrainPolicy, FIRECRACKER_TRAIN_POLICY_SOURCE, HOST_PREREQUISITE_POLICY_DOC,
     JAILER_PAIRING_RULE,
+};
+pub use host_prerequisite_result::{
+    HostPrerequisiteCheck, HostPrerequisiteFailureKind, HostPrerequisiteOwner,
+    HostPrerequisiteRemediation, HostPrerequisiteResult, HostPrerequisiteResultError,
+    HostPrerequisiteStatus, HOST_PREREQUISITE_RESULT_SCHEMA_VERSION,
 };
 pub use pinned_rootfs::PinnedRootfs;
 

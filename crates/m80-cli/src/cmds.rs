@@ -647,8 +647,18 @@ fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool
     match result {
         Ok(discovery) => {
             if json {
-                let rows = &discovery.report;
-                println!("{}", json::to_pretty(rows));
+                let proof = match m80_preflight::HostPrerequisiteResult::from_discovery(&discovery)
+                {
+                    Ok(proof) => proof,
+                    Err(err) => {
+                        let fc_err = FcError::Config(ConfigError::InvalidValue {
+                            field: "preflight.host_prerequisite_result",
+                            reason: err.to_string(),
+                        });
+                        return errors::render_error(&fc_err, json);
+                    }
+                };
+                println!("{}", json::to_pretty(&proof));
             } else {
                 println!("{}", discovery.render_table());
             }

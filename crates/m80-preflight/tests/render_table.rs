@@ -52,6 +52,8 @@ fn fixture_discovery() -> Discovery {
             "/opt/firecracker/bin/firecracker-seccomp-filter.bin",
         ),
         jailer_bin: PathBuf::from("/opt/firecracker/bin/jailer"),
+        firecracker_version: "v1.15.1".to_owned(),
+        jailer_version: "v1.15.1".to_owned(),
         jailer_harden_bin: PathBuf::from("/opt/m80/bin/m80-jailer-harden"),
         net_helper_bin: PathBuf::from("/opt/m80/bin/m80-net-helper"),
         kernel: PathBuf::from("/opt/m80/artifacts/vmlinux-6.1"),

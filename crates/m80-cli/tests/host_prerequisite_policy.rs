@@ -82,21 +82,36 @@ fn policy_doc_names_version_and_cve_sources_of_truth() {
 }
 
 #[test]
-fn policy_doc_requires_preflight_proof_rows_for_release_artifacts() {
+fn policy_doc_requires_preflight_proof_checks_for_release_artifacts() {
     let policy = read_repo_file("docs/behaviors/release/host-prerequisite-policy.md");
 
     assert_contains(&policy, "`m80 preflight --json`");
     assert_contains_words(
         &policy,
-        "`Firecracker binary` row records the expected and observed Firecracker version",
+        "`Firecracker binary` check records the expected and observed Firecracker version",
     );
     assert_contains_words(
         &policy,
-        "`Jailer binary` row records the expected jailer version and the observed jailer version",
+        "`Jailer binary` check records the expected jailer version and the observed jailer version",
     );
     assert_contains_words(
         &policy,
         "operator-provided train matches the guest artifact set",
+    );
+}
+
+#[test]
+fn release_runbook_uses_host_prerequisite_result_contract() {
+    let runbook = read_repo_file("docs/runbook/release.md");
+
+    assert_contains(&runbook, "`HostPrerequisiteResult`");
+    assert_contains_words(
+        &runbook,
+        "`Firecracker binary` check whose expected and observed version fields record the Firecracker version",
+    );
+    assert_contains_words(
+        &runbook,
+        "`Jailer binary` check whose expected and observed version fields record the jailer version",
     );
 }
 

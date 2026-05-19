@@ -92,8 +92,9 @@ Before promoting a release on a target host, save a preflight proof:
 m80 preflight --json > release-preflight-proof.json
 ```
 
-The proof must contain a `Firecracker binary` row whose detail records the
-expected and observed Firecracker version, and a `Jailer binary` row whose
-detail records the expected and observed jailer version. The train policy source
-is `crates/m80-preflight/src/firecracker_train.rs`; the CVE-floor table source
-is `crates/m80-preflight/src/cve_floor.rs`.
+The proof is a `HostPrerequisiteResult`. It must contain a
+`Firecracker binary` check whose expected and observed version fields record
+the Firecracker version, and a `Jailer binary` check whose expected and observed
+version fields record the jailer version. The train policy source is
+`crates/m80-preflight/src/firecracker_train.rs`; the CVE-floor table source is
+`crates/m80-preflight/src/cve_floor.rs`.
