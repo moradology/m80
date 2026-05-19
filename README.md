@@ -15,9 +15,10 @@ Expected output:
 hello
 ```
 
-The command above uses the default runtime profile. The built-in `env` profile
-reads `M80_KERNEL_IMAGE` and `M80_ROOTFS_IMAGE`; named profiles live at
-`/etc/m80/profiles/<name>.toml` or `~/.config/m80/profiles/<name>.toml`.
+The command above uses the default runtime profile. An installed quickstart
+writes `/etc/m80/profiles/default.toml` plus `/etc/m80/config.toml` so the
+default profile points at the installed guest bundle. The built-in `env`
+profile remains available for explicit environment-driven development.
 The requested program must exist inside the selected guest image/profile or in
 the visible workspace. m80 does not run host binaries, pull OCI images, or
 install packages implicitly.
@@ -38,11 +39,11 @@ m80 quickstart \
 `quickstart` downloads the matching guest artifact tarball, verifies the
 published checksum and extracted `SHA256SUMS`, checks the non-mutating host
 substrate before changing active artifacts when it will run the probe, installs
-the guest artifact set, and when it runs the probe generates
-`host-binaries.manifest.json` from the installed host TCB paths before
-`m80 run -- echo hello`. Host TCB binaries are installed separately from final
-host paths; release tarballs must not bundle the host manifest. The bundle shape
-is pinned in
+the guest artifact set, writes the installed default runtime profile/config,
+and when it runs the probe generates `host-binaries.manifest.json` from the
+installed host TCB paths before plain `m80 run -- echo hello`. Host TCB binaries
+are installed separately from final host paths; release tarballs must not bundle
+the host manifest. The bundle shape is pinned in
 [`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
 `--no-run` is a hostless artifact verification/install path; it does not claim
 host substrate readiness or real-KVM smoke proof.
@@ -54,15 +55,9 @@ m80 run -- <command> [args...]
 ```
 
 Use a binary and artifact tarball from the same release; `releases/latest`
-assumes your installed `m80` is also the latest release.
-
-No repo checkout needed:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/moradology/m80/main/scripts/quickstart.sh |
-  sudo env M80_BIN=/opt/m80/bin/m80 sh -s -- \
-    --artifact-url https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
-```
+assumes your installed `m80` is also the latest release. The one-command
+bootstrap installer is tracked under the release epoch and will replace this
+installed-binary quickstart path when it lands.
 
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,

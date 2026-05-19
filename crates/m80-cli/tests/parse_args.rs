@@ -254,11 +254,15 @@ fn parse_quickstart_required_artifact_url() {
             artifact_url,
             artifact_dir,
             run_root,
+            profile_dir,
+            config_path,
             no_run,
         }) => {
             assert_eq!(artifact_url, "file:///tmp/m80-artifacts.tar.gz");
             assert!(artifact_dir.is_none());
             assert!(run_root.is_none());
+            assert!(profile_dir.is_none());
+            assert!(config_path.is_none());
             assert!(!no_run);
         }
         _ => panic!("expected Quickstart"),
@@ -276,6 +280,10 @@ fn parse_quickstart_install_only_shape() {
         "/tmp/artifacts",
         "--run-root",
         "/tmp/run",
+        "--profile-dir",
+        "/tmp/profiles",
+        "--config-path",
+        "/tmp/config.toml",
         "--no-run",
     ])
     .unwrap();
@@ -287,6 +295,14 @@ fn parse_quickstart_install_only_shape() {
                 Some(std::path::PathBuf::from("/tmp/artifacts"))
             );
             assert_eq!(args.run_root, Some(std::path::PathBuf::from("/tmp/run")));
+            assert_eq!(
+                args.profile_dir,
+                Some(std::path::PathBuf::from("/tmp/profiles"))
+            );
+            assert_eq!(
+                args.config_path,
+                Some(std::path::PathBuf::from("/tmp/config.toml"))
+            );
             assert!(args.no_run);
         }
         _ => panic!("expected Quickstart"),

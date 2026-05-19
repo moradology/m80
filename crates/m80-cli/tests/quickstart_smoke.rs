@@ -12,6 +12,53 @@ use m80_image_manifest::{
 };
 use serde_json::Value;
 
+struct InstallPaths {
+    dst: std::path::PathBuf,
+    run_root: std::path::PathBuf,
+    profile_dir: std::path::PathBuf,
+    config_path: std::path::PathBuf,
+}
+
+fn install_paths(dir: &tempfile::TempDir, name: &str) -> InstallPaths {
+    InstallPaths {
+        dst: dir.path().join(format!("{name}-dst")),
+        run_root: dir.path().join(format!("{name}-run")),
+        profile_dir: dir.path().join(format!("{name}-profiles")),
+        config_path: dir.path().join(format!("{name}-config.toml")),
+    }
+}
+
+fn quickstart_no_run_args(tarball: &std::path::Path, paths: &InstallPaths) -> Vec<String> {
+    vec![
+        "quickstart".to_owned(),
+        "--artifact-url".to_owned(),
+        format!("file://{}", tarball.display()),
+        "--artifact-dir".to_owned(),
+        paths.dst.display().to_string(),
+        "--run-root".to_owned(),
+        paths.run_root.display().to_string(),
+        "--profile-dir".to_owned(),
+        paths.profile_dir.display().to_string(),
+        "--config-path".to_owned(),
+        paths.config_path.display().to_string(),
+        "--no-run".to_owned(),
+    ]
+}
+
+fn read_toml(path: &std::path::Path) -> toml::Value {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .parse::<toml::Value>()
+        .unwrap()
+}
+
+fn toml_str<'a>(value: &'a toml::Value, key: &str) -> &'a str {
+    value
+        .get(key)
+        .and_then(toml::Value::as_str)
+        .unwrap_or_else(|| panic!("missing string field {key} in {value:?}"))
+}
+
 fn run_checked(cmd: &mut StdCommand, label: &str) {
     let output = cmd.output().unwrap();
     assert!(
@@ -34,29 +81,41 @@ fn output_checked(cmd: &mut StdCommand, label: &str) -> std::process::Output {
 }
 
 fn write_release_tarball(dir: &tempfile::TempDir) -> std::path::PathBuf {
-    write_release_tarball_inner(dir, None)
+    write_release_tarball_with_kernel_kind(dir, KernelKind::Stock)
+}
+
+fn write_release_tarball_with_kernel_kind(
+    dir: &tempfile::TempDir,
+    kernel_kind: KernelKind,
+) -> std::path::PathBuf {
+    write_release_tarball_inner(dir, None, kernel_kind)
 }
 
 fn write_release_tarball_with_bundled_host_manifest(dir: &tempfile::TempDir) -> std::path::PathBuf {
-    write_release_tarball_inner(dir, Some("host-binaries.manifest.json"))
+    write_release_tarball_inner(dir, Some("host-binaries.manifest.json"), KernelKind::Stock)
 }
 
 fn write_release_tarball_with_nested_bundled_host_manifest(
     dir: &tempfile::TempDir,
 ) -> std::path::PathBuf {
-    write_release_tarball_inner(dir, Some("nested/host-binaries.manifest.json"))
+    write_release_tarball_inner(
+        dir,
+        Some("nested/host-binaries.manifest.json"),
+        KernelKind::Stock,
+    )
 }
 
 fn write_release_tarball_inner(
     dir: &tempfile::TempDir,
     host_manifest_relpath: Option<&str>,
+    kernel_kind: KernelKind,
 ) -> std::path::PathBuf {
     let src = dir.path().join("src");
     std::fs::create_dir(&src).unwrap();
     std::fs::write(src.join("vmlinux"), b"kernel").unwrap();
     std::fs::write(src.join("output.ext4"), b"rootfs").unwrap();
     std::fs::write(src.join("m80-guestd"), b"guestd").unwrap();
-    write_manifest_with_stale_paths(&src);
+    write_manifest_with_stale_paths(&src, kernel_kind);
     write_build_receipt_with_stale_paths(&src);
     let mut checksum_inputs = vec![
         "vmlinux",
@@ -118,7 +177,7 @@ fn write_release_tarball_inner(
     tarball
 }
 
-fn write_manifest_with_stale_paths(src: &std::path::Path) {
+fn write_manifest_with_stale_paths(src: &std::path::Path, kernel_kind: KernelKind) {
     let stale = std::path::PathBuf::from("/tmp/m80-release-artifacts");
     let manifest = Manifest::new(
         stale.join("m80-guestd"),
@@ -128,7 +187,7 @@ fn write_manifest_with_stale_paths(src: &std::path::Path) {
         ImageKind::Minimal,
         stale.join("vmlinux"),
         sha256_hex(&src.join("vmlinux")),
-        KernelKind::Stock,
+        kernel_kind,
         Some(m80_image_manifest::DEFAULT_NO_EGRESS_REASON.to_owned()),
         stale.join("output.ext4"),
         sha256_hex(&src.join("output.ext4")),
@@ -156,20 +215,10 @@ fn sha256_hex(path: &std::path::Path) -> String {
 fn quickstart_no_run_installs_verified_artifacts() {
     let dir = tempfile::tempdir().unwrap();
     let tarball = write_release_tarball(&dir);
-    let dst = dir.path().join("dst");
-    let run_root = dir.path().join("run");
+    let paths = install_paths(&dir, "default");
 
     m80()
-        .args([
-            "quickstart",
-            "--artifact-url",
-            &format!("file://{}", tarball.display()),
-            "--artifact-dir",
-            dst.to_str().unwrap(),
-            "--run-root",
-            run_root.to_str().unwrap(),
-            "--no-run",
-        ])
+        .args(quickstart_no_run_args(&tarball, &paths))
         .assert()
         .success();
 
@@ -180,41 +229,108 @@ fn quickstart_no_run_installs_verified_artifacts() {
         "m80-guestd",
     ] {
         assert!(
-            dst.join(artifact).is_file(),
+            paths.dst.join(artifact).is_file(),
             "quickstart should install {artifact}"
         );
     }
-    assert!(run_root.is_dir(), "quickstart should create run-root");
+    assert!(paths.run_root.is_dir(), "quickstart should create run-root");
 
-    let manifest = Manifest::read(&dst.join("output.ext4.manifest.json")).unwrap();
-    assert_eq!(manifest.kernel_image, dst.join("vmlinux"));
-    assert_eq!(manifest.output_rootfs_image, dst.join("output.ext4"));
-    assert_eq!(manifest.daemon_binary_path, dst.join("m80-guestd"));
-    manifest.verify(&dst).unwrap();
-    let receipt = BuildReceipt::read(&dst.join("output.ext4.build-receipt.json")).unwrap();
-    assert_eq!(receipt.manifest_path, dst.join("output.ext4.manifest.json"));
+    let manifest = Manifest::read(&paths.dst.join("output.ext4.manifest.json")).unwrap();
+    assert_eq!(manifest.kernel_image, paths.dst.join("vmlinux"));
+    assert_eq!(manifest.output_rootfs_image, paths.dst.join("output.ext4"));
+    assert_eq!(manifest.daemon_binary_path, paths.dst.join("m80-guestd"));
+    manifest.verify(&paths.dst).unwrap();
+    let receipt = BuildReceipt::read(&paths.dst.join("output.ext4.build-receipt.json")).unwrap();
+    assert_eq!(
+        receipt.manifest_path,
+        paths.dst.join("output.ext4.manifest.json")
+    );
     assert_eq!(
         receipt.manifest_sha256,
-        sha256_hex(&dst.join("output.ext4.manifest.json"))
+        sha256_hex(&paths.dst.join("output.ext4.manifest.json"))
     );
-    let provenance = InstallProvenance::read(&dst.join("install-provenance.json")).unwrap();
+    let provenance = InstallProvenance::read(&paths.dst.join("install-provenance.json")).unwrap();
     assert_eq!(provenance.release_tag, None);
     assert_eq!(provenance.transforms.len(), 2);
     assert_rewrite_record(
         &provenance,
         InstallProvenanceArtifact::GuestManifest,
         "output.ext4.manifest.json",
-        &dst.join("output.ext4.manifest.json"),
+        &paths.dst.join("output.ext4.manifest.json"),
     );
     assert_rewrite_record(
         &provenance,
         InstallProvenanceArtifact::BuildReceipt,
         "output.ext4.build-receipt.json",
-        &dst.join("output.ext4.build-receipt.json"),
+        &paths.dst.join("output.ext4.build-receipt.json"),
     );
     assert!(
-        !dst.join("host-binaries.manifest.json").exists(),
+        !paths.dst.join("host-binaries.manifest.json").exists(),
         "quickstart must not install a bundled host-binaries manifest"
+    );
+
+    let profile_path = paths.profile_dir.join("default.toml");
+    let profile = read_toml(&profile_path);
+    assert_eq!(
+        toml_str(&profile, "artifact_dir"),
+        paths.dst.to_str().unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "kernel_image"),
+        paths.dst.join("vmlinux").to_str().unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "rootfs_image"),
+        paths.dst.join("output.ext4").to_str().unwrap()
+    );
+    assert_eq!(toml_str(&profile, "kernel_kind"), "stock");
+    assert_eq!(
+        toml_str(&profile, "guestd"),
+        paths.dst.join("m80-guestd").to_str().unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "guest_manifest"),
+        paths
+            .dst
+            .join("output.ext4.manifest.json")
+            .to_str()
+            .unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "build_receipt"),
+        paths
+            .dst
+            .join("output.ext4.build-receipt.json")
+            .to_str()
+            .unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "install_provenance"),
+        paths.dst.join("install-provenance.json").to_str().unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "host_binaries_manifest"),
+        paths
+            .dst
+            .join("host-binaries.manifest.json")
+            .to_str()
+            .unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "run_root"),
+        paths.run_root.to_str().unwrap()
+    );
+    assert_eq!(
+        toml_str(&profile, "m80_version"),
+        concat!(env!("CARGO_PKG_VERSION"), "-dev")
+    );
+    assert!(profile.get("release_tag").is_none());
+
+    let config = read_toml(&paths.config_path);
+    assert_eq!(toml_str(&config, "default_profile"), "default");
+    assert_eq!(
+        toml_str(&config, "run_root"),
+        paths.run_root.to_str().unwrap()
     );
 }
 
@@ -268,24 +384,172 @@ fn write_build_receipt_with_stale_paths(src: &std::path::Path) {
 }
 
 #[test]
+fn quickstart_profile_records_release_tag_from_download_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_tarball = write_release_tarball(&dir);
+    let release_dir = dir.path().join("github/releases/download/v9.8.7");
+    std::fs::create_dir_all(&release_dir).unwrap();
+    let tarball = release_dir.join("m80-linux-x86_64-minimal-artifacts.tar.gz");
+    std::fs::copy(&source_tarball, &tarball).unwrap();
+    let tarball_sha = sha256_hex(&tarball);
+    std::fs::write(
+        format!("{}.sha256", tarball.display()),
+        format!(
+            "{tarball_sha}  {}\n",
+            tarball.file_name().unwrap().to_string_lossy()
+        ),
+    )
+    .unwrap();
+    let paths = install_paths(&dir, "tagged");
+
+    m80()
+        .args(quickstart_no_run_args(&tarball, &paths))
+        .assert()
+        .success();
+
+    let profile = read_toml(&paths.profile_dir.join("default.toml"));
+    assert_eq!(toml_str(&profile, "release_tag"), "v9.8.7");
+}
+
+#[test]
+fn quickstart_profile_uses_installed_manifest_kernel_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball_with_kernel_kind(&dir, KernelKind::Stripped);
+    let paths = install_paths(&dir, "stripped");
+
+    m80()
+        .args(quickstart_no_run_args(&tarball, &paths))
+        .assert()
+        .success();
+
+    let profile = read_toml(&paths.profile_dir.join("default.toml"));
+    assert_eq!(toml_str(&profile, "kernel_kind"), "stripped");
+}
+
+#[test]
+fn quickstart_overwrites_stale_profile_and_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball(&dir);
+    let paths = install_paths(&dir, "stale");
+    std::fs::create_dir_all(&paths.profile_dir).unwrap();
+    std::fs::write(paths.profile_dir.join("default.toml"), "stale = true\n").unwrap();
+    std::fs::write(
+        &paths.config_path,
+        "default_profile = \"old\"\nrun_root = \"/old\"\n",
+    )
+    .unwrap();
+
+    m80()
+        .args(quickstart_no_run_args(&tarball, &paths))
+        .assert()
+        .success();
+
+    let profile_text = std::fs::read_to_string(paths.profile_dir.join("default.toml")).unwrap();
+    assert!(!profile_text.contains("stale = true"));
+    let profile = profile_text.parse::<toml::Value>().unwrap();
+    assert_eq!(
+        toml_str(&profile, "artifact_dir"),
+        paths.dst.to_str().unwrap()
+    );
+    let config = read_toml(&paths.config_path);
+    assert_eq!(toml_str(&config, "default_profile"), "default");
+    assert_eq!(
+        toml_str(&config, "run_root"),
+        paths.run_root.to_str().unwrap()
+    );
+}
+
+#[test]
+fn quickstart_rolls_back_previous_profile_when_config_write_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball(&dir);
+    let mut paths = install_paths(&dir, "rollback");
+    std::fs::create_dir_all(&paths.profile_dir).unwrap();
+    let profile_path = paths.profile_dir.join("default.toml");
+    let stale_profile = "kernel_image = \"/old/vmlinux\"\nrootfs_image = \"/old/rootfs.ext4\"\n";
+    std::fs::write(&profile_path, stale_profile).unwrap();
+    paths.config_path = dir.path().join("rollback-config-dir");
+    std::fs::create_dir(&paths.config_path).unwrap();
+
+    let output = m80()
+        .args(quickstart_no_run_args(&tarball, &paths))
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert_eq!(
+        std::fs::read_to_string(profile_path).unwrap(),
+        stale_profile
+    );
+}
+
+#[test]
+fn quickstart_rolls_back_symlinked_profile_target_when_config_write_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball(&dir);
+    let mut paths = install_paths(&dir, "symlink-rollback");
+    std::fs::create_dir_all(&paths.profile_dir).unwrap();
+    let profile_path = paths.profile_dir.join("default.toml");
+    let profile_target = paths.profile_dir.join("default-target.toml");
+    let stale_profile = "kernel_image = \"/old/vmlinux\"\nrootfs_image = \"/old/rootfs.ext4\"\n";
+    std::fs::write(&profile_target, stale_profile).unwrap();
+    std::os::unix::fs::symlink("default-target.toml", &profile_path).unwrap();
+    paths.config_path = dir.path().join("symlink-rollback-config-dir");
+    std::fs::create_dir(&paths.config_path).unwrap();
+
+    let output = m80()
+        .args(quickstart_no_run_args(&tarball, &paths))
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert_eq!(
+        std::fs::read_to_string(profile_target).unwrap(),
+        stale_profile
+    );
+    assert_eq!(
+        std::fs::read_link(profile_path).unwrap(),
+        std::path::PathBuf::from("default-target.toml")
+    );
+}
+
+#[test]
+fn quickstart_rejects_unknown_existing_config_key_before_profile_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let tarball = write_release_tarball(&dir);
+    let paths = install_paths(&dir, "bad-config");
+    std::fs::create_dir_all(&paths.profile_dir).unwrap();
+    let profile_path = paths.profile_dir.join("default.toml");
+    let stale_profile = "kernel_image = \"/old/vmlinux\"\nrootfs_image = \"/old/rootfs.ext4\"\n";
+    std::fs::write(&profile_path, stale_profile).unwrap();
+    std::fs::write(&paths.config_path, "unknown_key = true\n").unwrap();
+
+    let output = m80()
+        .args(quickstart_no_run_args(&tarball, &paths))
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unknown config key"),
+        "quickstart should report the config key that would make the next run fail; stderr={stderr}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(profile_path).unwrap(),
+        stale_profile
+    );
+}
+
+#[test]
 fn quickstart_json_no_run_keeps_stdout_machine_readable() {
     let dir = tempfile::tempdir().unwrap();
     let tarball = write_release_tarball(&dir);
-    let dst = dir.path().join("json-dst");
-    let run_root = dir.path().join("json-run");
+    let paths = install_paths(&dir, "json");
 
     let output = m80()
-        .args([
-            "--json",
-            "quickstart",
-            "--artifact-url",
-            &format!("file://{}", tarball.display()),
-            "--artifact-dir",
-            dst.to_str().unwrap(),
-            "--run-root",
-            run_root.to_str().unwrap(),
-            "--no-run",
-        ])
+        .arg("--json")
+        .args(quickstart_no_run_args(&tarball, &paths))
         .output()
         .unwrap();
     assert!(
@@ -300,7 +564,15 @@ fn quickstart_json_no_run_keeps_stdout_machine_readable() {
     assert_eq!(value["data"]["ran_probe"], false);
     assert_eq!(
         value["data"]["artifact_dir"].as_str(),
-        Some(dst.to_str().unwrap())
+        Some(paths.dst.to_str().unwrap())
+    );
+    assert_eq!(
+        value["data"]["profile_path"].as_str(),
+        Some(paths.profile_dir.join("default.toml").to_str().unwrap())
+    );
+    assert_eq!(
+        value["data"]["config_path"].as_str(),
+        Some(paths.config_path.to_str().unwrap())
     );
 }
 

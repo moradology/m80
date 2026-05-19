@@ -13,6 +13,11 @@ use m80_image_manifest::{
 use crate::args::QuickstartArgs;
 use crate::errors;
 use crate::json;
+use crate::release::VersionIdentity;
+
+mod profile_writer;
+
+use profile_writer::{write_installed_default_profile, InstalledDefaultProfile};
 
 const REQUIRED_ARTIFACTS: &[&str] = &[
     "vmlinux",
@@ -23,6 +28,27 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
 ];
 const FORBIDDEN_ARTIFACTS: &[&str] = &["host-binaries.manifest.json"];
 const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
+const RUN_ECHO_PROBE_ENV_REMOVALS: &[&str] = &[
+    "M80_ARTIFACT_DIR",
+    "M80_KERNEL_IMAGE",
+    "M80_ROOTFS_IMAGE",
+    "M80_KERNEL_KIND",
+    "M80_RUN_ROOT",
+    "M80_DEFAULT_PROFILE",
+    "M80_MAX_CONCURRENT_VMS",
+    "M80_JAIL_UID",
+    "M80_JAIL_GID",
+    "M80_CGROUP_MODE",
+    "M80_FIRECRACKER_BIN",
+    "M80_FIRECRACKER_VERSION",
+    "M80_FIRECRACKER_SECCOMP_FILTER",
+    "M80_JAILER_BIN",
+    "M80_JAILER_HARDEN_BIN",
+    "M80_NET_HELPER_BIN",
+    "M80_SKIP_CHECK_VULNERABILITIES",
+    "M80_FORCE_PREFLIGHT",
+    "M80_PHASE_TRACE",
+];
 
 pub(crate) fn cmd_quickstart(args: QuickstartArgs, json_output: bool) -> anyhow::Result<i32> {
     if json_output && !args.no_run {
@@ -33,14 +59,25 @@ pub(crate) fn cmd_quickstart(args: QuickstartArgs, json_output: bool) -> anyhow:
         });
         return Ok(errors::render_error(&err, json_output));
     }
+    if !args.no_run && (args.profile_dir.is_some() || args.config_path.is_some()) {
+        let err = FcError::Config(m80_firecracker::ConfigError::InvalidValue {
+            field: "quickstart install-root override",
+            reason: "--profile-dir and --config-path are only supported with --no-run; the runnable probe reads the host /etc/m80 config/profile locations".to_owned(),
+        });
+        return Ok(errors::render_error(&err, json_output));
+    }
 
     let artifact_dir = args.artifact_dir.unwrap_or_else(default_artifact_dir);
     let run_root = args.run_root.unwrap_or_else(default_run_root);
+    let profile_dir = args.profile_dir.unwrap_or_else(default_profile_dir);
+    let config_path = args.config_path.unwrap_or_else(default_config_path);
 
     match run_quickstart(
         &args.artifact_url,
         &artifact_dir,
         &run_root,
+        &profile_dir,
+        &config_path,
         args.no_run,
         json_output,
     ) {
@@ -63,6 +100,8 @@ pub(crate) fn cmd_quickstart(args: QuickstartArgs, json_output: bool) -> anyhow:
 struct QuickstartSummary {
     artifact_dir: PathBuf,
     run_root: PathBuf,
+    profile_path: PathBuf,
+    config_path: PathBuf,
     ran_probe: bool,
 }
 
@@ -70,9 +109,16 @@ fn run_quickstart(
     artifact_url: &str,
     artifact_dir: &Path,
     run_root: &Path,
+    profile_dir: &Path,
+    config_path: &Path,
     no_run: bool,
     json_output: bool,
 ) -> Result<QuickstartSummary, FcError> {
+    require_absolute_path("artifact_dir", artifact_dir)?;
+    require_absolute_path("run_root", run_root)?;
+    require_absolute_path("profile_dir", profile_dir)?;
+    require_absolute_path("config_path", config_path)?;
+
     let temp = TempTree::new()?;
     let tarball = temp.path().join("artifacts.tar.gz");
     let tarball_checksum = temp.path().join("artifacts.tar.gz.sha256");
@@ -197,16 +243,43 @@ fn run_quickstart(
         vec![manifest_transform, receipt_transform],
     )?;
 
+    let host_binaries_manifest = artifact_dir.join("host-binaries.manifest.json");
     if !no_run {
         write_host_binaries_manifest_for_probe(artifact_dir)?;
-        run_echo_probe(artifact_dir, run_root)?;
+    }
+    let profile_path = write_installed_default_profile(InstalledDefaultProfile {
+        artifact_dir,
+        run_root,
+        profile_dir,
+        config_path,
+        release_tag: release_tag_from_artifact_url(artifact_url),
+        m80_version: VersionIdentity::current().binary_version,
+        host_binaries_manifest: &host_binaries_manifest,
+    })?;
+
+    if !no_run {
+        run_echo_probe()?;
     }
 
     Ok(QuickstartSummary {
         artifact_dir: artifact_dir.to_path_buf(),
         run_root: run_root.to_path_buf(),
+        profile_path,
+        config_path: config_path.to_path_buf(),
         ran_probe: !no_run,
     })
+}
+
+fn require_absolute_path(field: &'static str, path: &Path) -> Result<(), FcError> {
+    if path.is_absolute() {
+        return Ok(());
+    }
+    Err(FcError::Config(
+        m80_firecracker::ConfigError::InvalidValue {
+            field,
+            reason: format!("{field} must be an absolute path, got {}", path.display()),
+        },
+    ))
 }
 
 fn artifact_checksum_url(artifact_url: &str) -> String {
@@ -471,19 +544,15 @@ fn write_host_binaries_manifest_for_probe(artifact_dir: &Path) -> Result<(), FcE
     Ok(())
 }
 
-fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {
+fn run_echo_probe() -> Result<(), FcError> {
     let current = std::env::current_exe()
         .map_err(|source| crate::errors::host_io("resolve current executable", source))?;
-    let status = Command::new(current)
-        .arg("run")
-        .arg("--egress")
-        .arg("none")
-        .arg("--")
-        .arg("echo")
-        .arg("hello")
-        .env("M80_KERNEL_IMAGE", artifact_dir.join("vmlinux"))
-        .env("M80_ROOTFS_IMAGE", artifact_dir.join("output.ext4"))
-        .env("M80_RUN_ROOT", run_root)
+    let mut command = Command::new(current);
+    command.arg("run").arg("--").arg("echo").arg("hello");
+    for key in RUN_ECHO_PROBE_ENV_REMOVALS {
+        command.env_remove(key);
+    }
+    let status = command
         .status()
         .map_err(|source| FcError::CommandSpawnFailed {
             command: "m80 run -- echo hello",
@@ -497,6 +566,41 @@ fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RUN_ECHO_PROBE_ENV_REMOVALS;
+
+    #[test]
+    fn echo_probe_scrubs_runtime_env_overrides() {
+        for key in [
+            "M80_ARTIFACT_DIR",
+            "M80_KERNEL_IMAGE",
+            "M80_ROOTFS_IMAGE",
+            "M80_KERNEL_KIND",
+            "M80_RUN_ROOT",
+            "M80_DEFAULT_PROFILE",
+            "M80_MAX_CONCURRENT_VMS",
+            "M80_JAIL_UID",
+            "M80_JAIL_GID",
+            "M80_CGROUP_MODE",
+            "M80_FIRECRACKER_BIN",
+            "M80_FIRECRACKER_VERSION",
+            "M80_FIRECRACKER_SECCOMP_FILTER",
+            "M80_JAILER_BIN",
+            "M80_JAILER_HARDEN_BIN",
+            "M80_NET_HELPER_BIN",
+            "M80_SKIP_CHECK_VULNERABILITIES",
+            "M80_FORCE_PREFLIGHT",
+            "M80_PHASE_TRACE",
+        ] {
+            assert!(
+                RUN_ECHO_PROBE_ENV_REMOVALS.contains(&key),
+                "quickstart probe must remove ambient {key}"
+            );
+        }
+    }
 }
 
 fn run_status(cmd: &mut Command, label: &str) -> Result<(), FcError> {
@@ -580,26 +684,18 @@ fn summary_json(summary: &QuickstartSummary) -> String {
         "manifest": manifest.display().to_string(),
         "guestd": guestd.display().to_string(),
         "run_root": summary.run_root.display().to_string(),
+        "profile_path": summary.profile_path.display().to_string(),
+        "config_path": summary.config_path.display().to_string(),
         "ran_probe": summary.ran_probe,
     });
     json::to_pretty(&obj)
 }
 
 fn print_next_steps(summary: &QuickstartSummary) {
-    let kernel = summary.artifact_dir.join("vmlinux");
-    let rootfs = summary.artifact_dir.join("output.ext4");
-    let run_root = &summary.run_root;
     eprintln!(
-        "\nNext:\n  M80_KERNEL_IMAGE={} M80_ROOTFS_IMAGE={} M80_RUN_ROOT={} m80 run --workspace . --cwd /workspace -- ls\n  M80_KERNEL_IMAGE={} M80_ROOTFS_IMAGE={} M80_RUN_ROOT={} m80 run --egress none -- echo isolated\n  M80_KERNEL_IMAGE={} M80_ROOTFS_IMAGE={} M80_RUN_ROOT={} m80 run -it --workspace . -- sh",
-        kernel.display(),
-        rootfs.display(),
-        run_root.display(),
-        kernel.display(),
-        rootfs.display(),
-        run_root.display(),
-        kernel.display(),
-        rootfs.display(),
-        run_root.display(),
+        "default profile: {}\nconfig: {}\n\nNext:\n  m80 run --workspace . --cwd /workspace -- ls\n  m80 run --egress none -- echo isolated\n  m80 run -it --workspace . -- sh",
+        summary.profile_path.display(),
+        summary.config_path.display(),
     );
 }
 
@@ -609,6 +705,14 @@ fn default_artifact_dir() -> PathBuf {
 
 fn default_run_root() -> PathBuf {
     env_path("M80_RUN_ROOT", "/var/run/m80")
+}
+
+fn default_profile_dir() -> PathBuf {
+    PathBuf::from("/etc/m80/profiles")
+}
+
+fn default_config_path() -> PathBuf {
+    PathBuf::from("/etc/m80/config.toml")
 }
 
 fn env_path(key: &str, default: &str) -> PathBuf {

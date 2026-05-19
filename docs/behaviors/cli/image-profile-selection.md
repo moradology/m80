@@ -26,6 +26,9 @@ m80 run --profile dev -- python -V
 If `--profile` is absent, the `default_profile` config field is used. Its
 built-in value is `env`; it can be set in config files, with
 `M80_DEFAULT_PROFILE`, or by the `--profile` flag for one run.
+`m80 quickstart` sets the host default to the installed profile named `default`;
+that generated profile is described in
+`docs/behaviors/cli/installed-default-profile.md`.
 
 ## Profile Files
 
@@ -40,22 +43,42 @@ traversal and absolute path spelling fail as config errors.
 Profile TOML schema:
 
 ```toml
+artifact_dir = "/opt/m80/images/python" # optional
 kernel_image = "/opt/m80/images/python/vmlinux-stripped"
 rootfs_image = "/opt/m80/images/python/rootfs.ext4"
 kernel_kind = "stripped" # optional: stock|stripped
+guestd = "/opt/m80/images/python/m80-guestd" # optional
+guest_manifest = "/opt/m80/images/python/output.ext4.manifest.json" # optional
+build_receipt = "/opt/m80/images/python/output.ext4.build-receipt.json" # optional
+install_provenance = "/opt/m80/images/python/install-provenance.json" # optional
+host_binaries_manifest = "/opt/m80/images/python/host-binaries.manifest.json" # optional
+firecracker_bin = "/opt/firecracker/bin/firecracker" # optional
+firecracker_seccomp_filter = "/opt/firecracker/bin/firecracker-seccomp-filter.bin" # optional
+jailer_bin = "/opt/firecracker/bin/jailer" # optional
+jailer_harden_bin = "/opt/m80/bin/m80-jailer-harden" # optional
+net_helper_bin = "/opt/m80/bin/m80-net-helper" # optional
+run_root = "/var/run/m80" # optional metadata; installed config supplies runtime run_root
+release_tag = "v0.1.0" # optional
+m80_version = "v0.1.0" # optional
 description = "Python tool image" # optional operator-facing text
 ```
 
-`kernel_image` and `rootfs_image` must be absolute host paths. Unknown TOML keys
-fail closed. `m80` does not create missing files, pull images, or silently fall
-back to another profile.
+All profile paths must be absolute host paths. Unknown TOML keys fail closed.
+`m80` does not create missing files, pull images, or silently fall back to
+another profile.
 
 During backend construction, the resolved profile overlays the boot-artifact
-environment variables for the preflight call:
+and host-helper environment variables for the preflight call:
 
+- `M80_ARTIFACT_DIR`
 - `M80_KERNEL_IMAGE`
 - `M80_ROOTFS_IMAGE`
 - `M80_KERNEL_KIND` when present in the profile
+- `M80_FIRECRACKER_BIN`
+- `M80_FIRECRACKER_SECCOMP_FILTER`
+- `M80_JAILER_BIN`
+- `M80_JAILER_HARDEN_BIN`
+- `M80_NET_HELPER_BIN`
 
 The overlay is process-local and restored after preflight. This is the fixture
 proof that selected profiles reach the same boot-artifact resolution path as

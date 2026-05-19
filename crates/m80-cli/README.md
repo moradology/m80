@@ -46,8 +46,9 @@ binaries, pull OCI images, or install packages implicitly.
   extracted `SHA256SUMS`, installs the kernel/rootfs/manifest/guestd artifacts,
   rejects bundled host-binaries manifests, checks the non-mutating host
   substrate before changing active artifacts when the probe will run, generates
-  the installed host manifest from final host TCB paths before the probe, and
-  runs `m80 run -- echo hello` unless `--no-run` is set. `--json` requires
+  the installed default runtime profile/config, generates the installed host
+  manifest from final host TCB paths before the probe, and runs plain
+  `m80 run -- echo hello` unless `--no-run` is set. `--json` requires
   `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
   `--no-run` does not prove host substrate readiness or real-KVM launch.
 - `m80 config show` - prints the merged effective config and labels each field's
@@ -97,6 +98,8 @@ Output and error behavior is captured in
 `docs/behaviors/cli/output-and-errors.md`.
 Image/profile selection is captured in
 `docs/behaviors/cli/image-profile-selection.md`.
+Installed default profile generation is captured in
+`docs/behaviors/cli/installed-default-profile.md`.
 CLI egress policy is captured in `docs/behaviors/cli/egress-policy.md`.
 Warm lifetime semantics are captured in
 `docs/behaviors/cli/warm-lifetime.md`.
@@ -135,9 +138,10 @@ Snapshot-template command behavior is captured in
 ### `m80 run` options
 
 - `--profile <name>` - selects a local runtime profile for this run. The
-  built-in `env` profile uses the existing `M80_KERNEL_IMAGE` /
-  `M80_ROOTFS_IMAGE` artifact discovery path. Named profiles are TOML files at
-  `/etc/m80/profiles/<name>.toml` or
+  installed default profile points at the quickstart-installed bundle. The
+  built-in `env` profile remains available for the existing `M80_KERNEL_IMAGE`
+  / `M80_ROOTFS_IMAGE` artifact discovery path. Named profiles are TOML files
+  at `/etc/m80/profiles/<name>.toml` or
   `~/.config/m80/profiles/<name>.toml`.
 - `--workspace <path>` - makes a host workspace visible to the guest.
 - `--cwd <path>` - sets the guest process working directory.

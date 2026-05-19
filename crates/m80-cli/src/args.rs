@@ -449,6 +449,14 @@ pub struct QuickstartArgs {
     #[arg(long = "run-root", value_name = "PATH")]
     pub run_root: Option<PathBuf>,
 
+    /// Runtime profile directory override for install-root fixtures.
+    #[arg(long = "profile-dir", value_name = "PATH", hide = true)]
+    pub profile_dir: Option<PathBuf>,
+
+    /// m80 config file path override for install-root fixtures.
+    #[arg(long = "config-path", value_name = "PATH", hide = true)]
+    pub config_path: Option<PathBuf>,
+
     /// Install and verify artifacts but do not run echo.
     #[arg(long = "no-run")]
     pub no_run: bool,
