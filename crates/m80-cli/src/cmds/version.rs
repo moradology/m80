@@ -1,4 +1,5 @@
 use crate::json;
+use crate::release::VersionIdentity;
 
 /// `m80 version` — print version strings.
 ///
@@ -7,21 +8,32 @@ use crate::json;
 /// If the manifest can't be read, the Firecracker pin renders as
 /// `"unknown"` rather than failing the subcommand.
 pub(super) fn cmd_version(json_mode: bool) -> anyhow::Result<i32> {
-    let binary_version = env!("CARGO_PKG_VERSION");
+    let identity = VersionIdentity::current();
     let protocol_version = m80_proto::PROTOCOL_VERSION;
     let firecracker_pin = read_firecracker_pin();
 
     if json_mode {
         let obj = serde_json::json!({
-            "binary_version": binary_version,
+            "binary_version": identity.binary_version,
+            "package_version": identity.package_version,
+            "release_tag": identity.release_tag,
+            "release_build": identity.release_build,
+            "version_status": identity.version_status,
+            "expected_release_tag": identity.expected_release_tag,
             "protocol_version": protocol_version,
             "firecracker_pin": firecracker_pin,
         });
         println!("{}", json::to_pretty(&obj));
     } else {
-        println!("m80           {binary_version}");
-        println!("protocol      {protocol_version}");
-        println!("firecracker   {firecracker_pin}");
+        println!("m80             {}", identity.binary_version);
+        println!("package         {}", identity.package_version);
+        println!(
+            "release         {}",
+            identity.release_tag.as_deref().unwrap_or("unreleased")
+        );
+        println!("version_status  {}", identity.version_status.as_str());
+        println!("protocol        {protocol_version}");
+        println!("firecracker     {firecracker_pin}");
     }
 
     Ok(0)

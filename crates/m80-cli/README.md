@@ -75,7 +75,10 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 warm` - explicit warm-sandbox owner control. Foreground owner mode is
   implemented with `enable --foreground`, `status`, `drain`, and `disable`;
   packaged system service mode remains reserved.
-- `m80 version` - prints binary version, protocol version, and Firecracker pin.
+- `m80 version` - prints release identity, package version, protocol version,
+  and Firecracker pin. Dev builds render as `<package-version>-dev`; release
+  packaging injects `M80_RELEASE_TAG`, and the CLI exposes whether that tag
+  matches the expected `v<package-version>` release.
 
 Removed VM-front-door commands are not aliases: `launch`, out-of-process `exec`,
 foreground `stop`, and `snapshot capture` are not accepted by the clap surface.

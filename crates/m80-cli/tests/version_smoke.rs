@@ -10,13 +10,28 @@ fn version_exits_zero() {
 }
 
 #[test]
+fn clap_version_marks_dev_build() {
+    let output = m80().arg("--version").output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("-dev"),
+        "plain workspace build must be visibly unreleased: {stdout}"
+    );
+}
+
+#[test]
 fn version_prints_binary_version() {
     let output = m80().arg("version").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Must mention the crate version (0.0.0 in this workspace).
+    // Must mention the dev-marked crate version (0.0.0-dev in this workspace).
     assert!(
-        stdout.contains("0.0.0") || stdout.contains("m80"),
+        stdout.contains("0.0.0-dev") || stdout.contains("m80"),
         "version output should mention binary version: {stdout}"
+    );
+    assert!(
+        stdout.contains("release         unreleased"),
+        "dev build must not look like a release: {stdout}"
     );
 }
 
@@ -35,4 +50,10 @@ fn version_json_has_fields() {
         v["data"].get("protocol_version").is_some(),
         "missing protocol_version field: {v}"
     );
+    assert_eq!(v["data"]["binary_version"], "0.0.0-dev");
+    assert_eq!(v["data"]["package_version"], "0.0.0");
+    assert_eq!(v["data"]["release_build"], false);
+    assert_eq!(v["data"]["release_tag"], serde_json::Value::Null);
+    assert_eq!(v["data"]["version_status"], "dev");
+    assert_eq!(v["data"]["expected_release_tag"], "v0.0.0");
 }

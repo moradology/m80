@@ -17,7 +17,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
     about = "Run a process with a constrained view of the host",
     long_about = None
 )]
-#[command(version)]
+#[command(version = crate::release::DISPLAY_VERSION)]
 pub struct Cli {
     /// Emit machine-readable JSON instead of human-friendly text.
     #[arg(long, global = true)]

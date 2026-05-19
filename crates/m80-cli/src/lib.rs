@@ -16,6 +16,7 @@ mod config;
 mod errors;
 mod json;
 mod profile;
+mod release;
 mod request_id;
 
 pub use args::{
