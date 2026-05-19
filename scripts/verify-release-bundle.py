@@ -12,6 +12,9 @@ import tomllib
 
 
 BUNDLE_SCHEMA_VERSION = 1
+BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
+METADATA_NAME = "m80-linux-x86_64.bundle.json"
+INSTALL_NAME = "install.sh"
 PAYLOAD_PATHS = {
     "bin/m80",
     "bin/m80-jailer-harden",
@@ -25,6 +28,19 @@ PAYLOAD_PATHS = {
 }
 REQUIRED_PATHS = PAYLOAD_PATHS | {"bundle.json", "SHA256SUMS"}
 FORBIDDEN_PATHS = {"artifacts/host-binaries.manifest.json"}
+EXPECTED_MODES = {
+    "bin/m80": 0o755,
+    "bin/m80-jailer-harden": 0o755,
+    "bin/m80-net-helper": 0o755,
+    "artifacts/vmlinux": 0o644,
+    "artifacts/output.ext4": 0o644,
+    "artifacts/output.ext4.manifest.json": 0o644,
+    "artifacts/output.ext4.build-receipt.json": 0o644,
+    "artifacts/m80-guestd": 0o644,
+    "install.sh": 0o755,
+    "bundle.json": 0o644,
+    "SHA256SUMS": 0o644,
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,6 +50,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target", default="linux-x86_64")
     parser.add_argument("--image-kind", default="minimal")
     parser.add_argument("--repo-root", default=Path.cwd(), type=Path)
+    parser.add_argument(
+        "--verify-sidecars",
+        action="store_true",
+        help="verify adjacent public release sidecars emitted by package-release-bundle.py",
+    )
     return parser.parse_args()
 
 
@@ -51,8 +72,16 @@ def main() -> int:
     require(not missing, f"bundle missing required paths: {', '.join(missing)}")
     forbidden = sorted(FORBIDDEN_PATHS & paths)
     require(not forbidden, f"bundle contains install-time-only paths: {', '.join(forbidden)}")
+    unexpected = sorted(paths - REQUIRED_PATHS)
+    require(not unexpected, f"bundle contains unexpected paths: {', '.join(unexpected)}")
+    for path, expected_mode in EXPECTED_MODES.items():
+        actual_mode = files[path]["mode"]
+        require(
+            actual_mode == expected_mode,
+            f"bundle mode mismatch for {path}: expected {expected_mode:o}, got {actual_mode:o}",
+        )
 
-    metadata = json.loads(files["bundle.json"].decode("utf-8"))
+    metadata = json.loads(files["bundle.json"]["data"].decode("utf-8"))
     require(metadata.get("schema_version") == BUNDLE_SCHEMA_VERSION, "unsupported bundle schema_version")
     require(metadata.get("release_tag") == args.release_tag, "bundle release_tag mismatch")
     require(metadata.get("m80_version") == args.release_tag, "bundle m80_version mismatch")
@@ -66,31 +95,33 @@ def main() -> int:
     metadata_files = metadata_file_map(metadata)
     require(set(metadata_files) == PAYLOAD_PATHS, "bundle metadata file set mismatch")
     for path, expected in metadata_files.items():
-        actual = sha256_bytes(files[path])
+        actual = sha256_bytes(files[path]["data"])
         require(actual == expected, f"bundle metadata hash mismatch for {path}")
 
-    sums = parse_sha256s(files["SHA256SUMS"].decode("utf-8"))
+    sums = parse_sha256s(files["SHA256SUMS"]["data"].decode("utf-8"))
     require(set(sums) == PAYLOAD_PATHS | {"bundle.json"}, "SHA256SUMS file set mismatch")
     for path, expected in sums.items():
-        actual = sha256_bytes(files[path])
+        actual = sha256_bytes(files[path]["data"])
         require(actual == expected, f"SHA256SUMS hash mismatch for {path}")
+
+    if args.verify_sidecars:
+        verify_sidecars(args.bundle, files["bundle.json"]["data"])
 
     print(f"verified {args.bundle}")
     return 0
 
 
-def read_regular_files(tar: tarfile.TarFile) -> dict[str, bytes]:
-    files: dict[str, bytes] = {}
+def read_regular_files(tar: tarfile.TarFile) -> dict[str, dict]:
+    files: dict[str, dict] = {}
     for member in tar.getmembers():
         name = member.name
         require(not name.startswith("/"), f"bundle path must be relative: {name}")
         require(".." not in Path(name).parts, f"bundle path must not escape root: {name}")
-        if not member.isfile():
-            continue
+        require(member.isfile(), f"bundle contains non-file entry: {name}")
         require(name not in files, f"bundle duplicate path: {name}")
         extracted = tar.extractfile(member)
         require(extracted is not None, f"bundle member unreadable: {name}")
-        files[name] = extracted.read()
+        files[name] = {"data": extracted.read(), "mode": member.mode & 0o777}
     return files
 
 
@@ -121,6 +152,50 @@ def parse_sha256s(text: str) -> dict[str, str]:
     return result
 
 
+def verify_sidecars(bundle: Path, bundle_metadata: bytes) -> None:
+    sidecar_dir = bundle.parent
+    require(bundle.name == BUNDLE_NAME, f"bundle filename mismatch: expected {BUNDLE_NAME}, got {bundle.name}")
+    install_asset = sidecar_dir / INSTALL_NAME
+    metadata_asset = sidecar_dir / METADATA_NAME
+    public_sums = sidecar_dir / "SHA256SUMS"
+    require(install_asset.is_file(), f"missing public sidecar: {INSTALL_NAME}")
+    require(metadata_asset.is_file(), f"missing public sidecar: {METADATA_NAME}")
+    require(public_sums.is_file(), "missing public sidecar: SHA256SUMS")
+    verify_public_mode(bundle, 0o644)
+    verify_public_mode(install_asset, 0o755)
+    verify_public_mode(metadata_asset, 0o644)
+    verify_public_mode(public_sums, 0o644)
+    require(metadata_asset.read_bytes() == bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
+
+    expected_assets = {
+        BUNDLE_NAME: bundle,
+        INSTALL_NAME: install_asset,
+        METADATA_NAME: metadata_asset,
+    }
+    for name, path in expected_assets.items():
+        verify_single_sha256(sidecar_dir / f"{name}.sha256", name, path)
+
+    sums = parse_sha256s(public_sums.read_text())
+    require(set(sums) == set(expected_assets), "public SHA256SUMS file set mismatch")
+    for name, path in expected_assets.items():
+        require(sums[name] == sha256_file(path), f"public SHA256SUMS hash mismatch for {name}")
+
+
+def verify_single_sha256(sidecar: Path, expected_name: str, asset: Path) -> None:
+    require(sidecar.is_file(), f"missing checksum sidecar: {sidecar.name}")
+    verify_public_mode(sidecar, 0o644)
+    sums = parse_sha256s(sidecar.read_text())
+    require(sums == {expected_name: sha256_file(asset)}, f"checksum sidecar mismatch for {expected_name}")
+
+
+def verify_public_mode(path: Path, expected_mode: int) -> None:
+    actual_mode = path.stat().st_mode & 0o777
+    require(
+        actual_mode == expected_mode,
+        f"public sidecar mode mismatch for {path.name}: expected {expected_mode:o}, got {actual_mode:o}",
+    )
+
+
 def workspace_package_version(repo_root: Path) -> str:
     with (repo_root / "Cargo.toml").open("rb") as f:
         cargo = tomllib.load(f)
@@ -129,6 +204,14 @@ def workspace_package_version(repo_root: Path) -> str:
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def require(condition: bool, message: str) -> None:

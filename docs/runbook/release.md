@@ -64,5 +64,11 @@ Verify a produced bundle before upload:
 ```sh
 scripts/verify-release-bundle.py \
   /tmp/m80-release-bundle/m80-linux-x86_64.tar.gz \
-  --release-tag "$M80_RELEASE_TAG"
+  --release-tag "$M80_RELEASE_TAG" \
+  --verify-sidecars
 ```
+
+The package step emits a deterministic tarball, checksum sidecars, an
+inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, and a public
+`SHA256SUMS` for the tarball, installer, and metadata sidecar. The exact builder
+contract is captured in `docs/behaviors/release/bundle-builder.md`.

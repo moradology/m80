@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
+import io
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -17,6 +18,21 @@ import tomllib
 
 BUNDLE_SCHEMA_VERSION = 1
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
+METADATA_NAME = "m80-linux-x86_64.bundle.json"
+INSTALL_NAME = "install.sh"
+FILE_MODES = {
+    "bin/m80": 0o755,
+    "bin/m80-jailer-harden": 0o755,
+    "bin/m80-net-helper": 0o755,
+    "artifacts/vmlinux": 0o644,
+    "artifacts/output.ext4": 0o644,
+    "artifacts/output.ext4.manifest.json": 0o644,
+    "artifacts/output.ext4.build-receipt.json": 0o644,
+    "artifacts/m80-guestd": 0o644,
+    "install.sh": 0o755,
+    "bundle.json": 0o644,
+    "SHA256SUMS": 0o644,
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,12 +94,7 @@ def main() -> int:
             "install.sh": args.install_sh,
         }
         for rel, src in file_map.items():
-            copy_file(src, bundle_root / rel)
-
-        set_executable(bundle_root / "bin/m80")
-        set_executable(bundle_root / "bin/m80-jailer-harden")
-        set_executable(bundle_root / "bin/m80-net-helper")
-        set_executable(bundle_root / "install.sh")
+            copy_file(src, bundle_root / rel, FILE_MODES[rel])
 
         metadata = bundle_metadata(
             args=args,
@@ -94,19 +105,31 @@ def main() -> int:
         )
         metadata_path = bundle_root / "bundle.json"
         metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+        metadata_path.chmod(FILE_MODES["bundle.json"])
 
         sums = file_hashes(bundle_root)
         write_sha256s(bundle_root / "SHA256SUMS", sums)
+        (bundle_root / "SHA256SUMS").chmod(FILE_MODES["SHA256SUMS"])
 
         tarball = out_dir / BUNDLE_NAME
-        with tarfile.open(tarball, "w:gz") as tar:
-            for path in sorted(bundle_root.rglob("*")):
-                if path.is_file():
-                    tar.add(path, arcname=path.relative_to(bundle_root))
-        (out_dir / f"{BUNDLE_NAME}.sha256").write_text(
-            f"{sha256(tarball)}  {BUNDLE_NAME}\n"
+        write_deterministic_tar_gz(bundle_root, tarball)
+        tarball.chmod(0o644)
+        write_sha256_sidecar(out_dir / f"{BUNDLE_NAME}.sha256", tarball, BUNDLE_NAME)
+        install_asset = out_dir / INSTALL_NAME
+        copy_file(args.install_sh, install_asset, 0o755)
+        write_sha256_sidecar(out_dir / f"{INSTALL_NAME}.sha256", install_asset, INSTALL_NAME)
+        metadata_asset = out_dir / METADATA_NAME
+        shutil.copy2(metadata_path, metadata_asset)
+        metadata_asset.chmod(0o644)
+        write_sha256_sidecar(out_dir / f"{METADATA_NAME}.sha256", metadata_asset, METADATA_NAME)
+        write_public_sha256s(
+            out_dir / "SHA256SUMS",
+            [
+                (BUNDLE_NAME, tarball),
+                (INSTALL_NAME, install_asset),
+                (METADATA_NAME, metadata_asset),
+            ],
         )
-        shutil.copy2(args.install_sh, out_dir / "install.sh")
         print(tarball)
     return 0
 
@@ -136,14 +159,11 @@ def read_json(path: Path) -> dict:
         return json.load(f)
 
 
-def copy_file(src: Path, dest: Path) -> None:
+def copy_file(src: Path, dest: Path, mode: int) -> None:
     require(src.is_file(), f"missing required input: {src}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
-
-
-def set_executable(path: Path) -> None:
-    path.chmod(path.stat().st_mode | 0o755)
+    dest.chmod(mode)
 
 
 def file_hashes(root: Path) -> list[dict]:
@@ -182,6 +202,37 @@ def bundle_metadata(
 def write_sha256s(path: Path, rows: list[dict]) -> None:
     lines = [f"{row['sha256']}  {row['path']}\n" for row in rows]
     path.write_text("".join(lines))
+
+
+def write_sha256_sidecar(path: Path, asset: Path, asset_name: str) -> None:
+    path.write_text(f"{sha256(asset)}  {asset_name}\n")
+    path.chmod(0o644)
+
+
+def write_public_sha256s(path: Path, assets: list[tuple[str, Path]]) -> None:
+    lines = [f"{sha256(asset)}  {name}\n" for name, asset in assets]
+    path.write_text("".join(lines))
+    path.chmod(0o644)
+
+
+def write_deterministic_tar_gz(root: Path, tarball: Path) -> None:
+    with tarball.open("wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gzip_file:
+            with tarfile.open(fileobj=gzip_file, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+                for path in sorted(root.rglob("*")):
+                    if not path.is_file():
+                        continue
+                    rel = path.relative_to(root).as_posix()
+                    data = path.read_bytes()
+                    info = tarfile.TarInfo(rel)
+                    info.size = len(data)
+                    info.mode = FILE_MODES[rel]
+                    info.mtime = 0
+                    info.uid = 0
+                    info.gid = 0
+                    info.uname = ""
+                    info.gname = ""
+                    tar.addfile(info, io.BytesIO(data))
 
 
 def sha256(path: Path) -> str:

@@ -39,6 +39,11 @@ The metadata file set is the payload set: `bin/*`, `artifacts/*`, and
 `install.sh`. `SHA256SUMS` additionally covers `bundle.json` so the installed
 metadata bytes are checked before use.
 
+The release dist directory also publishes `m80-linux-x86_64.bundle.json` as a
+byte-identical metadata sidecar, checksum sidecars for public assets, and a
+public `SHA256SUMS` covering the tarball, installer, and metadata sidecar. See
+[`bundle-builder.md`](bundle-builder.md).
+
 Guest manifest and build-receipt bytes are release payloads. Installers must not
 rewrite them silently after bundle verification. If install-time relocation is
 needed, it must produce a separate installed-provenance record that names the
@@ -51,12 +56,15 @@ original hash, installed hash, path rewrite, and release tag. See
 
 - missing required paths;
 - duplicate tar entries;
+- unexpected tar entries;
 - install-time-only host-binaries manifests inside the bundle;
+- wrong file modes for required paths;
 - target or image-kind mismatch;
 - stale release tag, m80 version, or package version;
 - missing manifest/protocol/Firecracker metadata;
-- metadata or `SHA256SUMS` hash mismatch.
+- metadata or `SHA256SUMS` hash mismatch;
+- stale adjacent dist checksum sidecars when `--verify-sidecars` is set.
 
 `scripts/package-release-bundle.py` creates this shape from already-built
-inputs and refuses a binary whose `m80 --json version` identity does not match
-the release tag.
+inputs with deterministic tar metadata and refuses a binary whose
+`m80 --json version` identity does not match the release tag.
