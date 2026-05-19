@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{BufRead as _, BufReader, Read as _};
 use std::path::{Path, PathBuf};
@@ -147,7 +148,6 @@ pub(crate) fn cmd_run(
         });
         return Ok(errors::render_error(&e, json));
     }
-    let workspace_for_writeback = workspace.clone();
 
     let env = match build_process_env(&env, &secret_env) {
         Ok(env) => env,
@@ -177,6 +177,7 @@ pub(crate) fn cmd_run(
         Err(e) => return Ok(errors::render_error(&e, json)),
     };
 
+    let workspace_for_writeback = workspace.clone();
     let sandbox_config = sandbox_config_for_run(
         workspace,
         egress,
@@ -499,8 +500,8 @@ fn build_process_env(
 ) -> Result<Option<Vec<(String, String)>>, FcError> {
     let mut pairs = parse_env(values)?.unwrap_or_default();
     for key in secret_keys {
-        validate_secret_env_key(&key)?;
-        let os_val = std::env::var_os(&key).ok_or_else(|| {
+        validate_secret_env_key(key)?;
+        let os_val = std::env::var_os(key).ok_or_else(|| {
             FcError::Config(ConfigError::InvalidValue {
                 field: "secret_env",
                 reason: format!("secret env `{key}` is not set"),
@@ -738,13 +739,15 @@ pub(crate) fn cmd_config_show(json: bool) -> anyhow::Result<i32> {
 
 fn format_config_table(effective: &EffectiveConfig) -> String {
     let mut out = String::new();
-    out.push_str(&format!("{:<25} {:<20} SOURCE\n", "FIELD", "VALUE"));
-    out.push_str(&format!("{}\n", "-".repeat(60)));
+    writeln!(out, "{:<25} {:<20} SOURCE", "FIELD", "VALUE").unwrap();
+    writeln!(out, "{}", "-".repeat(60)).unwrap();
     for field in &effective.fields {
-        out.push_str(&format!(
-            "{:<25} {:<20} {:?}\n",
+        writeln!(
+            out,
+            "{:<25} {:<20} {:?}",
             field.name, field.value, field.source
-        ));
+        )
+        .unwrap();
     }
     out
 }

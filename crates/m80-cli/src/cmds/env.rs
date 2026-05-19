@@ -248,7 +248,7 @@ fn runtime_profile_dump(effective: Option<&EffectiveConfig>) -> RuntimeProfileDu
             description: profile.description,
             error: None,
         },
-        Err(e) => RuntimeProfileDump::error(format!("{e}")),
+        Err(e) => RuntimeProfileDump::error(e.to_string()),
     }
 }
 

@@ -4,6 +4,7 @@
 //! they walk `<run_root>/` on disk to discover VM state.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use m80_firecracker::{FcError, OWNERSHIP_LOCK};
@@ -112,8 +113,8 @@ fn inspect_output(run_root: &Path, vm_id: &str) -> Result<InspectOutput, FcError
 
 fn render_inspect_human(output: &InspectOutput) -> String {
     let mut out = String::new();
-    out.push_str(&format!("vm_id:    {}\n", output.vm_id));
-    out.push_str(&format!("run_dir:  {}\n", output.run_dir.display()));
+    writeln!(out, "vm_id:    {}", output.vm_id).unwrap();
+    writeln!(out, "run_dir:  {}", output.run_dir.display()).unwrap();
     out.push_str("files:\n");
     for name in &output.files {
         let detail = output
@@ -121,7 +122,7 @@ fn render_inspect_human(output: &InspectOutput) -> String {
             .get(name)
             .map(|v| format!("  {v}"))
             .unwrap_or_default();
-        out.push_str(&format!("  {name}{detail}\n"));
+        writeln!(out, "  {name}{detail}").unwrap();
     }
     if output.files.is_empty() {
         out.push_str("  (empty)\n");
@@ -201,15 +202,10 @@ fn list_entries(run_root: &Path) -> Result<Vec<ListEntry>, FcError> {
 fn render_list_human(run_root: &Path, entries: &[ListEntry]) -> String {
     let mut out = String::new();
     if entries.is_empty() {
-        out.push_str(&format!("(no VMs in {})\n", run_root.display()));
+        writeln!(out, "(no VMs in {})", run_root.display()).unwrap();
     }
     for e in entries {
-        out.push_str(&format!(
-            "{}  [{}]  {}\n",
-            e.vm_id,
-            e.state,
-            e.run_dir.display()
-        ));
+        writeln!(out, "{}  [{}]  {}", e.vm_id, e.state, e.run_dir.display()).unwrap();
     }
     out
 }

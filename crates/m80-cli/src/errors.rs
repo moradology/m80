@@ -101,7 +101,6 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
         | FcError::ArtifactMissing { .. }
         | FcError::WarmPoolFillFailed { .. }
         | FcError::WarmReadyProbeRejected { .. }
-        | FcError::WarmReadyProbeNoResult
         | FcError::WarmOwnerSocketExists { .. }
         | FcError::WarmOwnerNotAcceptingLeases
         | FcError::WarmOwnerDrainTimeout { .. }

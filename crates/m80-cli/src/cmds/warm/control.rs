@@ -124,7 +124,6 @@ pub(super) enum WarmErrorKind {
     ArtifactMissing,
     WarmPoolFillFailed,
     WarmReadyProbeRejected,
-    WarmReadyProbeNoResult,
     WarmOwnerSocketExists,
     WarmOwnerNotAcceptingLeases,
     WarmOwnerDrainTimeout,
@@ -183,7 +182,6 @@ impl WarmErrorKind {
             FcError::ArtifactMissing { .. } => Self::ArtifactMissing,
             FcError::WarmPoolFillFailed { .. } => Self::WarmPoolFillFailed,
             FcError::WarmReadyProbeRejected { .. } => Self::WarmReadyProbeRejected,
-            FcError::WarmReadyProbeNoResult => Self::WarmReadyProbeNoResult,
             FcError::WarmOwnerSocketExists { .. } => Self::WarmOwnerSocketExists,
             FcError::WarmOwnerNotAcceptingLeases => Self::WarmOwnerNotAcceptingLeases,
             FcError::WarmOwnerDrainTimeout { .. } => Self::WarmOwnerDrainTimeout,
@@ -238,7 +236,6 @@ impl WarmErrorKind {
             Self::ArtifactMissing => "ArtifactMissing",
             Self::WarmPoolFillFailed => "WarmPoolFillFailed",
             Self::WarmReadyProbeRejected => "WarmReadyProbeRejected",
-            Self::WarmReadyProbeNoResult => "WarmReadyProbeNoResult",
             Self::WarmOwnerSocketExists => "WarmOwnerSocketExists",
             Self::WarmOwnerNotAcceptingLeases => "WarmOwnerNotAcceptingLeases",
             Self::WarmOwnerDrainTimeout => "WarmOwnerDrainTimeout",
@@ -301,8 +298,13 @@ fn malformed_peer(context: &str, source: impl Display) -> FcError {
 fn connect_owner() -> Result<UnixStream, FcError> {
     let socket = status::socket_path()?;
     UnixStream::connect(&socket).map_err(|e| {
+        let context = if e.kind() == std::io::ErrorKind::NotFound {
+            "warm owner unavailable"
+        } else {
+            "connect warm owner"
+        };
         errors::host_io(
-            "connect warm owner",
+            context,
             std::io::Error::new(e.kind(), format!("{}: {e}", socket.display())),
         )
     })

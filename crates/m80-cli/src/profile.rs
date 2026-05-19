@@ -253,8 +253,6 @@ impl Drop for AppliedProfileEnv {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, OnceLock};
-
     use tempfile::TempDir;
 
     use super::*;
@@ -432,39 +430,14 @@ mod tests {
         );
     }
 
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
     #[test]
     fn profile_env_overlay_reaches_preflight_artifact_inputs() {
-        let _lock = env_lock().lock().unwrap();
-        struct RestoreEnv {
-            kernel: Option<OsString>,
-            rootfs: Option<OsString>,
-            kind: Option<OsString>,
-        }
-        impl Drop for RestoreEnv {
-            fn drop(&mut self) {
-                restore_key(ENV_KERNEL_IMAGE, &self.kernel);
-                restore_key(ENV_ROOTFS_IMAGE, &self.rootfs);
-                restore_key(ENV_KERNEL_KIND, &self.kind);
-            }
-        }
-        fn restore_key(key: &'static str, value: &Option<OsString>) {
-            if let Some(value) = value {
-                std::env::set_var(key, value);
-            } else {
-                std::env::remove_var(key);
-            }
-        }
-
-        let _restore = RestoreEnv {
-            kernel: std::env::var_os(ENV_KERNEL_IMAGE),
-            rootfs: std::env::var_os(ENV_ROOTFS_IMAGE),
-            kind: std::env::var_os(ENV_KERNEL_KIND),
-        };
+        let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+        let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+            ENV_KERNEL_IMAGE,
+            ENV_ROOTFS_IMAGE,
+            ENV_KERNEL_KIND,
+        ]);
         std::env::remove_var(ENV_KERNEL_IMAGE);
         std::env::remove_var(ENV_ROOTFS_IMAGE);
         std::env::remove_var(ENV_KERNEL_KIND);

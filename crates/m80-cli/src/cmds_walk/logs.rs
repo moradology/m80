@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -374,10 +375,12 @@ fn render_logs_human(output: &LogsOutput) -> String {
         let phase = record.phase.as_deref().unwrap_or("-");
         let request_id = record.request_id.as_deref().unwrap_or("-");
         let level = record.level.as_deref().unwrap_or("-");
-        out.push_str(&format!(
-            "[{source}] {timestamp} {phase} {request_id} {level} {}\n",
+        writeln!(
+            out,
+            "[{source}] {timestamp} {phase} {request_id} {level} {}",
             record.message
-        ));
+        )
+        .unwrap();
     }
     out
 }

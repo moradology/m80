@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 
@@ -285,18 +286,21 @@ pub(super) fn remove_owner_state() -> Result<(), FcError> {
 
 pub(super) fn format_human(status: &WarmStatus) -> String {
     let mut out = String::new();
-    out.push_str(&format!("owner: {}\n", status.owner.state));
+    writeln!(out, "owner: {}", status.owner.state).unwrap();
     if let Some(identity) = &status.owner.identity {
-        out.push_str(&format!("identity: {identity}\n"));
+        writeln!(out, "identity: {identity}").unwrap();
     }
-    out.push_str(&format!(
-        "profile: requested={} active={} compatible={}\n",
+    writeln!(
+        out,
+        "profile: requested={} active={} compatible={}",
         status.profile.requested,
         status.profile.active.as_deref().unwrap_or("-"),
         status.profile.compatible
-    ));
-    out.push_str(&format!(
-        "slots: target_ready={} ready={} filling={} leased={} discarded={} consecutive_fill_errors={} fill_attempts_total={} fill_failures_total={} lease_acquired_total={} lease_returned_total={}\n",
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "slots: target_ready={} ready={} filling={} leased={} discarded={} consecutive_fill_errors={} fill_attempts_total={} fill_failures_total={} lease_acquired_total={} lease_returned_total={}",
         status.slots.target_ready,
         status.slots.ready,
         status.slots.filling,
@@ -307,17 +311,19 @@ pub(super) fn format_human(status: &WarmStatus) -> String {
         status.slots.fill_failures_total,
         status.slots.lease_acquired_total,
         status.slots.lease_returned_total
-    ));
-    out.push_str(&format!(
-        "lifecycle: accepting_leases={} draining={}\n",
+    ).unwrap();
+    writeln!(
+        out,
+        "lifecycle: accepting_leases={} draining={}",
         status.lifecycle.accepting_leases, status.lifecycle.draining
-    ));
+    )
+    .unwrap();
     if let Some(err) = &status.last_error {
-        out.push_str(&format!("last_error: {}: {}\n", err.kind, err.detail));
+        writeln!(out, "last_error: {}: {}", err.kind, err.detail).unwrap();
     }
-    out.push_str(&format!("run_root: {}\n", status.paths.run_root));
+    writeln!(out, "run_root: {}", status.paths.run_root).unwrap();
     if let Some(socket) = &status.paths.socket {
-        out.push_str(&format!("socket: {socket}\n"));
+        writeln!(out, "socket: {socket}").unwrap();
     }
     out
 }

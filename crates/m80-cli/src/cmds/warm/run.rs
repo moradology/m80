@@ -1,6 +1,8 @@
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 
-use m80_firecracker::{FcError, WarmPool};
+use m80_firecracker::{FcError, WarmLease, WarmPool};
+use m80_proto::{ExecRequest, ExecResponse};
 
 use super::control::{
     self, WarmControlResponse, WarmErrorResponse, WarmRunResult, WarmStreamFrame,
@@ -17,6 +19,29 @@ pub(super) fn handle_run(
     request: ExecRequestJson,
     accepting_leases: bool,
 ) -> WarmControlResponse {
+    handle_run_with_pool(
+        pool,
+        identity,
+        profile,
+        egress,
+        request_id,
+        request,
+        accepting_leases,
+    )
+}
+
+fn handle_run_with_pool<P>(
+    pool: &P,
+    identity: &WarmOwnerIdentity,
+    profile: Option<String>,
+    egress: &str,
+    request_id: String,
+    request: ExecRequestJson,
+    accepting_leases: bool,
+) -> WarmControlResponse
+where
+    P: WarmRunPool,
+{
     if let Err(e) = validate_run_compatibility(identity, profile, egress, accepting_leases) {
         return WarmControlResponse::Error(WarmErrorResponse::from_error_with_request_id(
             &e,
@@ -60,6 +85,50 @@ pub(super) fn handle_run(
         discard_reason,
         run_dir,
     })
+}
+
+trait WarmRunPool {
+    type Lease: WarmRunLease;
+
+    fn try_lease(&self) -> Result<Self::Lease, FcError>;
+}
+
+trait WarmRunLease {
+    fn run_dir(&self) -> &Path;
+
+    fn exec_with_request_id(
+        &mut self,
+        request: ExecRequest,
+        request_id: String,
+    ) -> Result<ExecResponse, FcError>;
+
+    fn discard(self) -> Result<(), FcError>;
+}
+
+impl WarmRunPool for WarmPool {
+    type Lease = WarmLease;
+
+    fn try_lease(&self) -> Result<Self::Lease, FcError> {
+        WarmPool::try_lease(self)
+    }
+}
+
+impl WarmRunLease for WarmLease {
+    fn run_dir(&self) -> &Path {
+        WarmLease::run_dir(self)
+    }
+
+    fn exec_with_request_id(
+        &mut self,
+        request: ExecRequest,
+        request_id: String,
+    ) -> Result<ExecResponse, FcError> {
+        WarmLease::exec_with_request_id(self, request, request_id)
+    }
+
+    fn discard(self) -> Result<(), FcError> {
+        WarmLease::discard(self)
+    }
 }
 
 pub(super) fn handle_run_streaming(
@@ -163,13 +232,8 @@ fn write_error(stream: &mut UnixStream, err: &FcError, request_id: Option<String
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt as _;
-    use std::sync::Arc;
+    use std::path::Path;
 
-    use m80_firecracker::{
-        Backend, BackendConfig, CgroupMode, NetworkPolicy, SandboxConfig, SnapshotPaths,
-        WarmPoolConfig, WarmStrategy,
-    };
     use m80_proto::ExecRequest;
 
     use super::*;
@@ -186,8 +250,8 @@ mod tests {
 
     #[test]
     fn run_request_empty_pool_returns_pool_empty_without_cold_boot() {
-        let response = handle_run(
-            &empty_pool_fixture(),
+        let response = handle_run_with_pool(
+            &FakeEmptyPool { target_ready: 1 },
             &identity("minimal", "none"),
             Some("minimal".to_owned()),
             "none",
@@ -206,6 +270,40 @@ mod tests {
         }
     }
 
+    struct FakeEmptyPool {
+        target_ready: usize,
+    }
+
+    struct FakeLease;
+
+    impl WarmRunPool for FakeEmptyPool {
+        type Lease = FakeLease;
+
+        fn try_lease(&self) -> Result<Self::Lease, FcError> {
+            Err(FcError::PoolEmpty {
+                target_ready: self.target_ready,
+            })
+        }
+    }
+
+    impl WarmRunLease for FakeLease {
+        fn run_dir(&self) -> &Path {
+            panic!("empty pool must not produce a lease")
+        }
+
+        fn exec_with_request_id(
+            &mut self,
+            _request: ExecRequest,
+            _request_id: String,
+        ) -> Result<ExecResponse, FcError> {
+            panic!("empty pool must not execute")
+        }
+
+        fn discard(self) -> Result<(), FcError> {
+            panic!("empty pool must not discard")
+        }
+    }
+
     fn identity(profile: &str, egress: &str) -> WarmOwnerIdentity {
         WarmOwnerIdentity {
             binary_version: "0.0.0".to_owned(),
@@ -219,62 +317,6 @@ mod tests {
         }
     }
 
-    fn empty_pool_fixture() -> WarmPool {
-        let dir = tempfile::tempdir().unwrap();
-        let discovery = fake_discovery(dir.path());
-        let backend = Arc::new(
-            Backend::new(
-                BackendConfig::builder(discovery)
-                    .max_concurrent_vms(1)
-                    .run_root(dir.path().to_path_buf())
-                    .jail_uid(3000)
-                    .jail_gid(3000)
-                    .cgroup_mode(CgroupMode::Disabled)
-                    .build(),
-            )
-            .expect("backend"),
-        );
-        WarmPool::new(
-            backend,
-            WarmPoolConfig {
-                target_ready: 1,
-                sandbox: sandbox_config("fixture"),
-                strategy: WarmStrategy::direct_snapshot(
-                    SnapshotPaths {
-                        vm_state: dir.path().join("vm.snap"),
-                        mem: dir.path().join("mem.snap"),
-                    },
-                    ready_probe(),
-                ),
-                vm_id_prefix: "fixture".to_owned(),
-                cpu_allocator: None,
-            },
-        )
-        .expect("warm pool")
-    }
-
-    fn sandbox_config(vm_id: impl Into<String>) -> SandboxConfig {
-        SandboxConfig {
-            vm_id: Some(vm_id.into()),
-            workspace: None,
-            network: NetworkPolicy::NoEgress,
-            vcpu_count: None,
-            mem_size_mib: None,
-            cpuset_cpus: None,
-            cpu_template: None,
-            drive_cache_type: None,
-            boot_args: None,
-            overlay_size_bytes: 512 * 1024 * 1024,
-            overlay_clone_mode: Default::default(),
-            idle_timeout: None,
-            daemonize: false,
-            request_id: None,
-            pmem_layers: Vec::new(),
-            preallocated_drive_slots: 0,
-            one_shot: false,
-        }
-    }
-
     fn ready_probe() -> ExecRequest {
         ExecRequest {
             program: "/bin/true".to_owned(),
@@ -285,58 +327,5 @@ mod tests {
             timeout_ms: Some(5_000),
             streaming: false,
         }
-    }
-
-    fn fake_discovery(run_root: &std::path::Path) -> m80_preflight::Discovery {
-        let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
-        let rootfs_path = rootfs.path().to_path_buf();
-        let rootfs_file = rootfs.reopen().expect("fake rootfs fd");
-        let net_helper_bin = fake_net_helper(run_root);
-        m80_preflight::Discovery {
-            firecracker_bin: "/tmp/firecracker".into(),
-            firecracker_seccomp_filter: "/tmp/firecracker-seccomp-filter.bin".into(),
-            jailer_bin: "/tmp/jailer".into(),
-            jailer_harden_bin: "/tmp/m80-jailer-harden".into(),
-            net_helper_bin,
-            kernel: "/tmp/vmlinux".into(),
-            rootfs: "/tmp/rootfs.ext4".into(),
-            pinned_rootfs: m80_preflight::PinnedRootfs::from_file(rootfs_path, rootfs_file),
-            manifest: fake_manifest(),
-            run_root: run_root.to_path_buf(),
-            privilege: m80_preflight::PrivilegeStatus::Root,
-            report: Vec::new(),
-        }
-    }
-
-    fn fake_net_helper(run_root: &std::path::Path) -> std::path::PathBuf {
-        std::fs::create_dir_all(run_root).expect("run root");
-        let path = run_root.join("m80-net-helper");
-        std::fs::write(&path, b"#!/bin/sh\nexit 0\n").expect("fake net helper");
-        let mut perms = std::fs::metadata(&path)
-            .expect("fake net helper metadata")
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&path, perms).expect("fake net helper executable");
-        path
-    }
-
-    fn fake_manifest() -> m80_image_manifest::Manifest {
-        m80_image_manifest::Manifest::new(
-            "/tmp/m80-guestd".into(),
-            "0".repeat(64),
-            "v1.0.0".to_owned(),
-            52,
-            m80_image_manifest::ImageKind::Minimal,
-            "/tmp/vmlinux".into(),
-            "1".repeat(64),
-            m80_image_manifest::KernelKind::Stock,
-            None,
-            "/tmp/rootfs.ext4".into(),
-            "2".repeat(64),
-            "M80_READY".to_owned(),
-            m80_image_manifest::RootfsFormat::Ext4,
-            None,
-            None,
-        )
     }
 }

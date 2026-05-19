@@ -21,7 +21,7 @@ pub(super) fn exec_pty_streaming(
     interactive: bool,
 ) -> Result<RunOutcome<PtyExit>, FcError> {
     let (event_tx, event_rx) = mpsc::channel();
-    let signal_guard = PtySignalForwarder::install(event_tx.clone())?;
+    let signal_guard = install_pty_signal_forwarder(event_tx.clone())?;
     let mut terminal = HostTerminalMode::default();
     let _raw_guard = if interactive {
         Some(
@@ -31,11 +31,7 @@ pub(super) fn exec_pty_streaming(
     } else {
         None
     };
-    let _input_thread = if interactive {
-        Some(InputThread::spawn(event_tx))
-    } else {
-        None
-    };
+    let _input_thread = interactive.then(|| InputThread::spawn(event_tx));
     let mut stdout = std::io::stdout().lock();
     let exit = running.exec_pty(req, event_rx, |chunk| {
         copy_terminal_output(chunk, &mut stdout)
@@ -172,31 +168,25 @@ impl InputThread {
     }
 }
 
-struct PtySignalForwarder(SignalWatcher);
-
-impl PtySignalForwarder {
-    fn install(event_tx: mpsc::Sender<PtyHostEvent>) -> Result<Self, FcError> {
-        let mut signals = Signals::new([SIGWINCH, SIGINT, SIGTERM, SIGHUP])
-            .map_err(|source| errors::host_io("install pty signal handler", source))?;
-        let handle = signals.handle();
-        let first_signal = Arc::new(AtomicI32::new(0));
-        let first_signal_for_thread = Arc::clone(&first_signal);
-        let thread = std::thread::spawn(move || {
-            for signal in signals.forever() {
-                forward_signal_event(
-                    signal,
-                    &event_tx,
-                    &first_signal_for_thread,
-                    current_pty_size,
-                );
-            }
-        });
-        Ok(Self(SignalWatcher::new(first_signal, handle, thread)))
-    }
-
-    fn observed_signal(&self) -> Option<i32> {
-        self.0.observed_signal()
-    }
+fn install_pty_signal_forwarder(
+    event_tx: mpsc::Sender<PtyHostEvent>,
+) -> Result<SignalWatcher, FcError> {
+    let mut signals = Signals::new([SIGWINCH, SIGINT, SIGTERM, SIGHUP])
+        .map_err(|source| errors::host_io("install pty signal handler", source))?;
+    let handle = signals.handle();
+    let first_signal = Arc::new(AtomicI32::new(0));
+    let first_signal_for_thread = Arc::clone(&first_signal);
+    let thread = std::thread::spawn(move || {
+        for signal in signals.forever() {
+            forward_signal_event(
+                signal,
+                &event_tx,
+                &first_signal_for_thread,
+                current_pty_size,
+            );
+        }
+    });
+    Ok(SignalWatcher::new(first_signal, handle, thread))
 }
 
 fn forward_signal_event(

@@ -41,10 +41,7 @@ pub(super) fn cmd_run_warm(
     req: ExecRequest,
     json_mode: bool,
 ) -> i32 {
-    let request_id = match crate::request_id::current() {
-        Some(request_id) => request_id,
-        None => crate::request_id::new(),
-    };
+    let request_id = crate::request_id::current().unwrap_or_else(crate::request_id::new);
     if !json_mode {
         return render_warm_streaming_run(profile, egress, request_id, req);
     }

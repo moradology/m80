@@ -286,11 +286,7 @@ impl Drop for WarmOwnerStateGuard {
 }
 
 fn remove_file_if_present(path: &Path) {
-    match fs::remove_file(path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(_) => {}
-    }
+    let _ = fs::remove_file(path);
 }
 
 fn lock_warm_snapshot_files(paths: &SnapshotPaths) -> Result<(), FcError> {

@@ -25,7 +25,7 @@ use m80_firecracker::{load_config, EffectiveConfig, FcError};
 pub(crate) fn load_effective(
     flag_overrides: &HashMap<&str, String>,
 ) -> Result<EffectiveConfig, FcError> {
-    let owned: HashMap<String, String> = flag_overrides
+    let owned = flag_overrides
         .iter()
         .map(|(k, v)| ((*k).to_string(), v.clone()))
         .collect();

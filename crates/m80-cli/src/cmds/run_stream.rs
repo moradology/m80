@@ -19,7 +19,7 @@ pub(super) fn exec_pipe_streaming(
     running: &mut RunningSandbox,
     req: ExecRequest,
 ) -> Result<RunOutcome<ExecExit>, FcError> {
-    let (cancel_rx, watcher) = SignalCancellation::install()?;
+    let (cancel_rx, watcher) = install_run_signal_cancellation()?;
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     let exit = running.exec_streaming_with_cancel(req, cancel_rx, |chunk| {
@@ -43,7 +43,7 @@ pub(super) fn exec_buffered(
     running: &mut RunningSandbox,
     req: ExecRequest,
 ) -> Result<RunOutcome<ExecResponse>, FcError> {
-    let (cancel_rx, watcher) = SignalCancellation::install()?;
+    let (cancel_rx, watcher) = install_run_signal_cancellation()?;
     let response = running.exec_with_cancel(req, cancel_rx)?;
     Ok(RunOutcome {
         payload: response,
@@ -84,33 +84,22 @@ where
     }
 }
 
-struct SignalCancellation(SignalWatcher);
-
-impl SignalCancellation {
-    fn install() -> Result<(mpsc::Receiver<()>, Self), FcError> {
-        let (cancel_tx, cancel_rx) = mpsc::channel();
-        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP])
-            .map_err(|source| errors::host_io("install run signal handler", source))?;
-        let handle = signals.handle();
-        let first_signal = Arc::new(AtomicI32::new(0));
-        let first_signal_for_thread = Arc::clone(&first_signal);
-        let thread = std::thread::spawn(move || {
-            for signal in signals.forever() {
-                if first_signal_for_thread
-                    .compare_exchange(0, signal, Ordering::SeqCst, Ordering::SeqCst)
-                    .is_ok()
-                {
-                    let _ = cancel_tx.send(());
-                }
+fn install_run_signal_cancellation() -> Result<(mpsc::Receiver<()>, SignalWatcher), FcError> {
+    let (cancel_tx, cancel_rx) = mpsc::channel();
+    let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP])
+        .map_err(|source| errors::host_io("install run signal handler", source))?;
+    let handle = signals.handle();
+    let first_signal = Arc::new(AtomicI32::new(0));
+    let first_signal_for_thread = Arc::clone(&first_signal);
+    let thread = std::thread::spawn(move || {
+        for signal in signals.forever() {
+            if first_signal_for_thread
+                .compare_exchange(0, signal, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                let _ = cancel_tx.send(());
             }
-        });
-        Ok((
-            cancel_rx,
-            Self(SignalWatcher::new(first_signal, handle, thread)),
-        ))
-    }
-
-    fn observed_signal(&self) -> Option<i32> {
-        self.0.observed_signal()
-    }
+        }
+    });
+    Ok((cancel_rx, SignalWatcher::new(first_signal, handle, thread)))
 }
