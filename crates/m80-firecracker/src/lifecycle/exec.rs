@@ -126,11 +126,7 @@ impl RunningSandbox {
             exit_code: exit.exit_code,
             stdout,
             stderr,
-            truncated: if truncated || exit.truncated {
-                Some(true)
-            } else {
-                None
-            },
+            truncated: (truncated || exit.truncated).then_some(true),
             timing: exit.timing,
         })
     }

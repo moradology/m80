@@ -143,7 +143,11 @@ impl Channel {
             write!(w, "CONNECT {guest_port}\n").map_err(|e| io_err(&host_uds_arc, e))?;
             w.flush().map_err(|e| io_err(&host_uds_arc, e))?;
             if debug_wire::is_enabled("vsock") {
-                tracing::trace!(direction = "out", msg = format!("CONNECT {guest_port}"), "vsock handshake");
+                tracing::trace!(
+                    direction = "out",
+                    msg = format!("CONNECT {guest_port}"),
+                    "vsock handshake"
+                );
             }
         }
 

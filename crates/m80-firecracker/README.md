@@ -709,11 +709,10 @@ an invariant fails closed.
 - `FcError::UnsupportedOperation` names an unavailable v0.x API surface without
   pretending the caller supplied bad configuration.
 - Warm-pool/owner failures use typed variants (`WarmPoolFillFailed`,
-  `WarmReadyProbeRejected`, `WarmReadyProbeNoResult`,
-  `WarmOwnerSocketExists`, `WarmOwnerNotAcceptingLeases`,
-  `WarmOwnerDrainTimeout`, `WarmCompatibilityMismatch`,
-  `UnexpectedWarmResponse`) so CLI IPC and owner-state failures remain
-  distinguishable from configuration.
+  `WarmReadyProbeRejected`, `WarmOwnerSocketExists`,
+  `WarmOwnerNotAcceptingLeases`, `WarmOwnerDrainTimeout`,
+  `WarmCompatibilityMismatch`, `UnexpectedWarmResponse`) so CLI IPC and
+  owner-state failures remain distinguishable from configuration.
 - `FcError::IdleTimedOut` — returned by `exec` when the idle-timeout watcher
   has fired. The caller must drop or `stop()` the sandbox.
 - `FcError::SandboxDead` — returned before a new exec or PTY request when the

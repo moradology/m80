@@ -141,11 +141,7 @@ fn mount_devices(request: &DriveMountRequest) -> DriveMountResponse {
 
 fn detach_devices(request: &DriveDetachRequest) -> DriveDetachResponse {
     DriveDetachResponse {
-        statuses: request
-            .devices
-            .iter()
-            .map(|spec| detach_one(spec))
-            .collect(),
+        statuses: request.devices.iter().map(detach_one).collect(),
     }
 }
 

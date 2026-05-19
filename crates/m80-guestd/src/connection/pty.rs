@@ -16,13 +16,15 @@ use portable_pty::{native_pty_system, ExitStatus as PortableExitStatus};
 use super::{protocol_log, write_cancel_ack, write_payload_frame};
 use process::{
     command_builder, join_output_thread, signal_pty_child, spawn_output_thread, terminal_status,
-    terminate_pty_child, timeout_deadline, to_portable_size, PtyFrame,
+    terminate_pty_child, to_portable_size, PtyFrame,
 };
 use wire::{poll_host_frame, write_pty_failed, HostFrame};
 
 use crate::guest_log::{self, GuestLogPhase};
 
-use super::{effective_call_timeout_ms, unix_ms_now, ConnectionOutcome, POLL_INTERVAL};
+use super::{
+    effective_call_timeout_ms, timeout_deadline, unix_ms_now, ConnectionOutcome, POLL_INTERVAL,
+};
 
 /// Drop the PTY writer, receiver, and output thread, then return Continue.
 /// Used at every early-exit point inside `handle_pty_exec`.

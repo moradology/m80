@@ -429,4 +429,3 @@ fn hash_field(hasher: &mut Sha256, label: &str, value: &[u8]) {
     hasher.update((value.len() as u64).to_be_bytes());
     hasher.update(value);
 }
-

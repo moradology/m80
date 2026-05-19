@@ -1544,6 +1544,17 @@ fn wait_for_api_socket_create(api_socket: &Path, deadline: Instant) -> Result<()
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn wait_for_api_socket_create(api_socket: &Path, _deadline: Instant) -> Result<(), FcError> {
+    Err(path_io(
+        api_socket,
+        std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "inotify is only available on Linux",
+        ),
+    ))
+}
+
 fn event_name_matches(event_name: Option<&OsStr>, filename: &OsStr) -> bool {
     event_name.is_some_and(|name| name == filename)
 }
@@ -1696,8 +1707,7 @@ fn proc_stat_major_faults(pid: u32) -> Option<u64> {
 
 fn proc_stat_major_faults_from_text(text: &str) -> Option<u64> {
     let after_comm = text.rsplit_once(") ")?.1;
-    let fields_from_state = after_comm.split_whitespace().collect::<Vec<_>>();
-    fields_from_state.get(9)?.parse().ok()
+    after_comm.split_whitespace().nth(9)?.parse().ok()
 }
 
 fn cgroup_cpu_stat_snapshot(vm_id: &str) -> BTreeMap<String, String> {

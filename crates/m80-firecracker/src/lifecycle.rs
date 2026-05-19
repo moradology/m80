@@ -117,7 +117,7 @@ impl RunningSandbox {
             .clone();
         snapshot_capture(CaptureRequest {
             api_socket,
-            paths: snapshot_plan.jail_paths.clone(),
+            paths: snapshot_plan.jail_paths,
             host_paths: stage_paths.clone(),
             expected_firecracker_version: expected_firecracker_version.clone(),
             kind: SnapshotKind::Full,
@@ -689,8 +689,8 @@ pub(crate) fn kill_pid(pid: u32) -> Result<(), FcError> {
     fail_kill_pid_if_requested(pid)?;
 
     match kill(Pid::from_raw(pid as i32), Signal::SIGKILL) {
-        Ok(()) => Ok(()),
-        Err(Errno::ESRCH) => Ok(()), // Process already gone.
+        // ESRCH = process already gone, treat as success.
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
         Err(e) => Err(FcError::KillFailed {
             pid,
             source: std::io::Error::from_raw_os_error(e as i32),

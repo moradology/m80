@@ -74,29 +74,27 @@ impl WarmPoolInner {
 
     pub(super) fn start_background_fill(self: &Arc<Self>) {
         loop {
-            {
-                let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-                if self.shutdown.load(Ordering::Relaxed) {
-                    return;
-                }
-                // Stop if the pool is already at target or already has the
-                // maximum number of concurrent fill workers running.
-                let deficit = self
-                    .target_ready()
-                    .saturating_sub(state.ready.len() + state.filling);
-                if deficit == 0 || state.filling >= MAX_FILL_THREADS {
-                    return;
-                }
-                let cpuset_cpus = state.reserve_cpuset_cpus();
-                if self.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
-                    return;
-                }
-                state.filling += 1;
-                drop(state);
-
-                let inner = Arc::clone(self);
-                spawn_fill_worker(inner, cpuset_cpus);
+            let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+            if self.shutdown.load(Ordering::Relaxed) {
+                return;
             }
+            // Stop if the pool is already at target or already has the
+            // maximum number of concurrent fill workers running.
+            let deficit = self
+                .target_ready()
+                .saturating_sub(state.ready.len() + state.filling);
+            if deficit == 0 || state.filling >= MAX_FILL_THREADS {
+                return;
+            }
+            let cpuset_cpus = state.reserve_cpuset_cpus();
+            if self.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
+                return;
+            }
+            state.filling += 1;
+            drop(state);
+
+            let inner = Arc::clone(self);
+            spawn_fill_worker(inner, cpuset_cpus);
         }
     }
 
@@ -224,5 +222,5 @@ fn run_ready_probe(sandbox: &mut RunningSandbox, req: &ExecRequest) -> Result<()
             }
         }
     }
-    Err(last_error.unwrap_or(FcError::WarmReadyProbeNoResult))
+    Err(last_error.expect("ready-probe loop body sets last_error on every Err arm"))
 }

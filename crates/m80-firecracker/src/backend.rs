@@ -43,11 +43,37 @@ impl Backend {
         config: BackendConfig,
         effective: EffectiveConfig,
     ) -> Result<Self, FcError> {
+        Self::new_inner(config, effective, ParentCapabilityDrop::Run)
+    }
+
+    /// Construct a backend for hostless integration tests that exercise
+    /// admission/recovery logic without invoking the one-way parent capability
+    /// hardening path.
+    ///
+    /// Real-KVM and security tests must use [`Backend::new`] so they keep
+    /// proving the production capability behavior.
+    #[doc(hidden)]
+    pub fn new_without_parent_capability_drop_for_tests(
+        config: BackendConfig,
+    ) -> Result<Self, FcError> {
+        let effective = build_effective_config(&config);
+        Self::new_inner(config, effective, ParentCapabilityDrop::SkipForHostlessTest)
+    }
+
+    fn new_inner(
+        config: BackendConfig,
+        effective: EffectiveConfig,
+        parent_capability_drop: ParentCapabilityDrop,
+    ) -> Result<Self, FcError> {
         let permits = config.max_concurrent_vms;
         let semaphore = Arc::new(Mutex::new(permits));
         let network_helper = backend_network_helper(&config.discovery.net_helper_bin)?;
+        #[cfg(test)]
+        let _ = parent_capability_drop;
         #[cfg(not(test))]
-        drop_parent_cap_net_admin()?;
+        if parent_capability_drop == ParentCapabilityDrop::Run {
+            drop_parent_cap_net_admin()?;
+        }
         let backend = Backend {
             config,
             effective,
@@ -254,6 +280,12 @@ impl Backend {
         store.sweep_shared_refs(live_vm_ids)?;
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ParentCapabilityDrop {
+    Run,
+    SkipForHostlessTest,
 }
 
 fn live_run_dir_names(run_root: &Path) -> Result<Vec<String>, FcError> {

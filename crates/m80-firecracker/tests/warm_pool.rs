@@ -76,7 +76,10 @@ fn unique_name(prefix: &str) -> String {
 fn empty_pool_returns_pool_empty_without_cold_boot_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let discovery = common::fake_discovery(dir.path());
-    let backend = Arc::new(Backend::new(make_backend_config(discovery, 1)).expect("Backend::new"));
+    let backend = Arc::new(
+        Backend::new_without_parent_capability_drop_for_tests(make_backend_config(discovery, 1))
+            .expect("Backend::new"),
+    );
     let pool = WarmPool::new(
         backend,
         WarmPoolConfig {
@@ -103,7 +106,10 @@ fn empty_pool_returns_pool_empty_without_cold_boot_fallback() {
 fn workspace_backed_pool_config_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let discovery = common::fake_discovery(dir.path());
-    let backend = Arc::new(Backend::new(make_backend_config(discovery, 1)).expect("Backend::new"));
+    let backend = Arc::new(
+        Backend::new_without_parent_capability_drop_for_tests(make_backend_config(discovery, 1))
+            .expect("Backend::new"),
+    );
     let mut sandbox = sandbox_config("template");
     sandbox.workspace = Some(dir.path().join("workspace"));
 

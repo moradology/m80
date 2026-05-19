@@ -11,16 +11,16 @@ mod post_init;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::error::{ConfigError, FcError};
+use crate::layout::pmem_layer_jail_path;
+use crate::pmem::{validate_pmem_layers, PmemSharing};
+use crate::types::{Backend, SandboxConfig};
 use m80_snapshot::SnapshotPaths;
 use m80_snapshot_template::{
     GuestMountPath as TemplateGuestMountPath, HookSpecSet, ImageDigest as TemplateImageDigest,
     JailBackingPath, PinnedTemplate, PmemTemplateEntry, PmemTemplateSharing, TemplateDigest,
     TemplateInputs, TemplateRestoreLayout, TemplateStore,
 };
-use crate::error::{ConfigError, FcError};
-use crate::layout::pmem_layer_jail_path;
-use crate::pmem::{validate_pmem_layers, PmemSharing};
-use crate::types::{Backend, SandboxConfig};
 
 use post_init::{PostInitDigest, PostInitObservables};
 

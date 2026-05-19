@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::error::wrap_io;
 use crate::{TemplateFingerprint, TemplateStoreError, SCHEMA_VERSION};
@@ -78,10 +78,7 @@ struct SchemaVersionProbe {
     schema_version: u32,
 }
 
-fn parse_with_schema_probe<T: DeserializeOwned>(
-    raw: &[u8],
-    path: &Path,
-) -> Result<T, TemplateStoreError> {
+fn parse_with_schema_probe(raw: &[u8], path: &Path) -> Result<Index, TemplateStoreError> {
     let probe: SchemaVersionProbe =
         serde_json::from_slice(raw).map_err(|source| TemplateStoreError::Json {
             path: path.to_path_buf(),

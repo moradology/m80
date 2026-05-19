@@ -64,10 +64,9 @@ impl UeventMatcher for BlockDeviceMatcher {
         if event.subsystem.as_deref() != Some("block") {
             return false;
         }
-        match &self.devname {
-            Some(devname) => event.devname.as_deref() == Some(devname.as_str()),
-            None => true,
-        }
+        self.devname
+            .as_deref()
+            .is_none_or(|devname| event.devname.as_deref() == Some(devname))
     }
 }
 

@@ -75,10 +75,7 @@ fn read_ownership_lock(lock_path: &Path) -> Result<OwnershipRecord, ()> {
             pid = val.parse::<u32>().ok();
         }
     }
-    match pid {
-        Some(pid) => Ok(OwnershipRecord { pid }),
-        None => Err(()),
-    }
+    pid.map(|pid| OwnershipRecord { pid }).ok_or(())
 }
 
 /// Returns `true` if `/proc/<pid>` exists and is not a zombie/dead task.
@@ -109,6 +106,7 @@ fn proc_stat_state(stat: &str) -> Option<char> {
 /// the rest of the function runs. Use a name with a suffix
 /// (`_lease_guard`) so the binding lives until the end of the enclosing
 /// scope.
+#[derive(Debug)]
 pub(crate) struct LeaseGuard {
     lock_path: PathBuf,
 }
@@ -126,14 +124,6 @@ impl Drop for LeaseGuard {
                 );
             }
         }
-    }
-}
-
-impl std::fmt::Debug for LeaseGuard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LeaseGuard")
-            .field("lock_path", &self.lock_path)
-            .finish()
     }
 }
 

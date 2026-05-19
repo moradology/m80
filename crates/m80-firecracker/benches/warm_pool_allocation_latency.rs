@@ -61,15 +61,7 @@ fn main() {
     for _ in 0..n {
         let t = Instant::now();
         let mut lease = pool.try_lease().expect("warm lease");
-        let resp = match lease.exec(m80_proto::ExecRequest {
-            program: "/bin/true".into(),
-            args: Vec::new(),
-            cwd: None,
-            env: None,
-            stdin: None,
-            timeout_ms: Some(5_000),
-            streaming: false,
-        }) {
+        let resp = match lease.exec(true_request()) {
             Ok(resp) => resp,
             Err(err) => {
                 write_failure_artifacts(output.as_deref(), lease.vm_id(), lease.run_dir(), &err);

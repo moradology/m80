@@ -24,7 +24,9 @@ impl StoppedSandbox {
         let scratch = self
             .scratch
             .as_ref()
-            .ok_or_else(|| FcError::Config(ConfigError::MissingField { field: "workspace" }))?;
+            .ok_or(FcError::Config(ConfigError::MissingField {
+                field: "workspace",
+            }))?;
         let max_extract_bytes = std::fs::metadata(scratch.path())
             .map_err(|source| {
                 FcError::Storage(m80_storage::StorageError::Io {

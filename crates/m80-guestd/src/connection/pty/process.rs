@@ -15,7 +15,6 @@ use crate::{
     workload_broker,
 };
 
-pub(super) use super::super::timeout_deadline;
 use super::super::{
     cancel_status_from_group_signals, signal_process_group, PROCESS_GROUP_TERM_GRACE,
 };

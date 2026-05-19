@@ -52,7 +52,7 @@ impl Drop for Uploads {
                     guest_log::warn(
                         GuestLogPhase::Exec,
                         None,
-                        &format!(
+                        format!(
                             "failed to remove abandoned upload temp file {}: {err}",
                             upload.temp_path.display()
                         ),

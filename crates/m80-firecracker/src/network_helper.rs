@@ -292,8 +292,7 @@ fn encode_request(
         return Err(NetworkHelperError::RequestEncode {
             operation,
             detail: format!(
-                "network helper request exceeds {} bytes",
-                NETWORK_HELPER_MAX_FRAME_BYTES
+                "network helper request exceeds {NETWORK_HELPER_MAX_FRAME_BYTES} bytes"
             ),
         });
     }

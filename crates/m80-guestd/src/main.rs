@@ -66,7 +66,7 @@ pub(crate) fn parse_args() -> anyhow::Result<Args> {
             "--version" => {
                 args.print_version = true;
             }
-            other => anyhow::bail!("unknown arg: {}", other),
+            other => anyhow::bail!("unknown arg: {other}"),
         }
     }
     Ok(args)

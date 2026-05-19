@@ -22,7 +22,7 @@ static ENABLED_TARGETS: OnceLock<HashSet<String>> = OnceLock::new();
 ///
 /// Parameterised on `&str` so tests can call it without touching the env.
 pub(crate) fn parse_targets(raw: &str) -> HashSet<String> {
-    raw.split(',').map(|t| t.to_owned()).collect()
+    raw.split(',').map(str::to_owned).collect()
 }
 
 fn targets() -> &'static HashSet<String> {

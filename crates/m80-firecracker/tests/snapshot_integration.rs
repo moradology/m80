@@ -435,7 +435,8 @@ fn interrupted_snapshot_restore_run_dir_recovery_removes_partial_state() {
         .jail_gid(3000)
         .cgroup_mode(CgroupMode::Disabled)
         .build();
-    let backend = Backend::new(config).expect("Backend::new");
+    let backend =
+        Backend::new_without_parent_capability_drop_for_tests(config).expect("Backend::new");
     backend
         .recover_stale_run_root(false)
         .expect("startup recovery must handle partial restore dir");

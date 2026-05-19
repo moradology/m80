@@ -1,8 +1,6 @@
 //! Streaming exec tests for the transport-agnostic connection handler.
 
-use std::io::{self, BufReader, Cursor, Write};
-use std::os::unix::net::UnixStream;
-use std::thread;
+use std::io::{self, Cursor, Write};
 use std::time::{Duration, Instant};
 
 use m80_proto::{

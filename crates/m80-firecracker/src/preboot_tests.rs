@@ -397,7 +397,7 @@ fn pmem_plan_requires_resolved_backings() {
         ..SandboxConfig::default()
     };
 
-    let err = match plan_preboot_puts(
+    let Err(err) = plan_preboot_puts(
         &config,
         "vm-alpha",
         ImageKind::Ubuntu,
@@ -408,9 +408,8 @@ fn pmem_plan_requires_resolved_backings() {
         &[],
         &RealizedNetwork::NoEgress,
         &[],
-    ) {
-        Err(err) => err,
-        Ok(_) => panic!("pmem plan should require resolved backings"),
+    ) else {
+        panic!("pmem plan should require resolved backings")
     };
 
     assert!(

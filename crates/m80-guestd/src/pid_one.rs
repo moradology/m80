@@ -393,9 +393,9 @@ fn pivot_root<P1: ?Sized + NixPath, P2: ?Sized + NixPath>(
 /// Lift verbatim from kata-containers/src/agent/rustjail/src/mount.rs:523-559.
 pub(crate) fn pivot_rootfs<P: ?Sized + NixPath + std::fmt::Debug>(path: &P) -> anyhow::Result<()> {
     let oldroot = fcntl::open("/", OFlag::O_DIRECTORY | OFlag::O_RDONLY, Mode::empty())?;
-    defer! { if let Err(e) = unistd::close(oldroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(oldroot): {e}")); } }
+    defer! { if let Err(e) = unistd::close(oldroot) { guest_log::warn(GuestLogPhase::Boot, None, format!("close(oldroot): {e}")); } }
     let newroot = fcntl::open(path, OFlag::O_DIRECTORY | OFlag::O_RDONLY, Mode::empty())?;
-    defer! { if let Err(e) = unistd::close(newroot) { guest_log::warn(GuestLogPhase::Boot, None, &format!("close(newroot): {e}")); } }
+    defer! { if let Err(e) = unistd::close(newroot) { guest_log::warn(GuestLogPhase::Boot, None, format!("close(newroot): {e}")); } }
 
     // Change to the new root so that the pivot_root actually acts on it.
     unistd::fchdir(newroot)?;

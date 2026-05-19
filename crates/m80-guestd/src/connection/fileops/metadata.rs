@@ -145,7 +145,7 @@ fn stat_from_metadata(meta: &std::fs::Metadata) -> FileStat {
     FileStat {
         kind: kind_from_metadata(meta),
         size: meta.len(),
-        mtime_unix_ms: meta.mtime().saturating_mul(1000) + meta.mtime_nsec() / 1_000_000,
+        mtime_unix_ms: meta.mtime().saturating_mul(1_000) + meta.mtime_nsec() / 1_000_000,
         mode: meta.mode(),
     }
 }

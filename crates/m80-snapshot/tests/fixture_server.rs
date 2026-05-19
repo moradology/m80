@@ -4,7 +4,7 @@
 //! the multi-response server as `FixtureServer` (the name the existing tests
 //! use) and the common response builders.
 
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 pub(crate) use m80_test_helpers::fixture_server::{resp_204, resp_400};
 // Alias: existing tests call `FixtureServer::spawn(vec![...])` → multi-response.

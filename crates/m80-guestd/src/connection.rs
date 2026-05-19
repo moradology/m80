@@ -21,6 +21,8 @@
 //! The vsock channel is NOT multiplexed: only one exec is in flight at a time
 //! (single-flight invariant enforced by guestd's sequential accept loop).
 
+#![allow(unreachable_pub)]
+
 mod fileops;
 mod hotplug;
 mod metrics;
@@ -221,12 +223,6 @@ where
     Ok(())
 }
 
-/// Messages the child-wait thread sends back to the exec handler.
-enum ChildResult {
-    /// Child exited (naturally or via timeout/kill). Carries the response.
-    Done(ExecResponse),
-}
-
 fn handle_exec<R, W>(
     raw: RawEnvelope,
     mut reader: R,
@@ -284,14 +280,12 @@ where
     // `cancel_tx` lets this thread interrupt the child-wait thread when a
     // `cancel_request` arrives.
     let (cancel_tx, cancel_rx) = mpsc::channel::<()>();
-    let (child_tx, child_rx) = mpsc::channel::<ChildResult>();
+    let (child_tx, child_rx) = mpsc::channel::<ExecResponse>();
 
     let spawn_start = unix_ms_now();
-    let thread_req = req;
 
     thread::spawn(move || {
-        let result =
-            exec_request_with_cancel(&thread_req, spawn_start, pid_slot_for_thread, cancel_rx);
+        let result = exec_request_with_cancel(&req, spawn_start, pid_slot_for_thread, cancel_rx);
         let response = match result {
             Ok(resp) => resp,
             Err(e) => {
@@ -301,14 +295,14 @@ where
         };
         // Ignore send error: the main thread may have already sent CancelResponse
         // and moved on.
-        let _ = child_tx.send(ChildResult::Done(response));
+        let _ = child_tx.send(response);
     });
 
     // Poll for either: (a) the child finishes, or (b) a cancel frame arrives.
     loop {
         // Check if child finished.
         match child_rx.try_recv() {
-            Ok(ChildResult::Done(response)) => {
+            Ok(response) => {
                 guest_log::info(
                     GuestLogPhase::Exec,
                     request_id.as_deref(),
@@ -422,18 +416,17 @@ where
                             );
                             nix::unistd::sync();
                             return Ok(ConnectionOutcome::Continue);
-                        } else {
-                            // Wrong request_id — process either already exited or
-                            // this is a stale cancel from the host.
-                            let ack = CancelResponse {
-                                request_id: cancel_req.request_id,
-                                status: CancelStatus::AlreadyExited,
-                            };
-                            let ack_env = Envelope::new(ack);
-                            let _ = write_frame(writer, &ack_env);
-                            let _ = writer.flush();
-                            // Continue waiting for the child.
                         }
+                        // Wrong request_id — process either already exited or
+                        // this is a stale cancel from the host.
+                        let ack = CancelResponse {
+                            request_id: cancel_req.request_id,
+                            status: CancelStatus::AlreadyExited,
+                        };
+                        let ack_env = Envelope::new(ack);
+                        let _ = write_frame(writer, &ack_env);
+                        let _ = writer.flush();
+                        // Continue waiting for the child.
                     }
                     Err(e) => {
                         protocol_log::warn_proto_error(
@@ -464,7 +457,7 @@ where
 
 fn abort_inflight_exec(
     cancel_tx: &mpsc::Sender<()>,
-    child_rx: &mpsc::Receiver<ChildResult>,
+    child_rx: &mpsc::Receiver<ExecResponse>,
     child_pid_slot: &Arc<Mutex<Option<u32>>>,
 ) {
     let _ = cancel_tx.send(());
@@ -715,11 +708,7 @@ fn exec_request_with_cancel(
         }
     };
 
-    let truncated = if stdout_truncated || stderr_truncated {
-        Some(true)
-    } else {
-        None
-    };
+    let truncated = (stdout_truncated || stderr_truncated).then_some(true);
 
     Ok(ExecResponse {
         status,
@@ -829,12 +818,10 @@ fn effective_call_timeout_ms(
     request_timeout_ms: Option<u64>,
     max_duration_ms: Option<u64>,
 ) -> Option<u64> {
-    match (request_timeout_ms, max_duration_ms) {
-        (Some(request), Some(max_duration)) => Some(request.min(max_duration)),
-        (Some(request), None) => Some(request),
-        (None, Some(max_duration)) => Some(max_duration),
-        (None, None) => None,
-    }
+    [request_timeout_ms, max_duration_ms]
+        .into_iter()
+        .flatten()
+        .min()
 }
 
 /// Write a `CancelResponse` frame and flush the writer.
@@ -863,9 +850,8 @@ fn drain_cancel_acks_after_exit<R, W>(
 {
     while reader_ready(reader) {
         match reader.fill_buf() {
-            Ok([]) => return,
+            Ok([]) | Err(_) => return,
             Ok(_) => {}
-            Err(_) => return,
         }
 
         let next = match read_raw_frame(reader) {

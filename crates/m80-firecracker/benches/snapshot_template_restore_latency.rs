@@ -639,9 +639,8 @@ fn preexisting_firecracker_processes() -> Vec<FirecrackerProcess> {
         let Some(pid) = file_name.to_str().and_then(|raw| raw.parse::<u32>().ok()) else {
             continue;
         };
-        let cmdline = match fs::read(entry.path().join("cmdline")) {
-            Ok(bytes) => bytes,
-            Err(_) => continue,
+        let Ok(cmdline) = fs::read(entry.path().join("cmdline")) else {
+            continue;
         };
         let argv = cmdline
             .split(|byte| *byte == 0)

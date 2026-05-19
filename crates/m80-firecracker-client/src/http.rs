@@ -47,18 +47,14 @@ fn read_response(stream: &mut impl Read) -> io::Result<Response> {
             Ok(0) => {
                 // EOF — acceptable only if we can determine completion from
                 // what we have.
-                match response_end(&buf) {
-                    Some(end) => {
-                        buf.truncate(end);
-                        break;
-                    }
-                    None => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "connection closed before full HTTP response was received",
-                        ))
-                    }
+                if let Some(end) = response_end(&buf) {
+                    buf.truncate(end);
+                    break;
                 }
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "connection closed before full HTTP response was received",
+                ));
             }
             Ok(n) => {
                 buf.extend_from_slice(&chunk[..n]);
@@ -73,13 +69,11 @@ fn read_response(stream: &mut impl Read) -> io::Result<Response> {
                     io::ErrorKind::ConnectionReset | io::ErrorKind::WouldBlock
                 ) =>
             {
-                match response_end(&buf) {
-                    Some(end) => {
-                        buf.truncate(end);
-                        break;
-                    }
-                    None => return Err(e),
+                if let Some(end) = response_end(&buf) {
+                    buf.truncate(end);
+                    break;
                 }
+                return Err(e);
             }
             Err(e) => return Err(e),
         }
@@ -116,11 +110,7 @@ fn response_end(buf: &[u8]) -> Option<usize> {
         }
     })?;
     let total = header_len + content_length;
-    if buf.len() >= total {
-        Some(total)
-    } else {
-        None
-    }
+    (buf.len() >= total).then_some(total)
 }
 
 /// Parse a complete HTTP response from `bytes`.

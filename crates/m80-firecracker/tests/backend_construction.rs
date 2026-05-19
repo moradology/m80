@@ -2,26 +2,12 @@
 
 mod common;
 
-use std::sync::Arc;
-
-use m80_firecracker::{Backend, BackendConfig, CgroupMode, FcError};
+use m80_firecracker::FcError;
 
 #[test]
 fn backend_reused_across_admissions_shares_admission_state() {
     let dir = tempfile::tempdir().unwrap();
-    let discovery = common::fake_discovery(dir.path());
-    let backend = Arc::new(
-        Backend::new(
-            BackendConfig::builder(discovery)
-                .max_concurrent_vms(1)
-                .run_root(dir.path())
-                .jail_uid(3000)
-                .jail_gid(3000)
-                .cgroup_mode(CgroupMode::Disabled)
-                .build(),
-        )
-        .expect("Backend::new"),
-    );
+    let backend = common::make_fake_backend(1, dir.path());
 
     assert_eq!(backend.config().run_root(), dir.path());
     assert_eq!(backend.config().discovery().run_root, dir.path());

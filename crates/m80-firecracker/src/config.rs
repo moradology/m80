@@ -21,32 +21,32 @@ mod field {
 
 /// Built-in defaults for every recognized field.
 fn defaults() -> HashMap<String, (String, ConfigSource)> {
-    let mut m = HashMap::new();
-    m.insert(
-        field::DEFAULT_PROFILE.into(),
-        ("env".into(), ConfigSource::Default),
-    );
-    m.insert(
-        field::MAX_CONCURRENT_VMS.into(),
-        ("8".into(), ConfigSource::Default),
-    );
-    m.insert(
-        field::RUN_ROOT.into(),
-        ("/var/run/m80".into(), ConfigSource::Default),
-    );
-    m.insert(
-        field::JAIL_UID.into(),
-        ("3000".into(), ConfigSource::Default),
-    );
-    m.insert(
-        field::JAIL_GID.into(),
-        ("3000".into(), ConfigSource::Default),
-    );
-    m.insert(
-        field::CGROUP_MODE.into(),
-        ("unified-v2".into(), ConfigSource::Default),
-    );
-    m
+    HashMap::from([
+        (
+            field::DEFAULT_PROFILE.into(),
+            ("env".into(), ConfigSource::Default),
+        ),
+        (
+            field::MAX_CONCURRENT_VMS.into(),
+            ("8".into(), ConfigSource::Default),
+        ),
+        (
+            field::RUN_ROOT.into(),
+            ("/var/run/m80".into(), ConfigSource::Default),
+        ),
+        (
+            field::JAIL_UID.into(),
+            ("3000".into(), ConfigSource::Default),
+        ),
+        (
+            field::JAIL_GID.into(),
+            ("3000".into(), ConfigSource::Default),
+        ),
+        (
+            field::CGROUP_MODE.into(),
+            ("unified-v2".into(), ConfigSource::Default),
+        ),
+    ])
 }
 
 /// File paths used by configuration loading.

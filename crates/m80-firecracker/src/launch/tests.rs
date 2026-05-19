@@ -130,9 +130,8 @@ fn launch_rejects_duplicate_pmem_mounts_before_run_dir_creation() {
     };
     let sandbox = backend.admit(config).expect("admit");
 
-    let err = match sandbox.launch() {
-        Err(err) => err,
-        Ok(_) => panic!("launch should reject duplicate pmem mounts"),
+    let Err(err) = sandbox.launch() else {
+        panic!("launch should reject duplicate pmem mounts")
     };
 
     assert!(

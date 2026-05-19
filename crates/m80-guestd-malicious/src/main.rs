@@ -1,6 +1,6 @@
 //! Test-only adversarial guest daemon for real-KVM guest-to-host wire tests.
 
-use std::io::{Read, Write};
+use std::io::Write;
 
 use anyhow::Context as _;
 use m80_proto::{FileReadResponse, Payload, RawEnvelope};
@@ -208,11 +208,15 @@ fn run_peer(attack: Attack) -> anyhow::Result<()> {
                 drop(stream);
             }
             Attack::ResponseTypeMismatch => {
-                read_request_then_write_response_type_mismatch(&mut stream)?;
+                let request = m80_proto::read_raw_frame(&mut stream)
+                    .context("read request before mismatch frame")?;
+                write_response_type_mismatch(&mut stream, request)?;
                 drop(stream);
             }
             Attack::BogusRequestId => {
-                read_request_then_write_bogus_request_id(&mut stream)?;
+                let _request = m80_proto::read_raw_frame(&mut stream)
+                    .context("read request before bogus request-id frame")?;
+                write_bogus_request_id(&mut stream)?;
                 drop(stream);
             }
             Attack::UnsolicitedResponse => {
@@ -287,15 +291,6 @@ fn mutate_ping_payload_tag_to_unknown(body: &mut [u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn read_request_then_write_response_type_mismatch<S>(stream: &mut S) -> anyhow::Result<()>
-where
-    S: Read + Write,
-{
-    let request =
-        m80_proto::read_raw_frame(stream).context("read request before mismatch frame")?;
-    write_response_type_mismatch(stream, request)
-}
-
 fn write_response_type_mismatch(
     stream: &mut impl Write,
     request: RawEnvelope,
@@ -314,15 +309,6 @@ fn write_response_type_mismatch(
     };
     m80_proto::write_raw_frame(stream, envelope).context("write response-type-mismatch frame")?;
     stream.flush().context("flush response-type-mismatch frame")
-}
-
-fn read_request_then_write_bogus_request_id<S>(stream: &mut S) -> anyhow::Result<()>
-where
-    S: Read + Write,
-{
-    let _request =
-        m80_proto::read_raw_frame(stream).context("read request before bogus request-id frame")?;
-    write_bogus_request_id(stream)
 }
 
 fn write_bogus_request_id(stream: &mut impl Write) -> anyhow::Result<()> {

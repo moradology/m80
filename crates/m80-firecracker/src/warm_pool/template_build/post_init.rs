@@ -8,7 +8,7 @@ use sha2::{Digest as _, Sha256};
 use crate::error::FcError;
 use crate::types::{Backend, SandboxConfig, FIRST_LINE_MEM_SIZE_MIB, FIRST_LINE_VCPU_COUNT};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) struct PostInitDigest([u8; 32]);
 
 impl PostInitDigest {
@@ -55,7 +55,7 @@ impl PostInitDigest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(super) struct PostInitObservables {
     proto_version: u32,
     image_kind: &'static str,

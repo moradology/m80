@@ -111,7 +111,10 @@ pub(crate) fn make_fake_backend(
         .jail_gid(3000)
         .cgroup_mode(m80_firecracker::CgroupMode::Disabled)
         .build();
-    std::sync::Arc::new(m80_firecracker::Backend::new(config).expect("Backend::new"))
+    std::sync::Arc::new(
+        m80_firecracker::Backend::new_without_parent_capability_drop_for_tests(config)
+            .expect("Backend::new"),
+    )
 }
 
 /// Generate a short, unique VM identifier for use in integration tests.

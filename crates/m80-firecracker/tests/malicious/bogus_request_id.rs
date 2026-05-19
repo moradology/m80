@@ -37,7 +37,10 @@ fn bogus_request_id_returns_request_id_mismatch_with_expected_and_observed_ids()
     let diagnostics_path = run_dir.join("diagnostics.jsonl");
     let diagnostics = std::fs::read_to_string(&diagnostics_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", diagnostics_path.display()));
-    for needle in ["request_id mismatch in exec exit", "malicious-stale-request-id"] {
+    for needle in [
+        "request_id mismatch in exec exit",
+        "malicious-stale-request-id",
+    ] {
         assert!(
             diagnostics.contains(needle),
             "diagnostics did not contain {needle:?}:\n{diagnostics}"

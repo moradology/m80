@@ -27,7 +27,7 @@ pub(crate) enum WorkloadKind {
 }
 
 /// Mark the broker unavailable. Later workload spawn requests fail closed.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn poison_workload_broker() {
     WORKLOAD_BROKER_POISONED.store(true, Ordering::Release);
 }
@@ -106,8 +106,8 @@ fn ensure_broker_available() -> anyhow::Result<()> {
 fn validate_exec_request_size(req: &ExecRequest) -> anyhow::Result<()> {
     let size = string_size(&req.program)
         + strings_size(&req.args)
-        + opt_string_size(req.cwd.as_ref())
-        + env_size(req.env.as_ref())
+        + opt_string_size(req.cwd.as_deref())
+        + env_size(req.env.as_deref())
         + req.stdin.as_ref().map(Vec::len).unwrap_or(0);
     validate_broker_size(size)
 }
@@ -115,8 +115,8 @@ fn validate_exec_request_size(req: &ExecRequest) -> anyhow::Result<()> {
 fn validate_pty_request_size(req: &PtyRequest) -> anyhow::Result<()> {
     let size = string_size(&req.program)
         + strings_size(&req.args)
-        + opt_string_size(req.cwd.as_ref())
-        + env_size(req.env.as_ref());
+        + opt_string_size(req.cwd.as_deref())
+        + env_size(req.env.as_deref());
     validate_broker_size(size)
 }
 
@@ -133,15 +133,15 @@ fn string_size(value: &str) -> usize {
     value.len()
 }
 
-fn opt_string_size(value: Option<&String>) -> usize {
-    value.map(|s| s.len()).unwrap_or(0)
+fn opt_string_size(value: Option<&str>) -> usize {
+    value.map(str::len).unwrap_or(0)
 }
 
 fn strings_size(values: &[String]) -> usize {
     values.iter().map(String::len).sum()
 }
 
-fn env_size(env: Option<&Vec<(String, String)>>) -> usize {
+fn env_size(env: Option<&[(String, String)]>) -> usize {
     env.map(|pairs| {
         pairs
             .iter()

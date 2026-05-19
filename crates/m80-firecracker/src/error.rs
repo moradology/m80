@@ -9,8 +9,7 @@ use m80_cgroup::CgroupError;
 use m80_firecracker_client::ClientError;
 use m80_image_manifest::ManifestError;
 use m80_jailer::JailerError;
-use m80_net_outbound::NetError;
-use m80_net_outbound::NetworkHelperFailureKind;
+use m80_net_outbound::{NetError, NetworkHelperFailureKind};
 use m80_preflight::PreflightError;
 use m80_proto::{DriveHotplugError, ExecStatus, FileError, HookError, PmemMountError};
 use m80_snapshot::SnapshotError;
@@ -725,9 +724,6 @@ pub enum FcError {
         /// Guest exit code, when one was present.
         exit_code: Option<i32>,
     },
-    /// Warm-pool ready probe exhausted retries without a recorded error.
-    #[error("warm pool ready probe exhausted retries without a recorded error")]
-    WarmReadyProbeNoResult,
     /// A warm-owner socket already exists where a new owner would bind.
     #[error("warm owner socket already exists at {}; run `m80 warm disable` first", socket_path.display())]
     WarmOwnerSocketExists {
@@ -848,7 +844,6 @@ impl FcError {
             Self::ArtifactMissing { .. } => "ArtifactMissing",
             Self::WarmPoolFillFailed { .. } => "WarmPoolFillFailed",
             Self::WarmReadyProbeRejected { .. } => "WarmReadyProbeRejected",
-            Self::WarmReadyProbeNoResult => "WarmReadyProbeNoResult",
             Self::WarmOwnerSocketExists { .. } => "WarmOwnerSocketExists",
             Self::WarmOwnerNotAcceptingLeases => "WarmOwnerNotAcceptingLeases",
             Self::WarmOwnerDrainTimeout { .. } => "WarmOwnerDrainTimeout",
@@ -894,7 +889,6 @@ impl FcError {
             | Self::GuestdReadyTimeout { .. }
             | Self::HostIo { .. }
             | Self::WarmPoolFillFailed { .. }
-            | Self::WarmReadyProbeNoResult
             | Self::KillFailed { .. }
             | Self::ReapTimeout { .. }
             | Self::ReapFailed { .. } => FcErrorKind::Transient,

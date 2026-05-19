@@ -342,9 +342,8 @@ fn write_latency_artifact(path: &Path, samples_us: &[u64], p99_us: u64) {
 }
 
 fn assert_empty_dir(path: &Path) {
-    let entries = std::fs::read_dir(path)
+    let mut entries = std::fs::read_dir(path)
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()))
-        .filter_map(Result::ok)
-        .collect::<Vec<_>>();
-    assert!(entries.is_empty(), "{} not empty", path.display());
+        .filter_map(Result::ok);
+    assert!(entries.next().is_none(), "{} not empty", path.display());
 }

@@ -240,10 +240,7 @@ impl WarmLease {
     }
 
     fn is_one_shot(&self) -> bool {
-        self.slot
-            .as_ref()
-            .map(|slot| slot.sandbox.one_shot)
-            .unwrap_or(false)
+        self.slot.as_ref().is_some_and(|slot| slot.sandbox.one_shot)
     }
 
     fn exec_and_discard<T>(

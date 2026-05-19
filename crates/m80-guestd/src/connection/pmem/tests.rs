@@ -32,11 +32,6 @@ impl FakeOps {
             .push_str(&format!("{source} {target} {fstype} {options} 0 0\n"));
         self
     }
-
-    fn without_dax_after_mount(self) -> Self {
-        self.dax_after_mount.set(false);
-        self
-    }
 }
 
 impl PmemMountOps for FakeOps {
@@ -147,9 +142,7 @@ fn invalid_mount_path_fails_before_mounting() {
 
 #[test]
 fn dax_absent_after_mount_fails_closed() {
-    let ops = FakeOps::default()
-        .with_device("/dev/pmem0")
-        .without_dax_after_mount();
+    let ops = FakeOps::default().with_device("/dev/pmem0");
 
     let response = mount_devices_with_ops(
         &request(vec![spec("/dev/pmem0", "/opt/m80-layers/rust")]),

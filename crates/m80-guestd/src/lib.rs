@@ -4,6 +4,7 @@
 pub mod connection;
 #[allow(dead_code)]
 mod exec_sandbox;
+#[allow(dead_code)]
 pub mod guest_log;
 #[allow(dead_code)]
 mod guest_seccomp;

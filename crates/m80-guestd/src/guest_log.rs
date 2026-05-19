@@ -1,5 +1,7 @@
 //! Structured stderr logging for guest-visible diagnostics.
 
+#![allow(dead_code, unreachable_pub)]
+
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::Write as _;
