@@ -7,7 +7,7 @@ use nix::sys::utsname::uname;
 use nix::unistd::{geteuid, Gid, Group, Uid, User};
 
 use crate::{
-    classify_privilege, CheckRow, HostPrerequisiteCheck, HostPrerequisiteResult, PreflightError,
+    classify_privilege, CheckRow, HostPrerequisiteCheckId, HostPrerequisiteResult, PreflightError,
     PrivilegeStatus, REQUIRED_CAPABILITIES,
 };
 
@@ -296,12 +296,12 @@ fn verify_host_substrate_with_probe<P: HostSubstrateProbe>(
     report.push(privilege_row(privilege));
     report.push(proof_kind_row(proof_kind));
     debug_assert!(report.iter().all(|row| row.passed));
-    let host_prerequisites = HostPrerequisiteResult::new(
-        report
-            .iter()
-            .map(|row| HostPrerequisiteCheck::pass(row.label.clone()))
-            .collect(),
-    );
+    let host_prerequisites = HostPrerequisiteResult::from_success_rows(&report).map_err(|err| {
+        PreflightError::SystemIo {
+            operation: "host prerequisite result construction",
+            source: io::Error::other(err),
+        }
+    })?;
     Ok(HostSubstrateDiscovery {
         proof_kind,
         privilege,
@@ -320,11 +320,10 @@ fn check_os_values(
             actual: sysname.to_owned(),
         });
     }
-    report.push(CheckRow {
-        label: "OS gate".to_string(),
-        passed: true,
-        detail: format!("Linux {release}"),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::OsGate,
+        format!("Linux {release}"),
+    ));
     Ok(())
 }
 
@@ -333,11 +332,10 @@ fn check_host_kernel_release(
     report: &mut Vec<CheckRow>,
 ) -> Result<(), PreflightError> {
     classify_host_kernel_release(release)?;
-    report.push(CheckRow {
-        label: "Host kernel floor".to_string(),
-        passed: true,
-        detail: format!("Linux {release} >= 6.1"),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::HostKernelFloor,
+        format!("Linux {release} >= 6.1"),
+    ));
     Ok(())
 }
 
@@ -373,11 +371,10 @@ fn check_kvm_with_probe<P: HostSubstrateProbe>(
 ) -> Result<(), PreflightError> {
     let kvm = Path::new(KVM_PATH);
     classify_kvm_access(kvm, probe.kvm_exists(), probe.open_kvm_for_write())?;
-    report.push(CheckRow {
-        label: "KVM".to_string(),
-        passed: true,
-        detail: format!("{} present and writable", kvm.display()),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::Kvm,
+        format!("{} present and writable", kvm.display()),
+    ));
     Ok(())
 }
 
@@ -417,14 +414,13 @@ where
     if mode == CgroupPreflightMode::UnifiedV2 {
         classify_cgroup_probe(mode, probe())?;
     }
-    report.push(CheckRow {
-        label: "Cgroup mode".to_string(),
-        passed: true,
-        detail: match mode {
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::CgroupMode,
+        match mode {
             CgroupPreflightMode::Disabled => "disabled".to_string(),
             CgroupPreflightMode::UnifiedV2 => "unified-v2 available".to_string(),
         },
-    });
+    ));
     Ok(())
 }
 
@@ -463,18 +459,16 @@ pub(crate) fn classify_jailer_identity(
         id: jail_gid,
     })?;
 
-    Ok(CheckRow {
-        label: "Jailer identity".to_string(),
-        passed: true,
-        detail: format!("uid={jail_uid} ({user}), gid={jail_gid} ({group})"),
-    })
+    Ok(CheckRow::pass(
+        HostPrerequisiteCheckId::JailerIdentity,
+        format!("uid={jail_uid} ({user}), gid={jail_gid} ({group})"),
+    ))
 }
 
 fn privilege_row(status: PrivilegeStatus) -> CheckRow {
-    CheckRow {
-        label: "Privilege".to_string(),
-        passed: true,
-        detail: match status {
+    CheckRow::pass(
+        HostPrerequisiteCheckId::Privilege,
+        match status {
             PrivilegeStatus::Root => "euid == 0 (root)".to_string(),
             PrivilegeStatus::CapabilityBearing => format!(
                 "capability-bearing ({})",
@@ -485,14 +479,13 @@ fn privilege_row(status: PrivilegeStatus) -> CheckRow {
                     .join(", ")
             ),
         },
-    }
+    )
 }
 
 fn proof_kind_row(kind: HostSubstrateProofKind) -> CheckRow {
-    CheckRow {
-        label: "Host substrate proof".to_string(),
-        passed: true,
-        detail: match kind {
+    CheckRow::pass(
+        HostPrerequisiteCheckId::HostSubstrateProof,
+        match kind {
             HostSubstrateProofKind::LivePreflight => {
                 "live preflight only; not a real-KVM run-smoke proof".to_string()
             }
@@ -500,7 +493,7 @@ fn proof_kind_row(kind: HostSubstrateProofKind) -> CheckRow {
                 "hostless fixture only; not a real-KVM run-smoke proof".to_string()
             }
         },
-    }
+    )
 }
 
 fn parse_expected_concurrent_vms_env() -> Result<u32, PreflightError> {
@@ -585,7 +578,7 @@ mod tests {
         let proof = discovery
             .report
             .iter()
-            .find(|row| row.label == "Host substrate proof")
+            .find(|row| row.check_id == HostPrerequisiteCheckId::HostSubstrateProof)
             .expect("proof row");
         assert!(proof.detail.contains("hostless fixture only"));
         assert!(proof.detail.contains("not a real-KVM run-smoke proof"));
@@ -653,10 +646,9 @@ mod tests {
 
         let discovery = verify_host_substrate_fixture(config, &fixture).unwrap();
 
-        assert!(discovery
-            .report
-            .iter()
-            .any(|row| { row.label == "Cgroup mode" && row.detail == "disabled" }));
+        assert!(discovery.report.iter().any(|row| {
+            row.check_id == HostPrerequisiteCheckId::CgroupMode && row.detail == "disabled"
+        }));
     }
 
     #[test]

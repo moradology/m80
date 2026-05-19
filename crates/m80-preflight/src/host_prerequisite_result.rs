@@ -6,8 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CheckRow, Discovery};
 
+mod check_id;
 mod failure;
 
+pub use check_id::HostPrerequisiteCheckId;
 pub use failure::HostPrerequisiteFailureKind;
 
 /// Current schema version for [`HostPrerequisiteResult`].
@@ -49,35 +51,35 @@ impl HostPrerequisiteResult {
     pub fn from_discovery(discovery: &Discovery) -> Result<Self, HostPrerequisiteResultError> {
         let mut result = Self::from_success_rows(&discovery.report)?;
         for check in &mut result.checks {
-            match check.check_name.as_str() {
-                "Firecracker binary" => {
+            match check.check_id {
+                HostPrerequisiteCheckId::FirecrackerBinary => {
                     check.final_path = Some(discovery.firecracker_bin.clone());
                     check.expected_version =
                         Some(discovery.manifest.expected_firecracker_version.clone());
                     check.actual_version = Some(discovery.firecracker_version.clone());
                 }
-                "Jailer binary" => {
+                HostPrerequisiteCheckId::JailerBinary => {
                     check.final_path = Some(discovery.jailer_bin.clone());
                     check.expected_version =
                         Some(discovery.manifest.expected_firecracker_version.clone());
                     check.actual_version = Some(discovery.jailer_version.clone());
                 }
-                "Firecracker seccomp filter" => {
+                HostPrerequisiteCheckId::FirecrackerSeccompFilter => {
                     check.final_path = Some(discovery.firecracker_seccomp_filter.clone());
                 }
-                "Jailer hardening wrapper" => {
+                HostPrerequisiteCheckId::JailerHardeningWrapper => {
                     check.final_path = Some(discovery.jailer_harden_bin.clone());
                 }
-                "Network helper" => {
+                HostPrerequisiteCheckId::NetworkHelper => {
                     check.final_path = Some(discovery.net_helper_bin.clone());
                 }
-                "Kernel image" => {
+                HostPrerequisiteCheckId::KernelImage => {
                     check.final_path = Some(discovery.kernel.clone());
                 }
-                "Rootfs + manifest" => {
+                HostPrerequisiteCheckId::RootfsManifest => {
                     check.final_path = Some(discovery.rootfs.clone());
                 }
-                "Run-root" => {
+                HostPrerequisiteCheckId::RunRoot => {
                     check.final_path = Some(discovery.run_root.clone());
                 }
                 _ => {}
@@ -145,6 +147,8 @@ impl HostPrerequisiteResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostPrerequisiteCheck {
+    /// Stable machine-readable check identity.
+    pub check_id: HostPrerequisiteCheckId,
     /// Stable human-readable check name.
     pub check_name: String,
     /// Final host path observed or verified by the check.
@@ -187,9 +191,10 @@ pub struct HostPrerequisiteCheck {
 impl HostPrerequisiteCheck {
     /// Build a passing check.
     #[must_use]
-    pub fn pass(check_name: impl Into<String>) -> Self {
+    pub fn pass(check_id: HostPrerequisiteCheckId) -> Self {
         Self {
-            check_name: check_name.into(),
+            check_id,
+            check_name: check_id.check_name().to_string(),
             final_path: None,
             expected_version: None,
             actual_version: None,
@@ -208,7 +213,7 @@ impl HostPrerequisiteCheck {
     /// Build a failing check.
     #[must_use]
     pub fn fail(
-        check_name: impl Into<String>,
+        check_id: HostPrerequisiteCheckId,
         failure_variant: HostPrerequisiteFailureKind,
         remediation: HostPrerequisiteRemediation,
     ) -> Self {
@@ -216,8 +221,15 @@ impl HostPrerequisiteCheck {
             status: HostPrerequisiteStatus::Fail,
             failure_variant: Some(failure_variant),
             remediation: Some(remediation),
-            ..Self::pass(check_name)
+            ..Self::pass(check_id)
         }
+    }
+
+    /// Override the human label while preserving the stable machine identity.
+    #[must_use]
+    pub fn with_check_name(mut self, check_name: impl Into<String>) -> Self {
+        self.check_name = check_name.into();
+        self
     }
 
     /// Attach a final host path.
@@ -269,7 +281,7 @@ impl HostPrerequisiteCheck {
                 check_name: row.label.clone(),
             });
         }
-        Ok(Self::pass(row.label.clone()))
+        Ok(Self::pass(row.check_id).with_check_name(row.label.clone()))
     }
 }
 

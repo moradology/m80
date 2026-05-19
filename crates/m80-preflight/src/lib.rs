@@ -10,7 +10,6 @@ use std::path::PathBuf;
 
 use caps::Capability;
 use caps::CapsHashSet;
-use serde::{Deserialize, Serialize};
 
 use m80_image_manifest::{
     BuildReceiptArtifactKind, InstallProvenanceArtifact, Manifest, ManifestError,
@@ -24,6 +23,7 @@ mod cve_floor;
 mod firecracker_train;
 mod host_prerequisite_result;
 mod pinned_rootfs;
+mod row;
 mod table;
 
 /// Linux capabilities m80 needs when `euid != 0`; a process holding all of
@@ -72,18 +72,6 @@ pub enum PrivilegeStatus {
     /// `geteuid() != 0` but the effective capability set contains every
     /// capability in [`REQUIRED_CAPABILITIES`].
     CapabilityBearing,
-}
-
-/// One row in the preflight report.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CheckRow {
-    /// Short label naming the check.
-    pub label: String,
-    /// Whether the check passed.
-    pub passed: bool,
-    /// Free-text detail rendered alongside the label.
-    pub detail: String,
 }
 
 /// Output of a successful preflight: every resolved path, version, and
@@ -148,11 +136,12 @@ pub use firecracker_train::{
     JAILER_PAIRING_RULE,
 };
 pub use host_prerequisite_result::{
-    HostPrerequisiteCheck, HostPrerequisiteFailureKind, HostPrerequisiteOwner,
-    HostPrerequisiteRemediation, HostPrerequisiteResult, HostPrerequisiteResultError,
-    HostPrerequisiteStatus, HOST_PREREQUISITE_RESULT_SCHEMA_VERSION,
+    HostPrerequisiteCheck, HostPrerequisiteCheckId, HostPrerequisiteFailureKind,
+    HostPrerequisiteOwner, HostPrerequisiteRemediation, HostPrerequisiteResult,
+    HostPrerequisiteResultError, HostPrerequisiteStatus, HOST_PREREQUISITE_RESULT_SCHEMA_VERSION,
 };
 pub use pinned_rootfs::PinnedRootfs;
+pub use row::CheckRow;
 
 /// Errors surfaced by preflight. `Display` is lowercase, no trailing period,
 /// no embedded hint text. Actionable hints live in [`PreflightError::hint`].

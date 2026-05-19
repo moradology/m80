@@ -116,6 +116,30 @@ fn release_runbook_uses_host_prerequisite_result_contract() {
 }
 
 #[test]
+fn verifier_doc_records_stable_check_id_registry() {
+    let doc = read_repo_file("docs/behaviors/preflight/host-prerequisite-verifier.md");
+
+    assert_contains(&doc, "`check_id`, the stable machine identity");
+    assert_contains_words(
+        &doc,
+        "Machine consumers key on `check_id`, not `check_name`",
+    );
+    for required in [
+        "`os_gate`",
+        "`kvm`",
+        "`cgroup_mode`",
+        "`privilege`",
+        "`firecracker_binary`",
+        "`firecracker_seccomp_filter`",
+        "`jailer_binary`",
+        "`host_binary_manifest`",
+        "`rootfs_manifest`",
+    ] {
+        assert_contains(&doc, required);
+    }
+}
+
+#[test]
 fn readme_links_policy_only_from_preflight_remediation_context() {
     let readme = read_repo_file("README.md");
     let link = "docs/behaviors/release/host-prerequisite-policy.md";

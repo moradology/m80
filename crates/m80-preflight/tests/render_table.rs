@@ -2,7 +2,7 @@
 //! status markers for each fixture row.
 
 use m80_image_manifest::{ImageKind, KernelKind, Manifest, RootfsFormat};
-use m80_preflight::{CheckRow, Discovery, PinnedRootfs, PrivilegeStatus};
+use m80_preflight::{CheckRow, Discovery, HostPrerequisiteCheckId, PinnedRootfs, PrivilegeStatus};
 use std::path::PathBuf;
 
 fn fixture_manifest() -> Manifest {
@@ -30,21 +30,9 @@ fn fixture_discovery() -> Discovery {
     let rootfs_path = rootfs.path().to_path_buf();
     let rootfs_file = rootfs.reopen().unwrap();
     let rows = vec![
-        CheckRow {
-            label: "OS gate".into(),
-            passed: true,
-            detail: "Linux 6.1.0".into(),
-        },
-        CheckRow {
-            label: "KVM".into(),
-            passed: true,
-            detail: "/dev/kvm present".into(),
-        },
-        CheckRow {
-            label: "Kernel modules".into(),
-            passed: false,
-            detail: "tap missing".into(),
-        },
+        CheckRow::pass(HostPrerequisiteCheckId::OsGate, "Linux 6.1.0"),
+        CheckRow::pass(HostPrerequisiteCheckId::Kvm, "/dev/kvm present"),
+        CheckRow::fail(HostPrerequisiteCheckId::KernelModules, "tap missing"),
     ];
     Discovery {
         firecracker_bin: PathBuf::from("/opt/firecracker/bin/firecracker"),

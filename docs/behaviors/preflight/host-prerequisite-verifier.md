@@ -34,6 +34,7 @@ Host prerequisite proof uses `HostPrerequisiteResult` with
 a schema-versioned structure instead of asking installers, diagnostics, release
 proofs, or docs tests to scrape table rows. Each check has:
 
+- `check_id`, the stable machine identity;
 - `check_name`;
 - optional final path;
 - optional expected/actual version, sha256, mode, and owner facts;
@@ -41,11 +42,24 @@ proofs, or docs tests to scrape table rows. Each check has:
 - a typed `failure_variant` for failed checks;
 - a remediation id plus either an exact command or a policy/runbook link.
 
+Machine consumers key on `check_id`, not `check_name`. Human labels may change
+for table readability without changing the machine identity. The registry is:
+
+`os_gate`, `host_kernel_floor`, `kvm`, `cgroup_mode`, `jailer_identity`,
+`privilege`, `host_substrate_proof`, `kvm_cpu_extensions`, `kernel_modules`,
+`transparent_hugepages`, `kvm_halt_polling`, `cpu_governor`,
+`cpu_microcode`, `cpu_vulnerabilities`, `conntrack_capacity`,
+`firecracker_binary`, `firecracker_seccomp_filter`, `jailer_binary`,
+`jailer_hardening_wrapper`, `network_helper`, `host_binary_manifest`,
+`kernel_image`, `rootfs_manifest`, `run_root`, `run_root_filesystem`, and
+`storage_helpers`.
+
 Readers fail closed on unknown schema versions, missing required fields,
-unknown failure variants, and failed checks without a remediation token. The
-host substrate verifier emits this result for its rows today. Full host-binary
-path/hash/mode population is owned by `m80-o3uh9.8.3.2`; diagnostics rendering
-of these fields is owned by `m80-o3uh9.8.3.3`.
+unknown check ids, unknown failure variants, and failed checks without a
+remediation token. The host substrate verifier emits this result for its rows
+today. Full host-binary path/hash/mode population is owned by
+`m80-o3uh9.8.3.2`; diagnostics rendering of these fields is owned by
+`m80-o3uh9.8.3.3`.
 
 ## Fixture Knobs
 

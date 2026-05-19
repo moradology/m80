@@ -9,7 +9,7 @@ use crate::artifacts::{verify_artifacts, ArtifactPreflightConfig};
 use crate::binary::{discover_binaries, verify_host_binaries, BinaryDiscoveryConfig};
 use crate::cache::PreflightCache;
 use crate::firecracker_train::enforce_firecracker_version;
-use crate::{CheckRow, Discovery, PreflightError};
+use crate::{CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError};
 
 #[path = "substrate.rs"]
 mod substrate;
@@ -147,10 +147,9 @@ pub fn run_with_configs(
         .artifact_dir
         .join("host-binaries.manifest.json");
     verify_host_binaries(&binary_config, &binaries, &host_binary_manifest)?;
-    report.push(CheckRow {
-        label: "Firecracker binary".to_string(),
-        passed: true,
-        detail: format!(
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::FirecrackerBinary,
+        format!(
             "{} (observed {}, configured expected {})",
             binaries.firecracker_bin.display(),
             binaries.firecracker_version,
@@ -159,38 +158,33 @@ pub fn run_with_configs(
                 .as_deref()
                 .unwrap_or("from guest manifest")
         ),
-    });
-    report.push(CheckRow {
-        label: "Firecracker seccomp filter".to_string(),
-        passed: true,
-        detail: binaries.firecracker_seccomp_filter.display().to_string(),
-    });
+    ));
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::FirecrackerSeccompFilter,
+        binaries.firecracker_seccomp_filter.display().to_string(),
+    ));
 
-    report.push(CheckRow {
-        label: "Jailer binary".to_string(),
-        passed: true,
-        detail: format!(
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::JailerBinary,
+        format!(
             "{} (observed {}, expected {})",
             binaries.jailer_bin.display(),
             binaries.jailer_version,
             binaries.firecracker_version
         ),
-    });
-    report.push(CheckRow {
-        label: "Jailer hardening wrapper".to_string(),
-        passed: true,
-        detail: binaries.jailer_harden_bin.display().to_string(),
-    });
-    report.push(CheckRow {
-        label: "Network helper".to_string(),
-        passed: true,
-        detail: binaries.net_helper_bin.display().to_string(),
-    });
-    report.push(CheckRow {
-        label: "Host binary manifest".to_string(),
-        passed: true,
-        detail: format!("{} (sha256 ok)", host_binary_manifest.display()),
-    });
+    ));
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::JailerHardeningWrapper,
+        binaries.jailer_harden_bin.display().to_string(),
+    ));
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::NetworkHelper,
+        binaries.net_helper_bin.display().to_string(),
+    ));
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::HostBinaryManifest,
+        format!("{} (sha256 ok)", host_binary_manifest.display()),
+    ));
 
     // 14-18. Kernel/rootfs artifacts, run-root, and storage helpers
     let artifacts = verify_artifacts(&artifact_config, cache.hit().map(|hit| &hit.manifest))?;
@@ -200,7 +194,7 @@ pub fn run_with_configs(
     )?;
     if let Some(row) = report
         .iter_mut()
-        .find(|row| row.label == "Firecracker binary")
+        .find(|row| row.check_id == HostPrerequisiteCheckId::FirecrackerBinary)
     {
         row.detail = format!(
             "{} (observed {}, expected {})",
@@ -209,35 +203,30 @@ pub fn run_with_configs(
             artifacts.manifest.expected_firecracker_version
         );
     }
-    report.push(CheckRow {
-        label: "Kernel image".to_string(),
-        passed: true,
-        detail: artifacts.kernel.display().to_string(),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::KernelImage,
+        artifacts.kernel.display().to_string(),
+    ));
 
-    report.push(CheckRow {
-        label: "Rootfs + manifest".to_string(),
-        passed: true,
-        detail: format!("{} (sha256 ok)", artifacts.rootfs.display()),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::RootfsManifest,
+        format!("{} (sha256 ok)", artifacts.rootfs.display()),
+    ));
 
-    report.push(CheckRow {
-        label: "Run-root".to_string(),
-        passed: true,
-        detail: artifacts.run_root.display().to_string(),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::RunRoot,
+        artifacts.run_root.display().to_string(),
+    ));
 
-    report.push(CheckRow {
-        label: "Run-root filesystem".to_string(),
-        passed: true,
-        detail: artifacts.run_root_reflink.detail(),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::RunRootFilesystem,
+        artifacts.run_root_reflink.detail(),
+    ));
 
-    report.push(CheckRow {
-        label: "Storage helpers".to_string(),
-        passed: true,
-        detail: artifacts.storage_helpers.join(", "),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::StorageHelpers,
+        artifacts.storage_helpers.join(", "),
+    ));
 
     cache.store(
         &binaries.firecracker_version,
@@ -277,11 +266,10 @@ fn check_kvm_cpu_extensions(report: &mut Vec<CheckRow>) -> Result<(), PreflightE
     })?;
     let flags = classify_kvm_cpu_flags(&cpuinfo)?;
 
-    report.push(CheckRow {
-        label: "KVM CPU extensions".to_string(),
-        passed: true,
-        detail: flags.join(", "),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::KvmCpuExtensions,
+        flags.join(", "),
+    ));
     Ok(())
 }
 
@@ -330,11 +318,10 @@ fn check_kernel_modules(report: &mut Vec<CheckRow>) -> Result<(), PreflightError
     check_bridge_nf_call_iptables()?;
     classify_required_modules(&loaded)?;
 
-    report.push(CheckRow {
-        label: "Kernel modules".to_string(),
-        passed: true,
-        detail: "tap, bridge, br_netfilter loaded; tun, vhost-vsock, nf_conntrack available; bridge-nf-call-iptables=1".to_string(),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::KernelModules,
+        "tap, bridge, br_netfilter loaded; tun, vhost-vsock, nf_conntrack available; bridge-nf-call-iptables=1",
+    ));
     Ok(())
 }
 
@@ -353,13 +340,12 @@ fn check_nf_conntrack_capacity(
         })?;
     let actual = classify_nf_conntrack_capacity(&raw, expected_concurrent_vms)?;
     let minimum = minimum_nf_conntrack_entries(expected_concurrent_vms);
-    report.push(CheckRow {
-        label: "Conntrack capacity".to_string(),
-        passed: true,
-        detail: format!(
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::ConntrackCapacity,
+        format!(
             "nf_conntrack_max={actual} >= {minimum} for {expected_concurrent_vms} expected concurrent VMs"
         ),
-    });
+    ));
     Ok(())
 }
 
@@ -412,11 +398,7 @@ fn classify_thp_policy(read_result: Result<String, io::Error>) -> CheckRow {
         ),
     };
 
-    CheckRow {
-        label: "Transparent hugepages".to_string(),
-        passed: true,
-        detail,
-    }
+    CheckRow::pass(HostPrerequisiteCheckId::TransparentHugepages, detail)
 }
 
 fn selected_thp_mode(raw: &str) -> Option<&str> {
@@ -474,11 +456,7 @@ fn classify_kvm_halt_poll(
         )
     };
 
-    CheckRow {
-        label: "KVM halt polling".to_string(),
-        passed: true,
-        detail,
-    }
+    CheckRow::pass(HostPrerequisiteCheckId::KvmHaltPolling, detail)
 }
 
 fn check_cpu_governor(report: &mut Vec<CheckRow>) {
@@ -516,11 +494,7 @@ fn classify_cpu_governor(driver: Option<&str>, governor: Option<&str>) -> CheckR
         }
     };
 
-    CheckRow {
-        label: "CPU governor".to_string(),
-        passed: true,
-        detail,
-    }
+    CheckRow::pass(HostPrerequisiteCheckId::CpuGovernor, detail)
 }
 
 fn check_cpu_microcode(report: &mut Vec<CheckRow>) {
@@ -540,11 +514,7 @@ fn classify_cpu_microcode(version: Option<&str>, flags: Option<&str>) -> CheckRo
                 .to_string()
         }
     };
-    CheckRow {
-        label: "CPU microcode".to_string(),
-        passed: true,
-        detail,
-    }
+    CheckRow::pass(HostPrerequisiteCheckId::CpuMicrocode, detail)
 }
 
 fn check_cpu_vulnerabilities(report: &mut Vec<CheckRow>) -> Result<(), PreflightError> {
@@ -565,11 +535,10 @@ fn check_cpu_vulnerabilities_in_dir(
     report: &mut Vec<CheckRow>,
 ) -> Result<(), PreflightError> {
     if skip {
-        report.push(CheckRow {
-            label: "CPU vulnerabilities".to_string(),
-            passed: true,
-            detail: format!("skipped by {ENV_SKIP_CPU_VULNERABILITIES}=1"),
-        });
+        report.push(CheckRow::pass(
+            HostPrerequisiteCheckId::CpuVulnerabilities,
+            format!("skipped by {ENV_SKIP_CPU_VULNERABILITIES}=1"),
+        ));
         return Ok(());
     }
 
@@ -585,11 +554,10 @@ fn check_cpu_vulnerabilities_in_dir(
         });
     }
 
-    report.push(CheckRow {
-        label: "CPU vulnerabilities".to_string(),
-        passed: true,
-        detail: observations.join("; "),
-    });
+    report.push(CheckRow::pass(
+        HostPrerequisiteCheckId::CpuVulnerabilities,
+        observations.join("; "),
+    ));
     Ok(())
 }
 

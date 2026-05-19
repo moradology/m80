@@ -1,8 +1,8 @@
 use m80_preflight::{
     verify_host_substrate_fixture, CgroupPreflightMode, CheckRow, HostFeaturePreflightConfig,
-    HostPrerequisiteCheck, HostPrerequisiteFailureKind, HostPrerequisiteOwner,
-    HostPrerequisiteRemediation, HostPrerequisiteResult, HostPrerequisiteResultError,
-    HostPrerequisiteStatus, HostSubstrateFixture, PreflightError,
+    HostPrerequisiteCheck, HostPrerequisiteCheckId, HostPrerequisiteFailureKind,
+    HostPrerequisiteOwner, HostPrerequisiteRemediation, HostPrerequisiteResult,
+    HostPrerequisiteResultError, HostPrerequisiteStatus, HostSubstrateFixture, PreflightError,
     HOST_PREREQUISITE_RESULT_SCHEMA_VERSION,
 };
 
@@ -17,11 +17,11 @@ fn fixture_config() -> HostFeaturePreflightConfig {
 
 #[test]
 fn success_rows_reject_failed_table_rows() {
-    let rows = [CheckRow {
-        label: "legacy table row".to_owned(),
-        passed: false,
-        detail: "table booleans are not a typed failure contract".to_owned(),
-    }];
+    let rows = [CheckRow::fail(
+        HostPrerequisiteCheckId::Kvm,
+        "table booleans are not a typed failure contract",
+    )
+    .with_label("legacy table row")];
 
     let err = HostPrerequisiteResult::from_success_rows(&rows).unwrap_err();
 
@@ -34,17 +34,63 @@ fn success_rows_reject_failed_table_rows() {
 }
 
 #[test]
+fn success_rows_preserve_check_id_when_human_label_changes() {
+    let rows = [CheckRow::pass(HostPrerequisiteCheckId::Kvm, "present")
+        .with_label("Kernel virtualization device")];
+
+    let result = HostPrerequisiteResult::from_success_rows(&rows).unwrap();
+
+    assert_eq!(result.checks[0].check_id, HostPrerequisiteCheckId::Kvm);
+    assert_eq!(result.checks[0].check_name, "Kernel virtualization device");
+}
+
+#[test]
+fn stable_check_registry_keeps_expected_order() {
+    assert_eq!(
+        HostPrerequisiteCheckId::ALL,
+        &[
+            HostPrerequisiteCheckId::OsGate,
+            HostPrerequisiteCheckId::HostKernelFloor,
+            HostPrerequisiteCheckId::Kvm,
+            HostPrerequisiteCheckId::CgroupMode,
+            HostPrerequisiteCheckId::JailerIdentity,
+            HostPrerequisiteCheckId::Privilege,
+            HostPrerequisiteCheckId::HostSubstrateProof,
+            HostPrerequisiteCheckId::KvmCpuExtensions,
+            HostPrerequisiteCheckId::KernelModules,
+            HostPrerequisiteCheckId::TransparentHugepages,
+            HostPrerequisiteCheckId::KvmHaltPolling,
+            HostPrerequisiteCheckId::CpuGovernor,
+            HostPrerequisiteCheckId::CpuMicrocode,
+            HostPrerequisiteCheckId::CpuVulnerabilities,
+            HostPrerequisiteCheckId::ConntrackCapacity,
+            HostPrerequisiteCheckId::FirecrackerBinary,
+            HostPrerequisiteCheckId::FirecrackerSeccompFilter,
+            HostPrerequisiteCheckId::JailerBinary,
+            HostPrerequisiteCheckId::JailerHardeningWrapper,
+            HostPrerequisiteCheckId::NetworkHelper,
+            HostPrerequisiteCheckId::HostBinaryManifest,
+            HostPrerequisiteCheckId::KernelImage,
+            HostPrerequisiteCheckId::RootfsManifest,
+            HostPrerequisiteCheckId::RunRoot,
+            HostPrerequisiteCheckId::RunRootFilesystem,
+            HostPrerequisiteCheckId::StorageHelpers,
+        ]
+    );
+}
+
+#[test]
 fn valid_result_carries_path_version_hash_mode_owner_and_remediation_shape() {
     let root = HostPrerequisiteOwner { uid: 0, gid: 0 };
     let result = HostPrerequisiteResult::new(vec![
-        HostPrerequisiteCheck::pass("firecracker binary")
+        HostPrerequisiteCheck::pass(HostPrerequisiteCheckId::FirecrackerBinary)
             .with_final_path("/opt/firecracker/bin/firecracker")
             .with_versions("v1.15.1", "v1.15.1")
             .with_sha256("a".repeat(64), "a".repeat(64))
             .with_modes(0o755, 0o755)
             .with_owners(root, root),
         HostPrerequisiteCheck::fail(
-            "kvm",
+            HostPrerequisiteCheckId::Kvm,
             HostPrerequisiteFailureKind::KvmUnavailable,
             HostPrerequisiteRemediation::command("enable-kvm", "sudo modprobe kvm"),
         )
@@ -57,6 +103,10 @@ fn valid_result_carries_path_version_hash_mode_owner_and_remediation_shape() {
     assert_eq!(
         decoded.schema_version,
         HOST_PREREQUISITE_RESULT_SCHEMA_VERSION
+    );
+    assert_eq!(
+        decoded.checks[0].check_id,
+        HostPrerequisiteCheckId::FirecrackerBinary
     );
     assert_eq!(
         decoded.checks[0].final_path.as_deref().unwrap(),
@@ -121,6 +171,7 @@ fn unknown_failure_variant_fails_closed() {
         "schema_version": 1,
         "checks": [
             {
+                "check_id": "kvm",
                 "check_name": "kvm",
                 "status": "fail",
                 "failure_variant": "future_failure",
@@ -138,11 +189,30 @@ fn unknown_failure_variant_fails_closed() {
 }
 
 #[test]
+fn unknown_check_id_fails_closed() {
+    let raw = br#"{
+        "schema_version": 1,
+        "checks": [
+            {
+                "check_id": "future_check",
+                "check_name": "future",
+                "status": "pass"
+            }
+        ]
+    }"#;
+
+    let err = HostPrerequisiteResult::from_json_slice(raw).unwrap_err();
+
+    assert!(matches!(err, HostPrerequisiteResultError::Json(_)));
+}
+
+#[test]
 fn missing_failure_variant_fails_closed() {
     let raw = br#"{
         "schema_version": 1,
         "checks": [
             {
+                "check_id": "kvm",
                 "check_name": "kvm",
                 "status": "fail",
                 "remediation": {
@@ -169,6 +239,7 @@ fn missing_remediation_token_fails_closed() {
         "schema_version": 1,
         "checks": [
             {
+                "check_id": "kvm",
                 "check_name": "kvm",
                 "status": "fail",
                 "failure_variant": "kvm_unavailable",
@@ -196,6 +267,7 @@ fn missing_remediation_target_fails_closed() {
         "schema_version": 1,
         "checks": [
             {
+                "check_id": "kvm",
                 "check_name": "kvm",
                 "status": "fail",
                 "failure_variant": "kvm_unavailable",
@@ -293,15 +365,35 @@ fn hostless_substrate_verifier_emits_result_contract() {
     let discovery =
         verify_host_substrate_fixture(fixture_config(), &HostSubstrateFixture::supported_root())
             .unwrap();
+    let check_ids = discovery
+        .host_prerequisites
+        .checks
+        .iter()
+        .map(|check| check.check_id)
+        .collect::<Vec<_>>();
 
     assert_eq!(
         discovery.host_prerequisites.schema_version,
         HOST_PREREQUISITE_RESULT_SCHEMA_VERSION
     );
+    assert_eq!(
+        check_ids,
+        [
+            HostPrerequisiteCheckId::OsGate,
+            HostPrerequisiteCheckId::HostKernelFloor,
+            HostPrerequisiteCheckId::Kvm,
+            HostPrerequisiteCheckId::CgroupMode,
+            HostPrerequisiteCheckId::JailerIdentity,
+            HostPrerequisiteCheckId::Privilege,
+            HostPrerequisiteCheckId::HostSubstrateProof,
+        ]
+    );
     assert!(discovery
         .host_prerequisites
         .checks
         .iter()
-        .any(|check| check.check_name == "Host substrate proof"
-            && check.status == HostPrerequisiteStatus::Pass));
+        .any(
+            |check| check.check_id == HostPrerequisiteCheckId::HostSubstrateProof
+                && check.status == HostPrerequisiteStatus::Pass
+        ));
 }

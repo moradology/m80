@@ -83,6 +83,7 @@ fn char_chunks(chars: &[char], width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::HostPrerequisiteCheckId;
 
     #[test]
     fn empty_rows_produces_two_separators() {
@@ -96,11 +97,10 @@ mod tests {
 
     #[test]
     fn pass_row_contains_pass_marker() {
-        let rows = vec![CheckRow {
-            label: "OS gate".to_string(),
-            passed: true,
-            detail: "Linux 6.1.0".to_string(),
-        }];
+        let rows = vec![CheckRow::pass(
+            HostPrerequisiteCheckId::OsGate,
+            "Linux 6.1.0",
+        )];
         let out = render(&rows);
         assert!(out.contains("PASS"), "PASS must appear for passed row");
         assert!(out.contains("OS gate"), "label must appear");
@@ -108,11 +108,10 @@ mod tests {
 
     #[test]
     fn fail_row_contains_fail_marker() {
-        let rows = vec![CheckRow {
-            label: "KVM".to_string(),
-            passed: false,
-            detail: "/dev/kvm not found".to_string(),
-        }];
+        let rows = vec![CheckRow::fail(
+            HostPrerequisiteCheckId::Kvm,
+            "/dev/kvm not found",
+        )];
         let out = render(&rows);
         assert!(out.contains("FAIL"), "FAIL must appear for failed row");
     }
@@ -120,11 +119,10 @@ mod tests {
     #[test]
     fn long_detail_wraps_to_continuation_line() {
         let long_detail = "x".repeat(DETAIL_MAX + 10);
-        let rows = vec![CheckRow {
-            label: "Wrap test".to_string(),
-            passed: true,
-            detail: long_detail,
-        }];
+        let rows = vec![
+            CheckRow::pass(HostPrerequisiteCheckId::CpuMicrocode, long_detail)
+                .with_label("Wrap test"),
+        ];
         let out = render(&rows);
         // Should have separator + main line + continuation + separator = 4 lines min
         assert!(

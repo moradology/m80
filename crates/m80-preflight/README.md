@@ -211,7 +211,8 @@ which is the right place for a security review to start.
   `HostSubstrateFixture::supported_root()` and
   `HostSubstrateFixtureKvm { Writable, Missing, NotWritable }`.
 - `HostPrerequisiteResult { schema_version, checks }`,
-  `HostPrerequisiteCheck`, `HostPrerequisiteStatus`,
+  `HostPrerequisiteCheck`, `HostPrerequisiteCheckId`,
+  `HostPrerequisiteStatus`,
   `HostPrerequisiteFailureKind`, `HostPrerequisiteRemediation`,
   `HostPrerequisiteOwner`, and
   `HOST_PREREQUISITE_RESULT_SCHEMA_VERSION` — the versioned proof contract
@@ -228,7 +229,8 @@ which is the right place for a security review to start.
   `PinnedRootfs::path() -> &Path`, and
   `PinnedRootfs::proc_fd_path() -> PathBuf`.
 - `Discovery::render_table()` → `String`.
-- `CheckRow { label, passed, detail }`.
+- `CheckRow { check_id, label, passed, detail }`; `check_id` is stable for
+  machine consumers and `label` is human presentation text.
 - `PrivilegeStatus { Root, CapabilityBearing }`.
 - `FirecrackerTrainPolicy::from_expected_firecracker_version`, plus
   `expected_firecracker_version()`, `jailer_pairing_rule()`, `cve_floor()`,

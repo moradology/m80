@@ -7,7 +7,9 @@ use crate::args::{EgressMode, OverlayCloneModeArg, WritebackMode};
 use crate::errors::{EXIT_CONFIG, EXIT_PREFLIGHT};
 use crate::json;
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
-use m80_preflight::{CgroupPreflightMode, CheckRow, Discovery, PreflightError};
+use m80_preflight::{
+    CgroupPreflightMode, CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError,
+};
 use m80_proto::ExecStatus;
 
 fn fake_discovery() -> Discovery {
@@ -30,11 +32,7 @@ fn fake_discovery() -> Discovery {
         privilege: m80_preflight::PrivilegeStatus::Root,
         report: Vec::new(),
     };
-    d.report = vec![CheckRow {
-        label: "kvm".to_owned(),
-        passed: true,
-        detail: "fixture".to_owned(),
-    }];
+    d.report = vec![CheckRow::pass(HostPrerequisiteCheckId::Kvm, "fixture").with_label("kvm")];
     d
 }
 
@@ -406,6 +404,7 @@ fn preflight_json_formats_host_prerequisite_result_without_kvm() {
 
     assert_eq!(parsed["version"], 1);
     assert_eq!(parsed["data"]["schema_version"], 1);
+    assert_eq!(parsed["data"]["checks"][0]["check_id"], "kvm");
     assert_eq!(parsed["data"]["checks"][0]["check_name"], "kvm");
     assert_eq!(parsed["data"]["checks"][0]["status"], "pass");
 }
@@ -413,11 +412,10 @@ fn preflight_json_formats_host_prerequisite_result_without_kvm() {
 #[test]
 fn preflight_json_formats_discovery_version_fields() {
     let mut discovery = fake_discovery();
-    discovery.report = vec![CheckRow {
-        label: "Firecracker binary".to_owned(),
-        passed: true,
-        detail: "fixture".to_owned(),
-    }];
+    discovery.report = vec![CheckRow::pass(
+        HostPrerequisiteCheckId::FirecrackerBinary,
+        "fixture",
+    )];
     let proof = m80_preflight::HostPrerequisiteResult::from_discovery(&discovery).unwrap();
     let json = json::to_pretty(&proof);
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -425,6 +423,10 @@ fn preflight_json_formats_discovery_version_fields() {
     assert_eq!(
         parsed["data"]["checks"][0]["final_path"],
         "/tmp/firecracker"
+    );
+    assert_eq!(
+        parsed["data"]["checks"][0]["check_id"],
+        "firecracker_binary"
     );
     assert_eq!(parsed["data"]["checks"][0]["expected_version"], "v1.0.0");
     assert_eq!(parsed["data"]["checks"][0]["actual_version"], "v1.0.0");
