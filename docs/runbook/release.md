@@ -19,7 +19,10 @@ workspace package version `0.0.0`, the expected release tag is `v0.0.0`.
 - dev builds render as `<package-version>-dev`;
 - release builds render the injected GitHub release tag;
 - `m80 --json version` includes `package_version`, `release_tag`,
-  `release_build`, `version_status`, and `expected_release_tag`.
+  `release_build`, `version_status`, `expected_release_tag`,
+  `protocol_version`, `manifest_schema_version`,
+  `build_receipt_schema_version`, and
+  `install_provenance_schema_version`.
 
 Packaging must refuse to publish a bundle when `version_status` is `dev` or
 `mismatch`. The installer and quickstart resolver must not use `releases/latest`
@@ -43,6 +46,8 @@ inputs with:
 ```sh
 scripts/package-release-bundle.py \
   --release-tag "$M80_RELEASE_TAG" \
+  --target linux-x86_64 \
+  --image-kind minimal \
   --m80-bin target/release/m80 \
   --jailer-harden-bin target/release/m80-jailer-harden \
   --net-helper-bin target/release/m80-net-helper \
@@ -54,6 +59,12 @@ scripts/package-release-bundle.py \
   --install-sh scripts/quickstart.sh \
   --out-dir /tmp/m80-release-bundle
 ```
+
+This package command is the compatibility gate before upload. It reads
+`m80 --json version`, `m80-guestd --version`, the guest manifest, and the build
+receipt; then it refuses schema drift, protocol drift, wrong target/image kind,
+stale release identity, or manifest/receipt hashes that do not match the
+supplied artifacts.
 
 The installer bead will replace `scripts/quickstart.sh` with the final
 versioned `install.sh` release asset; the bundle contract already reserves the

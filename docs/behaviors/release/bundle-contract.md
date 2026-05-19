@@ -29,9 +29,16 @@ Firecracker, jailer, and the Firecracker seccomp filter are known.
 - `release_tag` and `m80_version`;
 - `package_version`;
 - `target`, currently `linux-x86_64`;
+- `os` and `arch`, currently `linux` and `x86_64`;
 - `image_kind`, currently `minimal` for the default quickstart;
+- `m80_protocol_version`;
+- `guestd_package_version`;
 - `guest_protocol_version`;
 - `manifest_schema_version`;
+- `build_receipt_schema_version`;
+- `build_receipt_manifest_path`;
+- `install_provenance_schema_version`;
+- `install_provenance_required: true`;
 - `expected_firecracker_version`;
 - one sha256 and size entry for each payload path.
 
@@ -59,12 +66,16 @@ original hash, installed hash, path rewrite, and release tag. See
 - unexpected tar entries;
 - install-time-only host-binaries manifests inside the bundle;
 - wrong file modes for required paths;
-- target or image-kind mismatch;
+- target, OS, arch, or image-kind mismatch;
 - stale release tag, m80 version, or package version;
-- missing manifest/protocol/Firecracker metadata;
+- missing manifest/protocol/receipt/provenance/Firecracker metadata;
+- manifest, build-receipt, or bundle compatibility tuple mismatch;
 - metadata or `SHA256SUMS` hash mismatch;
 - stale adjacent dist checksum sidecars when `--verify-sidecars` is set.
 
 `scripts/package-release-bundle.py` creates this shape from already-built
 inputs with deterministic tar metadata and refuses a binary whose
-`m80 --json version` identity does not match the release tag.
+`m80 --json version` identity does not match the release tag. It also refuses
+guestd protocol drift, manifest schema drift, build-receipt schema drift, wrong
+image kind, wrong target architecture, and manifest/receipt hashes that do not
+match the supplied release artifacts.

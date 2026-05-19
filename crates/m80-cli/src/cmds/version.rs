@@ -3,13 +3,17 @@ use crate::release::VersionIdentity;
 
 /// `m80 version` — print version strings.
 ///
-/// Reports binary version, wire-protocol version, and (best-effort) the
-/// Firecracker version pin from the manifest beside `M80_ROOTFS_IMAGE`.
+/// Reports binary version, wire-protocol version, image artifact schema
+/// versions, and (best-effort) the Firecracker version pin from the manifest
+/// beside `M80_ROOTFS_IMAGE`.
 /// If the manifest can't be read, the Firecracker pin renders as
 /// `"unknown"` rather than failing the subcommand.
 pub(super) fn cmd_version(json_mode: bool) -> anyhow::Result<i32> {
     let identity = VersionIdentity::current();
     let protocol_version = m80_proto::PROTOCOL_VERSION;
+    let manifest_schema_version = m80_image_manifest::SCHEMA_VERSION;
+    let build_receipt_schema_version = m80_image_manifest::BUILD_RECEIPT_SCHEMA_VERSION;
+    let install_provenance_schema_version = m80_image_manifest::INSTALL_PROVENANCE_SCHEMA_VERSION;
     let firecracker_pin = read_firecracker_pin();
 
     if json_mode {
@@ -21,6 +25,9 @@ pub(super) fn cmd_version(json_mode: bool) -> anyhow::Result<i32> {
             "version_status": identity.version_status,
             "expected_release_tag": identity.expected_release_tag,
             "protocol_version": protocol_version,
+            "manifest_schema_version": manifest_schema_version,
+            "build_receipt_schema_version": build_receipt_schema_version,
+            "install_provenance_schema_version": install_provenance_schema_version,
             "firecracker_pin": firecracker_pin,
         });
         println!("{}", json::to_pretty(&obj));
@@ -33,6 +40,9 @@ pub(super) fn cmd_version(json_mode: bool) -> anyhow::Result<i32> {
         );
         println!("version_status  {}", identity.version_status.as_str());
         println!("protocol        {protocol_version}");
+        println!("manifest_schema {manifest_schema_version}");
+        println!("receipt_schema  {build_receipt_schema_version}");
+        println!("provenance      {install_provenance_schema_version}");
         println!("firecracker     {firecracker_pin}");
     }
 

@@ -57,8 +57,16 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(metadata["m80_version"], "v0.0.0")
             self.assertEqual(metadata["package_version"], "0.0.0")
             self.assertEqual(metadata["target"], "linux-x86_64")
+            self.assertEqual(metadata["os"], "linux")
+            self.assertEqual(metadata["arch"], "x86_64")
             self.assertEqual(metadata["image_kind"], "minimal")
+            self.assertEqual(metadata["m80_protocol_version"], 1)
+            self.assertEqual(metadata["guestd_package_version"], "0.0.0")
             self.assertEqual(metadata["manifest_schema_version"], 5)
+            self.assertEqual(metadata["build_receipt_schema_version"], 1)
+            self.assertTrue(metadata["build_receipt_manifest_path"].endswith("output.ext4.manifest.json"))
+            self.assertEqual(metadata["install_provenance_schema_version"], 1)
+            self.assertEqual(metadata["install_provenance_required"], True)
             self.assertEqual(metadata["guest_protocol_version"], 1)
             self.assertEqual(metadata["expected_firecracker_version"], "v1.15.1")
             self.assertNotIn(
@@ -143,6 +151,17 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("bundle target mismatch", result.stderr)
 
+    def test_verifier_rejects_wrong_arch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "wrong-arch.tar.gz"
+            rewrite_tar(tarball, broken, metadata_updates={"arch": "arm64"})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle arch mismatch", result.stderr)
+
     def test_verifier_rejects_wrong_image_kind(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tarball = package_fixture(Path(tmp))
@@ -154,6 +173,17 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("bundle image_kind mismatch", result.stderr)
 
+    def test_verifier_rejects_missing_install_provenance_requirement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "missing-provenance-requirement.tar.gz"
+            rewrite_tar(tarball, broken, metadata_updates={"install_provenance_required": False})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle install_provenance_required missing", result.stderr)
+
     def test_verifier_rejects_stale_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tarball = package_fixture(Path(tmp))
@@ -164,6 +194,17 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("bundle m80_version mismatch", result.stderr)
+
+    def test_verifier_rejects_guestd_package_version_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "guestd-package-version.tar.gz"
+            rewrite_tar(tarball, broken, metadata_updates={"guestd_package_version": "9.9.9"})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle guestd_package_version mismatch", result.stderr)
 
     def test_verifier_rejects_metadata_hash_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -197,6 +238,135 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("release tag mismatch", result.stderr)
+
+    def test_rejects_guest_protocol_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0", guest_protocol=2)
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80-guestd protocol_version != m80 protocol_version", result.stderr)
+
+    def test_rejects_manifest_schema_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            rewrite_manifest(inputs["manifest"], {"schema_version": 99})
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("guest manifest schema_version mismatch", result.stderr)
+
+    def test_rejects_build_receipt_schema_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            rewrite_json(inputs["receipt"], {"schema_version": 99})
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build receipt schema_version mismatch", result.stderr)
+
+    def test_rejects_guest_manifest_image_kind_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            rewrite_manifest(inputs["manifest"], {"image_kind": "ubuntu"})
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("guest manifest image_kind mismatch", result.stderr)
+
+    def test_rejects_unsupported_package_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+
+            result = run_package(inputs, root / "out", target="linux-arm64", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported target", result.stderr)
+
+    def test_rejects_unsupported_package_image_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+
+            result = run_package(inputs, root / "out", image_kind="ubuntu", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported image kind", result.stderr)
+
+    def test_rejects_build_receipt_manifest_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            rewrite_json(inputs["receipt"], {"manifest_sha256": "0" * 64})
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build receipt manifest_sha256 mismatch", result.stderr)
+
+    def test_rejects_build_receipt_manifest_path_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            rewrite_json(inputs["receipt"], {"manifest_path": str(root / "other.manifest.json")})
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build receipt manifest_path mismatch", result.stderr)
+
+    def test_rejects_build_receipt_artifact_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            receipt = json.loads(inputs["receipt"].read_text())
+            receipt["artifacts"][0]["sha256"] = "0" * 64
+            inputs["receipt"].write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build receipt kernel_image sha256 mismatch", result.stderr)
+
+    def test_verifier_rejects_build_receipt_manifest_path_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "receipt-path.tar.gz"
+            rewrite_tar(
+                tarball,
+                broken,
+                metadata_updates={"build_receipt_manifest_path": "/tmp/not-the-manifest.json"},
+                payload_updates={
+                    "artifacts/output.ext4.build-receipt.json": lambda data: rewrite_json_bytes(
+                        data,
+                        {"manifest_path": "/tmp/not-the-manifest.json"},
+                    )
+                },
+            )
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build receipt manifest_path mismatch", result.stderr)
+
+    def test_verifier_rejects_build_receipt_manifest_path_metadata_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "receipt-path-metadata.tar.gz"
+            rewrite_tar(tarball, broken, metadata_updates={"build_receipt_manifest_path": "/tmp/other.json"})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle build_receipt_manifest_path mismatch", result.stderr)
 
     def test_verifier_rejects_stale_public_checksum_sidecar(self) -> None:
         cases = [
@@ -242,7 +412,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn("public sidecar mode mismatch for install.sh", result.stderr)
 
 
-def fixture_inputs(root: Path, *, release_tag: str) -> dict[str, Path]:
+def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> dict[str, Path]:
     inputs = root / "inputs"
     inputs.mkdir()
     for name in [
@@ -250,21 +420,13 @@ def fixture_inputs(root: Path, *, release_tag: str) -> dict[str, Path]:
         "m80-net-helper",
         "vmlinux",
         "output.ext4",
-        "output.ext4.build-receipt.json",
-        "m80-guestd",
     ]:
         write_executable(inputs / name, f"#!/bin/sh\nprintf '{name}\\n'\n")
     write_fake_m80(inputs / "m80", release_tag)
+    write_fake_guestd(inputs / "m80-guestd", guest_protocol)
     write_executable(inputs / "install.sh", "#!/bin/sh\nexit 0\n")
-    (inputs / "output.ext4.manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 5,
-                "expected_firecracker_version": "v1.15.1",
-            }
-        )
-        + "\n"
-    )
+    write_guest_manifest(inputs)
+    write_build_receipt(inputs)
     return {
         "m80": inputs / "m80",
         "jailer_harden": inputs / "m80-jailer-harden",
@@ -289,10 +451,83 @@ def write_fake_m80(path: Path, release_tag: str) -> None:
             "version_status": "release",
             "expected_release_tag": "v0.0.0",
             "protocol_version": 1,
+            "manifest_schema_version": 5,
+            "build_receipt_schema_version": 1,
+            "install_provenance_schema_version": 1,
             "firecracker_pin": "unknown",
         },
     }
     write_executable(path, f"#!/bin/sh\ncat <<'JSON'\n{json.dumps(payload)}\nJSON\n")
+
+
+def write_fake_guestd(path: Path, protocol_version: int) -> None:
+    write_executable(path, f"#!/bin/sh\nprintf 'm80-guestd 0.0.0 (proto v{protocol_version})\\n'\n")
+
+
+def write_guest_manifest(inputs: Path) -> None:
+    manifest = {
+        "daemon_binary_path": str(inputs / "m80-guestd"),
+        "daemon_binary_sha256": sha256(inputs / "m80-guestd"),
+        "expected_firecracker_version": "v1.15.1",
+        "guest_port": 9001,
+        "image_kind": "minimal",
+        "kernel_image": str(inputs / "vmlinux"),
+        "kernel_image_sha256": sha256(inputs / "vmlinux"),
+        "kernel_kind": "stock",
+        "no_egress_reason": None,
+        "output_rootfs_image": str(inputs / "output.ext4"),
+        "output_rootfs_sha256": sha256(inputs / "output.ext4"),
+        "ready_marker": "GUESTD_READY",
+        "rootfs_format": "ext4",
+        "schema_version": 5,
+        "source_rootfs_image": None,
+        "source_rootfs_sha256": None,
+    }
+    (inputs / "output.ext4.manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+
+def write_build_receipt(inputs: Path) -> None:
+    manifest_path = inputs / "output.ext4.manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    receipt = {
+        "artifacts": [
+            {
+                "kind": "kernel_image",
+                "path": manifest["kernel_image"],
+                "sha256": manifest["kernel_image_sha256"],
+            },
+            {
+                "kind": "output_rootfs_image",
+                "path": manifest["output_rootfs_image"],
+                "sha256": manifest["output_rootfs_sha256"],
+            },
+            {
+                "kind": "daemon_binary_path",
+                "path": manifest["daemon_binary_path"],
+                "sha256": manifest["daemon_binary_sha256"],
+            },
+        ],
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": sha256(manifest_path),
+        "schema_version": 1,
+    }
+    (inputs / "output.ext4.build-receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+
+
+def rewrite_manifest(path: Path, updates: dict) -> None:
+    rewrite_json(path, updates)
+
+
+def rewrite_json(path: Path, updates: dict) -> None:
+    payload = json.loads(path.read_text())
+    payload.update(updates)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def rewrite_json_bytes(data: bytes, updates: dict) -> bytes:
+    payload = json.loads(data.decode("utf-8"))
+    payload.update(updates)
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
 
 
 def write_executable(path: Path, text: str) -> None:
@@ -305,6 +540,8 @@ def run_package(
     out_dir: Path,
     *,
     release_tag: str = "v0.0.0",
+    target: str = "linux-x86_64",
+    image_kind: str = "minimal",
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     cmd = [
@@ -314,6 +551,10 @@ def run_package(
         str(REPO_ROOT),
         "--release-tag",
         release_tag,
+        "--target",
+        target,
+        "--image-kind",
+        image_kind,
         "--m80-bin",
         str(inputs["m80"]),
         "--jailer-harden-bin",
@@ -373,11 +614,13 @@ def rewrite_tar(
     duplicate: str | None = None,
     metadata_updates: dict | None = None,
     metadata_file_updates: dict[str, str] | None = None,
+    payload_updates: dict[str, object] | None = None,
     mode_updates: dict[str, int] | None = None,
     extra: dict[str, bytes] | None = None,
 ) -> None:
     omit = omit or set()
     mode_updates = mode_updates or {}
+    payload_updates = payload_updates or {}
     extra = extra or {}
     entries: list[tuple[str, bytes, int]] = []
     with tarfile.open(src, "r:gz") as tar:
@@ -394,6 +637,8 @@ def rewrite_tar(
                         if row["path"] in metadata_file_updates:
                             row["sha256"] = metadata_file_updates[row["path"]]
                 data = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode()
+            if member.name in payload_updates:
+                data = payload_updates[member.name](data)
             mode = mode_updates.get(member.name, member.mode & 0o777)
             entries.append((member.name, data, mode))
             if member.name == duplicate:

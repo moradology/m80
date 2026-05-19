@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -17,9 +18,13 @@ import tomllib
 
 
 BUNDLE_SCHEMA_VERSION = 1
+SUPPORTED_TARGET = "linux-x86_64"
+SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 INSTALL_NAME = "install.sh"
+GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
+REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
 FILE_MODES = {
     "bin/m80": 0o755,
     "bin/m80-jailer-harden": 0o755,
@@ -59,6 +64,11 @@ def main() -> int:
     repo_root = args.repo_root.resolve()
     out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    target_os, target_arch = supported_target_parts(args.target)
+    require(
+        args.image_kind == SUPPORTED_IMAGE_KIND,
+        f"unsupported image kind: expected {SUPPORTED_IMAGE_KIND}, got {args.image_kind}",
+    )
 
     workspace_version = workspace_package_version(repo_root)
     expected_tag = f"v{workspace_version}"
@@ -73,12 +83,33 @@ def main() -> int:
     require(version.get("release_tag") == args.release_tag, "m80 release_tag != release tag")
     require(version.get("package_version") == workspace_version, "m80 package_version != workspace version")
     require(version.get("version_status") == "release", "m80 version_status must be release")
+    require(isinstance(version.get("protocol_version"), int), "m80 version missing protocol_version")
+    require(isinstance(version.get("manifest_schema_version"), int), "m80 version missing manifest_schema_version")
+    require(
+        isinstance(version.get("build_receipt_schema_version"), int),
+        "m80 version missing build_receipt_schema_version",
+    )
+    require(
+        isinstance(version.get("install_provenance_schema_version"), int),
+        "m80 version missing install_provenance_schema_version",
+    )
+
+    guestd = guestd_version(args.guestd)
+    require(guestd["package_version"] == workspace_version, "m80-guestd package_version != workspace version")
+    require(
+        guestd["protocol_version"] == version["protocol_version"],
+        "m80-guestd protocol_version != m80 protocol_version",
+    )
 
     guest_manifest = read_json(args.rootfs_manifest)
-    manifest_schema = guest_manifest.get("schema_version")
-    expected_fc = guest_manifest.get("expected_firecracker_version")
-    require(isinstance(manifest_schema, int), "guest manifest missing integer schema_version")
-    require(isinstance(expected_fc, str) and expected_fc, "guest manifest missing expected_firecracker_version")
+    receipt = read_json(args.build_receipt)
+    compatibility = verify_compatibility_tuple(
+        args=args,
+        version=version,
+        guestd=guestd,
+        guest_manifest=guest_manifest,
+        receipt=receipt,
+    )
 
     with tempfile.TemporaryDirectory(prefix="m80-release-bundle-") as tmp:
         bundle_root = Path(tmp) / "bundle"
@@ -99,8 +130,10 @@ def main() -> int:
         metadata = bundle_metadata(
             args=args,
             version=version,
-            manifest_schema=manifest_schema,
-            expected_fc=expected_fc,
+            guestd=guestd,
+            compatibility=compatibility,
+            target_os=target_os,
+            target_arch=target_arch,
             files=file_hashes(bundle_root),
         )
         metadata_path = bundle_root / "bundle.json"
@@ -141,6 +174,7 @@ def workspace_package_version(repo_root: Path) -> str:
 
 
 def m80_version(binary: Path) -> dict:
+    require(binary.is_file(), f"missing required input: {binary}")
     output = subprocess.run(
         [str(binary), "--json", "version"],
         check=False,
@@ -154,9 +188,152 @@ def m80_version(binary: Path) -> dict:
     return payload["data"]
 
 
+def guestd_version(binary: Path) -> dict:
+    require(binary.is_file(), f"missing required input: {binary}")
+    output = subprocess.run(
+        [str(binary), "--version"],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if output.returncode != 0:
+        raise SystemExit(f"{binary} --version failed: {output.stderr.strip()}")
+    match = GUESTD_VERSION_RE.match(output.stdout.strip())
+    if not match:
+        raise SystemExit(f"m80-guestd --version output was not parseable: {output.stdout.strip()}")
+    return {
+        "package_version": match.group("package_version"),
+        "protocol_version": int(match.group("protocol_version")),
+    }
+
+
 def read_json(path: Path) -> dict:
     with path.open() as f:
         return json.load(f)
+
+
+def supported_target_parts(target: str) -> tuple[str, str]:
+    require(target == SUPPORTED_TARGET, f"unsupported target: expected {SUPPORTED_TARGET}, got {target}")
+    return ("linux", "x86_64")
+
+
+def verify_compatibility_tuple(
+    *,
+    args: argparse.Namespace,
+    version: dict,
+    guestd: dict,
+    guest_manifest: dict,
+    receipt: dict,
+) -> dict:
+    manifest_schema = require_int(guest_manifest, "schema_version", "guest manifest")
+    require(
+        manifest_schema == version["manifest_schema_version"],
+        f"guest manifest schema_version mismatch: expected {version['manifest_schema_version']}, got {manifest_schema}",
+    )
+    expected_fc = require_str(guest_manifest, "expected_firecracker_version", "guest manifest")
+    manifest_image_kind = require_str(guest_manifest, "image_kind", "guest manifest")
+    require(
+        manifest_image_kind == args.image_kind,
+        f"guest manifest image_kind mismatch: expected {args.image_kind}, got {manifest_image_kind}",
+    )
+    require(
+        guest_manifest.get("source_rootfs_image") is None and guest_manifest.get("source_rootfs_sha256") is None,
+        "minimal guest manifest must not record source rootfs artifacts",
+    )
+
+    receipt_schema = require_int(receipt, "schema_version", "build receipt")
+    require(
+        receipt_schema == version["build_receipt_schema_version"],
+        f"build receipt schema_version mismatch: expected {version['build_receipt_schema_version']}, got {receipt_schema}",
+    )
+    require(
+        require_str(receipt, "manifest_sha256", "build receipt") == sha256(args.rootfs_manifest),
+        "build receipt manifest_sha256 mismatch",
+    )
+    receipt_manifest_path = Path(require_str(receipt, "manifest_path", "build receipt"))
+    require(
+        receipt_manifest_path.resolve(strict=False) == args.rootfs_manifest.resolve(strict=False),
+        f"build receipt manifest_path mismatch: expected {args.rootfs_manifest}, got {receipt_manifest_path}",
+    )
+
+    artifact_rows = receipt_artifact_map(receipt)
+    require(
+        set(artifact_rows) == REQUIRED_MINIMAL_ARTIFACTS,
+        "build receipt artifact set mismatch",
+    )
+    verify_manifest_artifact(
+        args.kernel,
+        "kernel_image",
+        "kernel_image_sha256",
+        guest_manifest,
+        artifact_rows,
+    )
+    verify_manifest_artifact(
+        args.rootfs,
+        "output_rootfs_image",
+        "output_rootfs_sha256",
+        guest_manifest,
+        artifact_rows,
+    )
+    verify_manifest_artifact(
+        args.guestd,
+        "daemon_binary_path",
+        "daemon_binary_sha256",
+        guest_manifest,
+        artifact_rows,
+    )
+
+    return {
+        "manifest_schema": manifest_schema,
+        "build_receipt_schema": receipt_schema,
+        "build_receipt_manifest_path": str(receipt_manifest_path),
+        "install_provenance_schema": version["install_provenance_schema_version"],
+        "expected_firecracker_version": expected_fc,
+        "m80_protocol_version": version["protocol_version"],
+        "guest_protocol_version": guestd["protocol_version"],
+    }
+
+
+def verify_manifest_artifact(
+    input_path: Path,
+    manifest_path_field: str,
+    manifest_sha_field: str,
+    guest_manifest: dict,
+    artifact_rows: dict[str, dict],
+) -> None:
+    manifest_path = require_str(guest_manifest, manifest_path_field, "guest manifest")
+    manifest_sha = require_str(guest_manifest, manifest_sha_field, "guest manifest")
+    require(manifest_sha == sha256(input_path), f"guest manifest {manifest_sha_field} mismatch")
+    row = artifact_rows[manifest_path_field]
+    require(row["path"] == manifest_path, f"build receipt {manifest_path_field} path mismatch")
+    require(row["sha256"] == manifest_sha, f"build receipt {manifest_path_field} sha256 mismatch")
+
+
+def receipt_artifact_map(receipt: dict) -> dict[str, dict]:
+    rows = receipt.get("artifacts")
+    require(isinstance(rows, list), "build receipt artifacts must be a list")
+    result = {}
+    for row in rows:
+        require(isinstance(row, dict), "build receipt artifact entry must be an object")
+        kind = require_str(row, "kind", "build receipt artifact")
+        path = require_str(row, "path", "build receipt artifact")
+        digest = require_str(row, "sha256", "build receipt artifact")
+        require(kind not in result, f"build receipt duplicate artifact: {kind}")
+        result[kind] = {"path": path, "sha256": digest}
+    return result
+
+
+def require_int(obj: dict, key: str, label: str) -> int:
+    value = obj.get(key)
+    require(isinstance(value, int), f"{label} missing integer {key}")
+    return value
+
+
+def require_str(obj: dict, key: str, label: str) -> str:
+    value = obj.get(key)
+    require(isinstance(value, str) and value, f"{label} missing {key}")
+    return value
 
 
 def copy_file(src: Path, dest: Path, mode: int) -> None:
@@ -181,8 +358,10 @@ def bundle_metadata(
     *,
     args: argparse.Namespace,
     version: dict,
-    manifest_schema: int,
-    expected_fc: str,
+    guestd: dict,
+    compatibility: dict,
+    target_os: str,
+    target_arch: str,
     files: list[dict],
 ) -> dict:
     return {
@@ -191,10 +370,18 @@ def bundle_metadata(
         "m80_version": version["binary_version"],
         "package_version": version["package_version"],
         "target": args.target,
+        "os": target_os,
+        "arch": target_arch,
         "image_kind": args.image_kind,
-        "guest_protocol_version": version["protocol_version"],
-        "manifest_schema_version": manifest_schema,
-        "expected_firecracker_version": expected_fc,
+        "m80_protocol_version": compatibility["m80_protocol_version"],
+        "guestd_package_version": guestd["package_version"],
+        "guest_protocol_version": compatibility["guest_protocol_version"],
+        "manifest_schema_version": compatibility["manifest_schema"],
+        "build_receipt_schema_version": compatibility["build_receipt_schema"],
+        "build_receipt_manifest_path": compatibility["build_receipt_manifest_path"],
+        "install_provenance_schema_version": compatibility["install_provenance_schema"],
+        "install_provenance_required": True,
+        "expected_firecracker_version": compatibility["expected_firecracker_version"],
         "files": files,
     }
 

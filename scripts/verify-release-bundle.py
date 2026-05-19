@@ -12,6 +12,8 @@ import tomllib
 
 
 BUNDLE_SCHEMA_VERSION = 1
+SUPPORTED_TARGET = "linux-x86_64"
+SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 INSTALL_NAME = "install.sh"
@@ -60,6 +62,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    target_os, target_arch = supported_target_parts(args.target)
+    require(
+        args.image_kind == SUPPORTED_IMAGE_KIND,
+        f"unsupported image kind: expected {SUPPORTED_IMAGE_KIND}, got {args.image_kind}",
+    )
     workspace_version = workspace_package_version(args.repo_root)
     expected_tag = f"v{workspace_version}"
     require(args.release_tag == expected_tag, f"release tag mismatch: expected {expected_tag}, got {args.release_tag}")
@@ -86,11 +93,31 @@ def main() -> int:
     require(metadata.get("release_tag") == args.release_tag, "bundle release_tag mismatch")
     require(metadata.get("m80_version") == args.release_tag, "bundle m80_version mismatch")
     require(metadata.get("package_version") == workspace_version, "bundle package_version mismatch")
+    require(metadata.get("guestd_package_version") == workspace_version, "bundle guestd_package_version mismatch")
     require(metadata.get("target") == args.target, "bundle target mismatch")
+    require(metadata.get("os") == target_os, "bundle os mismatch")
+    require(metadata.get("arch") == target_arch, "bundle arch mismatch")
     require(metadata.get("image_kind") == args.image_kind, "bundle image_kind mismatch")
     require(isinstance(metadata.get("manifest_schema_version"), int), "bundle manifest_schema_version missing")
+    require(
+        isinstance(metadata.get("build_receipt_schema_version"), int),
+        "bundle build_receipt_schema_version missing",
+    )
+    require(metadata.get("build_receipt_manifest_path"), "bundle build_receipt_manifest_path missing")
+    require(
+        isinstance(metadata.get("install_provenance_schema_version"), int),
+        "bundle install_provenance_schema_version missing",
+    )
+    require(metadata.get("install_provenance_required") is True, "bundle install_provenance_required missing")
+    require(isinstance(metadata.get("m80_protocol_version"), int), "bundle m80_protocol_version missing")
     require(isinstance(metadata.get("guest_protocol_version"), int), "bundle guest_protocol_version missing")
+    require(
+        metadata.get("m80_protocol_version") == metadata.get("guest_protocol_version"),
+        "bundle protocol version mismatch",
+    )
     require(metadata.get("expected_firecracker_version"), "bundle expected_firecracker_version missing")
+
+    verify_compatibility_tuple(files, metadata)
 
     metadata_files = metadata_file_map(metadata)
     require(set(metadata_files) == PAYLOAD_PATHS, "bundle metadata file set mismatch")
@@ -123,6 +150,113 @@ def read_regular_files(tar: tarfile.TarFile) -> dict[str, dict]:
         require(extracted is not None, f"bundle member unreadable: {name}")
         files[name] = {"data": extracted.read(), "mode": member.mode & 0o777}
     return files
+
+
+def supported_target_parts(target: str) -> tuple[str, str]:
+    require(target == SUPPORTED_TARGET, f"unsupported target: expected {SUPPORTED_TARGET}, got {target}")
+    return ("linux", "x86_64")
+
+
+def verify_compatibility_tuple(files: dict[str, dict], metadata: dict) -> None:
+    guest_manifest = json.loads(files["artifacts/output.ext4.manifest.json"]["data"].decode("utf-8"))
+    receipt = json.loads(files["artifacts/output.ext4.build-receipt.json"]["data"].decode("utf-8"))
+
+    require(
+        metadata["manifest_schema_version"] == guest_manifest.get("schema_version"),
+        "bundle manifest_schema_version mismatch",
+    )
+    require(
+        metadata["build_receipt_schema_version"] == receipt.get("schema_version"),
+        "bundle build_receipt_schema_version mismatch",
+    )
+    require(
+        metadata["expected_firecracker_version"] == guest_manifest.get("expected_firecracker_version"),
+        "bundle expected_firecracker_version mismatch",
+    )
+    require(metadata["image_kind"] == guest_manifest.get("image_kind"), "bundle image_kind/manifest mismatch")
+    require(
+        guest_manifest.get("source_rootfs_image") is None and guest_manifest.get("source_rootfs_sha256") is None,
+        "minimal guest manifest must not record source rootfs artifacts",
+    )
+    require(
+        receipt.get("manifest_sha256") == sha256_bytes(files["artifacts/output.ext4.manifest.json"]["data"]),
+        "build receipt manifest_sha256 mismatch",
+    )
+    receipt_manifest_path = Path(require_str(receipt, "manifest_path", "build receipt"))
+    require(
+        metadata["build_receipt_manifest_path"] == str(receipt_manifest_path),
+        "bundle build_receipt_manifest_path mismatch",
+    )
+    require(
+        receipt_manifest_path.name == "output.ext4.manifest.json",
+        "build receipt manifest_path mismatch",
+    )
+
+    artifact_rows = receipt_artifact_map(receipt)
+    require(
+        set(artifact_rows) == {"kernel_image", "output_rootfs_image", "daemon_binary_path"},
+        "build receipt artifact set mismatch",
+    )
+    verify_manifest_artifact(
+        files,
+        guest_manifest,
+        artifact_rows,
+        "artifacts/vmlinux",
+        "kernel_image",
+        "kernel_image_sha256",
+    )
+    verify_manifest_artifact(
+        files,
+        guest_manifest,
+        artifact_rows,
+        "artifacts/output.ext4",
+        "output_rootfs_image",
+        "output_rootfs_sha256",
+    )
+    verify_manifest_artifact(
+        files,
+        guest_manifest,
+        artifact_rows,
+        "artifacts/m80-guestd",
+        "daemon_binary_path",
+        "daemon_binary_sha256",
+    )
+
+
+def verify_manifest_artifact(
+    files: dict[str, dict],
+    guest_manifest: dict,
+    artifact_rows: dict[str, dict],
+    bundle_path: str,
+    manifest_path_field: str,
+    manifest_sha_field: str,
+) -> None:
+    manifest_path = require_str(guest_manifest, manifest_path_field, "guest manifest")
+    manifest_sha = require_str(guest_manifest, manifest_sha_field, "guest manifest")
+    require(manifest_sha == sha256_bytes(files[bundle_path]["data"]), f"guest manifest {manifest_sha_field} mismatch")
+    row = artifact_rows[manifest_path_field]
+    require(row["path"] == manifest_path, f"build receipt {manifest_path_field} path mismatch")
+    require(row["sha256"] == manifest_sha, f"build receipt {manifest_path_field} sha256 mismatch")
+
+
+def receipt_artifact_map(receipt: dict) -> dict[str, dict]:
+    rows = receipt.get("artifacts")
+    require(isinstance(rows, list), "build receipt artifacts must be a list")
+    result = {}
+    for row in rows:
+        require(isinstance(row, dict), "build receipt artifact entry must be an object")
+        kind = require_str(row, "kind", "build receipt artifact")
+        path = require_str(row, "path", "build receipt artifact")
+        digest = require_str(row, "sha256", "build receipt artifact")
+        require(kind not in result, f"build receipt duplicate artifact: {kind}")
+        result[kind] = {"path": path, "sha256": digest}
+    return result
+
+
+def require_str(obj: dict, key: str, label: str) -> str:
+    value = obj.get(key)
+    require(isinstance(value, str) and value, f"{label} missing {key}")
+    return value
 
 
 def metadata_file_map(metadata: dict) -> dict[str, str]:
