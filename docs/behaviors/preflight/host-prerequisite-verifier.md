@@ -51,3 +51,4 @@ release `m80 run -- echo hello` smoke.
 - `crates/m80-preflight/src/substrate.rs::tests::substrate_fixture_rejects_bad_kvm_permissions`
 - `crates/m80-preflight/src/substrate.rs::tests::substrate_fixture_rejects_wrong_cgroup_mode`
 - `crates/m80-preflight/src/substrate.rs::tests::substrate_fixture_rejects_insufficient_privilege`
+- `crates/m80-preflight/tests/host_prerequisite_fixtures.rs`

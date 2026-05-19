@@ -80,6 +80,8 @@ document:
 - `docs/ops/host-setup.md` for operator host posture;
 - `docs/ops/binary-installation.md` for final installed paths, ownership, and
   host-binaries manifest generation;
+- `docs/behaviors/release/host-prerequisite-fixtures.md` for the hostless
+  install-root fixture matrix;
 - `docs/behaviors/preflight/host-prerequisite-verifier.md` for the reusable
   non-mutating substrate verifier used by install and preflight;
 - `docs/behaviors/preflight/binary-discovery.md` for current preflight

@@ -320,6 +320,12 @@ which is the right place for a security review to start.
 - Report determinism: same host state produces the same `report` rows
   in the same order.
 - Hint coverage: every error variant carries a non-empty hint string.
+- Host prerequisite fixtures: `tests/host_prerequisite_fixtures.rs` builds a
+  full fake install root and covers success, wrong Firecracker train, stale
+  byte-observable, missing jailer/seccomp, helper version-probe failure, and
+  install-root override without touching real `/opt`, `/etc`, `/dev/kvm`,
+  cgroups, or sudo. The final root-owned file/mode/hash rejection checks live
+  in the host-binary verifier/core tests.
 - Sentinel cache: corrupt sentinel rewrite, boot-id invalidation, and rootfs
   metadata invalidation.
 - `tests/security/rootfs_fd_pinning.rs` — proc-fd handle continues to read the
