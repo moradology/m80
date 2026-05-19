@@ -7,7 +7,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-artifacts-${{ github.ref_name }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,16 +21,16 @@ env:
 jobs:
   build-release-artifacts:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.82
-        with:
-          targets: x86_64-unknown-linux-musl
+        run: rustup toolchain install 1.82 --profile minimal
 
       - name: Install musl Rust target for pinned toolchain
-        run: rustup target add x86_64-unknown-linux-musl
+        run: rustup target add x86_64-unknown-linux-musl --toolchain 1.82
 
       - name: Install image-build host dependencies
         run: |
@@ -80,10 +84,23 @@ jobs:
             /tmp/${{ env.ARTIFACT_NAME }}.tar.gz
             /tmp/${{ env.ARTIFACT_NAME }}.tar.gz.sha256
 
-      - name: Attach artifacts to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  publish-release-artifacts:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-release-artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: |
-            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz
-            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz.sha256
+          name: ${{ env.ARTIFACT_NAME }}
+          path: /tmp/m80-release-upload
+
+      - name: Attach artifacts to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            /tmp/m80-release-upload/${ARTIFACT_NAME}.tar.gz \
+            /tmp/m80-release-upload/${ARTIFACT_NAME}.tar.gz.sha256 \
+            --clobber

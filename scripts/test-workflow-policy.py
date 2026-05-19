@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Tests for scripts/lint-github-workflows.py."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+import tempfile
+import textwrap
+import unittest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LINT = REPO_ROOT / "scripts" / "lint-github-workflows.py"
+
+
+class WorkflowPolicyTest(unittest.TestCase):
+    def test_repo_workflows_pass_policy(self) -> None:
+        result = run_lint(REPO_ROOT / ".github" / "workflows")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_workflow_requires_concurrency(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release workflow must declare top-level concurrency.group", result.stderr)
+
+    def test_latest_workflow_uses_release_guards(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            """
+            name: Latest freshness
+            on:
+              schedule:
+                - cron: "17 4 * * *"
+            permissions:
+              contents: read
+            jobs:
+              verify:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release workflow must declare top-level concurrency.group", result.stderr)
+
+    def test_release_write_token_is_publish_only(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: write
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job build must not grant contents: write", result.stderr)
+
+    def test_job_write_all_permission_is_rejected(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions: write-all
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job build must not grant *: write-all", result.stderr)
+
+    def test_floating_third_party_action_is_rejected(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: dtolnay/rust-toolchain@stable
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("third-party action must use a full commit SHA", result.stderr)
+
+    def test_pull_request_workflow_must_not_reference_secrets(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on:
+              pull_request:
+                branches: [main]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: echo "${{ secrets.GITHUB_TOKEN }}"
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pull_request workflow must not reference secrets.*", result.stderr)
+
+
+def run_lint(workflow_dir: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(LINT), "--workflow-dir", str(workflow_dir)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+class workflow_dir:
+    def __init__(self, name: str, body: str) -> None:
+        self.name = name
+        self.body = textwrap.dedent(body).strip() + "\n"
+        self.temp: tempfile.TemporaryDirectory[str] | None = None
+
+    def __enter__(self) -> Path:
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        (root / self.name).write_text(self.body)
+        return root
+
+    def __exit__(self, *args: object) -> None:
+        assert self.temp is not None
+        self.temp.cleanup()
+
+
+if __name__ == "__main__":
+    unittest.main()

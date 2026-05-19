@@ -84,6 +84,12 @@ inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, and a public
 `SHA256SUMS` for the tarball, installer, and metadata sidecar. The exact builder
 contract is captured in `docs/behaviors/release/bundle-builder.md`.
 
+The workflow stages and token boundary for building and publishing release
+artifacts are recorded in `docs/runbook/release-bundle.md`. The short version:
+build jobs run with `contents: read`; the tag-only publish job is the only stage
+with `contents: write`; and `scripts/lint-github-workflows.py` keeps that
+boundary from drifting in CI.
+
 ## Host Train Proof
 
 Before promoting a release on a target host, save a preflight proof:
