@@ -35,8 +35,10 @@ m80 quickstart \
   --artifact-url https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
 ```
 
-`quickstart` downloads the minimal kernel/rootfs/guestd artifacts, verifies the
-published checksum, installs them, then runs `m80 run -- echo hello`.
+`quickstart` downloads the matching release bundle, verifies the published
+checksum, installs the m80 binary/helper and guest artifact set, then runs
+`m80 run -- echo hello`. The bundle shape is pinned in
+[`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
 
 After that, wrap any process the same way:
 

@@ -13,6 +13,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
+VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
 
 
 class ReleaseBundleTest(unittest.TestCase):
@@ -25,6 +26,7 @@ class ReleaseBundleTest(unittest.TestCase):
             run_package(inputs, out_dir)
 
             tarball = out_dir / "m80-linux-x86_64.tar.gz"
+            run_verify(tarball)
             self.assertTrue(tarball.is_file())
             self.assertTrue((out_dir / "m80-linux-x86_64.tar.gz.sha256").is_file())
             self.assertTrue((out_dir / "install.sh").is_file())
@@ -48,6 +50,76 @@ class ReleaseBundleTest(unittest.TestCase):
                 "artifacts/host-binaries.manifest.json",
                 {row["path"] for row in metadata["files"]},
             )
+
+    def test_verifier_rejects_missing_required_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "missing.tar.gz"
+            rewrite_tar(tarball, broken, omit={"bin/m80"})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle missing required paths", result.stderr)
+
+    def test_verifier_rejects_duplicate_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "duplicate.tar.gz"
+            rewrite_tar(tarball, broken, duplicate="bin/m80")
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle duplicate path", result.stderr)
+
+    def test_verifier_rejects_wrong_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "wrong-target.tar.gz"
+            rewrite_tar(tarball, broken, metadata_updates={"target": "linux-arm64"})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle target mismatch", result.stderr)
+
+    def test_verifier_rejects_wrong_image_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "wrong-image-kind.tar.gz"
+            rewrite_tar(tarball, broken, metadata_updates={"image_kind": "ubuntu"})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle image_kind mismatch", result.stderr)
+
+    def test_verifier_rejects_stale_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "stale-version.tar.gz"
+            rewrite_tar(tarball, broken, metadata_updates={"m80_version": "v9.9.9"})
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle m80_version mismatch", result.stderr)
+
+    def test_verifier_rejects_metadata_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+            broken = Path(tmp) / "hash-mismatch.tar.gz"
+            rewrite_tar(
+                tarball,
+                broken,
+                metadata_file_updates={"bin/m80": "0" * 64},
+            )
+
+            result = run_verify(broken, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle metadata hash mismatch", result.stderr)
 
     def test_rejects_binary_release_tag_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -162,6 +234,74 @@ def run_package(
         str(out_dir),
     ]
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def package_fixture(root: Path) -> Path:
+    inputs = fixture_inputs(root, release_tag="v0.0.0")
+    out_dir = root / "out"
+    run_package(inputs, out_dir)
+    return out_dir / "m80-linux-x86_64.tar.gz"
+
+
+def run_verify(tarball: Path, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    cmd = [
+        "python3",
+        str(VERIFY),
+        str(tarball),
+        "--repo-root",
+        str(REPO_ROOT),
+        "--release-tag",
+        "v0.0.0",
+    ]
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def rewrite_tar(
+    src: Path,
+    dst: Path,
+    *,
+    omit: set[str] | None = None,
+    duplicate: str | None = None,
+    metadata_updates: dict | None = None,
+    metadata_file_updates: dict[str, str] | None = None,
+) -> None:
+    omit = omit or set()
+    entries: list[tuple[str, bytes]] = []
+    with tarfile.open(src, "r:gz") as tar:
+        for member in tar.getmembers():
+            if not member.isfile() or member.name in omit:
+                continue
+            data = tar.extractfile(member).read()  # type: ignore[union-attr]
+            if member.name == "bundle.json":
+                metadata = json.loads(data.decode("utf-8"))
+                if metadata_updates:
+                    metadata.update(metadata_updates)
+                if metadata_file_updates:
+                    for row in metadata["files"]:
+                        if row["path"] in metadata_file_updates:
+                            row["sha256"] = metadata_file_updates[row["path"]]
+                data = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode()
+            entries.append((member.name, data))
+            if member.name == duplicate:
+                entries.append((member.name, data))
+    with tarfile.open(dst, "w:gz") as tar:
+        for name, data in entries:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, fileobj=BytesReader(data))
+
+
+class BytesReader:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.offset = 0
+
+    def read(self, size: int = -1) -> bytes:
+        if size == -1:
+            size = len(self.data) - self.offset
+        chunk = self.data[self.offset : self.offset + size]
+        self.offset += len(chunk)
+        return chunk
 
 
 if __name__ == "__main__":

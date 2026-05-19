@@ -33,3 +33,36 @@ The release identity is pinned by:
   identity;
 - `crates/m80-cli/tests/version_smoke.rs` for `m80 --version` and JSON
   `m80 version` output.
+
+## Bundle Contract
+
+The Linux bundle contract is documented in
+`docs/behaviors/release/bundle-contract.md`. Build the bundle from already-built
+inputs with:
+
+```sh
+scripts/package-release-bundle.py \
+  --release-tag "$M80_RELEASE_TAG" \
+  --m80-bin target/release/m80 \
+  --jailer-harden-bin target/release/m80-jailer-harden \
+  --net-helper-bin target/release/m80-net-helper \
+  --kernel /tmp/m80-release-artifacts/vmlinux \
+  --rootfs /tmp/m80-release-artifacts/output.ext4 \
+  --rootfs-manifest /tmp/m80-release-artifacts/output.ext4.manifest.json \
+  --build-receipt /tmp/m80-release-artifacts/output.ext4.build-receipt.json \
+  --guestd /tmp/m80-release-artifacts/m80-guestd \
+  --install-sh scripts/quickstart.sh \
+  --out-dir /tmp/m80-release-bundle
+```
+
+The installer bead will replace `scripts/quickstart.sh` with the final
+versioned `install.sh` release asset; the bundle contract already reserves the
+in-bundle path as `install.sh`.
+
+Verify a produced bundle before upload:
+
+```sh
+scripts/verify-release-bundle.py \
+  /tmp/m80-release-bundle/m80-linux-x86_64.tar.gz \
+  --release-tag "$M80_RELEASE_TAG"
+```
