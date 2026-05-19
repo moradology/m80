@@ -15,6 +15,7 @@ fn current_or_root_test_uid_gid() -> (u32, u32) {
 }
 
 #[test]
+#[ignore = "requires CAP_CHOWN/root for jail root ownership"]
 fn launch_observes_pid_file_without_fixed_twenty_five_ms_floor() {
     let dir = tempfile::tempdir().unwrap();
     let run_dir = dir.path().join("vm-pid-backoff");

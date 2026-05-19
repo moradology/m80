@@ -792,7 +792,6 @@ name = "m80-image-store"
 version = "0.0.0"
 dependencies = [
  "hex",
- "m80-image-manifest",
  "nix 0.29.0",
  "serde",
  "serde_json",
@@ -859,7 +858,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "tracing",
  "tun",
 ]
 

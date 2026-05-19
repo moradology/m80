@@ -264,7 +264,7 @@ fn run_build_ubuntu(cfg: BuildConfig, dry_run: bool) -> anyhow::Result<()> {
             BuildReceiptArtifact {
                 kind: BuildReceiptArtifactKind::DaemonBinaryPath,
                 path: manifest.daemon_binary_path.clone(),
-                sha256: manifest.daemon_binary_sha256.clone(),
+                sha256: manifest.daemon_binary_sha256,
             },
         ],
     )?;

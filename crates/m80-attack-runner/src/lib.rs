@@ -26,7 +26,7 @@ impl AttackBlocked {
         }
     }
 
-    /// Return the human-readable block reason.
+    /// Human-readable reason the attack was blocked.
     #[must_use]
     pub fn reason(&self) -> &str {
         &self.reason

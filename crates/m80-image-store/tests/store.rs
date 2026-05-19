@@ -196,7 +196,12 @@ fn import_existing_erofs_rejects_non_erofs_bytes() {
 #[test]
 fn import_existing_erofs_rejects_unpinned_compressor() {
     let (root, store) = open_temp_store();
-    let source = build_erofs_source(root.path(), "zstd.erofs", &[0; 1024 * 1024], &["-zzstd"]);
+    let source = build_erofs_source(
+        root.path(),
+        "zstd.erofs",
+        &vec![0u8; 1024 * 1024],
+        &["-zzstd"],
+    );
 
     let err = store
         .import_existing(&source, ImageKind::Erofs)

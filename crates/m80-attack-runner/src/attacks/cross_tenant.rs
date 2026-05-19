@@ -7,6 +7,7 @@ use nix::mount::{mount, MsFlags};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 
+use super::read_forbidden;
 use crate::{
     blocked, peer_network_state, peer_pid, peer_run_dir, peer_sentinel, AttackBlocked, AttackResult,
 };
@@ -56,12 +57,4 @@ pub(crate) fn mount_peer_run_dir() -> AttackResult {
         None::<&str>,
     )
     .map_err(|err| blocked(format!("bind-mount peer run dir {path}"), err))
-}
-
-fn read_forbidden(path: &str, context: &'static str) -> AttackResult {
-    match fs::read(path) {
-        Ok(bytes) if !bytes.is_empty() => Ok(()),
-        Ok(_) => Err(AttackBlocked::new(format!("{context}: empty file"))),
-        Err(err) => Err(blocked(format!("read {path}"), err)),
-    }
 }

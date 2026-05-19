@@ -13,22 +13,23 @@ use sha2::{Digest, Sha256};
 
 use crate::{NetError, SetupPhase, VmNetworkStateRecord, RULE_COMMENT_PREFIX};
 
-const TCP_SYN_CONN_LIMIT_PER_VM: u16 = 256;
+pub(crate) const TCP_SYN_CONN_LIMIT_PER_VM: u16 = 256;
 
 /// Output returned by a host network policy command.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PolicyCommandOutput {
+pub(crate) struct PolicyCommandOutput {
     /// Whether the process exited successfully.
-    pub status_success: bool,
+    pub(crate) status_success: bool,
     /// Captured stdout as best-effort UTF-8.
-    pub stdout: String,
+    pub(crate) stdout: String,
     /// Captured stderr as best-effort UTF-8.
-    pub stderr: String,
+    pub(crate) stderr: String,
 }
 
+#[cfg(test)]
 impl PolicyCommandOutput {
     /// Construct a successful command output with stdout.
-    pub fn success(stdout: impl Into<String>) -> Self {
+    pub(crate) fn success(stdout: impl Into<String>) -> Self {
         Self {
             status_success: true,
             stdout: stdout.into(),
@@ -37,7 +38,7 @@ impl PolicyCommandOutput {
     }
 
     /// Construct a failed command output with stderr.
-    pub fn failure(stderr: impl Into<String>) -> Self {
+    pub(crate) fn failure(stderr: impl Into<String>) -> Self {
         Self {
             status_success: false,
             stdout: String::new(),
@@ -47,7 +48,7 @@ impl PolicyCommandOutput {
 }
 
 /// Host command seam for IPv4 forwarding and iptables policy operations.
-pub trait PolicyOps {
+pub(crate) trait PolicyOps {
     /// Run a command and return stdout/stderr without interpreting the exit status.
     fn command_output(
         &mut self,
@@ -126,7 +127,7 @@ pub fn apply_outbound_nat_policy(state: &VmNetworkStateRecord) -> Result<(), Net
 }
 
 /// Apply the outbound NAT iptables policy through a supplied command backend.
-pub fn apply_outbound_nat_policy_with_ops(
+pub(crate) fn apply_outbound_nat_policy_with_ops(
     ops: &mut impl PolicyOps,
     state: &VmNetworkStateRecord,
 ) -> Result<(), NetError> {
@@ -144,7 +145,7 @@ pub fn apply_outbound_nat_policy_with_ops(
 ///
 /// Format: `tfw` followed by the first 12 hex chars of `sha256(run_dir)`.
 #[must_use]
-pub fn outbound_nat_filter_chain(state: &VmNetworkStateRecord) -> String {
+pub(crate) fn outbound_nat_filter_chain(state: &VmNetworkStateRecord) -> String {
     format!("tfw{}", &digest_path(&state.run_dir)[..12])
 }
 
@@ -152,7 +153,7 @@ pub fn outbound_nat_filter_chain(state: &VmNetworkStateRecord) -> String {
 ///
 /// Format: `<RULE_COMMENT_PREFIX>:<first 12 hex chars sha256(run_root)>:<tap_name>`.
 #[must_use]
-pub fn outbound_nat_rule_comment(state: &VmNetworkStateRecord) -> String {
+pub(crate) fn outbound_nat_rule_comment(state: &VmNetworkStateRecord) -> String {
     format!(
         "{}:{}:{}",
         RULE_COMMENT_PREFIX,
@@ -163,7 +164,7 @@ pub fn outbound_nat_rule_comment(state: &VmNetworkStateRecord) -> String {
 
 /// Return the permanent-deny IPv4 CIDRs for one VM policy.
 #[must_use]
-pub fn permanent_deny_cidrs(bridge_cidr: Ipv4Net) -> Vec<Ipv4Net> {
+pub(crate) fn permanent_deny_cidrs(bridge_cidr: Ipv4Net) -> Vec<Ipv4Net> {
     let mut cidrs = vec![
         "0.0.0.0/8",
         "10.0.0.0/8",
@@ -531,7 +532,7 @@ fn restore_missing_policy_rules(
                 entry.insert(list_iptables_rule_specs(ops, rule.table, &rule.chain)?)
             }
         };
-        if !rule_exists_in_specs(installed.as_ref(), rule) {
+        if !rule_exists_in_specs(installed.as_deref(), rule) {
             missing.push(rule.clone());
         }
     }
@@ -547,7 +548,7 @@ fn restore_missing_policy_rules(
     )
 }
 
-fn rule_exists_in_specs(installed: Option<&Vec<Vec<String>>>, rule: &PlannedRule) -> bool {
+fn rule_exists_in_specs(installed: Option<&[Vec<String>]>, rule: &PlannedRule) -> bool {
     installed.is_some_and(|specs| specs.iter().any(|spec| spec == &rule.spec))
 }
 
@@ -602,7 +603,7 @@ fn build_iptables_restore_input(rules: &[PlannedRule]) -> String {
     input
 }
 
-fn split_iptables_rule_spec(rule: &str) -> Vec<String> {
+pub(super) fn split_iptables_rule_spec(rule: &str) -> Vec<String> {
     rule.split_whitespace()
         .map(|arg| arg.trim_matches('"').to_owned())
         .collect()

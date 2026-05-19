@@ -24,16 +24,16 @@ pub use diagnostics::{
 /// consumer exists in this workspace; they are gated behind `_test_internal`
 /// so integration tests can import them without widening the default public
 /// surface.
-#[cfg(feature = "_test_internal")]
+#[cfg(any(feature = "_test_internal", test))]
 pub use health::{
     aggregate_health, render_health_json, DurationHistogram, HealthSnapshot, LeaseAttribution,
     MetricLabelError, MetricLabelValue, OpsMetrics, PmemLayerCountBySharing, PmemSharingLabel,
     PostRestoreHookDuration, PostRestoreHookVariantLabel, ScratchSourceLabel,
     TemplateCountByFreshness, TemplateFreshnessLabel,
 };
-#[cfg(feature = "_test_internal")]
+#[cfg(any(feature = "_test_internal", test))]
 pub use probe::{probe, VmHealth, VmProbeRecord};
-#[cfg(feature = "_test_internal")]
+#[cfg(any(feature = "_test_internal", test))]
 pub use prometheus::render_prometheus;
 
 /// Errors surfaced by observability operations.

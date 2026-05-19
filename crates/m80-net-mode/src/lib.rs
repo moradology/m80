@@ -67,12 +67,6 @@ impl MacAddr {
             Err(MacAddrParseError::InvalidFormat { value })
         }
     }
-
-    /// Borrow the validated string form.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl std::fmt::Display for MacAddr {

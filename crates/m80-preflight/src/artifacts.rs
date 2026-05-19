@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use m80_image_manifest::ManifestError;
-use m80_image_manifest::{BuildReceipt, BuildReceiptArtifactKind};
-use m80_image_manifest::{KernelKind, Manifest};
+use m80_image_manifest::{
+    BuildReceipt, BuildReceiptArtifactKind, KernelKind, Manifest, ManifestError,
+};
 use nix::libc::O_NOFOLLOW;
 use nix::sys::statvfs::statvfs;
 use sha2::{Digest, Sha256};
@@ -166,7 +166,7 @@ pub(crate) fn discover_kernel(config: &ArtifactPreflightConfig) -> Result<PathBu
             path: config.artifact_dir.clone(),
             source,
         })?
-        .filter_map(|entry| entry.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.file_name().to_string_lossy().starts_with("vmlinux-"))
         .map(|e| e.path())
         .collect();
@@ -497,7 +497,7 @@ fn probe_run_root_reflink(run_root: &Path, search_path: Option<&OsString>) -> Ru
     };
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
     let prefix = format!(".m80-reflink-probe-{}-{stamp}", std::process::id());
     let source = run_root.join(format!("{prefix}.src"));

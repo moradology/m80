@@ -1,7 +1,7 @@
 //! Store-wide flock helpers.
 
 use std::fs::{File, OpenOptions};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use nix::fcntl::{Flock, FlockArg};
 

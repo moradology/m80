@@ -1,7 +1,7 @@
 //! Per-VM rootfs: shared base + cloned empty overlay allocation.
 
 use std::fs::{File, OpenOptions};
-use std::io::{Read as _, Write as _};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
@@ -22,7 +22,7 @@ const BYTE_COPY_CLONE_ARGS: &[&str] = &["--reflink=never", "--sparse=auto"];
 /// The choice is explicit and fail-closed. `Auto` may probe to choose a
 /// concrete mode; the clone itself never retries with another mode after
 /// failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OverlayTemplateCloneMode {
     /// Probe the run-root filesystem once and select either `Reflink` or
@@ -32,15 +32,10 @@ pub enum OverlayTemplateCloneMode {
     /// closed if `cp --reflink=always` fails at clone time.
     Auto,
     /// Copy bytes with reflinks disabled.
+    #[default]
     ByteCopy,
     /// Require a reflink/CoW clone.
     Reflink,
-}
-
-impl Default for OverlayTemplateCloneMode {
-    fn default() -> Self {
-        Self::ByteCopy
-    }
 }
 
 /// A per-VM rootfs view: shared read-only base ext4 + per-VM writable overlay.
@@ -279,22 +274,15 @@ fn validate_template(template: &Path, size_bytes: u64) -> Result<(), StorageErro
     }
 
     let meta = template_metadata_path(template);
-    let mut actual = String::new();
-    File::open(&meta)
-        .map_err(|e| StorageError::Io {
-            path: meta.clone(),
-            source: e,
-        })?
-        .read_to_string(&mut actual)
-        .map_err(|e| StorageError::Io {
-            path: meta.clone(),
-            source: e,
-        })?;
+    let actual = std::fs::read_to_string(&meta).map_err(|e| StorageError::Io {
+        path: meta.clone(),
+        source: e,
+    })?;
     let expected = expected_template_metadata(size_bytes);
     if actual != expected {
         return Err(StorageError::OverlayTemplateMismatch {
             path: meta,
-            reason: "metadata content differs from requested template identity".to_string(),
+            reason: "metadata content differs from requested template identity".to_owned(),
         });
     }
     Ok(())

@@ -142,12 +142,11 @@ pub(crate) fn probe_mounts(mounts: &str) -> Result<(), CgroupError> {
         return Err(CgroupError::UnsupportedHostMode);
     }
 
-    fs::read_to_string(Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control")).map_err(
-        |source| CgroupError::Io {
-            path: Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control"),
-            source,
-        },
-    )?;
+    let ctrl_path = Path::new(CGROUP_V2_ROOT).join("cgroup.subtree_control");
+    fs::read_to_string(&ctrl_path).map_err(|source| CgroupError::Io {
+        path: ctrl_path,
+        source,
+    })?;
 
     Ok(())
 }

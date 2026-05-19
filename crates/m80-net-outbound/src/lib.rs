@@ -20,7 +20,7 @@ use std::io;
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use ipnet::Ipv4Net;
@@ -28,11 +28,11 @@ use nix::fcntl::{Flock, FlockArg};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-static NETWORK_ALLOCATION_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+static NETWORK_ALLOCATION_MUTEX: Mutex<()> = Mutex::new(());
 
-pub(crate) use dns::CommandDnsDiscoveryOps;
-pub use dns::{
-    discover_dns_resolvers_with_ops, is_admitted_dns_resolver, DnsCommandOutput, DnsDiscoveryOps,
+pub use dns::is_admitted_dns_resolver;
+pub(crate) use dns::{
+    discover_dns_resolvers_with_ops, CommandDnsDiscoveryOps, DnsCommandOutput, DnsDiscoveryOps,
 };
 pub use helper::{
     decode_network_helper_request, encode_network_helper_response, serve_network_helper_stdio,
@@ -45,12 +45,13 @@ pub(crate) use injection::{
     prepare_pid_one_network_cmdline_with_ops, GuestNetworkConfigOps, NETWORKD_FILE, RESOLVED_FILE,
 };
 pub use injection::{prepare_pid_one_network_cmdline, PidOneNetworkCmdline};
-pub use iptables::{
-    apply_outbound_nat_policy, apply_outbound_nat_policy_with_ops, outbound_nat_filter_chain,
-    outbound_nat_rule_comment, permanent_deny_cidrs, PolicyCommandOutput, PolicyOps,
+pub use iptables::apply_outbound_nat_policy;
+#[cfg(test)]
+pub(crate) use iptables::{
+    apply_outbound_nat_policy_with_ops, permanent_deny_cidrs, PolicyCommandOutput,
 };
-pub use link_ops::LinkOps;
-pub(crate) use link_ops::NetlinkLinkOps;
+pub(crate) use iptables::{outbound_nat_filter_chain, outbound_nat_rule_comment, PolicyOps};
+pub(crate) use link_ops::{LinkOps, NetlinkLinkOps};
 use m80_net_mode::OutboundIntent;
 #[cfg(test)]
 pub(crate) use state::BRIDGE_STATE_FILE;
@@ -60,17 +61,16 @@ pub(crate) use state::{
     SetupPhase,
 };
 pub use state::{read_vm_network_state_record, VmNetworkStateRecord};
-pub use teardown::{
-    cleanup_orphan_bridge, cleanup_orphan_bridge_with_ops, cleanup_outbound_nat_policy_with_ops,
-    cleanup_vm, cleanup_vm_with_ops,
-};
+pub use teardown::{cleanup_orphan_bridge, cleanup_vm};
+#[cfg(test)]
+pub(crate) use teardown::{cleanup_outbound_nat_policy_with_ops, cleanup_vm_with_ops};
 
 #[cfg(test)]
 mod tests;
 
 /// Comment prefix m80 stamps on every iptables rule it owns. Used by cleanup
 /// to find rules by comment match (never by index).
-pub const RULE_COMMENT_PREFIX: &str = "m80";
+pub(crate) const RULE_COMMENT_PREFIX: &str = "m80";
 
 /// Per-VM network state filename under each VM run directory.
 pub const NETWORK_STATE_FILE: &str = "network-state.json";
@@ -146,7 +146,7 @@ fn emit_phase_event(name: &str, vm_id: &str, elapsed: Duration) {
 ///
 /// This is the deterministic test seam for host-route collision checks; real
 /// callers use [`realize_bridge_and_tap_with_ops`].
-pub fn realize_bridge_and_tap_with_ops_for_routes(
+pub(crate) fn realize_bridge_and_tap_with_ops_for_routes(
     ops: &mut impl LinkOps,
     intent: &OutboundIntent,
     vm_id: &str,
@@ -216,7 +216,6 @@ struct AllocationLock {
 
 fn lock_network_allocation(run_root: &Path) -> Result<AllocationLock, NetError> {
     let process_lock = NETWORK_ALLOCATION_MUTEX
-        .get_or_init(|| Mutex::new(()))
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let path = run_root.join(".network-allocation.lock");
@@ -286,10 +285,6 @@ pub(crate) fn derive_tap_name(run_root: &Path, vm_id: &str) -> String {
 /// Return the planned named network namespace path for an OutboundNat VM.
 #[must_use]
 pub fn planned_vmm_netns_path(run_root: &Path, vm_id: &str) -> PathBuf {
-    derive_vmm_netns_path(run_root, vm_id)
-}
-
-pub(crate) fn derive_vmm_netns_path(run_root: &Path, vm_id: &str) -> PathBuf {
     PathBuf::from(OUTBOUND_NETNS_DIR).join(derive_vmm_netns_name(run_root, vm_id))
 }
 
@@ -411,10 +406,7 @@ fn claim_guest_ipv4(run_root: &Path, vm_id: &str, guest_ipv4: Ipv4Addr) -> Resul
         }
         Err(source) if source.kind() == io::ErrorKind::NotFound => {}
         Err(source) => {
-            return Err(NetError::PathIo {
-                path: path.clone(),
-                source,
-            });
+            return Err(NetError::PathIo { path, source });
         }
     }
     fs::write(&path, format!("{vm_id}\n")).map_err(|source| NetError::PathIo { path, source })

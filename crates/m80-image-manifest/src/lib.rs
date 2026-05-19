@@ -79,7 +79,7 @@ pub enum RootfsFormat {
 }
 
 /// Host-side binary names covered by `host-binaries.manifest.json`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum HostBinaryName {
     /// Firecracker VMM executable.
@@ -202,7 +202,7 @@ impl HostBinariesManifest {
 }
 
 /// Artifact names recorded in a build receipt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum BuildReceiptArtifactKind {
     /// Guest kernel image.

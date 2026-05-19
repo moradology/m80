@@ -21,14 +21,6 @@ use tokio::runtime::{Builder, Runtime};
 use crate::{NetError, VmNetworkStateRecord};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct TapBridgePlan {
-    pub(crate) bridge_name: String,
-    pub(crate) tap_name: String,
-    pub(crate) bridge_cidr: Ipv4Net,
-    pub(crate) guest_mac: [u8; 6],
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct PrivateNetnsTapPlan {
     pub(crate) bridge_name: String,
     pub(crate) tap_name: String,
@@ -46,7 +38,7 @@ pub(crate) struct PrivateNetnsTapPlan {
 ///
 /// Production uses [`NetlinkLinkOps`]. Tests can provide a recording
 /// implementation so state-machine behavior is verified without `CAP_NET_ADMIN`.
-pub trait LinkOps {
+pub(crate) trait LinkOps {
     /// Create a Linux bridge interface.
     fn create_bridge(&mut self, name: &str) -> Result<(), NetError>;
     /// Add an IPv4 address to a link.
@@ -122,32 +114,6 @@ pub trait LinkOps {
         address: Ipv4Addr,
         prefix_len: u8,
     ) -> Result<bool, NetError>;
-}
-
-/// Create a full bridge+tap stack in one call. Used in tests; production callers
-/// use [`create_tap_on_bridge`] after the bridge is already up.
-#[allow(dead_code)]
-pub(crate) fn create_tap_bridge(
-    ops: &mut impl LinkOps,
-    plan: &TapBridgePlan,
-) -> Result<(), NetError> {
-    let gateway = plan
-        .bridge_cidr
-        .hosts()
-        .next()
-        .ok_or_else(|| NetError::InvalidNetworkState {
-            path: plan.bridge_name.clone().into(),
-            detail: format!("{} has no gateway host address", plan.bridge_cidr),
-        })?;
-
-    ops.create_bridge(&plan.bridge_name)?;
-    ops.add_ipv4_address(&plan.bridge_name, gateway, plan.bridge_cidr.prefix_len())?;
-    ops.set_link_up(&plan.bridge_name)?;
-    ops.create_tap(&plan.tap_name)?;
-    ops.set_link_mac(&plan.tap_name, plan.guest_mac)?;
-    ops.attach_link_to_bridge(&plan.tap_name, &plan.bridge_name)?;
-    ops.set_bridge_port_isolated(&plan.tap_name)?;
-    ops.set_link_up(&plan.tap_name)
 }
 
 pub(crate) fn teardown_tap(ops: &mut impl LinkOps, tap_name: &str) -> Result<(), NetError> {
@@ -564,35 +530,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tap_bridge_lifecycle_orders_link_operations() {
-        let mut ops = RecordingLinkOps::default();
-        let plan = TapBridgePlan {
-            bridge_name: "brfc12345678901".to_owned(),
-            tap_name: "tfc123456789012".to_owned(),
-            bridge_cidr: "172.29.86.0/24".parse().unwrap(),
-            guest_mac: [0x02, 0x8d, 0x9d, 0x42, 0xdb, 0xfd],
-        };
-
-        create_tap_bridge(&mut ops, &plan).unwrap();
-        teardown_tap(&mut ops, &plan.tap_name).unwrap();
-
-        assert_eq!(
-            ops.operations,
-            [
-                "create_bridge brfc12345678901",
-                "add_ipv4_address brfc12345678901 172.29.86.1/24",
-                "set_link_up brfc12345678901",
-                "create_tap tfc123456789012",
-                "set_link_mac tfc123456789012 02:8d:9d:42:db:fd",
-                "attach_link_to_bridge tfc123456789012 brfc12345678901",
-                "set_bridge_port_isolated tfc123456789012",
-                "set_link_up tfc123456789012",
-                "delete_link_if_exists tfc123456789012",
-            ]
-        );
-    }
-
-    #[test]
     fn link_ops_source_contains_no_ip_shellout() {
         let source = include_str!("link_ops.rs");
         let command_new_ip = ["Command::new", "(\"ip\")"].join("");
@@ -618,184 +555,5 @@ mod tests {
 
         ops.delete_link_if_exists(&tap_name).unwrap();
         assert!(ops.link_index(&tap_name).unwrap().is_none());
-    }
-
-    #[derive(Default)]
-    struct RecordingLinkOps {
-        operations: Vec<String>,
-    }
-
-    impl LinkOps for RecordingLinkOps {
-        fn create_bridge(&mut self, name: &str) -> Result<(), NetError> {
-            self.operations.push(format!("create_bridge {name}"));
-            Ok(())
-        }
-
-        fn add_ipv4_address(
-            &mut self,
-            link_name: &str,
-            address: Ipv4Addr,
-            prefix_len: u8,
-        ) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "add_ipv4_address {link_name} {address}/{prefix_len}"
-            ));
-            Ok(())
-        }
-
-        fn create_tap(&mut self, name: &str) -> Result<(), NetError> {
-            self.operations.push(format!("create_tap {name}"));
-            Ok(())
-        }
-
-        fn set_link_mac(&mut self, name: &str, mac: [u8; 6]) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "set_link_mac {name} {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
-            ));
-            Ok(())
-        }
-
-        fn attach_link_to_bridge(
-            &mut self,
-            link_name: &str,
-            bridge_name: &str,
-        ) -> Result<(), NetError> {
-            self.operations
-                .push(format!("attach_link_to_bridge {link_name} {bridge_name}"));
-            Ok(())
-        }
-
-        fn set_bridge_port_isolated(&mut self, link_name: &str) -> Result<(), NetError> {
-            self.operations
-                .push(format!("set_bridge_port_isolated {link_name}"));
-            Ok(())
-        }
-
-        fn set_link_up(&mut self, name: &str) -> Result<(), NetError> {
-            self.operations.push(format!("set_link_up {name}"));
-            Ok(())
-        }
-
-        fn delete_link_if_exists(&mut self, name: &str) -> Result<(), NetError> {
-            self.operations
-                .push(format!("delete_link_if_exists {name}"));
-            Ok(())
-        }
-
-        fn create_network_namespace(&mut self, name: &str) -> Result<(), NetError> {
-            self.operations
-                .push(format!("create_network_namespace {name}"));
-            Ok(())
-        }
-
-        fn delete_network_namespace_if_exists(&mut self, name: &str) -> Result<(), NetError> {
-            self.operations
-                .push(format!("delete_network_namespace_if_exists {name}"));
-            Ok(())
-        }
-
-        fn create_veth_pair(&mut self, host_name: &str, peer_name: &str) -> Result<(), NetError> {
-            self.operations
-                .push(format!("create_veth_pair {host_name} {peer_name}"));
-            Ok(())
-        }
-
-        fn move_link_to_namespace(
-            &mut self,
-            link_name: &str,
-            netns_path: &Path,
-        ) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "move_link_to_namespace {link_name} {}",
-                netns_path.display()
-            ));
-            Ok(())
-        }
-
-        fn create_bridge_in_namespace(
-            &mut self,
-            netns_path: &Path,
-            bridge_name: &str,
-        ) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "create_bridge_in_namespace {} {bridge_name}",
-                netns_path.display()
-            ));
-            Ok(())
-        }
-
-        fn create_tap_in_namespace(
-            &mut self,
-            netns_path: &Path,
-            tap_name: &str,
-        ) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "create_tap_in_namespace {} {tap_name}",
-                netns_path.display()
-            ));
-            Ok(())
-        }
-
-        fn set_link_mac_in_namespace(
-            &mut self,
-            netns_path: &Path,
-            link_name: &str,
-            mac: [u8; 6],
-        ) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "set_link_mac_in_namespace {} {link_name} {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                netns_path.display(),
-                mac[0],
-                mac[1],
-                mac[2],
-                mac[3],
-                mac[4],
-                mac[5]
-            ));
-            Ok(())
-        }
-
-        fn attach_link_to_bridge_in_namespace(
-            &mut self,
-            netns_path: &Path,
-            link_name: &str,
-            bridge_name: &str,
-        ) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "attach_link_to_bridge_in_namespace {} {link_name} {bridge_name}",
-                netns_path.display()
-            ));
-            Ok(())
-        }
-
-        fn set_link_up_in_namespace(
-            &mut self,
-            netns_path: &Path,
-            link_name: &str,
-        ) -> Result<(), NetError> {
-            self.operations.push(format!(
-                "set_link_up_in_namespace {} {link_name}",
-                netns_path.display()
-            ));
-            Ok(())
-        }
-
-        fn link_exists(&mut self, name: &str) -> Result<bool, NetError> {
-            self.operations.push(format!("link_exists {name}"));
-            Ok(true)
-        }
-
-        fn link_has_ipv4_address(
-            &mut self,
-            link_name: &str,
-            address: Ipv4Addr,
-            prefix_len: u8,
-        ) -> Result<bool, NetError> {
-            self.operations.push(format!(
-                "link_has_ipv4_address {link_name} {address}/{prefix_len}"
-            ));
-            Ok(true)
-        }
     }
 }

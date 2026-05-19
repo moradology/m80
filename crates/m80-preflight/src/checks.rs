@@ -871,7 +871,7 @@ fn classify_required_modules(loaded: &HashSet<&str>) -> Result<(), PreflightErro
     let missing: Vec<_> = REQUIRED_KERNEL_MODULES
         .iter()
         .filter(|m| !loaded.contains(*m))
-        .map(|m| m.to_string())
+        .map(ToString::to_string)
         .collect();
     if missing.is_empty() {
         return Ok(());
@@ -923,7 +923,7 @@ fn classify_cgroup_probe(
         }
         Err(err) => Err(PreflightError::SystemIo {
             operation: "cgroup v2 probe",
-            source: std::io::Error::other(format!("{err}")),
+            source: std::io::Error::other(err),
         }),
     }
 }

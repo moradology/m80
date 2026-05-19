@@ -66,7 +66,7 @@ pub(crate) fn raw_packet_inject() -> AttackResult {
 }
 
 pub(crate) fn send_arbitrary_netlink() -> AttackResult {
-    netlink_mutation(libc::RTM_NEWLINK, ifinfo_payload(), "RTM_NEWLINK mutation")
+    netlink_mutation(libc::RTM_NEWLINK, &ifinfo_payload(), "RTM_NEWLINK mutation")
 }
 
 pub(crate) fn bind_on_host_interface() -> AttackResult {
@@ -76,7 +76,11 @@ pub(crate) fn bind_on_host_interface() -> AttackResult {
 }
 
 pub(crate) fn privileged_route_mutation() -> AttackResult {
-    netlink_mutation(libc::RTM_NEWROUTE, route_payload(), "RTM_NEWROUTE mutation")
+    netlink_mutation(
+        libc::RTM_NEWROUTE,
+        &route_payload(),
+        "RTM_NEWROUTE mutation",
+    )
 }
 
 fn connect_v4(addr: Ipv4Addr, port: u16, label: &'static str) -> AttackResult {
@@ -86,7 +90,7 @@ fn connect_v4(addr: Ipv4Addr, port: u16, label: &'static str) -> AttackResult {
         .map_err(|err| blocked(format!("connect {label} {socket}"), err))
 }
 
-fn netlink_mutation(message_type: u16, payload: Vec<u8>, label: &'static str) -> AttackResult {
+fn netlink_mutation(message_type: u16, payload: &[u8], label: &'static str) -> AttackResult {
     let fd = socket(
         AddressFamily::Netlink,
         SockType::Raw,
@@ -128,7 +132,7 @@ fn netlink_mutation(message_type: u16, payload: Vec<u8>, label: &'static str) ->
     }
 }
 
-fn netlink_request(message_type: u16, payload: Vec<u8>) -> Vec<u8> {
+fn netlink_request(message_type: u16, payload: &[u8]) -> Vec<u8> {
     let len = u32::try_from(NETLINK_HEADER_LEN + payload.len()).expect("netlink payload fits u32");
     let flags =
         (libc::NLM_F_REQUEST | libc::NLM_F_ACK | libc::NLM_F_CREATE | libc::NLM_F_EXCL) as u16;
@@ -138,7 +142,7 @@ fn netlink_request(message_type: u16, payload: Vec<u8>) -> Vec<u8> {
     request.extend_from_slice(&flags.to_ne_bytes());
     request.extend_from_slice(&NETLINK_SEQ.to_ne_bytes());
     request.extend_from_slice(&0_u32.to_ne_bytes());
-    request.extend_from_slice(&payload);
+    request.extend_from_slice(payload);
     request
 }
 

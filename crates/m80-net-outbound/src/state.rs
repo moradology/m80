@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ipnet::Ipv4Net;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
     derive_bridge_cidr, derive_guest_addressing, derive_host_veth_name, derive_tap_name,
-    derive_vmm_bridge_name, derive_vmm_netns_name, derive_vmm_netns_path, derive_vmm_veth_name,
+    derive_vmm_bridge_name, derive_vmm_netns_name, derive_vmm_veth_name, planned_vmm_netns_path,
     NetError, OutboundIntent,
 };
 
@@ -154,7 +154,7 @@ pub(crate) fn planned_vm_network_state(
         bridge,
         tap_name: derive_tap_name(run_root, vm_id),
         vmm_netns_name: derive_vmm_netns_name(run_root, vm_id),
-        vmm_netns_path: derive_vmm_netns_path(run_root, vm_id),
+        vmm_netns_path: planned_vmm_netns_path(run_root, vm_id),
         host_veth_name: derive_host_veth_name(run_root, vm_id),
         vmm_veth_name: derive_vmm_veth_name(run_root, vm_id),
         vmm_bridge_name: derive_vmm_bridge_name(run_root, vm_id),
@@ -308,7 +308,7 @@ pub(crate) fn run_root_digest(run_root: &Path) -> [u8; 32] {
 
 fn read_json_state<T>(path: &Path) -> Result<T, NetError>
 where
-    T: for<'de> Deserialize<'de>,
+    T: DeserializeOwned,
 {
     let bytes = fs::read(path)?;
     serde_json::from_slice(&bytes).map_err(|source| NetError::InvalidNetworkState {
@@ -348,7 +348,7 @@ where
 fn unique_tmp_path(path: &Path) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
     let file_name = path
         .file_name()

@@ -76,9 +76,7 @@ pub fn probe(run_root: &Path) -> Result<Vec<VmProbeRecord>, ObservabilityError> 
 
 fn probe_one(vm_id: &str, run_dir: &Path) -> Result<VmProbeRecord, ObservabilityError> {
     let ownership_pid = read_ownership_pid(run_dir);
-    let owner_live = ownership_pid
-        .map(|pid| Path::new(&format!("/proc/{pid}")).exists())
-        .unwrap_or(false);
+    let owner_live = ownership_pid.is_some_and(|pid| Path::new(&format!("/proc/{pid}")).exists());
     let api_socket_visible = tree_contains_file_name(run_dir, FIRECRACKER_API_SOCKET)?;
     let vsock_socket_visible = tree_contains_file_name(run_dir, VSOCK_SOCKET)?;
     let diagnostics_visible = run_dir.join(crate::DIAGNOSTICS_FILE_NAME).exists();

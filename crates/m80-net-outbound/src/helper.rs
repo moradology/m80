@@ -104,8 +104,7 @@ pub fn decode_network_helper_request(
         return Err(NetworkHelperFailure {
             kind: NetworkHelperFailureKind::InvalidRequest,
             detail: format!(
-                "network helper request exceeds {} bytes",
-                NETWORK_HELPER_MAX_FRAME_BYTES
+                "network helper request exceeds {NETWORK_HELPER_MAX_FRAME_BYTES} bytes"
             ),
         });
     }
@@ -127,8 +126,7 @@ pub fn encode_network_helper_response(
         return Err(NetworkHelperFailure {
             kind: NetworkHelperFailureKind::OperationFailed,
             detail: format!(
-                "network helper response exceeds {} bytes",
-                NETWORK_HELPER_MAX_FRAME_BYTES
+                "network helper response exceeds {NETWORK_HELPER_MAX_FRAME_BYTES} bytes"
             ),
         });
     }
@@ -198,8 +196,7 @@ where
                 failure: NetworkHelperFailure {
                     kind: NetworkHelperFailureKind::InvalidRequest,
                     detail: format!(
-                        "network helper request exceeds {} bytes",
-                        NETWORK_HELPER_MAX_FRAME_BYTES
+                        "network helper request exceeds {NETWORK_HELPER_MAX_FRAME_BYTES} bytes"
                     ),
                 },
             },

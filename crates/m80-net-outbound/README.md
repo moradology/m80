@@ -156,34 +156,20 @@ Sequestering it has three benefits:
 - `realize_bridge_and_tap(...)` and
   `realize_bridge_and_tap_with_ops(...)` — bridge/TAP setup phase; the
   `_with_ops` variant is the deterministic test seam.
-- `realize_bridge_and_tap_with_ops_for_routes(...)` — deterministic test seam
-  for the same setup path with supplied `/proc/net/route` text.
-- `apply_outbound_nat_policy(...)` and
-  `apply_outbound_nat_policy_with_ops(...)` — host sysctl/iptables phase;
-  the `_with_ops` variant is the deterministic command-recording seam.
-- `discover_dns_resolvers_with_ops(...)` and
-  `is_admitted_dns_resolver(...)` — DNS discovery seam and resolver-address
-  admission helper.
+- `apply_outbound_nat_policy(...)` — host sysctl/iptables phase.
+- `is_admitted_dns_resolver(...)` — resolver-address admission helper.
 - `prepare_pid_one_network_cmdline(...)` — current PID-1 guest
   network config preparation; discovers DNS, updates the network state file,
   and returns deterministic `m80.net.*` cmdline tokens.
 - `PidOneNetworkCmdline { args }` — current PID-1 command-line token shape.
 - `cleanup_vm(vm_id, run_root) -> Result<(), NetError>`.
-- `cleanup_vm_with_ops(...)` — deterministic test seam for VM policy + TAP
-  cleanup.
-- `cleanup_outbound_nat_policy_with_ops(...)` — deterministic test seam for
-  policy-only cleanup.
-- `cleanup_orphan_bridge(run_root) -> Result<(), NetError>` and
-  `cleanup_orphan_bridge_with_ops(...)` — orphan bridge recovery, with a
-  deterministic test seam.
+- `cleanup_orphan_bridge(run_root) -> Result<(), NetError>` — orphan bridge
+  recovery.
 - `NetworkHelperRequest`, `NetworkHelperResponse`, `NetworkHelperSuccess`,
   `NetworkHelperFailure`, `decode_network_helper_request(...)`,
   `encode_network_helper_response(...)`, and
   `serve_network_helper_stdio(...)` — finite JSON protocol used by
   `m80-net-helper` for privileged network operations.
-- `RULE_COMMENT_PREFIX`, `outbound_nat_filter_chain(...)`,
-  `outbound_nat_rule_comment(...)`, and `permanent_deny_cidrs(...)` —
-  public deterministic helpers for policy identity and tests.
 - `NETWORK_STATE_FILE` — per-VM network state filename under each VM run
   directory.
 - `RealizedNetwork { bridge_name, tap_name, vmm_netns_path, guest_ipv4,
@@ -192,21 +178,7 @@ Sequestering it has three benefits:
   `read_vm_network_state_record(...)` and accepted by cmdline/policy helpers.
 - `read_vm_network_state_record(...)` — read the opaque per-VM network state
   record from a VM run directory.
-- `LinkOps` — bridge/veth/private-TAP setup link-operation seam used by tests
-  and the real internal rtnetlink/TUN backend.
-- `PolicyOps` — host policy command seam used by tests and the real
-  `sysctl`/`iptables`/`iptables-restore` backend. Implementors provide
-  `command_output(...)` and `run_command_input(...)`; the default
-  `run_command(...)` turns non-zero status into `NetError`.
-- `PolicyCommandOutput { status_success, stdout, stderr }` with
-  `success(...)` and `failure(...)` constructors — captured host policy
-  command output.
-- `DnsDiscoveryOps` — host seam for DNS discovery. Implementors provide
-  `command_output(...)` and `read_to_string(...)`.
-- `DnsCommandOutput { status_success, stdout, stderr }` with
-  `success(...)` and `failure(...)` constructors — captured DNS helper
-  command output.
-- `NetError`: `Ipv6Unsupported`, `GuestIpv4Collision { peer_vm_id }`,
+- `NetError`: `GuestIpv4Collision { peer_vm_id }`,
   `HostRouteCollision { existing }`, `BridgeOwnershipMismatch`,
   `NetworkCommandFailed { program, stderr }`,
   `NoUsableDnsResolvers`,

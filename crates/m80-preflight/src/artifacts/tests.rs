@@ -7,8 +7,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use super::{
-    probe_run_root_reflink_at, verify_artifacts, ArtifactPreflightConfig, RunRootReflink,
-    REQUIRED_STORAGE_HELPERS,
+    build_receipt_path_for_rootfs, manifest_path_for_rootfs, probe_run_root_reflink_at,
+    verify_artifacts, ArtifactPreflightConfig, RunRootReflink, REQUIRED_STORAGE_HELPERS,
 };
 use crate::PreflightError;
 use m80_image_manifest::{
@@ -58,7 +58,7 @@ fn fixture_manifest(dir: &Path, kernel: &Path) -> (PathBuf, Manifest) {
         None,
         None,
     );
-    let manifest_path = PathBuf::from(format!("{}.manifest.json", rootfs.display()));
+    let manifest_path = manifest_path_for_rootfs(&rootfs);
     manifest.write(&manifest_path).unwrap();
     write_build_receipt(&rootfs, &manifest_path, &manifest);
     (rootfs, manifest)
@@ -70,7 +70,7 @@ fn sha256_file(path: &Path) -> String {
 }
 
 fn write_build_receipt(rootfs: &Path, manifest_path: &Path, manifest: &Manifest) {
-    let receipt_path = PathBuf::from(format!("{}.build-receipt.json", rootfs.display()));
+    let receipt_path = build_receipt_path_for_rootfs(rootfs);
     BuildReceipt::new(
         manifest_path.to_path_buf(),
         sha256_file(manifest_path),
@@ -126,17 +126,11 @@ fn fixture_config() -> (
 }
 
 fn manifest_path(config: &ArtifactPreflightConfig) -> PathBuf {
-    PathBuf::from(format!(
-        "{}.manifest.json",
-        config.rootfs_image.as_ref().unwrap().display()
-    ))
+    manifest_path_for_rootfs(config.rootfs_image.as_ref().unwrap())
 }
 
 fn build_receipt_path(config: &ArtifactPreflightConfig) -> PathBuf {
-    PathBuf::from(format!(
-        "{}.build-receipt.json",
-        config.rootfs_image.as_ref().unwrap().display()
-    ))
+    build_receipt_path_for_rootfs(config.rootfs_image.as_ref().unwrap())
 }
 
 #[test]

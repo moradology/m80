@@ -6,18 +6,19 @@ use crate::NetError;
 
 /// Output returned by DNS discovery helper commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DnsCommandOutput {
+pub(crate) struct DnsCommandOutput {
     /// Whether the command exited successfully.
-    pub status_success: bool,
+    pub(crate) status_success: bool,
     /// Captured stdout as best-effort UTF-8.
-    pub stdout: String,
+    pub(crate) stdout: String,
     /// Captured stderr as best-effort UTF-8.
-    pub stderr: String,
+    pub(crate) stderr: String,
 }
 
+#[cfg(test)]
 impl DnsCommandOutput {
     /// Construct a successful DNS command output with stdout.
-    pub fn success(stdout: impl Into<String>) -> Self {
+    pub(crate) fn success(stdout: impl Into<String>) -> Self {
         Self {
             status_success: true,
             stdout: stdout.into(),
@@ -26,7 +27,7 @@ impl DnsCommandOutput {
     }
 
     /// Construct a failed DNS command output with stderr.
-    pub fn failure(stderr: impl Into<String>) -> Self {
+    pub(crate) fn failure(stderr: impl Into<String>) -> Self {
         Self {
             status_success: false,
             stdout: String::new(),
@@ -36,7 +37,7 @@ impl DnsCommandOutput {
 }
 
 /// Host seam for DNS resolver discovery.
-pub trait DnsDiscoveryOps {
+pub(crate) trait DnsDiscoveryOps {
     /// Run a helper command and return stdout/stderr without interpreting exit status.
     fn command_output(
         &mut self,
@@ -71,7 +72,7 @@ impl DnsDiscoveryOps for CommandDnsDiscoveryOps {
 }
 
 /// Discover admitted DNS resolvers through a supplied host seam.
-pub fn discover_dns_resolvers_with_ops(
+pub(crate) fn discover_dns_resolvers_with_ops(
     ops: &mut impl DnsDiscoveryOps,
 ) -> Result<Vec<Ipv4Addr>, NetError> {
     if let Ok(output) = ops.command_output("resolvectl", &["dns".to_owned()]) {
@@ -121,9 +122,9 @@ fn parse_resolv_conf(text: &str) -> Vec<Ipv4Addr> {
     let mut resolvers = Vec::new();
     for line in text.lines() {
         let line = line.split('#').next().unwrap_or_default().trim();
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        if fields.first() == Some(&"nameserver") {
-            if let Some(candidate) = fields.get(1) {
+        let mut fields = line.split_whitespace();
+        if fields.next() == Some("nameserver") {
+            if let Some(candidate) = fields.next() {
                 push_admitted_resolver(&mut resolvers, candidate);
             }
         }

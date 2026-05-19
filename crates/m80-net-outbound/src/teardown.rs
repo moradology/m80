@@ -1,14 +1,15 @@
 use std::fs;
 use std::path::Path;
 
-use crate::{
-    bridge_state_path, derive_host_veth_name, derive_vmm_netns_name, iptables::iptables_args,
-    iptables::iptables_state_path, link_ops, outbound_nat_filter_chain, outbound_nat_rule_comment,
-    read_bridge_state, read_vm_network_state_record, vm_network_state_path, LinkOps, NetError,
-    PolicyOps, VmNetworkStateRecord,
+use crate::iptables::{
+    iptables_args, iptables_state_path, split_iptables_rule_spec, TCP_SYN_CONN_LIMIT_PER_VM,
 };
-
-const TCP_SYN_CONN_LIMIT_PER_VM: &str = "256";
+use crate::{
+    bridge_state_path, derive_host_veth_name, derive_vmm_netns_name, link_ops,
+    outbound_nat_filter_chain, outbound_nat_rule_comment, read_bridge_state,
+    read_vm_network_state_record, vm_network_state_path, LinkOps, NetError, PolicyOps,
+    VmNetworkStateRecord,
+};
 
 /// Tear down network state owned by `vm_id` through real host backends.
 ///
@@ -20,7 +21,7 @@ pub fn cleanup_vm(vm_id: &str, run_root: &Path) -> Result<(), NetError> {
 }
 
 /// Tear down the network state owned by `vm_id` through supplied backends.
-pub fn cleanup_vm_with_ops(
+pub(crate) fn cleanup_vm_with_ops(
     links: &mut impl LinkOps,
     policy_ops: &mut impl PolicyOps,
     vm_id: &str,
@@ -58,7 +59,7 @@ pub fn cleanup_orphan_bridge(run_root: &Path) -> Result<(), NetError> {
 }
 
 /// Remove the run-root bridge through a supplied link backend when unused.
-pub fn cleanup_orphan_bridge_with_ops(
+pub(crate) fn cleanup_orphan_bridge_with_ops(
     links: &mut impl LinkOps,
     run_root: &Path,
 ) -> Result<(), NetError> {
@@ -82,7 +83,7 @@ pub fn cleanup_orphan_bridge_with_ops(
 }
 
 /// Remove the iptables policy owned by one VM state.
-pub fn cleanup_outbound_nat_policy_with_ops(
+pub(crate) fn cleanup_outbound_nat_policy_with_ops(
     ops: &mut impl PolicyOps,
     state: &VmNetworkStateRecord,
 ) -> Result<(), NetError> {
@@ -172,7 +173,7 @@ fn delete_forwarding_entry_rules(
             "-m",
             "connlimit",
             "--connlimit-above",
-            TCP_SYN_CONN_LIMIT_PER_VM,
+            &TCP_SYN_CONN_LIMIT_PER_VM.to_string(),
             "--connlimit-mask",
             "32",
             "-m",
@@ -302,7 +303,7 @@ fn delete_iptables_rule_if_present(
     chain: &str,
     rule: &[&str],
 ) -> Result<(), NetError> {
-    let rule_args = rule.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+    let rule_args = rule.iter().copied().map(str::to_owned).collect::<Vec<_>>();
     for _ in 0..32 {
         let check_args = iptables_args(table, "-C", chain, &rule_args);
         if !ops.command_output("iptables", &check_args)?.status_success {
@@ -314,12 +315,6 @@ fn delete_iptables_rule_if_present(
         path: iptables_state_path(table, chain),
         detail: "owned iptables rule remained after repeated deletion attempts".to_owned(),
     })
-}
-
-fn split_iptables_rule_spec(rule: &str) -> Vec<String> {
-    rule.split_whitespace()
-        .map(|arg| arg.trim_matches('"').to_owned())
-        .collect()
 }
 
 fn remove_file_if_present(path: &Path) -> Result<(), NetError> {

@@ -3,7 +3,8 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write as _;
 
-use crate::{blocked, host_sentinel, lower_sentinel, AttackBlocked, AttackResult};
+use super::read_forbidden;
+use crate::{blocked, host_sentinel, lower_sentinel, AttackResult};
 
 pub(crate) fn chroot_escape_via_dotdot() -> AttackResult {
     read_forbidden(
@@ -45,13 +46,5 @@ pub(crate) fn write_to_lower_layer() -> AttackResult {
     match fs::write(&path, b"blocked") {
         Ok(()) => Ok(()),
         Err(err) => Err(blocked(format!("write {path}"), err)),
-    }
-}
-
-fn read_forbidden(path: &str, context: &'static str) -> AttackResult {
-    match fs::read(path) {
-        Ok(bytes) if !bytes.is_empty() => Ok(()),
-        Ok(_) => Err(AttackBlocked::new(format!("{context}: empty file"))),
-        Err(err) => Err(blocked(format!("read {path}"), err)),
     }
 }

@@ -175,3 +175,25 @@ pub fn resp_400(body: &str) -> Vec<u8> {
     )
     .into_bytes()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_reader_accepts_case_insensitive_content_length() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        client
+            .write_all(b"PUT /x HTTP/1.1\r\ncontent-length: 5\r\n\r\n")
+            .unwrap();
+        let writer = thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            client.write_all(b"hello").unwrap();
+        });
+
+        let request = read_full_request(&mut server);
+        writer.join().unwrap();
+
+        assert!(request.ends_with("\r\n\r\nhello"), "{request:?}");
+    }
+}

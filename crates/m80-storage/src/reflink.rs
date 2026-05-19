@@ -42,9 +42,6 @@ pub(crate) enum UnsupportedReason {
     FicloneRejected(i32),
     /// Source and destination ended up on different devices.
     CrossDevice,
-    /// Other unsupported condition not worth splitting yet.
-    #[allow(dead_code)]
-    Other(String),
 }
 
 impl fmt::Display for UnsupportedReason {
@@ -55,7 +52,6 @@ impl fmt::Display for UnsupportedReason {
             }
             Self::FicloneRejected(errno) => write!(f, "FICLONE rejected with errno {errno}"),
             Self::CrossDevice => f.write_str("FICLONE rejected cross-device clone"),
-            Self::Other(reason) => f.write_str(reason),
         }
     }
 }

@@ -461,7 +461,7 @@ impl ImageStore {
         let _lock = StoreLock::shared(&self.root)?;
         let entry = self.entry_paths(digest);
         let metadata = read_metadata(&entry.metadata, digest)?;
-        for artifact in metadata.artifacts.iter() {
+        for artifact in &metadata.artifacts {
             let path = entry.artifact_path(artifact.kind);
             open_regular_nofollow(&path)?;
             let got = hash_file(&path)?;

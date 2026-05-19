@@ -1,5 +1,7 @@
 //! Fixed-width ASCII table renderer for the preflight report.
 
+use std::fmt::Write as _;
+
 use crate::CheckRow;
 
 /// Column widths (characters).
@@ -42,20 +44,24 @@ pub(crate) fn render(rows: &[CheckRow]) -> String {
         let chunks = char_chunks(&detail_chars, DETAIL_MAX);
 
         // First line.
-        let first = chunks.first().map(|s| s.as_str()).unwrap_or("");
-        out.push_str(&format!(
-            "| {status:<6} | {label} | {first:<width$} |\n",
+        let first = chunks.first().map(String::as_str).unwrap_or("");
+        writeln!(
+            out,
+            "| {status:<6} | {label} | {first:<width$} |",
             width = DETAIL_MAX,
-        ));
+        )
+        .unwrap();
 
         // Continuation lines (overflow detail only, blank status + label).
         for chunk in chunks.iter().skip(1) {
-            out.push_str(&format!(
-                "| {blank:<6} | {blank_label} | {chunk:<width$} |\n",
+            writeln!(
+                out,
+                "| {blank:<6} | {blank_label} | {chunk:<width$} |",
                 blank = "",
                 blank_label = " ".repeat(LABEL_WIDTH),
                 width = DETAIL_MAX,
-            ));
+            )
+            .unwrap();
         }
     }
     out.push_str(&sep);
@@ -113,7 +119,7 @@ mod tests {
 
     #[test]
     fn long_detail_wraps_to_continuation_line() {
-        let long_detail: String = "x".repeat(DETAIL_MAX + 10);
+        let long_detail = "x".repeat(DETAIL_MAX + 10);
         let rows = vec![CheckRow {
             label: "Wrap test".to_string(),
             passed: true,
