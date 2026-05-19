@@ -24,24 +24,35 @@ install packages implicitly.
 
 ## Quickstart
 
-After a release artifact tarball exists, first contact is:
+This buys you a Firecracker-backed process wrapper: `m80 run -- <command>`
+boots a microVM, runs the command, streams stdout/stderr back like a normal
+process, returns the guest exit code, and tears the VM down.
+
+Fastest path on a Linux/KVM host with `m80` already installed:
 
 ```sh
 m80 quickstart \
-  --artifact-url https://github.com/<owner>/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
+  --artifact-url https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
 ```
 
-The release must also publish the sibling
-`m80-linux-x86_64-minimal-artifacts.tar.gz.sha256`; quickstart verifies that
-outer checksum before extracting the tarball.
+`quickstart` downloads the minimal kernel/rootfs/guestd artifacts, verifies the
+published checksum, installs them, then runs `m80 run -- echo hello`.
 
-For a clean host that does not yet have the repo checkout, the same artifact
-flow is available as a shell script:
+After that, wrap any process the same way:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/<owner>/m80/main/scripts/quickstart.sh |
-  sudo sh -s -- \
-    --artifact-url https://github.com/<owner>/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
+m80 run -- <command> [args...]
+```
+
+Use a binary and artifact tarball from the same release; `releases/latest`
+assumes your installed `m80` is also the latest release.
+
+No repo checkout needed:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/moradology/m80/main/scripts/quickstart.sh |
+  sudo env M80_BIN=/opt/m80/bin/m80 sh -s -- \
+    --artifact-url https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
 ```
 
 `m80 preflight` reports missing host setup before launch. Firecracker needs a

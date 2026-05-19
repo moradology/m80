@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use m80_firecracker::FcError;
+use m80_image_manifest::{BuildReceipt, BuildReceiptArtifact, BuildReceiptArtifactKind};
 
 use crate::args::QuickstartArgs;
 use crate::errors;
@@ -13,7 +14,9 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
     "vmlinux",
     "output.ext4",
     "output.ext4.manifest.json",
+    "output.ext4.build-receipt.json",
     "m80-guestd",
+    "host-binaries.manifest.json",
 ];
 
 pub(crate) fn cmd_quickstart(args: QuickstartArgs, json_output: bool) -> anyhow::Result<i32> {
@@ -158,6 +161,7 @@ fn run_quickstart(
         })?;
     }
     relocate_manifest(artifact_dir)?;
+    relocate_build_receipt(artifact_dir)?;
 
     if !no_run {
         run_echo_probe(artifact_dir, run_root)?;
@@ -263,6 +267,81 @@ fn relocate_manifest(artifact_dir: &Path) -> Result<(), FcError> {
     Ok(())
 }
 
+fn relocate_build_receipt(artifact_dir: &Path) -> Result<(), FcError> {
+    let manifest_path = artifact_dir.join("output.ext4.manifest.json");
+    let receipt_path = artifact_dir.join("output.ext4.build-receipt.json");
+    let manifest = m80_image_manifest::Manifest::read(&manifest_path)?;
+    let manifest_sha256 = sha256_file(&manifest_path)?;
+    let mut artifacts = vec![
+        receipt_artifact(
+            BuildReceiptArtifactKind::KernelImage,
+            manifest.kernel_image.clone(),
+            manifest.kernel_image_sha256.clone(),
+        ),
+        receipt_artifact(
+            BuildReceiptArtifactKind::OutputRootfsImage,
+            manifest.output_rootfs_image.clone(),
+            manifest.output_rootfs_sha256.clone(),
+        ),
+        receipt_artifact(
+            BuildReceiptArtifactKind::DaemonBinaryPath,
+            manifest.daemon_binary_path.clone(),
+            manifest.daemon_binary_sha256.clone(),
+        ),
+    ];
+    if let (Some(path), Some(sha256)) = (
+        manifest.source_rootfs_image.clone(),
+        manifest.source_rootfs_sha256.clone(),
+    ) {
+        artifacts.push(receipt_artifact(
+            BuildReceiptArtifactKind::SourceRootfsImage,
+            path,
+            sha256,
+        ));
+    }
+    BuildReceipt::new(manifest_path, manifest_sha256, artifacts)
+        .write(&receipt_path)
+        .map_err(FcError::Manifest)?;
+    Ok(())
+}
+
+fn receipt_artifact(
+    kind: BuildReceiptArtifactKind,
+    path: PathBuf,
+    sha256: String,
+) -> BuildReceiptArtifact {
+    BuildReceiptArtifact { kind, path, sha256 }
+}
+
+fn sha256_file(path: &Path) -> Result<String, FcError> {
+    let output = run_output_capture(Command::new("sha256sum").arg(path), "compute file checksum")?;
+    if !output.status.success() {
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output_text = if combined.is_empty() {
+            String::new()
+        } else {
+            format!(": {combined}")
+        };
+        return Err(FcError::CommandFailed {
+            command: "compute file checksum",
+            status: output.status,
+            output: output_text,
+        });
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let digest = stdout.split_whitespace().next().ok_or_else(|| {
+        FcError::Config(m80_firecracker::ConfigError::InvalidValue {
+            field: "sha256sum",
+            reason: "sha256sum produced no digest".to_owned(),
+        })
+    })?;
+    Ok(digest.to_owned())
+}
+
 fn run_echo_probe(artifact_dir: &Path, run_root: &Path) -> Result<(), FcError> {
     let current = std::env::current_exe()
         .map_err(|source| crate::errors::host_io("resolve current executable", source))?;
@@ -347,6 +426,7 @@ fn command_label(label: &str) -> &'static str {
         "curl artifact tarball" => "curl artifact tarball",
         "curl artifact checksum" => "curl artifact checksum",
         "compute artifact tarball checksum" => "compute artifact tarball checksum",
+        "compute file checksum" => "compute file checksum",
         "extract artifact tarball" => "extract artifact tarball",
         "verify artifact checksums" => "verify artifact checksums",
         _ => "quickstart helper",
