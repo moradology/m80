@@ -27,6 +27,7 @@ RAW_RELEASE_RE = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-
 PRODUCTION_URL_FILES = [
     "scripts/install.sh",
     "scripts/package-release-bundle.py",
+    "scripts/stable_release_channel.py",
     "scripts/verify-release-bundle.py",
     "scripts/verify-release-integrity.py",
     "scripts/write-release-attestation-metadata.py",

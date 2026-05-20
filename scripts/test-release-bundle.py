@@ -546,6 +546,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("attestations: write", workflow)
         self.assertIn("scripts/write-release-attestation-metadata.py", workflow)
         self.assertGreaterEqual(workflow.count("scripts/verify-release-integrity.py"), 2)
+        self.assertIn("scripts/stable_release_channel.py", workflow)
+        self.assertIn('gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}"', workflow)
         self.assertIn("scripts/write-quickstart-proof-fixture.py", workflow)
         self.assertGreaterEqual(workflow.count("scripts/verify-quickstart-proof.py"), 2)
         self.assertIn("m80-quickstart-proof-hostless.json", workflow)
@@ -792,6 +794,15 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("release tag mismatch", result.stderr)
+
+    def test_rejects_prerelease_release_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            result = run_package(inputs, root / "out", release_tag="v0.0.0-rc.1", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("stable release tag must be vMAJOR.MINOR.PATCH", result.stderr)
 
     def test_rejects_guest_protocol_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

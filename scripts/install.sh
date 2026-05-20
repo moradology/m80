@@ -67,6 +67,33 @@ need rm
 need uname
 need wc
 
+validate_stable_release_tag() {
+    tag=$1
+    case "$tag" in
+        v*) version=${tag#v} ;;
+        *) fail "stable release tag must be vMAJOR.MINOR.PATCH: $tag" ;;
+    esac
+    major=${version%%.*}
+    rest=${version#*.}
+    if [ "$rest" = "$version" ]; then
+        fail "stable release tag must be vMAJOR.MINOR.PATCH with no prerelease suffix: $tag"
+    fi
+    minor=${rest%%.*}
+    patch=${rest#*.}
+    if [ "$patch" = "$rest" ] || [ "${patch#*.}" != "$patch" ]; then
+        fail "stable release tag must be vMAJOR.MINOR.PATCH with no prerelease suffix: $tag"
+    fi
+    for part in "$major" "$minor" "$patch"; do
+        case "$part" in
+            ''|*[!0123456789]*)
+                fail "stable release tag must be vMAJOR.MINOR.PATCH with no prerelease suffix: $tag"
+                ;;
+        esac
+    done
+}
+
+validate_stable_release_tag "$M80_RELEASE_TAG"
+
 preflight_attestation_verifier() {
     if ! gh_version="$(gh --version 2>&1)"; then
         echo "m80 install.sh: release attestation verifier missing: gh" >&2

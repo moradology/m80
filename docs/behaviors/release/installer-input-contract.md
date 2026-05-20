@@ -12,7 +12,9 @@ profile state and switch the install-root active pointer.
 
 The installer accepts exactly one source shape:
 
-- `--release-tag <TAG>`: a pinned release tag selected by the operator.
+- `--release-tag <TAG>`: a pinned stable release tag selected by the operator.
+  Stable tags are exactly `vMAJOR.MINOR.PATCH`; prerelease suffixes are
+  rejected by the normal install path.
 - `--bundle-url <URL>`: an explicit release bundle URL, including local
   `file://` bundle fixtures used while developing installer behavior.
 - `--bootstrap-tag <TAG>`: a concrete tag handed to `m80 install` by the stable
@@ -21,8 +23,9 @@ The installer accepts exactly one source shape:
 
 The parser rejects more than one source. A missing source reaches the command
 validator so the diagnostic names the two human-facing choices without exposing
-the hidden bootstrapper handoff. Source tags are exact GitHub release tags such
-as `v0.1.0`; the installer does not normalize loose versions.
+the hidden bootstrapper handoff. Source tags are exact stable GitHub release
+tags such as `v0.1.0`; the installer does not normalize loose versions,
+prerelease suffixes, or mutable aliases.
 
 ## Dry Run And Roots
 

@@ -179,6 +179,32 @@ fn release_tag_source_rejects_binary_tag_mismatch() {
 }
 
 #[test]
+fn release_tag_source_rejects_prerelease_tag_before_index_fetch() {
+    let identity = VersionIdentity::from_parts("1.2.3-rc.1", Some("v1.2.3-rc.1"));
+    let err = source_plan_with_index_resolver(
+        InstallSource::ReleaseTag("v1.2.3-rc.1"),
+        &identity,
+        |_, _| panic!("prerelease-shaped tag must fail before index fetch"),
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("no prerelease suffix"), "{err}");
+}
+
+#[test]
+fn bootstrap_tag_source_rejects_prerelease_tag_before_index_fetch() {
+    let identity = VersionIdentity::from_parts("1.2.3-rc.1", Some("v1.2.3-rc.1"));
+    let err = source_plan_with_index_resolver(
+        InstallSource::BootstrapTag("v1.2.3-rc.1"),
+        &identity,
+        |_, _| panic!("prerelease-shaped bootstrap tag must fail before index fetch"),
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("no prerelease suffix"), "{err}");
+}
+
+#[test]
 fn bundle_url_rejects_release_binary_tag_mismatch() {
     let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
     let err = install_plan(

@@ -33,6 +33,7 @@ INTEGRITY_NAME = "m80-release-integrity.json"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+STABLE_RELEASE_TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 INSTALL_TEMPLATE_TOKENS = {
     "@M80_RELEASE_TAG@",
     "@M80_PUBLIC_RELEASE_OWNER@",
@@ -115,6 +116,10 @@ def main() -> int:
     require(
         args.image_kind == SUPPORTED_IMAGE_KIND,
         f"unsupported image kind: expected {SUPPORTED_IMAGE_KIND}, got {args.image_kind}",
+    )
+    require(
+        STABLE_RELEASE_TAG_RE.fullmatch(args.release_tag) is not None,
+        f"stable release tag must be vMAJOR.MINOR.PATCH with no prerelease suffix: {args.release_tag}",
     )
 
     workspace_version = workspace_package_version(repo_root)

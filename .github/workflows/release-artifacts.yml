@@ -236,6 +236,12 @@ jobs:
             --pattern m80-release-integrity.attestation.jsonl \
             --pattern m80-release-attestation.json \
             --pattern SHA256SUMS
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+            > /tmp/m80-release-redownload/github-release.json
+          scripts/stable_release_channel.py \
+            --release-metadata /tmp/m80-release-redownload/github-release.json \
+            --asset-index /tmp/m80-release-redownload/m80-release-assets.json \
+            --expected-tag "$GITHUB_REF_NAME"
           scripts/verify-release-bundle.py \
             /tmp/m80-release-redownload/m80-linux-x86_64.tar.gz \
             --release-tag "$GITHUB_REF_NAME" \

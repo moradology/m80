@@ -116,16 +116,23 @@ where
 }
 
 fn validate_tag(field: &'static str, tag: &str) -> Result<(), FcError> {
-    if tag.trim().is_empty() {
+    let Some(version) = tag.strip_prefix('v') else {
         return Err(FcError::Config(ConfigError::InvalidValue {
             field,
-            reason: "tag must not be empty".into(),
+            reason: "stable release tag must be vMAJOR.MINOR.PATCH".into(),
         }));
-    }
-    if !tag.starts_with('v') {
+    };
+    let parts = version.split('.').collect::<Vec<_>>();
+    if parts.len() != 3
+        || parts
+            .iter()
+            .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
         return Err(FcError::Config(ConfigError::InvalidValue {
             field,
-            reason: "tag must be a concrete GitHub release tag such as v0.1.0".into(),
+            reason: format!(
+                "stable release tag must be vMAJOR.MINOR.PATCH with no prerelease suffix: {tag}"
+            ),
         }));
     }
     Ok(())

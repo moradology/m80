@@ -39,6 +39,8 @@ m80 run -- echo hello
 The install snippets are checked against the public release URL contract in
 [`docs/behaviors/release/public-release-root.env`](docs/behaviors/release/public-release-root.env)
 by [`scripts/render-release-install-snippets.py`](scripts/render-release-install-snippets.py).
+The `latest` command follows the stable release channel only: public,
+non-draft, non-prerelease GitHub releases tagged `vMAJOR.MINOR.PATCH`.
 
 The installer is a rendered asset from the selected release. It uses that
 pinned release tag to download the release asset index and shell-safe bootstrap
@@ -64,6 +66,9 @@ For reproducible automation, replace `latest` with a concrete tag:
 curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
 m80 run -- echo hello
 ```
+
+Use a stable tag such as `v1.2.3`; prerelease or draft releases are not accepted
+by the normal install path.
 
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,

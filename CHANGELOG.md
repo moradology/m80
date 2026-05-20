@@ -5,6 +5,15 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Changed — stable release install channel
+
+- Stable install entry points now require public release tags shaped exactly
+  `vMAJOR.MINOR.PATCH`; prerelease-shaped tags are rejected before asset index
+  or bundle work in packaging, `install.sh`, and `m80 install`.
+- Added `scripts/stable_release_channel.py` plus tests to validate future
+  latest-bootstrap/freshness metadata against the non-draft, non-prerelease
+  public asset contract.
+
 ### Added — Phase B PmemLayer PerVm
 
 - Phase B (`m80-q420k.2`) added the `SandboxConfig::pmem_layers`

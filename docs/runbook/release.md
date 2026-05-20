@@ -42,6 +42,15 @@ curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install
 Do not hand-write alternate owners, raw `main` URLs, or private checkout URLs
 for public install instructions.
 
+The common latest and pinned snippets are stable-channel only. The resolved
+release must be public, non-draft, non-prerelease, tagged exactly
+`vMAJOR.MINOR.PATCH`, and must publish the complete installer-consumed asset
+set. `scripts/stable_release_channel.py` validates GitHub release metadata and
+the asset index for future latest bootstrap/freshness lanes; `install.sh`,
+`m80 install --release-tag`, and packaging also reject prerelease-shaped tags
+before network/index work. See
+`docs/behaviors/release/stable-channel.md`.
+
 ## Verification
 
 The release identity is pinned by:
