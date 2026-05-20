@@ -142,7 +142,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(asset["metadata_sha256"], sha256(out_dir / METADATA_NAME))
             self.assertEqual(asset["checksum_name"], f"{BUNDLE_NAME}.sha256")
             self.assertIsNone(asset["signature_name"])
-            self.assertIsNone(asset["attestation_name"])
+            self.assertEqual(asset["attestation_name"], INTEGRITY_ATTESTATION_BUNDLE_NAME)
             self.assertEqual(asset["target"], "linux-x86_64")
             self.assertEqual(asset["os"], "linux")
             self.assertEqual(asset["arch"], "x86_64")
@@ -172,7 +172,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(selector_row[9], asset["metadata_sha256"])
             self.assertEqual(selector_row[10], f"{BUNDLE_NAME}.sha256")
             self.assertEqual(selector_row[11], "-")
-            self.assertEqual(selector_row[12], "-")
+            self.assertEqual(selector_row[12], INTEGRITY_ATTESTATION_BUNDLE_NAME)
             self.assertEqual(selector_row[13], "v0.0.0")
             integrity = json.loads((out_dir / INTEGRITY_NAME).read_text())
             self.assertEqual(integrity["schema_version"], 1)
@@ -1062,6 +1062,145 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertIn("verified release integrity material", result.stdout)
 
+    def test_release_integrity_material_rejects_missing_asset_index_attestation_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            remove_asset_index_asset_field(root / "out", "attestation_name")
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("asset index asset m80-linux-x86_64.tar.gz missing field(s): attestation_name", result.stderr)
+
+    def test_release_integrity_material_rejects_empty_asset_index_attestation_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"attestation_name": ""})
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index attestation_name missing", result.stderr)
+
+    def test_release_integrity_material_rejects_stale_asset_index_attestation_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"attestation_name": "old-release.attestation.jsonl"})
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index attestation_name mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_attestation_bundle_path_name_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            renamed = root / "out" / "renamed.attestation.jsonl"
+            renamed.write_text((root / "out" / INTEGRITY_ATTESTATION_BUNDLE_NAME).read_text())
+
+            result = run_verify_integrity(material, attestation_bundle=renamed, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity attestation bundle path name mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_stale_asset_index_release_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"release_tag": "v9.9.9"})
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index release_tag mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_stale_asset_index_m80_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"m80_version": "v9.9.9"})
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index m80_version mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_named_signature_without_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            signature = root / "out" / "m80-linux-x86_64.tar.gz.sig"
+            signature.write_text("signature\n")
+            rewrite_asset_index_asset(root / "out", {"signature_name": signature.name})
+            rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", signature.name)
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity missing subject(s): {signature.name}", result.stderr)
+
+    def test_release_integrity_material_rejects_absent_asset_index_signature_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"signature_name": "missing.sig"})
+            rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", "missing.sig")
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index signature_name missing file", result.stderr)
+
+    def test_release_integrity_material_rejects_signature_name_colliding_with_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"signature_name": BUNDLE_NAME})
+            rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", BUNDLE_NAME)
+            material = write_integrity_material(
+                root / "out",
+                subject_updates={BUNDLE_NAME: {"kind": "detached-signature"}},
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index signature_name collides with required subject", result.stderr)
+
+    def test_release_integrity_material_accepts_named_signature_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            signature = root / "out" / "m80-linux-x86_64.tar.gz.sig"
+            signature.write_text("signature\n")
+            rewrite_asset_index_asset(root / "out", {"signature_name": signature.name})
+            rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", signature.name)
+            material = write_integrity_material(
+                root / "out",
+                extra_subject={
+                    "name": signature.name,
+                    "kind": "detached-signature",
+                    "sha256": sha256(signature),
+                    "size_bytes": signature.stat().st_size,
+                },
+            )
+
+            result = run_verify_integrity(material)
+
+            self.assertIn("verified release integrity material", result.stdout)
+
     def test_release_attestation_metadata_writer_accepts_verified_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1283,7 +1422,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify_integrity(material, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(f"release integrity sha256 mismatch for {BUNDLE_NAME}", result.stderr)
+            self.assertIn(f"release integrity asset index sha256 mismatch for {BUNDLE_NAME}", result.stderr)
 
     def test_release_integrity_material_rejects_tampered_install_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1707,6 +1846,13 @@ def rewrite_asset_index_asset(out_dir: Path, updates: dict) -> None:
     rewrite_asset_index(out_dir, index)
 
 
+def remove_asset_index_asset_field(out_dir: Path, field: str) -> None:
+    index_path = out_dir / ASSET_INDEX_NAME
+    index = json.loads(index_path.read_text())
+    index["assets"][0].pop(field, None)
+    rewrite_asset_index(out_dir, index)
+
+
 def rewrite_asset_index(out_dir: Path, index: dict) -> None:
     index_path = out_dir / ASSET_INDEX_NAME
     index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n")
@@ -1741,6 +1887,15 @@ def rewrite_bootstrap_selector(out_dir: Path, lines: list[str]) -> None:
             (BOOTSTRAP_SELECTOR_NAME, selector),
         ],
     )
+
+
+def rewrite_bootstrap_selector_asset_field(out_dir: Path, field: str, value: str | None) -> None:
+    lines = bootstrap_selector_lines(out_dir)
+    columns = lines[2].split("\t")
+    row = lines[3].split("\t")
+    row[columns.index(field)] = value if value is not None else "-"
+    lines[3] = "\t".join(row)
+    rewrite_bootstrap_selector(out_dir, lines)
 
 
 def write_integrity_material(
@@ -2198,10 +2353,13 @@ def run_verify_integrity(
     material: Path,
     *,
     gh_bin: Path | None = None,
+    attestation_bundle: Path | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     if gh_bin is None:
         gh_bin = fake_gh_path(material.parent.parent)
+    if attestation_bundle is None:
+        attestation_bundle = material.parent / INTEGRITY_ATTESTATION_BUNDLE_NAME
     cmd = [
         "python3",
         str(VERIFY_INTEGRITY),
@@ -2217,7 +2375,7 @@ def run_verify_integrity(
         "--trust-policy",
         str(trust_policy_path(material.parent)),
         "--attestation-bundle",
-        str(material.parent / INTEGRITY_ATTESTATION_BUNDLE_NAME),
+        str(attestation_bundle),
         "--attestation-metadata",
         str(material.parent / "m80-release-attestation.json"),
         "--verification-time",

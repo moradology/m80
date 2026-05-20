@@ -30,6 +30,7 @@ ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
 INTEGRITY_NAME = "m80-release-integrity.json"
+INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 INSTALL_TEMPLATE_TOKENS = {
@@ -552,7 +553,7 @@ def release_asset_index(
                 "metadata_sha256": sha256(metadata_asset),
                 "checksum_name": f"{BUNDLE_NAME}.sha256",
                 "signature_name": None,
-                "attestation_name": None,
+                "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
                 "target": args.target,
                 "os": target_os,
                 "arch": target_arch,

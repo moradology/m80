@@ -24,8 +24,7 @@ bundle row records:
 - `sha256` and `size_bytes` for the bundle tarball;
 - `metadata_name` and `metadata_sha256` for the byte-identical bundle metadata
   sidecar;
-- `checksum_name`, plus optional `signature_name` and `attestation_name`
-  references;
+- `checksum_name`, `signature_name`, and `attestation_name` proof references;
 - `target`, `os`, and `arch`;
 - `image_kind`;
 - `release_tag` and `m80_version`;
@@ -72,17 +71,19 @@ POSIX installer path. It contains:
 - `release_tag`;
 - a fixed `columns` row;
 - one `row` per index asset with `os`, `arch`, `image_kind`, bundle name/URL,
-  bundle sha256, `size_bytes`, metadata name/sha256, checksum name, optional
-  proof asset names, and `m80_version`.
+  bundle sha256, `size_bytes`, metadata name/sha256, checksum name, proof asset
+  names, and `m80_version`.
 
 The selector is generated mechanically from `m80-release-assets.json`, is
 checksum-covered, appears in `SHA256SUMS`, and is represented in release
 integrity material. Selector values are conservative ASCII shell tokens:
 whitespace, control characters, and shell metacharacters are invalid; nullable
-proof fields use `-`. It is not a second source of truth: verification compares
-selector rows back to the JSON index and rejects stale tag, missing tuple,
-duplicate tuple, stale digest/size, unsupported schema, shell-unsafe tokens, or
-hand-edited drift.
+proof fields use `-`. `signature_name` is nullable in schema v1 because there
+is no detached-signature lane, but `attestation_name` is required for official
+signed release rows and names `m80-release-integrity.attestation.jsonl`. It is
+not a second source of truth: verification compares selector rows back to the
+JSON index and rejects stale tag, missing tuple, duplicate tuple, stale
+digest/size, unsupported schema, shell-unsafe tokens, or hand-edited drift.
 
 Release publication must generate the index from the actual dist files, upload
 it with the rest of the release assets, then re-download the public release and
@@ -90,9 +91,13 @@ validate the index against the uploaded tarball, metadata sidecar, checksum
 sidecars, and `SHA256SUMS`. A new architecture or image kind is a new row in
 the index, not a new README quickstart command.
 
-The current publisher is checksum-covered: `signature_name` and
-`attestation_name` are nullable until release signing/attestation material is
-wired into the release workflow. Checksum coverage proves the exact bytes that
-the selector parsed; it is not a substitute for signed release integrity
-verification. Signed-release verification must fail closed rather than
-accepting missing or stale proof references once that material exists.
+The current publisher is checksum-covered and attestation-referenced:
+`signature_name` is null, and `attestation_name` is
+`m80-release-integrity.attestation.jsonl`. Checksum coverage proves the exact
+bytes that the selector parsed; it is not a substitute for signed release
+integrity verification. Signed-release verification fails closed when an
+installer-consumed row omits `signature_name` or `attestation_name`, leaves
+`attestation_name` empty, names a stale attestation bundle, names a signature
+file that is absent from the release dist, or drifts from the release tag,
+bundle metadata version, bundle tarball, metadata sidecar, checksum sidecar, or
+selector row.

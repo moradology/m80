@@ -46,6 +46,15 @@ There are no detached signature files in v1. If a future asset-index row names
 must be added as a subject in the same predicate before signed release
 verification accepts the row.
 
+The v1 asset index still carries both proof-reference fields. Official signed
+release rows must set `attestation_name` to
+`m80-release-integrity.attestation.jsonl`; `signature_name` must be null unless
+a detached signature file is actually published. Signed verification rejects
+missing proof-reference fields, empty attestation names, stale attestation
+bundle names, absent signature files, stale row release tags or m80 versions,
+signature names that collide with built-in subject names, and any named
+signature file that is not a predicate subject.
+
 The bundle metadata hash is duplicated as `bundle_metadata_sha256` because
 installers and human verifiers need to bind the tarball metadata before
 extraction.
@@ -166,6 +175,9 @@ closed when:
 - a subject digest or size does not match current bytes;
 - `bundle_metadata_sha256` does not match the metadata sidecar;
 - bundle metadata or the asset index names a different release tag;
+- an installer-consumed asset-index row omits proof-reference fields, leaves
+  `attestation_name` empty, points at stale or absent proof material, names a
+  stale m80 version, or names a signature file omitted from the predicate;
 - the bootstrap selector names a different release tag or drifts from the
   asset index tuple map.
 
@@ -210,6 +222,16 @@ Linux package instructions are at <https://cli.github.com/packages>.
 `scripts/test-release-bundle.py` covers:
 
 - `test_release_integrity_material_verifier_accepts_valid_fixture`;
+- `test_release_integrity_material_rejects_missing_asset_index_attestation_ref`;
+- `test_release_integrity_material_rejects_empty_asset_index_attestation_ref`;
+- `test_release_integrity_material_rejects_stale_asset_index_attestation_ref`;
+- `test_release_integrity_material_rejects_attestation_bundle_path_name_mismatch`;
+- `test_release_integrity_material_rejects_stale_asset_index_release_tag`;
+- `test_release_integrity_material_rejects_stale_asset_index_m80_version`;
+- `test_release_integrity_material_rejects_named_signature_without_subject`;
+- `test_release_integrity_material_rejects_absent_asset_index_signature_ref`;
+- `test_release_integrity_material_rejects_signature_name_colliding_with_subject`;
+- `test_release_integrity_material_accepts_named_signature_subject`;
 - `test_release_workflow_publishes_and_verifies_proof_assets`;
 - `test_release_attestation_metadata_writer_accepts_verified_bundle`;
 - `test_release_integrity_material_preflights_missing_verifier_before_material_read`;

@@ -13,7 +13,7 @@ import subprocess
 import tomllib
 
 from release_attestation_verifier import preflight_gh_attestation_verifier
-from release_url_contract import release_repository
+from release_url_contract import release_asset_url, release_repository
 
 
 SCHEMA_VERSION = 1
@@ -26,6 +26,7 @@ METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
+INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 BOOTSTRAP_SELECTOR_COLUMNS = [
     "os",
     "arch",
@@ -42,8 +43,30 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
     "m80_version",
 ]
 SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
+DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+ASSET_INDEX_FIELDS = {"schema_version", "release_tag", "assets"}
+ASSET_FIELDS = {
+    "name",
+    "url",
+    "sha256",
+    "size_bytes",
+    "metadata_name",
+    "metadata_sha256",
+    "checksum_name",
+    "signature_name",
+    "attestation_name",
+    "target",
+    "os",
+    "arch",
+    "image_kind",
+    "release_tag",
+    "m80_version",
+    "guest_protocol_version",
+    "manifest_schema_version",
+    "expected_firecracker_version",
+}
 TOP_LEVEL_FIELDS = {
     "schema_version",
     "mechanism",
@@ -186,9 +209,15 @@ def main() -> int:
         f"release integrity bundle_metadata_sha256 mismatch for {METADATA_NAME}",
     )
     verify_bundle_metadata(metadata_path, material)
-    asset_index = verify_asset_index(dist_dir / ASSET_INDEX_NAME, material)
+    asset_index = verify_asset_index(
+        dist_dir / ASSET_INDEX_NAME,
+        material,
+        dist_dir=dist_dir,
+        attestation_bundle_path=args.attestation_bundle,
+        metadata=read_json(metadata_path, "bundle metadata"),
+    )
     verify_bootstrap_selector(dist_dir / BOOTSTRAP_SELECTOR_NAME, material, asset_index)
-    verify_subjects(material["subjects"], dist_dir)
+    verify_subjects(material["subjects"], dist_dir, signature_subjects_from_index(asset_index))
 
     print(f"verified release integrity material {args.material}")
     return 0
@@ -427,11 +456,132 @@ def verify_bundle_metadata(metadata_path: Path, material: dict) -> None:
     require(metadata.get("target") == material["target"], "release integrity bundle metadata target mismatch")
 
 
-def verify_asset_index(index_path: Path, material: dict) -> dict:
+def verify_asset_index(
+    index_path: Path,
+    material: dict,
+    *,
+    dist_dir: Path,
+    attestation_bundle_path: Path,
+    metadata: dict,
+) -> dict:
     index = read_json(index_path, "asset index")
+    require_exact_fields(index, ASSET_INDEX_FIELDS, "asset index")
+    require(index.get("schema_version") == SCHEMA_VERSION, "release integrity unsupported asset index schema_version")
     require(index.get("release_tag") == material["release_tag"], "release integrity asset index release_tag mismatch")
     require(isinstance(index.get("assets"), list), "release integrity asset index assets must be a list")
+    require(index["assets"], "release integrity asset index assets must not be empty")
+    seen: set[tuple[str, str, str]] = set()
+    found_default = False
+    for asset in index["assets"]:
+        require(isinstance(asset, dict), "release integrity asset index asset must be an object")
+        asset_name = asset.get("name") if isinstance(asset.get("name"), str) else "<unknown>"
+        require_exact_fields(asset, ASSET_FIELDS, f"asset index asset {asset_name}")
+        tuple_key = require_asset_tuple(asset)
+        require(
+            tuple_key not in seen,
+            f"release integrity asset index duplicate tuple: {format_tuple(tuple_key)}",
+        )
+        seen.add(tuple_key)
+        require(
+            asset["release_tag"] == material["release_tag"],
+            f"release integrity asset index release_tag mismatch for {asset_name}",
+        )
+        require(
+            asset["m80_version"] == metadata["m80_version"],
+            f"release integrity asset index m80_version mismatch for {asset_name}",
+        )
+        validate_asset_proof_refs(
+            asset,
+            dist_dir=dist_dir,
+            attestation_bundle_name=attestation_bundle_path.name,
+        )
+        if tuple_key == ("linux", "x86_64", "minimal"):
+            found_default = True
+            verify_default_asset_row(asset, material=material, metadata=metadata, dist_dir=dist_dir)
+    require(found_default, "release integrity asset index missing default bundle")
     return index
+
+
+def require_asset_tuple(asset: dict) -> tuple[str, str, str]:
+    key = (asset.get("os"), asset.get("arch"), asset.get("image_kind"))
+    require(
+        all(isinstance(value, str) and value for value in key),
+        "release integrity asset index tuple fields invalid",
+    )
+    return key
+
+
+def validate_asset_proof_refs(asset: dict, *, dist_dir: Path, attestation_bundle_name: str) -> None:
+    asset_name = asset["name"]
+    signature_name = asset["signature_name"]
+    if signature_name is not None:
+        signature_name = require_dist_asset_name(signature_name, "signature_name", asset_name)
+        require(
+            signature_name not in EXPECTED_SUBJECTS,
+            f"release integrity asset index signature_name collides with required subject for {asset_name}: "
+            f"{signature_name}",
+        )
+        require(
+            (dist_dir / signature_name).is_file(),
+            f"release integrity asset index signature_name missing file for {asset_name}: {signature_name}",
+        )
+    attestation_name = require_dist_asset_name(asset["attestation_name"], "attestation_name", asset_name)
+    require(
+        attestation_name == INTEGRITY_ATTESTATION_BUNDLE_NAME,
+        "release integrity asset index attestation_name mismatch for "
+        f"{asset_name}: expected {INTEGRITY_ATTESTATION_BUNDLE_NAME}, got {attestation_name}",
+    )
+    require(
+        attestation_bundle_name == attestation_name,
+        "release integrity attestation bundle path name mismatch: "
+        f"expected {attestation_name}, got {attestation_bundle_name}",
+    )
+    require(
+        (dist_dir / attestation_name).is_file(),
+        f"release integrity asset index attestation_name missing file for {asset_name}: {attestation_name}",
+    )
+
+
+def require_dist_asset_name(value: object, field: str, asset_name: str) -> str:
+    require(
+        isinstance(value, str) and value,
+        f"release integrity asset index {field} missing for {asset_name}",
+    )
+    require(
+        "/" not in value and value not in {".", ".."} and DIST_ASSET_NAME_RE.match(value) is not None,
+        f"release integrity asset index {field} invalid for {asset_name}",
+    )
+    return value
+
+
+def verify_default_asset_row(asset: dict, *, material: dict, metadata: dict, dist_dir: Path) -> None:
+    bundle_path = dist_dir / BUNDLE_NAME
+    metadata_path = dist_dir / METADATA_NAME
+    require(bundle_path.is_file(), f"release integrity default bundle missing: {BUNDLE_NAME}")
+    require(metadata_path.is_file(), f"release integrity bundle metadata missing: {METADATA_NAME}")
+    expected = {
+        "name": BUNDLE_NAME,
+        "url": release_asset_url(material["release_tag"], BUNDLE_NAME),
+        "sha256": sha256_file(bundle_path),
+        "size_bytes": bundle_path.stat().st_size,
+        "metadata_name": METADATA_NAME,
+        "metadata_sha256": sha256_file(metadata_path),
+        "checksum_name": f"{BUNDLE_NAME}.sha256",
+        "target": material["target"],
+        "os": "linux",
+        "arch": "x86_64",
+        "image_kind": "minimal",
+        "release_tag": material["release_tag"],
+        "m80_version": metadata["m80_version"],
+        "guest_protocol_version": metadata["guest_protocol_version"],
+        "manifest_schema_version": metadata["manifest_schema_version"],
+        "expected_firecracker_version": metadata["expected_firecracker_version"],
+    }
+    for field, expected_value in expected.items():
+        require(
+            asset[field] == expected_value,
+            f"release integrity asset index {field} mismatch for {BUNDLE_NAME}",
+        )
 
 
 def verify_bootstrap_selector(selector_path: Path, material: dict, index: dict) -> None:
@@ -511,12 +661,7 @@ def parse_bootstrap_selector(selector_path: Path) -> tuple[str, dict[tuple[str, 
 def expected_bootstrap_selector_rows(index: dict) -> dict[tuple[str, str, str], list[str]]:
     rows = {}
     for asset in index["assets"]:
-        require(isinstance(asset, dict), "release integrity asset index asset must be an object")
-        key = (asset.get("os"), asset.get("arch"), asset.get("image_kind"))
-        require(
-            all(isinstance(value, str) and value for value in key),
-            "release integrity asset index tuple fields invalid",
-        )
+        key = require_asset_tuple(asset)
         require(key not in rows, f"release integrity asset index duplicate bootstrap selector tuple: {format_tuple(key)}")
         rows[key] = [
             selector_value(asset.get("os"), "os"),
@@ -561,8 +706,19 @@ def format_tuple(key: tuple[str, str, str]) -> str:
     return "/".join(key)
 
 
-def verify_subjects(subjects: object, dist_dir: Path) -> None:
+def signature_subjects_from_index(index: dict) -> dict[str, str]:
+    subjects = {}
+    for asset in index["assets"]:
+        signature_name = asset["signature_name"]
+        if signature_name is not None:
+            subjects[signature_name] = "detached-signature"
+    return subjects
+
+
+def verify_subjects(subjects: object, dist_dir: Path, extra_expected_subjects: dict[str, str]) -> None:
     require(isinstance(subjects, list), "release integrity subjects must be a list")
+    expected_subjects = dict(EXPECTED_SUBJECTS)
+    expected_subjects.update(extra_expected_subjects)
     by_name: dict[str, dict] = {}
     for subject in subjects:
         require(isinstance(subject, dict), "release integrity subject must be an object")
@@ -570,7 +726,7 @@ def verify_subjects(subjects: object, dist_dir: Path) -> None:
         require(name not in by_name, f"release integrity duplicate subject {name}")
         require_exact_fields(subject, SUBJECT_FIELDS, f"release integrity subject {name}")
         kind = require_subject_str(subject, "kind", name)
-        expected_kind = EXPECTED_SUBJECTS.get(name)
+        expected_kind = expected_subjects.get(name)
         require(expected_kind is not None, f"release integrity unexpected subject {name}")
         require(kind == expected_kind, f"release integrity subject {name} kind mismatch")
         digest = require_subject_str(subject, "sha256", name)
@@ -579,7 +735,7 @@ def verify_subjects(subjects: object, dist_dir: Path) -> None:
         require(isinstance(size_bytes, int) and size_bytes > 0, f"release integrity subject {name} invalid size_bytes")
         by_name[name] = subject
 
-    missing_subjects = sorted(set(EXPECTED_SUBJECTS) - set(by_name))
+    missing_subjects = sorted(set(expected_subjects) - set(by_name))
     require(not missing_subjects, "release integrity missing subject(s): " + ", ".join(missing_subjects))
     for name, subject in by_name.items():
         asset = dist_dir / name
