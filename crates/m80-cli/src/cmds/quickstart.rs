@@ -15,7 +15,7 @@ use crate::errors;
 use crate::json;
 use crate::release::VersionIdentity;
 
-mod profile_writer;
+pub(in crate::cmds) mod profile_writer;
 
 use profile_writer::{write_installed_default_profile, InstalledDefaultProfile};
 
@@ -266,6 +266,7 @@ fn run_quickstart(
         run_root,
         profile_dir,
         config_path,
+        binary_config: m80_preflight::BinaryDiscoveryConfig::from_env(),
         release_tag: release_tag_from_artifact_url(artifact_url),
         m80_version: VersionIdentity::current().binary_version,
         host_binaries_manifest: &host_binaries_manifest,

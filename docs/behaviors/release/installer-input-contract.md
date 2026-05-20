@@ -5,8 +5,9 @@ Behavior bead: `m80-o3uh9.3.1`.
 `m80 install` is the release-bundle installer front door. This behavior pins
 the user-facing input contract, dry-run plan, and the currently supported
 explicit bundle layout copy. The command does not yet perform privileged
-copies, write `/etc` profile state, resolve "latest", or switch the active
-install pointer.
+copies, write `/etc` profile state, or resolve "latest". Successful bundle
+installs write install-root-local profile state and switch the install-root
+active pointer.
 
 ## Source Selection
 
@@ -37,8 +38,8 @@ Without `--dry-run`, the active installer supports explicit local `file://...`
 bundle URLs and GitHub release bundle URLs under
 `https://github.com/moradology/m80/releases/download/...`. A successful bundle
 install stages and verifies the bundle, copies the verified layout into
-`<install-root>/versions/<release_tag>`, and still does not switch
-`<install-root>/active` or write profile state. Release-tag/bootstrap
+`<install-root>/versions/<release_tag>`, writes install-root-local profile
+state, and switches `<install-root>/active` last. Release-tag/bootstrap
 resolution exits with the unsupported-operation code before creating the
 install root until the asset-index/bootstrapper leaves wire source selection.
 Local `http://127.0.0.1`, `http://localhost`, and `http://[::1]` bundle URLs are

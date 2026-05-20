@@ -250,8 +250,16 @@ fn render_layout_summary(summary: &layout::LayoutInstallSummary, json_mode: bool
         println!("version_dir={}", summary.version_dir);
         println!("files_copied={}", summary.files_copied);
         println!("install_provenance={}", summary.install_provenance);
-        println!("active_pointer_unchanged=true");
-        println!("profile_written=false");
+        println!("host_binaries_manifest={}", summary.host_binaries_manifest);
+        println!("profile_path={}", summary.profile_path);
+        println!("active_pointer={}", summary.active_pointer);
+        println!("active_pointer_flipped={}", summary.active_pointer_flipped);
+        println!("profile_written={}", summary.profile_written);
+        println!("preflight_gate={}", summary.preflight_gate);
+        println!(
+            "finalization_order={}",
+            summary.finalization_order.join(",")
+        );
     }
 }
 

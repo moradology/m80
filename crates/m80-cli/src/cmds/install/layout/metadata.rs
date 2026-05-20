@@ -347,7 +347,7 @@ pub(super) struct BundleMetadata {
     build_receipt_manifest_path: String,
     install_provenance_schema_version: u32,
     install_provenance_required: bool,
-    expected_firecracker_version: String,
+    pub(super) expected_firecracker_version: String,
     files: Vec<BundleFile>,
 }
 

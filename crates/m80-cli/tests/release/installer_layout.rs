@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
 use m80_image_manifest::{
@@ -8,6 +9,8 @@ use m80_image_manifest::{
 
 #[path = "../common/mod.rs"]
 mod common;
+#[path = "installer_layout/finalization.rs"]
+mod finalization;
 #[path = "installer_layout/fixture.rs"]
 mod fixture;
 #[path = "installer_layout/http_fixture.rs"]
@@ -35,22 +38,56 @@ const REQUIRED_INSTALLED_FILES: &[&str] = &[
     "SHA256SUMS",
 ];
 
+struct HostPrereqFixture {
+    _temp: tempfile::TempDir,
+    firecracker_bin: PathBuf,
+    firecracker_seccomp_filter: PathBuf,
+    jailer_bin: PathBuf,
+}
+
+impl HostPrereqFixture {
+    fn new() -> Self {
+        let temp = tempfile::tempdir().unwrap();
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let firecracker_bin = bin_dir.join("firecracker");
+        let jailer_bin = bin_dir.join("jailer");
+        let firecracker_seccomp_filter = bin_dir.join("firecracker-seccomp-filter.bin");
+        write_executable(
+            &firecracker_bin,
+            "#!/bin/sh\nprintf 'Firecracker v1.15.1\\n'\n",
+        );
+        write_executable(&jailer_bin, "#!/bin/sh\nprintf 'Jailer v1.15.1\\n'\n");
+        fs::write(&firecracker_seccomp_filter, b"{\"seccomp_level\":2}\n").unwrap();
+
+        Self {
+            _temp: temp,
+            firecracker_bin,
+            firecracker_seccomp_filter,
+            jailer_bin,
+        }
+    }
+
+    fn apply(&self, cmd: &mut assert_cmd::Command) {
+        clear_install_env(cmd);
+        cmd.env("M80_FIRECRACKER_BIN", &self.firecracker_bin);
+        cmd.env(
+            "M80_FIRECRACKER_SECCOMP_FILTER",
+            &self.firecracker_seccomp_filter,
+        );
+        cmd.env("M80_JAILER_BIN", &self.jailer_bin);
+        cmd.env("M80_INSTALL_HOSTLESS_FIXTURE", "1");
+    }
+}
+
 #[test]
 fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
     let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
     let install_temp = tempfile::tempdir().unwrap();
     let install_root = install_temp.path().join("install-root");
 
-    let output = m80()
-        .args([
-            "install",
-            "--bundle-url",
-            &format!("file://{}", bundle.tarball.display()),
-            "--install-root",
-            install_root.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
+    let output = run_install(&bundle, &install_root, Some(&host), &[], &[]);
 
     assert!(
         output.status.success(),
@@ -62,8 +99,16 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("installed bundle layout"), "{stdout}");
     assert!(stdout.contains("files_copied=12"), "{stdout}");
-    assert!(stdout.contains("active_pointer_unchanged=true"), "{stdout}");
-    assert!(stdout.contains("profile_written=false"), "{stdout}");
+    assert!(stdout.contains("active_pointer_flipped=true"), "{stdout}");
+    assert!(stdout.contains("profile_written=true"), "{stdout}");
+    assert!(
+        stdout.contains("preflight_gate=hostless_fixture"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("finalization_order=bundle_verification,host_prerequisite_verification,install_provenance,host_binaries_manifest,default_profile,preflight_smoke_gate,active_pointer_flip"),
+        "{stdout}"
+    );
 
     let version_dir = install_root.join("versions").join(&bundle.release_tag);
     assert!(
@@ -81,12 +126,57 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         provenance_path.is_file(),
         "installer must emit installed provenance"
     );
-    assert!(
-        !install_root.join("active").exists(),
-        "layout leaf must not switch active pointer"
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        version_dir
     );
 
     let artifacts = version_dir.join("artifacts");
+    let host_binaries_manifest = artifacts.join("host-binaries.manifest.json");
+    assert!(
+        host_binaries_manifest.is_file(),
+        "installer must emit host-binaries manifest"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "host_binaries_manifest={}",
+            host_binaries_manifest.display()
+        )),
+        "{stdout}"
+    );
+    let profile_path = install_root.join("profiles/default.toml");
+    assert!(
+        profile_path.is_file(),
+        "installer must write default profile"
+    );
+    assert!(
+        stdout.contains(&format!("profile_path={}", profile_path.display())),
+        "{stdout}"
+    );
+    let profile = fs::read_to_string(&profile_path).unwrap();
+    assert!(profile.contains("host_binaries_manifest = "), "{profile}");
+    assert!(
+        profile.contains(&host_binaries_manifest.display().to_string()),
+        "{profile}"
+    );
+    assert!(profile.contains("jailer_harden_bin = "), "{profile}");
+    assert!(
+        profile.contains(
+            &version_dir
+                .join("bin/m80-jailer-harden")
+                .display()
+                .to_string()
+        ),
+        "{profile}"
+    );
+    assert!(profile.contains("net_helper_bin = "), "{profile}");
+    assert!(
+        profile.contains(&version_dir.join("bin/m80-net-helper").display().to_string()),
+        "{profile}"
+    );
+    let config = fs::read_to_string(install_root.join("config.toml")).unwrap();
+    assert!(config.contains("default_profile = 'default'"), "{config}");
+
     let manifest_path = artifacts.join("output.ext4.manifest.json");
     let manifest = Manifest::read(&manifest_path).unwrap();
     assert_eq!(manifest.kernel_image, artifacts.join("vmlinux"));
@@ -136,6 +226,7 @@ fn install_bundle_layout_missing_required_bundle_file_fails_before_activation() 
     let bundle = write_release_bundle(Some("bin/m80-net-helper"));
     let install_temp = tempfile::tempdir().unwrap();
     let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
 
     let output = m80()
         .args([
@@ -156,8 +247,8 @@ fn install_bundle_layout_missing_required_bundle_file_fails_before_activation() 
         "unexpected stderr: {stderr}"
     );
     assert!(
-        !install_root.join("active").exists(),
-        "missing bundle file must not switch active pointer"
+        fs::read_link(install_root.join("active")).unwrap() == previous,
+        "missing bundle file must leave previous active pointer selected"
     );
     assert!(
         !install_root.join("versions").join(RELEASE_TAG).exists(),
@@ -265,33 +356,80 @@ fn install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout() {
     );
 }
 
-#[test]
-fn installed_layout_doc_names_directory_contract_and_tests() {
-    let doc = read_repo_file("docs/behaviors/release/installed-layout.md");
+fn run_install(
+    bundle: &fixture::ReleaseBundleFixture,
+    install_root: &Path,
+    host: Option<&HostPrereqFixture>,
+    envs: &[(&str, &str)],
+    env_removals: &[&str],
+) -> std::process::Output {
+    run_install_url(
+        &format!("file://{}", bundle.tarball.display()),
+        install_root,
+        host,
+        envs,
+        env_removals,
+    )
+}
 
-    for required in [
-        "`<install-root>/versions/<release_tag>`",
-        "`bin/m80`",
-        "`artifacts/output.ext4.manifest.json`",
-        "`artifacts/install-provenance.json`",
-        "`<install-root>/active`",
-        "install_bundle_layout_copies_verified_bundle_into_version_dir",
-        "install_bundle_layout_downloads_http_bundle_into_version_dir",
-        "install_bundle_layout_rejects_remote_bundle_checksum_mismatch_before_extract",
-        "install_bundle_layout_rejects_remote_404_before_extract",
-        "install_bundle_layout_deletes_truncated_download_partial",
-        "install_bundle_layout_rejects_redirect_to_different_fixture_host",
-        "install_bundle_layout_rejects_checksum_redirect_to_different_fixture_host",
-        "install_bundle_layout_missing_required_bundle_file_fails_before_activation",
-        "install_bundle_layout_duplicate_bundle_path_fails_before_activation",
-        "install_bundle_layout_permission_failure_leaves_active_state_untouched",
-        "install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout",
-    ] {
-        assert!(
-            doc.contains(required),
-            "installed layout doc missing {required:?}"
-        );
+fn run_install_url(
+    bundle_url: &str,
+    install_root: &Path,
+    host: Option<&HostPrereqFixture>,
+    envs: &[(&str, &str)],
+    env_removals: &[&str],
+) -> std::process::Output {
+    let mut command = m80();
+    command.args([
+        "install",
+        "--bundle-url",
+        bundle_url,
+        "--install-root",
+        install_root.to_str().unwrap(),
+    ]);
+    clear_install_env(&mut command);
+    for key in env_removals {
+        command.env_remove(key);
     }
+    if let Some(host) = host {
+        host.apply(&mut command);
+    }
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().unwrap()
+}
+
+fn clear_install_env(command: &mut assert_cmd::Command) {
+    for key in [
+        "M80_CGROUP_MODE",
+        "M80_JAIL_UID",
+        "M80_JAIL_GID",
+        "M80_EXPECTED_CONCURRENT_VMS",
+        "M80_FIRECRACKER_BIN",
+        "M80_FIRECRACKER_VERSION",
+        "M80_FIRECRACKER_SECCOMP_FILTER",
+        "M80_JAILER_BIN",
+        "M80_JAILER_HARDEN_BIN",
+        "M80_NET_HELPER_BIN",
+        "M80_INSTALL_HOSTLESS_FIXTURE",
+        "M80_INSTALL_INJECT_INTERRUPTION_AFTER_PROFILE",
+    ] {
+        command.env_remove(key);
+    }
+}
+
+fn seed_previous_active_install(install_root: &Path) -> PathBuf {
+    let previous = install_root.join("versions/v-previous");
+    fs::create_dir_all(&previous).unwrap();
+    fs::write(previous.join("marker"), b"previous").unwrap();
+    symlink(&previous, install_root.join("active")).unwrap();
+    previous
+}
+
+fn write_executable(path: &Path, body: &str) {
+    fs::write(path, body).unwrap();
+    set_mode(path, 0o755);
 }
 
 fn assert_receipt_artifact(

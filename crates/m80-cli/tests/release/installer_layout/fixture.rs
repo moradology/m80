@@ -47,9 +47,18 @@ pub(crate) fn write_release_bundle(omit: Option<&str>) -> ReleaseBundleFixture {
     let src = temp.path().join("src");
     fs::create_dir_all(src.join("bin")).unwrap();
     fs::create_dir_all(src.join("artifacts")).unwrap();
-    fs::write(src.join("bin/m80"), b"m80 cli").unwrap();
-    fs::write(src.join("bin/m80-jailer-harden"), b"jailer harden").unwrap();
-    fs::write(src.join("bin/m80-net-helper"), b"net helper").unwrap();
+    write_executable(
+        &src.join("bin/m80"),
+        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80 0.0.0\\n'; exit 0; fi\nprintf 'm80 fixture\\n'\n",
+    );
+    write_executable(
+        &src.join("bin/m80-jailer-harden"),
+        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80-jailer-harden 0.0.0\\n'; exit 0; fi\n",
+    );
+    write_executable(
+        &src.join("bin/m80-net-helper"),
+        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80-net-helper 0.0.0\\n'; exit 0; fi\n",
+    );
     fs::write(src.join("artifacts/vmlinux"), b"kernel").unwrap();
     fs::write(src.join("artifacts/output.ext4"), b"rootfs").unwrap();
     fs::write(src.join("artifacts/m80-guestd"), b"guestd").unwrap();
@@ -217,6 +226,11 @@ fn run_checked(cmd: &mut StdCommand, label: &str) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn write_executable(path: &Path, body: &str) {
+    fs::write(path, body).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 pub(crate) fn set_mode(path: &Path, mode: u32) {

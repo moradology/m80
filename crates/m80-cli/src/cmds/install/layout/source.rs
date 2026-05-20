@@ -26,6 +26,14 @@ pub(super) fn validate_bundle_source_url(bundle_url: &str) -> Result<(), FcError
     parse_supported_initial_remote_url(bundle_url).map(|_| ())
 }
 
+pub(super) fn is_fixture_bundle_url(bundle_url: &str) -> Result<bool, FcError> {
+    if local_file_url_path(bundle_url)?.is_some() {
+        return Ok(true);
+    }
+    let parsed = parse_supported_initial_remote_url(bundle_url)?;
+    Ok(parsed.scheme == "http" && is_local_fixture_host(&parsed.host))
+}
+
 fn local_file_url_path(url: &str) -> Result<Option<PathBuf>, FcError> {
     let Some(path) = url.strip_prefix("file://") else {
         return Ok(None);

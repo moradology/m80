@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 use m80_firecracker::FcError;
 use serde::Serialize;
 
-use super::INSTALL_PROVENANCE_FILE;
-
 const DEFAULT_PROFILE_NAME: &str = "default";
 const DEFAULT_PROFILE_FILE: &str = "default.toml";
+const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
 const CONFIG_KEYS: &[&str] = &[
     "default_profile",
     "max_concurrent_vms",
@@ -19,14 +18,15 @@ const CONFIG_KEYS: &[&str] = &[
     "cgroup_mode",
 ];
 
-pub(super) struct InstalledDefaultProfile<'a> {
-    pub(super) artifact_dir: &'a Path,
-    pub(super) run_root: &'a Path,
-    pub(super) profile_dir: &'a Path,
-    pub(super) config_path: &'a Path,
-    pub(super) release_tag: Option<String>,
-    pub(super) m80_version: String,
-    pub(super) host_binaries_manifest: &'a Path,
+pub(in crate::cmds) struct InstalledDefaultProfile<'a> {
+    pub(in crate::cmds) artifact_dir: &'a Path,
+    pub(in crate::cmds) run_root: &'a Path,
+    pub(in crate::cmds) profile_dir: &'a Path,
+    pub(in crate::cmds) config_path: &'a Path,
+    pub(in crate::cmds) binary_config: m80_preflight::BinaryDiscoveryConfig,
+    pub(in crate::cmds) release_tag: Option<String>,
+    pub(in crate::cmds) m80_version: String,
+    pub(in crate::cmds) host_binaries_manifest: &'a Path,
 }
 
 #[derive(Serialize)]
@@ -52,7 +52,7 @@ struct RuntimeProfileToml {
     description: String,
 }
 
-pub(super) fn write_installed_default_profile(
+pub(in crate::cmds) fn write_installed_default_profile(
     input: InstalledDefaultProfile<'_>,
 ) -> Result<PathBuf, FcError> {
     let profile_path = input.profile_dir.join(DEFAULT_PROFILE_FILE);
@@ -70,7 +70,6 @@ pub(super) fn write_installed_default_profile(
 }
 
 fn profile_toml(input: &InstalledDefaultProfile<'_>) -> Result<String, FcError> {
-    let binary_config = m80_preflight::BinaryDiscoveryConfig::from_env();
     let manifest =
         m80_image_manifest::Manifest::read(&input.artifact_dir.join("output.ext4.manifest.json"))
             .map_err(FcError::Manifest)?;
@@ -88,11 +87,11 @@ fn profile_toml(input: &InstalledDefaultProfile<'_>) -> Result<String, FcError> 
         build_receipt: input.artifact_dir.join("output.ext4.build-receipt.json"),
         install_provenance: input.artifact_dir.join(INSTALL_PROVENANCE_FILE),
         host_binaries_manifest: input.host_binaries_manifest.to_path_buf(),
-        firecracker_bin: binary_config.firecracker_bin,
-        firecracker_seccomp_filter: binary_config.firecracker_seccomp_filter,
-        jailer_bin: binary_config.jailer_bin,
-        jailer_harden_bin: binary_config.jailer_harden_bin,
-        net_helper_bin: binary_config.net_helper_bin,
+        firecracker_bin: input.binary_config.firecracker_bin.clone(),
+        firecracker_seccomp_filter: input.binary_config.firecracker_seccomp_filter.clone(),
+        jailer_bin: input.binary_config.jailer_bin.clone(),
+        jailer_harden_bin: input.binary_config.jailer_harden_bin.clone(),
+        net_helper_bin: input.binary_config.net_helper_bin.clone(),
         run_root: input.run_root.to_path_buf(),
         release_tag: input.release_tag.clone(),
         m80_version: input.m80_version.clone(),

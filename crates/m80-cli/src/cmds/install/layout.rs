@@ -1,9 +1,14 @@
 use std::fs;
+use std::io;
+use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
 
+use super::super::quickstart::profile_writer::{
+    write_installed_default_profile, InstalledDefaultProfile,
+};
 use super::{InstallPlan, SourceKind};
 use bundle::{
     extract_bundle, list_bundle_entries, verify_entry_set, verify_extracted_tree,
@@ -26,8 +31,13 @@ pub(super) struct LayoutInstallSummary {
     pub(super) version_dir: String,
     pub(super) files_copied: usize,
     pub(super) install_provenance: String,
-    pub(super) active_pointer_unchanged: bool,
+    pub(super) host_binaries_manifest: String,
+    pub(super) profile_path: String,
+    pub(super) active_pointer: String,
+    pub(super) active_pointer_flipped: bool,
     pub(super) profile_written: bool,
+    pub(super) preflight_gate: &'static str,
+    pub(super) finalization_order: Vec<&'static str>,
 }
 
 pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallSummary, FcError> {
@@ -36,11 +46,11 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     require_absolute_path("install_root", &install_root)?;
     validate_bundle_source_url(bundle_url)?;
     let staging_dir = prepare_staging_dir(&install_root)?;
-    let bundle_path = stage_bundle_source(bundle_url, &staging_dir)?;
+    let bundle_path = stage_bundle_source(bundle_url, staging_dir.path())?;
     let entries = list_bundle_entries(&bundle_path)?;
     verify_entry_set(&entries)?;
 
-    let extracted_dir = staging_dir.join("bundle");
+    let extracted_dir = staging_dir.path().join("bundle");
     fs::create_dir(&extracted_dir).map_err(|source| FcError::PathIo {
         path: extracted_dir.clone(),
         source,
@@ -87,7 +97,29 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         path: final_dir.clone(),
         source,
     })?;
-    let _ = fs::remove_dir(&staging_dir);
+
+    let binary_config = installed_binary_config(&final_dir, &metadata);
+    let host_binaries_manifest = write_install_host_binaries_manifest(&final_dir, &binary_config)?;
+    let run_root = install_root.join("run");
+    fs::create_dir_all(&run_root).map_err(|source| FcError::PathIo {
+        path: run_root.clone(),
+        source,
+    })?;
+    let profile_path = write_installed_default_profile(InstalledDefaultProfile {
+        artifact_dir: &final_dir.join("artifacts"),
+        run_root: &run_root,
+        profile_dir: &install_root.join("profiles"),
+        config_path: &install_root.join("config.toml"),
+        binary_config,
+        release_tag: Some(metadata.release_tag.clone()),
+        m80_version: plan.binary_version.clone(),
+        host_binaries_manifest: &host_binaries_manifest,
+    })?;
+    maybe_inject_interruption_after_profile()?;
+    let preflight_gate = verify_preflight_gate(bundle_url)?;
+
+    let active_pointer = PathBuf::from(&plan.active_pointer);
+    flip_active_pointer(&active_pointer, &final_dir)?;
 
     let install_provenance = final_dir.join("artifacts").join(INSTALL_PROVENANCE_FILE);
     Ok(LayoutInstallSummary {
@@ -95,8 +127,13 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         version_dir: final_dir.display().to_string(),
         files_copied: REQUIRED_BUNDLE_FILES.len() + 1,
         install_provenance: install_provenance.display().to_string(),
-        active_pointer_unchanged: true,
-        profile_written: false,
+        host_binaries_manifest: host_binaries_manifest.display().to_string(),
+        profile_path: profile_path.display().to_string(),
+        active_pointer: active_pointer.display().to_string(),
+        active_pointer_flipped: true,
+        profile_written: true,
+        preflight_gate,
+        finalization_order: finalization_order(),
     })
 }
 
@@ -126,12 +163,29 @@ fn require_absolute_path(field: &'static str, path: &Path) -> Result<(), FcError
     }
 }
 
-fn prepare_staging_dir(install_root: &Path) -> Result<PathBuf, FcError> {
+struct StagingDir {
+    path: PathBuf,
+}
+
+impl StagingDir {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for StagingDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+fn prepare_staging_dir(install_root: &Path) -> Result<StagingDir, FcError> {
     let staging_parent = install_root.join(".staging");
     fs::create_dir_all(&staging_parent).map_err(|source| FcError::PathIo {
         path: staging_parent.clone(),
         source,
     })?;
+    cleanup_abandoned_staging_dirs(&staging_parent)?;
     let staging_dir = staging_parent.join(format!("layout-{}", std::process::id()));
     if staging_dir.exists() {
         fs::remove_dir_all(&staging_dir).map_err(|source| FcError::PathIo {
@@ -143,7 +197,169 @@ fn prepare_staging_dir(install_root: &Path) -> Result<PathBuf, FcError> {
         path: staging_dir.clone(),
         source,
     })?;
-    Ok(staging_dir)
+    Ok(StagingDir { path: staging_dir })
+}
+
+fn cleanup_abandoned_staging_dirs(staging_parent: &Path) -> Result<(), FcError> {
+    for entry in fs::read_dir(staging_parent).map_err(|source| FcError::PathIo {
+        path: staging_parent.to_path_buf(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| FcError::PathIo {
+            path: staging_parent.to_path_buf(),
+            source,
+        })?;
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if name.starts_with("layout-") {
+            let path = entry.path();
+            remove_path_if_exists(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn installed_binary_config(
+    final_dir: &Path,
+    metadata: &metadata::BundleMetadata,
+) -> m80_preflight::BinaryDiscoveryConfig {
+    let mut config = m80_preflight::BinaryDiscoveryConfig::from_env();
+    config.jailer_harden_bin = final_dir.join("bin/m80-jailer-harden");
+    config.net_helper_bin = final_dir.join("bin/m80-net-helper");
+    config.expected_firecracker_version = Some(metadata.expected_firecracker_version.clone());
+    config
+}
+
+fn write_install_host_binaries_manifest(
+    final_dir: &Path,
+    binary_config: &m80_preflight::BinaryDiscoveryConfig,
+) -> Result<PathBuf, FcError> {
+    let path = final_dir.join("artifacts/host-binaries.manifest.json");
+    let config = m80_preflight::HostBinariesManifestConfig {
+        firecracker_bin: binary_config.firecracker_bin.clone(),
+        firecracker_seccomp_filter: binary_config.firecracker_seccomp_filter.clone(),
+        jailer_bin: binary_config.jailer_bin.clone(),
+        jailer_harden_bin: binary_config.jailer_harden_bin.clone(),
+        net_helper_bin: binary_config.net_helper_bin.clone(),
+        m80_bin: final_dir.join("bin/m80"),
+        expected_firecracker_version: binary_config.expected_firecracker_version.clone(),
+    };
+    m80_preflight::write_host_binaries_manifest(&config, &path)?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).map_err(|source| {
+        FcError::PathIo {
+            path: path.clone(),
+            source,
+        }
+    })?;
+    Ok(path)
+}
+
+fn verify_preflight_gate(bundle_url: &str) -> Result<&'static str, FcError> {
+    let config = m80_preflight::HostFeaturePreflightConfig::from_env()?;
+    let discovery = if use_hostless_fixture_preflight(bundle_url)? {
+        m80_preflight::verify_host_substrate_fixture(
+            config,
+            &m80_preflight::HostSubstrateFixture::supported_root(),
+        )?
+    } else {
+        m80_preflight::verify_host_substrate(config)?
+    };
+    Ok(match discovery.proof_kind {
+        m80_preflight::HostSubstrateProofKind::LivePreflight => "live_preflight",
+        m80_preflight::HostSubstrateProofKind::HostlessFixture => "hostless_fixture",
+    })
+}
+
+fn use_hostless_fixture_preflight(bundle_url: &str) -> Result<bool, FcError> {
+    #[cfg(debug_assertions)]
+    {
+        Ok(std::env::var_os("M80_INSTALL_HOSTLESS_FIXTURE").is_some()
+            && source::is_fixture_bundle_url(bundle_url)?)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = bundle_url;
+        Ok(false)
+    }
+}
+
+fn flip_active_pointer(active_pointer: &Path, final_dir: &Path) -> Result<(), FcError> {
+    let parent = active_pointer.parent().ok_or_else(|| {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "active_pointer",
+            reason: format!(
+                "active pointer path must have a parent: {}",
+                active_pointer.display()
+            ),
+        })
+    })?;
+    fs::create_dir_all(parent).map_err(|source| FcError::PathIo {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    let tmp_link = parent.join(format!(".active.tmp-{}", std::process::id()));
+    remove_path_if_exists(&tmp_link)?;
+    symlink(final_dir, &tmp_link).map_err(|source| FcError::PathIo {
+        path: tmp_link.clone(),
+        source,
+    })?;
+    match fs::rename(&tmp_link, active_pointer) {
+        Ok(()) => Ok(()),
+        Err(source) => {
+            let _ = remove_path_if_exists(&tmp_link);
+            Err(FcError::PathIo {
+                path: active_pointer.to_path_buf(),
+                source,
+            })
+        }
+    }
+}
+
+fn remove_path_if_exists(path: &Path) -> Result<(), FcError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            fs::remove_dir_all(path).map_err(|source| FcError::PathIo {
+                path: path.to_path_buf(),
+                source,
+            })
+        }
+        Ok(_) => fs::remove_file(path).map_err(|source| FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        }),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+fn maybe_inject_interruption_after_profile() -> Result<(), FcError> {
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var_os("M80_INSTALL_INJECT_INTERRUPTION_AFTER_PROFILE").is_some() {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "install.finalization",
+                reason: "injected interruption after profile write".to_owned(),
+            }));
+        }
+    }
+    Ok(())
+}
+
+fn finalization_order() -> Vec<&'static str> {
+    vec![
+        "bundle_verification",
+        "host_prerequisite_verification",
+        "install_provenance",
+        "host_binaries_manifest",
+        "default_profile",
+        "preflight_smoke_gate",
+        "active_pointer_flip",
+    ]
 }
 
 fn safe_release_dir(release_tag: &str) -> Result<&str, FcError> {

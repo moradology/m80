@@ -4,10 +4,12 @@ use std::path::Path;
 use super::common::m80;
 use super::fixture::{self, sha256_hex, write_release_bundle, RELEASE_TAG};
 use super::http_fixture::{HttpFixture, TestResponse};
+use super::{run_install_url, HostPrereqFixture};
 
 #[test]
 fn install_bundle_layout_downloads_http_bundle_into_version_dir() {
     let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
     let install_temp = tempfile::tempdir().unwrap();
     let install_root = install_temp.path().join("install-root");
     let server = HttpFixture::new([
@@ -21,16 +23,13 @@ fn install_bundle_layout_downloads_http_bundle_into_version_dir() {
         ),
     ]);
 
-    let output = m80()
-        .args([
-            "install",
-            "--bundle-url",
-            &server.url("/m80-linux-x86_64.tar.gz"),
-            "--install-root",
-            install_root.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
+    let output = run_install_url(
+        &server.url("/m80-linux-x86_64.tar.gz"),
+        &install_root,
+        Some(&host),
+        &[],
+        &[],
+    );
 
     assert!(
         output.status.success(),
