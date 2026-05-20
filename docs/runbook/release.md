@@ -362,6 +362,29 @@ strict workflow shell check, and it should run beside the pinned `actionlint`
 syntax/run-block gate: `python3 scripts/run-actionlint.py --workflow-dir
 .github/workflows`.
 
+Release and freshness workflow jobs also carry explicit job timeout budgets.
+Inner command timeouts remain the primary failure detector for network fetches,
+tool installation, and smoke probes; the job timeout is the final guard so a
+wedged runner cannot leave release authority undecided.
+
+| Workflow | Job | Timeout |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | `test` | 45 minutes |
+| `.github/workflows/ci.yml` | `audit` | 20 minutes |
+| `.github/workflows/release-artifacts.yml` | `build-release-artifacts` | 90 minutes |
+| `.github/workflows/release-artifacts.yml` | `publish-release-artifacts` | 30 minutes |
+
+`scripts/lint-github-workflows.py` requires every workflow whose filename
+contains `release`, `latest`, `freshness`, `proof`, or `publish` to put
+`timeout-minutes` on every normal job, with a maximum of 120 minutes. A reusable
+workflow job that cannot own `timeout-minutes` must carry a YAML comment in the
+job body such as `# m80-lint: reusable-timeout-minutes=45`; that number is the
+documented budget of the called workflow and is linted against the same maximum.
+Release build and publish jobs upload partial `/tmp/m80-release-*` diagnostics
+on ordinary step failures where the runner still reaches the diagnostic upload
+step. If the job-level timeout fires first, GitHub names the timed-out job in
+the run UI; the budget table above is the source of truth for which guard fired.
+
 The release readiness gate source of truth is
 `docs/behaviors/release/release-readiness-lanes.json`. It names the required
 lanes, proof kinds, allowed substrate kinds, required/warning severity,

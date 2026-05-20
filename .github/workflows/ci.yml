@@ -17,6 +17,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
@@ -102,6 +103,7 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       RUSTFLAGS: ""
     steps:

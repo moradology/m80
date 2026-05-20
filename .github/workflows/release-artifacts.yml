@@ -23,6 +23,7 @@ env:
 jobs:
   build-release-artifacts:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: read
       id-token: write
@@ -185,10 +186,21 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: /tmp/m80-release-dist/*
 
+      - name: Upload failed build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-build-failure-${{ github.run_id }}
+          path: |
+            /tmp/m80-release-artifacts/**
+            /tmp/m80-release-dist/**
+          if-no-files-found: ignore
+
   publish-release-artifacts:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build-release-artifacts
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -302,3 +314,13 @@ jobs:
             --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
+
+      - name: Upload failed publish diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-publish-failure-${{ github.run_id }}
+          path: |
+            /tmp/m80-release-upload/**
+            /tmp/m80-release-redownload/**
+          if-no-files-found: ignore

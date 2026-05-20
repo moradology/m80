@@ -113,6 +113,7 @@ class WorkflowPolicyTest(unittest.TestCase):
                   id-token: write
                   attestations: write
                 runs-on: ubuntu-latest
+                timeout-minutes: 90
                 steps:
                   - uses: actions/checkout@v4
                   - uses: actions/attest@v4
@@ -123,6 +124,7 @@ class WorkflowPolicyTest(unittest.TestCase):
                 permissions:
                   contents: write
                 runs-on: ubuntu-latest
+                timeout-minutes: 30
                 steps:
                   - uses: actions/checkout@v4
             """,
@@ -130,6 +132,129 @@ class WorkflowPolicyTest(unittest.TestCase):
             result = run_lint(root)
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_job_requires_timeout_minutes(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release job build must declare timeout-minutes", result.stderr)
+
+    def test_release_job_timeout_has_upper_bound(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                timeout-minutes: 999
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release job build timeout-minutes 999 exceeds maximum 120", result.stderr)
+
+    def test_release_job_timeout_within_bound_is_allowed(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                timeout-minutes: 30
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_reusable_release_job_timeout_marker_is_allowed(self) -> None:
+        with workflow_dir(
+            "proof.yml",
+            """
+            name: Release proof
+            on: workflow_call
+            permissions:
+              contents: read
+            concurrency:
+              group: proof-${{ github.ref_name }}
+            jobs:
+              real-kvm-proof:
+                # m80-lint: reusable-timeout-minutes=45
+                uses: ./.github/workflows/reusable-proof.yml
+                permissions:
+                  contents: read
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_reusable_release_job_requires_documented_timeout(self) -> None:
+        with workflow_dir(
+            "proof.yml",
+            """
+            name: Release proof
+            on: workflow_call
+            permissions:
+              contents: read
+            concurrency:
+              group: proof-${{ github.ref_name }}
+            jobs:
+              real-kvm-proof:
+                uses: ./.github/workflows/reusable-proof.yml
+                permissions:
+                  contents: read
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release reusable job real-kvm-proof must declare timeout-minutes", result.stderr)
 
     def test_release_attestation_requires_oidc_and_attestation_permissions(self) -> None:
         with workflow_dir(

@@ -25,6 +25,10 @@ ASSIGNMENT_COMMAND_SUBSTITUTION_RE = re.compile(
 )
 RUN_BLOCK_STRICT_PREAMBLE = "set -euo pipefail"
 RUN_BLOCK_EXCEPTION_MARKER = "m80-lint: allow-nonstrict-run"
+MAX_RELEASE_JOB_TIMEOUT_MINUTES = 120
+REUSABLE_TIMEOUT_MARKER_RE = re.compile(
+    r"m80-lint:\s*reusable-timeout-minutes=([0-9]+)\b"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +69,7 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
         errors.extend(lint_multiline_run_block_strictness(path, lines))
         if release_workflow:
             errors.extend(lint_release_concurrency(path, lines))
+            errors.extend(lint_release_job_timeouts(path, lines))
             errors.extend(lint_release_cargo_locked(path, lines))
             errors.extend(lint_release_rust_toolchain_pins(path, lines))
         if has_pull_request_event(lines) and SECRET_RE.search(text):
@@ -205,6 +210,83 @@ def lint_release_rust_toolchain_pins(path: Path, lines: list[str]) -> list[str]:
             if toolchain is None or PINNED_RUST_TOOLCHAIN_RE.fullmatch(toolchain) is None:
                 errors.append(f"{path}:{line_no}: release rustup target add must use --toolchain with a pinned numeric toolchain")
     return errors
+
+
+def lint_release_job_timeouts(path: Path, lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    for job_id, start, end in job_blocks(lines):
+        block = lines[start:end]
+        found_timeout = False
+        valid_timeouts: list[tuple[int, int]] = []
+        for offset, line in enumerate(block):
+            if not line.startswith("    timeout-minutes:"):
+                continue
+            found_timeout = True
+            value = line.split(":", 1)[1].split("#", 1)[0].strip()
+            if not value.isdigit():
+                errors.append(
+                    f"{path}:{start + offset + 1}: release job {job_id} timeout-minutes "
+                    "must be an integer minute value"
+                )
+                continue
+            valid_timeouts.append((int(value), offset))
+
+        if len(valid_timeouts) > 1:
+            errors.append(
+                f"{path}:{start + 1}: release job {job_id} must declare only one timeout-minutes"
+            )
+        if valid_timeouts:
+            minutes, offset = valid_timeouts[0]
+            errors.extend(
+                lint_timeout_budget(
+                    path,
+                    line_no=start + offset + 1,
+                    subject=f"release job {job_id}",
+                    minutes=minutes,
+                )
+            )
+            continue
+        if found_timeout:
+            continue
+
+        if job_uses_reusable_workflow(block):
+            marker = reusable_timeout_marker_minutes(path, job_id, start, block)
+            errors.extend(marker[1])
+            if marker[0] is None:
+                errors.append(
+                    f"{path}:{start + 1}: release reusable job {job_id} must declare "
+                    "timeout-minutes or document m80-lint: reusable-timeout-minutes=N"
+                )
+            else:
+                errors.extend(
+                    lint_timeout_budget(
+                        path,
+                        line_no=marker[2],
+                        subject=f"release reusable job {job_id}",
+                        minutes=marker[0],
+                    )
+                )
+            continue
+
+        errors.append(f"{path}:{start + 1}: release job {job_id} must declare timeout-minutes")
+    return errors
+
+
+def lint_timeout_budget(
+    path: Path,
+    *,
+    line_no: int,
+    subject: str,
+    minutes: int,
+) -> list[str]:
+    if minutes < 1:
+        return [f"{path}:{line_no}: {subject} timeout-minutes must be at least 1"]
+    if minutes > MAX_RELEASE_JOB_TIMEOUT_MINUTES:
+        return [
+            f"{path}:{line_no}: {subject} timeout-minutes {minutes} exceeds maximum "
+            f"{MAX_RELEASE_JOB_TIMEOUT_MINUTES}"
+        ]
+    return []
 
 
 def lint_multiline_run_block_strictness(path: Path, lines: list[str]) -> list[str]:
@@ -371,7 +453,44 @@ def is_trusted_first_party_action(repo: str) -> bool:
 
 
 def workflow_needs_release_guards(path: Path) -> bool:
-    return "release" in path.name or "latest" in path.name
+    return any(
+        token in path.name
+        for token in ["release", "latest", "freshness", "proof", "publish"]
+    )
+
+
+def job_uses_reusable_workflow(lines: list[str]) -> bool:
+    return any(line.startswith("    uses:") for line in lines)
+
+
+def reusable_timeout_marker_minutes(
+    path: Path,
+    job_id: str,
+    job_start: int,
+    lines: list[str],
+) -> tuple[int | None, list[str], int]:
+    errors: list[str] = []
+    found_line = job_start + 1
+    for offset, line in enumerate(lines):
+        stripped = line.strip()
+        if "m80-lint: reusable-timeout-minutes" not in stripped:
+            continue
+        found_line = job_start + offset + 1
+        if not stripped.startswith("#"):
+            errors.append(
+                f"{path}:{found_line}: release reusable job {job_id} timeout marker "
+                "must be a YAML comment"
+            )
+            continue
+        match = REUSABLE_TIMEOUT_MARKER_RE.search(stripped)
+        if match is None:
+            errors.append(
+                f"{path}:{found_line}: release reusable job {job_id} timeout marker "
+                "must use m80-lint: reusable-timeout-minutes=N"
+            )
+            continue
+        return int(match.group(1)), errors, found_line
+    return None, errors, found_line
 
 
 def is_publish_job(job_id: str) -> bool:
