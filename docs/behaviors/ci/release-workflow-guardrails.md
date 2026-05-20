@@ -21,11 +21,13 @@ public release state.
   pipeline failures and unset variables fail in the block itself. A block may
   opt out only with the `m80-lint: allow-nonstrict-run` marker when a documented
   POSIX or non-bash shell contract requires it.
-- The pinned workflow syntax-lint runner is `scripts/run-actionlint.py`. It
+- The pinned workflow syntax/run-block lint runner is `scripts/run-actionlint.py`. It
   pins `rhysd/actionlint` `v1.7.12` for Linux x86_64 and verifies
   `actionlint_1.7.12_linux_amd64.tar.gz` before extracting the binary. The
   runner never falls back to an unverified `actionlint` from `PATH`; CI uses
-  this runner rather than a floating install.
+  this runner rather than a floating install. CI installs `shellcheck` before
+  running actionlint so inline workflow `run:` blocks receive shell diagnostics
+  through the same pinned actionlint path.
 
 ## Enforcement
 
@@ -34,9 +36,10 @@ write permissions, release/latest workflows without concurrency, floating
 third-party action refs, `secrets.*` references in pull-request workflows, and
 multi-line `run:` blocks that omit the strict shell prelude.
 
-`CI` runs that linter and then the pinned actionlint syntax gate on every push
-and pull request before the normal Rust build/test/clippy sequence. The m80
-linter's negative fixture suite lives in `scripts/test-workflow-policy.py`.
+`CI` installs the host test tools, then runs the m80 linter and the pinned
+actionlint syntax/run-block gate on every push and pull request before the
+normal Rust build/test/clippy sequence. The m80 linter's negative fixture suite
+lives in `scripts/test-workflow-policy.py`.
 
 ## Verification
 
@@ -52,5 +55,7 @@ linter's negative fixture suite lives in `scripts/test-workflow-policy.py`.
   download failures, and refuses archives without an `actionlint` binary.
 - `scripts/test-actionlint-fixtures.py` proves the pinned actionlint binary
   accepts a valid workflow fixture, rejects stale `needs`, invalid GitHub
-  expressions, invalid event syntax, and duplicate job ids, and tolerates
-  concurrent CLI invocations sharing one cache.
+  expressions, invalid event syntax, duplicate job ids, and shellcheck failures
+  in inline bash run blocks, accepts a strict bash run block, accepts a
+  documented non-bash exception, and tolerates concurrent CLI invocations
+  sharing one cache.

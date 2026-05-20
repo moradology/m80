@@ -20,6 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install host test tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y erofs-utils shellcheck
+          shellcheck --version
+
       - name: workflow policy lint
         run: python3 scripts/lint-github-workflows.py
 
@@ -39,12 +46,6 @@ jobs:
           python3 scripts/test-quickstart-proof.py
           python3 scripts/test-install-handoff.py
           python3 scripts/test-release-bundle.py
-
-      - name: Install host test tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y erofs-utils shellcheck
 
       - name: Install Rust toolchain
         run: rustup toolchain install 1.82 --profile minimal --component rustfmt --component clippy

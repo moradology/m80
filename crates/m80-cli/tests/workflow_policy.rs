@@ -66,8 +66,10 @@ fn release_workflow_doc_records_authority_boundary() {
         "`scripts/test-actionlint-runner.py`",
         "`scripts/test-actionlint-fixtures.py`",
         "actionlint_1.7.12_linux_amd64.tar.gz",
-        "invalid event syntax, and duplicate job ids",
-        "concurrent CLI invocations sharing one cache",
+        "invalid event syntax, duplicate job ids",
+        "shellcheck failures\n  in inline bash run blocks",
+        "documented non-bash exception",
+        "concurrent CLI invocations\n  sharing one cache",
     ] {
         assert!(
             behavior.contains(required),
@@ -77,9 +79,11 @@ fn release_workflow_doc_records_authority_boundary() {
     assert!(runbook.contains("`publish-release-artifacts`"));
     assert!(runbook.contains("`contents: write`"));
     assert!(runbook.contains("python3 scripts/run-actionlint.py --workflow-dir .github/workflows"));
+    assert!(runbook.contains("Install `shellcheck` before running"));
     assert!(runbook.contains("python3 scripts/test-actionlint-fixtures.py"));
     assert!(runbook.contains("8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"));
     assert!(read_repo_file(".github/workflows/ci.yml").contains("workflow syntax lint"));
+    assert!(read_repo_file(".github/workflows/ci.yml").contains("shellcheck --version"));
     assert!(release_workflow.contains("publish-release-artifacts:"));
     assert!(release_workflow.contains("contents: write"));
     assert!(release_workflow.contains("release-artifacts-${{ github.ref_name }}"));

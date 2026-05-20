@@ -1,0 +1,13 @@
+name: shellcheck-failure
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          echo $UNQUOTED

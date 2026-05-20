@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,12 @@ class ActionlintFixtureTest(unittest.TestCase):
     def test_valid_workflow_fixture_passes(self) -> None:
         self.assertEqual(run_fixture("valid"), 0)
 
+    def test_strict_bash_fixture_passes(self) -> None:
+        self.assertEqual(run_fixture("strict-bash"), 0)
+
+    def test_non_bash_exception_fixture_passes(self) -> None:
+        self.assertEqual(run_fixture("non-bash-exception"), 0)
+
     def test_invalid_expression_fixture_fails(self) -> None:
         self.assertNotEqual(run_fixture("invalid-expression"), 0)
 
@@ -40,7 +47,12 @@ class ActionlintFixtureTest(unittest.TestCase):
     def test_duplicate_job_id_fixture_fails(self) -> None:
         self.assertNotEqual(run_fixture("duplicate-job-id"), 0)
 
+    def test_shellcheck_failure_fixture_fails(self) -> None:
+        require_shellcheck()
+        self.assertNotEqual(run_fixture("shellcheck-failure"), 0)
+
     def test_concurrent_cli_invocations_share_cache_without_temp_collision(self) -> None:
+        require_shellcheck()
         with tempfile.TemporaryDirectory() as temp:
             cache = Path(temp) / "cache"
             env = {**os.environ, "M80_ACTIONLINT_CACHE_DIR": str(cache)}
@@ -67,6 +79,14 @@ def run_fixture(name: str) -> int:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def require_shellcheck() -> None:
+    if shutil.which("shellcheck") is None:
+        raise AssertionError("shellcheck must be installed so actionlint can lint inline workflow run blocks")
+    result = subprocess.run(["shellcheck", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if result.returncode != 0:
+        raise AssertionError("shellcheck --version failed; actionlint inline run-block linting is not available")
 
 
 def format_process_results(commands: list[list[str]], return_codes: list[int | None], results: list[tuple[bytes, bytes]]) -> str:

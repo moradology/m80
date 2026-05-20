@@ -82,8 +82,9 @@ Multi-line workflow `run:` blocks are treated as release-authority shell
 scripts. The local workflow strictness check is the same command:
 `python3 scripts/lint-github-workflows.py`. Run it beside the pinned
 `actionlint` lane. The m80 linter catches project authority rules and the
-strict shell prelude; actionlint catches GitHub expression and workflow graph
-syntax drift.
+strict shell prelude; actionlint catches GitHub expression, workflow graph, and
+inline run-block shellcheck drift. Install `shellcheck` before running
+actionlint locally if you are changing workflow `run:` blocks.
 
 The pinned local actionlint command is:
 

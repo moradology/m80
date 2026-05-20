@@ -1,0 +1,13 @@
+name: non-bash-exception
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: python
+        run: |
+          # m80-lint: allow-nonstrict-run
+          print("ok")
