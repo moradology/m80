@@ -36,9 +36,9 @@ as blocked.
 
 Non-root/default verification compiles the ignored harness and attack runner:
 
-- `cargo test -p m80-attack-runner`
+- `cargo test -p m80-attack-runner --features malicious-artifact`
 - `cargo test -p m80-jailer --test defense_in_depth --no-run`
-- `cargo clippy -p m80-attack-runner --all-targets -- -D warnings`
+- `cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings`
 - `cargo clippy -p m80-jailer --test defense_in_depth -- -D warnings`
 
 Full execution requires root, the official Firecracker jailer,

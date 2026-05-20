@@ -83,12 +83,15 @@ mod tests {
 
     #[test]
     fn parse_host_pid_accepts_numeric_pid() {
-        assert_eq!(parse_host_pid("4242").unwrap(), 4242);
+        assert_eq!(
+            parse_host_pid("4242").expect("numeric host pid should parse"),
+            4242
+        );
     }
 
     #[test]
     fn parse_host_pid_rejects_invalid_pid() {
-        let err = parse_host_pid("not-a-pid").unwrap_err();
+        let err = parse_host_pid("not-a-pid").expect_err("invalid host pid should fail");
         assert!(err.reason().contains("invalid host_pid"), "{err}");
     }
 }

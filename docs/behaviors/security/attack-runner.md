@@ -25,9 +25,12 @@ at `/m80-attack-runner.conf` instead.
 
 The crate compiles for `x86_64-unknown-linux-musl` so the harness can copy one
 static payload into a minimal jail without a dynamic linker dependency.
+The executable payload is behind the `malicious-artifact` feature; default
+workspace tests compile the library/catalog surface, and payload/CLI checks
+enable that feature explicitly.
 
 Verification:
 
-- `cargo test -p m80-attack-runner`
-- `cargo clippy -p m80-attack-runner --all-targets -- -D warnings`
-- `cargo build -p m80-attack-runner --target x86_64-unknown-linux-musl`
+- `cargo test -p m80-attack-runner --features malicious-artifact`
+- `cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings`
+- `cargo build -p m80-attack-runner --features malicious-artifact --target x86_64-unknown-linux-musl`

@@ -42,6 +42,10 @@ The package keeps a library target because the binary, catalog tests, and
 jailer harness tests need to inspect or invoke the stable attack catalog without
 spawning a subprocess for every assertion.
 
+The executable payload is gated behind the `malicious-artifact` feature so
+default workspace builds do not produce it accidentally. Build, test, or lint
+the CLI payload with `--features malicious-artifact`.
+
 - `Attack` — one registered attack primitive with stable `name` and
   `category` fields.
 - `AttackCategory` — category enum used by defense-in-depth batteries:

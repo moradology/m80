@@ -413,6 +413,16 @@ class ReleaseBundleTest(unittest.TestCase):
 
         self.assertIn("python3 -m py_compile scripts/package-release-bundle.py", workflow)
         self.assertIn("python3 scripts/test-release-bundle.py", workflow)
+        self.assertIn("cargo test -p m80-attack-runner --features malicious-artifact", workflow)
+        self.assertIn(
+            "cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings",
+            workflow,
+        )
+        self.assertIn("RUSTFLAGS: \"\"", workflow)
+        self.assertIn("rustup toolchain install 1.85 --profile minimal", workflow)
+        self.assertIn("cargo +1.85 install cargo-audit --version 0.22.1 --locked", workflow)
+        self.assertIn("cargo +1.85 audit", workflow)
+        self.assertNotIn("rustsec/audit-check", workflow)
 
     def test_release_workflow_publishes_and_verifies_proof_assets(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()

@@ -31,9 +31,9 @@ cgroup limits. The resource attack battery itself remains a separate leaf.
 
 Default verification compiles the ignored root-only harness:
 
-- `cargo test -p m80-attack-runner`
+- `cargo test -p m80-attack-runner --features malicious-artifact`
 - `cargo test -p m80-jailer --test defense_in_depth --no-run`
-- `cargo clippy -p m80-attack-runner --all-targets -- -D warnings`
+- `cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings`
 - `cargo clippy -p m80-jailer --test defense_in_depth -- -D warnings`
 
 Full execution requires root, a writable cgroup v2 hierarchy, the official

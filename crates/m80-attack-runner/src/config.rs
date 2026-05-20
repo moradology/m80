@@ -55,9 +55,9 @@ mod tests {
 
     #[test]
     fn file_value_reads_host_pid_from_config_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir should be created");
         let path = dir.path().join("m80-attack-runner.conf");
-        std::fs::write(&path, "host_pid = 123\n").unwrap();
+        std::fs::write(&path, "host_pid = 123\n").expect("config fixture should be written");
 
         assert_eq!(file_value_at(&path, "host_pid").as_deref(), Some("123"));
     }

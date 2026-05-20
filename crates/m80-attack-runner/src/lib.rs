@@ -125,12 +125,12 @@ mod tests {
 
     #[test]
     fn unknown_attack_is_reported_as_blocked() {
-        let err = run_attack("missing_attack").unwrap_err();
+        let err = run_attack("missing_attack").expect_err("unknown attack should fail closed");
         assert!(err.reason().contains("unknown attack"), "{err}");
     }
 
     #[test]
     fn echo_zero_is_available_for_harness_negative_control() {
-        run_attack("echo_zero").unwrap();
+        run_attack("echo_zero").expect("echo_zero harness control should succeed");
     }
 }
