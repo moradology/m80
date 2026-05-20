@@ -26,6 +26,16 @@ Required inputs:
   `scripts/install.sh`;
 - `--out-dir`.
 
+Optional tuple inputs:
+
+- repeat `--extra-tuple-manifest <path>` for an already packaged non-default
+  tuple. The manifest is JSON with `schema_version: 1`, `bundle_path`,
+  `metadata_path`, `bundle_name`, and `metadata_name`. Relative paths resolve
+  from the manifest directory. The assembler copies those files into the dist
+  directory, verifies the metadata sidecar matches the bundle's `bundle.json`,
+  writes checksum sidecars, rejects duplicate `os` / `arch` / `image_kind`
+  tuples or duplicate dist names, and sorts rows by tuple.
+
 The dist directory contains:
 
 ```text
@@ -45,19 +55,25 @@ m80-release-integrity.json
 SHA256SUMS
 ```
 
+Extra tuple manifests add their own bundle, metadata sidecar, and checksum
+sidecars to the same dist directory. The default one-tuple release uses this
+same assembly path with no compatibility branch for an old single-row index
+writer.
+
 The tarball contains the contract paths from
 [`bundle-contract.md`](bundle-contract.md). `bundle.json` is also copied beside
 the tarball as `m80-linux-x86_64.bundle.json` so release tooling can inspect
 metadata before extraction. `m80-release-assets.json` is generated from the
-dist files and names the default host tuple, bundle digest, metadata digest,
-schema versions, guest protocol, and Firecracker version.
+assembled tuple artifacts and names each host tuple, bundle digest, metadata
+digest, schema versions, guest protocol, and Firecracker version.
 `m80-bootstrap-selector.tsv` is generated from that index for the POSIX
 bootstrap path that runs before a local `m80` binary exists. The public
 `m80-release-build.json` records the source commit, Rust toolchain, target
 triples, `Cargo.lock` digest, builder identity, builder OS image, and builder
-package versions or container digest. The public `SHA256SUMS` covers the
-tarball, installer, metadata sidecar, asset index, bootstrap selector, build
-manifest, and each checksum sidecar.
+package versions or container digest. The public `SHA256SUMS` covers every
+asset-index row's bundle, metadata sidecar, and checksum sidecars, plus the
+installer, asset index, bootstrap selector, build manifest, and their checksum
+sidecars. The current assembler emits no detached signature files.
 The public `install.sh` and the bundled `install.sh` are the same rendered
 versioned installer asset. The renderer fills in only the concrete release tag;
 bundle selection comes from the verified bootstrap selector and canonical asset
@@ -121,7 +137,8 @@ manifest drift from the bundle metadata, source commit, `Cargo.lock`, or
 builder-material contract.
 
 `scripts/verify-release-integrity.py` validates the release-integrity predicate
-used by the signing/attestation lane. That predicate is documented in
+used by the signing/attestation lane. That predicate is generated from the same
+assembled row set as the index and public checksum manifest. It is documented in
 [`release-integrity-material.md`](release-integrity-material.md) and records the
 release tag, commit SHA, target, Rust toolchain, m80 package version, bundle
 metadata hash, build-manifest subjects, and every current public

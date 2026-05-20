@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import gzip
 import hashlib
 import io
@@ -36,6 +37,7 @@ INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 STABLE_RELEASE_TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
+DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 INSTALL_TEMPLATE_TOKENS = {
     "@M80_RELEASE_TAG@",
     "@M80_PUBLIC_RELEASE_OWNER@",
@@ -46,21 +48,6 @@ SHELL_INTERACTIVE_COMMAND_RE = re.compile(r"(?:^|[;&|(){} \t])(?P<command>read|s
 SELECTOR_READ_LOOP = "while IFS= read -r line || [ -n \"$line\" ]; do"
 SELECTOR_READ_REDIRECT = 'done < "$selector_path"'
 REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
-INTEGRITY_SUBJECT_KINDS = [
-    (BUNDLE_NAME, "release-bundle"),
-    (f"{BUNDLE_NAME}.sha256", "checksum-sidecar"),
-    (INSTALL_NAME, "installer"),
-    (f"{INSTALL_NAME}.sha256", "checksum-sidecar"),
-    (METADATA_NAME, "bundle-metadata"),
-    (f"{METADATA_NAME}.sha256", "checksum-sidecar"),
-    (ASSET_INDEX_NAME, "asset-index"),
-    (f"{ASSET_INDEX_NAME}.sha256", "checksum-sidecar"),
-    (BOOTSTRAP_SELECTOR_NAME, "bootstrap-selector"),
-    (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", "checksum-sidecar"),
-    (BUILD_MANIFEST_NAME, "build-manifest"),
-    (f"{BUILD_MANIFEST_NAME}.sha256", "checksum-sidecar"),
-    ("SHA256SUMS", "checksum-manifest"),
-]
 BOOTSTRAP_SELECTOR_COLUMNS = [
     "os",
     "arch",
@@ -79,6 +66,17 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
 SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
 APT_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 OCI_SHA256_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+@dataclass(frozen=True)
+class ReleaseTupleArtifact:
+    bundle_name: str
+    bundle_path: Path
+    metadata_name: str
+    metadata_path: Path
+    metadata: dict
+
+
 FILE_MODES = {
     "bin/m80": 0o755,
     "bin/m80-jailer-harden": 0o755,
@@ -122,6 +120,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--guestd", required=True, type=Path)
     parser.add_argument("--install-sh", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument(
+        "--extra-tuple-manifest",
+        action="append",
+        default=[],
+        type=Path,
+        help=(
+            "JSON manifest for an already packaged extra tuple artifact. "
+            "Fields: schema_version=1, bundle_path, metadata_path, bundle_name, metadata_name."
+        ),
+    )
     parser.add_argument("--repo-root", default=Path.cwd(), type=Path)
     return parser.parse_args()
 
@@ -245,14 +253,12 @@ def main() -> int:
         tarball = out_dir / BUNDLE_NAME
         write_deterministic_tar_gz(bundle_root, tarball)
         tarball.chmod(0o644)
-        write_sha256_sidecar(out_dir / f"{BUNDLE_NAME}.sha256", tarball, BUNDLE_NAME)
         install_asset = out_dir / INSTALL_NAME
         copy_file(rendered_install, install_asset, 0o755)
         write_sha256_sidecar(out_dir / f"{INSTALL_NAME}.sha256", install_asset, INSTALL_NAME)
         metadata_asset = out_dir / METADATA_NAME
         shutil.copy2(metadata_path, metadata_asset)
         metadata_asset.chmod(0o644)
-        write_sha256_sidecar(out_dir / f"{METADATA_NAME}.sha256", metadata_asset, METADATA_NAME)
         build_manifest_path = out_dir / BUILD_MANIFEST_NAME
         write_json(
             build_manifest_path,
@@ -272,20 +278,22 @@ def main() -> int:
             build_manifest_path,
             BUILD_MANIFEST_NAME,
         )
+        tuple_artifacts = assemble_tuple_artifacts(
+            out_dir=out_dir,
+            release_tag=args.release_tag,
+            package_version=workspace_version,
+            default_artifact=ReleaseTupleArtifact(
+                bundle_name=BUNDLE_NAME,
+                bundle_path=tarball,
+                metadata_name=METADATA_NAME,
+                metadata_path=metadata_asset,
+                metadata=metadata,
+            ),
+            extra_manifests=args.extra_tuple_manifest,
+        )
         asset_index_path = out_dir / ASSET_INDEX_NAME
-        asset_index = release_asset_index(
-            args=args,
-            version=version,
-            compatibility=compatibility,
-            target_os=target_os,
-            target_arch=target_arch,
-            tarball=tarball,
-            metadata_asset=metadata_asset,
-        )
-        write_json(
-            asset_index_path,
-            asset_index,
-        )
+        asset_index = release_asset_index(args.release_tag, tuple_artifacts)
+        write_json(asset_index_path, asset_index)
         asset_index_path.chmod(0o644)
         write_sha256_sidecar(out_dir / f"{ASSET_INDEX_NAME}.sha256", asset_index_path, ASSET_INDEX_NAME)
         bootstrap_selector_path = out_dir / BOOTSTRAP_SELECTOR_NAME
@@ -296,23 +304,7 @@ def main() -> int:
             bootstrap_selector_path,
             BOOTSTRAP_SELECTOR_NAME,
         )
-        write_public_sha256s(
-            out_dir / "SHA256SUMS",
-            [
-                (BUNDLE_NAME, tarball),
-                (f"{BUNDLE_NAME}.sha256", out_dir / f"{BUNDLE_NAME}.sha256"),
-                (INSTALL_NAME, install_asset),
-                (f"{INSTALL_NAME}.sha256", out_dir / f"{INSTALL_NAME}.sha256"),
-                (METADATA_NAME, metadata_asset),
-                (f"{METADATA_NAME}.sha256", out_dir / f"{METADATA_NAME}.sha256"),
-                (ASSET_INDEX_NAME, asset_index_path),
-                (f"{ASSET_INDEX_NAME}.sha256", out_dir / f"{ASSET_INDEX_NAME}.sha256"),
-                (BOOTSTRAP_SELECTOR_NAME, bootstrap_selector_path),
-                (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256"),
-                (BUILD_MANIFEST_NAME, build_manifest_path),
-                (f"{BUILD_MANIFEST_NAME}.sha256", out_dir / f"{BUILD_MANIFEST_NAME}.sha256"),
-            ],
-        )
+        write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets(asset_index, out_dir))
         integrity_path = out_dir / INTEGRITY_NAME
         write_json(
             integrity_path,
@@ -320,6 +312,7 @@ def main() -> int:
                 args=args,
                 package_version=workspace_version,
                 metadata_asset=metadata_asset,
+                asset_index=asset_index,
                 dist_dir=out_dir,
             ),
         )
@@ -679,41 +672,257 @@ def bundle_metadata(
     }
 
 
-def release_asset_index(
+def assemble_tuple_artifacts(
     *,
-    args: argparse.Namespace,
-    version: dict,
-    compatibility: dict,
-    target_os: str,
-    target_arch: str,
-    tarball: Path,
-    metadata_asset: Path,
-) -> dict:
+    out_dir: Path,
+    release_tag: str,
+    package_version: str,
+    default_artifact: ReleaseTupleArtifact,
+    extra_manifests: list[Path],
+) -> list[ReleaseTupleArtifact]:
+    artifacts = [
+        validate_tuple_artifact(
+            default_artifact,
+            release_tag=release_tag,
+            package_version=package_version,
+        )
+    ]
+    reserved_names = core_release_dist_names()
+    reserve_tuple_dist_names(default_artifact, reserved_names)
+    for manifest_path in extra_manifests:
+        artifact = tuple_artifact_from_manifest(manifest_path)
+        require_tuple_dist_names_available(artifact, reserved_names)
+        copied = copy_tuple_artifact_to_dist(artifact, out_dir)
+        artifacts.append(
+            validate_tuple_artifact(
+                copied,
+                release_tag=release_tag,
+                package_version=package_version,
+            )
+        )
+        reserve_tuple_dist_names(copied, reserved_names)
+    artifacts = sorted(
+        artifacts,
+        key=lambda artifact: (
+            artifact.metadata["os"],
+            artifact.metadata["arch"],
+            artifact.metadata["image_kind"],
+        ),
+    )
+    require_unique_tuple_artifacts(artifacts)
+    return artifacts
+
+
+def core_release_dist_names() -> set[str]:
+    return {
+        INSTALL_NAME,
+        f"{INSTALL_NAME}.sha256",
+        ASSET_INDEX_NAME,
+        f"{ASSET_INDEX_NAME}.sha256",
+        BOOTSTRAP_SELECTOR_NAME,
+        f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
+        BUILD_MANIFEST_NAME,
+        f"{BUILD_MANIFEST_NAME}.sha256",
+        INTEGRITY_NAME,
+        INTEGRITY_ATTESTATION_BUNDLE_NAME,
+        "m80-release-attestation.json",
+        "SHA256SUMS",
+    }
+
+
+def require_tuple_dist_names_available(artifact: ReleaseTupleArtifact, reserved_names: set[str]) -> None:
+    for name in tuple_dist_names(artifact):
+        require(
+            name not in reserved_names,
+            f"release tuple dist asset name collides with another release asset: {name}",
+        )
+
+
+def reserve_tuple_dist_names(artifact: ReleaseTupleArtifact, reserved_names: set[str]) -> None:
+    require_tuple_dist_names_available(artifact, reserved_names)
+    reserved_names.update(tuple_dist_names(artifact))
+
+
+def tuple_dist_names(artifact: ReleaseTupleArtifact) -> set[str]:
+    return {
+        artifact.bundle_name,
+        f"{artifact.bundle_name}.sha256",
+        artifact.metadata_name,
+        f"{artifact.metadata_name}.sha256",
+    }
+
+
+def require_unique_tuple_artifacts(artifacts: list[ReleaseTupleArtifact]) -> None:
+    seen_tuples: set[tuple[str, str, str]] = set()
+    seen_names: set[str] = set()
+    for artifact in artifacts:
+        tuple_key = (
+            artifact.metadata["os"],
+            artifact.metadata["arch"],
+            artifact.metadata["image_kind"],
+        )
+        require(tuple_key not in seen_tuples, "release tuple duplicate: " + "/".join(tuple_key))
+        seen_tuples.add(tuple_key)
+        for name in [
+            artifact.bundle_name,
+            f"{artifact.bundle_name}.sha256",
+            artifact.metadata_name,
+            f"{artifact.metadata_name}.sha256",
+        ]:
+            require(name not in seen_names, f"release tuple duplicate dist asset name: {name}")
+            seen_names.add(name)
+
+
+def tuple_artifact_from_manifest(manifest_path: Path) -> ReleaseTupleArtifact:
+    manifest = read_json(manifest_path)
+    require(isinstance(manifest, dict), f"extra tuple manifest must be a JSON object: {manifest_path}")
+    require(manifest.get("schema_version") == 1, "extra tuple manifest schema_version mismatch")
+    expected = {"schema_version", "bundle_path", "metadata_path", "bundle_name", "metadata_name"}
+    actual = set(manifest)
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    require(not missing, f"extra tuple manifest missing field(s): {', '.join(missing)}")
+    require(not extra, f"extra tuple manifest unexpected field(s): {', '.join(extra)}")
+    bundle_name = require_dist_asset_name(manifest["bundle_name"], "bundle_name")
+    metadata_name = require_dist_asset_name(manifest["metadata_name"], "metadata_name")
+    bundle_path = resolve_manifest_path(manifest_path, require_str(manifest, "bundle_path", "extra tuple manifest"))
+    metadata_path = resolve_manifest_path(manifest_path, require_str(manifest, "metadata_path", "extra tuple manifest"))
+    metadata = read_json(metadata_path)
+    return ReleaseTupleArtifact(
+        bundle_name=bundle_name,
+        bundle_path=bundle_path,
+        metadata_name=metadata_name,
+        metadata_path=metadata_path,
+        metadata=metadata,
+    )
+
+
+def resolve_manifest_path(manifest_path: Path, raw_path: str) -> Path:
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = manifest_path.parent / path
+    return path
+
+
+def copy_tuple_artifact_to_dist(artifact: ReleaseTupleArtifact, out_dir: Path) -> ReleaseTupleArtifact:
+    bundle_dest = out_dir / artifact.bundle_name
+    metadata_dest = out_dir / artifact.metadata_name
+    copy_file(artifact.bundle_path, bundle_dest, 0o644)
+    copy_file(artifact.metadata_path, metadata_dest, 0o644)
+    return ReleaseTupleArtifact(
+        bundle_name=artifact.bundle_name,
+        bundle_path=bundle_dest,
+        metadata_name=artifact.metadata_name,
+        metadata_path=metadata_dest,
+        metadata=read_json(metadata_dest),
+    )
+
+
+def validate_tuple_artifact(
+    artifact: ReleaseTupleArtifact,
+    *,
+    release_tag: str,
+    package_version: str,
+) -> ReleaseTupleArtifact:
+    require_dist_asset_name(artifact.bundle_name, "bundle_name")
+    require_dist_asset_name(artifact.metadata_name, "metadata_name")
+    require(artifact.bundle_path.is_file(), f"tuple bundle missing: {artifact.bundle_path}")
+    require(artifact.metadata_path.is_file(), f"tuple metadata missing: {artifact.metadata_path}")
+    metadata = artifact.metadata
+    require(isinstance(metadata, dict), f"tuple metadata must be a JSON object for {artifact.metadata_name}")
+    require(metadata.get("schema_version") == BUNDLE_SCHEMA_VERSION, f"tuple metadata schema_version mismatch for {artifact.metadata_name}")
+    require(metadata.get("release_tag") == release_tag, f"tuple metadata release_tag mismatch for {artifact.metadata_name}")
+    require(metadata.get("m80_version") == release_tag, f"tuple metadata m80_version mismatch for {artifact.metadata_name}")
+    require(
+        metadata.get("package_version") == package_version,
+        f"tuple metadata package_version mismatch for {artifact.metadata_name}",
+    )
+    for field in ["target", "os", "arch", "image_kind", "expected_firecracker_version"]:
+        require(
+            isinstance(metadata.get(field), str) and metadata[field],
+            f"tuple metadata missing {field} for {artifact.metadata_name}",
+        )
+    for field in ["guest_protocol_version", "manifest_schema_version"]:
+        require(
+            isinstance(metadata.get(field), int) and metadata[field] > 0,
+            f"tuple metadata missing {field} for {artifact.metadata_name}",
+        )
+    require(metadata["target"] == f"{metadata['os']}-{metadata['arch']}", f"tuple metadata target mismatch for {artifact.metadata_name}")
+    require(isinstance(metadata.get("files"), list) and metadata["files"], f"tuple metadata missing files for {artifact.metadata_name}")
+    validate_tuple_bundle_metadata(artifact)
+    write_sha256_sidecar(artifact.bundle_path.with_name(f"{artifact.bundle_name}.sha256"), artifact.bundle_path, artifact.bundle_name)
+    write_sha256_sidecar(
+        artifact.metadata_path.with_name(f"{artifact.metadata_name}.sha256"),
+        artifact.metadata_path,
+        artifact.metadata_name,
+    )
+    return artifact
+
+
+def validate_tuple_bundle_metadata(artifact: ReleaseTupleArtifact) -> None:
+    try:
+        with tarfile.open(artifact.bundle_path, "r:gz") as tar:
+            extracted = tar.extractfile("bundle.json")
+            require(extracted is not None, f"tuple bundle missing bundle.json: {artifact.bundle_name}")
+            bundled_metadata = json.loads(extracted.read().decode("utf-8"))
+    except (tarfile.TarError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"tuple bundle metadata unreadable for {artifact.bundle_name}: {exc}") from exc
+    require(
+        bundled_metadata == artifact.metadata,
+        f"tuple bundle metadata sidecar mismatch for {artifact.bundle_name}",
+    )
+
+
+def require_dist_asset_name(value: object, field: str) -> str:
+    require(
+        isinstance(value, str)
+        and value
+        and "/" not in value
+        and value not in {".", ".."}
+        and DIST_ASSET_NAME_RE.fullmatch(value) is not None,
+        f"release tuple {field} must be a flat dist asset name",
+    )
+    return value
+
+
+def release_asset_index(release_tag: str, tuple_artifacts: list[ReleaseTupleArtifact]) -> dict:
+    seen_tuples: set[tuple[str, str, str]] = set()
+    assets = []
+    for artifact in tuple_artifacts:
+        metadata = artifact.metadata
+        tuple_key = (metadata["os"], metadata["arch"], metadata["image_kind"])
+        require(tuple_key not in seen_tuples, "release asset index duplicate tuple: " + "/".join(tuple_key))
+        seen_tuples.add(tuple_key)
+        assets.append(release_asset_index_row(release_tag, artifact))
+    require(assets, "release asset index must contain at least one tuple")
     return {
         "schema_version": ASSET_INDEX_SCHEMA_VERSION,
-        "release_tag": args.release_tag,
-        "assets": [
-            {
-                "name": BUNDLE_NAME,
-                "url": release_asset_url(args.release_tag, BUNDLE_NAME),
-                "sha256": sha256(tarball),
-                "size_bytes": tarball.stat().st_size,
-                "metadata_name": METADATA_NAME,
-                "metadata_sha256": sha256(metadata_asset),
-                "checksum_name": f"{BUNDLE_NAME}.sha256",
-                "signature_name": None,
-                "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
-                "target": args.target,
-                "os": target_os,
-                "arch": target_arch,
-                "image_kind": args.image_kind,
-                "release_tag": args.release_tag,
-                "m80_version": version["binary_version"],
-                "guest_protocol_version": compatibility["guest_protocol_version"],
-                "manifest_schema_version": compatibility["manifest_schema"],
-                "expected_firecracker_version": compatibility["expected_firecracker_version"],
-            }
-        ],
+        "release_tag": release_tag,
+        "assets": assets,
+    }
+
+
+def release_asset_index_row(release_tag: str, artifact: ReleaseTupleArtifact) -> dict:
+    metadata = artifact.metadata
+    return {
+        "name": artifact.bundle_name,
+        "url": release_asset_url(release_tag, artifact.bundle_name),
+        "sha256": sha256(artifact.bundle_path),
+        "size_bytes": artifact.bundle_path.stat().st_size,
+        "metadata_name": artifact.metadata_name,
+        "metadata_sha256": sha256(artifact.metadata_path),
+        "checksum_name": f"{artifact.bundle_name}.sha256",
+        "signature_name": None,
+        "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
+        "target": metadata["target"],
+        "os": metadata["os"],
+        "arch": metadata["arch"],
+        "image_kind": metadata["image_kind"],
+        "release_tag": release_tag,
+        "m80_version": metadata["m80_version"],
+        "guest_protocol_version": metadata["guest_protocol_version"],
+        "manifest_schema_version": metadata["manifest_schema_version"],
+        "expected_firecracker_version": metadata["expected_firecracker_version"],
     }
 
 
@@ -800,6 +1009,7 @@ def release_integrity_material(
     args: argparse.Namespace,
     package_version: str,
     metadata_asset: Path,
+    asset_index: dict,
     dist_dir: Path,
 ) -> dict:
     return {
@@ -815,9 +1025,47 @@ def release_integrity_material(
         "bundle_metadata_sha256": sha256(metadata_asset),
         "subjects": [
             release_integrity_subject(dist_dir / name, name, kind)
-            for name, kind in INTEGRITY_SUBJECT_KINDS
+            for name, kind in release_integrity_subject_kinds(asset_index)
         ],
     }
+
+
+def release_integrity_subject_kinds(asset_index: dict) -> list[tuple[str, str]]:
+    kinds: dict[str, str] = {}
+
+    def add(name: str, kind: str) -> None:
+        require(name not in kinds, f"release integrity duplicate subject name: {name}")
+        kinds[name] = kind
+
+    for asset in asset_index["assets"]:
+        add(asset["name"], "release-bundle")
+        add(asset["checksum_name"], "checksum-sidecar")
+        add(asset["metadata_name"], "bundle-metadata")
+        add(f"{asset['metadata_name']}.sha256", "checksum-sidecar")
+        if asset["signature_name"] is not None:
+            add(asset["signature_name"], "detached-signature")
+
+    for name, kind in [
+        (INSTALL_NAME, "installer"),
+        (f"{INSTALL_NAME}.sha256", "checksum-sidecar"),
+        (ASSET_INDEX_NAME, "asset-index"),
+        (f"{ASSET_INDEX_NAME}.sha256", "checksum-sidecar"),
+        (BOOTSTRAP_SELECTOR_NAME, "bootstrap-selector"),
+        (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", "checksum-sidecar"),
+        (BUILD_MANIFEST_NAME, "build-manifest"),
+        (f"{BUILD_MANIFEST_NAME}.sha256", "checksum-sidecar"),
+        ("SHA256SUMS", "checksum-manifest"),
+    ]:
+        add(name, kind)
+    return list(kinds.items())
+
+
+def public_sha256_assets(asset_index: dict, dist_dir: Path) -> list[tuple[str, Path]]:
+    return [
+        (name, dist_dir / name)
+        for name, _kind in release_integrity_subject_kinds(asset_index)
+        if name != "SHA256SUMS"
+    ]
 
 
 def release_integrity_subject(path: Path, name: str, kind: str) -> dict:

@@ -287,6 +287,9 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_rendered_install_script_rejects_failed_attestation_before_bundle_extract`;
 - `official_release_missing_attestation_verifier_fails_before_staging`;
 - `official_release_too_old_attestation_verifier_fails_before_staging`;
+- `test_package_assembles_multi_tuple_release_from_tuple_manifest`;
+- `test_package_rejects_extra_tuple_name_collision_before_copy`;
+- `test_package_rejects_extra_tuple_metadata_sidecar_mismatch`;
 - `test_release_integrity_material_accepts_complete_public_subject_set`;
 - `test_release_integrity_material_rejects_wrong_tag`;
 - `test_release_integrity_material_rejects_missing_asset_hash`;

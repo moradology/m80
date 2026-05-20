@@ -496,24 +496,50 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertTrue(args[2].endswith(f"/{BUNDLE_NAME}"), args)
             self.assertEqual(args[3:], ["--dry-run"])
 
-    def test_asset_index_expansion_keeps_default_install_and_quickstart_snippets(self) -> None:
+    def test_package_assembles_multi_tuple_release_from_tuple_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            package_signed_fixture(root)
-            add_alternate_image_kind_fixture(root / "out")
-            write_integrity_material(root / "out")
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            seed_out = root / "seed"
+            out_dir = root / "out"
+            run_package(inputs, seed_out)
+            manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
+            run_package(inputs, out_dir, extra_tuple_manifests=[manifest])
+            material = out_dir / INTEGRITY_NAME
+            write_trust_policy(out_dir)
+            write_attestation_bundle(out_dir, material)
+            write_attestation_metadata(out_dir, material)
+            write_fake_gh(root)
 
-            run_verify(root / "out" / BUNDLE_NAME, verify_sidecars=True)
+            run_verify(out_dir / BUNDLE_NAME, verify_sidecars=True)
+            run_verify_integrity(material)
             result, urls, install_args = run_rendered_install(root, args=["--dry-run"])
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn("m80-linux-x86_64-debug.tar.gz", "\n".join(urls))
             self.assertNotIn("m80-linux-x86_64-debug.bundle.json", "\n".join(urls))
-            index = json.loads((root / "out" / ASSET_INDEX_NAME).read_text())
+            index = json.loads((out_dir / ASSET_INDEX_NAME).read_text())
             self.assertEqual(
-                sorted((asset["os"], asset["arch"], asset["image_kind"]) for asset in index["assets"]),
+                [(asset["os"], asset["arch"], asset["image_kind"]) for asset in index["assets"]],
                 [("linux", "x86_64", "debug"), ("linux", "x86_64", "minimal")],
             )
+            debug_asset = index["assets"][0]
+            self.assertEqual(debug_asset["name"], "m80-linux-x86_64-debug.tar.gz")
+            self.assertEqual(debug_asset["metadata_name"], "m80-linux-x86_64-debug.bundle.json")
+            for asset_name in [
+                "m80-linux-x86_64-debug.tar.gz",
+                "m80-linux-x86_64-debug.tar.gz.sha256",
+                "m80-linux-x86_64-debug.bundle.json",
+                "m80-linux-x86_64-debug.bundle.json.sha256",
+            ]:
+                self.assertTrue((out_dir / asset_name).is_file(), asset_name)
+                self.assertIn(f"  {asset_name}\n", (out_dir / "SHA256SUMS").read_text())
+            integrity = json.loads(material.read_text())
+            subject_names = {subject["name"] for subject in integrity["subjects"]}
+            self.assertIn("m80-linux-x86_64-debug.tar.gz", subject_names)
+            self.assertIn("m80-linux-x86_64-debug.tar.gz.sha256", subject_names)
+            self.assertIn("m80-linux-x86_64-debug.bundle.json", subject_names)
+            self.assertIn("m80-linux-x86_64-debug.bundle.json.sha256", subject_names)
             install_argv = install_args.read_text().splitlines()
             self.assertEqual(install_argv[0:2], ["install", "--bundle-url"])
             self.assertTrue(install_argv[2].endswith(f"/{BUNDLE_NAME}"), install_argv)
@@ -522,6 +548,42 @@ class ReleaseBundleTest(unittest.TestCase):
                 snippets = extract_marked_quickstart_snippets(doc)
                 self.assertEqual(snippets["latest-install"], expected["latest-install"])
                 self.assertEqual(snippets["pinned-install"], expected["pinned-install"])
+
+    def test_package_rejects_extra_tuple_name_collision_before_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            seed_out = root / "seed"
+            out_dir = root / "out"
+            run_package(inputs, seed_out)
+            manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
+            payload = json.loads(manifest.read_text())
+            payload["bundle_name"] = BUNDLE_NAME
+            manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_package(inputs, out_dir, extra_tuple_manifests=[manifest], check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release tuple dist asset name collides", result.stderr)
+            self.assertEqual(sha256(out_dir / BUNDLE_NAME), sha256(seed_out / BUNDLE_NAME))
+
+    def test_package_rejects_extra_tuple_metadata_sidecar_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            seed_out = root / "seed"
+            run_package(inputs, seed_out)
+            manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
+            payload = json.loads(manifest.read_text())
+            metadata_path = Path(payload["metadata_path"])
+            metadata = json.loads(metadata_path.read_text())
+            metadata["image_kind"] = "stale-debug"
+            metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+
+            result = run_package(inputs, root / "out", extra_tuple_manifests=[manifest], check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("tuple bundle metadata sidecar mismatch", result.stderr)
 
     def test_rendered_install_script_rejects_extracted_m80_source_commit_mismatch_before_install(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2855,6 +2917,39 @@ def add_alternate_image_kind_fixture(out_dir: Path, *, image_kind: str = "debug"
     rewrite_bootstrap_selector(out_dir, bootstrap_selector_lines_for_index(out_dir, index))
 
 
+def write_extra_tuple_manifest_from_seed(root: Path, seed_out: Path, *, image_kind: str) -> Path:
+    tuple_dir = root / "tuple-inputs"
+    tuple_dir.mkdir()
+    bundle_name = f"m80-linux-x86_64-{image_kind}.tar.gz"
+    metadata_name = f"m80-linux-x86_64-{image_kind}.bundle.json"
+    bundle_path = tuple_dir / bundle_name
+    metadata_path = tuple_dir / metadata_name
+    rewrite_tar(
+        seed_out / BUNDLE_NAME,
+        bundle_path,
+        metadata_updates={"image_kind": image_kind},
+    )
+    with tarfile.open(bundle_path, "r:gz") as tar:
+        metadata = json.load(tar.extractfile("bundle.json"))  # type: ignore[arg-type]
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    manifest = tuple_dir / f"{image_kind}-tuple.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "bundle_path": str(bundle_path),
+                "metadata_path": str(metadata_path),
+                "bundle_name": bundle_name,
+                "metadata_name": metadata_name,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return manifest
+
+
 def bootstrap_selector_lines_for_index(out_dir: Path, index: dict) -> list[str]:
     lines = bootstrap_selector_lines(out_dir)[:3]
     columns = lines[2].split("\t")[1:]
@@ -3452,6 +3547,7 @@ def run_package(
     image_kind: str = "minimal",
     apt_package_versions: list[str] | None = None,
     container_digest: str | None = None,
+    extra_tuple_manifests: list[Path] | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     if apt_package_versions is None:
@@ -3509,6 +3605,8 @@ def run_package(
         cmd.extend(["--apt-package-version", package_version])
     if container_digest is not None:
         cmd.extend(["--container-digest", container_digest])
+    for manifest in extra_tuple_manifests or []:
+        cmd.extend(["--extra-tuple-manifest", str(manifest)])
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 

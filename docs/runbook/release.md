@@ -200,12 +200,16 @@ inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, a canonical
 `m80-release-assets.json` asset index, a shell-safe
 `m80-bootstrap-selector.tsv` projection of that index for the no-installed-binary
 installer path, `m80-release-build.json` for build-input provenance, and a
-public `SHA256SUMS` covering those assets plus their checksum sidecars. The
+public `SHA256SUMS` covering those assets plus their checksum sidecars. Extra
+tuple manifests add their own bundle, metadata sidecar, and checksum sidecars;
+the package command derives the asset index, bootstrap selector, public
+checksum manifest, and integrity predicate from that assembled row set. The
 exact builder contract is
 captured in `docs/behaviors/release/bundle-builder.md`.
 
 The complete installer/bootstrapper-consumed subject set recorded inside
-`m80-release-integrity.json` for the signed/attested default Linux dist is:
+`m80-release-integrity.json` for the signed/attested one-tuple default Linux
+dist is:
 
 ```text
 m80-linux-x86_64.tar.gz
@@ -223,6 +227,10 @@ m80-release-build.json.sha256
 SHA256SUMS
 ```
 
+Multi-tuple releases add each extra row's bundle, bundle checksum sidecar,
+metadata sidecar, and metadata checksum sidecar to that same subject set and to
+public `SHA256SUMS`. The current assembler emits no detached signature files.
+
 ## Asset Index
 
 The release asset index is the machine-readable selector for public bundles.
@@ -233,9 +241,9 @@ quickstart tuple is `linux` / `x86_64` / `minimal`. The published file is
 `m80-release-assets.json`; its checksum sidecar and the public `SHA256SUMS`
 cover the index before the publish job re-downloads and validates it. The
 release workflow also publishes the integrity predicate and attestation bundle
-used by the verifier. The asset-index `signature_name` and `attestation_name`
-fields remain nullable until the signed-index leaf makes per-row proof
-references mandatory.
+used by the verifier. The asset-index `signature_name` field is nullable in
+schema v1; official signed release rows require `attestation_name:
+m80-release-integrity.attestation.jsonl`.
 
 The bootstrap selector is generated from the asset index, not maintained by
 hand. It exists so `install.sh` can select a bundle with POSIX shell tooling
@@ -247,11 +255,13 @@ Adding a new architecture or image kind is a release-contract change, but it is
 not a quickstart-command change. Use this checklist:
 
 1. Package the new tuple artifact and its metadata sidecar with a unique
-   bundle name, checksum sidecar, and integrity/proof material.
-2. Add exactly one `m80-release-assets.json` row for the new
-   `os` / `arch` / `image_kind` tuple, pointing at those published assets.
-3. Regenerate `m80-bootstrap-selector.tsv`, its checksum sidecar, and the
-   public `SHA256SUMS`; do not edit the selector by hand.
+   bundle name.
+2. Write a tuple manifest with `schema_version: 1`, `bundle_path`,
+   `metadata_path`, `bundle_name`, and `metadata_name`, then pass it to
+   `scripts/package-release-bundle.py --extra-tuple-manifest`.
+3. Let the package command generate `m80-release-assets.json`,
+   `m80-bootstrap-selector.tsv`, their checksum sidecars, public `SHA256SUMS`,
+   and `m80-release-integrity.json`; do not edit generated JSON or TSV by hand.
 4. Before publishing or promoting the multi-row index, run
    `python3 scripts/verify-release-integrity.py ... --dist-dir <release-dist>`
    against the exact dist directory.

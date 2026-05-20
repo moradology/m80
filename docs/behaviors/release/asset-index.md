@@ -8,10 +8,13 @@ architecture, and image kind. The current flat-artifact quickstart path still
 requires an explicit artifact URL until it moves fully onto release bundles. An
 explicit bundle URL override bypasses index selection.
 
-The published index is `m80-release-assets.json`. Its checksum sidecar is
+The published index is `m80-release-assets.json`. The release packager derives
+it from the assembled tuple artifacts: the default package artifact plus any
+`--extra-tuple-manifest` inputs. Its checksum sidecar is
 `m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
-alongside the bundle tarball, `install.sh`, the metadata sidecar, and
-`m80-bootstrap-selector.tsv` and `m80-release-build.json`.
+alongside every indexed bundle, bundle checksum sidecar, metadata sidecar,
+metadata checksum sidecar, `install.sh`, `m80-bootstrap-selector.tsv`, and
+`m80-release-build.json`.
 Installer/bootstrapper code follows this order: fetch the pinned index and its
 sidecar for the same concrete release tag, verify the index sha256, and only
 then parse JSON or select a host tuple. `file://` fixture indexes use the same
@@ -120,10 +123,13 @@ not a second source of truth: verification compares selector rows back to the
 JSON index and rejects stale tag, missing tuple, duplicate tuple, stale
 digest/size, unsupported schema, shell-unsafe tokens, or hand-edited drift.
 
-Release publication must generate the index from the actual dist files, upload
-it with the rest of the release assets, then re-download the public release and
-validate the index against the uploaded tarball, metadata sidecar, checksum
-sidecars, build manifest, and `SHA256SUMS` with
+Release publication must generate the index from the actual assembled dist
+files, never by editing JSON or TSV after packaging. To add a tuple, package the
+tuple bundle and metadata sidecar, pass them to
+`scripts/package-release-bundle.py --extra-tuple-manifest`, upload the generated
+dist as a unit, then re-download the public release and validate the index
+against the uploaded tarballs, metadata sidecars, checksum sidecars, build
+manifest, and `SHA256SUMS` with
 `python3 scripts/verify-release-integrity.py ... --dist-dir <release-dist>`.
 A new architecture or image kind is a new row in the index, not a new README
 quickstart command.
