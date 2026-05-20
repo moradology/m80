@@ -48,6 +48,22 @@ fn help_quickstart() {
 }
 
 #[test]
+fn help_install() {
+    let output = m80().args(["install", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("Plan a release bundle install")
+            && stdout.contains("--release-tag")
+            && stdout.contains("--bundle-url")
+            && stdout.contains("--install-root")
+            && stdout.contains("--dry-run")
+            && !stdout.contains("--bootstrap-tag"),
+        "install help should expose user-facing installer inputs only, got: {stdout}"
+    );
+}
+
+#[test]
 fn help_inspect() {
     m80().args(["inspect", "--help"]).assert().success();
 }

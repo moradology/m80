@@ -12,8 +12,8 @@ use m80_firecracker::{
 use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
 
 use crate::args::{
-    EgressMode, ImageAction, OverlayCloneModeArg, QuickstartArgs, TemplateAction, WarmAction,
-    WritebackMode,
+    EgressMode, ImageAction, InstallArgs, OverlayCloneModeArg, QuickstartArgs, TemplateAction,
+    WarmAction, WritebackMode,
 };
 use crate::config;
 use crate::errors;
@@ -770,8 +770,13 @@ pub(crate) fn cmd_version(json: bool) -> anyhow::Result<i32> {
     version::cmd_version(json)
 }
 
+pub(crate) fn cmd_install(args: InstallArgs, json: bool) -> anyhow::Result<i32> {
+    install::cmd_install(args, json)
+}
+
 mod env;
 mod image;
+mod install;
 mod proto_json;
 mod pty;
 mod quickstart;

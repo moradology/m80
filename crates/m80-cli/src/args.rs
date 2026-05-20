@@ -115,6 +115,13 @@ pub enum Cmd {
     /// hello` unless `--no-run` is set.
     Quickstart(QuickstartArgs),
 
+    /// Plan a release bundle install.
+    ///
+    /// This validates the user-facing installer inputs and release identity
+    /// before any host state is touched. Until the bundle layout installer
+    /// lands, the command is dry-run only.
+    Install(InstallArgs),
+
     /// Print a VM's run-dir layout and recorded state.
     Inspect {
         /// VM id.
@@ -460,6 +467,44 @@ pub struct QuickstartArgs {
     /// Install and verify artifacts but do not run echo.
     #[arg(long = "no-run")]
     pub no_run: bool,
+}
+
+/// Arguments for `m80 install`.
+#[derive(Debug, Args)]
+#[command(override_usage = "m80 install [OPTIONS] <--release-tag <TAG>|--bundle-url <URL>>")]
+pub struct InstallArgs {
+    /// Pinned release tag to install, for example v0.1.0.
+    #[arg(
+        long = "release-tag",
+        value_name = "TAG",
+        conflicts_with_all = ["bundle_url", "bootstrap_tag"]
+    )]
+    pub release_tag: Option<String>,
+
+    /// Explicit release bundle URL to install.
+    #[arg(
+        long = "bundle-url",
+        value_name = "URL",
+        conflicts_with_all = ["release_tag", "bootstrap_tag"]
+    )]
+    pub bundle_url: Option<String>,
+
+    /// Concrete release tag selected by the stable bootstrapper.
+    #[arg(
+        long = "bootstrap-tag",
+        value_name = "TAG",
+        hide = true,
+        conflicts_with_all = ["release_tag", "bundle_url"]
+    )]
+    pub bootstrap_tag: Option<String>,
+
+    /// Install root to plan. Defaults to /opt/m80.
+    #[arg(long = "install-root", value_name = "PATH", default_value = "/opt/m80")]
+    pub install_root: PathBuf,
+
+    /// Print the install plan without touching host state.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
 }
 
 /// `m80 config` sub-actions.

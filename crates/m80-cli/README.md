@@ -53,6 +53,11 @@ binaries, pull OCI images, or install packages implicitly.
   target and proves the default host prerequisite path. `--json` requires
   `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
   `--no-run` does not prove host substrate readiness or real-KVM launch.
+- `m80 install --release-tag <tag>|--bundle-url <url> --dry-run` - validates
+  the release-bundle installer input contract and prints the install plan
+  without touching host state. Until bundle layout installation lands,
+  non-dry-run exits 7 after source validation and still does not create the
+  install root or active pointer.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -136,6 +141,8 @@ Image-store command behavior is captured in
 `docs/behaviors/cli/image-commands.md`.
 Snapshot-template command behavior is captured in
 `docs/behaviors/cli/template-commands.md`.
+Installer input behavior is captured in
+`docs/behaviors/release/installer-input-contract.md`.
 
 ### `m80 run` options
 
@@ -349,6 +356,7 @@ Rust library items:
 - `Cmd` - supported subcommand enum.
 - `ConfigAction` - `m80 config` action enum.
 - `EgressMode` - `m80 run --egress` value enum.
+- `InstallArgs` - `m80 install` argument struct.
 - `OverlayCloneModeArg` - `m80 run --overlay-clone-mode` value enum.
 - `QuickstartArgs` - `m80 quickstart` argument struct.
 - `WarmAction` - `m80 warm` action enum.
@@ -365,6 +373,9 @@ Stable surfaces:
   `output.ext4.manifest.json`, `output.ext4.build-receipt.json`,
   `m80-guestd`, and `SHA256SUMS`. The tarball must not contain
   `host-binaries.manifest.json`.
+- Installer source selection: `m80 install` accepts exactly one of
+  `--release-tag`, `--bundle-url`, or the hidden bootstrapper handoff
+  `--bootstrap-tag`. The current leaf is dry-run planning only.
 
 ## Non-goals
 
@@ -402,6 +413,9 @@ Stable surfaces:
   release-shaped tarball, external `.sha256` verification before extraction,
   extracted checksum verification, artifact install, run-root creation, and
   mismatch rejection.
+- Install: `m80 install --dry-run` is covered for source exclusivity,
+  install-root override, JSON output, dev-build refusal for release-tag
+  installs, and no host-state writes before the bundle installer lands.
 - Image/profile selection: local profile resolution, fail-closed profile
   parsing, and artifact env overlay are covered without KVM.
 - Feature gaps: reserved `run` flags and `m80 warm enable --system` exit 7

@@ -22,6 +22,6 @@ mod request_id;
 
 pub use args::{
     Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageBuildArgs, ImageGcArgs, ImageKindArg,
-    OverlayCloneModeArg, QuickstartArgs, TemplateAction, TemplateBuildArgs, WarmAction,
-    WarmEnableArgs, WritebackMode,
+    InstallArgs, OverlayCloneModeArg, QuickstartArgs, TemplateAction, TemplateBuildArgs,
+    WarmAction, WarmEnableArgs, WritebackMode,
 };

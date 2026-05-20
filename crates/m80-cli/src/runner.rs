@@ -52,6 +52,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
 
         Cmd::Quickstart(args) => cmds::cmd_quickstart(args, json),
 
+        Cmd::Install(args) => cmds::cmd_install(args, json),
+
         Cmd::Inspect { ref vm_id } => cmds_walk::cmd_inspect(vm_id, json),
 
         Cmd::Logs {

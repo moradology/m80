@@ -6,8 +6,8 @@
 
 use clap::Parser;
 use m80_cli::{
-    Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageKindArg, OverlayCloneModeArg,
-    QuickstartArgs, TemplateAction, WarmAction, WritebackMode,
+    Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageKindArg, InstallArgs,
+    OverlayCloneModeArg, QuickstartArgs, TemplateAction, WarmAction, WritebackMode,
 };
 
 // ---- run ----
@@ -313,6 +313,99 @@ fn parse_quickstart_install_only_shape() {
 fn parse_quickstart_requires_artifact_url() {
     let result = Cli::try_parse_from(["m80", "quickstart", "--no-run"]);
     assert!(result.is_err(), "quickstart requires --artifact-url");
+}
+
+// ---- install ----
+
+#[test]
+fn parse_install_release_tag_source() {
+    let cli = Cli::try_parse_from(["m80", "install", "--release-tag", "v0.1.0"]).unwrap();
+    match cli.subcommand {
+        Cmd::Install(InstallArgs {
+            release_tag,
+            bundle_url,
+            bootstrap_tag,
+            install_root,
+            dry_run,
+        }) => {
+            assert_eq!(release_tag.as_deref(), Some("v0.1.0"));
+            assert!(bundle_url.is_none());
+            assert!(bootstrap_tag.is_none());
+            assert_eq!(install_root, std::path::PathBuf::from("/opt/m80"));
+            assert!(!dry_run);
+        }
+        _ => panic!("expected Install"),
+    }
+}
+
+#[test]
+fn parse_install_bundle_url_source_with_root_and_dry_run() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "install",
+        "--bundle-url",
+        "file:///tmp/m80-linux-x86_64.tar.gz",
+        "--install-root",
+        "/tmp/m80-install",
+        "--dry-run",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Install(args) => {
+            assert!(args.release_tag.is_none());
+            assert_eq!(
+                args.bundle_url.as_deref(),
+                Some("file:///tmp/m80-linux-x86_64.tar.gz")
+            );
+            assert!(args.bootstrap_tag.is_none());
+            assert_eq!(
+                args.install_root,
+                std::path::PathBuf::from("/tmp/m80-install")
+            );
+            assert!(args.dry_run);
+        }
+        _ => panic!("expected Install"),
+    }
+}
+
+#[test]
+fn parse_install_bootstrap_tag_source() {
+    let cli = Cli::try_parse_from(["m80", "install", "--bootstrap-tag", "v0.1.0"]).unwrap();
+    match cli.subcommand {
+        Cmd::Install(args) => {
+            assert!(args.release_tag.is_none());
+            assert!(args.bundle_url.is_none());
+            assert_eq!(args.bootstrap_tag.as_deref(), Some("v0.1.0"));
+        }
+        _ => panic!("expected Install"),
+    }
+}
+
+#[test]
+fn parse_install_missing_source_reaches_command_diagnostic() {
+    let cli = Cli::try_parse_from(["m80", "install", "--dry-run"]).unwrap();
+    match cli.subcommand {
+        Cmd::Install(args) => {
+            assert!(args.release_tag.is_none());
+            assert!(args.bundle_url.is_none());
+            assert!(args.bootstrap_tag.is_none());
+            assert!(args.dry_run);
+        }
+        _ => panic!("expected Install"),
+    }
+}
+
+#[test]
+fn parse_install_rejects_multiple_sources() {
+    let result = Cli::try_parse_from([
+        "m80",
+        "install",
+        "--release-tag",
+        "v0.1.0",
+        "--bundle-url",
+        "file:///tmp/m80-linux-x86_64.tar.gz",
+    ]);
+    assert!(result.is_err(), "install accepts exactly one source");
 }
 
 // ---- inspect ----
