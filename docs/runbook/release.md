@@ -55,6 +55,13 @@ release integrity, attestation, and public checksum material. `install.sh`,
 before network/index work. See
 `docs/behaviors/release/stable-channel.md`.
 
+The shell installer bounds every release-asset download before the bundled
+`m80 install` binary can take over. Each fetch uses a 10 second connect timeout,
+120 second total timeout, two retries, and a one second retry delay. Failure
+diagnostics name the release tag, asset, URL, curl failure class, and whether
+release verification had started. Offline or private-network hosts are expected
+to fail clearly; this policy is not an offline install guarantee.
+
 ## Verification
 
 The release identity is pinned by:

@@ -22,6 +22,10 @@ M80_TRUST_SIGNER_WORKFLOW="${M80_PUBLIC_RELEASE_OWNER}/${M80_PUBLIC_RELEASE_REPO
 M80_TRUST_SIGNER_ISSUER='https://token.actions.githubusercontent.com'
 M80_TRUST_VALID_FROM='2026-01-01T00:00:00Z'
 M80_TRUST_VALID_UNTIL='2027-01-01T00:00:00Z'
+M80_DOWNLOAD_CONNECT_TIMEOUT_SECONDS='10'
+M80_DOWNLOAD_MAX_TIME_SECONDS='120'
+M80_DOWNLOAD_RETRY_COUNT='2'
+M80_DOWNLOAD_RETRY_DELAY_SECONDS='1'
 
 usage() {
     cat <<EOF
@@ -148,7 +152,12 @@ asset_url() {
 }
 
 integrity_retry_command() {
-    printf 'curl -fsSL %s | sudo sh\n' "$(asset_url "$M80_INSTALL_NAME")"
+    printf 'curl -fsSL --connect-timeout %s --max-time %s --retry %s --retry-delay %s %s | sudo sh\n' \
+        "$M80_DOWNLOAD_CONNECT_TIMEOUT_SECONDS" \
+        "$M80_DOWNLOAD_MAX_TIME_SECONDS" \
+        "$M80_DOWNLOAD_RETRY_COUNT" \
+        "$M80_DOWNLOAD_RETRY_DELAY_SECONDS" \
+        "$(asset_url "$M80_INSTALL_NAME")"
 }
 
 fail_integrity() {
@@ -159,14 +168,51 @@ download_asset() {
     asset_name=$1
     dest=$2
     url=$(asset_url "$asset_name")
-    curl -fsSL "$url" -o "$dest" || fail "failed to download $asset_name from $url"
+    download_release_asset "$asset_name" "$dest" "$url" "no" "plain"
 }
 
 download_integrity_asset() {
     asset_name=$1
     dest=$2
     url=$(asset_url "$asset_name")
-    curl -fsSL "$url" -o "$dest" || fail_integrity "failed to download $asset_name from $url"
+    download_release_asset "$asset_name" "$dest" "$url" "yes" "integrity"
+}
+
+curl_failure_kind() {
+    case "$1" in
+        6|7) printf '%s\n' "dns_or_connect_failure" ;;
+        22) printf '%s\n' "http_failure" ;;
+        28) printf '%s\n' "timeout" ;;
+        130) printf '%s\n' "interrupted" ;;
+        *) printf '%s\n' "download_failure" ;;
+    esac
+}
+
+download_release_asset() {
+    asset_name=$1
+    dest=$2
+    url=$3
+    verification_started=$4
+    failure_mode=$5
+    set +e
+    curl -fsSL \
+        --connect-timeout "$M80_DOWNLOAD_CONNECT_TIMEOUT_SECONDS" \
+        --max-time "$M80_DOWNLOAD_MAX_TIME_SECONDS" \
+        --retry "$M80_DOWNLOAD_RETRY_COUNT" \
+        --retry-delay "$M80_DOWNLOAD_RETRY_DELAY_SECONDS" \
+        "$url" \
+        -o "$dest"
+    status=$?
+    set -e
+    if [ "$status" -eq 0 ]; then
+        return 0
+    fi
+    kind=$(curl_failure_kind "$status")
+    message="failed to download release_tag=$M80_RELEASE_TAG asset=$asset_name url=$url verification_started=$verification_started failure=$kind curl_exit=$status"
+    case "$failure_mode" in
+        integrity) fail_integrity "$message" ;;
+        *) fail "$message" ;;
+    esac
 }
 
 validate_safe_token() {
@@ -763,7 +809,7 @@ gh attestation verify "$integrity_path" \
     --deny-self-hosted-runners \
     --format json >/dev/null || fail_integrity "release attestation verification failed for $M80_RELEASE_INTEGRITY_NAME"
 
-curl -fsSL "$selected_bundle_url" -o "$bundle_path" || fail_integrity "failed to download selected bundle $selected_bundle_name from $selected_bundle_url"
+download_release_asset "$selected_bundle_name" "$bundle_path" "$selected_bundle_url" "yes" "integrity"
 download_integrity_asset "$selected_checksum_name" "$checksum_path"
 verify_integrity_sha256_sidecar "$selected_bundle_name" "$selected_checksum_name" "$selected_bundle_sha256"
 actual_bundle_sha256=$(sha256sum "$bundle_path")

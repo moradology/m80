@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import tarfile
 import tempfile
@@ -305,6 +306,61 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertTrue(args[2].endswith(f"/{BUNDLE_NAME}"), args)
             self.assertEqual(args[3:], ["--dry-run"])
 
+    def test_rendered_install_script_bounds_every_download(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+
+            result, urls, _install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            arg_lines = rendered_install_curl_arg_lines(root)
+            self.assertEqual(len(arg_lines), len(urls))
+            for line in arg_lines:
+                args = shlex.split(line)
+                self.assert_curl_flag(args, "--connect-timeout", "10")
+                self.assert_curl_flag(args, "--max-time", "120")
+                self.assert_curl_flag(args, "--retry", "2")
+                self.assert_curl_flag(args, "--retry-delay", "1")
+
+    def test_rendered_install_script_download_failures_are_diagnosable_before_extract(self) -> None:
+        cases = [
+            (28, "timeout"),
+            (6, "dns_or_connect_failure"),
+            (22, "http_failure"),
+            (130, "interrupted"),
+        ]
+        for exit_code, failure in cases:
+            with self.subTest(exit_code=exit_code, failure=failure):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    package_signed_fixture(root)
+                    curl_script = (
+                        "#!/bin/sh\n"
+                        "printf 'simulated curl failure\\n' >&2\n"
+                        f"exit {exit_code}\n"
+                    )
+
+                    result, _urls, install_args = run_rendered_install(root, curl_script=curl_script)
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("release_tag=v0.0.0", result.stderr)
+                    self.assertIn(f"asset={BOOTSTRAP_SELECTOR_NAME}", result.stderr)
+                    self.assertIn(failure, result.stderr)
+                    self.assertIn("verification_started=no", result.stderr)
+                    self.assertIn(
+                        f"url=https://github.com/moradology/m80/releases/download/v0.0.0/{BOOTSTRAP_SELECTOR_NAME}",
+                        result.stderr,
+                    )
+                    self.assertFalse((root / "tar.log").exists(), result.stderr)
+                    self.assertFalse(install_args.exists(), result.stderr)
+
+    def assert_curl_flag(self, args: list[str], flag: str, expected_value: str) -> None:
+        self.assertIn(flag, args)
+        pos = args.index(flag)
+        self.assertLess(pos + 1, len(args), args)
+        self.assertEqual(args[pos + 1], expected_value, args)
+
     def test_rendered_install_script_rejects_unsigned_dev_fixture_before_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -313,9 +369,11 @@ class ReleaseBundleTest(unittest.TestCase):
             result, urls, install_args = run_rendered_install(root)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(f"failed to download {INTEGRITY_ATTESTATION_BUNDLE_NAME}", result.stderr)
+            self.assertIn(f"asset={INTEGRITY_ATTESTATION_BUNDLE_NAME}", result.stderr)
+            self.assertIn("verification_started=yes", result.stderr)
+            self.assertIn("failure=http_failure", result.stderr)
             self.assertIn(
-                "retry pinned command: curl -fsSL https://github.com/moradology/m80/releases/download/v0.0.0/install.sh | sudo sh",
+                "retry pinned command: curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 1 https://github.com/moradology/m80/releases/download/v0.0.0/install.sh | sudo sh",
                 result.stderr,
             )
             assert_no_bundle_download(self, urls, install_args)
@@ -2275,17 +2333,22 @@ def run_rendered_install(
     *,
     args: list[str] | None = None,
     uname_arch: str = "x86_64",
+    curl_script: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
     out_dir = root / "out"
     fakebin = root / "fakebin-install"
     curl_log = root / "curl.log"
+    curl_args_log = root / "curl-args.log"
     tar_log = root / "tar.log"
     install_args = root / "install-args.log"
     write_install_test_tools(fakebin)
+    if curl_script is not None:
+        write_executable(fakebin / "curl", curl_script)
     env = {
         "PATH": str(fakebin),
         "M80_RELEASE_ROOT": str(out_dir),
         "M80_CURL_LOG": str(curl_log),
+        "M80_CURL_ARGS_LOG": str(curl_args_log),
         "M80_TAR_LOG": str(tar_log),
         "M80_FAKE_UNAME_M": uname_arch,
         "M80_FAKE_INSTALL_ARGS": str(install_args),
@@ -2301,11 +2364,17 @@ def run_rendered_install(
     return result, urls, install_args
 
 
+def rendered_install_curl_arg_lines(root: Path) -> list[str]:
+    path = root / "curl-args.log"
+    return path.read_text().splitlines() if path.exists() else []
+
+
 def write_install_test_tools(fakebin: Path) -> None:
     fakebin.mkdir()
     write_executable(
         fakebin / "curl",
         "#!/bin/sh\n"
+        "argv=$*\n"
         "out=\n"
         "url=\n"
         "while [ \"$#\" -gt 0 ]; do\n"
@@ -2317,6 +2386,7 @@ def write_install_test_tools(fakebin: Path) -> None:
         "done\n"
         "[ -n \"$out\" ] || exit 2\n"
         "[ -n \"$url\" ] || exit 2\n"
+        "[ -z \"${M80_CURL_ARGS_LOG:-}\" ] || printf '%s\\n' \"$argv\" >> \"$M80_CURL_ARGS_LOG\"\n"
         "printf '%s\\n' \"$url\" >> \"$M80_CURL_LOG\"\n"
         "name=${url##*/}\n"
         "src=$M80_RELEASE_ROOT/$name\n"
