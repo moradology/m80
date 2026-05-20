@@ -15,10 +15,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
 VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
 VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
+WRITE_ATTESTATION_METADATA = REPO_ROOT / "scripts" / "write-release-attestation-metadata.py"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 INSTALL_NAME = "install.sh"
+INTEGRITY_NAME = "m80-release-integrity.json"
+INTEGRITY_ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
 INTEGRITY_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
 INTEGRITY_RUST_TOOLCHAIN = "1.82"
 INTEGRITY_VERIFICATION_TIME = "2026-05-20T00:00:00Z"
@@ -48,6 +51,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertTrue((out_dir / ASSET_INDEX_NAME).is_file())
             self.assertTrue((out_dir / f"{ASSET_INDEX_NAME}.sha256").is_file())
             self.assertTrue((out_dir / "SHA256SUMS").is_file())
+            self.assertTrue((out_dir / INTEGRITY_NAME).is_file())
             self.assertEqual(file_mode(tarball), 0o644)
             self.assertEqual(file_mode(out_dir / INSTALL_NAME), 0o755)
             self.assertEqual(file_mode(out_dir / f"{INSTALL_NAME}.sha256"), 0o644)
@@ -56,6 +60,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(file_mode(out_dir / ASSET_INDEX_NAME), 0o644)
             self.assertEqual(file_mode(out_dir / f"{ASSET_INDEX_NAME}.sha256"), 0o644)
             self.assertEqual(file_mode(out_dir / "SHA256SUMS"), 0o644)
+            self.assertEqual(file_mode(out_dir / INTEGRITY_NAME), 0o644)
             with tarfile.open(tarball, "r:gz") as tar:
                 names = set(tar.getnames())
                 self.assertIn("bundle.json", names)
@@ -134,6 +139,31 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(asset["guest_protocol_version"], 1)
             self.assertEqual(asset["manifest_schema_version"], 5)
             self.assertEqual(asset["expected_firecracker_version"], "v1.15.1")
+            integrity = json.loads((out_dir / INTEGRITY_NAME).read_text())
+            self.assertEqual(integrity["schema_version"], 1)
+            self.assertEqual(integrity["mechanism"], "github-artifact-attestation")
+            self.assertEqual(integrity["repository"], "moradology/m80")
+            self.assertEqual(integrity["release_tag"], "v0.0.0")
+            self.assertEqual(integrity["commit_sha"], INTEGRITY_COMMIT_SHA)
+            self.assertEqual(integrity["target"], "linux-x86_64")
+            self.assertEqual(integrity["rust_toolchain"], INTEGRITY_RUST_TOOLCHAIN)
+            self.assertEqual(integrity["m80_package_version"], "0.0.0")
+            self.assertEqual(integrity["bundle_metadata_name"], METADATA_NAME)
+            self.assertEqual(integrity["bundle_metadata_sha256"], sha256(out_dir / METADATA_NAME))
+            self.assertEqual(
+                {subject["name"] for subject in integrity["subjects"]},
+                {
+                    BUNDLE_NAME,
+                    f"{BUNDLE_NAME}.sha256",
+                    INSTALL_NAME,
+                    f"{INSTALL_NAME}.sha256",
+                    METADATA_NAME,
+                    f"{METADATA_NAME}.sha256",
+                    ASSET_INDEX_NAME,
+                    f"{ASSET_INDEX_NAME}.sha256",
+                    "SHA256SUMS",
+                },
+            )
 
     def test_package_rejects_legacy_quickstart_install_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,6 +186,44 @@ class ReleaseBundleTest(unittest.TestCase):
 
         self.assertIn("--install-sh scripts/install.sh", workflow)
         self.assertNotIn("--install-sh scripts/quickstart.sh", workflow)
+
+    def test_release_workflow_publishes_and_verifies_proof_assets(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()
+
+        self.assertIn("actions/attest@v4", workflow)
+        self.assertIn("subject-name: m80-release-integrity.json", workflow)
+        self.assertIn("subject-digest: ${{ steps.integrity-subject.outputs.digest }}", workflow)
+        self.assertNotIn("subject-path:", workflow)
+        self.assertIn("release_commit: ${{ steps.release-commit.outputs.sha }}", workflow)
+        self.assertIn('echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"', workflow)
+        self.assertIn("RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}", workflow)
+        self.assertIn("RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}", workflow)
+        self.assertIn('--commit-sha "$RELEASE_COMMIT"', workflow)
+        self.assertNotIn('--commit-sha "$GITHUB_SHA"', workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("attestations: write", workflow)
+        self.assertIn("scripts/write-release-attestation-metadata.py", workflow)
+        self.assertGreaterEqual(workflow.count("scripts/verify-release-integrity.py"), 2)
+        for name in [
+            INTEGRITY_NAME,
+            INTEGRITY_ATTESTATION_BUNDLE_NAME,
+            INTEGRITY_ATTESTATION_METADATA_NAME,
+        ]:
+            self.assertGreaterEqual(
+                workflow.count(f"/tmp/m80-release-upload/{name}"),
+                1,
+                f"{name} must be uploaded",
+            )
+            self.assertGreaterEqual(
+                workflow.count(f"--pattern {name}"),
+                1,
+                f"{name} must be re-downloaded",
+            )
+            self.assertGreaterEqual(
+                workflow.count(f"/tmp/m80-release-redownload/{name}"),
+                1,
+                f"{name} must be re-verified after publication",
+            )
 
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -609,6 +677,32 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify_integrity(material)
 
             self.assertIn("verified release integrity material", result.stdout)
+
+    def test_release_attestation_metadata_writer_accepts_verified_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = root / "out" / INTEGRITY_NAME
+            write_trust_policy(root / "out")
+            write_attestation_bundle(root / "out", material)
+            write_fake_gh(root)
+
+            metadata = root / "out" / INTEGRITY_ATTESTATION_METADATA_NAME
+            result = run_write_attestation_metadata(material, metadata)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(metadata.read_text())
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertEqual(payload["mechanism"], "github-artifact-attestation")
+            self.assertEqual(payload["repository"], "moradology/m80")
+            self.assertEqual(payload["release_tag"], "v0.0.0")
+            self.assertEqual(payload["predicate_sha256"], sha256(material))
+            self.assertEqual(payload["signer_identity"], INTEGRITY_SIGNER_IDENTITY)
+            self.assertEqual(payload["issuer"], INTEGRITY_SIGNER_ISSUER)
+            self.assertEqual(payload["keyset_id"], INTEGRITY_KEYSET_ID)
+            self.assertEqual(payload["certificate_not_before"], "2026-01-01T00:00:00Z")
+            self.assertEqual(payload["certificate_not_after"], "2027-01-01T00:00:00Z")
+            run_verify_integrity(material)
 
     def test_release_integrity_material_accepts_complete_public_subject_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1352,6 +1446,10 @@ def run_package(
         str(REPO_ROOT),
         "--release-tag",
         release_tag,
+        "--commit-sha",
+        INTEGRITY_COMMIT_SHA,
+        "--rust-toolchain",
+        INTEGRITY_RUST_TOOLCHAIN,
         "--target",
         target,
         "--image-kind",
@@ -1432,6 +1530,33 @@ def run_verify_integrity(material: Path, *, check: bool = True) -> subprocess.Co
         str(fake_gh_path(material.parent.parent)),
         "--rust-toolchain",
         INTEGRITY_RUST_TOOLCHAIN,
+    ]
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def run_write_attestation_metadata(
+    material: Path,
+    metadata: Path,
+    *,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    cmd = [
+        "python3",
+        str(WRITE_ATTESTATION_METADATA),
+        "--material",
+        str(material),
+        "--attestation-bundle",
+        str(material.parent / INTEGRITY_ATTESTATION_BUNDLE_NAME),
+        "--trust-policy",
+        str(trust_policy_path(material.parent)),
+        "--release-tag",
+        "v0.0.0",
+        "--commit-sha",
+        INTEGRITY_COMMIT_SHA,
+        "--out",
+        str(metadata),
+        "--gh-bin",
+        str(fake_gh_path(material.parent.parent)),
     ]
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 

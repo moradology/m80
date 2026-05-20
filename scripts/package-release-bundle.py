@@ -25,14 +25,27 @@ BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 INSTALL_NAME = "install.sh"
+INTEGRITY_NAME = "m80-release-integrity.json"
 GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
 GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 INSTALL_TEMPLATE_TOKENS = {
     "@M80_RELEASE_TAG@",
     "@M80_BUNDLE_URL@",
     "@M80_BUNDLE_NAME@",
 }
 REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
+INTEGRITY_SUBJECT_KINDS = [
+    (BUNDLE_NAME, "release-bundle"),
+    (f"{BUNDLE_NAME}.sha256", "checksum-sidecar"),
+    (INSTALL_NAME, "installer"),
+    (f"{INSTALL_NAME}.sha256", "checksum-sidecar"),
+    (METADATA_NAME, "bundle-metadata"),
+    (f"{METADATA_NAME}.sha256", "checksum-sidecar"),
+    (ASSET_INDEX_NAME, "asset-index"),
+    (f"{ASSET_INDEX_NAME}.sha256", "checksum-sidecar"),
+    ("SHA256SUMS", "checksum-manifest"),
+]
 FILE_MODES = {
     "bin/m80": 0o755,
     "bin/m80-jailer-harden": 0o755,
@@ -51,6 +64,8 @@ FILE_MODES = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-tag", required=True, help="GitHub release tag, e.g. v0.1.0")
+    parser.add_argument("--commit-sha", required=True, help="40-character source commit SHA for release proof")
+    parser.add_argument("--rust-toolchain", required=True, help="Rust toolchain used to build release binaries")
     parser.add_argument("--target", default="linux-x86_64")
     parser.add_argument("--image-kind", default="minimal")
     parser.add_argument("--m80-bin", required=True, type=Path)
@@ -73,6 +88,8 @@ def main() -> int:
     out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     target_os, target_arch = supported_target_parts(args.target)
+    require(COMMIT_RE.match(args.commit_sha) is not None, "commit sha must be a 40-character lowercase hex digest")
+    require(args.rust_toolchain.strip(), "rust toolchain must not be empty")
     require(
         args.image_kind == SUPPORTED_IMAGE_KIND,
         f"unsupported image kind: expected {SUPPORTED_IMAGE_KIND}, got {args.image_kind}",
@@ -194,6 +211,17 @@ def main() -> int:
                 (ASSET_INDEX_NAME, asset_index_path),
             ],
         )
+        integrity_path = out_dir / INTEGRITY_NAME
+        write_json(
+            integrity_path,
+            release_integrity_material(
+                args=args,
+                package_version=workspace_version,
+                metadata_asset=metadata_asset,
+                dist_dir=out_dir,
+            ),
+        )
+        integrity_path.chmod(0o644)
         print(tarball)
     return 0
 
@@ -493,6 +521,41 @@ def release_asset_index(
                 "expected_firecracker_version": compatibility["expected_firecracker_version"],
             }
         ],
+    }
+
+
+def release_integrity_material(
+    *,
+    args: argparse.Namespace,
+    package_version: str,
+    metadata_asset: Path,
+    dist_dir: Path,
+) -> dict:
+    return {
+        "schema_version": 1,
+        "mechanism": "github-artifact-attestation",
+        "repository": "moradology/m80",
+        "release_tag": args.release_tag,
+        "commit_sha": args.commit_sha,
+        "target": args.target,
+        "rust_toolchain": args.rust_toolchain,
+        "m80_package_version": package_version,
+        "bundle_metadata_name": METADATA_NAME,
+        "bundle_metadata_sha256": sha256(metadata_asset),
+        "subjects": [
+            release_integrity_subject(dist_dir / name, name, kind)
+            for name, kind in INTEGRITY_SUBJECT_KINDS
+        ],
+    }
+
+
+def release_integrity_subject(path: Path, name: str, kind: str) -> dict:
+    require(path.is_file(), f"release integrity subject missing: {name}")
+    return {
+        "name": name,
+        "kind": kind,
+        "sha256": sha256(path),
+        "size_bytes": path.stat().st_size,
     }
 
 

@@ -1,8 +1,8 @@
 # Release Integrity Material
 
-The release integrity material is the typed subject list that future signature
-and attestation verification must bind before an installer extracts a bundle or
-changes active install state.
+The release integrity material is the typed subject list that signature and
+attestation verification binds before an installer extracts a bundle or changes
+active install state.
 
 The v1 release integrity schema uses GitHub Artifact Attestations as the sole
 public provenance mechanism. The attested predicate is a JSON document named
@@ -80,8 +80,9 @@ issuer: https://token.actions.githubusercontent.com
 ```
 
 The signer identity is the GitHub Actions workflow allowed to create release
-attestations. A future release workflow must publish the matching workflow
-identity in the trust policy before that release is verified.
+attestations. The release workflow publishes proof material only for this
+matching workflow identity; changing the workflow path is a trust-policy
+cutover.
 
 `keyset_id` names the policy epoch for the GitHub/Sigstore trust material used
 by `gh attestation verify`. The trust-policy file comes from the trusted
@@ -112,8 +113,9 @@ must bind before trusting the predicate:
 
 The attestation repository and tag must match the predicate and the requested
 release tag. `predicate_sha256` must be the current sha256 of
-`m80-release-integrity.json`. The certificate window and trust-policy window
-must both include the verifier's `--verification-time`.
+`m80-release-integrity.json`. The metadata window follows the m80 trust-policy
+acceptance epoch; `gh attestation verify` remains responsible for validating
+the short-lived signing certificate, timestamp, and Sigstore roots.
 
 The cryptographic trust check is `gh attestation verify` over
 `m80-release-integrity.json`, scoped to `--repo moradology/m80`, the policy
@@ -166,11 +168,13 @@ policy comes from a trusted m80 checkout or installed verifier distribution,
 not from the downloaded release dist being verified.
 
 ```sh
+M80_RELEASE_COMMIT="$(git rev-list -n 1 "$M80_RELEASE_TAG")"
+
 python3 scripts/verify-release-integrity.py \
   /tmp/m80-release-dist/m80-release-integrity.json \
   --dist-dir /tmp/m80-release-dist \
   --release-tag "$M80_RELEASE_TAG" \
-  --commit-sha "$GITHUB_SHA" \
+  --commit-sha "$M80_RELEASE_COMMIT" \
   --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
   --attestation-bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl \
   --attestation-metadata /tmp/m80-release-dist/m80-release-attestation.json \
@@ -185,6 +189,8 @@ The command is read-only and does not require root.
 `scripts/test-release-bundle.py` covers:
 
 - `test_release_integrity_material_verifier_accepts_valid_fixture`;
+- `test_release_workflow_publishes_and_verifies_proof_assets`;
+- `test_release_attestation_metadata_writer_accepts_verified_bundle`;
 - `test_release_integrity_material_accepts_complete_public_subject_set`;
 - `test_release_integrity_material_rejects_wrong_tag`;
 - `test_release_integrity_material_rejects_missing_asset_hash`;

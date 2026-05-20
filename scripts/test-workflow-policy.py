@@ -94,6 +94,105 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("job build must not grant contents: write", result.stderr)
 
+    def test_release_build_attestation_permissions_are_allowed(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build-release-artifacts:
+                permissions:
+                  contents: read
+                  id-token: write
+                  attestations: write
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+                  - uses: actions/attest@v4
+                    with:
+                      subject-name: m80-release-integrity.json
+                      subject-digest: sha256:0123456789abcdef
+              publish-release-artifacts:
+                permissions:
+                  contents: write
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_attestation_requires_oidc_and_attestation_permissions(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build-release-artifacts:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/attest@v4
+                    with:
+                      subject-name: m80-release-integrity.json
+                      subject-digest: sha256:0123456789abcdef
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must grant id-token: write", result.stderr)
+        self.assertIn("must grant attestations: write", result.stderr)
+
+    def test_non_build_job_cannot_generate_release_attestations(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              publish-release-artifacts:
+                permissions:
+                  contents: write
+                  id-token: write
+                  attestations: write
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/attest@v4
+                    with:
+                      subject-name: m80-release-integrity.json
+                      subject-digest: sha256:0123456789abcdef
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must not grant id-token: write", result.stderr)
+        self.assertIn("must not generate release attestations", result.stderr)
+
     def test_job_write_all_permission_is_rejected(self) -> None:
         with workflow_dir(
             "release-artifacts.yml",

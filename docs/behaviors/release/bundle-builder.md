@@ -8,6 +8,9 @@ deterministic dist directory.
 Required inputs:
 
 - `--release-tag`, matching `v<workspace package version>`;
+- `--commit-sha`, the 40-character source commit SHA attested for the
+  release;
+- `--rust-toolchain`, the Rust toolchain used to build the release binaries;
 - `--target linux-x86_64` and `--image-kind minimal` for the supported default
   product;
 - `--m80-bin`, built with matching `M80_RELEASE_TAG`;
@@ -29,6 +32,7 @@ m80-release-assets.json
 m80-release-assets.json.sha256
 install.sh
 install.sh.sha256
+m80-release-integrity.json
 SHA256SUMS
 ```
 
@@ -43,6 +47,10 @@ The public `install.sh` and the bundled `install.sh` are the same rendered
 versioned installer asset. The renderer fills in the concrete release tag and
 bundle URL, and rejects templates that call `m80 quickstart`, mention
 `scripts/quickstart.sh`, or use artifact-only `--artifact-url`.
+
+The package command also emits `m80-release-integrity.json`. The tag workflow
+attests that predicate, then appends `m80-release-integrity.attestation.jsonl`
+and `m80-release-attestation.json` before uploading the release dist artifact.
 
 ## Determinism
 
@@ -93,7 +101,8 @@ index checksum sidecar.
 used by the signing/attestation lane. That predicate is documented in
 [`release-integrity-material.md`](release-integrity-material.md) and records the
 release tag, commit SHA, target, Rust toolchain, m80 package version, bundle
-metadata hash, and every current public dist asset digest. The verifier also
+metadata hash, and every current public installer/bootstrapper-consumed dist
+asset digest. The verifier also
 loads the anchored trust policy, `m80-release-integrity.attestation.jsonl`, and
 `m80-release-attestation.json` so human verification and installer verification
 share the same cryptographic GitHub attestation, signer, keyset, expiry, and

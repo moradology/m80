@@ -50,6 +50,7 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
         errors.extend(lint_action_refs(path, lines))
         errors.extend(lint_top_level_permissions(path, lines))
         errors.extend(lint_job_permissions(path, lines, release_workflow=release_workflow))
+        errors.extend(lint_attestation_permissions(path, lines, release_workflow=release_workflow))
         if release_workflow:
             errors.extend(lint_release_concurrency(path, lines))
         if has_pull_request_event(lines) and SECRET_RE.search(text):
@@ -124,8 +125,36 @@ def lint_job_permissions(
                 continue
             if scope == "contents" and is_publish_job(job_id):
                 continue
+            if release_workflow and is_attestation_build_permission(job_id, scope):
+                continue
             errors.append(
                 f"{path}:{start + 1}: job {job_id} must not grant {scope}: {level}"
+            )
+    return errors
+
+
+def lint_attestation_permissions(
+    path: Path,
+    lines: list[str],
+    *,
+    release_workflow: bool,
+) -> list[str]:
+    if not release_workflow:
+        return []
+    errors: list[str] = []
+    for job_id, start, end in job_blocks(lines):
+        block = lines[start:end]
+        if not any("uses: actions/attest@" in line for line in block):
+            continue
+        permissions = job_permissions(block)
+        for scope in ["id-token", "attestations"]:
+            if permissions is None or permissions.get(scope) != "write":
+                errors.append(
+                    f"{path}:{start + 1}: job {job_id} uses actions/attest and must grant {scope}: write"
+                )
+        if not is_attestation_build_job(job_id):
+            errors.append(
+                f"{path}:{start + 1}: job {job_id} must not generate release attestations"
             )
     return errors
 
@@ -223,6 +252,14 @@ def workflow_needs_release_guards(path: Path) -> bool:
 
 def is_publish_job(job_id: str) -> bool:
     return job_id == "publish" or job_id.startswith("publish-")
+
+
+def is_attestation_build_job(job_id: str) -> bool:
+    return job_id == "build-release-artifacts"
+
+
+def is_attestation_build_permission(job_id: str, scope: str) -> bool:
+    return is_attestation_build_job(job_id) and scope in {"id-token", "attestations"}
 
 
 def is_write_permission(level: str) -> bool:

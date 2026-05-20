@@ -44,8 +44,12 @@ The Linux bundle contract is documented in
 inputs with:
 
 ```sh
+M80_RELEASE_COMMIT="$(git rev-list -n 1 "$M80_RELEASE_TAG")"
+
 scripts/package-release-bundle.py \
   --release-tag "$M80_RELEASE_TAG" \
+  --commit-sha "$M80_RELEASE_COMMIT" \
+  --rust-toolchain 1.82 \
   --target linux-x86_64 \
   --image-kind minimal \
   --m80-bin target/release/m80 \
@@ -91,8 +95,8 @@ scripts/verify-release-bundle.py \
 
 The package step emits a deterministic tarball, checksum sidecars, an
 inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, and a public
-`SHA256SUMS` for the tarball, installer, and metadata sidecar. The exact builder
-contract is captured in `docs/behaviors/release/bundle-builder.md`.
+`SHA256SUMS` for the tarball, installer, metadata sidecar, and asset index. The
+exact builder contract is captured in `docs/behaviors/release/bundle-builder.md`.
 
 The complete public release subject set for the signed/attested default Linux
 dist is:
@@ -118,36 +122,40 @@ metadata digest, and integrity-material references. The default Linux
 quickstart tuple is `linux` / `x86_64` / `minimal`. The published file is
 `m80-release-assets.json`; its checksum sidecar and the public `SHA256SUMS`
 cover the index before the publish job re-downloads and validates it. The
-current publisher leaves signature/attestation reference fields nullable until
-the release signing lane defines and emits those proof assets.
+release workflow also publishes the integrity predicate and attestation bundle
+used by the verifier. The asset-index `signature_name` and `attestation_name`
+fields remain nullable until the signed-index leaf makes per-row proof
+references mandatory.
 
 ## Release Integrity Material
 
-The release signing lane uses the schema in
+The release workflow uses the schema in
 `docs/behaviors/release/release-integrity-material.md`. The public mechanism is
 GitHub Artifact Attestations over `m80-release-integrity.json`; that predicate
 records the release tag, commit SHA, target, Rust toolchain, m80 package
 version, bundle metadata hash, and the sha256/size of every current public
-dist asset. The same verifier also loads
+installer/bootstrapper-consumed dist asset. The same verifier also loads
 `docs/behaviors/release/m80-release-trust-policy.json`,
 `m80-release-integrity.attestation.jsonl`, and
 `m80-release-attestation.json` so human verification and installer verification
 share one trust-anchor path. The trust check uses `gh attestation verify`; use a
 GitHub CLI build with `gh attestation` support.
 
-Before wiring signed material into installers, verify the predicate shape
-against a downloaded dist directory. This command requires the signing lane to
-publish the attestation bundle and normalized metadata; a release that lacks
-those files is checksum-only and must not be treated as signed. Run it from a
-trusted m80 checkout or installed verifier distribution; do not load the trust
-policy from the release dist being verified:
+Verify the predicate shape against a downloaded dist directory before treating
+a release as signed. The tag workflow publishes the attestation bundle and
+normalized metadata; a release that lacks those files is not valid for signed
+installer verification. Run the command from a trusted m80 checkout or
+installed verifier distribution; do not load the trust policy from the release
+dist being verified:
 
 ```sh
+M80_RELEASE_COMMIT="$(git rev-list -n 1 "$M80_RELEASE_TAG")"
+
 python3 scripts/verify-release-integrity.py \
   /tmp/m80-release-dist/m80-release-integrity.json \
   --dist-dir /tmp/m80-release-dist \
   --release-tag "$M80_RELEASE_TAG" \
-  --commit-sha "$GITHUB_SHA" \
+  --commit-sha "$M80_RELEASE_COMMIT" \
   --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
   --attestation-bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl \
   --attestation-metadata /tmp/m80-release-dist/m80-release-attestation.json \

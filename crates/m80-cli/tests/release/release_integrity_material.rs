@@ -26,6 +26,8 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "certificate_not_after",
         "`release_tag`",
         "`commit_sha`",
+        "M80_RELEASE_COMMIT=\"$(git rev-list -n 1 \"$M80_RELEASE_TAG\")\"",
+        "--commit-sha \"$M80_RELEASE_COMMIT\"",
         "`target`",
         "`rust_toolchain`",
         "`m80_package_version`",
@@ -76,7 +78,8 @@ fn release_runbook_includes_human_integrity_verification_command() {
     assert!(runbook.contains("## Release Integrity Material"));
     assert!(runbook.contains("GitHub Artifact Attestations"));
     assert!(runbook.contains("python3 scripts/verify-release-integrity.py"));
-    assert!(runbook.contains("--commit-sha \"$GITHUB_SHA\""));
+    assert!(runbook.contains("M80_RELEASE_COMMIT=\"$(git rev-list -n 1 \"$M80_RELEASE_TAG\")\""));
+    assert!(runbook.contains("--commit-sha \"$M80_RELEASE_COMMIT\""));
     assert!(runbook.contains("--trust-policy docs/behaviors/release/m80-release-trust-policy.json"));
     assert!(runbook.contains(
         "--attestation-bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl"
@@ -87,6 +90,25 @@ fn release_runbook_includes_human_integrity_verification_command() {
     assert!(runbook.contains("gh attestation"));
     assert!(runbook.contains("share one trust-anchor path"));
     assert!(runbook.contains("does not require root"));
+}
+
+#[test]
+fn release_bundle_builder_doc_names_proof_material_outputs() {
+    let doc = read_repo_file("docs/behaviors/release/bundle-builder.md");
+
+    for required in [
+        "`--commit-sha`",
+        "`--rust-toolchain`",
+        "m80-release-integrity.json",
+        "m80-release-integrity.attestation.jsonl",
+        "m80-release-attestation.json",
+        "tag workflow",
+    ] {
+        assert!(
+            doc.contains(required),
+            "bundle-builder doc missing {required:?}"
+        );
+    }
 }
 
 #[test]

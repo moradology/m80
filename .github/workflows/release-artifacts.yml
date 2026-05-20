@@ -24,6 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      release_commit: ${{ steps.release-commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,11 +75,21 @@ jobs:
           sudo chown -R "$USER:$USER" "$ARTIFACT_DIR"
           target/release/m80-image-build verify --rootfs "$ARTIFACT_DIR/output.ext4"
 
+      - name: Resolve release commit
+        id: release-commit
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Package release bundle and asset index
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
         run: |
           scripts/package-release-bundle.py \
             --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --rust-toolchain 1.82 \
             --target linux-x86_64 \
             --image-kind minimal \
             --m80-bin target/release/m80 \
@@ -88,6 +102,38 @@ jobs:
             --guestd "$ARTIFACT_DIR/m80-guestd" \
             --install-sh scripts/install.sh \
             --out-dir "$DIST_DIR"
+
+      - name: Prepare release integrity attestation subject
+        id: integrity-subject
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          digest="$(sha256sum "$DIST_DIR/m80-release-integrity.json" | awk '{print $1}')"
+          echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release integrity attestation
+        id: attest-integrity
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest@v4
+        with:
+          subject-name: m80-release-integrity.json
+          subject-digest: ${{ steps.integrity-subject.outputs.digest }}
+          show-summary: false
+
+      - name: Capture release integrity attestation metadata
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
+        run: |
+          cp "${{ steps.attest-integrity.outputs.bundle-path }}" \
+            "$DIST_DIR/m80-release-integrity.attestation.jsonl"
+          python3 scripts/write-release-attestation-metadata.py \
+            --material "$DIST_DIR/m80-release-integrity.json" \
+            --attestation-bundle "$DIST_DIR/m80-release-integrity.attestation.jsonl" \
+            --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --out "$DIST_DIR/m80-release-attestation.json"
 
       - name: Upload workflow artifact
         if: startsWith(github.ref, 'refs/tags/')
@@ -110,6 +156,22 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: /tmp/m80-release-upload
 
+      - name: Verify release integrity material before upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
+        run: |
+          scripts/verify-release-integrity.py \
+            /tmp/m80-release-upload/m80-release-integrity.json \
+            --dist-dir /tmp/m80-release-upload \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+            --attestation-bundle /tmp/m80-release-upload/m80-release-integrity.attestation.jsonl \
+            --attestation-metadata /tmp/m80-release-upload/m80-release-attestation.json \
+            --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --rust-toolchain 1.82
+
       - name: Attach artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,12 +185,16 @@ jobs:
             /tmp/m80-release-upload/m80-release-assets.json.sha256 \
             /tmp/m80-release-upload/install.sh \
             /tmp/m80-release-upload/install.sh.sha256 \
+            /tmp/m80-release-upload/m80-release-integrity.json \
+            /tmp/m80-release-upload/m80-release-integrity.attestation.jsonl \
+            /tmp/m80-release-upload/m80-release-attestation.json \
             /tmp/m80-release-upload/SHA256SUMS \
             --clobber
 
       - name: Re-download and validate published release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
           mkdir -p /tmp/m80-release-redownload
           gh release download "$GITHUB_REF_NAME" \
@@ -141,8 +207,21 @@ jobs:
             --pattern m80-release-assets.json.sha256 \
             --pattern install.sh \
             --pattern install.sh.sha256 \
+            --pattern m80-release-integrity.json \
+            --pattern m80-release-integrity.attestation.jsonl \
+            --pattern m80-release-attestation.json \
             --pattern SHA256SUMS
           scripts/verify-release-bundle.py \
             /tmp/m80-release-redownload/m80-linux-x86_64.tar.gz \
             --release-tag "$GITHUB_REF_NAME" \
             --verify-sidecars
+          scripts/verify-release-integrity.py \
+            /tmp/m80-release-redownload/m80-release-integrity.json \
+            --dist-dir /tmp/m80-release-redownload \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+            --attestation-bundle /tmp/m80-release-redownload/m80-release-integrity.attestation.jsonl \
+            --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
+            --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --rust-toolchain 1.82
