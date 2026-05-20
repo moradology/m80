@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
 VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
 VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
+UPLOAD_MANIFEST = REPO_ROOT / "scripts" / "release_upload_manifest.py"
 WRITE_ATTESTATION_METADATA = REPO_ROOT / "scripts" / "write-release-attestation-metadata.py"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
@@ -35,6 +36,8 @@ INTEGRITY_KEYSET_ID = "github-actions-oidc:m80-release-v1"
 INTEGRITY_SIGNER_IDENTITY = "moradology/m80/.github/workflows/release-artifacts.yml"
 INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
+UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
+HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
 RELEASE_TARGET_TRIPLE = "x86_64-unknown-linux-gnu"
@@ -1271,6 +1274,158 @@ class ReleaseBundleTest(unittest.TestCase):
                 1,
                 f"{name} must be re-verified after publication",
             )
+
+    def test_release_upload_manifest_schema_derives_public_and_non_public_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+
+            manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
+            material = json.loads((out_dir / INTEGRITY_NAME).read_text())
+            public_assets = {asset["name"]: asset for asset in manifest["public_assets"]}
+            integrity_subject_names = {subject["name"] for subject in material["subjects"]}
+            non_public_names = {
+                artifact["name"] for artifact in manifest["non_public_workflow_artifacts"]
+            }
+
+            self.assertEqual(manifest["schema_version"], 1)
+            self.assertEqual(manifest["release_tag"], "v0.0.0")
+            self.assertEqual(
+                {name for name, asset in public_assets.items() if asset["integrity_subject"]},
+                integrity_subject_names,
+            )
+            self.assertIn(INTEGRITY_NAME, public_assets)
+            self.assertEqual(public_assets[INTEGRITY_NAME]["kind"], "release-integrity-predicate")
+            self.assertFalse(public_assets[INTEGRITY_NAME]["integrity_subject"])
+            self.assertEqual(
+                {
+                    INTEGRITY_ATTESTATION_BUNDLE_NAME,
+                    INTEGRITY_ATTESTATION_METADATA_NAME,
+                },
+                {
+                    name
+                    for name, asset in public_assets.items()
+                    if asset["kind"]
+                    in {
+                        "github-artifact-attestation-bundle",
+                        "release-attestation-metadata",
+                    }
+                },
+            )
+            self.assertIn(UPLOAD_MANIFEST_NAME, non_public_names)
+            self.assertIn(HOSTLESS_QUICKSTART_PROOF_NAME, non_public_names)
+            self.assertNotIn(UPLOAD_MANIFEST_NAME, public_assets)
+            self.assertNotIn(HOSTLESS_QUICKSTART_PROOF_NAME, public_assets)
+            for name, asset in public_assets.items():
+                self.assertEqual(asset["sha256"], sha256(out_dir / name))
+                self.assertEqual(asset["size_bytes"], (out_dir / name).stat().st_size)
+
+    def test_release_upload_manifest_rejects_duplicate_public_asset_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            payload = json.loads(manifest_path.read_text())
+            payload["public_assets"].append(dict(payload["public_assets"][0]))
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("duplicate name", result.stderr)
+
+    def test_release_upload_manifest_rejects_path_traversal_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            payload = json.loads(manifest_path.read_text())
+            payload["public_assets"][0]["name"] = "../evil"
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("flat dist asset name", result.stderr)
+
+    def test_release_upload_manifest_rejects_missing_public_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            (out_dir / INTEGRITY_ATTESTATION_BUNDLE_NAME).unlink()
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn(f"release upload public asset missing: {INTEGRITY_ATTESTATION_BUNDLE_NAME}", result.stderr)
+
+    def test_release_upload_manifest_rejects_stale_public_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            payload = json.loads(manifest_path.read_text())
+            payload["public_assets"][0]["sha256"] = "0" * 64
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("sha256 mismatch", result.stderr)
+
+    def test_release_upload_manifest_rejects_stale_public_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            payload = json.loads(manifest_path.read_text())
+            payload["public_assets"][0]["size_bytes"] += 1
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("size_bytes mismatch", result.stderr)
+
+    def test_release_upload_manifest_rejects_unknown_top_level_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            payload = json.loads(manifest_path.read_text())
+            payload["unexpected"] = True
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("field mismatch", result.stderr)
+            self.assertIn("unexpected", result.stderr)
+
+    def test_release_upload_manifest_rejects_undocumented_public_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            extra = out_dir / "extra.txt"
+            extra.write_text("extra\n")
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            payload = json.loads(manifest_path.read_text())
+            payload["public_assets"].append(
+                {
+                    "name": extra.name,
+                    "kind": "debug-extra",
+                    "sha256": sha256(extra),
+                    "size_bytes": extra.stat().st_size,
+                    "integrity_subject": False,
+                }
+            )
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("public asset set mismatch", result.stderr)
+            self.assertIn("extra.txt", result.stderr)
+
+    def test_release_upload_manifest_rejects_undocumented_non_public_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            payload = json.loads(manifest_path.read_text())
+            payload["non_public_workflow_artifacts"].append(
+                {"name": "local-debug.json", "reason": "debug"}
+            )
+            manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("non-public workflow artifact set mismatch", result.stderr)
+            self.assertIn("local-debug.json", result.stderr)
 
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3872,6 +4027,14 @@ def package_signed_fixture(root: Path) -> Path:
     return tarball
 
 
+def release_upload_manifest_fixture(root: Path) -> Path:
+    tarball = package_fixture(root)
+    out_dir = tarball.parent
+    write_integrity_material(out_dir)
+    run_release_upload_manifest(out_dir, "--write")
+    return out_dir
+
+
 def run_verify(
     tarball: Path,
     *,
@@ -3914,6 +4077,23 @@ def run_verify(
                 INTEGRITY_RUST_TOOLCHAIN,
             ]
         )
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def run_release_upload_manifest(
+    out_dir: Path,
+    *args: str,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    cmd = [
+        "python3",
+        str(UPLOAD_MANIFEST),
+        "--dist-dir",
+        str(out_dir),
+        "--release-tag",
+        "v0.0.0",
+        *args,
+    ]
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 
