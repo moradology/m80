@@ -108,14 +108,21 @@ Implemented warm flag:
 
 ## `m80 quickstart`
 
-`m80 quickstart --artifact-url <url>` is the binary equivalent of
-`scripts/quickstart.sh`. It downloads a release artifact tarball and the sibling
-`<url>.sha256`, verifies the tarball before extraction, verifies the extracted
-`SHA256SUMS`, installs `vmlinux`, `output.ext4`, `output.ext4.manifest.json`,
-and `m80-guestd`, creates the run-root, writes the installed default
-profile/config, and runs plain `m80 run -- echo hello` unless `--no-run` is set.
-The probe intentionally uses the CLI default outbound egress policy, matching
-the public follow-up command instead of proving only the no-egress variant.
+The normal Linux first-run path is the release `install.sh`, followed by plain
+`m80 run -- echo hello`.
+
+`m80 quickstart --artifact-url <url>` is the explicit operator/test override for
+local fixture tarballs or pinned artifact tarballs that match the running m80
+binary. `scripts/quickstart.sh` is only a thin launcher for that override path.
+Quickstart downloads the artifact tarball and the sibling `<url>.sha256`,
+verifies the tarball before extraction, verifies the extracted `SHA256SUMS`,
+installs `vmlinux`, `output.ext4`, `output.ext4.manifest.json`, and
+`m80-guestd`, creates the run-root, writes the installed default profile/config,
+and runs plain `m80 run -- echo hello` unless `--no-run` is set. Public GitHub
+release tarball URLs are rejected when the binary is a dev build or a different
+release. The probe intentionally uses the CLI default outbound egress policy,
+matching the public follow-up command instead of proving only the no-egress
+variant.
 When the probe will run, quickstart checks the non-mutating host substrate
 before changing active artifact paths.
 The tarball must not contain `host-binaries.manifest.json`; that manifest is
@@ -135,7 +142,8 @@ The generated installed-default profile/config fields are captured in
 `docs/behaviors/cli/installed-default-profile.md`.
 
 The command is non-interactive and does not install packages, pull OCI images,
-or infer a runtime. It consumes only an explicit artifact URL.
+or infer a runtime. It consumes only an explicit artifact URL and is not the
+common public install command.
 
 ## Output
 

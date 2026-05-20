@@ -4,11 +4,13 @@ Behavior capture for bead `m80-8emae.33`.
 
 ## Quickstart Tarball Integrity
 
-`m80 quickstart --artifact-url <url>` downloads both the release tarball and the
-sibling `<url>.sha256` file. The outer tarball sha256 is verified before
-extraction, then the extracted `SHA256SUMS` file is verified before artifacts are
-installed. The extracted checksum file is still useful for per-file integrity,
-but it is no longer trusted to certify the tarball that carried it.
+For explicit local fixture or operator override installs,
+`m80 quickstart --artifact-url <url>` downloads both the tarball and the sibling
+`<url>.sha256` file. The outer tarball sha256 is verified before extraction,
+then the extracted `SHA256SUMS` file is verified before artifacts are installed.
+The extracted checksum file is still useful for per-file integrity, but it is no
+longer trusted to certify the tarball that carried it. Normal Linux first-run
+installs use the release `install.sh` path.
 
 ## Protobuf Compiler
 

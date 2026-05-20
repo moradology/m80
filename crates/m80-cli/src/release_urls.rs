@@ -18,6 +18,10 @@ impl PublicReleaseRoot {
         format!("/{}/releases/download/", self.repository())
     }
 
+    fn latest_download_path_prefix(&self) -> String {
+        format!("/{}/releases/latest/download/", self.repository())
+    }
+
     fn release_download_base_url(&self, release_tag: &str) -> String {
         format!(
             "https://github.com/{}/releases/download/{release_tag}",
@@ -42,8 +46,24 @@ pub(crate) fn release_install_url(release_tag: &str) -> String {
     release_asset_url(release_tag, "install.sh")
 }
 
+pub(crate) fn latest_install_url() -> String {
+    latest_asset_url("install.sh")
+}
+
+pub(crate) fn latest_asset_url(asset_name: &str) -> String {
+    format!(
+        "https://github.com{}{}",
+        latest_download_path_prefix(),
+        asset_name
+    )
+}
+
 pub(crate) fn release_download_path_prefix() -> String {
     public_release_root().release_download_path_prefix()
+}
+
+pub(crate) fn latest_download_path_prefix() -> String {
+    public_release_root().latest_download_path_prefix()
 }
 
 pub(crate) fn release_asset_path(release_tag: &str, asset_name: &str) -> String {
@@ -104,6 +124,14 @@ mod tests {
         assert_eq!(
             release_asset_path("v0.0.0", "m80-release-assets.json"),
             "/moradology/m80/releases/download/v0.0.0/m80-release-assets.json"
+        );
+        assert_eq!(
+            latest_download_path_prefix(),
+            "/moradology/m80/releases/latest/download/"
+        );
+        assert_eq!(
+            latest_install_url(),
+            "https://github.com/moradology/m80/releases/latest/download/install.sh"
         );
     }
 

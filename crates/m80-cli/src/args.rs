@@ -108,9 +108,11 @@ pub enum Cmd {
     /// Exits 0 on full pass, 2 on any check failed.
     Preflight,
 
-    /// Install release artifacts and run the smallest process-wrapper probe.
+    /// Install an explicit artifact tarball for operator/test overrides.
     ///
-    /// Downloads the release tarball, verifies `SHA256SUMS`, installs the
+    /// The normal Linux first-run path is the release `install.sh`. This
+    /// command is for local fixtures or an explicitly pinned tarball that
+    /// matches the running m80 binary; it verifies `SHA256SUMS`, installs the
     /// kernel/rootfs/manifest/guestd artifacts, then runs `m80 run -- echo
     /// hello` unless `--no-run` is set.
     Quickstart(QuickstartArgs),
@@ -444,7 +446,7 @@ pub struct WarmEnableArgs {
 /// Arguments for `m80 quickstart`.
 #[derive(Debug, Args)]
 pub struct QuickstartArgs {
-    /// Release artifact tarball URL.
+    /// Operator/test artifact tarball URL matching this m80 binary.
     #[arg(long = "artifact-url", value_name = "URL")]
     pub artifact_url: String,
 

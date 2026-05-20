@@ -41,18 +41,22 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 run [OPTIONS] -- <program> [args...]` - primary process-wrapper command.
 - `m80 preflight` - runs `m80-preflight::run()` and renders the host capability
   table. Exit 0 on full pass, 2 on any check failed.
-- `m80 quickstart --artifact-url <url>` - downloads a release artifact tarball
-  plus `<url>.sha256`, verifies the tarball before extraction, verifies the
-  extracted `SHA256SUMS`, installs the kernel/rootfs/manifest/guestd artifacts,
-  rejects bundled host-binaries manifests, checks the non-mutating host
-  substrate before changing active artifacts when the probe will run, generates
-  the installed default runtime profile/config, generates the installed host
-  manifest from final host TCB paths before the probe, and runs plain
-  `m80 run -- echo hello` unless `--no-run` is set. The probe intentionally
-  uses the CLI default outbound egress so it matches the public quickstart
-  target and proves the default host prerequisite path. `--json` requires
-  `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
-  `--no-run` does not prove host substrate readiness or real-KVM launch.
+- `m80 quickstart --artifact-url <url>` - explicit operator/test override for a
+  local fixture tarball or a pinned artifact tarball that matches the running
+  m80 binary. The normal Linux first-run path is the release `install.sh`.
+  Quickstart downloads the tarball plus `<url>.sha256`, verifies the tarball
+  before extraction, verifies the extracted `SHA256SUMS`, installs the
+  kernel/rootfs/manifest/guestd artifacts, rejects bundled host-binaries
+  manifests, checks the non-mutating host substrate before changing active
+  artifacts when the probe will run, generates the installed default runtime
+  profile/config, generates the installed host manifest from final host TCB
+  paths before the probe, and runs plain `m80 run -- echo hello` unless
+  `--no-run` is set. Public GitHub release tarball URLs are rejected when the
+  binary is a dev build or a different release. The probe intentionally uses
+  the CLI default outbound egress so it matches the public quickstart target and
+  proves the default host prerequisite path. `--json` requires `--no-run` so
+  guest probe stdout cannot pollute the machine-readable summary. `--no-run`
+  does not prove host substrate readiness or real-KVM launch.
 - `m80 install --release-tag <tag>|--bundle-url <url> [--dry-run]` - validates
   the release-bundle installer input contract. `--dry-run` prints the install
   plan without touching host state. `--release-tag` and the hidden
@@ -153,7 +157,7 @@ Installed layout behavior is captured in
 ### `m80 run` options
 
 - `--profile <name>` - selects a local runtime profile for this run. The
-  installed default profile points at the quickstart-installed bundle. The
+  installed default profile points at the release-installed bundle. The
   built-in `env` profile remains available for the existing `M80_KERNEL_IMAGE`
   / `M80_ROOTFS_IMAGE` artifact discovery path. Named profiles are TOML files
   at `/etc/m80/profiles/<name>.toml` or
@@ -421,10 +425,10 @@ Stable surfaces:
 - Logs/env: parse/help tests cover the new CLI surfaces; module tests cover
   JSON envelope shape, request-id filtering, timestamp filtering, and bug-report
   dump sections without KVM.
-- Quickstart: `m80 quickstart --no-run` is covered with a local
-  release-shaped tarball, external `.sha256` verification before extraction,
-  extracted checksum verification, artifact install, run-root creation, and
-  mismatch rejection.
+- Quickstart: `m80 quickstart --no-run` is covered as an operator/test override
+  with a local release-shaped tarball, external `.sha256` verification before
+  extraction, extracted checksum verification, artifact install, run-root
+  creation, and mismatch rejection.
 - Install: `m80 install --dry-run` is covered for source exclusivity,
   install-root override, JSON output, and dev-build refusal for release-tag
   installs. Source selection is covered for checksum-verified asset-index

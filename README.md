@@ -15,7 +15,7 @@ Expected output:
 hello
 ```
 
-The command above uses the default runtime profile. An installed quickstart
+The command above uses the default runtime profile. The release installer
 writes `/etc/m80/profiles/default.toml` plus `/etc/m80/config.toml` so the
 default profile points at the installed guest bundle. The built-in `env`
 profile remains available for explicit environment-driven development.

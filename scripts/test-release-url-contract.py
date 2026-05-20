@@ -25,6 +25,9 @@ INSTALL_URL_RE = re.compile(
     r"https://github\.com/([^/\s]+/[^/\s]+)/(?:releases/latest/download|releases/download/[^/\s]+)/install\.sh"
 )
 RAW_RELEASE_RE = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/releases/")
+ARTIFACT_ONLY_LATEST_RE = re.compile(
+    r"https://github\.com/[^/\s]+/[^/\s]+/releases/latest/download/[^`'\"\s]+\.tar\.gz"
+)
 
 PRODUCTION_URL_FILES = [
     "scripts/install.sh",
@@ -36,6 +39,16 @@ PRODUCTION_URL_FILES = [
     "crates/m80-cli/src/release_asset_index/fetch.rs",
     "crates/m80-cli/src/release_asset_index/diagnostics.rs",
     "crates/m80-cli/src/cmds/install/layout/source.rs",
+]
+
+QUICKSTART_SURFACE_FILES = [
+    "README.md",
+    "docs/runbook/release.md",
+    "scripts/quickstart.sh",
+    "crates/m80-cli/README.md",
+    "docs/behaviors/cli/command-surface.md",
+    "docs/behaviors/cli/product-surface.md",
+    "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
 ]
 
 
@@ -120,6 +133,25 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 )
             self.assertNotIn("raw.githubusercontent.com", text)
             self.assertNotIn("/main/install.sh", text)
+
+    def test_quickstart_surfaces_do_not_reintroduce_legacy_latest_artifacts(self) -> None:
+        for relative in QUICKSTART_SURFACE_FILES:
+            text = read_repo_file(relative)
+            match = ARTIFACT_ONLY_LATEST_RE.search(text)
+            self.assertIsNone(
+                match,
+                f"{relative} reintroduced artifact-only latest quickstart URL: {match.group(0) if match else ''}",
+            )
+            self.assertNotIn(
+                "raw.githubusercontent.com",
+                text,
+                f"{relative} must not send users to mutable raw main installers",
+            )
+            self.assertNotIn(
+                "/main/install.sh",
+                text,
+                f"{relative} must not send users to mutable main install.sh",
+            )
 
     def test_production_code_does_not_hardcode_public_release_root(self) -> None:
         for relative in PRODUCTION_URL_FILES:

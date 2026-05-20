@@ -25,10 +25,13 @@ visibility and effects:
 - runtime selection: `--profile`
 - terminal mode: `--tty`, `-i`
 - lifetime acceleration: explicit `m80 warm` owner plus `m80 run --warm`
-- first-run setup: `m80 quickstart --artifact-url <release-tarball>` installs
-  the selected image/profile artifacts, writes the installed default
-  profile/config, and runs `m80 run -- echo hello` with the CLI default
-  outbound egress policy
+- first-run setup: the release `install.sh` installs the selected
+  image/profile artifacts, writes the installed default profile/config, and
+  leaves `m80 run -- echo hello` as the first proof command
+- explicit fixture/operator override: `m80 quickstart --artifact-url
+  <release-tarball>` accepts only tarballs matching the running m80 binary and
+  can run the same `m80 run -- echo hello` probe with the CLI default outbound
+  egress policy
 - diagnostics: typed errors, JSON envelopes, run-root `list`/`inspect`, and
   guest console capture, all correlated by the run-scoped opaque `request_id`
 
@@ -50,5 +53,5 @@ execution. Agent semantics remain outside m80 core.
   `examples/network-egress` provide runnable command-first examples.
 - `crates/m80-cli/tests/help_smoke.rs` pins top-level help to the
   constrained-process model.
-- `crates/m80-cli/tests/quickstart_smoke.rs` pins the release-tarball
-  quickstart install path without requiring KVM.
+- `crates/m80-cli/tests/quickstart_smoke.rs` pins the release-tarball override
+  path without requiring KVM.
