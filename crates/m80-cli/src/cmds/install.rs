@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::args::InstallArgs;
 use crate::release::{VersionIdentity, VersionStatus};
+use crate::release_asset_index;
 use crate::{errors, json};
 
 mod layout;
@@ -63,25 +64,40 @@ fn source_plan(
     source: InstallSource<'_>,
     identity: &VersionIdentity,
 ) -> Result<SourcePlan, FcError> {
+    source_plan_with_index_resolver(source, identity, |tag, identity| {
+        release_asset_index::select_release_bundle_for_install(tag, identity)
+    })
+}
+
+fn source_plan_with_index_resolver<F>(
+    source: InstallSource<'_>,
+    identity: &VersionIdentity,
+    resolve_indexed_bundle: F,
+) -> Result<SourcePlan, FcError>
+where
+    F: Fn(&str, &VersionIdentity) -> Result<release_asset_index::InstallerBundleSelection, FcError>,
+{
     match source {
         InstallSource::ReleaseTag(tag) => {
             validate_tag("release-tag", tag)?;
             validate_tag_source_matches_binary("--release-tag", tag, identity)?;
+            let bundle = resolve_indexed_bundle(tag, identity)?;
             Ok(SourcePlan {
                 kind: SourceKind::PinnedVersion,
                 selector: tag.to_owned(),
                 release_tag: Some(tag.to_owned()),
-                bundle_url: None,
+                bundle_url: Some(bundle.bundle_url),
             })
         }
         InstallSource::BootstrapTag(tag) => {
             validate_tag("bootstrap-tag", tag)?;
             validate_tag_source_matches_binary("--bootstrap-tag", tag, identity)?;
+            let bundle = resolve_indexed_bundle(tag, identity)?;
             Ok(SourcePlan {
                 kind: SourceKind::BootstrapTag,
                 selector: tag.to_owned(),
                 release_tag: Some(tag.to_owned()),
-                bundle_url: None,
+                bundle_url: Some(bundle.bundle_url),
             })
         }
         InstallSource::BundleUrl(url) => {
@@ -309,118 +325,4 @@ impl SourceKind {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn args_with_release_tag(tag: &str) -> InstallArgs {
-        InstallArgs {
-            release_tag: Some(tag.to_owned()),
-            bundle_url: None,
-            bootstrap_tag: None,
-            install_root: PathBuf::from("/tmp/m80-install"),
-            dry_run: true,
-        }
-    }
-
-    fn args_with_bundle_url(url: &str) -> InstallArgs {
-        InstallArgs {
-            release_tag: None,
-            bundle_url: Some(url.to_owned()),
-            bootstrap_tag: None,
-            install_root: PathBuf::from("/tmp/m80-install"),
-            dry_run: true,
-        }
-    }
-
-    #[test]
-    fn release_tag_source_matches_tagged_binary() {
-        let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
-        let plan = install_plan(&args_with_release_tag("v1.2.3"), &identity).unwrap();
-
-        assert_eq!(plan.source.kind, SourceKind::PinnedVersion);
-        assert_eq!(plan.source.release_tag.as_deref(), Some("v1.2.3"));
-        assert_eq!(plan.version_status, "release");
-    }
-
-    #[test]
-    fn release_tag_source_rejects_dev_binary() {
-        let identity = VersionIdentity::from_parts("1.2.3", None);
-        let err = install_plan(&args_with_release_tag("v1.2.3"), &identity).unwrap_err();
-
-        assert!(
-            err.to_string().contains("requires a tagged m80 binary"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn release_tag_source_rejects_binary_tag_mismatch() {
-        let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
-        let err = install_plan(&args_with_release_tag("v9.9.9"), &identity).unwrap_err();
-
-        assert!(
-            err.to_string().contains("bundle/binary tag mismatch"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn bundle_url_rejects_release_binary_tag_mismatch() {
-        let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
-        let err = install_plan(
-            &args_with_bundle_url(
-                "http://127.0.0.1/releases/download/v9.9.9/m80-linux-x86_64.tar.gz",
-            ),
-            &identity,
-        )
-        .unwrap_err();
-
-        assert!(
-            err.to_string().contains("bundle/binary tag mismatch"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn tagged_release_bundle_url_rejects_dev_binary() {
-        let identity = VersionIdentity::from_parts("1.2.3", None);
-        let err = install_plan(
-            &args_with_bundle_url(
-                "http://127.0.0.1/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
-            ),
-            &identity,
-        )
-        .unwrap_err();
-
-        assert!(
-            err.to_string().contains("GitHub release bundle URL"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn explicit_bundle_url_allows_dev_binary_for_local_bundle_testing() {
-        let identity = VersionIdentity::from_parts("1.2.3", None);
-        let plan = install_plan(
-            &args_with_bundle_url("file:///tmp/m80-linux-x86_64.tar.gz"),
-            &identity,
-        )
-        .unwrap();
-
-        assert_eq!(plan.source.kind, SourceKind::BundleUrl);
-        assert_eq!(
-            plan.source.bundle_url.as_deref(),
-            Some("file:///tmp/m80-linux-x86_64.tar.gz")
-        );
-        assert_eq!(plan.version_status, "dev");
-    }
-
-    #[test]
-    fn release_bundle_tag_is_extracted_from_github_url() {
-        let tag = release_tag_from_bundle_url(
-            "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
-        );
-
-        assert_eq!(tag.as_deref(), Some("v1.2.3"));
-    }
-}
+mod tests;

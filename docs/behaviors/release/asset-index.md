@@ -2,19 +2,20 @@
 
 The release asset index is the machine-readable contract that lets
 quickstart/bootstrapper code select a bundle without inferring semantics from a
-filename. The parser and resolver are staged for the installer/bootstrapper
-consumer that will read the index before bundle download; the current
-flat-artifact quickstart path still requires an explicit artifact URL until
-that consumer lands. An explicit bundle URL override bypasses index selection.
+filename. The installer/bootstrapper source path reads the verified index
+before bundle download, selects the default bundle by release tag, OS,
+architecture, and image kind. The current flat-artifact quickstart path still
+requires an explicit artifact URL until it moves fully onto release bundles. An
+explicit bundle URL override bypasses index selection.
 
 The published index is `m80-release-assets.json`. Its checksum sidecar is
 `m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
 alongside the bundle tarball, `install.sh`, the metadata sidecar, and
 `m80-bootstrap-selector.tsv`.
-Installer/bootstrapper code must fetch the pinned index and its sidecar for the
-same concrete release tag, verify the index sha256, and only then parse JSON or
-select a host tuple. `file://` fixture indexes use the same checksum-sidecar
-verifier as remote release indexes.
+Installer/bootstrapper code follows this order: fetch the pinned index and its
+sidecar for the same concrete release tag, verify the index sha256, and only
+then parse JSON or select a host tuple. `file://` fixture indexes use the same
+checksum-sidecar verifier as remote release indexes.
 
 The index uses `schema_version: 1` and has one top-level `release_tag`. Every
 bundle row records:

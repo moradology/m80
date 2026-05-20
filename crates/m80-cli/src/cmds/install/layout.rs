@@ -9,7 +9,7 @@ use serde::Serialize;
 use super::super::quickstart::profile_writer::{
     write_installed_default_profile, InstalledDefaultProfile,
 };
-use super::{InstallPlan, SourceKind};
+use super::InstallPlan;
 use bundle::{
     extract_bundle, list_bundle_entries, verify_entry_set, verify_extracted_tree,
     REQUIRED_BUNDLE_FILES,
@@ -47,7 +47,7 @@ pub(super) struct LayoutInstallSummary {
 }
 
 pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallSummary, FcError> {
-    let bundle_url = require_explicit_bundle_url(plan)?;
+    let bundle_url = require_bundle_url(plan)?;
     let install_root = PathBuf::from(&plan.install_root);
     require_absolute_path("install_root", &install_root)?;
     validate_bundle_source_url(bundle_url)?;
@@ -144,18 +144,12 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     })
 }
 
-fn require_explicit_bundle_url(plan: &InstallPlan) -> Result<&str, FcError> {
-    if plan.source.kind != SourceKind::BundleUrl {
-        return Err(FcError::UnsupportedOperation {
-            operation: "m80 install",
-            reason: "layout copy currently requires --bundle-url; release-tag resolution lands in the asset-index/bootstrapper leaves".into(),
-        });
-    }
+fn require_bundle_url(plan: &InstallPlan) -> Result<&str, FcError> {
     plan.source
         .bundle_url
         .as_deref()
         .ok_or(FcError::Config(ConfigError::MissingField {
-            field: "bundle-url",
+            field: "install.bundle_url",
         }))
 }
 
@@ -389,6 +383,7 @@ mod tests {
     use std::ffi::OsString;
     use std::sync::Mutex;
 
+    use super::super::SourceKind;
     use super::source::stage_bundle_source;
     use super::*;
 

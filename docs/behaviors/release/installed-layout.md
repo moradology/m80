@@ -2,15 +2,16 @@
 
 Behavior beads: `m80-o3uh9.3.3`, `m80-o3uh9.3.7`, `m80-o3uh9.16.1`.
 
-`m80 install --bundle-url <URL> --install-root <PATH>` stages one release
-bundle, verifies it, copies it into one versioned directory, writes install
-metadata/profile state, and flips the active pointer last. The layout
-transaction accepts explicit local `file://...` bundles for fixtures and
+`m80 install --release-tag <TAG> --install-root <PATH>` fetches the pinned
+release asset index, verifies its checksum sidecar, selects the matching Linux
+x86_64 minimal bundle, stages that release bundle through the existing
+checksum-sidecar downloader, verifies the extracted layout, copies it into one
+versioned directory, writes install metadata/profile state, and flips the active
+pointer last. `--bootstrap-tag <TAG>` uses the same indexed source selection
+after the bootstrapper resolves "latest" to a concrete tag. The installer also
+accepts explicit local `file://...` bundles for fixtures and
 `https://github.com/moradology/m80/releases/download/...` release bundle URLs.
 Local HTTP is accepted only for test fixtures.
-
-The installer still does not resolve release tags or "latest"; source
-resolution belongs to the asset-index/bootstrapper leaves.
 
 ## Directory Contract
 

@@ -418,6 +418,7 @@ fn format_probe_output(output: &std::process::Output) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
@@ -515,7 +516,14 @@ mod tests {
     fn write_fake_gh(root: &Path, body: &str) -> PathBuf {
         let path = root.join("fake-gh");
         let tmp_path = root.join("fake-gh.tmp");
-        fs::write(&tmp_path, body).unwrap();
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .unwrap();
+        file.write_all(body.as_bytes()).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
         let mut permissions = fs::metadata(&tmp_path).unwrap().permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&tmp_path, permissions).unwrap();

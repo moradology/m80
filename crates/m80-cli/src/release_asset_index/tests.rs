@@ -34,27 +34,6 @@ fn host_tuple_selection_picks_linux_x86_64_minimal() {
 }
 
 #[test]
-fn explicit_bundle_url_bypasses_index_selection() {
-    let index = valid_index();
-    let selection = index
-        .resolve_bundle(BundleSelectionRequest {
-            binary: dev_binary(),
-            host: HostTuple {
-                os: "plan9",
-                arch: "mips",
-            },
-            image_kind: Some("ubuntu"),
-            explicit_bundle_url: Some("file:///tmp/local-bundle.tar.gz"),
-        })
-        .unwrap();
-
-    assert_eq!(
-        selection,
-        BundleSelection::ExplicitUrl("file:///tmp/local-bundle.tar.gz")
-    );
-}
-
-#[test]
 fn duplicate_default_fails_closed() {
     let json = index_json_with_assets(format!(
         "{},{}",

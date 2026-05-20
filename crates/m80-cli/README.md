@@ -55,12 +55,13 @@ binaries, pull OCI images, or install packages implicitly.
   `--no-run` does not prove host substrate readiness or real-KVM launch.
 - `m80 install --release-tag <tag>|--bundle-url <url> [--dry-run]` - validates
   the release-bundle installer input contract. `--dry-run` prints the install
-  plan without touching host state. Non-dry-run currently supports explicit
-  local `file://` bundle URLs and moradology/m80 GitHub release bundle URLs: it
-  stages, verifies, and copies the bundle into
-  `<install-root>/versions/<release_tag>` without switching the active pointer
-  or writing profile state. Release-tag resolution, profile writing, and
-  active-pointer finalization land in later installer leaves.
+  plan without touching host state. `--release-tag` and the hidden
+  `--bootstrap-tag` handoff fetch the checksum-verified asset index for the
+  concrete release, select the Linux x86_64 minimal bundle by tag, OS,
+  architecture, and image kind. `--bundle-url` remains the explicit local
+  fixture/operator override path. Non-dry-run stages, verifies, and copies the
+  selected or explicit bundle into `<install-root>/versions/<release_tag>`,
+  writes profile state, and switches `<install-root>/active` last.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -380,10 +381,13 @@ Stable surfaces:
   `host-binaries.manifest.json`.
 - Installer source selection: `m80 install` accepts exactly one of
   `--release-tag`, `--bundle-url`, or the hidden bootstrapper handoff
-  `--bootstrap-tag`. Dry-run planning is side-effect-free. Non-dry-run layout
-  copy currently accepts local `file://` bundle URLs and moradology/m80 GitHub
-  release bundle URLs, staging downloads before publishing only
-  `<install-root>/versions/<release_tag>`.
+  `--bootstrap-tag`. Dry-run planning does not write host state; indexed sources
+  still fetch and verify the release asset index so the plan names the concrete
+  bundle. Release-tag and bootstrap-tag sources select bundles through the
+  checksum-verified release asset index. Non-dry-run layout copy accepts
+  selected index URLs, local `file://` bundle URLs, and moradology/m80 GitHub
+  release bundle URLs, staging downloads before publishing
+  `<install-root>/versions/<release_tag>` and flipping the active pointer last.
 
 ## Non-goals
 
@@ -423,11 +427,14 @@ Stable surfaces:
   mismatch rejection.
 - Install: `m80 install --dry-run` is covered for source exclusivity,
   install-root override, JSON output, and dev-build refusal for release-tag
-  installs. Bundle layout install is covered for local clean copy, HTTP fixture
-  download, remote checksum mismatch, 404, truncated download cleanup,
-  unsupported redirect cleanup, missing required bundle file, duplicate path,
-  permission failure, dry-run no-write behavior, manifest/build-receipt
-  relocation, and install provenance.
+  installs. Source selection is covered for checksum-verified asset-index
+  success, missing defaults, duplicate defaults, wrong architecture, wrong
+  image kind, wrong asset tag, bootstrap handoff, and explicit URL bypass.
+  Bundle layout install is covered for local clean copy, HTTP fixture download,
+  remote checksum mismatch, 404, truncated download cleanup, unsupported
+  redirect cleanup, missing required bundle file, duplicate path, permission
+  failure, dry-run no-write behavior, manifest/build-receipt relocation, and
+  install provenance.
 - Image/profile selection: local profile resolution, fail-closed profile
   parsing, and artifact env overlay are covered without KVM.
 - Feature gaps: reserved `run` flags and `m80 warm enable --system` exit 7

@@ -3,11 +3,10 @@
 Behavior bead: `m80-o3uh9.3.1`.
 
 `m80 install` is the release-bundle installer front door. This behavior pins
-the user-facing input contract, dry-run plan, and the currently supported
-explicit bundle layout copy. The command does not yet perform privileged
-copies, write `/etc` profile state, or resolve "latest". Successful bundle
-installs write install-root-local profile state and switch the install-root
-active pointer.
+the user-facing input contract, dry-run plan, and release-bundle layout copy.
+The command does not yet perform privileged copies, write `/etc` profile state,
+or resolve "latest". Successful bundle installs write install-root-local
+profile state and switch the install-root active pointer.
 
 ## Source Selection
 
@@ -33,18 +32,28 @@ pointer is planned as `<install-root>/active`.
 
 `--dry-run` renders the validated plan and does not create the install root,
 write `/opt`, write `/etc`, write profile files, or switch the active pointer.
+For `--release-tag` and `--bootstrap-tag`, dry-run still fetches and verifies
+the release asset index so the plan names the concrete selected bundle.
 
-Without `--dry-run`, the active installer supports explicit local `file://...`
-bundle URLs and GitHub release bundle URLs under
+Without `--dry-run`, `--release-tag` and `--bootstrap-tag` fetch the pinned
+`m80-release-assets.json` plus its checksum sidecar for the selected tag,
+verify the index sha256, then select the Linux x86_64 minimal bundle by
+release tag, OS, architecture, and image kind before any bundle download or
+extraction. The selected bundle is still staged through the existing
+checksum-sidecar downloader; indexed size and digest verification is tracked by
+`m80-o3uh9.3.10`. Missing default rows, duplicate defaults, wrong architecture,
+wrong image kind, and wrong index asset tags fail with tuple-specific
+diagnostics before the install root is touched.
+
+The installer also supports explicit local `file://...` bundle URLs and GitHub
+release bundle URLs under
 `https://github.com/moradology/m80/releases/download/...`. A successful bundle
-install stages and verifies the bundle, copies the verified layout into
-`<install-root>/versions/<release_tag>`, writes install-root-local profile
-state, and switches `<install-root>/active` last. Release-tag/bootstrap
-resolution exits with the unsupported-operation code before creating the
-install root until the asset-index/bootstrapper leaves wire source selection.
-Local `http://127.0.0.1`, `http://localhost`, and `http://[::1]` bundle URLs are
-accepted only as test-fixture transports for remote staging coverage; they are
-not documented as an operator install path.
+install stages and verifies the selected or explicit bundle, copies the
+verified layout into `<install-root>/versions/<release_tag>`, writes
+install-root-local profile state, and switches `<install-root>/active` last.
+Local `http://127.0.0.1`, `http://localhost`, and `http://[::1]` bundle URLs
+are accepted only as test-fixture transports for remote staging coverage; they
+are not documented as an operator install path.
 
 ## Release Identity Checks
 
@@ -81,4 +90,7 @@ Integration and behavior-doc coverage:
 Module coverage in `cmds/install.rs` pins release-build success, dev-build
 refusal, source/binary tag mismatch refusal, tagged release bundle URL refusal
 from a dev binary, explicit local bundle dry-run planning from a dev binary,
-and GitHub release-tag extraction from bundle URLs.
+explicit bundle URL index-bypass behavior, GitHub release-tag extraction from
+bundle URLs, bootstrap handoff source selection, and fail-closed index
+selection for missing defaults, duplicate defaults, wrong architecture, wrong
+image kind, and wrong asset tag entries.

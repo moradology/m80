@@ -1,14 +1,11 @@
 //! Release asset index fetching, parsing, and host tuple selection.
 
-// This contract is staged for the installer/bootstrapper leaves that consume
-// the public index. Keep it compiled and tested before wiring the CLI path.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 
+use m80_firecracker::{ConfigError, FcError};
 use serde::Deserialize;
 
-use crate::release::VersionStatus;
+use crate::release::{VersionIdentity, VersionStatus};
 
 mod diagnostics;
 mod fetch;
@@ -16,6 +13,66 @@ mod fetch;
 const ASSET_INDEX_SCHEMA_VERSION: u32 = 1;
 const ASSET_INDEX_NAME: &str = "m80-release-assets.json";
 const DEFAULT_IMAGE_KIND: &str = "minimal";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InstallerBundleSelection {
+    pub(crate) bundle_url: String,
+}
+
+pub(crate) fn select_release_bundle_for_install(
+    release_tag: &str,
+    identity: &VersionIdentity,
+) -> Result<InstallerBundleSelection, FcError> {
+    let index_url = fetch::github_release_asset_index_url(release_tag);
+    select_release_bundle_for_install_at_index_url(release_tag, identity, &index_url)
+}
+
+#[cfg(test)]
+pub(crate) fn select_release_bundle_for_install_from_index_url(
+    release_tag: &str,
+    identity: &VersionIdentity,
+    index_url: &str,
+) -> Result<InstallerBundleSelection, FcError> {
+    select_release_bundle_for_install_at_index_url(release_tag, identity, index_url)
+}
+
+fn select_release_bundle_for_install_at_index_url(
+    release_tag: &str,
+    identity: &VersionIdentity,
+    index_url: &str,
+) -> Result<InstallerBundleSelection, FcError> {
+    let host = HostTuple::current();
+    let verified = fetch::fetch_verified_asset_index(fetch::AssetIndexFetchRequest {
+        index_url,
+        release_tag,
+        host,
+        image_kind: Some(DEFAULT_IMAGE_KIND),
+    })
+    .map_err(asset_index_config_error)?;
+    let asset = verified
+        .index
+        .select_default_bundle(
+            BinaryRelease {
+                status: identity.version_status,
+                release_tag: identity.release_tag.as_deref(),
+                m80_version: &identity.binary_version,
+            },
+            host,
+            DEFAULT_IMAGE_KIND,
+        )
+        .map_err(asset_index_config_error)?;
+
+    Ok(InstallerBundleSelection {
+        bundle_url: asset.url.clone(),
+    })
+}
+
+fn asset_index_config_error(source: impl std::fmt::Display) -> FcError {
+    FcError::Config(ConfigError::InvalidValue {
+        field: "release_asset_index",
+        reason: source.to_string(),
+    })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BinaryRelease<'a> {
@@ -75,21 +132,6 @@ impl ReleaseAssetIndex {
             asset.validate(&index.release_tag)?;
         }
         Ok(index)
-    }
-
-    fn resolve_bundle<'a>(
-        &'a self,
-        request: BundleSelectionRequest<'a>,
-    ) -> Result<BundleSelection<'a>, AssetIndexError> {
-        if let Some(url) = request.explicit_bundle_url {
-            return Ok(BundleSelection::ExplicitUrl(url));
-        }
-        let asset = self.select_default_bundle(
-            request.binary,
-            request.host,
-            request.image_kind.unwrap_or(DEFAULT_IMAGE_KIND),
-        )?;
-        Ok(BundleSelection::Indexed(asset))
     }
 
     fn select_default_bundle<'a>(
@@ -268,20 +310,6 @@ impl BundleAsset {
         }
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct BundleSelectionRequest<'a> {
-    binary: BinaryRelease<'a>,
-    host: HostTuple<'a>,
-    image_kind: Option<&'a str>,
-    explicit_bundle_url: Option<&'a str>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum BundleSelection<'a> {
-    Indexed(&'a BundleAsset),
-    ExplicitUrl(&'a str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
