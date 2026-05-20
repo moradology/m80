@@ -13,6 +13,7 @@ fi
 
 echo "quiet-host preflight: found firecracker processes"
 echo
+# shellcheck disable=SC2009
 ps -eo pid,ppid,user,comm,args | grep -E 'firecracker|sandbox-executor-rs' | grep -v grep || true
 
 show_kubernetes_owner() {

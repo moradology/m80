@@ -78,11 +78,14 @@ Firecracker train itself, file a new policy decision and hard-cutover bead
 instead of making the current verifier tolerant.
 
 `scripts/install.sh` is the versioned installer template. Packaging renders it
-with the concrete release tag and bundle URL, publishes it as `install.sh`, and
-embeds the same rendered file inside the release bundle. It downloads the
-matching bundle, verifies the adjacent checksum sidecar, extracts that bundle's
-`bin/m80`, then hands off to `m80 install --bundle-url file://...`. It must not
-call `scripts/quickstart.sh` or the legacy artifact-only quickstart flow.
+with only the concrete release tag, publishes it as `install.sh`, and embeds the
+same rendered file inside the release bundle. The script downloads the pinned
+release's bootstrap selector and canonical asset index, verifies their checksum
+sidecars, selects the matching host tuple from the selector, then downloads only
+that bundle. After verifying the selected bundle checksum and size, it extracts
+that bundle's `bin/m80` and hands off to `m80 install --bundle-url file://...`.
+It must not carry a rendered per-tuple bundle URL, call `scripts/quickstart.sh`,
+or use the legacy artifact-only quickstart flow.
 
 Verify a produced bundle before upload:
 
@@ -100,8 +103,8 @@ inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, a canonical
 installer path, and a public `SHA256SUMS` covering those assets. The exact
 builder contract is captured in `docs/behaviors/release/bundle-builder.md`.
 
-The complete public release subject set for the signed/attested default Linux
-dist is:
+The complete installer/bootstrapper-consumed subject set recorded inside
+`m80-release-integrity.json` for the signed/attested default Linux dist is:
 
 ```text
 m80-linux-x86_64.tar.gz

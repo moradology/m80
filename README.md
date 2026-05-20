@@ -29,26 +29,21 @@ This buys you a Firecracker-backed process wrapper: `m80 run -- <command>`
 boots a microVM, runs the command, streams stdout/stderr back like a normal
 process, returns the guest exit code, and tears the VM down.
 
-Fastest path on a Linux/KVM host with `m80` already installed:
+Fastest path on a Linux/KVM host:
 
 ```sh
-m80 quickstart \
-  --artifact-url https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz
+curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+m80 run -- echo hello
 ```
 
-`quickstart` downloads the matching guest artifact tarball, verifies the
-published checksum and extracted `SHA256SUMS`, checks the non-mutating host
-substrate before changing active artifacts when it will run the probe, installs
-the guest artifact set, writes the installed default runtime profile/config,
-and when it runs the probe generates `host-binaries.manifest.json` from the
-installed host TCB paths before plain `m80 run -- echo hello`. That probe uses
-the CLI default outbound egress, matching the public follow-up command and
-proving the default host prerequisite path instead of a narrower no-egress
-variant. Host TCB binaries are installed separately from final host paths;
-release tarballs must not bundle the host manifest. The bundle shape is pinned in
-[`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
-`--no-run` is a hostless artifact verification/install path; it does not claim
-host substrate readiness or real-KVM smoke proof.
+The installer is a rendered asset from the selected release. It uses that
+pinned release tag to download the release asset index and shell-safe bootstrap
+selector, selects the matching Linux host bundle, verifies checksums before
+extraction, then runs the bundled `m80 install`. The install writes the default
+runtime profile/config so plain `m80 run -- echo hello` uses the installed
+guest bundle. Host TCB binaries are installed separately from final host paths;
+release tarballs must not bundle the host manifest. The bundle shape is pinned
+in [`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
 
 After that, wrap any process the same way:
 
@@ -56,10 +51,12 @@ After that, wrap any process the same way:
 m80 run -- <command> [args...]
 ```
 
-Use a binary and artifact tarball from the same release; `releases/latest`
-assumes your installed `m80` is also the latest release. The one-command
-bootstrap installer is tracked under the release epoch and will replace this
-installed-binary quickstart path when it lands.
+For reproducible automation, replace `latest` with a concrete tag:
+
+```sh
+curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
+m80 run -- echo hello
+```
 
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,

@@ -22,6 +22,11 @@ jobs:
       - name: workflow policy lint
         run: python3 scripts/lint-github-workflows.py
 
+      - name: release script tests
+        run: |
+          python3 -m py_compile scripts/package-release-bundle.py scripts/test-release-bundle.py scripts/verify-release-bundle.py scripts/verify-release-integrity.py
+          python3 scripts/test-release-bundle.py
+
       - name: Install Rust toolchain
         run: rustup toolchain install 1.82 --profile minimal --component rustfmt --component clippy
 

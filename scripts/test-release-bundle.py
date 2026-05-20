@@ -110,16 +110,16 @@ class ReleaseBundleTest(unittest.TestCase):
             public_install = (out_dir / INSTALL_NAME).read_text()
             self.assertEqual(public_install, bundled_install)
             self.assertIn("M80_RELEASE_TAG='v0.0.0'", public_install)
-            self.assertIn(
-                f"M80_BUNDLE_URL='https://github.com/moradology/m80/releases/download/v0.0.0/{BUNDLE_NAME}'",
-                public_install,
-            )
+            self.assertIn("M80_ASSET_INDEX_NAME='m80-release-assets.json'", public_install)
+            self.assertIn("M80_BOOTSTRAP_SELECTOR_NAME='m80-bootstrap-selector.tsv'", public_install)
+            self.assertNotIn("M80_BUNDLE_URL=", public_install)
+            self.assertNotIn("M80_BUNDLE_NAME=", public_install)
             self.assertIn("preflight_attestation_verifier", public_install)
             self.assertIn("gh attestation verify --help", public_install)
             self.assertIn("before downloading release assets", public_install)
             self.assertLess(
                 public_install.index("\npreflight_attestation_verifier\n"),
-                public_install.index('curl -fsSL "$M80_BUNDLE_URL"'),
+                public_install.index('download_asset "$M80_BOOTSTRAP_SELECTOR_NAME"'),
             )
             self.assertIn('"$extract_dir/bin/m80" install --bundle-url "file://$bundle_path"', public_install)
             self.assertNotIn('\nexec "$extract_dir/bin/m80"', public_install)
@@ -216,7 +216,26 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_package(inputs, root / "out", check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("must invoke m80 install, not the legacy quickstart flow", result.stderr)
+            self.assertIn("must use selector-driven m80 install", result.stderr)
+
+    def test_package_rejects_hardcoded_public_bundle_install_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            hardcoded = root / "hardcoded-install.sh"
+            write_executable(
+                hardcoded,
+                "#!/bin/sh\n"
+                "M80_RELEASE_TAG='@M80_RELEASE_TAG@'\n"
+                "curl -fsSL https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz -o bundle.tgz\n"
+                "bin/m80 install --bundle-url file://bundle.tgz\n",
+            )
+            inputs["install"] = hardcoded
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must use selector-driven m80 install", result.stderr)
 
     def test_rendered_install_script_preflights_missing_gh_before_curl(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -229,7 +248,7 @@ class ReleaseBundleTest(unittest.TestCase):
                 fakebin / "curl",
                 "#!/bin/sh\nprintf called > \"$M80_CURL_MARKER\"\nexit 88\n",
             )
-            for tool in ["sha256sum", "tar", "mktemp", "chmod"]:
+            for tool in ["sha256sum", "tar", "mktemp", "chmod", "mkdir", "rm", "uname", "wc"]:
                 write_executable(fakebin / tool, "#!/bin/sh\nexit 0\n")
 
             result = subprocess.run(
@@ -245,11 +264,155 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn("before downloading release assets", result.stderr)
             self.assertFalse(curl_marker.exists(), "curl must not run before gh preflight")
 
+    def test_rendered_install_script_selects_verified_selector_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+
+            result, urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            base = "https://github.com/moradology/m80/releases/download/v0.0.0"
+            self.assertEqual(
+                urls,
+                [
+                    f"{base}/{BOOTSTRAP_SELECTOR_NAME}",
+                    f"{base}/{BOOTSTRAP_SELECTOR_NAME}.sha256",
+                    f"{base}/{ASSET_INDEX_NAME}",
+                    f"{base}/{ASSET_INDEX_NAME}.sha256",
+                    f"{base}/{BUNDLE_NAME}",
+                    f"{base}/{BUNDLE_NAME}.sha256",
+                ],
+            )
+            self.assertTrue(install_args.is_file(), result.stderr)
+            args = install_args.read_text().splitlines()
+            self.assertEqual(args[0:2], ["install", "--bundle-url"])
+            self.assertTrue(args[2].startswith("file://"), args)
+            self.assertTrue(args[2].endswith(f"/{BUNDLE_NAME}"), args)
+            self.assertEqual(args[3:], ["--dry-run"])
+
+    def test_rendered_install_script_rejects_unsupported_arch_before_downloads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+
+            result, urls, install_args = run_rendered_install(root, uname_arch="sparc")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported architecture for release install: sparc", result.stderr)
+            self.assertEqual(urls, [])
+            self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_selector_stale_tag_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            lines[1] = "release_tag\tv9.9.9"
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector release_tag mismatch", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+
+    def test_rendered_install_script_rejects_selector_stale_schema_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            lines[0] = "schema_version\t2"
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported bootstrap selector schema", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+
+    def test_rendered_install_script_rejects_selector_missing_tuple_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_bootstrap_selector(root / "out", bootstrap_selector_lines(root / "out")[:3])
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector missing tuple", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+
+    def test_rendered_install_script_rejects_wrong_image_kind_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            row = lines[3].split("\t")
+            row[3] = "debug"
+            lines[3] = "\t".join(row)
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("image_kind=minimal", result.stderr)
+            self.assertIn("bootstrap selector missing tuple", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+
+    def test_rendered_install_script_rejects_selector_duplicate_tuple_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            lines.append(lines[3])
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector duplicate tuple", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+
+    def test_rendered_install_script_rejects_selector_checksum_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            (root / "out" / f"{BOOTSTRAP_SELECTOR_NAME}.sha256").write_text(
+                f"{'0' * 64}  {BOOTSTRAP_SELECTOR_NAME}\n"
+            )
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("checksum verification failed for m80-bootstrap-selector.tsv", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+
+    def test_rendered_install_script_rejects_index_checksum_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            (root / "out" / f"{ASSET_INDEX_NAME}.sha256").write_text(
+                f"{'0' * 64}  {ASSET_INDEX_NAME}\n"
+            )
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("checksum verification failed for m80-release-assets.json", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+
     def test_release_workflow_uses_versioned_install_template(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()
 
         self.assertIn("--install-sh scripts/install.sh", workflow)
         self.assertNotIn("--install-sh scripts/quickstart.sh", workflow)
+
+    def test_ci_runs_release_script_tests(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+
+        self.assertIn("python3 -m py_compile scripts/package-release-bundle.py", workflow)
+        self.assertIn("python3 scripts/test-release-bundle.py", workflow)
 
     def test_release_workflow_publishes_and_verifies_proof_assets(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()
@@ -1421,7 +1584,18 @@ def write_fake_m80(path: Path, release_tag: str) -> None:
             "firecracker_pin": "unknown",
         },
     }
-    write_executable(path, f"#!/bin/sh\ncat <<'JSON'\n{json.dumps(payload)}\nJSON\n")
+    write_executable(
+        path,
+        "#!/bin/sh\n"
+        "if [ \"${1:-}\" = install ]; then\n"
+        "  if [ -n \"${M80_FAKE_INSTALL_ARGS:-}\" ]; then\n"
+        "    : > \"$M80_FAKE_INSTALL_ARGS\"\n"
+        "    for arg in \"$@\"; do printf '%s\\n' \"$arg\" >> \"$M80_FAKE_INSTALL_ARGS\"; done\n"
+        "  fi\n"
+        "  exit 0\n"
+        "fi\n"
+        f"cat <<'JSON'\n{json.dumps(payload)}\nJSON\n",
+    )
 
 
 def write_fake_guestd(path: Path, protocol_version: int) -> None:
@@ -1808,6 +1982,104 @@ def write_fake_gh_missing_help_flag(root: Path, missing_flag: str) -> Path:
         "exit 1\n",
     )
     return path
+
+
+def run_rendered_install(
+    root: Path,
+    *,
+    args: list[str] | None = None,
+    uname_arch: str = "x86_64",
+) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
+    out_dir = root / "out"
+    fakebin = root / "fakebin-install"
+    curl_log = root / "curl.log"
+    install_args = root / "install-args.log"
+    write_install_test_tools(fakebin)
+    env = {
+        "PATH": str(fakebin),
+        "M80_RELEASE_ROOT": str(out_dir),
+        "M80_CURL_LOG": str(curl_log),
+        "M80_FAKE_UNAME_M": uname_arch,
+        "M80_FAKE_INSTALL_ARGS": str(install_args),
+    }
+    result = subprocess.run(
+        [str(out_dir / INSTALL_NAME), *(args or [])],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    urls = curl_log.read_text().splitlines() if curl_log.exists() else []
+    return result, urls, install_args
+
+
+def write_install_test_tools(fakebin: Path) -> None:
+    fakebin.mkdir()
+    write_executable(
+        fakebin / "curl",
+        "#!/bin/sh\n"
+        "out=\n"
+        "url=\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  case \"$1\" in\n"
+        "    -o) shift; out=$1 ;;\n"
+        "    http://*|https://*) url=$1 ;;\n"
+        "  esac\n"
+        "  shift\n"
+        "done\n"
+        "[ -n \"$out\" ] || exit 2\n"
+        "[ -n \"$url\" ] || exit 2\n"
+        "printf '%s\\n' \"$url\" >> \"$M80_CURL_LOG\"\n"
+        "name=${url##*/}\n"
+        "src=$M80_RELEASE_ROOT/$name\n"
+        "[ -f \"$src\" ] || exit 22\n"
+        "/bin/cp \"$src\" \"$out\"\n",
+    )
+    write_executable(
+        fakebin / "gh",
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then printf 'gh version 9.9.9\\n'; exit 0; fi\n"
+        "if [ \"$1\" = \"attestation\" ] && [ \"$2\" = \"verify\" ] && [ \"$3\" = \"--help\" ]; then\n"
+        "  printf '%s\\n' '--repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --source-digest --deny-self-hosted-runners --format'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+    )
+    write_executable(
+        fakebin / "uname",
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  -s) printf 'Linux\\n' ;;\n"
+        "  -m) printf '%s\\n' \"$M80_FAKE_UNAME_M\" ;;\n"
+        "  *) exit 1 ;;\n"
+        "esac\n",
+    )
+    write_executable(
+        fakebin / "mktemp",
+        "#!/bin/sh\n"
+        "[ \"$1\" = -d ] || exit 2\n"
+        "base=${2%XXXXXX}\n"
+        "dir=${base}fake\n"
+        "i=0\n"
+        "while [ -e \"$dir\" ]; do i=$((i + 1)); dir=${base}fake-$i; done\n"
+        "/bin/mkdir -p \"$dir\"\n"
+        "printf '%s\\n' \"$dir\"\n",
+    )
+    for name, target in [
+        ("sha256sum", "/usr/bin/sha256sum"),
+        ("chmod", "/bin/chmod"),
+        ("mkdir", "/bin/mkdir"),
+        ("rm", "/bin/rm"),
+        ("wc", "/usr/bin/wc"),
+    ]:
+        write_executable(fakebin / name, f"#!/bin/sh\nexec {target} \"$@\"\n")
+    write_executable(fakebin / "tar", "#!/bin/sh\nPATH=/usr/bin:/bin exec /usr/bin/tar \"$@\"\n")
+
+
+def assert_no_bundle_download(test: unittest.TestCase, urls: list[str], install_args: Path) -> None:
+    bundle_url = f"https://github.com/moradology/m80/releases/download/v0.0.0/{BUNDLE_NAME}"
+    test.assertNotIn(bundle_url, urls)
+    test.assertFalse(install_args.exists())
 
 
 def write_executable(path: Path, text: str) -> None:

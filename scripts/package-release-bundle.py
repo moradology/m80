@@ -33,8 +33,6 @@ GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 INSTALL_TEMPLATE_TOKENS = {
     "@M80_RELEASE_TAG@",
-    "@M80_BUNDLE_URL@",
-    "@M80_BUNDLE_NAME@",
 }
 REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
 INTEGRITY_SUBJECT_KINDS = [
@@ -163,7 +161,6 @@ def main() -> int:
             args.install_sh,
             rendered_install,
             release_tag=args.release_tag,
-            bundle_url=release_asset_url(args.release_tag, BUNDLE_NAME),
         )
         file_map = {
             "bin/m80": args.m80_bin,
@@ -437,16 +434,11 @@ def render_install_script(
     dest: Path,
     *,
     release_tag: str,
-    bundle_url: str,
 ) -> None:
     require(template.is_file(), f"missing required input: {template}")
     text = template.read_text()
     validate_install_template(template, text)
-    rendered = (
-        text.replace("@M80_RELEASE_TAG@", release_tag)
-        .replace("@M80_BUNDLE_URL@", bundle_url)
-        .replace("@M80_BUNDLE_NAME@", BUNDLE_NAME)
-    )
+    rendered = text.replace("@M80_RELEASE_TAG@", release_tag)
     require(
         not any(token in rendered for token in INSTALL_TEMPLATE_TOKENS),
         "install.sh template placeholders were not fully rendered",
@@ -456,11 +448,21 @@ def render_install_script(
 
 
 def validate_install_template(template: Path, text: str) -> None:
-    legacy_needles = ["quickstart.sh", "m80 quickstart", "--artifact-url"]
+    legacy_needles = [
+        "quickstart.sh",
+        "m80 quickstart",
+        "--artifact-url",
+        "@M80_BUNDLE_URL@",
+        "@M80_BUNDLE_NAME@",
+        "M80_BUNDLE_URL=",
+        "M80_BUNDLE_NAME=",
+        BUNDLE_NAME,
+        "m80-linux-x86_64-minimal-artifacts.tar.gz",
+    ]
     found = [needle for needle in legacy_needles if needle in text]
     require(
         not found,
-        f"install.sh must invoke m80 install, not the legacy quickstart flow: {template}",
+        f"install.sh must use selector-driven m80 install, not legacy quickstart or hardcoded bundle flow: {template}",
     )
     missing = sorted(token for token in INSTALL_TEMPLATE_TOKENS if token not in text)
     require(
@@ -468,7 +470,10 @@ def validate_install_template(template: Path, text: str) -> None:
         f"install.sh template missing required placeholder(s): {', '.join(missing)}",
     )
     require(
-        "bin/m80" in text and " install --bundle-url " in text,
+        "bin/m80" in text
+        and " install --bundle-url " in text
+        and BOOTSTRAP_SELECTOR_NAME in text
+        and ASSET_INDEX_NAME in text,
         "install.sh template must hand off to the versioned m80 install command",
     )
 

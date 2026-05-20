@@ -49,8 +49,11 @@ bootstrap path that runs before a local `m80` binary exists. The public
 `SHA256SUMS` covers the tarball, installer, metadata sidecar, asset index, and
 bootstrap selector.
 The public `install.sh` and the bundled `install.sh` are the same rendered
-versioned installer asset. The renderer fills in the concrete release tag and
-bundle URL, and rejects templates that call `m80 quickstart`, mention
+versioned installer asset. The renderer fills in only the concrete release tag;
+bundle selection comes from the verified bootstrap selector and canonical asset
+index downloaded from that pinned release. The renderer rejects templates that
+carry public-path `M80_BUNDLE_URL` or `M80_BUNDLE_NAME` placeholders, hardcode a
+tuple-specific artifact name, call `m80 quickstart`, mention
 `scripts/quickstart.sh`, or use artifact-only `--artifact-url`.
 
 The package command also emits `m80-release-integrity.json`. The tag workflow
