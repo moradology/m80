@@ -610,6 +610,29 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertIn("verified release integrity material", result.stdout)
 
+    def test_release_integrity_material_accepts_complete_public_subject_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            payload = json.loads(material.read_text())
+
+            self.assertEqual(
+                {subject["name"] for subject in payload["subjects"]},
+                {
+                    BUNDLE_NAME,
+                    f"{BUNDLE_NAME}.sha256",
+                    INSTALL_NAME,
+                    f"{INSTALL_NAME}.sha256",
+                    METADATA_NAME,
+                    f"{METADATA_NAME}.sha256",
+                    ASSET_INDEX_NAME,
+                    f"{ASSET_INDEX_NAME}.sha256",
+                    "SHA256SUMS",
+                },
+            )
+            run_verify_integrity(material)
+
     def test_release_integrity_material_rejects_wrong_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -634,6 +657,56 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(f"release integrity subject {BUNDLE_NAME} missing field(s): sha256", result.stderr)
+
+    def test_release_integrity_material_rejects_missing_install_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out", omit_subject=INSTALL_NAME)
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity missing subject(s): {INSTALL_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_missing_asset_index_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out", omit_subject=ASSET_INDEX_NAME)
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity missing subject(s): {ASSET_INDEX_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_unexpected_extra_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(
+                root / "out",
+                extra_subject={"name": "unpublished.txt", "kind": "extra", "sha256": "0" * 64, "size_bytes": 1},
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity unexpected subject unpublished.txt", result.stderr)
+
+    def test_release_integrity_material_rejects_subject_digest_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(
+                root / "out",
+                subject_updates={INSTALL_NAME: {"sha256": "0" * 64}},
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity sha256 mismatch for {INSTALL_NAME}", result.stderr)
 
     def test_release_integrity_material_rejects_tampered_bundle_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1043,7 +1116,10 @@ def write_integrity_material(
     out_dir: Path,
     *,
     updates: dict | None = None,
+    omit_subject: str | None = None,
     omit_subject_field: tuple[str, str] | None = None,
+    extra_subject: dict | None = None,
+    subject_updates: dict[str, dict] | None = None,
 ) -> Path:
     subject_kinds = {
         BUNDLE_NAME: "release-bundle",
@@ -1058,6 +1134,8 @@ def write_integrity_material(
     }
     subjects = []
     for name, kind in subject_kinds.items():
+        if omit_subject == name:
+            continue
         asset = out_dir / name
         subject = {
             "name": name,
@@ -1065,9 +1143,13 @@ def write_integrity_material(
             "sha256": sha256(asset),
             "size_bytes": asset.stat().st_size,
         }
+        if subject_updates and name in subject_updates:
+            subject.update(subject_updates[name])
         if omit_subject_field and omit_subject_field[0] == name:
             subject.pop(omit_subject_field[1], None)
         subjects.append(subject)
+    if extra_subject:
+        subjects.append(dict(extra_subject))
     payload = {
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",

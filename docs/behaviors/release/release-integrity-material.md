@@ -24,7 +24,8 @@ The predicate records:
 - `subjects`.
 
 Each subject records `name`, `kind`, `sha256`, and `size_bytes`. The current
-public subject set is:
+public subject set is complete for the installer/bootstrapper-consumed release
+dist assets:
 
 ```text
 m80-linux-x86_64.tar.gz
@@ -37,6 +38,11 @@ m80-release-assets.json
 m80-release-assets.json.sha256
 SHA256SUMS
 ```
+
+There are no detached signature files in v1. If a future asset-index row names
+`signature_name` or another proof file that the installer consumes, that file
+must be added as a subject in the same predicate before signed release
+verification accepts the row.
 
 The bundle metadata hash is duplicated as `bundle_metadata_sha256` because
 installers and human verifiers need to bind the tarball metadata before
@@ -179,8 +185,13 @@ The command is read-only and does not require root.
 `scripts/test-release-bundle.py` covers:
 
 - `test_release_integrity_material_verifier_accepts_valid_fixture`;
+- `test_release_integrity_material_accepts_complete_public_subject_set`;
 - `test_release_integrity_material_rejects_wrong_tag`;
 - `test_release_integrity_material_rejects_missing_asset_hash`;
+- `test_release_integrity_material_rejects_missing_install_subject`;
+- `test_release_integrity_material_rejects_missing_asset_index_subject`;
+- `test_release_integrity_material_rejects_unexpected_extra_subject`;
+- `test_release_integrity_material_rejects_subject_digest_mismatch`;
 - `test_release_integrity_material_rejects_tampered_bundle_hash`;
 - `test_release_integrity_material_rejects_tampered_install_hash`;
 - `test_release_integrity_material_rejects_unsupported_verifier_version`;

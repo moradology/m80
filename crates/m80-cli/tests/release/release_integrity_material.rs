@@ -31,12 +31,17 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "`m80_package_version`",
         "`bundle_metadata_sha256`",
         "`subjects`",
+        "test_release_integrity_material_accepts_complete_public_subject_set",
         "m80-linux-x86_64.tar.gz",
         "install.sh",
         "m80-release-assets.json",
         "SHA256SUMS",
         "scripts/verify-release-integrity.py",
         "test_release_integrity_material_rejects_wrong_tag",
+        "test_release_integrity_material_rejects_missing_install_subject",
+        "test_release_integrity_material_rejects_missing_asset_index_subject",
+        "test_release_integrity_material_rejects_unexpected_extra_subject",
+        "test_release_integrity_material_rejects_subject_digest_mismatch",
         "test_release_integrity_material_rejects_tampered_install_hash",
         "test_release_integrity_material_rejects_unsupported_verifier_version",
         "test_release_integrity_material_rejects_missing_attestation_metadata",
@@ -82,6 +87,30 @@ fn release_runbook_includes_human_integrity_verification_command() {
     assert!(runbook.contains("gh attestation"));
     assert!(runbook.contains("share one trust-anchor path"));
     assert!(runbook.contains("does not require root"));
+}
+
+#[test]
+fn release_subject_completeness_docs_name_public_asset_set() {
+    let bundle_contract = read_repo_file("docs/behaviors/release/bundle-contract.md");
+    let runbook = read_repo_file("docs/runbook/release.md");
+
+    for doc in [&bundle_contract, &runbook] {
+        assert!(doc.contains("complete"));
+        assert!(doc.contains("public"));
+        for asset in [
+            "m80-linux-x86_64.tar.gz",
+            "m80-linux-x86_64.tar.gz.sha256",
+            "install.sh",
+            "install.sh.sha256",
+            "m80-linux-x86_64.bundle.json",
+            "m80-linux-x86_64.bundle.json.sha256",
+            "m80-release-assets.json",
+            "m80-release-assets.json.sha256",
+            "SHA256SUMS",
+        ] {
+            assert!(doc.contains(asset), "subject-set doc missing {asset}");
+        }
+    }
 }
 
 fn read_repo_file(relative: &str) -> String {

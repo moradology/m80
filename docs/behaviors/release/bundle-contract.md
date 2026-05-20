@@ -60,6 +60,28 @@ byte-identical metadata sidecar, checksum sidecars for public assets, and a
 public `SHA256SUMS` covering the tarball, installer, and metadata sidecar. See
 [`bundle-builder.md`](bundle-builder.md).
 
+## Public Release Subject Set
+
+Signed release integrity material must cover every public dist asset consumed
+by the installer or bootstrapper. For the default Linux bundle, the complete
+public subject set is:
+
+```text
+m80-linux-x86_64.tar.gz
+m80-linux-x86_64.tar.gz.sha256
+install.sh
+install.sh.sha256
+m80-linux-x86_64.bundle.json
+m80-linux-x86_64.bundle.json.sha256
+m80-release-assets.json
+m80-release-assets.json.sha256
+SHA256SUMS
+```
+
+There are no detached signature files in v1. If the asset index later names a
+signature or proof file that the installer consumes, the signed/attested
+predicate must add that file as a subject in the same release.
+
 Guest manifest and build-receipt bytes are release payloads. Installers must not
 rewrite them silently after bundle verification. If install-time relocation is
 needed, it must produce a separate installed-provenance record that names the

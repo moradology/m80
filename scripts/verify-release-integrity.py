@@ -416,14 +416,17 @@ def verify_subjects(subjects: object, dist_dir: Path) -> None:
         require(name not in by_name, f"release integrity duplicate subject {name}")
         require_exact_fields(subject, SUBJECT_FIELDS, f"release integrity subject {name}")
         kind = require_subject_str(subject, "kind", name)
-        require(kind == EXPECTED_SUBJECTS.get(name), f"release integrity subject {name} kind mismatch")
+        expected_kind = EXPECTED_SUBJECTS.get(name)
+        require(expected_kind is not None, f"release integrity unexpected subject {name}")
+        require(kind == expected_kind, f"release integrity subject {name} kind mismatch")
         digest = require_subject_str(subject, "sha256", name)
         require_valid_sha(digest, f"release integrity subject {name} sha256")
         size_bytes = subject["size_bytes"]
         require(isinstance(size_bytes, int) and size_bytes > 0, f"release integrity subject {name} invalid size_bytes")
         by_name[name] = subject
 
-    require(set(by_name) == set(EXPECTED_SUBJECTS), "release integrity subject set mismatch")
+    missing_subjects = sorted(set(EXPECTED_SUBJECTS) - set(by_name))
+    require(not missing_subjects, "release integrity missing subject(s): " + ", ".join(missing_subjects))
     for name, subject in by_name.items():
         asset = dist_dir / name
         require(asset.is_file(), f"release integrity subject file missing: {name}")

@@ -94,6 +94,21 @@ inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, and a public
 `SHA256SUMS` for the tarball, installer, and metadata sidecar. The exact builder
 contract is captured in `docs/behaviors/release/bundle-builder.md`.
 
+The complete public release subject set for the signed/attested default Linux
+dist is:
+
+```text
+m80-linux-x86_64.tar.gz
+m80-linux-x86_64.tar.gz.sha256
+install.sh
+install.sh.sha256
+m80-linux-x86_64.bundle.json
+m80-linux-x86_64.bundle.json.sha256
+m80-release-assets.json
+m80-release-assets.json.sha256
+SHA256SUMS
+```
+
 ## Asset Index
 
 The release asset index is the machine-readable selector for public bundles.
