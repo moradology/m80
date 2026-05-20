@@ -197,20 +197,20 @@ fn import_existing_erofs_rejects_unpinned_compressor() {
     let (root, store) = open_temp_store();
     let source = build_erofs_source(
         root.path(),
-        "zstd.erofs",
+        "lzma.erofs",
         &vec![0u8; 1024 * 1024],
-        &["-zzstd"],
+        &["-zlzma"],
     );
 
     let err = store
         .import_existing(&source, ImageKind::Erofs)
-        .expect_err("zstd erofs must fail");
+        .expect_err("lzma erofs must fail");
 
     assert!(
         matches!(
             err,
             StoreError::UnsupportedErofsCompression { ref algorithm, .. }
-                if algorithm == "zstd"
+                if algorithm == "lzma"
         ),
         "got {err:?}"
     );
