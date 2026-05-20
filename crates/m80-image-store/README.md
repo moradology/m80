@@ -52,10 +52,10 @@ and feed them through `import_existing`.
 `build_minimal_test_image(source_dir, kind)` is only a small local-dev and test
 helper around `mkfs.erofs` / `mkfs.ext4`. It is not a production build system.
 The erofs helper emits the default uncompressed erofs feature set and pins
-timestamp, uid, gid, worker count, and sort order for byte-identical rebuilds
-of simple source trees. The ext4 helper pins UUID and lazy init settings, but
-ext4 tooling still has a weaker determinism contract; tests only require that
-the produced artifact imports and verifies.
+timestamp, uid, gid, and UUID for byte-identical rebuilds of simple source
+trees on supported erofs-utils versions. The ext4 helper pins UUID and lazy init
+settings, but ext4 tooling still has a weaker determinism contract; tests only
+require that the produced artifact imports and verifies.
 
 ## Public Surface
 

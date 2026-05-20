@@ -26,7 +26,6 @@ fn build_erofs(source_dir: &Path, output: &Path) -> Result<(), StoreError> {
         .arg("--force-gid=0")
         .arg("-U")
         .arg("00000000-0000-0000-0000-000000000000")
-        .arg("--sort=path")
         .arg(output)
         .arg(source_dir)
         .output()
