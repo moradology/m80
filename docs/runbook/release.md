@@ -242,6 +242,21 @@ before a local `m80` binary is available. Verification compares the selector
 back to `m80-release-assets.json`; changing one without regenerating the other
 is a release-blocking drift.
 
+Adding a new architecture or image kind is a release-contract change, but it is
+not a quickstart-command change. Use this checklist:
+
+1. Package the new tuple artifact and its metadata sidecar with a unique
+   bundle name, checksum sidecar, and integrity/proof material.
+2. Add exactly one `m80-release-assets.json` row for the new
+   `os` / `arch` / `image_kind` tuple, pointing at those published assets.
+3. Regenerate `m80-bootstrap-selector.tsv`, its checksum sidecar, and the
+   public `SHA256SUMS`; do not edit the selector by hand.
+4. Extend the release proof fixture for the new tuple or image kind before
+   publishing it as supported.
+5. Update docs only where the supported tuple matrix or image-kind behavior
+   changes. The common README latest and pinned install snippets stay:
+   `curl .../install.sh | sudo sh`.
+
 ## Release Integrity Material
 
 The release workflow uses the schema in

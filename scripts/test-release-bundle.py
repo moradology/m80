@@ -12,6 +12,8 @@ import tarfile
 import tempfile
 import unittest
 
+from quickstart_snippets import expected_quickstart_snippets, extract_marked_quickstart_snippets
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
@@ -494,6 +496,30 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertTrue(args[2].endswith(f"/{BUNDLE_NAME}"), args)
             self.assertEqual(args[3:], ["--dry-run"])
 
+    def test_asset_index_expansion_keeps_default_install_and_quickstart_snippets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
+            write_integrity_material(root / "out")
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            index = json.loads((root / "out" / ASSET_INDEX_NAME).read_text())
+            self.assertEqual(
+                sorted((asset["os"], asset["arch"], asset["image_kind"]) for asset in index["assets"]),
+                [("linux", "x86_64", "debug"), ("linux", "x86_64", "minimal")],
+            )
+            install_argv = install_args.read_text().splitlines()
+            self.assertEqual(install_argv[0:2], ["install", "--bundle-url"])
+            self.assertTrue(install_argv[2].endswith(f"/{BUNDLE_NAME}"), install_argv)
+            expected = expected_quickstart_snippets()
+            for doc in [REPO_ROOT / "README.md", REPO_ROOT / "docs" / "runbook" / "release.md"]:
+                snippets = extract_marked_quickstart_snippets(doc)
+                self.assertEqual(snippets["latest-install"], expected["latest-install"])
+                self.assertEqual(snippets["pinned-install"], expected["pinned-install"])
+
     def test_rendered_install_script_rejects_extracted_m80_source_commit_mismatch_before_install(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -965,17 +991,22 @@ class ReleaseBundleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             package_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
             lines = bootstrap_selector_lines(root / "out")
-            row = lines[3].split("\t")
-            row[3] = "debug"
-            lines[3] = "\t".join(row)
-            rewrite_bootstrap_selector(root / "out", lines)
+            rewrite_bootstrap_selector(
+                root / "out",
+                lines[:3] + bootstrap_selector_rows_for_image_kind(lines, "debug"),
+            )
 
             result, urls, install_args = run_rendered_install(root)
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("image_kind=minimal", result.stderr)
             self.assertIn("bootstrap selector missing tuple", result.stderr)
+            self.assertIn("available_tuples=linux/x86_64/debug", result.stderr)
+            self.assertNotIn("curl -fsSL", result.stderr)
+            self.assertNotIn("quickstart", result.stderr)
+            self.assertNotIn("README", result.stderr)
             assert_no_bundle_download(self, urls, install_args)
 
     def test_rendered_install_script_rejects_selector_duplicate_tuple_before_bundle(self) -> None:
@@ -2691,6 +2722,70 @@ def rewrite_asset_index(out_dir: Path, index: dict) -> None:
     )
 
 
+def add_alternate_image_kind_fixture(out_dir: Path, *, image_kind: str = "debug") -> None:
+    bundle_name = f"m80-linux-x86_64-{image_kind}.tar.gz"
+    metadata_name = f"m80-linux-x86_64-{image_kind}.bundle.json"
+    bundle_path = out_dir / bundle_name
+    metadata_path = out_dir / metadata_name
+    rewrite_tar(
+        out_dir / BUNDLE_NAME,
+        bundle_path,
+        metadata_updates={"image_kind": image_kind},
+    )
+    metadata = json.loads((out_dir / METADATA_NAME).read_text())
+    metadata["image_kind"] = image_kind
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    write_sha256_sidecar(out_dir / f"{bundle_name}.sha256", bundle_path, bundle_name)
+    write_sha256_sidecar(out_dir / f"{metadata_name}.sha256", metadata_path, metadata_name)
+
+    index_path = out_dir / ASSET_INDEX_NAME
+    index = json.loads(index_path.read_text())
+    asset = dict(index["assets"][0])
+    asset.update(
+        {
+            "name": bundle_name,
+            "url": f"https://github.com/moradology/m80/releases/download/v0.0.0/{bundle_name}",
+            "sha256": sha256(bundle_path),
+            "size_bytes": bundle_path.stat().st_size,
+            "metadata_name": metadata_name,
+            "metadata_sha256": sha256(metadata_path),
+            "checksum_name": f"{bundle_name}.sha256",
+            "image_kind": image_kind,
+        }
+    )
+    index["assets"].append(asset)
+    rewrite_asset_index(out_dir, index)
+    rewrite_bootstrap_selector(out_dir, bootstrap_selector_lines_for_index(out_dir, index))
+
+
+def bootstrap_selector_lines_for_index(out_dir: Path, index: dict) -> list[str]:
+    lines = bootstrap_selector_lines(out_dir)[:3]
+    columns = lines[2].split("\t")[1:]
+    for asset in index["assets"]:
+        lines.append(
+            "row\t"
+            + "\t".join(
+                selector_value_for_test(asset[asset_index_field_for_selector(column)])
+                for column in columns
+            )
+        )
+    return lines
+
+
+def asset_index_field_for_selector(column: str) -> str:
+    return {
+        "bundle_name": "name",
+        "bundle_url": "url",
+        "bundle_sha256": "sha256",
+    }.get(column, column)
+
+
+def selector_value_for_test(value: object) -> str:
+    if value is None:
+        return "-"
+    return str(value)
+
+
 def rewrite_build_manifest(out_dir: Path, updates: dict) -> None:
     manifest_path = out_dir / BUILD_MANIFEST_NAME
     manifest = json.loads(manifest_path.read_text())
@@ -2712,6 +2807,12 @@ def rewrite_build_manifest(out_dir: Path, updates: dict) -> None:
 
 def bootstrap_selector_lines(out_dir: Path) -> list[str]:
     return (out_dir / BOOTSTRAP_SELECTOR_NAME).read_text().splitlines()
+
+
+def bootstrap_selector_rows_for_image_kind(lines: list[str], image_kind: str) -> list[str]:
+    columns = lines[2].split("\t")
+    image_kind_index = columns.index("image_kind")
+    return [line for line in lines[3:] if line.split("\t")[image_kind_index] == image_kind]
 
 
 def rewrite_bootstrap_selector(out_dir: Path, lines: list[str]) -> None:

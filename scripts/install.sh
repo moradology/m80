@@ -322,6 +322,7 @@ parse_bootstrap_selector() {
     selected_signature_name=
     selected_attestation_name=
     selected_m80_version=
+    available_tuples=
 
     while IFS= read -r line || [ -n "$line" ]; do
         line_no=$((line_no + 1))
@@ -355,6 +356,11 @@ parse_bootstrap_selector() {
         row_os=$2
         row_arch=$3
         row_image_kind=$4
+        row_tuple="${row_os}/${row_arch}/${row_image_kind}"
+        case " $available_tuples " in
+            *" $row_tuple "*) ;;
+            *) available_tuples="${available_tuples}${available_tuples:+ }${row_tuple}" ;;
+        esac
         if [ "$row_os" = "$requested_os" ] && [ "$row_arch" = "$requested_arch" ] && [ "$row_image_kind" = "$requested_image_kind" ]; then
             match_count=$((match_count + 1))
             [ "$match_count" -eq 1 ] || fail "bootstrap selector duplicate tuple for ${requested_os}/${requested_arch}/${requested_image_kind}"
@@ -372,7 +378,7 @@ parse_bootstrap_selector() {
     done < "$selector_path"
 
     [ "$line_no" -ge 3 ] || fail "bootstrap selector missing header rows from $(asset_url "$M80_BOOTSTRAP_SELECTOR_NAME")"
-    [ "$match_count" -eq 1 ] || fail "bootstrap selector missing tuple for release_tag=${M80_RELEASE_TAG} os=${requested_os} arch=${requested_arch} image_kind=${requested_image_kind} selector=$(asset_url "$M80_BOOTSTRAP_SELECTOR_NAME") index=$(asset_url "$M80_ASSET_INDEX_NAME")"
+    [ "$match_count" -eq 1 ] || fail "bootstrap selector missing tuple for release_tag=${M80_RELEASE_TAG} os=${requested_os} arch=${requested_arch} image_kind=${requested_image_kind} available_tuples=${available_tuples:-none} selector=$(asset_url "$M80_BOOTSTRAP_SELECTOR_NAME") index=$(asset_url "$M80_ASSET_INDEX_NAME")"
 
     validate_sha256 "bootstrap selector bundle_sha256" "$selected_bundle_sha256"
     validate_positive_int "bootstrap selector size_bytes" "$selected_size_bytes"
