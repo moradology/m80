@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 import shlex
 import subprocess
 import tarfile
@@ -322,6 +323,80 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("must use selector-driven m80 install", result.stderr)
+
+    def test_package_rejects_literal_quickstart_script_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            legacy = root / "literal-quickstart.sh"
+            write_executable(
+                legacy,
+                "#!/bin/sh\n"
+                "M80_RELEASE_TAG='@M80_RELEASE_TAG@'\n"
+                "# do not delegate back to scripts/quickstart.sh\n"
+                "bin/m80 install --bundle-url file://bundle.tgz\n",
+            )
+            inputs["install"] = legacy
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must use selector-driven m80 install", result.stderr)
+
+    def test_package_rejects_interactive_install_prompt(self) -> None:
+        cases = {
+            "line-start": "read answer\n",
+            "inline": "if read -r answer; then exit 1; fi\n",
+            "select": "select answer in yes no; do exit 1; done\n",
+        }
+        for name, prompt in cases.items():
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    inputs = fixture_inputs(root, release_tag="v0.0.0")
+                    interactive = root / "interactive-install.sh"
+                    write_executable(
+                        interactive,
+                        "#!/bin/sh\n"
+                        "M80_RELEASE_TAG='@M80_RELEASE_TAG@'\n"
+                        "M80_PUBLIC_RELEASE_OWNER='@M80_PUBLIC_RELEASE_OWNER@'\n"
+                        "M80_PUBLIC_RELEASE_REPO='@M80_PUBLIC_RELEASE_REPO@'\n"
+                        "M80_BOOTSTRAP_SELECTOR_NAME='m80-bootstrap-selector.tsv'\n"
+                        "M80_ASSET_INDEX_NAME='m80-release-assets.json'\n"
+                        f"{prompt}"
+                        "\"bin/m80\" install --bundle-url \"file://bundle.tgz\"\n",
+                    )
+                    inputs["install"] = interactive
+
+                    result = run_package(inputs, root / "out", check=False)
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("install.sh template must be noninteractive", result.stderr)
+
+    def test_package_rejects_unsupported_install_template_placeholders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            placeholder = root / "placeholder-install.sh"
+            write_executable(
+                placeholder,
+                "#!/bin/sh\n"
+                "M80_RELEASE_TAG='@M80_RELEASE_TAG@'\n"
+                "M80_PUBLIC_RELEASE_OWNER='@M80_PUBLIC_RELEASE_OWNER@'\n"
+                "M80_PUBLIC_RELEASE_REPO='@M80_PUBLIC_RELEASE_REPO@'\n"
+                "M80_NEW_UNRENDERED='@M80_NEW_UNRENDERED@'\n"
+                "M80_MIXED_UNRENDERED='@M80_mixed_Unrendered@'\n"
+                "M80_BOOTSTRAP_SELECTOR_NAME='m80-bootstrap-selector.tsv'\n"
+                "M80_ASSET_INDEX_NAME='m80-release-assets.json'\n"
+                "\"bin/m80\" install --bundle-url \"file://bundle.tgz\"\n",
+            )
+            inputs["install"] = placeholder
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("@M80_mixed_Unrendered@", result.stderr)
+            self.assertIn("unsupported placeholder(s): @M80_NEW_UNRENDERED@", result.stderr)
 
     def test_package_rejects_hardcoded_public_bundle_install_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -951,6 +1026,12 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("--install-sh scripts/install.sh", workflow)
         self.assertNotIn("--install-sh scripts/quickstart.sh", workflow)
 
+    def test_install_script_is_posix_shellclean(self) -> None:
+        subprocess.run(["sh", "-n", str(REPO_ROOT / "scripts" / "install.sh")], check=True)
+        if shutil.which("shellcheck") is None:
+            self.skipTest("shellcheck is not installed")
+        subprocess.run(["shellcheck", "-s", "sh", str(REPO_ROOT / "scripts" / "install.sh")], check=True)
+
     def test_ci_runs_release_script_tests(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
 
@@ -965,6 +1046,10 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertNotIn("actions/checkout@v4", workflow)
         self.assertNotIn("actions/cache@v4", workflow)
         self.assertIn("sudo apt-get install -y erofs-utils shellcheck", workflow)
+        self.assertIn("sh -n scripts/install.sh", workflow)
+        self.assertIn("shellcheck -s sh scripts/install.sh", workflow)
+        self.assertIn("! -name 'install.sh'", workflow)
+        self.assertIn("-print0 | sort -z | xargs -0 shellcheck -s bash", workflow)
         self.assertIn("cargo test -p m80-attack-runner --features malicious-artifact", workflow)
         self.assertIn(
             "cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings",

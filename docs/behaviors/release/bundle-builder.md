@@ -64,7 +64,10 @@ bundle selection comes from the verified bootstrap selector and canonical asset
 index downloaded from that pinned release. The renderer rejects templates that
 carry public-path `M80_BUNDLE_URL` or `M80_BUNDLE_NAME` placeholders, hardcode a
 tuple-specific artifact name, call `m80 quickstart`, mention
-`scripts/quickstart.sh`, or use artifact-only `--artifact-url`.
+`scripts/quickstart.sh`, use artifact-only `--artifact-url`, or introduce any
+new `@M80_*@` placeholder. The installer template is POSIX `/bin/sh` code; CI
+runs `sh -n scripts/install.sh` and `shellcheck -s sh scripts/install.sh` so the
+published `curl | sudo sh` path does not depend on bash-only syntax.
 
 The package command also emits `m80-release-integrity.json`. The tag workflow
 attests that predicate, then appends `m80-release-integrity.attestation.jsonl`

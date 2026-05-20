@@ -41,6 +41,10 @@ INSTALL_TEMPLATE_TOKENS = {
     "@M80_PUBLIC_RELEASE_OWNER@",
     "@M80_PUBLIC_RELEASE_REPO@",
 }
+INSTALL_TEMPLATE_TOKEN_RE = re.compile(r"@M80_[A-Za-z0-9_]+@")
+SHELL_INTERACTIVE_COMMAND_RE = re.compile(r"(?:^|[;&|(){} \t])(?P<command>read|select)(?:[ \t;&|(){}]|$)")
+SELECTOR_READ_LOOP = "while IFS= read -r line || [ -n \"$line\" ]; do"
+SELECTOR_READ_REDIRECT = 'done < "$selector_path"'
 REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
 INTEGRITY_SUBJECT_KINDS = [
     (BUNDLE_NAME, "release-bundle"),
@@ -560,7 +564,7 @@ def render_install_script(
         .replace("@M80_PUBLIC_RELEASE_REPO@", release_root.repo)
     )
     require(
-        not any(token in rendered for token in INSTALL_TEMPLATE_TOKENS),
+        INSTALL_TEMPLATE_TOKEN_RE.search(rendered) is None,
         "install.sh template placeholders were not fully rendered",
     )
     dest.write_text(rendered)
@@ -584,6 +588,16 @@ def validate_install_template(template: Path, text: str) -> None:
         not found,
         f"install.sh must use selector-driven m80 install, not legacy quickstart or hardcoded bundle flow: {template}",
     )
+    interactive_line = first_interactive_install_line(text)
+    require(
+        interactive_line is None,
+        f"install.sh template must be noninteractive at line {interactive_line}: {template}",
+    )
+    unexpected_tokens = sorted(set(INSTALL_TEMPLATE_TOKEN_RE.findall(text)) - INSTALL_TEMPLATE_TOKENS)
+    require(
+        not unexpected_tokens,
+        f"install.sh template has unsupported placeholder(s): {', '.join(unexpected_tokens)}",
+    )
     missing = sorted(token for token in INSTALL_TEMPLATE_TOKENS if token not in text)
     require(
         not missing,
@@ -596,6 +610,24 @@ def validate_install_template(template: Path, text: str) -> None:
         and ASSET_INDEX_NAME in text,
         "install.sh template must hand off to the versioned m80 install command",
     )
+
+
+def first_interactive_install_line(text: str) -> int | None:
+    for line_no, raw_line in enumerate(text.splitlines(), start=1):
+        code = raw_line.split("#", 1)[0].strip()
+        if not code:
+            continue
+        match = SHELL_INTERACTIVE_COMMAND_RE.search(code)
+        if match is None:
+            continue
+        if match.group("command") == "select":
+            return line_no
+        if "<" in code:
+            continue
+        if code == SELECTOR_READ_LOOP and SELECTOR_READ_REDIRECT in text:
+            continue
+        return line_no
+    return None
 
 
 def file_hashes(root: Path) -> list[dict]:
