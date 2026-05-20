@@ -16,13 +16,31 @@ from release_attestation_verifier import preflight_gh_attestation_verifier
 
 
 SCHEMA_VERSION = 1
+BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
 MECHANISM = "github-artifact-attestation"
 REPOSITORY = "moradology/m80"
 TARGET = "linux-x86_64"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
+BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
+BOOTSTRAP_SELECTOR_COLUMNS = [
+    "os",
+    "arch",
+    "image_kind",
+    "bundle_name",
+    "bundle_url",
+    "bundle_sha256",
+    "size_bytes",
+    "metadata_name",
+    "metadata_sha256",
+    "checksum_name",
+    "signature_name",
+    "attestation_name",
+    "m80_version",
+]
+SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 TOP_LEVEL_FIELDS = {
@@ -72,6 +90,8 @@ EXPECTED_SUBJECTS = {
     f"{METADATA_NAME}.sha256": "checksum-sidecar",
     ASSET_INDEX_NAME: "asset-index",
     f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
+    BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
+    f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
     "SHA256SUMS": "checksum-manifest",
 }
 
@@ -165,7 +185,8 @@ def main() -> int:
         f"release integrity bundle_metadata_sha256 mismatch for {METADATA_NAME}",
     )
     verify_bundle_metadata(metadata_path, material)
-    verify_asset_index(dist_dir / ASSET_INDEX_NAME, material)
+    asset_index = verify_asset_index(dist_dir / ASSET_INDEX_NAME, material)
+    verify_bootstrap_selector(dist_dir / BOOTSTRAP_SELECTOR_NAME, material, asset_index)
     verify_subjects(material["subjects"], dist_dir)
 
     print(f"verified release integrity material {args.material}")
@@ -405,9 +426,138 @@ def verify_bundle_metadata(metadata_path: Path, material: dict) -> None:
     require(metadata.get("target") == material["target"], "release integrity bundle metadata target mismatch")
 
 
-def verify_asset_index(index_path: Path, material: dict) -> None:
+def verify_asset_index(index_path: Path, material: dict) -> dict:
     index = read_json(index_path, "asset index")
     require(index.get("release_tag") == material["release_tag"], "release integrity asset index release_tag mismatch")
+    require(isinstance(index.get("assets"), list), "release integrity asset index assets must be a list")
+    return index
+
+
+def verify_bootstrap_selector(selector_path: Path, material: dict, index: dict) -> None:
+    require(selector_path.is_file(), f"bootstrap selector missing: {selector_path}")
+    release_tag, actual_rows = parse_bootstrap_selector(selector_path)
+    require(
+        release_tag == material["release_tag"],
+        "release integrity bootstrap selector release_tag mismatch",
+    )
+    require(
+        release_tag == index["release_tag"],
+        "release integrity bootstrap selector/index release_tag mismatch",
+    )
+    expected_rows = expected_bootstrap_selector_rows(index)
+    missing = sorted(set(expected_rows) - set(actual_rows))
+    extra = sorted(set(actual_rows) - set(expected_rows))
+    require(
+        not missing,
+        "release integrity bootstrap selector missing tuple(s): " + ", ".join(format_tuple(row) for row in missing),
+    )
+    require(
+        not extra,
+        "release integrity bootstrap selector extra tuple(s): " + ", ".join(format_tuple(row) for row in extra),
+    )
+    for key, expected in expected_rows.items():
+        actual = actual_rows[key]
+        for field, expected_value, actual_value in zip(BOOTSTRAP_SELECTOR_COLUMNS, expected, actual, strict=True):
+            require(
+                actual_value == expected_value,
+                f"release integrity bootstrap selector {field} mismatch for {format_tuple(key)}",
+            )
+
+
+def parse_bootstrap_selector(selector_path: Path) -> tuple[str, dict[tuple[str, str, str], list[str]]]:
+    lines = selector_path.read_text().splitlines()
+    require(len(lines) >= 3, "release integrity bootstrap selector header missing")
+    require(
+        lines[0].split("\t") == ["schema_version", str(BOOTSTRAP_SELECTOR_SCHEMA_VERSION)],
+        "release integrity unsupported bootstrap selector schema_version",
+    )
+    release_parts = lines[1].split("\t")
+    require(
+        len(release_parts) == 2 and release_parts[0] == "release_tag",
+        "release integrity bootstrap selector release_tag header invalid",
+    )
+    release_tag = release_parts[1]
+    require(release_tag, "release integrity bootstrap selector release_tag missing")
+    require(
+        lines[2].split("\t") == ["columns", *BOOTSTRAP_SELECTOR_COLUMNS],
+        "release integrity bootstrap selector columns mismatch",
+    )
+    rows: dict[tuple[str, str, str], list[str]] = {}
+    for line in lines[3:]:
+        parts = line.split("\t")
+        require(
+            len(parts) == len(BOOTSTRAP_SELECTOR_COLUMNS) + 1 and parts[0] == "row",
+            "release integrity bootstrap selector row shape invalid",
+        )
+        values = parts[1:]
+        for field, value in zip(BOOTSTRAP_SELECTOR_COLUMNS, values, strict=True):
+            require(value, f"release integrity bootstrap selector {field} empty")
+            require(
+                not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value),
+                f"release integrity bootstrap selector {field} contains whitespace or control characters",
+            )
+            require(
+                SELECTOR_VALUE_RE.match(value) is not None,
+                f"release integrity bootstrap selector {field} contains non-shell-safe characters",
+            )
+        key = (values[0], values[1], values[2])
+        require(key not in rows, f"release integrity bootstrap selector duplicate tuple: {format_tuple(key)}")
+        rows[key] = values
+    require(rows, "release integrity bootstrap selector missing tuple rows")
+    return release_tag, rows
+
+
+def expected_bootstrap_selector_rows(index: dict) -> dict[tuple[str, str, str], list[str]]:
+    rows = {}
+    for asset in index["assets"]:
+        require(isinstance(asset, dict), "release integrity asset index asset must be an object")
+        key = (asset.get("os"), asset.get("arch"), asset.get("image_kind"))
+        require(
+            all(isinstance(value, str) and value for value in key),
+            "release integrity asset index tuple fields invalid",
+        )
+        require(key not in rows, f"release integrity asset index duplicate bootstrap selector tuple: {format_tuple(key)}")
+        rows[key] = [
+            selector_value(asset.get("os"), "os"),
+            selector_value(asset.get("arch"), "arch"),
+            selector_value(asset.get("image_kind"), "image_kind"),
+            selector_value(asset.get("name"), "name"),
+            selector_value(asset.get("url"), "url"),
+            selector_value(asset.get("sha256"), "sha256"),
+            selector_value(asset.get("size_bytes"), "size_bytes"),
+            selector_value(asset.get("metadata_name"), "metadata_name"),
+            selector_value(asset.get("metadata_sha256"), "metadata_sha256"),
+            selector_value(asset.get("checksum_name"), "checksum_name"),
+            selector_value(asset.get("signature_name"), "signature_name"),
+            selector_value(asset.get("attestation_name"), "attestation_name"),
+            selector_value(asset.get("m80_version"), "m80_version"),
+        ]
+    return rows
+
+
+def selector_value(value: object, field: str) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, int):
+        require(value > 0, f"release integrity bootstrap selector {field} must be greater than zero")
+        return str(value)
+    require(
+        isinstance(value, str) and value,
+        f"release integrity bootstrap selector {field} must not be empty",
+    )
+    require(
+        not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value),
+        f"release integrity bootstrap selector {field} must not contain whitespace or control characters",
+    )
+    require(
+        SELECTOR_VALUE_RE.match(value) is not None,
+        f"release integrity bootstrap selector {field} must contain only shell-safe token characters",
+    )
+    return value
+
+
+def format_tuple(key: tuple[str, str, str]) -> str:
+    return "/".join(key)
 
 
 def verify_subjects(subjects: object, dist_dir: Path) -> None:

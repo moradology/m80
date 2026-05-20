@@ -36,6 +36,8 @@ m80-linux-x86_64.bundle.json
 m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
 m80-release-assets.json.sha256
+m80-bootstrap-selector.tsv
+m80-bootstrap-selector.tsv.sha256
 SHA256SUMS
 ```
 
@@ -163,7 +165,9 @@ closed when:
 - a subject file is missing;
 - a subject digest or size does not match current bytes;
 - `bundle_metadata_sha256` does not match the metadata sidecar;
-- bundle metadata or the asset index names a different release tag.
+- bundle metadata or the asset index names a different release tag;
+- the bootstrap selector names a different release tag or drifts from the
+  asset index tuple map.
 
 Installer and bootstrapper verification must run this contract before
 extracting a bundle, running `install.sh`, or writing active install state. A
@@ -219,10 +223,13 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_integrity_material_rejects_missing_asset_hash`;
 - `test_release_integrity_material_rejects_missing_install_subject`;
 - `test_release_integrity_material_rejects_missing_asset_index_subject`;
+- `test_release_integrity_material_rejects_missing_bootstrap_selector_subject`;
 - `test_release_integrity_material_rejects_unexpected_extra_subject`;
 - `test_release_integrity_material_rejects_subject_digest_mismatch`;
 - `test_release_integrity_material_rejects_tampered_bundle_hash`;
 - `test_release_integrity_material_rejects_tampered_install_hash`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_drift`;
+- `test_release_integrity_material_rejects_signed_bootstrap_selector_shell_metacharacters`;
 - `test_release_integrity_material_rejects_unsupported_verifier_version`;
 - `test_release_integrity_material_rejects_missing_attestation_metadata`;
 - `test_release_integrity_material_rejects_missing_trust_policy`;

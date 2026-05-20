@@ -9,7 +9,8 @@ that consumer lands. An explicit bundle URL override bypasses index selection.
 
 The published index is `m80-release-assets.json`. Its checksum sidecar is
 `m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
-alongside the bundle tarball, `install.sh`, and the metadata sidecar.
+alongside the bundle tarball, `install.sh`, the metadata sidecar, and
+`m80-bootstrap-selector.tsv`.
 Installer/bootstrapper code must fetch the pinned index and its sidecar for the
 same concrete release tag, verify the index sha256, and only then parse JSON or
 select a host tuple. `file://` fixture indexes use the same checksum-sidecar
@@ -61,6 +62,26 @@ image kind. Missing index bytes, missing sidecars, checksum mismatch, invalid
 JSON after a valid checksum, stale schema, and index `release_tag` drift all
 fail before bundle download, extraction, tuple selection, or active install
 state writes.
+
+The release also publishes `m80-bootstrap-selector.tsv`, a non-executable
+line-oriented projection of the canonical JSON index for the no-installed-binary
+POSIX installer path. It contains:
+
+- `schema_version`;
+- `release_tag`;
+- a fixed `columns` row;
+- one `row` per index asset with `os`, `arch`, `image_kind`, bundle name/URL,
+  bundle sha256, `size_bytes`, metadata name/sha256, checksum name, optional
+  proof asset names, and `m80_version`.
+
+The selector is generated mechanically from `m80-release-assets.json`, is
+checksum-covered, appears in `SHA256SUMS`, and is represented in release
+integrity material. Selector values are conservative ASCII shell tokens:
+whitespace, control characters, and shell metacharacters are invalid; nullable
+proof fields use `-`. It is not a second source of truth: verification compares
+selector rows back to the JSON index and rejects stale tag, missing tuple,
+duplicate tuple, stale digest/size, unsupported schema, shell-unsafe tokens, or
+hand-edited drift.
 
 Release publication must generate the index from the actual dist files, upload
 it with the rest of the release assets, then re-download the public release and

@@ -30,6 +30,8 @@ m80-linux-x86_64.bundle.json
 m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
 m80-release-assets.json.sha256
+m80-bootstrap-selector.tsv
+m80-bootstrap-selector.tsv.sha256
 install.sh
 install.sh.sha256
 m80-release-integrity.json
@@ -41,8 +43,11 @@ The tarball contains the contract paths from
 the tarball as `m80-linux-x86_64.bundle.json` so release tooling can inspect
 metadata before extraction. `m80-release-assets.json` is generated from the
 dist files and names the default host tuple, bundle digest, metadata digest,
-schema versions, guest protocol, and Firecracker version. The public
-`SHA256SUMS` covers the tarball, installer, metadata sidecar, and asset index.
+schema versions, guest protocol, and Firecracker version.
+`m80-bootstrap-selector.tsv` is generated from that index for the POSIX
+bootstrap path that runs before a local `m80` binary exists. The public
+`SHA256SUMS` covers the tarball, installer, metadata sidecar, asset index, and
+bootstrap selector.
 The public `install.sh` and the bundled `install.sh` are the same rendered
 versioned installer asset. The renderer fills in the concrete release tag and
 bundle URL, and rejects templates that call `m80 quickstart`, mention
@@ -94,8 +99,8 @@ checks successful packaging plus rejection of missing required paths, duplicate
 paths, unexpected paths, wrong modes, stale versions, metadata hash mismatches,
 schema/protocol/receipt mismatches, missing install-provenance metadata, and
 stale public checksum sidecars. It also checks the asset-index path for missing
-assets, wrong tuple, wrong hash, duplicate tuple, stale version, and a missing
-index checksum sidecar.
+assets, wrong tuple, wrong hash, duplicate tuple, stale version, a missing index
+checksum sidecar, and bootstrap-selector drift from the JSON index.
 
 `scripts/verify-release-integrity.py` validates the release-integrity predicate
 used by the signing/attestation lane. That predicate is documented in

@@ -7,19 +7,38 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import tarfile
 import tomllib
 
 
 BUNDLE_SCHEMA_VERSION = 1
 ASSET_INDEX_SCHEMA_VERSION = 1
+BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
+BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
 GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
+BOOTSTRAP_SELECTOR_COLUMNS = [
+    "os",
+    "arch",
+    "image_kind",
+    "bundle_name",
+    "bundle_url",
+    "bundle_sha256",
+    "size_bytes",
+    "metadata_name",
+    "metadata_sha256",
+    "checksum_name",
+    "signature_name",
+    "attestation_name",
+    "m80_version",
+]
+SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
 PAYLOAD_PATHS = {
     "bin/m80",
     "bin/m80-jailer-harden",
@@ -339,15 +358,18 @@ def verify_sidecars(
     install_asset = sidecar_dir / INSTALL_NAME
     metadata_asset = sidecar_dir / METADATA_NAME
     asset_index = sidecar_dir / ASSET_INDEX_NAME
+    bootstrap_selector = sidecar_dir / BOOTSTRAP_SELECTOR_NAME
     public_sums = sidecar_dir / "SHA256SUMS"
     require(install_asset.is_file(), f"missing public sidecar: {INSTALL_NAME}")
     require(metadata_asset.is_file(), f"missing public sidecar: {METADATA_NAME}")
     require(asset_index.is_file(), f"missing public sidecar: {ASSET_INDEX_NAME}")
+    require(bootstrap_selector.is_file(), f"missing public sidecar: {BOOTSTRAP_SELECTOR_NAME}")
     require(public_sums.is_file(), "missing public sidecar: SHA256SUMS")
     verify_public_mode(bundle, 0o644)
     verify_public_mode(install_asset, 0o755)
     verify_public_mode(metadata_asset, 0o644)
     verify_public_mode(asset_index, 0o644)
+    verify_public_mode(bootstrap_selector, 0o644)
     verify_public_mode(public_sums, 0o644)
     require(metadata_asset.read_bytes() == bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
 
@@ -356,6 +378,7 @@ def verify_sidecars(
         INSTALL_NAME: install_asset,
         METADATA_NAME: metadata_asset,
         ASSET_INDEX_NAME: asset_index,
+        BOOTSTRAP_SELECTOR_NAME: bootstrap_selector,
     }
     for name, path in expected_assets.items():
         verify_single_sha256(sidecar_dir / f"{name}.sha256", name, path)
@@ -364,7 +387,7 @@ def verify_sidecars(
     require(set(sums) == set(expected_assets), "public SHA256SUMS file set mismatch")
     for name, path in expected_assets.items():
         require(sums[name] == sha256_file(path), f"public SHA256SUMS hash mismatch for {name}")
-    verify_asset_index(
+    index = verify_asset_index(
         asset_index,
         bundle=bundle,
         metadata_asset=metadata_asset,
@@ -374,6 +397,11 @@ def verify_sidecars(
         image_kind=image_kind,
         target_os=target_os,
         target_arch=target_arch,
+    )
+    verify_bootstrap_selector(
+        bootstrap_selector,
+        index,
+        release_tag=release_tag,
     )
 
 
@@ -388,7 +416,7 @@ def verify_asset_index(
     image_kind: str,
     target_os: str,
     target_arch: str,
-) -> None:
+) -> dict:
     index = json.loads(asset_index.read_text())
     require(index.get("schema_version") == ASSET_INDEX_SCHEMA_VERSION, "unsupported asset index schema_version")
     require(index.get("release_tag") == release_tag, "asset index release_tag mismatch")
@@ -432,6 +460,111 @@ def verify_asset_index(
             isinstance(asset.get("attestation_name"), str) and asset["attestation_name"],
             "asset index attestation_name invalid",
         )
+    return index
+
+
+def verify_bootstrap_selector(selector: Path, index: dict, *, release_tag: str) -> None:
+    parsed_release_tag, actual_rows = parse_bootstrap_selector(selector)
+    require(parsed_release_tag == release_tag, "bootstrap selector release_tag mismatch")
+    require(parsed_release_tag == index["release_tag"], "bootstrap selector/index release_tag mismatch")
+    expected_rows = expected_bootstrap_selector_rows(index)
+    missing = sorted(set(expected_rows) - set(actual_rows))
+    extra = sorted(set(actual_rows) - set(expected_rows))
+    require(not missing, "bootstrap selector missing tuple(s): " + ", ".join(format_tuple(row) for row in missing))
+    require(not extra, "bootstrap selector extra tuple(s): " + ", ".join(format_tuple(row) for row in extra))
+    for key, expected in expected_rows.items():
+        actual = actual_rows[key]
+        for field, expected_value, actual_value in zip(BOOTSTRAP_SELECTOR_COLUMNS, expected, actual, strict=True):
+            require(
+                actual_value == expected_value,
+                f"bootstrap selector {field} mismatch for {format_tuple(key)}",
+            )
+
+
+def parse_bootstrap_selector(selector: Path) -> tuple[str, dict[tuple[str, str, str], list[str]]]:
+    lines = selector.read_text().splitlines()
+    require(len(lines) >= 3, "bootstrap selector must contain header and at least one row")
+    require(
+        lines[0].split("\t") == ["schema_version", str(BOOTSTRAP_SELECTOR_SCHEMA_VERSION)],
+        "unsupported bootstrap selector schema_version",
+    )
+    release_parts = lines[1].split("\t")
+    require(len(release_parts) == 2 and release_parts[0] == "release_tag", "bootstrap selector release_tag header invalid")
+    release_tag = release_parts[1]
+    require(release_tag, "bootstrap selector release_tag missing")
+    require(
+        lines[2].split("\t") == ["columns", *BOOTSTRAP_SELECTOR_COLUMNS],
+        "bootstrap selector columns mismatch",
+    )
+    rows: dict[tuple[str, str, str], list[str]] = {}
+    for line in lines[3:]:
+        parts = line.split("\t")
+        require(
+            len(parts) == len(BOOTSTRAP_SELECTOR_COLUMNS) + 1 and parts[0] == "row",
+            "bootstrap selector row shape invalid",
+        )
+        values = parts[1:]
+        for field, value in zip(BOOTSTRAP_SELECTOR_COLUMNS, values, strict=True):
+            require(value, f"bootstrap selector {field} empty")
+            require(
+                not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value),
+                f"bootstrap selector {field} contains whitespace or control characters",
+            )
+            require(
+                SELECTOR_VALUE_RE.match(value) is not None,
+                f"bootstrap selector {field} contains non-shell-safe characters",
+            )
+        key = (values[0], values[1], values[2])
+        require(key not in rows, f"bootstrap selector duplicate tuple: {format_tuple(key)}")
+        rows[key] = values
+    require(rows, "bootstrap selector missing tuple rows")
+    return release_tag, rows
+
+
+def expected_bootstrap_selector_rows(index: dict) -> dict[tuple[str, str, str], list[str]]:
+    rows = {}
+    assets = index["assets"]
+    for asset in assets:
+        key = (asset["os"], asset["arch"], asset["image_kind"])
+        require(key not in rows, f"asset index duplicate bootstrap selector tuple: {format_tuple(key)}")
+        rows[key] = [
+            selector_value(asset["os"], "os"),
+            selector_value(asset["arch"], "arch"),
+            selector_value(asset["image_kind"], "image_kind"),
+            selector_value(asset["name"], "name"),
+            selector_value(asset["url"], "url"),
+            selector_value(asset["sha256"], "sha256"),
+            selector_value(asset["size_bytes"], "size_bytes"),
+            selector_value(asset["metadata_name"], "metadata_name"),
+            selector_value(asset["metadata_sha256"], "metadata_sha256"),
+            selector_value(asset["checksum_name"], "checksum_name"),
+            selector_value(asset["signature_name"], "signature_name"),
+            selector_value(asset["attestation_name"], "attestation_name"),
+            selector_value(asset["m80_version"], "m80_version"),
+        ]
+    return rows
+
+
+def selector_value(value: object, field: str) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, int):
+        require(value > 0, f"bootstrap selector {field} must be greater than zero")
+        return str(value)
+    require(isinstance(value, str) and value, f"bootstrap selector {field} must not be empty")
+    require(
+        not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value),
+        f"bootstrap selector {field} must not contain whitespace or control characters",
+    )
+    require(
+        SELECTOR_VALUE_RE.match(value) is not None,
+        f"bootstrap selector {field} must contain only shell-safe token characters",
+    )
+    return value
+
+
+def format_tuple(key: tuple[str, str, str]) -> str:
+    return "/".join(key)
 
 
 def release_asset_url(release_tag: str, asset_name: str) -> str:

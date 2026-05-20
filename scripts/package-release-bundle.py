@@ -19,11 +19,13 @@ import tomllib
 
 BUNDLE_SCHEMA_VERSION = 1
 ASSET_INDEX_SCHEMA_VERSION = 1
+BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
+BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
 INTEGRITY_NAME = "m80-release-integrity.json"
 GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
@@ -44,8 +46,26 @@ INTEGRITY_SUBJECT_KINDS = [
     (f"{METADATA_NAME}.sha256", "checksum-sidecar"),
     (ASSET_INDEX_NAME, "asset-index"),
     (f"{ASSET_INDEX_NAME}.sha256", "checksum-sidecar"),
+    (BOOTSTRAP_SELECTOR_NAME, "bootstrap-selector"),
+    (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", "checksum-sidecar"),
     ("SHA256SUMS", "checksum-manifest"),
 ]
+BOOTSTRAP_SELECTOR_COLUMNS = [
+    "os",
+    "arch",
+    "image_kind",
+    "bundle_name",
+    "bundle_url",
+    "bundle_sha256",
+    "size_bytes",
+    "metadata_name",
+    "metadata_sha256",
+    "checksum_name",
+    "signature_name",
+    "attestation_name",
+    "m80_version",
+]
+SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
 FILE_MODES = {
     "bin/m80": 0o755,
     "bin/m80-jailer-harden": 0o755,
@@ -188,20 +208,29 @@ def main() -> int:
         metadata_asset.chmod(0o644)
         write_sha256_sidecar(out_dir / f"{METADATA_NAME}.sha256", metadata_asset, METADATA_NAME)
         asset_index_path = out_dir / ASSET_INDEX_NAME
+        asset_index = release_asset_index(
+            args=args,
+            version=version,
+            compatibility=compatibility,
+            target_os=target_os,
+            target_arch=target_arch,
+            tarball=tarball,
+            metadata_asset=metadata_asset,
+        )
         write_json(
             asset_index_path,
-            release_asset_index(
-                args=args,
-                version=version,
-                compatibility=compatibility,
-                target_os=target_os,
-                target_arch=target_arch,
-                tarball=tarball,
-                metadata_asset=metadata_asset,
-            ),
+            asset_index,
         )
         asset_index_path.chmod(0o644)
         write_sha256_sidecar(out_dir / f"{ASSET_INDEX_NAME}.sha256", asset_index_path, ASSET_INDEX_NAME)
+        bootstrap_selector_path = out_dir / BOOTSTRAP_SELECTOR_NAME
+        write_bootstrap_selector(bootstrap_selector_path, asset_index)
+        bootstrap_selector_path.chmod(0o644)
+        write_sha256_sidecar(
+            out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
+            bootstrap_selector_path,
+            BOOTSTRAP_SELECTOR_NAME,
+        )
         write_public_sha256s(
             out_dir / "SHA256SUMS",
             [
@@ -209,6 +238,7 @@ def main() -> int:
                 (INSTALL_NAME, install_asset),
                 (METADATA_NAME, metadata_asset),
                 (ASSET_INDEX_NAME, asset_index_path),
+                (BOOTSTRAP_SELECTOR_NAME, bootstrap_selector_path),
             ],
         )
         integrity_path = out_dir / INTEGRITY_NAME
@@ -522,6 +552,55 @@ def release_asset_index(
             }
         ],
     }
+
+
+def write_bootstrap_selector(path: Path, asset_index: dict) -> None:
+    rows = [
+        f"schema_version\t{BOOTSTRAP_SELECTOR_SCHEMA_VERSION}\n",
+        f"release_tag\t{selector_value(asset_index['release_tag'], 'release_tag')}\n",
+        "columns\t" + "\t".join(BOOTSTRAP_SELECTOR_COLUMNS) + "\n",
+    ]
+    for asset in asset_index["assets"]:
+        rows.append(
+            "row\t"
+            + "\t".join(
+                [
+                    selector_value(asset["os"], "os"),
+                    selector_value(asset["arch"], "arch"),
+                    selector_value(asset["image_kind"], "image_kind"),
+                    selector_value(asset["name"], "name"),
+                    selector_value(asset["url"], "url"),
+                    selector_value(asset["sha256"], "sha256"),
+                    selector_value(asset["size_bytes"], "size_bytes"),
+                    selector_value(asset["metadata_name"], "metadata_name"),
+                    selector_value(asset["metadata_sha256"], "metadata_sha256"),
+                    selector_value(asset["checksum_name"], "checksum_name"),
+                    selector_value(asset["signature_name"], "signature_name"),
+                    selector_value(asset["attestation_name"], "attestation_name"),
+                    selector_value(asset["m80_version"], "m80_version"),
+                ]
+            )
+            + "\n"
+        )
+    path.write_text("".join(rows))
+
+
+def selector_value(value: object, field: str) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, int):
+        require(value > 0, f"bootstrap selector {field} must be greater than zero")
+        return str(value)
+    require(isinstance(value, str) and value, f"bootstrap selector {field} must not be empty")
+    require(
+        not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value),
+        f"bootstrap selector {field} must not contain whitespace or control characters",
+    )
+    require(
+        SELECTOR_VALUE_RE.match(value) is not None,
+        f"bootstrap selector {field} must contain only shell-safe token characters",
+    )
+    return value
 
 
 def release_integrity_material(

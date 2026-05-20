@@ -19,6 +19,7 @@ WRITE_ATTESTATION_METADATA = REPO_ROOT / "scripts" / "write-release-attestation-
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
+BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
 INTEGRITY_NAME = "m80-release-integrity.json"
 INTEGRITY_ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
@@ -50,6 +51,8 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertTrue((out_dir / f"{METADATA_NAME}.sha256").is_file())
             self.assertTrue((out_dir / ASSET_INDEX_NAME).is_file())
             self.assertTrue((out_dir / f"{ASSET_INDEX_NAME}.sha256").is_file())
+            self.assertTrue((out_dir / BOOTSTRAP_SELECTOR_NAME).is_file())
+            self.assertTrue((out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256").is_file())
             self.assertTrue((out_dir / "SHA256SUMS").is_file())
             self.assertTrue((out_dir / INTEGRITY_NAME).is_file())
             self.assertEqual(file_mode(tarball), 0o644)
@@ -59,6 +62,8 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(file_mode(out_dir / f"{METADATA_NAME}.sha256"), 0o644)
             self.assertEqual(file_mode(out_dir / ASSET_INDEX_NAME), 0o644)
             self.assertEqual(file_mode(out_dir / f"{ASSET_INDEX_NAME}.sha256"), 0o644)
+            self.assertEqual(file_mode(out_dir / BOOTSTRAP_SELECTOR_NAME), 0o644)
+            self.assertEqual(file_mode(out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256"), 0o644)
             self.assertEqual(file_mode(out_dir / "SHA256SUMS"), 0o644)
             self.assertEqual(file_mode(out_dir / INTEGRITY_NAME), 0o644)
             with tarfile.open(tarball, "r:gz") as tar:
@@ -146,6 +151,29 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(asset["guest_protocol_version"], 1)
             self.assertEqual(asset["manifest_schema_version"], 5)
             self.assertEqual(asset["expected_firecracker_version"], "v1.15.1")
+            selector = (out_dir / BOOTSTRAP_SELECTOR_NAME).read_text().splitlines()
+            self.assertEqual(selector[0], "schema_version\t1")
+            self.assertEqual(selector[1], "release_tag\tv0.0.0")
+            self.assertEqual(
+                selector[2],
+                "columns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\t"
+                "size_bytes\tmetadata_name\tmetadata_sha256\tchecksum_name\tsignature_name\t"
+                "attestation_name\tm80_version",
+            )
+            self.assertEqual(len(selector), 4)
+            selector_row = selector[3].split("\t")
+            self.assertEqual(selector_row[0], "row")
+            self.assertEqual(selector_row[1:4], ["linux", "x86_64", "minimal"])
+            self.assertEqual(selector_row[4], BUNDLE_NAME)
+            self.assertEqual(selector_row[5], asset["url"])
+            self.assertEqual(selector_row[6], asset["sha256"])
+            self.assertEqual(selector_row[7], str(asset["size_bytes"]))
+            self.assertEqual(selector_row[8], METADATA_NAME)
+            self.assertEqual(selector_row[9], asset["metadata_sha256"])
+            self.assertEqual(selector_row[10], f"{BUNDLE_NAME}.sha256")
+            self.assertEqual(selector_row[11], "-")
+            self.assertEqual(selector_row[12], "-")
+            self.assertEqual(selector_row[13], "v0.0.0")
             integrity = json.loads((out_dir / INTEGRITY_NAME).read_text())
             self.assertEqual(integrity["schema_version"], 1)
             self.assertEqual(integrity["mechanism"], "github-artifact-attestation")
@@ -168,6 +196,8 @@ class ReleaseBundleTest(unittest.TestCase):
                     f"{METADATA_NAME}.sha256",
                     ASSET_INDEX_NAME,
                     f"{ASSET_INDEX_NAME}.sha256",
+                    BOOTSTRAP_SELECTOR_NAME,
+                    f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
                     "SHA256SUMS",
                 },
             )
@@ -238,6 +268,29 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("attestations: write", workflow)
         self.assertIn("scripts/write-release-attestation-metadata.py", workflow)
         self.assertGreaterEqual(workflow.count("scripts/verify-release-integrity.py"), 2)
+        for name in [
+            BUNDLE_NAME,
+            f"{BUNDLE_NAME}.sha256",
+            METADATA_NAME,
+            f"{METADATA_NAME}.sha256",
+            ASSET_INDEX_NAME,
+            f"{ASSET_INDEX_NAME}.sha256",
+            BOOTSTRAP_SELECTOR_NAME,
+            f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
+            INSTALL_NAME,
+            f"{INSTALL_NAME}.sha256",
+            "SHA256SUMS",
+        ]:
+            self.assertGreaterEqual(
+                workflow.count(f"/tmp/m80-release-upload/{name}"),
+                1,
+                f"{name} must be uploaded",
+            )
+            self.assertGreaterEqual(
+                workflow.count(f"--pattern {name}"),
+                1,
+                f"{name} must be re-downloaded",
+            )
         for name in [
             INTEGRITY_NAME,
             INTEGRITY_ATTESTATION_BUNDLE_NAME,
@@ -596,6 +649,7 @@ class ReleaseBundleTest(unittest.TestCase):
                 "checksum sidecar mismatch",
             ),
             (f"{ASSET_INDEX_NAME}.sha256", ASSET_INDEX_NAME, "checksum sidecar mismatch"),
+            (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", BOOTSTRAP_SELECTOR_NAME, "checksum sidecar mismatch"),
             ("SHA256SUMS", INSTALL_NAME, f"public SHA256SUMS hash mismatch for {INSTALL_NAME}"),
         ]
         for sidecar, asset_name, expected_error in cases:
@@ -701,6 +755,107 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("asset index m80_version mismatch", result.stderr)
+
+    def test_verifier_rejects_bootstrap_selector_unsupported_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            lines[0] = "schema_version\t999"
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported bootstrap selector schema_version", result.stderr)
+
+    def test_verifier_rejects_bootstrap_selector_stale_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            lines[1] = "release_tag\tv9.9.9"
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector release_tag mismatch", result.stderr)
+
+    def test_verifier_rejects_bootstrap_selector_missing_tuple(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")[:3]
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector missing tuple", result.stderr)
+
+    def test_verifier_rejects_bootstrap_selector_duplicate_tuple(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            lines.append(lines[3])
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector duplicate tuple: linux/x86_64/minimal", result.stderr)
+
+    def test_verifier_rejects_bootstrap_selector_stale_digest_or_size(self) -> None:
+        cases = [
+            (6, "0" * 64, "bootstrap selector bundle_sha256 mismatch"),
+            (7, "999", "bootstrap selector size_bytes mismatch"),
+        ]
+        for column, value, expected_error in cases:
+            with self.subTest(column=column), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                tarball = package_fixture(root)
+                lines = bootstrap_selector_lines(root / "out")
+                row = lines[3].split("\t")
+                row[column] = value
+                lines[3] = "\t".join(row)
+                rewrite_bootstrap_selector(root / "out", lines)
+
+                result = run_verify(tarball, verify_sidecars=True, check=False)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected_error, result.stderr)
+
+    def test_verifier_rejects_hand_edited_bootstrap_selector_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            row = lines[3].split("\t")
+            row[8] = "other.bundle.json"
+            lines[3] = "\t".join(row)
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector metadata_name mismatch", result.stderr)
+
+    def test_verifier_rejects_bootstrap_selector_shell_metacharacters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            row = lines[3].split("\t")
+            row[5] = "https://example.invalid/$(id)"
+            lines[3] = "\t".join(row)
+            rewrite_bootstrap_selector(root / "out", lines)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap selector bundle_url contains non-shell-safe characters", result.stderr)
 
     def test_release_integrity_material_verifier_accepts_valid_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -829,6 +984,8 @@ class ReleaseBundleTest(unittest.TestCase):
                     f"{METADATA_NAME}.sha256",
                     ASSET_INDEX_NAME,
                     f"{ASSET_INDEX_NAME}.sha256",
+                    BOOTSTRAP_SELECTOR_NAME,
+                    f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
                     "SHA256SUMS",
                 },
             )
@@ -880,6 +1037,17 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(f"release integrity missing subject(s): {ASSET_INDEX_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_missing_bootstrap_selector_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out", omit_subject=BOOTSTRAP_SELECTOR_NAME)
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity missing subject(s): {BOOTSTRAP_SELECTOR_NAME}", result.stderr)
 
     def test_release_integrity_material_rejects_unexpected_extra_subject(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -934,6 +1102,41 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(f"release integrity sha256 mismatch for {INSTALL_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            row = lines[3].split("\t")
+            row[7] = "999"
+            lines[3] = "\t".join(row)
+            rewrite_bootstrap_selector(root / "out", lines)
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity bootstrap selector size_bytes mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_signed_bootstrap_selector_shell_metacharacters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            row = lines[3].split("\t")
+            row[5] = "https://example.invalid/$(id)"
+            lines[3] = "\t".join(row)
+            rewrite_bootstrap_selector(root / "out", lines)
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "release integrity bootstrap selector bundle_url contains non-shell-safe characters",
+                result.stderr,
+            )
 
     def test_release_integrity_material_rejects_unsupported_verifier_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1309,6 +1512,27 @@ def rewrite_asset_index(out_dir: Path, index: dict) -> None:
             (INSTALL_NAME, out_dir / INSTALL_NAME),
             (METADATA_NAME, out_dir / METADATA_NAME),
             (ASSET_INDEX_NAME, index_path),
+            (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
+        ],
+    )
+
+
+def bootstrap_selector_lines(out_dir: Path) -> list[str]:
+    return (out_dir / BOOTSTRAP_SELECTOR_NAME).read_text().splitlines()
+
+
+def rewrite_bootstrap_selector(out_dir: Path, lines: list[str]) -> None:
+    selector = out_dir / BOOTSTRAP_SELECTOR_NAME
+    selector.write_text("\n".join(lines) + "\n")
+    write_sha256_sidecar(out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256", selector, BOOTSTRAP_SELECTOR_NAME)
+    write_public_sha256s(
+        out_dir / "SHA256SUMS",
+        [
+            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
+            (INSTALL_NAME, out_dir / INSTALL_NAME),
+            (METADATA_NAME, out_dir / METADATA_NAME),
+            (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
+            (BOOTSTRAP_SELECTOR_NAME, selector),
         ],
     )
 
@@ -1331,6 +1555,8 @@ def write_integrity_material(
         f"{METADATA_NAME}.sha256": "checksum-sidecar",
         ASSET_INDEX_NAME: "asset-index",
         f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
+        BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
+        f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
         "SHA256SUMS": "checksum-manifest",
     }
     subjects = []

@@ -183,6 +183,8 @@ jobs:
             /tmp/m80-release-upload/m80-linux-x86_64.bundle.json.sha256 \
             /tmp/m80-release-upload/m80-release-assets.json \
             /tmp/m80-release-upload/m80-release-assets.json.sha256 \
+            /tmp/m80-release-upload/m80-bootstrap-selector.tsv \
+            /tmp/m80-release-upload/m80-bootstrap-selector.tsv.sha256 \
             /tmp/m80-release-upload/install.sh \
             /tmp/m80-release-upload/install.sh.sha256 \
             /tmp/m80-release-upload/m80-release-integrity.json \
@@ -205,6 +207,8 @@ jobs:
             --pattern m80-linux-x86_64.bundle.json.sha256 \
             --pattern m80-release-assets.json \
             --pattern m80-release-assets.json.sha256 \
+            --pattern m80-bootstrap-selector.tsv \
+            --pattern m80-bootstrap-selector.tsv.sha256 \
             --pattern install.sh \
             --pattern install.sh.sha256 \
             --pattern m80-release-integrity.json \

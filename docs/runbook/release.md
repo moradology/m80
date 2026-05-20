@@ -94,9 +94,11 @@ scripts/verify-release-bundle.py \
 ```
 
 The package step emits a deterministic tarball, checksum sidecars, an
-inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, and a public
-`SHA256SUMS` for the tarball, installer, metadata sidecar, and asset index. The
-exact builder contract is captured in `docs/behaviors/release/bundle-builder.md`.
+inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, a canonical
+`m80-release-assets.json` asset index, a shell-safe
+`m80-bootstrap-selector.tsv` projection of that index for the no-installed-binary
+installer path, and a public `SHA256SUMS` covering those assets. The exact
+builder contract is captured in `docs/behaviors/release/bundle-builder.md`.
 
 The complete public release subject set for the signed/attested default Linux
 dist is:
@@ -110,6 +112,8 @@ m80-linux-x86_64.bundle.json
 m80-linux-x86_64.bundle.json.sha256
 m80-release-assets.json
 m80-release-assets.json.sha256
+m80-bootstrap-selector.tsv
+m80-bootstrap-selector.tsv.sha256
 SHA256SUMS
 ```
 
@@ -126,6 +130,12 @@ release workflow also publishes the integrity predicate and attestation bundle
 used by the verifier. The asset-index `signature_name` and `attestation_name`
 fields remain nullable until the signed-index leaf makes per-row proof
 references mandatory.
+
+The bootstrap selector is generated from the asset index, not maintained by
+hand. It exists so `install.sh` can select a bundle with POSIX shell tooling
+before a local `m80` binary is available. Verification compares the selector
+back to `m80-release-assets.json`; changing one without regenerating the other
+is a release-blocking drift.
 
 ## Release Integrity Material
 
