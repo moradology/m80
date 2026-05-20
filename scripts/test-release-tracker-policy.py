@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""Tests for scripts/verify-release-tracker-policy.py."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+VERIFY = REPO_ROOT / "scripts" / "verify-release-tracker-policy.py"
+
+
+class ReleaseTrackerPolicyTest(unittest.TestCase):
+    def test_missing_verified_close_label_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.18",
+                        "Privileged release smoke runner",
+                        labels=["cicd", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                    issue(
+                        "m80-o3uh9.18.2",
+                        "Real-KVM runner baseline",
+                        "proof artifact records runner identity and substrate summary",
+                        labels=["cicd", "real-kvm", "release"],
+                        parent="m80-o3uh9.18",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "m80-o3uh9.18.2: must carry requires-verified-close",
+                result.stderr,
+            )
+
+    def test_parent_inherits_missing_verified_close_label(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.17",
+                        "Hostless release fixture CI",
+                        labels=["cicd", "quickstart", "release"],
+                        parent="m80-o3uh9",
+                    ),
+                    issue(
+                        "m80-o3uh9.17.1",
+                        "Fake release server fixture",
+                        "fixture emits a hostless proof artifact",
+                        labels=["cicd", "quickstart", "release", "requires-verified-close"],
+                        parent="m80-o3uh9.17",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "m80-o3uh9.17: must carry requires-verified-close",
+                result.stderr,
+            )
+
+    def test_missing_verified_close_reason_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.18.2",
+                        "Real-KVM runner baseline",
+                        status="closed",
+                        labels=["cicd", "real-kvm", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("closed requires-verified-close issue missing close_reason", result.stderr)
+
+    def test_new_closed_proof_leaf_without_label_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.18.2",
+                        "Real-KVM runner baseline",
+                        "proof artifact records runner identity and substrate summary",
+                        status="closed",
+                        labels=["cicd", "real-kvm", "release"],
+                        parent="m80-o3uh9",
+                        closed_at="2026-05-20T18:30:00+00:00",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "m80-o3uh9.18.2: must carry requires-verified-close",
+                result.stderr,
+            )
+
+    def test_stale_artifact_path_fails(self) -> None:
+        with tracker_repo() as repo:
+            sha = repo.commit_all("issues only")
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.18.2",
+                        "Real-KVM runner baseline",
+                        status="closed",
+                        close_reason=f"verified: artifacts/missing.json @ {sha}",
+                        labels=["cicd", "real-kvm", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("verified artifact path is missing: artifacts/missing.json", result.stderr)
+
+    def test_valid_close_note_passes(self) -> None:
+        with tracker_repo() as repo:
+            proof = repo.root / "artifacts" / "proof.json"
+            proof.parent.mkdir()
+            proof.write_text(json.dumps(valid_quickstart_proof()))
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.18.2",
+                        "Real-KVM runner baseline",
+                        status="closed",
+                        labels=["cicd", "real-kvm", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+            sha = repo.commit_all("valid proof")
+            issues = read_issues(repo.root)
+            issues[1]["close_reason"] = f"verified: artifacts/proof.json @ {sha}"
+            write_issues(repo.root, issues)
+
+            result = repo.run_verify()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("release tracker policy ok", result.stdout)
+
+
+class tracker_repo:
+    def __enter__(self) -> "tracker_repo":
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / ".beads").mkdir()
+        (self.root / ".beads" / "issues.jsonl").write_text("")
+        subprocess.run(["git", "init"], cwd=self.root, check=True, stdout=subprocess.PIPE)
+        subprocess.run(["git", "config", "user.email", "tester@example.com"], cwd=self.root, check=True)
+        subprocess.run(["git", "config", "user.name", "tester"], cwd=self.root, check=True)
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.tmp.cleanup()
+
+    def run_verify(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "python3",
+                str(VERIFY),
+                "--issues",
+                str(self.root / ".beads" / "issues.jsonl"),
+                "--repo-root",
+                str(self.root),
+            ],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    def commit_all(self, message: str) -> str:
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=self.root,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.root, text=True).strip()
+
+
+def issue(
+    issue_id: str,
+    title: str,
+    description: str = "",
+    *,
+    status: str = "open",
+    labels: list[str] | None = None,
+    parent: str | None = None,
+    close_reason: str | None = None,
+    closed_at: str | None = None,
+) -> dict:
+    value: dict[str, object] = {
+        "id": issue_id,
+        "title": title,
+        "description": description,
+        "status": status,
+        "priority": 1,
+        "issue_type": "task",
+        "labels": labels or [],
+        "dependencies": [],
+    }
+    if parent:
+        value["dependencies"] = [
+            {
+                "issue_id": issue_id,
+                "depends_on_id": parent,
+                "type": "parent-child",
+            }
+        ]
+    if close_reason is not None:
+        value["close_reason"] = close_reason
+    if closed_at is not None:
+        value["closed_at"] = closed_at
+        value["updated_at"] = closed_at
+    return value
+
+
+def write_issues(root: Path, issues: list[dict]) -> None:
+    with (root / ".beads" / "issues.jsonl").open("w") as f:
+        for issue_row in issues:
+            f.write(json.dumps(issue_row, sort_keys=True))
+            f.write("\n")
+
+
+def read_issues(root: Path) -> list[dict]:
+    with (root / ".beads" / "issues.jsonl").open() as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def valid_quickstart_proof() -> dict:
+    return {
+        "release": {"resolved_tag": "v0.0.0"},
+        "command": {"display": "m80 run -- echo hello", "observed_exit_status": 0},
+        "stdout": {"excerpt": "hello\n"},
+        "stderr": {"excerpt": ""},
+        "substrate": {"kind": "real-kvm", "summary": "test runner"},
+    }
+
+
+if __name__ == "__main__":
+    unittest.main()

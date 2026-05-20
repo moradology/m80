@@ -30,6 +30,14 @@ exit status equals expected exit status, and that expected stdout/stderr markers
 appear on the correct streams. It rejects unknown fields so fixture, release,
 and freshness producers cannot silently drift.
 
+Tracker close discipline is guarded separately by
+`scripts/verify-release-tracker-policy.py`. Open `m80-o3uh9` proof-shaped beads
+and their parents carry `requires-verified-close`, and closed labeled leaves
+must cite `verified: <artifact-path> @ <commit-sha>` for a committed proof
+artifact containing command, stdout/stderr or log path, exit status, resolved
+tag, and substrate. See
+[`verified-close-policy.md`](verified-close-policy.md).
+
 The tag release workflow writes
 `m80-quickstart-proof-hostless.json` into the `m80-release-dist` GitHub Actions
 artifact and validates it before upload. The publish job validates the same
@@ -52,4 +60,5 @@ scripts/verify-quickstart-proof.py \
 Relevant tests:
 
 - `scripts/test-quickstart-proof.py`
+- `scripts/test-release-tracker-policy.py`
 - `scripts/test-release-bundle.py::test_release_workflow_publishes_and_verifies_proof_assets`
