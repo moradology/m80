@@ -303,20 +303,22 @@ before downloading official release assets or touching active install state. If
 the `gh` check fails: Install or upgrade GitHub CLI with attestation support
 from <https://cli.github.com/packages>.
 
-Verify the predicate shape against a downloaded dist directory before treating
-a release as signed. The tag workflow publishes the attestation bundle and
-normalized metadata; a release that lacks those files is not valid for signed
-installer verification. Run the command from a trusted m80 checkout or
-installed verifier distribution; do not load the trust policy from the release
-dist being verified:
+Verify a downloaded dist directory before treating a release as signed. This
+one read-only command verifies the bundle tar contract, bundle checksum,
+installer checksum, metadata sidecar, public sidecars, signed predicate,
+attestation metadata, cryptographic attestation bundle, and tag identity. The
+tag workflow publishes the attestation bundle and normalized metadata; a
+release that lacks those files is not valid for signed installer verification.
+Run the command from a trusted m80 checkout or installed verifier distribution;
+do not load the trust policy from the release dist being verified:
 
 ```sh
 M80_RELEASE_COMMIT="$(git rev-list -n 1 "$M80_RELEASE_TAG")"
 
-python3 scripts/verify-release-integrity.py \
-  /tmp/m80-release-dist/m80-release-integrity.json \
-  --dist-dir /tmp/m80-release-dist \
+python3 scripts/verify-release-bundle.py \
+  /tmp/m80-release-dist/m80-linux-x86_64.tar.gz \
   --release-tag "$M80_RELEASE_TAG" \
+  --verify-integrity \
   --commit-sha "$M80_RELEASE_COMMIT" \
   --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
   --attestation-bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl \
@@ -324,6 +326,11 @@ python3 scripts/verify-release-integrity.py \
   --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --rust-toolchain 1.82
 ```
+
+`scripts/verify-release-bundle.py --verify-integrity` drives
+`scripts/verify-release-integrity.py` after public bundle and sidecar checks so
+humans and automation have one command for the full public dist verification
+path.
 
 This check is read-only and does not require root. It fails closed for wrong
 tag, wrong commit, missing subject digests, unknown signers, stale keysets,

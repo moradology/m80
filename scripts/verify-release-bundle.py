@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
+import sys
 import tarfile
 import tomllib
 
@@ -27,6 +30,8 @@ ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 BUILD_MANIFEST_NAME = "m80-release-build.json"
 INTEGRITY_NAME = "m80-release-integrity.json"
+INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
+INTEGRITY_ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
 INSTALL_NAME = "install.sh"
 BOOTSTRAP_SELECTOR_COLUMNS = [
     "os",
@@ -159,7 +164,42 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="verify adjacent public release sidecars emitted by package-release-bundle.py",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--verify-integrity",
+        action="store_true",
+        help=(
+            "also verify the signed release integrity predicate and attestation "
+            "for the bundle's public dist directory"
+        ),
+    )
+    parser.add_argument("--dist-dir", type=Path, help="public release dist directory; defaults to bundle parent")
+    parser.add_argument("--integrity-material", type=Path, help=f"path to {INTEGRITY_NAME}; defaults to dist dir")
+    parser.add_argument("--commit-sha", help="expected 40-hex release commit; required with --verify-integrity")
+    parser.add_argument(
+        "--trust-policy",
+        type=Path,
+        help="trusted release trust policy; defaults to repo docs policy",
+    )
+    parser.add_argument(
+        "--attestation-bundle",
+        type=Path,
+        help=f"path to {INTEGRITY_ATTESTATION_BUNDLE_NAME}; defaults to dist dir",
+    )
+    parser.add_argument(
+        "--attestation-metadata",
+        type=Path,
+        help=f"path to {INTEGRITY_ATTESTATION_METADATA_NAME}; defaults to dist dir",
+    )
+    parser.add_argument(
+        "--verification-time",
+        help="RFC3339 UTC verification time; defaults to current UTC time",
+    )
+    parser.add_argument("--gh-bin", default="gh", help="GitHub CLI binary used for attestation verification")
+    parser.add_argument("--rust-toolchain", help="expected Rust toolchain recorded in release integrity material")
+    args = parser.parse_args()
+    if args.verify_integrity and not args.commit_sha:
+        parser.error("--verify-integrity requires --commit-sha")
+    return args
 
 
 def main() -> int:
@@ -172,15 +212,58 @@ def main() -> int:
         repo_root=args.repo_root,
     )
 
-    if args.verify_sidecars:
+    if args.verify_sidecars or args.verify_integrity:
         verify_sidecars(
             verification,
             repo_root=args.repo_root,
             release_tag=args.release_tag,
         )
 
+    if args.verify_integrity:
+        verify_release_integrity(args, verification.bundle)
+
     print(f"verified {args.bundle}")
     return 0
+
+
+def verify_release_integrity(args: argparse.Namespace, bundle: Path) -> None:
+    dist_dir = args.dist_dir or bundle.parent
+    material = args.integrity_material or dist_dir / INTEGRITY_NAME
+    trust_policy = args.trust_policy or args.repo_root / "docs/behaviors/release/m80-release-trust-policy.json"
+    attestation_bundle = args.attestation_bundle or dist_dir / INTEGRITY_ATTESTATION_BUNDLE_NAME
+    attestation_metadata = args.attestation_metadata or dist_dir / INTEGRITY_ATTESTATION_METADATA_NAME
+    verification_time = args.verification_time or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    verifier = Path(__file__).with_name("verify-release-integrity.py")
+    cmd = [
+        sys.executable,
+        str(verifier),
+        str(material),
+        "--dist-dir",
+        str(dist_dir),
+        "--release-tag",
+        args.release_tag,
+        "--commit-sha",
+        args.commit_sha,
+        "--trust-policy",
+        str(trust_policy),
+        "--attestation-bundle",
+        str(attestation_bundle),
+        "--attestation-metadata",
+        str(attestation_metadata),
+        "--verification-time",
+        verification_time,
+        "--gh-bin",
+        args.gh_bin,
+        "--target",
+        args.target,
+        "--repo-root",
+        str(args.repo_root),
+    ]
+    if args.rust_toolchain:
+        cmd.extend(["--rust-toolchain", args.rust_toolchain])
+    completed = subprocess.run(cmd, check=False)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
 
 
 def verify_bundle_contract(

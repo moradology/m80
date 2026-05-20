@@ -163,10 +163,13 @@ remediation: Install or upgrade GitHub CLI with attestation support.
 
 ## Verification Contract
 
-`scripts/verify-release-integrity.py` is the trust-anchor loader for both human
-verification and installer verification. It verifies the predicate, trust
-policy, and attestation metadata against a release dist directory. It fails
-closed when:
+`scripts/verify-release-bundle.py --verify-integrity` is the one-command human
+verifier for a downloaded public release dist directory. It first verifies the
+tarball contract plus adjacent public checksum sidecars, then invokes
+`scripts/verify-release-integrity.py` as the shared trust-anchor loader for
+human verification and installer verification. The integrity verifier checks
+the predicate, trust policy, and attestation metadata against the same release
+dist directory. It fails closed when:
 
 - `schema_version` is unsupported;
 - `mechanism` is not `github-artifact-attestation`;
@@ -233,10 +236,10 @@ not from the downloaded release dist being verified.
 ```sh
 M80_RELEASE_COMMIT="$(git rev-list -n 1 "$M80_RELEASE_TAG")"
 
-python3 scripts/verify-release-integrity.py \
-  /tmp/m80-release-dist/m80-release-integrity.json \
-  --dist-dir /tmp/m80-release-dist \
+python3 scripts/verify-release-bundle.py \
+  /tmp/m80-release-dist/m80-linux-x86_64.tar.gz \
   --release-tag "$M80_RELEASE_TAG" \
+  --verify-integrity \
   --commit-sha "$M80_RELEASE_COMMIT" \
   --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
   --attestation-bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl \
@@ -247,6 +250,12 @@ python3 scripts/verify-release-integrity.py \
 
 The command is read-only and does not require root.
 
+`--verify-integrity` implies public sidecar verification. It checks the bundle
+tar internals, bundle checksum, installer checksum, metadata sidecar, asset
+index, bootstrap selector, build manifest, public `SHA256SUMS`, signed
+predicate, attestation metadata, cryptographic attestation bundle, and tag
+identity before printing success.
+
 If this command fails before reading release files with an attestation-verifier
 error, upgrade GitHub CLI to a build that includes `gh attestation verify`.
 Linux package instructions are at <https://cli.github.com/packages>.
@@ -256,6 +265,12 @@ Linux package instructions are at <https://cli.github.com/packages>.
 `scripts/test-release-bundle.py` covers:
 
 - `test_release_integrity_material_verifier_accepts_valid_fixture`;
+- `test_human_release_dist_verifier_accepts_clean_public_dist`;
+- `test_human_release_dist_verifier_rejects_tampered_tarball`;
+- `test_human_release_dist_verifier_rejects_tampered_install_sh`;
+- `test_human_release_dist_verifier_rejects_wrong_tag`;
+- `test_human_release_dist_verifier_rejects_missing_attestation`;
+- `test_human_release_dist_verifier_rejects_missing_sidecar`;
 - `test_release_integrity_material_rejects_missing_asset_index_attestation_ref`;
 - `test_release_integrity_material_rejects_empty_asset_index_attestation_ref`;
 - `test_release_integrity_material_rejects_stale_asset_index_attestation_ref`;

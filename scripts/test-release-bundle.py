@@ -1925,6 +1925,78 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertIn("verified release integrity material", result.stdout)
 
+    def test_human_release_dist_verifier_accepts_clean_public_dist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            write_integrity_material(root / "out")
+
+            result = run_verify(tarball, verify_integrity=True)
+
+            self.assertIn("verified release integrity material", result.stdout)
+            self.assertIn(f"verified {tarball}", result.stdout)
+
+    def test_human_release_dist_verifier_rejects_tampered_tarball(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            write_integrity_material(root / "out")
+            with tarball.open("ab") as f:
+                f.write(b"tampered")
+
+            result = run_verify(tarball, verify_integrity=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"checksum sidecar mismatch for {BUNDLE_NAME}", result.stderr)
+
+    def test_human_release_dist_verifier_rejects_tampered_install_sh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            write_integrity_material(root / "out")
+            with (root / "out" / INSTALL_NAME).open("a") as f:
+                f.write("\n# tampered\n")
+
+            result = run_verify(tarball, verify_integrity=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"checksum sidecar mismatch for {INSTALL_NAME}", result.stderr)
+
+    def test_human_release_dist_verifier_rejects_wrong_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            write_integrity_material(root / "out")
+
+            result = run_verify(tarball, verify_integrity=True, release_tag="v9.9.9", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release tag mismatch: expected v0.0.0, got v9.9.9", result.stderr)
+
+    def test_human_release_dist_verifier_rejects_missing_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            write_integrity_material(root / "out")
+            (root / "out" / INTEGRITY_ATTESTATION_BUNDLE_NAME).unlink()
+
+            result = run_verify(tarball, verify_integrity=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation bundle missing", result.stderr)
+
+    def test_human_release_dist_verifier_rejects_missing_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            write_integrity_material(root / "out")
+            (root / "out" / f"{INSTALL_NAME}.sha256").unlink()
+
+            result = run_verify(tarball, verify_integrity=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"missing checksum sidecar: {INSTALL_NAME}.sha256", result.stderr)
+
     def test_release_integrity_material_rejects_missing_asset_index_attestation_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -3805,6 +3877,9 @@ def run_verify(
     *,
     check: bool = True,
     verify_sidecars: bool = False,
+    verify_integrity: bool = False,
+    release_tag: str = "v0.0.0",
+    gh_bin: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     cmd = [
         "python3",
@@ -3813,10 +3888,32 @@ def run_verify(
         "--repo-root",
         str(REPO_ROOT),
         "--release-tag",
-        "v0.0.0",
+        release_tag,
     ]
     if verify_sidecars:
         cmd.append("--verify-sidecars")
+    if verify_integrity:
+        if gh_bin is None:
+            gh_bin = fake_gh_path(tarball.parent.parent)
+        cmd.extend(
+            [
+                "--verify-integrity",
+                "--commit-sha",
+                INTEGRITY_COMMIT_SHA,
+                "--trust-policy",
+                str(trust_policy_path(tarball.parent)),
+                "--attestation-bundle",
+                str(tarball.parent / INTEGRITY_ATTESTATION_BUNDLE_NAME),
+                "--attestation-metadata",
+                str(tarball.parent / INTEGRITY_ATTESTATION_METADATA_NAME),
+                "--verification-time",
+                INTEGRITY_VERIFICATION_TIME,
+                "--gh-bin",
+                str(gh_bin),
+                "--rust-toolchain",
+                INTEGRITY_RUST_TOOLCHAIN,
+            ]
+        )
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 

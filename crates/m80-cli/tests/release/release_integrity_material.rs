@@ -43,6 +43,14 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "m80-release-build.json",
         "SHA256SUMS",
         "scripts/verify-release-integrity.py",
+        "scripts/verify-release-bundle.py",
+        "--verify-integrity",
+        "test_human_release_dist_verifier_accepts_clean_public_dist",
+        "test_human_release_dist_verifier_rejects_tampered_tarball",
+        "test_human_release_dist_verifier_rejects_tampered_install_sh",
+        "test_human_release_dist_verifier_rejects_wrong_tag",
+        "test_human_release_dist_verifier_rejects_missing_attestation",
+        "test_human_release_dist_verifier_rejects_missing_sidecar",
         "test_release_integrity_material_rejects_wrong_tag",
         "test_release_integrity_material_rejects_missing_install_subject",
         "test_release_integrity_material_rejects_missing_asset_index_subject",
@@ -99,6 +107,9 @@ fn release_runbook_includes_human_integrity_verification_command() {
 
     assert!(runbook.contains("## Release Integrity Material"));
     assert!(runbook.contains("GitHub Artifact Attestations"));
+    assert!(runbook.contains("python3 scripts/verify-release-bundle.py"));
+    assert!(runbook.contains("/tmp/m80-release-dist/m80-linux-x86_64.tar.gz"));
+    assert!(runbook.contains("--verify-integrity"));
     assert!(runbook.contains("python3 scripts/verify-release-integrity.py"));
     assert!(runbook.contains("M80_RELEASE_COMMIT=\"$(git rev-list -n 1 \"$M80_RELEASE_TAG\")\""));
     assert!(runbook.contains("--commit-sha \"$M80_RELEASE_COMMIT\""));
