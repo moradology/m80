@@ -2,10 +2,11 @@
 
 Behavior bead: `m80-o3uh9.3.1`.
 
-`m80 install` is the release-bundle installer front door. This leaf pins only
-the user-facing input contract and dry-run plan; the command does not yet
-perform privileged copies, write `/etc` profile state, or switch the active
-install pointer.
+`m80 install` is the release-bundle installer front door. This behavior pins
+the user-facing input contract, dry-run plan, and the currently supported local
+bundle layout copy. The command does not yet perform privileged copies, write
+`/etc` profile state, resolve "latest", download network bundles, or switch the
+active install pointer.
 
 ## Source Selection
 
@@ -25,15 +26,19 @@ as `v0.1.0`; the installer does not normalize loose versions.
 
 ## Dry Run And Roots
 
-`--install-root <PATH>` selects the root that a later installer leaf will use
-for bundle contents and the active pointer. The default plan root is
-`/opt/m80`, and the active pointer is planned as `<install-root>/active`.
+`--install-root <PATH>` selects the root used for versioned bundle contents and
+the future active pointer. The default plan root is `/opt/m80`, and the active
+pointer is planned as `<install-root>/active`.
 
 `--dry-run` renders the validated plan and does not create the install root,
 write `/opt`, write `/etc`, write profile files, or switch the active pointer.
-Until bundle layout installation lands, omitting `--dry-run` exits with the
-unsupported-operation code after source validation and still does not create
-the install root.
+
+Without `--dry-run`, the active installer supports explicit local
+`file://...` bundle URLs only. A successful local bundle install copies the
+verified bundle layout into `<install-root>/versions/<release_tag>` and still
+does not switch `<install-root>/active` or write profile state. Network bundle
+URLs and release-tag/bootstrap resolution exit with the unsupported-operation
+code before creating the install root.
 
 ## Release Identity Checks
 
@@ -43,9 +48,9 @@ or active-state write. Tagged binaries whose build tag does not match the
 selected source tag also fail before host state changes.
 
 `--bundle-url` is the development and operator override path. A local bundle
-URL can be planned from a dev binary. If a GitHub release bundle URL includes a
-`/releases/download/<tag>/` segment, a dev binary refuses it and a tagged
-release binary must match that tag.
+URL can be planned and layout-installed from a dev binary. If a GitHub release
+bundle URL includes a `/releases/download/<tag>/` segment, a dev binary refuses
+it and a tagged release binary must match that tag.
 
 ## Tests
 
@@ -64,7 +69,7 @@ Integration and behavior-doc coverage:
 - `install_json_dry_run_uses_stdout_envelope`
 - `install_release_tag_refuses_dev_build_before_install_root_touch`
 - `install_missing_source_prints_source_diagnostic`
-- `install_non_dry_run_is_unsupported_without_touching_install_root`
+- `install_non_file_bundle_url_is_unsupported_without_touching_install_root`
 - `installer_input_contract_doc_names_source_shapes_and_tests`
 
 Module coverage in `cmds/install.rs` pins release-build success, dev-build

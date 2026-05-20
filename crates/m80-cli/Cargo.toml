@@ -31,6 +31,7 @@ m80-snapshot-template.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 signal-hook.workspace = true
 toml.workspace = true
 anyhow.workspace = true

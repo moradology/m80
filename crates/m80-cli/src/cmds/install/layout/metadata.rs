@@ -1,0 +1,361 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+
+use m80_firecracker::{ConfigError, FcError};
+use m80_image_manifest::{
+    BuildReceipt, BuildReceiptArtifactKind, InstallProvenance, InstallProvenanceArtifact,
+    InstallProvenanceRewrite, InstallProvenanceTransform, Manifest,
+};
+use serde::Deserialize;
+
+use super::bundle::{sha256_file, PAYLOAD_FILES};
+
+pub(super) const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
+
+pub(super) fn read_bundle_metadata(path: &Path) -> Result<BundleMetadata, FcError> {
+    let raw = fs::read(path).map_err(|source| FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    serde_json::from_slice(&raw).map_err(|source| FcError::Json {
+        context: "read bundle metadata",
+        source,
+    })
+}
+
+pub(super) fn verify_bundle_metadata(metadata: &BundleMetadata) -> Result<(), FcError> {
+    if metadata.schema_version != 1 {
+        return Err(invalid_bundle(
+            "bundle.schema_version",
+            format!(
+                "unsupported bundle schema_version: {}",
+                metadata.schema_version
+            ),
+        ));
+    }
+    if metadata.target != "linux-x86_64" || metadata.os != "linux" || metadata.arch != "x86_64" {
+        return Err(invalid_bundle(
+            "bundle.target",
+            format!(
+                "unsupported bundle target tuple: target={} os={} arch={}",
+                metadata.target, metadata.os, metadata.arch
+            ),
+        ));
+    }
+    if metadata.image_kind != "minimal" {
+        return Err(invalid_bundle(
+            "bundle.image_kind",
+            format!("unsupported bundle image_kind: {}", metadata.image_kind),
+        ));
+    }
+    if metadata.m80_protocol_version != m80_proto::PROTOCOL_VERSION
+        || metadata.guest_protocol_version != m80_proto::PROTOCOL_VERSION
+    {
+        return Err(invalid_bundle(
+            "bundle.protocol_version",
+            format!(
+                "bundle protocol mismatch: m80={} guest={} binary={}",
+                metadata.m80_protocol_version,
+                metadata.guest_protocol_version,
+                m80_proto::PROTOCOL_VERSION
+            ),
+        ));
+    }
+    if !metadata.install_provenance_required {
+        return Err(invalid_bundle(
+            "bundle.install_provenance_required",
+            "bundle must require installed provenance".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn verify_metadata_hashes(
+    root: &Path,
+    metadata: &BundleMetadata,
+) -> Result<(), FcError> {
+    let files = metadata
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), (file.sha256.as_str(), file.size_bytes)))
+        .collect::<BTreeMap<_, _>>();
+    for required in PAYLOAD_FILES {
+        let (expected_sha, expected_size) = files.get(required).ok_or_else(|| {
+            FcError::Config(ConfigError::InvalidValue {
+                field: "bundle.files",
+                reason: format!("bundle metadata missing file row: {required}"),
+            })
+        })?;
+        let actual_size = root
+            .join(required)
+            .metadata()
+            .map_err(|source| FcError::PathIo {
+                path: root.join(required),
+                source,
+            })?
+            .len();
+        if actual_size != *expected_size {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "bundle.files",
+                reason: format!(
+                    "bundle metadata size mismatch for {required}: expected {expected_size}, got {actual_size}"
+                ),
+            }));
+        }
+        let actual = sha256_file(&root.join(required))?;
+        if actual != *expected_sha {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "bundle.files",
+                reason: format!(
+                    "bundle metadata hash mismatch for {required}: expected {expected_sha}, got {actual}"
+                ),
+            }));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn verify_sha256s_file(root: &Path) -> Result<(), FcError> {
+    let sums_path = root.join("SHA256SUMS");
+    let contents = fs::read_to_string(&sums_path).map_err(|source| FcError::PathIo {
+        path: sums_path.clone(),
+        source,
+    })?;
+    let sums = parse_sha256s(&contents)?;
+    let expected = PAYLOAD_FILES
+        .iter()
+        .copied()
+        .chain(std::iter::once("bundle.json"))
+        .collect::<BTreeSet<_>>();
+    let actual = sums.keys().copied().collect::<BTreeSet<_>>();
+    if actual != expected {
+        return Err(invalid_bundle(
+            "SHA256SUMS",
+            "SHA256SUMS file set mismatch".to_owned(),
+        ));
+    }
+    for path in expected {
+        let expected_sha = sums.get(path).expect("expected path exists in sums");
+        let actual_sha = sha256_file(&root.join(path))?;
+        if expected_sha != &actual_sha {
+            return Err(invalid_bundle(
+                "SHA256SUMS",
+                format!(
+                    "SHA256SUMS hash mismatch for {path}: expected {expected_sha}, got {actual_sha}"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn parse_sha256s(contents: &str) -> Result<BTreeMap<&str, &str>, FcError> {
+    let mut sums = BTreeMap::new();
+    for (line_no, line) in contents.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut fields = line.split_whitespace();
+        let Some(sha256) = fields.next() else {
+            continue;
+        };
+        let Some(path) = fields.next() else {
+            return Err(invalid_bundle(
+                "SHA256SUMS",
+                format!("malformed SHA256SUMS line {}", line_no + 1),
+            ));
+        };
+        if fields.next().is_some()
+            || sha256.len() != 64
+            || !sha256.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err(invalid_bundle(
+                "SHA256SUMS",
+                format!("malformed SHA256SUMS line {}", line_no + 1),
+            ));
+        }
+        if sums.insert(path, sha256).is_some() {
+            return Err(invalid_bundle(
+                "SHA256SUMS",
+                format!("SHA256SUMS duplicate path: {path}"),
+            ));
+        }
+    }
+    Ok(sums)
+}
+
+pub(super) fn rewrite_installed_metadata(
+    root: &Path,
+    final_dir: &Path,
+    metadata: &BundleMetadata,
+) -> Result<(), FcError> {
+    let artifacts = final_dir.join("artifacts");
+    let manifest_path = root.join("artifacts/output.ext4.manifest.json");
+    let receipt_path = root.join("artifacts/output.ext4.build-receipt.json");
+    let source_manifest_sha = sha256_file(&manifest_path)?;
+    let source_receipt_sha = sha256_file(&receipt_path)?;
+
+    let mut manifest = Manifest::read(&manifest_path).map_err(FcError::Manifest)?;
+    if manifest.schema_version() != metadata.manifest_schema_version {
+        return Err(invalid_bundle(
+            "bundle.manifest_schema_version",
+            format!(
+                "bundle manifest_schema_version mismatch: expected {}, got {}",
+                metadata.manifest_schema_version,
+                manifest.schema_version()
+            ),
+        ));
+    }
+    if manifest.expected_firecracker_version != metadata.expected_firecracker_version {
+        return Err(invalid_bundle(
+            "bundle.expected_firecracker_version",
+            "bundle expected_firecracker_version mismatch".to_owned(),
+        ));
+    }
+    manifest.daemon_binary_path = artifacts.join("m80-guestd");
+    manifest.kernel_image = artifacts.join("vmlinux");
+    manifest.output_rootfs_image = artifacts.join("output.ext4");
+    manifest.write(&manifest_path).map_err(FcError::Manifest)?;
+    let installed_manifest_sha = sha256_file(&manifest_path)?;
+
+    let mut receipt = BuildReceipt::read(&receipt_path).map_err(FcError::Manifest)?;
+    if receipt.schema_version() != metadata.build_receipt_schema_version {
+        return Err(invalid_bundle(
+            "bundle.build_receipt_schema_version",
+            format!(
+                "bundle build_receipt_schema_version mismatch: expected {}, got {}",
+                metadata.build_receipt_schema_version,
+                receipt.schema_version()
+            ),
+        ));
+    }
+    if receipt.manifest_path != PathBuf::from(&metadata.build_receipt_manifest_path) {
+        return Err(invalid_bundle(
+            "bundle.build_receipt_manifest_path",
+            "bundle build_receipt_manifest_path mismatch".to_owned(),
+        ));
+    }
+    receipt.manifest_path = artifacts.join("output.ext4.manifest.json");
+    receipt.manifest_sha256 = installed_manifest_sha.clone();
+    for artifact in &mut receipt.artifacts {
+        artifact.path = match artifact.kind {
+            BuildReceiptArtifactKind::KernelImage => artifacts.join("vmlinux"),
+            BuildReceiptArtifactKind::OutputRootfsImage => artifacts.join("output.ext4"),
+            BuildReceiptArtifactKind::DaemonBinaryPath => artifacts.join("m80-guestd"),
+            BuildReceiptArtifactKind::SourceRootfsImage => artifact.path.clone(),
+        };
+    }
+    receipt.write(&receipt_path).map_err(FcError::Manifest)?;
+    let installed_receipt_sha = sha256_file(&receipt_path)?;
+
+    let provenance = InstallProvenance::new(
+        Some(metadata.release_tag.clone()),
+        vec![
+            install_path_rewrite_transform(
+                InstallProvenanceArtifact::GuestManifest,
+                "artifacts/output.ext4.manifest.json",
+                artifacts.join("output.ext4.manifest.json"),
+                source_manifest_sha,
+                installed_manifest_sha,
+            ),
+            install_path_rewrite_transform(
+                InstallProvenanceArtifact::BuildReceipt,
+                "artifacts/output.ext4.build-receipt.json",
+                artifacts.join("output.ext4.build-receipt.json"),
+                source_receipt_sha,
+                installed_receipt_sha,
+            ),
+        ],
+    );
+    provenance
+        .write(&root.join("artifacts").join(INSTALL_PROVENANCE_FILE))
+        .map_err(FcError::Manifest)
+}
+
+fn install_path_rewrite_transform(
+    artifact: InstallProvenanceArtifact,
+    source_path: &str,
+    installed_path: PathBuf,
+    source_sha256: String,
+    installed_sha256: String,
+) -> InstallProvenanceTransform {
+    InstallProvenanceTransform {
+        artifact,
+        source_sha256,
+        source_path: PathBuf::from(source_path),
+        installed_sha256,
+        installed_path,
+        rewrite: InstallProvenanceRewrite::InstallPathRewrite,
+    }
+}
+
+pub(super) fn set_final_modes(root: &Path) -> Result<(), FcError> {
+    for path in [
+        "bin/m80",
+        "bin/m80-jailer-harden",
+        "bin/m80-net-helper",
+        "install.sh",
+    ] {
+        set_mode(&root.join(path), 0o755)?;
+    }
+    for path in [
+        "artifacts/vmlinux",
+        "artifacts/output.ext4",
+        "artifacts/output.ext4.manifest.json",
+        "artifacts/output.ext4.build-receipt.json",
+        "artifacts/m80-guestd",
+        "artifacts/install-provenance.json",
+        "bundle.json",
+        "SHA256SUMS",
+    ] {
+        set_mode(&root.join(path), 0o644)?;
+    }
+    Ok(())
+}
+
+fn set_mode(path: &Path, mode: u32) -> Result<(), FcError> {
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|source| FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn invalid_bundle(field: &'static str, reason: String) -> FcError {
+    FcError::Config(ConfigError::InvalidValue { field, reason })
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct BundleMetadata {
+    schema_version: u32,
+    pub(super) release_tag: String,
+    m80_version: String,
+    package_version: String,
+    target: String,
+    os: String,
+    arch: String,
+    image_kind: String,
+    m80_protocol_version: u32,
+    guestd_package_version: String,
+    guest_protocol_version: u32,
+    manifest_schema_version: u32,
+    build_receipt_schema_version: u32,
+    build_receipt_manifest_path: String,
+    install_provenance_schema_version: u32,
+    install_provenance_required: bool,
+    expected_firecracker_version: String,
+    files: Vec<BundleFile>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BundleFile {
+    path: String,
+    sha256: String,
+    size_bytes: u64,
+}

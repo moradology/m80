@@ -115,11 +115,11 @@ pub enum Cmd {
     /// hello` unless `--no-run` is set.
     Quickstart(QuickstartArgs),
 
-    /// Plan a release bundle install.
+    /// Install or plan a release bundle.
     ///
-    /// This validates the user-facing installer inputs and release identity
-    /// before any host state is touched. Until the bundle layout installer
-    /// lands, the command is dry-run only.
+    /// This validates the user-facing installer inputs and release identity.
+    /// `--dry-run` is side-effect-free; non-dry-run currently supports local
+    /// `file://` bundle layout copies without active-pointer finalization.
     Install(InstallArgs),
 
     /// Print a VM's run-dir layout and recorded state.
@@ -498,7 +498,7 @@ pub struct InstallArgs {
     )]
     pub bootstrap_tag: Option<String>,
 
-    /// Install root to plan. Defaults to /opt/m80.
+    /// Install root to plan or populate. Defaults to /opt/m80.
     #[arg(long = "install-root", value_name = "PATH", default_value = "/opt/m80")]
     pub install_root: PathBuf,
 

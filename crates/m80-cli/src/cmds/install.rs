@@ -7,6 +7,8 @@ use crate::args::InstallArgs;
 use crate::release::{VersionIdentity, VersionStatus};
 use crate::{errors, json};
 
+mod layout;
+
 /// `m80 install` — validate installer inputs and render a plan.
 pub(super) fn cmd_install(args: InstallArgs, json_mode: bool) -> anyhow::Result<i32> {
     let identity = VersionIdentity::current();
@@ -15,15 +17,15 @@ pub(super) fn cmd_install(args: InstallArgs, json_mode: bool) -> anyhow::Result<
         Err(err) => return Ok(errors::render_error(&err, json_mode)),
     };
 
-    if !args.dry_run {
-        let err = FcError::UnsupportedOperation {
-            operation: "m80 install",
-            reason: "bundle installation is not active yet; rerun with --dry-run to inspect the validated install plan".into(),
+    if args.dry_run {
+        render_install_plan(&plan, json_mode);
+    } else {
+        let summary = match layout::install_bundle_layout(&plan) {
+            Ok(summary) => summary,
+            Err(err) => return Ok(errors::render_error(&err, json_mode)),
         };
-        return Ok(errors::render_error(&err, json_mode));
+        render_layout_summary(&summary, json_mode);
     }
-
-    render_install_plan(&plan, json_mode);
     Ok(0)
 }
 
@@ -236,6 +238,20 @@ fn render_install_plan(plan: &InstallPlan, json_mode: bool) {
         println!("version_status={}", plan.version_status);
         println!("dry_run=true");
         println!("writes=none");
+    }
+}
+
+fn render_layout_summary(summary: &layout::LayoutInstallSummary, json_mode: bool) {
+    if json_mode {
+        println!("{}", json::to_pretty(summary));
+    } else {
+        println!("installed bundle layout");
+        println!("release_tag={}", summary.release_tag);
+        println!("version_dir={}", summary.version_dir);
+        println!("files_copied={}", summary.files_copied);
+        println!("install_provenance={}", summary.install_provenance);
+        println!("active_pointer_unchanged=true");
+        println!("profile_written=false");
     }
 }
 

@@ -53,7 +53,7 @@ fn help_install() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
-        stdout.contains("Plan a release bundle install")
+        stdout.contains("Install or plan a release bundle")
             && stdout.contains("--release-tag")
             && stdout.contains("--bundle-url")
             && stdout.contains("--install-root")

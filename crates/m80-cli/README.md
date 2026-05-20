@@ -53,11 +53,13 @@ binaries, pull OCI images, or install packages implicitly.
   target and proves the default host prerequisite path. `--json` requires
   `--no-run` so guest probe stdout cannot pollute the machine-readable summary.
   `--no-run` does not prove host substrate readiness or real-KVM launch.
-- `m80 install --release-tag <tag>|--bundle-url <url> --dry-run` - validates
-  the release-bundle installer input contract and prints the install plan
-  without touching host state. Until bundle layout installation lands,
-  non-dry-run exits 7 after source validation and still does not create the
-  install root or active pointer.
+- `m80 install --release-tag <tag>|--bundle-url <url> [--dry-run]` - validates
+  the release-bundle installer input contract. `--dry-run` prints the install
+  plan without touching host state. Non-dry-run currently supports explicit
+  local `file://` bundle URLs: it verifies and copies the bundle into
+  `<install-root>/versions/<release_tag>` without switching the active pointer
+  or writing profile state. Release-tag resolution, network downloads, profile
+  writing, and active-pointer finalization land in later installer leaves.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -143,6 +145,8 @@ Snapshot-template command behavior is captured in
 `docs/behaviors/cli/template-commands.md`.
 Installer input behavior is captured in
 `docs/behaviors/release/installer-input-contract.md`.
+Installed layout behavior is captured in
+`docs/behaviors/release/installed-layout.md`.
 
 ### `m80 run` options
 
@@ -375,7 +379,9 @@ Stable surfaces:
   `host-binaries.manifest.json`.
 - Installer source selection: `m80 install` accepts exactly one of
   `--release-tag`, `--bundle-url`, or the hidden bootstrapper handoff
-  `--bootstrap-tag`. The current leaf is dry-run planning only.
+  `--bootstrap-tag`. Dry-run planning is side-effect-free. Non-dry-run layout
+  copy currently accepts local `file://` bundle URLs and publishes only
+  `<install-root>/versions/<release_tag>`.
 
 ## Non-goals
 
@@ -414,8 +420,10 @@ Stable surfaces:
   extracted checksum verification, artifact install, run-root creation, and
   mismatch rejection.
 - Install: `m80 install --dry-run` is covered for source exclusivity,
-  install-root override, JSON output, dev-build refusal for release-tag
-  installs, and no host-state writes before the bundle installer lands.
+  install-root override, JSON output, and dev-build refusal for release-tag
+  installs. Local bundle layout install is covered for clean copy, missing
+  required bundle file, duplicate path, permission failure, dry-run no-write
+  behavior, manifest/build-receipt relocation, and install provenance.
 - Image/profile selection: local profile resolution, fail-closed profile
   parsing, and artifact env overlay are covered without KVM.
 - Feature gaps: reserved `run` flags and `m80 warm enable --system` exit 7

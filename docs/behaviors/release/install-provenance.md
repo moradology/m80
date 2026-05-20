@@ -17,8 +17,8 @@ verified, an installer that rewrites those JSON files must write
   sha256, and `rewrite: "install_path_rewrite"`.
 
 Legacy artifact-only quickstart installs may have `release_tag: null` because
-they do not resolve a concrete tag. The stable release installer must supply a
-tag once that flow lands.
+they do not resolve a concrete tag. The release-bundle layout installer records
+the bundle's concrete release tag.
 
 ## Verification
 
@@ -38,6 +38,9 @@ that marker exists, `install-provenance.json` must also exist and verify.
 - `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_no_run_installs_verified_artifacts`
   proves quickstart emits both transforms and that their installed hashes match
   the installed files.
+- `crates/m80-cli/tests/release/installer_layout.rs::install_bundle_layout_copies_verified_bundle_into_version_dir`
+  proves the release-bundle layout installer records the concrete release tag
+  and the installed manifest/receipt rewrites.
 - `crates/m80-preflight/src/artifacts/tests.rs::install_provenance_covering_rewritten_manifest_and_receipt_passes`
   proves preflight accepts a valid installed provenance chain.
 - `crates/m80-preflight/src/artifacts/tests.rs::install_provenance_missing_for_installed_artifacts_fails_preflight`
