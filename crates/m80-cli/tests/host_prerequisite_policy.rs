@@ -59,6 +59,14 @@ fn policy_doc_declares_v0x_operator_provided_prerequisites() {
     ] {
         assert_contains(&policy, required);
     }
+    assert_contains_words(
+        &policy,
+        "`scripts/verify-release-bundle.py` rejects tar entries such as `bin/firecracker`, `bin/jailer`, and `bin/firecracker-seccomp-filter.bin`",
+    );
+    assert_contains_words(
+        &policy,
+        "`m80 quickstart` rejects the same payload names before creating or changing the active artifact directory.",
+    );
 }
 
 #[test]

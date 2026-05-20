@@ -105,9 +105,16 @@ fn write_release_tarball_with_nested_bundled_host_manifest(
     )
 }
 
+fn write_release_tarball_with_extra_file(
+    dir: &tempfile::TempDir,
+    relpath: &str,
+) -> std::path::PathBuf {
+    write_release_tarball_inner(dir, Some(relpath), KernelKind::Stock)
+}
+
 fn write_release_tarball_inner(
     dir: &tempfile::TempDir,
-    host_manifest_relpath: Option<&str>,
+    extra_relpath: Option<&str>,
     kernel_kind: KernelKind,
 ) -> std::path::PathBuf {
     let src = dir.path().join("src");
@@ -124,11 +131,10 @@ fn write_release_tarball_inner(
         "output.ext4.build-receipt.json",
         "m80-guestd",
     ];
-    if let Some(relpath) = host_manifest_relpath {
-        let host_manifest = src.join(relpath);
-        std::fs::create_dir_all(host_manifest.parent().unwrap()).unwrap();
-        std::fs::write(
-            &host_manifest,
+    if let Some(relpath) = extra_relpath {
+        let extra_file = src.join(relpath);
+        std::fs::create_dir_all(extra_file.parent().unwrap()).unwrap();
+        let extra_payload: &[u8] = if relpath.ends_with("host-binaries.manifest.json") {
             br#"{
   "binaries": [],
   "launch_material": [
@@ -141,9 +147,11 @@ fn write_release_tarball_inner(
   ],
   "schema_version": 4
 }
-"#,
-        )
-        .unwrap();
+"#
+        } else {
+            b"operator-provided host prerequisite payload\n"
+        };
+        std::fs::write(&extra_file, extra_payload).unwrap();
         checksum_inputs.push(relpath);
     }
 
@@ -723,6 +731,58 @@ fn quickstart_rejects_nested_bundled_host_binaries_manifest() {
         !dst.exists(),
         "quickstart must not install artifacts after seeing a nested host manifest"
     );
+}
+
+#[test]
+fn quickstart_rejects_bundled_operator_host_prerequisites() {
+    for relpath in [
+        "firecracker",
+        "nested/jailer",
+        "nested/firecracker-seccomp-filter.bin",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let tarball = write_release_tarball_with_extra_file(&dir, relpath);
+        let dst = dir.path().join("host-prereq-dst");
+        let run_root = dir.path().join("host-prereq-run");
+
+        let output = m80()
+            .args([
+                "quickstart",
+                "--artifact-url",
+                &format!("file://{}", tarball.display()),
+                "--artifact-dir",
+                dst.to_str().unwrap(),
+                "--run-root",
+                run_root.to_str().unwrap(),
+                "--no-run",
+            ])
+            .output()
+            .unwrap();
+
+        assert!(
+            !output.status.success(),
+            "quickstart should reject bundled host prerequisite {relpath}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(
+                std::path::Path::new(relpath)
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+            ),
+            "quickstart should name forbidden host prerequisite {relpath}; stderr={stderr}"
+        );
+        assert!(
+            stderr.contains("operator-provided host prerequisites"),
+            "quickstart should explain the host-prereq ownership policy; stderr={stderr}"
+        );
+        assert!(
+            !dst.exists(),
+            "quickstart must not install artifacts after seeing bundled host prerequisite {relpath}"
+        );
+    }
 }
 
 #[test]

@@ -81,6 +81,23 @@ class ReleaseBundleTest(unittest.TestCase):
                 metadata,
             )
 
+    def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = package_fixture(Path(tmp))
+
+            with tarfile.open(tarball, "r:gz") as tar:
+                names = set(tar.getnames())
+
+            for forbidden in [
+                "bin/firecracker",
+                "bin/jailer",
+                "bin/firecracker-seccomp-filter.bin",
+                "artifacts/firecracker",
+                "artifacts/jailer",
+                "artifacts/firecracker-seccomp-filter.bin",
+            ]:
+                self.assertNotIn(forbidden, names)
+
     def test_package_tarball_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -128,6 +145,29 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("bundle contains unexpected paths", result.stderr)
+
+    def test_verifier_rejects_bundled_operator_host_prerequisites(self) -> None:
+        for forbidden in [
+            "bin/firecracker",
+            "bin/jailer",
+            "bin/firecracker-seccomp-filter.bin",
+            "artifacts/firecracker-seccomp-filter.json",
+        ]:
+            with self.subTest(forbidden=forbidden), tempfile.TemporaryDirectory() as tmp:
+                tarball = package_fixture(Path(tmp))
+                broken = Path(tmp) / f"{Path(forbidden).name}.tar.gz"
+                rewrite_tar(
+                    tarball,
+                    broken,
+                    extra={forbidden: b"operator-provided host prerequisite\n"},
+                )
+
+                result = run_verify(broken, check=False)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("operator-provided host prerequisite payloads", result.stderr)
+                self.assertIn(forbidden, result.stderr)
+                self.assertIn("m80 binaries/helpers and guest artifacts", result.stderr)
 
     def test_verifier_rejects_wrong_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

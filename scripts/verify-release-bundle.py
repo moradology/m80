@@ -29,7 +29,26 @@ PAYLOAD_PATHS = {
     "install.sh",
 }
 REQUIRED_PATHS = PAYLOAD_PATHS | {"bundle.json", "SHA256SUMS"}
-FORBIDDEN_PATHS = {"artifacts/host-binaries.manifest.json"}
+FORBIDDEN_INSTALL_TIME_PATHS = {"artifacts/host-binaries.manifest.json"}
+FORBIDDEN_HOST_PREREQ_PATHS = {
+    "bin/firecracker",
+    "bin/jailer",
+    "bin/firecracker-seccomp-filter.bin",
+    "bin/firecracker-seccomp-filter.json",
+    "artifacts/firecracker",
+    "artifacts/jailer",
+    "artifacts/firecracker-seccomp-filter.bin",
+    "artifacts/firecracker-seccomp-filter.json",
+    "firecracker",
+    "jailer",
+    "firecracker-seccomp-filter.bin",
+    "firecracker-seccomp-filter.json",
+}
+HOST_PREREQ_POLICY_MESSAGE = (
+    "m80 v0.x release bundles own m80 binaries/helpers and guest artifacts; "
+    "official Firecracker, official jailer, and Firecracker seccomp filter "
+    "payloads are operator-provided host prerequisites"
+)
 EXPECTED_MODES = {
     "bin/m80": 0o755,
     "bin/m80-jailer-harden": 0o755,
@@ -77,8 +96,14 @@ def main() -> int:
     paths = set(files)
     missing = sorted(REQUIRED_PATHS - paths)
     require(not missing, f"bundle missing required paths: {', '.join(missing)}")
-    forbidden = sorted(FORBIDDEN_PATHS & paths)
+    forbidden = sorted(FORBIDDEN_INSTALL_TIME_PATHS & paths)
     require(not forbidden, f"bundle contains install-time-only paths: {', '.join(forbidden)}")
+    forbidden_host_prereqs = sorted(FORBIDDEN_HOST_PREREQ_PATHS & paths)
+    require(
+        not forbidden_host_prereqs,
+        "bundle contains operator-provided host prerequisite payloads: "
+        f"{', '.join(forbidden_host_prereqs)}; {HOST_PREREQ_POLICY_MESSAGE}",
+    )
     unexpected = sorted(paths - REQUIRED_PATHS)
     require(not unexpected, f"bundle contains unexpected paths: {', '.join(unexpected)}")
     for path, expected_mode in EXPECTED_MODES.items():

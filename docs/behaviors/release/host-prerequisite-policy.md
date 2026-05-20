@@ -28,6 +28,14 @@ a valid m80 release bundle. If m80 ever starts installing pinned Firecracker
 bytes itself, that is a new policy decision and a hard cutover, not a tolerated
 compatibility mode.
 
+The fail-closed checks are explicit. `scripts/package-release-bundle.py` has no
+inputs or payload destinations for official Firecracker, official jailer, or
+Firecracker seccomp filter bytes. `scripts/verify-release-bundle.py` rejects
+tar entries such as `bin/firecracker`, `bin/jailer`, and
+`bin/firecracker-seccomp-filter.bin` with this policy named in the error.
+`m80 quickstart` rejects the same payload names before creating or changing the
+active artifact directory.
+
 ## Version Sources
 
 The expected Firecracker train for a guest artifact set comes from the verified

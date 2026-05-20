@@ -24,6 +24,13 @@ Firecracker, jailer, and the Firecracker seccomp filter are known. That
 installed manifest records the seccomp filter under `launch_material`, not as a
 host binary.
 
+The bundle also must not carry operator-provided host prerequisite payloads.
+For v0.x, names such as `bin/firecracker`, `bin/jailer`, and
+`bin/firecracker-seccomp-filter.bin` are rejected rather than treated as
+optional convenience files. m80 owns its own CLI/helper binaries and guest
+artifacts; the official Firecracker train remains an operator-provided host
+prerequisite.
+
 ## Metadata
 
 `bundle.json` uses `schema_version: 1` and records:
@@ -67,6 +74,8 @@ original hash, installed hash, path rewrite, and release tag. See
 - duplicate tar entries;
 - unexpected tar entries;
 - install-time-only host-binaries manifests inside the bundle;
+- operator-provided Firecracker, jailer, or Firecracker seccomp filter payloads
+  inside the bundle;
 - wrong file modes for required paths;
 - target, OS, arch, or image-kind mismatch;
 - stale release tag, m80 version, or package version;

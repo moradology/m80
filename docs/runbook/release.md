@@ -66,6 +66,13 @@ receipt; then it refuses schema drift, protocol drift, wrong target/image kind,
 stale release identity, or manifest/receipt hashes that do not match the
 supplied artifacts.
 
+Do not add official Firecracker, official jailer, or Firecracker seccomp filter
+payloads to the bundle. v0.x policy treats those bytes as operator-provided host
+prerequisites, so both the bundle verifier and `m80 quickstart` reject them
+before an install can become active. If m80 ever starts installing a pinned
+Firecracker train itself, file a new policy decision and hard-cutover bead
+instead of making the current verifier tolerant.
+
 The installer bead will replace `scripts/quickstart.sh` with the final
 versioned `install.sh` release asset; the bundle contract already reserves the
 in-bundle path as `install.sh`.

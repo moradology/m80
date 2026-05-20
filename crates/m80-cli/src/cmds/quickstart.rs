@@ -26,8 +26,19 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
     "output.ext4.build-receipt.json",
     "m80-guestd",
 ];
-const FORBIDDEN_ARTIFACTS: &[&str] = &["host-binaries.manifest.json"];
+const FORBIDDEN_ARTIFACTS: &[&str] = &[
+    "host-binaries.manifest.json",
+    "firecracker",
+    "jailer",
+    "firecracker-seccomp-filter.bin",
+    "firecracker-seccomp-filter.json",
+];
 const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
+const FORBIDDEN_HOST_PREREQ_REASON: &str = concat!(
+    "m80 v0.x release artifacts must not bundle official Firecracker, official jailer, ",
+    "or Firecracker seccomp filter payloads; m80 owns m80 binaries/helpers and guest ",
+    "artifacts, while Firecracker/jailer/seccomp are operator-provided host prerequisites",
+);
 const RUN_ECHO_PROBE_COMMAND: &str = "m80 run -- echo hello";
 const RUN_ECHO_PROBE_ARGS: &[&str] = &["run", "--", "echo", "hello"];
 const RUN_ECHO_PROBE_EGRESS_POLICY: &str = "default-outbound";
@@ -188,9 +199,7 @@ fn run_quickstart(
         return Err(FcError::Config(
             m80_firecracker::ConfigError::InvalidValue {
                 field: "artifact_url",
-                reason: format!(
-                    "artifact tarball must not contain {name}; generate it after final host install paths are known"
-                ),
+                reason: forbidden_artifact_reason(name),
             },
         ));
     }
@@ -539,6 +548,16 @@ fn find_forbidden_artifact(root: &Path) -> Result<Option<PathBuf>, FcError> {
         }
     }
     Ok(None)
+}
+
+fn forbidden_artifact_reason(name: &str) -> String {
+    if name == "host-binaries.manifest.json" {
+        format!(
+            "artifact tarball must not contain {name}; generate it after final host install paths are known"
+        )
+    } else {
+        format!("artifact tarball must not contain {name}; {FORBIDDEN_HOST_PREREQ_REASON}")
+    }
 }
 
 fn write_host_binaries_manifest_for_probe(artifact_dir: &Path) -> Result<(), FcError> {
