@@ -300,11 +300,17 @@ def main() -> int:
             out_dir / "SHA256SUMS",
             [
                 (BUNDLE_NAME, tarball),
+                (f"{BUNDLE_NAME}.sha256", out_dir / f"{BUNDLE_NAME}.sha256"),
                 (INSTALL_NAME, install_asset),
+                (f"{INSTALL_NAME}.sha256", out_dir / f"{INSTALL_NAME}.sha256"),
                 (METADATA_NAME, metadata_asset),
+                (f"{METADATA_NAME}.sha256", out_dir / f"{METADATA_NAME}.sha256"),
                 (ASSET_INDEX_NAME, asset_index_path),
+                (f"{ASSET_INDEX_NAME}.sha256", out_dir / f"{ASSET_INDEX_NAME}.sha256"),
                 (BOOTSTRAP_SELECTOR_NAME, bootstrap_selector_path),
+                (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256"),
                 (BUILD_MANIFEST_NAME, build_manifest_path),
+                (f"{BUILD_MANIFEST_NAME}.sha256", out_dir / f"{BUILD_MANIFEST_NAME}.sha256"),
             ],
         )
         integrity_path = out_dir / INTEGRITY_NAME

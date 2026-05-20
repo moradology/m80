@@ -108,7 +108,10 @@ POSIX installer path. It contains:
 
 The selector is generated mechanically from `m80-release-assets.json`, is
 checksum-covered, appears in `SHA256SUMS`, and is represented in release
-integrity material. Selector values are conservative ASCII shell tokens:
+integrity material. Each row's bundle, metadata sidecar, bundle checksum
+sidecar, metadata checksum sidecar, and any named detached signature are also
+represented in both the public checksum manifest and release integrity
+subjects. Selector values are conservative ASCII shell tokens:
 whitespace, control characters, and shell metacharacters are invalid; nullable
 proof fields use `-`. `signature_name` is nullable in schema v1 because there
 is no detached-signature lane, but `attestation_name` is required for official
@@ -120,15 +123,17 @@ digest/size, unsupported schema, shell-unsafe tokens, or hand-edited drift.
 Release publication must generate the index from the actual dist files, upload
 it with the rest of the release assets, then re-download the public release and
 validate the index against the uploaded tarball, metadata sidecar, checksum
-sidecars, build manifest, and `SHA256SUMS`. A new architecture or image kind
-is a new row in the index, not a new README quickstart command.
+sidecars, build manifest, and `SHA256SUMS` with
+`python3 scripts/verify-release-integrity.py ... --dist-dir <release-dist>`.
+A new architecture or image kind is a new row in the index, not a new README
+quickstart command.
 
 The current publisher is checksum-covered and attestation-referenced:
 `signature_name` is null, and `attestation_name` is
 `m80-release-integrity.attestation.jsonl`. Checksum coverage proves the exact
 bytes that the selector parsed; it is not a substitute for signed release integrity
 verification. Signed-release verification fails closed when an
-installer-consumed row omits `signature_name` or `attestation_name`, leaves
+asset-index row omits `signature_name` or `attestation_name`, leaves
 `attestation_name` empty, names a stale attestation bundle, names a signature
 file that is absent from the release dist, or drifts from the release tag,
 bundle metadata version, bundle tarball, metadata sidecar, checksum sidecar, or

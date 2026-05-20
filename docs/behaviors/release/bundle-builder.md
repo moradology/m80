@@ -56,8 +56,8 @@ bootstrap path that runs before a local `m80` binary exists. The public
 `m80-release-build.json` records the source commit, Rust toolchain, target
 triples, `Cargo.lock` digest, builder identity, builder OS image, and builder
 package versions or container digest. The public `SHA256SUMS` covers the
-tarball, installer, metadata sidecar, asset index, bootstrap selector, and
-build manifest.
+tarball, installer, metadata sidecar, asset index, bootstrap selector, build
+manifest, and each checksum sidecar.
 The public `install.sh` and the bundled `install.sh` are the same rendered
 versioned installer asset. The renderer fills in only the concrete release tag;
 bundle selection comes from the verified bootstrap selector and canonical asset

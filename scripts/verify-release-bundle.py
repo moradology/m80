@@ -428,10 +428,6 @@ def verify_sidecars(
     for name, path in expected_assets.items():
         verify_single_sha256(sidecar_dir / f"{name}.sha256", name, path)
 
-    sums = parse_sha256s(public_sums.read_text())
-    require(set(sums) == set(expected_assets), "public SHA256SUMS file set mismatch")
-    for name, path in expected_assets.items():
-        require(sums[name] == sha256_file(path), f"public SHA256SUMS hash mismatch for {name}")
     index = verify_asset_index(
         asset_index,
         bundle=bundle,
@@ -443,6 +439,11 @@ def verify_sidecars(
         target_os=target_os,
         target_arch=target_arch,
     )
+    expected_public_assets = expected_public_assets_from_index(index, sidecar_dir, expected_assets)
+    sums = parse_sha256s(public_sums.read_text())
+    require(set(sums) == set(expected_public_assets), "public SHA256SUMS file set mismatch")
+    for name, path in expected_public_assets.items():
+        require(sums[name] == sha256_file(path), f"public SHA256SUMS hash mismatch for {name}")
     verify_bootstrap_selector(
         bootstrap_selector,
         index,
@@ -458,6 +459,42 @@ def verify_sidecars(
         image_kind=image_kind,
         sidecar_dir=sidecar_dir,
     )
+
+
+def expected_public_assets_from_index(index: dict, sidecar_dir: Path, core_assets: dict[str, Path]) -> dict[str, Path]:
+    expected: dict[str, Path] = {}
+
+    def add(name: object, path: Path) -> None:
+        require(isinstance(name, str) and name, "public SHA256SUMS asset name invalid")
+        require("/" not in name and name not in {".", ".."}, f"public SHA256SUMS asset name must be flat: {name}")
+        previous = expected.get(name)
+        require(
+            previous is None or previous == path,
+            f"public SHA256SUMS duplicate asset path mismatch for {name}",
+        )
+        expected[name] = path
+
+    assets = index.get("assets")
+    require(isinstance(assets, list), "asset index assets must be a list")
+    for asset in assets:
+        require(isinstance(asset, dict), "asset index asset must be an object")
+        name = asset.get("name")
+        require(isinstance(name, str) and name, "asset index name invalid")
+        checksum_name = asset.get("checksum_name")
+        require(isinstance(checksum_name, str) and checksum_name, "asset index checksum_name invalid")
+        add(name, sidecar_dir / name)
+        add(checksum_name, sidecar_dir / checksum_name)
+        metadata_name = asset.get("metadata_name")
+        require(isinstance(metadata_name, str) and metadata_name, "asset index metadata_name invalid")
+        add(metadata_name, sidecar_dir / metadata_name)
+        add(f"{metadata_name}.sha256", sidecar_dir / f"{metadata_name}.sha256")
+        signature_name = asset.get("signature_name")
+        if signature_name is not None:
+            add(signature_name, sidecar_dir / signature_name)
+    for name, path in core_assets.items():
+        add(name, path)
+        add(f"{name}.sha256", sidecar_dir / f"{name}.sha256")
+    return expected
 
 
 def verify_asset_index(

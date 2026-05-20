@@ -23,9 +23,11 @@ The predicate records:
 - `bundle_metadata_sha256`;
 - `subjects`.
 
-Each subject records `name`, `kind`, `sha256`, and `size_bytes`. The current
-public subject set is complete for the installer/bootstrapper-consumed release
-dist assets:
+Each subject records `name`, `kind`, `sha256`, and `size_bytes`. The subject
+set is derived from `m80-release-assets.json`: every row contributes its
+bundle, bundle checksum sidecar, metadata sidecar, metadata checksum sidecar,
+and any named detached signature. The current single-row default Linux subject
+set is:
 
 ```text
 m80-linux-x86_64.tar.gz
@@ -48,14 +50,19 @@ There are no detached signature files in v1. If a future asset-index row names
 must be added as a subject in the same predicate before signed release
 verification accepts the row.
 
+The public `SHA256SUMS` contains every release-integrity subject except
+`SHA256SUMS` itself. The GitHub attestation bundle is checked as the proof for
+the predicate and is intentionally not a predicate subject.
+
 The v1 asset index still carries both proof-reference fields. Official signed
 release rows must set `attestation_name` to
 `m80-release-integrity.attestation.jsonl`; `signature_name` must be null unless
 a detached signature file is actually published. Signed verification rejects
 missing proof-reference fields, empty attestation names, stale attestation
 bundle names, absent signature files, stale row release tags or m80 versions,
-signature names that collide with built-in subject names, and any named
-signature file that is not a predicate subject.
+signature names that collide with built-in subject names, any named signature
+file that is not a predicate subject, and any asset-index row missing from the
+public checksum manifest.
 
 The bundle metadata hash is duplicated as `bundle_metadata_sha256` because
 installers and human verifiers need to bind the tarball metadata before

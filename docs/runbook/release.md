@@ -200,7 +200,8 @@ inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, a canonical
 `m80-release-assets.json` asset index, a shell-safe
 `m80-bootstrap-selector.tsv` projection of that index for the no-installed-binary
 installer path, `m80-release-build.json` for build-input provenance, and a
-public `SHA256SUMS` covering those assets. The exact builder contract is
+public `SHA256SUMS` covering those assets plus their checksum sidecars. The
+exact builder contract is
 captured in `docs/behaviors/release/bundle-builder.md`.
 
 The complete installer/bootstrapper-consumed subject set recorded inside
@@ -251,9 +252,12 @@ not a quickstart-command change. Use this checklist:
    `os` / `arch` / `image_kind` tuple, pointing at those published assets.
 3. Regenerate `m80-bootstrap-selector.tsv`, its checksum sidecar, and the
    public `SHA256SUMS`; do not edit the selector by hand.
-4. Extend the release proof fixture for the new tuple or image kind before
+4. Before publishing or promoting the multi-row index, run
+   `python3 scripts/verify-release-integrity.py ... --dist-dir <release-dist>`
+   against the exact dist directory.
+5. Extend the release proof fixture for the new tuple or image kind before
    publishing it as supported.
-5. Update docs only where the supported tuple matrix or image-kind behavior
+6. Update docs only where the supported tuple matrix or image-kind behavior
    changes. The common README latest and pinned install snippets stay:
    `curl .../install.sh | sudo sh`.
 

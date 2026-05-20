@@ -748,18 +748,22 @@ def verify_build_manifest_builder_material(manifest: dict) -> None:
     require(apt_packages or container_digest is not None, "build manifest missing apt packages or container digest")
 
 
-def verify_asset_index(metadata: dict) -> None:
+def verify_asset_index(metadata: dict) -> dict:
     index = read_json(tmp / ASSET_INDEX_NAME, "asset index")
     require_exact_fields(index, EXPECTED_INDEX_FIELDS, "asset index")
     require(index["schema_version"] == 1, "release integrity unsupported asset index schema_version")
     require(index["release_tag"] == release_tag, "release integrity asset index release_tag mismatch")
     require(isinstance(index["assets"], list) and index["assets"], "release integrity asset index assets must not be empty")
     selected = None
+    seen: set[tuple[str, str, str]] = set()
     for asset in index["assets"]:
         require(isinstance(asset, dict), "release integrity asset index asset must be an object")
         name = asset.get("name") if isinstance(asset.get("name"), str) else "<unknown>"
         require_exact_fields(asset, EXPECTED_ASSET_FIELDS, f"asset index asset {name}")
-        if (asset["os"], asset["arch"], asset["image_kind"]) == (host_os, host_arch, image_kind):
+        tuple_key = (asset["os"], asset["arch"], asset["image_kind"])
+        require(tuple_key not in seen, f"release integrity asset index duplicate tuple: {'/'.join(tuple_key)}")
+        seen.add(tuple_key)
+        if tuple_key == (host_os, host_arch, image_kind):
             require(selected is None, f"release integrity asset index duplicate tuple: {host_os}/{host_arch}/{image_kind}")
             selected = asset
     require(selected is not None, f"release integrity asset index missing tuple: {host_os}/{host_arch}/{image_kind}")
@@ -785,18 +789,13 @@ def verify_asset_index(metadata: dict) -> None:
     }
     for field, expected_value in expected.items():
         require(selected[field] == expected_value, f"release integrity asset index {field} mismatch for {bundle_name}")
+    return index
 
 
-def verify_subjects(material: dict) -> str:
-    subjects = material["subjects"]
-    require(isinstance(subjects, list), "release integrity subjects must be a list")
+def expected_subjects_from_index(index: dict) -> dict[str, str]:
     expected = {
-        bundle_name: "release-bundle",
-        checksum_name: "checksum-sidecar",
         INSTALL_NAME: "installer",
         f"{INSTALL_NAME}.sha256": "checksum-sidecar",
-        metadata_name: "bundle-metadata",
-        f"{metadata_name}.sha256": "checksum-sidecar",
         ASSET_INDEX_NAME: "asset-index",
         f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
         BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
@@ -805,7 +804,45 @@ def verify_subjects(material: dict) -> str:
         f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
         PUBLIC_SHA256SUMS_NAME: "checksum-manifest",
     }
-    skipped = {bundle_name, checksum_name} if phase == "prebundle" else set()
+    for asset in index["assets"]:
+        add_expected_subject(expected, asset["name"], "release-bundle")
+        add_expected_subject(expected, asset["checksum_name"], "checksum-sidecar")
+        add_expected_subject(expected, asset["metadata_name"], "bundle-metadata")
+        add_expected_subject(expected, f"{asset['metadata_name']}.sha256", "checksum-sidecar")
+        if asset["signature_name"] is not None:
+            add_expected_subject(expected, asset["signature_name"], "detached-signature")
+    return expected
+
+
+def add_expected_subject(subjects: dict[str, str], name: str, kind: str) -> None:
+    require(name not in subjects, f"release integrity duplicate expected subject {name}")
+    subjects[name] = kind
+
+
+def downloaded_subjects() -> set[str]:
+    names = {
+        INSTALL_NAME,
+        f"{INSTALL_NAME}.sha256",
+        metadata_name,
+        f"{metadata_name}.sha256",
+        ASSET_INDEX_NAME,
+        f"{ASSET_INDEX_NAME}.sha256",
+        BOOTSTRAP_SELECTOR_NAME,
+        f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
+        BUILD_MANIFEST_NAME,
+        f"{BUILD_MANIFEST_NAME}.sha256",
+        PUBLIC_SHA256SUMS_NAME,
+    }
+    if phase == "full":
+        names.update({bundle_name, checksum_name})
+    return names
+
+
+def verify_subjects(material: dict, index: dict) -> str:
+    subjects = material["subjects"]
+    require(isinstance(subjects, list), "release integrity subjects must be a list")
+    expected = expected_subjects_from_index(index)
+    downloaded = downloaded_subjects()
     by_name: dict[str, dict] = {}
     for subject in subjects:
         require(isinstance(subject, dict), "release integrity subject must be an object")
@@ -819,12 +856,12 @@ def verify_subjects(material: dict) -> str:
         require_sha(subject["sha256"], f"release integrity subject {name} sha256")
         require_size(subject["size_bytes"], f"release integrity subject {name} size_bytes")
         by_name[name] = subject
-    missing = sorted(set(expected) - set(by_name) - skipped)
+    missing = sorted(set(expected) - set(by_name))
     require(not missing, "release integrity missing subject(s): " + ", ".join(missing))
     extra = sorted(set(by_name) - set(expected))
     require(not extra, "release integrity unexpected subject(s): " + ", ".join(extra))
     for name, subject in by_name.items():
-        if name in skipped:
+        if name not in downloaded:
             continue
         path = tmp / name
         require(path.is_file(), f"release integrity subject file missing: {name}")
@@ -848,8 +885,8 @@ commit_sha = verify_top_level(material)
 verify_attestation_metadata(material_path, material)
 metadata = verify_metadata(material)
 verify_build_manifest(material, metadata)
-verify_asset_index(metadata)
-install_sha256 = verify_subjects(material)
+asset_index = verify_asset_index(metadata)
+install_sha256 = verify_subjects(material, asset_index)
 print(f"commit_sha={commit_sha}")
 print(f"install_sha256={install_sha256}")
 PY

@@ -503,9 +503,12 @@ class ReleaseBundleTest(unittest.TestCase):
             add_alternate_image_kind_fixture(root / "out")
             write_integrity_material(root / "out")
 
-            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+            run_verify(root / "out" / BUNDLE_NAME, verify_sidecars=True)
+            result, urls, install_args = run_rendered_install(root, args=["--dry-run"])
 
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("m80-linux-x86_64-debug.tar.gz", "\n".join(urls))
+            self.assertNotIn("m80-linux-x86_64-debug.bundle.json", "\n".join(urls))
             index = json.loads((root / "out" / ASSET_INDEX_NAME).read_text())
             self.assertEqual(
                 sorted((asset["os"], asset["arch"], asset["image_kind"]) for asset in index["assets"]),
@@ -1919,7 +1922,7 @@ class ReleaseBundleTest(unittest.TestCase):
             signature.write_text("signature\n")
             rewrite_asset_index_asset(root / "out", {"signature_name": signature.name})
             rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", signature.name)
-            material = write_integrity_material(root / "out")
+            material = write_integrity_material(root / "out", omit_subject=signature.name)
 
             result = run_verify_integrity(material, check=False)
 
@@ -1930,9 +1933,12 @@ class ReleaseBundleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             package_fixture(root)
-            rewrite_asset_index_asset(root / "out", {"signature_name": "missing.sig"})
-            rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", "missing.sig")
+            signature = root / "out" / "missing.sig"
+            signature.write_text("signature\n")
+            rewrite_asset_index_asset(root / "out", {"signature_name": signature.name})
+            rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", signature.name)
             material = write_integrity_material(root / "out")
+            signature.unlink()
 
             result = run_verify_integrity(material, check=False)
 
@@ -1963,15 +1969,7 @@ class ReleaseBundleTest(unittest.TestCase):
             signature.write_text("signature\n")
             rewrite_asset_index_asset(root / "out", {"signature_name": signature.name})
             rewrite_bootstrap_selector_asset_field(root / "out", "signature_name", signature.name)
-            material = write_integrity_material(
-                root / "out",
-                extra_subject={
-                    "name": signature.name,
-                    "kind": "detached-signature",
-                    "sha256": sha256(signature),
-                    "size_bytes": signature.stat().st_size,
-                },
-            )
+            material = write_integrity_material(root / "out")
 
             result = run_verify_integrity(material)
 
@@ -2002,6 +2000,115 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(payload["certificate_not_before"], "2026-01-01T00:00:00Z")
             self.assertEqual(payload["certificate_not_after"], "2027-01-01T00:00:00Z")
             run_verify_integrity(material)
+
+    def test_release_integrity_material_accepts_multi_row_asset_index_subjects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
+            material = write_integrity_material(root / "out")
+            payload = json.loads(material.read_text())
+            subject_names = {subject["name"] for subject in payload["subjects"]}
+
+            self.assertIn("m80-linux-x86_64-debug.tar.gz", subject_names)
+            self.assertIn("m80-linux-x86_64-debug.tar.gz.sha256", subject_names)
+            self.assertIn("m80-linux-x86_64-debug.bundle.json", subject_names)
+            self.assertIn("m80-linux-x86_64-debug.bundle.json.sha256", subject_names)
+            run_verify_integrity(material)
+
+    def test_release_integrity_material_rejects_missing_non_default_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
+            material = write_integrity_material(root / "out")
+            (root / "out" / "m80-linux-x86_64-debug.tar.gz").unlink()
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index bundle missing", result.stderr)
+
+    def test_release_integrity_material_rejects_non_default_asset_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
+            index = json.loads((root / "out" / ASSET_INDEX_NAME).read_text())
+            for asset in index["assets"]:
+                if asset["image_kind"] == "debug":
+                    asset["sha256"] = "0" * 64
+            rewrite_asset_index(root / "out", index)
+            rewrite_bootstrap_selector(root / "out", bootstrap_selector_lines_for_index(root / "out", index))
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity asset index sha256 mismatch for m80-linux-x86_64-debug.tar.gz", result.stderr)
+
+    def test_release_integrity_material_rejects_non_default_metadata_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
+            index = json.loads((root / "out" / ASSET_INDEX_NAME).read_text())
+            for asset in index["assets"]:
+                if asset["image_kind"] == "debug":
+                    asset["metadata_sha256"] = "0" * 64
+            rewrite_asset_index(root / "out", index)
+            rewrite_bootstrap_selector(root / "out", bootstrap_selector_lines_for_index(root / "out", index))
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "release integrity asset index metadata_sha256 mismatch for m80-linux-x86_64-debug.tar.gz",
+                result.stderr,
+            )
+
+    def test_release_integrity_material_rejects_non_default_selector_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
+            lines = bootstrap_selector_lines(root / "out")
+            columns = lines[2].split("\t")
+            size_index = columns.index("size_bytes")
+            debug_rows = bootstrap_selector_rows_for_image_kind(lines, "debug")
+            self.assertEqual(len(debug_rows), 1)
+            row_parts = debug_rows[0].split("\t")
+            row_parts[size_index] = "1"
+            for index, line in enumerate(lines):
+                if line == debug_rows[0]:
+                    lines[index] = "\t".join(row_parts)
+            rewrite_bootstrap_selector(root / "out", lines)
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity bootstrap selector size_bytes mismatch for linux/x86_64/debug", result.stderr)
+
+    def test_release_integrity_material_rejects_public_sums_missing_non_default_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            add_alternate_image_kind_fixture(root / "out")
+            sums_path = root / "out" / "SHA256SUMS"
+            lines = [
+                line
+                for line in sums_path.read_text().splitlines()
+                if not line.endswith("  m80-linux-x86_64-debug.tar.gz")
+            ]
+            sums_path.write_text("\n".join(lines) + "\n")
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity public SHA256SUMS missing asset(s): m80-linux-x86_64-debug.tar.gz", result.stderr)
 
     def test_release_integrity_material_preflights_missing_verifier_before_material_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2248,7 +2355,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify_integrity(material, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(f"release integrity sha256 mismatch for {INSTALL_NAME}", result.stderr)
+            self.assertIn(f"release integrity public SHA256SUMS hash mismatch for {INSTALL_NAME}", result.stderr)
 
     def test_release_integrity_material_rejects_signed_bootstrap_selector_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2709,17 +2816,7 @@ def rewrite_asset_index(out_dir: Path, index: dict) -> None:
     index_path = out_dir / ASSET_INDEX_NAME
     index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n")
     write_sha256_sidecar(out_dir / f"{ASSET_INDEX_NAME}.sha256", index_path, ASSET_INDEX_NAME)
-    write_public_sha256s(
-        out_dir / "SHA256SUMS",
-        [
-            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
-            (INSTALL_NAME, out_dir / INSTALL_NAME),
-            (METADATA_NAME, out_dir / METADATA_NAME),
-            (ASSET_INDEX_NAME, index_path),
-            (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
-            (BUILD_MANIFEST_NAME, out_dir / BUILD_MANIFEST_NAME),
-        ],
-    )
+    write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets_for_index(out_dir))
 
 
 def add_alternate_image_kind_fixture(out_dir: Path, *, image_kind: str = "debug") -> None:
@@ -2792,17 +2889,7 @@ def rewrite_build_manifest(out_dir: Path, updates: dict) -> None:
     manifest.update(updates)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     write_sha256_sidecar(out_dir / f"{BUILD_MANIFEST_NAME}.sha256", manifest_path, BUILD_MANIFEST_NAME)
-    write_public_sha256s(
-        out_dir / "SHA256SUMS",
-        [
-            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
-            (INSTALL_NAME, out_dir / INSTALL_NAME),
-            (METADATA_NAME, out_dir / METADATA_NAME),
-            (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
-            (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
-            (BUILD_MANIFEST_NAME, manifest_path),
-        ],
-    )
+    write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets_for_index(out_dir))
 
 
 def bootstrap_selector_lines(out_dir: Path) -> list[str]:
@@ -2819,17 +2906,7 @@ def rewrite_bootstrap_selector(out_dir: Path, lines: list[str]) -> None:
     selector = out_dir / BOOTSTRAP_SELECTOR_NAME
     selector.write_text("\n".join(lines) + "\n")
     write_sha256_sidecar(out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256", selector, BOOTSTRAP_SELECTOR_NAME)
-    write_public_sha256s(
-        out_dir / "SHA256SUMS",
-        [
-            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
-            (INSTALL_NAME, out_dir / INSTALL_NAME),
-            (METADATA_NAME, out_dir / METADATA_NAME),
-            (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
-            (BOOTSTRAP_SELECTOR_NAME, selector),
-            (BUILD_MANIFEST_NAME, out_dir / BUILD_MANIFEST_NAME),
-        ],
-    )
+    write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets_for_index(out_dir))
 
 
 def rewrite_bootstrap_selector_asset_field(out_dir: Path, field: str, value: str | None) -> None:
@@ -2855,18 +2932,62 @@ def replace_bundle_m80_for_install(out_dir: Path, script_text: str) -> None:
     rewrite_asset_index_asset(out_dir, {"sha256": bundle_sha, "size_bytes": bundle_size})
     rewrite_bootstrap_selector_asset_field(out_dir, "bundle_sha256", bundle_sha)
     rewrite_bootstrap_selector_asset_field(out_dir, "size_bytes", str(bundle_size))
-    write_public_sha256s(
-        out_dir / "SHA256SUMS",
-        [
-            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
-            (INSTALL_NAME, out_dir / INSTALL_NAME),
-            (METADATA_NAME, out_dir / METADATA_NAME),
-            (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
-            (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
-            (BUILD_MANIFEST_NAME, out_dir / BUILD_MANIFEST_NAME),
-        ],
-    )
+    write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets_for_index(out_dir))
     write_integrity_material(out_dir)
+
+
+def public_sha256_assets_for_index(out_dir: Path) -> list[tuple[str, Path]]:
+    index = json.loads((out_dir / ASSET_INDEX_NAME).read_text())
+    assets: list[tuple[str, Path]] = []
+    for asset in index["assets"]:
+        assets.append((asset["name"], out_dir / asset["name"]))
+        assets.append((asset["checksum_name"], out_dir / asset["checksum_name"]))
+    assets.extend(
+        [
+            (INSTALL_NAME, out_dir / INSTALL_NAME),
+            (f"{INSTALL_NAME}.sha256", out_dir / f"{INSTALL_NAME}.sha256"),
+        ]
+    )
+    for asset in index["assets"]:
+        metadata_name = asset["metadata_name"]
+        assets.append((metadata_name, out_dir / metadata_name))
+        assets.append((f"{metadata_name}.sha256", out_dir / f"{metadata_name}.sha256"))
+        if asset["signature_name"] is not None:
+            assets.append((asset["signature_name"], out_dir / asset["signature_name"]))
+    assets.extend(
+        [
+            (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
+            (f"{ASSET_INDEX_NAME}.sha256", out_dir / f"{ASSET_INDEX_NAME}.sha256"),
+            (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
+            (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256"),
+            (BUILD_MANIFEST_NAME, out_dir / BUILD_MANIFEST_NAME),
+            (f"{BUILD_MANIFEST_NAME}.sha256", out_dir / f"{BUILD_MANIFEST_NAME}.sha256"),
+        ]
+    )
+    return assets
+
+
+def release_integrity_subject_kinds(out_dir: Path) -> dict[str, str]:
+    subject_kinds = {
+        INSTALL_NAME: "installer",
+        f"{INSTALL_NAME}.sha256": "checksum-sidecar",
+        ASSET_INDEX_NAME: "asset-index",
+        f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
+        BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
+        f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
+        BUILD_MANIFEST_NAME: "build-manifest",
+        f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
+        "SHA256SUMS": "checksum-manifest",
+    }
+    index = json.loads((out_dir / ASSET_INDEX_NAME).read_text())
+    for asset in index["assets"]:
+        subject_kinds[asset["name"]] = "release-bundle"
+        subject_kinds[asset["checksum_name"]] = "checksum-sidecar"
+        subject_kinds[asset["metadata_name"]] = "bundle-metadata"
+        subject_kinds[f"{asset['metadata_name']}.sha256"] = "checksum-sidecar"
+        if asset["signature_name"] is not None:
+            subject_kinds[asset["signature_name"]] = "detached-signature"
+    return subject_kinds
 
 
 def write_integrity_material(
@@ -2878,21 +2999,7 @@ def write_integrity_material(
     extra_subject: dict | None = None,
     subject_updates: dict[str, dict] | None = None,
 ) -> Path:
-    subject_kinds = {
-        BUNDLE_NAME: "release-bundle",
-        f"{BUNDLE_NAME}.sha256": "checksum-sidecar",
-        INSTALL_NAME: "installer",
-        f"{INSTALL_NAME}.sha256": "checksum-sidecar",
-        METADATA_NAME: "bundle-metadata",
-        f"{METADATA_NAME}.sha256": "checksum-sidecar",
-        ASSET_INDEX_NAME: "asset-index",
-        f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
-        BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
-        f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
-        BUILD_MANIFEST_NAME: "build-manifest",
-        f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
-        "SHA256SUMS": "checksum-manifest",
-    }
+    subject_kinds = release_integrity_subject_kinds(out_dir)
     subjects = []
     for name, kind in subject_kinds.items():
         if omit_subject == name:
