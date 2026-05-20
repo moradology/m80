@@ -46,7 +46,11 @@ The common latest and pinned snippets are stable-channel only. The resolved
 release must be public, non-draft, non-prerelease, tagged exactly
 `vMAJOR.MINOR.PATCH`, and must publish the complete installer-consumed asset
 set. `scripts/stable_release_channel.py` validates GitHub release metadata and
-the asset index for future latest bootstrap/freshness lanes; `install.sh`,
+the asset index for future latest bootstrap/freshness lanes.
+`scripts/stable_latest_bootstrap.py` resolves latest to one concrete stable tag,
+checks that latest has not switched before handoff, and emits pinned URLs for
+`install.sh`, the bundle, checksum sidecars, asset index, bootstrap selector,
+release integrity, attestation, and public checksum material. `install.sh`,
 `m80 install --release-tag`, and packaging also reject prerelease-shaped tags
 before network/index work. See
 `docs/behaviors/release/stable-channel.md`.

@@ -24,8 +24,13 @@ The stable-channel metadata gate checks:
   row reports `m80_version` equal to that tag.
 
 `scripts/stable_release_channel.py` is the reusable verifier for future latest
-bootstrap and freshness jobs. Current install entry points also enforce the
-stable tag shape before network or index work:
+bootstrap and freshness jobs. `scripts/stable_latest_bootstrap.py` resolves the
+GitHub latest release metadata into one stable concrete tag, checks the latest
+metadata again before emitting a handoff, and outputs only pinned
+`releases/download/<tag>/...` URLs for the installer, bundle, checksum sidecars,
+asset index, bootstrap selector, release-integrity predicate, attestation
+metadata, and public checksum material. Current install entry points also
+enforce the stable tag shape before network or index work:
 
 - `scripts/install.sh` refuses a rendered non-stable `M80_RELEASE_TAG` before
   release asset downloads;
@@ -39,6 +44,9 @@ Regression coverage:
 - `scripts/test-stable-release-channel.py` covers eligible metadata, draft
   release, prerelease release, missing `install.sh`, wrong public asset URL,
   asset-index tag drift, and `m80_version` drift;
+- `scripts/test-stable-latest-bootstrap.py` covers latest resolution success,
+  tag-switch failure before handoff output, missing metadata, HTTP fetch
+  failure, and no-network local fixture mode;
 - `scripts/test-release-bundle.py::test_rejects_prerelease_release_tag`;
 - `crates/m80-cli/src/cmds/install/tests.rs` prerelease rejection tests for
   `--release-tag` and `--bootstrap-tag`.
