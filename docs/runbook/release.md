@@ -106,6 +106,31 @@ cover the index before the publish job re-downloads and validates it. The
 current publisher leaves signature/attestation reference fields nullable until
 the release signing lane defines and emits those proof assets.
 
+## Release Integrity Material
+
+The release signing lane uses the schema in
+`docs/behaviors/release/release-integrity-material.md`. The public mechanism is
+GitHub Artifact Attestations over `m80-release-integrity.json`; that predicate
+records the release tag, commit SHA, target, Rust toolchain, m80 package
+version, bundle metadata hash, and the sha256/size of every current public
+dist asset.
+
+Before wiring signed material into installers, verify the predicate shape
+against a downloaded dist directory:
+
+```sh
+python3 scripts/verify-release-integrity.py \
+  /tmp/m80-release-dist/m80-release-integrity.json \
+  --dist-dir /tmp/m80-release-dist \
+  --release-tag "$M80_RELEASE_TAG" \
+  --commit-sha "$GITHUB_SHA" \
+  --rust-toolchain 1.82
+```
+
+This check is read-only and does not require root. It fails closed for wrong
+tag, wrong commit, missing subject digests, tampered bundle or installer bytes,
+unsupported schema, and bundle metadata or asset-index tag drift.
+
 To add a new architecture or image kind, add a new asset-index row and publish
 the matching bundle, metadata sidecar, checksums, and integrity material. The
 README command stays the same: the installer/bootstrapper reads the verified

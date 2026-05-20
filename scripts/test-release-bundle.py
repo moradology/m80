@@ -14,10 +14,13 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
 VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
+VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 INSTALL_NAME = "install.sh"
+INTEGRITY_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+INTEGRITY_RUST_TOOLCHAIN = "1.82"
 
 
 class ReleaseBundleTest(unittest.TestCase):
@@ -592,6 +595,78 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("asset index m80_version mismatch", result.stderr)
 
+    def test_release_integrity_material_verifier_accepts_valid_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material)
+
+            self.assertIn("verified release integrity material", result.stdout)
+
+    def test_release_integrity_material_rejects_wrong_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out", updates={"release_tag": "v9.9.9"})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity release_tag mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_missing_asset_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(
+                root / "out",
+                omit_subject_field=(BUNDLE_NAME, "sha256"),
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity subject {BUNDLE_NAME} missing field(s): sha256", result.stderr)
+
+    def test_release_integrity_material_rejects_tampered_bundle_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            with (root / "out" / BUNDLE_NAME).open("ab") as f:
+                f.write(b"tampered")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity sha256 mismatch for {BUNDLE_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_tampered_install_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            with (root / "out" / INSTALL_NAME).open("a") as f:
+                f.write("\n# tampered\n")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity sha256 mismatch for {INSTALL_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_unsupported_verifier_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out", updates={"schema_version": 999})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported release integrity schema_version", result.stderr)
+
 
 def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> dict[str, Path]:
     inputs = root / "inputs"
@@ -732,6 +807,55 @@ def rewrite_asset_index(out_dir: Path, index: dict) -> None:
     )
 
 
+def write_integrity_material(
+    out_dir: Path,
+    *,
+    updates: dict | None = None,
+    omit_subject_field: tuple[str, str] | None = None,
+) -> Path:
+    subject_kinds = {
+        BUNDLE_NAME: "release-bundle",
+        f"{BUNDLE_NAME}.sha256": "checksum-sidecar",
+        INSTALL_NAME: "installer",
+        f"{INSTALL_NAME}.sha256": "checksum-sidecar",
+        METADATA_NAME: "bundle-metadata",
+        f"{METADATA_NAME}.sha256": "checksum-sidecar",
+        ASSET_INDEX_NAME: "asset-index",
+        f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
+        "SHA256SUMS": "checksum-manifest",
+    }
+    subjects = []
+    for name, kind in subject_kinds.items():
+        asset = out_dir / name
+        subject = {
+            "name": name,
+            "kind": kind,
+            "sha256": sha256(asset),
+            "size_bytes": asset.stat().st_size,
+        }
+        if omit_subject_field and omit_subject_field[0] == name:
+            subject.pop(omit_subject_field[1], None)
+        subjects.append(subject)
+    payload = {
+        "schema_version": 1,
+        "mechanism": "github-artifact-attestation",
+        "repository": "moradology/m80",
+        "release_tag": "v0.0.0",
+        "commit_sha": INTEGRITY_COMMIT_SHA,
+        "target": "linux-x86_64",
+        "rust_toolchain": INTEGRITY_RUST_TOOLCHAIN,
+        "m80_package_version": "0.0.0",
+        "bundle_metadata_name": METADATA_NAME,
+        "bundle_metadata_sha256": sha256(out_dir / METADATA_NAME),
+        "subjects": subjects,
+    }
+    if updates:
+        payload.update(updates)
+    path = out_dir / "m80-release-integrity.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return path
+
+
 def write_executable(path: Path, text: str) -> None:
     path.write_text(text)
     path.chmod(0o755)
@@ -805,6 +929,25 @@ def run_verify(
     ]
     if verify_sidecars:
         cmd.append("--verify-sidecars")
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def run_verify_integrity(material: Path, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    cmd = [
+        "python3",
+        str(VERIFY_INTEGRITY),
+        str(material),
+        "--repo-root",
+        str(REPO_ROOT),
+        "--dist-dir",
+        str(material.parent),
+        "--release-tag",
+        "v0.0.0",
+        "--commit-sha",
+        INTEGRITY_COMMIT_SHA,
+        "--rust-toolchain",
+        INTEGRITY_RUST_TOOLCHAIN,
+    ]
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 

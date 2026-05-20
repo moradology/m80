@@ -8,3 +8,6 @@ mod installer_input_contract;
 
 #[path = "release/installer_layout.rs"]
 mod installer_layout;
+
+#[path = "release/release_integrity_material.rs"]
+mod release_integrity_material;

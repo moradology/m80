@@ -88,3 +88,9 @@ schema/protocol/receipt mismatches, missing install-provenance metadata, and
 stale public checksum sidecars. It also checks the asset-index path for missing
 assets, wrong tuple, wrong hash, duplicate tuple, stale version, and a missing
 index checksum sidecar.
+
+`scripts/verify-release-integrity.py` validates the release-integrity predicate
+used by the signing/attestation lane. That predicate is documented in
+[`release-integrity-material.md`](release-integrity-material.md) and records the
+release tag, commit SHA, target, Rust toolchain, m80 package version, bundle
+metadata hash, and every current public dist asset digest.
