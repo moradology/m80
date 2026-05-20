@@ -1,6 +1,7 @@
 # Installed Default Profile
 
-Behavior capture for beads `m80-o3uh9.9.2` and `m80-o3uh9.9.4`.
+Behavior capture for beads `m80-o3uh9.9.1`, `m80-o3uh9.9.2`,
+`m80-o3uh9.9.3`, and `m80-o3uh9.9.4`.
 
 ## Contract
 
@@ -81,16 +82,38 @@ This path does not require ambient `M80_KERNEL_IMAGE`, `M80_ROOTFS_IMAGE`, or
 host-helper environment variables.
 
 `m80 preflight` uses the same selected runtime profile when checking artifact
-and helper paths. Its host-prerequisite proof therefore reports the final paths
-selected from the installed default profile instead of falling back to ambient
-artifact environment variables.
+and helper paths. Human output prints the selected profile report before the
+preflight table. JSON output is a versioned preflight report containing:
+
+- `runtime_profile`: selected profile name, selection source, body source,
+  profile file path, artifact/helper paths, active install pointer status,
+  release tag, m80 version, and missing profile paths by field.
+- `host_prerequisites`: the schema-versioned `HostPrerequisiteResult` with
+  final checked paths and observed versions.
+
+The host-prerequisite proof therefore reports the final paths selected from the
+installed default profile instead of falling back to ambient artifact
+environment variables.
 
 `m80 env` reports the selected profile name, selection source, body source,
 profile file path, artifact paths, host-helper paths, profile run-root field,
-release tag, and m80 version. Its artifact and Firecracker diagnostic sections
-prefer the selected profile paths before ambient environment variables, so a bug
-report from a completed install names the same paths that `m80 run` and
-`m80 preflight` use.
+release tag, m80 version, active install pointer status, and missing profile
+paths by field. Its artifact and Firecracker diagnostic sections prefer the
+selected profile paths before ambient environment variables, so a bug report
+from a completed install names the same paths that `m80 run` and `m80
+preflight` use.
+
+When `artifact_dir` follows the install layout
+`<install-root>/versions/<tag>/artifacts`, the diagnostic report checks
+`<install-root>/active`:
+
+- `live`: the active symlink points at the selected version directory.
+- `stale`: the active symlink points somewhere else.
+- `missing`: the active symlink is absent.
+- `error`: the active symlink could not be read.
+
+Missing profile paths are reported as structured `{ field, path, reason }`
+entries before the operator has to inspect TOML by hand.
 
 Operator overrides keep their normal precedence:
 
@@ -120,11 +143,13 @@ and config contents where they existed. Missing files are removed again.
   proves stale file overwrite.
 - `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_rolls_back_previous_profile_when_config_write_fails`
   proves rollback after a failed second write.
-- `crates/m80-cli/src/profile.rs` unit tests prove profile path validation,
-  search precedence, and fail-closed parsing.
+- `crates/m80-cli/src/profile.rs` and `crates/m80-cli/src/profile/report.rs`
+  tests prove profile path validation, search precedence, fail-closed parsing,
+  active-pointer classification, and missing-path diagnostics.
 - `crates/m80-cli/src/cmds.rs` unit tests prove selected profile artifacts and
   helpers feed backend/preflight config without artifact/helper env vars, and
-  that operator config owns `run_root`.
+  that operator config owns `run_root`. They also prove preflight JSON includes
+  the selected runtime-profile report alongside host prerequisites.
 - `crates/m80-cli/src/cmds/env.rs` unit tests prove `m80 env` reports selected
   profile source and exact installed paths from an isolated hostless profile.
 - `crates/m80-cli/src/cmds/quickstart.rs` unit tests pin the m80 environment

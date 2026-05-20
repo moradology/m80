@@ -2,12 +2,13 @@ use super::{
     artifact_config_for_runtime_profile, binary_config_for_runtime_profile, build_process_env,
     cmd_preflight, format_config_json, format_config_table, host_feature_config_from_effective,
     network_policy_for_egress, parse_env, render_preflight_result, run_request, run_stream,
-    sandbox_config_for_run, should_writeback, validate_run_flags,
+    sandbox_config_for_run, should_writeback, validate_run_flags, PreflightErrorReport,
+    PreflightReport,
 };
 use crate::args::{EgressMode, OverlayCloneModeArg, WritebackMode};
 use crate::errors::{EXIT_CONFIG, EXIT_PREFLIGHT};
 use crate::json;
-use crate::profile::{ProfileBodySource, RuntimeProfile};
+use crate::profile::{self, ProfileBodySource, RuntimeProfile};
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
 use m80_preflight::{
     CgroupPreflightMode, CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError,
@@ -60,7 +61,9 @@ fn fake_manifest() -> m80_image_manifest::Manifest {
 
 #[test]
 fn preflight_error_uses_shared_error_mapping() {
+    let profile = installed_runtime_profile();
     let code = render_preflight_result(
+        &profile,
         Err(m80_firecracker::FcError::Preflight(
             PreflightError::KvmUnavailable {
                 path: "/dev/kvm".into(),
@@ -428,7 +431,8 @@ fn writeback_policy_decides_from_guest_exit() {
 
 #[test]
 fn preflight_success_fixture_needs_no_kvm() {
-    let code = render_preflight_result(Ok(fake_discovery()), false);
+    let profile = installed_runtime_profile();
+    let code = render_preflight_result(&profile, Ok(fake_discovery()), false);
     assert_eq!(code, 0);
 }
 
@@ -470,11 +474,71 @@ fn preflight_json_formats_discovery_version_fields() {
 }
 
 #[test]
+fn preflight_json_report_includes_selected_profile_context() {
+    let profile = installed_runtime_profile();
+    let proof = m80_preflight::HostPrerequisiteResult::from_discovery(&fake_discovery()).unwrap();
+    let report = PreflightReport {
+        schema_version: 1,
+        runtime_profile: profile::runtime_profile_report(&profile),
+        host_prerequisites: proof,
+    };
+    let json = json::to_pretty(&report);
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed["data"]["schema_version"], 1);
+    assert_eq!(parsed["data"]["runtime_profile"]["name"], "default");
+    assert_eq!(
+        parsed["data"]["runtime_profile"]["selection_source"],
+        "SystemFile"
+    );
+    assert_eq!(
+        parsed["data"]["runtime_profile"]["kernel_image"],
+        "/opt/m80/versions/v1/artifacts/vmlinux"
+    );
+    assert_eq!(
+        parsed["data"]["runtime_profile"]["host_binaries_manifest"],
+        "/opt/m80/versions/v1/artifacts/host-binaries.manifest.json"
+    );
+    assert_eq!(parsed["data"]["runtime_profile"]["release_tag"], "v1");
+    assert_eq!(
+        parsed["data"]["host_prerequisites"]["schema_version"],
+        m80_preflight::HOST_PREREQUISITE_RESULT_SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn preflight_json_error_report_includes_selected_profile_context() {
+    let profile = installed_runtime_profile();
+    let err = m80_firecracker::FcError::Preflight(PreflightError::KvmUnavailable {
+        path: "/dev/kvm".into(),
+    });
+    let report = PreflightErrorReport {
+        error: crate::errors::envelope(&err),
+        runtime_profile: profile::runtime_profile_report(&profile),
+    };
+    let json = json::to_pretty(&report);
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed["data"]["variant"], "Preflight");
+    assert_eq!(parsed["data"]["exit_code"], EXIT_PREFLIGHT);
+    assert_eq!(parsed["data"]["runtime_profile"]["name"], "default");
+    assert_eq!(
+        parsed["data"]["runtime_profile"]["selection_source"],
+        "SystemFile"
+    );
+    assert_eq!(
+        parsed["data"]["runtime_profile"]["rootfs_image"],
+        "/opt/m80/versions/v1/artifacts/output.ext4"
+    );
+}
+
+#[test]
 fn preflight_json_rejects_failed_success_rows_without_panicking() {
     let mut discovery = fake_discovery();
     discovery.report[0].passed = false;
 
-    let code = render_preflight_result(Ok(discovery), true);
+    let profile = installed_runtime_profile();
+    let code = render_preflight_result(&profile, Ok(discovery), true);
 
     assert_eq!(code, EXIT_CONFIG);
 }

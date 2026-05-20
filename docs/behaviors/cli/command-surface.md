@@ -86,8 +86,11 @@ preflight environment. Named profile behavior is captured in
 `docs/behaviors/cli/image-profile-selection.md`.
 
 `m80 preflight` uses that same selected profile for artifact and host-helper
-checks, so diagnostics for an installed default profile name the paths that
-plain `m80 run -- echo hello` will use.
+checks. Its human output names the selected profile, active install pointer,
+artifact/helper paths, release tag, and missing profile paths before the
+preflight table; its JSON output wraps that same runtime-profile report beside
+the `HostPrerequisiteResult`. Diagnostics for an installed default profile
+therefore name the paths that plain `m80 run -- echo hello` will use.
 
 Parsed but intentionally feature-gapped:
 

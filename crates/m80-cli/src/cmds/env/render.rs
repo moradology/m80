@@ -73,6 +73,36 @@ pub(super) fn render_env_human(dump: &EnvDump) -> String {
     if let Some(run_root) = &dump.runtime_profile.run_root {
         writeln!(out, "  profile_run_root: {}", run_root.display()).unwrap();
     }
+    if let Some(active_pointer) = &dump.runtime_profile.active_pointer {
+        writeln!(
+            out,
+            "  active_pointer: {} status={}",
+            active_pointer.display(),
+            dump.runtime_profile
+                .active_pointer_status
+                .unwrap_or("unknown")
+        )
+        .unwrap();
+    }
+    if let Some(active_target) = &dump.runtime_profile.active_pointer_target {
+        writeln!(out, "  active_pointer_target: {}", active_target.display()).unwrap();
+    }
+    if let Some(error) = &dump.runtime_profile.active_pointer_error {
+        writeln!(out, "  active_pointer_error: {error}").unwrap();
+    }
+    if !dump.runtime_profile.missing_paths.is_empty() {
+        writeln!(out, "  missing_paths:").unwrap();
+        for missing in &dump.runtime_profile.missing_paths {
+            writeln!(
+                out,
+                "    {}: {} ({})",
+                missing.field,
+                missing.path.display(),
+                missing.reason
+            )
+            .unwrap();
+        }
+    }
     if let Some(error) = &dump.runtime_profile.error {
         writeln!(out, "  error: {error}").unwrap();
     }

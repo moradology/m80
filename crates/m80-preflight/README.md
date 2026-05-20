@@ -216,7 +216,9 @@ which is the right place for a security review to start.
   `HostPrerequisiteFailureKind`, `HostPrerequisiteRemediation`,
   `HostPrerequisiteOwner`, and
   `HOST_PREREQUISITE_RESULT_SCHEMA_VERSION` — the versioned proof contract
-  for install, preflight JSON, diagnostics, and release evidence.
+  for install, diagnostics, and release evidence. The CLI embeds this proof
+  under `data.host_prerequisites` in `m80 --json preflight` alongside the
+  selected runtime-profile report.
 - `classify_privilege(euid, effective_caps) -> Result<PrivilegeStatus,
   PreflightError>` — pure classifier used by the live privilege probe and
   focused tests.

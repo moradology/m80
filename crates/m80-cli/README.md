@@ -41,7 +41,10 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 run [OPTIONS] -- <program> [args...]` - primary process-wrapper command.
 - `m80 preflight` - resolves the effective config and selected runtime profile,
   then runs the same profile-aware host capability/artifact checks used before
-  `m80 run`. Exit 0 on full pass, 2 on any check failed.
+  `m80 run`. Human output names the selected profile, active install pointer,
+  artifact/helper paths, release tag, and missing profile paths before the
+  preflight table. JSON output wraps that runtime-profile report plus the
+  `HostPrerequisiteResult`. Exit 0 on full pass, 2 on any check failed.
 - `m80 quickstart --artifact-url <url>` - explicit operator/test override for a
   local fixture tarball or a pinned artifact tarball that matches the running
   m80 binary. The normal Linux first-run path is the release `install.sh`.
@@ -79,8 +82,9 @@ binaries, pull OCI images, or install packages implicitly.
   replaying wrapped-process stdout/stderr.
 - `m80 env` - prints the diagnostic dump for bug reports: host capabilities,
   effective config, selected runtime profile source, profile artifact/helper
-  paths, Firecracker version, and run-root state. `m80 --json env` emits the
-  same data in a versioned envelope.
+  paths, active install pointer status, missing profile paths, Firecracker
+  version, and run-root state. `m80 --json env` emits the same data in a
+  versioned envelope.
 - `m80 cleanup [--force]` - recovers stale run-root state and removes orphaned
   host resources where the lower crates expose cleanup.
 - `m80 image build/gc/list/show/rm/verify` - manages content-addressed
@@ -419,8 +423,9 @@ Stable surfaces:
 - Argv parse: every documented invocation parses to the expected enum shape.
 - Facade runner: dispatch is tested through `m80_cli::runner::run` without
   spawning the binary for every unit case.
-- Config/preflight fixtures: isolated HOME/M80_* tests cover config precedence
-  and selected installed-profile diagnostics, plus in-memory config/preflight
+- Config/preflight fixtures: isolated HOME/M80_* tests cover config precedence,
+  selected installed-profile diagnostics, active-pointer status, and
+  preflight's runtime-profile JSON wrapper, plus in-memory config/preflight
   render tests avoid KVM.
 - Removed aliases: `launch`, `exec`, `stop`, and `snapshot` fail to parse.
 - Help text: `--help` for the top level and every supported subcommand renders

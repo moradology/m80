@@ -10,6 +10,7 @@ use m80_firecracker::{
     SandboxConfig, StoppedSandbox, CONSOLE_LOG,
 };
 use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
+use serde::Serialize;
 
 use crate::args::{
     EgressMode, ImageAction, InstallArgs, OverlayCloneModeArg, QuickstartArgs, TemplateAction,
@@ -594,17 +595,29 @@ pub(crate) fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
         Ok(effective) => effective,
         Err(err) => return Ok(errors::render_error(&err, json)),
     };
-    let result = preflight_with_effective_config(effective);
-    Ok(render_preflight_result(result, json))
+    let runtime_profile =
+        match profile::resolve_from_effective(&effective, ProfileFilePaths::host()) {
+            Ok(runtime_profile) => runtime_profile,
+            Err(err) => return Ok(errors::render_error(&err, json)),
+        };
+    let result = preflight_with_runtime_profile(effective, &runtime_profile);
+    Ok(render_preflight_result(&runtime_profile, result, json))
 }
 
 fn preflight_with_effective_config(
     effective: EffectiveConfig,
 ) -> Result<m80_preflight::Discovery, FcError> {
     let runtime_profile = profile::resolve_from_effective(&effective, ProfileFilePaths::host())?;
+    preflight_with_runtime_profile(effective, &runtime_profile)
+}
+
+fn preflight_with_runtime_profile(
+    effective: EffectiveConfig,
+    runtime_profile: &RuntimeProfile,
+) -> Result<m80_preflight::Discovery, FcError> {
     m80_preflight::run_with_configs(
-        binary_config_for_runtime_profile(&runtime_profile),
-        artifact_config_for_runtime_profile(&effective, &runtime_profile),
+        binary_config_for_runtime_profile(runtime_profile),
+        artifact_config_for_runtime_profile(&effective, runtime_profile),
         host_feature_config_from_effective(&effective).map_err(FcError::Preflight)?,
     )
     .map_err(FcError::Preflight)
@@ -678,7 +691,26 @@ fn effective_jail_id(
         })
 }
 
-fn render_preflight_result(result: Result<Discovery, FcError>, json: bool) -> i32 {
+#[derive(Serialize)]
+struct PreflightReport {
+    schema_version: u32,
+    runtime_profile: profile::RuntimeProfileReport,
+    host_prerequisites: m80_preflight::HostPrerequisiteResult,
+}
+
+#[derive(Serialize)]
+struct PreflightErrorReport {
+    #[serde(flatten)]
+    error: errors::ErrorEnvelope,
+    runtime_profile: profile::RuntimeProfileReport,
+}
+
+fn render_preflight_result(
+    runtime_profile: &RuntimeProfile,
+    result: Result<Discovery, FcError>,
+    json: bool,
+) -> i32 {
+    let runtime_profile = profile::runtime_profile_report(runtime_profile);
     match result {
         Ok(discovery) => {
             if json {
@@ -693,14 +725,100 @@ fn render_preflight_result(result: Result<Discovery, FcError>, json: bool) -> i3
                         return errors::render_error(&fc_err, json);
                     }
                 };
-                println!("{}", json::to_pretty(&proof));
+                let report = PreflightReport {
+                    schema_version: 1,
+                    runtime_profile,
+                    host_prerequisites: proof,
+                };
+                println!("{}", json::to_pretty(&report));
             } else {
+                print!("{}", render_preflight_profile(&runtime_profile));
                 println!("{}", discovery.render_table());
             }
             0
         }
-        Err(e) => errors::render_error(&e, json),
+        Err(e) => render_preflight_error(&runtime_profile, &e, json),
     }
+}
+
+fn render_preflight_error(
+    runtime_profile: &profile::RuntimeProfileReport,
+    err: &FcError,
+    json_mode: bool,
+) -> i32 {
+    if json_mode {
+        let report = PreflightErrorReport {
+            error: errors::envelope(err),
+            runtime_profile: runtime_profile.clone(),
+        };
+        eprintln!("{}", json::to_pretty(&report));
+        errors::exit_code_for(err)
+    } else {
+        eprint!("{}", render_preflight_profile(runtime_profile));
+        errors::render_error(err, false)
+    }
+}
+
+fn render_preflight_profile(profile: &profile::RuntimeProfileReport) -> String {
+    let mut out = String::new();
+    writeln!(out, "profile: {}", profile.name).unwrap();
+    writeln!(out, "  selection_source: {}", profile.selection_source).unwrap();
+    writeln!(out, "  body_source: {}", profile.body_source).unwrap();
+    if let Some(file_path) = &profile.file_path {
+        writeln!(out, "  file_path: {}", file_path.display()).unwrap();
+    }
+    if let Some(artifact_dir) = &profile.artifact_dir {
+        writeln!(out, "  artifact_dir: {}", artifact_dir.display()).unwrap();
+    }
+    if let Some(kernel_image) = &profile.kernel_image {
+        writeln!(out, "  kernel_image: {}", kernel_image.display()).unwrap();
+    }
+    if let Some(rootfs_image) = &profile.rootfs_image {
+        writeln!(out, "  rootfs_image: {}", rootfs_image.display()).unwrap();
+    }
+    if let Some(guestd) = &profile.guestd {
+        writeln!(out, "  guestd: {}", guestd.display()).unwrap();
+    }
+    if let Some(host_binaries_manifest) = &profile.host_binaries_manifest {
+        writeln!(
+            out,
+            "  host_binaries_manifest: {}",
+            host_binaries_manifest.display()
+        )
+        .unwrap();
+    }
+    if let Some(active_pointer) = &profile.active_pointer {
+        writeln!(
+            out,
+            "  active_pointer: {} status={}",
+            active_pointer.display(),
+            profile.active_pointer_status.unwrap_or("unknown")
+        )
+        .unwrap();
+    }
+    if let Some(active_target) = &profile.active_pointer_target {
+        writeln!(out, "  active_pointer_target: {}", active_target.display()).unwrap();
+    }
+    if let Some(release_tag) = &profile.release_tag {
+        writeln!(out, "  release_tag: {release_tag}").unwrap();
+    }
+    if let Some(m80_version) = &profile.m80_version {
+        writeln!(out, "  m80_version: {m80_version}").unwrap();
+    }
+    if !profile.missing_paths.is_empty() {
+        writeln!(out, "  missing_paths:").unwrap();
+        for missing in &profile.missing_paths {
+            writeln!(
+                out,
+                "    {}: {} ({})",
+                missing.field,
+                missing.path.display(),
+                missing.reason
+            )
+            .unwrap();
+        }
+    }
+    out
 }
 
 pub(crate) fn cmd_warm(action: WarmAction, json: bool) -> anyhow::Result<i32> {

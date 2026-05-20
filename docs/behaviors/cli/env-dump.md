@@ -18,6 +18,10 @@ The payload includes:
 - selected runtime profile name, selection source, body source, profile file,
   profile artifact paths, host-helper paths, run-root field, release tag, and
   m80 version when resolvable
+- installed-profile diagnostics: active pointer path, target, `live`/`stale`/
+  `missing`/`error` status when the artifact path is under an install-root
+  `versions/<tag>/artifacts` tree, and a field-by-field list of missing
+  profile paths
 - kernel/rootfs/kernel-kind artifact paths from profile or `M80_*`
 - rootfs manifest path and parse status
 - Firecracker binary path from the selected profile or `M80_*`, version
@@ -48,5 +52,8 @@ m80 --json logs <vm-id> > m80-logs.json
 - `crates/m80-cli/src/cmds/env.rs::tests::env_json_reports_selected_installed_profile_paths`
   proves selected profile paths are reported and preferred over ambient
   artifact/helper environment variables.
+- `crates/m80-cli/src/profile/report.rs` tests prove active install pointers
+  are classified as `live`, `stale`, or `missing`, and that missing profile
+  paths are named by field.
 - `crates/m80-cli/tests/parse_args.rs` pins the `m80 env` parse surface.
 - `crates/m80-cli/tests/help_smoke.rs` pins the visible help surface.

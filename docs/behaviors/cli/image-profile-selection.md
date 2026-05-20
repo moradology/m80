@@ -93,6 +93,11 @@ artifact preflight. The output includes `default_profile` and its source label,
 so operators can see whether the selected default came from the built-in value,
 system config, user config, env, or a caller-supplied flag path.
 
+`m80 env` and `m80 preflight` render the resolved runtime profile, including
+the profile body source, exact artifact/helper paths, active install pointer
+status when the path is under an install root, and missing profile paths by
+field.
+
 ## Runtime Availability
 
 Commands such as `claude`, `python`, `node`, or `bash` must already exist in the
@@ -101,10 +106,12 @@ host binaries with the same name and does not install missing programs.
 
 ## Evidence
 
-- `crates/m80-cli/src/profile.rs` unit tests pin default `env` resolution,
-  named profile search precedence, and fail-closed parsing.
+- `crates/m80-cli/src/profile.rs` and `crates/m80-cli/src/profile/report.rs`
+  tests pin default `env` resolution, named profile search precedence,
+  fail-closed parsing, and profile diagnostic status.
 - `crates/m80-cli/src/cmds.rs` unit tests pin direct profile-to-preflight config
-  projection and the `run_root` config precedence rule.
+  projection, the `run_root` config precedence rule, and preflight JSON profile
+  reporting.
 - `crates/m80-firecracker/tests/config_loading.rs` pins `default_profile`
   defaults, env mapping, and flag precedence.
 - `crates/m80-cli/tests/parse_args.rs::parse_run_runtime_profile_shape` pins the

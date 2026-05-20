@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::config;
 use crate::json;
-use crate::profile::{self, ProfileBodySource, ProfileFilePaths, RuntimeProfile};
+use crate::profile::{self, ProfileFilePaths, RuntimeProfile};
 
 mod render;
 
@@ -82,6 +82,11 @@ struct RuntimeProfileDump {
     release_tag: Option<String>,
     m80_version: Option<String>,
     description: Option<String>,
+    active_pointer: Option<PathBuf>,
+    active_pointer_target: Option<PathBuf>,
+    active_pointer_status: Option<&'static str>,
+    active_pointer_error: Option<String>,
+    missing_paths: Vec<profile::RuntimeProfilePathIssue>,
     error: Option<String>,
 }
 
@@ -253,32 +258,40 @@ fn mem_total_kib() -> Option<u64> {
 
 fn runtime_profile_dump(result: Result<&RuntimeProfile, &String>) -> RuntimeProfileDump {
     match result {
-        Ok(profile) => RuntimeProfileDump {
-            ok: true,
-            name: Some(profile.name.clone()),
-            selection_source: Some(format!("{:?}", profile.selection_source)),
-            body_source: Some(profile_body_source(profile.body_source)),
-            file_path: profile.file_path.clone(),
-            artifact_dir: profile.artifact_dir.clone(),
-            kernel_image: profile.kernel_image.clone(),
-            rootfs_image: profile.rootfs_image.clone(),
-            kernel_kind: profile.kernel_kind.clone(),
-            guestd: profile.guestd.clone(),
-            guest_manifest: profile.guest_manifest.clone(),
-            build_receipt: profile.build_receipt.clone(),
-            install_provenance: profile.install_provenance.clone(),
-            host_binaries_manifest: profile.host_binaries_manifest.clone(),
-            firecracker_bin: profile.firecracker_bin.clone(),
-            firecracker_seccomp_filter: profile.firecracker_seccomp_filter.clone(),
-            jailer_bin: profile.jailer_bin.clone(),
-            jailer_harden_bin: profile.jailer_harden_bin.clone(),
-            net_helper_bin: profile.net_helper_bin.clone(),
-            run_root: profile.run_root.clone(),
-            release_tag: profile.release_tag.clone(),
-            m80_version: profile.m80_version.clone(),
-            description: profile.description.clone(),
-            error: None,
-        },
+        Ok(profile) => {
+            let report = profile::runtime_profile_report(profile);
+            RuntimeProfileDump {
+                ok: true,
+                name: Some(report.name),
+                selection_source: Some(report.selection_source),
+                body_source: Some(report.body_source),
+                file_path: report.file_path,
+                artifact_dir: report.artifact_dir,
+                kernel_image: report.kernel_image,
+                rootfs_image: report.rootfs_image,
+                kernel_kind: report.kernel_kind,
+                guestd: report.guestd,
+                guest_manifest: report.guest_manifest,
+                build_receipt: report.build_receipt,
+                install_provenance: report.install_provenance,
+                host_binaries_manifest: report.host_binaries_manifest,
+                firecracker_bin: report.firecracker_bin,
+                firecracker_seccomp_filter: report.firecracker_seccomp_filter,
+                jailer_bin: report.jailer_bin,
+                jailer_harden_bin: report.jailer_harden_bin,
+                net_helper_bin: report.net_helper_bin,
+                run_root: report.run_root,
+                release_tag: report.release_tag,
+                m80_version: report.m80_version,
+                description: report.description,
+                active_pointer: report.active_pointer,
+                active_pointer_target: report.active_pointer_target,
+                active_pointer_status: report.active_pointer_status,
+                active_pointer_error: report.active_pointer_error,
+                missing_paths: report.missing_paths,
+                error: None,
+            }
+        }
         Err(e) => RuntimeProfileDump::error(e.clone()),
     }
 }
@@ -309,16 +322,13 @@ impl RuntimeProfileDump {
             release_tag: None,
             m80_version: None,
             description: None,
+            active_pointer: None,
+            active_pointer_target: None,
+            active_pointer_status: None,
+            active_pointer_error: None,
+            missing_paths: Vec::new(),
             error: Some(error.into()),
         }
-    }
-}
-
-fn profile_body_source(source: ProfileBodySource) -> &'static str {
-    match source {
-        ProfileBodySource::BuiltinEnv => "builtin_env",
-        ProfileBodySource::SystemFile => "system_file",
-        ProfileBodySource::UserFile => "user_file",
     }
 }
 
@@ -612,6 +622,20 @@ mod tests {
             seccomp.to_str()
         );
         assert_eq!(profile["run_root"].as_str(), run_root.to_str());
+        assert_eq!(
+            profile["active_pointer"].as_str(),
+            install_root.join("active").to_str()
+        );
+        assert_eq!(profile["active_pointer_status"], "missing");
+        let missing_paths = profile["missing_paths"].as_array().unwrap();
+        assert!(
+            missing_paths
+                .iter()
+                .any(|missing| missing["field"] == "rootfs_image"
+                    && missing["path"] == artifacts.join("output.ext4").to_str().unwrap()
+                    && missing["reason"] == "missing"),
+            "{missing_paths:?}"
+        );
         assert_eq!(
             parsed["data"]["artifacts"]["kernel_image"].as_str(),
             artifacts.join("vmlinux").to_str()

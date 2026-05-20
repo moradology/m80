@@ -296,9 +296,12 @@ Before promoting a release on a target host, save a preflight proof:
 m80 preflight --json > release-preflight-proof.json
 ```
 
-The proof is a `HostPrerequisiteResult`. It must contain a
+The proof payload contains `data.runtime_profile` plus
+`data.host_prerequisites`. `data.runtime_profile` names the selected profile,
+active install pointer, artifact/helper paths, and release tag.
+`data.host_prerequisites` is the `HostPrerequisiteResult`; it must contain a
 `Firecracker binary` check whose expected and observed version fields record
-the Firecracker version, and a `Jailer binary` check whose expected and observed
-version fields record the jailer version. The train policy source is
+the Firecracker version, and a `Jailer binary` check whose expected and
+observed version fields record the jailer version. The train policy source is
 `crates/m80-preflight/src/firecracker_train.rs`; the CVE-floor table source is
 `crates/m80-preflight/src/cve_floor.rs`.
