@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest, Sha256};
 
-use super::{HostTuple, ReleaseAssetIndex, ASSET_INDEX_NAME, DEFAULT_IMAGE_KIND};
+use super::{
+    AssetIndexDiagnostic, AssetIndexDiagnosticCode, AssetIndexRequest, HostTuple,
+    ReleaseAssetIndex, ASSET_INDEX_NAME, DEFAULT_IMAGE_KIND,
+};
 
 static DOWNLOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -56,16 +59,28 @@ pub(super) fn fetch_verified_asset_index(
             expected_sha256: expected_sha256.clone(),
             observed_sha256: observed_sha256.clone(),
             detail: format!("release asset index is not UTF-8: {source}"),
+            semantic_code: None,
+            available_tuples: Vec::new(),
+            available_image_kinds: Vec::new(),
+            available_m80_versions: Vec::new(),
             context: context.clone(),
         }
     })?;
     let index = ReleaseAssetIndex::parse_json(&index_text).map_err(|source| {
+        let semantic_code = source.diagnostic_code();
+        let available_tuples = source.diagnostic_available_tuples();
+        let available_image_kinds = source.diagnostic_available_image_kinds();
+        let available_m80_versions = source.diagnostic_available_m80_versions();
         AssetIndexFetchError::VerifiedIndexInvalid {
             index_url: request.index_url.to_owned(),
             checksum_url: checksum_url.clone(),
             expected_sha256: expected_sha256.clone(),
             observed_sha256: observed_sha256.clone(),
             detail: source.to_string(),
+            semantic_code: Some(semantic_code),
+            available_tuples,
+            available_image_kinds,
+            available_m80_versions,
             context: context.clone(),
         }
     })?;
@@ -248,6 +263,16 @@ impl AssetIndexFetchContext {
             self.release_tag, self.os, self.arch, self.image_kind
         )
     }
+
+    fn request(&self, m80_version: &str) -> AssetIndexRequest {
+        AssetIndexRequest {
+            os: self.os.clone(),
+            arch: self.arch.clone(),
+            image_kind: self.image_kind.clone(),
+            release_tag: self.release_tag.clone(),
+            m80_version: m80_version.to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,6 +321,10 @@ pub(super) enum AssetIndexFetchError {
         expected_sha256: String,
         observed_sha256: String,
         detail: String,
+        semantic_code: Option<AssetIndexDiagnosticCode>,
+        available_tuples: Vec<String>,
+        available_image_kinds: Vec<String>,
+        available_m80_versions: Vec<String>,
         context: AssetIndexFetchContext,
     },
     ReleaseTagMismatch {
@@ -310,6 +339,91 @@ pub(super) enum AssetIndexFetchError {
 }
 
 impl std::error::Error for AssetIndexFetchError {}
+
+impl AssetIndexFetchError {
+    pub(super) fn into_diagnostic(self, m80_version: &str) -> AssetIndexDiagnostic {
+        let detail = self.to_string();
+        let (code, request, repair_url) = match &self {
+            Self::UnsupportedUrl { context, .. } => (
+                AssetIndexDiagnosticCode::UnsupportedUrl,
+                context.request(m80_version),
+                None,
+            ),
+            Self::LocalRead { context, .. } => (
+                AssetIndexDiagnosticCode::LocalReadFailed,
+                context.request(m80_version),
+                None,
+            ),
+            Self::DownloadSpawnFailed { context, .. } => (
+                AssetIndexDiagnosticCode::DownloadSpawnFailed,
+                context.request(m80_version),
+                None,
+            ),
+            Self::DownloadFailed { context, .. } => (
+                AssetIndexDiagnosticCode::DownloadFailed,
+                context.request(m80_version),
+                None,
+            ),
+            Self::RedirectUnsupported { context, .. } => (
+                AssetIndexDiagnosticCode::RedirectUnsupported,
+                context.request(m80_version),
+                None,
+            ),
+            Self::ChecksumInvalid { context, .. } => (
+                AssetIndexDiagnosticCode::ChecksumInvalid,
+                context.request(m80_version),
+                None,
+            ),
+            Self::ChecksumMismatch { context, .. } => (
+                AssetIndexDiagnosticCode::ChecksumMismatch,
+                context.request(m80_version),
+                None,
+            ),
+            Self::VerifiedIndexInvalid {
+                context,
+                semantic_code,
+                ..
+            } => (
+                semantic_code.unwrap_or(AssetIndexDiagnosticCode::VerifiedIndexInvalid),
+                context.request(m80_version),
+                None,
+            ),
+            Self::ReleaseTagMismatch {
+                expected_release_tag,
+                context,
+                ..
+            } => (
+                AssetIndexDiagnosticCode::IndexTagMismatch,
+                context.request(m80_version),
+                Some(crate::release_urls::release_install_url(
+                    expected_release_tag,
+                )),
+            ),
+        };
+        let (available_tuples, available_image_kinds, available_m80_versions) = match &self {
+            Self::VerifiedIndexInvalid {
+                available_tuples,
+                available_image_kinds,
+                available_m80_versions,
+                ..
+            } => (
+                available_tuples.clone(),
+                available_image_kinds.clone(),
+                available_m80_versions.clone(),
+            ),
+            _ => (Vec::new(), Vec::new(), Vec::new()),
+        };
+        request.diagnostic(
+            code,
+            detail,
+            available_tuples,
+            available_image_kinds,
+            available_m80_versions,
+            repair_url.clone(),
+            repair_url.map(|url| format!("curl -fsSL {url} | sudo sh")),
+        )
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RemoteUrl {

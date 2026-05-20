@@ -2,13 +2,15 @@
 
 use std::collections::BTreeSet;
 
-use m80_firecracker::{ConfigError, FcError};
 use serde::Deserialize;
 
 use crate::release::{VersionIdentity, VersionStatus};
 
 mod diagnostics;
 mod fetch;
+mod structured;
+
+pub(crate) use structured::{AssetIndexDiagnostic, AssetIndexDiagnosticCode, AssetIndexFailure};
 
 const ASSET_INDEX_SCHEMA_VERSION: u32 = 1;
 const ASSET_INDEX_NAME: &str = "m80-release-assets.json";
@@ -22,7 +24,7 @@ pub(crate) struct InstallerBundleSelection {
 pub(crate) fn select_release_bundle_for_install(
     release_tag: &str,
     identity: &VersionIdentity,
-) -> Result<InstallerBundleSelection, FcError> {
+) -> Result<InstallerBundleSelection, AssetIndexFailure> {
     let index_url = fetch::github_release_asset_index_url(release_tag);
     select_release_bundle_for_install_at_index_url(release_tag, identity, &index_url)
 }
@@ -32,7 +34,7 @@ pub(crate) fn select_release_bundle_for_install_from_index_url(
     release_tag: &str,
     identity: &VersionIdentity,
     index_url: &str,
-) -> Result<InstallerBundleSelection, FcError> {
+) -> Result<InstallerBundleSelection, AssetIndexFailure> {
     select_release_bundle_for_install_at_index_url(release_tag, identity, index_url)
 }
 
@@ -40,15 +42,17 @@ fn select_release_bundle_for_install_at_index_url(
     release_tag: &str,
     identity: &VersionIdentity,
     index_url: &str,
-) -> Result<InstallerBundleSelection, FcError> {
+) -> Result<InstallerBundleSelection, AssetIndexFailure> {
     let host = HostTuple::current();
+    let requested =
+        AssetIndexRequest::from_identity(release_tag, identity, host, DEFAULT_IMAGE_KIND);
     let verified = fetch::fetch_verified_asset_index(fetch::AssetIndexFetchRequest {
         index_url,
         release_tag,
         host,
         image_kind: Some(DEFAULT_IMAGE_KIND),
     })
-    .map_err(asset_index_config_error)?;
+    .map_err(|source| AssetIndexFailure::from_fetch(source, &identity.binary_version))?;
     let asset = verified
         .index
         .select_default_bundle(
@@ -60,18 +64,74 @@ fn select_release_bundle_for_install_at_index_url(
             host,
             DEFAULT_IMAGE_KIND,
         )
-        .map_err(asset_index_config_error)?;
+        .map_err(|source| AssetIndexFailure::from_selection(source, requested))?;
 
     Ok(InstallerBundleSelection {
         bundle_url: asset.url.clone(),
     })
 }
 
-fn asset_index_config_error(source: impl std::fmt::Display) -> FcError {
-    FcError::Config(ConfigError::InvalidValue {
-        field: "release_asset_index",
-        reason: source.to_string(),
-    })
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AssetIndexRequest {
+    os: String,
+    arch: String,
+    image_kind: String,
+    release_tag: String,
+    m80_version: String,
+}
+
+impl AssetIndexRequest {
+    fn from_identity(
+        release_tag: &str,
+        identity: &VersionIdentity,
+        host: HostTuple<'_>,
+        image_kind: &str,
+    ) -> Self {
+        Self {
+            os: host.os.to_owned(),
+            arch: host.arch.to_owned(),
+            image_kind: image_kind.to_owned(),
+            release_tag: release_tag.to_owned(),
+            m80_version: identity.binary_version.clone(),
+        }
+    }
+
+    fn from_current_host(release_tag: &str, m80_version: &str) -> Self {
+        let host = HostTuple::current();
+        Self {
+            os: host.os.to_owned(),
+            arch: host.arch.to_owned(),
+            image_kind: DEFAULT_IMAGE_KIND.to_owned(),
+            release_tag: release_tag.to_owned(),
+            m80_version: m80_version.to_owned(),
+        }
+    }
+
+    fn diagnostic(
+        self,
+        code: AssetIndexDiagnosticCode,
+        detail: String,
+        available_tuples: Vec<String>,
+        available_image_kinds: Vec<String>,
+        available_m80_versions: Vec<String>,
+        repair_url: Option<String>,
+        repair_command: Option<String>,
+    ) -> AssetIndexDiagnostic {
+        AssetIndexDiagnostic {
+            code,
+            detail,
+            requested_os: self.os,
+            requested_arch: self.arch,
+            requested_image_kind: self.image_kind,
+            requested_release_tag: self.release_tag,
+            requested_m80_version: self.m80_version,
+            available_tuples,
+            available_image_kinds,
+            available_m80_versions,
+            repair_url,
+            repair_command,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

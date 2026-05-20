@@ -184,6 +184,7 @@ impl fmt::Display for AssetIndexFetchError {
                 observed_sha256,
                 detail,
                 context,
+                ..
             } => write!(
                 f,
                 "verified release asset index invalid at {index_url} using {checksum_url}: {detail}; expected_sha256={expected_sha256} observed_sha256={observed_sha256}; {}",

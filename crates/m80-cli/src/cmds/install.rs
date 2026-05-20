@@ -6,16 +6,24 @@ use serde::Serialize;
 use crate::args::InstallArgs;
 use crate::release::{VersionIdentity, VersionStatus};
 use crate::release_asset_index;
-use crate::{errors, json};
+use crate::{errors, json, request_id};
 
 mod layout;
 
 /// `m80 install` — validate installer inputs and render a plan.
 pub(super) fn cmd_install(args: InstallArgs, json_mode: bool) -> anyhow::Result<i32> {
     let identity = VersionIdentity::current();
-    let plan = match install_plan(&args, &identity) {
+    cmd_install_with_identity(args, json_mode, &identity)
+}
+
+fn cmd_install_with_identity(
+    args: InstallArgs,
+    json_mode: bool,
+    identity: &VersionIdentity,
+) -> anyhow::Result<i32> {
+    let plan = match install_plan(&args, identity) {
         Ok(plan) => plan,
-        Err(err) => return Ok(errors::render_error(&err, json_mode)),
+        Err(err) => return Ok(render_install_error(&err, json_mode)),
     };
 
     if args.dry_run {
@@ -30,7 +38,10 @@ pub(super) fn cmd_install(args: InstallArgs, json_mode: bool) -> anyhow::Result<
     Ok(0)
 }
 
-fn install_plan(args: &InstallArgs, identity: &VersionIdentity) -> Result<InstallPlan, FcError> {
+fn install_plan(
+    args: &InstallArgs,
+    identity: &VersionIdentity,
+) -> Result<InstallPlan, InstallError> {
     let source = selected_source(args)?;
     let source = source_plan(source, identity)?;
     Ok(InstallPlan {
@@ -63,7 +74,7 @@ fn selected_source(args: &InstallArgs) -> Result<InstallSource<'_>, FcError> {
 fn source_plan(
     source: InstallSource<'_>,
     identity: &VersionIdentity,
-) -> Result<SourcePlan, FcError> {
+) -> Result<SourcePlan, InstallError> {
     source_plan_with_index_resolver(source, identity, |tag, identity| {
         release_asset_index::select_release_bundle_for_install(tag, identity)
     })
@@ -73,15 +84,21 @@ fn source_plan_with_index_resolver<F>(
     source: InstallSource<'_>,
     identity: &VersionIdentity,
     resolve_indexed_bundle: F,
-) -> Result<SourcePlan, FcError>
+) -> Result<SourcePlan, InstallError>
 where
-    F: Fn(&str, &VersionIdentity) -> Result<release_asset_index::InstallerBundleSelection, FcError>,
+    F: Fn(
+        &str,
+        &VersionIdentity,
+    ) -> Result<
+        release_asset_index::InstallerBundleSelection,
+        release_asset_index::AssetIndexFailure,
+    >,
 {
     match source {
         InstallSource::ReleaseTag(tag) => {
             validate_tag("release-tag", tag)?;
             validate_tag_source_matches_binary("--release-tag", tag, identity)?;
-            let bundle = resolve_indexed_bundle(tag, identity)?;
+            let bundle = resolve_indexed_bundle(tag, identity).map_err(InstallError::AssetIndex)?;
             Ok(SourcePlan {
                 kind: SourceKind::PinnedVersion,
                 selector: tag.to_owned(),
@@ -92,7 +109,7 @@ where
         InstallSource::BootstrapTag(tag) => {
             validate_tag("bootstrap-tag", tag)?;
             validate_tag_source_matches_binary("--bootstrap-tag", tag, identity)?;
-            let bundle = resolve_indexed_bundle(tag, identity)?;
+            let bundle = resolve_indexed_bundle(tag, identity).map_err(InstallError::AssetIndex)?;
             Ok(SourcePlan {
                 kind: SourceKind::BootstrapTag,
                 selector: tag.to_owned(),
@@ -152,23 +169,28 @@ fn validate_tag_source_matches_binary(
     source_flag: &'static str,
     source_tag: &str,
     identity: &VersionIdentity,
-) -> Result<(), FcError> {
+) -> Result<(), InstallError> {
     match identity.version_status {
-        VersionStatus::Dev => Err(FcError::Config(ConfigError::InvalidValue {
-            field: "install.binary",
-            reason: format!(
-                "{source_flag} install requires a tagged m80 binary; this binary is {} ({})",
-                identity.binary_version,
-                VersionStatus::Dev.as_str()
+        VersionStatus::Dev => Err(InstallError::AssetIndex(
+            release_asset_index::AssetIndexFailure::dev_build_refused(
+                source_flag,
+                source_tag,
+                identity,
             ),
-        })),
-        VersionStatus::Mismatch => Err(mismatched_build_error(identity)),
+        )),
+        VersionStatus::Mismatch => Err(InstallError::AssetIndex(
+            release_asset_index::AssetIndexFailure::mismatched_build_refused(source_tag, identity),
+        )),
         VersionStatus::Release => {
             let binary_tag = identity.release_tag.as_deref().unwrap_or("<missing>");
             if binary_tag == source_tag {
                 Ok(())
             } else {
-                Err(tag_mismatch_error(source_tag, binary_tag))
+                Err(InstallError::AssetIndex(
+                    release_asset_index::AssetIndexFailure::tag_mismatch_refused(
+                        source_tag, binary_tag, identity,
+                    ),
+                ))
             }
         }
     }
@@ -286,6 +308,98 @@ fn render_layout_summary(summary: &layout::LayoutInstallSummary, json_mode: bool
         );
     }
 }
+
+fn render_install_error(err: &InstallError, json_mode: bool) -> i32 {
+    match err {
+        InstallError::Fc(err) => errors::render_error(err, json_mode),
+        InstallError::AssetIndex(err) => render_asset_index_error(err, json_mode),
+    }
+}
+
+fn render_asset_index_error(err: &release_asset_index::AssetIndexFailure, json_mode: bool) -> i32 {
+    let exit_code = errors::EXIT_CONFIG;
+    let diagnostic = err.diagnostic();
+    if json_mode {
+        let payload = asset_index_error_payload(err);
+        eprintln!("{}", json::to_pretty(&payload));
+    } else {
+        if let Some(request_id) = request_id::current() {
+            eprintln!("error: [{request_id}] release asset index: {err}");
+        } else {
+            eprintln!("error: release asset index: {err}");
+        }
+        eprintln!("asset_index_code={}", diagnostic.code.as_str());
+        eprintln!("requested_os={}", diagnostic.requested_os);
+        eprintln!("requested_arch={}", diagnostic.requested_arch);
+        eprintln!("requested_image_kind={}", diagnostic.requested_image_kind);
+        eprintln!("requested_release_tag={}", diagnostic.requested_release_tag);
+        eprintln!("requested_m80_version={}", diagnostic.requested_m80_version);
+        if !diagnostic.available_tuples.is_empty() {
+            eprintln!("available_tuples={}", diagnostic.available_tuples.join(","));
+        }
+        if !diagnostic.available_image_kinds.is_empty() {
+            eprintln!(
+                "available_image_kinds={}",
+                diagnostic.available_image_kinds.join(",")
+            );
+        }
+        if !diagnostic.available_m80_versions.is_empty() {
+            eprintln!(
+                "available_m80_versions={}",
+                diagnostic.available_m80_versions.join(",")
+            );
+        }
+        if let Some(url) = &diagnostic.repair_url {
+            eprintln!("repair_url={url}");
+        }
+        if let Some(command) = &diagnostic.repair_command {
+            eprintln!("repair_command={command}");
+        }
+    }
+    exit_code
+}
+
+fn asset_index_error_payload(
+    err: &release_asset_index::AssetIndexFailure,
+) -> AssetIndexErrorEnvelope {
+    AssetIndexErrorEnvelope {
+        variant: "ReleaseAssetIndex",
+        exit_code: errors::EXIT_CONFIG,
+        diagnostic: err.diagnostic().clone(),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AssetIndexErrorEnvelope {
+    variant: &'static str,
+    exit_code: i32,
+    #[serde(flatten)]
+    diagnostic: release_asset_index::AssetIndexDiagnostic,
+}
+
+#[derive(Debug)]
+enum InstallError {
+    Fc(FcError),
+    AssetIndex(release_asset_index::AssetIndexFailure),
+}
+
+impl From<FcError> for InstallError {
+    fn from(value: FcError) -> Self {
+        Self::Fc(value)
+    }
+}
+
+impl std::fmt::Display for InstallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Fc(err) => write!(f, "{err}"),
+            Self::AssetIndex(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for InstallError {}
 
 #[derive(Debug, Clone, Copy)]
 enum InstallSource<'a> {

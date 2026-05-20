@@ -64,6 +64,11 @@ are not documented as an operator install path.
 tagged release build for the same tag. Dev builds fail before any install-root
 or active-state write. Tagged binaries whose build tag does not match the
 selected source tag also fail before host state changes.
+For release-tag source failures that come from asset-index selection or release
+identity, `--json` emits the structured asset-index diagnostic on stderr with
+stdout empty. The diagnostic names the requested OS, architecture, image kind,
+release tag, m80 version, available alternatives, and repair command when one
+is known.
 
 `--bundle-url` is the development and operator override path. A local bundle
 URL can be planned and layout-installed from a dev binary. If a GitHub release
@@ -86,6 +91,7 @@ Integration and behavior-doc coverage:
 - `install_dry_run_bundle_url_does_not_touch_install_root`
 - `install_json_dry_run_uses_stdout_envelope`
 - `install_release_tag_refuses_dev_build_before_install_root_touch`
+- `install_json_release_tag_refusal_reports_asset_index_fields_on_stderr`
 - `install_missing_source_prints_source_diagnostic`
 - `install_non_release_remote_bundle_url_is_rejected_without_touching_install_root`
 - `installer_input_contract_doc_names_source_shapes_and_tests`

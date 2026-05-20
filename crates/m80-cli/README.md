@@ -66,10 +66,13 @@ binaries, pull OCI images, or install packages implicitly.
   plan without touching host state. `--release-tag` and the hidden
   `--bootstrap-tag` handoff fetch the checksum-verified asset index for the
   concrete release, select the Linux x86_64 minimal bundle by tag, OS,
-  architecture, and image kind. `--bundle-url` remains the explicit local
-  fixture/operator override path. Non-dry-run stages, verifies, and copies the
-  selected or explicit bundle into `<install-root>/versions/<release_tag>`,
-  writes profile state, and switches `<install-root>/active` last.
+  architecture, and image kind. Asset-index failures report stable text and
+  JSON fields for the requested tuple/version, available alternatives, a
+  machine-readable code, and a repair command when known. `--bundle-url`
+  remains the explicit local fixture/operator override path. Non-dry-run
+  stages, verifies, and copies the selected or explicit bundle into
+  `<install-root>/versions/<release_tag>`, writes profile state, and switches
+  `<install-root>/active` last.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -158,6 +161,8 @@ Snapshot-template command behavior is captured in
 `docs/behaviors/cli/template-commands.md`.
 Installer input behavior is captured in
 `docs/behaviors/release/installer-input-contract.md`.
+Release asset-index selection and diagnostics are captured in
+`docs/behaviors/release/asset-index.md`.
 Installed layout behavior is captured in
 `docs/behaviors/release/installed-layout.md`.
 

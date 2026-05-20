@@ -111,6 +111,70 @@ fn install_release_tag_refuses_dev_build_before_install_root_touch() {
         "unexpected stderr: {stderr}"
     );
     assert!(
+        stderr.contains("asset_index_code=dev_build_refused"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("requested_release_tag=v0.0.0"), "{stderr}");
+    assert!(stderr.contains("requested_image_kind=minimal"), "{stderr}");
+    assert!(
+        stderr.contains("repair_command=m80 install --bundle-url <compatible-bundle-url>"),
+        "{stderr}"
+    );
+    assert!(
+        !install_root.exists(),
+        "dev-build refusal must not create install root {}",
+        install_root.display()
+    );
+}
+
+#[test]
+fn install_json_release_tag_refusal_reports_asset_index_fields_on_stderr() {
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("install-root");
+
+    let output = m80()
+        .args([
+            "--json",
+            "install",
+            "--release-tag",
+            "v0.0.0",
+            "--install-root",
+            install_root.to_str().unwrap(),
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(
+        output.stdout.is_empty(),
+        "asset-index JSON failures must keep stdout empty: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let value: Value = serde_json::from_slice(&output.stderr)
+        .unwrap_or_else(|err| panic!("stderr should be one JSON object: {err}"));
+    assert_eq!(value["version"], 1);
+    let data = &value["data"];
+    assert_eq!(data["variant"], "ReleaseAssetIndex");
+    assert_eq!(data["exit_code"], 6);
+    assert_eq!(data["code"], "dev_build_refused");
+    assert_eq!(data["requested_os"], std::env::consts::OS);
+    assert_eq!(data["requested_arch"], std::env::consts::ARCH);
+    assert_eq!(data["requested_image_kind"], "minimal");
+    assert_eq!(data["requested_release_tag"], "v0.0.0");
+    assert!(
+        data["requested_m80_version"]
+            .as_str()
+            .expect("requested_m80_version")
+            .ends_with("-dev"),
+        "unexpected requested_m80_version: {data}"
+    );
+    assert_eq!(data["available_tuples"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        data["repair_command"],
+        "m80 install --bundle-url <compatible-bundle-url>"
+    );
+    assert!(
         !install_root.exists(),
         "dev-build refusal must not create install root {}",
         install_root.display()
@@ -178,6 +242,7 @@ fn installer_input_contract_doc_names_source_shapes_and_tests() {
         "install_dry_run_bundle_url_does_not_touch_install_root",
         "install_json_dry_run_uses_stdout_envelope",
         "install_release_tag_refuses_dev_build_before_install_root_touch",
+        "install_json_release_tag_refusal_reports_asset_index_fields_on_stderr",
         "install_missing_source_prints_source_diagnostic",
         "install_non_release_remote_bundle_url_is_rejected_without_touching_install_root",
     ] {

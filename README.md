@@ -122,6 +122,11 @@ by the
 [`host prerequisite verifier`](docs/behaviors/preflight/host-prerequisite-verifier.md)
 contract.
 
+If `m80 install` fails with `asset_index_code=...`, the requested
+OS/architecture/image kind, m80 version, available release tuples, and exact
+repair command are defined in
+[`docs/behaviors/release/asset-index.md`](docs/behaviors/release/asset-index.md).
+
 Production operators should read [`docs/ops/host-setup.md`](docs/ops/host-setup.md)
 before trusting a host. It covers identity separation, Docker socket risk,
 artifact ownership, Cargo source controls, and runtime host assumptions.

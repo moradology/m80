@@ -63,6 +63,38 @@ JSON after a valid checksum, stale schema, and index `release_tag` drift all
 fail before bundle download, extraction, tuple selection, or active install
 state writes.
 
+Installer JSON failures for asset-index selection are emitted as the final
+stderr JSON envelope with stdout empty. The envelope `data` object uses
+`variant: "ReleaseAssetIndex"`, `exit_code: 6`, and stable diagnostic fields:
+`code`, `detail`, `requested_os`, `requested_arch`,
+`requested_image_kind`, `requested_release_tag`,
+`requested_m80_version`, `available_tuples`,
+`available_image_kinds`, `available_m80_versions`, plus `repair_url` and
+`repair_command` when a concrete repair is known. Human stderr prints the same
+fields as `asset_index_code=...`, `requested_*`, `available_*`, and
+`repair_*` lines after the error summary.
+
+The stable `code` values are:
+
+- `unsupported_host_tuple` for unsupported OS/architecture rows;
+- `missing_image_kind` for a missing `minimal` image kind on an otherwise
+  supported tuple;
+- `stale_asset_index` when the verified index has the right tuple/tag but no
+  row for the running m80 version;
+- `binary_tag_mismatch` when the install source and running binary identity
+  disagree before bundle selection;
+- `duplicate_default_bundle` for multiple matching default rows;
+- `dev_build_refused` when an unreleased binary tries to select public release
+  assets implicitly;
+- `index_tag_mismatch`, `asset_release_tag_mismatch`, and
+  `target_tuple_mismatch` for stale or internally inconsistent index rows;
+- `invalid_json`, `unsupported_schema`, `missing_field`, and `invalid_field`
+  for strict schema failures;
+- `unsupported_url`, `local_read_failed`, `download_spawn_failed`,
+  `download_failed`, `redirect_unsupported`, `checksum_invalid`,
+  `checksum_mismatch`, and `verified_index_invalid` for fetch or integrity
+  failures before tuple selection.
+
 The release also publishes `m80-bootstrap-selector.tsv`, a non-executable
 line-oriented projection of the canonical JSON index for the no-installed-binary
 POSIX installer path. It contains:
