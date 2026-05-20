@@ -3,10 +3,10 @@
 Behavior bead: `m80-o3uh9.3.1`.
 
 `m80 install` is the release-bundle installer front door. This behavior pins
-the user-facing input contract, dry-run plan, and the currently supported local
-bundle layout copy. The command does not yet perform privileged copies, write
-`/etc` profile state, resolve "latest", download network bundles, or switch the
-active install pointer.
+the user-facing input contract, dry-run plan, and the currently supported
+explicit bundle layout copy. The command does not yet perform privileged
+copies, write `/etc` profile state, resolve "latest", or switch the active
+install pointer.
 
 ## Source Selection
 
@@ -33,12 +33,17 @@ pointer is planned as `<install-root>/active`.
 `--dry-run` renders the validated plan and does not create the install root,
 write `/opt`, write `/etc`, write profile files, or switch the active pointer.
 
-Without `--dry-run`, the active installer supports explicit local
-`file://...` bundle URLs only. A successful local bundle install copies the
-verified bundle layout into `<install-root>/versions/<release_tag>` and still
-does not switch `<install-root>/active` or write profile state. Network bundle
-URLs and release-tag/bootstrap resolution exit with the unsupported-operation
-code before creating the install root.
+Without `--dry-run`, the active installer supports explicit local `file://...`
+bundle URLs and GitHub release bundle URLs under
+`https://github.com/moradology/m80/releases/download/...`. A successful bundle
+install stages and verifies the bundle, copies the verified layout into
+`<install-root>/versions/<release_tag>`, and still does not switch
+`<install-root>/active` or write profile state. Release-tag/bootstrap
+resolution exits with the unsupported-operation code before creating the
+install root until the asset-index/bootstrapper leaves wire source selection.
+Local `http://127.0.0.1`, `http://localhost`, and `http://[::1]` bundle URLs are
+accepted only as test-fixture transports for remote staging coverage; they are
+not documented as an operator install path.
 
 ## Release Identity Checks
 
@@ -69,7 +74,7 @@ Integration and behavior-doc coverage:
 - `install_json_dry_run_uses_stdout_envelope`
 - `install_release_tag_refuses_dev_build_before_install_root_touch`
 - `install_missing_source_prints_source_diagnostic`
-- `install_non_file_bundle_url_is_unsupported_without_touching_install_root`
+- `install_non_release_remote_bundle_url_is_rejected_without_touching_install_root`
 - `installer_input_contract_doc_names_source_shapes_and_tests`
 
 Module coverage in `cmds/install.rs` pins release-build success, dev-build

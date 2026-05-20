@@ -10,6 +10,10 @@ use m80_image_manifest::{
 mod common;
 #[path = "installer_layout/fixture.rs"]
 mod fixture;
+#[path = "installer_layout/http_fixture.rs"]
+mod http_fixture;
+#[path = "installer_layout/remote_fetch.rs"]
+mod remote_fetch;
 
 use common::m80;
 use fixture::{
@@ -272,6 +276,12 @@ fn installed_layout_doc_names_directory_contract_and_tests() {
         "`artifacts/install-provenance.json`",
         "`<install-root>/active`",
         "install_bundle_layout_copies_verified_bundle_into_version_dir",
+        "install_bundle_layout_downloads_http_bundle_into_version_dir",
+        "install_bundle_layout_rejects_remote_bundle_checksum_mismatch_before_extract",
+        "install_bundle_layout_rejects_remote_404_before_extract",
+        "install_bundle_layout_deletes_truncated_download_partial",
+        "install_bundle_layout_rejects_redirect_to_different_fixture_host",
+        "install_bundle_layout_rejects_checksum_redirect_to_different_fixture_host",
         "install_bundle_layout_missing_required_bundle_file_fails_before_activation",
         "install_bundle_layout_duplicate_bundle_path_fails_before_activation",
         "install_bundle_layout_permission_failure_leaves_active_state_untouched",

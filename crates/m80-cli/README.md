@@ -56,10 +56,11 @@ binaries, pull OCI images, or install packages implicitly.
 - `m80 install --release-tag <tag>|--bundle-url <url> [--dry-run]` - validates
   the release-bundle installer input contract. `--dry-run` prints the install
   plan without touching host state. Non-dry-run currently supports explicit
-  local `file://` bundle URLs: it verifies and copies the bundle into
+  local `file://` bundle URLs and moradology/m80 GitHub release bundle URLs: it
+  stages, verifies, and copies the bundle into
   `<install-root>/versions/<release_tag>` without switching the active pointer
-  or writing profile state. Release-tag resolution, network downloads, profile
-  writing, and active-pointer finalization land in later installer leaves.
+  or writing profile state. Release-tag resolution, profile writing, and
+  active-pointer finalization land in later installer leaves.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -380,7 +381,8 @@ Stable surfaces:
 - Installer source selection: `m80 install` accepts exactly one of
   `--release-tag`, `--bundle-url`, or the hidden bootstrapper handoff
   `--bootstrap-tag`. Dry-run planning is side-effect-free. Non-dry-run layout
-  copy currently accepts local `file://` bundle URLs and publishes only
+  copy currently accepts local `file://` bundle URLs and moradology/m80 GitHub
+  release bundle URLs, staging downloads before publishing only
   `<install-root>/versions/<release_tag>`.
 
 ## Non-goals
@@ -421,9 +423,11 @@ Stable surfaces:
   mismatch rejection.
 - Install: `m80 install --dry-run` is covered for source exclusivity,
   install-root override, JSON output, and dev-build refusal for release-tag
-  installs. Local bundle layout install is covered for clean copy, missing
-  required bundle file, duplicate path, permission failure, dry-run no-write
-  behavior, manifest/build-receipt relocation, and install provenance.
+  installs. Bundle layout install is covered for local clean copy, HTTP fixture
+  download, remote checksum mismatch, 404, truncated download cleanup,
+  unsupported redirect cleanup, missing required bundle file, duplicate path,
+  permission failure, dry-run no-write behavior, manifest/build-receipt
+  relocation, and install provenance.
 - Image/profile selection: local profile resolution, fail-closed profile
   parsing, and artifact env overlay are covered without KVM.
 - Feature gaps: reserved `run` flags and `m80 warm enable --system` exit 7

@@ -13,9 +13,11 @@ use metadata::{
     read_bundle_metadata, rewrite_installed_metadata, set_final_modes, verify_bundle_metadata,
     verify_metadata_hashes, verify_sha256s_file, INSTALL_PROVENANCE_FILE,
 };
+use source::{stage_bundle_source, validate_bundle_source_url};
 
 mod bundle;
 mod metadata;
+mod source;
 
 /// Summary emitted after the layout copy succeeds.
 #[derive(Debug, Serialize)]
@@ -30,17 +32,14 @@ pub(super) struct LayoutInstallSummary {
 
 pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallSummary, FcError> {
     let bundle_url = require_explicit_bundle_url(plan)?;
-    let bundle_path = local_file_url_path(bundle_url)?;
-    if !bundle_path.is_file() {
-        return Err(FcError::ArtifactMissing { path: bundle_path });
-    }
-
     let install_root = PathBuf::from(&plan.install_root);
     require_absolute_path("install_root", &install_root)?;
+    validate_bundle_source_url(bundle_url)?;
+    let staging_dir = prepare_staging_dir(&install_root)?;
+    let bundle_path = stage_bundle_source(bundle_url, &staging_dir)?;
     let entries = list_bundle_entries(&bundle_path)?;
     verify_entry_set(&entries)?;
 
-    let staging_dir = prepare_staging_dir(&install_root)?;
     let extracted_dir = staging_dir.join("bundle");
     fs::create_dir(&extracted_dir).map_err(|source| FcError::PathIo {
         path: extracted_dir.clone(),
@@ -116,24 +115,6 @@ fn require_explicit_bundle_url(plan: &InstallPlan) -> Result<&str, FcError> {
         }))
 }
 
-fn local_file_url_path(url: &str) -> Result<PathBuf, FcError> {
-    let Some(path) = url.strip_prefix("file://") else {
-        return Err(FcError::UnsupportedOperation {
-            operation: "m80 install",
-            reason: "layout copy currently supports local file:// bundle URLs; network download lands in the bootstrapper/asset-index leaves".into(),
-        });
-    };
-    let path = PathBuf::from(path);
-    if path.is_absolute() {
-        Ok(path)
-    } else {
-        Err(FcError::Config(ConfigError::InvalidValue {
-            field: "bundle-url",
-            reason: "file:// bundle URL must contain an absolute local path".into(),
-        }))
-    }
-}
-
 fn require_absolute_path(field: &'static str, path: &Path) -> Result<(), FcError> {
     if path.is_absolute() {
         Ok(())
@@ -182,11 +163,12 @@ fn safe_release_dir(release_tag: &str) -> Result<&str, FcError> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::source::stage_bundle_source;
 
     #[test]
     fn local_file_url_requires_absolute_path() {
-        let err = local_file_url_path("file://relative.tar.gz").unwrap_err();
+        let tmp = tempfile::tempdir().unwrap();
+        let err = stage_bundle_source("file://relative.tar.gz", tmp.path()).unwrap_err();
         assert!(
             err.to_string().contains("absolute local path"),
             "unexpected error: {err}"

@@ -134,7 +134,7 @@ fn install_missing_source_prints_source_diagnostic() {
 }
 
 #[test]
-fn install_non_file_bundle_url_is_unsupported_without_touching_install_root() {
+fn install_non_release_remote_bundle_url_is_rejected_without_touching_install_root() {
     let temp = tempfile::tempdir().unwrap();
     let install_root = temp.path().join("install-root");
 
@@ -149,11 +149,11 @@ fn install_non_file_bundle_url_is_unsupported_without_touching_install_root() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(7));
+    assert_eq!(output.status.code(), Some(6));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
-        stderr.contains("layout copy currently supports local file:// bundle URLs"),
+        stderr.contains("moradology/m80 GitHub release asset"),
         "unexpected stderr: {stderr}"
     );
     assert!(
@@ -179,7 +179,7 @@ fn installer_input_contract_doc_names_source_shapes_and_tests() {
         "install_json_dry_run_uses_stdout_envelope",
         "install_release_tag_refuses_dev_build_before_install_root_touch",
         "install_missing_source_prints_source_diagnostic",
-        "install_non_file_bundle_url_is_unsupported_without_touching_install_root",
+        "install_non_release_remote_bundle_url_is_rejected_without_touching_install_root",
     ] {
         assert!(
             doc.contains(required),

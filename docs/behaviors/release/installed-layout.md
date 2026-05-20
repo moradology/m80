@@ -1,12 +1,15 @@
 # Installed Layout
 
-Behavior bead: `m80-o3uh9.3.3`.
+Behavior beads: `m80-o3uh9.3.3`, `m80-o3uh9.3.7`.
 
-`m80 install --bundle-url file://... --install-root <PATH>` copies one verified
-release bundle into one versioned directory. The layout leaf is intentionally
-only the file transaction: it does not resolve release tags, download network
-bundles, install host prerequisites, write profile state, or switch the active
-install pointer.
+`m80 install --bundle-url <URL> --install-root <PATH>` stages one release
+bundle, verifies it, and copies it into one versioned directory. The layout
+transaction accepts explicit local `file://...` bundles for fixtures and
+`https://github.com/moradology/m80/releases/download/...` release bundle URLs.
+Local HTTP is accepted only for test fixtures.
+
+The layout leaf still does not resolve release tags, install host
+prerequisites, write profile state, or switch the active install pointer.
 
 ## Directory Contract
 
@@ -47,10 +50,20 @@ The installer validates the tar entry set before extraction. Duplicate paths,
 unexpected paths, escaping paths, missing required files, unsupported bundle
 metadata, `SHA256SUMS` mismatch, and non-regular extracted files fail closed.
 
-The copy uses `<install-root>/.staging/layout-<pid>/bundle` as its transaction
-directory. Failures never write `<install-root>/active` and never write profile
-state. Failures after staging may leave that staging directory behind so the
-operator can inspect the partial extraction.
+The copy uses `<install-root>/.staging/layout-<pid>` as its transaction
+directory. Remote bundle downloads first land as
+`<install-root>/.staging/layout-<pid>/bundle.tar.gz`, and the adjacent
+`<URL>.sha256` is downloaded and checked before extraction. The final effective
+download URL must stay on the release host/CDN allowlist, or on the same local
+test fixture authority. Indexed size and digest metadata handoff is tracked by
+`m80-o3uh9.3.10`; this leaf's explicit remote URL path is checksum-sidecar
+verified.
+
+Failures never write `<install-root>/active` and never write profile state.
+Failed downloads, checksum mismatches, unsupported redirects, and truncated
+downloads delete staged bundle/checksum partials. Failures after extraction may
+leave the staging directory behind so the operator can inspect the partial
+extraction.
 
 `--dry-run` remains a pure plan render. It does not read the bundle and does not
 create `<install-root>`.
@@ -58,6 +71,12 @@ create `<install-root>`.
 ## Tests
 
 - `install_bundle_layout_copies_verified_bundle_into_version_dir`
+- `install_bundle_layout_downloads_http_bundle_into_version_dir`
+- `install_bundle_layout_rejects_remote_bundle_checksum_mismatch_before_extract`
+- `install_bundle_layout_rejects_remote_404_before_extract`
+- `install_bundle_layout_deletes_truncated_download_partial`
+- `install_bundle_layout_rejects_redirect_to_different_fixture_host`
+- `install_bundle_layout_rejects_checksum_redirect_to_different_fixture_host`
 - `install_bundle_layout_missing_required_bundle_file_fails_before_activation`
 - `install_bundle_layout_duplicate_bundle_path_fails_before_activation`
 - `install_bundle_layout_permission_failure_leaves_active_state_untouched`
