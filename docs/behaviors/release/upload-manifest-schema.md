@@ -40,6 +40,15 @@ missing public files, stale `sha256`, stale `size_bytes`, unknown top-level
 fields, public asset set drift, post-predicate proof asset drift, and
 non-public workflow artifact drift.
 
+The publish workflow also runs the verifier with
+`--require-exact-dist-public-assets` immediately after `gh release download`.
+At that point the redownload directory must contain exactly the manifest's
+public assets; workflow-only files and `github-release.json` are not present
+yet. This catches missing uploaded assets and unexpected public release files
+before install-handoff, stable-channel, bundle, or integrity verification runs.
+The verifier also checks that `SHA256SUMS` covers every release-integrity
+subject except `SHA256SUMS` itself, and that those hashes match the predicate.
+
 Relevant tests:
 
 - `scripts/test-release-bundle.py::test_release_upload_manifest_schema_derives_public_and_non_public_assets`
@@ -51,3 +60,8 @@ Relevant tests:
 - `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_unknown_top_level_field`
 - `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_undocumented_public_asset`
 - `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_undocumented_non_public_artifact`
+- `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_extra_redownloaded_asset`
+- `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_missing_release_integrity_subject`
+- `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_missing_sha256sum_coverage`
+- `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_stale_provenance_digest`
+- `scripts/test-release-bundle.py::test_release_upload_manifest_rejects_synthetic_public_asset_omitted_from_manifest`

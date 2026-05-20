@@ -29,7 +29,8 @@ and hostless proof evidence exist, and uploads only a workflow artifact.
 finishes. It is the only job with `contents: write`. It downloads the workflow
 artifact, validates `m80-release-upload-manifest.json`, derives the
 `gh release upload` path list and `gh release download --pattern` list from
-that manifest, re-downloads those public assets, and runs
+that manifest, re-downloads those public assets, verifies the redownload
+directory contains exactly the manifest's public asset set, and runs
 `scripts/verify-release-bundle.py --verify-sidecars` against the downloaded
 bundle so the published asset index is checked against the uploaded tarball,
 metadata, bootstrap selector, checksums, and installer before any later

@@ -284,12 +284,13 @@ jobs:
               --print-download-patterns
           )
           gh release download "$GITHUB_REF_NAME" "${download_args[@]}"
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-            > /tmp/m80-release-redownload/github-release.json
           scripts/release_upload_manifest.py \
             --dist-dir /tmp/m80-release-redownload \
             --manifest /tmp/m80-release-upload/m80-release-upload-manifest.json \
-            --release-tag "$GITHUB_REF_NAME"
+            --release-tag "$GITHUB_REF_NAME" \
+            --require-exact-dist-public-assets
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+            > /tmp/m80-release-redownload/github-release.json
           scripts/verify-install-handoff.py \
             /tmp/m80-release-redownload \
             --release-tag "$GITHUB_REF_NAME" \

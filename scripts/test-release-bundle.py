@@ -1239,6 +1239,11 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("--print-download-patterns", workflow)
         self.assertIn('gh release download "$GITHUB_REF_NAME" "${download_args[@]}"', workflow)
         self.assertIn("--manifest /tmp/m80-release-upload/m80-release-upload-manifest.json", workflow)
+        self.assertIn("--require-exact-dist-public-assets", workflow)
+        self.assertLess(
+            workflow.index("--require-exact-dist-public-assets"),
+            workflow.index('gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}"'),
+        )
         self.assertNotIn(
             'gh release upload "$GITHUB_REF_NAME" \\\n            /tmp/m80-release-upload/',
             workflow,
@@ -1330,6 +1335,91 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertEqual(upload.stdout.splitlines(), [str(out_dir / name) for name in public_names])
             self.assertEqual(download.stdout.splitlines(), public_names)
+
+    def test_release_upload_manifest_rejects_extra_redownloaded_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            (redownload / "extra.txt").write_text("extra\n")
+
+            result = run_release_upload_manifest(
+                redownload,
+                "--manifest",
+                str(out_dir / UPLOAD_MANIFEST_NAME),
+                "--require-exact-dist-public-assets",
+                check=False,
+            )
+
+            self.assertIn("redownload file set mismatch", result.stderr)
+            self.assertIn("extra.txt", result.stderr)
+
+    def test_release_upload_manifest_rejects_missing_release_integrity_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            material_path = out_dir / INTEGRITY_NAME
+            material = json.loads(material_path.read_text())
+            removed = material["subjects"][0]["name"]
+            material["subjects"] = material["subjects"][1:]
+            material_path.write_text(json.dumps(material, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("public asset set mismatch", result.stderr)
+            self.assertIn(removed, result.stderr)
+
+    def test_release_upload_manifest_rejects_missing_sha256sum_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            sums_path = out_dir / "SHA256SUMS"
+            lines = [
+                line
+                for line in sums_path.read_text().splitlines()
+                if not line.endswith(f"  {INSTALL_NAME}")
+            ]
+            sums_path.write_text("\n".join(lines) + "\n")
+            refresh_integrity_subject_and_manifest_asset(out_dir, "SHA256SUMS")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("SHA256SUMS subject coverage mismatch", result.stderr)
+            self.assertIn(INSTALL_NAME, result.stderr)
+
+    def test_release_upload_manifest_rejects_stale_provenance_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            material_path = out_dir / INTEGRITY_NAME
+            material = json.loads(material_path.read_text())
+            material["subjects"][0]["sha256"] = "0" * 64
+            stale_name = material["subjects"][0]["name"]
+            material_path.write_text(json.dumps(material, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn(f"release upload integrity subject {stale_name} sha256 mismatch", result.stderr)
+
+    def test_release_upload_manifest_rejects_synthetic_public_asset_omitted_from_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            synthetic = out_dir / "future-installer.bin"
+            synthetic.write_text("future\n")
+            material_path = out_dir / INTEGRITY_NAME
+            material = json.loads(material_path.read_text())
+            material["subjects"].append(
+                {
+                    "kind": "installer",
+                    "name": synthetic.name,
+                    "sha256": sha256(synthetic),
+                    "size_bytes": synthetic.stat().st_size,
+                }
+            )
+            material_path.write_text(json.dumps(material, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_upload_manifest(out_dir, check=False)
+
+            self.assertIn("public asset set mismatch", result.stderr)
+            self.assertIn(synthetic.name, result.stderr)
 
     def test_release_upload_manifest_rejects_duplicate_public_asset_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4045,6 +4135,38 @@ def release_upload_manifest_fixture(root: Path) -> Path:
     write_integrity_material(out_dir)
     run_release_upload_manifest(out_dir, "--write")
     return out_dir
+
+
+def copy_manifest_public_assets(source: Path, target: Path) -> None:
+    target.mkdir()
+    manifest = json.loads((source / UPLOAD_MANIFEST_NAME).read_text())
+    for asset in manifest["public_assets"]:
+        shutil.copy2(source / asset["name"], target / asset["name"])
+
+
+def refresh_integrity_subject_and_manifest_asset(out_dir: Path, name: str) -> None:
+    path = out_dir / name
+    updates = {"sha256": sha256(path), "size_bytes": path.stat().st_size}
+    material_path = out_dir / INTEGRITY_NAME
+    material = json.loads(material_path.read_text())
+    for subject in material["subjects"]:
+        if subject["name"] == name:
+            subject.update(updates)
+    material_path.write_text(json.dumps(material, indent=2, sort_keys=True) + "\n")
+    refresh_manifest_asset(out_dir, name)
+    refresh_manifest_asset(out_dir, INTEGRITY_NAME)
+
+
+def refresh_manifest_asset(out_dir: Path, name: str) -> None:
+    path = out_dir / name
+    updates = {"sha256": sha256(path), "size_bytes": path.stat().st_size}
+
+    manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    for asset in manifest["public_assets"]:
+        if asset["name"] == name:
+            asset.update(updates)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
 
 def run_verify(

@@ -17,6 +17,7 @@ INTEGRITY_NAME = "m80-release-integrity.json"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 INTEGRITY_ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+SHA256SUMS_NAME = "SHA256SUMS"
 
 DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -74,6 +75,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="print public asset names, one per line",
     )
+    parser.add_argument(
+        "--require-exact-dist-public-assets",
+        action="store_true",
+        help="require dist-dir file names to equal public_assets exactly",
+    )
     return parser.parse_args()
 
 
@@ -87,6 +93,8 @@ def main() -> int:
 
     manifest = read_json(manifest_path, "release upload manifest")
     verify_manifest(manifest, dist_dir, args.release_tag)
+    if args.require_exact_dist_public_assets:
+        verify_exact_dist_public_assets(manifest, dist_dir)
 
     if args.print_upload_paths:
         for asset in manifest["public_assets"]:
@@ -137,6 +145,7 @@ def verify_manifest(manifest: dict, dist_dir: Path, release_tag: str) -> None:
             )
 
     material = read_integrity_material(dist_dir, release_tag)
+    verify_sha256s_coverage(dist_dir, material["subjects"])
     integrity_subject_names = {subject["name"] for subject in material["subjects"]}
     observed_integrity_names = {
         asset["name"] for asset in public_assets if asset["integrity_subject"] is True
@@ -175,6 +184,41 @@ def verify_manifest(manifest: dict, dist_dir: Path, release_tag: str) -> None:
         require(
             observed_non_public[name]["reason"] == reason,
             f"release upload manifest non-public workflow artifact {name} reason mismatch",
+        )
+
+
+def verify_exact_dist_public_assets(manifest: dict, dist_dir: Path) -> None:
+    public_assets = require_list(manifest["public_assets"], "release upload manifest public_assets")
+    public_by_name = unique_rows_by_name(
+        public_assets,
+        PUBLIC_ASSET_FIELDS,
+        "release upload manifest public asset",
+    )
+    actual_files = {path.name for path in dist_dir.iterdir() if path.is_file()}
+    require_name_set(
+        actual_files,
+        set(public_by_name),
+        "release upload redownload file set",
+    )
+
+
+def verify_sha256s_coverage(dist_dir: Path, subjects: list[object]) -> None:
+    expected = {
+        subject["name"]: subject["sha256"]
+        for subject in subjects
+        if subject["name"] != SHA256SUMS_NAME
+    }
+    sums = read_sha256s(dist_dir / SHA256SUMS_NAME)
+    require_name_set(
+        set(sums),
+        set(expected),
+        "release upload SHA256SUMS subject coverage",
+    )
+    for name, expected_sha in expected.items():
+        require(
+            sums[name] == expected_sha,
+            f"release upload SHA256SUMS hash mismatch for {name}: "
+            f"expected {expected_sha}, got {sums[name]}",
         )
 
 
@@ -317,6 +361,22 @@ def read_json(path: Path, label: str) -> dict:
 
 def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def read_sha256s(path: Path) -> dict[str, str]:
+    require(path.is_file(), f"release upload SHA256SUMS missing: {path}")
+    result: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        require(line, "release upload SHA256SUMS contains empty line")
+        parts = line.split()
+        require(len(parts) == 2, "release upload SHA256SUMS row shape invalid")
+        digest, name = parts
+        require_sha256(digest, f"release upload SHA256SUMS digest for {name}")
+        require_dist_asset_name(name, "release upload SHA256SUMS asset name")
+        require(name not in result, f"release upload SHA256SUMS duplicate asset: {name}")
+        result[name] = digest
+    require(result, "release upload SHA256SUMS must not be empty")
+    return result
 
 
 def sha256_file(path: Path) -> str:
