@@ -56,7 +56,7 @@ scripts/package-release-bundle.py \
   --rootfs-manifest /tmp/m80-release-artifacts/output.ext4.manifest.json \
   --build-receipt /tmp/m80-release-artifacts/output.ext4.build-receipt.json \
   --guestd /tmp/m80-release-artifacts/m80-guestd \
-  --install-sh scripts/quickstart.sh \
+  --install-sh scripts/install.sh \
   --out-dir /tmp/m80-release-bundle
 ```
 
@@ -73,9 +73,12 @@ before an install can become active. If m80 ever starts installing a pinned
 Firecracker train itself, file a new policy decision and hard-cutover bead
 instead of making the current verifier tolerant.
 
-The installer bead will replace `scripts/quickstart.sh` with the final
-versioned `install.sh` release asset; the bundle contract already reserves the
-in-bundle path as `install.sh`.
+`scripts/install.sh` is the versioned installer template. Packaging renders it
+with the concrete release tag and bundle URL, publishes it as `install.sh`, and
+embeds the same rendered file inside the release bundle. It downloads the
+matching bundle, verifies the adjacent checksum sidecar, extracts that bundle's
+`bin/m80`, then hands off to `m80 install --bundle-url file://...`. It must not
+call `scripts/quickstart.sh` or the legacy artifact-only quickstart flow.
 
 Verify a produced bundle before upload:
 

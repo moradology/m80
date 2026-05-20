@@ -55,6 +55,7 @@ class ReleaseBundleTest(unittest.TestCase):
                 self.assertIn("bin/m80", names)
                 self.assertIn("artifacts/output.ext4.manifest.json", names)
                 metadata = json.load(tar.extractfile("bundle.json"))  # type: ignore[arg-type]
+                bundled_install = tar.extractfile("install.sh").read().decode("utf-8")  # type: ignore[union-attr]
                 modes = {
                     member.name: member.mode & 0o777
                     for member in tar.getmembers()
@@ -88,6 +89,18 @@ class ReleaseBundleTest(unittest.TestCase):
                 json.loads((out_dir / METADATA_NAME).read_text()),
                 metadata,
             )
+            public_install = (out_dir / INSTALL_NAME).read_text()
+            self.assertEqual(public_install, bundled_install)
+            self.assertIn("M80_RELEASE_TAG='v0.0.0'", public_install)
+            self.assertIn(
+                f"M80_BUNDLE_URL='https://github.com/moradology/m80/releases/download/v0.0.0/{BUNDLE_NAME}'",
+                public_install,
+            )
+            self.assertIn('"$extract_dir/bin/m80" install --bundle-url "file://$bundle_path"', public_install)
+            self.assertNotIn('\nexec "$extract_dir/bin/m80"', public_install)
+            self.assertNotIn("@M80_", public_install)
+            self.assertNotIn("m80 quickstart", public_install)
+            self.assertNotIn("quickstart.sh", public_install)
             index = json.loads((out_dir / ASSET_INDEX_NAME).read_text())
             self.assertEqual(index["schema_version"], 1)
             self.assertEqual(index["release_tag"], "v0.0.0")
@@ -113,6 +126,28 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(asset["guest_protocol_version"], 1)
             self.assertEqual(asset["manifest_schema_version"], 5)
             self.assertEqual(asset["expected_firecracker_version"], "v1.15.1")
+
+    def test_package_rejects_legacy_quickstart_install_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            legacy = root / "legacy-quickstart.sh"
+            write_executable(
+                legacy,
+                "#!/bin/sh\nexec \"${M80_BIN:-m80}\" quickstart --artifact-url \"$1\"\n",
+            )
+            inputs["install"] = legacy
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must invoke m80 install, not the legacy quickstart flow", result.stderr)
+
+    def test_release_workflow_uses_versioned_install_template(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()
+
+        self.assertIn("--install-sh scripts/install.sh", workflow)
+        self.assertNotIn("--install-sh scripts/quickstart.sh", workflow)
 
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -570,7 +605,6 @@ def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> 
         write_executable(inputs / name, f"#!/bin/sh\nprintf '{name}\\n'\n")
     write_fake_m80(inputs / "m80", release_tag)
     write_fake_guestd(inputs / "m80-guestd", guest_protocol)
-    write_executable(inputs / "install.sh", "#!/bin/sh\nexit 0\n")
     write_guest_manifest(inputs)
     write_build_receipt(inputs)
     return {
@@ -582,7 +616,7 @@ def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> 
         "manifest": inputs / "output.ext4.manifest.json",
         "receipt": inputs / "output.ext4.build-receipt.json",
         "guestd": inputs / "m80-guestd",
-        "install": inputs / "install.sh",
+        "install": REPO_ROOT / "scripts" / "install.sh",
     }
 
 

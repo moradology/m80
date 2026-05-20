@@ -27,6 +27,11 @@ ASSET_INDEX_NAME = "m80-release-assets.json"
 INSTALL_NAME = "install.sh"
 GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
 GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
+INSTALL_TEMPLATE_TOKENS = {
+    "@M80_RELEASE_TAG@",
+    "@M80_BUNDLE_URL@",
+    "@M80_BUNDLE_NAME@",
+}
 REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
 FILE_MODES = {
     "bin/m80": 0o755,
@@ -116,6 +121,13 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="m80-release-bundle-") as tmp:
         bundle_root = Path(tmp) / "bundle"
+        rendered_install = Path(tmp) / INSTALL_NAME
+        render_install_script(
+            args.install_sh,
+            rendered_install,
+            release_tag=args.release_tag,
+            bundle_url=release_asset_url(args.release_tag, BUNDLE_NAME),
+        )
         file_map = {
             "bin/m80": args.m80_bin,
             "bin/m80-jailer-harden": args.jailer_harden_bin,
@@ -125,7 +137,7 @@ def main() -> int:
             "artifacts/output.ext4.manifest.json": args.rootfs_manifest,
             "artifacts/output.ext4.build-receipt.json": args.build_receipt,
             "artifacts/m80-guestd": args.guestd,
-            "install.sh": args.install_sh,
+            "install.sh": rendered_install,
         }
         for rel, src in file_map.items():
             copy_file(src, bundle_root / rel, FILE_MODES[rel])
@@ -152,7 +164,7 @@ def main() -> int:
         tarball.chmod(0o644)
         write_sha256_sidecar(out_dir / f"{BUNDLE_NAME}.sha256", tarball, BUNDLE_NAME)
         install_asset = out_dir / INSTALL_NAME
-        copy_file(args.install_sh, install_asset, 0o755)
+        copy_file(rendered_install, install_asset, 0o755)
         write_sha256_sidecar(out_dir / f"{INSTALL_NAME}.sha256", install_asset, INSTALL_NAME)
         metadata_asset = out_dir / METADATA_NAME
         shutil.copy2(metadata_path, metadata_asset)
@@ -360,6 +372,47 @@ def copy_file(src: Path, dest: Path, mode: int) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
     dest.chmod(mode)
+
+
+def render_install_script(
+    template: Path,
+    dest: Path,
+    *,
+    release_tag: str,
+    bundle_url: str,
+) -> None:
+    require(template.is_file(), f"missing required input: {template}")
+    text = template.read_text()
+    validate_install_template(template, text)
+    rendered = (
+        text.replace("@M80_RELEASE_TAG@", release_tag)
+        .replace("@M80_BUNDLE_URL@", bundle_url)
+        .replace("@M80_BUNDLE_NAME@", BUNDLE_NAME)
+    )
+    require(
+        not any(token in rendered for token in INSTALL_TEMPLATE_TOKENS),
+        "install.sh template placeholders were not fully rendered",
+    )
+    dest.write_text(rendered)
+    dest.chmod(FILE_MODES["install.sh"])
+
+
+def validate_install_template(template: Path, text: str) -> None:
+    legacy_needles = ["quickstart.sh", "m80 quickstart", "--artifact-url"]
+    found = [needle for needle in legacy_needles if needle in text]
+    require(
+        not found,
+        f"install.sh must invoke m80 install, not the legacy quickstart flow: {template}",
+    )
+    missing = sorted(token for token in INSTALL_TEMPLATE_TOKENS if token not in text)
+    require(
+        not missing,
+        f"install.sh template missing required placeholder(s): {', '.join(missing)}",
+    )
+    require(
+        "bin/m80" in text and " install --bundle-url " in text,
+        "install.sh template must hand off to the versioned m80 install command",
+    )
 
 
 def file_hashes(root: Path) -> list[dict]:

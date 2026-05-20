@@ -14,7 +14,8 @@ Required inputs:
 - `--jailer-harden-bin` and `--net-helper-bin`;
 - `--kernel`, `--rootfs`, `--rootfs-manifest`, and `--build-receipt`;
 - `--guestd`;
-- `--install-sh`;
+- `--install-sh`, the versioned installer template, normally
+  `scripts/install.sh`;
 - `--out-dir`.
 
 The dist directory contains:
@@ -38,6 +39,10 @@ metadata before extraction. `m80-release-assets.json` is generated from the
 dist files and names the default host tuple, bundle digest, metadata digest,
 schema versions, guest protocol, and Firecracker version. The public
 `SHA256SUMS` covers the tarball, installer, metadata sidecar, and asset index.
+The public `install.sh` and the bundled `install.sh` are the same rendered
+versioned installer asset. The renderer fills in the concrete release tag and
+bundle URL, and rejects templates that call `m80 quickstart`, mention
+`scripts/quickstart.sh`, or use artifact-only `--artifact-url`.
 
 ## Determinism
 

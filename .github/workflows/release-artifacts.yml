@@ -86,7 +86,7 @@ jobs:
             --rootfs-manifest "$ARTIFACT_DIR/output.ext4.manifest.json" \
             --build-receipt "$ARTIFACT_DIR/output.ext4.build-receipt.json" \
             --guestd "$ARTIFACT_DIR/m80-guestd" \
-            --install-sh scripts/quickstart.sh \
+            --install-sh scripts/install.sh \
             --out-dir "$DIST_DIR"
 
       - name: Upload workflow artifact
