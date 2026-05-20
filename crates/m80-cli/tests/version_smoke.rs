@@ -62,10 +62,28 @@ fn version_json_has_fields() {
         v["data"].get("install_provenance_schema_version").is_some(),
         "missing install_provenance_schema_version field: {v}"
     );
+    assert!(
+        v["data"].get("source_commit").is_some(),
+        "missing source_commit field: {v}"
+    );
+    assert!(
+        v["data"].get("target").is_some(),
+        "missing target field: {v}"
+    );
+    assert!(
+        v["data"].get("target_triple").is_some(),
+        "missing target_triple field: {v}"
+    );
     assert_eq!(v["data"]["binary_version"], "0.0.0-dev");
     assert_eq!(v["data"]["package_version"], "0.0.0");
     assert_eq!(v["data"]["release_build"], false);
     assert_eq!(v["data"]["release_tag"], serde_json::Value::Null);
+    assert_eq!(v["data"]["source_commit"], serde_json::Value::Null);
+    assert_eq!(
+        v["data"]["target"],
+        format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+    );
+    assert_eq!(v["data"]["target_triple"], serde_json::Value::Null);
     assert_eq!(v["data"]["version_status"], "dev");
     assert_eq!(v["data"]["expected_release_tag"], "v0.0.0");
     assert_eq!(v["data"]["manifest_schema_version"], 5);

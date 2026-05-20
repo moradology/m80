@@ -6,6 +6,9 @@ mod asset_index;
 #[path = "release/installer_input_contract.rs"]
 mod installer_input_contract;
 
+#[path = "release/install_handoff_identity.rs"]
+mod install_handoff_identity;
+
 #[path = "release/installer_layout.rs"]
 mod installer_layout;
 

@@ -849,6 +849,108 @@ print(f"install_sha256={install_sha256}")
 PY
 }
 
+verify_extracted_m80_identity() {
+    binary_path=$1
+    identity_path="$tmp/extracted-m80-version.json"
+    if ! "$binary_path" --json version > "$identity_path"; then
+        fail_integrity "extracted m80 identity command failed for $binary_path"
+    fi
+    python3 - "$identity_path" "$metadata_path" "$build_manifest_path" "$M80_RELEASE_TAG" "$commit_sha" <<'PY' || fail_integrity "extracted m80 identity verification failed"
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import sys
+
+
+identity_path, metadata_path, build_manifest_path, release_tag, source_commit = sys.argv[1:]
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(message)
+
+
+def read_json(path: str, label: str) -> dict:
+    with Path(path).open() as f:
+        payload = json.load(f)
+    require(isinstance(payload, dict), f"{label} must be a JSON object")
+    return payload
+
+
+def require_equal(actual: object, expected: object, label: str) -> None:
+    require(actual == expected, f"{label} mismatch: expected {expected!r}, got {actual!r}")
+
+
+identity = read_json(identity_path, "extracted m80 identity")
+metadata = read_json(metadata_path, "bundle metadata")
+build_manifest = read_json(build_manifest_path, "build manifest")
+
+require_equal(identity.get("version"), 1, "extracted m80 identity envelope version")
+data = identity.get("data")
+require(isinstance(data, dict), "extracted m80 identity data must be a JSON object")
+required_fields = {
+    "binary_version",
+    "package_version",
+    "release_tag",
+    "release_build",
+    "version_status",
+    "expected_release_tag",
+    "source_commit",
+    "target",
+    "target_triple",
+    "protocol_version",
+    "manifest_schema_version",
+    "build_receipt_schema_version",
+    "install_provenance_schema_version",
+}
+missing = sorted(field for field in required_fields if field not in data)
+require(not missing, "extracted m80 identity missing field(s): " + ", ".join(missing))
+
+require_equal(data["version_status"], "release", "extracted m80 version_status")
+require_equal(data["release_build"], True, "extracted m80 release_build")
+require_equal(data["binary_version"], release_tag, "extracted m80 binary_version")
+require_equal(data["release_tag"], release_tag, "extracted m80 release_tag")
+require_equal(data["expected_release_tag"], release_tag, "extracted m80 expected_release_tag")
+require_equal(data["source_commit"], source_commit, "extracted m80 source_commit")
+require_equal(build_manifest.get("source_commit"), source_commit, "build manifest source_commit")
+require_equal(metadata.get("release_tag"), release_tag, "bundle metadata release_tag")
+require_equal(metadata.get("m80_version"), release_tag, "bundle metadata m80_version")
+require_equal(data["target"], metadata.get("target"), "extracted m80 target")
+require_equal(data["target"], build_manifest.get("target"), "extracted m80 build target")
+target_triples = build_manifest.get("target_triples")
+require(isinstance(target_triples, list), "build manifest target_triples must be a JSON array")
+require(isinstance(data["target_triple"], str) and data["target_triple"], "extracted m80 target_triple must be a string")
+require(
+    data["target_triple"] in target_triples,
+    f"extracted m80 target_triple missing from build manifest target_triples: {data['target_triple']!r}",
+)
+require_equal(data["package_version"], metadata.get("package_version"), "extracted m80 package_version")
+require_equal(data["package_version"], build_manifest.get("m80_package_version"), "extracted m80 build package_version")
+require_equal(data["protocol_version"], metadata.get("m80_protocol_version"), "extracted m80 protocol_version")
+require_equal(data["protocol_version"], metadata.get("guest_protocol_version"), "extracted m80 guest protocol_version")
+require_equal(data["manifest_schema_version"], metadata.get("manifest_schema_version"), "extracted m80 manifest_schema_version")
+require_equal(
+    data["build_receipt_schema_version"],
+    metadata.get("build_receipt_schema_version"),
+    "extracted m80 build_receipt_schema_version",
+)
+require_equal(
+    data["install_provenance_schema_version"],
+    metadata.get("install_provenance_schema_version"),
+    "extracted m80 install_provenance_schema_version",
+)
+
+print(
+    "m80 install.sh: verified handoff binary="
+    f"{data['binary_version']} source_commit={data['source_commit']} "
+    f"target={data['target']} target_triple={data['target_triple']} "
+    f"protocol={data['protocol_version']} manifest_schema={data['manifest_schema_version']}",
+    file=sys.stderr,
+)
+PY
+}
+
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/m80-install.XXXXXX")"
 cleanup() {
     rm -rf "$tmp"
@@ -951,5 +1053,6 @@ echo "m80 install.sh: install_sh_sha256=$install_sha256" >&2
 mkdir "$extract_dir"
 tar -xzf "$bundle_path" -C "$extract_dir" bin/m80
 chmod 0755 "$extract_dir/bin/m80"
+verify_extracted_m80_identity "$extract_dir/bin/m80"
 
 "$extract_dir/bin/m80" install --bundle-url "file://$bundle_path" "$@"

@@ -33,6 +33,8 @@ INTEGRITY_SIGNER_IDENTITY = "moradology/m80/.github/workflows/release-artifacts.
 INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
+RELEASE_TARGET = "linux-x86_64"
+RELEASE_TARGET_TRIPLE = "x86_64-unknown-linux-gnu"
 
 
 class ReleaseBundleTest(unittest.TestCase):
@@ -403,12 +405,138 @@ class ReleaseBundleTest(unittest.TestCase):
                 result.stderr,
             )
             self.assertIn(f"install_sh_sha256={sha256(root / 'out' / INSTALL_NAME)}", result.stderr)
+            self.assertIn(
+                "verified handoff binary=v0.0.0 "
+                f"source_commit={INTEGRITY_COMMIT_SHA} "
+                f"target={RELEASE_TARGET} target_triple={RELEASE_TARGET_TRIPLE} "
+                "protocol=1 manifest_schema=5",
+                result.stderr,
+            )
             self.assertTrue(install_args.is_file(), result.stderr)
             args = install_args.read_text().splitlines()
             self.assertEqual(args[0:2], ["install", "--bundle-url"])
             self.assertTrue(args[2].startswith("file://"), args)
             self.assertTrue(args[2].endswith(f"/{BUNDLE_NAME}"), args)
             self.assertEqual(args[3:], ["--dry-run"])
+
+    def test_rendered_install_script_rejects_extracted_m80_source_commit_mismatch_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            replace_bundle_m80_for_install(
+                root / "out",
+                fake_m80_script(
+                    fake_m80_payload(updates={"source_commit": "1" * 40})
+                ),
+            )
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("extracted m80 source_commit mismatch", result.stderr)
+            self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_extracted_m80_release_tag_mismatch_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            replace_bundle_m80_for_install(
+                root / "out",
+                fake_m80_script(fake_m80_payload(updates={"release_tag": "v9.9.9"})),
+            )
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("extracted m80 release_tag mismatch", result.stderr)
+            self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_extracted_m80_target_mismatch_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            replace_bundle_m80_for_install(
+                root / "out",
+                fake_m80_script(fake_m80_payload(updates={"target": "linux-aarch64"})),
+            )
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("extracted m80 target mismatch", result.stderr)
+            self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_extracted_m80_target_triple_mismatch_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            replace_bundle_m80_for_install(
+                root / "out",
+                fake_m80_script(fake_m80_payload(updates={"target_triple": "aarch64-unknown-linux-gnu"})),
+            )
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("extracted m80 target_triple missing from build manifest target_triples", result.stderr)
+            self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_extracted_m80_dev_identity_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            replace_bundle_m80_for_install(
+                root / "out",
+                fake_m80_script(
+                    fake_m80_payload(
+                        updates={
+                            "binary_version": "0.0.0-dev",
+                            "release_tag": None,
+                            "release_build": False,
+                            "version_status": "dev",
+                            "source_commit": None,
+                        }
+                    )
+                ),
+            )
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("extracted m80 version_status mismatch", result.stderr)
+            self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_extracted_m80_malformed_identity_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            replace_bundle_m80_for_install(
+                root / "out",
+                "#!/bin/sh\n"
+                "if [ \"${1:-}\" = install ]; then exit 99; fi\n"
+                "printf 'not-json\\n'\n",
+            )
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("extracted m80 identity verification failed", result.stderr)
+            self.assertFalse(install_args.exists())
+
+    def test_rendered_install_script_rejects_extracted_m80_missing_identity_field_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            replace_bundle_m80_for_install(
+                root / "out",
+                fake_m80_script(fake_m80_payload(omit={"protocol_version"})),
+            )
+
+            result, _urls, install_args = run_rendered_install(root, args=["--dry-run"])
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("extracted m80 identity missing field(s): protocol_version", result.stderr)
+            self.assertFalse(install_args.exists())
 
     def test_rendered_install_script_bounds_every_download(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -865,6 +993,10 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("cargo build --locked -p m80-image-build --release", workflow)
         self.assertIn("cargo build --locked -p m80-guestd --release --target x86_64-unknown-linux-musl", workflow)
         self.assertIn("cargo build --locked -p m80-cli -p m80-jailer-harden -p m80-net-helper --release", workflow)
+        self.assertIn("release_commit=\"$(git rev-parse HEAD)\"", workflow)
+        self.assertIn("release_target_triple=\"$(rustc -vV | awk '/^host:/ {print $2}')\"", workflow)
+        self.assertIn("M80_RELEASE_COMMIT=\"$release_commit\"", workflow)
+        self.assertIn("M80_RELEASE_TARGET_TRIPLE=\"$release_target_triple\"", workflow)
         self.assertIn("--target-triple x86_64-unknown-linux-musl", workflow)
         self.assertIn("--builder-identity", workflow)
         self.assertIn("--builder-os-image", workflow)
@@ -1123,6 +1255,39 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("m80 binary_version != release tag", result.stderr)
+
+    def test_rejects_binary_source_commit_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            write_fake_m80(inputs["m80"], "v0.0.0", source_commit="1" * 40)
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80 source_commit != release commit", result.stderr)
+
+    def test_rejects_binary_target_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            write_fake_m80(inputs["m80"], "v0.0.0", target="linux-aarch64")
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80 target != release target", result.stderr)
+
+    def test_rejects_binary_target_triple_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            write_fake_m80(inputs["m80"], "v0.0.0", target_triple="aarch64-unknown-linux-gnu")
+
+            result = run_package(inputs, root / "out", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80 target_triple missing from release target_triples", result.stderr)
 
     def test_rejects_workspace_release_tag_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2268,7 +2433,12 @@ def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> 
     }
 
 
-def write_fake_m80(path: Path, release_tag: str) -> None:
+def fake_m80_payload(
+    release_tag: str = "v0.0.0",
+    *,
+    updates: dict | None = None,
+    omit: set[str] | None = None,
+) -> dict:
     payload = {
         "version": 1,
         "data": {
@@ -2278,6 +2448,9 @@ def write_fake_m80(path: Path, release_tag: str) -> None:
             "release_build": True,
             "version_status": "release",
             "expected_release_tag": "v0.0.0",
+            "source_commit": INTEGRITY_COMMIT_SHA,
+            "target": RELEASE_TARGET,
+            "target_triple": RELEASE_TARGET_TRIPLE,
             "protocol_version": 1,
             "manifest_schema_version": 5,
             "build_receipt_schema_version": 1,
@@ -2285,8 +2458,16 @@ def write_fake_m80(path: Path, release_tag: str) -> None:
             "firecracker_pin": "unknown",
         },
     }
-    write_executable(
-        path,
+    if updates:
+        payload["data"].update(updates)
+    for field in omit or set():
+        payload["data"].pop(field, None)
+    return payload
+
+
+def fake_m80_script(payload: dict) -> str:
+    rendered = shlex.quote(json.dumps(payload))
+    return (
         "#!/bin/sh\n"
         "if [ \"${1:-}\" = install ]; then\n"
         "  if [ -n \"${M80_FAKE_INSTALL_ARGS:-}\" ]; then\n"
@@ -2295,7 +2476,30 @@ def write_fake_m80(path: Path, release_tag: str) -> None:
         "  fi\n"
         "  exit 0\n"
         "fi\n"
-        f"cat <<'JSON'\n{json.dumps(payload)}\nJSON\n",
+        f"printf '%s\\n' {rendered}\n"
+    )
+
+
+def write_fake_m80(
+    path: Path,
+    release_tag: str,
+    *,
+    source_commit: str = INTEGRITY_COMMIT_SHA,
+    target: str = RELEASE_TARGET,
+    target_triple: str = RELEASE_TARGET_TRIPLE,
+) -> None:
+    write_executable(
+        path,
+        fake_m80_script(
+            fake_m80_payload(
+                release_tag,
+                updates={
+                    "source_commit": source_commit,
+                    "target": target,
+                    "target_triple": target_triple,
+                },
+            )
+        ),
     )
 
 
@@ -2447,6 +2651,34 @@ def rewrite_bootstrap_selector_asset_field(out_dir: Path, field: str, value: str
     row[columns.index(field)] = value if value is not None else "-"
     lines[3] = "\t".join(row)
     rewrite_bootstrap_selector(out_dir, lines)
+
+
+def replace_bundle_m80_for_install(out_dir: Path, script_text: str) -> None:
+    rewritten = out_dir / "rewritten-m80-bundle.tar.gz"
+    rewrite_tar(
+        out_dir / BUNDLE_NAME,
+        rewritten,
+        payload_updates={"bin/m80": lambda _data: script_text.encode()},
+    )
+    rewritten.replace(out_dir / BUNDLE_NAME)
+    bundle_sha = sha256(out_dir / BUNDLE_NAME)
+    bundle_size = (out_dir / BUNDLE_NAME).stat().st_size
+    write_sha256_sidecar(out_dir / f"{BUNDLE_NAME}.sha256", out_dir / BUNDLE_NAME, BUNDLE_NAME)
+    rewrite_asset_index_asset(out_dir, {"sha256": bundle_sha, "size_bytes": bundle_size})
+    rewrite_bootstrap_selector_asset_field(out_dir, "bundle_sha256", bundle_sha)
+    rewrite_bootstrap_selector_asset_field(out_dir, "size_bytes", str(bundle_size))
+    write_public_sha256s(
+        out_dir / "SHA256SUMS",
+        [
+            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
+            (INSTALL_NAME, out_dir / INSTALL_NAME),
+            (METADATA_NAME, out_dir / METADATA_NAME),
+            (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
+            (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
+            (BUILD_MANIFEST_NAME, out_dir / BUILD_MANIFEST_NAME),
+        ],
+    )
+    write_integrity_material(out_dir)
 
 
 def write_integrity_material(

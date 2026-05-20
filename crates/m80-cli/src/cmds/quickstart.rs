@@ -725,7 +725,11 @@ mod tests {
 
     #[test]
     fn public_release_artifact_url_must_match_release_binary() {
-        let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+        let identity = VersionIdentity::from_parts(
+            "1.2.3",
+            Some("v1.2.3"),
+            Some("0123456789abcdef0123456789abcdef01234567"),
+        );
 
         validate_artifact_url_matches_binary(
             "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
@@ -736,7 +740,7 @@ mod tests {
 
     #[test]
     fn dev_binary_rejects_public_release_artifact_with_repair_command() {
-        let identity = VersionIdentity::from_parts("1.2.3", None);
+        let identity = VersionIdentity::from_parts("1.2.3", None, None);
         let err = validate_artifact_url_matches_binary(
             "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
             &identity,
@@ -755,7 +759,7 @@ mod tests {
 
     #[test]
     fn public_latest_artifact_url_is_rejected_as_mutable_legacy_quickstart() {
-        let identity = VersionIdentity::from_parts("1.2.3", None);
+        let identity = VersionIdentity::from_parts("1.2.3", None, None);
         let err = validate_artifact_url_matches_binary(
             "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64.tar.gz",
             &identity,
@@ -774,7 +778,11 @@ mod tests {
 
     #[test]
     fn release_binary_rejects_different_public_release_artifact() {
-        let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+        let identity = VersionIdentity::from_parts(
+            "1.2.3",
+            Some("v1.2.3"),
+            Some("0123456789abcdef0123456789abcdef01234567"),
+        );
         let err = validate_artifact_url_matches_binary(
             "https://github.com/moradology/m80/releases/download/v9.9.9/m80-linux-x86_64.tar.gz",
             &identity,
@@ -792,7 +800,7 @@ mod tests {
 
     #[test]
     fn local_artifact_url_remains_operator_test_override_for_dev_builds() {
-        let identity = VersionIdentity::from_parts("1.2.3", None);
+        let identity = VersionIdentity::from_parts("1.2.3", None, None);
 
         validate_artifact_url_matches_binary("file:///tmp/m80-linux-x86_64.tar.gz", &identity)
             .unwrap();
@@ -829,7 +837,11 @@ mod tests {
 
     #[test]
     fn mismatch_reason_points_to_pinned_installer() {
-        let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+        let identity = VersionIdentity::from_parts(
+            "1.2.3",
+            Some("v1.2.3"),
+            Some("0123456789abcdef0123456789abcdef01234567"),
+        );
         let reason = quickstart_bundle_mismatch_reason("v9.9.9", &identity);
 
         assert!(reason.contains("versioned install.sh"), "{reason}");

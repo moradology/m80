@@ -24,6 +24,9 @@ pub(super) fn cmd_version(json_mode: bool) -> anyhow::Result<i32> {
             "release_build": identity.release_build,
             "version_status": identity.version_status,
             "expected_release_tag": identity.expected_release_tag,
+            "source_commit": identity.source_commit,
+            "target": identity.target,
+            "target_triple": identity.target_triple,
             "protocol_version": protocol_version,
             "manifest_schema_version": manifest_schema_version,
             "build_receipt_schema_version": build_receipt_schema_version,
@@ -37,6 +40,15 @@ pub(super) fn cmd_version(json_mode: bool) -> anyhow::Result<i32> {
         println!(
             "release         {}",
             identity.release_tag.as_deref().unwrap_or("unreleased")
+        );
+        println!(
+            "source_commit   {}",
+            identity.source_commit.as_deref().unwrap_or("unrecorded")
+        );
+        println!("target          {}", identity.target);
+        println!(
+            "target_triple   {}",
+            identity.target_triple.as_deref().unwrap_or("unrecorded")
         );
         println!("version_status  {}", identity.version_status.as_str());
         println!("protocol        {protocol_version}");

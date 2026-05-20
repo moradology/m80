@@ -5,14 +5,22 @@ quickstart flow.
 
 ## Version Source
 
-Release builds inject the GitHub release tag at compile time:
+Release builds inject the GitHub release tag, source commit, and Rust target
+triple at compile time:
 
 ```sh
-M80_RELEASE_TAG=vX.Y.Z cargo build --release -p m80-cli
+M80_RELEASE_TAG=vX.Y.Z \
+  M80_RELEASE_COMMIT=<40-hex-commit> \
+  M80_RELEASE_TARGET_TRIPLE=<rust-target-triple> \
+  cargo build --release -p m80-cli
 ```
 
 The injected tag must be the exact `v<workspace package version>` tag. For the
 workspace package version `0.0.0`, the expected release tag is `v0.0.0`.
+The injected source commit must be the exact commit used by the release build
+manifest and signed release integrity material.
+The injected Rust target triple must be one of the target triples recorded in
+the release build manifest.
 
 `m80 --version` and `m80 version` expose the release identity:
 
@@ -20,13 +28,16 @@ workspace package version `0.0.0`, the expected release tag is `v0.0.0`.
 - release builds render the injected GitHub release tag;
 - `m80 --json version` includes `package_version`, `release_tag`,
   `release_build`, `version_status`, `expected_release_tag`,
-  `protocol_version`, `manifest_schema_version`,
-  `build_receipt_schema_version`, and
+  `source_commit`, `target`, `target_triple`, `protocol_version`,
+  `manifest_schema_version`, `build_receipt_schema_version`, and
   `install_provenance_schema_version`.
 
 Packaging must refuse to publish a bundle when `version_status` is `dev` or
-`mismatch`. The installer and quickstart resolver must not use `releases/latest`
-from a dev build; dev builds require an explicit local bundle or artifact URL.
+`mismatch`, when `source_commit` is missing or differs from the release manifest
+commit, or when the binary target identity does not match the release target
+and build manifest target triples. The installer and quickstart resolver must
+not use `releases/latest` from a dev build; dev builds require an explicit local
+bundle or artifact URL.
 
 ## Public Install URLs
 
@@ -162,7 +173,9 @@ release integrity predicate, attestation bundle, normalized attestation
 metadata, installer asset, metadata sidecar, public checksum manifest, and the
 selected bundle. After verifying the signed predicate, attestation signer,
 selected bundle checksum, and size, it extracts that bundle's `bin/m80` and
-hands off to `m80 install --bundle-url file://...`.
+checks that `m80 --json version` agrees with the verified release tag, source
+commit, target, target triple, protocol, schema, and bundle metadata, then hands
+off to `m80 install --bundle-url file://...`.
 It must not carry a rendered per-tuple bundle URL, call `scripts/quickstart.sh`,
 or use the legacy artifact-only quickstart flow.
 

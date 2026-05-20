@@ -161,6 +161,16 @@ def main() -> int:
     require(version.get("release_tag") == args.release_tag, "m80 release_tag != release tag")
     require(version.get("package_version") == workspace_version, "m80 package_version != workspace version")
     require(version.get("version_status") == "release", "m80 version_status must be release")
+    source_commit = version.get("source_commit")
+    require(
+        isinstance(source_commit, str) and COMMIT_RE.fullmatch(source_commit) is not None,
+        "m80 version missing source_commit",
+    )
+    require(source_commit == args.commit_sha, "m80 source_commit != release commit")
+    require(version.get("target") == args.target, "m80 target != release target")
+    target_triple = version.get("target_triple")
+    require(isinstance(target_triple, str) and target_triple, "m80 version missing target_triple")
+    require(target_triple in target_triples, "m80 target_triple missing from release target_triples")
     require(isinstance(version.get("protocol_version"), int), "m80 version missing protocol_version")
     require(isinstance(version.get("manifest_schema_version"), int), "m80 version missing manifest_schema_version")
     require(

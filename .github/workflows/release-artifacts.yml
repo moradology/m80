@@ -52,7 +52,12 @@ jobs:
           cargo build --locked -p m80-image-build --release
           cargo build --locked -p m80-guestd --release --target x86_64-unknown-linux-musl
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            M80_RELEASE_TAG="$GITHUB_REF_NAME" cargo build --locked -p m80-cli -p m80-jailer-harden -p m80-net-helper --release
+            release_commit="$(git rev-parse HEAD)"
+            release_target_triple="$(rustc -vV | awk '/^host:/ {print $2}')"
+            M80_RELEASE_TAG="$GITHUB_REF_NAME" \
+              M80_RELEASE_COMMIT="$release_commit" \
+              M80_RELEASE_TARGET_TRIPLE="$release_target_triple" \
+              cargo build --locked -p m80-cli -p m80-jailer-harden -p m80-net-helper --release
           fi
 
       - name: Write minimal image config

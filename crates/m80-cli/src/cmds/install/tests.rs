@@ -28,7 +28,11 @@ fn args_with_bundle_url(url: &str) -> InstallArgs {
 
 #[test]
 fn release_tag_source_selects_index_bundle_for_tagged_binary() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let temp = tempfile::tempdir().unwrap();
     let index_url = write_index_with_sidecar(
         temp.path(),
@@ -48,7 +52,11 @@ fn release_tag_source_selects_index_bundle_for_tagged_binary() {
 
 #[test]
 fn bootstrap_tag_source_selects_index_bundle_for_tagged_binary() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let temp = tempfile::tempdir().unwrap();
     let index_url = write_index_with_sidecar(
         temp.path(),
@@ -68,7 +76,11 @@ fn bootstrap_tag_source_selects_index_bundle_for_tagged_binary() {
 
 #[test]
 fn release_tag_source_rejects_missing_default_index_entry() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let temp = tempfile::tempdir().unwrap();
     let index_url = write_index_with_sidecar(temp.path(), &index_json_with_assets(String::new()));
 
@@ -81,7 +93,11 @@ fn release_tag_source_rejects_missing_default_index_entry() {
 
 #[test]
 fn release_tag_source_rejects_duplicate_default_index_entry() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let temp = tempfile::tempdir().unwrap();
     let index_url = write_index_with_sidecar(
         temp.path(),
@@ -104,7 +120,11 @@ fn release_tag_source_rejects_duplicate_default_index_entry() {
 
 #[test]
 fn release_tag_source_rejects_wrong_arch_index_entry() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let temp = tempfile::tempdir().unwrap();
     let index_url = write_index_with_sidecar(
         temp.path(),
@@ -120,7 +140,11 @@ fn release_tag_source_rejects_wrong_arch_index_entry() {
 
 #[test]
 fn release_tag_source_rejects_wrong_image_kind_index_entry() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let temp = tempfile::tempdir().unwrap();
     let index_url = write_index_with_sidecar(
         temp.path(),
@@ -139,7 +163,11 @@ fn release_tag_source_rejects_wrong_image_kind_index_entry() {
 
 #[test]
 fn release_tag_source_rejects_wrong_tag_index_entry() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let temp = tempfile::tempdir().unwrap();
     let index_url = write_index_with_sidecar(
         temp.path(),
@@ -158,7 +186,7 @@ fn release_tag_source_rejects_wrong_tag_index_entry() {
 
 #[test]
 fn release_tag_source_rejects_dev_binary() {
-    let identity = VersionIdentity::from_parts("1.2.3", None);
+    let identity = VersionIdentity::from_parts("1.2.3", None, None);
     let err = install_plan(&args_with_release_tag("v1.2.3"), &identity).unwrap_err();
 
     assert!(
@@ -169,7 +197,11 @@ fn release_tag_source_rejects_dev_binary() {
 
 #[test]
 fn release_tag_source_rejects_binary_tag_mismatch() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let err = install_plan(&args_with_release_tag("v9.9.9"), &identity).unwrap_err();
 
     assert!(
@@ -180,7 +212,11 @@ fn release_tag_source_rejects_binary_tag_mismatch() {
 
 #[test]
 fn release_tag_source_rejects_prerelease_tag_before_index_fetch() {
-    let identity = VersionIdentity::from_parts("1.2.3-rc.1", Some("v1.2.3-rc.1"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3-rc.1",
+        Some("v1.2.3-rc.1"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let err = source_plan_with_index_resolver(
         InstallSource::ReleaseTag("v1.2.3-rc.1"),
         &identity,
@@ -193,7 +229,11 @@ fn release_tag_source_rejects_prerelease_tag_before_index_fetch() {
 
 #[test]
 fn bootstrap_tag_source_rejects_prerelease_tag_before_index_fetch() {
-    let identity = VersionIdentity::from_parts("1.2.3-rc.1", Some("v1.2.3-rc.1"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3-rc.1",
+        Some("v1.2.3-rc.1"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let err = source_plan_with_index_resolver(
         InstallSource::BootstrapTag("v1.2.3-rc.1"),
         &identity,
@@ -206,7 +246,11 @@ fn bootstrap_tag_source_rejects_prerelease_tag_before_index_fetch() {
 
 #[test]
 fn bundle_url_rejects_release_binary_tag_mismatch() {
-    let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
     let err = install_plan(
         &args_with_bundle_url("http://127.0.0.1/releases/download/v9.9.9/m80-linux-x86_64.tar.gz"),
         &identity,
@@ -221,7 +265,7 @@ fn bundle_url_rejects_release_binary_tag_mismatch() {
 
 #[test]
 fn tagged_release_bundle_url_rejects_dev_binary() {
-    let identity = VersionIdentity::from_parts("1.2.3", None);
+    let identity = VersionIdentity::from_parts("1.2.3", None, None);
     let err = install_plan(
         &args_with_bundle_url("http://127.0.0.1/releases/download/v1.2.3/m80-linux-x86_64.tar.gz"),
         &identity,
@@ -236,7 +280,7 @@ fn tagged_release_bundle_url_rejects_dev_binary() {
 
 #[test]
 fn explicit_bundle_url_allows_dev_binary_for_local_bundle_testing() {
-    let identity = VersionIdentity::from_parts("1.2.3", None);
+    let identity = VersionIdentity::from_parts("1.2.3", None, None);
     let plan = install_plan(
         &args_with_bundle_url("file:///tmp/m80-linux-x86_64.tar.gz"),
         &identity,
@@ -253,7 +297,7 @@ fn explicit_bundle_url_allows_dev_binary_for_local_bundle_testing() {
 
 #[test]
 fn explicit_bundle_url_does_not_require_index_selection() {
-    let identity = VersionIdentity::from_parts("1.2.3", None);
+    let identity = VersionIdentity::from_parts("1.2.3", None, None);
     let plan = source_plan_with_index_resolver(
         InstallSource::BundleUrl("file:///tmp/m80-linux-x86_64.tar.gz"),
         &identity,

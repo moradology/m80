@@ -103,9 +103,10 @@ binaries, pull OCI images, or install packages implicitly.
   packaged system service mode remains reserved.
 - `m80 version` - prints release identity, package version, protocol version,
   image artifact schema versions, and Firecracker pin. Dev builds render as
-  `<package-version>-dev`; release packaging injects `M80_RELEASE_TAG`, and
-  the CLI exposes whether that tag matches the expected `v<package-version>`
-  release.
+  `<package-version>-dev`; release packaging injects `M80_RELEASE_TAG` and
+  `M80_RELEASE_COMMIT` plus `M80_RELEASE_TARGET_TRIPLE`, and the CLI exposes
+  whether that tag matches the expected `v<package-version>` release plus the
+  source commit and target identity bound to the release manifest.
 
 Removed VM-front-door commands are not aliases: `launch`, out-of-process `exec`,
 foreground `stop`, and `snapshot capture` are not accepted by the clap surface.
