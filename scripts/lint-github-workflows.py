@@ -18,6 +18,13 @@ CARGO_COMMAND_RE = re.compile(r"(?:^|\s)cargo(?:\s+\+\S+)?\s+(build|test|clippy|
 RUSTUP_TOOLCHAIN_INSTALL_RE = re.compile(r"(?:^|\s)rustup\s+toolchain\s+install\s+(\S+)")
 RUSTUP_TARGET_ADD_RE = re.compile(r"(?:^|\s)rustup\s+target\s+add\b")
 PINNED_RUST_TOOLCHAIN_RE = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
+MULTILINE_RUN_RE = re.compile(r"^(\s*)(?:-\s*)?run\s*:\s*[|>][+-]?")
+COMMAND_SUBSTITUTION_RE = re.compile(r"\$\(")
+ASSIGNMENT_COMMAND_SUBSTITUTION_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*=(?:\"|')?\$\("
+)
+RUN_BLOCK_STRICT_PREAMBLE = "set -euo pipefail"
+RUN_BLOCK_EXCEPTION_MARKER = "m80-lint: allow-nonstrict-run"
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,6 +62,7 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
         errors.extend(lint_top_level_permissions(path, lines))
         errors.extend(lint_job_permissions(path, lines, release_workflow=release_workflow))
         errors.extend(lint_attestation_permissions(path, lines, release_workflow=release_workflow))
+        errors.extend(lint_multiline_run_block_strictness(path, lines))
         if release_workflow:
             errors.extend(lint_release_concurrency(path, lines))
             errors.extend(lint_release_cargo_locked(path, lines))
@@ -197,6 +205,85 @@ def lint_release_rust_toolchain_pins(path: Path, lines: list[str]) -> list[str]:
             if toolchain is None or PINNED_RUST_TOOLCHAIN_RE.fullmatch(toolchain) is None:
                 errors.append(f"{path}:{line_no}: release rustup target add must use --toolchain with a pinned numeric toolchain")
     return errors
+
+
+def lint_multiline_run_block_strictness(path: Path, lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    for index, line in enumerate(lines):
+        match = MULTILINE_RUN_RE.match(line)
+        if not match:
+            continue
+        run_indent = len(match.group(1))
+        block_start = index + 1
+        block_end = run_block_end(lines, block_start, run_indent)
+        block = lines[block_start:block_end]
+        if run_block_has_exception(lines, index, block):
+            continue
+        first_command = first_run_block_command(block)
+        if first_command is None:
+            continue
+        if first_command != RUN_BLOCK_STRICT_PREAMBLE:
+            errors.append(
+                f'{path}:{index + 1}: multiline run block must start with "{RUN_BLOCK_STRICT_PREAMBLE}" '
+                f"or include {RUN_BLOCK_EXCEPTION_MARKER}"
+            )
+            continue
+        errors.extend(lint_masked_command_substitutions(path, block_start, block))
+    return errors
+
+
+def run_block_end(lines: list[str], block_start: int, run_indent: int) -> int:
+    for index in range(block_start, len(lines)):
+        line = lines[index]
+        if not line.strip():
+            continue
+        if leading_spaces(line) <= run_indent:
+            return index
+    return len(lines)
+
+
+def run_block_has_exception(lines: list[str], run_index: int, block: list[str]) -> bool:
+    del lines, run_index
+    for line in block:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            return RUN_BLOCK_EXCEPTION_MARKER in stripped
+        return False
+    return False
+
+
+def first_run_block_command(block: list[str]) -> str | None:
+    for line in block:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        return stripped
+    return None
+
+
+def lint_masked_command_substitutions(
+    path: Path,
+    block_start: int,
+    block: list[str],
+) -> list[str]:
+    errors: list[str] = []
+    for offset, line in enumerate(block):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or COMMAND_SUBSTITUTION_RE.search(stripped) is None:
+            continue
+        if ASSIGNMENT_COMMAND_SUBSTITUTION_RE.match(stripped):
+            continue
+        errors.append(
+            f"{path}:{block_start + offset + 1}: command substitution in workflow run block "
+            "must be captured in a standalone assignment before use"
+        )
+    return errors
+
+
+def leading_spaces(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
 
 
 def rustup_target_toolchain(line: str) -> str | None:

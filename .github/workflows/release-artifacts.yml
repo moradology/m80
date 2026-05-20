@@ -40,6 +40,7 @@ jobs:
 
       - name: Install image-build host dependencies
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y busybox-static musl-tools e2fsprogs curl
           mkdir -p "$ARTIFACT_DIR"
@@ -49,6 +50,7 @@ jobs:
 
       - name: Build m80 binaries
         run: |
+          set -euo pipefail
           cargo build --locked -p m80-image-build --release
           cargo build --locked -p m80-guestd --release --target x86_64-unknown-linux-musl
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -62,6 +64,7 @@ jobs:
 
       - name: Write minimal image config
         run: |
+          set -euo pipefail
           cat > /tmp/m80-release-image.toml <<'EOF'
           [kernel]
           version = "v1.15.1"
@@ -81,6 +84,7 @@ jobs:
 
       - name: Build minimal rootfs artifacts
         run: |
+          set -euo pipefail
           sudo -E target/release/m80-image-build run --config /tmp/m80-release-image.toml
           sudo chown -R "$USER:$USER" "$ARTIFACT_DIR"
           target/release/m80-image-build verify --rootfs "$ARTIFACT_DIR/output.ext4"
@@ -89,13 +93,16 @@ jobs:
         id: release-commit
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          release_commit_sha="$(git rev-parse HEAD)"
+          echo "sha=$release_commit_sha" >> "$GITHUB_OUTPUT"
 
       - name: Package release bundle and asset index
         if: startsWith(github.ref, 'refs/tags/')
         env:
           RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
         run: |
+          set -euo pipefail
           RUSTC_HOST_TRIPLE="$(rustc +1.82 -vV | awk '/^host:/ {print $2}')"
           package_args=()
           while IFS= read -r package_version; do
@@ -127,6 +134,7 @@ jobs:
         id: integrity-subject
         if: startsWith(github.ref, 'refs/tags/')
         run: |
+          set -euo pipefail
           digest="$(sha256sum "$DIST_DIR/m80-release-integrity.json" | awk '{print $1}')"
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
 
@@ -145,6 +153,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
         run: |
+          set -euo pipefail
           cp "${{ steps.attest-integrity.outputs.bundle-path }}" \
             "$DIST_DIR/m80-release-integrity.attestation.jsonl"
           python3 scripts/write-release-attestation-metadata.py \
@@ -158,6 +167,7 @@ jobs:
       - name: Write and validate hostless quickstart proof artifact
         if: startsWith(github.ref, 'refs/tags/')
         run: |
+          set -euo pipefail
           scripts/write-quickstart-proof-fixture.py \
             --release-tag "$GITHUB_REF_NAME" \
             --artifact-root "$DIST_DIR" \
@@ -191,6 +201,7 @@ jobs:
 
       - name: Verify hostless quickstart proof artifact before upload
         run: |
+          set -euo pipefail
           scripts/verify-quickstart-proof.py \
             /tmp/m80-release-upload/m80-quickstart-proof-hostless.json \
             --artifact-root /tmp/m80-release-upload \
@@ -201,6 +212,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
+          set -euo pipefail
+          verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           scripts/verify-release-integrity.py \
             /tmp/m80-release-upload/m80-release-integrity.json \
             --dist-dir /tmp/m80-release-upload \
@@ -209,13 +222,14 @@ jobs:
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
             --attestation-bundle /tmp/m80-release-upload/m80-release-integrity.attestation.jsonl \
             --attestation-metadata /tmp/m80-release-upload/m80-release-attestation.json \
-            --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
       - name: Attach artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           gh release upload "$GITHUB_REF_NAME" \
             /tmp/m80-release-upload/m80-linux-x86_64.tar.gz \
             /tmp/m80-release-upload/m80-linux-x86_64.tar.gz.sha256 \
@@ -240,6 +254,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
         run: |
+          set -euo pipefail
+          verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p /tmp/m80-release-redownload
           gh release download "$GITHUB_REF_NAME" \
             --dir /tmp/m80-release-redownload \
@@ -267,7 +283,7 @@ jobs:
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
             --attestation-bundle /tmp/m80-release-redownload/m80-release-integrity.attestation.jsonl \
             --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
-            --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            --verification-time "$verification_time"
           scripts/stable_release_channel.py \
             --release-metadata /tmp/m80-release-redownload/github-release.json \
             --asset-index /tmp/m80-release-redownload/m80-release-assets.json \
@@ -284,5 +300,5 @@ jobs:
             --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
             --attestation-bundle /tmp/m80-release-redownload/m80-release-integrity.attestation.jsonl \
             --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
-            --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --verification-time "$verification_time" \
             --rust-toolchain 1.82

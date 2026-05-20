@@ -304,7 +304,10 @@ The workflow stages and token boundary for building and publishing release
 artifacts are recorded in `docs/runbook/release-bundle.md`. The short version:
 build jobs run with `contents: read`; the tag-only publish job is the only stage
 with `contents: write`; and `scripts/lint-github-workflows.py` keeps that
-boundary from drifting in CI.
+boundary from drifting in CI. Run `python3 scripts/lint-github-workflows.py`
+locally before release workflow edits; it is the m80 authority-policy and
+strict workflow shell check, and it should run beside the pinned `actionlint`
+syntax/run-block gate when that gate is present.
 
 ## Quickstart Proof Artifact
 

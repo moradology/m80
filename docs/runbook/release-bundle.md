@@ -8,7 +8,10 @@ bundle path.
 `CI` runs `python3 scripts/lint-github-workflows.py` on every push and pull
 request. The linter rejects broad workflow permissions, release workflows
 without a concurrency group, floating third-party action refs, and
-`pull_request` workflows that reference `secrets.*`.
+`pull_request` workflows that reference `secrets.*`. It also rejects
+multi-line workflow `run:` blocks that do not start with `set -euo pipefail`,
+unless the block carries the documented `m80-lint: allow-nonstrict-run`
+exception marker.
 
 `Release artifacts` uses a concurrency group keyed by the GitHub ref name:
 `release-artifacts-${{ github.ref_name }}`. For tag pushes, that key is the
@@ -74,3 +77,10 @@ Release workflows must keep Rust inputs pinned. The workflow policy linter
 rejects floating `rustup toolchain install` values, `rustup target add` without
 a pinned `--toolchain`, and release `cargo` build/test/clippy/install
 invocations that omit `--locked`.
+
+Multi-line workflow `run:` blocks are treated as release-authority shell
+scripts. The local workflow strictness check is the same command:
+`python3 scripts/lint-github-workflows.py`. Run it beside the pinned
+`actionlint` lane once that syntax/run-block gate is installed. The m80 linter
+catches project authority rules and the strict shell prelude; actionlint catches
+GitHub expression and shell syntax drift.

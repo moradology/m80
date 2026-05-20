@@ -341,6 +341,264 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("pull_request workflow must not reference secrets.*", result.stderr)
 
+    def test_multiline_run_block_requires_strict_preamble(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      echo build
+                      echo test
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('multiline run block must start with "set -euo pipefail"', result.stderr)
+
+    def test_multiline_run_block_posix_exception_marker_is_allowed(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      # m80-lint: allow-nonstrict-run
+                      set -eu
+                      echo posix
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_exception_marker_outside_run_block_does_not_bypass_strictness(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - name: m80-lint: allow-nonstrict-run
+                    run: |
+                      echo build
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('multiline run block must start with "set -euo pipefail"', result.stderr)
+
+    def test_exception_marker_after_command_does_not_bypass_strictness(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      echo build
+                      # m80-lint: allow-nonstrict-run
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('multiline run block must start with "set -euo pipefail"', result.stderr)
+
+    def test_exception_marker_in_command_does_not_bypass_strictness(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      echo "m80-lint: allow-nonstrict-run"
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('multiline run block must start with "set -euo pipefail"', result.stderr)
+
+    def test_multiline_run_block_allows_yaml_spacing_before_colon(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run : |
+                      set -euo pipefail
+                      echo build
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_multiline_run_block_chomp_variant_requires_strict_preamble(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |-
+                      echo build
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('multiline run block must start with "set -euo pipefail"', result.stderr)
+
+    def test_multiline_pipeline_without_pipefail_is_rejected(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      false | true
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("set -euo pipefail", result.stderr)
+
+    def test_multiline_unset_variable_use_without_strict_preamble_is_rejected(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      echo "$RELEASE_TAG"
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("set -euo pipefail", result.stderr)
+
+    def test_clean_multiline_run_block_with_strict_preamble_is_allowed(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      set -euo pipefail
+                      echo "$RELEASE_TAG"
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_masked_command_substitution_in_argument_is_rejected(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      set -euo pipefail
+                      echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("command substitution", result.stderr)
+
+    def test_command_substitution_assignment_is_allowed(self) -> None:
+        with workflow_dir(
+            "ci.yml",
+            """
+            name: CI
+            on: [push]
+            permissions:
+              contents: read
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      set -euo pipefail
+                      release_sha="$(git rev-parse HEAD)"
+                      echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 def run_lint(workflow_dir: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
