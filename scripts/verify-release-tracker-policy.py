@@ -17,6 +17,39 @@ DEFAULT_EPIC = "m80-o3uh9"
 VERIFIED_LABEL = "requires-verified-close"
 POLICY_EFFECTIVE_AT = datetime(2026, 5, 20, 18, 0, 0, tzinfo=timezone.utc)
 VERIFIED_REF_RE = re.compile(r"verified:\s+([^\s]+)\s+@\s+([0-9a-fA-F]{7,40})\b")
+TRACKED_TEXT_FIELDS = ("title", "description", "acceptance_criteria", "close_reason")
+EXPECTED_INSTALL_REPLACEMENT = (
+    "use latest/pinned release install.sh or m80 install; reserve "
+    "m80 quickstart --artifact-url for local/operator/test overrides"
+)
+RAW_MAIN_INSTALL_URL_RE = re.compile(
+    r"https://(?:raw\.githubusercontent\.com/[^/\s`\"')]+/m80/(?:main|master)/[^\s`\"')]+|"
+    r"github\.com/[^/\s`\"')]+/m80/(?:raw|blob)/(?:main|master)/[^\s`\"')]+)",
+    re.IGNORECASE,
+)
+GITHUB_RELEASE_DOWNLOAD_RE = re.compile(
+    r"https://github\.com/([^/\s`\"')]+)/([^/\s`\"')]+)/releases/"
+    r"(?:download/[^/\s`\"')]+|latest/download)/([^\s`\"')]+)",
+    re.IGNORECASE,
+)
+QUICKSTART_RE = re.compile(r"\bm80\s+quickstart\b", re.IGNORECASE)
+QUICKSTART_OVERRIDE_MARKER_RE = re.compile(
+    r"\b(local|fixture|operator|test|override|legacy|internal|explicit)\b",
+    re.IGNORECASE,
+)
+QUICKSTART_ALLOWED_FLAG_RE = re.compile(
+    r"\b(?:sudo\s+)?m80\s+quickstart\b[^\n]*(--artifact-url|--no-run)\b",
+    re.IGNORECASE,
+)
+QUICKSTART_POLICY_META_RE = re.compile(
+    r"\b(fail|fails|reject|rejects|forbid|forbids|scan|scans|lint|inventory|"
+    r"reintroduce|deprecated|stale|no-arg|template)\b",
+    re.IGNORECASE,
+)
+PUBLIC_SELECTOR_RE = re.compile(
+    r"\b(public|common|first-run|normal|user-facing|latest|pinned|select|selector|install path)\b",
+    re.IGNORECASE,
+)
 PROOF_EXEMPT_TITLE_RE = re.compile(r"\b(policy lint|anti-drift lint)\b", re.IGNORECASE)
 REAL_KVM_RE = re.compile(
     r"real[- ]?kvm[^.\n]*(proof|smoke|baseline|runner|quickstart|release|process-wrapper)|"
@@ -120,6 +153,7 @@ def verify_tracker_policy(
             errors.append(f"{issue_id}: must carry {VERIFIED_LABEL}")
 
     for issue_id, issue in sorted(release_issues.items()):
+        errors.extend(verify_tracker_text_contract(issue))
         if issue.get("status") != "closed" or not carries_verified_label(issue):
             continue
         errors.extend(
@@ -130,6 +164,96 @@ def verify_tracker_policy(
             )
         )
     return errors
+
+
+def verify_tracker_text_contract(issue: dict[str, Any]) -> list[str]:
+    issue_id = str(issue.get("id") or "<unknown>")
+    errors: list[str] = []
+    for field in TRACKED_TEXT_FIELDS:
+        value = issue.get(field)
+        if not isinstance(value, str) or not value:
+            continue
+        errors.extend(verify_text_field_contract(issue_id, field, value))
+    return errors
+
+
+def verify_text_field_contract(issue_id: str, field: str, text: str) -> list[str]:
+    errors: list[str] = []
+    for match in RAW_MAIN_INSTALL_URL_RE.finditer(text):
+        errors.append(
+            tracker_contract_error(
+                issue_id,
+                field,
+                match.group(0),
+                "raw main installer URLs are mutable",
+            )
+        )
+
+    for match in GITHUB_RELEASE_DOWNLOAD_RE.finditer(text):
+        owner, repo, asset = match.groups()
+        url = match.group(0)
+        if looks_like_m80_release_asset(asset) and (owner, repo) != ("moradology", "m80"):
+            errors.append(
+                tracker_contract_error(
+                    issue_id,
+                    field,
+                    url,
+                    "public m80 release downloads must use moradology/m80",
+                )
+            )
+        if is_artifact_only_latest_url(url, asset):
+            errors.append(
+                tracker_contract_error(
+                    issue_id,
+                    field,
+                    url,
+                    "artifact-only releases/latest URLs are not the public install selector",
+                )
+            )
+
+    for line in text.splitlines():
+        if QUICKSTART_RE.search(line) is None:
+            continue
+        if quickstart_line_is_allowed(line):
+            continue
+        errors.append(
+            tracker_contract_error(
+                issue_id,
+                field,
+                line.strip() or "m80 quickstart",
+                "no-arg m80 quickstart is not the public release selector",
+            )
+        )
+    return errors
+
+
+def looks_like_m80_release_asset(asset: str) -> bool:
+    return asset == "install.sh" or asset.startswith("m80-") or "m80" in asset
+
+
+def is_artifact_only_latest_url(url: str, asset: str) -> bool:
+    if "/releases/latest/download/" not in url.lower():
+        return False
+    if asset == "install.sh":
+        return False
+    return asset.endswith(".tar.gz") or "artifact" in asset or "bundle" in asset
+
+
+def quickstart_line_is_allowed(line: str) -> bool:
+    if QUICKSTART_POLICY_META_RE.search(line) is not None:
+        return True
+    if QUICKSTART_ALLOWED_FLAG_RE.search(line) is not None:
+        return True
+    if QUICKSTART_OVERRIDE_MARKER_RE.search(line) is not None:
+        return True
+    return PUBLIC_SELECTOR_RE.search(line) is None
+
+
+def tracker_contract_error(issue_id: str, field: str, offending: str, reason: str) -> str:
+    return (
+        f"{issue_id}: {field} contains unsupported release command claim "
+        f"{offending!r}: {reason}; expected {EXPECTED_INSTALL_REPLACEMENT}"
+    )
 
 
 def parent_links(issues_by_id: dict[str, dict[str, Any]]) -> dict[str, str]:

@@ -197,6 +197,193 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("release tracker policy ok", result.stdout)
 
+    def test_no_arg_quickstart_public_selector_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.4",
+                        "Selector",
+                        "Public common path runs `m80 quickstart` to select latest assets.",
+                        labels=["quickstart", "release"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80-o3uh9.4: description contains unsupported", result.stderr)
+            self.assertIn("no-arg m80 quickstart is not the public release selector", result.stderr)
+            self.assertIn("expected use latest/pinned release install.sh", result.stderr)
+
+    def test_explicit_quickstart_override_passes(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.4.2",
+                        "Quickstart explicit artifact override verifier",
+                        "`m80 quickstart --artifact-url <url>` remains a local fixture/operator override.",
+                        labels=["quickstart", "release"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_public_install_sh_claim_passes(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        "Public path: curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_raw_main_installer_url_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.12",
+                        "Docs",
+                        "Install with https://raw.githubusercontent.com/moradology/m80/main/scripts/install.sh",
+                        labels=["docs", "release"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("raw main installer URLs are mutable", result.stderr)
+
+    def test_artifact_only_latest_url_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.19",
+                        "Legacy quickstart",
+                        "curl https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz",
+                        labels=["quickstart", "release"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("artifact-only releases/latest URLs are not the public install selector", result.stderr)
+
+    def test_wrong_owner_public_download_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.12",
+                        "Docs",
+                        "Use https://github.com/someone-else/m80/releases/latest/download/install.sh",
+                        labels=["docs", "release"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("public m80 release downloads must use moradology/m80", result.stderr)
+
+    def test_acceptance_criteria_and_close_reason_are_scanned(self) -> None:
+        with tracker_repo() as repo:
+            docs_issue = issue(
+                "m80-o3uh9.12",
+                "Docs",
+                labels=["docs", "release"],
+                parent="m80-o3uh9",
+            )
+            docs_issue["acceptance_criteria"] = (
+                "Common path uses https://raw.githubusercontent.com/moradology/m80/main/scripts/install.sh"
+            )
+            closed_issue = issue(
+                "m80-o3uh9.19",
+                "Legacy quickstart",
+                status="closed",
+                labels=["quickstart", "release"],
+                parent="m80-o3uh9",
+                close_reason=(
+                    "Public quickstart repaired with "
+                    "https://github.com/example/m80/releases/latest/download/install.sh"
+                ),
+            )
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    docs_issue,
+                    closed_issue,
+                ],
+            )
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80-o3uh9.12: acceptance_criteria contains unsupported", result.stderr)
+            self.assertIn("raw main installer URLs are mutable", result.stderr)
+            self.assertIn("m80-o3uh9.19: close_reason contains unsupported", result.stderr)
+            self.assertIn("public m80 release downloads must use moradology/m80", result.stderr)
+
 
 class tracker_repo:
     def __enter__(self) -> "tracker_repo":

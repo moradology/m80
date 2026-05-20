@@ -41,6 +41,13 @@ Unclassified `curl`, `m80 install`, `m80 quickstart`, `sudo sh install.sh`, or
 keeps secondary docs from growing stale raw-main, wrong-owner, or artifact-only
 latest instructions outside the marked README/runbook snippets.
 
+Tracker text is part of the same public contract. `scripts/verify-release-tracker-policy.py`
+scans release epoch titles, descriptions, acceptance criteria, and close
+reasons for stale common-path claims. Public tracker prose may name latest or
+pinned `install.sh`, `m80 install`, and `m80 run -- echo hello`; `m80 quickstart`
+is allowed only when it is an explicit local, fixture, operator, test, override,
+legacy, or internal path such as `m80 quickstart --artifact-url <url>`.
+
 The shared latest install snippet is a release-channel template until public
 release access is proven. Any docs block that shows the `latest-install`
 snippet must have nearby visible text saying public installer status is pending,
