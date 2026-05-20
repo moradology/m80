@@ -217,6 +217,27 @@ build jobs run with `contents: read`; the tag-only publish job is the only stage
 with `contents: write`; and `scripts/lint-github-workflows.py` keeps that
 boundary from drifting in CI.
 
+## Quickstart Proof Artifact
+
+The release workflow writes `m80-quickstart-proof-hostless.json` into the
+`m80-release-dist` `actions/upload-artifact` payload and validates it with
+`scripts/verify-quickstart-proof.py` before upload. The publish job validates
+the same proof again after `actions/download-artifact`. The hostless proof uses
+the same schema as future `real-kvm` and freshness proofs, but its substrate
+summary must say it is not a real-KVM run-smoke proof.
+
+Inspect a downloaded proof with:
+
+```sh
+scripts/verify-quickstart-proof.py \
+  m80-quickstart-proof-hostless.json \
+  --artifact-root /path/to/m80-release-dist \
+  --release-tag "$M80_RELEASE_TAG"
+```
+
+The schema and inspection contract live in
+`docs/behaviors/release/quickstart-proof-artifacts.md`.
+
 ## Host Train Proof
 
 Before promoting a release on a target host, save a preflight proof:

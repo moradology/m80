@@ -136,6 +136,19 @@ jobs:
             --commit-sha "$RELEASE_COMMIT" \
             --out "$DIST_DIR/m80-release-attestation.json"
 
+      - name: Write and validate hostless quickstart proof artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          scripts/write-quickstart-proof-fixture.py \
+            --release-tag "$GITHUB_REF_NAME" \
+            --artifact-root "$DIST_DIR" \
+            --bundle-metadata "$DIST_DIR/m80-linux-x86_64.bundle.json" \
+            --out "$DIST_DIR/m80-quickstart-proof-hostless.json"
+          scripts/verify-quickstart-proof.py \
+            "$DIST_DIR/m80-quickstart-proof-hostless.json" \
+            --artifact-root "$DIST_DIR" \
+            --release-tag "$GITHUB_REF_NAME"
+
       - name: Upload workflow artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
@@ -156,6 +169,13 @@ jobs:
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: /tmp/m80-release-upload
+
+      - name: Verify hostless quickstart proof artifact before upload
+        run: |
+          scripts/verify-quickstart-proof.py \
+            /tmp/m80-release-upload/m80-quickstart-proof-hostless.json \
+            --artifact-root /tmp/m80-release-upload \
+            --release-tag "$GITHUB_REF_NAME"
 
       - name: Verify release integrity material before upload
         env:

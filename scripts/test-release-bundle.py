@@ -458,6 +458,11 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("attestations: write", workflow)
         self.assertIn("scripts/write-release-attestation-metadata.py", workflow)
         self.assertGreaterEqual(workflow.count("scripts/verify-release-integrity.py"), 2)
+        self.assertIn("scripts/write-quickstart-proof-fixture.py", workflow)
+        self.assertGreaterEqual(workflow.count("scripts/verify-quickstart-proof.py"), 2)
+        self.assertIn("m80-quickstart-proof-hostless.json", workflow)
+        self.assertIn("actions/upload-artifact", workflow)
+        self.assertIn("actions/download-artifact", workflow)
         for name in [
             BUNDLE_NAME,
             f"{BUNDLE_NAME}.sha256",
