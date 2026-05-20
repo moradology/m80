@@ -62,6 +62,8 @@ jobs:
         run: cargo test -p m80-attack-runner --features malicious-artifact -- --test-threads=2
 
       - name: cargo clippy --workspace --all-targets
+        env:
+          RUSTFLAGS: ""
         run: cargo clippy --workspace --all-targets
 
       - name: cargo clippy m80-attack-runner malicious artifact

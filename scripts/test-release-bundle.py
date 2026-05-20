@@ -424,6 +424,13 @@ class ReleaseBundleTest(unittest.TestCase):
             "cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings",
             workflow,
         )
+        self.assertIn(
+            '- name: cargo clippy --workspace --all-targets\n'
+            '        env:\n'
+            '          RUSTFLAGS: ""\n'
+            '        run: cargo clippy --workspace --all-targets',
+            workflow,
+        )
         self.assertIn("RUSTFLAGS: \"\"", workflow)
         self.assertIn("rustup toolchain install 1.85 --profile minimal", workflow)
         self.assertIn("cargo +1.85 install cargo-audit --version 0.22.1 --locked", workflow)
