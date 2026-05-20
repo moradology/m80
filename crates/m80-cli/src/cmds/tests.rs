@@ -1,9 +1,12 @@
-use super::{
-    artifact_config_for_runtime_profile, binary_config_for_runtime_profile, build_process_env,
-    cmd_preflight, format_config_json, format_config_table, host_feature_config_from_effective,
-    network_policy_for_egress, parse_env, render_preflight_result, run_request, run_stream,
-    sandbox_config_for_run, should_writeback, validate_run_flags, PreflightErrorReport,
+use super::preflight::{
+    artifact_config_for_runtime_profile, binary_config_for_runtime_profile,
+    host_feature_config_from_effective, render_preflight_result, PreflightErrorReport,
     PreflightReport,
+};
+use super::{
+    build_process_env, cmd_preflight, format_config_json, format_config_table,
+    network_policy_for_egress, parse_env, run_request, run_stream, sandbox_config_for_run,
+    should_writeback, validate_run_flags,
 };
 use crate::args::{EgressMode, OverlayCloneModeArg, WritebackMode};
 use crate::errors::{EXIT_CONFIG, EXIT_PREFLIGHT};

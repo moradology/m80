@@ -471,7 +471,7 @@ fn preflight_dump(effective: Option<&EffectiveConfig>) -> PreflightDump {
             checks: Vec::new(),
         };
     };
-    match super::preflight_with_effective_config(effective.clone()) {
+    match super::preflight::preflight_with_effective_config(effective.clone()) {
         Ok(discovery) => PreflightDump {
             ok: true,
             error: None,
