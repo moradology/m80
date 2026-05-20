@@ -86,6 +86,7 @@ fn source_plan(
         }
         InstallSource::BundleUrl(url) => {
             validate_bundle_url(url)?;
+            layout::preflight_attestation_verifier_for_bundle_url(url)?;
             let release_tag = release_tag_from_bundle_url(url);
             validate_bundle_url_matches_binary(release_tag.as_deref(), identity)?;
             Ok(SourcePlan {
@@ -368,7 +369,7 @@ mod tests {
         let identity = VersionIdentity::from_parts("1.2.3", Some("v1.2.3"));
         let err = install_plan(
             &args_with_bundle_url(
-                "https://github.com/moradology/m80/releases/download/v9.9.9/m80-linux-x86_64.tar.gz",
+                "http://127.0.0.1/releases/download/v9.9.9/m80-linux-x86_64.tar.gz",
             ),
             &identity,
         )
@@ -385,7 +386,7 @@ mod tests {
         let identity = VersionIdentity::from_parts("1.2.3", None);
         let err = install_plan(
             &args_with_bundle_url(
-                "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+                "http://127.0.0.1/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
             ),
             &identity,
         )

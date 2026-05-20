@@ -12,6 +12,8 @@ import re
 import subprocess
 import tomllib
 
+from release_attestation_verifier import preflight_gh_attestation_verifier
+
 
 SCHEMA_VERSION = 1
 MECHANISM = "github-artifact-attestation"
@@ -93,6 +95,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    preflight_gh_attestation_verifier(args.gh_bin)
     dist_dir = args.dist_dir or args.material.parent
     require(dist_dir.is_dir(), f"release dist dir missing: {dist_dir}")
     require(COMMIT_RE.match(args.commit_sha) is not None, "commit sha must be a 40-character lowercase hex digest")

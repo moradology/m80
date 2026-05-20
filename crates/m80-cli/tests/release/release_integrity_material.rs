@@ -20,6 +20,8 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "`gh attestation verify`",
         "`--deny-self-hosted-runners`",
         "`--signer-workflow`",
+        "`--source-digest`",
+        "Install or upgrade GitHub CLI with attestation support",
         "moradology/m80/.github/workflows/release-artifacts.yml",
         "https://token.actions.githubusercontent.com",
         "certificate_not_before",
@@ -46,6 +48,10 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "test_release_integrity_material_rejects_subject_digest_mismatch",
         "test_release_integrity_material_rejects_tampered_install_hash",
         "test_release_integrity_material_rejects_unsupported_verifier_version",
+        "test_release_integrity_material_preflights_missing_verifier_before_material_read",
+        "test_release_attestation_metadata_writer_preflights_missing_verifier_before_material_read",
+        "test_release_integrity_material_rejects_too_old_attestation_verifier",
+        "test_release_integrity_material_rejects_attestation_verifier_missing_required_flag",
         "test_release_integrity_material_rejects_missing_attestation_metadata",
         "test_release_integrity_material_rejects_missing_trust_policy",
         "test_release_integrity_material_rejects_missing_attestation_bundle",
@@ -88,6 +94,8 @@ fn release_runbook_includes_human_integrity_verification_command() {
         .contains("--attestation-metadata /tmp/m80-release-dist/m80-release-attestation.json"));
     assert!(runbook.contains("--verification-time \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""));
     assert!(runbook.contains("gh attestation"));
+    assert!(runbook.contains("--source-digest"));
+    assert!(runbook.contains("Install or upgrade GitHub CLI with attestation support"));
     assert!(runbook.contains("share one trust-anchor path"));
     assert!(runbook.contains("does not require root"));
 }

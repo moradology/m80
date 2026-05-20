@@ -42,6 +42,38 @@ need tar
 need mktemp
 need chmod
 
+preflight_attestation_verifier() {
+    if ! gh_version="$(gh --version 2>&1)"; then
+        echo "m80 install.sh: release attestation verifier missing: gh" >&2
+        echo "m80 install.sh: signed m80 release installs require gh attestation verify before downloading release assets" >&2
+        echo "m80 install.sh: observed version output: $gh_version" >&2
+        echo "m80 install.sh: Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages" >&2
+        exit 127
+    fi
+    if ! gh_help="$(gh attestation verify --help 2>&1)"; then
+        echo "m80 install.sh: release attestation verifier unsupported: gh attestation verify --help failed" >&2
+        echo "m80 install.sh: signed m80 release installs require gh attestation verify before downloading release assets" >&2
+        echo "m80 install.sh: observed version output: $gh_version" >&2
+        echo "m80 install.sh: observed help output: $gh_help" >&2
+        echo "m80 install.sh: Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages" >&2
+        exit 1
+    fi
+    for flag in --repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --source-digest --deny-self-hosted-runners --format; do
+        case "$gh_help" in
+            *"$flag"*) ;;
+            *)
+                echo "m80 install.sh: release attestation verifier unsupported: gh attestation verify --help is missing $flag" >&2
+                echo "m80 install.sh: observed version output: $gh_version" >&2
+                echo "m80 install.sh: observed help output: $gh_help" >&2
+                echo "m80 install.sh: Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages" >&2
+                exit 1
+                ;;
+        esac
+    done
+}
+
+preflight_attestation_verifier
+
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/m80-install.XXXXXX")"
 cleanup() {
     rm -rf "$tmp"

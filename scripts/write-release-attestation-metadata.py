@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 import subprocess
 
+from release_attestation_verifier import preflight_gh_attestation_verifier
+
 
 SCHEMA_VERSION = 1
 MECHANISM = "github-artifact-attestation"
@@ -44,6 +46,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    preflight_gh_attestation_verifier(args.gh_bin)
     require(args.material.is_file(), f"release integrity material missing: {args.material}")
     require(args.attestation_bundle.is_file(), f"release attestation bundle missing: {args.attestation_bundle}")
     require(COMMIT_RE.match(args.commit_sha) is not None, "commit sha must be a 40-character lowercase hex digest")

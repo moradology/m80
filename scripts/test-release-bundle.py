@@ -109,6 +109,13 @@ class ReleaseBundleTest(unittest.TestCase):
                 f"M80_BUNDLE_URL='https://github.com/moradology/m80/releases/download/v0.0.0/{BUNDLE_NAME}'",
                 public_install,
             )
+            self.assertIn("preflight_attestation_verifier", public_install)
+            self.assertIn("gh attestation verify --help", public_install)
+            self.assertIn("before downloading release assets", public_install)
+            self.assertLess(
+                public_install.index("\npreflight_attestation_verifier\n"),
+                public_install.index('curl -fsSL "$M80_BUNDLE_URL"'),
+            )
             self.assertIn('"$extract_dir/bin/m80" install --bundle-url "file://$bundle_path"', public_install)
             self.assertNotIn('\nexec "$extract_dir/bin/m80"', public_install)
             self.assertNotIn("@M80_", public_install)
@@ -180,6 +187,33 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("must invoke m80 install, not the legacy quickstart flow", result.stderr)
+
+    def test_rendered_install_script_preflights_missing_gh_before_curl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            curl_marker = root / "curl-called"
+            write_executable(
+                fakebin / "curl",
+                "#!/bin/sh\nprintf called > \"$M80_CURL_MARKER\"\nexit 88\n",
+            )
+            for tool in ["sha256sum", "tar", "mktemp", "chmod"]:
+                write_executable(fakebin / tool, "#!/bin/sh\nexit 0\n")
+
+            result = subprocess.run(
+                [str(root / "out" / INSTALL_NAME)],
+                check=False,
+                text=True,
+                capture_output=True,
+                env={"PATH": str(fakebin), "M80_CURL_MARKER": str(curl_marker)},
+            )
+
+            self.assertEqual(result.returncode, 127)
+            self.assertIn("release attestation verifier missing: gh", result.stderr)
+            self.assertIn("before downloading release assets", result.stderr)
+            self.assertFalse(curl_marker.exists(), "curl must not run before gh preflight")
 
     def test_release_workflow_uses_versioned_install_template(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()
@@ -703,6 +737,79 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(payload["certificate_not_before"], "2026-01-01T00:00:00Z")
             self.assertEqual(payload["certificate_not_after"], "2027-01-01T00:00:00Z")
             run_verify_integrity(material)
+
+    def test_release_integrity_material_preflights_missing_verifier_before_material_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = root / "out"
+            out_dir.mkdir()
+
+            result = run_verify_integrity(
+                out_dir / "missing-material.json",
+                gh_bin=root / "missing-gh",
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation verifier missing", result.stderr)
+            self.assertIn(
+                "Install or upgrade GitHub CLI with attestation support on Linux",
+                result.stderr,
+            )
+            self.assertNotIn("release integrity material missing", result.stderr)
+
+    def test_release_attestation_metadata_writer_preflights_missing_verifier_before_material_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = root / "out"
+            out_dir.mkdir()
+
+            result = run_write_attestation_metadata(
+                out_dir / "missing-material.json",
+                out_dir / INTEGRITY_ATTESTATION_METADATA_NAME,
+                gh_bin=root / "missing-gh",
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation verifier missing", result.stderr)
+            self.assertIn(
+                "Install or upgrade GitHub CLI with attestation support on Linux",
+                result.stderr,
+            )
+            self.assertNotIn("release integrity material missing", result.stderr)
+
+    def test_release_integrity_material_rejects_too_old_attestation_verifier(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            write_fake_gh_without_attestation(root)
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation verifier unsupported", result.stderr)
+            self.assertIn("gh version 2.0.0", result.stderr)
+            self.assertIn("unknown command \"attestation\"", result.stderr)
+            self.assertIn(
+                "Install or upgrade GitHub CLI with attestation support on Linux",
+                result.stderr,
+            )
+
+    def test_release_integrity_material_rejects_attestation_verifier_missing_required_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            write_fake_gh_missing_help_flag(root, "--source-digest")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation verifier unsupported", result.stderr)
+            self.assertIn("--source-digest", result.stderr)
+            self.assertIn("gh version 9.9.9", result.stderr)
 
     def test_release_integrity_material_accepts_complete_public_subject_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1367,12 +1474,28 @@ from pathlib import Path
 import sys
 
 expected = {json.dumps(expected, sort_keys=True)}
+help_text = " ".join([
+    "--repo",
+    "--bundle",
+    "--signer-workflow",
+    "--cert-oidc-issuer",
+    "--source-ref",
+    "--source-digest",
+    "--deny-self-hosted-runners",
+    "--format",
+])
 
 def fail(message):
     print(message, file=sys.stderr)
     sys.exit(1)
 
 args = sys.argv[1:]
+if args == ["--version"]:
+    print("gh version 9.9.9")
+    sys.exit(0)
+if args == ["attestation", "verify", "--help"]:
+    print(help_text)
+    sys.exit(0)
 if len(args) < 3 or args[:2] != ["attestation", "verify"]:
     fail("unexpected gh command")
 artifact = args[2]
@@ -1422,6 +1545,42 @@ print(json.dumps([{{"verificationResult": {{"statement": {{"subject": subjects}}
     path = fake_gh_path(root)
     path.write_text(script)
     path.chmod(0o755)
+    return path
+
+
+def write_fake_gh_without_attestation(root: Path) -> Path:
+    path = fake_gh_path(root)
+    write_executable(
+        path,
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then printf 'gh version 2.0.0\\n'; exit 0; fi\n"
+        "printf 'unknown command \"attestation\" for \"gh\"\\n' >&2\n"
+        "exit 1\n",
+    )
+    return path
+
+
+def write_fake_gh_missing_help_flag(root: Path, missing_flag: str) -> Path:
+    flags = [
+        "--repo",
+        "--bundle",
+        "--signer-workflow",
+        "--cert-oidc-issuer",
+        "--source-ref",
+        "--source-digest",
+        "--deny-self-hosted-runners",
+        "--format",
+    ]
+    flags.remove(missing_flag)
+    path = fake_gh_path(root)
+    write_executable(
+        path,
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then printf 'gh version 9.9.9\\n'; exit 0; fi\n"
+        "if [ \"$1\" = \"attestation\" ] && [ \"$2\" = \"verify\" ] && [ \"$3\" = \"--help\" ]; then "
+        f"printf '%s\\n' '{' '.join(flags)}'; exit 0; fi\n"
+        "exit 1\n",
+    )
     return path
 
 
@@ -1505,7 +1664,14 @@ def run_verify(
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 
-def run_verify_integrity(material: Path, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run_verify_integrity(
+    material: Path,
+    *,
+    gh_bin: Path | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    if gh_bin is None:
+        gh_bin = fake_gh_path(material.parent.parent)
     cmd = [
         "python3",
         str(VERIFY_INTEGRITY),
@@ -1527,7 +1693,7 @@ def run_verify_integrity(material: Path, *, check: bool = True) -> subprocess.Co
         "--verification-time",
         INTEGRITY_VERIFICATION_TIME,
         "--gh-bin",
-        str(fake_gh_path(material.parent.parent)),
+        str(gh_bin),
         "--rust-toolchain",
         INTEGRITY_RUST_TOOLCHAIN,
     ]
@@ -1538,8 +1704,11 @@ def run_write_attestation_metadata(
     material: Path,
     metadata: Path,
     *,
+    gh_bin: Path | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    if gh_bin is None:
+        gh_bin = fake_gh_path(material.parent.parent)
     cmd = [
         "python3",
         str(WRITE_ATTESTATION_METADATA),
@@ -1556,7 +1725,7 @@ def run_write_attestation_metadata(
         "--out",
         str(metadata),
         "--gh-bin",
-        str(fake_gh_path(material.parent.parent)),
+        str(gh_bin),
     ]
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 

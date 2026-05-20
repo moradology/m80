@@ -24,6 +24,12 @@ mod bundle;
 mod metadata;
 mod source;
 
+pub(super) fn preflight_attestation_verifier_for_bundle_url(
+    bundle_url: &str,
+) -> Result<(), FcError> {
+    source::preflight_attestation_verifier_for_bundle_url(bundle_url)
+}
+
 /// Summary emitted after the layout copy succeeds.
 #[derive(Debug, Serialize)]
 pub(super) struct LayoutInstallSummary {
@@ -45,6 +51,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     let install_root = PathBuf::from(&plan.install_root);
     require_absolute_path("install_root", &install_root)?;
     validate_bundle_source_url(bundle_url)?;
+    preflight_attestation_verifier_for_bundle_url(bundle_url)?;
     let staging_dir = prepare_staging_dir(&install_root)?;
     let bundle_path = stage_bundle_source(bundle_url, staging_dir.path())?;
     let entries = list_bundle_entries(&bundle_path)?;
@@ -379,7 +386,15 @@ fn safe_release_dir(release_tag: &str) -> Result<&str, FcError> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
     use super::source::stage_bundle_source;
+    use super::*;
+
+    static ATTESTATION_ENV_LOCK: Mutex<()> = Mutex::new(());
+    const OFFICIAL_BUNDLE_URL: &str =
+        "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz";
 
     #[test]
     fn local_file_url_requires_absolute_path() {
@@ -389,5 +404,106 @@ mod tests {
             err.to_string().contains("absolute local path"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn official_release_missing_attestation_verifier_fails_before_staging() {
+        let _guard = ATTESTATION_ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let install_root = temp.path().join("install-root");
+        let missing_gh = temp.path().join("missing-gh");
+        let _env = AttestationGhEnv::set(&missing_gh);
+
+        let err = install_bundle_layout(&official_release_plan(&install_root)).unwrap_err();
+
+        let message = err.to_string();
+        assert!(
+            message.contains("release attestation verifier missing"),
+            "{message}"
+        );
+        assert!(
+            message.contains("Install or upgrade GitHub CLI with attestation support on Linux"),
+            "{message}"
+        );
+        assert!(
+            !install_root.exists(),
+            "attestation verifier failure must happen before staging creates the install root"
+        );
+    }
+
+    #[test]
+    fn official_release_too_old_attestation_verifier_fails_before_staging() {
+        let _guard = ATTESTATION_ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let install_root = temp.path().join("install-root");
+        let fake_gh = write_fake_gh(
+            temp.path(),
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'gh version 2.0.0\\n'; exit 0; fi\nprintf 'unknown command \"attestation\" for \"gh\"\\n' >&2\nexit 1\n",
+        );
+        let _env = AttestationGhEnv::set(&fake_gh);
+
+        let err = install_bundle_layout(&official_release_plan(&install_root)).unwrap_err();
+
+        let message = err.to_string();
+        assert!(
+            message.contains("release attestation verifier unsupported"),
+            "{message}"
+        );
+        assert!(message.contains("gh version 2.0.0"), "{message}");
+        assert!(
+            message.contains("unknown command \"attestation\""),
+            "{message}"
+        );
+        assert!(
+            !install_root.exists(),
+            "attestation verifier failure must happen before staging creates the install root"
+        );
+    }
+
+    fn official_release_plan(install_root: &Path) -> InstallPlan {
+        InstallPlan {
+            dry_run: false,
+            install_root: install_root.display().to_string(),
+            active_pointer: install_root.join("active").display().to_string(),
+            source: super::super::SourcePlan {
+                kind: SourceKind::BundleUrl,
+                selector: OFFICIAL_BUNDLE_URL.to_owned(),
+                release_tag: Some("v0.0.0".to_owned()),
+                bundle_url: Some(OFFICIAL_BUNDLE_URL.to_owned()),
+            },
+            binary_version: "v0.0.0".to_owned(),
+            binary_release_tag: Some("v0.0.0".to_owned()),
+            version_status: "release".to_owned(),
+        }
+    }
+
+    fn write_fake_gh(root: &Path, body: &str) -> PathBuf {
+        let path = root.join("fake-gh");
+        fs::write(&path, body).unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
+
+    struct AttestationGhEnv {
+        previous: Option<OsString>,
+    }
+
+    impl AttestationGhEnv {
+        fn set(path: &Path) -> Self {
+            let previous = std::env::var_os("M80_RELEASE_ATTESTATION_GH");
+            std::env::set_var("M80_RELEASE_ATTESTATION_GH", path);
+            Self { previous }
+        }
+    }
+
+    impl Drop for AttestationGhEnv {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("M80_RELEASE_ATTESTATION_GH", value),
+                None => std::env::remove_var("M80_RELEASE_ATTESTATION_GH"),
+            }
+        }
     }
 }

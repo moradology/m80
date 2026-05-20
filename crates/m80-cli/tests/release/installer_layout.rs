@@ -414,6 +414,7 @@ fn clear_install_env(command: &mut assert_cmd::Command) {
         "M80_NET_HELPER_BIN",
         "M80_INSTALL_HOSTLESS_FIXTURE",
         "M80_INSTALL_INJECT_INTERRUPTION_AFTER_PROFILE",
+        "M80_RELEASE_ATTESTATION_GH",
     ] {
         command.env_remove(key);
     }

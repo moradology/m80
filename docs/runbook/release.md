@@ -138,8 +138,16 @@ installer/bootstrapper-consumed dist asset. The same verifier also loads
 `docs/behaviors/release/m80-release-trust-policy.json`,
 `m80-release-integrity.attestation.jsonl`, and
 `m80-release-attestation.json` so human verification and installer verification
-share one trust-anchor path. The trust check uses `gh attestation verify`; use a
-GitHub CLI build with `gh attestation` support.
+share one trust-anchor path.
+
+Prerequisite for the signed v1 verifier: the selected GitHub CLI must include
+`gh attestation verify` with `--repo`, `--bundle`, `--signer-workflow`,
+`--cert-oidc-issuer`, `--source-ref`, `--source-digest`,
+`--deny-self-hosted-runners`, and `--format`. The verifier checks this before
+reading release proof material, and the installer checks it before downloading
+official release assets or touching active install state. If this fails:
+Install or upgrade GitHub CLI with attestation support from
+<https://cli.github.com/packages>.
 
 Verify the predicate shape against a downloaded dist directory before treating
 a release as signed. The tag workflow publishes the attestation bundle and

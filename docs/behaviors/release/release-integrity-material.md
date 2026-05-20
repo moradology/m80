@@ -124,6 +124,17 @@ refs/tags/<release_tag>`, `--source-digest <commit_sha>`, the supplied
 attestation bundle, and `--deny-self-hosted-runners`. The normalized metadata
 is policy input and audit material; it is not treated as a signature substitute.
 
+Before an official signed install or human verification command reads release
+proof material, it preflights the selected attestation verifier. The v1
+preflight runs `gh --version` and `gh attestation verify --help`, then requires
+support for `--repo`, `--bundle`, `--signer-workflow`,
+`--cert-oidc-issuer`, `--source-ref`, `--source-digest`,
+`--deny-self-hosted-runners`, and `--format`. Missing or too-old verifier
+support fails before network fetch, extraction, `install.sh` execution, sudo, or
+active-state writes. The failure names the selected tool, observed version/help
+output when available, why attestation verification is required, and the Linux
+remediation: Install or upgrade GitHub CLI with attestation support.
+
 ## Verification Contract
 
 `scripts/verify-release-integrity.py` is the trust-anchor loader for both human
@@ -143,6 +154,8 @@ closed when:
 - trust policy is not yet active or has expired;
 - attestation certificate/key material is not yet active or has expired;
 - rotation mode is not `hard-fail-expired`;
+- the selected attestation verifier is missing or does not support the required
+  `gh attestation verify` flags;
 - `gh attestation verify` cannot cryptographically verify the predicate for
   the pinned repo, signer, tag ref, commit SHA, and bundle;
 - the subject set is missing, duplicated, or has unknown fields;
@@ -184,6 +197,10 @@ python3 scripts/verify-release-integrity.py \
 
 The command is read-only and does not require root.
 
+If this command fails before reading release files with an attestation-verifier
+error, upgrade GitHub CLI to a build that includes `gh attestation verify`.
+Linux package instructions are at <https://cli.github.com/packages>.
+
 ## Coverage
 
 `scripts/test-release-bundle.py` covers:
@@ -191,6 +208,12 @@ The command is read-only and does not require root.
 - `test_release_integrity_material_verifier_accepts_valid_fixture`;
 - `test_release_workflow_publishes_and_verifies_proof_assets`;
 - `test_release_attestation_metadata_writer_accepts_verified_bundle`;
+- `test_release_integrity_material_preflights_missing_verifier_before_material_read`;
+- `test_release_attestation_metadata_writer_preflights_missing_verifier_before_material_read`;
+- `test_release_integrity_material_rejects_too_old_attestation_verifier`;
+- `test_release_integrity_material_rejects_attestation_verifier_missing_required_flag`;
+- `official_release_missing_attestation_verifier_fails_before_staging`;
+- `official_release_too_old_attestation_verifier_fails_before_staging`;
 - `test_release_integrity_material_accepts_complete_public_subject_set`;
 - `test_release_integrity_material_rejects_wrong_tag`;
 - `test_release_integrity_material_rejects_missing_asset_hash`;
