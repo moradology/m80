@@ -18,11 +18,14 @@ import tomllib
 
 
 BUNDLE_SCHEMA_VERSION = 1
+ASSET_INDEX_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
+ASSET_INDEX_NAME = "m80-release-assets.json"
 INSTALL_NAME = "install.sh"
+GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
 GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
 REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
 FILE_MODES = {
@@ -155,12 +158,28 @@ def main() -> int:
         shutil.copy2(metadata_path, metadata_asset)
         metadata_asset.chmod(0o644)
         write_sha256_sidecar(out_dir / f"{METADATA_NAME}.sha256", metadata_asset, METADATA_NAME)
+        asset_index_path = out_dir / ASSET_INDEX_NAME
+        write_json(
+            asset_index_path,
+            release_asset_index(
+                args=args,
+                version=version,
+                compatibility=compatibility,
+                target_os=target_os,
+                target_arch=target_arch,
+                tarball=tarball,
+                metadata_asset=metadata_asset,
+            ),
+        )
+        asset_index_path.chmod(0o644)
+        write_sha256_sidecar(out_dir / f"{ASSET_INDEX_NAME}.sha256", asset_index_path, ASSET_INDEX_NAME)
         write_public_sha256s(
             out_dir / "SHA256SUMS",
             [
                 (BUNDLE_NAME, tarball),
                 (INSTALL_NAME, install_asset),
                 (METADATA_NAME, metadata_asset),
+                (ASSET_INDEX_NAME, asset_index_path),
             ],
         )
         print(tarball)
@@ -384,6 +403,52 @@ def bundle_metadata(
         "expected_firecracker_version": compatibility["expected_firecracker_version"],
         "files": files,
     }
+
+
+def release_asset_index(
+    *,
+    args: argparse.Namespace,
+    version: dict,
+    compatibility: dict,
+    target_os: str,
+    target_arch: str,
+    tarball: Path,
+    metadata_asset: Path,
+) -> dict:
+    return {
+        "schema_version": ASSET_INDEX_SCHEMA_VERSION,
+        "release_tag": args.release_tag,
+        "assets": [
+            {
+                "name": BUNDLE_NAME,
+                "url": release_asset_url(args.release_tag, BUNDLE_NAME),
+                "sha256": sha256(tarball),
+                "size_bytes": tarball.stat().st_size,
+                "metadata_name": METADATA_NAME,
+                "metadata_sha256": sha256(metadata_asset),
+                "checksum_name": f"{BUNDLE_NAME}.sha256",
+                "signature_name": None,
+                "attestation_name": None,
+                "target": args.target,
+                "os": target_os,
+                "arch": target_arch,
+                "image_kind": args.image_kind,
+                "release_tag": args.release_tag,
+                "m80_version": version["binary_version"],
+                "guest_protocol_version": compatibility["guest_protocol_version"],
+                "manifest_schema_version": compatibility["manifest_schema"],
+                "expected_firecracker_version": compatibility["expected_firecracker_version"],
+            }
+        ],
+    }
+
+
+def release_asset_url(release_tag: str, asset_name: str) -> str:
+    return f"{GITHUB_RELEASE_BASE_URL}/{release_tag}/{asset_name}"
+
+
+def write_json(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def write_sha256s(path: Path, rows: list[dict]) -> None:

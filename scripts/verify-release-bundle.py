@@ -12,11 +12,14 @@ import tomllib
 
 
 BUNDLE_SCHEMA_VERSION = 1
+ASSET_INDEX_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
+ASSET_INDEX_NAME = "m80-release-assets.json"
 INSTALL_NAME = "install.sh"
+GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
 PAYLOAD_PATHS = {
     "bin/m80",
     "bin/m80-jailer-harden",
@@ -157,7 +160,16 @@ def main() -> int:
         require(actual == expected, f"SHA256SUMS hash mismatch for {path}")
 
     if args.verify_sidecars:
-        verify_sidecars(args.bundle, files["bundle.json"]["data"])
+        verify_sidecars(
+            args.bundle,
+            files["bundle.json"]["data"],
+            metadata,
+            release_tag=args.release_tag,
+            target=args.target,
+            image_kind=args.image_kind,
+            target_os=target_os,
+            target_arch=target_arch,
+        )
 
     print(f"verified {args.bundle}")
     return 0
@@ -311,18 +323,31 @@ def parse_sha256s(text: str) -> dict[str, str]:
     return result
 
 
-def verify_sidecars(bundle: Path, bundle_metadata: bytes) -> None:
+def verify_sidecars(
+    bundle: Path,
+    bundle_metadata: bytes,
+    metadata: dict,
+    *,
+    release_tag: str,
+    target: str,
+    image_kind: str,
+    target_os: str,
+    target_arch: str,
+) -> None:
     sidecar_dir = bundle.parent
     require(bundle.name == BUNDLE_NAME, f"bundle filename mismatch: expected {BUNDLE_NAME}, got {bundle.name}")
     install_asset = sidecar_dir / INSTALL_NAME
     metadata_asset = sidecar_dir / METADATA_NAME
+    asset_index = sidecar_dir / ASSET_INDEX_NAME
     public_sums = sidecar_dir / "SHA256SUMS"
     require(install_asset.is_file(), f"missing public sidecar: {INSTALL_NAME}")
     require(metadata_asset.is_file(), f"missing public sidecar: {METADATA_NAME}")
+    require(asset_index.is_file(), f"missing public sidecar: {ASSET_INDEX_NAME}")
     require(public_sums.is_file(), "missing public sidecar: SHA256SUMS")
     verify_public_mode(bundle, 0o644)
     verify_public_mode(install_asset, 0o755)
     verify_public_mode(metadata_asset, 0o644)
+    verify_public_mode(asset_index, 0o644)
     verify_public_mode(public_sums, 0o644)
     require(metadata_asset.read_bytes() == bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
 
@@ -330,6 +355,7 @@ def verify_sidecars(bundle: Path, bundle_metadata: bytes) -> None:
         BUNDLE_NAME: bundle,
         INSTALL_NAME: install_asset,
         METADATA_NAME: metadata_asset,
+        ASSET_INDEX_NAME: asset_index,
     }
     for name, path in expected_assets.items():
         verify_single_sha256(sidecar_dir / f"{name}.sha256", name, path)
@@ -338,6 +364,78 @@ def verify_sidecars(bundle: Path, bundle_metadata: bytes) -> None:
     require(set(sums) == set(expected_assets), "public SHA256SUMS file set mismatch")
     for name, path in expected_assets.items():
         require(sums[name] == sha256_file(path), f"public SHA256SUMS hash mismatch for {name}")
+    verify_asset_index(
+        asset_index,
+        bundle=bundle,
+        metadata_asset=metadata_asset,
+        metadata=metadata,
+        release_tag=release_tag,
+        target=target,
+        image_kind=image_kind,
+        target_os=target_os,
+        target_arch=target_arch,
+    )
+
+
+def verify_asset_index(
+    asset_index: Path,
+    *,
+    bundle: Path,
+    metadata_asset: Path,
+    metadata: dict,
+    release_tag: str,
+    target: str,
+    image_kind: str,
+    target_os: str,
+    target_arch: str,
+) -> None:
+    index = json.loads(asset_index.read_text())
+    require(index.get("schema_version") == ASSET_INDEX_SCHEMA_VERSION, "unsupported asset index schema_version")
+    require(index.get("release_tag") == release_tag, "asset index release_tag mismatch")
+    assets = index.get("assets")
+    require(isinstance(assets, list), "asset index assets must be a list")
+    default_assets = [
+        asset
+        for asset in assets
+        if isinstance(asset, dict)
+        and asset.get("os") == target_os
+        and asset.get("arch") == target_arch
+        and asset.get("image_kind") == image_kind
+    ]
+    require(default_assets, "asset index missing default bundle")
+    require(len(default_assets) == 1, "asset index duplicate default bundle")
+    asset = default_assets[0]
+    expected = {
+        "name": BUNDLE_NAME,
+        "url": release_asset_url(release_tag, BUNDLE_NAME),
+        "sha256": sha256_file(bundle),
+        "size_bytes": bundle.stat().st_size,
+        "metadata_name": METADATA_NAME,
+        "metadata_sha256": sha256_file(metadata_asset),
+        "checksum_name": f"{BUNDLE_NAME}.sha256",
+        "target": target,
+        "os": target_os,
+        "arch": target_arch,
+        "image_kind": image_kind,
+        "release_tag": release_tag,
+        "m80_version": metadata["m80_version"],
+        "guest_protocol_version": metadata["guest_protocol_version"],
+        "manifest_schema_version": metadata["manifest_schema_version"],
+        "expected_firecracker_version": metadata["expected_firecracker_version"],
+    }
+    for field, expected_value in expected.items():
+        require(asset.get(field) == expected_value, f"asset index {field} mismatch")
+    if asset.get("signature_name") is not None:
+        require(isinstance(asset.get("signature_name"), str) and asset["signature_name"], "asset index signature_name invalid")
+    if asset.get("attestation_name") is not None:
+        require(
+            isinstance(asset.get("attestation_name"), str) and asset["attestation_name"],
+            "asset index attestation_name invalid",
+        )
+
+
+def release_asset_url(release_tag: str, asset_name: str) -> str:
+    return f"{GITHUB_RELEASE_BASE_URL}/{release_tag}/{asset_name}"
 
 
 def verify_single_sha256(sidecar: Path, expected_name: str, asset: Path) -> None:

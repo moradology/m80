@@ -24,6 +24,8 @@ m80-linux-x86_64.tar.gz
 m80-linux-x86_64.tar.gz.sha256
 m80-linux-x86_64.bundle.json
 m80-linux-x86_64.bundle.json.sha256
+m80-release-assets.json
+m80-release-assets.json.sha256
 install.sh
 install.sh.sha256
 SHA256SUMS
@@ -32,8 +34,10 @@ SHA256SUMS
 The tarball contains the contract paths from
 [`bundle-contract.md`](bundle-contract.md). `bundle.json` is also copied beside
 the tarball as `m80-linux-x86_64.bundle.json` so release tooling can inspect
-metadata before extraction. The public `SHA256SUMS` covers the tarball,
-installer, and metadata sidecar.
+metadata before extraction. `m80-release-assets.json` is generated from the
+dist files and names the default host tuple, bundle digest, metadata digest,
+schema versions, guest protocol, and Firecracker version. The public
+`SHA256SUMS` covers the tarball, installer, metadata sidecar, and asset index.
 
 ## Determinism
 
@@ -76,4 +80,6 @@ adjacent dist sidecars. Regression coverage in `scripts/test-release-bundle.py`
 checks successful packaging plus rejection of missing required paths, duplicate
 paths, unexpected paths, wrong modes, stale versions, metadata hash mismatches,
 schema/protocol/receipt mismatches, missing install-provenance metadata, and
-stale public checksum sidecars.
+stale public checksum sidecars. It also checks the asset-index path for missing
+assets, wrong tuple, wrong hash, duplicate tuple, stale version, and a missing
+index checksum sidecar.

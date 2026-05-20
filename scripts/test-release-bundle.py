@@ -14,6 +14,10 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
 VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
+BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
+METADATA_NAME = "m80-linux-x86_64.bundle.json"
+ASSET_INDEX_NAME = "m80-release-assets.json"
+INSTALL_NAME = "install.sh"
 
 
 class ReleaseBundleTest(unittest.TestCase):
@@ -25,20 +29,24 @@ class ReleaseBundleTest(unittest.TestCase):
 
             run_package(inputs, out_dir)
 
-            tarball = out_dir / "m80-linux-x86_64.tar.gz"
+            tarball = out_dir / BUNDLE_NAME
             run_verify(tarball, verify_sidecars=True)
             self.assertTrue(tarball.is_file())
-            self.assertTrue((out_dir / "m80-linux-x86_64.tar.gz.sha256").is_file())
-            self.assertTrue((out_dir / "install.sh").is_file())
-            self.assertTrue((out_dir / "install.sh.sha256").is_file())
-            self.assertTrue((out_dir / "m80-linux-x86_64.bundle.json").is_file())
-            self.assertTrue((out_dir / "m80-linux-x86_64.bundle.json.sha256").is_file())
+            self.assertTrue((out_dir / f"{BUNDLE_NAME}.sha256").is_file())
+            self.assertTrue((out_dir / INSTALL_NAME).is_file())
+            self.assertTrue((out_dir / f"{INSTALL_NAME}.sha256").is_file())
+            self.assertTrue((out_dir / METADATA_NAME).is_file())
+            self.assertTrue((out_dir / f"{METADATA_NAME}.sha256").is_file())
+            self.assertTrue((out_dir / ASSET_INDEX_NAME).is_file())
+            self.assertTrue((out_dir / f"{ASSET_INDEX_NAME}.sha256").is_file())
             self.assertTrue((out_dir / "SHA256SUMS").is_file())
             self.assertEqual(file_mode(tarball), 0o644)
-            self.assertEqual(file_mode(out_dir / "install.sh"), 0o755)
-            self.assertEqual(file_mode(out_dir / "install.sh.sha256"), 0o644)
-            self.assertEqual(file_mode(out_dir / "m80-linux-x86_64.bundle.json"), 0o644)
-            self.assertEqual(file_mode(out_dir / "m80-linux-x86_64.bundle.json.sha256"), 0o644)
+            self.assertEqual(file_mode(out_dir / INSTALL_NAME), 0o755)
+            self.assertEqual(file_mode(out_dir / f"{INSTALL_NAME}.sha256"), 0o644)
+            self.assertEqual(file_mode(out_dir / METADATA_NAME), 0o644)
+            self.assertEqual(file_mode(out_dir / f"{METADATA_NAME}.sha256"), 0o644)
+            self.assertEqual(file_mode(out_dir / ASSET_INDEX_NAME), 0o644)
+            self.assertEqual(file_mode(out_dir / f"{ASSET_INDEX_NAME}.sha256"), 0o644)
             self.assertEqual(file_mode(out_dir / "SHA256SUMS"), 0o644)
             with tarfile.open(tarball, "r:gz") as tar:
                 names = set(tar.getnames())
@@ -77,9 +85,34 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(modes["install.sh"], 0o755)
             self.assertEqual(modes["artifacts/output.ext4"], 0o644)
             self.assertEqual(
-                json.loads((out_dir / "m80-linux-x86_64.bundle.json").read_text()),
+                json.loads((out_dir / METADATA_NAME).read_text()),
                 metadata,
             )
+            index = json.loads((out_dir / ASSET_INDEX_NAME).read_text())
+            self.assertEqual(index["schema_version"], 1)
+            self.assertEqual(index["release_tag"], "v0.0.0")
+            self.assertEqual(len(index["assets"]), 1)
+            asset = index["assets"][0]
+            self.assertEqual(asset["name"], BUNDLE_NAME)
+            self.assertEqual(
+                asset["url"],
+                f"https://github.com/moradology/m80/releases/download/v0.0.0/{BUNDLE_NAME}",
+            )
+            self.assertEqual(asset["sha256"], sha256(tarball))
+            self.assertEqual(asset["size_bytes"], tarball.stat().st_size)
+            self.assertEqual(asset["metadata_name"], METADATA_NAME)
+            self.assertEqual(asset["metadata_sha256"], sha256(out_dir / METADATA_NAME))
+            self.assertEqual(asset["checksum_name"], f"{BUNDLE_NAME}.sha256")
+            self.assertIsNone(asset["signature_name"])
+            self.assertIsNone(asset["attestation_name"])
+            self.assertEqual(asset["target"], "linux-x86_64")
+            self.assertEqual(asset["os"], "linux")
+            self.assertEqual(asset["arch"], "x86_64")
+            self.assertEqual(asset["image_kind"], "minimal")
+            self.assertEqual(asset["m80_version"], "v0.0.0")
+            self.assertEqual(asset["guest_protocol_version"], 1)
+            self.assertEqual(asset["manifest_schema_version"], 5)
+            self.assertEqual(asset["expected_firecracker_version"], "v1.15.1")
 
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -413,11 +446,12 @@ class ReleaseBundleTest(unittest.TestCase):
             ("m80-linux-x86_64.tar.gz.sha256", "m80-linux-x86_64.tar.gz", "checksum sidecar mismatch"),
             ("install.sh.sha256", "install.sh", "checksum sidecar mismatch"),
             (
-                "m80-linux-x86_64.bundle.json.sha256",
-                "m80-linux-x86_64.bundle.json",
+                f"{METADATA_NAME}.sha256",
+                METADATA_NAME,
                 "checksum sidecar mismatch",
             ),
-            ("SHA256SUMS", "install.sh", "public SHA256SUMS hash mismatch for install.sh"),
+            (f"{ASSET_INDEX_NAME}.sha256", ASSET_INDEX_NAME, "checksum sidecar mismatch"),
+            ("SHA256SUMS", INSTALL_NAME, f"public SHA256SUMS hash mismatch for {INSTALL_NAME}"),
         ]
         for sidecar, asset_name, expected_error in cases:
             with self.subTest(sidecar=sidecar), tempfile.TemporaryDirectory() as tmp:
@@ -450,6 +484,78 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("public sidecar mode mismatch for install.sh", result.stderr)
+
+    def test_verifier_rejects_asset_index_missing_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            index_path = root / "out" / ASSET_INDEX_NAME
+            index = json.loads(index_path.read_text())
+            index["assets"] = []
+            rewrite_asset_index(root / "out", index)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("asset index missing default bundle", result.stderr)
+
+    def test_verifier_rejects_asset_index_wrong_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"sha256": "0" * 64})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("asset index sha256 mismatch", result.stderr)
+
+    def test_verifier_rejects_asset_index_wrong_tuple(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"target": "linux-aarch64", "arch": "aarch64"})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("asset index missing default bundle", result.stderr)
+
+    def test_verifier_rejects_asset_index_duplicate_tuple(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            index_path = root / "out" / ASSET_INDEX_NAME
+            index = json.loads(index_path.read_text())
+            index["assets"].append(dict(index["assets"][0]))
+            rewrite_asset_index(root / "out", index)
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("asset index duplicate default bundle", result.stderr)
+
+    def test_verifier_rejects_asset_index_missing_checksum_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            (root / "out" / f"{ASSET_INDEX_NAME}.sha256").unlink()
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"missing checksum sidecar: {ASSET_INDEX_NAME}.sha256", result.stderr)
+
+    def test_verifier_rejects_asset_index_stale_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"m80_version": "v9.9.9"})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("asset index m80_version mismatch", result.stderr)
 
 
 def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> dict[str, Path]:
@@ -568,6 +674,28 @@ def rewrite_json_bytes(data: bytes, updates: dict) -> bytes:
     payload = json.loads(data.decode("utf-8"))
     payload.update(updates)
     return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+
+
+def rewrite_asset_index_asset(out_dir: Path, updates: dict) -> None:
+    index_path = out_dir / ASSET_INDEX_NAME
+    index = json.loads(index_path.read_text())
+    index["assets"][0].update(updates)
+    rewrite_asset_index(out_dir, index)
+
+
+def rewrite_asset_index(out_dir: Path, index: dict) -> None:
+    index_path = out_dir / ASSET_INDEX_NAME
+    index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n")
+    write_sha256_sidecar(out_dir / f"{ASSET_INDEX_NAME}.sha256", index_path, ASSET_INDEX_NAME)
+    write_public_sha256s(
+        out_dir / "SHA256SUMS",
+        [
+            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
+            (INSTALL_NAME, out_dir / INSTALL_NAME),
+            (METADATA_NAME, out_dir / METADATA_NAME),
+            (ASSET_INDEX_NAME, index_path),
+        ],
+    )
 
 
 def write_executable(path: Path, text: str) -> None:
@@ -705,6 +833,17 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def write_sha256_sidecar(path: Path, asset: Path, asset_name: str) -> None:
+    path.write_text(f"{sha256(asset)}  {asset_name}\n")
+    path.chmod(0o644)
+
+
+def write_public_sha256s(path: Path, assets: list[tuple[str, Path]]) -> None:
+    lines = [f"{sha256(asset)}  {name}\n" for name, asset in assets]
+    path.write_text("".join(lines))
+    path.chmod(0o644)
 
 
 class BytesReader:

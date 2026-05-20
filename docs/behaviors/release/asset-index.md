@@ -5,6 +5,10 @@ quickstart/bootstrapper code select a bundle without inferring semantics from a
 filename. It is consumed before bundle download for the common path and is not
 used when an operator provides an explicit bundle URL override.
 
+The published index is `m80-release-assets.json`. Its checksum sidecar is
+`m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
+alongside the bundle tarball, `install.sh`, and the metadata sidecar.
+
 The index uses `schema_version: 1` and has one top-level `release_tag`. Every
 bundle row records:
 
@@ -39,3 +43,15 @@ non-SHA-256 digest strings, zero size/schema/protocol numbers, and rows whose
 `target` does not match `os` plus `arch`. This keeps the index strict enough
 for future OS, architecture, or image-kind expansion without changing the
 README quickstart command.
+
+Release publication must generate the index from the actual dist files, upload
+it with the rest of the release assets, then re-download the public release and
+validate the index against the uploaded tarball, metadata sidecar, checksum
+sidecars, and `SHA256SUMS`. A new architecture or image kind is a new row in
+the index, not a new README quickstart command.
+
+The current publisher is checksum-covered: `signature_name` and
+`attestation_name` are nullable until release signing/attestation material is
+wired into the release workflow. Signed-release verification must fail closed
+rather than accepting missing or stale proof references once that material
+exists.

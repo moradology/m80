@@ -97,7 +97,11 @@ The release asset index is the machine-readable selector for public bundles.
 It lists every bundle by OS, architecture, image kind, release tag, m80 version,
 guest protocol, manifest schema, expected Firecracker version, tarball digest,
 metadata digest, and integrity-material references. The default Linux
-quickstart tuple is `linux` / `x86_64` / `minimal`.
+quickstart tuple is `linux` / `x86_64` / `minimal`. The published file is
+`m80-release-assets.json`; its checksum sidecar and the public `SHA256SUMS`
+cover the index before the publish job re-downloads and validates it. The
+current publisher leaves signature/attestation reference fields nullable until
+the release signing lane defines and emits those proof assets.
 
 To add a new architecture or image kind, add a new asset-index row and publish
 the matching bundle, metadata sidecar, checksums, and integrity material. The

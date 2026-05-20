@@ -16,13 +16,17 @@ release tag. For manual dispatches, it is the selected ref.
 
 `build-release-artifacts` has `contents: read`. It checks out the repository,
 installs the pinned Rust toolchain from this repo's toolchain policy, builds
-the release artifacts, packages the tarball/checksum pair, and uploads only a
-workflow artifact.
+the release artifacts, packages the release bundle plus
+`m80-release-assets.json`, and uploads only a workflow artifact.
 
 `publish-release-artifacts` runs only for tag refs after the build job
 finishes. It is the only job with `contents: write`. It downloads the workflow
-artifact and uploads the exact files to the matching GitHub Release with
-`gh release upload`.
+artifact, uploads the exact files to the matching GitHub Release with
+`gh release upload`, re-downloads those public assets, and runs
+`scripts/verify-release-bundle.py --verify-sidecars` against the downloaded
+bundle so the published asset index is checked against the uploaded tarball,
+metadata, checksums, and installer before any later latest-promotion lane can
+trust it.
 
 ## Authority Boundary
 

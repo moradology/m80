@@ -16,7 +16,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   ARTIFACT_DIR: /tmp/m80-release-artifacts
-  ARTIFACT_NAME: m80-linux-x86_64-minimal-artifacts
+  DIST_DIR: /tmp/m80-release-dist
+  ARTIFACT_NAME: m80-release-dist
 
 jobs:
   build-release-artifacts:
@@ -41,6 +42,9 @@ jobs:
         run: |
           cargo build -p m80-image-build --release
           cargo build -p m80-guestd --release --target x86_64-unknown-linux-musl
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            M80_RELEASE_TAG="$GITHUB_REF_NAME" cargo build -p m80-cli -p m80-jailer-harden -p m80-net-helper --release
+          fi
 
       - name: Write minimal image config
         run: |
@@ -67,22 +71,30 @@ jobs:
           sudo chown -R "$USER:$USER" "$ARTIFACT_DIR"
           target/release/m80-image-build verify --rootfs "$ARTIFACT_DIR/output.ext4"
 
-      - name: Package tarball and checksums
+      - name: Package release bundle and asset index
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          cd "$ARTIFACT_DIR"
-          sha256sum vmlinux output.ext4 output.ext4.manifest.json m80-guestd > SHA256SUMS
-          tar -czf "/tmp/${ARTIFACT_NAME}.tar.gz" \
-            vmlinux output.ext4 output.ext4.manifest.json m80-guestd SHA256SUMS
-          cd /tmp
-          sha256sum "${ARTIFACT_NAME}.tar.gz" > "${ARTIFACT_NAME}.tar.gz.sha256"
+          scripts/package-release-bundle.py \
+            --release-tag "$GITHUB_REF_NAME" \
+            --target linux-x86_64 \
+            --image-kind minimal \
+            --m80-bin target/release/m80 \
+            --jailer-harden-bin target/release/m80-jailer-harden \
+            --net-helper-bin target/release/m80-net-helper \
+            --kernel "$ARTIFACT_DIR/vmlinux" \
+            --rootfs "$ARTIFACT_DIR/output.ext4" \
+            --rootfs-manifest "$ARTIFACT_DIR/output.ext4.manifest.json" \
+            --build-receipt "$ARTIFACT_DIR/output.ext4.build-receipt.json" \
+            --guestd "$ARTIFACT_DIR/m80-guestd" \
+            --install-sh scripts/quickstart.sh \
+            --out-dir "$DIST_DIR"
 
       - name: Upload workflow artifact
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: |
-            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz
-            /tmp/${{ env.ARTIFACT_NAME }}.tar.gz.sha256
+          path: /tmp/m80-release-dist/*
 
   publish-release-artifacts:
     if: startsWith(github.ref, 'refs/tags/')
@@ -91,6 +103,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
@@ -101,6 +115,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$GITHUB_REF_NAME" \
-            /tmp/m80-release-upload/${ARTIFACT_NAME}.tar.gz \
-            /tmp/m80-release-upload/${ARTIFACT_NAME}.tar.gz.sha256 \
+            /tmp/m80-release-upload/m80-linux-x86_64.tar.gz \
+            /tmp/m80-release-upload/m80-linux-x86_64.tar.gz.sha256 \
+            /tmp/m80-release-upload/m80-linux-x86_64.bundle.json \
+            /tmp/m80-release-upload/m80-linux-x86_64.bundle.json.sha256 \
+            /tmp/m80-release-upload/m80-release-assets.json \
+            /tmp/m80-release-upload/m80-release-assets.json.sha256 \
+            /tmp/m80-release-upload/install.sh \
+            /tmp/m80-release-upload/install.sh.sha256 \
+            /tmp/m80-release-upload/SHA256SUMS \
             --clobber
+
+      - name: Re-download and validate published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/m80-release-redownload
+          gh release download "$GITHUB_REF_NAME" \
+            --dir /tmp/m80-release-redownload \
+            --pattern m80-linux-x86_64.tar.gz \
+            --pattern m80-linux-x86_64.tar.gz.sha256 \
+            --pattern m80-linux-x86_64.bundle.json \
+            --pattern m80-linux-x86_64.bundle.json.sha256 \
+            --pattern m80-release-assets.json \
+            --pattern m80-release-assets.json.sha256 \
+            --pattern install.sh \
+            --pattern install.sh.sha256 \
+            --pattern SHA256SUMS
+          scripts/verify-release-bundle.py \
+            /tmp/m80-release-redownload/m80-linux-x86_64.tar.gz \
+            --release-tag "$GITHUB_REF_NAME" \
+            --verify-sidecars
