@@ -25,7 +25,8 @@ jobs:
 
       - name: release script tests
         run: |
-          python3 -m py_compile scripts/package-release-bundle.py scripts/test-release-bundle.py scripts/verify-release-bundle.py scripts/verify-release-integrity.py
+          python3 -m py_compile scripts/release_url_contract.py scripts/render-release-install-snippets.py scripts/test-release-url-contract.py scripts/package-release-bundle.py scripts/test-release-bundle.py scripts/verify-release-bundle.py scripts/verify-release-integrity.py scripts/write-release-attestation-metadata.py
+          python3 scripts/test-release-url-contract.py
           python3 scripts/test-release-bundle.py
 
       - name: Install host test tools

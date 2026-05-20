@@ -278,7 +278,8 @@ fn parse_supported_remote_url(
         "https" | "http" => Err(FcError::Config(ConfigError::InvalidValue {
             field: "bundle-url",
             reason: format!(
-                "remote bundle URL must be a moradology/m80 GitHub release asset or local test fixture: {url}"
+                "remote bundle URL must be a {} GitHub release asset or local test fixture: {url}",
+                crate::release_urls::release_repository()
             ),
         })),
         _ => Err(FcError::UnsupportedOperation {
@@ -372,7 +373,9 @@ fn validate_final_url(initial: &RemoteUrl, final_url: &RemoteUrl) -> Result<(), 
 fn is_github_release_url(url: &RemoteUrl) -> bool {
     url.scheme == "https"
         && url.host == "github.com"
-        && url.path.starts_with("/moradology/m80/releases/download/")
+        && url
+            .path
+            .starts_with(&crate::release_urls::release_download_path_prefix())
 }
 
 fn is_github_asset_redirect_host(host: &str) -> bool {
@@ -492,7 +495,7 @@ mod tests {
         );
 
         preflight_attestation_verifier_for_bundle_url_with_gh(
-            "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz",
+            &crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
             gh.to_str().unwrap(),
         )
         .unwrap();
@@ -508,7 +511,7 @@ mod tests {
         );
 
         let err = preflight_attestation_verifier_for_bundle_url_with_gh(
-            "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz",
+            &crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
             gh.to_str().unwrap(),
         )
         .unwrap_err();

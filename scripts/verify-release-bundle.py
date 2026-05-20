@@ -11,6 +11,8 @@ import re
 import tarfile
 import tomllib
 
+from release_url_contract import release_asset_url
+
 
 BUNDLE_SCHEMA_VERSION = 1
 ASSET_INDEX_SCHEMA_VERSION = 1
@@ -22,7 +24,6 @@ METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
-GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
 BOOTSTRAP_SELECTOR_COLUMNS = [
     "os",
     "arch",
@@ -565,10 +566,6 @@ def selector_value(value: object, field: str) -> str:
 
 def format_tuple(key: tuple[str, str, str]) -> str:
     return "/".join(key)
-
-
-def release_asset_url(release_tag: str, asset_name: str) -> str:
-    return f"{GITHUB_RELEASE_BASE_URL}/{release_tag}/{asset_name}"
 
 
 def verify_single_sha256(sidecar: Path, expected_name: str, asset: Path) -> None:

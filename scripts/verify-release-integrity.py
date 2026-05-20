@@ -13,12 +13,13 @@ import subprocess
 import tomllib
 
 from release_attestation_verifier import preflight_gh_attestation_verifier
+from release_url_contract import release_repository
 
 
 SCHEMA_VERSION = 1
 BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
 MECHANISM = "github-artifact-attestation"
-REPOSITORY = "moradology/m80"
+REPOSITORY = release_repository()
 TARGET = "linux-x86_64"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"

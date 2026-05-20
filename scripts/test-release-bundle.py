@@ -411,7 +411,8 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_ci_runs_release_script_tests(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
 
-        self.assertIn("python3 -m py_compile scripts/package-release-bundle.py", workflow)
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/package-release-bundle.py")
+        self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
         self.assertIn("python3 scripts/test-release-bundle.py", workflow)
         self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
         self.assertIn("uses: actions/checkout@v6", workflow)

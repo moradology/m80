@@ -102,7 +102,7 @@ impl fmt::Display for AssetIndexError {
 }
 
 fn release_install_url(release_tag: &str) -> String {
-    format!("https://github.com/moradology/m80/releases/download/{release_tag}/install.sh")
+    crate::release_urls::release_install_url(release_tag)
 }
 
 impl fmt::Display for AssetIndexFetchError {

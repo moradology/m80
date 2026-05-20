@@ -27,7 +27,7 @@ pub(super) struct VerifiedAssetIndex {
 }
 
 pub(super) fn github_release_asset_index_url(release_tag: &str) -> String {
-    format!("https://github.com/moradology/m80/releases/download/{release_tag}/{ASSET_INDEX_NAME}")
+    crate::release_urls::release_asset_url(release_tag, ASSET_INDEX_NAME)
 }
 
 pub(super) fn fetch_verified_asset_index(
@@ -350,7 +350,10 @@ fn parse_supported_remote_url(
         }
         "https" | "http" => Err(AssetIndexFetchError::UnsupportedUrl {
             url: url.to_owned(),
-            reason: "release asset index URL must be the pinned moradology/m80 GitHub release index or a local test fixture".to_owned(),
+            reason: format!(
+                "release asset index URL must be the pinned {} GitHub release index or a local test fixture",
+                crate::release_urls::release_repository()
+            ),
             context: context.clone(),
         }),
         _ => Err(AssetIndexFetchError::UnsupportedUrl {
@@ -459,8 +462,7 @@ fn validate_final_index_url(
 }
 
 fn is_github_release_asset_index_url(url: &RemoteUrl, release_tag: &str) -> bool {
-    let release_path =
-        format!("/moradology/m80/releases/download/{release_tag}/{ASSET_INDEX_NAME}");
+    let release_path = crate::release_urls::release_asset_path(release_tag, ASSET_INDEX_NAME);
     url.scheme == "https"
         && url.host == "github.com"
         && (url.path == release_path || url.path == format!("{release_path}.sha256"))

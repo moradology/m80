@@ -16,6 +16,8 @@ import tarfile
 import tempfile
 import tomllib
 
+from release_url_contract import public_release_root, release_asset_url, release_repository
+
 
 BUNDLE_SCHEMA_VERSION = 1
 ASSET_INDEX_SCHEMA_VERSION = 1
@@ -28,11 +30,12 @@ ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
 INSTALL_NAME = "install.sh"
 INTEGRITY_NAME = "m80-release-integrity.json"
-GITHUB_RELEASE_BASE_URL = "https://github.com/moradology/m80/releases/download"
 GUESTD_VERSION_RE = re.compile(r"^m80-guestd (?P<package_version>\S+) \(proto v(?P<protocol_version>\d+)\)\s*$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 INSTALL_TEMPLATE_TOKENS = {
     "@M80_RELEASE_TAG@",
+    "@M80_PUBLIC_RELEASE_OWNER@",
+    "@M80_PUBLIC_RELEASE_REPO@",
 }
 REQUIRED_MINIMAL_ARTIFACTS = {"kernel_image", "output_rootfs_image", "daemon_binary_path"}
 INTEGRITY_SUBJECT_KINDS = [
@@ -438,7 +441,12 @@ def render_install_script(
     require(template.is_file(), f"missing required input: {template}")
     text = template.read_text()
     validate_install_template(template, text)
-    rendered = text.replace("@M80_RELEASE_TAG@", release_tag)
+    release_root = public_release_root()
+    rendered = (
+        text.replace("@M80_RELEASE_TAG@", release_tag)
+        .replace("@M80_PUBLIC_RELEASE_OWNER@", release_root.owner)
+        .replace("@M80_PUBLIC_RELEASE_REPO@", release_root.repo)
+    )
     require(
         not any(token in rendered for token in INSTALL_TEMPLATE_TOKENS),
         "install.sh template placeholders were not fully rendered",
@@ -618,7 +626,7 @@ def release_integrity_material(
     return {
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
-        "repository": "moradology/m80",
+        "repository": release_repository(),
         "release_tag": args.release_tag,
         "commit_sha": args.commit_sha,
         "target": args.target,
@@ -641,10 +649,6 @@ def release_integrity_subject(path: Path, name: str, kind: str) -> dict:
         "sha256": sha256(path),
         "size_bytes": path.stat().st_size,
     }
-
-
-def release_asset_url(release_tag: str, asset_name: str) -> str:
-    return f"{GITHUB_RELEASE_BASE_URL}/{release_tag}/{asset_name}"
 
 
 def write_json(path: Path, payload: dict) -> None:

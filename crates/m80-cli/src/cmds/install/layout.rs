@@ -388,9 +388,6 @@ mod tests {
     use super::*;
 
     static ATTESTATION_ENV_LOCK: Mutex<()> = Mutex::new(());
-    const OFFICIAL_BUNDLE_URL: &str =
-        "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz";
-
     #[test]
     fn local_file_url_requires_absolute_path() {
         let tmp = tempfile::tempdir().unwrap();
@@ -456,15 +453,17 @@ mod tests {
     }
 
     fn official_release_plan(install_root: &Path) -> InstallPlan {
+        let bundle_url =
+            crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz");
         InstallPlan {
             dry_run: false,
             install_root: install_root.display().to_string(),
             active_pointer: install_root.join("active").display().to_string(),
             source: super::super::SourcePlan {
                 kind: SourceKind::BundleUrl,
-                selector: OFFICIAL_BUNDLE_URL.to_owned(),
+                selector: bundle_url.clone(),
                 release_tag: Some("v0.0.0".to_owned()),
-                bundle_url: Some(OFFICIAL_BUNDLE_URL.to_owned()),
+                bundle_url: Some(bundle_url),
             },
             binary_version: "v0.0.0".to_owned(),
             binary_release_tag: Some("v0.0.0".to_owned()),

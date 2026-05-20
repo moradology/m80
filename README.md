@@ -36,6 +36,10 @@ curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh
 m80 run -- echo hello
 ```
 
+The install snippets are checked against the public release URL contract in
+[`docs/behaviors/release/public-release-root.env`](docs/behaviors/release/public-release-root.env)
+by [`scripts/render-release-install-snippets.py`](scripts/render-release-install-snippets.py).
+
 The installer is a rendered asset from the selected release. It uses that
 pinned release tag to download the release asset index and shell-safe bootstrap
 selector, selects the matching Linux host bundle, verifies checksums before

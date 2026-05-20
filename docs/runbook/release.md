@@ -28,6 +28,20 @@ Packaging must refuse to publish a bundle when `version_status` is `dev` or
 `mismatch`. The installer and quickstart resolver must not use `releases/latest`
 from a dev build; dev builds require an explicit local bundle or artifact URL.
 
+## Public Install URLs
+
+The public GitHub release owner/repo source is
+`docs/behaviors/release/public-release-root.env`. The README and this runbook
+must use snippets rendered by `scripts/render-release-install-snippets.py`:
+
+```sh
+curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
+```
+
+Do not hand-write alternate owners, raw `main` URLs, or private checkout URLs
+for public install instructions.
+
 ## Verification
 
 The release identity is pinned by:

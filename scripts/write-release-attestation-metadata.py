@@ -12,11 +12,12 @@ import re
 import subprocess
 
 from release_attestation_verifier import preflight_gh_attestation_verifier
+from release_url_contract import release_repository
 
 
 SCHEMA_VERSION = 1
 MECHANISM = "github-artifact-attestation"
-REPOSITORY = "moradology/m80"
+REPOSITORY = release_repository()
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 TRUST_POLICY_FIELDS = {

@@ -18,6 +18,7 @@ mod json;
 mod profile;
 mod release;
 mod release_asset_index;
+mod release_urls;
 mod request_id;
 
 pub use args::{
