@@ -141,7 +141,7 @@ impl HostPrerequisiteFailureKind {
             PreflightError::KernelModulesMissing { .. } => Self::KernelModulesMissing,
             PreflightError::PrivilegeUnavailable { .. } => Self::PrivilegeUnavailable,
             PreflightError::CapabilityRead(_) => Self::CapabilityRead,
-            PreflightError::FirecrackerBinaryNotFound => Self::FirecrackerBinaryNotFound,
+            PreflightError::FirecrackerBinaryNotFound { .. } => Self::FirecrackerBinaryNotFound,
             PreflightError::FirecrackerVersionMismatch { .. } => Self::FirecrackerVersionMismatch,
             PreflightError::FirecrackerVersionCommandFailed { .. } => {
                 Self::FirecrackerVersionCommandFailed
@@ -158,14 +158,14 @@ impl HostPrerequisiteFailureKind {
             PreflightError::FirecrackerSeccompFilterEmpty { .. } => {
                 Self::FirecrackerSeccompFilterEmpty
             }
-            PreflightError::JailerBinaryNotFound => Self::JailerBinaryNotFound,
+            PreflightError::JailerBinaryNotFound { .. } => Self::JailerBinaryNotFound,
             PreflightError::JailerVersionCommandFailed { .. } => Self::JailerVersionCommandFailed,
             PreflightError::JailerVersionOutputMalformed { .. } => {
                 Self::JailerVersionOutputMalformed
             }
             PreflightError::JailerVersionMismatch { .. } => Self::JailerVersionMismatch,
-            PreflightError::JailerHardenBinaryNotFound => Self::JailerHardenBinaryNotFound,
-            PreflightError::NetHelperBinaryNotFound => Self::NetHelperBinaryNotFound,
+            PreflightError::JailerHardenBinaryNotFound { .. } => Self::JailerHardenBinaryNotFound,
+            PreflightError::NetHelperBinaryNotFound { .. } => Self::NetHelperBinaryNotFound,
             PreflightError::HostBinaryManifest(_) => Self::HostBinaryManifest,
             PreflightError::HostBinaryMissing { .. } => Self::HostBinaryMissing,
             PreflightError::HostBinaryDuplicate { .. } => Self::HostBinaryDuplicate,

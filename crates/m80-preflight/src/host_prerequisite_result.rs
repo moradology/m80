@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CheckRow, Discovery};
+use crate::{CheckRow, Discovery, PreflightError};
 
 mod check_id;
 mod failure;
@@ -14,6 +14,11 @@ pub use failure::HostPrerequisiteFailureKind;
 
 /// Current schema version for [`HostPrerequisiteResult`].
 pub const HOST_PREREQUISITE_RESULT_SCHEMA_VERSION: u32 = 1;
+
+const HOST_SETUP_DOC: &str = "docs/ops/host-setup.md";
+const BINARY_INSTALLATION_DOC: &str = "docs/ops/binary-installation.md";
+const HOST_PREREQUISITE_POLICY_DOC: &str = "docs/behaviors/release/host-prerequisite-policy.md";
+const FIRECRACKER_CVE_FLOOR_DOC: &str = "docs/security/firecracker-cve-floor.md";
 
 /// Machine-readable host-prerequisite proof shared by install, preflight,
 /// diagnostics, and release proof artifacts.
@@ -96,6 +101,12 @@ impl HostPrerequisiteResult {
         Ok(result)
     }
 
+    /// Build a one-check failed result for a preflight verifier error.
+    #[must_use]
+    pub fn from_preflight_error(error: &PreflightError) -> Option<Self> {
+        HostPrerequisiteCheck::from_preflight_error(error).map(|check| Self::new(vec![check]))
+    }
+
     /// Validate schema version and failure remediation invariants.
     pub fn validate(&self) -> Result<(), HostPrerequisiteResultError> {
         if self.schema_version != HOST_PREREQUISITE_RESULT_SCHEMA_VERSION {
@@ -154,6 +165,12 @@ pub struct HostPrerequisiteCheck {
     /// Final host path observed or verified by the check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_path: Option<PathBuf>,
+    /// Expected non-version scalar value, when the check has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_value: Option<String>,
+    /// Actual observed non-version scalar value, when the check has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actual_value: Option<String>,
     /// Expected version, when the check has a version source of truth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_version: Option<String>,
@@ -196,6 +213,8 @@ impl HostPrerequisiteCheck {
             check_id,
             check_name: check_id.check_name().to_string(),
             final_path: None,
+            expected_value: None,
+            actual_value: None,
             expected_version: None,
             actual_version: None,
             expected_sha256: None,
@@ -225,6 +244,21 @@ impl HostPrerequisiteCheck {
         }
     }
 
+    /// Project a typed preflight error into the host-prerequisite diagnostic
+    /// schema used by JSON preflight output, release proofs, and text repair
+    /// rendering.
+    #[must_use]
+    pub fn from_preflight_error(error: &PreflightError) -> Option<Self> {
+        let failure_variant = HostPrerequisiteFailureKind::from_preflight_error(error)?;
+        let mut check = Self::fail(
+            check_id_for_preflight_error(error),
+            failure_variant,
+            remediation_for_preflight_error(error),
+        );
+        apply_preflight_error_fields(&mut check, error);
+        Some(check)
+    }
+
     /// Override the human label while preserving the stable machine identity.
     #[must_use]
     pub fn with_check_name(mut self, check_name: impl Into<String>) -> Self {
@@ -236,6 +270,14 @@ impl HostPrerequisiteCheck {
     #[must_use]
     pub fn with_final_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.final_path = Some(path.into());
+        self
+    }
+
+    /// Attach expected and actual non-version scalar facts.
+    #[must_use]
+    pub fn with_values(mut self, expected: impl Into<String>, actual: impl Into<String>) -> Self {
+        self.expected_value = Some(expected.into());
+        self.actual_value = Some(actual.into());
         self
     }
 
@@ -282,6 +324,400 @@ impl HostPrerequisiteCheck {
             });
         }
         Ok(Self::pass(row.check_id).with_check_name(row.label.clone()))
+    }
+}
+
+fn check_id_for_preflight_error(error: &PreflightError) -> HostPrerequisiteCheckId {
+    match error {
+        PreflightError::UnsupportedHostPlatform { .. } => HostPrerequisiteCheckId::OsGate,
+        PreflightError::HostKernelUnsupported { .. } => HostPrerequisiteCheckId::HostKernelFloor,
+        PreflightError::KvmUnavailable { .. } | PreflightError::KvmNotWritable { .. } => {
+            HostPrerequisiteCheckId::Kvm
+        }
+        PreflightError::KvmCpuExtensionMissing => HostPrerequisiteCheckId::KvmCpuExtensions,
+        PreflightError::InvalidCgroupMode { .. } | PreflightError::CgroupV2Unavailable => {
+            HostPrerequisiteCheckId::CgroupMode
+        }
+        PreflightError::InvalidJailIdentity { .. }
+        | PreflightError::JailIdentityUnavailable { .. } => HostPrerequisiteCheckId::JailerIdentity,
+        PreflightError::CpuVulnerabilityDetected { .. } => {
+            HostPrerequisiteCheckId::CpuVulnerabilities
+        }
+        PreflightError::VsockUnavailable
+        | PreflightError::TunUnavailable
+        | PreflightError::NfConntrackUnavailable
+        | PreflightError::BridgeNetfilterUnavailable
+        | PreflightError::BridgeNfCallIptablesDisabled { .. }
+        | PreflightError::KernelModulesMissing { .. } => HostPrerequisiteCheckId::KernelModules,
+        PreflightError::NfConntrackCapacityTooLow { .. }
+        | PreflightError::InvalidNfConntrackMax { .. }
+        | PreflightError::InvalidExpectedConcurrentVms { .. } => {
+            HostPrerequisiteCheckId::ConntrackCapacity
+        }
+        PreflightError::PrivilegeUnavailable { .. } | PreflightError::CapabilityRead(_) => {
+            HostPrerequisiteCheckId::Privilege
+        }
+        PreflightError::FirecrackerBinaryNotFound { .. }
+        | PreflightError::FirecrackerVersionMismatch { .. }
+        | PreflightError::FirecrackerVersionCommandFailed { .. }
+        | PreflightError::FirecrackerVersionOutputMalformed { .. }
+        | PreflightError::FirecrackerCveFloorViolation { .. } => {
+            HostPrerequisiteCheckId::FirecrackerBinary
+        }
+        PreflightError::FirecrackerSeccompFilterNotFound { .. }
+        | PreflightError::FirecrackerSeccompFilterEmpty { .. } => {
+            HostPrerequisiteCheckId::FirecrackerSeccompFilter
+        }
+        PreflightError::JailerBinaryNotFound { .. }
+        | PreflightError::JailerVersionCommandFailed { .. }
+        | PreflightError::JailerVersionOutputMalformed { .. }
+        | PreflightError::JailerVersionMismatch { .. } => HostPrerequisiteCheckId::JailerBinary,
+        PreflightError::JailerHardenBinaryNotFound { .. } => {
+            HostPrerequisiteCheckId::JailerHardeningWrapper
+        }
+        PreflightError::NetHelperBinaryNotFound { .. } => HostPrerequisiteCheckId::NetworkHelper,
+        PreflightError::HostBinaryManifest(_)
+        | PreflightError::HostBinaryMissing { .. }
+        | PreflightError::HostBinaryDuplicate { .. } => HostPrerequisiteCheckId::HostBinaryManifest,
+        PreflightError::HostBinaryPathMismatch { name, .. }
+        | PreflightError::BinaryHashMismatch { name, .. }
+        | PreflightError::HostBinaryPermission { name, .. }
+        | PreflightError::HostBinaryVersionCommandFailed { name, .. }
+        | PreflightError::HostBinaryVersionMismatch { name, .. } => {
+            check_id_for_host_binary_name(name)
+        }
+        PreflightError::HostLaunchMaterialMissing { .. }
+        | PreflightError::HostLaunchMaterialDuplicate { .. }
+        | PreflightError::HostLaunchMaterialPathMismatch { .. }
+        | PreflightError::HostLaunchMaterialHashMismatch { .. }
+        | PreflightError::HostLaunchMaterialPermission { .. }
+        | PreflightError::HostLaunchMaterialVersionMismatch { .. } => {
+            HostPrerequisiteCheckId::FirecrackerSeccompFilter
+        }
+        PreflightError::NonAbsolutePath { kind, .. } => check_id_for_non_absolute_kind(kind),
+        PreflightError::PathIo { path, .. } => check_id_for_path(path),
+        PreflightError::SystemIo { .. } => HostPrerequisiteCheckId::HostBinaryManifest,
+        _ => HostPrerequisiteCheckId::RootfsManifest,
+    }
+}
+
+fn check_id_for_host_binary_name(name: &str) -> HostPrerequisiteCheckId {
+    match name {
+        "firecracker" => HostPrerequisiteCheckId::FirecrackerBinary,
+        "jailer" => HostPrerequisiteCheckId::JailerBinary,
+        "m80_jailer_harden" => HostPrerequisiteCheckId::JailerHardeningWrapper,
+        "m80_net_helper" => HostPrerequisiteCheckId::NetworkHelper,
+        _ => HostPrerequisiteCheckId::HostBinaryManifest,
+    }
+}
+
+fn check_id_for_non_absolute_kind(kind: &str) -> HostPrerequisiteCheckId {
+    if kind.contains("firecracker_seccomp_filter") || kind.contains("launch material") {
+        HostPrerequisiteCheckId::FirecrackerSeccompFilter
+    } else if kind.contains("firecracker") {
+        HostPrerequisiteCheckId::FirecrackerBinary
+    } else if kind.contains("jailer") {
+        HostPrerequisiteCheckId::JailerBinary
+    } else if kind.contains("net_helper") {
+        HostPrerequisiteCheckId::NetworkHelper
+    } else if kind.contains("kernel") {
+        HostPrerequisiteCheckId::KernelImage
+    } else if kind.contains("rootfs") {
+        HostPrerequisiteCheckId::RootfsManifest
+    } else {
+        HostPrerequisiteCheckId::HostBinaryManifest
+    }
+}
+
+fn check_id_for_path(path: &std::path::Path) -> HostPrerequisiteCheckId {
+    match path.to_str() {
+        Some("/dev/kvm") => HostPrerequisiteCheckId::Kvm,
+        Some(value) if value.contains("seccomp") => {
+            HostPrerequisiteCheckId::FirecrackerSeccompFilter
+        }
+        Some(value) if value.contains("jailer") => HostPrerequisiteCheckId::JailerBinary,
+        Some(value) if value.contains("net-helper") || value.contains("net_helper") => {
+            HostPrerequisiteCheckId::NetworkHelper
+        }
+        Some(value) if value.contains("firecracker") => HostPrerequisiteCheckId::FirecrackerBinary,
+        Some(value) if value.contains("vmlinux") || value.contains("kernel") => {
+            HostPrerequisiteCheckId::KernelImage
+        }
+        Some(value) if value.contains("rootfs") || value.ends_with(".ext4") => {
+            HostPrerequisiteCheckId::RootfsManifest
+        }
+        _ => HostPrerequisiteCheckId::HostBinaryManifest,
+    }
+}
+
+fn remediation_for_preflight_error(error: &PreflightError) -> HostPrerequisiteRemediation {
+    match error {
+        PreflightError::KvmUnavailable { .. } | PreflightError::KvmNotWritable { .. } => {
+            HostPrerequisiteRemediation::policy_link("repair-kvm", HOST_SETUP_DOC)
+        }
+        PreflightError::CgroupV2Unavailable | PreflightError::InvalidCgroupMode { .. } => {
+            HostPrerequisiteRemediation::policy_link("repair-cgroup-mode", HOST_SETUP_DOC)
+        }
+        PreflightError::PrivilegeUnavailable { .. } | PreflightError::CapabilityRead(_) => {
+            HostPrerequisiteRemediation::policy_link("repair-privilege", HOST_SETUP_DOC)
+        }
+        PreflightError::FirecrackerCveFloorViolation { .. } => {
+            HostPrerequisiteRemediation::policy_link(
+                "upgrade-firecracker-cve-floor",
+                FIRECRACKER_CVE_FLOOR_DOC,
+            )
+        }
+        PreflightError::FirecrackerBinaryNotFound { .. }
+        | PreflightError::FirecrackerVersionMismatch { .. }
+        | PreflightError::FirecrackerVersionCommandFailed { .. }
+        | PreflightError::FirecrackerVersionOutputMalformed { .. }
+        | PreflightError::FirecrackerSeccompFilterNotFound { .. }
+        | PreflightError::FirecrackerSeccompFilterEmpty { .. }
+        | PreflightError::JailerBinaryNotFound { .. }
+        | PreflightError::JailerVersionCommandFailed { .. }
+        | PreflightError::JailerVersionOutputMalformed { .. }
+        | PreflightError::JailerVersionMismatch { .. } => HostPrerequisiteRemediation::policy_link(
+            "install-firecracker-prerequisites",
+            HOST_PREREQUISITE_POLICY_DOC,
+        ),
+        PreflightError::HostBinaryManifest(_)
+        | PreflightError::JailerHardenBinaryNotFound { .. }
+        | PreflightError::NetHelperBinaryNotFound { .. }
+        | PreflightError::HostBinaryMissing { .. }
+        | PreflightError::HostBinaryDuplicate { .. }
+        | PreflightError::HostBinaryPathMismatch { .. }
+        | PreflightError::BinaryHashMismatch { .. }
+        | PreflightError::HostBinaryPermission { .. }
+        | PreflightError::HostBinaryVersionCommandFailed { .. }
+        | PreflightError::HostBinaryVersionMismatch { .. }
+        | PreflightError::HostLaunchMaterialMissing { .. }
+        | PreflightError::HostLaunchMaterialDuplicate { .. }
+        | PreflightError::HostLaunchMaterialPathMismatch { .. }
+        | PreflightError::HostLaunchMaterialHashMismatch { .. }
+        | PreflightError::HostLaunchMaterialPermission { .. }
+        | PreflightError::HostLaunchMaterialVersionMismatch { .. } => {
+            HostPrerequisiteRemediation::policy_link(
+                "repair-host-binaries-manifest",
+                BINARY_INSTALLATION_DOC,
+            )
+        }
+        _ => HostPrerequisiteRemediation::policy_link("repair-host-setup", HOST_SETUP_DOC),
+    }
+}
+
+fn apply_preflight_error_fields(check: &mut HostPrerequisiteCheck, error: &PreflightError) {
+    match error {
+        PreflightError::UnsupportedHostPlatform { actual } => {
+            check.expected_value = Some("Linux".to_string());
+            check.actual_value = Some(actual.clone());
+        }
+        PreflightError::HostKernelUnsupported { actual, minimum } => {
+            check.expected_version = Some(minimum.clone());
+            check.actual_version = Some(actual.clone());
+        }
+        PreflightError::KvmUnavailable { path } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("present and writable".to_string());
+            check.actual_value = Some("missing".to_string());
+        }
+        PreflightError::KvmNotWritable { path } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("present and writable".to_string());
+            check.actual_value = Some("not writable".to_string());
+        }
+        PreflightError::KvmCpuExtensionMissing => {
+            check.expected_value = Some("vmx or svm".to_string());
+            check.actual_value = Some("missing".to_string());
+        }
+        PreflightError::InvalidCgroupMode { actual } => {
+            check.expected_value = Some("unified-v2 or disabled".to_string());
+            check.actual_value = Some(actual.clone());
+        }
+        PreflightError::CgroupV2Unavailable => {
+            check.expected_value = Some("unified cgroup v2".to_string());
+            check.actual_value = Some("unavailable".to_string());
+        }
+        PreflightError::InvalidJailIdentity { field, value } => {
+            check.expected_value = Some(format!("{field} u32"));
+            check.actual_value = Some(value.clone());
+        }
+        PreflightError::JailIdentityUnavailable { field, id } => {
+            check.expected_value = Some(format!("{field} present in host identity database"));
+            check.actual_value = Some(format!("{field} id {id} not found"));
+        }
+        PreflightError::CpuVulnerabilityDetected { id, detail } => {
+            check.expected_value = Some(format!("{id} mitigated"));
+            check.actual_value = Some(detail.clone());
+        }
+        PreflightError::VsockUnavailable => {
+            check.expected_value = Some("vhost-vsock available".to_string());
+            check.actual_value = Some("unavailable".to_string());
+        }
+        PreflightError::TunUnavailable => {
+            check.expected_value = Some("tun available".to_string());
+            check.actual_value = Some("unavailable".to_string());
+        }
+        PreflightError::NfConntrackUnavailable => {
+            check.expected_value = Some("nf_conntrack available".to_string());
+            check.actual_value = Some("unavailable".to_string());
+        }
+        PreflightError::BridgeNetfilterUnavailable => {
+            check.expected_value = Some("br_netfilter available".to_string());
+            check.actual_value = Some("unavailable".to_string());
+        }
+        PreflightError::BridgeNfCallIptablesDisabled { actual } => {
+            check.expected_value = Some("1".to_string());
+            check.actual_value = Some(actual.clone());
+        }
+        PreflightError::NfConntrackCapacityTooLow {
+            actual,
+            minimum,
+            expected_concurrent_vms,
+        } => {
+            check.expected_value = Some(format!(
+                ">= {minimum} for {expected_concurrent_vms} concurrent VMs"
+            ));
+            check.actual_value = Some(actual.to_string());
+        }
+        PreflightError::InvalidNfConntrackMax { actual } => {
+            check.expected_value = Some("u64".to_string());
+            check.actual_value = Some(actual.clone());
+        }
+        PreflightError::InvalidExpectedConcurrentVms { actual } => {
+            check.expected_value = Some("positive u32".to_string());
+            check.actual_value = Some(actual.clone());
+        }
+        PreflightError::KernelModulesMissing { missing } => {
+            check.expected_value = Some("required kernel modules loaded".to_string());
+            check.actual_value = Some(format!("missing {}", missing.join(",")));
+        }
+        PreflightError::PrivilegeUnavailable { missing_caps } => {
+            check.expected_value = Some("root or required capabilities".to_string());
+            check.actual_value = Some(format!("missing {missing_caps:?}"));
+        }
+        PreflightError::CapabilityRead(source) => {
+            check.expected_value = Some("capability state readable".to_string());
+            check.actual_value = Some(source.to_string());
+        }
+        PreflightError::FirecrackerBinaryNotFound { path }
+        | PreflightError::JailerBinaryNotFound { path }
+        | PreflightError::JailerHardenBinaryNotFound { path }
+        | PreflightError::NetHelperBinaryNotFound { path }
+        | PreflightError::FirecrackerSeccompFilterNotFound { path } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("present".to_string());
+            check.actual_value = Some("missing".to_string());
+        }
+        PreflightError::FirecrackerSeccompFilterEmpty { path } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("non-empty regular file".to_string());
+            check.actual_value = Some("empty file".to_string());
+        }
+        PreflightError::FirecrackerVersionCommandFailed { path, status }
+        | PreflightError::JailerVersionCommandFailed { path, status }
+        | PreflightError::HostBinaryVersionCommandFailed { path, status, .. } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("version command exits 0".to_string());
+            check.actual_value = Some(status.clone());
+        }
+        PreflightError::FirecrackerVersionMismatch {
+            expected, actual, ..
+        }
+        | PreflightError::JailerVersionMismatch {
+            expected, actual, ..
+        } => {
+            check.expected_version = Some(expected.clone());
+            check.actual_version = Some(actual.clone());
+        }
+        PreflightError::FirecrackerCveFloorViolation {
+            expected, actual, ..
+        } => {
+            check.expected_version = Some(expected.clone());
+            check.actual_version = Some(actual.clone());
+        }
+        PreflightError::FirecrackerVersionOutputMalformed { actual, .. }
+        | PreflightError::JailerVersionOutputMalformed { actual, .. } => {
+            check.expected_value = Some("official release version output".to_string());
+            check.actual_value = Some(actual.clone());
+            check.actual_version = Some(actual.clone());
+        }
+        PreflightError::HostBinaryManifest(source) => {
+            check.expected_value = Some("host-binaries manifest parses and validates".to_string());
+            check.actual_value = Some(source.to_string());
+        }
+        PreflightError::HostBinaryMissing { name }
+        | PreflightError::HostLaunchMaterialMissing { name } => {
+            check.expected_value = Some(format!("{name} manifest entry present"));
+            check.actual_value = Some("missing".to_string());
+        }
+        PreflightError::HostBinaryDuplicate { name }
+        | PreflightError::HostLaunchMaterialDuplicate { name } => {
+            check.expected_value = Some(format!("single {name} manifest entry"));
+            check.actual_value = Some("duplicate".to_string());
+        }
+        PreflightError::HostBinaryPathMismatch {
+            expected, actual, ..
+        }
+        | PreflightError::HostLaunchMaterialPathMismatch {
+            expected, actual, ..
+        } => {
+            check.final_path = Some(actual.clone());
+            check.expected_value = Some(expected.display().to_string());
+            check.actual_value = Some(actual.display().to_string());
+        }
+        PreflightError::BinaryHashMismatch {
+            path,
+            expected,
+            actual,
+            ..
+        }
+        | PreflightError::HostLaunchMaterialHashMismatch {
+            path,
+            expected,
+            actual,
+            ..
+        } => {
+            check.final_path = Some(path.clone());
+            check.expected_sha256 = Some(expected.clone());
+            check.actual_sha256 = Some(actual.clone());
+        }
+        PreflightError::HostBinaryVersionMismatch {
+            path,
+            expected,
+            actual,
+            ..
+        }
+        | PreflightError::HostLaunchMaterialVersionMismatch {
+            path,
+            expected,
+            actual,
+            ..
+        } => {
+            check.final_path = Some(path.clone());
+            check.expected_version = Some(expected.clone());
+            check.actual_version = Some(actual.clone());
+        }
+        PreflightError::HostBinaryPermission { path, reason, .. }
+        | PreflightError::HostLaunchMaterialPermission { path, reason, .. } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("root-owned non-writable safe path".to_string());
+            check.actual_value = Some((*reason).to_string());
+        }
+        PreflightError::NonAbsolutePath { path, .. } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("absolute path".to_string());
+            check.actual_value = Some(path.display().to_string());
+        }
+        PreflightError::PathIo { path, source } => {
+            check.final_path = Some(path.clone());
+            check.expected_value = Some("filesystem operation succeeds".to_string());
+            check.actual_value = Some(source.to_string());
+        }
+        PreflightError::SystemIo { operation, source } => {
+            check.expected_value = Some(format!("{operation} succeeds"));
+            check.actual_value = Some(source.to_string());
+        }
+        _ => {}
     }
 }
 

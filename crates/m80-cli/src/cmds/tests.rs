@@ -1,6 +1,7 @@
 use super::preflight::{
     artifact_config_for_runtime_profile, binary_config_for_runtime_profile,
-    host_feature_config_from_effective, render_preflight_result, PreflightErrorReport,
+    host_feature_config_from_effective, host_prerequisite_failure,
+    render_host_prerequisite_failure, render_preflight_result, PreflightErrorReport,
     PreflightReport,
 };
 use super::{
@@ -518,6 +519,10 @@ fn preflight_json_error_report_includes_selected_profile_context() {
     let report = PreflightErrorReport {
         error: crate::errors::envelope(&err),
         runtime_profile: profile::runtime_profile_report(&profile),
+        host_prerequisite_failure: host_prerequisite_failure(
+            &err,
+            &profile::runtime_profile_report(&profile),
+        ),
     };
     let json = json::to_pretty(&report);
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -533,6 +538,86 @@ fn preflight_json_error_report_includes_selected_profile_context() {
         parsed["data"]["runtime_profile"]["rootfs_image"],
         "/opt/m80/versions/v1/artifacts/output.ext4"
     );
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["check_id"],
+        "kvm"
+    );
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["final_path"],
+        "/dev/kvm"
+    );
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["expected_value"],
+        "present and writable"
+    );
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["actual_value"],
+        "missing"
+    );
+    assert_eq!(
+        parsed["data"]["host_prerequisite_failure"]["remediation"]["id"],
+        "repair-kvm"
+    );
+}
+
+#[test]
+fn preflight_json_error_pins_m80_owned_repair_command_to_release_tag() {
+    let profile = installed_runtime_profile();
+    let runtime_report = profile::runtime_profile_report(&profile);
+    let err = m80_firecracker::FcError::Preflight(PreflightError::NetHelperBinaryNotFound {
+        path: "/opt/m80/versions/v1/bin/m80-net-helper".into(),
+    });
+
+    let check = host_prerequisite_failure(&err, &runtime_report).unwrap();
+
+    assert_eq!(check.check_id, HostPrerequisiteCheckId::NetworkHelper);
+    let remediation = check.remediation.as_ref().unwrap();
+    assert_eq!(remediation.id, "reinstall-m80-release");
+    assert_eq!(
+        remediation.command.as_deref(),
+        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1/install.sh | sudo sh")
+    );
+    assert_eq!(
+        remediation.policy_link.as_deref(),
+        Some("docs/ops/binary-installation.md")
+    );
+}
+
+#[test]
+fn preflight_text_error_renders_same_host_prerequisite_fields() {
+    let err = PreflightError::JailerVersionMismatch {
+        expected: "v1.15.1".into(),
+        actual: "v1.14.4".into(),
+        policy_source: "crates/m80-preflight/src/firecracker_train.rs",
+    };
+    let check = m80_preflight::HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    let text = render_host_prerequisite_failure(&check);
+
+    assert!(text.contains("host_prerequisite_failure:"));
+    assert!(text.contains("check_id: jailer_binary"));
+    assert!(text.contains("status: fail"));
+    assert!(text.contains("failure_variant: jailer_version_mismatch"));
+    assert!(text.contains("expected_version: v1.15.1"));
+    assert!(text.contains("actual_version: v1.14.4"));
+    assert!(text.contains("remediation_id: install-firecracker-prerequisites"));
+    assert!(text.contains("remediation_policy: docs/behaviors/release/host-prerequisite-policy.md"));
+}
+
+#[test]
+fn preflight_text_error_renders_expected_actual_values() {
+    let err = PreflightError::KvmNotWritable {
+        path: "/dev/kvm".into(),
+    };
+    let check = m80_preflight::HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    let text = render_host_prerequisite_failure(&check);
+
+    assert!(text.contains("check_id: kvm"));
+    assert!(text.contains("final_path: /dev/kvm"));
+    assert!(text.contains("expected_value: present and writable"));
+    assert!(text.contains("actual_value: not writable"));
+    assert!(text.contains("remediation_id: repair-kvm"));
 }
 
 #[test]

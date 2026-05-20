@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use m80_preflight::{
     verify_host_substrate_fixture, CgroupPreflightMode, CheckRow, HostFeaturePreflightConfig,
     HostPrerequisiteCheck, HostPrerequisiteCheckId, HostPrerequisiteFailureKind,
@@ -85,6 +87,7 @@ fn valid_result_carries_path_version_hash_mode_owner_and_remediation_shape() {
     let result = HostPrerequisiteResult::new(vec![
         HostPrerequisiteCheck::pass(HostPrerequisiteCheckId::FirecrackerBinary)
             .with_final_path("/opt/firecracker/bin/firecracker")
+            .with_values("present", "present")
             .with_versions("v1.15.1", "v1.15.1")
             .with_sha256("a".repeat(64), "a".repeat(64))
             .with_modes(0o755, 0o755)
@@ -116,6 +119,8 @@ fn valid_result_carries_path_version_hash_mode_owner_and_remediation_shape() {
         decoded.checks[0].expected_version.as_deref(),
         Some("v1.15.1")
     );
+    assert_eq!(decoded.checks[0].expected_value.as_deref(), Some("present"));
+    assert_eq!(decoded.checks[0].actual_value.as_deref(), Some("present"));
     assert_eq!(
         decoded.checks[0].actual_sha256.as_deref(),
         Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -358,6 +363,237 @@ fn failure_kind_maps_host_feature_preflight_errors() {
             Some(expected)
         );
     }
+}
+
+#[test]
+fn diagnostic_maps_host_verifier_failures_to_expected_actual_values() {
+    let cases = [
+        (
+            PreflightError::UnsupportedHostPlatform {
+                actual: "Darwin".to_owned(),
+            },
+            HostPrerequisiteCheckId::OsGate,
+            Some("Linux"),
+            Some("Darwin"),
+        ),
+        (
+            PreflightError::InvalidCgroupMode {
+                actual: "legacy".to_owned(),
+            },
+            HostPrerequisiteCheckId::CgroupMode,
+            Some("unified-v2 or disabled"),
+            Some("legacy"),
+        ),
+        (
+            PreflightError::JailIdentityUnavailable {
+                field: "jail_uid",
+                id: 3000,
+            },
+            HostPrerequisiteCheckId::JailerIdentity,
+            Some("jail_uid present in host identity database"),
+            Some("jail_uid id 3000 not found"),
+        ),
+        (
+            PreflightError::KvmCpuExtensionMissing,
+            HostPrerequisiteCheckId::KvmCpuExtensions,
+            Some("vmx or svm"),
+            Some("missing"),
+        ),
+        (
+            PreflightError::NfConntrackCapacityTooLow {
+                actual: 128,
+                minimum: 1024,
+                expected_concurrent_vms: 8,
+            },
+            HostPrerequisiteCheckId::ConntrackCapacity,
+            Some(">= 1024 for 8 concurrent VMs"),
+            Some("128"),
+        ),
+    ];
+
+    for (err, check_id, expected, actual) in cases {
+        let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+        assert_eq!(check.check_id, check_id);
+        assert_eq!(check.expected_value.as_deref(), expected);
+        assert_eq!(check.actual_value.as_deref(), actual);
+        assert!(check.remediation.as_ref().unwrap().policy_link.is_some());
+    }
+}
+
+#[test]
+fn diagnostic_maps_missing_firecracker_to_policy_linked_repair() {
+    let err = PreflightError::FirecrackerBinaryNotFound {
+        path: "/opt/firecracker/bin/firecracker".into(),
+    };
+
+    let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    assert_eq!(check.check_id, HostPrerequisiteCheckId::FirecrackerBinary);
+    assert_eq!(check.status, HostPrerequisiteStatus::Fail);
+    assert_eq!(
+        check.failure_variant,
+        Some(HostPrerequisiteFailureKind::FirecrackerBinaryNotFound)
+    );
+    assert_eq!(
+        check.final_path.as_deref(),
+        Some(Path::new("/opt/firecracker/bin/firecracker"))
+    );
+    assert_eq!(check.expected_value.as_deref(), Some("present"));
+    assert_eq!(check.actual_value.as_deref(), Some("missing"));
+    let remediation = check.remediation.as_ref().unwrap();
+    assert_eq!(remediation.id, "install-firecracker-prerequisites");
+    assert_eq!(
+        remediation.policy_link.as_deref(),
+        Some("docs/behaviors/release/host-prerequisite-policy.md")
+    );
+}
+
+#[test]
+fn diagnostic_maps_wrong_jailer_train_to_expected_actual_versions() {
+    let err = PreflightError::JailerVersionMismatch {
+        expected: "v1.15.1".into(),
+        actual: "v1.14.4".into(),
+        policy_source: "crates/m80-preflight/src/firecracker_train.rs",
+    };
+
+    let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    assert_eq!(check.check_id, HostPrerequisiteCheckId::JailerBinary);
+    assert_eq!(
+        check.failure_variant,
+        Some(HostPrerequisiteFailureKind::JailerVersionMismatch)
+    );
+    assert_eq!(check.expected_version.as_deref(), Some("v1.15.1"));
+    assert_eq!(check.actual_version.as_deref(), Some("v1.14.4"));
+    assert_eq!(
+        check.remediation.as_ref().unwrap().policy_link.as_deref(),
+        Some("docs/behaviors/release/host-prerequisite-policy.md")
+    );
+}
+
+#[test]
+fn diagnostic_maps_missing_seccomp_filter_to_final_path() {
+    let err = PreflightError::FirecrackerSeccompFilterNotFound {
+        path: "/opt/firecracker/seccomp/filter.bin".into(),
+    };
+
+    let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    assert_eq!(
+        check.check_id,
+        HostPrerequisiteCheckId::FirecrackerSeccompFilter
+    );
+    assert_eq!(
+        check.failure_variant,
+        Some(HostPrerequisiteFailureKind::FirecrackerSeccompFilterNotFound)
+    );
+    assert_eq!(
+        check.final_path.as_deref(),
+        Some(Path::new("/opt/firecracker/seccomp/filter.bin"))
+    );
+}
+
+#[test]
+fn diagnostic_path_fallback_keeps_jailer_identity_under_firecracker_dir() {
+    let err = PreflightError::PathIo {
+        path: "/opt/firecracker/bin/jailer".into(),
+        source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+    };
+
+    let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    assert_eq!(check.check_id, HostPrerequisiteCheckId::JailerBinary);
+    assert_eq!(
+        check.failure_variant,
+        Some(HostPrerequisiteFailureKind::PathIo)
+    );
+    assert_eq!(
+        check.final_path.as_deref(),
+        Some(Path::new("/opt/firecracker/bin/jailer"))
+    );
+    assert_eq!(
+        check.expected_value.as_deref(),
+        Some("filesystem operation succeeds")
+    );
+    assert_eq!(check.actual_value.as_deref(), Some("denied"));
+}
+
+#[test]
+fn diagnostic_maps_bad_kvm_substrate_to_repair_token() {
+    let err = PreflightError::KvmNotWritable {
+        path: "/dev/kvm".into(),
+    };
+
+    let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    assert_eq!(check.check_id, HostPrerequisiteCheckId::Kvm);
+    assert_eq!(
+        check.failure_variant,
+        Some(HostPrerequisiteFailureKind::KvmNotWritable)
+    );
+    assert_eq!(check.final_path.as_deref(), Some(Path::new("/dev/kvm")));
+    assert_eq!(check.remediation.as_ref().unwrap().id, "repair-kvm");
+}
+
+#[test]
+fn diagnostic_maps_stale_host_manifest_hash_to_expected_actual_sha() {
+    let expected = "a".repeat(64);
+    let actual = "b".repeat(64);
+    let err = PreflightError::BinaryHashMismatch {
+        name: "m80_net_helper",
+        path: "/opt/m80/bin/m80-net-helper".into(),
+        expected: expected.clone(),
+        actual: actual.clone(),
+    };
+
+    let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    assert_eq!(check.check_id, HostPrerequisiteCheckId::NetworkHelper);
+    assert_eq!(
+        check.failure_variant,
+        Some(HostPrerequisiteFailureKind::BinaryHashMismatch)
+    );
+    assert_eq!(
+        check.final_path.as_deref(),
+        Some(Path::new("/opt/m80/bin/m80-net-helper"))
+    );
+    assert_eq!(check.expected_sha256.as_deref(), Some(expected.as_str()));
+    assert_eq!(check.actual_sha256.as_deref(), Some(actual.as_str()));
+    assert_eq!(
+        check.remediation.as_ref().unwrap().policy_link.as_deref(),
+        Some("docs/ops/binary-installation.md")
+    );
+}
+
+#[test]
+fn diagnostic_maps_unsupported_bundled_host_asset_policy_failure() {
+    let err = PreflightError::HostLaunchMaterialPathMismatch {
+        name: "firecracker_seccomp_filter",
+        expected: "/opt/firecracker/seccomp/filter.bin".into(),
+        actual: "/opt/m80/artifacts/firecracker-seccomp-filter.bin".into(),
+    };
+
+    let check = HostPrerequisiteCheck::from_preflight_error(&err).unwrap();
+
+    assert_eq!(
+        check.check_id,
+        HostPrerequisiteCheckId::FirecrackerSeccompFilter
+    );
+    assert_eq!(
+        check.failure_variant,
+        Some(HostPrerequisiteFailureKind::HostLaunchMaterialPathMismatch)
+    );
+    assert_eq!(
+        check.final_path.as_deref(),
+        Some(Path::new(
+            "/opt/m80/artifacts/firecracker-seccomp-filter.bin"
+        ))
+    );
+    assert_eq!(
+        check.remediation.as_ref().unwrap().policy_link.as_deref(),
+        Some("docs/ops/binary-installation.md")
+    );
 }
 
 #[test]

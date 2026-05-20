@@ -5,6 +5,13 @@ All notable changes to m80 are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added — host prerequisite diagnostics bridge
+
+- Failed `m80 preflight` output now carries a structured
+  `host_prerequisite_failure` record in JSON and matching plain-text repair
+  fields, including stable check id, typed failure variant, final path,
+  expected/actual values or versions, and a policy-linked remediation token.
+
 ### Changed — stable release install channel
 
 - Stable install entry points now require public release tags shaped exactly

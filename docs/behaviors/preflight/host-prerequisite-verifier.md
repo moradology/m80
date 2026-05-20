@@ -37,6 +37,7 @@ proofs, or docs tests to scrape table rows. Each check has:
 - `check_id`, the stable machine identity;
 - `check_name`;
 - optional final path;
+- optional expected/actual scalar values;
 - optional expected/actual version, sha256, mode, and owner facts;
 - pass/fail status;
 - a typed `failure_variant` for failed checks;
@@ -57,9 +58,16 @@ for table readability without changing the machine identity. The registry is:
 Readers fail closed on unknown schema versions, missing required fields,
 unknown check ids, unknown failure variants, and failed checks without a
 remediation token. The host substrate verifier emits this result for its rows
-today. Full host-binary path/hash/mode population is owned by
-`m80-o3uh9.8.3.2`; diagnostics rendering of these fields is owned by
-`m80-o3uh9.8.3.3`.
+today. `HostPrerequisiteCheck::from_preflight_error()` projects typed preflight
+failures into the same schema, including final path, expected/actual scalar
+values, release version fields when known, a typed failure variant, and a
+policy-linked remediation token. `m80 preflight` renders that projected record
+in both JSON and plain text so machine consumers and operators see the same
+structured repair fields. When the selected runtime profile names a release
+tag, CLI rendering pins m80-owned helper repairs to that exact `install.sh`
+URL; operator-owned Firecracker, jailer, and seccomp repairs remain policy
+links. Full host-binary path/hash/mode population is owned by
+`m80-o3uh9.8.3.2`.
 
 ## Fixture Knobs
 

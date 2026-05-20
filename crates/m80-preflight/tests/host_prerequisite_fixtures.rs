@@ -312,7 +312,12 @@ fn install_root_fixture_rejects_missing_jailer() {
 
     let err = fixture.write_manifest().unwrap_err();
 
-    assert!(matches!(err, PreflightError::JailerBinaryNotFound));
+    match err {
+        PreflightError::JailerBinaryNotFound { path } => {
+            assert_eq!(path, fixture.jailer_bin);
+        }
+        other => panic!("expected missing jailer binary, got {other:?}"),
+    }
 }
 
 #[test]

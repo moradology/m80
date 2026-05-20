@@ -176,7 +176,9 @@ pub(crate) fn discover_binaries(
     require_absolute_binary("m80-net-helper", &config.net_helper_bin)?;
 
     if !config.firecracker_bin.exists() {
-        return Err(PreflightError::FirecrackerBinaryNotFound);
+        return Err(PreflightError::FirecrackerBinaryNotFound {
+            path: config.firecracker_bin.clone(),
+        });
     }
     verify_seccomp_filter_path(&config.firecracker_seccomp_filter)?;
 
@@ -191,7 +193,9 @@ pub(crate) fn discover_binaries(
     enforce_configured_firecracker_version(&train_policy, &actual_version)?;
 
     if !config.jailer_bin.exists() {
-        return Err(PreflightError::JailerBinaryNotFound);
+        return Err(PreflightError::JailerBinaryNotFound {
+            path: config.jailer_bin.clone(),
+        });
     }
     let jailer_version = match cached_jailer_version {
         Some(version) => version.to_owned(),
@@ -200,10 +204,14 @@ pub(crate) fn discover_binaries(
     enforce_jailer_pairing(&actual_version, &jailer_version)?;
 
     if !config.jailer_harden_bin.exists() {
-        return Err(PreflightError::JailerHardenBinaryNotFound);
+        return Err(PreflightError::JailerHardenBinaryNotFound {
+            path: config.jailer_harden_bin.clone(),
+        });
     }
     if !config.net_helper_bin.exists() {
-        return Err(PreflightError::NetHelperBinaryNotFound);
+        return Err(PreflightError::NetHelperBinaryNotFound {
+            path: config.net_helper_bin.clone(),
+        });
     }
 
     Ok(BinaryDiscovery {

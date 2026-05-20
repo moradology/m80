@@ -289,7 +289,12 @@ fn missing_firecracker_binary_fails_closed() {
 
     let err = discover_binaries(&config, None, None).unwrap_err();
 
-    assert!(matches!(err, PreflightError::FirecrackerBinaryNotFound));
+    match err {
+        PreflightError::FirecrackerBinaryNotFound { path } => {
+            assert_eq!(path, config.firecracker_bin);
+        }
+        other => panic!("expected missing firecracker binary, got {other:?}"),
+    }
 }
 
 #[test]
@@ -370,7 +375,12 @@ fn missing_jailer_binary_fails_closed() {
 
     let err = discover_binaries(&config, None, None).unwrap_err();
 
-    assert!(matches!(err, PreflightError::JailerBinaryNotFound));
+    match err {
+        PreflightError::JailerBinaryNotFound { path } => {
+            assert_eq!(path, config.jailer_bin);
+        }
+        other => panic!("expected missing jailer binary, got {other:?}"),
+    }
 }
 
 #[test]
@@ -380,7 +390,12 @@ fn missing_jailer_hardening_wrapper_fails_closed() {
 
     let err = discover_binaries(&config, None, None).unwrap_err();
 
-    assert!(matches!(err, PreflightError::JailerHardenBinaryNotFound));
+    match err {
+        PreflightError::JailerHardenBinaryNotFound { path } => {
+            assert_eq!(path, config.jailer_harden_bin);
+        }
+        other => panic!("expected missing jailer hardening wrapper, got {other:?}"),
+    }
 }
 
 #[test]
@@ -390,7 +405,12 @@ fn missing_network_helper_fails_closed() {
 
     let err = discover_binaries(&config, None, None).unwrap_err();
 
-    assert!(matches!(err, PreflightError::NetHelperBinaryNotFound));
+    match err {
+        PreflightError::NetHelperBinaryNotFound { path } => {
+            assert_eq!(path, config.net_helper_bin);
+        }
+        other => panic!("expected missing network helper, got {other:?}"),
+    }
 }
 
 #[test]

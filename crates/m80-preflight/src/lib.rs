@@ -302,7 +302,10 @@ pub enum PreflightError {
 
     /// `firecracker` not found via env or default path.
     #[error("firecracker binary not found")]
-    FirecrackerBinaryNotFound,
+    FirecrackerBinaryNotFound {
+        /// Configured binary path that was missing.
+        path: PathBuf,
+    },
 
     /// `firecracker --version` did not match the expected train.
     #[error(
@@ -369,7 +372,10 @@ pub enum PreflightError {
 
     /// `jailer` binary not found.
     #[error("jailer binary not found")]
-    JailerBinaryNotFound,
+    JailerBinaryNotFound {
+        /// Configured binary path that was missing.
+        path: PathBuf,
+    },
 
     /// `jailer --version` exited non-zero.
     #[error("jailer --version at {} exited with {status}", path.display())]
@@ -403,11 +409,17 @@ pub enum PreflightError {
 
     /// `m80-jailer-harden` binary not found.
     #[error("jailer hardening wrapper not found")]
-    JailerHardenBinaryNotFound,
+    JailerHardenBinaryNotFound {
+        /// Configured binary path that was missing.
+        path: PathBuf,
+    },
 
     /// `m80-net-helper` binary not found.
     #[error("network helper binary not found")]
-    NetHelperBinaryNotFound,
+    NetHelperBinaryNotFound {
+        /// Configured binary path that was missing.
+        path: PathBuf,
+    },
 
     /// Host TCB binary manifest read/validate failed.
     #[error("host binary manifest: {0}")]
@@ -845,7 +857,7 @@ impl PreflightError {
             Self::PrivilegeUnavailable { .. } => {
                 "run as root, use `setcap cap_net_admin,cap_sys_admin,cap_mknod,cap_chown,cap_fowner,cap_kill,cap_setuid,cap_setgid,cap_setpcap+ep <binary>`, or set securityContext.capabilities.add in your pod spec"
             }
-            Self::FirecrackerBinaryNotFound => {
+            Self::FirecrackerBinaryNotFound { .. } => {
                 "install firecracker to /opt/firecracker/bin/firecracker or set M80_FIRECRACKER_BIN to the binary path"
             }
             Self::FirecrackerVersionMismatch { .. } => {
@@ -866,7 +878,7 @@ impl PreflightError {
             Self::FirecrackerSeccompFilterEmpty { .. } => {
                 "replace the Firecracker advanced seccomp filter with a non-empty compiled bitcode filter"
             }
-            Self::JailerBinaryNotFound => {
+            Self::JailerBinaryNotFound { .. } => {
                 "install jailer to /opt/firecracker/bin/jailer (it ships alongside firecracker) or set M80_JAILER_BIN to the binary path"
             }
             Self::JailerVersionCommandFailed { .. } => {
@@ -878,10 +890,10 @@ impl PreflightError {
             Self::JailerVersionMismatch { .. } => {
                 "install the official jailer from the same Firecracker release train as the accepted firecracker binary; see docs/behaviors/release/host-prerequisite-policy.md"
             }
-            Self::JailerHardenBinaryNotFound => {
+            Self::JailerHardenBinaryNotFound { .. } => {
                 "install m80-jailer-harden to /opt/m80/bin/m80-jailer-harden or set M80_JAILER_HARDEN_BIN to the binary path"
             }
-            Self::NetHelperBinaryNotFound => {
+            Self::NetHelperBinaryNotFound { .. } => {
                 "install m80-net-helper to /opt/m80/bin/m80-net-helper or set M80_NET_HELPER_BIN to the binary path"
             }
             Self::HostBinaryManifest(_) => {

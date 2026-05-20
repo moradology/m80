@@ -173,7 +173,9 @@ fn privilege_unavailable_has_hint() {
 
 #[test]
 fn firecracker_binary_not_found_has_hint() {
-    assert_hint(&PreflightError::FirecrackerBinaryNotFound);
+    assert_hint(&PreflightError::FirecrackerBinaryNotFound {
+        path: "/opt/firecracker/bin/firecracker".into(),
+    });
 }
 
 #[test]
@@ -219,7 +221,9 @@ fn firecracker_seccomp_filter_empty_has_hint() {
 
 #[test]
 fn jailer_binary_not_found_has_hint() {
-    assert_hint(&PreflightError::JailerBinaryNotFound);
+    assert_hint(&PreflightError::JailerBinaryNotFound {
+        path: "/opt/firecracker/bin/jailer".into(),
+    });
 }
 
 #[test]
@@ -249,12 +253,16 @@ fn jailer_version_mismatch_has_hint() {
 
 #[test]
 fn jailer_harden_binary_not_found_has_hint() {
-    assert_hint(&PreflightError::JailerHardenBinaryNotFound);
+    assert_hint(&PreflightError::JailerHardenBinaryNotFound {
+        path: "/opt/m80/bin/m80-jailer-harden".into(),
+    });
 }
 
 #[test]
 fn net_helper_binary_not_found_has_hint() {
-    assert_hint(&PreflightError::NetHelperBinaryNotFound);
+    assert_hint(&PreflightError::NetHelperBinaryNotFound {
+        path: "/opt/m80/bin/m80-net-helper".into(),
+    });
 }
 
 #[test]

@@ -94,6 +94,7 @@ fn policy_doc_requires_preflight_proof_checks_for_release_artifacts() {
     let policy = read_repo_file("docs/behaviors/release/host-prerequisite-policy.md");
 
     assert_contains(&policy, "`m80 preflight --json`");
+    assert_contains(&policy, "`data.host_prerequisite_failure`");
     assert_contains_words(
         &policy,
         "`Firecracker binary` check records the expected and observed Firecracker version",
@@ -128,6 +129,11 @@ fn verifier_doc_records_stable_check_id_registry() {
     let doc = read_repo_file("docs/behaviors/preflight/host-prerequisite-verifier.md");
 
     assert_contains(&doc, "`check_id`, the stable machine identity");
+    assert_contains(&doc, "optional expected/actual scalar values");
+    assert_contains(
+        &doc,
+        "pins m80-owned helper repairs to that exact `install.sh`",
+    );
     assert_contains_words(
         &doc,
         "Machine consumers key on `check_id`, not `check_name`",
@@ -148,26 +154,31 @@ fn verifier_doc_records_stable_check_id_registry() {
 }
 
 #[test]
-fn readme_links_policy_only_from_preflight_remediation_context() {
+fn readme_links_host_prerequisite_docs_only_from_preflight_remediation_context() {
     let readme = read_repo_file("README.md");
-    let link = "docs/behaviors/release/host-prerequisite-policy.md";
-
-    let link_count = readme.match_indices(link).count();
-    assert_eq!(
-        link_count, 1,
-        "README should link the policy once from remediation context"
-    );
+    let links = [
+        "docs/behaviors/release/host-prerequisite-policy.md",
+        "docs/behaviors/preflight/host-prerequisite-verifier.md",
+    ];
 
     let (preflight_index, _) = readme_preflight_paragraph_bounds(&readme);
-    let link_index = readme.find(link).expect("README should link policy");
     let diagnostics_index = readme
         .find("## Diagnostics")
         .expect("README should have diagnostics section");
 
-    assert!(
-        preflight_index < link_index && link_index < diagnostics_index,
-        "policy link must stay in the quickstart preflight/remediation paragraph"
-    );
+    for link in links {
+        let link_count = readme.match_indices(link).count();
+        assert_eq!(
+            link_count, 1,
+            "README should link {link} once from remediation context"
+        );
+
+        let link_index = readme.find(link).expect("README should link host doc");
+        assert!(
+            preflight_index < link_index && link_index < diagnostics_index,
+            "{link} must stay in the quickstart preflight/remediation paragraph"
+        );
+    }
 }
 
 #[test]
@@ -183,6 +194,7 @@ fn readme_preflight_paragraph_keeps_common_host_prerequisite_story() {
         "Firecracker seccomp filter",
         "`host-binaries.manifest.json`",
         "docs/behaviors/release/host-prerequisite-policy.md",
+        "docs/behaviors/preflight/host-prerequisite-verifier.md",
     ] {
         assert_contains(paragraph, required);
     }

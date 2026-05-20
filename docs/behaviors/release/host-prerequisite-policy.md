@@ -104,6 +104,11 @@ check records the expected jailer version and the observed jailer version.
 Those checks are the host-local proof that the operator-provided train matches
 the guest artifact set.
 
+Failed `m80 preflight` output includes `data.host_prerequisite_failure`, a
+single failed `HostPrerequisiteCheck` carrying the same check id,
+expected/actual value fields, final path, failure variant, and remediation
+policy link that plain text renders for operators.
+
 The user-facing rule is short: install the m80 bundle, provide the official
 Firecracker host prerequisites at their configured paths, run `m80 preflight`,
 then run `m80 run -- echo hello`.

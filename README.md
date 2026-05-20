@@ -117,7 +117,10 @@ m80 capability set, or a privileged container. For v0.x, Firecracker, jailer,
 and the Firecracker seccomp filter are operator-provided host prerequisites; if
 preflight reports one of those failures, use the short
 [`host prerequisite policy`](docs/behaviors/release/host-prerequisite-policy.md)
-to decide what to install or repair.
+to decide what to install or repair. The structured repair fields are defined
+by the
+[`host prerequisite verifier`](docs/behaviors/preflight/host-prerequisite-verifier.md)
+contract.
 
 Production operators should read [`docs/ops/host-setup.md`](docs/ops/host-setup.md)
 before trusting a host. It covers identity separation, Docker socket risk,

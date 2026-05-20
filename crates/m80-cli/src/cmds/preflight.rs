@@ -4,13 +4,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use m80_firecracker::{Backend, ConfigError, EffectiveConfig, FcError};
-use m80_preflight::{CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, PreflightError};
+use m80_preflight::{
+    CgroupPreflightMode, Discovery, HostFeaturePreflightConfig, HostPrerequisiteCheck,
+    HostPrerequisiteCheckId, PreflightError,
+};
 use serde::Serialize;
 
 use crate::config;
 use crate::errors;
 use crate::json;
 use crate::profile::{self, ProfileFilePaths, RuntimeProfile};
+use crate::release_urls;
 
 /// Resolve config, run preflight, and build an `Arc<Backend>`.
 /// Returns `EffectiveConfig` alongside for callers that need source labels.
@@ -215,6 +219,8 @@ pub(super) struct PreflightErrorReport {
     #[serde(flatten)]
     pub(super) error: errors::ErrorEnvelope,
     pub(super) runtime_profile: profile::RuntimeProfileReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) host_prerequisite_failure: Option<HostPrerequisiteCheck>,
 }
 
 pub(super) fn render_preflight_result(
@@ -262,13 +268,102 @@ fn render_preflight_error(
         let report = PreflightErrorReport {
             error: errors::envelope(err),
             runtime_profile: runtime_profile.clone(),
+            host_prerequisite_failure: host_prerequisite_failure(err, runtime_profile),
         };
         eprintln!("{}", json::to_pretty(&report));
         errors::exit_code_for(err)
     } else {
         eprint!("{}", render_preflight_profile(runtime_profile));
+        if let Some(failure) = host_prerequisite_failure(err, runtime_profile) {
+            eprint!("{}", render_host_prerequisite_failure(&failure));
+        }
         errors::render_error(err, false)
     }
+}
+
+pub(super) fn host_prerequisite_failure(
+    err: &FcError,
+    runtime_profile: &profile::RuntimeProfileReport,
+) -> Option<HostPrerequisiteCheck> {
+    let mut check = match err {
+        FcError::Preflight(err) => HostPrerequisiteCheck::from_preflight_error(err),
+        _ => None,
+    }?;
+    attach_m80_owned_repair_command(&mut check, runtime_profile);
+    Some(check)
+}
+
+fn attach_m80_owned_repair_command(
+    check: &mut HostPrerequisiteCheck,
+    runtime_profile: &profile::RuntimeProfileReport,
+) {
+    if !matches!(
+        check.check_id,
+        HostPrerequisiteCheckId::JailerHardeningWrapper | HostPrerequisiteCheckId::NetworkHelper
+    ) {
+        return;
+    }
+    let Some(tag) = runtime_profile.release_tag.as_deref() else {
+        return;
+    };
+    let Some(remediation) = &mut check.remediation else {
+        return;
+    };
+    remediation.id = "reinstall-m80-release".to_owned();
+    remediation.command = Some(format!(
+        "curl -fsSL {} | sudo sh",
+        release_urls::release_install_url(tag)
+    ));
+}
+
+pub(super) fn render_host_prerequisite_failure(check: &HostPrerequisiteCheck) -> String {
+    let mut out = String::new();
+    writeln!(out, "host_prerequisite_failure:").unwrap();
+    writeln!(out, "  check_id: {}", json_scalar(check.check_id)).unwrap();
+    writeln!(out, "  check_name: {}", check.check_name).unwrap();
+    writeln!(out, "  status: {}", json_scalar(check.status)).unwrap();
+    if let Some(variant) = check.failure_variant {
+        writeln!(out, "  failure_variant: {}", json_scalar(variant)).unwrap();
+    }
+    if let Some(path) = &check.final_path {
+        writeln!(out, "  final_path: {}", path.display()).unwrap();
+    }
+    if let Some(expected) = &check.expected_value {
+        writeln!(out, "  expected_value: {expected}").unwrap();
+    }
+    if let Some(actual) = &check.actual_value {
+        writeln!(out, "  actual_value: {actual}").unwrap();
+    }
+    if let Some(expected) = &check.expected_version {
+        writeln!(out, "  expected_version: {expected}").unwrap();
+    }
+    if let Some(actual) = &check.actual_version {
+        writeln!(out, "  actual_version: {actual}").unwrap();
+    }
+    if let Some(expected) = &check.expected_sha256 {
+        writeln!(out, "  expected_sha256: {expected}").unwrap();
+    }
+    if let Some(actual) = &check.actual_sha256 {
+        writeln!(out, "  actual_sha256: {actual}").unwrap();
+    }
+    if let Some(remediation) = &check.remediation {
+        writeln!(out, "  remediation_id: {}", remediation.id).unwrap();
+        if let Some(command) = &remediation.command {
+            writeln!(out, "  remediation_command: {command}").unwrap();
+        }
+        if let Some(policy_link) = &remediation.policy_link {
+            writeln!(out, "  remediation_policy: {policy_link}").unwrap();
+        }
+    }
+    out
+}
+
+fn json_scalar<T: Serialize>(value: T) -> String {
+    serde_json::to_value(value)
+        .expect("enum scalar serializes")
+        .as_str()
+        .expect("enum scalar serializes as a string")
+        .to_owned()
 }
 
 fn render_preflight_profile(profile: &profile::RuntimeProfileReport) -> String {
