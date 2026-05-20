@@ -100,6 +100,13 @@ release integrity, attestation, and public checksum material. `install.sh`,
 before network/index work. See
 `docs/behaviors/release/stable-channel.md`.
 
+Latest metadata resolution is bounded separately from release-asset downloads:
+both the initial and guard GitHub metadata fetches use a 10 second connect
+timeout, 120 second total timeout, two retries, and a one second retry delay
+before emitting install handoff JSON. URL-mode failures name the fetch role,
+metadata URL, and curl failure class. Fixture mode stays network-free and does
+not require curl.
+
 The shell installer bounds every release-asset download before the bundled
 `m80 install` binary can take over. Each fetch uses a 10 second connect timeout,
 120 second total timeout, two retries, and a one second retry delay. Failure

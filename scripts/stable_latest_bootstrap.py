@@ -17,11 +17,19 @@ from stable_release_channel import (
 )
 
 
+METADATA_CONNECT_TIMEOUT_SECONDS = 10
+METADATA_MAX_TIME_SECONDS = 120
+METADATA_RETRY_COUNT = 2
+METADATA_RETRY_DELAY_SECONDS = 1
+
+
 @dataclass(frozen=True)
 class MetadataSource:
     release: dict
     label: str
     mode: str
+    role: str = "latest release metadata"
+    fetch_role: str = "initial"
 
 
 @dataclass(frozen=True)
@@ -80,10 +88,11 @@ def main() -> int:
 
 
 def load_latest_source(path: Path | None, url: str | None, *, curl_bin: str, label: str) -> MetadataSource:
+    fetch_role = metadata_fetch_role(label)
     if path is not None:
-        return MetadataSource(read_json(path, label), str(path), "fixture")
+        return MetadataSource(read_json(path, label), str(path), "fixture", label, fetch_role)
     if url is not None:
-        return MetadataSource(fetch_json_url(url, curl_bin=curl_bin, label=label), url, "url")
+        return MetadataSource(fetch_json_url(url, curl_bin=curl_bin, label=label), url, "url", label, fetch_role)
     raise ValueError(f"{label} source missing")
 
 
@@ -94,7 +103,7 @@ def load_guard_source(args: argparse.Namespace, latest: MetadataSource) -> Metad
         return load_latest_source(None, args.guard_latest_url, curl_bin=args.curl, label="guard latest release metadata")
     if args.latest_url is not None:
         return load_latest_source(None, args.latest_url, curl_bin=args.curl, label="guard latest release metadata")
-    return MetadataSource(latest.release, latest.label, "fixture-reused")
+    return MetadataSource(latest.release, latest.label, "fixture-reused", "guard latest release metadata", "guard")
 
 
 def resolve_latest_bootstrap(
@@ -104,8 +113,8 @@ def resolve_latest_bootstrap(
     asset_index: dict | None = None,
 ) -> LatestBootstrapResolution:
     eligibility = validate_stable_release_metadata(latest.release, asset_index=asset_index)
-    guard_tag = release_tag_from_metadata(guard.release, "guard latest release metadata")
-    require_same_latest_tag(eligibility.tag, guard_tag)
+    guard_tag = release_tag_from_metadata(guard.release, describe_metadata_source(guard))
+    require_same_latest_tag(eligibility.tag, guard_tag, latest=latest, guard=guard)
     validate_stable_release_metadata(guard.release, expected_tag=eligibility.tag)
     pinned_asset_urls = {name: release_asset_url(eligibility.tag, name) for name in REQUIRED_PUBLIC_ASSETS}
     return LatestBootstrapResolution(
@@ -126,32 +135,88 @@ def release_tag_from_metadata(release: dict, label: str) -> str:
     return tag
 
 
-def require_same_latest_tag(first_tag: str, second_tag: str) -> None:
+def require_same_latest_tag(first_tag: str, second_tag: str, *, latest: MetadataSource, guard: MetadataSource) -> None:
     if first_tag == second_tag:
         return
     raise ValueError(
         "latest release tag changed during bootstrap resolution: "
         f"started with {first_tag}, guard observed {second_tag}; "
+        f"failure=latest_tag_switch; "
+        f"initial_source={describe_metadata_source(latest)}; "
+        f"guard_source={describe_metadata_source(guard)}; "
         f"retry with pinned command: {pinned_install_command(first_tag)}"
     )
 
 
+def describe_metadata_source(source: MetadataSource) -> str:
+    return f"{source.role} from {source.label} fetch_role={source.fetch_role}"
+
+
+def metadata_fetch_role(label: str) -> str:
+    if label.startswith("guard "):
+        return "guard"
+    return "initial"
+
+
+def metadata_curl_args(curl_bin: str, url: str) -> list[str]:
+    return [
+        curl_bin,
+        "-fsSL",
+        "--connect-timeout",
+        str(METADATA_CONNECT_TIMEOUT_SECONDS),
+        "--max-time",
+        str(METADATA_MAX_TIME_SECONDS),
+        "--retry",
+        str(METADATA_RETRY_COUNT),
+        "--retry-delay",
+        str(METADATA_RETRY_DELAY_SECONDS),
+        url,
+    ]
+
+
+def curl_failure_kind(status: int) -> str:
+    if status in {6, 7}:
+        return "dns_or_connect_failure"
+    if status == 22:
+        return "http_failure"
+    if status == 28:
+        return "timeout"
+    if status == 130:
+        return "interrupted"
+    return "metadata_fetch_failure"
+
+
 def fetch_json_url(url: str, *, curl_bin: str, label: str) -> dict:
-    result = subprocess.run(
-        [curl_bin, "-fsSL", url],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    fetch_role = metadata_fetch_role(label)
+    try:
+        result = subprocess.run(
+            metadata_curl_args(curl_bin, url),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ValueError(
+            f"failed to fetch {label} from {url}: fetch_role={fetch_role} failure=curl_spawn_failed: {exc}"
+        ) from exc
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "no curl output"
-        raise ValueError(f"failed to fetch {label} from {url}: curl exited {result.returncode}: {detail}")
+        raise ValueError(
+            f"failed to fetch {label} from {url}: "
+            f"fetch_role={fetch_role} failure={curl_failure_kind(result.returncode)} curl_exit={result.returncode}; "
+            f"curl exited {result.returncode}: {detail}"
+        )
     try:
         value = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{label} from {url} must be valid JSON: {exc}") from exc
+        raise ValueError(
+            f"failed to parse {label} from {url}: fetch_role={fetch_role} failure=malformed_json: {exc}"
+        ) from exc
     if not isinstance(value, dict):
-        raise ValueError(f"{label} from {url} must be a JSON object")
+        raise ValueError(
+            f"failed to parse {label} from {url}: fetch_role={fetch_role} "
+            "failure=malformed_json: expected JSON object"
+        )
     return value
 
 

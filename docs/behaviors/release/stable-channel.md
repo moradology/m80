@@ -29,8 +29,11 @@ GitHub latest release metadata into one stable concrete tag, checks the latest
 metadata again before emitting a handoff, and outputs only pinned
 `releases/download/<tag>/...` URLs for the installer, bundle, checksum sidecars,
 asset index, bootstrap selector, release-integrity predicate, attestation
-metadata, and public checksum material. Current install entry points also
-enforce the stable tag shape before network or index work:
+metadata, and public checksum material. Its URL mode bounds both metadata
+fetches with the same connect-timeout, total-timeout, retry, and retry-delay
+policy used by installer asset downloads; fixture mode stays network-free.
+Current install entry points also enforce the stable tag shape before network or
+index work:
 
 - `scripts/install.sh` refuses a rendered non-stable `M80_RELEASE_TAG` before
   release asset downloads;
@@ -45,8 +48,9 @@ Regression coverage:
   release, prerelease release, missing `install.sh`, wrong public asset URL,
   asset-index tag drift, and `m80_version` drift;
 - `scripts/test-stable-latest-bootstrap.py` covers latest resolution success,
-  tag-switch failure before handoff output, missing metadata, HTTP fetch
-  failure, and no-network local fixture mode;
+  tag-switch failure before handoff output, missing metadata, bounded URL-mode
+  curl args, HTTP/DNS-or-connect/timeout/malformed-metadata fetch failures, and
+  no-network local fixture mode;
 - `scripts/test-release-bundle.py::test_rejects_prerelease_release_tag`;
 - `crates/m80-cli/src/cmds/install/tests.rs` prerelease rejection tests for
   `--release-tag` and `--bootstrap-tag`.
