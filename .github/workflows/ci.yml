@@ -38,7 +38,7 @@ jobs:
       - name: release script tests
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/release_url_contract.py scripts/quickstart_snippets.py scripts/render-release-install-snippets.py scripts/test-release-url-contract.py scripts/stable_release_channel.py scripts/test-stable-release-channel.py scripts/stable_latest_bootstrap.py scripts/test-stable-latest-bootstrap.py scripts/lint-github-workflows.py scripts/test-workflow-policy.py scripts/run-actionlint.py scripts/test-actionlint-runner.py scripts/test-actionlint-fixtures.py scripts/verify-quickstart-proof.py scripts/write-quickstart-proof-fixture.py scripts/test-quickstart-proof.py scripts/verify-release-tracker-policy.py scripts/test-release-tracker-policy.py scripts/package-release-bundle.py scripts/test-release-bundle.py scripts/verify-release-bundle.py scripts/verify-release-integrity.py scripts/verify-install-handoff.py scripts/test-install-handoff.py scripts/write-release-attestation-metadata.py
+          python3 -m py_compile scripts/release_url_contract.py scripts/quickstart_snippets.py scripts/render-release-install-snippets.py scripts/test-release-url-contract.py scripts/stable_release_channel.py scripts/test-stable-release-channel.py scripts/stable_latest_bootstrap.py scripts/test-stable-latest-bootstrap.py scripts/lint-github-workflows.py scripts/test-workflow-policy.py scripts/run-actionlint.py scripts/test-actionlint-runner.py scripts/test-actionlint-fixtures.py scripts/verify-quickstart-proof.py scripts/write-quickstart-proof-fixture.py scripts/test-quickstart-proof.py scripts/verify-release-tracker-policy.py scripts/test-release-tracker-policy.py scripts/verify-release-readiness-config.py scripts/test-release-readiness-config.py scripts/package-release-bundle.py scripts/test-release-bundle.py scripts/verify-release-bundle.py scripts/verify-release-integrity.py scripts/verify-install-handoff.py scripts/test-install-handoff.py scripts/write-release-attestation-metadata.py
           python3 scripts/test-release-url-contract.py
           python3 scripts/test-stable-release-channel.py
           python3 scripts/test-stable-latest-bootstrap.py
@@ -48,6 +48,8 @@ jobs:
           python3 scripts/test-quickstart-proof.py
           python3 scripts/test-release-tracker-policy.py
           python3 scripts/verify-release-tracker-policy.py
+          python3 scripts/test-release-readiness-config.py
+          python3 scripts/verify-release-readiness-config.py
           python3 scripts/test-install-handoff.py
           python3 scripts/test-release-bundle.py
 

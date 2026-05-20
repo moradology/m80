@@ -362,6 +362,15 @@ strict workflow shell check, and it should run beside the pinned `actionlint`
 syntax/run-block gate: `python3 scripts/run-actionlint.py --workflow-dir
 .github/workflows`.
 
+The release readiness gate source of truth is
+`docs/behaviors/release/release-readiness-lanes.json`. It names the required
+lanes, proof kinds, allowed substrate kinds, required/warning severity,
+status taxonomy, tag/commit fields, digest fields, and remediation command
+fields that a future aggregate readiness receipt must consume before
+publish/latest authority can move. Validate changes with
+`python3 scripts/verify-release-readiness-config.py`; CI runs that validator and
+its negative fixture suite beside the release script tests.
+
 ## Quickstart Proof Artifact
 
 The release workflow writes `m80-quickstart-proof-hostless.json` into the

@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "status_taxonomy": [
+    {
+      "id": "passed",
+      "publish_effect": "satisfies",
+      "requires_remediation": false,
+      "description": "The lane proof is current for the requested release tag and commit."
+    },
+    {
+      "id": "warning",
+      "publish_effect": "warn",
+      "requires_remediation": false,
+      "description": "The lane produced a policy-allowed warning and does not block publish unless its lane policy says otherwise."
+    },
+    {
+      "id": "failed",
+      "publish_effect": "blocks",
+      "requires_remediation": true,
+      "description": "The lane ran and produced a failing proof or verifier result."
+    },
+    {
+      "id": "stale",
+      "publish_effect": "blocks",
+      "requires_remediation": true,
+      "description": "The lane proof does not match the requested release tag, commit, workflow run, or required digest."
+    },
+    {
+      "id": "missing",
+      "publish_effect": "blocks",
+      "requires_remediation": true,
+      "description": "The lane proof artifact is absent from the release-readiness input set."
+    },
+    {
+      "id": "unauthenticated",
+      "publish_effect": "blocks",
+      "requires_remediation": true,
+      "description": "The public-access lane used credentials or private checkout state where unauthenticated public fetches are required."
+    },
+    {
+      "id": "wrong-substrate",
+      "publish_effect": "blocks",
+      "requires_remediation": true,
+      "description": "The proof ran on a fixture or host class that cannot satisfy the configured lane substrate."
+    }
+  ],
+  "lanes": [
+    {
+      "id": "workflow-policy",
+      "title": "Workflow authority policy and syntax gates",
+      "lane_kind": "workflow-policy",
+      "proof_kind": "workflow-policy-report",
+      "allowed_substrates": ["github-actions"],
+      "severity": "required",
+      "publish_blocking": true,
+      "expected_tag_field": "github.ref_name",
+      "expected_commit_field": "github.sha",
+      "digest_field": "workflow_policy_sha256",
+      "remediation": {
+        "field": "remediation.command",
+        "command": "python3 scripts/lint-github-workflows.py"
+      },
+      "policy_text": "Release workflows must keep write authority isolated to the publish job before any upload or latest-promotion step."
+    },
+    {
+      "id": "release-bundle-integrity",
+      "title": "Release bundle, checksum, and attestation integrity",
+      "lane_kind": "release-integrity",
+      "proof_kind": "release-integrity-predicate",
+      "allowed_substrates": ["github-actions"],
+      "severity": "required",
+      "publish_blocking": true,
+      "expected_tag_field": "release_tag",
+      "expected_commit_field": "commit_sha",
+      "digest_field": "predicate_sha256",
+      "remediation": {
+        "field": "remediation.command",
+        "command": "scripts/verify-release-bundle.py --verify-integrity"
+      },
+      "policy_text": "Public bundles are publishable only when the signed predicate binds the release tag, commit, asset index, installer, checksums, and attestation metadata."
+    },
+    {
+      "id": "hostless-quickstart",
+      "title": "Hostless release fixture quickstart proof",
+      "lane_kind": "hostless-quickstart",
+      "proof_kind": "quickstart-proof",
+      "allowed_substrates": ["hostless"],
+      "severity": "required",
+      "publish_blocking": true,
+      "expected_tag_field": "release.resolved_tag",
+      "expected_commit_field": null,
+      "digest_field": "proof_sha256",
+      "remediation": {
+        "field": "remediation.command",
+        "command": "scripts/verify-quickstart-proof.py"
+      },
+      "policy_text": "The hostless fixture proves the installer handoff shape and artifact references before upload, but it never substitutes for the real-KVM lane."
+    },
+    {
+      "id": "real-kvm-quickstart",
+      "title": "Privileged real-KVM quickstart smoke",
+      "lane_kind": "real-kvm-smoke",
+      "proof_kind": "quickstart-proof",
+      "allowed_substrates": ["real-kvm"],
+      "severity": "required",
+      "publish_blocking": true,
+      "expected_tag_field": "release.resolved_tag",
+      "expected_commit_field": "release.commit_sha",
+      "digest_field": "proof_sha256",
+      "remediation": {
+        "field": "remediation.command",
+        "command": "br show m80-o3uh9.18"
+      },
+      "policy_text": "A public release is not fully promoted until the documented quickstart command has run on a privileged host with /dev/kvm."
+    },
+    {
+      "id": "public-access-latest",
+      "title": "Unauthenticated public latest access proof",
+      "lane_kind": "public-access",
+      "proof_kind": "public-access-proof",
+      "allowed_substrates": ["public-github"],
+      "severity": "required",
+      "publish_blocking": true,
+      "expected_tag_field": "release.resolved_tag",
+      "expected_commit_field": null,
+      "digest_field": "proof_sha256",
+      "remediation": {
+        "field": "remediation.command",
+        "command": "br show m80-o3uh9.21.7"
+      },
+      "policy_text": "Docs cannot treat latest as promoted until unauthenticated GitHub release URLs fetch the public installer and proof assets."
+    },
+    {
+      "id": "latest-freshness",
+      "title": "Scheduled latest/docs freshness check",
+      "lane_kind": "freshness",
+      "proof_kind": "freshness-proof",
+      "allowed_substrates": ["public-github"],
+      "severity": "warning",
+      "publish_blocking": false,
+      "expected_tag_field": "release.resolved_tag",
+      "expected_commit_field": null,
+      "digest_field": "proof_sha256",
+      "remediation": {
+        "field": "remediation.command",
+        "command": "br show m80-o3uh9.21"
+      },
+      "policy_text": "Freshness drift files a repair bead and blocks the next release once promoted to a failing required lane."
+    }
+  ]
+}
