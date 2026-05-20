@@ -722,6 +722,8 @@ verify_integrity_sha256_sidecar "$M80_INSTALL_NAME" "$M80_INSTALL_NAME.sha256" "
 download_integrity_asset "$M80_PUBLIC_SHA256SUMS_NAME" "$public_sha256s_path"
 
 validate_release_integrity_material prebundle "$integrity_facts_path" || fail_integrity "release integrity material verification failed"
+commit_sha=
+install_sha256=
 # shellcheck disable=SC1090
 . "$integrity_facts_path"
 gh attestation verify "$integrity_path" \
