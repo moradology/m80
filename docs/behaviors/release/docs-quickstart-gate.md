@@ -23,6 +23,24 @@ same test rejects mutable `raw.githubusercontent.com` / `main` installer URLs,
 artifact-only `releases/latest/download/*.tar.gz` quickstarts, and public
 install URLs outside the configured `moradology/m80` repository.
 
+The same helper builds a public command inventory from `README.md`, crate
+READMEs, `docs/runbook/**`, and `docs/behaviors/**`. Fenced command blocks that
+look like public install/run snippets must classify as one of:
+
+- `common`: the latest install command or `m80 run -- echo hello` from the
+  shared quickstart source
+- `pinned`: the reproducible `<version>` install command from the shared source
+- `verified/operator`: the verified install handoff block from the shared source
+- `troubleshooting`: a concrete pinned repair command in repair/troubleshooting
+  context
+- `legacy-internal`: behavior-doc references that repeat the shared commands
+  only to explain the hard cutover
+
+Unclassified `curl`, `m80 install`, `m80 quickstart`, `sudo sh install.sh`, or
+`m80 run -- echo hello` command blocks fail the release URL contract tests. This
+keeps secondary docs from growing stale raw-main, wrong-owner, or artifact-only
+latest instructions outside the marked README/runbook snippets.
+
 Release automation uses the same contract through
 `scripts/write-quickstart-proof-fixture.py` and
 `scripts/verify-quickstart-proof.py`: normal hostless and real-KVM quickstart

@@ -19,7 +19,11 @@ from release_url_contract import (
     release_repository,
     verified_install_handoff_block,
 )
-from quickstart_snippets import expected_quickstart_snippets, extract_marked_quickstart_snippets
+from quickstart_snippets import (
+    expected_quickstart_snippets,
+    extract_marked_quickstart_snippets,
+    public_command_inventory,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +141,107 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 expected,
                 f"{relative} quickstart snippets diverged from the shared contract",
             )
+
+    def test_public_command_inventory_classifies_every_public_command_snippet(self) -> None:
+        expected_snippets = expected_quickstart_snippets()
+        inventory = public_command_inventory(REPO_ROOT)
+        observed = {(str(snippet.path), snippet.body, snippet.classification) for snippet in inventory}
+
+        for expected in [
+            ("README.md", expected_snippets["post-install-smoke"], "common"),
+            ("README.md", expected_snippets["latest-install"], "common"),
+            ("README.md", expected_snippets["pinned-install"], "pinned"),
+            ("README.md", expected_snippets["verified-install-handoff"], "verified/operator"),
+            ("docs/runbook/release.md", expected_snippets["latest-install"], "common"),
+            ("docs/runbook/release.md", expected_snippets["pinned-install"], "pinned"),
+            ("docs/runbook/release.md", expected_snippets["verified-install-handoff"], "verified/operator"),
+            (
+                "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
+                "\n".join([expected_snippets["latest-install"], expected_snippets["pinned-install"]]),
+                "legacy-internal",
+            ),
+        ]:
+            self.assertIn(expected, observed)
+
+    def test_public_command_inventory_rejects_stale_and_unclassified_commands(self) -> None:
+        cases = [
+            (
+                "```sh\ncurl -fsSL https://raw.githubusercontent.com/moradology/m80/main/install.sh | sudo sh\n```\n",
+                "mutable raw main",
+            ),
+            (
+                "```sh\ncurl -fsSL https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz | tar xz\n```\n",
+                "artifact-only latest URL",
+            ),
+            (
+                "```sh\ncurl -fsSL https://github.com/example/m80/releases/latest/download/install.sh | sudo sh\n```\n",
+                "expected moradology/m80",
+            ),
+            (
+                "```sh\nm80 quickstart --artifact-url https://example.invalid/m80.tar.gz\n```\n",
+                "unclassified public command snippet",
+            ),
+            (
+                "  ```sh\n  m80 install --release-tag v1.2.3\n  ```\n",
+                "unclassified public command snippet",
+            ),
+            (
+                "  ```sh\n  curl -fsSL https://raw.githubusercontent.com/moradology/m80/main/install.sh | sudo sh\n  ```\n",
+                "mutable raw main",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc_dir = root / "docs" / "runbook"
+            doc_dir.mkdir(parents=True)
+            doc = doc_dir / "release.md"
+            for body, expected_error in cases:
+                doc.write_text(body)
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    public_command_inventory(root)
+
+    def test_public_command_inventory_allows_repair_scoped_pinned_troubleshooting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc_dir = root / "docs" / "runbook"
+            doc_dir.mkdir(parents=True)
+            doc = doc_dir / "release.md"
+            doc.write_text(
+                "\n".join(
+                    [
+                        "Troubleshooting repair command for a broken active install:",
+                        "",
+                        "```sh",
+                        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh",
+                        "```",
+                    ]
+                )
+            )
+
+            inventory = public_command_inventory(root)
+            self.assertEqual(len(inventory), 1)
+            self.assertEqual(inventory[0].classification, "troubleshooting")
+
+    def test_public_command_inventory_classifies_indented_common_fences(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            readme = root / "README.md"
+            readme.write_text(
+                "\n".join(
+                    [
+                        "- install:",
+                        "  ```sh",
+                        f"  {latest_install_command()}",
+                        "  ```",
+                    ]
+                )
+            )
+
+            inventory = public_command_inventory(root)
+            self.assertEqual(len(inventory), 1)
+            self.assertEqual(inventory[0].body, latest_install_command())
+            self.assertEqual(inventory[0].classification, "common")
 
     def test_quickstart_snippet_marker_errors_are_actionable(self) -> None:
         cases = [
