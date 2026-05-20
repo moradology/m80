@@ -45,6 +45,12 @@ The public GitHub release owner/repo source is
 `docs/behaviors/release/public-release-root.env`. The README and this runbook
 must use snippets rendered by `scripts/render-release-install-snippets.py`:
 
+Public installer status is pending until the unauthenticated public-access
+proof is green for the promoted release. The latest snippet is the
+release-channel template, not a current-success claim, until that proof is
+green.
+<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->
+
 <!-- m80:quickstart-snippet latest-install start -->
 ```sh
 curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
@@ -82,9 +88,10 @@ for public install instructions.
 
 The common latest and pinned snippets are stable-channel only. The resolved
 release must be public, non-draft, non-prerelease, tagged exactly
-`vMAJOR.MINOR.PATCH`, and must publish the complete installer-consumed asset
-set. `scripts/stable_release_channel.py` validates GitHub release metadata and
-the asset index for future latest bootstrap/freshness lanes.
+`vMAJOR.MINOR.PATCH`, must publish the complete installer-consumed asset set,
+and must have a green unauthenticated public-access proof before docs treat it
+as promoted. `scripts/stable_release_channel.py` validates GitHub release
+metadata and the asset index for future latest bootstrap/freshness lanes.
 `scripts/stable_latest_bootstrap.py` resolves latest to one concrete stable tag,
 checks that latest has not switched before handoff, and emits pinned URLs for
 `install.sh`, the bundle, checksum sidecars, asset index, bootstrap selector,

@@ -31,7 +31,10 @@ This buys you a Firecracker-backed process wrapper: `m80 run -- <command>`
 boots a microVM, runs the command, streams stdout/stderr back like a normal
 process, returns the guest exit code, and tears the VM down.
 
-Fastest path on a Linux/KVM host:
+Public installer status: pending until the unauthenticated public-access proof
+is green for the promoted release. The command below is the release-channel
+template; use it only after that proof is green.
+<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->
 
 <!-- m80:quickstart-snippet latest-install start -->
 ```sh
@@ -49,7 +52,9 @@ by [`scripts/render-release-install-snippets.py`](scripts/render-release-install
 and the marker gate in
 [`docs/behaviors/release/docs-quickstart-gate.md`](docs/behaviors/release/docs-quickstart-gate.md).
 The `latest` command follows the stable release channel only: public,
-non-draft, non-prerelease GitHub releases tagged `vMAJOR.MINOR.PATCH`.
+non-draft, non-prerelease GitHub releases tagged `vMAJOR.MINOR.PATCH`, and it
+is not considered promoted until the unauthenticated public-access proof is
+green.
 
 The installer is a rendered asset from the selected release. It uses that
 pinned release tag to download the release asset index and shell-safe bootstrap

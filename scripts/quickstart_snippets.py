@@ -44,6 +44,11 @@ LEGACY_INTERNAL_DOCS = {
     "docs/behaviors/cli/product-surface.md",
 }
 TROUBLESHOOTING_CONTEXT_WORDS = ("repair", "troubleshoot", "troubleshooting", "diagnostic", "rollback")
+PUBLIC_ACCESS_PROOF_GUARD = "m80-o3uh9.21.7"
+PUBLIC_ACCESS_PROOF_MARKER_RE = re.compile(
+    r"m80:public-access-proof\s+m80-o3uh9\.21\.7\s+pending"
+)
+PUBLIC_ACCESS_PROOF_GUARD_WORDS = ("public installer status", "pending", "proof")
 
 
 @dataclass(frozen=True)
@@ -218,7 +223,13 @@ def is_public_command_block(body: str) -> bool:
 def classify_public_command_snippet(body: str, relative_path: Path, context: str) -> str:
     validate_public_command_urls(body, relative_path)
     expected = expected_quickstart_snippets()
-    if body in (expected["post-install-smoke"], expected["latest-install"]):
+    if body == expected["post-install-smoke"]:
+        return "common"
+    if body == expected["latest-install"]:
+        if not has_public_access_proof_guard(context):
+            raise ValueError(
+                f"{relative_path}: latest install snippet must be guarded by a public-access proof status note"
+            )
         return "common"
     if body == expected["pinned-install"]:
         return "pinned"
@@ -247,6 +258,15 @@ def validate_public_command_urls(body: str, relative_path: Path) -> None:
             )
 
 
+def has_public_access_proof_guard(context: str) -> bool:
+    lowered = context.lower()
+    return (
+        PUBLIC_ACCESS_PROOF_MARKER_RE.search(context) is not None
+        and PUBLIC_ACCESS_PROOF_GUARD in context
+        and all(word in lowered for word in PUBLIC_ACCESS_PROOF_GUARD_WORDS)
+    )
+
+
 def is_legacy_internal_reference(body: str, relative_path: Path, expected: dict[str, str]) -> bool:
     if str(relative_path) not in LEGACY_INTERNAL_DOCS:
         return False
@@ -267,7 +287,7 @@ def is_troubleshooting_pinned_install(body: str, context: str) -> bool:
 
 
 def surrounding_context(lines: list[str], start_line: int, end_line: int) -> str:
-    context_start = max(start_line - 4, 0)
+    context_start = max(start_line - 8, 0)
     context_end = min(end_line + 3, len(lines))
     return "\n".join(lines[context_start:context_end])
 

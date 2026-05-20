@@ -163,6 +163,38 @@ class ReleaseUrlContractTest(unittest.TestCase):
         ]:
             self.assertIn(expected, observed)
 
+    def test_latest_install_snippet_requires_public_access_proof_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            readme = root / "README.md"
+            readme.write_text(
+                "\n".join(
+                    [
+                        "Fastest path on Linux:",
+                        "",
+                        "```sh",
+                        latest_install_command(),
+                        "```",
+                    ]
+                )
+            )
+
+            with self.assertRaisesRegex(ValueError, "public-access proof status note"):
+                public_command_inventory(root)
+
+            readme.write_text(
+                "\n".join(
+                    [
+                        "<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->",
+                        "```sh",
+                        latest_install_command(),
+                        "```",
+                    ]
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "public-access proof status note"):
+                public_command_inventory(root)
+
     def test_public_command_inventory_rejects_stale_and_unclassified_commands(self) -> None:
         cases = [
             (
@@ -231,6 +263,8 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 "\n".join(
                     [
                         "- install:",
+                        "  public installer status is pending until the public-access proof is green",
+                        "  <!-- m80:public-access-proof m80-o3uh9.21.7 pending -->",
                         "  ```sh",
                         f"  {latest_install_command()}",
                         "  ```",

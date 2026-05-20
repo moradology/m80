@@ -41,6 +41,14 @@ Unclassified `curl`, `m80 install`, `m80 quickstart`, `sudo sh install.sh`, or
 keeps secondary docs from growing stale raw-main, wrong-owner, or artifact-only
 latest instructions outside the marked README/runbook snippets.
 
+The shared latest install snippet is a release-channel template until public
+release access is proven. Any docs block that shows the `latest-install`
+snippet must have nearby visible text saying public installer status is pending,
+plus a nearby `m80:public-access-proof m80-o3uh9.21.7 pending` marker for the
+doc gate. Once that proof is green for the promoted release, the status text
+can be updated by the freshness status work; the command itself still comes
+from the shared snippet source.
+
 Release automation uses the same contract through
 `scripts/write-quickstart-proof-fixture.py` and
 `scripts/verify-quickstart-proof.py`: normal hostless and real-KVM quickstart
