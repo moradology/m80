@@ -21,6 +21,11 @@ ASSET_INDEX_NAME = "m80-release-assets.json"
 INSTALL_NAME = "install.sh"
 INTEGRITY_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
 INTEGRITY_RUST_TOOLCHAIN = "1.82"
+INTEGRITY_VERIFICATION_TIME = "2026-05-20T00:00:00Z"
+INTEGRITY_KEYSET_ID = "github-actions-oidc:m80-release-v1"
+INTEGRITY_SIGNER_IDENTITY = "moradology/m80/.github/workflows/release-artifacts.yml"
+INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
+INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 
 
 class ReleaseBundleTest(unittest.TestCase):
@@ -667,6 +672,233 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unsupported release integrity schema_version", result.stderr)
 
+    def test_release_integrity_material_rejects_missing_attestation_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            (root / "out" / "m80-release-attestation.json").unlink()
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation metadata missing", result.stderr)
+
+    def test_release_integrity_material_rejects_missing_trust_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            trust_policy_path(root / "out").unlink()
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust policy missing", result.stderr)
+
+    def test_release_integrity_material_rejects_missing_attestation_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            (root / "out" / INTEGRITY_ATTESTATION_BUNDLE_NAME).unlink()
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation bundle missing", result.stderr)
+
+    def test_release_integrity_material_rejects_unsupported_trust_policy_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_trust_policy(root / "out", {"schema_version": 999})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported release trust policy schema_version", result.stderr)
+
+    def test_release_integrity_material_rejects_unsupported_attestation_metadata_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_metadata(root / "out", {"schema_version": 999})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported release attestation metadata schema_version", result.stderr)
+
+    def test_release_integrity_material_rejects_trust_policy_mechanism_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_trust_policy(root / "out", {"mechanism": "checksum-only"})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust mechanism mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_failed_cryptographic_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_bundle(root / "out", {"valid": False})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust cryptographic attestation verification failed", result.stderr)
+
+    def test_release_integrity_material_rejects_attestation_without_material_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_bundle(root / "out", {"omit_subject": True})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation verifier JSON omitted material name/sha256 subject", result.stderr)
+
+    def test_release_integrity_material_rejects_attestation_subject_digest_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_bundle(root / "out", {"wrong_subject_digest": True})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation verifier JSON omitted material name/sha256 subject", result.stderr)
+
+    def test_release_integrity_material_rejects_attestation_subject_name_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_bundle(root / "out", {"wrong_subject_name": True})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release attestation verifier JSON omitted material name/sha256 subject", result.stderr)
+
+    def test_release_integrity_material_rejects_unknown_signer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_metadata(
+                root / "out",
+                {
+                    "signer_identity": "repo:moradology/other:ref:refs/tags/v0.0.0",
+                },
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust signer not allowed", result.stderr)
+
+    def test_release_integrity_material_rejects_stale_keyset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_metadata(
+                root / "out",
+                {"keyset_id": "github-actions-oidc:old"},
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust keyset mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_expired_certificate_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_metadata(
+                root / "out",
+                {"certificate_not_after": "2026-05-19T23:59:59Z"},
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust certificate expired", result.stderr)
+
+    def test_release_integrity_material_rejects_expired_trust_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_trust_policy(
+                root / "out",
+                {"valid_until": "2026-05-19T23:59:59Z"},
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust policy expired", result.stderr)
+
+    def test_release_integrity_material_rejects_boolean_rotation_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_trust_policy(
+                root / "out",
+                {
+                    "rotation": {
+                        "mode": "hard-fail-expired",
+                        "overlap_days": True,
+                        "next_keyset_id": None,
+                    }
+                },
+            )
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust rotation overlap_days invalid", result.stderr)
+
+    def test_release_integrity_material_rejects_replayed_tag_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_metadata(root / "out", {"release_tag": "v9.9.9"})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust attestation release_tag mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_replayed_repo_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out")
+            rewrite_attestation_metadata(root / "out", {"repository": "moradology/other"})
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release trust attestation repository mismatch", result.stderr)
+
 
 def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> dict[str, Path]:
     inputs = root / "inputs"
@@ -853,6 +1085,167 @@ def write_integrity_material(
         payload.update(updates)
     path = out_dir / "m80-release-integrity.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    write_trust_policy(out_dir)
+    write_attestation_bundle(out_dir, path)
+    write_attestation_metadata(out_dir, path)
+    write_fake_gh(out_dir.parent)
+    return path
+
+
+def write_trust_policy(out_dir: Path, *, updates: dict | None = None) -> Path:
+    payload = {
+        "schema_version": 1,
+        "mechanism": "github-artifact-attestation",
+        "repository": "moradology/m80",
+        "keyset_id": INTEGRITY_KEYSET_ID,
+        "valid_from": "2026-01-01T00:00:00Z",
+        "valid_until": "2027-01-01T00:00:00Z",
+        "allowed_signers": [
+            {
+                "identity": INTEGRITY_SIGNER_IDENTITY,
+                "issuer": INTEGRITY_SIGNER_ISSUER,
+            }
+        ],
+        "rotation": {
+            "mode": "hard-fail-expired",
+            "overlap_days": 14,
+            "next_keyset_id": None,
+        },
+    }
+    if updates:
+        payload.update(updates)
+    path = trust_policy_path(out_dir)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def write_attestation_bundle(out_dir: Path, material: Path, *, updates: dict | None = None) -> Path:
+    payload = {
+        "valid": True,
+        "artifact": str(material),
+        "repository": "moradology/m80",
+        "release_tag": "v0.0.0",
+        "commit_sha": INTEGRITY_COMMIT_SHA,
+        "signer_identity": INTEGRITY_SIGNER_IDENTITY,
+        "issuer": INTEGRITY_SIGNER_ISSUER,
+    }
+    if updates:
+        payload.update(updates)
+    path = out_dir / INTEGRITY_ATTESTATION_BUNDLE_NAME
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def write_attestation_metadata(out_dir: Path, material: Path, *, updates: dict | None = None) -> Path:
+    payload = {
+        "schema_version": 1,
+        "mechanism": "github-artifact-attestation",
+        "repository": "moradology/m80",
+        "release_tag": "v0.0.0",
+        "predicate_sha256": sha256(material),
+        "signer_identity": INTEGRITY_SIGNER_IDENTITY,
+        "issuer": INTEGRITY_SIGNER_ISSUER,
+        "keyset_id": INTEGRITY_KEYSET_ID,
+        "certificate_not_before": "2026-01-01T00:00:00Z",
+        "certificate_not_after": "2027-01-01T00:00:00Z",
+    }
+    if updates:
+        payload.update(updates)
+    path = out_dir / "m80-release-attestation.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def rewrite_trust_policy(out_dir: Path, updates: dict) -> None:
+    rewrite_json(trust_policy_path(out_dir), updates)
+
+
+def rewrite_attestation_bundle(out_dir: Path, updates: dict) -> None:
+    rewrite_json(out_dir / INTEGRITY_ATTESTATION_BUNDLE_NAME, updates)
+
+
+def rewrite_attestation_metadata(out_dir: Path, updates: dict) -> None:
+    rewrite_json(out_dir / "m80-release-attestation.json", updates)
+
+
+def trust_policy_path(out_dir: Path) -> Path:
+    return out_dir / "m80-release-trust-policy.json"
+
+
+def fake_gh_path(root: Path) -> Path:
+    return root / "fake-gh"
+
+
+def write_fake_gh(root: Path) -> Path:
+    expected = {
+        "repo": "moradology/m80",
+        "signer_workflow": INTEGRITY_SIGNER_IDENTITY,
+        "cert_oidc_issuer": INTEGRITY_SIGNER_ISSUER,
+        "source_ref": "refs/tags/v0.0.0",
+        "source_digest": INTEGRITY_COMMIT_SHA,
+    }
+    script = f"""#!/usr/bin/env python3
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+expected = {json.dumps(expected, sort_keys=True)}
+
+def fail(message):
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+args = sys.argv[1:]
+if len(args) < 3 or args[:2] != ["attestation", "verify"]:
+    fail("unexpected gh command")
+artifact = args[2]
+flags = {{}}
+i = 3
+while i < len(args):
+    flag = args[i]
+    if flag == "--deny-self-hosted-runners":
+        flags[flag] = True
+        i += 1
+        continue
+    if i + 1 >= len(args):
+        fail("missing flag value")
+    flags[flag] = args[i + 1]
+    i += 2
+
+for flag, key in [
+    ("--repo", "repo"),
+    ("--signer-workflow", "signer_workflow"),
+    ("--cert-oidc-issuer", "cert_oidc_issuer"),
+    ("--source-ref", "source_ref"),
+    ("--source-digest", "source_digest"),
+]:
+    if flags.get(flag) != expected[key]:
+        fail(f"{{flag}} mismatch: {{flags.get(flag)}}")
+if flags.get("--format") != "json":
+    fail("--format mismatch")
+if flags.get("--deny-self-hosted-runners") is not True:
+    fail("--deny-self-hosted-runners missing")
+bundle_path = flags.get("--bundle")
+if not bundle_path:
+    fail("--bundle missing")
+bundle = json.loads(Path(bundle_path).read_text())
+if not bundle.get("valid", False):
+    fail("cryptographic attestation invalid")
+if bundle.get("artifact") != artifact:
+    fail("artifact mismatch")
+digest = hashlib.sha256(Path(artifact).read_bytes()).hexdigest()
+if bundle.get("wrong_subject_digest", False):
+    digest = "0" * 64
+subject = {{"name": artifact, "digest": {{"sha256": digest}}}}
+if bundle.get("wrong_subject_name", False):
+    subject = {{"name": "other", "digest": {{"sha256": digest}}}}
+subjects = [] if bundle.get("omit_subject", False) else [subject]
+print(json.dumps([{{"verificationResult": {{"statement": {{"subject": subjects}}}}}}]))
+"""
+    path = fake_gh_path(root)
+    path.write_text(script)
+    path.chmod(0o755)
     return path
 
 
@@ -945,6 +1338,16 @@ def run_verify_integrity(material: Path, *, check: bool = True) -> subprocess.Co
         "v0.0.0",
         "--commit-sha",
         INTEGRITY_COMMIT_SHA,
+        "--trust-policy",
+        str(trust_policy_path(material.parent)),
+        "--attestation-bundle",
+        str(material.parent / INTEGRITY_ATTESTATION_BUNDLE_NAME),
+        "--attestation-metadata",
+        str(material.parent / "m80-release-attestation.json"),
+        "--verification-time",
+        INTEGRITY_VERIFICATION_TIME,
+        "--gh-bin",
+        str(fake_gh_path(material.parent.parent)),
         "--rust-toolchain",
         INTEGRITY_RUST_TOOLCHAIN,
     ]

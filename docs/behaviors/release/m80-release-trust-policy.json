@@ -1,0 +1,19 @@
+{
+  "allowed_signers": [
+    {
+      "identity": "moradology/m80/.github/workflows/release-artifacts.yml",
+      "issuer": "https://token.actions.githubusercontent.com"
+    }
+  ],
+  "keyset_id": "github-actions-oidc:m80-release-v1",
+  "mechanism": "github-artifact-attestation",
+  "repository": "moradology/m80",
+  "rotation": {
+    "mode": "hard-fail-expired",
+    "next_keyset_id": null,
+    "overlap_days": 14
+  },
+  "schema_version": 1,
+  "valid_from": "2026-01-01T00:00:00Z",
+  "valid_until": "2027-01-01T00:00:00Z"
+}

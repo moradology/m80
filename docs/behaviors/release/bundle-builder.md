@@ -93,4 +93,8 @@ index checksum sidecar.
 used by the signing/attestation lane. That predicate is documented in
 [`release-integrity-material.md`](release-integrity-material.md) and records the
 release tag, commit SHA, target, Rust toolchain, m80 package version, bundle
-metadata hash, and every current public dist asset digest.
+metadata hash, and every current public dist asset digest. The verifier also
+loads the anchored trust policy, `m80-release-integrity.attestation.jsonl`, and
+`m80-release-attestation.json` so human verification and installer verification
+share the same cryptographic GitHub attestation, signer, keyset, expiry, and
+rotation checks.

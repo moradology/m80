@@ -113,10 +113,19 @@ The release signing lane uses the schema in
 GitHub Artifact Attestations over `m80-release-integrity.json`; that predicate
 records the release tag, commit SHA, target, Rust toolchain, m80 package
 version, bundle metadata hash, and the sha256/size of every current public
-dist asset.
+dist asset. The same verifier also loads
+`docs/behaviors/release/m80-release-trust-policy.json`,
+`m80-release-integrity.attestation.jsonl`, and
+`m80-release-attestation.json` so human verification and installer verification
+share one trust-anchor path. The trust check uses `gh attestation verify`; use a
+GitHub CLI build with `gh attestation` support.
 
 Before wiring signed material into installers, verify the predicate shape
-against a downloaded dist directory:
+against a downloaded dist directory. This command requires the signing lane to
+publish the attestation bundle and normalized metadata; a release that lacks
+those files is checksum-only and must not be treated as signed. Run it from a
+trusted m80 checkout or installed verifier distribution; do not load the trust
+policy from the release dist being verified:
 
 ```sh
 python3 scripts/verify-release-integrity.py \
@@ -124,12 +133,18 @@ python3 scripts/verify-release-integrity.py \
   --dist-dir /tmp/m80-release-dist \
   --release-tag "$M80_RELEASE_TAG" \
   --commit-sha "$GITHUB_SHA" \
+  --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+  --attestation-bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl \
+  --attestation-metadata /tmp/m80-release-dist/m80-release-attestation.json \
+  --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --rust-toolchain 1.82
 ```
 
 This check is read-only and does not require root. It fails closed for wrong
-tag, wrong commit, missing subject digests, tampered bundle or installer bytes,
-unsupported schema, and bundle metadata or asset-index tag drift.
+tag, wrong commit, missing subject digests, unknown signers, stale keysets,
+expired trust material, unsigned/downgraded material, tampered bundle or
+installer bytes, failed GitHub attestation verification, unsupported schema,
+and bundle metadata or asset-index tag drift.
 
 To add a new architecture or image kind, add a new asset-index row and publish
 the matching bundle, metadata sidecar, checksums, and integrity material. The

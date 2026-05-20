@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import tomllib
 
 
@@ -35,6 +37,30 @@ TOP_LEVEL_FIELDS = {
     "subjects",
 }
 SUBJECT_FIELDS = {"name", "kind", "sha256", "size_bytes"}
+TRUST_POLICY_FIELDS = {
+    "schema_version",
+    "mechanism",
+    "repository",
+    "keyset_id",
+    "valid_from",
+    "valid_until",
+    "allowed_signers",
+    "rotation",
+}
+TRUST_SIGNER_FIELDS = {"identity", "issuer"}
+TRUST_ROTATION_FIELDS = {"mode", "overlap_days", "next_keyset_id"}
+ATTESTATION_FIELDS = {
+    "schema_version",
+    "mechanism",
+    "repository",
+    "release_tag",
+    "predicate_sha256",
+    "signer_identity",
+    "issuer",
+    "keyset_id",
+    "certificate_not_before",
+    "certificate_not_after",
+}
 EXPECTED_SUBJECTS = {
     BUNDLE_NAME: "release-bundle",
     f"{BUNDLE_NAME}.sha256": "checksum-sidecar",
@@ -54,6 +80,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dist-dir", type=Path)
     parser.add_argument("--release-tag", required=True)
     parser.add_argument("--commit-sha", required=True)
+    parser.add_argument("--trust-policy", required=True, type=Path)
+    parser.add_argument("--attestation-bundle", required=True, type=Path)
+    parser.add_argument("--attestation-metadata", required=True, type=Path)
+    parser.add_argument("--verification-time", required=True)
+    parser.add_argument("--gh-bin", default="gh")
     parser.add_argument("--target", default=TARGET)
     parser.add_argument("--rust-toolchain")
     parser.add_argument("--repo-root", default=Path.cwd(), type=Path)
@@ -68,6 +99,7 @@ def main() -> int:
 
     material = read_json(args.material, "release integrity material")
     require_exact_fields(material, TOP_LEVEL_FIELDS, "release integrity material")
+    verification_time = parse_timestamp(args.verification_time, "verification time")
     require(
         material["schema_version"] == SCHEMA_VERSION,
         f"unsupported release integrity schema_version: expected {SCHEMA_VERSION}, got {material['schema_version']}",
@@ -110,6 +142,17 @@ def main() -> int:
         material["bundle_metadata_name"] == METADATA_NAME,
         f"release integrity bundle_metadata_name mismatch: expected {METADATA_NAME}, got {material['bundle_metadata_name']}",
     )
+    verify_trust_anchor(
+        material,
+        material_path=args.material,
+        trust_policy_path=args.trust_policy,
+        attestation_bundle_path=args.attestation_bundle,
+        attestation_path=args.attestation_metadata,
+        gh_bin=args.gh_bin,
+        release_tag=args.release_tag,
+        commit_sha=args.commit_sha,
+        verification_time=verification_time,
+    )
 
     metadata_path = dist_dir / METADATA_NAME
     metadata_sha = sha256_file(metadata_path)
@@ -124,6 +167,222 @@ def main() -> int:
 
     print(f"verified release integrity material {args.material}")
     return 0
+
+
+def verify_trust_anchor(
+    material: dict,
+    *,
+    material_path: Path,
+    trust_policy_path: Path,
+    attestation_bundle_path: Path,
+    attestation_path: Path,
+    gh_bin: str,
+    release_tag: str,
+    commit_sha: str,
+    verification_time: datetime,
+) -> None:
+    policy = read_json(trust_policy_path, "release trust policy")
+    attestation = read_json(attestation_path, "release attestation metadata")
+    require_exact_fields(policy, TRUST_POLICY_FIELDS, "release trust policy")
+    require_exact_fields(attestation, ATTESTATION_FIELDS, "release attestation metadata")
+    require(
+        policy["schema_version"] == SCHEMA_VERSION,
+        f"unsupported release trust policy schema_version: expected {SCHEMA_VERSION}, got {policy['schema_version']}",
+    )
+    require(
+        attestation["schema_version"] == SCHEMA_VERSION,
+        f"unsupported release attestation metadata schema_version: expected {SCHEMA_VERSION}, got {attestation['schema_version']}",
+    )
+    require(policy["mechanism"] == MECHANISM, f"release trust mechanism mismatch: expected {MECHANISM}")
+    require(attestation["mechanism"] == MECHANISM, f"release attestation mechanism mismatch: expected {MECHANISM}")
+    require(policy["repository"] == REPOSITORY, f"release trust repository mismatch: expected {REPOSITORY}")
+    require(attestation["repository"] == material["repository"], "release trust attestation repository mismatch")
+    require(attestation["release_tag"] == release_tag, "release trust attestation release_tag mismatch")
+    require(attestation["release_tag"] == material["release_tag"], "release trust predicate tag mismatch")
+    require_valid_sha(attestation["predicate_sha256"], "release attestation predicate_sha256")
+    require(
+        attestation["predicate_sha256"] == sha256_file(material_path),
+        "release trust predicate digest mismatch",
+    )
+    policy_keyset_id = require_nonempty_str(policy, "keyset_id", "release trust policy")
+    attestation_keyset_id = require_nonempty_str(attestation, "keyset_id", "release attestation metadata")
+    require_nonempty_str(attestation, "signer_identity", "release attestation metadata")
+    require_nonempty_str(attestation, "issuer", "release attestation metadata")
+    require(policy_keyset_id == attestation_keyset_id, "release trust keyset mismatch")
+    validate_policy_window(policy, verification_time)
+    validate_certificate_window(attestation, verification_time)
+    signers = allowed_signers(policy)
+    metadata_signer = validate_signer(signers, attestation)
+    verified_signer = verify_cryptographic_attestation(
+        gh_bin=gh_bin,
+        material_path=material_path,
+        attestation_bundle_path=attestation_bundle_path,
+        signers=signers,
+        release_tag=release_tag,
+        commit_sha=commit_sha,
+    )
+    require(metadata_signer == verified_signer, "release trust metadata signer mismatch")
+
+
+def validate_policy_window(policy: dict, verification_time: datetime) -> None:
+    valid_from = parse_timestamp(policy["valid_from"], "release trust valid_from")
+    valid_until = parse_timestamp(policy["valid_until"], "release trust valid_until")
+    require(valid_from <= valid_until, "release trust validity window is inverted")
+    require(valid_from <= verification_time, "release trust policy is not active yet")
+    require(verification_time <= valid_until, "release trust policy expired")
+    rotation = policy["rotation"]
+    require(isinstance(rotation, dict), "release trust rotation must be an object")
+    require_exact_fields(rotation, TRUST_ROTATION_FIELDS, "release trust rotation")
+    require(rotation["mode"] == "hard-fail-expired", "release trust rotation mode mismatch")
+    require(
+        type(rotation["overlap_days"]) is int and rotation["overlap_days"] >= 0,
+        "release trust rotation overlap_days invalid",
+    )
+    require(
+        rotation["next_keyset_id"] is None
+        or (isinstance(rotation["next_keyset_id"], str) and rotation["next_keyset_id"]),
+        "release trust rotation next_keyset_id invalid",
+    )
+
+
+def validate_certificate_window(attestation: dict, verification_time: datetime) -> None:
+    not_before = parse_timestamp(
+        attestation["certificate_not_before"],
+        "release attestation certificate_not_before",
+    )
+    not_after = parse_timestamp(
+        attestation["certificate_not_after"],
+        "release attestation certificate_not_after",
+    )
+    require(not_before <= not_after, "release attestation certificate window is inverted")
+    require(not_before <= verification_time, "release trust certificate is not active yet")
+    require(verification_time <= not_after, "release trust certificate expired")
+
+
+def allowed_signers(policy: dict) -> list[tuple[str, str]]:
+    signers = policy["allowed_signers"]
+    require(isinstance(signers, list), "release trust allowed_signers must be a list")
+    allowed = []
+    for signer in signers:
+        require(isinstance(signer, dict), "release trust allowed signer must be an object")
+        require_exact_fields(signer, TRUST_SIGNER_FIELDS, "release trust allowed signer")
+        identity = require_nonempty_str(signer, "identity", "release trust allowed signer")
+        issuer = require_nonempty_str(signer, "issuer", "release trust allowed signer")
+        allowed.append((identity, issuer))
+    require(allowed, "release trust allowed_signers must not be empty")
+    return allowed
+
+
+def validate_signer(signers: list[tuple[str, str]], attestation: dict) -> tuple[str, str]:
+    metadata_signer = (attestation["signer_identity"], attestation["issuer"])
+    require(
+        metadata_signer in set(signers),
+        "release trust signer not allowed",
+    )
+    return metadata_signer
+
+
+def verify_cryptographic_attestation(
+    *,
+    gh_bin: str,
+    material_path: Path,
+    attestation_bundle_path: Path,
+    signers: list[tuple[str, str]],
+    release_tag: str,
+    commit_sha: str,
+) -> tuple[str, str]:
+    require(attestation_bundle_path.is_file(), f"release attestation bundle missing: {attestation_bundle_path}")
+    failures = []
+    for signer_identity, signer_issuer in signers:
+        if run_gh_attestation_verify(
+            gh_bin=gh_bin,
+            material_path=material_path,
+            attestation_bundle_path=attestation_bundle_path,
+            signer_identity=signer_identity,
+            signer_issuer=signer_issuer,
+            release_tag=release_tag,
+            commit_sha=commit_sha,
+        ):
+            return signer_identity, signer_issuer
+        failures.append(f"{signer_identity} / {signer_issuer}")
+    raise SystemExit(
+        "release trust cryptographic attestation verification failed for allowed signer(s): "
+        + ", ".join(failures)
+    )
+
+
+def run_gh_attestation_verify(
+    *,
+    gh_bin: str,
+    material_path: Path,
+    attestation_bundle_path: Path,
+    signer_identity: str,
+    signer_issuer: str,
+    release_tag: str,
+    commit_sha: str,
+) -> bool:
+    cmd = [
+        gh_bin,
+        "attestation",
+        "verify",
+        str(material_path),
+        "--repo",
+        REPOSITORY,
+        "--bundle",
+        str(attestation_bundle_path),
+        "--signer-workflow",
+        signer_identity,
+        "--cert-oidc-issuer",
+        signer_issuer,
+        "--source-ref",
+        f"refs/tags/{release_tag}",
+        "--source-digest",
+        commit_sha,
+        "--deny-self-hosted-runners",
+        "--format",
+        "json",
+    ]
+    try:
+        completed = subprocess.run(cmd, check=False, text=True, capture_output=True)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"release attestation verifier missing: {gh_bin}") from exc
+    if completed.returncode != 0:
+        return False
+    require(completed.stdout.strip(), "release attestation verifier returned empty JSON")
+    try:
+        verified = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit("release attestation verifier returned invalid JSON") from exc
+    require(isinstance(verified, list) and verified, "release attestation verifier returned no attestations")
+    require_gh_output_names_material(verified, material_path)
+    return True
+
+
+def require_gh_output_names_material(verified: list, material_path: Path) -> None:
+    expected_sha = sha256_file(material_path)
+    expected_names = {str(material_path), material_path.name}
+    for entry in verified:
+        require(isinstance(entry, dict), "release attestation verifier result must be an object")
+        result = entry.get("verificationResult")
+        if not isinstance(result, dict):
+            continue
+        statement = result.get("statement")
+        if not isinstance(statement, dict):
+            continue
+        subjects = statement.get("subject")
+        if not isinstance(subjects, list):
+            continue
+        for subject in subjects:
+            if not isinstance(subject, dict):
+                continue
+            digest = subject.get("digest")
+            if (
+                subject.get("name") in expected_names
+                and isinstance(digest, dict)
+                and digest.get("sha256") == expected_sha
+            ):
+                return
+    raise SystemExit("release attestation verifier JSON omitted material name/sha256 subject")
 
 
 def verify_bundle_metadata(metadata_path: Path, material: dict) -> None:
@@ -210,6 +469,16 @@ def require_subject_str(subject: dict, key: str, name: str) -> str:
 
 def require_valid_sha(value: object, label: str) -> None:
     require(isinstance(value, str) and SHA256_RE.match(value) is not None, f"{label} must be lowercase sha256")
+
+
+def parse_timestamp(value: object, label: str) -> datetime:
+    require(isinstance(value, str) and value, f"{label} missing")
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SystemExit(f"{label} must be RFC3339") from exc
+    require(timestamp.tzinfo is not None, f"{label} must include timezone")
+    return timestamp.astimezone(timezone.utc)
 
 
 def workspace_package_version(repo_root: Path) -> str:
