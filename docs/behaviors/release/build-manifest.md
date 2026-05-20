@@ -29,5 +29,9 @@ build manifest and checksum sidecar to be subjects in
 the signed predicate.
 
 The versioned `install.sh` downloads `m80-release-build.json` and
-`m80-release-build.json.sha256` before extracting the selected bundle so the
-signed subject set remains complete even on the no-installed-binary path.
+`m80-release-build.json.sha256` before extracting the selected bundle. Its
+embedded verifier rejects a build manifest whose release tag, source commit,
+Rust toolchain, target, package version, image kind, target triples, builder
+material, or bundle metadata hash does not match the signed predicate and the
+selected bundle metadata. That keeps the no-installed-binary path from treating
+the manifest as a mere signed blob.

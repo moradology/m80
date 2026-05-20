@@ -454,6 +454,151 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertFalse((root / "tar.log").exists())
             self.assertFalse(install_root.exists())
 
+    def test_rendered_install_script_rejects_build_manifest_commit_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"source_commit": "1" * 40})
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest source_commit mismatch", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_build_manifest_metadata_hash_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"bundle_metadata_sha256": "0" * 64})
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest bundle_metadata_sha256 mismatch", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"apt_packages": [], "container_digest": None})
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest missing apt packages or container digest", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_build_manifest_target_triples_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(
+                root / "out",
+                {
+                    "target_triples": ["x86_64-unknown-linux-gnu"],
+                },
+            )
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest target_triples missing x86_64-unknown-linux-musl", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_build_manifest_rust_toolchain_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"rust_toolchain": "0.0"})
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest rust_toolchain mismatch", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_build_manifest_target_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"target": "linux-aarch64"})
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest target mismatch: expected linux-x86_64", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_build_manifest_package_version_mismatch_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"m80_package_version": "9.9.9"})
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest m80_package_version mismatch", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
     def test_rendered_install_script_rejects_failed_attestation_before_bundle_extract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

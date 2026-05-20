@@ -76,6 +76,13 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "test_release_integrity_material_rejects_boolean_rotation_overlap",
         "test_release_integrity_material_rejects_replayed_tag_attestation",
         "test_release_integrity_material_rejects_replayed_repo_attestation",
+        "test_rendered_install_script_rejects_build_manifest_commit_mismatch_before_bundle",
+        "test_rendered_install_script_rejects_build_manifest_target_triples_mismatch_before_bundle",
+        "test_rendered_install_script_rejects_build_manifest_rust_toolchain_mismatch_before_bundle",
+        "test_rendered_install_script_rejects_build_manifest_target_mismatch_before_bundle",
+        "test_rendered_install_script_rejects_build_manifest_package_version_mismatch_before_bundle",
+        "test_rendered_install_script_rejects_build_manifest_metadata_hash_mismatch_before_bundle",
+        "test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle",
     ] {
         assert!(
             doc.contains(required),

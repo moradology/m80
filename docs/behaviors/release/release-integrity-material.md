@@ -198,6 +198,10 @@ Installer and bootstrapper verification must run this contract before
 extracting a bundle, running `install.sh`, or writing active install state. A
 checksum-only verifier may run earlier, but it is not a replacement for this
 predicate once signed/attested material is required.
+The versioned `install.sh` embedded verifier also validates
+`m80-release-build.json` semantics before bundle extraction, including release
+tag, source commit, Rust toolchain, target, package version, target triples,
+builder material, and bundle metadata hash.
 
 `scripts/verify-install-handoff.py` is the narrower pre-root gate for
 automation that already has a trusted m80 checkout. It downloads no assets by
@@ -264,6 +268,13 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_rendered_install_script_rejects_unsigned_dev_fixture_before_bundle`;
 - `test_rendered_install_script_rejects_tampered_install_before_bundle_extract`;
 - `test_rendered_install_script_rejects_wrong_integrity_tag_before_bundle_extract`;
+- `test_rendered_install_script_rejects_build_manifest_commit_mismatch_before_bundle`;
+- `test_rendered_install_script_rejects_build_manifest_metadata_hash_mismatch_before_bundle`;
+- `test_rendered_install_script_rejects_build_manifest_target_triples_mismatch_before_bundle`;
+- `test_rendered_install_script_rejects_build_manifest_rust_toolchain_mismatch_before_bundle`;
+- `test_rendered_install_script_rejects_build_manifest_target_mismatch_before_bundle`;
+- `test_rendered_install_script_rejects_build_manifest_package_version_mismatch_before_bundle`;
+- `test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle`;
 - `test_rendered_install_script_rejects_failed_attestation_before_bundle_extract`;
 - `official_release_missing_attestation_verifier_fails_before_staging`;
 - `official_release_too_old_attestation_verifier_fails_before_staging`;
