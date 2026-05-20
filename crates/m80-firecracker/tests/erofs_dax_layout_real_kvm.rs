@@ -319,7 +319,6 @@ fn build_erofs(source: &Path, image: &Path, compression: ErofsCompression) {
         .arg("--force-gid=0")
         .arg("-U")
         .arg("00000000-0000-0000-0000-000000000000")
-        .arg("--workers=1")
         .arg("--sort=path");
     if matches!(compression, ErofsCompression::Lz4hc) {
         command.arg("-zlz4hc,level=9");
