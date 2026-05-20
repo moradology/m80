@@ -1,5 +1,6 @@
 use std::fmt;
 
+use super::fetch::AssetIndexFetchError;
 use super::AssetIndexError;
 
 impl fmt::Display for AssetIndexError {
@@ -102,4 +103,105 @@ impl fmt::Display for AssetIndexError {
 
 fn release_install_url(release_tag: &str) -> String {
     format!("https://github.com/moradology/m80/releases/download/{release_tag}/install.sh")
+}
+
+impl fmt::Display for AssetIndexFetchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedUrl {
+                url,
+                reason,
+                context,
+            } => write!(
+                f,
+                "release asset index fetch refused {url}: {reason}; {}",
+                context.describe()
+            ),
+            Self::LocalRead {
+                path,
+                source,
+                context,
+            } => write!(
+                f,
+                "release asset index fetch failed reading {}: {}; {}",
+                path.display(),
+                source,
+                context.describe()
+            ),
+            Self::DownloadSpawnFailed {
+                url,
+                source,
+                context,
+            } => write!(
+                f,
+                "release asset index fetch failed to spawn curl for {url}: {}; {}",
+                source,
+                context.describe()
+            ),
+            Self::DownloadFailed {
+                url,
+                status,
+                output,
+                context,
+            } => write!(
+                f,
+                "release asset index fetch failed for {url}: status={status} output={output}; {}",
+                context.describe()
+            ),
+            Self::RedirectUnsupported {
+                initial,
+                final_url,
+                context,
+            } => write!(
+                f,
+                "release asset index redirected to unsupported host {final_url}; expected {initial}; {}",
+                context.describe()
+            ),
+            Self::ChecksumInvalid {
+                checksum_url,
+                detail,
+                context,
+            } => write!(
+                f,
+                "release asset index checksum sidecar invalid at {checksum_url}: {detail}; {}",
+                context.describe()
+            ),
+            Self::ChecksumMismatch {
+                index_url,
+                checksum_url,
+                expected_sha256,
+                observed_sha256,
+                context,
+            } => write!(
+                f,
+                "release asset index sha256 mismatch for {index_url} using {checksum_url}: expected {expected_sha256}, observed {observed_sha256}; {}",
+                context.describe()
+            ),
+            Self::VerifiedIndexInvalid {
+                index_url,
+                checksum_url,
+                expected_sha256,
+                observed_sha256,
+                detail,
+                context,
+            } => write!(
+                f,
+                "verified release asset index invalid at {index_url} using {checksum_url}: {detail}; expected_sha256={expected_sha256} observed_sha256={observed_sha256}; {}",
+                context.describe()
+            ),
+            Self::ReleaseTagMismatch {
+                index_url,
+                checksum_url,
+                expected_sha256,
+                observed_sha256,
+                expected_release_tag,
+                actual_release_tag,
+                context,
+            } => write!(
+                f,
+                "verified release asset index tag mismatch at {index_url} using {checksum_url}: expected release_tag {expected_release_tag}, got {actual_release_tag}; expected_sha256={expected_sha256} observed_sha256={observed_sha256}; {}",
+                context.describe()
+            ),
+        }
+    }
 }

@@ -10,6 +10,10 @@ that consumer lands. An explicit bundle URL override bypasses index selection.
 The published index is `m80-release-assets.json`. Its checksum sidecar is
 `m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
 alongside the bundle tarball, `install.sh`, and the metadata sidecar.
+Installer/bootstrapper code must fetch the pinned index and its sidecar for the
+same concrete release tag, verify the index sha256, and only then parse JSON or
+select a host tuple. `file://` fixture indexes use the same checksum-sidecar
+verifier as remote release indexes.
 
 The index uses `schema_version: 1` and has one top-level `release_tag`. Every
 bundle row records:
@@ -51,6 +55,13 @@ non-SHA-256 digest strings, zero size/schema/protocol numbers, and rows whose
 for future OS, architecture, or image-kind expansion without changing the
 README quickstart command.
 
+Fetch diagnostics name the index URL or local path, checksum sidecar URL or
+path, expected sha256, observed sha256, release tag, requested OS/arch, and
+image kind. Missing index bytes, missing sidecars, checksum mismatch, invalid
+JSON after a valid checksum, stale schema, and index `release_tag` drift all
+fail before bundle download, extraction, tuple selection, or active install
+state writes.
+
 Release publication must generate the index from the actual dist files, upload
 it with the rest of the release assets, then re-download the public release and
 validate the index against the uploaded tarball, metadata sidecar, checksum
@@ -59,6 +70,7 @@ the index, not a new README quickstart command.
 
 The current publisher is checksum-covered: `signature_name` and
 `attestation_name` are nullable until release signing/attestation material is
-wired into the release workflow. Signed-release verification must fail closed
-rather than accepting missing or stale proof references once that material
-exists.
+wired into the release workflow. Checksum coverage proves the exact bytes that
+the selector parsed; it is not a substitute for signed release integrity
+verification. Signed-release verification must fail closed rather than
+accepting missing or stale proof references once that material exists.

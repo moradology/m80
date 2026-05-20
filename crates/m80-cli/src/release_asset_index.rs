@@ -1,4 +1,4 @@
-//! Release asset index parsing and host tuple selection.
+//! Release asset index fetching, parsing, and host tuple selection.
 
 // This contract is staged for the installer/bootstrapper leaves that consume
 // the public index. Keep it compiled and tested before wiring the CLI path.
@@ -11,8 +11,10 @@ use serde::Deserialize;
 use crate::release::VersionStatus;
 
 mod diagnostics;
+mod fetch;
 
 const ASSET_INDEX_SCHEMA_VERSION: u32 = 1;
+const ASSET_INDEX_NAME: &str = "m80-release-assets.json";
 const DEFAULT_IMAGE_KIND: &str = "minimal";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
