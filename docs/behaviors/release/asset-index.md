@@ -94,8 +94,8 @@ the index, not a new README quickstart command.
 The current publisher is checksum-covered and attestation-referenced:
 `signature_name` is null, and `attestation_name` is
 `m80-release-integrity.attestation.jsonl`. Checksum coverage proves the exact
-bytes that the selector parsed; it is not a substitute for signed release
-integrity verification. Signed-release verification fails closed when an
+bytes that the selector parsed; it is not a substitute for signed release integrity
+verification. Signed-release verification fails closed when an
 installer-consumed row omits `signature_name` or `attestation_name`, leaves
 `attestation_name` empty, names a stale attestation bundle, names a signature
 file that is absent from the release dist, or drifts from the release tag,
