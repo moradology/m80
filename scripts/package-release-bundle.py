@@ -74,6 +74,7 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
 ]
 SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
 APT_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
+OCI_SHA256_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 FILE_MODES = {
     "bin/m80": 0o755,
     "bin/m80-jailer-harden": 0o755,
@@ -131,10 +132,11 @@ def main() -> int:
     require(args.rust_toolchain.strip(), "rust toolchain must not be empty")
     target_triples = target_triple_list(args.target_triple)
     apt_packages = apt_package_versions(args.apt_package_version)
+    container_digest = container_image_digest(args.container_digest)
     require(args.builder_identity.strip(), "builder identity must not be empty")
     require(args.builder_os_image.strip(), "builder os image must not be empty")
     require(
-        bool(apt_packages) or bool(args.container_digest),
+        bool(apt_packages) or container_digest is not None,
         "release build manifest must record apt package versions or a container digest",
     )
     require(
@@ -246,6 +248,7 @@ def main() -> int:
                 metadata_asset=metadata_asset,
                 target_triples=target_triples,
                 apt_packages=apt_packages,
+                container_digest=container_digest,
                 repo_root=repo_root,
             ),
         )
@@ -514,6 +517,16 @@ def apt_package_versions(raw_packages: list[str]) -> list[dict[str, str]]:
     return sorted(packages, key=lambda row: row["name"])
 
 
+def container_image_digest(value: str | None) -> str | None:
+    if value is None:
+        return None
+    require(
+        OCI_SHA256_DIGEST_RE.fullmatch(value) is not None,
+        "container digest must be sha256:<64 lowercase hex>",
+    )
+    return value
+
+
 def copy_file(src: Path, dest: Path, mode: int) -> None:
     require(src.is_file(), f"missing required input: {src}")
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -663,6 +676,7 @@ def release_build_manifest(
     metadata_asset: Path,
     target_triples: list[str],
     apt_packages: list[dict[str, str]],
+    container_digest: str | None,
     repo_root: Path,
 ) -> dict:
     return {
@@ -678,7 +692,7 @@ def release_build_manifest(
         "builder_identity": args.builder_identity,
         "builder_os_image": args.builder_os_image,
         "apt_packages": apt_packages,
-        "container_digest": args.container_digest,
+        "container_digest": container_digest,
         "bundle_metadata_name": METADATA_NAME,
         "bundle_metadata_sha256": sha256(metadata_asset),
     }

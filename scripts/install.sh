@@ -462,6 +462,7 @@ BUILD_MANIFEST_SCHEMA_VERSION = 1
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 APT_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
+OCI_SHA256_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 MECHANISM = "github-artifact-attestation"
 INTEGRITY_NAME = "m80-release-integrity.json"
 ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
@@ -734,7 +735,8 @@ def verify_build_manifest_builder_material(manifest: dict) -> None:
         seen.add(name)
     container_digest = manifest["container_digest"]
     require(
-        container_digest is None or (isinstance(container_digest, str) and container_digest),
+        container_digest is None
+        or (isinstance(container_digest, str) and OCI_SHA256_DIGEST_RE.fullmatch(container_digest) is not None),
         "build manifest container_digest invalid",
     )
     require(apt_packages or container_digest is not None, "build manifest missing apt packages or container digest")

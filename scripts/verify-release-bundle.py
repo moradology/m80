@@ -108,6 +108,7 @@ BUILD_MANIFEST_FIELDS = {
     "bundle_metadata_sha256",
 }
 APT_PACKAGE_FIELDS = {"name", "version"}
+OCI_SHA256_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -618,7 +619,8 @@ def verify_build_manifest_builder_material(manifest: dict) -> None:
         seen.add(name)
     container_digest = manifest.get("container_digest")
     require(
-        container_digest is None or (isinstance(container_digest, str) and container_digest),
+        container_digest is None
+        or (isinstance(container_digest, str) and OCI_SHA256_DIGEST_RE.fullmatch(container_digest) is not None),
         "build manifest container_digest invalid",
     )
     require(apt_packages or container_digest is not None, "build manifest missing apt packages or container digest")

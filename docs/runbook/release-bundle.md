@@ -46,6 +46,10 @@ guest target triples, `Cargo.lock` digest, builder identity, builder OS image,
 and either apt package versions or a container digest. Publication is blocked
 when the manifest's tag, commit, Rust toolchain, package version, bundle
 metadata hash, or `Cargo.lock` hash does not match the rest of the dist.
+The current GitHub workflow records apt package versions. If a future release
+builder switches to a containerized builder, its manifest must record an
+immutable `sha256:<64 lowercase hex>` OCI digest; tags and repository names are
+not accepted as builder provenance.
 
 For pull requests, CI runs the same package/verify script tests without publish
 authority. Those fixture packages must emit the same manifest shape as a tag

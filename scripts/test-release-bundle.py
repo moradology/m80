@@ -32,6 +32,7 @@ INTEGRITY_KEYSET_ID = "github-actions-oidc:m80-release-v1"
 INTEGRITY_SIGNER_IDENTITY = "moradology/m80/.github/workflows/release-artifacts.yml"
 INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
+VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 
 
 class ReleaseBundleTest(unittest.TestCase):
@@ -236,6 +237,73 @@ class ReleaseBundleTest(unittest.TestCase):
                     "SHA256SUMS",
                 },
             )
+
+    def test_package_accepts_container_only_builder_material(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            out_dir = root / "out"
+
+            run_package(
+                inputs,
+                out_dir,
+                apt_package_versions=[],
+                container_digest=VALID_CONTAINER_DIGEST,
+            )
+
+            build_manifest = json.loads((out_dir / BUILD_MANIFEST_NAME).read_text())
+            self.assertEqual(build_manifest["apt_packages"], [])
+            self.assertEqual(build_manifest["container_digest"], VALID_CONTAINER_DIGEST)
+            run_verify(out_dir / BUNDLE_NAME, verify_sidecars=True)
+            run_verify_integrity(write_integrity_material(out_dir))
+
+    def test_package_accepts_apt_and_container_builder_material(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            out_dir = root / "out"
+
+            run_package(inputs, out_dir, container_digest=VALID_CONTAINER_DIGEST)
+
+            build_manifest = json.loads((out_dir / BUILD_MANIFEST_NAME).read_text())
+            self.assertTrue(build_manifest["apt_packages"])
+            self.assertEqual(build_manifest["container_digest"], VALID_CONTAINER_DIGEST)
+
+    def test_package_rejects_missing_builder_material(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+
+            result = run_package(inputs, root / "out", apt_package_versions=[], check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release build manifest must record apt package versions or a container digest", result.stderr)
+
+    def test_package_rejects_malformed_container_digest_values(self) -> None:
+        invalid_values = [
+            "latest",
+            "example.com/m80-builder:latest",
+            "sha256:" + ("0" * 63),
+            "sha256:" + ("A" * 64),
+            "sha512:" + ("0" * 128),
+            "sha256:" + ("0" * 64) + " tag",
+            "sha256:" + ("0" * 64) + "\n",
+        ]
+        for invalid_digest in invalid_values:
+            with self.subTest(invalid_digest=invalid_digest):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    inputs = fixture_inputs(root, release_tag="v0.0.0")
+
+                    result = run_package(
+                        inputs,
+                        root / "out",
+                        container_digest=invalid_digest,
+                        check=False,
+                    )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("container digest must be sha256:<64 lowercase hex>", result.stderr)
 
     def test_package_rejects_legacy_quickstart_install_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -509,6 +577,26 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("build manifest missing apt packages or container digest", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_build_manifest_malformed_container_digest_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"container_digest": "m80-builder:latest"})
+            write_integrity_material(root / "out")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest container_digest invalid", result.stderr)
             self.assertIn("retry pinned command:", result.stderr)
             assert_no_bundle_download(self, urls, install_args)
             self.assertFalse((root / "tar.log").exists())
@@ -1273,6 +1361,17 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("build manifest missing apt packages or container digest", result.stderr)
 
+    def test_verifier_rejects_build_manifest_malformed_container_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_build_manifest(root / "out", {"container_digest": "sha256:" + ("0" * 63)})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest container_digest invalid", result.stderr)
+
     def test_verifier_rejects_asset_index_missing_asset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1801,6 +1900,18 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("release integrity build manifest source_commit mismatch", result.stderr)
+
+    def test_release_integrity_material_rejects_build_manifest_malformed_container_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"container_digest": "sha256:" + ("A" * 64)})
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest container_digest invalid", result.stderr)
 
     def test_release_integrity_material_rejects_unexpected_extra_subject(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2812,8 +2923,17 @@ def run_package(
     release_tag: str = "v0.0.0",
     target: str = "linux-x86_64",
     image_kind: str = "minimal",
+    apt_package_versions: list[str] | None = None,
+    container_digest: str | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    if apt_package_versions is None:
+        apt_package_versions = [
+            "busybox-static=1.36.1",
+            "curl=8.5.0",
+            "e2fsprogs=1.47.0",
+            "musl-tools=1.2.4",
+        ]
     cmd = [
         "python3",
         str(SCRIPT),
@@ -2833,14 +2953,6 @@ def run_package(
         "test-builder",
         "--builder-os-image",
         "test-os-image",
-        "--apt-package-version",
-        "busybox-static=1.36.1",
-        "--apt-package-version",
-        "curl=8.5.0",
-        "--apt-package-version",
-        "e2fsprogs=1.47.0",
-        "--apt-package-version",
-        "musl-tools=1.2.4",
         "--target",
         target,
         "--image-kind",
@@ -2866,6 +2978,10 @@ def run_package(
         "--out-dir",
         str(out_dir),
     ]
+    for package_version in apt_package_versions:
+        cmd.extend(["--apt-package-version", package_version])
+    if container_digest is not None:
+        cmd.extend(["--container-digest", container_digest])
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 

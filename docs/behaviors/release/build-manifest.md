@@ -20,6 +20,14 @@ For the default Linux release, `target_triples` must include
 The GitHub release workflow also records the host `rustc` triple used for the
 host-side m80 binaries.
 
+`container_digest` is builder evidence only when it is an immutable OCI digest
+with syntax `sha256:<64 lowercase hex>`. Image tags such as `latest`,
+repository names, uppercase hex, short digests, and whitespace-bearing values
+are not provenance and fail before packaging, publication verification, or
+installer extraction. The current GitHub release workflow records apt package
+versions; the container digest field is an explicit future builder mode, not a
+fallback for missing apt evidence.
+
 `scripts/verify-release-bundle.py --verify-sidecars` rejects a build manifest
 whose release tag, target, image kind, package version, bundle metadata digest,
 `Cargo.lock` digest, source commit, or Rust toolchain does not match the rest
@@ -32,6 +40,6 @@ The versioned `install.sh` downloads `m80-release-build.json` and
 `m80-release-build.json.sha256` before extracting the selected bundle. Its
 embedded verifier rejects a build manifest whose release tag, source commit,
 Rust toolchain, target, package version, image kind, target triples, builder
-material, or bundle metadata hash does not match the signed predicate and the
-selected bundle metadata. That keeps the no-installed-binary path from treating
-the manifest as a mere signed blob.
+material, container digest syntax, or bundle metadata hash does not match the
+signed predicate and the selected bundle metadata. That keeps the
+no-installed-binary path from treating the manifest as a mere signed blob.

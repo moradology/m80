@@ -169,8 +169,9 @@ closed when:
 - `m80-release-build.json` does not match the signed release tag, source
   commit, Rust toolchain, target, package version, bundle metadata hash, or
   current `Cargo.lock` digest;
-- the build manifest omits target triples or records neither apt package
-  versions nor a container digest;
+- the build manifest omits target triples, records neither apt package
+  versions nor a container digest, or records a container digest that is not
+  `sha256:<64 lowercase hex>`;
 - trust policy, attestation bundle, or attestation metadata is missing;
 - trust policy or attestation metadata uses an unsupported schema;
 - trust policy or attestation metadata uses a different repository, mechanism,
@@ -275,6 +276,7 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_rendered_install_script_rejects_build_manifest_target_mismatch_before_bundle`;
 - `test_rendered_install_script_rejects_build_manifest_package_version_mismatch_before_bundle`;
 - `test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle`;
+- `test_rendered_install_script_rejects_build_manifest_malformed_container_digest_before_bundle`;
 - `test_rendered_install_script_rejects_failed_attestation_before_bundle_extract`;
 - `official_release_missing_attestation_verifier_fails_before_staging`;
 - `official_release_too_old_attestation_verifier_fails_before_staging`;
@@ -286,6 +288,7 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_integrity_material_rejects_missing_bootstrap_selector_subject`;
 - `test_release_integrity_material_rejects_missing_build_manifest_subject`;
 - `test_release_integrity_material_rejects_build_manifest_commit_mismatch`;
+- `test_release_integrity_material_rejects_build_manifest_malformed_container_digest`;
 - `test_release_integrity_material_rejects_unexpected_extra_subject`;
 - `test_release_integrity_material_rejects_subject_digest_mismatch`;
 - `test_release_integrity_material_rejects_tampered_bundle_hash`;

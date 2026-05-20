@@ -49,6 +49,7 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "test_release_integrity_material_rejects_missing_bootstrap_selector_subject",
         "test_release_integrity_material_rejects_missing_build_manifest_subject",
         "test_release_integrity_material_rejects_build_manifest_commit_mismatch",
+        "test_release_integrity_material_rejects_build_manifest_malformed_container_digest",
         "test_release_integrity_material_rejects_unexpected_extra_subject",
         "test_release_integrity_material_rejects_subject_digest_mismatch",
         "test_release_integrity_material_rejects_tampered_install_hash",
@@ -83,6 +84,7 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "test_rendered_install_script_rejects_build_manifest_package_version_mismatch_before_bundle",
         "test_rendered_install_script_rejects_build_manifest_metadata_hash_mismatch_before_bundle",
         "test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle",
+        "test_rendered_install_script_rejects_build_manifest_malformed_container_digest_before_bundle",
     ] {
         assert!(
             doc.contains(required),
