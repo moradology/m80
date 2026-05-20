@@ -307,7 +307,7 @@ with `contents: write`; and `scripts/lint-github-workflows.py` keeps that
 boundary from drifting in CI. Run `python3 scripts/lint-github-workflows.py`
 locally before release workflow edits; it is the m80 authority-policy and
 strict workflow shell check, and it should run beside the pinned `actionlint`
-syntax/run-block gate: `python3 scripts/run-actionlint.py --workflow-dir
+syntax gate: `python3 scripts/run-actionlint.py --workflow-dir
 .github/workflows`.
 
 ## Quickstart Proof Artifact

@@ -24,8 +24,8 @@ public release state.
 - The pinned workflow syntax-lint runner is `scripts/run-actionlint.py`. It
   pins `rhysd/actionlint` `v1.7.12` for Linux x86_64 and verifies
   `actionlint_1.7.12_linux_amd64.tar.gz` before extracting the binary. The
-  runner never falls back to an unverified `actionlint` from `PATH`; the
-  follow-on CI syntax gate uses this runner rather than a floating install.
+  runner never falls back to an unverified `actionlint` from `PATH`; CI uses
+  this runner rather than a floating install.
 
 ## Enforcement
 
@@ -34,9 +34,9 @@ write permissions, release/latest workflows without concurrency, floating
 third-party action refs, `secrets.*` references in pull-request workflows, and
 multi-line `run:` blocks that omit the strict shell prelude.
 
-`CI` runs that linter on every push and pull request before the normal Rust
-build/test/clippy sequence. The linter's negative fixture suite lives in
-`scripts/test-workflow-policy.py`.
+`CI` runs that linter and then the pinned actionlint syntax gate on every push
+and pull request before the normal Rust build/test/clippy sequence. The m80
+linter's negative fixture suite lives in `scripts/test-workflow-policy.py`.
 
 ## Verification
 
@@ -50,3 +50,7 @@ build/test/clippy sequence. The linter's negative fixture suite lives in
   accepts verified metadata, recreates a missing cached binary from the verified
   archive, rejects checksum mismatches, rejects unsupported platforms, reports
   download failures, and refuses archives without an `actionlint` binary.
+- `scripts/test-actionlint-fixtures.py` proves the pinned actionlint binary
+  accepts a valid workflow fixture, rejects stale `needs`, invalid GitHub
+  expressions, invalid event syntax, and duplicate job ids, and tolerates
+  concurrent CLI invocations sharing one cache.

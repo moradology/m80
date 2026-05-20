@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import concurrent.futures
 from pathlib import Path
 import sys
 import tarfile
@@ -103,6 +104,23 @@ class ActionlintRunnerTest(unittest.TestCase):
 
             with self.assertRaisesRegex(runner.ActionlintRunnerError, "did not contain a file named actionlint"):
                 runner.ensure_actionlint(root / "cache", pin)
+
+    def test_concurrent_installs_do_not_share_temp_binary_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = make_actionlint_archive(
+                root / "actionlint.tar.gz",
+                fake_actionlint_script(root / "args.txt") + b"#" * (512 * 1024),
+            )
+            pin = pin_for_archive(archive)
+            cache = root / "cache"
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                binaries = list(pool.map(lambda _: runner.ensure_actionlint(cache, pin), range(32)))
+
+            self.assertEqual({path for path in binaries}, {cache / f"v{pin.version}" / pin.target / "actionlint"})
+            self.assertTrue(binaries[0].exists())
+            self.assertFalse(list(binaries[0].parent.glob(".actionlint.*.tmp")))
 
 
 def fake_actionlint_script(args_file: Path) -> bytes:

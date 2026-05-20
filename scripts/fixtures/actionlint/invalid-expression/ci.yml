@@ -1,0 +1,10 @@
+name: invalid-expression
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.ref == }}"

@@ -46,6 +46,11 @@ fn actionlint_runner_fixture_suite_passes() {
 }
 
 #[test]
+fn actionlint_live_fixture_suite_passes() {
+    run_python_script("scripts/test-actionlint-fixtures.py");
+}
+
+#[test]
 fn release_workflow_doc_records_authority_boundary() {
     let behavior = read_repo_file("docs/behaviors/ci/release-workflow-guardrails.md");
     let runbook = read_repo_file("docs/runbook/release-bundle.md");
@@ -59,7 +64,10 @@ fn release_workflow_doc_records_authority_boundary() {
         "`scripts/test-workflow-policy.py`",
         "`scripts/run-actionlint.py`",
         "`scripts/test-actionlint-runner.py`",
+        "`scripts/test-actionlint-fixtures.py`",
         "actionlint_1.7.12_linux_amd64.tar.gz",
+        "invalid event syntax, and duplicate job ids",
+        "concurrent CLI invocations sharing one cache",
     ] {
         assert!(
             behavior.contains(required),
@@ -69,7 +77,9 @@ fn release_workflow_doc_records_authority_boundary() {
     assert!(runbook.contains("`publish-release-artifacts`"));
     assert!(runbook.contains("`contents: write`"));
     assert!(runbook.contains("python3 scripts/run-actionlint.py --workflow-dir .github/workflows"));
+    assert!(runbook.contains("python3 scripts/test-actionlint-fixtures.py"));
     assert!(runbook.contains("8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"));
+    assert!(read_repo_file(".github/workflows/ci.yml").contains("workflow syntax lint"));
     assert!(release_workflow.contains("publish-release-artifacts:"));
     assert!(release_workflow.contains("contents: write"));
     assert!(release_workflow.contains("release-artifacts-${{ github.ref_name }}"));

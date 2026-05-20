@@ -1,0 +1,11 @@
+name: stale-needs
+
+on:
+  push:
+
+jobs:
+  test:
+    needs: missing
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

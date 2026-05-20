@@ -81,9 +81,9 @@ invocations that omit `--locked`.
 Multi-line workflow `run:` blocks are treated as release-authority shell
 scripts. The local workflow strictness check is the same command:
 `python3 scripts/lint-github-workflows.py`. Run it beside the pinned
-`actionlint` lane once that syntax/run-block gate is installed. The m80 linter
-catches project authority rules and the strict shell prelude; actionlint catches
-GitHub expression and shell syntax drift.
+`actionlint` lane. The m80 linter catches project authority rules and the
+strict shell prelude; actionlint catches GitHub expression and workflow graph
+syntax drift.
 
 The pinned local actionlint command is:
 
@@ -103,5 +103,6 @@ sha256 constants in `scripts/run-actionlint.py`, then run:
 
 ```sh
 python3 scripts/test-actionlint-runner.py
+python3 scripts/test-actionlint-fixtures.py
 python3 scripts/run-actionlint.py --workflow-dir .github/workflows
 ```

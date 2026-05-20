@@ -82,6 +82,8 @@ def run_actionlint(
     *,
     env: dict[str, str] | None = None,
     host_target: str | None = None,
+    stdout=None,
+    stderr=None,
 ) -> int:
     target = host_target if host_target is not None else supported_target()
     if target != pin.target:
@@ -91,7 +93,7 @@ def run_actionlint(
     if not workflow_files:
         raise ActionlintRunnerError(f"{workflow_dir}: no workflow files found")
     command = [str(binary), "-no-color", *[str(path) for path in workflow_files]]
-    return subprocess.run(command, env=env, check=False).returncode
+    return subprocess.run(command, env=env, check=False, stdout=stdout, stderr=stderr).returncode
 
 
 def supported_target(
@@ -167,20 +169,25 @@ def extract_actionlint_binary(archive: Path, binary: Path) -> None:
             source = tar.extractfile(member)
             if source is None:
                 raise ActionlintRunnerError(f"actionlint archive {archive} did not expose actionlint bytes")
-            tmp = binary.with_name(f".{binary.name}.tmp")
-            with source, tmp.open("wb") as out:
-                while chunk := source.read(1024 * 1024):
-                    out.write(chunk)
-            tmp.chmod(
-                stat.S_IRUSR
-                | stat.S_IWUSR
-                | stat.S_IXUSR
-                | stat.S_IRGRP
-                | stat.S_IXGRP
-                | stat.S_IROTH
-                | stat.S_IXOTH
-            )
-            tmp.replace(binary)
+            fd, tmp_name = tempfile.mkstemp(prefix=f".{binary.name}.", suffix=".tmp", dir=binary.parent)
+            tmp = Path(tmp_name)
+            try:
+                with source, os.fdopen(fd, "wb") as out:
+                    while chunk := source.read(1024 * 1024):
+                        out.write(chunk)
+                tmp.chmod(
+                    stat.S_IRUSR
+                    | stat.S_IWUSR
+                    | stat.S_IXUSR
+                    | stat.S_IRGRP
+                    | stat.S_IXGRP
+                    | stat.S_IROTH
+                    | stat.S_IXOTH
+                )
+                tmp.replace(binary)
+            except Exception:
+                tmp.unlink(missing_ok=True)
+                raise
     except KeyError as err:
         raise ActionlintRunnerError(f"actionlint archive {archive} did not contain a file named actionlint") from err
     except tarfile.TarError as err:
