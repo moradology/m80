@@ -21,17 +21,23 @@ release tag. For manual dispatches, it is the selected ref.
 installs the pinned Rust toolchain from this repo's toolchain policy, builds
 the release artifacts with `cargo --locked`, records apt package versions,
 packages the release bundle plus `m80-release-assets.json`,
-`m80-bootstrap-selector.tsv`, and `m80-release-build.json`, and uploads only a
-workflow artifact.
+`m80-bootstrap-selector.tsv`, and `m80-release-build.json`, writes
+`m80-release-upload-manifest.json` after release-integrity attestation metadata
+and hostless proof evidence exist, and uploads only a workflow artifact.
 
 `publish-release-artifacts` runs only for tag refs after the build job
 finishes. It is the only job with `contents: write`. It downloads the workflow
-artifact, uploads the exact files to the matching GitHub Release with
-`gh release upload`, re-downloads those public assets, and runs
+artifact, validates `m80-release-upload-manifest.json`, derives the
+`gh release upload` path list and `gh release download --pattern` list from
+that manifest, re-downloads those public assets, and runs
 `scripts/verify-release-bundle.py --verify-sidecars` against the downloaded
 bundle so the published asset index is checked against the uploaded tarball,
 metadata, bootstrap selector, checksums, and installer before any later
 latest-promotion lane can trust it.
+
+The upload manifest itself and `m80-quickstart-proof-hostless.json` stay
+workflow-only artifacts. Public proof is the release-integrity predicate,
+attestation bundle, and normalized attestation metadata listed in the manifest.
 
 ## Build Manifest
 

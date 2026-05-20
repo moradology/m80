@@ -1227,6 +1227,22 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("scripts/write-quickstart-proof-fixture.py", workflow)
         self.assertGreaterEqual(workflow.count("scripts/verify-quickstart-proof.py"), 2)
         self.assertIn("m80-quickstart-proof-hostless.json", workflow)
+        self.assertGreaterEqual(workflow.count("scripts/release_upload_manifest.py"), 5)
+        self.assertIn("Write and validate release upload manifest", workflow)
+        self.assertIn("--write", workflow)
+        self.assertIn("Verify release upload manifest before upload", workflow)
+        self.assertIn("mapfile -t upload_paths < <(", workflow)
+        self.assertIn("--print-upload-paths", workflow)
+        self.assertIn('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}" --clobber', workflow)
+        self.assertIn("download_args=(--dir /tmp/m80-release-redownload)", workflow)
+        self.assertIn('download_args+=(--pattern "$pattern")', workflow)
+        self.assertIn("--print-download-patterns", workflow)
+        self.assertIn('gh release download "$GITHUB_REF_NAME" "${download_args[@]}"', workflow)
+        self.assertIn("--manifest /tmp/m80-release-upload/m80-release-upload-manifest.json", workflow)
+        self.assertNotIn(
+            'gh release upload "$GITHUB_REF_NAME" \\\n            /tmp/m80-release-upload/',
+            workflow,
+        )
         self.assertIn("actions/upload-artifact", workflow)
         self.assertIn("actions/download-artifact", workflow)
         for name in [
@@ -1243,32 +1259,16 @@ class ReleaseBundleTest(unittest.TestCase):
             INSTALL_NAME,
             f"{INSTALL_NAME}.sha256",
             "SHA256SUMS",
+            INTEGRITY_NAME,
+            INTEGRITY_ATTESTATION_BUNDLE_NAME,
+            INTEGRITY_ATTESTATION_METADATA_NAME,
         ]:
-            self.assertGreaterEqual(
-                workflow.count(f"/tmp/m80-release-upload/{name}"),
-                1,
-                f"{name} must be uploaded",
-            )
-            self.assertGreaterEqual(
-                workflow.count(f"--pattern {name}"),
-                1,
-                f"{name} must be re-downloaded",
-            )
+            self.assertNotIn(f"--pattern {name}", workflow)
         for name in [
             INTEGRITY_NAME,
             INTEGRITY_ATTESTATION_BUNDLE_NAME,
             INTEGRITY_ATTESTATION_METADATA_NAME,
         ]:
-            self.assertGreaterEqual(
-                workflow.count(f"/tmp/m80-release-upload/{name}"),
-                1,
-                f"{name} must be uploaded",
-            )
-            self.assertGreaterEqual(
-                workflow.count(f"--pattern {name}"),
-                1,
-                f"{name} must be re-downloaded",
-            )
             self.assertGreaterEqual(
                 workflow.count(f"/tmp/m80-release-redownload/{name}"),
                 1,
@@ -1318,6 +1318,18 @@ class ReleaseBundleTest(unittest.TestCase):
             for name, asset in public_assets.items():
                 self.assertEqual(asset["sha256"], sha256(out_dir / name))
                 self.assertEqual(asset["size_bytes"], (out_dir / name).stat().st_size)
+
+    def test_release_upload_manifest_prints_upload_paths_and_download_patterns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
+            public_names = [asset["name"] for asset in manifest["public_assets"]]
+
+            upload = run_release_upload_manifest(out_dir, "--print-upload-paths")
+            download = run_release_upload_manifest(out_dir, "--print-download-patterns")
+
+            self.assertEqual(upload.stdout.splitlines(), [str(out_dir / name) for name in public_names])
+            self.assertEqual(download.stdout.splitlines(), public_names)
 
     def test_release_upload_manifest_rejects_duplicate_public_asset_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -179,6 +179,15 @@ jobs:
             --artifact-root "$DIST_DIR" \
             --release-tag "$GITHUB_REF_NAME"
 
+      - name: Write and validate release upload manifest
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          scripts/release_upload_manifest.py \
+            --dist-dir "$DIST_DIR" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --write
+
       - name: Upload workflow artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
@@ -237,29 +246,25 @@ jobs:
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
+      - name: Verify release upload manifest before upload
+        run: |
+          set -euo pipefail
+          scripts/release_upload_manifest.py \
+            --dist-dir /tmp/m80-release-upload \
+            --release-tag "$GITHUB_REF_NAME"
+
       - name: Attach artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload "$GITHUB_REF_NAME" \
-            /tmp/m80-release-upload/m80-linux-x86_64.tar.gz \
-            /tmp/m80-release-upload/m80-linux-x86_64.tar.gz.sha256 \
-            /tmp/m80-release-upload/m80-linux-x86_64.bundle.json \
-            /tmp/m80-release-upload/m80-linux-x86_64.bundle.json.sha256 \
-            /tmp/m80-release-upload/m80-release-assets.json \
-            /tmp/m80-release-upload/m80-release-assets.json.sha256 \
-            /tmp/m80-release-upload/m80-bootstrap-selector.tsv \
-            /tmp/m80-release-upload/m80-bootstrap-selector.tsv.sha256 \
-            /tmp/m80-release-upload/m80-release-build.json \
-            /tmp/m80-release-upload/m80-release-build.json.sha256 \
-            /tmp/m80-release-upload/install.sh \
-            /tmp/m80-release-upload/install.sh.sha256 \
-            /tmp/m80-release-upload/m80-release-integrity.json \
-            /tmp/m80-release-upload/m80-release-integrity.attestation.jsonl \
-            /tmp/m80-release-upload/m80-release-attestation.json \
-            /tmp/m80-release-upload/SHA256SUMS \
-            --clobber
+          mapfile -t upload_paths < <(
+            scripts/release_upload_manifest.py \
+              --dist-dir /tmp/m80-release-upload \
+              --release-tag "$GITHUB_REF_NAME" \
+              --print-upload-paths
+          )
+          gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}" --clobber
 
       - name: Re-download and validate published release assets
         env:
@@ -269,26 +274,22 @@ jobs:
           set -euo pipefail
           verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p /tmp/m80-release-redownload
-          gh release download "$GITHUB_REF_NAME" \
-            --dir /tmp/m80-release-redownload \
-            --pattern m80-linux-x86_64.tar.gz \
-            --pattern m80-linux-x86_64.tar.gz.sha256 \
-            --pattern m80-linux-x86_64.bundle.json \
-            --pattern m80-linux-x86_64.bundle.json.sha256 \
-            --pattern m80-release-assets.json \
-            --pattern m80-release-assets.json.sha256 \
-            --pattern m80-bootstrap-selector.tsv \
-            --pattern m80-bootstrap-selector.tsv.sha256 \
-            --pattern m80-release-build.json \
-            --pattern m80-release-build.json.sha256 \
-            --pattern install.sh \
-            --pattern install.sh.sha256 \
-            --pattern m80-release-integrity.json \
-            --pattern m80-release-integrity.attestation.jsonl \
-            --pattern m80-release-attestation.json \
-            --pattern SHA256SUMS
+          download_args=(--dir /tmp/m80-release-redownload)
+          while IFS= read -r pattern; do
+            download_args+=(--pattern "$pattern")
+          done < <(
+            scripts/release_upload_manifest.py \
+              --dist-dir /tmp/m80-release-upload \
+              --release-tag "$GITHUB_REF_NAME" \
+              --print-download-patterns
+          )
+          gh release download "$GITHUB_REF_NAME" "${download_args[@]}"
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
             > /tmp/m80-release-redownload/github-release.json
+          scripts/release_upload_manifest.py \
+            --dist-dir /tmp/m80-release-redownload \
+            --manifest /tmp/m80-release-upload/m80-release-upload-manifest.json \
+            --release-tag "$GITHUB_REF_NAME"
           scripts/verify-install-handoff.py \
             /tmp/m80-release-redownload \
             --release-tag "$GITHUB_REF_NAME" \
