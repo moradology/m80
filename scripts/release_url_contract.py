@@ -10,6 +10,13 @@ import re
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = REPO_ROOT / "docs" / "behaviors" / "release" / "public-release-root.env"
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+VERIFIED_INSTALL_HANDOFF_ASSETS = (
+    "install.sh",
+    "install.sh.sha256",
+    "m80-release-integrity.json",
+    "m80-release-integrity.attestation.jsonl",
+    "m80-release-attestation.json",
+)
 
 
 @dataclass(frozen=True)
@@ -77,3 +84,24 @@ def latest_install_command() -> str:
 
 def pinned_install_command(release_tag: str = "<version>") -> str:
     return f"curl -fsSL {public_release_root().pinned_install_url(release_tag)} | sudo sh"
+
+
+def verified_install_handoff_block(release_tag: str = "<version>") -> str:
+    repo = public_release_root().repository
+    assets = " ".join(VERIFIED_INSTALL_HANDOFF_ASSETS)
+    return "\n".join(
+        [
+            f"tag={release_tag}",
+            f"repo={repo}",
+            'tmp="$(mktemp -d)"',
+            'base="https://github.com/${repo}/releases/download/${tag}"',
+            f"for asset in {assets}; do",
+            '  curl -fsSLo "${tmp}/${asset}" "${base}/${asset}"',
+            "done",
+            'python3 scripts/verify-install-handoff.py "${tmp}" \\',
+            '  --release-tag "${tag}" \\',
+            "  --trust-policy docs/behaviors/release/m80-release-trust-policy.json \\",
+            '  --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"',
+            'sudo sh "${tmp}/install.sh"',
+        ]
+    )

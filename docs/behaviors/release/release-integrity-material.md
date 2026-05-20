@@ -192,6 +192,15 @@ extracting a bundle, running `install.sh`, or writing active install state. A
 checksum-only verifier may run earlier, but it is not a replacement for this
 predicate once signed/attested material is required.
 
+`scripts/verify-install-handoff.py` is the narrower pre-root gate for
+automation that already has a trusted m80 checkout. It downloads no assets by
+itself; given local `install.sh`, `install.sh.sha256`,
+`m80-release-integrity.json`, `m80-release-integrity.attestation.jsonl`, and
+`m80-release-attestation.json`, it verifies the installer checksum and the
+signed predicate subject before printing the local `sudo sh <tmp>/install.sh`
+handoff command. The full installer still verifies the complete bundle and
+asset-index contract before extraction or active-state writes.
+
 ## Human Command
 
 A human can verify downloaded release material without installing it:

@@ -39,6 +39,24 @@ curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh
 curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
 ```
 
+Automation from a trusted checkout uses the verified handoff block when it must
+prove `install.sh` before sudo:
+
+```sh
+tag=<version>
+repo=moradology/m80
+tmp="$(mktemp -d)"
+base="https://github.com/${repo}/releases/download/${tag}"
+for asset in install.sh install.sh.sha256 m80-release-integrity.json m80-release-integrity.attestation.jsonl m80-release-attestation.json; do
+  curl -fsSLo "${tmp}/${asset}" "${base}/${asset}"
+done
+python3 scripts/verify-install-handoff.py "${tmp}" \
+  --release-tag "${tag}" \
+  --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+  --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+sudo sh "${tmp}/install.sh"
+```
+
 Do not hand-write alternate owners, raw `main` URLs, or private checkout URLs
 for public install instructions.
 
@@ -61,6 +79,13 @@ The shell installer bounds every release-asset download before the bundled
 diagnostics name the release tag, asset, URL, curl failure class, and whether
 release verification had started. Offline or private-network hosts are expected
 to fail clearly; this policy is not an offline install guarantee.
+
+`scripts/verify-install-handoff.py` verifies downloaded `install.sh` bytes and
+their signed release-integrity subject before automation runs local verified
+bytes with `sudo`. It prints the release tag, source commit,
+`install_sh_sha256`, and verified asset names before the privilege-sensitive
+handoff. See
+`docs/behaviors/release/verified-install-handoff.md`.
 
 ## Verification
 

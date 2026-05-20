@@ -70,6 +70,24 @@ m80 run -- echo hello
 Use a stable tag such as `v1.2.3`; prerelease or draft releases are not accepted
 by the normal install path.
 
+Automation from a trusted checkout can verify the installer before handing it to
+sudo:
+
+```sh
+tag=<version>
+repo=moradology/m80
+tmp="$(mktemp -d)"
+base="https://github.com/${repo}/releases/download/${tag}"
+for asset in install.sh install.sh.sha256 m80-release-integrity.json m80-release-integrity.attestation.jsonl m80-release-attestation.json; do
+  curl -fsSLo "${tmp}/${asset}" "${base}/${asset}"
+done
+python3 scripts/verify-install-handoff.py "${tmp}" \
+  --release-tag "${tag}" \
+  --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+  --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+sudo sh "${tmp}/install.sh"
+```
+
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,
 Firecracker seccomp filter, `host-binaries.manifest.json` for the installed

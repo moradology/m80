@@ -10,11 +10,13 @@ import unittest
 
 from release_url_contract import (
     CONTRACT_PATH,
+    VERIFIED_INSTALL_HANDOFF_ASSETS,
     latest_install_command,
     pinned_install_command,
     public_release_root,
     release_asset_url,
     release_repository,
+    verified_install_handoff_block,
 )
 
 
@@ -61,6 +63,10 @@ class ReleaseUrlContractTest(unittest.TestCase):
             pinned_install_command(release_tag),
             f"curl -fsSL {expected_base}/install.sh | sudo sh",
         )
+        self.assertIn(f"repo={release_repository()}", verified_install_handoff_block(release_tag))
+        self.assertIn("scripts/verify-install-handoff.py", verified_install_handoff_block(release_tag))
+        for asset_name in VERIFIED_INSTALL_HANDOFF_ASSETS:
+            self.assertIn(asset_name, verified_install_handoff_block(release_tag))
         for asset_name in [
             "m80-release-assets.json",
             "install.sh",
@@ -82,12 +88,22 @@ class ReleaseUrlContractTest(unittest.TestCase):
             text=True,
         ).stdout.splitlines()
 
-        self.assertEqual(output, [latest_install_command(), pinned_install_command()])
+        self.assertEqual(
+            output,
+            [
+                latest_install_command(),
+                pinned_install_command(),
+                "",
+                *verified_install_handoff_block().splitlines(),
+            ],
+        )
         readme = read_repo_file("README.md")
         runbook = read_repo_file("docs/runbook/release.md")
-        for command in output:
+        for command in [latest_install_command(), pinned_install_command()]:
             self.assertIn(command, readme)
             self.assertIn(command, runbook)
+        self.assertIn(verified_install_handoff_block(), readme)
+        self.assertIn(verified_install_handoff_block(), runbook)
         self.assertIn("scripts/render-release-install-snippets.py", readme)
         self.assertIn(str(CONTRACT_PATH.relative_to(REPO_ROOT)), runbook)
 

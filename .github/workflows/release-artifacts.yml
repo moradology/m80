@@ -238,6 +238,13 @@ jobs:
             --pattern SHA256SUMS
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
             > /tmp/m80-release-redownload/github-release.json
+          scripts/verify-install-handoff.py \
+            /tmp/m80-release-redownload \
+            --release-tag "$GITHUB_REF_NAME" \
+            --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+            --attestation-bundle /tmp/m80-release-redownload/m80-release-integrity.attestation.jsonl \
+            --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
+            --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           scripts/stable_release_channel.py \
             --release-metadata /tmp/m80-release-redownload/github-release.json \
             --asset-index /tmp/m80-release-redownload/m80-release-assets.json \
