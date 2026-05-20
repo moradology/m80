@@ -267,7 +267,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rendered_install_script_selects_verified_selector_before_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            package_fixture(root)
+            package_signed_fixture(root)
 
             result, urls, install_args = run_rendered_install(root, args=["--dry-run"])
 
@@ -280,16 +280,104 @@ class ReleaseBundleTest(unittest.TestCase):
                     f"{base}/{BOOTSTRAP_SELECTOR_NAME}.sha256",
                     f"{base}/{ASSET_INDEX_NAME}",
                     f"{base}/{ASSET_INDEX_NAME}.sha256",
+                    f"{base}/{INTEGRITY_NAME}",
+                    f"{base}/{INTEGRITY_ATTESTATION_BUNDLE_NAME}",
+                    f"{base}/{INTEGRITY_ATTESTATION_METADATA_NAME}",
+                    f"{base}/{METADATA_NAME}",
+                    f"{base}/{METADATA_NAME}.sha256",
+                    f"{base}/{INSTALL_NAME}",
+                    f"{base}/{INSTALL_NAME}.sha256",
+                    f"{base}/SHA256SUMS",
                     f"{base}/{BUNDLE_NAME}",
                     f"{base}/{BUNDLE_NAME}.sha256",
                 ],
             )
+            self.assertIn("verified release tag=v0.0.0", result.stderr)
+            self.assertIn(
+                f"verified assets={BUNDLE_NAME},{METADATA_NAME},{INSTALL_NAME},{INTEGRITY_NAME},{INTEGRITY_ATTESTATION_BUNDLE_NAME}",
+                result.stderr,
+            )
+            self.assertIn(f"install_sh_sha256={sha256(root / 'out' / INSTALL_NAME)}", result.stderr)
             self.assertTrue(install_args.is_file(), result.stderr)
             args = install_args.read_text().splitlines()
             self.assertEqual(args[0:2], ["install", "--bundle-url"])
             self.assertTrue(args[2].startswith("file://"), args)
             self.assertTrue(args[2].endswith(f"/{BUNDLE_NAME}"), args)
             self.assertEqual(args[3:], ["--dry-run"])
+
+    def test_rendered_install_script_rejects_unsigned_dev_fixture_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"failed to download {INTEGRITY_ATTESTATION_BUNDLE_NAME}", result.stderr)
+            self.assertIn(
+                "retry pinned command: curl -fsSL https://github.com/moradology/m80/releases/download/v0.0.0/install.sh | sudo sh",
+                result.stderr,
+            )
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+
+    def test_rendered_install_script_rejects_tampered_install_before_bundle_extract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            with (root / "out" / INSTALL_NAME).open("a") as f:
+                f.write("\n# tampered\n")
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"checksum verification failed for {INSTALL_NAME}", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_wrong_integrity_tag_before_bundle_extract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            write_integrity_material(root / "out", updates={"release_tag": "v9.9.9"})
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity release_tag mismatch", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
+
+    def test_rendered_install_script_rejects_failed_attestation_before_bundle_extract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            rewrite_attestation_bundle(root / "out", {"valid": False})
+            install_root = root / "install-root"
+
+            result, urls, install_args = run_rendered_install(
+                root,
+                args=["--install-root", str(install_root)],
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release attestation verification failed for {INTEGRITY_NAME}", result.stderr)
+            self.assertIn("retry pinned command:", result.stderr)
+            assert_no_bundle_download(self, urls, install_args)
+            self.assertFalse((root / "tar.log").exists())
+            self.assertFalse(install_root.exists())
 
     def test_rendered_install_script_rejects_unsupported_arch_before_downloads(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2180,12 +2268,14 @@ def run_rendered_install(
     out_dir = root / "out"
     fakebin = root / "fakebin-install"
     curl_log = root / "curl.log"
+    tar_log = root / "tar.log"
     install_args = root / "install-args.log"
     write_install_test_tools(fakebin)
     env = {
         "PATH": str(fakebin),
         "M80_RELEASE_ROOT": str(out_dir),
         "M80_CURL_LOG": str(curl_log),
+        "M80_TAR_LOG": str(tar_log),
         "M80_FAKE_UNAME_M": uname_arch,
         "M80_FAKE_INSTALL_ARGS": str(install_args),
     }
@@ -2224,13 +2314,82 @@ def write_install_test_tools(fakebin: Path) -> None:
     )
     write_executable(
         fakebin / "gh",
-        "#!/bin/sh\n"
-        "if [ \"$1\" = \"--version\" ]; then printf 'gh version 9.9.9\\n'; exit 0; fi\n"
-        "if [ \"$1\" = \"attestation\" ] && [ \"$2\" = \"verify\" ] && [ \"$3\" = \"--help\" ]; then\n"
-        "  printf '%s\\n' '--repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --source-digest --deny-self-hosted-runners --format'\n"
-        "  exit 0\n"
-        "fi\n"
-        "exit 1\n",
+        f"""#!/usr/bin/env python3
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+EXPECTED = {{
+    "repo": "moradology/m80",
+    "signer": "{INTEGRITY_SIGNER_IDENTITY}",
+    "issuer": "{INTEGRITY_SIGNER_ISSUER}",
+    "source_ref": "refs/tags/v0.0.0",
+}}
+HELP = "--repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --source-digest --deny-self-hosted-runners --format"
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+args = sys.argv[1:]
+if args == ["--version"]:
+    print("gh version 9.9.9")
+    sys.exit(0)
+if args == ["attestation", "verify", "--help"]:
+    print(HELP)
+    sys.exit(0)
+if len(args) < 3 or args[:2] != ["attestation", "verify"]:
+    fail("unexpected gh command")
+artifact = Path(args[2])
+flags = {{}}
+i = 3
+while i < len(args):
+    flag = args[i]
+    if flag == "--deny-self-hosted-runners":
+        flags[flag] = True
+        i += 1
+        continue
+    if i + 1 >= len(args):
+        fail(f"missing value for {{flag}}")
+    flags[flag] = args[i + 1]
+    i += 2
+if flags.get("--repo") != EXPECTED["repo"]:
+    fail("--repo mismatch")
+if flags.get("--signer-workflow") != EXPECTED["signer"]:
+    fail("--signer-workflow mismatch")
+if flags.get("--cert-oidc-issuer") != EXPECTED["issuer"]:
+    fail("--cert-oidc-issuer mismatch")
+if flags.get("--source-ref") != EXPECTED["source_ref"]:
+    fail("--source-ref mismatch")
+if flags.get("--format") != "json":
+    fail("--format mismatch")
+if flags.get("--deny-self-hosted-runners") is not True:
+    fail("--deny-self-hosted-runners missing")
+bundle_path = flags.get("--bundle")
+if not bundle_path:
+    fail("--bundle missing")
+bundle = json.loads(Path(bundle_path).read_text())
+if not bundle.get("valid", False):
+    fail("cryptographic attestation invalid")
+material = json.loads(artifact.read_text())
+if flags.get("--source-digest") != material["commit_sha"]:
+    fail("--source-digest mismatch")
+if bundle.get("repository") != EXPECTED["repo"]:
+    fail("bundle repository mismatch")
+if bundle.get("release_tag") != "v0.0.0":
+    fail("bundle release_tag mismatch")
+if bundle.get("commit_sha") != material["commit_sha"]:
+    fail("bundle commit_sha mismatch")
+if bundle.get("signer_identity") != EXPECTED["signer"]:
+    fail("bundle signer mismatch")
+if bundle.get("issuer") != EXPECTED["issuer"]:
+    fail("bundle issuer mismatch")
+digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+print(json.dumps([{{"verificationResult": {{"statement": {{"subject": [{{"name": str(artifact), "digest": {{"sha256": digest}}}}]}}}}}}]))
+""",
     )
     write_executable(
         fakebin / "uname",
@@ -2254,13 +2413,19 @@ def write_install_test_tools(fakebin: Path) -> None:
     )
     for name, target in [
         ("sha256sum", "/usr/bin/sha256sum"),
+        ("python3", "/usr/bin/python3"),
         ("chmod", "/bin/chmod"),
         ("mkdir", "/bin/mkdir"),
         ("rm", "/bin/rm"),
         ("wc", "/usr/bin/wc"),
     ]:
         write_executable(fakebin / name, f"#!/bin/sh\nexec {target} \"$@\"\n")
-    write_executable(fakebin / "tar", "#!/bin/sh\nPATH=/usr/bin:/bin exec /usr/bin/tar \"$@\"\n")
+    write_executable(
+        fakebin / "tar",
+        "#!/bin/sh\n"
+        "if [ -n \"${M80_TAR_LOG:-}\" ]; then printf '%s\\n' \"$*\" >> \"$M80_TAR_LOG\"; fi\n"
+        "PATH=/usr/bin:/bin exec /usr/bin/tar \"$@\"\n",
+    )
 
 
 def assert_no_bundle_download(test: unittest.TestCase, urls: list[str], install_args: Path) -> None:
@@ -2327,6 +2492,12 @@ def package_fixture(root: Path) -> Path:
     out_dir = root / "out"
     run_package(inputs, out_dir)
     return out_dir / "m80-linux-x86_64.tar.gz"
+
+
+def package_signed_fixture(root: Path) -> Path:
+    tarball = package_fixture(root)
+    write_integrity_material(root / "out")
+    return tarball
 
 
 def run_verify(

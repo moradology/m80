@@ -95,9 +95,12 @@ instead of making the current verifier tolerant.
 with only the concrete release tag, publishes it as `install.sh`, and embeds the
 same rendered file inside the release bundle. The script downloads the pinned
 release's bootstrap selector and canonical asset index, verifies their checksum
-sidecars, selects the matching host tuple from the selector, then downloads only
-that bundle. After verifying the selected bundle checksum and size, it extracts
-that bundle's `bin/m80` and hands off to `m80 install --bundle-url file://...`.
+sidecars, selects the matching host tuple from the selector, then downloads the
+release integrity predicate, attestation bundle, normalized attestation
+metadata, installer asset, metadata sidecar, public checksum manifest, and the
+selected bundle. After verifying the signed predicate, attestation signer,
+selected bundle checksum, and size, it extracts that bundle's `bin/m80` and
+hands off to `m80 install --bundle-url file://...`.
 It must not carry a rendered per-tuple bundle URL, call `scripts/quickstart.sh`,
 or use the legacy artifact-only quickstart flow.
 
@@ -167,14 +170,14 @@ installer/bootstrapper-consumed dist asset. The same verifier also loads
 `m80-release-attestation.json` so human verification and installer verification
 share one trust-anchor path.
 
-Prerequisite for the signed v1 verifier: the selected GitHub CLI must include
-`gh attestation verify` with `--repo`, `--bundle`, `--signer-workflow`,
-`--cert-oidc-issuer`, `--source-ref`, `--source-digest`,
-`--deny-self-hosted-runners`, and `--format`. The verifier checks this before
-reading release proof material, and the installer checks it before downloading
-official release assets or touching active install state. If this fails:
-Install or upgrade GitHub CLI with attestation support from
-<https://cli.github.com/packages>.
+Prerequisites for the signed v1 verifier: `python3`, plus a selected GitHub CLI
+that includes `gh attestation verify` with `--repo`, `--bundle`,
+`--signer-workflow`, `--cert-oidc-issuer`, `--source-ref`,
+`--source-digest`, `--deny-self-hosted-runners`, and `--format`. The verifier
+checks this before reading release proof material, and the installer checks it
+before downloading official release assets or touching active install state. If
+the `gh` check fails: Install or upgrade GitHub CLI with attestation support
+from <https://cli.github.com/packages>.
 
 Verify the predicate shape against a downloaded dist directory before treating
 a release as signed. The tag workflow publishes the attestation bundle and

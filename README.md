@@ -42,12 +42,15 @@ by [`scripts/render-release-install-snippets.py`](scripts/render-release-install
 
 The installer is a rendered asset from the selected release. It uses that
 pinned release tag to download the release asset index and shell-safe bootstrap
-selector, selects the matching Linux host bundle, verifies checksums before
-extraction, then runs the bundled `m80 install`. The install writes the default
-runtime profile/config so plain `m80 run -- echo hello` uses the installed
-guest bundle. Host TCB binaries are installed separately from final host paths;
-release tarballs must not bundle the host manifest. The bundle shape is pinned
-in [`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
+selector, selects the matching Linux host bundle, verifies the signed release
+integrity predicate and checksums before extraction, then runs the bundled
+`m80 install`. The installer needs standard Linux tools plus `curl`,
+`python3`, `sha256sum`, `tar`, and GitHub CLI `gh` with
+`gh attestation verify`. The install writes the default runtime profile/config
+so plain `m80 run -- echo hello` uses the installed guest bundle. Host TCB
+binaries are installed separately from final host paths; release tarballs must
+not bundle the host manifest. The bundle shape is pinned in
+[`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
 
 After that, wrap any process the same way:
 

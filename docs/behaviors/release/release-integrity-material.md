@@ -73,6 +73,12 @@ distribution:
 - `m80-release-attestation.json`, the normalized GitHub Artifact Attestation
   envelope for `m80-release-integrity.json`.
 
+The versioned public `install.sh` is one trusted verifier distribution for its
+own release tag. It carries the same repository, signer workflow, issuer,
+keyset, and validity-window constants as the policy file, then verifies the
+downloaded predicate and attestation bundle before extracting the selected
+bundle or handing off to `bin/m80 install`.
+
 The v1 trust policy records:
 
 - `schema_version: 1`;
@@ -238,6 +244,11 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_attestation_metadata_writer_preflights_missing_verifier_before_material_read`;
 - `test_release_integrity_material_rejects_too_old_attestation_verifier`;
 - `test_release_integrity_material_rejects_attestation_verifier_missing_required_flag`;
+- `test_rendered_install_script_selects_verified_selector_before_bundle`;
+- `test_rendered_install_script_rejects_unsigned_dev_fixture_before_bundle`;
+- `test_rendered_install_script_rejects_tampered_install_before_bundle_extract`;
+- `test_rendered_install_script_rejects_wrong_integrity_tag_before_bundle_extract`;
+- `test_rendered_install_script_rejects_failed_attestation_before_bundle_extract`;
 - `official_release_missing_attestation_verifier_fails_before_staging`;
 - `official_release_too_old_attestation_verifier_fails_before_staging`;
 - `test_release_integrity_material_accepts_complete_public_subject_set`;
