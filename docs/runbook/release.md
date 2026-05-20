@@ -91,6 +91,21 @@ inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, and a public
 `SHA256SUMS` for the tarball, installer, and metadata sidecar. The exact builder
 contract is captured in `docs/behaviors/release/bundle-builder.md`.
 
+## Asset Index
+
+The release asset index is the machine-readable selector for public bundles.
+It lists every bundle by OS, architecture, image kind, release tag, m80 version,
+guest protocol, manifest schema, expected Firecracker version, tarball digest,
+metadata digest, and integrity-material references. The default Linux
+quickstart tuple is `linux` / `x86_64` / `minimal`.
+
+To add a new architecture or image kind, add a new asset-index row and publish
+the matching bundle, metadata sidecar, checksums, and integrity material. The
+README command stays the same: the installer/bootstrapper reads the verified
+index and selects the matching host tuple without changing README commands. Do
+not add architecture-specific README commands unless the common installer cannot
+select the tuple.
+
 The workflow stages and token boundary for building and publishing release
 artifacts are recorded in `docs/runbook/release-bundle.md`. The short version:
 build jobs run with `contents: read`; the tag-only publish job is the only stage

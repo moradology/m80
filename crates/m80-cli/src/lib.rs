@@ -17,6 +17,7 @@ mod errors;
 mod json;
 mod profile;
 mod release;
+mod release_asset_index;
 mod request_id;
 
 pub use args::{
