@@ -299,6 +299,9 @@ fn read_firecracker_pid_file(pid_file: &Path) -> Result<Option<u32>, JailerError
             });
         }
     };
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
     let pid = raw.trim().parse().map_err(|e| JailerError::Io {
         path: pid_file.to_path_buf(),
         source: io::Error::new(

@@ -88,6 +88,47 @@ fn firecracker_pid_wait_rechecks_after_one_ms_poll() {
 }
 
 #[test]
+fn firecracker_pid_wait_retries_empty_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let pid_file = dir.path().join("firecracker.pid");
+    std::fs::write(&pid_file, b"").unwrap();
+    let mut sleeps = Vec::new();
+
+    let pid = wait_for_firecracker_pid_file_with_sleep(
+        &pid_file,
+        Instant::now() + Duration::from_secs(1),
+        |delay| {
+            sleeps.push(delay);
+            std::fs::write(&pid_file, b"4242\n").unwrap();
+        },
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(pid, 4242);
+    assert_eq!(sleeps, vec![Duration::from_millis(1)]);
+}
+
+#[test]
+fn firecracker_pid_wait_rejects_non_numeric_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let pid_file = dir.path().join("firecracker.pid");
+    std::fs::write(&pid_file, b"not-a-pid\n").unwrap();
+
+    let err = wait_for_firecracker_pid_file_with_sleep(
+        &pid_file,
+        Instant::now() + Duration::from_secs(1),
+        |_| panic!("invalid pid must fail without retrying"),
+    )
+    .expect_err("non-numeric pid file must fail closed");
+
+    assert!(
+        err.to_string().contains("firecracker.pid not a u32"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn launch_redirects_stdio_and_passes_hardening_args() {
     let dir = tempfile::tempdir().unwrap();
     let run_dir = dir.path().join("vm-stdio");
