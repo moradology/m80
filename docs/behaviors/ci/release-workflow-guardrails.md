@@ -21,6 +21,11 @@ public release state.
   pipeline failures and unset variables fail in the block itself. A block may
   opt out only with the `m80-lint: allow-nonstrict-run` marker when a documented
   POSIX or non-bash shell contract requires it.
+- The pinned workflow syntax-lint runner is `scripts/run-actionlint.py`. It
+  pins `rhysd/actionlint` `v1.7.12` for Linux x86_64 and verifies
+  `actionlint_1.7.12_linux_amd64.tar.gz` before extracting the binary. The
+  runner never falls back to an unverified `actionlint` from `PATH`; the
+  follow-on CI syntax gate uses this runner rather than a floating install.
 
 ## Enforcement
 
@@ -41,3 +46,7 @@ build/test/clippy sequence. The linter's negative fixture suite lives in
   release/latest concurrency, non-publish write tokens, `write-all`, floating
   third-party action refs, `secrets.*` in pull-request workflows, and workflow
   run blocks that rely on GitHub's implicit shell flags.
+- `scripts/test-actionlint-runner.py` proves the pinned actionlint runner
+  accepts verified metadata, recreates a missing cached binary from the verified
+  archive, rejects checksum mismatches, rejects unsupported platforms, reports
+  download failures, and refuses archives without an `actionlint` binary.

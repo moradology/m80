@@ -41,6 +41,11 @@ fn workflow_policy_linter_negative_fixture_suite_passes() {
 }
 
 #[test]
+fn actionlint_runner_fixture_suite_passes() {
+    run_python_script("scripts/test-actionlint-runner.py");
+}
+
+#[test]
 fn release_workflow_doc_records_authority_boundary() {
     let behavior = read_repo_file("docs/behaviors/ci/release-workflow-guardrails.md");
     let runbook = read_repo_file("docs/runbook/release-bundle.md");
@@ -52,6 +57,9 @@ fn release_workflow_doc_records_authority_boundary() {
         "Release/latest workflows declare a concurrency group",
         "`scripts/lint-github-workflows.py`",
         "`scripts/test-workflow-policy.py`",
+        "`scripts/run-actionlint.py`",
+        "`scripts/test-actionlint-runner.py`",
+        "actionlint_1.7.12_linux_amd64.tar.gz",
     ] {
         assert!(
             behavior.contains(required),
@@ -60,6 +68,8 @@ fn release_workflow_doc_records_authority_boundary() {
     }
     assert!(runbook.contains("`publish-release-artifacts`"));
     assert!(runbook.contains("`contents: write`"));
+    assert!(runbook.contains("python3 scripts/run-actionlint.py --workflow-dir .github/workflows"));
+    assert!(runbook.contains("8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"));
     assert!(release_workflow.contains("publish-release-artifacts:"));
     assert!(release_workflow.contains("contents: write"));
     assert!(release_workflow.contains("release-artifacts-${{ github.ref_name }}"));

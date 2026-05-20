@@ -84,3 +84,24 @@ scripts. The local workflow strictness check is the same command:
 `actionlint` lane once that syntax/run-block gate is installed. The m80 linter
 catches project authority rules and the strict shell prelude; actionlint catches
 GitHub expression and shell syntax drift.
+
+The pinned local actionlint command is:
+
+```sh
+python3 scripts/run-actionlint.py --workflow-dir .github/workflows
+```
+
+The runner currently pins `rhysd/actionlint` `v1.7.12` for Linux x86_64:
+`actionlint_1.7.12_linux_amd64.tar.gz` with sha256
+`8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8`.
+It downloads from the public GitHub release without credentials, verifies the
+archive before extraction, and never falls back to an unverified `actionlint`
+from `PATH`.
+
+To refresh the pin, inspect the upstream release, update the version, URL, and
+sha256 constants in `scripts/run-actionlint.py`, then run:
+
+```sh
+python3 scripts/test-actionlint-runner.py
+python3 scripts/run-actionlint.py --workflow-dir .github/workflows
+```
