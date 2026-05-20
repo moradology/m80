@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
+from quickstart_snippets import quickstart_smoke_argv, quickstart_smoke_command
 from release_url_contract import release_asset_url
 
 
@@ -51,8 +52,8 @@ def main() -> int:
             "install_url": release_asset_url(args.release_tag, "install.sh"),
         },
         "command": {
-            "display": "m80 run -- echo hello",
-            "argv": ["m80", "run", "--", "echo", "hello"],
+            "display": quickstart_smoke_command(),
+            "argv": quickstart_smoke_argv(),
             "expected_exit_status": 0,
             "observed_exit_status": 0,
             "expected_nonzero": False,

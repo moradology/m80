@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Render README/runbook install snippets from the public release URL contract."""
+"""Render README/runbook install snippets from the public quickstart contract."""
 
 from __future__ import annotations
 
 import argparse
 
-from release_url_contract import latest_install_command, pinned_install_command, verified_install_handoff_block
+from quickstart_snippets import install_snippets
 
 
 def parse_args() -> argparse.Namespace:
@@ -16,10 +16,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    print(latest_install_command())
-    print(pinned_install_command(args.release_tag))
+    latest, pinned, verified = install_snippets(args.release_tag)
+    print(latest.body)
+    print(pinned.body)
     print()
-    print(verified_install_handoff_block(args.release_tag))
+    print(verified.body)
     return 0
 
 

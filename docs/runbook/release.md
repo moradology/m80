@@ -34,14 +34,22 @@ The public GitHub release owner/repo source is
 `docs/behaviors/release/public-release-root.env`. The README and this runbook
 must use snippets rendered by `scripts/render-release-install-snippets.py`:
 
+<!-- m80:quickstart-snippet latest-install start -->
 ```sh
 curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+```
+<!-- m80:quickstart-snippet latest-install end -->
+
+<!-- m80:quickstart-snippet pinned-install start -->
+```sh
 curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
 ```
+<!-- m80:quickstart-snippet pinned-install end -->
 
 Automation from a trusted checkout uses the verified handoff block when it must
 prove `install.sh` before sudo:
 
+<!-- m80:quickstart-snippet verified-install-handoff start -->
 ```sh
 tag=<version>
 repo=moradology/m80
@@ -56,6 +64,7 @@ python3 scripts/verify-install-handoff.py "${tmp}" \
   --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 sudo sh "${tmp}/install.sh"
 ```
+<!-- m80:quickstart-snippet verified-install-handoff end -->
 
 Do not hand-write alternate owners, raw `main` URLs, or private checkout URLs
 for public install instructions.
@@ -285,6 +294,15 @@ scripts/verify-quickstart-proof.py \
 
 The schema and inspection contract live in
 `docs/behaviors/release/quickstart-proof-artifacts.md`.
+The normal release proof command is the same post-install smoke snippet used by
+the README:
+
+<!-- m80:quickstart-snippet post-install-smoke start -->
+```sh
+m80 run -- echo hello
+```
+<!-- m80:quickstart-snippet post-install-smoke end -->
+
 The public echo proof is paired with an expected-nonzero process fixture so the
 release smoke proves exit-code passthrough as well as stdout/stderr capture.
 

@@ -5,9 +5,11 @@ thin host-process wrapper: stdout is stdout, stderr is stderr, the guest exit
 code is the `m80` exit code, and the process sees only the filesystem, network,
 environment, and runtime profile you selected.
 
+<!-- m80:quickstart-snippet post-install-smoke start -->
 ```sh
 m80 run -- echo hello
 ```
+<!-- m80:quickstart-snippet post-install-smoke end -->
 
 Expected output:
 
@@ -31,14 +33,21 @@ process, returns the guest exit code, and tears the VM down.
 
 Fastest path on a Linux/KVM host:
 
+<!-- m80:quickstart-snippet latest-install start -->
 ```sh
 curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+```
+<!-- m80:quickstart-snippet latest-install end -->
+
+```sh
 m80 run -- echo hello
 ```
 
 The install snippets are checked against the public release URL contract in
 [`docs/behaviors/release/public-release-root.env`](docs/behaviors/release/public-release-root.env)
-by [`scripts/render-release-install-snippets.py`](scripts/render-release-install-snippets.py).
+by [`scripts/render-release-install-snippets.py`](scripts/render-release-install-snippets.py)
+and the marker gate in
+[`docs/behaviors/release/docs-quickstart-gate.md`](docs/behaviors/release/docs-quickstart-gate.md).
 The `latest` command follows the stable release channel only: public,
 non-draft, non-prerelease GitHub releases tagged `vMAJOR.MINOR.PATCH`.
 
@@ -62,8 +71,13 @@ m80 run -- <command> [args...]
 
 For reproducible automation, replace `latest` with a concrete tag:
 
+<!-- m80:quickstart-snippet pinned-install start -->
 ```sh
 curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh
+```
+<!-- m80:quickstart-snippet pinned-install end -->
+
+```sh
 m80 run -- echo hello
 ```
 
@@ -73,6 +87,7 @@ by the normal install path.
 Automation from a trusted checkout can verify the installer before handing it to
 sudo:
 
+<!-- m80:quickstart-snippet verified-install-handoff start -->
 ```sh
 tag=<version>
 repo=moradology/m80
@@ -87,6 +102,7 @@ python3 scripts/verify-install-handoff.py "${tmp}" \
   --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 sudo sh "${tmp}/install.sh"
 ```
+<!-- m80:quickstart-snippet verified-install-handoff end -->
 
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,

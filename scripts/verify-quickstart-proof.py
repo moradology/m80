@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
+from quickstart_snippets import quickstart_smoke_argv, quickstart_smoke_command
 from release_url_contract import release_asset_url
 
 
@@ -114,6 +115,14 @@ def validate_quickstart_proof(
             f"quickstart proof expected-nonzero exit mismatch: expected {expected_status}, got {observed_status}",
         )
     else:
+        require(
+            command["display"] == quickstart_smoke_command(),
+            "quickstart proof normal command display must match the docs quickstart smoke snippet",
+        )
+        require(
+            argv == quickstart_smoke_argv(),
+            "quickstart proof normal command argv must match the docs quickstart smoke snippet",
+        )
         require(expected_status == 0, "quickstart proof normal command must expect exit status 0")
         require(
             observed_status == 0,

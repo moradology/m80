@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import unittest
 
 from release_url_contract import (
@@ -18,6 +19,7 @@ from release_url_contract import (
     release_repository,
     verified_install_handoff_block,
 )
+from quickstart_snippets import expected_quickstart_snippets, extract_marked_quickstart_snippets
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +51,11 @@ QUICKSTART_SURFACE_FILES = [
     "docs/behaviors/cli/command-surface.md",
     "docs/behaviors/cli/product-surface.md",
     "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
+]
+
+QUICKSTART_SNIPPET_DOCS = [
+    "README.md",
+    "docs/runbook/release.md",
 ]
 
 
@@ -92,7 +99,7 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 f"{expected_base}/{asset_name}",
             )
 
-    def test_snippet_renderer_matches_readme_commands(self) -> None:
+    def test_snippet_renderer_matches_public_install_commands(self) -> None:
         output = subprocess.run(
             ["python3", "scripts/render-release-install-snippets.py"],
             cwd=REPO_ROOT,
@@ -119,6 +126,53 @@ class ReleaseUrlContractTest(unittest.TestCase):
         self.assertIn(verified_install_handoff_block(), runbook)
         self.assertIn("scripts/render-release-install-snippets.py", readme)
         self.assertIn(str(CONTRACT_PATH.relative_to(REPO_ROOT)), runbook)
+
+    def test_marked_quickstart_snippets_match_shared_contract(self) -> None:
+        expected = expected_quickstart_snippets()
+
+        for relative in QUICKSTART_SNIPPET_DOCS:
+            snippets = extract_marked_quickstart_snippets(REPO_ROOT / relative)
+            self.assertEqual(
+                snippets,
+                expected,
+                f"{relative} quickstart snippets diverged from the shared contract",
+            )
+
+    def test_quickstart_snippet_marker_errors_are_actionable(self) -> None:
+        cases = [
+            (
+                "<!-- m80:quickstart-snippet latest-install start -->\n```sh\nmissing end\n```\n",
+                "missing end marker",
+            ),
+            (
+                "<!-- m80:quickstart-snippet latest-install end -->\n",
+                "unmatched quickstart snippet end",
+            ),
+            (
+                "\n".join(
+                    [
+                        "<!-- m80:quickstart-snippet latest-install start -->",
+                        "```sh",
+                        "first",
+                        "```",
+                        "<!-- m80:quickstart-snippet latest-install end -->",
+                        "<!-- m80:quickstart-snippet latest-install start -->",
+                        "```sh",
+                        "second",
+                        "```",
+                        "<!-- m80:quickstart-snippet latest-install end -->",
+                    ]
+                ),
+                "duplicate quickstart snippet",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "doc.md"
+            for body, expected_error in cases:
+                path.write_text(body)
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    extract_marked_quickstart_snippets(path)
 
     def test_docs_use_only_the_public_release_repository_for_install_commands(self) -> None:
         for relative in ["README.md", "docs/runbook/release.md"]:

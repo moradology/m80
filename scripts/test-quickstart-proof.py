@@ -109,6 +109,28 @@ class QuickstartProofTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unexpected nonzero exit", result.stderr)
 
+    def test_normal_smoke_command_must_match_docs_snippet(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            proof["command"]["display"] = "m80 run -- echo drifted"
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("normal command display must match", result.stderr)
+
+    def test_normal_smoke_argv_must_match_docs_snippet(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            proof["command"]["argv"] = ["m80", "run", "--", "echo", "drifted"]
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("normal command argv must match", result.stderr)
+
     def test_stream_swap_fails(self) -> None:
         with proof_fixture() as fixture:
             proof = read_json(fixture.proof)
