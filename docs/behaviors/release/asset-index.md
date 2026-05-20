@@ -59,23 +59,34 @@ non-SHA-256 digest strings, zero size/schema/protocol numbers, and rows whose
 for future OS, architecture, or image-kind expansion without changing the
 README quickstart command.
 
+Remote index fetches use explicit 10-second curl connect and 120-second
+total-time bounds for both `m80-release-assets.json` and
+`m80-release-assets.json.sha256`. Slow fixtures, offline endpoints, HTTP
+failures, and unsupported redirects fail as bounded asset-index selection
+errors. They fail before bundle download, extraction, tuple selection, or
+install-root writes. These fetch bounds only prove the index selection path
+fails promptly; they do not promise later bundle download success.
+
 Fetch diagnostics name the index URL or local path, checksum sidecar URL or
-path, expected sha256, observed sha256, release tag, requested OS/arch, and
-image kind. Missing index bytes, missing sidecars, checksum mismatch, invalid
-JSON after a valid checksum, stale schema, and index `release_tag` drift all
-fail before bundle download, extraction, tuple selection, or active install
-state writes.
+path, expected sha256, observed sha256, release tag, requested OS/arch, image
+kind, and whether the failure happened before or after checksum verification.
+Missing index bytes, missing sidecars, checksum mismatch, invalid JSON after a
+valid checksum, stale schema, and index `release_tag` drift all fail before
+bundle download, extraction, tuple selection, or active install state writes.
 
 Installer JSON failures for asset-index selection are emitted as the final
 stderr JSON envelope with stdout empty. The envelope `data` object uses
 `variant: "ReleaseAssetIndex"`, `exit_code: 6`, and stable diagnostic fields:
 `code`, `detail`, `requested_os`, `requested_arch`,
 `requested_image_kind`, `requested_release_tag`,
-`requested_m80_version`, `available_tuples`,
+`requested_m80_version`, optional `index_url` and
+`fetch_url` plus `checksum_verification` for fetch-path errors,
+`available_tuples`,
 `available_image_kinds`, `available_m80_versions`, plus `repair_url` and
 `repair_command` when a concrete repair is known. Human stderr prints the same
-fields as `asset_index_code=...`, `requested_*`, `available_*`, and
-`repair_*` lines after the error summary.
+fields as `asset_index_code=...`, `requested_*`, `index_url=...`,
+`fetch_url=...`, `checksum_verification=...`, `available_*`, and `repair_*`
+lines after the error summary.
 
 The stable `code` values are:
 

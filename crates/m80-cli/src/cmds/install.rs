@@ -44,7 +44,35 @@ fn install_plan(
 ) -> Result<InstallPlan, InstallError> {
     let source = selected_source(args)?;
     let source = source_plan(source, identity)?;
-    Ok(InstallPlan {
+    Ok(install_plan_from_source(args, identity, source))
+}
+
+#[cfg(test)]
+fn install_plan_with_index_resolver<F>(
+    args: &InstallArgs,
+    identity: &VersionIdentity,
+    resolve_indexed_bundle: F,
+) -> Result<InstallPlan, InstallError>
+where
+    F: Fn(
+        &str,
+        &VersionIdentity,
+    ) -> Result<
+        release_asset_index::InstallerBundleSelection,
+        release_asset_index::AssetIndexFailure,
+    >,
+{
+    let source = selected_source(args)?;
+    let source = source_plan_with_index_resolver(source, identity, resolve_indexed_bundle)?;
+    Ok(install_plan_from_source(args, identity, source))
+}
+
+fn install_plan_from_source(
+    args: &InstallArgs,
+    identity: &VersionIdentity,
+    source: SourcePlan,
+) -> InstallPlan {
+    InstallPlan {
         dry_run: args.dry_run,
         install_root: display_path(&args.install_root),
         active_pointer: display_path(&active_pointer(&args.install_root)),
@@ -52,7 +80,7 @@ fn install_plan(
         binary_version: identity.binary_version.clone(),
         binary_release_tag: identity.release_tag.clone(),
         version_status: identity.version_status.as_str().to_owned(),
-    })
+    }
 }
 
 fn selected_source(args: &InstallArgs) -> Result<InstallSource<'_>, FcError> {
@@ -98,7 +126,8 @@ where
         InstallSource::ReleaseTag(tag) => {
             validate_tag("release-tag", tag)?;
             validate_tag_source_matches_binary("--release-tag", tag, identity)?;
-            let bundle = resolve_indexed_bundle(tag, identity).map_err(InstallError::AssetIndex)?;
+            let bundle =
+                resolve_indexed_bundle(tag, identity).map_err(InstallError::asset_index)?;
             Ok(SourcePlan {
                 kind: SourceKind::PinnedVersion,
                 selector: tag.to_owned(),
@@ -109,7 +138,8 @@ where
         InstallSource::BootstrapTag(tag) => {
             validate_tag("bootstrap-tag", tag)?;
             validate_tag_source_matches_binary("--bootstrap-tag", tag, identity)?;
-            let bundle = resolve_indexed_bundle(tag, identity).map_err(InstallError::AssetIndex)?;
+            let bundle =
+                resolve_indexed_bundle(tag, identity).map_err(InstallError::asset_index)?;
             Ok(SourcePlan {
                 kind: SourceKind::BootstrapTag,
                 selector: tag.to_owned(),
@@ -171,14 +201,14 @@ fn validate_tag_source_matches_binary(
     identity: &VersionIdentity,
 ) -> Result<(), InstallError> {
     match identity.version_status {
-        VersionStatus::Dev => Err(InstallError::AssetIndex(
+        VersionStatus::Dev => Err(InstallError::asset_index(
             release_asset_index::AssetIndexFailure::dev_build_refused(
                 source_flag,
                 source_tag,
                 identity,
             ),
         )),
-        VersionStatus::Mismatch => Err(InstallError::AssetIndex(
+        VersionStatus::Mismatch => Err(InstallError::asset_index(
             release_asset_index::AssetIndexFailure::mismatched_build_refused(source_tag, identity),
         )),
         VersionStatus::Release => {
@@ -186,7 +216,7 @@ fn validate_tag_source_matches_binary(
             if binary_tag == source_tag {
                 Ok(())
             } else {
-                Err(InstallError::AssetIndex(
+                Err(InstallError::asset_index(
                     release_asset_index::AssetIndexFailure::tag_mismatch_refused(
                         source_tag, binary_tag, identity,
                     ),
@@ -334,6 +364,15 @@ fn render_asset_index_error(err: &release_asset_index::AssetIndexFailure, json_m
         eprintln!("requested_image_kind={}", diagnostic.requested_image_kind);
         eprintln!("requested_release_tag={}", diagnostic.requested_release_tag);
         eprintln!("requested_m80_version={}", diagnostic.requested_m80_version);
+        if let Some(index_url) = &diagnostic.index_url {
+            eprintln!("index_url={index_url}");
+        }
+        if let Some(fetch_url) = &diagnostic.fetch_url {
+            eprintln!("fetch_url={fetch_url}");
+        }
+        if let Some(checksum_verification) = &diagnostic.checksum_verification {
+            eprintln!("checksum_verification={checksum_verification}");
+        }
         if !diagnostic.available_tuples.is_empty() {
             eprintln!("available_tuples={}", diagnostic.available_tuples.join(","));
         }
@@ -381,7 +420,13 @@ struct AssetIndexErrorEnvelope {
 #[derive(Debug)]
 enum InstallError {
     Fc(FcError),
-    AssetIndex(release_asset_index::AssetIndexFailure),
+    AssetIndex(Box<release_asset_index::AssetIndexFailure>),
+}
+
+impl InstallError {
+    fn asset_index(value: release_asset_index::AssetIndexFailure) -> Self {
+        Self::AssetIndex(Box::new(value))
+    }
 }
 
 impl From<FcError> for InstallError {

@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest, Sha256};
@@ -12,12 +12,41 @@ use super::{
 
 static DOWNLOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+const DEFAULT_CONNECT_TIMEOUT_SECONDS: u64 = 10;
+const DEFAULT_MAX_TIME_SECONDS: u64 = 120;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct AssetIndexDownloadBounds {
+    pub(super) connect_timeout_seconds: u64,
+    pub(super) max_time_seconds: u64,
+}
+
+impl AssetIndexDownloadBounds {
+    #[cfg(test)]
+    pub(super) const fn for_test(connect_timeout_seconds: u64, max_time_seconds: u64) -> Self {
+        Self {
+            connect_timeout_seconds,
+            max_time_seconds,
+        }
+    }
+}
+
+impl Default for AssetIndexDownloadBounds {
+    fn default() -> Self {
+        Self {
+            connect_timeout_seconds: DEFAULT_CONNECT_TIMEOUT_SECONDS,
+            max_time_seconds: DEFAULT_MAX_TIME_SECONDS,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AssetIndexFetchRequest<'a> {
     pub(super) index_url: &'a str,
     pub(super) release_tag: &'a str,
     pub(super) host: HostTuple<'a>,
     pub(super) image_kind: Option<&'a str>,
+    pub(super) download_bounds: AssetIndexDownloadBounds,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +69,9 @@ pub(super) fn fetch_verified_asset_index(
     let checksum_url = checksum_url_for_index(request.index_url);
     let index_bytes = fetch_asset_index_bytes(request.index_url, request.release_tag, &context)?;
     let checksum_bytes = fetch_asset_index_bytes(&checksum_url, request.release_tag, &context)?;
-    let expected_sha256 = read_expected_index_sha256(&checksum_url, &checksum_bytes, &context)?;
+    let checksum_context = context.after_checksum_verification();
+    let expected_sha256 =
+        read_expected_index_sha256(&checksum_url, &checksum_bytes, &checksum_context)?;
     let observed_sha256 = sha256_bytes(&index_bytes);
     if expected_sha256 != observed_sha256 {
         return Err(AssetIndexFetchError::ChecksumMismatch {
@@ -48,10 +79,11 @@ pub(super) fn fetch_verified_asset_index(
             checksum_url,
             expected_sha256,
             observed_sha256,
-            context,
+            context: checksum_context,
         });
     }
 
+    let verified_context = checksum_context;
     let index_text = String::from_utf8(index_bytes).map_err(|source| {
         AssetIndexFetchError::VerifiedIndexInvalid {
             index_url: request.index_url.to_owned(),
@@ -63,7 +95,7 @@ pub(super) fn fetch_verified_asset_index(
             available_tuples: Vec::new(),
             available_image_kinds: Vec::new(),
             available_m80_versions: Vec::new(),
-            context: context.clone(),
+            context: verified_context.clone(),
         }
     })?;
     let index = ReleaseAssetIndex::parse_json(&index_text).map_err(|source| {
@@ -81,7 +113,7 @@ pub(super) fn fetch_verified_asset_index(
             available_tuples,
             available_image_kinds,
             available_m80_versions,
-            context: context.clone(),
+            context: verified_context.clone(),
         }
     })?;
     if index.release_tag != request.release_tag {
@@ -92,7 +124,7 @@ pub(super) fn fetch_verified_asset_index(
             observed_sha256,
             expected_release_tag: request.release_tag.to_owned(),
             actual_release_tag: index.release_tag,
-            context,
+            context: verified_context,
         });
     }
     Ok(VerifiedAssetIndex {
@@ -115,6 +147,7 @@ fn fetch_asset_index_bytes(
 ) -> Result<Vec<u8>, AssetIndexFetchError> {
     if let Some(path) = local_file_url_path(url, context)? {
         return fs::read(&path).map_err(|source| AssetIndexFetchError::LocalRead {
+            url: url.to_owned(),
             path,
             source: source.to_string(),
             context: context.clone(),
@@ -157,12 +190,17 @@ fn download_url_to_bytes(
         .create_new(true)
         .open(&dest)
         .map_err(|source| AssetIndexFetchError::LocalRead {
+            url: url.to_owned(),
             path: dest.clone(),
             source: source.to_string(),
             context: context.clone(),
         })?;
     let output = Command::new("curl")
         .arg("-fsSL")
+        .arg("--connect-timeout")
+        .arg(context.download_bounds.connect_timeout_seconds.to_string())
+        .arg("--max-time")
+        .arg(context.download_bounds.max_time_seconds.to_string())
         .arg("--proto")
         .arg("=https,http")
         .arg("--proto-redir")
@@ -184,15 +222,23 @@ fn download_url_to_bytes(
         return Err(AssetIndexFetchError::DownloadFailed {
             url: url.to_owned(),
             status: output.status.to_string(),
+            failure: curl_failure_kind(output.status).to_owned(),
             output: command_stderr_text(&output),
             context: context.clone(),
         });
     }
-    let bytes = fs::read(&dest).map_err(|source| AssetIndexFetchError::LocalRead {
-        path: dest.clone(),
-        source: source.to_string(),
-        context: context.clone(),
-    })?;
+    let bytes = match fs::read(&dest) {
+        Ok(bytes) => bytes,
+        Err(source) => {
+            let _ = fs::remove_file(&dest);
+            return Err(AssetIndexFetchError::LocalRead {
+                url: url.to_owned(),
+                path: dest,
+                source: source.to_string(),
+                context: context.clone(),
+            });
+        }
+    };
     let _ = fs::remove_file(&dest);
     Ok((bytes, final_url))
 }
@@ -245,6 +291,9 @@ pub(super) struct AssetIndexFetchContext {
     os: String,
     arch: String,
     image_kind: String,
+    index_url: String,
+    checksum_verification: ChecksumVerificationPhase,
+    download_bounds: AssetIndexDownloadBounds,
 }
 
 impl AssetIndexFetchContext {
@@ -254,14 +303,28 @@ impl AssetIndexFetchContext {
             os: request.host.os.to_owned(),
             arch: request.host.arch.to_owned(),
             image_kind: request.image_kind.unwrap_or(DEFAULT_IMAGE_KIND).to_owned(),
+            index_url: request.index_url.to_owned(),
+            checksum_verification: ChecksumVerificationPhase::Before,
+            download_bounds: request.download_bounds,
         }
     }
 
     pub(super) fn describe(&self) -> String {
         format!(
-            "release_tag={} host={}/{} image_kind={}",
-            self.release_tag, self.os, self.arch, self.image_kind
+            "release_tag={} requested_os={} requested_arch={} requested_image_kind={} index_url={} checksum_verification={}",
+            self.release_tag,
+            self.os,
+            self.arch,
+            self.image_kind,
+            self.index_url,
+            self.checksum_verification.as_str()
         )
+    }
+
+    fn after_checksum_verification(&self) -> Self {
+        let mut context = self.clone();
+        context.checksum_verification = ChecksumVerificationPhase::After;
+        context
     }
 
     fn request(&self, m80_version: &str) -> AssetIndexRequest {
@@ -275,6 +338,21 @@ impl AssetIndexFetchContext {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChecksumVerificationPhase {
+    Before,
+    After,
+}
+
+impl ChecksumVerificationPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Before => "before",
+            Self::After => "after",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum AssetIndexFetchError {
     UnsupportedUrl {
@@ -283,6 +361,7 @@ pub(super) enum AssetIndexFetchError {
         context: AssetIndexFetchContext,
     },
     LocalRead {
+        url: String,
         path: PathBuf,
         source: String,
         context: AssetIndexFetchContext,
@@ -295,10 +374,12 @@ pub(super) enum AssetIndexFetchError {
     DownloadFailed {
         url: String,
         status: String,
+        failure: String,
         output: String,
         context: AssetIndexFetchContext,
     },
     RedirectUnsupported {
+        url: String,
         initial: String,
         final_url: String,
         context: AssetIndexFetchContext,
@@ -343,43 +424,66 @@ impl std::error::Error for AssetIndexFetchError {}
 impl AssetIndexFetchError {
     pub(super) fn into_diagnostic(self, m80_version: &str) -> AssetIndexDiagnostic {
         let detail = self.to_string();
-        let (code, request, repair_url) = match &self {
-            Self::UnsupportedUrl { context, .. } => (
+        let (code, request, repair_url, context, fetch_url) = match &self {
+            Self::UnsupportedUrl { url, context, .. } => (
                 AssetIndexDiagnosticCode::UnsupportedUrl,
                 context.request(m80_version),
                 None,
+                context,
+                url,
             ),
-            Self::LocalRead { context, .. } => (
+            Self::LocalRead { url, context, .. } => (
                 AssetIndexDiagnosticCode::LocalReadFailed,
                 context.request(m80_version),
                 None,
+                context,
+                url,
             ),
-            Self::DownloadSpawnFailed { context, .. } => (
+            Self::DownloadSpawnFailed { url, context, .. } => (
                 AssetIndexDiagnosticCode::DownloadSpawnFailed,
                 context.request(m80_version),
                 None,
+                context,
+                url,
             ),
-            Self::DownloadFailed { context, .. } => (
+            Self::DownloadFailed { url, context, .. } => (
                 AssetIndexDiagnosticCode::DownloadFailed,
                 context.request(m80_version),
                 None,
+                context,
+                url,
             ),
-            Self::RedirectUnsupported { context, .. } => (
+            Self::RedirectUnsupported { url, context, .. } => (
                 AssetIndexDiagnosticCode::RedirectUnsupported,
                 context.request(m80_version),
                 None,
+                context,
+                url,
             ),
-            Self::ChecksumInvalid { context, .. } => (
+            Self::ChecksumInvalid {
+                checksum_url,
+                context,
+                ..
+            } => (
                 AssetIndexDiagnosticCode::ChecksumInvalid,
                 context.request(m80_version),
                 None,
+                context,
+                checksum_url,
             ),
-            Self::ChecksumMismatch { context, .. } => (
+            Self::ChecksumMismatch {
+                checksum_url,
+                context,
+                ..
+            } => (
                 AssetIndexDiagnosticCode::ChecksumMismatch,
                 context.request(m80_version),
                 None,
+                context,
+                checksum_url,
             ),
             Self::VerifiedIndexInvalid {
+                index_url,
                 context,
                 semantic_code,
                 ..
@@ -387,8 +491,11 @@ impl AssetIndexFetchError {
                 semantic_code.unwrap_or(AssetIndexDiagnosticCode::VerifiedIndexInvalid),
                 context.request(m80_version),
                 None,
+                context,
+                index_url,
             ),
             Self::ReleaseTagMismatch {
+                index_url,
                 expected_release_tag,
                 context,
                 ..
@@ -398,6 +505,8 @@ impl AssetIndexFetchError {
                 Some(crate::release_urls::release_install_url(
                     expected_release_tag,
                 )),
+                context,
+                index_url,
             ),
         };
         let (available_tuples, available_image_kinds, available_m80_versions) = match &self {
@@ -413,7 +522,7 @@ impl AssetIndexFetchError {
             ),
             _ => (Vec::new(), Vec::new(), Vec::new()),
         };
-        request.diagnostic(
+        let mut diagnostic = request.diagnostic(
             code,
             detail,
             available_tuples,
@@ -421,12 +530,17 @@ impl AssetIndexFetchError {
             available_m80_versions,
             repair_url.clone(),
             repair_url.map(|url| format!("curl -fsSL {url} | sudo sh")),
-        )
+        );
+        diagnostic.index_url = Some(context.index_url.clone());
+        diagnostic.fetch_url = Some(fetch_url.clone());
+        diagnostic.checksum_verification = Some(context.checksum_verification.as_str().to_owned());
+        diagnostic
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RemoteUrl {
+    original: String,
     scheme: String,
     authority: String,
     host: String,
@@ -510,6 +624,7 @@ fn parse_url(
         });
     }
     Ok(RemoteUrl {
+        original: url.to_owned(),
         scheme,
         authority: authority.to_ascii_lowercase(),
         host,
@@ -569,6 +684,7 @@ fn validate_final_index_url(
         return Ok(());
     }
     Err(AssetIndexFetchError::RedirectUnsupported {
+        url: initial.original.clone(),
         initial: initial.authority.clone(),
         final_url: final_url.authority.clone(),
         context: context.clone(),
@@ -597,4 +713,14 @@ fn is_local_fixture_host(host: &str) -> bool {
 
 fn command_stderr_text(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).trim().to_owned()
+}
+
+fn curl_failure_kind(status: ExitStatus) -> &'static str {
+    match status.code() {
+        Some(28) => "timeout",
+        Some(6 | 7) => "connect_failure",
+        Some(22) => "http_failure",
+        Some(47) => "redirect_unsupported",
+        _ => "download_failure",
+    }
 }

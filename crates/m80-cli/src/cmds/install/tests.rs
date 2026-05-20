@@ -1,5 +1,13 @@
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener};
 use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
@@ -337,6 +345,94 @@ fn asset_index_json_payload_covers_cli_path_failure_codes() {
 }
 
 #[test]
+fn asset_index_fetch_failure_leaves_install_root_absent_for_dry_run_and_apply() {
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let index_url = format!(
+        "file://{}",
+        temp.path().join("missing-release-assets.json").display()
+    );
+
+    for dry_run in [true, false] {
+        let install_root = temp.path().join(format!(
+            "install-root-{}",
+            if dry_run { "dry" } else { "apply" }
+        ));
+        let mut args = args_with_release_tag("v1.2.3");
+        args.install_root = install_root.clone();
+        args.dry_run = dry_run;
+
+        let err = install_plan_with_index_resolver(&args, &identity, |tag, identity| {
+            release_asset_index::select_release_bundle_for_install_from_index_url(
+                tag, identity, &index_url,
+            )
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            asset_index_diagnostic(&err).code,
+            release_asset_index::AssetIndexDiagnosticCode::LocalReadFailed
+        );
+        let payload = asset_index_json_payload(&err);
+        assert_eq!(payload["index_url"], index_url, "{payload}");
+        assert_eq!(payload["fetch_url"], index_url, "{payload}");
+        assert_eq!(payload["checksum_verification"], "before", "{payload}");
+        assert!(
+            !install_root.exists(),
+            "asset-index failures must happen before install-root mutation for dry_run={dry_run}"
+        );
+    }
+}
+
+#[test]
+fn asset_index_timeout_leaves_install_root_absent_for_dry_run_and_apply() {
+    let identity = VersionIdentity::from_parts(
+        "1.2.3",
+        Some("v1.2.3"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
+    let temp = tempfile::tempdir().unwrap();
+
+    for dry_run in [true, false] {
+        let server = SlowIndexServer::new();
+        let index_url = server.url("/m80-release-assets.json");
+        let install_root = temp.path().join(format!(
+            "timeout-install-root-{}",
+            if dry_run { "dry" } else { "apply" }
+        ));
+        let mut args = args_with_release_tag("v1.2.3");
+        args.install_root = install_root.clone();
+        args.dry_run = dry_run;
+
+        let err = install_plan_with_index_resolver(&args, &identity, |tag, identity| {
+            release_asset_index::select_release_bundle_for_install_from_index_url_with_download_bounds(
+                tag,
+                identity,
+                &index_url,
+                1,
+                1,
+            )
+        })
+        .unwrap_err();
+
+        let payload = asset_index_json_payload(&err);
+        assert_eq!(payload["code"], "download_failed", "{payload}");
+        assert_eq!(payload["index_url"], index_url, "{payload}");
+        assert_eq!(payload["fetch_url"], index_url, "{payload}");
+        assert_eq!(payload["checksum_verification"], "before", "{payload}");
+        assert!(err.to_string().contains("failure=timeout"), "{err}");
+        assert!(
+            !install_root.exists(),
+            "asset-index timeout must happen before install-root mutation for dry_run={dry_run}"
+        );
+    }
+}
+
+#[test]
 fn release_tag_source_rejects_dev_binary() {
     let identity = VersionIdentity::from_parts("1.2.3", None, None);
     let err = install_plan(&args_with_release_tag("v1.2.3"), &identity).unwrap_err();
@@ -587,4 +683,63 @@ fn asset_json_with_m80_version(
   "expected_firecracker_version": "v1.15.1"
 }}"#
     )
+}
+
+struct SlowIndexServer {
+    addr: SocketAddr,
+    shutdown: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl SlowIndexServer {
+    fn new() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let thread_shutdown = Arc::clone(&shutdown);
+        let handle = thread::spawn(move || {
+            while !thread_shutdown.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => handle_slow_index_request(&mut stream),
+                    Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        Self {
+            addr,
+            shutdown,
+            handle: Some(handle),
+        }
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("http://{}{}", self.addr, path)
+    }
+}
+
+impl Drop for SlowIndexServer {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        let _ = std::net::TcpStream::connect(self.addr);
+        if let Some(handle) = self.handle.take() {
+            handle.join().unwrap();
+        }
+    }
+}
+
+fn handle_slow_index_request(stream: &mut std::net::TcpStream) {
+    let mut request = [0_u8; 256];
+    let _ = stream.read(&mut request);
+    thread::sleep(Duration::from_secs(2));
+    let body = b"{}";
+    let header = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(body);
 }

@@ -43,6 +43,36 @@ fn select_release_bundle_for_install_at_index_url(
     identity: &VersionIdentity,
     index_url: &str,
 ) -> Result<InstallerBundleSelection, AssetIndexFailure> {
+    select_release_bundle_for_install_at_index_url_with_bounds(
+        release_tag,
+        identity,
+        index_url,
+        fetch::AssetIndexDownloadBounds::default(),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn select_release_bundle_for_install_from_index_url_with_download_bounds(
+    release_tag: &str,
+    identity: &VersionIdentity,
+    index_url: &str,
+    connect_timeout_seconds: u64,
+    max_time_seconds: u64,
+) -> Result<InstallerBundleSelection, AssetIndexFailure> {
+    select_release_bundle_for_install_at_index_url_with_bounds(
+        release_tag,
+        identity,
+        index_url,
+        fetch::AssetIndexDownloadBounds::for_test(connect_timeout_seconds, max_time_seconds),
+    )
+}
+
+fn select_release_bundle_for_install_at_index_url_with_bounds(
+    release_tag: &str,
+    identity: &VersionIdentity,
+    index_url: &str,
+    download_bounds: fetch::AssetIndexDownloadBounds,
+) -> Result<InstallerBundleSelection, AssetIndexFailure> {
     let host = HostTuple::current();
     let requested =
         AssetIndexRequest::from_identity(release_tag, identity, host, DEFAULT_IMAGE_KIND);
@@ -51,6 +81,7 @@ fn select_release_bundle_for_install_at_index_url(
         release_tag,
         host,
         image_kind: Some(DEFAULT_IMAGE_KIND),
+        download_bounds,
     })
     .map_err(|source| AssetIndexFailure::from_fetch(source, &identity.binary_version))?;
     let asset = verified
@@ -128,6 +159,9 @@ impl AssetIndexRequest {
             available_tuples,
             available_image_kinds,
             available_m80_versions,
+            index_url: None,
+            fetch_url: None,
+            checksum_verification: None,
             repair_url,
             repair_command,
         }

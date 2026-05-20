@@ -118,6 +118,12 @@ pub(crate) struct AssetIndexDiagnostic {
     pub(crate) available_image_kinds: Vec<String>,
     pub(crate) available_m80_versions: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) index_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fetch_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) checksum_verification: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) repair_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) repair_command: Option<String>,

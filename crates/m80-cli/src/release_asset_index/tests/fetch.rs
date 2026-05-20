@@ -1,9 +1,18 @@
+use std::collections::HashMap;
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener};
 use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use super::super::fetch::{
-    fetch_verified_asset_index, github_release_asset_index_url, sha256_bytes, AssetIndexFetchError,
-    AssetIndexFetchRequest,
+    fetch_verified_asset_index, github_release_asset_index_url, sha256_bytes,
+    AssetIndexDownloadBounds, AssetIndexFetchError, AssetIndexFetchRequest,
 };
 use super::super::ASSET_INDEX_NAME;
 use super::{asset_json, index_json, index_json_with_schema, linux_x86_64};
@@ -33,8 +42,16 @@ fn verified_file_index_fetch_names_missing_index_with_context() {
     let message = err.to_string();
     assert!(message.contains(index.to_str().unwrap()), "{message}");
     assert!(message.contains("release_tag=v0.0.0"), "{message}");
-    assert!(message.contains("host=linux/x86_64"), "{message}");
-    assert!(message.contains("image_kind=minimal"), "{message}");
+    assert!(message.contains("requested_os=linux"), "{message}");
+    assert!(message.contains("requested_arch=x86_64"), "{message}");
+    assert!(
+        message.contains("requested_image_kind=minimal"),
+        "{message}"
+    );
+    assert!(
+        message.contains("checksum_verification=before"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -52,6 +69,10 @@ fn verified_file_index_fetch_names_missing_checksum_sidecar() {
         "{message}"
     );
     assert!(message.contains("release_tag=v0.0.0"), "{message}");
+    assert!(
+        message.contains("checksum_verification=before"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -72,6 +93,8 @@ fn verified_file_index_fetch_rejects_bad_checksum_before_json_parse() {
     let message = err.to_string();
     assert!(message.contains("expected"), "{message}");
     assert!(message.contains("observed"), "{message}");
+    assert!(message.contains("index_url=file://"), "{message}");
+    assert!(message.contains("checksum_verification=after"), "{message}");
     assert!(!message.contains("JSON is invalid"), "{message}");
 }
 
@@ -94,6 +117,7 @@ fn verified_file_index_fetch_rejects_invalid_json_after_valid_checksum() {
     assert!(message.contains("expected_sha256="), "{message}");
     assert!(message.contains("observed_sha256="), "{message}");
     assert!(message.contains("release_tag=v0.0.0"), "{message}");
+    assert!(message.contains("checksum_verification=after"), "{message}");
 }
 
 #[test]
@@ -109,7 +133,9 @@ fn verified_file_index_fetch_rejects_stale_schema_after_valid_checksum() {
         "{message}"
     );
     assert!(message.contains("expected_sha256="), "{message}");
-    assert!(message.contains("host=linux/x86_64"), "{message}");
+    assert!(message.contains("requested_os=linux"), "{message}");
+    assert!(message.contains("requested_arch=x86_64"), "{message}");
+    assert!(message.contains("checksum_verification=after"), "{message}");
 }
 
 #[test]
@@ -133,6 +159,113 @@ fn verified_file_index_fetch_rejects_index_release_tag_mismatch() {
     assert!(message.contains("expected release_tag v0.0.0"), "{message}");
     assert!(message.contains("got v9.9.9"), "{message}");
     assert!(message.contains("observed_sha256="), "{message}");
+    assert!(message.contains("checksum_verification=after"), "{message}");
+}
+
+#[test]
+fn remote_index_fetch_times_out_with_bounded_context() {
+    let server = HttpFixture::new([(
+        "/m80-release-assets.json",
+        TestResponse::slow_ok(index_json_with_schema(1).into_bytes()),
+    )]);
+    let index_url = server.url("/m80-release-assets.json");
+
+    let err = fetch_verified_asset_index(timeout_fetch_request(&index_url)).unwrap_err();
+
+    assert!(matches!(err, AssetIndexFetchError::DownloadFailed { .. }));
+    let diagnostic = err.clone().into_diagnostic("v0.0.0");
+    assert_eq!(diagnostic.index_url.as_deref(), Some(index_url.as_str()));
+    assert_eq!(diagnostic.fetch_url.as_deref(), Some(index_url.as_str()));
+    assert_eq!(diagnostic.checksum_verification.as_deref(), Some("before"));
+    let message = err.to_string();
+    assert!(message.contains("failure=timeout"), "{message}");
+    assert_fetch_context(&message, &index_url, "before");
+}
+
+#[test]
+fn remote_checksum_fetch_times_out_with_bounded_context() {
+    let index = index_json_with_schema(1).into_bytes();
+    let checksum = checksum_sidecar_for(&index);
+    let server = HttpFixture::new([
+        ("/m80-release-assets.json", TestResponse::ok(index)),
+        (
+            "/m80-release-assets.json.sha256",
+            TestResponse::slow_ok(checksum),
+        ),
+    ]);
+    let index_url = server.url("/m80-release-assets.json");
+
+    let err = fetch_verified_asset_index(timeout_fetch_request(&index_url)).unwrap_err();
+
+    assert!(matches!(err, AssetIndexFetchError::DownloadFailed { .. }));
+    let checksum_url = format!("{index_url}.sha256");
+    let diagnostic = err.clone().into_diagnostic("v0.0.0");
+    assert_eq!(diagnostic.index_url.as_deref(), Some(index_url.as_str()));
+    assert_eq!(diagnostic.fetch_url.as_deref(), Some(checksum_url.as_str()));
+    assert_eq!(diagnostic.checksum_verification.as_deref(), Some("before"));
+    let message = err.to_string();
+    assert!(message.contains("failure=timeout"), "{message}");
+    assert!(
+        message.contains("m80-release-assets.json.sha256"),
+        "{message}"
+    );
+    assert_fetch_context(&message, &index_url, "before");
+}
+
+#[test]
+fn remote_index_fetch_names_http_failure_context() {
+    let server = HttpFixture::new([(
+        "/m80-release-assets.json",
+        TestResponse::status(500, b"server failed".to_vec()),
+    )]);
+    let index_url = server.url("/m80-release-assets.json");
+
+    let err = fetch_verified_asset_index(timeout_fetch_request(&index_url)).unwrap_err();
+
+    assert!(matches!(err, AssetIndexFetchError::DownloadFailed { .. }));
+    let message = err.to_string();
+    assert!(message.contains("failure=http_failure"), "{message}");
+    assert_fetch_context(&message, &index_url, "before");
+}
+
+#[test]
+fn remote_index_fetch_names_connect_failure_context() {
+    let index_url = unused_local_fixture_url();
+
+    let err = fetch_verified_asset_index(timeout_fetch_request(&index_url)).unwrap_err();
+
+    assert!(matches!(err, AssetIndexFetchError::DownloadFailed { .. }));
+    let message = err.to_string();
+    assert!(message.contains("failure=connect_failure"), "{message}");
+    assert_fetch_context(&message, &index_url, "before");
+}
+
+#[test]
+fn remote_index_fetch_rejects_unsupported_redirect_with_context() {
+    let server = HttpFixture::new([
+        (
+            "/m80-release-assets.json",
+            TestResponse::redirect_placeholder_host("/redirected-index"),
+        ),
+        (
+            "/redirected-index",
+            TestResponse::ok(index_json_with_schema(1).into_bytes()),
+        ),
+    ]);
+    let index_url = server.url("/m80-release-assets.json");
+
+    let err = fetch_verified_asset_index(timeout_fetch_request(&index_url)).unwrap_err();
+
+    assert!(matches!(
+        err,
+        AssetIndexFetchError::RedirectUnsupported { .. }
+    ));
+    let message = err.to_string();
+    assert!(
+        message.contains("redirected to unsupported host"),
+        "{message}"
+    );
+    assert_fetch_context(&message, &index_url, "before");
 }
 
 #[test]
@@ -144,11 +277,23 @@ fn pinned_github_asset_index_url_uses_moradology_m80_release() {
 }
 
 fn fetch_request(index_url: &str) -> AssetIndexFetchRequest<'_> {
+    fetch_request_with_bounds(index_url, AssetIndexDownloadBounds::default())
+}
+
+fn timeout_fetch_request(index_url: &str) -> AssetIndexFetchRequest<'_> {
+    fetch_request_with_bounds(index_url, AssetIndexDownloadBounds::for_test(1, 1))
+}
+
+fn fetch_request_with_bounds(
+    index_url: &str,
+    download_bounds: AssetIndexDownloadBounds,
+) -> AssetIndexFetchRequest<'_> {
     AssetIndexFetchRequest {
         index_url,
         release_tag: "v0.0.0",
         host: linux_x86_64(),
         image_kind: Some("minimal"),
+        download_bounds,
     }
 }
 
@@ -165,4 +310,166 @@ fn write_index_with_sidecar(root: &Path, json: &str) -> String {
 
 fn file_url(path: &Path) -> String {
     format!("file://{}", path.display())
+}
+
+fn checksum_sidecar_for(index: &[u8]) -> Vec<u8> {
+    format!("{}  {ASSET_INDEX_NAME}\n", sha256_bytes(index)).into_bytes()
+}
+
+fn assert_fetch_context(message: &str, index_url: &str, checksum_verification: &str) {
+    assert!(message.contains("release_tag=v0.0.0"), "{message}");
+    assert!(message.contains("requested_os=linux"), "{message}");
+    assert!(message.contains("requested_arch=x86_64"), "{message}");
+    assert!(
+        message.contains("requested_image_kind=minimal"),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("index_url={index_url}")),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("checksum_verification={checksum_verification}")),
+        "{message}"
+    );
+}
+
+fn unused_local_fixture_url() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+    format!("http://{addr}/m80-release-assets.json")
+}
+
+struct HttpFixture {
+    addr: SocketAddr,
+    shutdown: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl HttpFixture {
+    fn new<const N: usize>(routes: [(&'static str, TestResponse); N]) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let route_map = Arc::new(Mutex::new(
+            routes
+                .into_iter()
+                .map(|(path, response)| (path.to_owned(), response.with_addr(addr)))
+                .collect::<HashMap<_, _>>(),
+        ));
+        let thread_shutdown = Arc::clone(&shutdown);
+        let handle = thread::spawn(move || {
+            while !thread_shutdown.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let routes = route_map.lock().unwrap();
+                        handle_http_request(&mut stream, &routes);
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        Self {
+            addr,
+            shutdown,
+            handle: Some(handle),
+        }
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("http://{}{}", self.addr, path)
+    }
+}
+
+impl Drop for HttpFixture {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        let _ = std::net::TcpStream::connect(self.addr);
+        if let Some(handle) = self.handle.take() {
+            handle.join().unwrap();
+        }
+    }
+}
+
+#[derive(Clone)]
+enum TestResponse {
+    Ok(Vec<u8>),
+    Status { code: u16, body: Vec<u8> },
+    RedirectPlaceholderHost(String),
+    Redirect(String),
+    SlowOk { body: Vec<u8>, delay: Duration },
+}
+
+impl TestResponse {
+    fn ok(body: Vec<u8>) -> Self {
+        Self::Ok(body)
+    }
+
+    fn status(code: u16, body: Vec<u8>) -> Self {
+        Self::Status { code, body }
+    }
+
+    fn redirect_placeholder_host(path: &str) -> Self {
+        Self::RedirectPlaceholderHost(path.to_owned())
+    }
+
+    fn slow_ok(body: Vec<u8>) -> Self {
+        Self::SlowOk {
+            body,
+            delay: Duration::from_secs(2),
+        }
+    }
+
+    fn with_addr(self, addr: SocketAddr) -> Self {
+        match self {
+            Self::RedirectPlaceholderHost(path) => {
+                Self::Redirect(format!("http://localhost:{}{path}", addr.port()))
+            }
+            other => other,
+        }
+    }
+}
+
+fn handle_http_request(stream: &mut std::net::TcpStream, routes: &HashMap<String, TestResponse>) {
+    let mut request = [0_u8; 2048];
+    let Ok(nread) = stream.read(&mut request) else {
+        return;
+    };
+    let request = String::from_utf8_lossy(&request[..nread]);
+    let path = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .unwrap_or("/");
+    match routes.get(path) {
+        Some(TestResponse::Ok(body)) => write_response(stream, 200, body),
+        Some(TestResponse::Status { code, body }) => write_response(stream, *code, body),
+        Some(TestResponse::Redirect(location)) => {
+            let response = format!(
+                "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+        Some(TestResponse::SlowOk { body, delay }) => {
+            thread::sleep(*delay);
+            write_response(stream, 200, body);
+        }
+        Some(TestResponse::RedirectPlaceholderHost(_)) => unreachable!("placeholder resolved"),
+        None => write_response(stream, 404, b"missing"),
+    }
+}
+
+fn write_response(stream: &mut std::net::TcpStream, status: u16, body: &[u8]) {
+    let reason = if status == 200 { "OK" } else { "Error" };
+    let header = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(body);
 }

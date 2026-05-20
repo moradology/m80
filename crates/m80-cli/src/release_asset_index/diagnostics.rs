@@ -118,12 +118,13 @@ impl fmt::Display for AssetIndexFetchError {
                 context.describe()
             ),
             Self::LocalRead {
+                url,
                 path,
                 source,
                 context,
             } => write!(
                 f,
-                "release asset index fetch failed reading {}: {}; {}",
+                "release asset index fetch failed reading {} for {url}: {}; {}",
                 path.display(),
                 source,
                 context.describe()
@@ -141,14 +142,16 @@ impl fmt::Display for AssetIndexFetchError {
             Self::DownloadFailed {
                 url,
                 status,
+                failure,
                 output,
                 context,
             } => write!(
                 f,
-                "release asset index fetch failed for {url}: status={status} output={output}; {}",
+                "release asset index fetch failed for {url}: failure={failure} status={status} output={output}; {}",
                 context.describe()
             ),
             Self::RedirectUnsupported {
+                url: _,
                 initial,
                 final_url,
                 context,
