@@ -21,6 +21,7 @@ BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
+BUILD_MANIFEST_NAME = "m80-release-build.json"
 INSTALL_NAME = "install.sh"
 INTEGRITY_NAME = "m80-release-integrity.json"
 INTEGRITY_ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
@@ -54,6 +55,8 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertTrue((out_dir / f"{ASSET_INDEX_NAME}.sha256").is_file())
             self.assertTrue((out_dir / BOOTSTRAP_SELECTOR_NAME).is_file())
             self.assertTrue((out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256").is_file())
+            self.assertTrue((out_dir / BUILD_MANIFEST_NAME).is_file())
+            self.assertTrue((out_dir / f"{BUILD_MANIFEST_NAME}.sha256").is_file())
             self.assertTrue((out_dir / "SHA256SUMS").is_file())
             self.assertTrue((out_dir / INTEGRITY_NAME).is_file())
             self.assertEqual(file_mode(tarball), 0o644)
@@ -65,6 +68,8 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(file_mode(out_dir / f"{ASSET_INDEX_NAME}.sha256"), 0o644)
             self.assertEqual(file_mode(out_dir / BOOTSTRAP_SELECTOR_NAME), 0o644)
             self.assertEqual(file_mode(out_dir / f"{BOOTSTRAP_SELECTOR_NAME}.sha256"), 0o644)
+            self.assertEqual(file_mode(out_dir / BUILD_MANIFEST_NAME), 0o644)
+            self.assertEqual(file_mode(out_dir / f"{BUILD_MANIFEST_NAME}.sha256"), 0o644)
             self.assertEqual(file_mode(out_dir / "SHA256SUMS"), 0o644)
             self.assertEqual(file_mode(out_dir / INTEGRITY_NAME), 0o644)
             with tarfile.open(tarball, "r:gz") as tar:
@@ -175,6 +180,33 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(selector_row[11], "-")
             self.assertEqual(selector_row[12], INTEGRITY_ATTESTATION_BUNDLE_NAME)
             self.assertEqual(selector_row[13], "v0.0.0")
+            build_manifest = json.loads((out_dir / BUILD_MANIFEST_NAME).read_text())
+            self.assertEqual(build_manifest["schema_version"], 1)
+            self.assertEqual(build_manifest["release_tag"], "v0.0.0")
+            self.assertEqual(build_manifest["source_commit"], INTEGRITY_COMMIT_SHA)
+            self.assertEqual(build_manifest["rust_toolchain"], INTEGRITY_RUST_TOOLCHAIN)
+            self.assertEqual(build_manifest["target"], "linux-x86_64")
+            self.assertEqual(
+                build_manifest["target_triples"],
+                ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"],
+            )
+            self.assertEqual(build_manifest["m80_package_version"], "0.0.0")
+            self.assertEqual(build_manifest["image_kind"], "minimal")
+            self.assertEqual(build_manifest["cargo_lock_sha256"], sha256(REPO_ROOT / "Cargo.lock"))
+            self.assertEqual(build_manifest["builder_identity"], "test-builder")
+            self.assertEqual(build_manifest["builder_os_image"], "test-os-image")
+            self.assertEqual(
+                build_manifest["apt_packages"],
+                [
+                    {"name": "busybox-static", "version": "1.36.1"},
+                    {"name": "curl", "version": "8.5.0"},
+                    {"name": "e2fsprogs", "version": "1.47.0"},
+                    {"name": "musl-tools", "version": "1.2.4"},
+                ],
+            )
+            self.assertIsNone(build_manifest["container_digest"])
+            self.assertEqual(build_manifest["bundle_metadata_name"], METADATA_NAME)
+            self.assertEqual(build_manifest["bundle_metadata_sha256"], sha256(out_dir / METADATA_NAME))
             integrity = json.loads((out_dir / INTEGRITY_NAME).read_text())
             self.assertEqual(integrity["schema_version"], 1)
             self.assertEqual(integrity["mechanism"], "github-artifact-attestation")
@@ -199,6 +231,8 @@ class ReleaseBundleTest(unittest.TestCase):
                     f"{ASSET_INDEX_NAME}.sha256",
                     BOOTSTRAP_SELECTOR_NAME,
                     f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
+                    BUILD_MANIFEST_NAME,
+                    f"{BUILD_MANIFEST_NAME}.sha256",
                     "SHA256SUMS",
                 },
             )
@@ -288,6 +322,8 @@ class ReleaseBundleTest(unittest.TestCase):
                     f"{base}/{METADATA_NAME}.sha256",
                     f"{base}/{INSTALL_NAME}",
                     f"{base}/{INSTALL_NAME}.sha256",
+                    f"{base}/{BUILD_MANIFEST_NAME}",
+                    f"{base}/{BUILD_MANIFEST_NAME}.sha256",
                     f"{base}/SHA256SUMS",
                     f"{base}/{BUNDLE_NAME}",
                     f"{base}/{BUNDLE_NAME}.sha256",
@@ -295,7 +331,7 @@ class ReleaseBundleTest(unittest.TestCase):
             )
             self.assertIn("verified release tag=v0.0.0", result.stderr)
             self.assertIn(
-                f"verified assets={BUNDLE_NAME},{METADATA_NAME},{INSTALL_NAME},{INTEGRITY_NAME},{INTEGRITY_ATTESTATION_BUNDLE_NAME}",
+                f"verified assets={BUNDLE_NAME},{METADATA_NAME},{INSTALL_NAME},{BUILD_MANIFEST_NAME},{INTEGRITY_NAME},{INTEGRITY_ATTESTATION_BUNDLE_NAME}",
                 result.stderr,
             )
             self.assertIn(f"install_sh_sha256={sha256(root / 'out' / INSTALL_NAME)}", result.stderr)
@@ -558,7 +594,9 @@ class ReleaseBundleTest(unittest.TestCase):
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
 
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/package-release-bundle.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
         self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
+        self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
         self.assertIn("python3 scripts/test-release-bundle.py", workflow)
         self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
         self.assertIn("uses: actions/checkout@v6", workflow)
@@ -591,6 +629,13 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("uses: actions/checkout@v6", workflow)
         self.assertNotIn("actions/checkout@v4", workflow)
         self.assertIn("actions/attest@v4", workflow)
+        self.assertIn("cargo build --locked -p m80-image-build --release", workflow)
+        self.assertIn("cargo build --locked -p m80-guestd --release --target x86_64-unknown-linux-musl", workflow)
+        self.assertIn("cargo build --locked -p m80-cli -p m80-jailer-harden -p m80-net-helper --release", workflow)
+        self.assertIn("--target-triple x86_64-unknown-linux-musl", workflow)
+        self.assertIn("--builder-identity", workflow)
+        self.assertIn("--builder-os-image", workflow)
+        self.assertIn("--apt-package-version", workflow)
         self.assertIn("subject-name: m80-release-integrity.json", workflow)
         self.assertIn("subject-digest: ${{ steps.integrity-subject.outputs.digest }}", workflow)
         self.assertNotIn("subject-path:", workflow)
@@ -620,6 +665,8 @@ class ReleaseBundleTest(unittest.TestCase):
             f"{ASSET_INDEX_NAME}.sha256",
             BOOTSTRAP_SELECTOR_NAME,
             f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
+            BUILD_MANIFEST_NAME,
+            f"{BUILD_MANIFEST_NAME}.sha256",
             INSTALL_NAME,
             f"{INSTALL_NAME}.sha256",
             "SHA256SUMS",
@@ -1002,6 +1049,7 @@ class ReleaseBundleTest(unittest.TestCase):
             ),
             (f"{ASSET_INDEX_NAME}.sha256", ASSET_INDEX_NAME, "checksum sidecar mismatch"),
             (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", BOOTSTRAP_SELECTOR_NAME, "checksum sidecar mismatch"),
+            (f"{BUILD_MANIFEST_NAME}.sha256", BUILD_MANIFEST_NAME, "checksum sidecar mismatch"),
             ("SHA256SUMS", INSTALL_NAME, f"public SHA256SUMS hash mismatch for {INSTALL_NAME}"),
         ]
         for sidecar, asset_name, expected_error in cases:
@@ -1035,6 +1083,50 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("public sidecar mode mismatch for install.sh", result.stderr)
+
+    def test_verifier_rejects_build_manifest_metadata_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_build_manifest(root / "out", {"bundle_metadata_sha256": "0" * 64})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest bundle_metadata_sha256 mismatch", result.stderr)
+
+    def test_verifier_rejects_build_manifest_commit_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_build_manifest(root / "out", {"source_commit": "1" * 40})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest source_commit/integrity commit_sha mismatch", result.stderr)
+
+    def test_verifier_rejects_build_manifest_cargo_lock_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_build_manifest(root / "out", {"cargo_lock_sha256": "0" * 64})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest cargo_lock_sha256 mismatch", result.stderr)
+
+    def test_verifier_rejects_build_manifest_without_builder_material(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            rewrite_build_manifest(root / "out", {"apt_packages": [], "container_digest": None})
+
+            result = run_verify(tarball, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("build manifest missing apt packages or container digest", result.stderr)
 
     def test_verifier_rejects_asset_index_missing_asset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1477,6 +1569,8 @@ class ReleaseBundleTest(unittest.TestCase):
                     f"{ASSET_INDEX_NAME}.sha256",
                     BOOTSTRAP_SELECTOR_NAME,
                     f"{BOOTSTRAP_SELECTOR_NAME}.sha256",
+                    BUILD_MANIFEST_NAME,
+                    f"{BUILD_MANIFEST_NAME}.sha256",
                     "SHA256SUMS",
                 },
             )
@@ -1539,6 +1633,29 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(f"release integrity missing subject(s): {BOOTSTRAP_SELECTOR_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_missing_build_manifest_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            material = write_integrity_material(root / "out", omit_subject=BUILD_MANIFEST_NAME)
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"release integrity missing subject(s): {BUILD_MANIFEST_NAME}", result.stderr)
+
+    def test_release_integrity_material_rejects_build_manifest_commit_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_fixture(root)
+            rewrite_build_manifest(root / "out", {"source_commit": "1" * 40})
+            material = write_integrity_material(root / "out")
+
+            result = run_verify_integrity(material, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release integrity build manifest source_commit mismatch", result.stderr)
 
     def test_release_integrity_material_rejects_unexpected_extra_subject(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2022,6 +2139,26 @@ def rewrite_asset_index(out_dir: Path, index: dict) -> None:
             (METADATA_NAME, out_dir / METADATA_NAME),
             (ASSET_INDEX_NAME, index_path),
             (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
+            (BUILD_MANIFEST_NAME, out_dir / BUILD_MANIFEST_NAME),
+        ],
+    )
+
+
+def rewrite_build_manifest(out_dir: Path, updates: dict) -> None:
+    manifest_path = out_dir / BUILD_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    manifest.update(updates)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    write_sha256_sidecar(out_dir / f"{BUILD_MANIFEST_NAME}.sha256", manifest_path, BUILD_MANIFEST_NAME)
+    write_public_sha256s(
+        out_dir / "SHA256SUMS",
+        [
+            (BUNDLE_NAME, out_dir / BUNDLE_NAME),
+            (INSTALL_NAME, out_dir / INSTALL_NAME),
+            (METADATA_NAME, out_dir / METADATA_NAME),
+            (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
+            (BOOTSTRAP_SELECTOR_NAME, out_dir / BOOTSTRAP_SELECTOR_NAME),
+            (BUILD_MANIFEST_NAME, manifest_path),
         ],
     )
 
@@ -2042,6 +2179,7 @@ def rewrite_bootstrap_selector(out_dir: Path, lines: list[str]) -> None:
             (METADATA_NAME, out_dir / METADATA_NAME),
             (ASSET_INDEX_NAME, out_dir / ASSET_INDEX_NAME),
             (BOOTSTRAP_SELECTOR_NAME, selector),
+            (BUILD_MANIFEST_NAME, out_dir / BUILD_MANIFEST_NAME),
         ],
     )
 
@@ -2075,6 +2213,8 @@ def write_integrity_material(
         f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
         BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
         f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
+        BUILD_MANIFEST_NAME: "build-manifest",
+        f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
         "SHA256SUMS": "checksum-manifest",
     }
     subjects = []
@@ -2540,6 +2680,22 @@ def run_package(
         INTEGRITY_COMMIT_SHA,
         "--rust-toolchain",
         INTEGRITY_RUST_TOOLCHAIN,
+        "--target-triple",
+        "x86_64-unknown-linux-gnu",
+        "--target-triple",
+        "x86_64-unknown-linux-musl",
+        "--builder-identity",
+        "test-builder",
+        "--builder-os-image",
+        "test-os-image",
+        "--apt-package-version",
+        "busybox-static=1.36.1",
+        "--apt-package-version",
+        "curl=8.5.0",
+        "--apt-package-version",
+        "e2fsprogs=1.47.0",
+        "--apt-package-version",
+        "musl-tools=1.2.4",
         "--target",
         target,
         "--image-kind",

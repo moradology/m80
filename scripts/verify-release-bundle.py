@@ -17,12 +17,15 @@ from release_url_contract import release_asset_url
 BUNDLE_SCHEMA_VERSION = 1
 ASSET_INDEX_SCHEMA_VERSION = 1
 BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
+BUILD_MANIFEST_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
+BUILD_MANIFEST_NAME = "m80-release-build.json"
+INTEGRITY_NAME = "m80-release-integrity.json"
 INSTALL_NAME = "install.sh"
 BOOTSTRAP_SELECTOR_COLUMNS = [
     "os",
@@ -40,6 +43,8 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
     "m80_version",
 ]
 SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+APT_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 PAYLOAD_PATHS = {
     "bin/m80",
     "bin/m80-jailer-harden",
@@ -85,6 +90,24 @@ EXPECTED_MODES = {
     "bundle.json": 0o644,
     "SHA256SUMS": 0o644,
 }
+BUILD_MANIFEST_FIELDS = {
+    "schema_version",
+    "release_tag",
+    "source_commit",
+    "rust_toolchain",
+    "target",
+    "target_triples",
+    "m80_package_version",
+    "image_kind",
+    "cargo_lock_sha256",
+    "builder_identity",
+    "builder_os_image",
+    "apt_packages",
+    "container_digest",
+    "bundle_metadata_name",
+    "bundle_metadata_sha256",
+}
+APT_PACKAGE_FIELDS = {"name", "version"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -184,6 +207,7 @@ def main() -> int:
             args.bundle,
             files["bundle.json"]["data"],
             metadata,
+            repo_root=args.repo_root,
             release_tag=args.release_tag,
             target=args.target,
             image_kind=args.image_kind,
@@ -331,6 +355,20 @@ def metadata_file_map(metadata: dict) -> dict[str, str]:
     return result
 
 
+def require_exact_fields(obj: dict, expected_fields: set[str], label: str) -> None:
+    actual = set(obj)
+    missing = sorted(expected_fields - actual)
+    extra = sorted(actual - expected_fields)
+    require(not missing, f"{label} missing field(s): {', '.join(missing)}")
+    require(not extra, f"{label} unexpected field(s): {', '.join(extra)}")
+
+
+def require_nonempty_str(obj: dict, key: str, label: str) -> str:
+    value = obj.get(key)
+    require(isinstance(value, str) and value, f"{label} missing {key}")
+    return value
+
+
 def parse_sha256s(text: str) -> dict[str, str]:
     result = {}
     for line in text.splitlines():
@@ -348,6 +386,7 @@ def verify_sidecars(
     bundle_metadata: bytes,
     metadata: dict,
     *,
+    repo_root: Path,
     release_tag: str,
     target: str,
     image_kind: str,
@@ -360,17 +399,20 @@ def verify_sidecars(
     metadata_asset = sidecar_dir / METADATA_NAME
     asset_index = sidecar_dir / ASSET_INDEX_NAME
     bootstrap_selector = sidecar_dir / BOOTSTRAP_SELECTOR_NAME
+    build_manifest = sidecar_dir / BUILD_MANIFEST_NAME
     public_sums = sidecar_dir / "SHA256SUMS"
     require(install_asset.is_file(), f"missing public sidecar: {INSTALL_NAME}")
     require(metadata_asset.is_file(), f"missing public sidecar: {METADATA_NAME}")
     require(asset_index.is_file(), f"missing public sidecar: {ASSET_INDEX_NAME}")
     require(bootstrap_selector.is_file(), f"missing public sidecar: {BOOTSTRAP_SELECTOR_NAME}")
+    require(build_manifest.is_file(), f"missing public sidecar: {BUILD_MANIFEST_NAME}")
     require(public_sums.is_file(), "missing public sidecar: SHA256SUMS")
     verify_public_mode(bundle, 0o644)
     verify_public_mode(install_asset, 0o755)
     verify_public_mode(metadata_asset, 0o644)
     verify_public_mode(asset_index, 0o644)
     verify_public_mode(bootstrap_selector, 0o644)
+    verify_public_mode(build_manifest, 0o644)
     verify_public_mode(public_sums, 0o644)
     require(metadata_asset.read_bytes() == bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
 
@@ -380,6 +422,7 @@ def verify_sidecars(
         METADATA_NAME: metadata_asset,
         ASSET_INDEX_NAME: asset_index,
         BOOTSTRAP_SELECTOR_NAME: bootstrap_selector,
+        BUILD_MANIFEST_NAME: build_manifest,
     }
     for name, path in expected_assets.items():
         verify_single_sha256(sidecar_dir / f"{name}.sha256", name, path)
@@ -403,6 +446,16 @@ def verify_sidecars(
         bootstrap_selector,
         index,
         release_tag=release_tag,
+    )
+    verify_build_manifest(
+        build_manifest,
+        metadata_asset=metadata_asset,
+        metadata=metadata,
+        repo_root=repo_root,
+        release_tag=release_tag,
+        target=target,
+        image_kind=image_kind,
+        sidecar_dir=sidecar_dir,
     )
 
 
@@ -462,6 +515,113 @@ def verify_asset_index(
             "asset index attestation_name invalid",
         )
     return index
+
+
+def verify_build_manifest(
+    manifest_path: Path,
+    *,
+    metadata_asset: Path,
+    metadata: dict,
+    repo_root: Path,
+    release_tag: str,
+    target: str,
+    image_kind: str,
+    sidecar_dir: Path,
+) -> None:
+    manifest = json.loads(manifest_path.read_text())
+    require(isinstance(manifest, dict), "build manifest must be a JSON object")
+    require_exact_fields(manifest, BUILD_MANIFEST_FIELDS, "build manifest")
+    require(manifest.get("schema_version") == BUILD_MANIFEST_SCHEMA_VERSION, "unsupported build manifest schema_version")
+    require(manifest.get("release_tag") == release_tag, "build manifest release_tag mismatch")
+    require(manifest.get("target") == target, "build manifest target mismatch")
+    require(manifest.get("image_kind") == image_kind, "build manifest image_kind mismatch")
+    require(
+        manifest.get("m80_package_version") == metadata["package_version"],
+        "build manifest m80_package_version mismatch",
+    )
+    require(
+        manifest.get("bundle_metadata_name") == METADATA_NAME,
+        "build manifest bundle_metadata_name mismatch",
+    )
+    require(
+        manifest.get("bundle_metadata_sha256") == sha256_file(metadata_asset),
+        "build manifest bundle_metadata_sha256 mismatch",
+    )
+    require(
+        manifest.get("cargo_lock_sha256") == sha256_file(repo_root / "Cargo.lock"),
+        "build manifest cargo_lock_sha256 mismatch",
+    )
+    source_commit = manifest.get("source_commit")
+    require(
+        isinstance(source_commit, str) and COMMIT_RE.fullmatch(source_commit) is not None,
+        "build manifest source_commit invalid",
+    )
+    require_nonempty_str(manifest, "rust_toolchain", "build manifest")
+    require_nonempty_str(manifest, "builder_identity", "build manifest")
+    require_nonempty_str(manifest, "builder_os_image", "build manifest")
+    verify_build_manifest_target_triples(manifest.get("target_triples"))
+    verify_build_manifest_builder_material(manifest)
+    integrity_path = sidecar_dir / INTEGRITY_NAME
+    if integrity_path.is_file():
+        integrity = json.loads(integrity_path.read_text())
+        require(
+            manifest["source_commit"] == integrity.get("commit_sha"),
+            "build manifest source_commit/integrity commit_sha mismatch",
+        )
+        require(
+            manifest["release_tag"] == integrity.get("release_tag"),
+            "build manifest release_tag/integrity release_tag mismatch",
+        )
+        require(
+            manifest["rust_toolchain"] == integrity.get("rust_toolchain"),
+            "build manifest rust_toolchain/integrity rust_toolchain mismatch",
+        )
+        require(
+            manifest["m80_package_version"] == integrity.get("m80_package_version"),
+            "build manifest m80_package_version/integrity m80_package_version mismatch",
+        )
+
+
+def verify_build_manifest_target_triples(value: object) -> None:
+    require(isinstance(value, list) and value, "build manifest target_triples must be a non-empty list")
+    seen: set[str] = set()
+    for triple in value:
+        require(isinstance(triple, str) and triple, "build manifest target triple must not be empty")
+        require(
+            not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in triple),
+            f"build manifest target triple invalid: {triple!r}",
+        )
+        require(triple not in seen, f"build manifest duplicate target triple: {triple}")
+        seen.add(triple)
+    require(
+        "x86_64-unknown-linux-musl" in seen,
+        "build manifest target_triples missing x86_64-unknown-linux-musl",
+    )
+
+
+def verify_build_manifest_builder_material(manifest: dict) -> None:
+    apt_packages = manifest.get("apt_packages")
+    require(isinstance(apt_packages, list), "build manifest apt_packages must be a list")
+    seen: set[str] = set()
+    for package in apt_packages:
+        require(isinstance(package, dict), "build manifest apt package must be an object")
+        require_exact_fields(package, APT_PACKAGE_FIELDS, "build manifest apt package")
+        name = package.get("name")
+        version = package.get("version")
+        require(isinstance(name, str) and APT_PACKAGE_NAME_RE.fullmatch(name) is not None, "build manifest apt package name invalid")
+        require(isinstance(version, str) and version, f"build manifest apt package version missing for {name}")
+        require(
+            not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in version),
+            f"build manifest apt package version invalid for {name}",
+        )
+        require(name not in seen, f"build manifest duplicate apt package: {name}")
+        seen.add(name)
+    container_digest = manifest.get("container_digest")
+    require(
+        container_digest is None or (isinstance(container_digest, str) and container_digest),
+        "build manifest container_digest invalid",
+    )
+    require(apt_packages or container_digest is not None, "build manifest missing apt packages or container digest")
 
 
 def verify_bootstrap_selector(selector: Path, index: dict, *, release_tag: str) -> None:

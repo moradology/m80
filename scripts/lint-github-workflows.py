@@ -14,6 +14,10 @@ USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^#\s]+)")
 JOB_RE = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$")
 PERMISSION_RE = re.compile(r"^\s{6}([A-Za-z0-9_-]+):\s*([A-Za-z0-9_-]+)\s*(?:#.*)?$")
 SECRET_RE = re.compile(r"\$\{\{\s*secrets\.")
+CARGO_COMMAND_RE = re.compile(r"(?:^|\s)cargo(?:\s+\+\S+)?\s+(build|test|clippy|install)\b")
+RUSTUP_TOOLCHAIN_INSTALL_RE = re.compile(r"(?:^|\s)rustup\s+toolchain\s+install\s+(\S+)")
+RUSTUP_TARGET_ADD_RE = re.compile(r"(?:^|\s)rustup\s+target\s+add\b")
+PINNED_RUST_TOOLCHAIN_RE = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,6 +57,8 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
         errors.extend(lint_attestation_permissions(path, lines, release_workflow=release_workflow))
         if release_workflow:
             errors.extend(lint_release_concurrency(path, lines))
+            errors.extend(lint_release_cargo_locked(path, lines))
+            errors.extend(lint_release_rust_toolchain_pins(path, lines))
         if has_pull_request_event(lines) and SECRET_RE.search(text):
             errors.append(f"{path}: pull_request workflow must not reference secrets.*")
     return errors
@@ -168,6 +174,37 @@ def lint_release_concurrency(path: Path, lines: list[str]) -> list[str]:
             f"{path}: release concurrency group must be keyed by tag/ref or latest promotion target"
         ]
     return []
+
+
+def lint_release_cargo_locked(path: Path, lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    for line_no, line in enumerate(lines, start=1):
+        if not CARGO_COMMAND_RE.search(line):
+            continue
+        if "--locked" not in line:
+            errors.append(f"{path}:{line_no}: release cargo invocation must use --locked")
+    return errors
+
+
+def lint_release_rust_toolchain_pins(path: Path, lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    for line_no, line in enumerate(lines, start=1):
+        install = RUSTUP_TOOLCHAIN_INSTALL_RE.search(line)
+        if install and PINNED_RUST_TOOLCHAIN_RE.fullmatch(install.group(1)) is None:
+            errors.append(f"{path}:{line_no}: release rustup toolchain install must use a pinned numeric toolchain")
+        if RUSTUP_TARGET_ADD_RE.search(line):
+            toolchain = rustup_target_toolchain(line)
+            if toolchain is None or PINNED_RUST_TOOLCHAIN_RE.fullmatch(toolchain) is None:
+                errors.append(f"{path}:{line_no}: release rustup target add must use --toolchain with a pinned numeric toolchain")
+    return errors
+
+
+def rustup_target_toolchain(line: str) -> str | None:
+    parts = line.split()
+    for index, part in enumerate(parts):
+        if part == "--toolchain" and index + 1 < len(parts):
+            return parts[index + 1]
+    return None
 
 
 def job_blocks(lines: list[str]) -> list[tuple[str, int, int]]:

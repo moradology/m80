@@ -22,12 +22,14 @@ from release_url_contract import public_release_root, release_asset_url, release
 BUNDLE_SCHEMA_VERSION = 1
 ASSET_INDEX_SCHEMA_VERSION = 1
 BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
+BUILD_MANIFEST_SCHEMA_VERSION = 1
 SUPPORTED_TARGET = "linux-x86_64"
 SUPPORTED_IMAGE_KIND = "minimal"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
+BUILD_MANIFEST_NAME = "m80-release-build.json"
 INSTALL_NAME = "install.sh"
 INTEGRITY_NAME = "m80-release-integrity.json"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
@@ -51,6 +53,8 @@ INTEGRITY_SUBJECT_KINDS = [
     (f"{ASSET_INDEX_NAME}.sha256", "checksum-sidecar"),
     (BOOTSTRAP_SELECTOR_NAME, "bootstrap-selector"),
     (f"{BOOTSTRAP_SELECTOR_NAME}.sha256", "checksum-sidecar"),
+    (BUILD_MANIFEST_NAME, "build-manifest"),
+    (f"{BUILD_MANIFEST_NAME}.sha256", "checksum-sidecar"),
     ("SHA256SUMS", "checksum-manifest"),
 ]
 BOOTSTRAP_SELECTOR_COLUMNS = [
@@ -69,6 +73,7 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
     "m80_version",
 ]
 SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
+APT_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 FILE_MODES = {
     "bin/m80": 0o755,
     "bin/m80-jailer-harden": 0o755,
@@ -89,6 +94,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--release-tag", required=True, help="GitHub release tag, e.g. v0.1.0")
     parser.add_argument("--commit-sha", required=True, help="40-character source commit SHA for release proof")
     parser.add_argument("--rust-toolchain", required=True, help="Rust toolchain used to build release binaries")
+    parser.add_argument("--target-triple", action="append", required=True, help="Rust target triple built in this release")
+    parser.add_argument("--builder-identity", required=True, help="Builder identity, e.g. GitHub Actions run URL")
+    parser.add_argument("--builder-os-image", required=True, help="OS image used by the release builder")
+    parser.add_argument(
+        "--apt-package-version",
+        action="append",
+        default=[],
+        metavar="PACKAGE=VERSION",
+        help="Relevant apt package version installed in the release builder",
+    )
+    parser.add_argument("--container-digest", help="Container image digest if the builder is containerized")
     parser.add_argument("--target", default="linux-x86_64")
     parser.add_argument("--image-kind", default="minimal")
     parser.add_argument("--m80-bin", required=True, type=Path)
@@ -113,6 +129,14 @@ def main() -> int:
     target_os, target_arch = supported_target_parts(args.target)
     require(COMMIT_RE.match(args.commit_sha) is not None, "commit sha must be a 40-character lowercase hex digest")
     require(args.rust_toolchain.strip(), "rust toolchain must not be empty")
+    target_triples = target_triple_list(args.target_triple)
+    apt_packages = apt_package_versions(args.apt_package_version)
+    require(args.builder_identity.strip(), "builder identity must not be empty")
+    require(args.builder_os_image.strip(), "builder os image must not be empty")
+    require(
+        bool(apt_packages) or bool(args.container_digest),
+        "release build manifest must record apt package versions or a container digest",
+    )
     require(
         args.image_kind == SUPPORTED_IMAGE_KIND,
         f"unsupported image kind: expected {SUPPORTED_IMAGE_KIND}, got {args.image_kind}",
@@ -213,6 +237,24 @@ def main() -> int:
         shutil.copy2(metadata_path, metadata_asset)
         metadata_asset.chmod(0o644)
         write_sha256_sidecar(out_dir / f"{METADATA_NAME}.sha256", metadata_asset, METADATA_NAME)
+        build_manifest_path = out_dir / BUILD_MANIFEST_NAME
+        write_json(
+            build_manifest_path,
+            release_build_manifest(
+                args=args,
+                package_version=workspace_version,
+                metadata_asset=metadata_asset,
+                target_triples=target_triples,
+                apt_packages=apt_packages,
+                repo_root=repo_root,
+            ),
+        )
+        build_manifest_path.chmod(0o644)
+        write_sha256_sidecar(
+            out_dir / f"{BUILD_MANIFEST_NAME}.sha256",
+            build_manifest_path,
+            BUILD_MANIFEST_NAME,
+        )
         asset_index_path = out_dir / ASSET_INDEX_NAME
         asset_index = release_asset_index(
             args=args,
@@ -245,6 +287,7 @@ def main() -> int:
                 (METADATA_NAME, metadata_asset),
                 (ASSET_INDEX_NAME, asset_index_path),
                 (BOOTSTRAP_SELECTOR_NAME, bootstrap_selector_path),
+                (BUILD_MANIFEST_NAME, build_manifest_path),
             ],
         )
         integrity_path = out_dir / INTEGRITY_NAME
@@ -431,6 +474,46 @@ def require_str(obj: dict, key: str, label: str) -> str:
     return value
 
 
+def target_triple_list(raw_triples: list[str]) -> list[str]:
+    triples: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_triples:
+        triple = raw.strip()
+        require(triple, "target triple must not be empty")
+        require(
+            not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in triple),
+            f"target triple must not contain whitespace or control characters: {triple!r}",
+        )
+        if triple in seen:
+            continue
+        seen.add(triple)
+        triples.append(triple)
+    require(triples, "at least one target triple must be recorded")
+    require(
+        "x86_64-unknown-linux-musl" in seen,
+        "linux-x86_64 release builds must record x86_64-unknown-linux-musl",
+    )
+    return triples
+
+
+def apt_package_versions(raw_packages: list[str]) -> list[dict[str, str]]:
+    packages = []
+    seen: set[str] = set()
+    for raw in raw_packages:
+        require("=" in raw, f"apt package version must be PACKAGE=VERSION: {raw}")
+        name, version = raw.split("=", 1)
+        require(APT_PACKAGE_NAME_RE.fullmatch(name) is not None, f"apt package name invalid: {name}")
+        require(version, f"apt package version missing for {name}")
+        require(
+            not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in version),
+            f"apt package version must not contain whitespace or control characters: {name}",
+        )
+        require(name not in seen, f"duplicate apt package version: {name}")
+        seen.add(name)
+        packages.append({"name": name, "version": version})
+    return sorted(packages, key=lambda row: row["name"])
+
+
 def copy_file(src: Path, dest: Path, mode: int) -> None:
     require(src.is_file(), f"missing required input: {src}")
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -570,6 +653,34 @@ def release_asset_index(
                 "expected_firecracker_version": compatibility["expected_firecracker_version"],
             }
         ],
+    }
+
+
+def release_build_manifest(
+    *,
+    args: argparse.Namespace,
+    package_version: str,
+    metadata_asset: Path,
+    target_triples: list[str],
+    apt_packages: list[dict[str, str]],
+    repo_root: Path,
+) -> dict:
+    return {
+        "schema_version": BUILD_MANIFEST_SCHEMA_VERSION,
+        "release_tag": args.release_tag,
+        "source_commit": args.commit_sha,
+        "rust_toolchain": args.rust_toolchain,
+        "target": args.target,
+        "target_triples": target_triples,
+        "m80_package_version": package_version,
+        "image_kind": args.image_kind,
+        "cargo_lock_sha256": sha256(repo_root / "Cargo.lock"),
+        "builder_identity": args.builder_identity,
+        "builder_os_image": args.builder_os_image,
+        "apt_packages": apt_packages,
+        "container_digest": args.container_digest,
+        "bundle_metadata_name": METADATA_NAME,
+        "bundle_metadata_sha256": sha256(metadata_asset),
     }
 
 

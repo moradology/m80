@@ -58,7 +58,8 @@ metadata bytes are checked before use.
 The release dist directory also publishes `m80-linux-x86_64.bundle.json` as a
 byte-identical metadata sidecar, checksum sidecars for public assets, and a
 public `SHA256SUMS` covering the tarball, installer, metadata sidecar, asset
-index, and bootstrap selector. See [`bundle-builder.md`](bundle-builder.md).
+index, bootstrap selector, and build manifest. See
+[`bundle-builder.md`](bundle-builder.md).
 
 ## Public Release Subject Set
 
@@ -77,6 +78,8 @@ m80-release-assets.json
 m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
 m80-bootstrap-selector.tsv.sha256
+m80-release-build.json
+m80-release-build.json.sha256
 SHA256SUMS
 ```
 

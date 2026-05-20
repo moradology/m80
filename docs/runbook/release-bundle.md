@@ -16,8 +16,9 @@ release tag. For manual dispatches, it is the selected ref.
 
 `build-release-artifacts` has `contents: read`. It checks out the repository,
 installs the pinned Rust toolchain from this repo's toolchain policy, builds
-the release artifacts, packages the release bundle plus
-`m80-release-assets.json` and `m80-bootstrap-selector.tsv`, and uploads only a
+the release artifacts with `cargo --locked`, records apt package versions,
+packages the release bundle plus `m80-release-assets.json`,
+`m80-bootstrap-selector.tsv`, and `m80-release-build.json`, and uploads only a
 workflow artifact.
 
 `publish-release-artifacts` runs only for tag refs after the build job
@@ -28,6 +29,27 @@ artifact, uploads the exact files to the matching GitHub Release with
 bundle so the published asset index is checked against the uploaded tarball,
 metadata, bootstrap selector, checksums, and installer before any later
 latest-promotion lane can trust it.
+
+## Build Manifest
+
+Every release dist includes `m80-release-build.json` and
+`m80-release-build.json.sha256`. Inspect it before publication or when
+debugging input drift:
+
+```sh
+jq . /tmp/m80-release-dist/m80-release-build.json
+sha256sum -c /tmp/m80-release-dist/m80-release-build.json.sha256
+```
+
+The manifest must name the release tag, source commit, Rust toolchain, host and
+guest target triples, `Cargo.lock` digest, builder identity, builder OS image,
+and either apt package versions or a container digest. Publication is blocked
+when the manifest's tag, commit, Rust toolchain, package version, bundle
+metadata hash, or `Cargo.lock` hash does not match the rest of the dist.
+
+For pull requests, CI runs the same package/verify script tests without publish
+authority. Those fixture packages must emit the same manifest shape as a tag
+release, so a schema drift fails before the protected release workflow runs.
 
 ## Authority Boundary
 
@@ -43,3 +65,8 @@ workflow/job `permissions` map.
 GitHub's major-version tags. Third-party actions must be pinned by full
 40-character commit SHA. Prefer eliminating third-party actions from the
 release path when a local shell command is clear enough.
+
+Release workflows must keep Rust inputs pinned. The workflow policy linter
+rejects floating `rustup toolchain install` values, `rustup target add` without
+a pinned `--toolchain`, and release `cargo` build/test/clippy/install
+invocations that omit `--locked`.

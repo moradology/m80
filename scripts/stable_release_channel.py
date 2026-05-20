@@ -28,6 +28,8 @@ REQUIRED_PUBLIC_ASSETS = (
     "m80-release-assets.json.sha256",
     "m80-bootstrap-selector.tsv",
     "m80-bootstrap-selector.tsv.sha256",
+    "m80-release-build.json",
+    "m80-release-build.json.sha256",
     "m80-release-integrity.json",
     INTEGRITY_ATTESTATION_BUNDLE_NAME,
     "m80-release-attestation.json",

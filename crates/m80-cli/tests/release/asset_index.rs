@@ -21,6 +21,7 @@ fn asset_index_behavior_doc_names_schema_and_selection_contract() {
         "`m80-release-assets.json`",
         "`m80-release-assets.json.sha256`",
         "`m80-bootstrap-selector.tsv`",
+        "`m80-release-build.json`",
         "`SHA256SUMS`",
         "shell tokens",
         "shell-unsafe tokens",

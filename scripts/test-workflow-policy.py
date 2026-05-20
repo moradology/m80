@@ -218,6 +218,87 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("job build must not grant *: write-all", result.stderr)
 
+    def test_release_cargo_invocation_requires_locked(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+                  - run: cargo build -p m80-cli --release
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release cargo invocation must use --locked", result.stderr)
+
+    def test_release_rust_toolchain_install_requires_numeric_pin(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+                  - run: rustup toolchain install stable --profile minimal
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release rustup toolchain install must use a pinned numeric toolchain", result.stderr)
+
+    def test_release_target_add_requires_pinned_toolchain(self) -> None:
+        with workflow_dir(
+            "release-artifacts.yml",
+            """
+            name: Release artifacts
+            on:
+              push:
+                tags: ["v*"]
+            permissions:
+              contents: read
+            concurrency:
+              group: release-${{ github.ref_name }}
+            jobs:
+              build:
+                permissions:
+                  contents: read
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+                  - run: rustup target add x86_64-unknown-linux-musl
+            """,
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release rustup target add must use --toolchain with a pinned numeric toolchain", result.stderr)
+
     def test_floating_third_party_action_is_rejected(self) -> None:
         with workflow_dir(
             "ci.yml",

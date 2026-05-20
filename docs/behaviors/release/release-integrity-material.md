@@ -38,6 +38,8 @@ m80-release-assets.json
 m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
 m80-bootstrap-selector.tsv.sha256
+m80-release-build.json
+m80-release-build.json.sha256
 SHA256SUMS
 ```
 
@@ -164,6 +166,11 @@ closed when:
 - `repository` is not `moradology/m80`;
 - `release_tag`, `commit_sha`, `target`, `rust_toolchain`, or
   `m80_package_version` do not match the expected release inputs;
+- `m80-release-build.json` does not match the signed release tag, source
+  commit, Rust toolchain, target, package version, bundle metadata hash, or
+  current `Cargo.lock` digest;
+- the build manifest omits target triples or records neither apt package
+  versions nor a container digest;
 - trust policy, attestation bundle, or attestation metadata is missing;
 - trust policy or attestation metadata uses an unsupported schema;
 - trust policy or attestation metadata uses a different repository, mechanism,
@@ -266,6 +273,8 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_integrity_material_rejects_missing_install_subject`;
 - `test_release_integrity_material_rejects_missing_asset_index_subject`;
 - `test_release_integrity_material_rejects_missing_bootstrap_selector_subject`;
+- `test_release_integrity_material_rejects_missing_build_manifest_subject`;
+- `test_release_integrity_material_rejects_build_manifest_commit_mismatch`;
 - `test_release_integrity_material_rejects_unexpected_extra_subject`;
 - `test_release_integrity_material_rejects_subject_digest_mismatch`;
 - `test_release_integrity_material_rejects_tampered_bundle_hash`;

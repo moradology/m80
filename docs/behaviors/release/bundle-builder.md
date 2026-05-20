@@ -11,6 +11,11 @@ Required inputs:
 - `--commit-sha`, the 40-character source commit SHA attested for the
   release;
 - `--rust-toolchain`, the Rust toolchain used to build the release binaries;
+- one or more `--target-triple` values, including
+  `x86_64-unknown-linux-musl` for the guest daemon;
+- `--builder-identity` and `--builder-os-image`;
+- either one or more `--apt-package-version` `PACKAGE=VERSION` rows or
+  `--container-digest`;
 - `--target linux-x86_64` and `--image-kind minimal` for the supported default
   product;
 - `--m80-bin`, built with matching `M80_RELEASE_TAG`;
@@ -32,6 +37,8 @@ m80-release-assets.json
 m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
 m80-bootstrap-selector.tsv.sha256
+m80-release-build.json
+m80-release-build.json.sha256
 install.sh
 install.sh.sha256
 m80-release-integrity.json
@@ -46,8 +53,11 @@ dist files and names the default host tuple, bundle digest, metadata digest,
 schema versions, guest protocol, and Firecracker version.
 `m80-bootstrap-selector.tsv` is generated from that index for the POSIX
 bootstrap path that runs before a local `m80` binary exists. The public
-`SHA256SUMS` covers the tarball, installer, metadata sidecar, asset index, and
-bootstrap selector.
+`m80-release-build.json` records the source commit, Rust toolchain, target
+triples, `Cargo.lock` digest, builder identity, builder OS image, and builder
+package versions or container digest. The public `SHA256SUMS` covers the
+tarball, installer, metadata sidecar, asset index, bootstrap selector, and
+build manifest.
 The public `install.sh` and the bundled `install.sh` are the same rendered
 versioned installer asset. The renderer fills in only the concrete release tag;
 bundle selection comes from the verified bootstrap selector and canonical asset
@@ -103,14 +113,16 @@ paths, unexpected paths, wrong modes, stale versions, metadata hash mismatches,
 schema/protocol/receipt mismatches, missing install-provenance metadata, and
 stale public checksum sidecars. It also checks the asset-index path for missing
 assets, wrong tuple, wrong hash, duplicate tuple, stale version, a missing index
-checksum sidecar, and bootstrap-selector drift from the JSON index.
+checksum sidecar, bootstrap-selector drift from the JSON index, and build
+manifest drift from the bundle metadata, source commit, `Cargo.lock`, or
+builder-material contract.
 
 `scripts/verify-release-integrity.py` validates the release-integrity predicate
 used by the signing/attestation lane. That predicate is documented in
 [`release-integrity-material.md`](release-integrity-material.md) and records the
 release tag, commit SHA, target, Rust toolchain, m80 package version, bundle
-metadata hash, and every current public installer/bootstrapper-consumed dist
-asset digest. The verifier also
+metadata hash, build-manifest subjects, and every current public
+installer/bootstrapper-consumed dist asset digest. The verifier also
 loads the anchored trust policy, `m80-release-integrity.attestation.jsonl`, and
 `m80-release-attestation.json` so human verification and installer verification
 share the same cryptographic GitHub attestation, signer, keyset, expiry, and

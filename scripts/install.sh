@@ -12,6 +12,7 @@ M80_ASSET_INDEX_NAME='m80-release-assets.json'
 M80_BOOTSTRAP_SELECTOR_NAME='m80-bootstrap-selector.tsv'
 M80_INSTALL_NAME='install.sh'
 M80_PUBLIC_SHA256SUMS_NAME='SHA256SUMS'
+M80_RELEASE_BUILD_NAME='m80-release-build.json'
 M80_RELEASE_INTEGRITY_NAME='m80-release-integrity.json'
 M80_RELEASE_ATTESTATION_BUNDLE_NAME='m80-release-integrity.attestation.jsonl'
 M80_RELEASE_ATTESTATION_METADATA_NAME='m80-release-attestation.json'
@@ -465,6 +466,7 @@ ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
 INSTALL_NAME = "install.sh"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
+BUILD_MANIFEST_NAME = "m80-release-build.json"
 PUBLIC_SHA256SUMS_NAME = "SHA256SUMS"
 EXPECTED_INTEGRITY_FIELDS = {
     "schema_version",
@@ -686,6 +688,8 @@ def verify_subjects(material: dict) -> str:
         f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
         BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
         f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
+        BUILD_MANIFEST_NAME: "build-manifest",
+        f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
         PUBLIC_SHA256SUMS_NAME: "checksum-manifest",
     }
     skipped = {bundle_name, checksum_name} if phase == "prebundle" else set()
@@ -754,6 +758,8 @@ attestation_bundle_path="$tmp/$M80_RELEASE_ATTESTATION_BUNDLE_NAME"
 attestation_metadata_path="$tmp/$M80_RELEASE_ATTESTATION_METADATA_NAME"
 install_path="$tmp/$M80_INSTALL_NAME"
 install_checksum_path="$tmp/$M80_INSTALL_NAME.sha256"
+build_manifest_path="$tmp/$M80_RELEASE_BUILD_NAME"
+build_manifest_checksum_path="$tmp/$M80_RELEASE_BUILD_NAME.sha256"
 public_sha256s_path="$tmp/$M80_PUBLIC_SHA256SUMS_NAME"
 integrity_facts_path="$tmp/release-integrity.env"
 extract_dir="$tmp/extract"
@@ -792,6 +798,10 @@ download_integrity_asset "$M80_INSTALL_NAME" "$install_path"
 download_integrity_asset "$M80_INSTALL_NAME.sha256" "$install_checksum_path"
 install_sidecar_digest=$(read_checksum_digest "$install_checksum_path" "$M80_INSTALL_NAME")
 verify_integrity_sha256_sidecar "$M80_INSTALL_NAME" "$M80_INSTALL_NAME.sha256" "$install_sidecar_digest"
+download_integrity_asset "$M80_RELEASE_BUILD_NAME" "$build_manifest_path"
+download_integrity_asset "$M80_RELEASE_BUILD_NAME.sha256" "$build_manifest_checksum_path"
+build_manifest_digest=$(read_checksum_digest "$build_manifest_checksum_path" "$M80_RELEASE_BUILD_NAME")
+verify_integrity_sha256_sidecar "$M80_RELEASE_BUILD_NAME" "$M80_RELEASE_BUILD_NAME.sha256" "$build_manifest_digest"
 download_integrity_asset "$M80_PUBLIC_SHA256SUMS_NAME" "$public_sha256s_path"
 
 validate_release_integrity_material prebundle "$integrity_facts_path" || fail_integrity "release integrity material verification failed"
@@ -827,7 +837,7 @@ validate_release_integrity_material full "$integrity_facts_path" || fail_integri
 # shellcheck disable=SC1090
 . "$integrity_facts_path"
 echo "m80 install.sh: verified release tag=$M80_RELEASE_TAG commit=$commit_sha" >&2
-echo "m80 install.sh: verified assets=$selected_bundle_name,$selected_metadata_name,$M80_INSTALL_NAME,$M80_RELEASE_INTEGRITY_NAME,$selected_attestation_name" >&2
+echo "m80 install.sh: verified assets=$selected_bundle_name,$selected_metadata_name,$M80_INSTALL_NAME,$M80_RELEASE_BUILD_NAME,$M80_RELEASE_INTEGRITY_NAME,$selected_attestation_name" >&2
 echo "m80 install.sh: install_sh_sha256=$install_sha256" >&2
 
 mkdir "$extract_dir"

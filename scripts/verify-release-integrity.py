@@ -18,6 +18,7 @@ from release_url_contract import release_asset_url, release_repository
 
 SCHEMA_VERSION = 1
 BOOTSTRAP_SELECTOR_SCHEMA_VERSION = 1
+BUILD_MANIFEST_SCHEMA_VERSION = 1
 MECHANISM = "github-artifact-attestation"
 REPOSITORY = release_repository()
 TARGET = "linux-x86_64"
@@ -25,6 +26,7 @@ BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
 ASSET_INDEX_NAME = "m80-release-assets.json"
 BOOTSTRAP_SELECTOR_NAME = "m80-bootstrap-selector.tsv"
+BUILD_MANIFEST_NAME = "m80-release-build.json"
 INSTALL_NAME = "install.sh"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 BOOTSTRAP_SELECTOR_COLUMNS = [
@@ -116,8 +118,29 @@ EXPECTED_SUBJECTS = {
     f"{ASSET_INDEX_NAME}.sha256": "checksum-sidecar",
     BOOTSTRAP_SELECTOR_NAME: "bootstrap-selector",
     f"{BOOTSTRAP_SELECTOR_NAME}.sha256": "checksum-sidecar",
+    BUILD_MANIFEST_NAME: "build-manifest",
+    f"{BUILD_MANIFEST_NAME}.sha256": "checksum-sidecar",
     "SHA256SUMS": "checksum-manifest",
 }
+BUILD_MANIFEST_FIELDS = {
+    "schema_version",
+    "release_tag",
+    "source_commit",
+    "rust_toolchain",
+    "target",
+    "target_triples",
+    "m80_package_version",
+    "image_kind",
+    "cargo_lock_sha256",
+    "builder_identity",
+    "builder_os_image",
+    "apt_packages",
+    "container_digest",
+    "bundle_metadata_name",
+    "bundle_metadata_sha256",
+}
+APT_PACKAGE_FIELDS = {"name", "version"}
+APT_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -202,19 +225,21 @@ def main() -> int:
     )
 
     metadata_path = dist_dir / METADATA_NAME
+    metadata = read_json(metadata_path, "bundle metadata")
     metadata_sha = sha256_file(metadata_path)
     require_valid_sha(material["bundle_metadata_sha256"], "release integrity bundle_metadata_sha256")
     require(
         material["bundle_metadata_sha256"] == metadata_sha,
         f"release integrity bundle_metadata_sha256 mismatch for {METADATA_NAME}",
     )
-    verify_bundle_metadata(metadata_path, material)
+    verify_bundle_metadata(metadata, material)
+    verify_build_manifest(dist_dir / BUILD_MANIFEST_NAME, material, metadata, args.repo_root)
     asset_index = verify_asset_index(
         dist_dir / ASSET_INDEX_NAME,
         material,
         dist_dir=dist_dir,
         attestation_bundle_path=args.attestation_bundle,
-        metadata=read_json(metadata_path, "bundle metadata"),
+        metadata=metadata,
     )
     verify_bootstrap_selector(dist_dir / BOOTSTRAP_SELECTOR_NAME, material, asset_index)
     verify_subjects(material["subjects"], dist_dir, signature_subjects_from_index(asset_index))
@@ -439,8 +464,7 @@ def require_gh_output_names_material(verified: list, material_path: Path) -> Non
     raise SystemExit("release attestation verifier JSON omitted material name/sha256 subject")
 
 
-def verify_bundle_metadata(metadata_path: Path, material: dict) -> None:
-    metadata = read_json(metadata_path, "bundle metadata")
+def verify_bundle_metadata(metadata: dict, material: dict) -> None:
     require(
         metadata.get("release_tag") == material["release_tag"],
         "release integrity bundle metadata release_tag mismatch",
@@ -454,6 +478,82 @@ def verify_bundle_metadata(metadata_path: Path, material: dict) -> None:
         "release integrity bundle metadata package_version mismatch",
     )
     require(metadata.get("target") == material["target"], "release integrity bundle metadata target mismatch")
+
+
+def verify_build_manifest(manifest_path: Path, material: dict, metadata: dict, repo_root: Path) -> None:
+    manifest = read_json(manifest_path, "build manifest")
+    require_exact_fields(manifest, BUILD_MANIFEST_FIELDS, "build manifest")
+    require(
+        manifest["schema_version"] == BUILD_MANIFEST_SCHEMA_VERSION,
+        "release integrity unsupported build manifest schema_version",
+    )
+    require(manifest["release_tag"] == material["release_tag"], "release integrity build manifest release_tag mismatch")
+    require(manifest["source_commit"] == material["commit_sha"], "release integrity build manifest source_commit mismatch")
+    require(manifest["rust_toolchain"] == material["rust_toolchain"], "release integrity build manifest rust_toolchain mismatch")
+    require(manifest["target"] == material["target"], "release integrity build manifest target mismatch")
+    require(
+        manifest["m80_package_version"] == material["m80_package_version"],
+        "release integrity build manifest m80_package_version mismatch",
+    )
+    require(manifest["image_kind"] == metadata["image_kind"], "release integrity build manifest image_kind mismatch")
+    require(
+        manifest["bundle_metadata_name"] == METADATA_NAME,
+        "release integrity build manifest bundle_metadata_name mismatch",
+    )
+    require(
+        manifest["bundle_metadata_sha256"] == material["bundle_metadata_sha256"],
+        "release integrity build manifest bundle_metadata_sha256 mismatch",
+    )
+    require(
+        manifest["cargo_lock_sha256"] == sha256_file(repo_root / "Cargo.lock"),
+        "release integrity build manifest cargo_lock_sha256 mismatch",
+    )
+    require_build_manifest_target_triples(manifest["target_triples"])
+    require_nonempty_str(manifest, "builder_identity", "build manifest")
+    require_nonempty_str(manifest, "builder_os_image", "build manifest")
+    require_build_manifest_builder_material(manifest)
+
+
+def require_build_manifest_target_triples(value: object) -> None:
+    require(isinstance(value, list) and value, "build manifest target_triples must be a non-empty list")
+    seen: set[str] = set()
+    for triple in value:
+        require(isinstance(triple, str) and triple, "build manifest target triple must not be empty")
+        require(
+            not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in triple),
+            f"build manifest target triple invalid: {triple!r}",
+        )
+        require(triple not in seen, f"build manifest duplicate target triple: {triple}")
+        seen.add(triple)
+    require(
+        "x86_64-unknown-linux-musl" in seen,
+        "build manifest target_triples missing x86_64-unknown-linux-musl",
+    )
+
+
+def require_build_manifest_builder_material(manifest: dict) -> None:
+    apt_packages = manifest.get("apt_packages")
+    require(isinstance(apt_packages, list), "build manifest apt_packages must be a list")
+    seen: set[str] = set()
+    for package in apt_packages:
+        require(isinstance(package, dict), "build manifest apt package must be an object")
+        require_exact_fields(package, APT_PACKAGE_FIELDS, "build manifest apt package")
+        name = package.get("name")
+        version = package.get("version")
+        require(isinstance(name, str) and APT_PACKAGE_NAME_RE.fullmatch(name) is not None, "build manifest apt package name invalid")
+        require(isinstance(version, str) and version, f"build manifest apt package version missing for {name}")
+        require(
+            not any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in version),
+            f"build manifest apt package version invalid for {name}",
+        )
+        require(name not in seen, f"build manifest duplicate apt package: {name}")
+        seen.add(name)
+    container_digest = manifest.get("container_digest")
+    require(
+        container_digest is None or (isinstance(container_digest, str) and container_digest),
+        "build manifest container_digest invalid",
+    )
+    require(apt_packages or container_digest is not None, "build manifest missing apt packages or container digest")
 
 
 def verify_asset_index(

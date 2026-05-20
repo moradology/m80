@@ -118,6 +118,14 @@ scripts/package-release-bundle.py \
   --release-tag "$M80_RELEASE_TAG" \
   --commit-sha "$M80_RELEASE_COMMIT" \
   --rust-toolchain 1.82 \
+  --target-triple "$(rustc +1.82 -vV | awk '/^host:/ {print $2}')" \
+  --target-triple x86_64-unknown-linux-musl \
+  --builder-identity "local-release-builder:$(hostname)" \
+  --builder-os-image "$(uname -sr)" \
+  --apt-package-version busybox-static="$(dpkg-query -W -f='${Version}' busybox-static)" \
+  --apt-package-version musl-tools="$(dpkg-query -W -f='${Version}' musl-tools)" \
+  --apt-package-version e2fsprogs="$(dpkg-query -W -f='${Version}' e2fsprogs)" \
+  --apt-package-version curl="$(dpkg-query -W -f='${Version}' curl)" \
   --target linux-x86_64 \
   --image-kind minimal \
   --m80-bin target/release/m80 \
@@ -171,8 +179,9 @@ The package step emits a deterministic tarball, checksum sidecars, an
 inspectable `m80-linux-x86_64.bundle.json` metadata sidecar, a canonical
 `m80-release-assets.json` asset index, a shell-safe
 `m80-bootstrap-selector.tsv` projection of that index for the no-installed-binary
-installer path, and a public `SHA256SUMS` covering those assets. The exact
-builder contract is captured in `docs/behaviors/release/bundle-builder.md`.
+installer path, `m80-release-build.json` for build-input provenance, and a
+public `SHA256SUMS` covering those assets. The exact builder contract is
+captured in `docs/behaviors/release/bundle-builder.md`.
 
 The complete installer/bootstrapper-consumed subject set recorded inside
 `m80-release-integrity.json` for the signed/attested default Linux dist is:
@@ -188,6 +197,8 @@ m80-release-assets.json
 m80-release-assets.json.sha256
 m80-bootstrap-selector.tsv
 m80-bootstrap-selector.tsv.sha256
+m80-release-build.json
+m80-release-build.json.sha256
 SHA256SUMS
 ```
 
@@ -217,8 +228,9 @@ The release workflow uses the schema in
 `docs/behaviors/release/release-integrity-material.md`. The public mechanism is
 GitHub Artifact Attestations over `m80-release-integrity.json`; that predicate
 records the release tag, commit SHA, target, Rust toolchain, m80 package
-version, bundle metadata hash, and the sha256/size of every current public
-installer/bootstrapper-consumed dist asset. The same verifier also loads
+version, bundle metadata hash, build manifest identity, and the sha256/size of
+every current public installer/bootstrapper-consumed dist asset. The same
+verifier also loads
 `docs/behaviors/release/m80-release-trust-policy.json`,
 `m80-release-integrity.attestation.jsonl`, and
 `m80-release-attestation.json` so human verification and installer verification

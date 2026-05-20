@@ -42,13 +42,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y busybox-static musl-tools e2fsprogs curl
+          mkdir -p "$ARTIFACT_DIR"
+          dpkg-query -W -f='${Package}=${Version}\n' \
+            busybox-static musl-tools e2fsprogs curl \
+            | sort > "$ARTIFACT_DIR/apt-package-versions.env"
 
       - name: Build m80 binaries
         run: |
-          cargo build -p m80-image-build --release
-          cargo build -p m80-guestd --release --target x86_64-unknown-linux-musl
+          cargo build --locked -p m80-image-build --release
+          cargo build --locked -p m80-guestd --release --target x86_64-unknown-linux-musl
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            M80_RELEASE_TAG="$GITHUB_REF_NAME" cargo build -p m80-cli -p m80-jailer-harden -p m80-net-helper --release
+            M80_RELEASE_TAG="$GITHUB_REF_NAME" cargo build --locked -p m80-cli -p m80-jailer-harden -p m80-net-helper --release
           fi
 
       - name: Write minimal image config
@@ -87,10 +91,20 @@ jobs:
         env:
           RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
         run: |
+          RUSTC_HOST_TRIPLE="$(rustc +1.82 -vV | awk '/^host:/ {print $2}')"
+          package_args=()
+          while IFS= read -r package_version; do
+            package_args+=(--apt-package-version "$package_version")
+          done < "$ARTIFACT_DIR/apt-package-versions.env"
           scripts/package-release-bundle.py \
             --release-tag "$GITHUB_REF_NAME" \
             --commit-sha "$RELEASE_COMMIT" \
             --rust-toolchain 1.82 \
+            --target-triple "$RUSTC_HOST_TRIPLE" \
+            --target-triple x86_64-unknown-linux-musl \
+            --builder-identity "github-actions:${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+            --builder-os-image "${ImageOS:-unknown}:${ImageVersion:-unknown}" \
+            "${package_args[@]}" \
             --target linux-x86_64 \
             --image-kind minimal \
             --m80-bin target/release/m80 \
@@ -206,6 +220,8 @@ jobs:
             /tmp/m80-release-upload/m80-release-assets.json.sha256 \
             /tmp/m80-release-upload/m80-bootstrap-selector.tsv \
             /tmp/m80-release-upload/m80-bootstrap-selector.tsv.sha256 \
+            /tmp/m80-release-upload/m80-release-build.json \
+            /tmp/m80-release-upload/m80-release-build.json.sha256 \
             /tmp/m80-release-upload/install.sh \
             /tmp/m80-release-upload/install.sh.sha256 \
             /tmp/m80-release-upload/m80-release-integrity.json \
@@ -230,6 +246,8 @@ jobs:
             --pattern m80-release-assets.json.sha256 \
             --pattern m80-bootstrap-selector.tsv \
             --pattern m80-bootstrap-selector.tsv.sha256 \
+            --pattern m80-release-build.json \
+            --pattern m80-release-build.json.sha256 \
             --pattern install.sh \
             --pattern install.sh.sha256 \
             --pattern m80-release-integrity.json \

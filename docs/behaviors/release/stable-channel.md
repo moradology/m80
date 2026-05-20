@@ -16,8 +16,8 @@ The stable-channel metadata gate checks:
 - `draft` and `prerelease` are both false;
 - public release metadata names every installer-consumed asset, including
   `install.sh`, the bundle, checksum sidecars, asset index, bootstrap selector,
-  release-integrity predicate, attestation bundle, normalized attestation
-  metadata, and `SHA256SUMS`;
+  build manifest, release-integrity predicate, attestation bundle, normalized
+  attestation metadata, and `SHA256SUMS`;
 - each public asset URL points at the configured release repository and the
   same resolved tag;
 - the release asset index uses the same `release_tag`, and each indexed bundle

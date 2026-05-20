@@ -11,7 +11,7 @@ explicit bundle URL override bypasses index selection.
 The published index is `m80-release-assets.json`. Its checksum sidecar is
 `m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
 alongside the bundle tarball, `install.sh`, the metadata sidecar, and
-`m80-bootstrap-selector.tsv`.
+`m80-bootstrap-selector.tsv` and `m80-release-build.json`.
 Installer/bootstrapper code follows this order: fetch the pinned index and its
 sidecar for the same concrete release tag, verify the index sha256, and only
 then parse JSON or select a host tuple. `file://` fixture indexes use the same
@@ -88,8 +88,8 @@ digest/size, unsupported schema, shell-unsafe tokens, or hand-edited drift.
 Release publication must generate the index from the actual dist files, upload
 it with the rest of the release assets, then re-download the public release and
 validate the index against the uploaded tarball, metadata sidecar, checksum
-sidecars, and `SHA256SUMS`. A new architecture or image kind is a new row in
-the index, not a new README quickstart command.
+sidecars, build manifest, and `SHA256SUMS`. A new architecture or image kind
+is a new row in the index, not a new README quickstart command.
 
 The current publisher is checksum-covered and attestation-referenced:
 `signature_name` is null, and `attestation_name` is
