@@ -16,6 +16,7 @@ TOP_LEVEL_FIELDS = {
     "proof_kind",
     "release",
     "command",
+    "stream_expectations",
     "stdout",
     "stderr",
     "install",
@@ -25,7 +26,8 @@ TOP_LEVEL_FIELDS = {
     "substrate",
 }
 RELEASE_FIELDS = {"requested", "resolved_tag", "install_url"}
-COMMAND_FIELDS = {"display", "argv", "exit_status"}
+COMMAND_FIELDS = {"display", "argv", "expected_exit_status", "observed_exit_status", "expected_nonzero"}
+STREAM_EXPECTATION_FIELDS = {"stdout_contains", "stderr_contains"}
 STREAM_EXCERPT_FIELDS = {"excerpt"}
 STREAM_PATH_FIELDS = {"path"}
 INSTALL_FIELDS = {"root", "active_pointer", "default_profile"}
@@ -101,12 +103,37 @@ def validate_quickstart_proof(
         isinstance(argv, list) and all(isinstance(value, str) and value for value in argv),
         "quickstart proof command argv must be a nonempty string list",
     )
-    require(isinstance(command["exit_status"], int), "quickstart proof command exit_status must be an integer")
+    expected_status = require_int(command, "expected_exit_status", "quickstart proof command")
+    observed_status = require_int(command, "observed_exit_status", "quickstart proof command")
+    expected_nonzero = command["expected_nonzero"]
+    require(isinstance(expected_nonzero, bool), "quickstart proof command expected_nonzero must be a boolean")
+    if expected_nonzero:
+        require(expected_status != 0, "quickstart proof expected-nonzero command must not expect exit status 0")
+        require(
+            observed_status == expected_status,
+            f"quickstart proof expected-nonzero exit mismatch: expected {expected_status}, got {observed_status}",
+        )
+    else:
+        require(expected_status == 0, "quickstart proof normal command must expect exit status 0")
+        require(
+            observed_status == 0,
+            f"quickstart proof unexpected nonzero exit: expected 0, got {observed_status}",
+        )
 
+    expectations = require_object(proof, "stream_expectations", "quickstart proof")
+    require_exact_fields(expectations, STREAM_EXPECTATION_FIELDS, "quickstart proof stream_expectations")
+    stdout_expected = require_str(expectations, "stdout_contains", "quickstart proof stream_expectations")
+    stderr_expected = require_str(expectations, "stderr_contains", "quickstart proof stream_expectations")
     stdout = require_object(proof, "stdout", "quickstart proof")
     require_exact_fields(stdout, STREAM_EXCERPT_FIELDS, "quickstart proof stdout")
     require(isinstance(stdout["excerpt"], str), "quickstart proof stdout excerpt must be a string")
-    validate_stderr(proof["stderr"], artifact_root)
+    stderr_text = validate_stderr(proof["stderr"], artifact_root)
+    validate_stream_expectations(
+        stdout_text=stdout["excerpt"],
+        stderr_text=stderr_text,
+        stdout_expected=stdout_expected,
+        stderr_expected=stderr_expected,
+    )
 
     install = require_object(proof, "install", "quickstart proof")
     require_exact_fields(install, INSTALL_FIELDS, "quickstart proof install")
@@ -148,15 +175,37 @@ def validate_quickstart_proof(
     return proof
 
 
-def validate_stderr(stderr: object, artifact_root: Path) -> None:
+def validate_stderr(stderr: object, artifact_root: Path) -> str:
     require(isinstance(stderr, dict), "quickstart proof stderr must be an object")
     keys = set(stderr)
     if keys == STREAM_EXCERPT_FIELDS:
         require(isinstance(stderr["excerpt"], str), "quickstart proof stderr excerpt must be a string")
+        return stderr["excerpt"]
     elif keys == STREAM_PATH_FIELDS:
-        resolve_artifact_path(artifact_root, stderr["path"], "quickstart proof stderr path")
+        return resolve_artifact_path(artifact_root, stderr["path"], "quickstart proof stderr path").read_text()
     else:
         raise SystemExit("quickstart proof stderr must contain exactly path or exactly excerpt")
+
+
+def validate_stream_expectations(
+    *,
+    stdout_text: str,
+    stderr_text: str,
+    stdout_expected: str,
+    stderr_expected: str,
+) -> None:
+    if stdout_expected:
+        require(stdout_expected in stdout_text, "quickstart proof stdout missing expected capture")
+        require(
+            stdout_expected not in stderr_text,
+            "quickstart proof stream swap: stdout marker appeared in stderr",
+        )
+    if stderr_expected:
+        require(stderr_expected in stderr_text, "quickstart proof stderr missing expected capture")
+        require(
+            stderr_expected not in stdout_text,
+            "quickstart proof stream swap: stderr marker appeared in stdout",
+        )
 
 
 def resolve_artifact_path(root: Path, value: object, label: str) -> Path:
@@ -194,6 +243,18 @@ def require_exact_fields(obj: dict, fields: set[str], label: str) -> None:
 def require_nonempty_str(obj: dict, key: str, label: str) -> str:
     value = obj.get(key)
     require(isinstance(value, str) and value, f"{label} {key} must be a nonempty string")
+    return value
+
+
+def require_str(obj: dict, key: str, label: str) -> str:
+    value = obj.get(key)
+    require(isinstance(value, str), f"{label} {key} must be a string")
+    return value
+
+
+def require_int(obj: dict, key: str, label: str) -> int:
+    value = obj.get(key)
+    require(isinstance(value, int), f"{label} {key} must be an integer")
     return value
 
 

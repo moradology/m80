@@ -53,7 +53,13 @@ def main() -> int:
         "command": {
             "display": "m80 run -- echo hello",
             "argv": ["m80", "run", "--", "echo", "hello"],
-            "exit_status": 0,
+            "expected_exit_status": 0,
+            "observed_exit_status": 0,
+            "expected_nonzero": False,
+        },
+        "stream_expectations": {
+            "stdout_contains": "hello",
+            "stderr_contains": "",
         },
         "stdout": {"excerpt": "hello\n"},
         "stderr": {"path": stderr_path.relative_to(root).as_posix()},

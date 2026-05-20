@@ -237,6 +237,8 @@ scripts/verify-quickstart-proof.py \
 
 The schema and inspection contract live in
 `docs/behaviors/release/quickstart-proof-artifacts.md`.
+The public echo proof is paired with an expected-nonzero process fixture so the
+release smoke proves exit-code passthrough as well as stdout/stderr capture.
 
 ## Host Train Proof
 

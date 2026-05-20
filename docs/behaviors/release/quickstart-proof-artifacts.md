@@ -8,7 +8,10 @@ the same fields before a quickstart lane is considered green.
 The v1 proof records:
 
 - `release`: requested selector, resolved concrete release tag, and install URL.
-- `command`: display command, argv, and exit status for `m80 run -- echo hello`.
+- `command`: display command, argv, expected exit status, observed exit status,
+  and whether the command is the expected-nonzero companion smoke.
+- `stream_expectations`: stdout and stderr markers the validator checks to
+  catch stream swaps and missing captures.
 - `stdout` plus `stderr`: stdout excerpt and either a stderr excerpt or a
   relative stderr artifact path.
 - `install`: install root, active pointer, and default profile path.
@@ -22,9 +25,10 @@ The v1 proof records:
 
 The validator checks that relative artifact paths exist under the uploaded
 proof root, that bundle metadata and host-binary manifest references are
-present, and that the resolved tag matches the expected release tag. It rejects
-unknown fields so fixture, release, and freshness producers cannot silently
-drift.
+present, that the resolved tag matches the expected release tag, that observed
+exit status equals expected exit status, and that expected stdout/stderr markers
+appear on the correct streams. It rejects unknown fields so fixture, release,
+and freshness producers cannot silently drift.
 
 The tag release workflow writes
 `m80-quickstart-proof-hostless.json` into the `m80-release-dist` GitHub Actions
@@ -32,6 +36,9 @@ artifact and validates it before upload. The publish job validates the same
 proof again after downloading the workflow artifact. Real-KVM release smoke and
 latest freshness jobs must upload their own proof JSON with `proof_kind:
 "real-kvm"` and run the same validator before marking quickstart proof green.
+The expected-nonzero companion smoke should use `expected_nonzero: true` and
+matching nonzero expected/observed exit statuses to prove process-wrapper
+exit-code passthrough.
 
 Inspect a proof artifact with:
 

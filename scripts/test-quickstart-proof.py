@@ -56,6 +56,86 @@ class QuickstartProofTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("resolved tag mismatch", result.stderr)
 
+    def test_expected_nonzero_exit_status_passes_when_observed_matches(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            proof["command"]["expected_exit_status"] = 42
+            proof["command"]["observed_exit_status"] = 42
+            proof["command"]["expected_nonzero"] = True
+            proof["stdout"]["excerpt"] = "stdout-marker\n"
+            proof["stderr"] = {"excerpt": "stderr-marker\n"}
+            proof["stream_expectations"] = {
+                "stdout_contains": "stdout-marker",
+                "stderr_contains": "stderr-marker",
+            }
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_expected_exit_status_fails(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            del proof["command"]["expected_exit_status"]
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing field(s): expected_exit_status", result.stderr)
+
+    def test_expected_nonzero_rejects_unexpected_zero_exit(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            proof["command"]["expected_exit_status"] = 42
+            proof["command"]["observed_exit_status"] = 0
+            proof["command"]["expected_nonzero"] = True
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("expected-nonzero exit mismatch", result.stderr)
+
+    def test_normal_smoke_rejects_unexpected_nonzero_exit(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            proof["command"]["observed_exit_status"] = 42
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unexpected nonzero exit", result.stderr)
+
+    def test_stream_swap_fails(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            proof["stdout"]["excerpt"] = "stderr-marker\n"
+            proof["stderr"] = {"excerpt": "stdout-marker\n"}
+            proof["stream_expectations"] = {
+                "stdout_contains": "stdout-marker",
+                "stderr_contains": "stderr-marker",
+            }
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("stdout missing expected capture", result.stderr)
+
+    def test_missing_stdout_capture_fails(self) -> None:
+        with proof_fixture() as fixture:
+            proof = read_json(fixture.proof)
+            proof["stdout"]["excerpt"] = ""
+            write_json(fixture.proof, proof)
+
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("stdout missing expected capture", result.stderr)
+
     def test_missing_manifest_reference_fails(self) -> None:
         with proof_fixture() as fixture:
             proof = read_json(fixture.proof)
@@ -166,7 +246,13 @@ def valid_proof(proof_kind: str) -> dict:
         "command": {
             "display": "m80 run -- echo hello",
             "argv": ["m80", "run", "--", "echo", "hello"],
-            "exit_status": 0,
+            "expected_exit_status": 0,
+            "observed_exit_status": 0,
+            "expected_nonzero": False,
+        },
+        "stream_expectations": {
+            "stdout_contains": "hello",
+            "stderr_contains": "",
         },
         "stdout": {"excerpt": "hello\n"},
         "stderr": {"path": "stderr.txt"},
