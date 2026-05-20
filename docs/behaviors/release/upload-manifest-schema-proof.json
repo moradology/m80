@@ -1,12 +1,18 @@
 {
+  "ci": {
+    "conclusion": "success",
+    "head_sha": "2eda2627afba783806a6ec6a6dda1b8e8fb57333",
+    "run_id": "26194946124",
+    "url": "https://github.com/moradology/m80/actions/runs/26194946124"
+  },
   "command": "python3 -m py_compile scripts/release_upload_manifest.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py",
   "exit_status": 0,
   "release_tag": "v0.0.0",
   "schema_version": 1,
   "stderr": "",
-  "stdout": "Ran 173 tests in 42.472s\n\nOK",
+  "stdout": "Ran 179 tests in 43.886s\n\nOK",
   "substrate": {
     "kind": "local-linux-hostless",
-    "summary": "Fixture-based release bundle tests generated and verified m80-release-upload-manifest.json with local dist artifacts."
+    "summary": "Fixture-based release bundle tests generated and verified m80-release-upload-manifest.json with local dist artifacts, including manifest-driven upload/download lists, exact redownload file sets, release-integrity subjects, SHA256SUMS coverage, and provenance digest coverage."
   }
 }
