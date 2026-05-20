@@ -84,10 +84,7 @@ fn install_official_release_missing_attestation_verifier_fails_before_download_o
 fn install_official_release_too_old_attestation_verifier_fails_before_download_or_staging() {
     let install_temp = tempfile::tempdir().unwrap();
     let install_root = install_temp.path().join("install-root");
-    let fake_gh = write_fake_gh(
-        install_temp.path(),
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'gh version 2.0.0\\n'; exit 0; fi\nprintf 'unknown command \"attestation\" for \"gh\"\\n' >&2\nexit 1\n",
-    );
+    let fake_gh = fake_gh_fixture("fake-gh-attestation-too-old.sh");
 
     let output = run_install_url(
         "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz",
@@ -305,13 +302,10 @@ fn bundle_checksum_line(bundle: &fixture::ReleaseBundleFixture) -> String {
     format!("{}  m80-linux-x86_64.tar.gz\n", sha256_hex(&bundle.tarball))
 }
 
-fn write_fake_gh(root: &Path, body: &str) -> std::path::PathBuf {
-    let path = root.join("fake-gh");
-    let tmp_path = root.join("fake-gh.tmp");
-    fs::write(&tmp_path, body).unwrap();
-    fixture::set_mode(&tmp_path, 0o755);
-    fs::rename(&tmp_path, &path).unwrap();
-    path
+fn fake_gh_fixture(name: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 fn assert_no_staged_files(install_root: &Path) {

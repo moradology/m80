@@ -85,6 +85,10 @@ effective `default_profile` config field is used. The built-in default is the
 preflight environment. Named profile behavior is captured in
 `docs/behaviors/cli/image-profile-selection.md`.
 
+`m80 preflight` uses that same selected profile for artifact and host-helper
+checks, so diagnostics for an installed default profile name the paths that
+plain `m80 run -- echo hello` will use.
+
 Parsed but intentionally feature-gapped:
 
 - `--allow-host <host>` / `--allow-cidr <cidr>` - egress allowlists.

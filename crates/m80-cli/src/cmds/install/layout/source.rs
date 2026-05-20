@@ -421,11 +421,6 @@ fn format_probe_output(output: &std::process::Output) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-    use std::sync::Mutex;
-
-    static FAKE_GH_PROBE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn remote_url_rejects_non_release_https_host() {
@@ -487,12 +482,7 @@ mod tests {
 
     #[test]
     fn attestation_verifier_preflight_accepts_supported_gh_help() {
-        let _guard = FAKE_GH_PROBE_LOCK.lock().unwrap();
-        let temp = tempfile::tempdir().unwrap();
-        let gh = write_fake_gh(
-            temp.path(),
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'gh version 9.9.9\\n'; exit 0; fi\nif [ \"$1\" = \"attestation\" ] && [ \"$2\" = \"verify\" ] && [ \"$3\" = \"--help\" ]; then printf '%s\\n' '--repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --source-digest --deny-self-hosted-runners --format'; exit 0; fi\nexit 1\n",
-        );
+        let gh = fake_gh_fixture("fake-gh-attestation-supported.sh");
 
         preflight_attestation_verifier_for_bundle_url_with_gh(
             &crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
@@ -503,12 +493,7 @@ mod tests {
 
     #[test]
     fn attestation_verifier_preflight_rejects_help_missing_required_flag() {
-        let _guard = FAKE_GH_PROBE_LOCK.lock().unwrap();
-        let temp = tempfile::tempdir().unwrap();
-        let gh = write_fake_gh(
-            temp.path(),
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'gh version 9.9.9\\n'; exit 0; fi\nif [ \"$1\" = \"attestation\" ] && [ \"$2\" = \"verify\" ] && [ \"$3\" = \"--help\" ]; then printf '%s\\n' '--repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --deny-self-hosted-runners --format'; exit 0; fi\nexit 1\n",
-        );
+        let gh = fake_gh_fixture("fake-gh-attestation-missing-source-digest.sh");
 
         let err = preflight_attestation_verifier_for_bundle_url_with_gh(
             &crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
@@ -524,21 +509,9 @@ mod tests {
         assert!(message.contains("--source-digest"), "{message}");
     }
 
-    fn write_fake_gh(root: &Path, body: &str) -> PathBuf {
-        let path = root.join("fake-gh");
-        let tmp_path = root.join("fake-gh.tmp");
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp_path)
-            .unwrap();
-        file.write_all(body.as_bytes()).unwrap();
-        file.sync_all().unwrap();
-        drop(file);
-        let mut permissions = fs::metadata(&tmp_path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&tmp_path, permissions).unwrap();
-        fs::rename(&tmp_path, &path).unwrap();
-        path
+    fn fake_gh_fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
     }
 }

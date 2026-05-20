@@ -75,9 +75,22 @@ closed through the normal config loader.
 ## Runtime Use
 
 `m80 run` resolves `default_profile` from the effective config, loads the named
-profile, and overlays its artifact and host-helper paths for preflight before
-building the backend. The overlay is restored after backend construction. The
-installed config supplies the default run-root.
+profile, and passes its artifact and host-helper paths directly into preflight
+before building the backend. The installed config supplies the default run-root.
+This path does not require ambient `M80_KERNEL_IMAGE`, `M80_ROOTFS_IMAGE`, or
+host-helper environment variables.
+
+`m80 preflight` uses the same selected runtime profile when checking artifact
+and helper paths. Its host-prerequisite proof therefore reports the final paths
+selected from the installed default profile instead of falling back to ambient
+artifact environment variables.
+
+`m80 env` reports the selected profile name, selection source, body source,
+profile file path, artifact paths, host-helper paths, profile run-root field,
+release tag, and m80 version. Its artifact and Firecracker diagnostic sections
+prefer the selected profile paths before ambient environment variables, so a bug
+report from a completed install names the same paths that `m80 run` and
+`m80 preflight` use.
 
 Operator overrides keep their normal precedence:
 
@@ -85,9 +98,11 @@ Operator overrides keep their normal precedence:
 - `M80_DEFAULT_PROFILE` or user config can select a different default profile.
 - `--profile env` or `M80_DEFAULT_PROFILE=env` selects the built-in env
   profile, where artifact/helper `M80_*` values drive discovery directly.
-- A named profile supplies every field it records as a process-local discovery
-  value. Ambient `M80_*` values still fill any optional helper path the selected
-  profile omits.
+- A named profile supplies every artifact and host-helper field it records as a
+  process-local discovery value. Ambient `M80_*` values still fill any optional
+  helper path the selected profile omits.
+- `run_root` remains config-owned for runtime authority; an operator config or
+  `M80_RUN_ROOT` override wins over the profile's `run_root` diagnostic field.
 
 ## Failure And Rollback
 
@@ -105,8 +120,13 @@ and config contents where they existed. Missing files are removed again.
   proves stale file overwrite.
 - `crates/m80-cli/tests/quickstart_smoke.rs::quickstart_rolls_back_previous_profile_when_config_write_fails`
   proves rollback after a failed second write.
-- `crates/m80-cli/src/profile.rs` unit tests prove profile path validation and
-  artifact/helper env overlay.
+- `crates/m80-cli/src/profile.rs` unit tests prove profile path validation,
+  search precedence, and fail-closed parsing.
+- `crates/m80-cli/src/cmds.rs` unit tests prove selected profile artifacts and
+  helpers feed backend/preflight config without artifact/helper env vars, and
+  that operator config owns `run_root`.
+- `crates/m80-cli/src/cmds/env.rs` unit tests prove `m80 env` reports selected
+  profile source and exact installed paths from an isolated hostless profile.
 - `crates/m80-cli/src/cmds/quickstart.rs` unit tests pin the m80 environment
   overrides removed from the runnable probe.
 - `crates/m80-cli/src/cmds/quickstart.rs::tests::echo_probe_command_is_plain_public_target`

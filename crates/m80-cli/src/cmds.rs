@@ -18,7 +18,7 @@ use crate::args::{
 use crate::config;
 use crate::errors;
 use crate::json;
-use crate::profile::{self, ProfileFilePaths};
+use crate::profile::{self, ProfileFilePaths, RuntimeProfile};
 
 /// Resolve config, run preflight, and build an `Arc<Backend>`.
 /// Returns `EffectiveConfig` alongside for callers that need source labels.
@@ -26,7 +26,8 @@ pub(crate) fn build_backend(
     flag_overrides: &HashMap<&str, String>,
 ) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
     let effective = config::load_effective(flag_overrides)?;
-    backend_from_effective(effective)
+    let runtime_profile = profile::resolve_from_effective(&effective, ProfileFilePaths::host())?;
+    backend_from_effective(effective, &runtime_profile)
 }
 
 fn build_run_backend(profile: Option<String>) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
@@ -36,33 +37,74 @@ fn build_run_backend(profile: Option<String>) -> Result<(Arc<Backend>, Effective
     }
     let effective = config::load_effective(&flag_overrides)?;
     let runtime_profile = profile::resolve_from_effective(&effective, ProfileFilePaths::host())?;
-    let _profile_env = runtime_profile.apply_env();
-    backend_from_effective(effective)
+    backend_from_effective(effective, &runtime_profile)
 }
 
 fn backend_from_effective(
     effective: EffectiveConfig,
+    runtime_profile: &RuntimeProfile,
 ) -> Result<(Arc<Backend>, EffectiveConfig), FcError> {
-    let run_root = effective
-        .fields
-        .iter()
-        .find(|f| f.name == "run_root")
-        .map(|f| std::path::PathBuf::from(&f.value));
-    let artifact_config = match run_root {
-        Some(run_root) => m80_preflight::ArtifactPreflightConfig {
-            run_root,
-            ..m80_preflight::ArtifactPreflightConfig::from_env()
-        },
-        None => m80_preflight::ArtifactPreflightConfig::from_env(),
-    };
     let discovery = m80_preflight::run_with_configs(
-        m80_preflight::BinaryDiscoveryConfig::from_env(),
-        artifact_config,
+        binary_config_for_runtime_profile(runtime_profile),
+        artifact_config_for_runtime_profile(&effective, runtime_profile),
         host_feature_config_from_effective(&effective)?,
     )?;
     let backend_config = m80_firecracker::backend_config_from_effective(&effective, discovery)?;
     let backend = Backend::new_with_effective_config(backend_config, effective.clone())?;
     Ok((Arc::new(backend), effective))
+}
+
+fn binary_config_for_runtime_profile(
+    runtime_profile: &RuntimeProfile,
+) -> m80_preflight::BinaryDiscoveryConfig {
+    let mut config = m80_preflight::BinaryDiscoveryConfig::from_env();
+    if let Some(path) = &runtime_profile.firecracker_bin {
+        config.firecracker_bin = path.clone();
+    }
+    if let Some(path) = &runtime_profile.firecracker_seccomp_filter {
+        config.firecracker_seccomp_filter = path.clone();
+    }
+    if let Some(path) = &runtime_profile.jailer_bin {
+        config.jailer_bin = path.clone();
+    }
+    if let Some(path) = &runtime_profile.jailer_harden_bin {
+        config.jailer_harden_bin = path.clone();
+    }
+    if let Some(path) = &runtime_profile.net_helper_bin {
+        config.net_helper_bin = path.clone();
+    }
+    config
+}
+
+fn artifact_config_for_runtime_profile(
+    effective: &EffectiveConfig,
+    runtime_profile: &RuntimeProfile,
+) -> m80_preflight::ArtifactPreflightConfig {
+    let mut config = m80_preflight::ArtifactPreflightConfig::from_env();
+    if let Some(path) = &runtime_profile.artifact_dir {
+        config.artifact_dir = path.clone();
+    }
+    if let Some(path) = &runtime_profile.kernel_image {
+        config.kernel_image = Some(path.clone());
+    }
+    if let Some(path) = &runtime_profile.rootfs_image {
+        config.rootfs_image = Some(path.clone());
+    }
+    if let Some(kind) = &runtime_profile.kernel_kind {
+        config.kernel_kind = Some(kind.clone());
+    }
+    if let Some(run_root) = effective_run_root(effective) {
+        config.run_root = run_root;
+    }
+    config
+}
+
+fn effective_run_root(effective: &EffectiveConfig) -> Option<PathBuf> {
+    effective
+        .fields
+        .iter()
+        .find(|f| f.name == "run_root")
+        .map(|f| PathBuf::from(&f.value))
 }
 
 /// `m80 run` — boot a sandbox, run one process, mirror stdout/stderr/exit.
@@ -548,31 +590,24 @@ fn render_warning(variant: &str, detail: &str, json: bool) {
 
 /// `m80 preflight` — run host capability checks and render a table.
 pub(crate) fn cmd_preflight(json: bool) -> anyhow::Result<i32> {
-    let effective = config::load_effective(&std::collections::HashMap::new())?;
+    let effective = match config::load_effective(&std::collections::HashMap::new()) {
+        Ok(effective) => effective,
+        Err(err) => return Ok(errors::render_error(&err, json)),
+    };
     let result = preflight_with_effective_config(effective);
     Ok(render_preflight_result(result, json))
 }
 
 fn preflight_with_effective_config(
     effective: EffectiveConfig,
-) -> Result<m80_preflight::Discovery, m80_preflight::PreflightError> {
-    let run_root = effective
-        .fields
-        .iter()
-        .find(|f| f.name == "run_root")
-        .map(|f| std::path::PathBuf::from(&f.value));
-    let artifact_config = match run_root {
-        Some(run_root) => m80_preflight::ArtifactPreflightConfig {
-            run_root,
-            ..m80_preflight::ArtifactPreflightConfig::from_env()
-        },
-        None => m80_preflight::ArtifactPreflightConfig::from_env(),
-    };
+) -> Result<m80_preflight::Discovery, FcError> {
+    let runtime_profile = profile::resolve_from_effective(&effective, ProfileFilePaths::host())?;
     m80_preflight::run_with_configs(
-        m80_preflight::BinaryDiscoveryConfig::from_env(),
-        artifact_config,
-        host_feature_config_from_effective(&effective)?,
+        binary_config_for_runtime_profile(&runtime_profile),
+        artifact_config_for_runtime_profile(&effective, &runtime_profile),
+        host_feature_config_from_effective(&effective).map_err(FcError::Preflight)?,
     )
+    .map_err(FcError::Preflight)
 }
 
 fn host_feature_config_from_effective(
@@ -643,7 +678,7 @@ fn effective_jail_id(
         })
 }
 
-fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool) -> i32 {
+fn render_preflight_result(result: Result<Discovery, FcError>, json: bool) -> i32 {
     match result {
         Ok(discovery) => {
             if json {
@@ -664,10 +699,7 @@ fn render_preflight_result(result: Result<Discovery, PreflightError>, json: bool
             }
             0
         }
-        Err(e) => {
-            let fc_err = m80_firecracker::FcError::Preflight(e);
-            errors::render_error(&fc_err, json)
-        }
+        Err(e) => errors::render_error(&e, json),
     }
 }
 

@@ -1,11 +1,13 @@
 use super::{
-    build_process_env, format_config_json, format_config_table, host_feature_config_from_effective,
+    artifact_config_for_runtime_profile, binary_config_for_runtime_profile, build_process_env,
+    cmd_preflight, format_config_json, format_config_table, host_feature_config_from_effective,
     network_policy_for_egress, parse_env, render_preflight_result, run_request, run_stream,
     sandbox_config_for_run, should_writeback, validate_run_flags,
 };
 use crate::args::{EgressMode, OverlayCloneModeArg, WritebackMode};
 use crate::errors::{EXIT_CONFIG, EXIT_PREFLIGHT};
 use crate::json;
+use crate::profile::{ProfileBodySource, RuntimeProfile};
 use m80_firecracker::{ConfigSource, EffectiveConfig, EffectiveField, NetworkPolicy};
 use m80_preflight::{
     CgroupPreflightMode, CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError,
@@ -59,12 +61,47 @@ fn fake_manifest() -> m80_image_manifest::Manifest {
 #[test]
 fn preflight_error_uses_shared_error_mapping() {
     let code = render_preflight_result(
-        Err(PreflightError::KvmUnavailable {
-            path: "/dev/kvm".into(),
-        }),
+        Err(m80_firecracker::FcError::Preflight(
+            PreflightError::KvmUnavailable {
+                path: "/dev/kvm".into(),
+            },
+        )),
         false,
     );
     assert_eq!(code, EXIT_PREFLIGHT);
+}
+
+#[test]
+fn cmd_preflight_config_load_error_uses_shared_error_mapping() {
+    let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+    let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+        "HOME",
+        "M80_DEFAULT_PROFILE",
+        "M80_MAX_CONCURRENT_VMS",
+        "M80_RUN_ROOT",
+        "M80_JAIL_UID",
+        "M80_JAIL_GID",
+        "M80_CGROUP_MODE",
+    ]);
+    for key in [
+        "M80_DEFAULT_PROFILE",
+        "M80_MAX_CONCURRENT_VMS",
+        "M80_RUN_ROOT",
+        "M80_JAIL_UID",
+        "M80_JAIL_GID",
+        "M80_CGROUP_MODE",
+    ] {
+        std::env::remove_var(key);
+    }
+    let home = tempfile::tempdir().unwrap();
+    let config_dir = home.path().join(".config/m80");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(config_dir.join("config.toml"), "[").unwrap();
+    std::env::set_var("HOME", home.path());
+
+    let code = cmd_preflight(false).unwrap();
+
+    assert_eq!(code, EXIT_CONFIG);
 }
 
 #[test]
@@ -440,6 +477,165 @@ fn preflight_json_rejects_failed_success_rows_without_panicking() {
     let code = render_preflight_result(Ok(discovery), true);
 
     assert_eq!(code, EXIT_CONFIG);
+}
+
+fn effective_config_with_run_root(run_root: &str) -> EffectiveConfig {
+    EffectiveConfig {
+        fields: vec![
+            EffectiveField {
+                name: "default_profile".to_owned(),
+                value: "default".to_owned(),
+                source: ConfigSource::SystemFile,
+            },
+            EffectiveField {
+                name: "run_root".to_owned(),
+                value: run_root.to_owned(),
+                source: ConfigSource::Env,
+            },
+        ],
+    }
+}
+
+fn installed_runtime_profile() -> RuntimeProfile {
+    RuntimeProfile {
+        name: "default".to_owned(),
+        selection_source: ConfigSource::SystemFile,
+        body_source: ProfileBodySource::SystemFile,
+        file_path: Some("/etc/m80/profiles/default.toml".into()),
+        artifact_dir: Some("/opt/m80/versions/v1/artifacts".into()),
+        kernel_image: Some("/opt/m80/versions/v1/artifacts/vmlinux".into()),
+        rootfs_image: Some("/opt/m80/versions/v1/artifacts/output.ext4".into()),
+        kernel_kind: Some("stripped".to_owned()),
+        guestd: Some("/opt/m80/versions/v1/artifacts/m80-guestd".into()),
+        guest_manifest: Some("/opt/m80/versions/v1/artifacts/output.ext4.manifest.json".into()),
+        build_receipt: Some("/opt/m80/versions/v1/artifacts/output.ext4.build-receipt.json".into()),
+        install_provenance: Some("/opt/m80/versions/v1/artifacts/install-provenance.json".into()),
+        host_binaries_manifest: Some(
+            "/opt/m80/versions/v1/artifacts/host-binaries.manifest.json".into(),
+        ),
+        firecracker_bin: Some("/opt/firecracker/bin/firecracker".into()),
+        firecracker_seccomp_filter: Some(
+            "/opt/firecracker/bin/firecracker-seccomp-filter.bin".into(),
+        ),
+        jailer_bin: Some("/opt/firecracker/bin/jailer".into()),
+        jailer_harden_bin: Some("/opt/m80/versions/v1/bin/m80-jailer-harden".into()),
+        net_helper_bin: Some("/opt/m80/versions/v1/bin/m80-net-helper".into()),
+        run_root: Some("/var/run/m80-profile".into()),
+        release_tag: Some("v1".to_owned()),
+        m80_version: Some("v1".to_owned()),
+        description: Some("m80 installed default profile".to_owned()),
+    }
+}
+
+#[test]
+fn selected_profile_artifacts_feed_preflight_without_artifact_env_vars() {
+    let profile = installed_runtime_profile();
+    let effective = effective_config_with_run_root("/var/run/m80-effective");
+
+    let artifact_config = artifact_config_for_runtime_profile(&effective, &profile);
+
+    assert_eq!(
+        artifact_config.artifact_dir,
+        std::path::PathBuf::from("/opt/m80/versions/v1/artifacts")
+    );
+    assert_eq!(
+        artifact_config.kernel_image.as_deref(),
+        Some(std::path::Path::new(
+            "/opt/m80/versions/v1/artifacts/vmlinux"
+        ))
+    );
+    assert_eq!(
+        artifact_config.rootfs_image.as_deref(),
+        Some(std::path::Path::new(
+            "/opt/m80/versions/v1/artifacts/output.ext4"
+        ))
+    );
+    assert_eq!(artifact_config.kernel_kind.as_deref(), Some("stripped"));
+    assert_eq!(
+        artifact_config.run_root,
+        std::path::PathBuf::from("/var/run/m80-effective")
+    );
+}
+
+#[test]
+fn selected_profile_helpers_feed_preflight_without_helper_env_vars() {
+    let profile = installed_runtime_profile();
+
+    let binary_config = binary_config_for_runtime_profile(&profile);
+
+    assert_eq!(
+        binary_config.firecracker_bin,
+        std::path::PathBuf::from("/opt/firecracker/bin/firecracker")
+    );
+    assert_eq!(
+        binary_config.firecracker_seccomp_filter,
+        std::path::PathBuf::from("/opt/firecracker/bin/firecracker-seccomp-filter.bin")
+    );
+    assert_eq!(
+        binary_config.jailer_bin,
+        std::path::PathBuf::from("/opt/firecracker/bin/jailer")
+    );
+    assert_eq!(
+        binary_config.jailer_harden_bin,
+        std::path::PathBuf::from("/opt/m80/versions/v1/bin/m80-jailer-harden")
+    );
+    assert_eq!(
+        binary_config.net_helper_bin,
+        std::path::PathBuf::from("/opt/m80/versions/v1/bin/m80-net-helper")
+    );
+}
+
+#[test]
+fn operator_config_run_root_wins_over_profile_run_root() {
+    let profile = installed_runtime_profile();
+    let effective = effective_config_with_run_root("/operator/run-root");
+
+    let artifact_config = artifact_config_for_runtime_profile(&effective, &profile);
+
+    assert_eq!(
+        artifact_config.run_root,
+        std::path::PathBuf::from("/operator/run-root")
+    );
+}
+
+#[test]
+fn builtin_env_profile_keeps_env_artifact_inputs() {
+    let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+    let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+        "M80_ARTIFACT_DIR",
+        "M80_KERNEL_IMAGE",
+        "M80_ROOTFS_IMAGE",
+        "M80_KERNEL_KIND",
+    ]);
+    std::env::set_var("M80_ARTIFACT_DIR", "/env/artifacts");
+    std::env::set_var("M80_KERNEL_IMAGE", "/env/vmlinux");
+    std::env::set_var("M80_ROOTFS_IMAGE", "/env/rootfs.ext4");
+    std::env::set_var("M80_KERNEL_KIND", "stock");
+
+    let mut profile = installed_runtime_profile();
+    profile.name = "env".to_owned();
+    profile.body_source = ProfileBodySource::BuiltinEnv;
+    profile.artifact_dir = None;
+    profile.kernel_image = None;
+    profile.rootfs_image = None;
+    profile.kernel_kind = None;
+    let effective = effective_config_with_run_root("/operator/run-root");
+
+    let artifact_config = artifact_config_for_runtime_profile(&effective, &profile);
+
+    assert_eq!(
+        artifact_config.artifact_dir,
+        std::path::PathBuf::from("/env/artifacts")
+    );
+    assert_eq!(
+        artifact_config.kernel_image.as_deref(),
+        Some(std::path::Path::new("/env/vmlinux"))
+    );
+    assert_eq!(
+        artifact_config.rootfs_image.as_deref(),
+        Some(std::path::Path::new("/env/rootfs.ext4"))
+    );
+    assert_eq!(artifact_config.kernel_kind.as_deref(), Some("stock"));
 }
 
 #[test]

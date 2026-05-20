@@ -247,7 +247,7 @@ which is the right place for a security review to start.
   `ENV_FIRECRACKER_VERSION`, `DEFAULT_FIRECRACKER_BIN`,
   `DEFAULT_FIRECRACKER_SECCOMP_FILTER`, `ENV_KERNEL_IMAGE`,
   `ENV_KERNEL_KIND`, and `ENV_ROOTFS_IMAGE` — shared keys/default used by the
-  CLI when it displays or overlays effective preflight inputs. Other env
+  CLI when it displays or constructs effective preflight inputs. Other env
   keys/default paths remain crate-private implementation details of
   `from_env()`.
 - `PreflightError`: `UnsupportedHostPlatform { actual }`,

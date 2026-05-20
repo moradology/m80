@@ -61,6 +61,18 @@ pub(super) fn render_env_human(dump: &EnvDump) -> String {
         dump.runtime_profile.name.as_deref().unwrap_or("unresolved")
     )
     .unwrap();
+    if let Some(selection_source) = &dump.runtime_profile.selection_source {
+        writeln!(out, "  selection_source: {selection_source}").unwrap();
+    }
+    if let Some(body_source) = dump.runtime_profile.body_source {
+        writeln!(out, "  body_source: {body_source}").unwrap();
+    }
+    if let Some(file_path) = &dump.runtime_profile.file_path {
+        writeln!(out, "  file_path: {}", file_path.display()).unwrap();
+    }
+    if let Some(run_root) = &dump.runtime_profile.run_root {
+        writeln!(out, "  profile_run_root: {}", run_root.display()).unwrap();
+    }
     if let Some(error) = &dump.runtime_profile.error {
         writeln!(out, "  error: {error}").unwrap();
     }
@@ -107,6 +119,15 @@ pub(super) fn render_env_human(dump: &EnvDump) -> String {
         dump.firecracker.seccomp_filter_exists
     )
     .unwrap();
+    if let Some(jailer) = &dump.runtime_profile.jailer_bin {
+        writeln!(out, "jailer: {}", jailer.display()).unwrap();
+    }
+    if let Some(jailer_harden) = &dump.runtime_profile.jailer_harden_bin {
+        writeln!(out, "jailer_harden: {}", jailer_harden.display()).unwrap();
+    }
+    if let Some(net_helper) = &dump.runtime_profile.net_helper_bin {
+        writeln!(out, "net_helper: {}", net_helper.display()).unwrap();
+    }
     writeln!(
         out,
         "run_root: {} exists={} run_dirs={}",

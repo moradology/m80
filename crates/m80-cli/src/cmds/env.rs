@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::config;
 use crate::json;
-use crate::profile::{self, ProfileBodySource, ProfileFilePaths};
+use crate::profile::{self, ProfileBodySource, ProfileFilePaths, RuntimeProfile};
 
 mod render;
 
@@ -64,9 +64,23 @@ struct RuntimeProfileDump {
     selection_source: Option<String>,
     body_source: Option<&'static str>,
     file_path: Option<PathBuf>,
+    artifact_dir: Option<PathBuf>,
     kernel_image: Option<PathBuf>,
     rootfs_image: Option<PathBuf>,
     kernel_kind: Option<String>,
+    guestd: Option<PathBuf>,
+    guest_manifest: Option<PathBuf>,
+    build_receipt: Option<PathBuf>,
+    install_provenance: Option<PathBuf>,
+    host_binaries_manifest: Option<PathBuf>,
+    firecracker_bin: Option<PathBuf>,
+    firecracker_seccomp_filter: Option<PathBuf>,
+    jailer_bin: Option<PathBuf>,
+    jailer_harden_bin: Option<PathBuf>,
+    net_helper_bin: Option<PathBuf>,
+    run_root: Option<PathBuf>,
+    release_tag: Option<String>,
+    m80_version: Option<String>,
     description: Option<String>,
     error: Option<String>,
 }
@@ -119,10 +133,16 @@ pub(super) fn cmd_env(json: bool) -> anyhow::Result<i32> {
 
 fn collect_env_dump() -> EnvDump {
     let config_result = config::load_effective(&HashMap::new());
-    let runtime_profile = runtime_profile_dump(config_result.as_ref().ok());
+    let runtime_profile_result = match config_result.as_ref() {
+        Ok(effective) => profile::resolve_from_effective(effective, ProfileFilePaths::host())
+            .map_err(|e| e.to_string()),
+        Err(_) => Err("effective config unavailable".to_owned()),
+    };
+    let runtime_profile = runtime_profile_dump(runtime_profile_result.as_ref());
     let artifacts = artifact_dump(&runtime_profile);
     let run_root = run_root_dump(config_result.as_ref().ok());
-    let preflight = preflight_dump();
+    let preflight = preflight_dump(config_result.as_ref().ok());
+    let firecracker = firecracker_dump(&runtime_profile);
 
     EnvDump {
         version: 1,
@@ -143,7 +163,7 @@ fn collect_env_dump() -> EnvDump {
         },
         runtime_profile,
         artifacts,
-        firecracker: firecracker_dump(),
+        firecracker,
         run_root,
         preflight,
     }
@@ -231,24 +251,35 @@ fn mem_total_kib() -> Option<u64> {
     None
 }
 
-fn runtime_profile_dump(effective: Option<&EffectiveConfig>) -> RuntimeProfileDump {
-    let Some(effective) = effective else {
-        return RuntimeProfileDump::error("effective config unavailable");
-    };
-    match profile::resolve_from_effective(effective, ProfileFilePaths::host()) {
+fn runtime_profile_dump(result: Result<&RuntimeProfile, &String>) -> RuntimeProfileDump {
+    match result {
         Ok(profile) => RuntimeProfileDump {
             ok: true,
-            name: Some(profile.name),
+            name: Some(profile.name.clone()),
             selection_source: Some(format!("{:?}", profile.selection_source)),
             body_source: Some(profile_body_source(profile.body_source)),
-            file_path: profile.file_path,
-            kernel_image: profile.kernel_image,
-            rootfs_image: profile.rootfs_image,
-            kernel_kind: profile.kernel_kind,
-            description: profile.description,
+            file_path: profile.file_path.clone(),
+            artifact_dir: profile.artifact_dir.clone(),
+            kernel_image: profile.kernel_image.clone(),
+            rootfs_image: profile.rootfs_image.clone(),
+            kernel_kind: profile.kernel_kind.clone(),
+            guestd: profile.guestd.clone(),
+            guest_manifest: profile.guest_manifest.clone(),
+            build_receipt: profile.build_receipt.clone(),
+            install_provenance: profile.install_provenance.clone(),
+            host_binaries_manifest: profile.host_binaries_manifest.clone(),
+            firecracker_bin: profile.firecracker_bin.clone(),
+            firecracker_seccomp_filter: profile.firecracker_seccomp_filter.clone(),
+            jailer_bin: profile.jailer_bin.clone(),
+            jailer_harden_bin: profile.jailer_harden_bin.clone(),
+            net_helper_bin: profile.net_helper_bin.clone(),
+            run_root: profile.run_root.clone(),
+            release_tag: profile.release_tag.clone(),
+            m80_version: profile.m80_version.clone(),
+            description: profile.description.clone(),
             error: None,
         },
-        Err(e) => RuntimeProfileDump::error(e.to_string()),
+        Err(e) => RuntimeProfileDump::error(e.clone()),
     }
 }
 
@@ -260,9 +291,23 @@ impl RuntimeProfileDump {
             selection_source: None,
             body_source: None,
             file_path: None,
+            artifact_dir: None,
             kernel_image: None,
             rootfs_image: None,
             kernel_kind: None,
+            guestd: None,
+            guest_manifest: None,
+            build_receipt: None,
+            install_provenance: None,
+            host_binaries_manifest: None,
+            firecracker_bin: None,
+            firecracker_seccomp_filter: None,
+            jailer_bin: None,
+            jailer_harden_bin: None,
+            net_helper_bin: None,
+            run_root: None,
+            release_tag: None,
+            m80_version: None,
             description: None,
             error: Some(error.into()),
         }
@@ -313,13 +358,19 @@ fn artifact_dump(profile: &RuntimeProfileDump) -> ArtifactDump {
     }
 }
 
-fn firecracker_dump() -> BinaryDump {
-    let path = std::env::var_os(m80_preflight::ENV_FIRECRACKER_BIN)
-        .map(PathBuf::from)
+fn firecracker_dump(profile: &RuntimeProfileDump) -> BinaryDump {
+    let path = profile
+        .firecracker_bin
+        .clone()
+        .or_else(|| std::env::var_os(m80_preflight::ENV_FIRECRACKER_BIN).map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from(m80_preflight::DEFAULT_FIRECRACKER_BIN));
     let exists = path.exists();
-    let seccomp_filter_path = std::env::var_os(m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER)
-        .map(PathBuf::from)
+    let seccomp_filter_path = profile
+        .firecracker_seccomp_filter
+        .clone()
+        .or_else(|| {
+            std::env::var_os(m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER).map(PathBuf::from)
+        })
         .unwrap_or_else(|| PathBuf::from(m80_preflight::DEFAULT_FIRECRACKER_SECCOMP_FILTER));
     let seccomp_filter_exists = seccomp_filter_path.exists();
     let configured_pin = std::env::var(m80_preflight::ENV_FIRECRACKER_VERSION).ok();
@@ -402,8 +453,15 @@ fn run_root_dump(effective: Option<&EffectiveConfig>) -> RunRootDump {
     }
 }
 
-fn preflight_dump() -> PreflightDump {
-    match m80_preflight::run() {
+fn preflight_dump(effective: Option<&EffectiveConfig>) -> PreflightDump {
+    let Some(effective) = effective else {
+        return PreflightDump {
+            ok: false,
+            error: Some("effective config unavailable".to_owned()),
+            checks: Vec::new(),
+        };
+    };
+    match super::preflight_with_effective_config(effective.clone()) {
         Ok(discovery) => PreflightDump {
             ok: true,
             error: None,
@@ -427,6 +485,7 @@ fn read_trimmed(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn env_json_has_data_version_and_host_sections() {
@@ -450,5 +509,124 @@ mod tests {
         assert!(text.contains("firecracker_seccomp_filter:"));
         assert!(text.contains("run_root:"));
         assert!(text.contains("preflight:"));
+    }
+
+    #[test]
+    fn env_json_reports_selected_installed_profile_paths() {
+        let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+        let _restore = m80_test_helpers::env::EnvRestore::capture(&[
+            "HOME",
+            "M80_DEFAULT_PROFILE",
+            "M80_RUN_ROOT",
+            "M80_ARTIFACT_DIR",
+            "M80_KERNEL_IMAGE",
+            "M80_ROOTFS_IMAGE",
+            "M80_KERNEL_KIND",
+            m80_preflight::ENV_FIRECRACKER_BIN,
+            m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER,
+            m80_preflight::ENV_FIRECRACKER_VERSION,
+        ]);
+        for key in [
+            "M80_ARTIFACT_DIR",
+            "M80_KERNEL_IMAGE",
+            "M80_ROOTFS_IMAGE",
+            "M80_KERNEL_KIND",
+            m80_preflight::ENV_FIRECRACKER_BIN,
+            m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER,
+            m80_preflight::ENV_FIRECRACKER_VERSION,
+        ] {
+            std::env::remove_var(key);
+        }
+
+        let home = tempfile::tempdir().unwrap();
+        let profile_dir = home.path().join(".config/m80/profiles");
+        let install_root = home.path().join("install");
+        let artifacts = install_root.join("versions/v1/artifacts");
+        let bin = install_root.join("versions/v1/bin");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::create_dir_all(&artifacts).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let firecracker = bin.join("firecracker");
+        std::fs::write(&firecracker, "#!/bin/sh\nprintf 'Firecracker v1.15.1\\n'\n").unwrap();
+        let mut mode = std::fs::metadata(&firecracker).unwrap().permissions();
+        mode.set_mode(0o755);
+        std::fs::set_permissions(&firecracker, mode).unwrap();
+        let seccomp = bin.join("firecracker-seccomp-filter.bin");
+        std::fs::write(&seccomp, "{}\n").unwrap();
+        let run_root = home.path().join("run-root");
+
+        std::fs::write(
+            profile_dir.join("default.toml"),
+            format!(
+                "artifact_dir = '{}'\n\
+                 kernel_image = '{}'\n\
+                 rootfs_image = '{}'\n\
+                 kernel_kind = 'stripped'\n\
+                 firecracker_bin = '{}'\n\
+                 firecracker_seccomp_filter = '{}'\n\
+                 jailer_bin = '{}'\n\
+                 jailer_harden_bin = '{}'\n\
+                 net_helper_bin = '{}'\n\
+                 run_root = '{}'\n\
+                 release_tag = 'v1'\n\
+                 m80_version = 'v1'\n",
+                artifacts.display(),
+                artifacts.join("vmlinux").display(),
+                artifacts.join("output.ext4").display(),
+                firecracker.display(),
+                seccomp.display(),
+                bin.join("jailer").display(),
+                bin.join("m80-jailer-harden").display(),
+                bin.join("m80-net-helper").display(),
+                run_root.display()
+            ),
+        )
+        .unwrap();
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("M80_DEFAULT_PROFILE", "default");
+        std::env::set_var("M80_RUN_ROOT", &run_root);
+
+        let rendered = json::to_pretty(&collect_env_dump());
+        let parsed: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        let profile = &parsed["data"]["runtime_profile"];
+
+        assert_eq!(profile["name"], "default");
+        assert_eq!(profile["selection_source"], "Env");
+        assert_eq!(profile["body_source"], "user_file");
+        assert_eq!(
+            profile["file_path"].as_str(),
+            profile_dir.join("default.toml").to_str()
+        );
+        assert_eq!(profile["artifact_dir"].as_str(), artifacts.to_str());
+        assert_eq!(
+            profile["kernel_image"].as_str(),
+            artifacts.join("vmlinux").to_str()
+        );
+        assert_eq!(
+            profile["rootfs_image"].as_str(),
+            artifacts.join("output.ext4").to_str()
+        );
+        assert_eq!(profile["firecracker_bin"].as_str(), firecracker.to_str());
+        assert_eq!(
+            profile["firecracker_seccomp_filter"].as_str(),
+            seccomp.to_str()
+        );
+        assert_eq!(profile["run_root"].as_str(), run_root.to_str());
+        assert_eq!(
+            parsed["data"]["artifacts"]["kernel_image"].as_str(),
+            artifacts.join("vmlinux").to_str()
+        );
+        assert_eq!(
+            parsed["data"]["artifacts"]["rootfs_image"].as_str(),
+            artifacts.join("output.ext4").to_str()
+        );
+        assert_eq!(
+            parsed["data"]["firecracker"]["path"].as_str(),
+            firecracker.to_str()
+        );
+        assert_eq!(
+            parsed["data"]["run_root"]["path"].as_str(),
+            run_root.to_str()
+        );
     }
 }

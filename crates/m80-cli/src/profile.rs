@@ -1,19 +1,13 @@
 //! Runtime image/profile resolution for `m80 run`.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
 use m80_firecracker::{ConfigError, ConfigSource, EffectiveConfig, FcError};
-use m80_preflight::{ENV_KERNEL_IMAGE, ENV_KERNEL_KIND, ENV_ROOTFS_IMAGE};
 
 const DEFAULT_PROFILE_FIELD: &str = "default_profile";
 const BUILTIN_ENV_PROFILE: &str = "env";
-const ENV_ARTIFACT_DIR: &str = "M80_ARTIFACT_DIR";
-const ENV_JAILER_BIN: &str = "M80_JAILER_BIN";
-const ENV_JAILER_HARDEN_BIN: &str = "M80_JAILER_HARDEN_BIN";
-const ENV_NET_HELPER_BIN: &str = "M80_NET_HELPER_BIN";
 
 /// Directory set used for profile-file lookup.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,75 +284,6 @@ fn profile_filename(name: &str) -> String {
     format!("{name}.toml")
 }
 
-impl RuntimeProfile {
-    pub(crate) fn apply_env(&self) -> AppliedProfileEnv {
-        let overrides = self.env_overrides();
-        let previous = overrides
-            .iter()
-            .map(|(key, _)| (*key, std::env::var_os(key)))
-            .collect();
-        for (key, value) in overrides {
-            std::env::set_var(key, value);
-        }
-        AppliedProfileEnv { previous }
-    }
-
-    fn env_overrides(&self) -> Vec<(&'static str, OsString)> {
-        let mut overrides = Vec::new();
-        if let Some(path) = &self.artifact_dir {
-            overrides.push((ENV_ARTIFACT_DIR, path.as_os_str().to_owned()));
-        }
-        if let Some(path) = &self.kernel_image {
-            overrides.push((ENV_KERNEL_IMAGE, path.as_os_str().to_owned()));
-        }
-        if let Some(path) = &self.rootfs_image {
-            overrides.push((ENV_ROOTFS_IMAGE, path.as_os_str().to_owned()));
-        }
-        if let Some(kind) = &self.kernel_kind {
-            overrides.push((ENV_KERNEL_KIND, OsString::from(kind)));
-        }
-        if let Some(path) = &self.firecracker_bin {
-            overrides.push((
-                m80_preflight::ENV_FIRECRACKER_BIN,
-                path.as_os_str().to_owned(),
-            ));
-        }
-        if let Some(path) = &self.firecracker_seccomp_filter {
-            overrides.push((
-                m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER,
-                path.as_os_str().to_owned(),
-            ));
-        }
-        if let Some(path) = &self.jailer_bin {
-            overrides.push((ENV_JAILER_BIN, path.as_os_str().to_owned()));
-        }
-        if let Some(path) = &self.jailer_harden_bin {
-            overrides.push((ENV_JAILER_HARDEN_BIN, path.as_os_str().to_owned()));
-        }
-        if let Some(path) = &self.net_helper_bin {
-            overrides.push((ENV_NET_HELPER_BIN, path.as_os_str().to_owned()));
-        }
-        overrides
-    }
-}
-
-/// Restores any artifact env vars overlaid for profile-aware preflight.
-pub(crate) struct AppliedProfileEnv {
-    previous: Vec<(&'static str, Option<OsString>)>,
-}
-
-impl Drop for AppliedProfileEnv {
-    fn drop(&mut self) {
-        for (key, value) in &self.previous {
-            if let Some(value) = value {
-                std::env::set_var(key, value);
-            } else {
-                std::env::remove_var(key);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use tempfile::TempDir;
@@ -587,95 +512,5 @@ mod tests {
                 PathBuf::from("/home/alice/.config/m80/profiles/dev.toml"),
             ]
         );
-    }
-
-    #[test]
-    fn profile_env_overlay_reaches_preflight_artifact_inputs() {
-        let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
-        let _restore = m80_test_helpers::env::EnvRestore::capture(&[
-            ENV_ARTIFACT_DIR,
-            ENV_KERNEL_IMAGE,
-            ENV_ROOTFS_IMAGE,
-            ENV_KERNEL_KIND,
-            m80_preflight::ENV_FIRECRACKER_BIN,
-            m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER,
-            ENV_JAILER_BIN,
-            ENV_JAILER_HARDEN_BIN,
-            ENV_NET_HELPER_BIN,
-        ]);
-        std::env::remove_var(ENV_ARTIFACT_DIR);
-        std::env::remove_var(ENV_KERNEL_IMAGE);
-        std::env::remove_var(ENV_ROOTFS_IMAGE);
-        std::env::remove_var(ENV_KERNEL_KIND);
-        std::env::remove_var(m80_preflight::ENV_FIRECRACKER_BIN);
-        std::env::remove_var(m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER);
-        std::env::remove_var(ENV_JAILER_BIN);
-        std::env::remove_var(ENV_JAILER_HARDEN_BIN);
-        std::env::remove_var(ENV_NET_HELPER_BIN);
-
-        let profile = RuntimeProfile {
-            name: "dev".to_owned(),
-            selection_source: ConfigSource::Flag,
-            body_source: ProfileBodySource::UserFile,
-            file_path: Some(PathBuf::from("/profiles/dev.toml")),
-            artifact_dir: Some(PathBuf::from("/images")),
-            kernel_image: Some(PathBuf::from("/images/vmlinux")),
-            rootfs_image: Some(PathBuf::from("/images/rootfs.ext4")),
-            kernel_kind: Some("stripped".to_owned()),
-            guestd: None,
-            guest_manifest: None,
-            build_receipt: None,
-            install_provenance: None,
-            host_binaries_manifest: None,
-            firecracker_bin: Some(PathBuf::from("/fc/bin/firecracker")),
-            firecracker_seccomp_filter: Some(PathBuf::from(
-                "/fc/bin/firecracker-seccomp-filter.bin",
-            )),
-            jailer_bin: Some(PathBuf::from("/fc/bin/jailer")),
-            jailer_harden_bin: Some(PathBuf::from("/m80/bin/m80-jailer-harden")),
-            net_helper_bin: Some(PathBuf::from("/m80/bin/m80-net-helper")),
-            run_root: None,
-            release_tag: None,
-            m80_version: None,
-            description: None,
-        };
-
-        {
-            let _overlay = profile.apply_env();
-            assert_eq!(std::env::var(ENV_ARTIFACT_DIR).unwrap(), "/images");
-            assert_eq!(std::env::var(ENV_KERNEL_IMAGE).unwrap(), "/images/vmlinux");
-            assert_eq!(
-                std::env::var(ENV_ROOTFS_IMAGE).unwrap(),
-                "/images/rootfs.ext4"
-            );
-            assert_eq!(std::env::var(ENV_KERNEL_KIND).unwrap(), "stripped");
-            assert_eq!(
-                std::env::var(m80_preflight::ENV_FIRECRACKER_BIN).unwrap(),
-                "/fc/bin/firecracker"
-            );
-            assert_eq!(
-                std::env::var(m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER).unwrap(),
-                "/fc/bin/firecracker-seccomp-filter.bin"
-            );
-            assert_eq!(std::env::var(ENV_JAILER_BIN).unwrap(), "/fc/bin/jailer");
-            assert_eq!(
-                std::env::var(ENV_JAILER_HARDEN_BIN).unwrap(),
-                "/m80/bin/m80-jailer-harden"
-            );
-            assert_eq!(
-                std::env::var(ENV_NET_HELPER_BIN).unwrap(),
-                "/m80/bin/m80-net-helper"
-            );
-        }
-
-        assert!(std::env::var_os(ENV_ARTIFACT_DIR).is_none());
-        assert!(std::env::var_os(ENV_KERNEL_IMAGE).is_none());
-        assert!(std::env::var_os(ENV_ROOTFS_IMAGE).is_none());
-        assert!(std::env::var_os(ENV_KERNEL_KIND).is_none());
-        assert!(std::env::var_os(m80_preflight::ENV_FIRECRACKER_BIN).is_none());
-        assert!(std::env::var_os(m80_preflight::ENV_FIRECRACKER_SECCOMP_FILTER).is_none());
-        assert!(std::env::var_os(ENV_JAILER_BIN).is_none());
-        assert!(std::env::var_os(ENV_JAILER_HARDEN_BIN).is_none());
-        assert!(std::env::var_os(ENV_NET_HELPER_BIN).is_none());
     }
 }

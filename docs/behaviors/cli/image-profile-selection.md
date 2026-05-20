@@ -67,22 +67,24 @@ All profile paths must be absolute host paths. Unknown TOML keys fail closed.
 `m80` does not create missing files, pull images, or silently fall back to
 another profile.
 
-During backend construction, the resolved profile overlays the boot-artifact
-and host-helper environment variables for the preflight call:
+During backend construction, the resolved profile is converted directly into
+the boot-artifact and host-helper preflight configs. Profile fields override
+ambient `M80_*` values for:
 
-- `M80_ARTIFACT_DIR`
-- `M80_KERNEL_IMAGE`
-- `M80_ROOTFS_IMAGE`
-- `M80_KERNEL_KIND` when present in the profile
-- `M80_FIRECRACKER_BIN`
-- `M80_FIRECRACKER_SECCOMP_FILTER`
-- `M80_JAILER_BIN`
-- `M80_JAILER_HARDEN_BIN`
-- `M80_NET_HELPER_BIN`
+- artifact directory
+- kernel image
+- rootfs image
+- kernel kind, when present in the profile
+- Firecracker binary
+- Firecracker seccomp filter
+- official jailer binary
+- m80 jailer hardening wrapper
+- m80 network helper
 
-The overlay is process-local and restored after preflight. This is the fixture
-proof that selected profiles reach the same boot-artifact resolution path as
-environment-driven launches.
+The built-in `env` profile leaves those fields unset so ambient `M80_*` values
+continue to drive discovery directly. `run_root` remains config-owned:
+`M80_RUN_ROOT`, config files, and the CLI's effective config determine runtime
+authority; the profile's `run_root` field is reported for diagnostics.
 
 ## Config Visibility
 
@@ -100,7 +102,9 @@ host binaries with the same name and does not install missing programs.
 ## Evidence
 
 - `crates/m80-cli/src/profile.rs` unit tests pin default `env` resolution,
-  named profile search precedence, fail-closed parsing, and env overlay.
+  named profile search precedence, and fail-closed parsing.
+- `crates/m80-cli/src/cmds.rs` unit tests pin direct profile-to-preflight config
+  projection and the `run_root` config precedence rule.
 - `crates/m80-firecracker/tests/config_loading.rs` pins `default_profile`
   defaults, env mapping, and flag precedence.
 - `crates/m80-cli/tests/parse_args.rs::parse_run_runtime_profile_shape` pins the

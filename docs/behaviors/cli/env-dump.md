@@ -15,11 +15,13 @@ The payload includes:
 - host kernel version, CPU count, KVM device accessibility, vsock module
   evidence, virtualization CPU flags, and total memory
 - effective config when config loading succeeds
-- selected runtime profile and profile artifact paths when resolvable
+- selected runtime profile name, selection source, body source, profile file,
+  profile artifact paths, host-helper paths, run-root field, release tag, and
+  m80 version when resolvable
 - kernel/rootfs/kernel-kind artifact paths from profile or `M80_*`
 - rootfs manifest path and parse status
-- Firecracker binary path, version subprocess output when discoverable, and
-  configured version pin
+- Firecracker binary path from the selected profile or `M80_*`, version
+  subprocess output when discoverable, and configured version pin
 - run-root path, existence, and VM directory count
 - preflight status and check rows when full preflight succeeds
 
@@ -43,5 +45,8 @@ m80 --json logs <vm-id> > m80-logs.json
 
 - `crates/m80-cli/src/cmds/env.rs` tests that the JSON dump has the standard
   envelope, a payload version, and bug-report sections without requiring KVM.
+- `crates/m80-cli/src/cmds/env.rs::tests::env_json_reports_selected_installed_profile_paths`
+  proves selected profile paths are reported and preferred over ambient
+  artifact/helper environment variables.
 - `crates/m80-cli/tests/parse_args.rs` pins the `m80 env` parse surface.
 - `crates/m80-cli/tests/help_smoke.rs` pins the visible help surface.
