@@ -314,7 +314,6 @@ fn build_erofs(source: &Path, image: &Path, compression: ErofsCompression) {
         .arg("--quiet")
         .arg("-T")
         .arg("0")
-        .arg("--all-time")
         .arg("--all-root")
         .arg("--force-uid=0")
         .arg("--force-gid=0")

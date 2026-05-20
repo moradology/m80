@@ -18,7 +18,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: workflow policy lint
         run: python3 scripts/lint-github-workflows.py
@@ -37,7 +37,7 @@ jobs:
         run: rustup toolchain install 1.82 --profile minimal --component rustfmt --component clippy
 
       - name: Cache cargo registry + target
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -75,7 +75,7 @@ jobs:
     env:
       RUSTFLAGS: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install audit toolchain
         run: rustup toolchain install 1.85 --profile minimal
