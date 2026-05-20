@@ -413,7 +413,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
         self.assertIn("python3 -m py_compile scripts/package-release-bundle.py", workflow)
         self.assertIn("python3 scripts/test-release-bundle.py", workflow)
-        self.assertIn("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true", workflow)
+        self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
         self.assertIn("sudo apt-get install -y erofs-utils shellcheck", workflow)
         self.assertIn("cargo test -p m80-attack-runner --features malicious-artifact", workflow)
         self.assertIn(
@@ -429,7 +429,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_release_workflow_publishes_and_verifies_proof_assets(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()
 
-        self.assertIn("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true", workflow)
+        self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
         self.assertIn("actions/attest@v4", workflow)
         self.assertIn("subject-name: m80-release-integrity.json", workflow)
         self.assertIn("subject-digest: ${{ steps.integrity-subject.outputs.digest }}", workflow)

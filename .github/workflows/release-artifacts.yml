@@ -15,7 +15,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   ARTIFACT_DIR: /tmp/m80-release-artifacts
   DIST_DIR: /tmp/m80-release-dist
   ARTIFACT_NAME: m80-release-dist
