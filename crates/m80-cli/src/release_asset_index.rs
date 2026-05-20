@@ -5,11 +5,12 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeSet;
-use std::fmt;
 
 use serde::Deserialize;
 
 use crate::release::VersionStatus;
+
+mod diagnostics;
 
 const ASSET_INDEX_SCHEMA_VERSION: u32 = 1;
 const DEFAULT_IMAGE_KIND: &str = "minimal";
@@ -96,14 +97,21 @@ impl ReleaseAssetIndex {
         image_kind: &'_ str,
     ) -> Result<&'a BundleAsset, AssetIndexError> {
         let Some(binary_tag) = binary.release_tag else {
-            return Err(AssetIndexError::DevBuildSelection);
+            return Err(AssetIndexError::DevBuildSelection {
+                m80_version: binary.m80_version.to_owned(),
+            });
         };
         match binary.status {
             VersionStatus::Release => {}
-            VersionStatus::Dev => return Err(AssetIndexError::DevBuildSelection),
+            VersionStatus::Dev => {
+                return Err(AssetIndexError::DevBuildSelection {
+                    m80_version: binary.m80_version.to_owned(),
+                });
+            }
             VersionStatus::Mismatch => {
                 return Err(AssetIndexError::MismatchedBuildSelection {
                     release_tag: binary_tag.to_owned(),
+                    m80_version: binary.m80_version.to_owned(),
                 });
             }
         }
@@ -296,9 +304,12 @@ enum AssetIndexError {
         image_kind: String,
         available: Vec<String>,
     },
-    DevBuildSelection,
+    DevBuildSelection {
+        m80_version: String,
+    },
     MismatchedBuildSelection {
         release_tag: String,
+        m80_version: String,
     },
     WrongTag {
         index: String,
@@ -338,95 +349,6 @@ enum AssetIndexError {
     },
 }
 
-impl fmt::Display for AssetIndexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Json { detail } => write!(f, "release asset index JSON is invalid: {detail}"),
-            Self::UnsupportedSchema { expected, actual } => write!(
-                f,
-                "release asset index schema mismatch: expected {expected}, got {actual}"
-            ),
-            Self::MissingField { field } => {
-                write!(f, "release asset index missing required field {field}")
-            }
-            Self::InvalidField { field, detail } => {
-                write!(f, "release asset index invalid field {field}: {detail}")
-            }
-            Self::MissingDefault {
-                os,
-                arch,
-                image_kind,
-                available,
-            } => write!(
-                f,
-                "release asset index has no default bundle for {os}/{arch}/{image_kind}; available: {}",
-                available.join(", ")
-            ),
-            Self::DevBuildSelection => write!(
-                f,
-                "dev builds cannot select release assets from the index; use an explicit bundle URL"
-            ),
-            Self::MismatchedBuildSelection { release_tag } => write!(
-                f,
-                "mismatched release build {release_tag} cannot select release assets from the index"
-            ),
-            Self::WrongTag { index, binary } => write!(
-                f,
-                "release asset index tag {index} does not match binary tag {binary}"
-            ),
-            Self::WrongArchitecture {
-                os,
-                arch,
-                available,
-            } => write!(
-                f,
-                "release asset index has no bundle for host tuple {os}/{arch}; available: {}",
-                available.join(", ")
-            ),
-            Self::WrongImageKind {
-                os,
-                arch,
-                image_kind,
-                available,
-            } => write!(
-                f,
-                "release asset index has no {image_kind} bundle for {os}/{arch}; available image kinds: {}",
-                available.join(", ")
-            ),
-            Self::WrongM80Version {
-                expected,
-                available,
-            } => write!(
-                f,
-                "release asset index has no bundle for m80 version {expected}; available versions: {}",
-                available.join(", ")
-            ),
-            Self::DuplicateDefault {
-                os,
-                arch,
-                image_kind,
-                release_tag,
-            } => write!(
-                f,
-                "release asset index has duplicate default bundles for {release_tag} {os}/{arch}/{image_kind}"
-            ),
-            Self::AssetReleaseTagMismatch { index, asset, name } => write!(
-                f,
-                "release asset {name} tag {asset} does not match index tag {index}"
-            ),
-            Self::TargetTupleMismatch {
-                name,
-                target,
-                os,
-                arch,
-            } => write!(
-                f,
-                "release asset {name} target {target} does not match os/arch {os}/{arch}"
-            ),
-        }
-    }
-}
-
 impl std::error::Error for AssetIndexError {}
 
 fn validate_sha256(field: &'static str, value: &str) -> Result<(), AssetIndexError> {
@@ -462,7 +384,12 @@ fn validate_nonzero(field: &'static str, value: u64) -> Result<(), AssetIndexErr
 fn available_tuples(assets: &[BundleAsset]) -> Vec<String> {
     assets
         .iter()
-        .map(|asset| format!("{}/{}", asset.os, asset.arch))
+        .map(|asset| {
+            format!(
+                "{}/{}/{}@{}",
+                asset.os, asset.arch, asset.image_kind, asset.m80_version
+            )
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()

@@ -2,8 +2,10 @@
 
 The release asset index is the machine-readable contract that lets
 quickstart/bootstrapper code select a bundle without inferring semantics from a
-filename. It is consumed before bundle download for the common path and is not
-used when an operator provides an explicit bundle URL override.
+filename. The parser and resolver are staged for the installer/bootstrapper
+consumer that will read the index before bundle download; the current
+flat-artifact quickstart path still requires an explicit artifact URL until
+that consumer lands. An explicit bundle URL override bypasses index selection.
 
 The published index is `m80-release-assets.json`. Its checksum sidecar is
 `m80-release-assets.json.sha256`, and the public `SHA256SUMS` covers the index
@@ -32,6 +34,11 @@ duplicate default rows are invalid for selection.
 Missing defaults fail closed. Rows for the wrong architecture, wrong image
 kind, wrong tag, or wrong m80 version fail with typed diagnostics that name the
 requested tuple and available alternatives.
+Diagnostics name the requested `os`, `arch`, `image_kind`, release tag, and
+binary version when those fields are relevant. They also name available tuples
+as `<os>/<arch>/<image_kind>@<m80_version>` and include either `--bundle-url`
+for an explicit compatible bundle or a pinned release `install.sh` URL when a
+matching tagged release is visible in the index.
 
 Release dev builds do not select release assets from the index. A dev build
 needs an explicit local bundle URL or artifact override so it cannot silently

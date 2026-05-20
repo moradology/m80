@@ -136,7 +136,12 @@ fn dev_build_selection_fails_closed() {
         .select_default_bundle(dev_binary(), linux_x86_64(), "minimal")
         .unwrap_err();
 
-    assert_eq!(err, AssetIndexError::DevBuildSelection);
+    assert_eq!(
+        err,
+        AssetIndexError::DevBuildSelection {
+            m80_version: "0.0.0-dev".to_owned()
+        }
+    );
 }
 
 #[test]
@@ -151,6 +156,91 @@ fn mismatched_build_selection_fails_closed() {
         err,
         AssetIndexError::MismatchedBuildSelection { .. }
     ));
+}
+
+#[test]
+fn wrong_architecture_diagnostic_names_requested_and_available_tuple() {
+    let json = index_json_with_assets(asset_json(
+        "linux", "aarch64", "minimal", "v0.0.0", "v0.0.0",
+    ));
+    let index = ReleaseAssetIndex::parse_json(&json).unwrap();
+
+    let err = index
+        .select_default_bundle(release_binary(), linux_x86_64(), "minimal")
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("os=linux arch=x86_64"), "{err}");
+    assert!(err.contains("linux/aarch64/minimal@v0.0.0"), "{err}");
+    assert!(err.contains("--bundle-url"), "{err}");
+}
+
+#[test]
+fn wrong_image_kind_diagnostic_names_requested_and_available_kind() {
+    let json = index_json_with_assets(asset_json("linux", "x86_64", "ubuntu", "v0.0.0", "v0.0.0"));
+    let index = ReleaseAssetIndex::parse_json(&json).unwrap();
+
+    let err = index
+        .select_default_bundle(release_binary(), linux_x86_64(), "minimal")
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("requested image kind minimal"), "{err}");
+    assert!(err.contains("available image kinds: ubuntu"), "{err}");
+    assert!(err.contains("--bundle-url"), "{err}");
+}
+
+#[test]
+fn stale_version_diagnostic_names_requested_available_and_pinned_url() {
+    let json = index_json_with_assets(asset_json("linux", "x86_64", "minimal", "v0.0.0", "v9.9.9"));
+    let index = ReleaseAssetIndex::parse_json(&json).unwrap();
+
+    let err = index
+        .select_default_bundle(release_binary(), linux_x86_64(), "minimal")
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("requested m80 version v0.0.0"), "{err}");
+    assert!(err.contains("available versions: v9.9.9"), "{err}");
+    assert!(
+        err.contains("https://github.com/moradology/m80/releases/download/v9.9.9/install.sh"),
+        "{err}"
+    );
+}
+
+#[test]
+fn wrong_tag_diagnostic_names_binary_tag_and_pinned_url() {
+    let json = index_json(
+        "v9.9.9",
+        asset_json("linux", "x86_64", "minimal", "v9.9.9", "v9.9.9"),
+    );
+    let index = ReleaseAssetIndex::parse_json(&json).unwrap();
+
+    let err = index
+        .select_default_bundle(release_binary(), linux_x86_64(), "minimal")
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("index tag v9.9.9"), "{err}");
+    assert!(err.contains("binary tag v0.0.0"), "{err}");
+    assert!(
+        err.contains("https://github.com/moradology/m80/releases/download/v0.0.0/install.sh"),
+        "{err}"
+    );
+}
+
+#[test]
+fn dev_build_diagnostic_names_local_bundle_repair() {
+    let index = valid_index();
+
+    let err = index
+        .select_default_bundle(dev_binary(), linux_x86_64(), "minimal")
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("dev build 0.0.0-dev"), "{err}");
+    assert!(err.contains("--bundle-url"), "{err}");
+    assert!(err.contains("tagged release binary"), "{err}");
 }
 
 #[test]

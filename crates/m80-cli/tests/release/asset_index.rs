@@ -25,6 +25,8 @@ fn asset_index_behavior_doc_names_schema_and_selection_contract() {
         "zero size/schema/protocol",
         "duplicate",
         "dev builds",
+        "`--bundle-url`",
+        "pinned release `install.sh` URL",
     ] {
         assert!(
             doc.contains(required),
