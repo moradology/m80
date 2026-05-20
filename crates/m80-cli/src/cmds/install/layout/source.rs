@@ -420,6 +420,9 @@ mod tests {
     use super::*;
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
+    use std::sync::Mutex;
+
+    static FAKE_GH_PROBE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn remote_url_rejects_non_release_https_host() {
@@ -481,6 +484,7 @@ mod tests {
 
     #[test]
     fn attestation_verifier_preflight_accepts_supported_gh_help() {
+        let _guard = FAKE_GH_PROBE_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let gh = write_fake_gh(
             temp.path(),
@@ -496,6 +500,7 @@ mod tests {
 
     #[test]
     fn attestation_verifier_preflight_rejects_help_missing_required_flag() {
+        let _guard = FAKE_GH_PROBE_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let gh = write_fake_gh(
             temp.path(),
@@ -509,8 +514,11 @@ mod tests {
         .unwrap_err();
 
         let message = err.to_string();
-        assert!(message.contains("release attestation verifier unsupported"));
-        assert!(message.contains("--source-digest"));
+        assert!(
+            message.contains("release attestation verifier unsupported"),
+            "{message}"
+        );
+        assert!(message.contains("--source-digest"), "{message}");
     }
 
     fn write_fake_gh(root: &Path, body: &str) -> PathBuf {
