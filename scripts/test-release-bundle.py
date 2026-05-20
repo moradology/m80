@@ -585,6 +585,28 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("tuple bundle metadata sidecar mismatch", result.stderr)
 
+    def test_package_rejects_extra_tuple_tar_internal_corruption(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            seed_out = root / "seed"
+            out_dir = root / "out"
+            run_package(inputs, seed_out)
+            manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
+            payload = json.loads(manifest.read_text())
+            rewrite_tar(
+                Path(payload["bundle_path"]),
+                Path(payload["bundle_path"]).with_suffix(".broken.tar.gz"),
+                payload_updates={"artifacts/m80-guestd": lambda _data: b"tampered guestd\n"},
+            )
+            Path(payload["bundle_path"]).with_suffix(".broken.tar.gz").replace(payload["bundle_path"])
+
+            result = run_package(inputs, out_dir, extra_tuple_manifests=[manifest], check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("tuple bundle contract verification failed for m80-linux-x86_64-debug.tar.gz", result.stderr)
+            self.assertIn("guest manifest daemon_binary_sha256 mismatch", result.stderr)
+
     def test_rendered_install_script_rejects_extracted_m80_source_commit_mismatch_before_install(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2172,6 +2194,90 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("release integrity public SHA256SUMS missing asset(s): m80-linux-x86_64-debug.tar.gz", result.stderr)
 
+    def test_verifier_rejects_non_default_tar_internal_corruption_after_dist_integrity_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            seed_out = root / "seed"
+            out_dir = root / "out"
+            run_package(inputs, seed_out)
+            manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
+            run_package(inputs, out_dir, extra_tuple_manifests=[manifest])
+            rewrite_release_tuple_bundle(
+                out_dir,
+                image_kind="debug",
+                payload_updates={"artifacts/m80-guestd": lambda _data: b"tampered guestd\n"},
+            )
+            material = write_integrity_material(out_dir)
+
+            run_verify_integrity(material)
+            result = run_verify(out_dir / BUNDLE_NAME, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "asset index tuple linux/x86_64/debug bundle m80-linux-x86_64-debug.tar.gz failed verification",
+                result.stderr,
+            )
+            self.assertIn("guest manifest daemon_binary_sha256 mismatch", result.stderr)
+
+    def test_verifier_checks_every_extra_tuple_bundle_after_dist_integrity_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            inputs = fixture_inputs(root, release_tag="v0.0.0")
+            seed_out = root / "seed"
+            out_dir = root / "out"
+            run_package(inputs, seed_out)
+            debug_manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
+            trace_manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="trace")
+            run_package(inputs, out_dir, extra_tuple_manifests=[debug_manifest, trace_manifest])
+            rewrite_release_tuple_bundle(
+                out_dir,
+                image_kind="trace",
+                payload_updates={"artifacts/m80-guestd": lambda _data: b"tampered trace guestd\n"},
+            )
+            material = write_integrity_material(out_dir)
+
+            run_verify_integrity(material)
+            result = run_verify(out_dir / BUNDLE_NAME, verify_sidecars=True, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "asset index tuple linux/x86_64/trace bundle m80-linux-x86_64-trace.tar.gz failed verification",
+                result.stderr,
+            )
+            self.assertIn("guest manifest daemon_binary_sha256 mismatch", result.stderr)
+
+    def test_verifier_rejects_non_flat_extra_tuple_asset_names_before_path_lookup(self) -> None:
+        cases = [
+            ("name", "../m80-linux-x86_64-debug.tar.gz", "asset index name"),
+            ("metadata_name", "../m80-linux-x86_64-debug.bundle.json", "asset index metadata_name"),
+            ("checksum_name", "../m80-linux-x86_64-debug.tar.gz.sha256", "asset index checksum_name"),
+            ("signature_name", "../m80-linux-x86_64-debug.tar.gz.sig", "asset index signature_name"),
+            ("attestation_name", "../m80-release-integrity.attestation.jsonl", "asset index attestation_name"),
+        ]
+        for field, value, label in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                inputs = fixture_inputs(root, release_tag="v0.0.0")
+                seed_out = root / "seed"
+                out_dir = root / "out"
+                run_package(inputs, seed_out)
+                manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
+                run_package(inputs, out_dir, extra_tuple_manifests=[manifest])
+                index_path = out_dir / ASSET_INDEX_NAME
+                index = json.loads(index_path.read_text())
+                for asset in index["assets"]:
+                    if asset["image_kind"] == "debug":
+                        asset[field] = value
+                index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n")
+                write_sha256_sidecar(out_dir / f"{ASSET_INDEX_NAME}.sha256", index_path, ASSET_INDEX_NAME)
+
+                result = run_verify(out_dir / BUNDLE_NAME, verify_sidecars=True, check=False)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"release dist asset name must be flat for {label}", result.stderr)
+                self.assertIn(value, result.stderr)
+
     def test_release_integrity_material_preflights_missing_verifier_before_material_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2919,18 +3025,12 @@ def add_alternate_image_kind_fixture(out_dir: Path, *, image_kind: str = "debug"
 
 def write_extra_tuple_manifest_from_seed(root: Path, seed_out: Path, *, image_kind: str) -> Path:
     tuple_dir = root / "tuple-inputs"
-    tuple_dir.mkdir()
+    tuple_dir.mkdir(exist_ok=True)
     bundle_name = f"m80-linux-x86_64-{image_kind}.tar.gz"
     metadata_name = f"m80-linux-x86_64-{image_kind}.bundle.json"
     bundle_path = tuple_dir / bundle_name
     metadata_path = tuple_dir / metadata_name
-    rewrite_tar(
-        seed_out / BUNDLE_NAME,
-        bundle_path,
-        metadata_updates={"image_kind": image_kind},
-    )
-    with tarfile.open(bundle_path, "r:gz") as tar:
-        metadata = json.load(tar.extractfile("bundle.json"))  # type: ignore[arg-type]
+    metadata = write_tuple_bundle_from_seed(seed_out / BUNDLE_NAME, bundle_path, image_kind=image_kind)
     metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
     manifest = tuple_dir / f"{image_kind}-tuple.json"
     manifest.write_text(
@@ -2948,6 +3048,64 @@ def write_extra_tuple_manifest_from_seed(root: Path, seed_out: Path, *, image_ki
         + "\n"
     )
     return manifest
+
+
+def write_tuple_bundle_from_seed(seed_bundle: Path, bundle_path: Path, *, image_kind: str) -> dict:
+    entries: dict[str, tuple[bytes, int]] = {}
+    with tarfile.open(seed_bundle, "r:gz") as tar:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            data = tar.extractfile(member).read()  # type: ignore[union-attr]
+            entries[member.name] = (data, member.mode & 0o777)
+
+    guest_manifest_path = "artifacts/output.ext4.manifest.json"
+    guest_manifest = json.loads(entries[guest_manifest_path][0].decode("utf-8"))
+    guest_manifest["image_kind"] = image_kind
+    guest_manifest_bytes = (json.dumps(guest_manifest, indent=2, sort_keys=True) + "\n").encode()
+    entries[guest_manifest_path] = (guest_manifest_bytes, entries[guest_manifest_path][1])
+    guest_manifest_sha = sha256_bytes(guest_manifest_bytes)
+
+    receipt_path = "artifacts/output.ext4.build-receipt.json"
+    receipt = json.loads(entries[receipt_path][0].decode("utf-8"))
+    receipt["manifest_sha256"] = guest_manifest_sha
+    receipt_bytes = (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode()
+    entries[receipt_path] = (receipt_bytes, entries[receipt_path][1])
+
+    metadata = json.loads(entries["bundle.json"][0].decode("utf-8"))
+    metadata["image_kind"] = image_kind
+    for row in metadata["files"]:
+        if row["path"] == guest_manifest_path:
+            row["sha256"] = guest_manifest_sha
+        if row["path"] == receipt_path:
+            row["sha256"] = sha256_bytes(receipt_bytes)
+    metadata_bytes = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode()
+    entries["bundle.json"] = (metadata_bytes, entries["bundle.json"][1])
+
+    sums = parse_sha256sum_bytes(entries["SHA256SUMS"][0])
+    sums[guest_manifest_path] = guest_manifest_sha
+    sums[receipt_path] = sha256_bytes(receipt_bytes)
+    sums["bundle.json"] = sha256_bytes(metadata_bytes)
+    sums_text = "".join(f"{sums[name]}  {name}\n" for name in sorted(sums))
+    entries["SHA256SUMS"] = (sums_text.encode(), entries["SHA256SUMS"][1])
+
+    with tarfile.open(bundle_path, "w:gz") as tar:
+        for name, (data, mode) in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = mode
+            tar.addfile(info, fileobj=BytesReader(data))
+    return metadata
+
+
+def parse_sha256sum_bytes(data: bytes) -> dict[str, str]:
+    sums: dict[str, str] = {}
+    for line in data.decode("utf-8").splitlines():
+        if not line.strip():
+            continue
+        digest, path = line.split(maxsplit=1)
+        sums[path.strip()] = digest
+    return sums
 
 
 def bootstrap_selector_lines_for_index(out_dir: Path, index: dict) -> list[str]:
@@ -3029,6 +3187,25 @@ def replace_bundle_m80_for_install(out_dir: Path, script_text: str) -> None:
     rewrite_bootstrap_selector_asset_field(out_dir, "size_bytes", str(bundle_size))
     write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets_for_index(out_dir))
     write_integrity_material(out_dir)
+
+
+def rewrite_release_tuple_bundle(out_dir: Path, *, image_kind: str, payload_updates: dict[str, object]) -> None:
+    index = json.loads((out_dir / ASSET_INDEX_NAME).read_text())
+    matching = [asset for asset in index["assets"] if asset["image_kind"] == image_kind]
+    if len(matching) != 1:
+        raise AssertionError(f"expected exactly one {image_kind} tuple")
+    asset = matching[0]
+    bundle_path = out_dir / asset["name"]
+    rewritten = out_dir / f"rewritten-{asset['name']}"
+    rewrite_tar(bundle_path, rewritten, payload_updates=payload_updates)
+    rewritten.replace(bundle_path)
+    bundle_path.chmod(0o644)
+    asset["sha256"] = sha256(bundle_path)
+    asset["size_bytes"] = bundle_path.stat().st_size
+    rewrite_asset_index(out_dir, index)
+    write_sha256_sidecar(out_dir / asset["checksum_name"], bundle_path, asset["name"])
+    rewrite_bootstrap_selector(out_dir, bootstrap_selector_lines_for_index(out_dir, index))
+    write_public_sha256s(out_dir / "SHA256SUMS", public_sha256_assets_for_index(out_dir))
 
 
 def public_sha256_assets_for_index(out_dir: Path) -> list[tuple[str, Path]]:
@@ -3771,6 +3948,12 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_bytes(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
 
 
 def write_sha256_sidecar(path: Path, asset: Path, asset_name: str) -> None:

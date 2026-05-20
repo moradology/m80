@@ -125,16 +125,23 @@ bundle metadata that omits the install-provenance requirement.
 
 ## Verification
 
-`scripts/verify-release-bundle.py --verify-sidecars` validates the tarball and
-adjacent dist sidecars. Regression coverage in `scripts/test-release-bundle.py`
-checks successful packaging plus rejection of missing required paths, duplicate
-paths, unexpected paths, wrong modes, stale versions, metadata hash mismatches,
-schema/protocol/receipt mismatches, missing install-provenance metadata, and
-stale public checksum sidecars. It also checks the asset-index path for missing
-assets, wrong tuple, wrong hash, duplicate tuple, stale version, a missing index
-checksum sidecar, bootstrap-selector drift from the JSON index, and build
-manifest drift from the bundle metadata, source commit, `Cargo.lock`, or
-builder-material contract.
+`scripts/verify-release-bundle.py --verify-sidecars` validates the default
+tarball, adjacent dist sidecars, and every bundle named by the release asset
+index. Each asset-index row supplies the tuple metadata used to re-run the
+tar-internal bundle contract, so a non-default image kind can have fresh public
+checksums, a fresh selector row, and fresh integrity subjects while still
+failing publish verification if its tar members disagree with `bundle.json`,
+the guest manifest, the build receipt, or internal `SHA256SUMS`.
+
+Regression coverage in `scripts/test-release-bundle.py` checks successful
+packaging plus rejection of missing required paths, duplicate paths, unexpected
+paths, wrong modes, stale versions, metadata hash mismatches,
+schema/protocol/receipt mismatches, missing install-provenance metadata, stale
+public checksum sidecars, and non-default tuple tar corruption. It also checks
+the asset-index path for missing assets, wrong tuple, wrong hash, duplicate
+tuple, stale version, a missing index checksum sidecar, bootstrap-selector drift
+from the JSON index, and build manifest drift from the bundle metadata, source
+commit, `Cargo.lock`, or builder-material contract.
 
 `scripts/verify-release-integrity.py` validates the release-integrity predicate
 used by the signing/attestation lane. That predicate is generated from the same

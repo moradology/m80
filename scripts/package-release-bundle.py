@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import tomllib
@@ -282,6 +283,7 @@ def main() -> int:
             out_dir=out_dir,
             release_tag=args.release_tag,
             package_version=workspace_version,
+            repo_root=repo_root,
             default_artifact=ReleaseTupleArtifact(
                 bundle_name=BUNDLE_NAME,
                 bundle_path=tarball,
@@ -677,6 +679,7 @@ def assemble_tuple_artifacts(
     out_dir: Path,
     release_tag: str,
     package_version: str,
+    repo_root: Path,
     default_artifact: ReleaseTupleArtifact,
     extra_manifests: list[Path],
 ) -> list[ReleaseTupleArtifact]:
@@ -685,6 +688,7 @@ def assemble_tuple_artifacts(
             default_artifact,
             release_tag=release_tag,
             package_version=package_version,
+            repo_root=repo_root,
         )
     ]
     reserved_names = core_release_dist_names()
@@ -698,6 +702,7 @@ def assemble_tuple_artifacts(
                 copied,
                 release_tag=release_tag,
                 package_version=package_version,
+                repo_root=repo_root,
             )
         )
         reserve_tuple_dist_names(copied, reserved_names)
@@ -823,6 +828,7 @@ def validate_tuple_artifact(
     *,
     release_tag: str,
     package_version: str,
+    repo_root: Path,
 ) -> ReleaseTupleArtifact:
     require_dist_asset_name(artifact.bundle_name, "bundle_name")
     require_dist_asset_name(artifact.metadata_name, "metadata_name")
@@ -850,6 +856,7 @@ def validate_tuple_artifact(
     require(metadata["target"] == f"{metadata['os']}-{metadata['arch']}", f"tuple metadata target mismatch for {artifact.metadata_name}")
     require(isinstance(metadata.get("files"), list) and metadata["files"], f"tuple metadata missing files for {artifact.metadata_name}")
     validate_tuple_bundle_metadata(artifact)
+    verify_tuple_bundle_contract(artifact, release_tag=release_tag, repo_root=repo_root)
     write_sha256_sidecar(artifact.bundle_path.with_name(f"{artifact.bundle_name}.sha256"), artifact.bundle_path, artifact.bundle_name)
     write_sha256_sidecar(
         artifact.metadata_path.with_name(f"{artifact.metadata_name}.sha256"),
@@ -857,6 +864,32 @@ def validate_tuple_artifact(
         artifact.metadata_name,
     )
     return artifact
+
+
+def verify_tuple_bundle_contract(artifact: ReleaseTupleArtifact, *, release_tag: str, repo_root: Path) -> None:
+    verifier = Path(__file__).with_name("verify-release-bundle.py")
+    output = subprocess.run(
+        [
+            sys.executable,
+            str(verifier),
+            str(artifact.bundle_path),
+            "--release-tag",
+            release_tag,
+            "--target",
+            artifact.metadata["target"],
+            "--image-kind",
+            artifact.metadata["image_kind"],
+            "--repo-root",
+            str(repo_root),
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if output.returncode != 0:
+        detail = output.stderr.strip() or output.stdout.strip()
+        raise SystemExit(f"tuple bundle contract verification failed for {artifact.bundle_name}: {detail}")
 
 
 def validate_tuple_bundle_metadata(artifact: ReleaseTupleArtifact) -> None:

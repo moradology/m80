@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -43,6 +44,9 @@ BOOTSTRAP_SELECTOR_COLUMNS = [
     "m80_version",
 ]
 SELECTOR_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+-]+$")
+DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
+TARGET_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_]+$")
+IMAGE_KIND_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 APT_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 PAYLOAD_PATHS = {
@@ -109,6 +113,38 @@ BUILD_MANIFEST_FIELDS = {
 }
 APT_PACKAGE_FIELDS = {"name", "version"}
 OCI_SHA256_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+ASSET_INDEX_FIELDS = {
+    "name",
+    "url",
+    "sha256",
+    "size_bytes",
+    "metadata_name",
+    "metadata_sha256",
+    "checksum_name",
+    "signature_name",
+    "attestation_name",
+    "target",
+    "os",
+    "arch",
+    "image_kind",
+    "release_tag",
+    "m80_version",
+    "guest_protocol_version",
+    "manifest_schema_version",
+    "expected_firecracker_version",
+}
+
+
+@dataclass(frozen=True)
+class BundleVerification:
+    bundle: Path
+    files: dict[str, dict]
+    metadata: dict
+    bundle_metadata: bytes
+    target: str
+    image_kind: str
+    target_os: str
+    target_arch: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -128,16 +164,43 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    target_os, target_arch = supported_target_parts(args.target)
-    require(
-        args.image_kind == SUPPORTED_IMAGE_KIND,
-        f"unsupported image kind: expected {SUPPORTED_IMAGE_KIND}, got {args.image_kind}",
+    verification = verify_bundle_contract(
+        args.bundle,
+        release_tag=args.release_tag,
+        target=args.target,
+        image_kind=args.image_kind,
+        repo_root=args.repo_root,
     )
-    workspace_version = workspace_package_version(args.repo_root)
-    expected_tag = f"v{workspace_version}"
-    require(args.release_tag == expected_tag, f"release tag mismatch: expected {expected_tag}, got {args.release_tag}")
 
-    with tarfile.open(args.bundle, "r:gz") as tar:
+    if args.verify_sidecars:
+        verify_sidecars(
+            verification,
+            repo_root=args.repo_root,
+            release_tag=args.release_tag,
+        )
+
+    print(f"verified {args.bundle}")
+    return 0
+
+
+def verify_bundle_contract(
+    bundle: Path,
+    *,
+    release_tag: str,
+    target: str,
+    image_kind: str,
+    repo_root: Path,
+) -> BundleVerification:
+    target_os, target_arch = target_parts(target)
+    require(
+        isinstance(image_kind, str) and IMAGE_KIND_RE.fullmatch(image_kind) is not None,
+        f"image kind invalid: {image_kind}",
+    )
+    workspace_version = workspace_package_version(repo_root)
+    expected_tag = f"v{workspace_version}"
+    require(release_tag == expected_tag, f"release tag mismatch: expected {expected_tag}, got {release_tag}")
+
+    with tarfile.open(bundle, "r:gz") as tar:
         files = read_regular_files(tar)
 
     paths = set(files)
@@ -160,16 +223,17 @@ def main() -> int:
             f"bundle mode mismatch for {path}: expected {expected_mode:o}, got {actual_mode:o}",
         )
 
-    metadata = json.loads(files["bundle.json"]["data"].decode("utf-8"))
+    bundle_metadata = files["bundle.json"]["data"]
+    metadata = json.loads(bundle_metadata.decode("utf-8"))
     require(metadata.get("schema_version") == BUNDLE_SCHEMA_VERSION, "unsupported bundle schema_version")
-    require(metadata.get("release_tag") == args.release_tag, "bundle release_tag mismatch")
-    require(metadata.get("m80_version") == args.release_tag, "bundle m80_version mismatch")
+    require(metadata.get("release_tag") == release_tag, "bundle release_tag mismatch")
+    require(metadata.get("m80_version") == release_tag, "bundle m80_version mismatch")
     require(metadata.get("package_version") == workspace_version, "bundle package_version mismatch")
     require(metadata.get("guestd_package_version") == workspace_version, "bundle guestd_package_version mismatch")
-    require(metadata.get("target") == args.target, "bundle target mismatch")
+    require(metadata.get("target") == target, "bundle target mismatch")
     require(metadata.get("os") == target_os, "bundle os mismatch")
     require(metadata.get("arch") == target_arch, "bundle arch mismatch")
-    require(metadata.get("image_kind") == args.image_kind, "bundle image_kind mismatch")
+    require(metadata.get("image_kind") == image_kind, "bundle image_kind mismatch")
     require(isinstance(metadata.get("manifest_schema_version"), int), "bundle manifest_schema_version missing")
     require(
         isinstance(metadata.get("build_receipt_schema_version"), int),
@@ -203,21 +267,16 @@ def main() -> int:
         actual = sha256_bytes(files[path]["data"])
         require(actual == expected, f"SHA256SUMS hash mismatch for {path}")
 
-    if args.verify_sidecars:
-        verify_sidecars(
-            args.bundle,
-            files["bundle.json"]["data"],
-            metadata,
-            repo_root=args.repo_root,
-            release_tag=args.release_tag,
-            target=args.target,
-            image_kind=args.image_kind,
-            target_os=target_os,
-            target_arch=target_arch,
-        )
-
-    print(f"verified {args.bundle}")
-    return 0
+    return BundleVerification(
+        bundle=bundle,
+        files=files,
+        metadata=metadata,
+        bundle_metadata=bundle_metadata,
+        target=target,
+        image_kind=image_kind,
+        target_os=target_os,
+        target_arch=target_arch,
+    )
 
 
 def read_regular_files(tar: tarfile.TarFile) -> dict[str, dict]:
@@ -234,9 +293,19 @@ def read_regular_files(tar: tarfile.TarFile) -> dict[str, dict]:
     return files
 
 
-def supported_target_parts(target: str) -> tuple[str, str]:
-    require(target == SUPPORTED_TARGET, f"unsupported target: expected {SUPPORTED_TARGET}, got {target}")
-    return ("linux", "x86_64")
+def target_parts(target: str) -> tuple[str, str]:
+    parts = target.split("-")
+    require(len(parts) == 2, f"target must be OS-ARCH: {target}")
+    target_os, target_arch = parts
+    require(
+        TARGET_COMPONENT_RE.fullmatch(target_os) is not None,
+        f"target os invalid: {target_os}",
+    )
+    require(
+        TARGET_COMPONENT_RE.fullmatch(target_arch) is not None,
+        f"target arch invalid: {target_arch}",
+    )
+    return target_os, target_arch
 
 
 def verify_compatibility_tuple(files: dict[str, dict], metadata: dict) -> None:
@@ -256,10 +325,11 @@ def verify_compatibility_tuple(files: dict[str, dict], metadata: dict) -> None:
         "bundle expected_firecracker_version mismatch",
     )
     require(metadata["image_kind"] == guest_manifest.get("image_kind"), "bundle image_kind/manifest mismatch")
-    require(
-        guest_manifest.get("source_rootfs_image") is None and guest_manifest.get("source_rootfs_sha256") is None,
-        "minimal guest manifest must not record source rootfs artifacts",
-    )
+    if metadata["image_kind"] == SUPPORTED_IMAGE_KIND:
+        require(
+            guest_manifest.get("source_rootfs_image") is None and guest_manifest.get("source_rootfs_sha256") is None,
+            "minimal guest manifest must not record source rootfs artifacts",
+        )
     require(
         receipt.get("manifest_sha256") == sha256_bytes(files["artifacts/output.ext4.manifest.json"]["data"]),
         "build receipt manifest_sha256 mismatch",
@@ -383,17 +453,13 @@ def parse_sha256s(text: str) -> dict[str, str]:
 
 
 def verify_sidecars(
-    bundle: Path,
-    bundle_metadata: bytes,
-    metadata: dict,
+    default_bundle: BundleVerification,
     *,
     repo_root: Path,
     release_tag: str,
-    target: str,
-    image_kind: str,
-    target_os: str,
-    target_arch: str,
 ) -> None:
+    bundle = default_bundle.bundle
+    metadata = default_bundle.metadata
     sidecar_dir = bundle.parent
     require(bundle.name == BUNDLE_NAME, f"bundle filename mismatch: expected {BUNDLE_NAME}, got {bundle.name}")
     install_asset = sidecar_dir / INSTALL_NAME
@@ -415,7 +481,7 @@ def verify_sidecars(
     verify_public_mode(bootstrap_selector, 0o644)
     verify_public_mode(build_manifest, 0o644)
     verify_public_mode(public_sums, 0o644)
-    require(metadata_asset.read_bytes() == bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
+    require(metadata_asset.read_bytes() == default_bundle.bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
 
     expected_assets = {
         BUNDLE_NAME: bundle,
@@ -430,14 +496,9 @@ def verify_sidecars(
 
     index = verify_asset_index(
         asset_index,
-        bundle=bundle,
+        bundle=default_bundle,
         metadata_asset=metadata_asset,
-        metadata=metadata,
         release_tag=release_tag,
-        target=target,
-        image_kind=image_kind,
-        target_os=target_os,
-        target_arch=target_arch,
     )
     expected_public_assets = expected_public_assets_from_index(index, sidecar_dir, expected_assets)
     sums = parse_sha256s(public_sums.read_text())
@@ -455,9 +516,15 @@ def verify_sidecars(
         metadata=metadata,
         repo_root=repo_root,
         release_tag=release_tag,
-        target=target,
-        image_kind=image_kind,
+        target=default_bundle.target,
+        image_kind=default_bundle.image_kind,
         sidecar_dir=sidecar_dir,
+    )
+    verify_asset_index_tuple_bundles(
+        index,
+        sidecar_dir=sidecar_dir,
+        repo_root=repo_root,
+        release_tag=release_tag,
     )
 
 
@@ -465,8 +532,7 @@ def expected_public_assets_from_index(index: dict, sidecar_dir: Path, core_asset
     expected: dict[str, Path] = {}
 
     def add(name: object, path: Path) -> None:
-        require(isinstance(name, str) and name, "public SHA256SUMS asset name invalid")
-        require("/" not in name and name not in {".", ".."}, f"public SHA256SUMS asset name must be flat: {name}")
+        name = require_dist_asset_name(name, "public SHA256SUMS asset name")
         previous = expected.get(name)
         require(
             previous is None or previous == path,
@@ -478,18 +544,16 @@ def expected_public_assets_from_index(index: dict, sidecar_dir: Path, core_asset
     require(isinstance(assets, list), "asset index assets must be a list")
     for asset in assets:
         require(isinstance(asset, dict), "asset index asset must be an object")
-        name = asset.get("name")
-        require(isinstance(name, str) and name, "asset index name invalid")
-        checksum_name = asset.get("checksum_name")
-        require(isinstance(checksum_name, str) and checksum_name, "asset index checksum_name invalid")
+        name = require_dist_asset_name(asset.get("name"), "asset index name")
+        checksum_name = require_dist_asset_name(asset.get("checksum_name"), "asset index checksum_name")
         add(name, sidecar_dir / name)
         add(checksum_name, sidecar_dir / checksum_name)
-        metadata_name = asset.get("metadata_name")
-        require(isinstance(metadata_name, str) and metadata_name, "asset index metadata_name invalid")
+        metadata_name = require_dist_asset_name(asset.get("metadata_name"), "asset index metadata_name")
         add(metadata_name, sidecar_dir / metadata_name)
         add(f"{metadata_name}.sha256", sidecar_dir / f"{metadata_name}.sha256")
         signature_name = asset.get("signature_name")
         if signature_name is not None:
+            signature_name = require_dist_asset_name(signature_name, "asset index signature_name")
             add(signature_name, sidecar_dir / signature_name)
     for name, path in core_assets.items():
         add(name, path)
@@ -500,14 +564,9 @@ def expected_public_assets_from_index(index: dict, sidecar_dir: Path, core_asset
 def verify_asset_index(
     asset_index: Path,
     *,
-    bundle: Path,
+    bundle: BundleVerification,
     metadata_asset: Path,
-    metadata: dict,
     release_tag: str,
-    target: str,
-    image_kind: str,
-    target_os: str,
-    target_arch: str,
 ) -> dict:
     index = json.loads(asset_index.read_text())
     require(index.get("schema_version") == ASSET_INDEX_SCHEMA_VERSION, "unsupported asset index schema_version")
@@ -518,25 +577,81 @@ def verify_asset_index(
         asset
         for asset in assets
         if isinstance(asset, dict)
-        and asset.get("os") == target_os
-        and asset.get("arch") == target_arch
-        and asset.get("image_kind") == image_kind
+        and asset.get("os") == bundle.target_os
+        and asset.get("arch") == bundle.target_arch
+        and asset.get("image_kind") == bundle.image_kind
     ]
     require(default_assets, "asset index missing default bundle")
     require(len(default_assets) == 1, "asset index duplicate default bundle")
+    require_unique_asset_index_tuples(assets)
     asset = default_assets[0]
+    verify_asset_row_matches_bundle(
+        asset,
+        bundle=bundle.bundle,
+        metadata_asset=metadata_asset,
+        metadata=bundle.metadata,
+        release_tag=release_tag,
+        tuple_label=format_tuple((bundle.target_os, bundle.target_arch, bundle.image_kind)),
+    )
+    return index
+
+
+def require_unique_asset_index_tuples(assets: list) -> None:
+    seen: set[tuple[str, str, str]] = set()
+    for asset in assets:
+        require(isinstance(asset, dict), "asset index asset must be an object")
+        require_dist_asset_name(asset.get("name"), "asset index name")
+        require_dist_asset_name(asset.get("metadata_name"), "asset index metadata_name")
+        require_dist_asset_name(asset.get("checksum_name"), "asset index checksum_name")
+        if asset.get("signature_name") is not None:
+            require_dist_asset_name(asset.get("signature_name"), "asset index signature_name")
+        if asset.get("attestation_name") is not None:
+            require_dist_asset_name(asset.get("attestation_name"), "asset index attestation_name")
+        target_os = asset.get("os")
+        target_arch = asset.get("arch")
+        image_kind = asset.get("image_kind")
+        require(isinstance(target_os, str) and target_os, "asset index os missing")
+        require(isinstance(target_arch, str) and target_arch, "asset index arch missing")
+        require(isinstance(image_kind, str) and image_kind, "asset index image_kind missing")
+        tuple_key = (target_os, target_arch, image_kind)
+        require(tuple_key not in seen, f"asset index duplicate tuple: {format_tuple(tuple_key)}")
+        seen.add(tuple_key)
+
+
+def require_dist_asset_name(value: object, label: str) -> str:
+    require(
+        isinstance(value, str)
+        and value
+        and "/" not in value
+        and value not in {".", ".."}
+        and DIST_ASSET_NAME_RE.fullmatch(value) is not None,
+        f"release dist asset name must be flat for {label}: {value}",
+    )
+    return value
+
+
+def verify_asset_row_matches_bundle(
+    asset: dict,
+    *,
+    bundle: Path,
+    metadata_asset: Path,
+    metadata: dict,
+    release_tag: str,
+    tuple_label: str,
+) -> None:
+    require_exact_fields(asset, ASSET_INDEX_FIELDS, f"asset index asset {bundle.name}")
     expected = {
-        "name": BUNDLE_NAME,
-        "url": release_asset_url(release_tag, BUNDLE_NAME),
+        "name": bundle.name,
+        "url": release_asset_url(release_tag, bundle.name),
         "sha256": sha256_file(bundle),
         "size_bytes": bundle.stat().st_size,
-        "metadata_name": METADATA_NAME,
+        "metadata_name": metadata_asset.name,
         "metadata_sha256": sha256_file(metadata_asset),
-        "checksum_name": f"{BUNDLE_NAME}.sha256",
-        "target": target,
-        "os": target_os,
-        "arch": target_arch,
-        "image_kind": image_kind,
+        "checksum_name": f"{bundle.name}.sha256",
+        "target": metadata["target"],
+        "os": metadata["os"],
+        "arch": metadata["arch"],
+        "image_kind": metadata["image_kind"],
         "release_tag": release_tag,
         "m80_version": metadata["m80_version"],
         "guest_protocol_version": metadata["guest_protocol_version"],
@@ -544,15 +659,65 @@ def verify_asset_index(
         "expected_firecracker_version": metadata["expected_firecracker_version"],
     }
     for field, expected_value in expected.items():
-        require(asset.get(field) == expected_value, f"asset index {field} mismatch")
+        require(asset.get(field) == expected_value, f"asset index {field} mismatch for {tuple_label}")
     if asset.get("signature_name") is not None:
-        require(isinstance(asset.get("signature_name"), str) and asset["signature_name"], "asset index signature_name invalid")
+        require_dist_asset_name(asset.get("signature_name"), "asset index signature_name")
     if asset.get("attestation_name") is not None:
-        require(
-            isinstance(asset.get("attestation_name"), str) and asset["attestation_name"],
-            "asset index attestation_name invalid",
-        )
-    return index
+        require_dist_asset_name(asset.get("attestation_name"), "asset index attestation_name")
+
+
+def verify_asset_index_tuple_bundles(
+    index: dict,
+    *,
+    sidecar_dir: Path,
+    repo_root: Path,
+    release_tag: str,
+) -> None:
+    assets = index.get("assets")
+    require(isinstance(assets, list), "asset index assets must be a list")
+    for asset in assets:
+        require(isinstance(asset, dict), "asset index asset must be an object")
+        name = require_dist_asset_name(asset.get("name"), "asset index name")
+        target = require_nonempty_str(asset, "target", "asset index asset")
+        image_kind = require_nonempty_str(asset, "image_kind", "asset index asset")
+        target_os = require_nonempty_str(asset, "os", "asset index asset")
+        target_arch = require_nonempty_str(asset, "arch", "asset index asset")
+        tuple_label = format_tuple((target_os, target_arch, image_kind))
+        bundle_path = sidecar_dir / name
+        metadata_name = require_dist_asset_name(asset.get("metadata_name"), "asset index metadata_name")
+        metadata_path = sidecar_dir / metadata_name
+        checksum_name = require_dist_asset_name(asset.get("checksum_name"), "asset index checksum_name")
+        try:
+            require(bundle_path.is_file(), f"asset index bundle missing: {name}")
+            require(metadata_path.is_file(), f"asset index metadata missing: {metadata_name}")
+            verify_public_mode(bundle_path, 0o644)
+            verify_public_mode(metadata_path, 0o644)
+            verify_single_sha256(sidecar_dir / checksum_name, name, bundle_path)
+            verify_single_sha256(sidecar_dir / f"{metadata_name}.sha256", metadata_name, metadata_path)
+            verified = verify_bundle_contract(
+                bundle_path,
+                release_tag=release_tag,
+                target=target,
+                image_kind=image_kind,
+                repo_root=repo_root,
+            )
+            require(
+                metadata_path.read_bytes() == verified.bundle_metadata,
+                f"tuple metadata sidecar does not match bundled bundle.json: {metadata_name}",
+            )
+            verify_asset_row_matches_bundle(
+                asset,
+                bundle=bundle_path,
+                metadata_asset=metadata_path,
+                metadata=verified.metadata,
+                release_tag=release_tag,
+                tuple_label=tuple_label,
+            )
+        except SystemExit as exc:
+            detail = str(exc)
+            raise SystemExit(
+                f"asset index tuple {tuple_label} bundle {name} failed verification: {detail}"
+            ) from exc
 
 
 def verify_build_manifest(

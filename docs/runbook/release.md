@@ -230,6 +230,11 @@ SHA256SUMS
 Multi-tuple releases add each extra row's bundle, bundle checksum sidecar,
 metadata sidecar, and metadata checksum sidecar to that same subject set and to
 public `SHA256SUMS`. The current assembler emits no detached signature files.
+The asset index, selector, public `SHA256SUMS`, and release-integrity predicate
+prove the public dist rows. Full tar contract verification is separate:
+`scripts/verify-release-bundle.py --verify-sidecars` reopens every bundle named
+by the asset index and checks its internal `bundle.json`, guest manifest, build
+receipt, and bundled `SHA256SUMS` before publish.
 
 ## Asset Index
 
@@ -263,11 +268,15 @@ not a quickstart-command change. Use this checklist:
    `m80-bootstrap-selector.tsv`, their checksum sidecars, public `SHA256SUMS`,
    and `m80-release-integrity.json`; do not edit generated JSON or TSV by hand.
 4. Before publishing or promoting the multi-row index, run
+   `python3 scripts/verify-release-bundle.py <default-bundle> --release-tag <tag> --verify-sidecars`
+   against the exact dist directory so every asset-index row's tar internals are
+   checked.
+5. Then run
    `python3 scripts/verify-release-integrity.py ... --dist-dir <release-dist>`
    against the exact dist directory.
-5. Extend the release proof fixture for the new tuple or image kind before
+6. Extend the release proof fixture for the new tuple or image kind before
    publishing it as supported.
-6. Update docs only where the supported tuple matrix or image-kind behavior
+7. Update docs only where the supported tuple matrix or image-kind behavior
    changes. The common README latest and pinned install snippets stay:
    `curl .../install.sh | sudo sh`.
 
