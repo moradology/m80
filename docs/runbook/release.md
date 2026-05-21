@@ -114,6 +114,11 @@ tag, every installer-consumed public asset URL, and concrete docs-linked
 release install URLs. Failures name the URL, release tag, asset, freshness role,
 curl exit code, and source such as `docs:README.md:<line>`, so stale docs or
 missing public assets are repairable without rerunning a privileged smoke.
+`.github/workflows/latest-freshness.yml` runs this verifier on a scheduled and
+manual read-only hostless lane. Its `latest-freshness-public` concurrency group
+uses `cancel-in-progress: false` so an overlapping run does not discard the
+older run's evidence, and it uploads proof, stdout, and stderr artifacts with
+`if: always()`.
 Until the fuller freshness failure-policy automation in `m80-o3uh9.21.2`
 lands, this lane does not page by itself: a failure blocks a green freshness
 status and the next release/latest promotion, and the operator files or updates

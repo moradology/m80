@@ -70,6 +70,99 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("release workflow must declare top-level concurrency.group", result.stderr)
 
+    def test_freshness_workflow_clean_scheduled_manual_artifact_shape_is_allowed(self) -> None:
+        with workflow_dir("latest-freshness.yml", latest_freshness_workflow()) as root:
+            result = run_lint(root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_freshness_workflow_requires_schedule_and_manual_dispatch(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(
+                events="""
+                workflow_dispatch:
+                """
+            ),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness workflow must declare a schedule trigger", result.stderr)
+
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(
+                events="""
+                schedule:
+                  - cron: "17 4 * * *"
+                """
+            ),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness workflow must declare workflow_dispatch", result.stderr)
+
+    def test_freshness_workflow_requires_read_only_permissions(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(job_permissions="contents: write"),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job hostless-public-freshness must not grant contents: write", result.stderr)
+
+    def test_freshness_workflow_keeps_evidence_runs_uncanceled(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(cancel_in_progress="true"),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness workflow concurrency must set cancel-in-progress: false", result.stderr)
+
+    def test_freshness_workflow_requires_always_artifact_upload(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(upload_artifact=False),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness workflow must upload proof/log artifacts with if: always()", result.stderr)
+
+    def test_freshness_workflow_requires_stderr_artifact_upload(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(upload_stderr_artifact=False),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness workflow must upload proof/log artifacts with if: always()", result.stderr)
+
+    def test_freshness_workflow_rejects_mutation_commands_and_privileged_runner(self) -> None:
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(command="gh release upload v0.1.0 /tmp/asset"),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness workflow must not run release mutation command", result.stderr)
+
+        with workflow_dir(
+            "latest-freshness.yml",
+            latest_freshness_workflow(runs_on="[self-hosted, real-kvm]"),
+        ) as root:
+            result = run_lint(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness job hostless-public-freshness must stay hostless", result.stderr)
+
     def test_release_write_token_is_publish_only(self) -> None:
         with workflow_dir(
             "release-artifacts.yml",
@@ -874,6 +967,74 @@ def publish_authority_workflow() -> str:
         steps:
           - uses: actions/checkout@v6
     """
+
+
+def latest_freshness_workflow(
+    *,
+    events: str = """
+      schedule:
+        - cron: "17 4 * * *"
+      workflow_dispatch:
+    """,
+    cancel_in_progress: str = "false",
+    job_permissions: str = "contents: read",
+    runs_on: str = "ubuntu-latest",
+    command: str = (
+        "python3 scripts/release_freshness.py --json "
+        "--proof-out /tmp/m80-latest-freshness/m80-latest-freshness-proof.json"
+    ),
+    upload_artifact: bool = True,
+    upload_stderr_artifact: bool = True,
+) -> str:
+    events_block = textwrap.indent(textwrap.dedent(events).strip(), "  ")
+    stderr_artifact = (
+        "\n                      /tmp/m80-latest-freshness/m80-latest-freshness.stderr"
+        if upload_stderr_artifact
+        else ""
+    )
+    upload_step = (
+        textwrap.indent(
+            textwrap.dedent(
+                f"""
+                - name: Upload latest freshness evidence
+                  if: always()
+                  uses: actions/upload-artifact@v4
+                  with:
+                    path: |
+                      /tmp/m80-latest-freshness/m80-latest-freshness-proof.json
+                      /tmp/m80-latest-freshness/m80-latest-freshness.stdout{stderr_artifact}
+                    if-no-files-found: error
+                """
+            ).strip(),
+            "          ",
+        )
+        if upload_artifact
+        else ""
+    )
+    return f"""
+name: Latest freshness
+on:
+{events_block}
+permissions:
+  contents: read
+concurrency:
+  group: latest-freshness-public
+  cancel-in-progress: {cancel_in_progress}
+jobs:
+  hostless-public-freshness:
+    runs-on: {runs_on}
+    timeout-minutes: 10
+    permissions:
+      {job_permissions}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run public latest freshness verifier
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/m80-latest-freshness
+          {command}
+{upload_step}
+"""
 
 
 class workflow_dir:

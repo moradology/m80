@@ -67,6 +67,8 @@ def lint_workflow_dir(workflow_dir: Path) -> list[str]:
         errors.extend(lint_job_permissions(path, lines, release_workflow=release_workflow))
         errors.extend(lint_attestation_permissions(path, lines, release_workflow=release_workflow))
         errors.extend(lint_multiline_run_block_strictness(path, lines))
+        if is_freshness_workflow(path):
+            errors.extend(lint_freshness_workflow(path, text, lines))
         if release_workflow:
             errors.extend(lint_release_concurrency(path, lines))
             errors.extend(lint_release_job_timeouts(path, lines))
@@ -272,6 +274,40 @@ def lint_release_job_timeouts(path: Path, lines: list[str]) -> list[str]:
     return errors
 
 
+def lint_freshness_workflow(path: Path, text: str, lines: list[str]) -> list[str]:
+    errors: list[str] = []
+    if not has_schedule_event(lines):
+        errors.append(f"{path}: freshness workflow must declare a schedule trigger")
+    if not has_workflow_dispatch_event(lines):
+        errors.append(f"{path}: freshness workflow must declare workflow_dispatch")
+    if top_level_concurrency_cancel_in_progress(lines) != "false":
+        errors.append(f"{path}: freshness workflow concurrency must set cancel-in-progress: false")
+    if "scripts/release_freshness.py" not in text:
+        errors.append(f"{path}: freshness workflow must invoke scripts/release_freshness.py")
+    if not has_always_artifact_upload(lines):
+        errors.append(f"{path}: freshness workflow must upload proof/log artifacts with if: always()")
+    for forbidden in [
+        "gh release upload",
+        "gh release edit",
+        "gh release delete",
+        "gh api --method POST",
+        "gh api --method PATCH",
+        "gh api --method DELETE",
+    ]:
+        if forbidden in text:
+            errors.append(f"{path}: freshness workflow must not run release mutation command: {forbidden}")
+    for job_id, start, end in job_blocks(lines):
+        block = lines[start:end]
+        for offset, line in enumerate(block):
+            if "runs-on:" not in line:
+                continue
+            if any(token in line for token in ["self-hosted", "real-kvm", "privileged"]):
+                errors.append(
+                    f"{path}:{start + offset + 1}: freshness job {job_id} must stay hostless"
+                )
+    return errors
+
+
 def lint_timeout_budget(
     path: Path,
     *,
@@ -433,6 +469,45 @@ def top_level_concurrency_group(lines: list[str]) -> str | None:
     return None
 
 
+def top_level_concurrency_cancel_in_progress(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        if line != "concurrency:":
+            continue
+        for nested in lines[index + 1 :]:
+            if not nested.strip() or nested.lstrip().startswith("#"):
+                continue
+            if not nested.startswith("  "):
+                break
+            stripped = nested.strip()
+            if stripped.startswith("cancel-in-progress:"):
+                return stripped.split(":", 1)[1].strip()
+        return None
+    return None
+
+
+def has_schedule_event(lines: list[str]) -> bool:
+    return has_event(lines, "schedule")
+
+
+def has_workflow_dispatch_event(lines: list[str]) -> bool:
+    return has_event(lines, "workflow_dispatch")
+
+
+def has_event(lines: list[str], event: str) -> bool:
+    for index, line in enumerate(lines):
+        if line.startswith("on:") and event in line:
+            return True
+        if line.startswith("on:"):
+            for nested in lines[index + 1 :]:
+                if not nested.strip() or nested.lstrip().startswith("#"):
+                    continue
+                if not nested.startswith("  "):
+                    break
+                if nested.strip().startswith(f"{event}:"):
+                    return True
+    return False
+
+
 def has_pull_request_event(lines: list[str]) -> bool:
     for index, line in enumerate(lines):
         if line.startswith("on:") and "pull_request" in line:
@@ -448,6 +523,39 @@ def has_pull_request_event(lines: list[str]) -> bool:
     return False
 
 
+def has_always_artifact_upload(lines: list[str]) -> bool:
+    for index, line in enumerate(lines):
+        if "uses: actions/upload-artifact@" not in line:
+            continue
+        step_start = previous_step_index(lines, index)
+        if step_start is None:
+            continue
+        block_end = next_step_index(lines, index + 1)
+        step = "\n".join(lines[step_start:block_end])
+        required_artifacts = [
+            "m80-latest-freshness-proof.json",
+            "m80-latest-freshness.stdout",
+            "m80-latest-freshness.stderr",
+        ]
+        if "if: always()" in step and all(artifact in step for artifact in required_artifacts):
+            return True
+    return False
+
+
+def previous_step_index(lines: list[str], index: int) -> int | None:
+    for current in range(index, -1, -1):
+        if re.match(r"^\s{6}-\s", lines[current]):
+            return current
+    return None
+
+
+def next_step_index(lines: list[str], index: int) -> int:
+    for current in range(index, len(lines)):
+        if re.match(r"^\s{6}-\s", lines[current]):
+            return current
+    return len(lines)
+
+
 def is_trusted_first_party_action(repo: str) -> bool:
     return repo.startswith("actions/")
 
@@ -457,6 +565,10 @@ def workflow_needs_release_guards(path: Path) -> bool:
         token in path.name
         for token in ["release", "latest", "freshness", "proof", "publish"]
     )
+
+
+def is_freshness_workflow(path: Path) -> bool:
+    return "freshness" in path.name
 
 
 def job_uses_reusable_workflow(lines: list[str]) -> bool:

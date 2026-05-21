@@ -1,0 +1,114 @@
+name: Latest freshness
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: latest-freshness-public
+  cancel-in-progress: false
+
+env:
+  FRESHNESS_DIR: /tmp/m80-latest-freshness
+  FRESHNESS_PROOF: /tmp/m80-latest-freshness/m80-latest-freshness-proof.json
+  FRESHNESS_STDOUT: /tmp/m80-latest-freshness/m80-latest-freshness.stdout
+  FRESHNESS_STDERR: /tmp/m80-latest-freshness/m80-latest-freshness.stderr
+
+jobs:
+  hostless-public-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Prepare freshness evidence directory
+        run: |
+          set -euo pipefail
+          mkdir -p "$FRESHNESS_DIR"
+          : > "$FRESHNESS_STDOUT"
+          : > "$FRESHNESS_STDERR"
+          python3 - "$FRESHNESS_PROOF" <<'PY'
+          import json
+          import os
+          import sys
+
+          proof = {
+              "schema_version": 1,
+              "freshness_workflow_wiring": True,
+              "status": "not_started",
+              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+              "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+              "job": os.environ.get("GITHUB_JOB", ""),
+          }
+          with open(sys.argv[1], "w", encoding="utf-8") as fh:
+              json.dump(proof, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+
+      - uses: actions/checkout@v6
+
+      - name: Run public latest freshness verifier
+        run: |
+          set -euo pipefail
+          set +e
+          python3 scripts/release_freshness.py \
+            --docs-root . \
+            --json \
+            --proof-out "$FRESHNESS_PROOF" \
+            > "$FRESHNESS_STDOUT" \
+            2> "$FRESHNESS_STDERR"
+          status="$?"
+          set -e
+          if [ "$status" -ne 0 ]; then
+            should_write_failure_proof=0
+            if [ ! -s "$FRESHNESS_PROOF" ]; then
+              should_write_failure_proof=1
+            elif grep -q '"status": "not_started"' "$FRESHNESS_PROOF"; then
+              should_write_failure_proof=1
+            fi
+          fi
+          if [ "${should_write_failure_proof:-0}" -eq 1 ]; then
+            python3 - "$FRESHNESS_PROOF" "$status" "$FRESHNESS_STDERR" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          stderr = Path(sys.argv[3]).read_text(encoding="utf-8")
+          proof = {
+              "schema_version": 1,
+              "freshness_workflow_wiring": True,
+              "status": "failed",
+              "exit_status": int(sys.argv[2]),
+              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+              "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+              "job": os.environ.get("GITHUB_JOB", ""),
+              "stderr": stderr[-4000:],
+          }
+          with open(sys.argv[1], "w", encoding="utf-8") as fh:
+              json.dump(proof, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          PY
+          fi
+          cat "$FRESHNESS_STDOUT"
+          cat "$FRESHNESS_STDERR" >&2
+          exit "$status"
+
+      - name: Upload latest freshness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-latest-freshness-${{ github.run_id }}
+          path: |
+            /tmp/m80-latest-freshness/m80-latest-freshness-proof.json
+            /tmp/m80-latest-freshness/m80-latest-freshness.stdout
+            /tmp/m80-latest-freshness/m80-latest-freshness.stderr
+          if-no-files-found: error
