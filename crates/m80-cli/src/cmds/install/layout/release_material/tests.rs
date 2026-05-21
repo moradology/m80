@@ -9,6 +9,7 @@ use super::test_fixture::{
 };
 use super::*;
 
+mod fixture_harness;
 mod no_write;
 
 #[test]

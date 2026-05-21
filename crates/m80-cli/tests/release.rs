@@ -3,6 +3,9 @@
 #[path = "release/asset_index.rs"]
 mod asset_index;
 
+#[path = "release/direct_url_fixture_harness.rs"]
+mod direct_url_fixture_harness;
+
 #[path = "release/installer_input_contract.rs"]
 mod installer_input_contract;
 
