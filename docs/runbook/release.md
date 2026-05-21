@@ -411,6 +411,15 @@ the signed release integrity predicate or attestation bundle. The behavior
 contract lives in
 `docs/behaviors/release/publish-decision-receipt.md`.
 
+After upload, the publish job re-downloads the public release assets and writes
+`m80-release-remote-assets.json`. That inventory records the GitHub release id,
+remote asset ids, names, sizes, SHA256 digests, browser download URLs, and
+timestamps for the bytes GitHub is serving. The digest is computed from the
+re-downloaded file, not from the local dist directory. Missing metadata,
+duplicate asset names, stale bytes, or incomplete redownloads fail before any
+later latest-promotion gate can trust the remote state. The behavior contract
+lives in `docs/behaviors/release/remote-asset-inventory.md`.
+
 ## Quickstart Proof Artifact
 
 The release workflow writes `m80-quickstart-proof-hostless.json` into the

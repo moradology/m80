@@ -307,6 +307,22 @@ jobs:
             --require-exact-dist-public-assets
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
             > /tmp/m80-release-redownload/github-release.json
+          release_id="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("/tmp/m80-release-redownload/github-release.json").read_text())["id"])
+          PY
+          )"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+            > /tmp/m80-release-redownload/github-release-assets.json
+          scripts/release_remote_asset_inventory.py \
+            --redownload-dir /tmp/m80-release-redownload \
+            --manifest /tmp/m80-release-upload/m80-release-upload-manifest.json \
+            --release-metadata /tmp/m80-release-redownload/github-release.json \
+            --release-assets-metadata /tmp/m80-release-redownload/github-release-assets.json \
+            --release-tag "$GITHUB_REF_NAME" \
+            --write
           scripts/verify-install-handoff.py \
             /tmp/m80-release-redownload \
             --release-tag "$GITHUB_REF_NAME" \
@@ -338,6 +354,13 @@ jobs:
         with:
           name: m80-release-publish-decision-${{ github.run_id }}
           path: /tmp/m80-release-upload/m80-release-publish-decision.json
+          if-no-files-found: error
+
+      - name: Upload remote release asset inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-remote-assets-${{ github.run_id }}
+          path: /tmp/m80-release-redownload/m80-release-remote-assets.json
           if-no-files-found: error
 
       - name: Upload failed publish diagnostics

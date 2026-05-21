@@ -21,6 +21,7 @@ VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
 VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
 UPLOAD_MANIFEST = REPO_ROOT / "scripts" / "release_upload_manifest.py"
 PUBLISH_RECEIPT = REPO_ROOT / "scripts" / "release_publish_receipt.py"
+REMOTE_INVENTORY = REPO_ROOT / "scripts" / "release_remote_asset_inventory.py"
 WRITE_ATTESTATION_METADATA = REPO_ROOT / "scripts" / "write-release-attestation-metadata.py"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
@@ -39,6 +40,7 @@ INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
+REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
@@ -1260,6 +1262,24 @@ class ReleaseBundleTest(unittest.TestCase):
             workflow.index("--require-exact-dist-public-assets"),
             workflow.index('gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}"'),
         )
+        self.assertIn("scripts/release_remote_asset_inventory.py", workflow)
+        self.assertIn("--redownload-dir /tmp/m80-release-redownload", workflow)
+        self.assertIn("--release-metadata /tmp/m80-release-redownload/github-release.json", workflow)
+        self.assertIn("github-release-assets.json", workflow)
+        self.assertIn("gh api --paginate --slurp", workflow)
+        self.assertIn("--release-assets-metadata /tmp/m80-release-redownload/github-release-assets.json", workflow)
+        self.assertLess(
+            workflow.index('gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}"'),
+            workflow.index("gh api --paginate --slurp"),
+        )
+        self.assertLess(
+            workflow.index("gh api --paginate --slurp"),
+            workflow.index("scripts/release_remote_asset_inventory.py"),
+        )
+        self.assertLess(
+            workflow.index("scripts/release_remote_asset_inventory.py"),
+            workflow.index("scripts/verify-install-handoff.py"),
+        )
         self.assertNotIn(
             'gh release upload "$GITHUB_REF_NAME" \\\n            /tmp/m80-release-upload/',
             workflow,
@@ -1268,6 +1288,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("actions/download-artifact", workflow)
         self.assertIn("m80-release-publish-decision-${{ github.run_id }}", workflow)
         self.assertIn("/tmp/m80-release-upload/m80-release-publish-decision.json", workflow)
+        self.assertIn("m80-release-remote-assets-${{ github.run_id }}", workflow)
+        self.assertIn("/tmp/m80-release-redownload/m80-release-remote-assets.json", workflow)
         for name in [
             BUNDLE_NAME,
             f"{BUNDLE_NAME}.sha256",
@@ -1637,6 +1659,128 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("github-ref must be the release tag ref", result.stderr)
+
+    def test_remote_release_asset_inventory_writes_remote_byte_digests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            assets_metadata = write_remote_release_assets_metadata(metadata)
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", assets_metadata=assets_metadata)
+            inventory = json.loads((redownload / REMOTE_INVENTORY_NAME).read_text())
+            manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(inventory["schema_version"], 1)
+            self.assertEqual(inventory["kind"], "m80_release_remote_asset_inventory")
+            self.assertEqual(inventory["release_tag"], "v0.0.0")
+            self.assertEqual(inventory["release_id"], 9001)
+            self.assertEqual(
+                {asset["name"] for asset in inventory["assets"]},
+                {asset["name"] for asset in manifest["public_assets"]},
+            )
+            for asset in inventory["assets"]:
+                self.assertEqual(asset["sha256"], sha256(redownload / asset["name"]))
+                self.assertEqual(asset["size_bytes"], (redownload / asset["name"]).stat().st_size)
+                self.assertTrue(asset["download_url"].endswith(f"/releases/download/v0.0.0/{asset['name']}"))
+                self.assertIn("created_at", asset)
+                self.assertIn("updated_at", asset)
+
+    def test_remote_release_asset_inventory_rejects_duplicate_remote_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload, duplicate_first=True)
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("duplicate asset name", result.stderr)
+
+    def test_remote_release_asset_inventory_rejects_missing_remote_downloaded_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            missing = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())["public_assets"][0]["name"]
+            (redownload / missing).unlink()
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"downloaded bytes missing: {missing}", result.stderr)
+
+    def test_remote_release_asset_inventory_rejects_stale_local_only_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            omitted = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())["public_assets"][0]["name"]
+            metadata = write_remote_release_metadata(out_dir, redownload, omit_name=omitted)
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("remote release asset metadata set mismatch", result.stderr)
+            self.assertIn(omitted, result.stderr)
+
+    def test_remote_release_asset_inventory_rejects_remote_digest_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            stale = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())["public_assets"][0]["name"]
+            stale_path = redownload / stale
+            stale_path.write_bytes(b"x" * stale_path.stat().st_size)
+            refresh_remote_release_metadata_size(metadata, stale, (redownload / stale).stat().st_size)
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"remote release asset {stale} sha256 mismatch", result.stderr)
+
+    def test_remote_release_asset_inventory_rejects_missing_download_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            payload = json.loads(metadata.read_text())
+            missing = payload["assets"][0]["name"]
+            payload["assets"][0].pop("browser_download_url")
+            metadata.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"asset {missing} browser_download_url", result.stderr)
+
+    def test_remote_release_asset_inventory_rejects_duplicate_remote_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out_dir = release_upload_manifest_fixture(root)
+            redownload = root / "redownload"
+            copy_manifest_public_assets(out_dir, redownload)
+            metadata = write_remote_release_metadata(out_dir, redownload)
+            payload = json.loads(metadata.read_text())
+            payload["assets"][1]["id"] = payload["assets"][0]["id"]
+            metadata.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_remote_asset_inventory(redownload, out_dir, metadata, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("duplicate asset id", result.stderr)
 
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4276,6 +4420,59 @@ def copy_manifest_public_assets(source: Path, target: Path) -> None:
         shutil.copy2(source / asset["name"], target / asset["name"])
 
 
+def write_remote_release_metadata(
+    manifest_dir: Path,
+    redownload_dir: Path,
+    *,
+    omit_name: str | None = None,
+    duplicate_first: bool = False,
+) -> Path:
+    manifest = json.loads((manifest_dir / UPLOAD_MANIFEST_NAME).read_text())
+    assets = []
+    for index, asset in enumerate(manifest["public_assets"], start=1):
+        name = asset["name"]
+        if name == omit_name:
+            continue
+        path = redownload_dir / name
+        assets.append(
+            {
+                "id": 1000 + index,
+                "name": name,
+                "size": path.stat().st_size,
+                "browser_download_url": f"https://github.com/moradology/m80/releases/download/v0.0.0/{name}",
+                "created_at": "2026-05-21T00:00:00Z",
+                "updated_at": "2026-05-21T00:00:01Z",
+            }
+        )
+    if duplicate_first and assets:
+        duplicate = dict(assets[0])
+        duplicate["id"] = 9999
+        assets.append(duplicate)
+    metadata = {
+        "id": 9001,
+        "tag_name": "v0.0.0",
+        "assets": assets,
+    }
+    path = redownload_dir / "github-release.json"
+    path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def write_remote_release_assets_metadata(metadata_path: Path) -> Path:
+    metadata = json.loads(metadata_path.read_text())
+    path = metadata_path.with_name("github-release-assets.json")
+    path.write_text(json.dumps([metadata["assets"]], indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def refresh_remote_release_metadata_size(metadata_path: Path, name: str, size: int) -> None:
+    metadata = json.loads(metadata_path.read_text())
+    for asset in metadata["assets"]:
+        if asset["name"] == name:
+            asset["size"] = size
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+
+
 def refresh_integrity_subject_and_manifest_asset(out_dir: Path, name: str) -> None:
     path = out_dir / name
     updates = {"sha256": sha256(path), "size_bytes": path.stat().st_size}
@@ -4393,6 +4590,34 @@ def run_release_publish_receipt(
         "2026-05-21T00:00:00Z",
         *args,
     ]
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def run_remote_asset_inventory(
+    redownload_dir: Path,
+    manifest_dir: Path,
+    metadata: Path,
+    *args: str,
+    assets_metadata: Path | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    cmd = [
+        "python3",
+        str(REMOTE_INVENTORY),
+        "--redownload-dir",
+        str(redownload_dir),
+        "--manifest",
+        str(manifest_dir / UPLOAD_MANIFEST_NAME),
+        "--release-metadata",
+        str(metadata),
+        "--release-tag",
+        "v0.0.0",
+        "--generated-at",
+        "2026-05-21T00:00:00Z",
+    ]
+    if assets_metadata is not None:
+        cmd.extend(["--release-assets-metadata", str(assets_metadata)])
+    cmd.extend(args)
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 
