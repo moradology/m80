@@ -202,6 +202,188 @@ fn install_root_override_output_names_default_and_observed_roots() {
 }
 
 #[test]
+fn status_matrix_healthy_active_release() {
+    let report = active_report();
+
+    assert_status_matrix_case(
+        report,
+        "healthy_active_release",
+        "ready",
+        "next_action=installed release is ready",
+    )
+    .assert_json_field("active.release_tag", "v1.2.3")
+    .assert_json_field("selected_profile.name", "default")
+    .assert_json_field("metadata.proof_cache_manifest.status", "present");
+}
+
+#[test]
+fn status_matrix_missing_active_pointer() {
+    let mut report = active_report();
+    report.state = InstallStateKind::MissingActivePointer;
+    report.active_pointer.status = ActivePointerStatus::Missing;
+    report.active_pointer.target = None;
+    report.active_pointer.version_dir = None;
+    report.active_pointer.release_tag = None;
+    report.metadata = None;
+
+    assert_status_matrix_case(
+        report,
+        "missing_active_pointer",
+        "install_release",
+        "next_action=install a release to create the active install pointer",
+    )
+    .assert_json_field("active.status", "missing")
+    .assert_json_null("metadata");
+}
+
+#[test]
+fn status_matrix_dangling_active_pointer() {
+    let mut report = active_report();
+    let missing_dir = PathBuf::from("/opt/m80/versions/v9.9.9");
+    report.state = InstallStateKind::DanglingActivePointer;
+    report.active_pointer.status = ActivePointerStatus::Dangling;
+    report.active_pointer.target = Some(missing_dir.clone());
+    report.active_pointer.version_dir = Some(missing_dir);
+    report.active_pointer.release_tag = Some("v9.9.9".to_owned());
+    report.metadata = None;
+
+    assert_status_matrix_case(
+        report,
+        "dangling_active_pointer",
+        "reinstall_release",
+        "next_action=reinstall the selected release to refresh the installed bundle",
+    )
+    .assert_json_field("active.status", "dangling")
+    .assert_json_field("next_action.command", "curl -fsSL https://github.com/moradology/m80/releases/download/v9.9.9/install.sh | sudo sh");
+}
+
+#[test]
+fn status_matrix_stale_profile_target() {
+    let mut report = active_report();
+    let active_dir = PathBuf::from("/opt/m80/versions/v1.2.4");
+    report.state = InstallStateKind::StaleProfileTarget;
+    report.active_pointer.target = Some(active_dir.clone());
+    report.active_pointer.version_dir = Some(active_dir);
+    report.active_pointer.release_tag = Some("v1.2.4".to_owned());
+    report.metadata = None;
+
+    assert_status_matrix_case(
+        report,
+        "stale_profile_target",
+        "reinstall_release",
+        "next_action=reinstall the selected release to refresh the installed bundle",
+    )
+    .assert_json_field("mismatches.0.code", "stale_profile_target")
+    .assert_json_field("mismatches.0.expected_tag", "v1.2.4")
+    .assert_json_field("mismatches.0.observed_tag", "v1.2.3");
+}
+
+#[test]
+fn status_matrix_explicit_override() {
+    let mut report = active_report();
+    report.state = InstallStateKind::ExplicitOverride;
+    report.config.default_profile = Some("env".to_owned());
+    report.config.default_profile_source = Some(ConfigSource::Env);
+    report.config.explicit_override = true;
+    let profile = report.profile.as_mut().expect("active report has profile");
+    profile.name = "env".to_owned();
+    profile.selection_source = ConfigSource::Env;
+    profile.body_source = "builtin_env";
+    profile.file_path = None;
+    profile.artifact_dir = None;
+    profile.version_dir = None;
+    profile.release_tag = None;
+    profile.m80_version = None;
+    report.metadata = None;
+
+    assert_status_matrix_case(
+        report,
+        "explicit_override",
+        "remove_override",
+        "next_action=remove the profile override to inspect the installed default release",
+    )
+    .assert_json_field("selected_config.default_profile_source", "env")
+    .assert_json_field("mismatches.0.code", "explicit_profile_override")
+    .assert_json_absent("next_action.command");
+}
+
+#[test]
+fn status_matrix_explicit_override_flag_source() {
+    let mut report = active_report();
+    report.state = InstallStateKind::ExplicitOverride;
+    report.config.default_profile = Some("other".to_owned());
+    report.config.default_profile_source = Some(ConfigSource::Flag);
+    report.config.explicit_override = true;
+    let profile = report.profile.as_mut().expect("active report has profile");
+    profile.name = "other".to_owned();
+    profile.selection_source = ConfigSource::Flag;
+    profile.release_tag = Some("v9.0.0".to_owned());
+
+    assert_status_matrix_case(
+        report,
+        "explicit_override",
+        "remove_override",
+        "next_action=remove the profile override to inspect the installed default release",
+    )
+    .assert_json_field("selected_config.default_profile_source", "flag")
+    .assert_json_field("selected_profile.name", "other")
+    .assert_json_field("mismatches.0.code", "explicit_profile_override")
+    .assert_json_absent("mismatches.0.observed_path");
+}
+
+#[test]
+fn status_matrix_local_dev_tree() {
+    let mut report = active_report();
+    report.state = InstallStateKind::LocalDevTree;
+    report.active_pointer.status = ActivePointerStatus::Missing;
+    report.active_pointer.target = None;
+    report.active_pointer.version_dir = None;
+    report.active_pointer.release_tag = None;
+    report.config.default_profile = Some("env".to_owned());
+    report.config.default_profile_source = Some(ConfigSource::Default);
+    let profile = report.profile.as_mut().expect("active report has profile");
+    profile.name = "env".to_owned();
+    profile.selection_source = ConfigSource::Default;
+    profile.body_source = "builtin_env";
+    profile.file_path = None;
+    profile.artifact_dir = None;
+    profile.version_dir = None;
+    profile.release_tag = None;
+    profile.m80_version = None;
+    report.metadata = None;
+
+    assert_status_matrix_case(
+        report,
+        "local_dev_tree",
+        "install_release",
+        "next_action=install a release so m80 run uses the bundled guest by default",
+    )
+    .assert_json_field("selected_profile.body_source", "builtin_env")
+    .assert_json_field("selected_config.default_profile", "env");
+}
+
+#[test]
+fn status_matrix_tampered_proof_cache() {
+    let mut report = active_report();
+    report.state = InstallStateKind::TamperedProofCache;
+    report
+        .metadata
+        .as_mut()
+        .expect("active report has metadata")
+        .proof_cache_manifest
+        .status = MetadataFileStatus::Stale;
+
+    assert_status_matrix_case(
+        report,
+        "tampered_proof_cache",
+        "reinstall_release",
+        "next_action=reinstall the selected release to refresh the installed bundle",
+    )
+    .assert_json_field("metadata.proof_cache_manifest.status", "stale")
+    .assert_json_field("next_action.command", "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh");
+}
+
+#[test]
 fn human_output_for_missing_install_has_next_action() {
     let mut report = active_report();
     report.state = InstallStateKind::MissingActivePointer;
@@ -310,4 +492,84 @@ fn metadata_file(path: PathBuf) -> MetadataFileReport {
         status: MetadataFileStatus::Present,
         sha256: Some("0".repeat(64)),
     }
+}
+
+struct StatusMatrixAssertion {
+    data: serde_json::Value,
+}
+
+impl StatusMatrixAssertion {
+    fn assert_json_field(self, dotted_path: &str, expected: &str) -> Self {
+        assert_eq!(
+            json_field(&self.data, dotted_path).as_str(),
+            Some(expected),
+            "{dotted_path}"
+        );
+        self
+    }
+
+    fn assert_json_null(self, dotted_path: &str) -> Self {
+        assert!(
+            json_field(&self.data, dotted_path).is_null(),
+            "{dotted_path} should be null"
+        );
+        self
+    }
+
+    fn assert_json_absent(self, dotted_path: &str) -> Self {
+        assert!(
+            json_field(&self.data, dotted_path).is_null(),
+            "{dotted_path} should be absent or null"
+        );
+        self
+    }
+}
+
+fn assert_status_matrix_case(
+    report: InstallStateReport,
+    expected_status: &str,
+    expected_next_action_kind: &str,
+    expected_human_next_action: &str,
+) -> StatusMatrixAssertion {
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let data = parsed["data"].clone();
+
+    assert_eq!(data["schema_version"], 1);
+    assert_eq!(data["status"], expected_status);
+    assert_eq!(data["next_action"]["kind"], expected_next_action_kind);
+    assert!(
+        data.get("active").is_some(),
+        "active field should be present"
+    );
+    assert!(
+        data.get("selected_config").is_some(),
+        "selected_config field should be present"
+    );
+
+    let human = render_human(&output);
+    assert!(
+        human.contains(&format!("status={expected_status}")),
+        "human status missing {expected_status}: {human}"
+    );
+    assert!(
+        human.contains(expected_human_next_action),
+        "human next_action missing {expected_human_next_action:?}: {human}"
+    );
+
+    StatusMatrixAssertion { data }
+}
+
+fn json_field<'a>(value: &'a serde_json::Value, dotted_path: &str) -> &'a serde_json::Value {
+    let mut current = value;
+    for segment in dotted_path.split('.') {
+        if let Ok(index) = segment.parse::<usize>() {
+            current = &current[index];
+        } else {
+            current = &current[segment];
+        }
+    }
+    current
 }

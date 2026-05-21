@@ -3,7 +3,7 @@
 Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
 `m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.1`,
 `m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`,
-`m80-o3uh9.16.7.4`.
+`m80-o3uh9.16.7.4`, `m80-o3uh9.16.7.5`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -218,3 +218,11 @@ colliding path.
 - `proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`
 - `install_state_doc_names_proof_cache_manifest_contract`
+- `status_matrix_healthy_active_release`
+- `status_matrix_missing_active_pointer`
+- `status_matrix_dangling_active_pointer`
+- `status_matrix_stale_profile_target`
+- `status_matrix_explicit_override`
+- `status_matrix_explicit_override_flag_source`
+- `status_matrix_local_dev_tree`
+- `status_matrix_tampered_proof_cache`
