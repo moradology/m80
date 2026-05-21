@@ -21,6 +21,26 @@ pub(crate) struct InstallerBundleSelection {
     pub(crate) bundle_url: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DirectBundleIndexMaterial {
+    pub(crate) release_tag: String,
+    pub(crate) bundle_name: String,
+    pub(crate) bundle_url: String,
+    pub(crate) bundle_sha256: String,
+    pub(crate) bundle_size_bytes: u64,
+    pub(crate) metadata_name: String,
+    pub(crate) metadata_sha256: String,
+    pub(crate) checksum_name: String,
+    pub(crate) attestation_name: Option<String>,
+    pub(crate) target: String,
+    pub(crate) image_kind: String,
+    pub(crate) m80_version: String,
+    pub(crate) index_url: String,
+    pub(crate) index_checksum_url: String,
+    pub(crate) index_expected_sha256: String,
+    pub(crate) index_observed_sha256: String,
+}
+
 pub(crate) fn select_release_bundle_for_install(
     release_tag: &str,
     identity: &VersionIdentity,
@@ -100,6 +120,66 @@ fn select_release_bundle_for_install_at_index_url_with_bounds(
     Ok(InstallerBundleSelection {
         bundle_url: asset.url.clone(),
     })
+}
+
+pub(crate) fn fetch_direct_bundle_index_material(
+    release_tag: &str,
+    bundle_name: &str,
+    bundle_url: &str,
+) -> Result<DirectBundleIndexMaterial, String> {
+    let index_url = fetch::github_release_asset_index_url(release_tag);
+    fetch_direct_bundle_index_material_at_index_url(
+        release_tag,
+        bundle_name,
+        bundle_url,
+        &index_url,
+    )
+}
+
+fn fetch_direct_bundle_index_material_at_index_url(
+    release_tag: &str,
+    bundle_name: &str,
+    bundle_url: &str,
+    index_url: &str,
+) -> Result<DirectBundleIndexMaterial, String> {
+    let host = HostTuple::current();
+    let verified = fetch::fetch_verified_asset_index(fetch::AssetIndexFetchRequest {
+        index_url,
+        release_tag,
+        host,
+        image_kind: Some(DEFAULT_IMAGE_KIND),
+        download_bounds: fetch::AssetIndexDownloadBounds::default(),
+    })
+    .map_err(|source| source.to_string())?;
+    let asset = verified
+        .index
+        .direct_bundle_asset(bundle_name)
+        .ok_or_else(|| {
+            format!(
+                "release asset index has no direct bundle row for {bundle_name}; available bundles: {}",
+                verified.index.available_bundle_names().join(", ")
+            )
+        })?;
+    if asset.url != bundle_url {
+        return Err(format!(
+            "release asset index URL mismatch for {bundle_name}: expected {bundle_url}, got {}",
+            asset.url
+        ));
+    }
+    let expected_checksum_name = format!("{bundle_name}.sha256");
+    if asset.checksum_name != expected_checksum_name {
+        return Err(format!(
+            "release asset index checksum_name mismatch for {bundle_name}: expected {expected_checksum_name}, got {}",
+            asset.checksum_name
+        ));
+    }
+    Ok(DirectBundleIndexMaterial::from_verified_asset(
+        asset,
+        verified.index_url,
+        verified.checksum_url,
+        verified.expected_sha256,
+        verified.observed_sha256,
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -324,6 +404,19 @@ impl ReleaseAssetIndex {
 
         Ok(version_matches[0])
     }
+
+    fn direct_bundle_asset<'a>(&'a self, bundle_name: &str) -> Option<&'a BundleAsset> {
+        self.assets.iter().find(|asset| asset.name == bundle_name)
+    }
+
+    fn available_bundle_names(&self) -> Vec<String> {
+        self.assets
+            .iter()
+            .map(|asset| asset.name.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -403,6 +496,35 @@ impl BundleAsset {
             });
         }
         Ok(())
+    }
+}
+
+impl DirectBundleIndexMaterial {
+    fn from_verified_asset(
+        asset: &BundleAsset,
+        index_url: String,
+        index_checksum_url: String,
+        index_expected_sha256: String,
+        index_observed_sha256: String,
+    ) -> Self {
+        Self {
+            release_tag: asset.release_tag.clone(),
+            bundle_name: asset.name.clone(),
+            bundle_url: asset.url.clone(),
+            bundle_sha256: asset.sha256.clone(),
+            bundle_size_bytes: asset.size_bytes,
+            metadata_name: asset.metadata_name.clone(),
+            metadata_sha256: asset.metadata_sha256.clone(),
+            checksum_name: asset.checksum_name.clone(),
+            attestation_name: asset.attestation_name.clone(),
+            target: asset.target.clone(),
+            image_kind: asset.image_kind.clone(),
+            m80_version: asset.m80_version.clone(),
+            index_url,
+            index_checksum_url,
+            index_expected_sha256,
+            index_observed_sha256,
+        }
     }
 }
 

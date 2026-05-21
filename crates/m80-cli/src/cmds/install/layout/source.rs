@@ -23,6 +23,13 @@ const REQUIRED_GH_ATTESTATION_FLAGS: &[&str] = &[
 const ATTESTATION_VERIFIER_REMEDIATION: &str =
     "Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct OfficialReleaseBundle {
+    pub(super) release_tag: String,
+    pub(super) bundle_name: String,
+    pub(super) bundle_url: String,
+}
+
 pub(super) fn stage_bundle_source(
     bundle_url: &str,
     staging_dir: &Path,
@@ -59,11 +66,23 @@ pub(super) fn is_fixture_bundle_url(bundle_url: &str) -> Result<bool, FcError> {
 pub(super) fn official_release_tag_from_bundle_url(
     bundle_url: &str,
 ) -> Result<Option<String>, FcError> {
+    Ok(official_release_bundle_from_url(bundle_url)?.map(|bundle| bundle.release_tag))
+}
+
+pub(super) fn official_release_bundle_from_url(
+    bundle_url: &str,
+) -> Result<Option<OfficialReleaseBundle>, FcError> {
     if local_file_url_path(bundle_url)?.is_some() {
         return Ok(None);
     }
     let parsed = parse_supported_initial_remote_url(bundle_url)?;
-    Ok(official_release_bundle_parts(&parsed).map(|(tag, _)| tag.to_owned()))
+    Ok(
+        official_release_bundle_parts(&parsed).map(|(tag, asset)| OfficialReleaseBundle {
+            release_tag: tag.to_owned(),
+            bundle_name: asset.to_owned(),
+            bundle_url: bundle_url.to_owned(),
+        }),
+    )
 }
 
 fn preflight_attestation_verifier_for_bundle_url_with_gh(
@@ -370,7 +389,7 @@ fn validate_final_url(initial: &RemoteUrl, final_url: &RemoteUrl) -> Result<(), 
             return Ok(());
         }
     } else if is_official_release_bundle_url(initial)
-        && (is_official_release_bundle_or_checksum_url(final_url)
+        && (is_same_official_bundle_or_checksum_url(initial, final_url)
             || is_github_asset_redirect_host(&final_url.host))
     {
         return Ok(());
@@ -399,6 +418,17 @@ fn is_official_release_bundle_or_checksum_url(url: &RemoteUrl) -> bool {
         return false;
     };
     is_stable_release_tag(tag) && is_release_bundle_asset_name(bundle_asset)
+}
+
+fn is_same_official_bundle_or_checksum_url(initial: &RemoteUrl, final_url: &RemoteUrl) -> bool {
+    let Some((initial_tag, initial_asset)) = official_release_bundle_parts(initial) else {
+        return false;
+    };
+    let Some((final_tag, final_asset)) = official_release_asset_parts(final_url) else {
+        return false;
+    };
+    final_tag == initial_tag
+        && (final_asset == initial_asset || final_asset == format!("{initial_asset}.sha256"))
 }
 
 fn official_release_bundle_parts(url: &RemoteUrl) -> Option<(&str, &str)> {
@@ -672,6 +702,29 @@ mod tests {
             err.to_string().contains("redirected to unsupported host"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn official_bundle_redirect_must_stay_on_same_release_asset() {
+        let initial = parse_supported_initial_remote_url(&official_bundle_url("v1.2.3")).unwrap();
+        let final_url = parse_supported_download_url(&official_bundle_url("v9.9.9")).unwrap();
+
+        let err = validate_final_url(&initial, &final_url).unwrap_err();
+
+        assert!(
+            err.to_string().contains("redirected to unsupported host"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn official_bundle_checksum_redirect_stays_bound_to_same_bundle() {
+        let initial = parse_supported_initial_remote_url(&official_bundle_url("v1.2.3")).unwrap();
+        let final_url =
+            parse_supported_download_url(&format!("{}.sha256", official_bundle_url("v1.2.3")))
+                .unwrap();
+
+        validate_final_url(&initial, &final_url).unwrap();
     }
 
     #[test]

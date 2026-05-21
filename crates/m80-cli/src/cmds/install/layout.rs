@@ -2,6 +2,8 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::Mutex;
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
@@ -22,7 +24,11 @@ use source::{stage_bundle_source, validate_bundle_source_url};
 
 mod bundle;
 mod metadata;
+mod release_material;
 mod source;
+
+#[cfg(test)]
+static INSTALL_PREFLIGHT_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 pub(super) fn preflight_attestation_verifier_for_bundle_url(
     bundle_url: &str,
@@ -58,6 +64,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     require_absolute_path("install_root", &install_root)?;
     validate_bundle_source_url(bundle_url)?;
     preflight_attestation_verifier_for_bundle_url(bundle_url)?;
+    release_material::preflight_official_release_materials(bundle_url)?;
     let staging_dir = prepare_staging_dir(&install_root)?;
     let bundle_path = stage_bundle_source(bundle_url, staging_dir.path())?;
     let entries = list_bundle_entries(&bundle_path)?;
@@ -387,13 +394,11 @@ fn safe_release_dir(release_tag: &str) -> Result<&str, FcError> {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
-    use std::sync::Mutex;
 
     use super::super::SourceKind;
     use super::source::stage_bundle_source;
     use super::*;
 
-    static ATTESTATION_ENV_LOCK: Mutex<()> = Mutex::new(());
     #[test]
     fn local_file_url_requires_absolute_path() {
         let tmp = tempfile::tempdir().unwrap();
@@ -406,7 +411,7 @@ mod tests {
 
     #[test]
     fn official_release_missing_attestation_verifier_fails_before_staging() {
-        let _guard = ATTESTATION_ENV_LOCK.lock().unwrap();
+        let _guard = INSTALL_PREFLIGHT_ENV_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let install_root = temp.path().join("install-root");
         let missing_gh = temp.path().join("missing-gh");
@@ -431,7 +436,7 @@ mod tests {
 
     #[test]
     fn official_release_too_old_attestation_verifier_fails_before_staging() {
-        let _guard = ATTESTATION_ENV_LOCK.lock().unwrap();
+        let _guard = INSTALL_PREFLIGHT_ENV_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let install_root = temp.path().join("install-root");
         let fake_gh = write_fake_gh(

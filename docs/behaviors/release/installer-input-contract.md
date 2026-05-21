@@ -55,6 +55,24 @@ Mutable `releases/latest/download` artifact URLs, raw branch URLs, foreign
 repositories, path-traversal asset paths, non-bundle release assets such as
 `install.sh`, and non-HTTPS GitHub release URLs fail before network access or
 install-root mutation.
+
+Before an official GitHub release bundle URL can create staging state, the
+layout installer resolves the same-tag public material set. It fetches and
+checksum-verifies the tag's `m80-release-assets.json`, requires the selected
+bundle row URL to match the explicit bundle URL, requires the row's
+`attestation_name` to name `m80-release-integrity.attestation.jsonl`, and builds
+a plan covering the bundle, bundle checksum sidecar, metadata sidecar,
+metadata checksum sidecar, asset index, asset-index checksum, `install.sh`,
+`install.sh.sha256`, `m80-bootstrap-selector.tsv`, its checksum sidecar,
+`m80-release-build.json`, its checksum sidecar, `m80-release-integrity.json`,
+`m80-release-integrity.attestation.jsonl`, `m80-release-attestation.json`, and
+public `SHA256SUMS`. The bundle tarball itself is only listed at this stage,
+not downloaded. Missing public material, checksum sidecar mismatch, metadata
+digest mismatch, or redirect to an unsupported host fails before `<install-root>`
+or `.staging` exists. The failure diagnostic names the resolved release tag,
+material class, material name, public URL, and expected public digest or
+identity without printing credentials or temporary paths.
+
 A successful bundle install stages and verifies the selected or explicit bundle, copies the
 verified layout into `<install-root>/versions/<release_tag>`, writes
 install-root-local profile state, and switches `<install-root>/active` last.
@@ -109,6 +127,12 @@ Integration and behavior-doc coverage:
 - `install_path_traversal_release_asset_url_is_rejected_without_touching_install_root`
 - `install_non_https_github_release_url_is_rejected_without_touching_install_root`
 - `installer_input_contract_doc_names_source_shapes_and_tests`
+- `direct_plan_lists_same_tag_urls_and_expected_identity_before_fetch`
+- `direct_plan_rejects_material_name_url_injection`
+- `direct_plan_requires_official_attestation_bundle_ref`
+- `official_bundle_checksum_redirect_stays_bound_to_same_bundle`
+- `official_bundle_redirect_must_stay_on_same_release_asset`
+- `official_release_missing_material_fails_before_staging_or_bundle_download`
 
 Module coverage in `cmds/install.rs` pins release-build success, dev-build
 refusal, source/binary tag mismatch refusal, tagged release bundle URL refusal

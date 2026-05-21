@@ -69,8 +69,12 @@ binaries, pull OCI images, or install packages implicitly.
   architecture, and image kind. Asset-index failures report stable text and
   JSON fields for the requested tuple/version, available alternatives, a
   machine-readable code, and a repair command when known. `--bundle-url`
-  remains the explicit local fixture/operator override path. Non-dry-run
-  stages, verifies, and copies the selected or explicit bundle into
+  remains the explicit local fixture/operator override path. Concrete official
+  GitHub release bundle URLs preflight the same-tag public material set before
+  staging: asset index, checksum sidecars, installer, bootstrap selector,
+  build manifest, release-integrity predicate, attestation bundle, attestation
+  metadata, and public `SHA256SUMS`. Non-dry-run stages, verifies, and copies
+  the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
   `<install-root>/active` last.
 - `m80 config show` - prints the merged effective config and labels each field's
@@ -406,7 +410,11 @@ Stable surfaces:
   `m80-<target>.tar.gz`. Mutable latest artifact URLs, raw branch URLs, foreign
   repositories, path-traversal asset paths, non-bundle release assets, and
   non-HTTPS GitHub release URLs are rejected before network access or
-  install-root mutation. Accepted remote bundles are staged before publishing
+  install-root mutation. Concrete official GitHub release bundle URLs also
+  preflight the same-tag public material set before staging so missing
+  release-integrity, attestation, index, checksum, installer, selector, build,
+  or public checksum assets fail before the bundle tarball is downloaded.
+  Accepted remote bundles are staged before publishing
   `<install-root>/versions/<release_tag>` and flipping the active pointer last.
 
 ## Non-goals

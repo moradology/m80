@@ -300,7 +300,11 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle`;
 - `test_rendered_install_script_rejects_build_manifest_malformed_container_digest_before_bundle`;
 - `test_rendered_install_script_rejects_failed_attestation_before_bundle_extract`;
+- `direct_plan_lists_same_tag_urls_and_expected_identity_before_fetch`;
+- `direct_plan_rejects_material_name_url_injection`;
+- `direct_plan_requires_official_attestation_bundle_ref`;
 - `official_release_missing_attestation_verifier_fails_before_staging`;
+- `official_release_missing_material_fails_before_staging_or_bundle_download`;
 - `official_release_too_old_attestation_verifier_fails_before_staging`;
 - `test_package_assembles_multi_tuple_release_from_tuple_manifest`;
 - `test_package_rejects_extra_tuple_name_collision_before_copy`;
