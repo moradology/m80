@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 import tempfile
@@ -12,6 +13,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LINT = REPO_ROOT / "scripts" / "lint-github-workflows.py"
+AUTHORITY = REPO_ROOT / "scripts" / "release_publish_authority.py"
 
 
 class WorkflowPolicyTest(unittest.TestCase):
@@ -132,6 +134,83 @@ class WorkflowPolicyTest(unittest.TestCase):
             result = run_lint(root)
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_publish_authority_policy_allows_clean_publish_context(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(root / "release-artifacts.yml")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_publish_authority_policy_rejects_wrong_repository(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(
+                root / "release-artifacts.yml",
+                repository="example/m80",
+                workflow_ref="example/m80/.github/workflows/release-artifacts.yml@refs/tags/v0.1.0",
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("repository mismatch", result.stderr)
+
+    def test_publish_authority_policy_rejects_branch_ref(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(
+                root / "release-artifacts.yml",
+                github_ref="refs/heads/main",
+                workflow_ref="moradology/m80/.github/workflows/release-artifacts.yml@refs/heads/main",
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("github-ref must match refs/tags/v*", result.stderr)
+
+    def test_publish_authority_policy_rejects_wrong_job(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(root / "release-artifacts.yml", github_job="build-release-artifacts")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("job mismatch", result.stderr)
+
+    def test_publish_authority_policy_rejects_wrong_workflow_ref(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(
+                root / "release-artifacts.yml",
+                workflow_ref="moradology/m80/.github/workflows/not-release.yml@refs/tags/v0.1.0",
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("workflow-ref mismatch", result.stderr)
+
+    def test_publish_authority_policy_rejects_missing_token_source(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(root / "release-artifacts.yml", token_source=None)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("token-source missing", result.stderr)
+
+    def test_publish_authority_policy_rejects_wrong_token_source(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(root / "release-artifacts.yml", token_source="secrets.RELEASE_TOKEN")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("token-source mismatch", result.stderr)
+
+    def test_publish_authority_policy_rejects_missing_token_material(self) -> None:
+        with workflow_dir("release-artifacts.yml", publish_authority_workflow()) as root:
+            result = run_authority(root / "release-artifacts.yml", token_present=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("token env GH_TOKEN missing", result.stderr)
+
+    def test_publish_authority_policy_rejects_unexpected_write_authority(self) -> None:
+        workflow = publish_authority_workflow().replace(
+            "          contents: read\n          id-token: write",
+            "          contents: write\n          id-token: write",
+        )
+        with workflow_dir("release-artifacts.yml", workflow) as root:
+            result = run_authority(root / "release-artifacts.yml")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unexpected write authority", result.stderr)
 
     def test_release_job_requires_timeout_minutes(self) -> None:
         with workflow_dir(
@@ -732,6 +811,69 @@ def run_lint(workflow_dir: Path) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
+
+
+def run_authority(
+    workflow_file: Path,
+    *,
+    repository: str = "moradology/m80",
+    github_ref: str = "refs/tags/v0.1.0",
+    workflow_ref: str = "moradology/m80/.github/workflows/release-artifacts.yml@refs/tags/v0.1.0",
+    github_job: str = "publish-release-artifacts",
+    token_source: str | None = "github.token",
+    token_present: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["GITHUB_REPOSITORY"] = repository
+    env["GITHUB_REF"] = github_ref
+    env["GITHUB_WORKFLOW_REF"] = workflow_ref
+    env["GITHUB_JOB"] = github_job
+    if token_source is None:
+        env.pop("M80_RELEASE_TOKEN_SOURCE", None)
+    else:
+        env["M80_RELEASE_TOKEN_SOURCE"] = token_source
+    if token_present:
+        env["GH_TOKEN"] = "ghs_test_token"
+    else:
+        env.pop("GH_TOKEN", None)
+    return subprocess.run(
+        ["python3", str(AUTHORITY), "--workflow-file", str(workflow_file)],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def publish_authority_workflow() -> str:
+    return """
+    name: Release artifacts
+    on:
+      push:
+        tags: ["v*"]
+    permissions:
+      contents: read
+    concurrency:
+      group: release-${{ github.ref_name }}
+    jobs:
+      build-release-artifacts:
+        permissions:
+          contents: read
+          id-token: write
+          attestations: write
+        runs-on: ubuntu-latest
+        timeout-minutes: 90
+        steps:
+          - uses: actions/checkout@v6
+      publish-release-artifacts:
+        if: startsWith(github.ref, 'refs/tags/')
+        permissions:
+          contents: write
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+          - uses: actions/checkout@v6
+    """
 
 
 class workflow_dir:

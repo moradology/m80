@@ -1161,6 +1161,7 @@ class ReleaseBundleTest(unittest.TestCase):
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
 
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/package-release-bundle.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_publish_authority.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
         self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
         self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
@@ -1241,6 +1242,13 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("Write and validate release upload manifest", workflow)
         self.assertIn("--write", workflow)
         self.assertIn("Verify release upload manifest before upload", workflow)
+        self.assertIn("Verify publish authority before mutation", workflow)
+        self.assertIn("scripts/release_publish_authority.py", workflow)
+        self.assertIn("M80_RELEASE_TOKEN_SOURCE: github.token", workflow)
+        self.assertLess(
+            workflow.index("scripts/release_publish_authority.py"),
+            workflow.index("scripts/release_publish_receipt.py"),
+        )
         self.assertIn("Write and validate publish decision receipt before upload", workflow)
         self.assertIn("scripts/release_publish_receipt.py", workflow)
         self.assertIn("--workflow-run-id \"$GITHUB_RUN_ID\"", workflow)

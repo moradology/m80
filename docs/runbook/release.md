@@ -356,11 +356,15 @@ The workflow stages and token boundary for building and publishing release
 artifacts are recorded in `docs/runbook/release-bundle.md`. The short version:
 build jobs run with `contents: read`; the tag-only publish job is the only stage
 with `contents: write`; and `scripts/lint-github-workflows.py` keeps that
-boundary from drifting in CI. Run `python3 scripts/lint-github-workflows.py`
-locally before release workflow edits; it is the m80 authority-policy and
-strict workflow shell check, and it should run beside the pinned `actionlint`
-syntax/run-block gate: `python3 scripts/run-actionlint.py --workflow-dir
-.github/workflows`.
+boundary from drifting in CI. The publish job also runs
+`scripts/release_publish_authority.py` at the mutation boundary, before the
+publish decision receipt and before `gh release upload`, so the actual GitHub
+context must still match the expected repository, tag ref, workflow path, job
+id, token source, and write-permission posture. Run
+`python3 scripts/lint-github-workflows.py` locally before release workflow
+edits; it is the static m80 authority-policy and strict workflow shell check,
+and it should run beside the pinned `actionlint` syntax/run-block gate:
+`python3 scripts/run-actionlint.py --workflow-dir .github/workflows`.
 
 Release and freshness workflow jobs also carry explicit job timeout budgets.
 Inner command timeouts remain the primary failure detector for network fetches,

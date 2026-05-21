@@ -27,14 +27,15 @@ and hostless proof evidence exist, and uploads only a workflow artifact.
 
 `publish-release-artifacts` runs only for tag refs after the build job
 finishes. It is the only job with `contents: write`. It downloads the workflow
-artifact, validates `m80-release-upload-manifest.json`, derives the
-`gh release upload` path list and `gh release download --pattern` list from
-that manifest, re-downloads those public assets, verifies the redownload
-directory contains exactly the manifest's public asset set, and runs
-`scripts/verify-release-bundle.py --verify-sidecars` against the downloaded
-bundle so the published asset index is checked against the uploaded tarball,
-metadata, bootstrap selector, checksums, and installer before any later
-latest-promotion lane can trust it.
+artifact, validates `m80-release-upload-manifest.json`, runs
+`scripts/release_publish_authority.py` against the live GitHub context before
+any release mutation, derives the `gh release upload` path list and
+`gh release download --pattern` list from that manifest, re-downloads those
+public assets, verifies the redownload directory contains exactly the
+manifest's public asset set, and runs `scripts/verify-release-bundle.py
+--verify-sidecars` against the downloaded bundle so the published asset index
+is checked against the uploaded tarball, metadata, bootstrap selector,
+checksums, and installer before any later latest-promotion lane can trust it.
 
 The upload manifest itself and `m80-quickstart-proof-hostless.json` stay
 workflow-only artifacts. Public proof is the release-integrity predicate,
@@ -70,6 +71,10 @@ release, so a schema drift fails before the protected release workflow runs.
 Top-level workflow permissions stay read-only. A write-capable token is scoped
 to the publish job because that is the only stage that mutates GitHub release
 state. Build, verify, PR, and documentation jobs do not receive write tokens.
+The checked runtime publish policy is
+`docs/behaviors/release/publish-authority-policy.md`; it names the expected
+repository, workflow path, publish job id, tag-ref shape, `github.token` source,
+and allowed write-permission posture.
 
 Pull-request workflows must not reference `secrets.*`. Jobs that need the
 standard GitHub token use `github.token`, which remains governed by the

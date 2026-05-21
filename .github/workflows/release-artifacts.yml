@@ -253,6 +253,16 @@ jobs:
             --dist-dir /tmp/m80-release-upload \
             --release-tag "$GITHUB_REF_NAME"
 
+      - name: Verify publish authority before mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          M80_RELEASE_TOKEN_SOURCE: github.token
+        run: |
+          set -euo pipefail
+          scripts/release_publish_authority.py \
+            --workflow-file .github/workflows/release-artifacts.yml \
+            --token-source "$M80_RELEASE_TOKEN_SOURCE"
+
       - name: Write and validate publish decision receipt before upload
         env:
           RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
