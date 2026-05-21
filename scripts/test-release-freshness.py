@@ -54,7 +54,9 @@ class ReleaseFreshnessTest(unittest.TestCase):
             logged = [shlex.split(line) for line in log.read_text().splitlines()]
 
         self.assertTrue(payload["freshness_network_bounded"])
+        self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["resolved_tag"], "v1.2.3")
+        self.assertRegex(payload["published_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         urls = {row["url"] for row in payload["checked_urls"]}
         self.assertIn("https://github.com/moradology/m80/releases/latest/download/install.sh", urls)
         self.assertIn("https://github.com/moradology/m80/releases/download/v1.2.3/install.sh", urls)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -538,9 +539,11 @@ def freshness_proof_json(
     public_assets: dict[str, FreshnessAsset],
 ) -> dict:
     return {
+        "schema_version": 1,
         "freshness_network_bounded": True,
         "repository": resolution.repository,
         "resolved_tag": resolution.resolved_tag,
+        "published_at": utc_now_rfc3339(),
         "fetch_policy": {
             "connect_timeout_seconds": FETCH_CONNECT_TIMEOUT_SECONDS,
             "max_time_seconds": FETCH_MAX_TIME_SECONDS,
@@ -561,6 +564,10 @@ def freshness_proof_json(
         ],
         "public_assets": public_asset_proof_rows(public_assets),
     }
+
+
+def utc_now_rfc3339() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def public_asset_proof_rows(public_assets: dict[str, FreshnessAsset]) -> list[dict]:
