@@ -45,7 +45,11 @@ The copied guest manifest and build receipt are rewritten from release-local
 paths to the final installed `artifacts/` paths. The rewrite is not silent:
 `artifacts/install-provenance.json` records the source hash, installed hash,
 release tag, and `install_path_rewrite` transform for both rewritten JSON
-artifacts.
+artifacts. The installed `bundle.json` and installed `SHA256SUMS` are rewritten
+after those path rewrites so the version directory is self-verifying on disk.
+For official release installs, the original public `SHA256SUMS` is preserved in
+`artifacts/release-proof-cache/` with the rest of the verified public proof
+material.
 
 The executable entrypoint is `bin/m80`; guest metadata is rooted at
 `artifacts/output.ext4.manifest.json`.

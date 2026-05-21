@@ -23,6 +23,7 @@ use source::{stage_bundle_source, validate_bundle_source_url};
 mod bundle;
 mod metadata;
 mod proof_cache;
+mod reinstall;
 mod release_material;
 mod source;
 
@@ -44,6 +45,7 @@ pub(super) fn official_release_tag_from_bundle_url(
 /// Summary emitted after the layout copy succeeds.
 #[derive(Debug, Serialize)]
 pub(super) struct LayoutInstallSummary {
+    pub(super) state: &'static str,
     pub(super) release_tag: String,
     pub(super) version_dir: String,
     pub(super) files_copied: usize,
@@ -149,13 +151,23 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     let final_dir = install_root
         .join("versions")
         .join(safe_release_dir(&metadata.release_tag)?);
+    rewrite_installed_metadata(&extracted_dir, &final_dir, &metadata)?;
+    set_final_modes(&extracted_dir)?;
     if final_dir.exists() {
         if let Some(verified_bundle) = &verified_official_bundle {
-            require_active_pointer_targets(&PathBuf::from(&plan.active_pointer), &final_dir)?;
+            let verification = reinstall::verify_same_version_reinstall(
+                plan,
+                bundle_url,
+                &install_root,
+                &final_dir,
+                &extracted_dir,
+                &metadata.release_tag,
+            )?;
             let reinstall = proof_cache::compare_existing_release_proof_cache(
                 verified_bundle,
                 &final_dir,
                 &plan.binary_version,
+                &verification.repair_command,
             )?;
             return Ok(idempotent_reinstall_summary(
                 plan,
@@ -172,8 +184,6 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         }));
     }
 
-    rewrite_installed_metadata(&extracted_dir, &final_dir, &metadata)?;
-    set_final_modes(&extracted_dir)?;
     let proof_cache_manifest = verified_official_bundle
         .as_ref()
         .map(|verified_bundle| {
@@ -227,6 +237,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         summary
     });
     Ok(LayoutInstallSummary {
+        state: "installed",
         release_tag: metadata.release_tag,
         version_dir: final_dir.display().to_string(),
         files_copied: REQUIRED_BUNDLE_FILES.len() + 1,
@@ -267,6 +278,7 @@ fn idempotent_reinstall_summary(
         .join("artifacts")
         .join("host-binaries.manifest.json");
     LayoutInstallSummary {
+        state: "already_installed",
         release_tag: release_tag.to_owned(),
         version_dir: final_dir.display().to_string(),
         files_copied: 0,
@@ -300,6 +312,7 @@ fn idempotent_reinstall_summary(
 #[cfg(test)]
 pub(super) fn reinstall_summary_for_render_test() -> LayoutInstallSummary {
     LayoutInstallSummary {
+        state: "already_installed",
         release_tag: "v0.0.0".to_owned(),
         version_dir: "/opt/m80/versions/v0.0.0".to_owned(),
         files_copied: 0,
@@ -350,26 +363,6 @@ fn require_absolute_path(field: &'static str, path: &Path) -> Result<(), FcError
         Err(FcError::Config(ConfigError::InvalidValue {
             field,
             reason: format!("{field} must be an absolute path, got {}", path.display()),
-        }))
-    }
-}
-
-fn require_active_pointer_targets(active_pointer: &Path, final_dir: &Path) -> Result<(), FcError> {
-    let target = fs::read_link(active_pointer).map_err(|source| FcError::PathIo {
-        path: active_pointer.to_path_buf(),
-        source,
-    })?;
-    if target == final_dir {
-        Ok(())
-    } else {
-        Err(FcError::Config(ConfigError::InvalidValue {
-            field: "install.active_pointer",
-            reason: format!(
-                "same-version reinstall found existing version directory but active pointer targets a different path: active_pointer={} observed_target={} expected_target={}",
-                active_pointer.display(),
-                target.display(),
-                final_dir.display()
-            ),
         }))
     }
 }

@@ -542,6 +542,18 @@ fn human_layout_summary_includes_reinstall_diagnostics() {
     let lines = layout_summary_lines(&layout::reinstall_summary_for_render_test());
 
     assert!(
+        lines.contains(&"release already installed".to_owned()),
+        "{lines:?}"
+    );
+    assert!(
+        lines.contains(&"install_state=already_installed".to_owned()),
+        "{lines:?}"
+    );
+    assert!(
+        lines.contains(&"next_command=m80 run -- echo hello".to_owned()),
+        "{lines:?}"
+    );
+    assert!(
         lines.contains(&"reinstall_status=idempotent_same_material".to_owned()),
         "{lines:?}"
     );

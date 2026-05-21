@@ -197,7 +197,10 @@ fn verify_extracted_tree_inner(
     Ok(())
 }
 
-pub(super) fn extract_bundle(bundle_path: &Path, dest: &Path) -> Result<(), FcError> {
+pub(in crate::cmds::install::layout) fn extract_bundle(
+    bundle_path: &Path,
+    dest: &Path,
+) -> Result<(), FcError> {
     let output = Command::new("tar")
         .arg("-xzf")
         .arg(bundle_path)

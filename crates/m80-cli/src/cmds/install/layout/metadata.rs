@@ -14,7 +14,9 @@ use super::bundle::{sha256_file, PAYLOAD_FILES};
 
 pub(super) const INSTALL_PROVENANCE_FILE: &str = "install-provenance.json";
 
-pub(super) fn read_bundle_metadata(path: &Path) -> Result<BundleMetadata, FcError> {
+pub(in crate::cmds::install::layout) fn read_bundle_metadata(
+    path: &Path,
+) -> Result<BundleMetadata, FcError> {
     let raw = fs::read(path).map_err(|source| FcError::PathIo {
         path: path.to_path_buf(),
         source,
@@ -187,7 +189,7 @@ fn parse_sha256s(contents: &str) -> Result<BTreeMap<&str, &str>, FcError> {
     Ok(sums)
 }
 
-pub(super) fn rewrite_installed_metadata(
+pub(in crate::cmds::install::layout) fn rewrite_installed_metadata(
     root: &Path,
     final_dir: &Path,
     metadata: &BundleMetadata,
@@ -272,7 +274,17 @@ pub(super) fn rewrite_installed_metadata(
     );
     provenance
         .write(&root.join("artifacts").join(INSTALL_PROVENANCE_FILE))
-        .map_err(FcError::Manifest)
+        .map_err(FcError::Manifest)?;
+
+    rewrite_installed_bundle_metadata(
+        root,
+        final_dir,
+        &[
+            "artifacts/output.ext4.manifest.json",
+            "artifacts/output.ext4.build-receipt.json",
+        ],
+    )?;
+    rewrite_installed_sha256s(root)
 }
 
 fn install_path_rewrite_transform(
@@ -292,7 +304,90 @@ fn install_path_rewrite_transform(
     }
 }
 
-pub(super) fn set_final_modes(root: &Path) -> Result<(), FcError> {
+fn rewrite_installed_bundle_metadata(
+    root: &Path,
+    final_dir: &Path,
+    rewritten_files: &[&str],
+) -> Result<(), FcError> {
+    let bundle_path = root.join("bundle.json");
+    let raw = fs::read(&bundle_path).map_err(|source| FcError::PathIo {
+        path: bundle_path.clone(),
+        source,
+    })?;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&raw).map_err(|source| FcError::Json {
+            context: "rewrite installed bundle metadata",
+            source,
+        })?;
+    value["build_receipt_manifest_path"] = serde_json::Value::String(
+        final_dir
+            .join("artifacts/output.ext4.manifest.json")
+            .display()
+            .to_string(),
+    );
+    for relative in rewritten_files {
+        rewrite_bundle_file_record(root, &mut value, relative)?;
+    }
+    let mut encoded = serde_json::to_vec_pretty(&value).map_err(|source| FcError::Json {
+        context: "encode installed bundle metadata",
+        source,
+    })?;
+    encoded.push(b'\n');
+    fs::write(&bundle_path, encoded).map_err(|source| FcError::PathIo {
+        path: bundle_path,
+        source,
+    })
+}
+
+fn rewrite_bundle_file_record(
+    root: &Path,
+    metadata: &mut serde_json::Value,
+    relative: &str,
+) -> Result<(), FcError> {
+    let path = root.join(relative);
+    let size_bytes = path
+        .metadata()
+        .map_err(|source| FcError::PathIo {
+            path: path.clone(),
+            source,
+        })?
+        .len();
+    let sha256 = sha256_file(&path)?;
+    let files = metadata["files"].as_array_mut().ok_or_else(|| {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "bundle.files",
+            reason: "bundle metadata files must be an array".to_owned(),
+        })
+    })?;
+    let Some(record) = files.iter_mut().find(|record| {
+        record
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|path| path == relative)
+    }) else {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field: "bundle.files",
+            reason: format!("bundle metadata missing file row: {relative}"),
+        }));
+    };
+    record["sha256"] = serde_json::Value::String(sha256);
+    record["size_bytes"] = serde_json::Value::Number(size_bytes.into());
+    Ok(())
+}
+
+fn rewrite_installed_sha256s(root: &Path) -> Result<(), FcError> {
+    let mut lines = String::new();
+    for relative in PAYLOAD_FILES.iter().copied().chain(["bundle.json"]) {
+        lines.push_str(&format!(
+            "{}  {relative}\n",
+            sha256_file(&root.join(relative))?
+        ));
+    }
+    let path = root.join("SHA256SUMS");
+    fs::write(&path, lines).map_err(|source| FcError::PathIo { path, source })
+}
+
+pub(in crate::cmds::install::layout) fn set_final_modes(root: &Path) -> Result<(), FcError> {
     for path in [
         "bin/m80",
         "bin/m80-jailer-harden",

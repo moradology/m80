@@ -451,8 +451,14 @@ fn render_layout_summary(summary: &layout::LayoutInstallSummary, json_mode: bool
 }
 
 fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
+    let heading = if summary.state == "already_installed" {
+        "release already installed"
+    } else {
+        "installed bundle layout"
+    };
     let mut lines = vec![
-        "installed bundle layout".to_owned(),
+        heading.to_owned(),
+        format!("install_state={}", summary.state),
         format!("release_tag={}", summary.release_tag),
         format!("version_dir={}", summary.version_dir),
         format!("files_copied={}", summary.files_copied),
@@ -463,6 +469,7 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
         format!("active_pointer_flipped={}", summary.active_pointer_flipped),
         format!("profile_written={}", summary.profile_written),
         format!("preflight_gate={}", summary.preflight_gate),
+        "next_command=m80 run -- echo hello".to_owned(),
         format!(
             "finalization_order={}",
             summary.finalization_order.join(",")
