@@ -2,11 +2,12 @@
 
 Bead: `m80-o3uh9.16.12.3`.
 
-Normal install and future update paths refuse to move an active install from a
-newer stable release to an older stable release. The default rule is
-fail-closed: `<install-root>/active` is read before asset-index fetch,
-attestation verifier preflight, installer staging, profile writes, proof-cache
-writes, or active-pointer replacement.
+Normal install paths refuse to move an active install from a newer stable
+release to an older stable release. Future update paths must apply the same
+policy before active-pointer movement. The default rule is fail-closed:
+`<install-root>/active` is read before asset-index fetch, attestation verifier
+preflight, installer staging, profile writes, proof-cache writes, or
+active-pointer replacement.
 
 The comparison only uses concrete stable tags with shape
 `vMAJOR.MINOR.PATCH`. A target equal to the active tag is not a downgrade. A
