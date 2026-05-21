@@ -253,6 +253,22 @@ jobs:
             --dist-dir /tmp/m80-release-upload \
             --release-tag "$GITHUB_REF_NAME"
 
+      - name: Write and validate publish decision receipt before upload
+        env:
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+          scripts/release_publish_receipt.py \
+            --dist-dir /tmp/m80-release-upload \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --actor "$GITHUB_ACTOR" \
+            --repository "$GITHUB_REPOSITORY" \
+            --github-ref "$GITHUB_REF" \
+            --write
+
       - name: Attach artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -316,6 +332,13 @@ jobs:
             --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
+
+      - name: Upload publish decision receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-publish-decision-${{ github.run_id }}
+          path: /tmp/m80-release-upload/m80-release-publish-decision.json
+          if-no-files-found: error
 
       - name: Upload failed publish diagnostics
         if: failure()

@@ -1,0 +1,22 @@
+{
+  "bead": "m80-o3uh9.13.26",
+  "command": "python3 -m py_compile scripts/release_publish_receipt.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py ReleaseBundleTest.test_release_publish_receipt_writes_and_validates_publish_inputs ReleaseBundleTest.test_release_publish_receipt_rejects_missing_receipt ReleaseBundleTest.test_release_publish_receipt_rejects_stale_artifact_manifest_digest ReleaseBundleTest.test_release_publish_receipt_rejects_stale_proof_ledger_digest ReleaseBundleTest.test_release_publish_receipt_rejects_wrong_actor_context ReleaseBundleTest.test_release_publish_receipt_rejects_wrong_ref_context ReleaseBundleTest.test_release_workflow_publishes_and_verifies_proof_assets && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-workflow-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json",
+  "exit_status": 0,
+  "kind": "m80_verified_close_proof",
+  "logs": [
+    "targeted release publish receipt tests: 7 passed",
+    "full scripts/test-release-bundle.py suite: 185 passed",
+    "workflow policy lint: ok",
+    "actionlint workflow syntax: ok",
+    "release tracker policy: ok"
+  ],
+  "release_tag": "v0.0.0",
+  "resolved_tag": "v0.0.0",
+  "schema_version": 1,
+  "stderr": "",
+  "stdout": "release publish decision receipt verifies missing receipt, stale artifact manifest digest, stale proof ledger digest, wrong actor context, wrong ref context, and successful receipt-gated publish fixture",
+  "substrate": {
+    "kind": "local-fixture",
+    "real_kvm": false
+  }
+}

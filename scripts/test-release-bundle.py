@@ -20,6 +20,7 @@ SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
 VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
 VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
 UPLOAD_MANIFEST = REPO_ROOT / "scripts" / "release_upload_manifest.py"
+PUBLISH_RECEIPT = REPO_ROOT / "scripts" / "release_publish_receipt.py"
 WRITE_ATTESTATION_METADATA = REPO_ROOT / "scripts" / "write-release-attestation-metadata.py"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
@@ -37,6 +38,7 @@ INTEGRITY_SIGNER_IDENTITY = "moradology/m80/.github/workflows/release-artifacts.
 INTEGRITY_SIGNER_ISSUER = "https://token.actions.githubusercontent.com"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
+PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
@@ -1237,6 +1239,14 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("Write and validate release upload manifest", workflow)
         self.assertIn("--write", workflow)
         self.assertIn("Verify release upload manifest before upload", workflow)
+        self.assertIn("Write and validate publish decision receipt before upload", workflow)
+        self.assertIn("scripts/release_publish_receipt.py", workflow)
+        self.assertIn("--workflow-run-id \"$GITHUB_RUN_ID\"", workflow)
+        self.assertIn("--actor \"$GITHUB_ACTOR\"", workflow)
+        self.assertLess(
+            workflow.index("scripts/release_publish_receipt.py"),
+            workflow.index('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}" --clobber'),
+        )
         self.assertIn("mapfile -t upload_paths < <(", workflow)
         self.assertIn("--print-upload-paths", workflow)
         self.assertIn('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}" --clobber', workflow)
@@ -1256,6 +1266,8 @@ class ReleaseBundleTest(unittest.TestCase):
         )
         self.assertIn("actions/upload-artifact", workflow)
         self.assertIn("actions/download-artifact", workflow)
+        self.assertIn("m80-release-publish-decision-${{ github.run_id }}", workflow)
+        self.assertIn("/tmp/m80-release-upload/m80-release-publish-decision.json", workflow)
         for name in [
             BUNDLE_NAME,
             f"{BUNDLE_NAME}.sha256",
@@ -1534,6 +1546,97 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertIn("non-public workflow artifact set mismatch", result.stderr)
             self.assertIn("local-debug.json", result.stderr)
+
+    def test_release_publish_receipt_writes_and_validates_publish_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+
+            result = run_release_publish_receipt(out_dir, "--write")
+            receipt = json.loads((out_dir / PUBLISH_RECEIPT_NAME).read_text())
+            manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(receipt["schema_version"], 1)
+            self.assertEqual(receipt["kind"], "m80_release_publish_decision")
+            self.assertEqual(receipt["decision"], "approved")
+            self.assertEqual(receipt["release_tag"], "v0.0.0")
+            self.assertEqual(receipt["commit_sha"], INTEGRITY_COMMIT_SHA)
+            self.assertEqual(receipt["workflow_run_id"], "12345")
+            self.assertEqual(receipt["actor"], "release-bot")
+            self.assertEqual(receipt["repository"], "moradology/m80")
+            self.assertEqual(receipt["github_ref"], "refs/tags/v0.0.0")
+            self.assertEqual(receipt["artifact_manifest"]["name"], UPLOAD_MANIFEST_NAME)
+            self.assertEqual(receipt["artifact_manifest_digest"], receipt["artifact_manifest"]["sha256"])
+            self.assertEqual(receipt["proof_ledger"]["name"], HOSTLESS_QUICKSTART_PROOF_NAME)
+            self.assertEqual(receipt["proof_ledger_digest"], receipt["proof_ledger"]["sha256"])
+            self.assertEqual(
+                {asset["name"] for asset in receipt["public_assets"]},
+                {asset["name"] for asset in manifest["public_assets"]},
+            )
+
+    def test_release_publish_receipt_rejects_missing_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+
+            result = run_release_publish_receipt(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release publish decision receipt missing", result.stderr)
+
+    def test_release_publish_receipt_rejects_stale_artifact_manifest_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            manifest_path = out_dir / UPLOAD_MANIFEST_NAME
+            manifest = json.loads(manifest_path.read_text())
+            manifest["non_public_workflow_artifacts"][0]["reason"] = "tampered"
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("artifact manifest sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_stale_proof_ledger_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            proof = write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            proof.write_text("{\"tampered\": true}\n")
+
+            result = run_release_publish_receipt(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof ledger sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_wrong_actor_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write", actor="release-bot")
+
+            result = run_release_publish_receipt(out_dir, actor="other-actor", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("actor mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_wrong_ref_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+
+            result = run_release_publish_receipt(
+                out_dir,
+                github_ref="refs/heads/main",
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("github-ref must be the release tag ref", result.stderr)
 
     def test_package_does_not_bundle_operator_host_prerequisites(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4143,6 +4246,29 @@ def release_upload_manifest_fixture(root: Path) -> Path:
     return out_dir
 
 
+def write_publish_proof_ledger(out_dir: Path) -> Path:
+    proof = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+    proof.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "hostless-release-proof-ledger-fixture",
+                "release_tag": "v0.0.0",
+                "proofs": [
+                    {
+                        "name": "hostless-quickstart",
+                        "artifact": HOSTLESS_QUICKSTART_PROOF_NAME,
+                    }
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return proof
+
+
 def copy_manifest_public_assets(source: Path, target: Path) -> None:
     target.mkdir()
     manifest = json.loads((source / UPLOAD_MANIFEST_NAME).read_text())
@@ -4232,6 +4358,39 @@ def run_release_upload_manifest(
         str(out_dir),
         "--release-tag",
         "v0.0.0",
+        *args,
+    ]
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def run_release_publish_receipt(
+    out_dir: Path,
+    *args: str,
+    check: bool = True,
+    actor: str = "release-bot",
+    github_ref: str = "refs/tags/v0.0.0",
+) -> subprocess.CompletedProcess[str]:
+    cmd = [
+        "python3",
+        str(PUBLISH_RECEIPT),
+        "--dist-dir",
+        str(out_dir),
+        "--release-tag",
+        "v0.0.0",
+        "--commit-sha",
+        INTEGRITY_COMMIT_SHA,
+        "--workflow-run-id",
+        "12345",
+        "--workflow-run-attempt",
+        "1",
+        "--actor",
+        actor,
+        "--repository",
+        "moradology/m80",
+        "--github-ref",
+        github_ref,
+        "--generated-at",
+        "2026-05-21T00:00:00Z",
         *args,
     ]
     return subprocess.run(cmd, check=check, text=True, capture_output=True)

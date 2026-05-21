@@ -394,6 +394,23 @@ publish/latest authority can move. Validate changes with
 `python3 scripts/verify-release-readiness-config.py`; CI runs that validator and
 its negative fixture suite beside the release script tests.
 
+## Publish Decision Receipt
+
+Before the tag publish job mutates GitHub release state, it writes and validates
+`m80-release-publish-decision.json` with
+`scripts/release_publish_receipt.py`. The receipt binds the release tag, commit
+SHA, workflow run id/attempt, actor, repository, tag ref, upload manifest
+digest, proof input digest, and public asset list. The mutating
+`gh release upload` step runs only after the receipt validates against the
+downloaded workflow artifact bytes.
+
+The receipt is uploaded as a durable workflow artifact on success and is also
+included in failed publish diagnostics when upload or post-upload verification
+fails after the receipt step. It is decision evidence, not a replacement for
+the signed release integrity predicate or attestation bundle. The behavior
+contract lives in
+`docs/behaviors/release/publish-decision-receipt.md`.
+
 ## Quickstart Proof Artifact
 
 The release workflow writes `m80-quickstart-proof-hostless.json` into the
