@@ -73,26 +73,30 @@ impl WarmPoolInner {
     }
 
     pub(super) fn start_background_fill(self: &Arc<Self>) {
-        loop {
+        let mut fills_to_spawn = Vec::new();
+        {
             let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
             if self.shutdown.load(Ordering::Relaxed) {
                 return;
             }
-            // Stop if the pool is already at target or already has the
-            // maximum number of concurrent fill workers running.
             let deficit = self
                 .target_ready()
                 .saturating_sub(state.ready.len() + state.filling);
-            if deficit == 0 || state.filling >= MAX_FILL_THREADS {
+            let available_workers = MAX_FILL_THREADS.saturating_sub(state.filling);
+            let fill_count = deficit.min(available_workers);
+            if fill_count == 0 {
                 return;
             }
-            let cpuset_cpus = state.reserve_cpuset_cpus();
-            if self.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
-                return;
+            for _ in 0..fill_count {
+                let cpuset_cpus = state.reserve_cpuset_cpus();
+                if self.config.cpu_allocator.is_some() && cpuset_cpus.is_none() {
+                    break;
+                }
+                state.filling += 1;
+                fills_to_spawn.push(cpuset_cpus);
             }
-            state.filling += 1;
-            drop(state);
-
+        }
+        for cpuset_cpus in fills_to_spawn {
             let inner = Arc::clone(self);
             spawn_fill_worker(inner, cpuset_cpus);
         }
