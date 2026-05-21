@@ -384,6 +384,145 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
             self.assertIn("m80-o3uh9.19: close_reason contains unsupported", result.stderr)
             self.assertIn("public m80 release downloads must use moradology/m80", result.stderr)
 
+    def test_policy_config_non_default_epoch_passes(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "release-next",
+                        "Next release epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-next.1",
+                        "Install docs",
+                        "Public path uses latest install.sh.",
+                        labels=["docs", "release"],
+                        parent="release-next",
+                    ),
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [{"id": "release-next", "status": "active"}],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_policy_config_multiple_active_epochs_pass(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-next",
+                        "Next release epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-next.1",
+                        "Fixture quickstart",
+                        "`m80 quickstart --artifact-url <url>` remains a test override.",
+                        labels=["quickstart", "release"],
+                        parent="release-next",
+                    ),
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [
+                    {"id": "m80-o3uh9", "status": "active"},
+                    {"id": "release-next", "status": "active"},
+                ],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_policy_config_missing_active_epoch_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    )
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [{"id": "missing-release", "status": "active"}],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("active epoch missing-release is missing from tracker", result.stderr)
+
+    def test_policy_config_retired_epoch_with_reason_passes(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    )
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [
+                    {"id": "m80-o3uh9", "status": "active"},
+                    {
+                        "id": "release-old",
+                        "status": "retired",
+                        "reason": "superseded by m80-o3uh9 after release proof landed",
+                    },
+                ],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_policy_config_retired_epoch_without_reason_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    )
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [
+                    {"id": "m80-o3uh9", "status": "active"},
+                    {"id": "release-old", "status": "retired"},
+                ],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("retired epochs require a nonempty reason", result.stderr)
+
 
 class tracker_repo:
     def __enter__(self) -> "tracker_repo":
@@ -399,7 +538,7 @@ class tracker_repo:
     def __exit__(self, *_exc: object) -> None:
         self.tmp.cleanup()
 
-    def run_verify(self) -> subprocess.CompletedProcess[str]:
+    def run_verify(self, *extra_args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 "python3",
@@ -408,6 +547,7 @@ class tracker_repo:
                 str(self.root / ".beads" / "issues.jsonl"),
                 "--repo-root",
                 str(self.root),
+                *extra_args,
             ],
             cwd=REPO_ROOT,
             stdout=subprocess.PIPE,
@@ -469,6 +609,12 @@ def write_issues(root: Path, issues: list[dict]) -> None:
         for issue_row in issues:
             f.write(json.dumps(issue_row, sort_keys=True))
             f.write("\n")
+
+
+def write_policy_config(root: Path, epochs: list[dict]) -> Path:
+    path = root / "release-tracker-policy.json"
+    path.write_text(json.dumps({"schema_version": 1, "epochs": epochs}, indent=2))
+    return path
 
 
 def read_issues(root: Path) -> list[dict]:

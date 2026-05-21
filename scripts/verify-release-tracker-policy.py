@@ -15,6 +15,10 @@ from typing import Any
 
 DEFAULT_EPIC = "m80-o3uh9"
 VERIFIED_LABEL = "requires-verified-close"
+POLICY_CONFIG_SCHEMA_VERSION = 1
+POLICY_CONFIG_TOP_LEVEL_KEYS = {"schema_version", "epochs"}
+POLICY_CONFIG_EPOCH_KEYS = {"id", "status", "reason"}
+POLICY_CONFIG_STATUSES = {"active", "retired"}
 POLICY_EFFECTIVE_AT = datetime(2026, 5, 20, 18, 0, 0, tzinfo=timezone.utc)
 VERIFIED_REF_RE = re.compile(r"verified:\s+([^\s]+)\s+@\s+([0-9a-fA-F]{7,40})\b")
 TRACKED_TEXT_FIELDS = ("title", "description", "acceptance_criteria", "close_reason")
@@ -84,7 +88,17 @@ def parse_args() -> argparse.Namespace:
         default=Path("."),
         help="repository root for artifact and git checks",
     )
-    parser.add_argument("--epic", default=DEFAULT_EPIC, help="release epoch id to lint")
+    parser.add_argument(
+        "--epic",
+        default=None,
+        help=f"release epoch id to lint without --policy-config (default: {DEFAULT_EPIC})",
+    )
+    parser.add_argument(
+        "--policy-config",
+        type=Path,
+        default=None,
+        help="machine-readable release tracker policy config to lint",
+    )
     parser.add_argument(
         "--skip-git-history",
         action="store_true",
@@ -96,17 +110,33 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     repo_root = args.repo_root.resolve()
-    errors = verify_tracker_policy(
-        read_issues(args.issues),
-        repo_root=repo_root,
-        epic=args.epic,
-        check_git_history=not args.skip_git_history,
-    )
+    issues = read_issues(args.issues)
+    if args.policy_config is not None:
+        if args.epic is not None:
+            print("use --epic or --policy-config, not both", file=sys.stderr)
+            return 2
+        errors = verify_policy_config(
+            issues,
+            config=read_policy_config(args.policy_config),
+            config_path=args.policy_config,
+            repo_root=repo_root,
+            check_git_history=not args.skip_git_history,
+        )
+    else:
+        errors = verify_tracker_policy(
+            issues,
+            repo_root=repo_root,
+            epic=args.epic or DEFAULT_EPIC,
+            check_git_history=not args.skip_git_history,
+        )
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
-    print(f"release tracker policy ok: {args.issues}")
+    if args.policy_config is not None:
+        print(f"release tracker policy ok: {args.policy_config}")
+    else:
+        print(f"release tracker policy ok: {args.issues}")
     return 0
 
 
@@ -124,6 +154,99 @@ def read_issues(path: Path) -> list[dict[str, Any]]:
                 raise SystemExit(f"{path}:{line_no}: issue row must be a JSON object")
             issues.append(issue)
     return issues
+
+
+def read_policy_config(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{path}: invalid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise SystemExit(f"{path}: policy config must be a JSON object")
+    return value
+
+
+def verify_policy_config(
+    issues: list[dict[str, Any]],
+    *,
+    config: dict[str, Any],
+    config_path: Path,
+    repo_root: Path,
+    check_git_history: bool,
+) -> list[str]:
+    errors = validate_policy_config(config, config_path)
+    if errors:
+        return errors
+
+    issues_by_id = {
+        issue["id"]: issue
+        for issue in issues
+        if isinstance(issue.get("id"), str)
+    }
+    active_epochs = [
+        epoch["id"]
+        for epoch in config["epochs"]
+        if epoch["status"] == "active"
+    ]
+    if not active_epochs:
+        return [f"{config_path}: must name at least one active epoch"]
+
+    for epic in active_epochs:
+        if epic not in issues_by_id:
+            errors.append(f"{config_path}: active epoch {epic} is missing from tracker")
+            continue
+        for error in verify_tracker_policy(
+            issues,
+            repo_root=repo_root,
+            epic=epic,
+            check_git_history=check_git_history,
+        ):
+            errors.append(f"{epic}: {error}")
+    return errors
+
+
+def validate_policy_config(config: dict[str, Any], config_path: Path) -> list[str]:
+    errors: list[str] = []
+    unknown_keys = sorted(set(config) - POLICY_CONFIG_TOP_LEVEL_KEYS)
+    if unknown_keys:
+        errors.append(f"{config_path}: unknown top-level keys: {', '.join(unknown_keys)}")
+    if config.get("schema_version") != POLICY_CONFIG_SCHEMA_VERSION:
+        errors.append(
+            f"{config_path}: schema_version must be {POLICY_CONFIG_SCHEMA_VERSION}"
+        )
+    epochs = config.get("epochs")
+    if not isinstance(epochs, list):
+        errors.append(f"{config_path}: epochs must be a list")
+        return errors
+    if not epochs:
+        errors.append(f"{config_path}: epochs must not be empty")
+        return errors
+
+    seen: set[str] = set()
+    for index, epoch in enumerate(epochs):
+        prefix = f"{config_path}: epochs[{index}]"
+        if not isinstance(epoch, dict):
+            errors.append(f"{prefix}: entry must be a JSON object")
+            continue
+        unknown_epoch_keys = sorted(set(epoch) - POLICY_CONFIG_EPOCH_KEYS)
+        if unknown_epoch_keys:
+            errors.append(f"{prefix}: unknown keys: {', '.join(unknown_epoch_keys)}")
+        epoch_id = epoch.get("id")
+        if not nonempty_str(epoch_id):
+            errors.append(f"{prefix}: id must be a nonempty string")
+        elif epoch_id in seen:
+            errors.append(f"{prefix}: duplicate epoch id {epoch_id}")
+        else:
+            seen.add(epoch_id)
+
+        status = epoch.get("status")
+        if status not in POLICY_CONFIG_STATUSES:
+            errors.append(f"{prefix}: status must be active or retired")
+        if status == "active" and "reason" in epoch:
+            errors.append(f"{prefix}: active epochs must not carry a retired reason")
+        if status == "retired" and not nonempty_str(epoch.get("reason")):
+            errors.append(f"{prefix}: retired epochs require a nonempty reason")
+    return errors
 
 
 def verify_tracker_policy(
