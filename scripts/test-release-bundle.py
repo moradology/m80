@@ -22,6 +22,7 @@ VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
 UPLOAD_MANIFEST = REPO_ROOT / "scripts" / "release_upload_manifest.py"
 PUBLISH_RECEIPT = REPO_ROOT / "scripts" / "release_publish_receipt.py"
 REMOTE_INVENTORY = REPO_ROOT / "scripts" / "release_remote_asset_inventory.py"
+EVIDENCE_BUNDLE = REPO_ROOT / "scripts" / "release_evidence_bundle.py"
 WRITE_ATTESTATION_METADATA = REPO_ROOT / "scripts" / "write-release-attestation-metadata.py"
 BUNDLE_NAME = "m80-linux-x86_64.tar.gz"
 METADATA_NAME = "m80-linux-x86_64.bundle.json"
@@ -41,6 +42,7 @@ INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
+EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
@@ -1162,6 +1164,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/package-release-bundle.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_publish_authority.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_evidence_bundle.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
         self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
         self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
@@ -1667,6 +1670,142 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("github-ref must be the release tag ref", result.stderr)
+
+    def test_release_evidence_bundle_writes_schema_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
+
+            self.assertEqual(bundle["schema_version"], 1)
+            self.assertEqual(bundle["kind"], "m80_release_evidence_bundle")
+            self.assertEqual(bundle["release_tag"], "v0.0.0")
+            self.assertEqual(bundle["commit_sha"], INTEGRITY_COMMIT_SHA)
+            self.assertEqual(bundle["workflow_run_id"], "12345")
+            self.assertEqual(bundle["m80_version"], "v0.0.0")
+            self.assertEqual(bundle["resolved_install_tag"], "v0.0.0")
+            self.assertEqual(bundle["upload_manifest"]["name"], UPLOAD_MANIFEST_NAME)
+            self.assertEqual(bundle["build_handoff"]["name"], BUILD_MANIFEST_NAME)
+            self.assertEqual(bundle["publish_decision_receipt"]["name"], PUBLISH_RECEIPT_NAME)
+            self.assertEqual(bundle["proof_ledger"]["name"], HOSTLESS_QUICKSTART_PROOF_NAME)
+            self.assertIn("real-kvm-quickstart", bundle["required_lane_ids"])
+            self.assertIn("real-kvm-quickstart", bundle["missing_required_lane_ids"])
+            self.assertNotIn("hostless-quickstart", bundle["missing_required_lane_ids"])
+            self.assertEqual(
+                {asset["name"] for asset in bundle["public_assets"]},
+                {asset["name"] for asset in manifest["public_assets"]},
+            )
+            workflow_only_names = {artifact["name"] for artifact in bundle["workflow_only_artifacts"]}
+            self.assertIn(UPLOAD_MANIFEST_NAME, workflow_only_names)
+            self.assertIn(HOSTLESS_QUICKSTART_PROOF_NAME, workflow_only_names)
+            self.assertEqual(
+                bundle["proofs"],
+                [
+                    {
+                        "artifact_class": "workflow-only",
+                        "file": bundle["proof_ledger"],
+                        "lane_id": "hostless-quickstart",
+                        "proof_kind": "quickstart-proof",
+                        "substrate": "hostless",
+                    }
+                ],
+            )
+            self.assertIn("absolute-host-paths", bundle["redaction"]["forbidden"])
+
+    def test_release_evidence_bundle_rejects_missing_required_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload.pop("commit_sha")
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("field mismatch: missing commit_sha", result.stderr)
+
+    def test_release_evidence_bundle_rejects_unknown_schema_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["schema_version"] = 999
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unsupported release evidence bundle schema_version", result.stderr)
+
+    def test_release_evidence_bundle_rejects_duplicate_lane_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["required_lane_ids"].append(payload["required_lane_ids"][0])
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("required_lane_ids duplicate lane id", result.stderr)
+
+    def test_release_evidence_bundle_rejects_unaccounted_required_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["missing_required_lane_ids"].remove("real-kvm-quickstart")
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("required lane coverage mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_malformed_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["upload_manifest"]["sha256"] = "not-a-digest"
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("upload manifest sha256 must be sha256:<lowercase digest>", result.stderr)
+
+    def test_release_evidence_bundle_rejects_public_workflow_artifact_confusion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            public_asset = payload["public_assets"][0]
+            payload["workflow_only_artifacts"].append(
+                {
+                    "name": public_asset["name"],
+                    "reason": "bad overlap",
+                    "sha256": public_asset["sha256"],
+                    "size_bytes": public_asset["size_bytes"],
+                }
+            )
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("public/workflow artifact confusion", result.stderr)
+
+    def test_release_evidence_bundle_rejects_hostless_as_real_kvm_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            proof = dict(payload["proofs"][0])
+            proof["lane_id"] = "real-kvm-quickstart"
+            proof["substrate"] = "hostless"
+            payload["proofs"] = [proof]
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof real-kvm-quickstart substrate mismatch", result.stderr)
 
     def test_remote_release_asset_inventory_writes_remote_byte_digests(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4398,6 +4537,14 @@ def release_upload_manifest_fixture(root: Path) -> Path:
     return out_dir
 
 
+def evidence_bundle_fixture(root: Path) -> Path:
+    out_dir = release_upload_manifest_fixture(root)
+    write_publish_proof_ledger(out_dir)
+    run_release_publish_receipt(out_dir, "--write")
+    run_release_evidence_bundle(out_dir, "--write")
+    return out_dir
+
+
 def write_publish_proof_ledger(out_dir: Path) -> Path:
     proof = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
     proof.write_text(
@@ -4594,6 +4741,33 @@ def run_release_publish_receipt(
         "moradology/m80",
         "--github-ref",
         github_ref,
+        "--generated-at",
+        "2026-05-21T00:00:00Z",
+        *args,
+    ]
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+
+
+def run_release_evidence_bundle(
+    out_dir: Path,
+    *args: str,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    cmd = [
+        "python3",
+        str(EVIDENCE_BUNDLE),
+        "--dist-dir",
+        str(out_dir),
+        "--release-tag",
+        "v0.0.0",
+        "--commit-sha",
+        INTEGRITY_COMMIT_SHA,
+        "--workflow-run-id",
+        "12345",
+        "--m80-version",
+        "v0.0.0",
+        "--resolved-install-tag",
+        "v0.0.0",
         "--generated-at",
         "2026-05-21T00:00:00Z",
         *args,

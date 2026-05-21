@@ -371,6 +371,15 @@ Inner command timeouts remain the primary failure detector for network fetches,
 tool installation, and smoke probes; the job timeout is the final guard so a
 wedged runner cannot leave release authority undecided.
 
+The durable publish-proof schema entrypoint is `m80-release-evidence.json`,
+validated by `scripts/release_evidence_bundle.py`. Schema version 1 records
+release tag, commit, workflow run id, m80 version, resolved install tag,
+required and missing readiness lane ids, and digests for the upload manifest,
+build handoff, publish decision receipt, proof ledger, public assets, and
+workflow-only artifacts without embedding host paths or token material. Release
+workflow emission and upload are handled by the evidence collector/verifier
+leaves in the `m80-o3uh9.13.39` family.
+
 | Workflow | Job | Timeout |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | `test` | 45 minutes |
