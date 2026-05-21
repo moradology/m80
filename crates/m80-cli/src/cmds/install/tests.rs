@@ -538,6 +538,24 @@ fn same_version_reinstall_is_not_downgrade_refused() {
 }
 
 #[test]
+fn human_layout_summary_includes_reinstall_diagnostics() {
+    let lines = layout_summary_lines(&layout::reinstall_summary_for_render_test());
+
+    assert!(
+        lines.contains(&"reinstall_status=idempotent_same_material".to_owned()),
+        "{lines:?}"
+    );
+    assert!(
+        lines.contains(&"existing_proof_cache_manifest_digest=existing-digest".to_owned()),
+        "{lines:?}"
+    );
+    assert!(
+        lines.contains(&"verified_proof_cache_manifest_digest=verified-digest".to_owned()),
+        "{lines:?}"
+    );
+}
+
+#[test]
 fn missing_active_metadata_still_refuses_older_target_by_pointer_tag() {
     let temp = tempfile::tempdir().expect("create tempdir");
     let install_root = temp.path().join("install-root");

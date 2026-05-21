@@ -24,6 +24,15 @@ the verified public integrity material into the staged version directory,
 rehashes the proof-cache manifest, and checks saved proof file modes before any
 profile/config write or active-pointer rename can happen.
 
+Same-version official reinstalls compare the newly verified public proof
+material against the active version's saved proof cache before active-state
+writes. Matching material is an idempotent no-op with
+`reinstall_status=idempotent_same_material`; changed public proof material is a
+`proof-cache.reinstall` failure that reports old/new manifest digests and the
+changed fields plus the protected `version_dir`, then names
+`explicit_repair=review_changed_public_material_then_remove_version_dir_and_reinstall`
+instead of silently replacing the cache.
+
 CI fixtures can opt into a debug-only hostless preflight fixture mode for local
 `file://` and local HTTP fixture bundles. GitHub release bundle URLs use live
 host preflight. Local bundles without the fixture switch also use live host

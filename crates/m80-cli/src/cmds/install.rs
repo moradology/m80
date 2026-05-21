@@ -444,49 +444,84 @@ fn render_layout_summary(summary: &layout::LayoutInstallSummary, json_mode: bool
     if json_mode {
         println!("{}", json::to_pretty(summary));
     } else {
-        println!("installed bundle layout");
-        println!("release_tag={}", summary.release_tag);
-        println!("version_dir={}", summary.version_dir);
-        println!("files_copied={}", summary.files_copied);
-        println!("install_provenance={}", summary.install_provenance);
-        println!("host_binaries_manifest={}", summary.host_binaries_manifest);
-        println!("profile_path={}", summary.profile_path);
-        println!("active_pointer={}", summary.active_pointer);
-        println!("active_pointer_flipped={}", summary.active_pointer_flipped);
-        println!("profile_written={}", summary.profile_written);
-        println!("preflight_gate={}", summary.preflight_gate);
-        println!(
-            "finalization_order={}",
-            summary.finalization_order.join(",")
-        );
-        if let Some(release_material) = &summary.release_material {
-            println!(
-                "release_material_release_tag={}",
-                release_material.release_tag
-            );
-            println!("bundle_asset={}", release_material.bundle_asset);
-            println!("bundle_url={}", release_material.bundle_url);
-            println!("bundle_sha256={}", release_material.bundle_sha256);
-            println!("install_sh_sha256={}", release_material.install_sh_sha256);
-            println!(
-                "public_sha256s_sha256={}",
-                release_material.public_sha256s_sha256
-            );
-            println!("asset_index_sha256={}", release_material.asset_index_sha256);
-            println!("predicate_sha256={}", release_material.predicate_sha256);
-            println!("attestation_signer={}", release_material.attestation_signer);
-            println!("attestation_issuer={}", release_material.attestation_issuer);
-            println!("source_commit={}", release_material.source_commit);
-            println!(
-                "proof_cache_destination={}",
-                release_material.proof_cache_destination
-            );
-            println!(
-                "proof_cache_written={}",
-                release_material.proof_cache_written
-            );
+        for line in layout_summary_lines(summary) {
+            println!("{line}");
         }
     }
+}
+
+fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
+    let mut lines = vec![
+        "installed bundle layout".to_owned(),
+        format!("release_tag={}", summary.release_tag),
+        format!("version_dir={}", summary.version_dir),
+        format!("files_copied={}", summary.files_copied),
+        format!("install_provenance={}", summary.install_provenance),
+        format!("host_binaries_manifest={}", summary.host_binaries_manifest),
+        format!("profile_path={}", summary.profile_path),
+        format!("active_pointer={}", summary.active_pointer),
+        format!("active_pointer_flipped={}", summary.active_pointer_flipped),
+        format!("profile_written={}", summary.profile_written),
+        format!("preflight_gate={}", summary.preflight_gate),
+        format!(
+            "finalization_order={}",
+            summary.finalization_order.join(",")
+        ),
+    ];
+    if let Some(reinstall) = &summary.reinstall {
+        lines.push(format!("reinstall_status={}", reinstall.status));
+        lines.push(format!(
+            "existing_proof_cache_manifest_digest={}",
+            reinstall.existing_manifest_digest
+        ));
+        lines.push(format!(
+            "verified_proof_cache_manifest_digest={}",
+            reinstall.verified_manifest_digest
+        ));
+    }
+    if let Some(release_material) = &summary.release_material {
+        lines.push(format!(
+            "release_material_release_tag={}",
+            release_material.release_tag
+        ));
+        lines.push(format!("bundle_asset={}", release_material.bundle_asset));
+        lines.push(format!("bundle_url={}", release_material.bundle_url));
+        lines.push(format!("bundle_sha256={}", release_material.bundle_sha256));
+        lines.push(format!(
+            "install_sh_sha256={}",
+            release_material.install_sh_sha256
+        ));
+        lines.push(format!(
+            "public_sha256s_sha256={}",
+            release_material.public_sha256s_sha256
+        ));
+        lines.push(format!(
+            "asset_index_sha256={}",
+            release_material.asset_index_sha256
+        ));
+        lines.push(format!(
+            "predicate_sha256={}",
+            release_material.predicate_sha256
+        ));
+        lines.push(format!(
+            "attestation_signer={}",
+            release_material.attestation_signer
+        ));
+        lines.push(format!(
+            "attestation_issuer={}",
+            release_material.attestation_issuer
+        ));
+        lines.push(format!("source_commit={}", release_material.source_commit));
+        lines.push(format!(
+            "proof_cache_destination={}",
+            release_material.proof_cache_destination
+        ));
+        lines.push(format!(
+            "proof_cache_written={}",
+            release_material.proof_cache_written
+        ));
+    }
+    lines
 }
 
 fn render_install_error(err: &InstallError, json_mode: bool) -> i32 {

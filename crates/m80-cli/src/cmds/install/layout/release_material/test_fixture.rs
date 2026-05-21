@@ -26,6 +26,7 @@ pub(super) struct ReleaseFixtureOptions {
     pub(super) gh_omit_subject: bool,
     pub(super) gh_wrong_subject_digest: bool,
     pub(super) gh_wrong_source_ref: bool,
+    pub(super) alternate_install_script: bool,
 }
 
 pub(super) struct ReleaseFixture {
@@ -163,7 +164,11 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     index_bytes.push(b'\n');
     let index_sha256 = sha256_bytes(&index_bytes);
 
-    let install_bytes = b"#!/bin/sh\nexit 0\n";
+    let install_bytes: &[u8] = if options.alternate_install_script {
+        b"#!/bin/sh\nprintf 'alternate install script\\n'\nexit 0\n"
+    } else {
+        b"#!/bin/sh\nexit 0\n"
+    };
     let selector_bytes = format!(
         "schema_version\t1\nrelease_tag\tv0.0.0\ncolumns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\tsize_bytes\tmetadata_name\tmetadata_sha256\tchecksum_name\tsignature_name\tattestation_name\tm80_version\nrow\tlinux\tx86_64\tminimal\t{bundle_name}\t{bundle_url}\t{bundle_sha256}\t{bundle_size}\t{metadata_name}\t{metadata_sha256}\t{bundle_name}.sha256\t-\tm80-release-integrity.attestation.jsonl\tv0.0.0\n"
     );

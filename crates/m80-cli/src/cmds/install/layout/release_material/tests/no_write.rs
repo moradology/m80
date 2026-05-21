@@ -21,6 +21,7 @@ use super::super::test_fixture::{
     ReleaseFixtureOptions,
 };
 
+mod reinstall;
 mod release_verifier_matrix;
 
 #[test]

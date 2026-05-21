@@ -57,6 +57,8 @@ pub(super) struct LayoutInstallSummary {
     pub(super) finalization_order: Vec<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) release_material: Option<ReleaseMaterialInstallSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reinstall: Option<proof_cache::ProofCacheReinstallReport>,
 }
 
 #[derive(Debug, Serialize)]
@@ -148,6 +150,22 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         .join("versions")
         .join(safe_release_dir(&metadata.release_tag)?);
     if final_dir.exists() {
+        if let Some(verified_bundle) = &verified_official_bundle {
+            require_active_pointer_targets(&PathBuf::from(&plan.active_pointer), &final_dir)?;
+            let reinstall = proof_cache::compare_existing_release_proof_cache(
+                verified_bundle,
+                &final_dir,
+                &plan.binary_version,
+            )?;
+            return Ok(idempotent_reinstall_summary(
+                plan,
+                &metadata.release_tag,
+                &final_dir,
+                &install_root,
+                &verified_bundle.summary,
+                reinstall,
+            ));
+        }
         return Err(FcError::Config(ConfigError::InvalidValue {
             field: "install.version_dir",
             reason: format!("version directory already exists: {}", final_dir.display()),
@@ -221,6 +239,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         preflight_gate,
         finalization_order: finalization_order(proof_cache_manifest.is_some()),
         release_material,
+        reinstall: None,
     })
 }
 
@@ -234,6 +253,76 @@ pub(super) fn with_bundle_url_retry_context(
 
 fn release_proof_cache_destination(final_dir: &Path) -> PathBuf {
     final_dir.join("artifacts").join("release-proof-cache")
+}
+
+fn idempotent_reinstall_summary(
+    plan: &InstallPlan,
+    release_tag: &str,
+    final_dir: &Path,
+    install_root: &Path,
+    verification: &release_material::ReleaseVerificationSummary,
+    reinstall: proof_cache::ProofCacheReinstallReport,
+) -> LayoutInstallSummary {
+    let host_binaries_manifest = final_dir
+        .join("artifacts")
+        .join("host-binaries.manifest.json");
+    LayoutInstallSummary {
+        release_tag: release_tag.to_owned(),
+        version_dir: final_dir.display().to_string(),
+        files_copied: 0,
+        install_provenance: final_dir
+            .join("artifacts")
+            .join(INSTALL_PROVENANCE_FILE)
+            .display()
+            .to_string(),
+        host_binaries_manifest: host_binaries_manifest.display().to_string(),
+        profile_path: install_root
+            .join("profiles/default.toml")
+            .display()
+            .to_string(),
+        active_pointer: plan.active_pointer.clone(),
+        active_pointer_flipped: false,
+        profile_written: false,
+        preflight_gate: "not_run_idempotent_reinstall",
+        finalization_order: vec![
+            "bundle_verification",
+            "release_proof_cache_idempotency_check",
+            "no_active_state_change",
+        ],
+        release_material: Some(ReleaseMaterialInstallSummary::from_verification(
+            verification,
+            final_dir,
+        )),
+        reinstall: Some(reinstall),
+    }
+}
+
+#[cfg(test)]
+pub(super) fn reinstall_summary_for_render_test() -> LayoutInstallSummary {
+    LayoutInstallSummary {
+        release_tag: "v0.0.0".to_owned(),
+        version_dir: "/opt/m80/versions/v0.0.0".to_owned(),
+        files_copied: 0,
+        install_provenance: "/opt/m80/versions/v0.0.0/artifacts/install-provenance.json".to_owned(),
+        host_binaries_manifest: "/opt/m80/versions/v0.0.0/artifacts/host-binaries.manifest.json"
+            .to_owned(),
+        profile_path: "/opt/m80/profiles/default.toml".to_owned(),
+        active_pointer: "/opt/m80/active".to_owned(),
+        active_pointer_flipped: false,
+        profile_written: false,
+        preflight_gate: "not_run_idempotent_reinstall",
+        finalization_order: vec![
+            "bundle_verification",
+            "release_proof_cache_idempotency_check",
+            "no_active_state_change",
+        ],
+        release_material: None,
+        reinstall: Some(proof_cache::ProofCacheReinstallReport {
+            status: "idempotent_same_material",
+            existing_manifest_digest: "existing-digest".to_owned(),
+            verified_manifest_digest: "verified-digest".to_owned(),
+        }),
+    }
 }
 
 fn stage_verified_bundle(bundle_path: &Path, staging_dir: &Path) -> Result<PathBuf, FcError> {
@@ -261,6 +350,26 @@ fn require_absolute_path(field: &'static str, path: &Path) -> Result<(), FcError
         Err(FcError::Config(ConfigError::InvalidValue {
             field,
             reason: format!("{field} must be an absolute path, got {}", path.display()),
+        }))
+    }
+}
+
+fn require_active_pointer_targets(active_pointer: &Path, final_dir: &Path) -> Result<(), FcError> {
+    let target = fs::read_link(active_pointer).map_err(|source| FcError::PathIo {
+        path: active_pointer.to_path_buf(),
+        source,
+    })?;
+    if target == final_dir {
+        Ok(())
+    } else {
+        Err(FcError::Config(ConfigError::InvalidValue {
+            field: "install.active_pointer",
+            reason: format!(
+                "same-version reinstall found existing version directory but active pointer targets a different path: active_pointer={} observed_target={} expected_target={}",
+                active_pointer.display(),
+                target.display(),
+                final_dir.display()
+            ),
         }))
     }
 }

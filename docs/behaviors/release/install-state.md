@@ -291,6 +291,24 @@ previous active pointer, default profile, and config file remain selected. A
 pre-existing non-directory proof-cache target is rejected without rewriting the
 colliding path.
 
+If the requested official release tag is already installed and active, the
+installer compares the newly verified public proof material with the saved
+proof cache before writing any active state. Identical public proof material is
+reported as `reinstall_status=idempotent_same_material`: the active pointer,
+default profile, and config remain unchanged, `files_copied=0`, and both the
+existing and newly verified proof-cache manifest digests are printed.
+`verifier_versions` drift alone is manifest provenance, not changed public
+trust material, so it is reported as idempotent while still showing old/new
+manifest digests. If the
+same tag now resolves to changed public trust material, the reinstall fails
+closed with `proof-cache.reinstall`, `existing_manifest_digest`,
+`verified_manifest_digest`, the changed proof fields, `version_dir`, and
+`explicit_repair=review_changed_public_material_then_remove_version_dir_and_reinstall`.
+m80 does not silently replace saved trust material for a same-version reinstall.
+If the version directory exists but `<install-root>/active` points somewhere
+else, m80 refuses the reinstall as `install.active_pointer` instead of guessing
+which installed tree owns the same tag.
+
 ## Tests
 
 - `complete_manifest_parses_and_validates_digest`
@@ -303,6 +321,14 @@ colliding path.
 - `proof_cache_write_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`
+- `same_version_reinstall_with_identical_proof_material_is_idempotent`
+- `same_version_reinstall_with_changed_verifier_versions_is_idempotent`
+- `same_version_reinstall_with_changed_predicate_refuses_silent_replacement`
+- `same_version_reinstall_with_changed_public_sha256s_refuses_silent_replacement`
+- `same_version_reinstall_with_changed_trust_policy_identity_refuses_silent_replacement`
+- `same_version_reinstall_change_error_names_explicit_repair_version_dir`
+- `same_version_reinstall_refuses_when_existing_version_is_not_active`
+- `human_layout_summary_includes_reinstall_diagnostics`
 - `install_state_doc_names_proof_cache_manifest_contract`
 - `status_matrix_healthy_active_release`
 - `status_matrix_missing_active_pointer`

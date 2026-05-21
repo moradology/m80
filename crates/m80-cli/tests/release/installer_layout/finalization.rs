@@ -70,6 +70,18 @@ fn install_state_doc_names_proof_cache_manifest_contract() {
         "proof_cache_write_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected",
+        "same_version_reinstall_with_identical_proof_material_is_idempotent",
+        "same_version_reinstall_with_changed_verifier_versions_is_idempotent",
+        "same_version_reinstall_with_changed_predicate_refuses_silent_replacement",
+        "same_version_reinstall_with_changed_public_sha256s_refuses_silent_replacement",
+        "same_version_reinstall_with_changed_trust_policy_identity_refuses_silent_replacement",
+        "same_version_reinstall_change_error_names_explicit_repair_version_dir",
+        "same_version_reinstall_refuses_when_existing_version_is_not_active",
+        "human_layout_summary_includes_reinstall_diagnostics",
+        "`reinstall_status=idempotent_same_material`",
+        "`proof-cache.reinstall`",
+        "`version_dir`",
+        "`explicit_repair=review_changed_public_material_then_remove_version_dir_and_reinstall`",
         "before default profile/config writes",
     ] {
         assert!(
