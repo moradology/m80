@@ -30,6 +30,7 @@ pub(super) struct PrebundleVerification {
     pub(super) install_sh_sha256: String,
     pub(super) predicate_sha256: String,
     pub(super) public_sha256s_sha256: String,
+    pub(super) asset_index_sha256: String,
     pub(super) attestation_signer: String,
     pub(super) attestation_issuer: String,
 }

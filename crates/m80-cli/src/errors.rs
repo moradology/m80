@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use m80_firecracker::FcError;
+use m80_firecracker::{ConfigError, FcError};
 
 use crate::json;
 use crate::request_id;
@@ -128,6 +128,10 @@ pub(crate) fn exit_code_for(err: &FcError) -> i32 {
 pub(crate) struct ErrorEnvelope {
     /// Error class / variant name (e.g., `"Preflight"`, `"Config"`).
     pub(crate) variant: &'static str,
+    /// Optional stable diagnostic code for contract-level failures that share
+    /// a broader `FcError` variant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) code: Option<ErrorDiagnosticCode>,
     /// Full human-readable description.
     pub(crate) detail: String,
     /// Corresponding CLI exit code.
@@ -135,6 +139,17 @@ pub(crate) struct ErrorEnvelope {
     /// Number of warm slots that will be ready, when the error is `PoolEmpty`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) target_ready: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ErrorDiagnosticCode {
+    DirectUrlClassifier,
+    ReleaseMaterialFetch,
+    ReleaseMaterialDigest,
+    ReleaseMaterialAttestation,
+    ReleaseMaterialStale,
+    InstallNoWriteRollback,
 }
 
 /// Build an [`ErrorEnvelope`] from an [`FcError`].
@@ -145,10 +160,60 @@ pub(crate) fn envelope(err: &FcError) -> ErrorEnvelope {
     };
     ErrorEnvelope {
         variant: err.variant_name(),
+        code: diagnostic_code_for(err),
         detail: err.to_string(),
         exit_code: exit_code_for(err),
         target_ready,
     }
+}
+
+fn diagnostic_code_for(err: &FcError) -> Option<ErrorDiagnosticCode> {
+    match err {
+        FcError::Config(ConfigError::InvalidValue { field, reason }) => match *field {
+            "bundle-url" => Some(ErrorDiagnosticCode::DirectUrlClassifier),
+            "bundle-url.sha256" => Some(ErrorDiagnosticCode::ReleaseMaterialDigest),
+            "attestation-verifier" => Some(ErrorDiagnosticCode::ReleaseMaterialAttestation),
+            "release-material" => Some(release_material_diagnostic_code(reason)),
+            "install.finalization" | "install.no_write_rollback" => {
+                Some(ErrorDiagnosticCode::InstallNoWriteRollback)
+            }
+            _ => None,
+        },
+        FcError::UnsupportedOperation {
+            operation: "m80 install",
+            reason,
+        } if reason.contains("bundle URL") => Some(ErrorDiagnosticCode::DirectUrlClassifier),
+        _ => None,
+    }
+}
+
+fn release_material_diagnostic_code(reason: &str) -> ErrorDiagnosticCode {
+    let reason = reason.to_ascii_lowercase();
+    if reason.contains("fetch failed")
+        || reason.contains("fetch spawn failed")
+        || reason.contains("asset index fetch failed")
+    {
+        return ErrorDiagnosticCode::ReleaseMaterialFetch;
+    }
+    if reason.contains("attestation") || reason.contains("gh_bin") {
+        return ErrorDiagnosticCode::ReleaseMaterialAttestation;
+    }
+    if reason.contains("repository mismatch")
+        || reason.contains("release_tag mismatch")
+        || reason.contains("target mismatch")
+        || reason.contains("m80_version")
+        || reason.contains("schema_version")
+        || reason.contains("mechanism mismatch")
+        || reason.contains("source_ref")
+        || reason.contains("subject set mismatch")
+        || reason.contains("unexpected subject")
+    {
+        return ErrorDiagnosticCode::ReleaseMaterialStale;
+    }
+    if reason.contains("sha256") || reason.contains("checksum") || reason.contains("digest") {
+        return ErrorDiagnosticCode::ReleaseMaterialDigest;
+    }
+    ErrorDiagnosticCode::ReleaseMaterialStale
 }
 
 /// Render the error to stderr (shared JSON envelope when `json` is true;
@@ -424,8 +489,59 @@ mod tests {
         });
         let env = envelope(&err);
         assert_eq!(env.variant, "Config");
+        assert_eq!(env.code, None);
         assert_eq!(env.exit_code, EXIT_CONFIG);
         assert!(!env.detail.is_empty());
+    }
+
+    #[test]
+    fn json_envelope_codes_direct_url_diagnostics() {
+        for (err, expected) in [
+            (
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "bundle-url",
+                    reason: "remote bundle URL must be a concrete moradology/m80 asset".into(),
+                }),
+                ErrorDiagnosticCode::DirectUrlClassifier,
+            ),
+            (
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "release-material",
+                    reason: "release material fetch failed: release_tag=v0.0.0 material_class=install-script".into(),
+                }),
+                ErrorDiagnosticCode::ReleaseMaterialFetch,
+            ),
+            (
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "release-material",
+                    reason: "release material checksum mismatch: material_class=bundle-checksum".into(),
+                }),
+                ErrorDiagnosticCode::ReleaseMaterialDigest,
+            ),
+            (
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "release-material",
+                    reason: "release trust cryptographic attestation verification failed: material_class=release-attestation-bundle".into(),
+                }),
+                ErrorDiagnosticCode::ReleaseMaterialAttestation,
+            ),
+            (
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "release-material",
+                    reason: "release integrity release_tag mismatch: material_class=release-integrity-predicate expected v0.0.0, got v9.9.9".into(),
+                }),
+                ErrorDiagnosticCode::ReleaseMaterialStale,
+            ),
+            (
+                FcError::Config(ConfigError::InvalidValue {
+                    field: "install.finalization",
+                    reason: "injected interruption after profile write".into(),
+                }),
+                ErrorDiagnosticCode::InstallNoWriteRollback,
+            ),
+        ] {
+            assert_eq!(envelope(&err).code, Some(expected), "{err}");
+        }
     }
 
     #[test]

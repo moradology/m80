@@ -9,6 +9,7 @@ use super::test_fixture::{
 };
 use super::*;
 
+mod diagnostics;
 mod fixture_harness;
 mod no_write;
 
@@ -172,8 +173,16 @@ fn official_release_verifier_accepts_complete_material_before_staging() {
         sha256_file(verified.bundle_path()).unwrap(),
         fixture.bundle_sha256
     );
+    assert_eq!(verified.summary.release_tag, "v0.0.0");
+    assert_eq!(verified.summary.bundle_asset, "m80-linux-x86_64.tar.gz");
+    assert_eq!(verified.summary.bundle_url, fixture.bundle_url);
+    assert_eq!(verified.summary.bundle_sha256, fixture.bundle_sha256);
     assert_eq!(verified.summary.install_sh_sha256, fixture.install_sha256);
     assert_eq!(verified.summary.predicate_sha256, fixture.predicate_sha256);
+    assert_eq!(
+        verified.summary.asset_index_sha256,
+        fixture.asset_index_sha256
+    );
     assert_eq!(
         verified.summary.attestation_signer,
         "moradology/m80/.github/workflows/release-artifacts.yml"
@@ -222,8 +231,15 @@ fn official_release_verifier_invokes_gh_attestation_verify_before_bundle_downloa
         .unwrap()
         .unwrap();
 
+    assert_eq!(verified.summary.release_tag, "v0.0.0");
+    assert_eq!(verified.summary.bundle_asset, "m80-linux-x86_64.tar.gz");
+    assert_eq!(verified.summary.bundle_sha256, fixture.bundle_sha256);
     assert_eq!(verified.summary.install_sh_sha256, fixture.install_sha256);
     assert_eq!(verified.summary.predicate_sha256, fixture.predicate_sha256);
+    assert_eq!(
+        verified.summary.asset_index_sha256,
+        fixture.asset_index_sha256
+    );
     assert_eq!(
         verified.summary.attestation_signer,
         "moradology/m80/.github/workflows/release-artifacts.yml"

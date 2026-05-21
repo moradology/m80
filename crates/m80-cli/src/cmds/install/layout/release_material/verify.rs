@@ -80,6 +80,7 @@ fn verify_prebundle_material(
     )?;
     let predicate_sha256 = sha256_file(downloaded.path("release-integrity-predicate")?)?;
     let public_sha256s_sha256 = sha256_file(downloaded.path("public-sha256s")?)?;
+    let asset_index_sha256 = sha256_file(downloaded.path("asset-index")?)?;
 
     require_equal_material(
         "release-integrity-predicate",
@@ -228,6 +229,7 @@ fn verify_prebundle_material(
         install_sh_sha256,
         predicate_sha256,
         public_sha256s_sha256,
+        asset_index_sha256,
         attestation_signer: attestation.signer_identity,
         attestation_issuer: attestation.issuer,
     })
@@ -251,13 +253,14 @@ fn verify_full_material(
         downloaded.path("bundle")?,
     )?;
 
+    let bundle_sha256 = sha256_file(downloaded.path("bundle")?)?;
     if let MaterialExpectation::BundleIdentity { sha256, size_bytes } = &bundle.expectation {
-        let actual_sha256 = sha256_file(downloaded.path("bundle")?)?;
-        if &actual_sha256 != sha256 {
+        if &bundle_sha256 != sha256 {
             return Err(release_material_error(format!(
                 "release material bundle digest mismatch: {} expected_sha256={} observed_sha256={actual_sha256}",
                 bundle.context(),
-                sha256
+                sha256,
+                actual_sha256 = bundle_sha256
             )));
         }
         let bundle_path = downloaded.path("bundle")?;
@@ -277,9 +280,14 @@ fn verify_full_material(
     }
 
     Ok(ReleaseVerificationSummary {
+        release_tag: plan.release_tag.clone(),
+        bundle_asset: bundle.name.clone(),
+        bundle_url: bundle.url.clone(),
+        bundle_sha256,
         install_sh_sha256: prebundle.install_sh_sha256,
         predicate_sha256: prebundle.predicate_sha256,
         public_sha256s_sha256: prebundle.public_sha256s_sha256,
+        asset_index_sha256: prebundle.asset_index_sha256,
         attestation_signer: prebundle.attestation_signer,
         attestation_issuer: prebundle.attestation_issuer,
         source_commit: prebundle.integrity.commit_sha,

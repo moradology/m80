@@ -76,7 +76,12 @@ binaries, pull OCI images, or install packages implicitly.
   attestation metadata, the GitHub Artifact Attestation bundle, public
   `SHA256SUMS`, and the selected bundle digest. The attestation check binds the
   predicate to the moradology/m80 release workflow, tag ref, source commit, and
-  trusted issuer before the selected bundle tarball is downloaded.
+  trusted issuer before the selected bundle tarball is downloaded. Successful
+  direct official URL installs name the resolved tag, bundle asset, installer
+  digest, public checksum digest, asset-index digest, and reserved proof-cache
+  destination. Failures include finite JSON `code` values for classifier,
+  fetch, digest, attestation, stale-material, and no-write rollback cases plus
+  one retry command when the operator should rerun the explicit URL.
   Non-dry-run stages, verifies, and copies the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
   `<install-root>/active` last.
@@ -170,6 +175,8 @@ Installer input behavior is captured in
 `docs/behaviors/release/installer-input-contract.md`.
 Release asset-index selection and diagnostics are captured in
 `docs/behaviors/release/asset-index.md`.
+Direct official URL diagnostics are captured in
+`docs/behaviors/release/direct-url-diagnostics.md`.
 Installed layout behavior is captured in
 `docs/behaviors/release/installed-layout.md`.
 

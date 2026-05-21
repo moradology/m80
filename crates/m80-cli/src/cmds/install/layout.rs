@@ -56,18 +56,62 @@ pub(super) struct LayoutInstallSummary {
     pub(super) profile_written: bool,
     pub(super) preflight_gate: &'static str,
     pub(super) finalization_order: Vec<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) release_material: Option<ReleaseMaterialInstallSummary>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct ReleaseMaterialInstallSummary {
+    pub(super) release_tag: String,
+    pub(super) bundle_asset: String,
+    pub(super) bundle_url: String,
+    pub(super) bundle_sha256: String,
+    pub(super) install_sh_sha256: String,
+    pub(super) public_sha256s_sha256: String,
+    pub(super) asset_index_sha256: String,
+    pub(super) predicate_sha256: String,
+    pub(super) attestation_signer: String,
+    pub(super) attestation_issuer: String,
+    pub(super) source_commit: String,
+    pub(super) proof_cache_destination: String,
+    pub(super) proof_cache_written: bool,
+}
+
+impl ReleaseMaterialInstallSummary {
+    fn from_verification(
+        verification: &release_material::ReleaseVerificationSummary,
+        final_dir: &Path,
+    ) -> Self {
+        Self {
+            release_tag: verification.release_tag.clone(),
+            bundle_asset: verification.bundle_asset.clone(),
+            bundle_url: verification.bundle_url.clone(),
+            bundle_sha256: verification.bundle_sha256.clone(),
+            install_sh_sha256: verification.install_sh_sha256.clone(),
+            public_sha256s_sha256: verification.public_sha256s_sha256.clone(),
+            asset_index_sha256: verification.asset_index_sha256.clone(),
+            predicate_sha256: verification.predicate_sha256.clone(),
+            attestation_signer: verification.attestation_signer.clone(),
+            attestation_issuer: verification.attestation_issuer.clone(),
+            source_commit: verification.source_commit.clone(),
+            proof_cache_destination: release_proof_cache_destination(final_dir)
+                .display()
+                .to_string(),
+            proof_cache_written: false,
+        }
+    }
 }
 
 pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallSummary, FcError> {
     let bundle_url = require_bundle_url(plan)?;
     let install_root = PathBuf::from(&plan.install_root);
     require_absolute_path("install_root", &install_root)?;
-    validate_bundle_source_url(bundle_url)?;
-    preflight_attestation_verifier_for_bundle_url(bundle_url)?;
+    validate_bundle_source_url(bundle_url)
+        .map_err(|err| with_bundle_url_retry_context(err, bundle_url, &install_root))?;
+    preflight_attestation_verifier_for_bundle_url(bundle_url)
+        .map_err(|err| with_bundle_url_retry_context(err, bundle_url, &install_root))?;
     let verified_official_bundle = release_material::verify_official_release_bundle(bundle_url)
-        .map_err(|err| {
-            release_material::with_install_retry_context(err, bundle_url, &install_root)
-        })?;
+        .map_err(|err| with_bundle_url_retry_context(err, bundle_url, &install_root))?;
     let staging_dir = prepare_staging_dir(&install_root)?;
     let bundle_path = if let Some(verified_bundle) = &verified_official_bundle {
         stage_verified_bundle(verified_bundle.bundle_path(), staging_dir.path())?
@@ -149,6 +193,9 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     flip_active_pointer(&active_pointer, &final_dir)?;
 
     let install_provenance = final_dir.join("artifacts").join(INSTALL_PROVENANCE_FILE);
+    let release_material = verified_official_bundle.as_ref().map(|verified_bundle| {
+        ReleaseMaterialInstallSummary::from_verification(&verified_bundle.summary, &final_dir)
+    });
     Ok(LayoutInstallSummary {
         release_tag: metadata.release_tag,
         version_dir: final_dir.display().to_string(),
@@ -161,7 +208,20 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         profile_written: true,
         preflight_gate,
         finalization_order: finalization_order(),
+        release_material,
     })
+}
+
+pub(super) fn with_bundle_url_retry_context(
+    err: FcError,
+    bundle_url: &str,
+    install_root: &Path,
+) -> FcError {
+    release_material::with_install_retry_context(err, bundle_url, install_root)
+}
+
+fn release_proof_cache_destination(final_dir: &Path) -> PathBuf {
+    final_dir.join("artifacts").join("release-proof-cache")
 }
 
 fn stage_verified_bundle(bundle_path: &Path, staging_dir: &Path) -> Result<PathBuf, FcError> {
@@ -422,6 +482,47 @@ mod tests {
         assert!(
             err.to_string().contains("absolute local path"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn release_material_install_summary_names_reserved_proof_cache_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let final_dir = temp.path().join("versions/v0.0.0");
+        let verification = release_material::ReleaseVerificationSummary {
+            release_tag: "v0.0.0".to_owned(),
+            bundle_asset: "m80-linux-x86_64.tar.gz".to_owned(),
+            bundle_url:
+                "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz"
+                    .to_owned(),
+            bundle_sha256: "a".repeat(64),
+            install_sh_sha256: "b".repeat(64),
+            public_sha256s_sha256: "c".repeat(64),
+            asset_index_sha256: "d".repeat(64),
+            predicate_sha256: "e".repeat(64),
+            attestation_signer: "moradology/m80/.github/workflows/release-artifacts.yml".to_owned(),
+            attestation_issuer: "https://token.actions.githubusercontent.com".to_owned(),
+            source_commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+        };
+
+        let summary = ReleaseMaterialInstallSummary::from_verification(&verification, &final_dir);
+
+        assert_eq!(summary.release_tag, "v0.0.0");
+        assert_eq!(summary.bundle_asset, "m80-linux-x86_64.tar.gz");
+        assert_eq!(summary.install_sh_sha256, "b".repeat(64));
+        assert_eq!(summary.public_sha256s_sha256, "c".repeat(64));
+        assert_eq!(summary.asset_index_sha256, "d".repeat(64));
+        assert_eq!(
+            summary.proof_cache_destination,
+            final_dir
+                .join("artifacts/release-proof-cache")
+                .display()
+                .to_string()
+        );
+        assert!(!summary.proof_cache_written);
+        assert!(
+            !final_dir.join("artifacts/release-proof-cache").exists(),
+            "diagnostics reserve the proof-cache destination but do not write cache material yet"
         );
     }
 

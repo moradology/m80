@@ -45,13 +45,16 @@ pub(super) fn verify_official_release_bundle(
     let plan = ReleaseMaterialPlan::from_index_material(material)?;
     let verified = plan.verify_official_bundle()?;
     eprintln!(
-        "m80 install: verified release material release_tag={} material_classes={} identity={} install_sh_sha256={} predicate_sha256={} public_sha256s_sha256={} attestation_signer={} attestation_issuer={} source_commit={}",
+        "m80 install: verified release material release_tag={} bundle_asset={} bundle_sha256={} material_classes={} identity={} install_sh_sha256={} public_sha256s_sha256={} asset_index_sha256={} predicate_sha256={} attestation_signer={} attestation_issuer={} source_commit={}",
         plan.release_tag,
+        verified.summary.bundle_asset,
+        verified.summary.bundle_sha256,
         plan.material_classes().join(","),
         plan.identity,
         verified.summary.install_sh_sha256,
-        verified.summary.predicate_sha256,
         verified.summary.public_sha256s_sha256,
+        verified.summary.asset_index_sha256,
+        verified.summary.predicate_sha256,
         verified.summary.attestation_signer,
         verified.summary.attestation_issuer,
         verified.summary.source_commit
@@ -64,18 +67,70 @@ pub(super) fn with_install_retry_context(
     bundle_url: &str,
     install_root: &Path,
 ) -> FcError {
+    let release_tag = source::official_release_tag_from_bundle_url(bundle_url)
+        .ok()
+        .flatten();
     match err {
-        FcError::Config(ConfigError::InvalidValue {
-            field: "release-material",
+        FcError::Config(ConfigError::InvalidValue { field, reason })
+            if field == "release-material"
+                || field == "bundle-url"
+                || field == "bundle-url.sha256"
+                || field == "attestation-verifier" =>
+        {
+            FcError::Config(ConfigError::InvalidValue {
+                field,
+                reason: append_retry_context(
+                    &reason,
+                    bundle_url,
+                    install_root,
+                    release_tag.as_deref(),
+                ),
+            })
+        }
+        FcError::UnsupportedOperation {
+            operation: "m80 install",
             reason,
-        }) => FcError::Config(ConfigError::InvalidValue {
-            field: "release-material",
-            reason: format!(
-                "{reason}; retry_command={}",
-                install_retry_command(bundle_url, install_root)
-            ),
-        }),
+        } if reason.contains("bundle URL") => FcError::UnsupportedOperation {
+            operation: "m80 install",
+            reason: append_retry_context(&reason, bundle_url, install_root, release_tag.as_deref()),
+        },
         other => other,
+    }
+}
+
+fn append_retry_context(
+    reason: &str,
+    bundle_url: &str,
+    install_root: &Path,
+    release_tag: Option<&str>,
+) -> String {
+    let mut enriched = reason.to_owned();
+    if let Some(release_tag) = release_tag {
+        if !enriched.contains("release_tag=") {
+            enriched.push_str("; release_tag=");
+            enriched.push_str(release_tag);
+        }
+    }
+    if !enriched.contains("material_class=") {
+        if let Some(material_class) = fallback_material_class(reason) {
+            enriched.push_str("; material_class=");
+            enriched.push_str(material_class);
+        }
+    }
+    if !enriched.contains("retry_command=") {
+        enriched.push_str("; retry_command=");
+        enriched.push_str(&install_retry_command(bundle_url, install_root));
+    }
+    enriched
+}
+
+fn fallback_material_class(reason: &str) -> Option<&'static str> {
+    if reason.contains("attestation") || reason.contains("gh_bin") {
+        Some("release-attestation-bundle")
+    } else if reason.contains("bundle URL") || reason.contains("remote bundle URL") {
+        Some("direct-url-classifier")
+    } else {
+        None
     }
 }
 
@@ -83,8 +138,17 @@ fn install_retry_command(bundle_url: &str, install_root: &Path) -> String {
     format!(
         "m80 install --bundle-url {} --install-root {}",
         shell_quote(bundle_url),
-        shell_quote(&install_root.display().to_string())
+        shell_quote(&retry_install_root(install_root))
     )
+}
+
+fn retry_install_root(install_root: &Path) -> String {
+    if install_root.is_absolute() {
+        return install_root.display().to_string();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(install_root).display().to_string())
+        .unwrap_or_else(|_| install_root.display().to_string())
 }
 
 fn shell_quote(value: &str) -> String {
@@ -106,9 +170,14 @@ impl VerifiedOfficialReleaseBundle {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ReleaseVerificationSummary {
+    pub(super) release_tag: String,
+    pub(super) bundle_asset: String,
+    pub(super) bundle_url: String,
+    pub(super) bundle_sha256: String,
     pub(super) install_sh_sha256: String,
     pub(super) predicate_sha256: String,
     pub(super) public_sha256s_sha256: String,
+    pub(super) asset_index_sha256: String,
     pub(super) attestation_signer: String,
     pub(super) attestation_issuer: String,
     pub(super) source_commit: String,

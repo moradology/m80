@@ -30,6 +30,7 @@ pub(super) struct ReleaseFixtureOptions {
 pub(super) struct ReleaseFixture {
     pub(super) bundle_url: String,
     pub(super) bundle_sha256: String,
+    pub(super) asset_index_sha256: String,
     pub(super) install_sha256: String,
     pub(super) predicate_sha256: String,
 }
@@ -456,6 +457,7 @@ pub(super) fn write_direct_release_materials_with(
     ReleaseFixture {
         bundle_url,
         bundle_sha256,
+        asset_index_sha256: index_sha256,
         install_sha256,
         predicate_sha256,
     }

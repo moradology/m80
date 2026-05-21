@@ -238,6 +238,7 @@ fn render_owner_error(err: control::WarmErrorResponse, json_mode: bool) -> i32 {
             .map(|id| crate::request_id::set(id.to_owned()));
         let env = errors::ErrorEnvelope {
             variant: err.variant.as_str(),
+            code: None,
             detail: err.detail,
             exit_code,
             target_ready: err.target_ready,

@@ -23,7 +23,10 @@ fn cmd_install_with_identity(
 ) -> anyhow::Result<i32> {
     let plan = match install_plan(&args, identity) {
         Ok(plan) => plan,
-        Err(err) => return Ok(render_install_error(&err, json_mode)),
+        Err(err) => {
+            let err = with_install_retry_context(err, &args);
+            return Ok(render_install_error(&err, json_mode));
+        }
     };
 
     if args.dry_run {
@@ -31,11 +34,32 @@ fn cmd_install_with_identity(
     } else {
         let summary = match layout::install_bundle_layout(&plan) {
             Ok(summary) => summary,
-            Err(err) => return Ok(errors::render_error(&err, json_mode)),
+            Err(err) => {
+                let err = if let Some(bundle_url) = args.bundle_url.as_deref() {
+                    layout::with_bundle_url_retry_context(err, bundle_url, &args.install_root)
+                } else {
+                    err
+                };
+                return Ok(errors::render_error(&err, json_mode));
+            }
         };
         render_layout_summary(&summary, json_mode);
     }
     Ok(0)
+}
+
+fn with_install_retry_context(err: InstallError, args: &InstallArgs) -> InstallError {
+    let Some(bundle_url) = args.bundle_url.as_deref() else {
+        return err;
+    };
+    match err {
+        InstallError::Fc(err) => InstallError::Fc(layout::with_bundle_url_retry_context(
+            err,
+            bundle_url,
+            &args.install_root,
+        )),
+        other => other,
+    }
 }
 
 fn install_plan(
@@ -332,6 +356,33 @@ fn render_layout_summary(summary: &layout::LayoutInstallSummary, json_mode: bool
             "finalization_order={}",
             summary.finalization_order.join(",")
         );
+        if let Some(release_material) = &summary.release_material {
+            println!(
+                "release_material_release_tag={}",
+                release_material.release_tag
+            );
+            println!("bundle_asset={}", release_material.bundle_asset);
+            println!("bundle_url={}", release_material.bundle_url);
+            println!("bundle_sha256={}", release_material.bundle_sha256);
+            println!("install_sh_sha256={}", release_material.install_sh_sha256);
+            println!(
+                "public_sha256s_sha256={}",
+                release_material.public_sha256s_sha256
+            );
+            println!("asset_index_sha256={}", release_material.asset_index_sha256);
+            println!("predicate_sha256={}", release_material.predicate_sha256);
+            println!("attestation_signer={}", release_material.attestation_signer);
+            println!("attestation_issuer={}", release_material.attestation_issuer);
+            println!("source_commit={}", release_material.source_commit);
+            println!(
+                "proof_cache_destination={}",
+                release_material.proof_cache_destination
+            );
+            println!(
+                "proof_cache_written={}",
+                release_material.proof_cache_written
+            );
+        }
     }
 }
 
