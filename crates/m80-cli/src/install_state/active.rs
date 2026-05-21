@@ -111,6 +111,42 @@ fn active_pointer_target_report(
             status: ActivePointerStatus::Dangling,
         };
     }
+    match std::fs::symlink_metadata(&resolved_target) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            diagnostics.push(diagnostic(
+                InstallStateDiagnosticCode::ActivePointerNotVersionDir,
+                Some("active_pointer"),
+                Some(resolved_target.clone()),
+                format!(
+                    "active pointer target must be a real version directory, got {}",
+                    resolved_target.display()
+                ),
+            ));
+            return ActivePointerReport {
+                path: pointer.to_path_buf(),
+                target: Some(target),
+                version_dir: Some(resolved_target),
+                release_tag,
+                status: ActivePointerStatus::Invalid,
+            };
+        }
+        Ok(_) => {}
+        Err(source) => {
+            diagnostics.push(diagnostic(
+                InstallStateDiagnosticCode::ActivePointerUnreadable,
+                Some("active_pointer"),
+                Some(resolved_target.clone()),
+                source.to_string(),
+            ));
+            return ActivePointerReport {
+                path: pointer.to_path_buf(),
+                target: Some(target),
+                version_dir: Some(resolved_target),
+                release_tag,
+                status: ActivePointerStatus::Invalid,
+            };
+        }
+    }
     ActivePointerReport {
         path: pointer.to_path_buf(),
         target: Some(target),

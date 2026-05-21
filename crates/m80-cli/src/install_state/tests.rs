@@ -6,6 +6,8 @@ use m80_firecracker::{ConfigFilePaths, ConfigSource};
 
 use super::*;
 
+mod metadata;
+
 #[test]
 fn host_paths_use_documented_linux_locations() {
     let paths = InstallStatePaths::host("/opt/m80");
@@ -25,6 +27,7 @@ fn host_paths_use_documented_linux_locations() {
 fn resolver_reports_healthy_active_release() {
     let fixture = InstallStateFixture::new();
     fixture.write_installed_profile("v1.2.3");
+    metadata::write_complete_install_metadata(&fixture, "v1.2.3");
     fixture.write_system_config("default");
     fixture.point_active_at("v1.2.3");
 
@@ -45,6 +48,7 @@ fn resolver_reports_healthy_active_release() {
             .and_then(|profile| profile.release_tag.as_deref()),
         Some("v1.2.3")
     );
+    assert!(report.metadata.is_some());
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
 }
 
@@ -80,6 +84,29 @@ fn resolver_reports_dangling_active_pointer() {
     assert_eq!(report.state, InstallStateKind::DanglingActivePointer);
     assert_eq!(report.active_pointer.status, ActivePointerStatus::Dangling);
     assert_eq!(report.active_pointer.release_tag.as_deref(), Some("v9.9.9"));
+}
+
+#[test]
+fn resolver_rejects_active_pointer_target_symlink_version_dir() {
+    let fixture = InstallStateFixture::new();
+    let versions_dir = fixture.install_root().join("versions");
+    let version_dir = versions_dir.join("v1.2.3");
+    let outside = fixture.temp.path().join("outside-version");
+    fs::create_dir_all(&versions_dir).expect("create versions dir");
+    fs::create_dir_all(&outside).expect("create outside version dir");
+    symlink(&outside, &version_dir).expect("make version dir symlink");
+    fixture.write_profile_with_artifact_dir("default", "v1.2.3", version_dir.join("artifacts"));
+    fixture.write_system_config("default");
+    symlink(&version_dir, fixture.install_root().join("active")).expect("point active at symlink");
+
+    let report = fixture.resolve(None);
+
+    assert_eq!(report.state, InstallStateKind::InvalidInstallMetadata);
+    assert_eq!(report.active_pointer.status, ActivePointerStatus::Invalid);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == InstallStateDiagnosticCode::ActivePointerNotVersionDir
+            && diagnostic.field == Some("active_pointer")
+    }));
 }
 
 #[test]

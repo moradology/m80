@@ -11,6 +11,8 @@ use serde::Serialize;
 use crate::profile::{self, ProfileBodySource, ProfileFilePaths, RuntimeProfile};
 
 mod active;
+mod metadata;
+mod state;
 
 pub(crate) use active::{ActivePointerReport, ActivePointerStatus};
 
@@ -57,6 +59,7 @@ pub(crate) struct InstallStateReport {
     pub(crate) active_pointer: ActivePointerReport,
     pub(crate) config: InstallConfigReport,
     pub(crate) profile: Option<InstallProfileReport>,
+    pub(crate) metadata: Option<metadata::InstallMetadataReport>,
     pub(crate) diagnostics: Vec<InstallStateDiagnostic>,
 }
 
@@ -69,6 +72,9 @@ pub(crate) enum InstallStateKind {
     LocalDevTree,
     StaleProfileTarget,
     ExplicitOverride,
+    MissingInstallMetadata,
+    StaleInstallMetadata,
+    TamperedProofCache,
     InvalidInstallMetadata,
 }
 
@@ -119,6 +125,12 @@ pub(crate) enum InstallStateDiagnosticCode {
     ProfilePathOutsideInstallRoot,
     ProfileArtifactDirMalformed,
     ProfileTargetsInactiveVersion,
+    InstallMetadataMissing,
+    InstallMetadataInvalid,
+    InstallMetadataStale,
+    ProofCacheMissing,
+    ProofCacheInvalid,
+    ProofCacheStale,
     ExplicitProfileOverride,
     LocalDevProfile,
 }
@@ -205,7 +217,16 @@ pub(crate) fn resolve_install_state(request: InstallStateRequest) -> InstallStat
             ));
         }
     }
-    let state = classify_install_state(
+    let metadata = if state::should_read_metadata(&active_pointer, profile_report.as_ref()) {
+        profile.as_ref().and_then(|profile| {
+            profile_report.as_ref().map(|profile_report| {
+                metadata::read_install_metadata(profile, profile_report, &mut diagnostics)
+            })
+        })
+    } else {
+        None
+    };
+    let state = state::classify_install_state(
         &active_pointer,
         &config,
         profile_report.as_ref(),
@@ -218,6 +239,7 @@ pub(crate) fn resolve_install_state(request: InstallStateRequest) -> InstallStat
         active_pointer,
         config,
         profile: profile_report,
+        metadata,
         diagnostics,
     }
 }
@@ -384,50 +406,6 @@ fn validate_profile_path_has_no_traversal(
         format!("profile path contains '..': {}", path.display()),
     ));
     false
-}
-
-fn classify_install_state(
-    active: &ActivePointerReport,
-    config: &InstallConfigReport,
-    profile: Option<&InstallProfileReport>,
-    diagnostics: &[InstallStateDiagnostic],
-) -> InstallStateKind {
-    if diagnostics.iter().any(|diagnostic| {
-        matches!(
-            diagnostic.code,
-            InstallStateDiagnosticCode::ConfigLoadFailed
-                | InstallStateDiagnosticCode::DefaultProfileMissing
-                | InstallStateDiagnosticCode::ProfileLoadFailed
-                | InstallStateDiagnosticCode::ActivePointerTraversal
-                | InstallStateDiagnosticCode::ActivePointerOutsideInstallRoot
-                | InstallStateDiagnosticCode::ActivePointerNotVersionDir
-                | InstallStateDiagnosticCode::ProfilePathTraversal
-                | InstallStateDiagnosticCode::ProfilePathOutsideInstallRoot
-                | InstallStateDiagnosticCode::ProfileArtifactDirMalformed
-        )
-    }) {
-        return InstallStateKind::InvalidInstallMetadata;
-    }
-    if config.explicit_override {
-        return InstallStateKind::ExplicitOverride;
-    }
-    if profile.is_some_and(|profile| profile.body_source == "builtin_env") {
-        return InstallStateKind::LocalDevTree;
-    }
-    match active.status {
-        ActivePointerStatus::Missing => InstallStateKind::MissingActivePointer,
-        ActivePointerStatus::Dangling => InstallStateKind::DanglingActivePointer,
-        ActivePointerStatus::Invalid => InstallStateKind::InvalidInstallMetadata,
-        ActivePointerStatus::Live => {
-            if let (Some(active_version), Some(profile)) = (active.version_dir.as_deref(), profile)
-            {
-                if profile.version_dir.as_deref() != Some(active_version) {
-                    return InstallStateKind::StaleProfileTarget;
-                }
-            }
-            InstallStateKind::HealthyActiveRelease
-        }
-    }
 }
 
 fn is_explicit_override_source(source: ConfigSource) -> bool {

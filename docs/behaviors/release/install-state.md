@@ -1,7 +1,7 @@
 # Install State
 
 Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
-`m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.2`.
+`m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -39,6 +39,13 @@ The resolver returns one typed state:
 - `explicit_override`: an operator override such as `M80_DEFAULT_PROFILE`, a
   user config layer, a config drop-in, or a future `--profile` caller override
   selects a profile instead of trusting the installed system config alone.
+- `missing_install_metadata`: the active/profile state is coherent, but a
+  required installed metadata file is absent.
+- `stale_install_metadata`: installed metadata parses, but one of its recorded
+  paths, sizes, release tags, or digests no longer matches the active version
+  directory.
+- `tampered_proof_cache`: the saved public proof-cache manifest or one of its
+  referenced proof files no longer matches the recorded digest.
 - `invalid_install_metadata`: config/profile parsing failed, the active pointer
   is malformed, or persisted installed-profile paths are not valid install-root
   paths.
@@ -51,6 +58,30 @@ paths outside the install root. Host prerequisite paths such as Firecracker and
 jailer binaries may still point at their documented system locations. Explicit
 operator profile overrides are reported as overrides rather than rejected as
 broken installed metadata.
+
+## Installed Metadata Reader
+
+The metadata reader for `m80-o3uh9.16.7.3` is the status-facing view of the
+active version directory. It parses these files without running binaries,
+preflight, network fetches, or installer repair:
+
+- `<version-dir>/bundle.json`
+- `<version-dir>/artifacts/install-provenance.json`
+- `<version-dir>/artifacts/host-binaries.manifest.json`
+- `<version-dir>/artifacts/release-proof-cache/manifest.json`
+
+The reader treats unknown JSON fields, malformed digests, absolute or escaping
+bundle file paths, malformed proof-cache file names, symlinked installed references,
+and missing referenced files as unhealthy installed state. Metadata
+files are opened with `O_NOFOLLOW`, referenced bundle/proof/provenance files
+are hashed from an opened file descriptor instead of read fully into memory, and
+relative installed references must not traverse symlink components inside the
+active version directory. Bundle metadata and proof-cache DTOs use
+`deny_unknown_fields`; host-binaries and install-provenance parsing reuses the
+shared manifest readers from `m80-image-manifest`. A missing metadata file
+reports `missing_install_metadata`; a stale bundle/provenance reference reports
+`stale_install_metadata`; a stale proof-cache reference reports
+`tampered_proof_cache`.
 
 ## Proof Cache Contract
 
