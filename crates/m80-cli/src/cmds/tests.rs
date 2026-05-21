@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt as _;
 
 use super::install_status::ProofCacheStatusOutput;
 use super::preflight::{
@@ -572,6 +573,40 @@ fn preflight_json_report_reads_offline_proof_cache_material() {
 }
 
 #[test]
+fn preflight_json_report_reports_tampered_proof_cache_repair_command() {
+    let temp = tempfile::tempdir().expect("create proof-cache fixture root");
+    let profile = installed_runtime_profile_with_proof_cache(temp.path());
+    let material = temp
+        .path()
+        .join("versions/v1/artifacts/release-proof-cache/m80-release-integrity.json");
+    fs::set_permissions(&material, fs::Permissions::from_mode(0o600))
+        .expect("tamper proof-cache material mode");
+
+    let runtime_profile = profile::runtime_profile_report(&profile);
+    let proof = m80_preflight::HostPrerequisiteResult::from_discovery(&fake_discovery()).unwrap();
+    let report = PreflightReport {
+        schema_version: 1,
+        proof_cache: ProofCacheStatusOutput::from_runtime_profile(&runtime_profile),
+        runtime_profile,
+        host_prerequisites: proof,
+    };
+    let json = json::to_pretty(&report);
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let proof_cache = &parsed["data"]["proof_cache"];
+
+    assert_eq!(proof_cache["status"], "stale_manifest");
+    assert_eq!(proof_cache["diagnostics"][0]["code"], "proof_cache_stale");
+    assert!(proof_cache["diagnostics"][0]["message"]
+        .as_str()
+        .expect("diagnostic message is a string")
+        .contains("proof_cache.file_mode"));
+    assert_eq!(
+        proof_cache["repair_command"],
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1/install.sh | sudo sh"
+    );
+}
+
+#[test]
 fn preflight_json_error_report_includes_selected_profile_context() {
     let profile = installed_runtime_profile();
     let err = m80_firecracker::FcError::Preflight(PreflightError::KvmUnavailable {
@@ -761,6 +796,8 @@ fn installed_runtime_profile_with_proof_cache(root: &std::path::Path) -> Runtime
 
 fn write_test_proof_cache(cache_dir: &std::path::Path) {
     fs::create_dir_all(cache_dir).expect("create proof-cache dir");
+    fs::set_permissions(cache_dir, fs::Permissions::from_mode(0o755))
+        .expect("set proof-cache dir mode");
     let integrity = write_test_proof_file(cache_dir, "m80-release-integrity.json", b"integrity\n");
     let attestation = write_test_proof_file(
         cache_dir,
@@ -821,10 +858,17 @@ fn write_test_proof_cache(cache_dir: &std::path::Path) {
         serde_json::to_vec_pretty(&manifest).expect("encode proof-cache manifest"),
     )
     .expect("write proof-cache manifest");
+    fs::set_permissions(
+        cache_dir.join("manifest.json"),
+        fs::Permissions::from_mode(0o644),
+    )
+    .expect("set proof-cache manifest mode");
 }
 
 fn write_test_proof_file(cache_dir: &std::path::Path, name: &str, bytes: &[u8]) -> TestProofFile {
     fs::write(cache_dir.join(name), bytes).expect("write proof-cache material");
+    fs::set_permissions(cache_dir.join(name), fs::Permissions::from_mode(0o644))
+        .expect("set proof-cache material mode");
     TestProofFile {
         path: name.to_owned(),
         sha256: sha256_bytes(bytes),

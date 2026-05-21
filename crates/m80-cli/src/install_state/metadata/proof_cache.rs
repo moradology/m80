@@ -1,3 +1,4 @@
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,8 @@ use super::{
 use crate::install_state::{diagnostic, InstallStateDiagnostic, InstallStateDiagnosticCode};
 
 const PROOF_CACHE_SCHEMA_VERSION: u32 = 1;
+const PROOF_CACHE_FILE_MODE: u32 = 0o644;
+const PROOF_CACHE_DIR_MODE: u32 = 0o755;
 
 pub(super) fn read_proof_cache_manifest(
     version_dir: &Path,
@@ -38,6 +41,20 @@ pub(super) fn read_proof_cache_manifest(
     let cache_dir = path
         .parent()
         .expect("proof-cache manifest should have parent");
+    if let Err(reason) = verify_mode(cache_dir, PROOF_CACHE_DIR_MODE, "proof_cache.dir_mode") {
+        stale_proof_cache(diagnostics, path, reason);
+        return (
+            file_report(path, MetadataFileStatus::Stale, Some(sha256)),
+            None,
+        );
+    }
+    if let Err(reason) = verify_mode(path, PROOF_CACHE_FILE_MODE, "proof_cache.manifest_mode") {
+        stale_proof_cache(diagnostics, path, reason);
+        return (
+            file_report(path, MetadataFileStatus::Stale, Some(sha256)),
+            None,
+        );
+    }
     if let Err(reason) = validate_proof_cache_manifest(cache_dir, &manifest) {
         stale_proof_cache(diagnostics, path, reason);
         return (
@@ -360,7 +377,29 @@ fn verify_cache_file(
             expected_sha256
         ));
     }
+    verify_mode(&path, PROOF_CACHE_FILE_MODE, "proof_cache.file_mode")?;
     Ok(())
+}
+
+fn verify_mode(path: &Path, expected: u32, field: &'static str) -> Result<(), String> {
+    let observed = std::fs::symlink_metadata(path)
+        .map_err(|source| {
+            format!(
+                "proof-cache mode check failed: field={field} path={} source={source}",
+                path.display()
+            )
+        })?
+        .permissions()
+        .mode()
+        & 0o777;
+    if observed == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "proof-cache mode mismatch: field={field} path={} expected={expected:o} observed={observed:o}",
+            path.display()
+        ))
+    }
 }
 
 fn proof_cache_payload_digest(payload: &ProofCachePayload) -> Result<String, String> {

@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
 use serde::Serialize;
@@ -7,6 +8,8 @@ use super::sha256_bytes;
 
 pub(super) fn write_proof_cache(cache_dir: &Path, tag: &str) {
     fs::create_dir_all(cache_dir).expect("create proof-cache dir");
+    fs::set_permissions(cache_dir, fs::Permissions::from_mode(0o755))
+        .expect("set proof-cache dir mode");
     let integrity = proof_file(cache_dir, "m80-release-integrity.json", b"integrity\n");
     let attestation = proof_file(
         cache_dir,
@@ -63,11 +66,18 @@ pub(super) fn write_proof_cache(cache_dir: &Path, tag: &str) {
         serde_json::to_vec_pretty(&manifest).expect("encode proof-cache manifest"),
     )
     .expect("write proof-cache manifest");
+    fs::set_permissions(
+        cache_dir.join("manifest.json"),
+        fs::Permissions::from_mode(0o644),
+    )
+    .expect("set proof-cache manifest mode");
 }
 
 fn proof_file(cache_dir: &Path, name: &str, bytes: &[u8]) -> TestProofFile {
     let path = cache_dir.join(name);
     fs::write(&path, bytes).expect("write proof-cache file");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
+        .expect("set proof-cache file mode");
     TestProofFile {
         path: name.to_owned(),
         sha256: sha256_bytes(bytes),

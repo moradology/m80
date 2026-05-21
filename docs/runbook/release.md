@@ -182,6 +182,9 @@ evidence:
   `proof_cache.trust_policy.path`, `proof_cache.trust_policy.sha256`, and
   `proof_cache.verifier_versions.*`: offline evidence of the public material
   and trust policy verified at install time.
+- `proof_cache.diagnostics` and `proof_cache.repair_command`: must be empty
+  for green evidence; non-empty values mean local saved trust material must be
+  repaired or reinstalled before reuse.
 - `diagnostics` and `mismatches`: must be empty for a default installed release
   evidence capture. Non-empty values are repair inputs, not green evidence.
 - `next_action.kind`: must be `ready`; `next_action.command` should be

@@ -399,6 +399,18 @@ fn status_matrix_tampered_proof_cache() {
         .expect("active report has metadata");
     metadata.proof_cache_manifest.status = MetadataFileStatus::Stale;
     metadata.proof_cache = None;
+    report.diagnostics.push(InstallStateDiagnostic {
+        code: InstallStateDiagnosticCode::ProofCacheStale,
+        field: Some("proof_cache_manifest"),
+        path: Some(PathBuf::from(
+            "/opt/m80/versions/v1.2.3/artifacts/release-proof-cache/manifest.json",
+        )),
+        message: "proof-cache mode mismatch: expected=644 observed=600".to_owned(),
+    });
+
+    let human = render_human(&InstallStatusOutput::from_report(&report));
+    assert!(human.contains("proof_cache_diagnostic_0_code=proof_cache_stale"));
+    assert!(human.contains("proof_cache_repair_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh"));
 
     assert_status_matrix_case(
         report,
@@ -408,6 +420,11 @@ fn status_matrix_tampered_proof_cache() {
     )
     .assert_json_field("metadata.proof_cache_manifest.status", "stale")
     .assert_json_field("proof_cache.status", "stale_manifest")
+    .assert_json_field("proof_cache.diagnostics.0.code", "proof_cache_stale")
+    .assert_json_field(
+        "proof_cache.repair_command",
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh",
+    )
     .assert_json_field("next_action.command", "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh");
 }
 

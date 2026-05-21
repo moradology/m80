@@ -1,5 +1,6 @@
 use std::fs;
 use std::os::unix::fs::symlink;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
 use m80_image_manifest::{
@@ -152,17 +153,16 @@ fn resolver_reports_tampered_proof_cache() {
     let fixture = installed_fixture();
     fs::write(
         proof_cache_dir(&fixture).join("m80-release-integrity.json"),
-        "tampered\n",
+        "tampered!\n",
     )
     .expect("tamper proof-cache file");
 
     let report = fixture.resolve(None);
 
     assert_eq!(report.state, InstallStateKind::TamperedProofCache);
-    assert!(report
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == InstallStateDiagnosticCode::ProofCacheStale));
+    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
+        == InstallStateDiagnosticCode::ProofCacheStale
+        && diagnostic.message.contains("sha256 mismatch")));
 }
 
 #[test]
@@ -174,10 +174,76 @@ fn resolver_reports_tampered_proof_cache_for_missing_reference() {
     let report = fixture.resolve(None);
 
     assert_eq!(report.state, InstallStateKind::TamperedProofCache);
-    assert!(report
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == InstallStateDiagnosticCode::ProofCacheStale));
+    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
+        == InstallStateDiagnosticCode::ProofCacheStale
+        && diagnostic.message.contains("referenced file is unreadable")));
+}
+
+#[test]
+fn resolver_reports_tampered_proof_cache_for_manifest_digest_mismatch() {
+    let fixture = installed_fixture();
+    mutate_json(&proof_cache_manifest_path(&fixture), |value| {
+        value["manifest_digest"] = serde_json::json!("f".repeat(64));
+    });
+
+    let report = fixture.resolve(None);
+
+    assert_eq!(report.state, InstallStateKind::TamperedProofCache);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == InstallStateDiagnosticCode::ProofCacheStale
+            && diagnostic.message.contains("manifest_digest mismatch")
+    }));
+}
+
+#[test]
+fn resolver_reports_tampered_proof_cache_for_changed_file_mode() {
+    let fixture = installed_fixture();
+    fs::set_permissions(
+        proof_cache_dir(&fixture).join("m80-release-integrity.json"),
+        fs::Permissions::from_mode(0o600),
+    )
+    .expect("change proof-cache file mode");
+
+    let report = fixture.resolve(None);
+
+    assert_eq!(report.state, InstallStateKind::TamperedProofCache);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == InstallStateDiagnosticCode::ProofCacheStale
+            && diagnostic.message.contains("mode mismatch")
+    }));
+}
+
+#[test]
+fn resolver_reports_tampered_proof_cache_for_changed_manifest_mode() {
+    let fixture = installed_fixture();
+    fs::set_permissions(
+        proof_cache_manifest_path(&fixture),
+        fs::Permissions::from_mode(0o600),
+    )
+    .expect("change proof-cache manifest mode");
+
+    let report = fixture.resolve(None);
+
+    assert_eq!(report.state, InstallStateKind::TamperedProofCache);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == InstallStateDiagnosticCode::ProofCacheStale
+            && diagnostic.message.contains("proof_cache.manifest_mode")
+    }));
+}
+
+#[test]
+fn resolver_reports_tampered_proof_cache_for_changed_cache_dir_mode() {
+    let fixture = installed_fixture();
+    fs::set_permissions(proof_cache_dir(&fixture), fs::Permissions::from_mode(0o700))
+        .expect("change proof-cache dir mode");
+
+    let report = fixture.resolve(None);
+
+    assert_eq!(report.state, InstallStateKind::TamperedProofCache);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == InstallStateDiagnosticCode::ProofCacheStale
+            && diagnostic.message.contains("proof_cache.dir_mode")
+    }));
 }
 
 #[test]
@@ -371,6 +437,10 @@ fn proof_cache_dir(fixture: &InstallStateFixture) -> PathBuf {
     version_dir(fixture)
         .join("artifacts")
         .join("release-proof-cache")
+}
+
+fn proof_cache_manifest_path(fixture: &InstallStateFixture) -> PathBuf {
+    proof_cache_dir(fixture).join("manifest.json")
 }
 
 fn mutate_json(path: &Path, mutate: impl FnOnce(&mut serde_json::Value)) {

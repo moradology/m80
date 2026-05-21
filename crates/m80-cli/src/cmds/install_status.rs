@@ -6,10 +6,11 @@ use serde::Serialize;
 use crate::args::InstallStatusArgs;
 use crate::install_state::{
     resolve_install_state, ActivePointerReport, ActivePointerStatus, InstallConfigReport,
-    InstallMetadataReport, InstallProfileReport, InstallStateDiagnostic, InstallStateKind,
-    InstallStatePaths, InstallStateReport, InstallStateRequest, MetadataFileReport,
-    MetadataFileStatus, ProofCacheMaterialReport, ProofCacheMetadataReport, ProofCacheReport,
-    ProofCacheTrustPolicyReport, ProofCacheVerifierVersionsReport,
+    InstallMetadataReport, InstallProfileReport, InstallStateDiagnostic,
+    InstallStateDiagnosticCode, InstallStateKind, InstallStatePaths, InstallStateReport,
+    InstallStateRequest, MetadataFileReport, MetadataFileStatus, ProofCacheMaterialReport,
+    ProofCacheMetadataReport, ProofCacheReport, ProofCacheTrustPolicyReport,
+    ProofCacheVerifierVersionsReport,
 };
 use crate::json;
 use crate::profile::RuntimeProfileReport;
@@ -322,6 +323,27 @@ fn push_proof_cache(text: &mut String, proof_cache: &ProofCacheStatusOutput) {
                 .map(|seconds| seconds.to_string()),
         );
     }
+    push_line(
+        text,
+        "proof_cache_diagnostic_count",
+        proof_cache.diagnostics.len(),
+    );
+    for (index, diagnostic) in proof_cache.diagnostics.iter().enumerate() {
+        let prefix = format!("proof_cache_diagnostic_{index}");
+        push_line(
+            text,
+            &format!("{prefix}_code"),
+            diagnostic_code_label(diagnostic.code),
+        );
+        push_optional(text, &format!("{prefix}_field"), diagnostic.field);
+        push_optional_path(text, &format!("{prefix}_path"), diagnostic.path.as_ref());
+        push_line(text, &format!("{prefix}_message"), &diagnostic.message);
+    }
+    push_optional(
+        text,
+        "proof_cache_repair_command",
+        proof_cache.repair_command.as_deref(),
+    );
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -478,16 +500,25 @@ pub(super) struct ProofCacheStatusOutput {
     trust_policy: Option<ProofCacheTrustPolicyOutput>,
     verifier_versions: Option<ProofCacheVerifierVersionsOutput>,
     diagnostics: Vec<InstallStateDiagnostic>,
+    repair_command: Option<String>,
     message: String,
 }
 
 impl ProofCacheStatusOutput {
     fn from_install_report(report: &InstallStateReport) -> Self {
+        let proof_cache_diagnostics = proof_cache_diagnostics(&report.diagnostics);
+        let release_tag = report.active_pointer.release_tag.as_deref().or_else(|| {
+            report
+                .profile
+                .as_ref()
+                .and_then(|profile| profile.release_tag.as_deref())
+        });
         if let Some(metadata) = &report.metadata {
             return Self::from_metadata(
                 &metadata.proof_cache_manifest,
                 metadata.proof_cache.as_ref(),
-                Vec::new(),
+                proof_cache_diagnostics,
+                release_tag,
             );
         }
         match report.state {
@@ -510,14 +541,18 @@ impl ProofCacheStatusOutput {
         };
         let report =
             crate::install_state::read_proof_cache_metadata_from_artifact_dir(artifact_dir);
-        Self::from_proof_cache_metadata(report)
+        Self::from_proof_cache_metadata(report, profile.release_tag.as_deref())
     }
 
-    fn from_proof_cache_metadata(report: ProofCacheMetadataReport) -> Self {
+    fn from_proof_cache_metadata(
+        report: ProofCacheMetadataReport,
+        release_tag: Option<&str>,
+    ) -> Self {
         Self::from_metadata(
             &report.proof_cache_manifest,
             report.proof_cache.as_ref(),
             report.diagnostics,
+            release_tag,
         )
     }
 
@@ -525,15 +560,12 @@ impl ProofCacheStatusOutput {
         manifest: &MetadataFileReport,
         proof_cache: Option<&ProofCacheReport>,
         diagnostics: Vec<InstallStateDiagnostic>,
+        release_tag: Option<&str>,
     ) -> Self {
         let Some(proof_cache) = proof_cache else {
+            let status = proof_cache_status_from_manifest_status(manifest.status);
             return Self {
-                status: match manifest.status {
-                    MetadataFileStatus::Missing => ProofCacheStatusKind::MissingManifest,
-                    MetadataFileStatus::Invalid => ProofCacheStatusKind::InvalidManifest,
-                    MetadataFileStatus::Stale => ProofCacheStatusKind::StaleManifest,
-                    MetadataFileStatus::Present => ProofCacheStatusKind::Unavailable,
-                },
+                status,
                 cache_dir: manifest.path.parent().map(Path::to_path_buf),
                 manifest_path: Some(manifest.path.clone()),
                 manifest_sha256: manifest.sha256.clone(),
@@ -547,13 +579,8 @@ impl ProofCacheStatusOutput {
                 trust_policy: None,
                 verifier_versions: None,
                 diagnostics,
-                message: proof_cache_status_message(match manifest.status {
-                    MetadataFileStatus::Missing => ProofCacheStatusKind::MissingManifest,
-                    MetadataFileStatus::Invalid => ProofCacheStatusKind::InvalidManifest,
-                    MetadataFileStatus::Stale => ProofCacheStatusKind::StaleManifest,
-                    MetadataFileStatus::Present => ProofCacheStatusKind::Unavailable,
-                })
-                .to_owned(),
+                repair_command: proof_cache_repair_command(status, release_tag),
+                message: proof_cache_status_message(status).to_owned(),
             };
         };
         Self {
@@ -579,6 +606,7 @@ impl ProofCacheStatusOutput {
                 &proof_cache.verifier_versions,
             )),
             diagnostics,
+            repair_command: None,
             message: proof_cache_status_message(ProofCacheStatusKind::Available).to_owned(),
         }
     }
@@ -599,6 +627,7 @@ impl ProofCacheStatusOutput {
             trust_policy: None,
             verifier_versions: None,
             diagnostics: Vec::new(),
+            repair_command: None,
             message: proof_cache_status_message(status).to_owned(),
         }
     }
@@ -940,6 +969,15 @@ fn proof_cache_status_label(status: ProofCacheStatusKind) -> &'static str {
     }
 }
 
+fn proof_cache_status_from_manifest_status(status: MetadataFileStatus) -> ProofCacheStatusKind {
+    match status {
+        MetadataFileStatus::Missing => ProofCacheStatusKind::MissingManifest,
+        MetadataFileStatus::Invalid => ProofCacheStatusKind::InvalidManifest,
+        MetadataFileStatus::Stale => ProofCacheStatusKind::StaleManifest,
+        MetadataFileStatus::Present => ProofCacheStatusKind::Unavailable,
+    }
+}
+
 fn proof_cache_status_message(status: ProofCacheStatusKind) -> &'static str {
     match status {
         ProofCacheStatusKind::Available => {
@@ -961,6 +999,72 @@ fn proof_cache_status_message(status: ProofCacheStatusKind) -> &'static str {
             "installed release proof-cache material no longer matches its manifest"
         }
         ProofCacheStatusKind::Unavailable => "cached proof material is unavailable",
+    }
+}
+
+fn proof_cache_diagnostics(diagnostics: &[InstallStateDiagnostic]) -> Vec<InstallStateDiagnostic> {
+    diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            matches!(
+                diagnostic.code,
+                InstallStateDiagnosticCode::ProofCacheMissing
+                    | InstallStateDiagnosticCode::ProofCacheInvalid
+                    | InstallStateDiagnosticCode::ProofCacheStale
+            )
+        })
+        .cloned()
+        .collect()
+}
+
+fn proof_cache_repair_command(
+    status: ProofCacheStatusKind,
+    release_tag: Option<&str>,
+) -> Option<String> {
+    if !matches!(
+        status,
+        ProofCacheStatusKind::MissingManifest
+            | ProofCacheStatusKind::InvalidManifest
+            | ProofCacheStatusKind::StaleManifest
+    ) {
+        return None;
+    }
+    let tag = release_tag.filter(|tag| release_tag_is_url_safe(tag))?;
+    Some(format!(
+        "curl -fsSL {} | sudo sh",
+        crate::release_urls::release_install_url(tag)
+    ))
+}
+
+fn diagnostic_code_label(code: InstallStateDiagnosticCode) -> &'static str {
+    match code {
+        InstallStateDiagnosticCode::ConfigLoadFailed => "config_load_failed",
+        InstallStateDiagnosticCode::DefaultProfileMissing => "default_profile_missing",
+        InstallStateDiagnosticCode::ProfileLoadFailed => "profile_load_failed",
+        InstallStateDiagnosticCode::MissingActivePointer => "missing_active_pointer",
+        InstallStateDiagnosticCode::DanglingActivePointer => "dangling_active_pointer",
+        InstallStateDiagnosticCode::ActivePointerUnreadable => "active_pointer_unreadable",
+        InstallStateDiagnosticCode::ActivePointerTraversal => "active_pointer_traversal",
+        InstallStateDiagnosticCode::ActivePointerOutsideInstallRoot => {
+            "active_pointer_outside_install_root"
+        }
+        InstallStateDiagnosticCode::ActivePointerNotVersionDir => "active_pointer_not_version_dir",
+        InstallStateDiagnosticCode::ProfilePathTraversal => "profile_path_traversal",
+        InstallStateDiagnosticCode::ProfilePathOutsideInstallRoot => {
+            "profile_path_outside_install_root"
+        }
+        InstallStateDiagnosticCode::ProfileArtifactDirMalformed => "profile_artifact_dir_malformed",
+        InstallStateDiagnosticCode::ProfileTargetsInactiveVersion => {
+            "profile_targets_inactive_version"
+        }
+        InstallStateDiagnosticCode::InstallMetadataMissing => "install_metadata_missing",
+        InstallStateDiagnosticCode::InstallMetadataInvalid => "install_metadata_invalid",
+        InstallStateDiagnosticCode::InstallMetadataStale => "install_metadata_stale",
+        InstallStateDiagnosticCode::ProofCacheMissing => "proof_cache_missing",
+        InstallStateDiagnosticCode::ProofCacheInvalid => "proof_cache_invalid",
+        InstallStateDiagnosticCode::ProofCacheStale => "proof_cache_stale",
+        InstallStateDiagnosticCode::ExplicitProfileOverride => "explicit_profile_override",
+        InstallStateDiagnosticCode::LocalDevProfile => "local_dev_profile",
     }
 }
 

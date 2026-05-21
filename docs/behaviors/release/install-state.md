@@ -130,6 +130,8 @@ JSON field table:
 | `proof_cache.materials[]` | Saved public material role, path, sha256, size, subject, and source timestamp. | Evidence of every public artifact preserved after install-time verification. |
 | `proof_cache.trust_policy.path/identity/sha256` | Trust policy saved with the verification material. | Captures the identity policy that bounded install-time verification. |
 | `proof_cache.verifier_versions.*` | m80, GitHub CLI, release-integrity schema, and asset-index schema versions. | Explains which local verifier versions produced the saved evidence. |
+| `proof_cache.diagnostics[]` | Proof-cache stale/missing/invalid diagnostics copied from the local status reader. | Distinguishes local cache tampering from public latest freshness checks. |
+| `proof_cache.repair_command` | Pinned reinstall command for the affected release tag when the cache is missing, invalid, or stale. | Gives support captures a deterministic repair path without selecting mutable latest. |
 | `diagnostics[]` | Resolver diagnostics with code, field, path, and message. | Machine-readable failure details for repair beads and support captures. |
 | `mismatches[]` | Expected/observed mismatch records for stale defaults and overrides. | Shows exactly which tag/path/source differs from the installed default. |
 | `next_action.kind` | `ready`, `install_release`, `reinstall_release`, or `remove_override`. | Stable automation hint for local repair UX. |
@@ -264,6 +266,13 @@ fields are evidence of what the installer verified at install time. Freshness
 against the current public latest release belongs to the freshness lane, not
 this cache reporter.
 
+When the local proof cache is missing, malformed, stale, mode-changed, or has a
+referenced material digest mismatch, status reports `proof_cache.status` as a
+local cache problem and includes the proof-cache diagnostic plus a pinned
+release reinstall command when the affected release tag is URL-safe. This does
+not decide whether the release is current; it only blocks reuse of local saved
+trust material until repair or reinstall.
+
 ## Transaction Ordering
 
 For official release installs, the installer writes the proof cache inside the
@@ -303,8 +312,16 @@ colliding path.
 - `status_matrix_explicit_override_flag_source`
 - `status_matrix_local_dev_tree`
 - `status_matrix_tampered_proof_cache`
+- `resolver_reports_tampered_proof_cache`
+- `resolver_reports_tampered_proof_cache_for_missing_reference`
+- `resolver_rejects_proof_cache_symlink_even_when_digest_matches`
+- `resolver_reports_tampered_proof_cache_for_manifest_digest_mismatch`
+- `resolver_reports_tampered_proof_cache_for_changed_file_mode`
+- `resolver_reports_tampered_proof_cache_for_changed_manifest_mode`
+- `resolver_reports_tampered_proof_cache_for_changed_cache_dir_mode`
 - `resolver_reports_proof_cache_materials_for_offline_status`
 - `json_output_reports_active_install_paths`
 - `human_output_reports_active_install_paths`
 - `preflight_json_report_includes_selected_profile_context`
 - `preflight_json_report_reads_offline_proof_cache_material`
+- `preflight_json_report_reports_tampered_proof_cache_repair_command`
