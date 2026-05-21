@@ -295,7 +295,7 @@ pub(super) fn verify_sidecar(
     let observed_sha256 = sha256_file(asset_path)?;
     if expected_sha256 != observed_sha256 {
         return Err(release_material_error(format!(
-            "release material sidecar digest mismatch: asset_class={asset_class} sidecar_class={sidecar_class} expected_sha256={expected_sha256} observed_sha256={observed_sha256}"
+            "release material sidecar digest mismatch: material_class={asset_class} sidecar_class={sidecar_class} expected_sha256={expected_sha256} observed_sha256={observed_sha256}"
         )));
     }
     if let Some(expected_name) = expected_name {
@@ -307,7 +307,7 @@ pub(super) fn verify_sidecar(
         };
         if expected_name != asset_name {
             return Err(release_material_error(format!(
-                "release material sidecar target mismatch: asset_class={asset_class} sidecar_class={sidecar_class} expected_name={expected_name} observed_name={asset_name}"
+                "release material sidecar target mismatch: material_class={asset_class} sidecar_class={sidecar_class} expected_name={expected_name} observed_name={asset_name}"
             )));
         }
     }

@@ -10,7 +10,7 @@ use super::super::source;
 use super::support::{download_material_to_dir, release_material_error, sha256_file};
 use super::verify_support::{
     expected_file_sha256, expected_subjects, material_subject_kind, parse_sha256s, read_json,
-    require_commit_sha, require_equal, require_nonempty, verify_public_sha256s_complete,
+    require_commit_sha, require_nonempty, verify_public_sha256s_complete,
     verify_public_sha256s_row, verify_sidecar, verify_subject_file, verify_subject_set,
     DownloadedReleaseMaterials, PrebundleVerification, ReleaseAttestationMetadata,
     ReleaseIntegrityPredicate,
@@ -81,37 +81,44 @@ fn verify_prebundle_material(
     let predicate_sha256 = sha256_file(downloaded.path("release-integrity-predicate")?)?;
     let public_sha256s_sha256 = sha256_file(downloaded.path("public-sha256s")?)?;
 
-    require_equal(
+    require_equal_material(
+        "release-integrity-predicate",
         "release integrity schema_version",
         integrity.schema_version,
         RELEASE_INTEGRITY_SCHEMA_VERSION,
     )?;
-    require_equal(
+    require_equal_material(
+        "release-integrity-predicate",
         "release integrity mechanism",
         integrity.mechanism.as_str(),
         RELEASE_INTEGRITY_MECHANISM,
     )?;
-    require_equal(
+    require_equal_material(
+        "release-integrity-predicate",
         "release integrity repository",
         integrity.repository.as_str(),
         crate::release_urls::release_repository().as_str(),
     )?;
-    require_equal(
+    require_equal_material(
+        "release-integrity-predicate",
         "release integrity release_tag",
         integrity.release_tag.as_str(),
         plan.release_tag.as_str(),
     )?;
-    require_equal(
+    require_equal_material(
+        "release-integrity-predicate",
         "release integrity target",
         integrity.target.as_str(),
         plan.target.as_str(),
     )?;
-    require_equal(
+    require_equal_material(
+        "release-integrity-predicate",
         "release integrity bundle_metadata_name",
         integrity.bundle_metadata_name.as_str(),
         plan.material("bundle-metadata")?.name.as_str(),
     )?;
-    require_equal(
+    require_equal_material(
+        "release-integrity-predicate",
         "release integrity bundle_metadata_sha256",
         integrity.bundle_metadata_sha256.as_str(),
         expected_file_sha256(plan.material("bundle-metadata")?)?,
@@ -126,37 +133,44 @@ fn verify_prebundle_material(
         &integrity.m80_package_version,
     )?;
 
-    require_equal(
+    require_equal_material(
+        "release-attestation-metadata",
         "release attestation schema_version",
         attestation.schema_version,
         RELEASE_INTEGRITY_SCHEMA_VERSION,
     )?;
-    require_equal(
+    require_equal_material(
+        "release-attestation-metadata",
         "release attestation mechanism",
         attestation.mechanism.as_str(),
         RELEASE_INTEGRITY_MECHANISM,
     )?;
-    require_equal(
+    require_equal_material(
+        "release-attestation-metadata",
         "release attestation repository",
         attestation.repository.as_str(),
         crate::release_urls::release_repository().as_str(),
     )?;
-    require_equal(
+    require_equal_material(
+        "release-attestation-metadata",
         "release attestation release_tag",
         attestation.release_tag.as_str(),
         plan.release_tag.as_str(),
     )?;
-    require_equal(
+    require_equal_material(
+        "release-attestation-metadata",
         "release attestation predicate_sha256",
         attestation.predicate_sha256.as_str(),
         predicate_sha256.as_str(),
     )?;
-    require_equal(
+    require_equal_material(
+        "release-attestation-metadata",
         "release attestation signer_identity",
         attestation.signer_identity.as_str(),
         RELEASE_ATTESTATION_SIGNER_WORKFLOW,
     )?;
-    require_equal(
+    require_equal_material(
+        "release-attestation-metadata",
         "release attestation issuer",
         attestation.issuer.as_str(),
         RELEASE_ATTESTATION_ISSUER,
@@ -304,7 +318,7 @@ fn verify_cryptographic_attestation(
         .output()
         .map_err(|source| {
             release_material_error(format!(
-                "release attestation verifier missing: gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} source={source}",
+                "release attestation verifier missing: material_class=release-attestation-bundle gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} source={source}",
                 plan.release_tag,
                 predicate_path.display(),
                 attestation_bundle_path.display()
@@ -312,7 +326,7 @@ fn verify_cryptographic_attestation(
         })?;
     if !output.status.success() {
         return Err(release_material_error(format!(
-            "release trust cryptographic attestation verification failed: gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} repo={} signer_workflow={} issuer={} source_ref={} source_digest={} status={}{}",
+            "release trust cryptographic attestation verification failed: material_class=release-attestation-bundle gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} repo={} signer_workflow={} issuer={} source_ref={} source_digest={} status={}{}",
             plan.release_tag,
             predicate_path.display(),
             attestation_bundle_path.display(),
@@ -335,17 +349,17 @@ fn require_attestation_output_names_predicate(
 ) -> Result<(), FcError> {
     if stdout.iter().all(|byte| byte.is_ascii_whitespace()) {
         return Err(release_material_error(
-            "release attestation verifier returned empty JSON".to_owned(),
+            "release attestation verifier returned empty JSON: material_class=release-attestation-bundle".to_owned(),
         ));
     }
     let verified = serde_json::from_slice::<Value>(stdout).map_err(|source| {
         release_material_error(format!(
-            "release attestation verifier returned invalid JSON: source={source}"
+            "release attestation verifier returned invalid JSON: material_class=release-attestation-bundle source={source}"
         ))
     })?;
     let Some(entries) = verified.as_array().filter(|entries| !entries.is_empty()) else {
         return Err(release_material_error(
-            "release attestation verifier returned no attestations".to_owned(),
+            "release attestation verifier returned no attestations: material_class=release-attestation-bundle".to_owned(),
         ));
     };
     let expected_names = [
@@ -383,9 +397,27 @@ fn require_attestation_output_names_predicate(
         }
     }
     Err(release_material_error(
-        "release attestation verifier JSON omitted release-integrity predicate name/sha256 subject"
+        "release attestation verifier JSON omitted release-integrity predicate name/sha256 subject: material_class=release-attestation-bundle"
             .to_owned(),
     ))
+}
+
+fn require_equal_material<T>(
+    material_class: &'static str,
+    label: &str,
+    observed: T,
+    expected: T,
+) -> Result<(), FcError>
+where
+    T: PartialEq + std::fmt::Display,
+{
+    if observed == expected {
+        Ok(())
+    } else {
+        Err(release_material_error(format!(
+            "{label} mismatch: material_class={material_class} expected {expected}, got {observed}"
+        )))
+    }
 }
 
 fn command_output_text(output: &std::process::Output) -> String {

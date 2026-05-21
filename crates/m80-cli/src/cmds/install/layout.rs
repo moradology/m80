@@ -64,7 +64,10 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     require_absolute_path("install_root", &install_root)?;
     validate_bundle_source_url(bundle_url)?;
     preflight_attestation_verifier_for_bundle_url(bundle_url)?;
-    let verified_official_bundle = release_material::verify_official_release_bundle(bundle_url)?;
+    let verified_official_bundle = release_material::verify_official_release_bundle(bundle_url)
+        .map_err(|err| {
+            release_material::with_install_retry_context(err, bundle_url, &install_root)
+        })?;
     let staging_dir = prepare_staging_dir(&install_root)?;
     let bundle_path = if let Some(verified_bundle) = &verified_official_bundle {
         stage_verified_bundle(verified_bundle.bundle_path(), staging_dir.path())?

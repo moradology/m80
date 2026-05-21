@@ -16,7 +16,11 @@ pub(super) struct ReleaseFixtureOptions {
     pub(super) wrong_attestation_signer: bool,
     pub(super) wrong_attestation_issuer: bool,
     pub(super) wrong_commit_sha: bool,
+    pub(super) wrong_repository: bool,
+    pub(super) wrong_release_tag: bool,
     pub(super) missing_install_digest: bool,
+    pub(super) stale_public_sha256s: bool,
+    pub(super) bad_predicate_subject: bool,
     pub(super) gh_failure: bool,
     pub(super) gh_omit_subject: bool,
     pub(super) gh_wrong_subject_digest: bool,
@@ -155,6 +159,16 @@ pub(super) fn write_direct_release_materials_with(
     } else {
         "0123456789abcdef0123456789abcdef01234567"
     };
+    let repository = if options.wrong_repository {
+        "moradology/not-m80"
+    } else {
+        "moradology/m80"
+    };
+    let predicate_release_tag = if options.wrong_release_tag {
+        "v9.9.9"
+    } else {
+        "v0.0.0"
+    };
     let build_bytes = serde_json::to_vec_pretty(&serde_json::json!({
         "schema_version": 1,
         "release_tag": "v0.0.0",
@@ -275,6 +289,11 @@ pub(super) fn write_direct_release_materials_with(
         if options.missing_install_digest && name == "install.sh" {
             continue;
         }
+        let digest = if options.stale_public_sha256s && name == "install.sh" {
+            "f".repeat(64)
+        } else {
+            digest
+        };
         public_sha256s.push_str(&format!("{digest}  {name}\n"));
     }
     let public_sha256s_sha = sha256_bytes(public_sha256s.as_bytes());
@@ -285,6 +304,11 @@ pub(super) fn write_direct_release_materials_with(
         options.omit,
     );
 
+    let install_subject_sha256 = if options.bad_predicate_subject {
+        "e".repeat(64)
+    } else {
+        install_sha256.clone()
+    };
     let subjects = [
         subject(
             bundle_name,
@@ -325,7 +349,7 @@ pub(super) fn write_direct_release_materials_with(
         subject(
             "install.sh",
             "installer",
-            &install_sha256,
+            &install_subject_sha256,
             install_bytes.len(),
         ),
         subject(
@@ -368,8 +392,8 @@ pub(super) fn write_direct_release_materials_with(
     let integrity = serde_json::json!({
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
-        "repository": "moradology/m80",
-        "release_tag": "v0.0.0",
+        "repository": repository,
+        "release_tag": predicate_release_tag,
         "commit_sha": commit_sha,
         "target": "linux-x86_64",
         "rust_toolchain": "rustc 1.82.0",
@@ -411,8 +435,8 @@ pub(super) fn write_direct_release_materials_with(
     let attestation = serde_json::json!({
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
-        "repository": "moradology/m80",
-        "release_tag": "v0.0.0",
+        "repository": repository,
+        "release_tag": predicate_release_tag,
         "predicate_sha256": attestation_predicate_sha,
         "signer_identity": signer_identity,
         "issuer": issuer,

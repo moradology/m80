@@ -21,6 +21,8 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "`--deny-self-hosted-runners`",
         "`--signer-workflow`",
         "`--source-digest`",
+        "`material_class`",
+        "`retry_command=m80 install --bundle-url '<url>' --install-root '<path>'`",
         "Install or upgrade GitHub CLI with attestation support",
         "moradology/m80/.github/workflows/release-artifacts.yml",
         "https://token.actions.githubusercontent.com",
@@ -93,6 +95,7 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "test_rendered_install_script_rejects_build_manifest_metadata_hash_mismatch_before_bundle",
         "test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle",
         "test_rendered_install_script_rejects_build_manifest_malformed_container_digest_before_bundle",
+        "official_release_verifier_failure_matrix_leaves_install_root_unchanged",
     ] {
         assert!(
             doc.contains(required),

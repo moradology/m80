@@ -12,7 +12,10 @@ after the bootstrapper resolves "latest" to a concrete tag. The installer also
 accepts explicit local `file://...` bundles for fixtures and
 concrete stable-tag
 `https://github.com/moradology/m80/releases/download/<tag>/m80-<target>.tar.gz`
-release bundle URLs. Mutable latest artifact URLs, raw branch URLs, foreign
+release bundle URLs. Direct official release URLs are not a weaker trust mode:
+the installer verifies the same release-integrity material and GitHub
+attestation policy as the public installer before staging or tar listing.
+Mutable latest artifact URLs, raw branch URLs, foreign
 repositories, path-traversal asset paths, non-bundle release assets, and
 non-HTTPS GitHub release URLs fail before network access or install-root
 mutation. Local HTTP is accepted only for test fixtures.
@@ -77,6 +80,11 @@ host-binaries manifest, and injected interruption failures can leave an
 unselected version directory behind for inspection, but the active pointer is
 not changed. Failed downloads, checksum mismatches, unsupported redirects, and
 truncated downloads delete staged bundle/checksum partials.
+Direct official release-material failures happen earlier than staging: missing
+metadata, wrong repository, wrong tag, stale checksums or asset index rows,
+bad attestation, bad predicate, tampered bundle bytes, and release-material
+network failures leave the install root byte-for-byte unchanged and print the
+failed `material_class` plus a safe retry command.
 
 `--dry-run` remains a pure plan render. It does not read the bundle and does not
 create `<install-root>`.
@@ -98,4 +106,5 @@ create `<install-root>`.
 - `install_bundle_layout_injected_interruption_leaves_previous_active_selected`
 - `install_bundle_layout_cleans_abandoned_staging_dirs`
 - `install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout`
+- `official_release_verifier_failure_matrix_leaves_install_root_unchanged`
 - `installed_layout_doc_names_directory_contract_and_tests`

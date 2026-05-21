@@ -9,6 +9,8 @@ use super::test_fixture::{
 };
 use super::*;
 
+mod no_write;
+
 #[test]
 fn direct_plan_lists_same_tag_urls_and_expected_identity_before_fetch() {
     let plan = ReleaseMaterialPlan::from_index_material(valid_material()).unwrap();

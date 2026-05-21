@@ -28,6 +28,7 @@ fn installed_layout_doc_names_directory_contract_and_tests() {
         "install_bundle_layout_profile_failure_leaves_previous_active_and_profile",
         "install_bundle_layout_injected_interruption_leaves_previous_active_selected",
         "install_bundle_layout_cleans_abandoned_staging_dirs",
+        "official_release_verifier_failure_matrix_leaves_install_root_unchanged",
         "install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout",
     ] {
         assert!(

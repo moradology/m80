@@ -232,6 +232,11 @@ predicate subject name and digest before the selected bundle bytes are
 downloaded. Any digest, subject, asset-index, attestation-metadata,
 cryptographic attestation, or missing `install.sh` row disagreement fails while
 the verified bundle still lives only in a temporary release-material directory.
+Those CLI failures name the failed `material_class`, print a safe
+`retry_command=m80 install --bundle-url '<url>' --install-root '<path>'`, and
+leave the install root byte-for-byte unchanged: no staging cleanup, no profile
+write, no version publication, no active pointer mutation, and no tar listing
+or extraction before the release-material contract is complete.
 Local `file://` and local test fixtures remain explicit operator overrides and
 do not claim official release trust.
 
@@ -327,6 +332,7 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `official_release_missing_attestation_verifier_fails_before_staging`;
 - `official_release_missing_material_fails_before_staging_or_bundle_download`;
 - `official_release_too_old_attestation_verifier_fails_before_staging`;
+- `official_release_verifier_failure_matrix_leaves_install_root_unchanged`;
 - `test_package_assembles_multi_tuple_release_from_tuple_manifest`;
 - `test_package_rejects_extra_tuple_name_collision_before_copy`;
 - `test_package_rejects_extra_tuple_metadata_sidecar_mismatch`;

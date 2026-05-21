@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use m80_firecracker::FcError;
+use m80_firecracker::{ConfigError, FcError};
 use tempfile::TempDir;
 
 use super::source;
@@ -57,6 +57,38 @@ pub(super) fn verify_official_release_bundle(
         verified.summary.source_commit
     );
     Ok(Some(verified))
+}
+
+pub(super) fn with_install_retry_context(
+    err: FcError,
+    bundle_url: &str,
+    install_root: &Path,
+) -> FcError {
+    match err {
+        FcError::Config(ConfigError::InvalidValue {
+            field: "release-material",
+            reason,
+        }) => FcError::Config(ConfigError::InvalidValue {
+            field: "release-material",
+            reason: format!(
+                "{reason}; retry_command={}",
+                install_retry_command(bundle_url, install_root)
+            ),
+        }),
+        other => other,
+    }
+}
+
+fn install_retry_command(bundle_url: &str, install_root: &Path) -> String {
+    format!(
+        "m80 install --bundle-url {} --install-root {}",
+        shell_quote(bundle_url),
+        shell_quote(&install_root.display().to_string())
+    )
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 #[derive(Debug)]
