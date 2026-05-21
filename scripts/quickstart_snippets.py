@@ -237,6 +237,8 @@ def classify_public_command_snippet(body: str, relative_path: Path, context: str
         return "verified/operator"
     if is_legacy_internal_reference(body, relative_path, expected):
         return "legacy-internal"
+    if is_install_status_command(body):
+        return "troubleshooting"
     if is_troubleshooting_pinned_install(body, context):
         return "troubleshooting"
     raise ValueError(
@@ -284,6 +286,10 @@ def is_troubleshooting_pinned_install(body: str, context: str) -> bool:
         return False
     lowered_context = context.lower()
     return any(word in lowered_context for word in TROUBLESHOOTING_CONTEXT_WORDS)
+
+
+def is_install_status_command(body: str) -> bool:
+    return body.strip() == "m80 install-status"
 
 
 def surrounding_context(lines: list[str], start_line: int, end_line: int) -> str:

@@ -152,6 +152,7 @@ class ReleaseUrlContractTest(unittest.TestCase):
             ("README.md", expected_snippets["latest-install"], "common"),
             ("README.md", expected_snippets["pinned-install"], "pinned"),
             ("README.md", expected_snippets["verified-install-handoff"], "verified/operator"),
+            ("README.md", "m80 install-status", "troubleshooting"),
             ("docs/runbook/release.md", expected_snippets["latest-install"], "common"),
             ("docs/runbook/release.md", expected_snippets["pinned-install"], "pinned"),
             ("docs/runbook/release.md", expected_snippets["verified-install-handoff"], "verified/operator"),
