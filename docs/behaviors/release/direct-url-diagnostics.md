@@ -5,15 +5,17 @@ Bead: `m80-o3uh9.15.11.6`
 `m80 install --bundle-url <URL>` is an explicit development/operator override.
 The normal public path remains the versioned installer:
 
+Public installer status: pending until the unauthenticated public-access proof
+is green.
+
+<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->
+
 ```sh
 curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
 ```
 
-or, after m80 is already installed from a matching release binary:
-
-```sh
-m80 install --release-tag <tag>
-```
+or, after m80 is already installed from a matching release binary,
+`m80 install --release-tag <tag>`.
 
 Concrete official bundle URLs under
 `https://github.com/moradology/m80/releases/download/<tag>/<bundle>.tar.gz`
