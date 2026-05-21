@@ -10,6 +10,7 @@
   "checked_at": "2026-05-21T21:51:42Z",
   "command": "CI release script test cluster from .github/workflows/ci.yml, including python3 -m py_compile for freshness_status.py, verify-freshness-status.py, and test-freshness-status.py",
   "exit_status": 0,
+  "resolved_tag": "v1.2.3",
   "schema_version": 1,
   "stderr": "",
   "stdout": "test-release-url-contract: 14 OK; test-stable-release-channel: 9 OK; test-stable-latest-bootstrap: 13 OK; test-release-freshness: 8 OK; test-freshness-status: 9 OK; test-workflow-policy: 46 OK; test-actionlint-runner: 7 OK; test-actionlint-fixtures: 9 OK; test-release-proof-ledger: 11 OK; test-quickstart-proof: 17 OK; test-release-tracker-policy: 41 OK; verify-release-tracker-policy: OK; test-release-readiness-config: 10 OK; verify-release-readiness-config: OK; test-install-handoff: 7 OK; test-release-bundle: 211 OK",
