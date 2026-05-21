@@ -114,7 +114,9 @@ def validate_stable_release_metadata(
     missing = [name for name in REQUIRED_PUBLIC_ASSETS if name not in by_name]
     require(
         not missing,
-        "stable release missing required public asset(s): " + ", ".join(missing) + f"; {stable_fallback_hint()}",
+        "stable release missing required public asset(s): "
+        + "; ".join(missing_public_asset_detail(tag, name) for name in missing)
+        + f"; {stable_fallback_hint()}",
     )
     for name in REQUIRED_PUBLIC_ASSETS:
         expected_url = release_asset_url(tag, name)
@@ -178,6 +180,30 @@ def require_stable_tag(tag: str) -> None:
 
 def stable_fallback_hint() -> str:
     return "select a non-draft, non-prerelease vMAJOR.MINOR.PATCH release and use its pinned install.sh URL"
+
+
+def missing_public_asset_detail(tag: str, name: str) -> str:
+    return f"{name} role={public_asset_role(name)} url={release_asset_url(tag, name)} release_tag={tag}"
+
+
+def public_asset_role(name: str) -> str:
+    if name == "install.sh":
+        return "installer"
+    if name == "m80-release-assets.json":
+        return "asset-index"
+    if name == "m80-bootstrap-selector.tsv":
+        return "selector"
+    if name == "m80-release-integrity.json":
+        return "provenance"
+    if name == INTEGRITY_ATTESTATION_BUNDLE_NAME or name == "m80-release-attestation.json":
+        return "attestation"
+    if name == BUNDLE_NAME:
+        return "bundle"
+    if name.endswith(".sha256") or name == "SHA256SUMS":
+        return "checksum"
+    if name == METADATA_NAME or name == "m80-release-build.json":
+        return "metadata"
+    return "public-asset"
 
 
 def read_json(path: Path, label: str) -> dict:

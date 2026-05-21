@@ -119,6 +119,10 @@ manual read-only hostless lane. Its `latest-freshness-public` concurrency group
 uses `cancel-in-progress: false` so an overlapping run does not discard the
 older run's evidence, and it uploads proof, stdout, and stderr artifacts with
 `if: always()`.
+The verifier also checks that the GitHub latest release metadata contains every
+installer-consumed public asset with the expected name, URL, size when reported,
+and `sha256:` digest. With an asset-index fixture, the bundle and metadata
+digests must agree with the index row before URL liveness checks run.
 Until the fuller freshness failure-policy automation in `m80-o3uh9.21.2`
 lands, this lane does not page by itself: a failure blocks a green freshness
 status and the next release/latest promotion, and the operator files or updates

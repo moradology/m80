@@ -14,7 +14,10 @@ import unittest
 
 from release_url_contract import latest_install_command, release_asset_url
 from stable_release_channel import (
+    BUNDLE_NAME,
+    CHECKSUM_NAME,
     INTEGRITY_ATTESTATION_BUNDLE_NAME,
+    METADATA_NAME,
     REQUIRED_PUBLIC_ASSETS,
 )
 
@@ -58,6 +61,20 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn(release_asset_url("v1.2.3", "m80-release-assets.json"), urls)
         self.assertIn(release_asset_url("v1.2.3", INTEGRITY_ATTESTATION_BUNDLE_NAME), urls)
         self.assertIn(release_asset_url("v1.2.3", "m80-release-attestation.json"), urls)
+        assets = {row["name"]: row for row in payload["public_assets"]}
+        self.assertEqual(set(assets), set(REQUIRED_PUBLIC_ASSETS))
+        self.assertEqual(assets["install.sh"]["role"], "installer")
+        self.assertEqual(assets["install.sh"]["url"], release_asset_url("v1.2.3", "install.sh"))
+        self.assertEqual(assets["install.sh"]["release_tag"], "v1.2.3")
+        self.assertEqual(assets[BUNDLE_NAME]["role"], "bundle")
+        self.assertEqual(assets[BUNDLE_NAME]["size_bytes"], len(BUNDLE_NAME) * 10)
+        self.assertEqual(assets[BUNDLE_NAME]["sha256"], asset_digest(BUNDLE_NAME))
+        for name, row in assets.items():
+            self.assertEqual(row["url"], release_asset_url("v1.2.3", name))
+            self.assertEqual(row["release_tag"], "v1.2.3")
+            self.assertIsInstance(row["role"], str)
+            self.assertGreater(row["size_bytes"], 0)
+            self.assertEqual(row["sha256"], asset_digest(name))
 
         for args in logged:
             self.assert_curl_flag(args, "--connect-timeout", "10")
@@ -147,6 +164,175 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("asset=install.sh", result.stderr)
         self.assertIn("docs:README.md:", result.stderr)
 
+    def test_missing_public_asset_names_role_url_and_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            metadata = base_release_metadata()
+            metadata["assets"] = [
+                asset for asset in metadata["assets"] if asset["name"] != CHECKSUM_NAME
+            ]
+            curl = write_fake_curl(root / "curl", log=root / "curl.log", metadata=metadata)
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness public asset missing", result.stderr)
+        self.assertIn(f"role=checksum asset={CHECKSUM_NAME}", result.stderr)
+        self.assertIn(f"url={release_asset_url('v1.2.3', CHECKSUM_NAME)}", result.stderr)
+        self.assertIn("release_tag=v1.2.3", result.stderr)
+
+    def test_missing_attestation_and_provenance_assets_are_named(self) -> None:
+        cases = [
+            (INTEGRITY_ATTESTATION_BUNDLE_NAME, "attestation"),
+            ("m80-release-integrity.json", "provenance"),
+        ]
+        for missing, role in cases:
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                docs_root = write_docs_root(root / "docs-root")
+                metadata = base_release_metadata()
+                metadata["assets"] = [
+                    asset for asset in metadata["assets"] if asset["name"] != missing
+                ]
+                curl = write_fake_curl(root / "curl", log=root / "curl.log", metadata=metadata)
+
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(SCRIPT),
+                        "--curl",
+                        str(curl),
+                        "--docs-root",
+                        str(docs_root),
+                        "--json",
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"role={role} asset={missing}", result.stderr)
+            self.assertIn("release_tag=v1.2.3", result.stderr)
+
+    def test_asset_index_digest_mismatch_fails_before_url_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            index = write_json(
+                root / "assets.json",
+                base_asset_index(bundle_sha="0" * 64),
+            )
+            curl = write_fake_curl(root / "curl", log=root / "curl.log")
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--asset-index",
+                    str(index),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness public asset digest mismatch", result.stderr)
+        self.assertIn(f"role=bundle asset={BUNDLE_NAME}", result.stderr)
+        self.assertIn("expected_sha256=" + ("0" * 64), result.stderr)
+        self.assertIn("got_sha256=" + asset_digest(BUNDLE_NAME), result.stderr)
+
+    def test_malformed_asset_index_diagnostics_name_index_role(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            index = write_json(root / "assets.json", {"schema_version": 999, "release_tag": "v1.2.3", "assets": []})
+            curl = write_fake_curl(root / "curl", log=root / "curl.log")
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--asset-index",
+                    str(index),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness asset-index malformed", result.stderr)
+        self.assertIn("role=asset-index asset=m80-release-assets.json", result.stderr)
+        self.assertIn(f"url={release_asset_url('v1.2.3', 'm80-release-assets.json')}", result.stderr)
+        self.assertIn("release_tag=v1.2.3", result.stderr)
+
+    def test_asset_index_required_role_omission_names_asset_url_and_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            asset_index = base_asset_index()
+            asset_index["assets"][0]["attestation_name"] = None
+            index = write_json(root / "assets.json", asset_index)
+            curl = write_fake_curl(root / "curl", log=root / "curl.log")
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--asset-index",
+                    str(index),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("freshness asset-index malformed", result.stderr)
+        self.assertIn(f"role=attestation asset={INTEGRITY_ATTESTATION_BUNDLE_NAME}", result.stderr)
+        self.assertIn(
+            f"url={release_asset_url('v1.2.3', INTEGRITY_ATTESTATION_BUNDLE_NAME)}",
+            result.stderr,
+        )
+        self.assertIn("release_tag=v1.2.3", result.stderr)
+        self.assertIn("field=attestation_name", result.stderr)
+
     def assert_curl_flag(self, args: list[str], flag: str, expected_value: str) -> None:
         self.assertIn(flag, args)
         pos = args.index(flag)
@@ -176,11 +362,12 @@ def write_fake_curl(
     path: Path,
     *,
     log: Path,
+    metadata: dict | None = None,
     fail_contains: str | None = None,
     fail_code: int = 28,
     fail_stderr: str = "failed\n",
 ) -> Path:
-    metadata = json.dumps(base_release_metadata())
+    metadata_json = json.dumps(metadata if metadata is not None else base_release_metadata())
     script = f"""#!/usr/bin/env python3
 import shlex
 import sys
@@ -198,7 +385,7 @@ if fail_contains and fail_contains in url:
     raise SystemExit({fail_code})
 
 if "api.github.com" in url:
-    sys.stdout.write({metadata!r})
+    sys.stdout.write({metadata_json!r})
 """
     path.write_text(script)
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
@@ -214,10 +401,55 @@ def base_release_metadata(*, tag: str = "v1.2.3") -> dict:
             {
                 "name": name,
                 "browser_download_url": release_asset_url(tag, name),
+                "digest": "sha256:" + asset_digest(name),
+                "size": len(name) * 10,
             }
             for name in REQUIRED_PUBLIC_ASSETS
         ],
     }
+
+
+def base_asset_index(
+    *,
+    tag: str = "v1.2.3",
+    bundle_sha: str | None = None,
+    metadata_sha: str | None = None,
+) -> dict:
+    return {
+        "schema_version": 1,
+        "release_tag": tag,
+        "assets": [
+            {
+                "name": BUNDLE_NAME,
+                "url": release_asset_url(tag, BUNDLE_NAME),
+                "sha256": bundle_sha or asset_digest(BUNDLE_NAME),
+                "size_bytes": len(BUNDLE_NAME) * 10,
+                "metadata_name": METADATA_NAME,
+                "metadata_sha256": metadata_sha or asset_digest(METADATA_NAME),
+                "checksum_name": CHECKSUM_NAME,
+                "signature_name": None,
+                "attestation_name": INTEGRITY_ATTESTATION_BUNDLE_NAME,
+                "target": "linux-x86_64",
+                "os": "linux",
+                "arch": "x86_64",
+                "image_kind": "minimal",
+                "release_tag": tag,
+                "m80_version": tag,
+                "guest_protocol_version": 1,
+                "manifest_schema_version": 1,
+                "expected_firecracker_version": "v1.15.1",
+            }
+        ],
+    }
+
+
+def asset_digest(name: str) -> str:
+    return f"{sum(name.encode()):064x}"[-64:]
+
+
+def write_json(path: Path, value: dict) -> Path:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    return path
 
 
 if __name__ == "__main__":
