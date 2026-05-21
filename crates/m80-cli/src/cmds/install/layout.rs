@@ -156,6 +156,16 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
 
     rewrite_installed_metadata(&extracted_dir, &final_dir, &metadata)?;
     set_final_modes(&extracted_dir)?;
+    let proof_cache_manifest = verified_official_bundle
+        .as_ref()
+        .map(|verified_bundle| {
+            proof_cache::write_verified_release_proof_cache(
+                verified_bundle,
+                &extracted_dir,
+                &plan.binary_version,
+            )
+        })
+        .transpose()?;
     let versions_dir = final_dir
         .parent()
         .expect("version directory should have versions parent");
@@ -193,7 +203,10 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
 
     let install_provenance = final_dir.join("artifacts").join(INSTALL_PROVENANCE_FILE);
     let release_material = verified_official_bundle.as_ref().map(|verified_bundle| {
-        ReleaseMaterialInstallSummary::from_verification(&verified_bundle.summary, &final_dir)
+        let mut summary =
+            ReleaseMaterialInstallSummary::from_verification(&verified_bundle.summary, &final_dir);
+        summary.proof_cache_written = proof_cache_manifest.is_some();
+        summary
     });
     Ok(LayoutInstallSummary {
         release_tag: metadata.release_tag,
@@ -206,7 +219,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         active_pointer_flipped: true,
         profile_written: true,
         preflight_gate,
-        finalization_order: finalization_order(),
+        finalization_order: finalization_order(proof_cache_manifest.is_some()),
         release_material,
     })
 }
@@ -439,16 +452,22 @@ fn maybe_inject_interruption_after_profile() -> Result<(), FcError> {
     Ok(())
 }
 
-fn finalization_order() -> Vec<&'static str> {
-    vec![
+fn finalization_order(include_release_proof_cache: bool) -> Vec<&'static str> {
+    let mut order = vec![
         "bundle_verification",
         "host_prerequisite_verification",
         "install_provenance",
+    ];
+    if include_release_proof_cache {
+        order.push("release_proof_cache");
+    }
+    order.extend([
         "host_binaries_manifest",
         "default_profile",
         "preflight_smoke_gate",
         "active_pointer_flip",
-    ]
+    ]);
+    order
 }
 
 fn safe_release_dir(release_tag: &str) -> Result<&str, FcError> {
@@ -485,11 +504,13 @@ mod tests {
     }
 
     #[test]
-    fn release_material_install_summary_names_reserved_proof_cache_destination() {
+    fn release_material_install_summary_initializes_proof_cache_fields() {
         let temp = tempfile::tempdir().unwrap();
         let final_dir = temp.path().join("versions/v0.0.0");
         let verification = release_material::ReleaseVerificationSummary {
             release_tag: "v0.0.0".to_owned(),
+            repository: "moradology/m80".to_owned(),
+            target: "linux-x86_64".to_owned(),
             bundle_asset: "m80-linux-x86_64.tar.gz".to_owned(),
             bundle_url:
                 "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz"
@@ -501,7 +522,9 @@ mod tests {
             predicate_sha256: "e".repeat(64),
             attestation_signer: "moradology/m80/.github/workflows/release-artifacts.yml".to_owned(),
             attestation_issuer: "https://token.actions.githubusercontent.com".to_owned(),
+            attestation_keyset_id: "github-actions-oidc:m80-release-v1".to_owned(),
             source_commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            release_integrity_schema_version: 1,
         };
 
         let summary = ReleaseMaterialInstallSummary::from_verification(&verification, &final_dir);

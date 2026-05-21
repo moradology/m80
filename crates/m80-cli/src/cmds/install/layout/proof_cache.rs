@@ -1,15 +1,34 @@
-#![allow(dead_code)]
-
 use std::fs;
-use std::path::Path;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::release_material::VerifiedOfficialReleaseBundle;
+
 pub(super) const PROOF_CACHE_DIR: &str = "release-proof-cache";
 pub(super) const PROOF_CACHE_MANIFEST: &str = "manifest.json";
 pub(super) const PROOF_CACHE_SCHEMA_VERSION: u32 = 1;
+
+const PROOF_CACHE_FILE_MODE: u32 = 0o644;
+const PROOF_CACHE_DIR_MODE: u32 = 0o755;
+const TRUST_POLICY_NAME: &str = "m80-release-trust-policy.json";
+const TRUST_POLICY_BYTES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/behaviors/release/m80-release-trust-policy.json"
+));
+const CHECKSUM_SIDECAR_MATERIALS: &[&str] = &[
+    "bundle-checksum",
+    "bundle-metadata-checksum",
+    "asset-index-checksum",
+    "install-script-checksum",
+    "bootstrap-selector-checksum",
+    "release-build-checksum",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,6 +95,126 @@ pub(super) struct VerifierVersions {
     pub(super) gh_version: String,
     pub(super) release_integrity_schema_version: u32,
     pub(super) asset_index_schema_version: u32,
+}
+
+struct SavedFile {
+    descriptor: ProofCacheFile,
+    cache_path: PathBuf,
+}
+
+pub(super) fn write_verified_release_proof_cache(
+    verified: &VerifiedOfficialReleaseBundle,
+    final_dir: &Path,
+    m80_version: &str,
+) -> Result<PathBuf, FcError> {
+    let cache_dir = final_dir.join("artifacts").join(PROOF_CACHE_DIR);
+    fs::create_dir(&cache_dir).map_err(|source| FcError::PathIo {
+        path: cache_dir.clone(),
+        source,
+    })?;
+    fs::set_permissions(&cache_dir, fs::Permissions::from_mode(PROOF_CACHE_DIR_MODE)).map_err(
+        |source| FcError::PathIo {
+            path: cache_dir.clone(),
+            source,
+        },
+    )?;
+    maybe_inject_write_failure()?;
+
+    let integrity_predicate = copy_material(
+        verified,
+        &cache_dir,
+        "release-integrity-predicate",
+        "m80-release-integrity.json",
+    )?;
+    let attestation_bundle = copy_material(
+        verified,
+        &cache_dir,
+        "release-attestation-bundle",
+        "m80-release-integrity.attestation.jsonl",
+    )?;
+    let attestation_metadata = copy_material(
+        verified,
+        &cache_dir,
+        "release-attestation-metadata",
+        "m80-release-attestation.json",
+    )?;
+    let asset_index = copy_material(
+        verified,
+        &cache_dir,
+        "asset-index",
+        "m80-release-assets.json",
+    )?;
+    let public_sha256s = copy_material(verified, &cache_dir, "public-sha256s", "SHA256SUMS")?;
+
+    let mut saved_paths = vec![
+        integrity_predicate.cache_path.clone(),
+        attestation_bundle.cache_path.clone(),
+        attestation_metadata.cache_path.clone(),
+        asset_index.cache_path.clone(),
+        public_sha256s.cache_path.clone(),
+    ];
+    let checksum_sidecars = CHECKSUM_SIDECAR_MATERIALS
+        .iter()
+        .map(|class| {
+            let saved = copy_material_with_source_name(verified, &cache_dir, class)?;
+            let subject = checksum_sidecar_subject(&saved.cache_path)?;
+            saved_paths.push(saved.cache_path);
+            Ok(ChecksumSidecarRef {
+                path: saved.descriptor.path,
+                sha256: saved.descriptor.sha256,
+                subject,
+            })
+        })
+        .collect::<Result<Vec<_>, FcError>>()?;
+    let trust_policy = write_trust_policy(&cache_dir, verified)?;
+    saved_paths.push(trust_policy.cache_path.clone());
+
+    let payload = ProofCachePayload {
+        release_tag: verified.summary.release_tag.clone(),
+        repository: verified.summary.repository.clone(),
+        target: verified.summary.target.clone(),
+        integrity_predicate: integrity_predicate.descriptor,
+        attestation_bundle: attestation_bundle.descriptor,
+        attestation_metadata: AttestationMetadataRef {
+            file: attestation_metadata.descriptor,
+            signer_identity: verified.summary.attestation_signer.clone(),
+            issuer: verified.summary.attestation_issuer.clone(),
+            keyset_id: verified.summary.attestation_keyset_id.clone(),
+            predicate_sha256: verified.summary.predicate_sha256.clone(),
+        },
+        asset_index: asset_index.descriptor,
+        public_sha256s: public_sha256s.descriptor,
+        checksum_sidecars,
+        trust_policy: trust_policy.descriptor,
+        verifier_versions: VerifierVersions {
+            m80_version: m80_version.to_owned(),
+            gh_version: gh_version()?,
+            release_integrity_schema_version: verified.summary.release_integrity_schema_version,
+            asset_index_schema_version: crate::release_asset_index::ASSET_INDEX_SCHEMA_VERSION,
+        },
+    };
+    let manifest_digest = if inject_manifest_digest_failure() {
+        "0".repeat(64)
+    } else {
+        proof_cache_manifest_digest(&payload)?
+    };
+    let manifest = ProofCacheManifest {
+        schema_version: PROOF_CACHE_SCHEMA_VERSION,
+        manifest_digest,
+        payload,
+    };
+    let manifest_path = cache_dir.join(PROOF_CACHE_MANIFEST);
+    write_json_file(&manifest_path, &manifest)?;
+    saved_paths.push(manifest_path.clone());
+
+    maybe_inject_mode_failure(&saved_paths)?;
+    let parsed = read_proof_cache_manifest(&manifest_path)?;
+    verify_cached_payload_files(&cache_dir, &parsed.payload)?;
+    verify_dir_mode(&cache_dir)?;
+    for path in &saved_paths {
+        verify_file_mode(path)?;
+    }
+    Ok(manifest_path)
 }
 
 pub(super) fn read_proof_cache_manifest(path: &Path) -> Result<ProofCacheManifest, FcError> {
@@ -196,6 +335,334 @@ fn validate_checksum_sidecar(sidecar: &ChecksumSidecarRef) -> Result<(), FcError
     require_nonempty("checksum_sidecars.subject", &sidecar.subject)
 }
 
+fn copy_material(
+    verified: &VerifiedOfficialReleaseBundle,
+    cache_dir: &Path,
+    class: &'static str,
+    name: &str,
+) -> Result<SavedFile, FcError> {
+    let source = verified.material_path(class)?;
+    let dest = cache_dir.join(name);
+    fs::copy(source, &dest).map_err(|source| FcError::PathIo {
+        path: dest.clone(),
+        source,
+    })?;
+    fs::set_permissions(&dest, fs::Permissions::from_mode(PROOF_CACHE_FILE_MODE)).map_err(
+        |source| FcError::PathIo {
+            path: dest.clone(),
+            source,
+        },
+    )?;
+    Ok(SavedFile {
+        descriptor: describe_file(name, &dest)?,
+        cache_path: dest,
+    })
+}
+
+fn copy_material_with_source_name(
+    verified: &VerifiedOfficialReleaseBundle,
+    cache_dir: &Path,
+    class: &'static str,
+) -> Result<SavedFile, FcError> {
+    let source = verified.material_path(class)?;
+    let name = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            invalid_manifest(format!(
+                "proof-cache material path has no UTF-8 file name: material_class={class} path={}",
+                source.display()
+            ))
+        })?
+        .to_owned();
+    copy_material(verified, cache_dir, class, &name)
+}
+
+struct SavedTrustPolicy {
+    descriptor: TrustPolicyRef,
+    cache_path: PathBuf,
+}
+
+fn write_trust_policy(
+    cache_dir: &Path,
+    verified: &VerifiedOfficialReleaseBundle,
+) -> Result<SavedTrustPolicy, FcError> {
+    let path = cache_dir.join(TRUST_POLICY_NAME);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|source| FcError::PathIo {
+            path: path.clone(),
+            source,
+        })?;
+    file.write_all(TRUST_POLICY_BYTES)
+        .map_err(|source| FcError::PathIo {
+            path: path.clone(),
+            source,
+        })?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(PROOF_CACHE_FILE_MODE)).map_err(
+        |source| FcError::PathIo {
+            path: path.clone(),
+            source,
+        },
+    )?;
+    Ok(SavedTrustPolicy {
+        descriptor: TrustPolicyRef {
+            path: TRUST_POLICY_NAME.to_owned(),
+            identity: format!(
+                "repository={} signer={} issuer={} keyset_id={}",
+                verified.summary.repository,
+                verified.summary.attestation_signer,
+                verified.summary.attestation_issuer,
+                verified.summary.attestation_keyset_id
+            ),
+            sha256: sha256_file(&path)?,
+        },
+        cache_path: path,
+    })
+}
+
+fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<(), FcError> {
+    let encoded = serde_json::to_vec_pretty(value).map_err(|source| FcError::Json {
+        context: "write proof cache manifest",
+        source,
+    })?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|source| FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.write_all(&encoded)
+        .and_then(|_| file.write_all(b"\n"))
+        .map_err(|source| FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    fs::set_permissions(path, fs::Permissions::from_mode(PROOF_CACHE_FILE_MODE)).map_err(|source| {
+        FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        }
+    })
+}
+
+fn describe_file(relative_path: &str, path: &Path) -> Result<ProofCacheFile, FcError> {
+    let metadata = fs::metadata(path).map_err(|source| FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(invalid_manifest(format!(
+            "proof-cache material is not a regular file: {}",
+            path.display()
+        )));
+    }
+    Ok(ProofCacheFile {
+        path: relative_path.to_owned(),
+        sha256: sha256_file(path)?,
+        size_bytes: metadata.len(),
+    })
+}
+
+fn checksum_sidecar_subject(path: &Path) -> Result<String, FcError> {
+    let text = fs::read_to_string(path).map_err(|source| FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut parts = text.split_whitespace();
+    let _digest = parts.next().ok_or_else(|| {
+        invalid_manifest(format!(
+            "checksum sidecar is empty: path={}",
+            path.display()
+        ))
+    })?;
+    let subject = parts.next().ok_or_else(|| {
+        invalid_manifest(format!(
+            "checksum sidecar missing subject: path={}",
+            path.display()
+        ))
+    })?;
+    require_nonempty("checksum_sidecars.subject", subject)?;
+    Ok(subject.to_owned())
+}
+
+fn gh_version() -> Result<String, FcError> {
+    let gh_bin = super::source::release_attestation_gh_bin();
+    let output = Command::new(&gh_bin)
+        .arg("--version")
+        .output()
+        .map_err(|source| {
+            invalid_verifier(format!(
+                "release attestation verifier version failed: gh_bin={gh_bin} source={source}"
+            ))
+        })?;
+    if !output.status.success() {
+        return Err(invalid_verifier(format!(
+            "release attestation verifier version failed: gh_bin={gh_bin} status={}",
+            output.status
+        )));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let version = stdout.lines().find(|line| !line.trim().is_empty());
+    match version {
+        Some(version) => Ok(version.trim().to_owned()),
+        None => Err(invalid_verifier(format!(
+            "release attestation verifier version was empty: gh_bin={gh_bin}"
+        ))),
+    }
+}
+
+fn verify_dir_mode(path: &Path) -> Result<(), FcError> {
+    verify_mode(path, PROOF_CACHE_DIR_MODE, "proof-cache.dir-mode")
+}
+
+fn verify_file_mode(path: &Path) -> Result<(), FcError> {
+    verify_mode(path, PROOF_CACHE_FILE_MODE, "proof-cache.file-mode")
+}
+
+fn verify_cached_payload_files(
+    cache_dir: &Path,
+    payload: &ProofCachePayload,
+) -> Result<(), FcError> {
+    verify_proof_file(
+        cache_dir,
+        "integrity_predicate",
+        &payload.integrity_predicate,
+    )?;
+    verify_proof_file(cache_dir, "attestation_bundle", &payload.attestation_bundle)?;
+    verify_proof_file(
+        cache_dir,
+        "attestation_metadata.file",
+        &payload.attestation_metadata.file,
+    )?;
+    verify_proof_file(cache_dir, "asset_index", &payload.asset_index)?;
+    verify_proof_file(cache_dir, "public_sha256s", &payload.public_sha256s)?;
+    for sidecar in &payload.checksum_sidecars {
+        verify_sha_ref(
+            cache_dir,
+            "checksum_sidecars",
+            &sidecar.path,
+            &sidecar.sha256,
+        )?;
+    }
+    verify_sha_ref(
+        cache_dir,
+        "trust_policy",
+        &payload.trust_policy.path,
+        &payload.trust_policy.sha256,
+    )
+}
+
+fn verify_proof_file(
+    cache_dir: &Path,
+    label: &'static str,
+    descriptor: &ProofCacheFile,
+) -> Result<(), FcError> {
+    let path = cache_file_path(cache_dir, &descriptor.path)?;
+    let metadata = fs::metadata(&path).map_err(|source| FcError::PathIo {
+        path: path.clone(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(invalid_cached_file(format!(
+            "{label} is not a regular file: path={}",
+            path.display()
+        )));
+    }
+    if metadata.len() != descriptor.size_bytes {
+        return Err(invalid_cached_file(format!(
+            "{label} size mismatch: path={} expected_size_bytes={} observed_size_bytes={}",
+            path.display(),
+            descriptor.size_bytes,
+            metadata.len()
+        )));
+    }
+    let observed = sha256_file(&path)?;
+    if observed != descriptor.sha256 {
+        return Err(invalid_cached_file(format!(
+            "{label} sha256 mismatch: path={} expected_sha256={} observed_sha256={observed}",
+            path.display(),
+            descriptor.sha256
+        )));
+    }
+    Ok(())
+}
+
+fn verify_sha_ref(
+    cache_dir: &Path,
+    label: &'static str,
+    relative_path: &str,
+    expected_sha256: &str,
+) -> Result<(), FcError> {
+    let path = cache_file_path(cache_dir, relative_path)?;
+    let metadata = fs::metadata(&path).map_err(|source| FcError::PathIo {
+        path: path.clone(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(invalid_cached_file(format!(
+            "{label} is not a regular file: path={}",
+            path.display()
+        )));
+    }
+    let observed = sha256_file(&path)?;
+    if observed != expected_sha256 {
+        return Err(invalid_cached_file(format!(
+            "{label} sha256 mismatch: path={} expected_sha256={expected_sha256} observed_sha256={observed}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn cache_file_path(cache_dir: &Path, relative_path: &str) -> Result<PathBuf, FcError> {
+    if relative_path.is_empty()
+        || relative_path.contains('/')
+        || relative_path.contains('\\')
+        || relative_path == "."
+        || relative_path == ".."
+    {
+        return Err(invalid_cached_file(format!(
+            "proof-cache path must be a file name inside the cache directory: {relative_path:?}"
+        )));
+    }
+    Ok(cache_dir.join(relative_path))
+}
+
+fn verify_mode(path: &Path, expected: u32, field: &'static str) -> Result<(), FcError> {
+    let observed = fs::metadata(path)
+        .map_err(|source| FcError::PathIo {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .permissions()
+        .mode()
+        & 0o777;
+    if observed == expected {
+        Ok(())
+    } else {
+        Err(FcError::Config(ConfigError::InvalidValue {
+            field,
+            reason: format!(
+                "proof-cache mode mismatch: path={} expected={expected:o} observed={observed:o}",
+                path.display()
+            ),
+        }))
+    }
+}
+
+fn sha256_file(path: &Path) -> Result<String, FcError> {
+    let bytes = fs::read(path).map_err(|source| FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(format!("{:x}", Sha256::digest(&bytes)))
+}
+
 fn require_nonempty(label: &str, value: &str) -> Result<(), FcError> {
     if value.is_empty() {
         Err(invalid_manifest(format!("{label} must not be empty")))
@@ -221,181 +688,61 @@ fn invalid_manifest(reason: String) -> FcError {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use serde_json::{json, Value};
+fn invalid_verifier(reason: String) -> FcError {
+    FcError::Config(ConfigError::InvalidValue {
+        field: "proof-cache.verifier",
+        reason,
+    })
+}
 
-    use super::*;
+fn invalid_cached_file(reason: String) -> FcError {
+    FcError::Config(ConfigError::InvalidValue {
+        field: "proof-cache.cached-file",
+        reason,
+    })
+}
 
-    #[test]
-    fn complete_manifest_parses_and_validates_digest() {
-        let manifest = valid_manifest();
-        let fixture = write_manifest(&manifest);
-
-        let parsed = read_proof_cache_manifest(&fixture.path)
-            .expect("complete proof-cache manifest should parse");
-
-        assert_eq!(parsed.schema_version, PROOF_CACHE_SCHEMA_VERSION);
-        assert_eq!(parsed.payload.release_tag, "v0.0.0");
-        assert_eq!(
-            parsed.payload.attestation_metadata.keyset_id,
-            "github-actions-oidc:m80-release-v1"
-        );
-        assert_eq!(parsed.payload.checksum_sidecars.len(), 2);
-    }
-
-    #[test]
-    fn missing_required_field_fails_closed() {
-        let mut value = valid_manifest_json();
-        value["payload"]
-            .as_object_mut()
-            .expect("payload should be an object")
-            .remove("integrity_predicate");
-        let fixture = write_value(&value);
-
-        let err = read_proof_cache_manifest(&fixture.path)
-            .expect_err("missing integrity_predicate should fail");
-
-        assert!(
-            err.to_string()
-                .contains("missing field `integrity_predicate`"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn unknown_field_fails_closed() {
-        let mut value = valid_manifest_json();
-        value["payload"]
-            .as_object_mut()
-            .expect("payload should be an object")
-            .insert("surprise".to_owned(), json!(true));
-        let fixture = write_value(&value);
-
-        let err = read_proof_cache_manifest(&fixture.path).expect_err("unknown field should fail");
-
-        assert!(
-            err.to_string().contains("unknown field `surprise`"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn malformed_material_digest_fails_closed() {
-        let mut manifest = valid_manifest();
-        manifest.payload.asset_index.sha256 = "not-a-digest".to_owned();
-        manifest.manifest_digest =
-            proof_cache_manifest_digest(&manifest.payload).expect("digest test payload");
-        let fixture = write_manifest(&manifest);
-
-        let err = read_proof_cache_manifest(&fixture.path)
-            .expect_err("malformed material digest should fail");
-
-        assert!(
-            err.to_string().contains("asset_index.sha256")
-                && err.to_string().contains("64-hex sha256"),
-            "{err}"
-        );
-    }
-
-    #[test]
-    fn malformed_manifest_digest_fails_closed() {
-        let mut manifest = valid_manifest();
-        manifest.manifest_digest = "not-a-digest".to_owned();
-        let fixture = write_manifest(&manifest);
-
-        let err = read_proof_cache_manifest(&fixture.path)
-            .expect_err("malformed manifest digest should fail");
-
-        assert!(
-            err.to_string().contains("manifest_digest")
-                && err.to_string().contains("64-hex sha256"),
-            "{err}"
-        );
-    }
-
-    fn valid_manifest_json() -> Value {
-        serde_json::to_value(valid_manifest()).expect("serialize test manifest")
-    }
-
-    fn valid_manifest() -> ProofCacheManifest {
-        let payload = ProofCachePayload {
-            release_tag: "v0.0.0".to_owned(),
-            repository: "moradology/m80".to_owned(),
-            target: "linux-x86_64".to_owned(),
-            integrity_predicate: proof_file("m80-release-integrity.json", "1", 1200),
-            attestation_bundle: proof_file("m80-release-integrity.attestation.jsonl", "2", 900),
-            attestation_metadata: AttestationMetadataRef {
-                file: proof_file("m80-release-attestation.json", "3", 700),
-                signer_identity: "moradology/m80/.github/workflows/release-artifacts.yml"
-                    .to_owned(),
-                issuer: "https://token.actions.githubusercontent.com".to_owned(),
-                keyset_id: "github-actions-oidc:m80-release-v1".to_owned(),
-                predicate_sha256: digest("1"),
-            },
-            asset_index: proof_file("m80-release-assets.json", "4", 500),
-            public_sha256s: proof_file("SHA256SUMS", "5", 400),
-            checksum_sidecars: vec![
-                ChecksumSidecarRef {
-                    path: "m80-linux-x86_64.tar.gz.sha256".to_owned(),
-                    sha256: digest("6"),
-                    subject: "m80-linux-x86_64.tar.gz".to_owned(),
-                },
-                ChecksumSidecarRef {
-                    path: "install.sh.sha256".to_owned(),
-                    sha256: digest("7"),
-                    subject: "install.sh".to_owned(),
-                },
-            ],
-            trust_policy: TrustPolicyRef {
-                path: "m80-release-trust-policy.json".to_owned(),
-                identity: "github-actions-oidc:m80-release-v1".to_owned(),
-                sha256: digest("8"),
-            },
-            verifier_versions: VerifierVersions {
-                m80_version: "v0.0.0".to_owned(),
-                gh_version: "gh version 2.75.0".to_owned(),
-                release_integrity_schema_version: 1,
-                asset_index_schema_version: 1,
-            },
-        };
-        let manifest_digest = proof_cache_manifest_digest(&payload).expect("digest test payload");
-        ProofCacheManifest {
-            schema_version: PROOF_CACHE_SCHEMA_VERSION,
-            manifest_digest,
-            payload,
+fn maybe_inject_write_failure() -> Result<(), FcError> {
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var_os("M80_INSTALL_INJECT_PROOF_CACHE_WRITE_FAILURE").is_some() {
+            return Err(FcError::Config(ConfigError::InvalidValue {
+                field: "proof-cache.write",
+                reason: "injected proof-cache write failure".to_owned(),
+            }));
         }
     }
+    Ok(())
+}
 
-    fn proof_file(path: &str, seed: &str, size_bytes: u64) -> ProofCacheFile {
-        ProofCacheFile {
-            path: path.to_owned(),
-            sha256: digest(seed),
-            size_bytes,
-        }
+fn inject_manifest_digest_failure() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        std::env::var_os("M80_INSTALL_INJECT_PROOF_CACHE_DIGEST_FAILURE").is_some()
     }
-
-    fn digest(seed: &str) -> String {
-        seed.repeat(64 / seed.len())
-    }
-
-    struct ManifestFixture {
-        _temp: tempfile::TempDir,
-        path: std::path::PathBuf,
-    }
-
-    fn write_manifest(manifest: &ProofCacheManifest) -> ManifestFixture {
-        write_value(&serde_json::to_value(manifest).expect("serialize test manifest"))
-    }
-
-    fn write_value(value: &Value) -> ManifestFixture {
-        let temp = tempfile::tempdir().expect("create temp proof-cache manifest dir");
-        let path = temp.path().join(PROOF_CACHE_MANIFEST);
-        std::fs::write(
-            &path,
-            serde_json::to_vec_pretty(value).expect("serialize test manifest JSON"),
-        )
-        .expect("write test manifest");
-        ManifestFixture { _temp: temp, path }
+    #[cfg(not(debug_assertions))]
+    {
+        false
     }
 }
+
+fn maybe_inject_mode_failure(paths: &[PathBuf]) -> Result<(), FcError> {
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var_os("M80_INSTALL_INJECT_PROOF_CACHE_MODE_FAILURE").is_some() {
+            let Some(path) = paths.first() else {
+                return Ok(());
+            };
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|source| {
+                FcError::PathIo {
+                    path: path.clone(),
+                    source,
+                }
+            })?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

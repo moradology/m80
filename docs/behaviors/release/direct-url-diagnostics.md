@@ -22,10 +22,10 @@ Concrete official bundle URLs under
 are still verified as official release material. Successful direct official URL
 installs report the resolved release tag, bundle asset, bundle SHA-256,
 `install.sh` SHA-256, public `SHA256SUMS` SHA-256, asset-index SHA-256,
-predicate SHA-256, attestation identity, source commit, and the reserved proof cache destination.
-The current diagnostic reserves the destination and reports
-`proof_cache_written=false`; callers must not infer cached proof material exists
-from this field alone.
+predicate SHA-256, attestation identity, source commit, the proof-cache destination,
+and `proof_cache_written=true` after the verified proof cache is
+written before activation. Local fixture/operator bundle installs do not write a
+release proof cache.
 
 Direct URL verifier failures include the resolved `release_tag` when the URL
 classified far enough to know it, the failed `material_class` when there is a
@@ -50,4 +50,4 @@ share the broader `Config` or `UnsupportedOperation` variants:
 - `classifier_failure_context_names_classifier_class_and_one_retry`
 - `json_envelope_codes_direct_url_diagnostics`
 - `official_release_verifier_accepts_complete_material_before_staging`
-- `release_material_install_summary_names_reserved_proof_cache_destination`
+- `release_material_install_summary_initializes_proof_cache_fields`

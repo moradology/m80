@@ -62,6 +62,11 @@ fn install_state_doc_names_proof_cache_manifest_contract() {
         "unknown_field_fails_closed",
         "malformed_material_digest_fails_closed",
         "malformed_manifest_digest_fails_closed",
+        "write_verified_release_proof_cache_copies_manifest_and_mode_checks_material",
+        "proof_cache_write_failure_leaves_previous_active_profile_and_config_selected",
+        "proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected",
+        "proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected",
+        "before default profile/config writes",
     ] {
         assert!(
             doc.contains(required),
@@ -196,6 +201,7 @@ fn install_finalization_transaction_doc_names_state_machine_and_tests() {
         "`bundle_verification`",
         "`host_prerequisite_verification`",
         "`install_provenance`",
+        "`release_proof_cache`",
         "`host_binaries_manifest`",
         "`default_profile`",
         "`preflight_smoke_gate`",
@@ -207,6 +213,9 @@ fn install_finalization_transaction_doc_names_state_machine_and_tests() {
         "install_bundle_layout_manifest_failure_leaves_previous_active_selected",
         "install_bundle_layout_profile_failure_leaves_previous_active_and_profile",
         "install_bundle_layout_injected_interruption_leaves_previous_active_selected",
+        "proof_cache_write_failure_leaves_previous_active_profile_and_config_selected",
+        "proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected",
+        "proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected",
         "install_bundle_layout_cleans_abandoned_staging_dirs",
     ] {
         assert!(

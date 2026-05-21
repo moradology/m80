@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use m80_firecracker::{ConfigError, FcError};
@@ -159,6 +160,7 @@ fn shell_quote(value: &str) -> String {
 pub(super) struct VerifiedOfficialReleaseBundle {
     pub(super) _temp_dir: TempDir,
     pub(super) bundle_path: PathBuf,
+    pub(super) material_paths: BTreeMap<&'static str, PathBuf>,
     pub(super) summary: ReleaseVerificationSummary,
 }
 
@@ -166,11 +168,24 @@ impl VerifiedOfficialReleaseBundle {
     pub(super) fn bundle_path(&self) -> &Path {
         &self.bundle_path
     }
+
+    pub(super) fn material_path(&self, class: &'static str) -> Result<&Path, FcError> {
+        self.material_paths
+            .get(class)
+            .map(PathBuf::as_path)
+            .ok_or_else(|| {
+                release_material_error(format!(
+                    "release material was not preserved after verification: material_class={class}"
+                ))
+            })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ReleaseVerificationSummary {
     pub(super) release_tag: String,
+    pub(super) repository: String,
+    pub(super) target: String,
     pub(super) bundle_asset: String,
     pub(super) bundle_url: String,
     pub(super) bundle_sha256: String,
@@ -180,7 +195,9 @@ pub(super) struct ReleaseVerificationSummary {
     pub(super) asset_index_sha256: String,
     pub(super) attestation_signer: String,
     pub(super) attestation_issuer: String,
+    pub(super) attestation_keyset_id: String,
     pub(super) source_commit: String,
+    pub(super) release_integrity_schema_version: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

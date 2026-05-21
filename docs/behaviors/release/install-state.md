@@ -1,6 +1,6 @@
 # Install State
 
-Behavior bead: `m80-o3uh9.16.8.1`.
+Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -57,6 +57,22 @@ unknown fields, empty path/identity strings, zero sizes, unsupported schema
 versions, malformed sha256 fields, and mismatched `manifest_digest` all fail
 closed before any status surface trusts the cached proof.
 
+## Transaction Ordering
+
+For official release installs, the installer writes the proof cache inside the
+staged version directory after extraction and installed metadata rewriting, but
+before the staged tree is renamed to `<install-root>/versions/<release_tag>`,
+before default profile/config writes, and before `<install-root>/active` is
+renamed. The writer copies the verified public material, writes the trust
+policy used by the verifier, computes the manifest digest, reads the manifest
+back through the typed parser, and checks the cache directory/file modes before
+the install can proceed to version-directory publication, host-binaries manifest
+generation, and profile publishing.
+
+If proof-cache file creation, manifest rehashing, or mode checking fails, the
+staged tree is not renamed into the version directory and is not active. Any
+previous active pointer, default profile, and config file remain selected.
+
 ## Tests
 
 - `complete_manifest_parses_and_validates_digest`
@@ -64,4 +80,8 @@ closed before any status surface trusts the cached proof.
 - `unknown_field_fails_closed`
 - `malformed_material_digest_fails_closed`
 - `malformed_manifest_digest_fails_closed`
+- `write_verified_release_proof_cache_copies_manifest_and_mode_checks_material`
+- `proof_cache_write_failure_leaves_previous_active_profile_and_config_selected`
+- `proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected`
+- `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`
 - `install_state_doc_names_proof_cache_manifest_contract`

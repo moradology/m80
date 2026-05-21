@@ -18,6 +18,12 @@ The installer records this order in command output:
 6. `preflight_smoke_gate`
 7. `active_pointer_flip`
 
+Official release installs insert `release_proof_cache` after
+`install_provenance` and before version-directory publication. That step copies
+the verified public integrity material into the staged version directory,
+rehashes the proof-cache manifest, and checks saved proof file modes before any
+profile/config write or active-pointer rename can happen.
+
 CI fixtures can opt into a debug-only hostless preflight fixture mode for local
 `file://` and local HTTP fixture bundles. GitHub release bundle URLs use live
 host preflight. Local bundles without the fixture switch also use live host
@@ -33,11 +39,11 @@ The installer writes `<install-root>/active` as an absolute symlink to
 temporary sibling and renamed into place after profile writing, manifest
 generation, and the preflight gate have passed.
 
-If bundle verification, host-binaries manifest generation, profile writing, or
-the interruption injection fails, any previous `<install-root>/active` symlink
-continues to select the previous version. An unselected version directory may
-remain after a late failure so the operator can inspect it; it is not current
-until the active symlink points at it.
+If bundle verification, release proof-cache verification, host-binaries manifest
+generation, profile writing, or the interruption injection fails, any previous
+`<install-root>/active` symlink continues to select the previous version. An
+unselected version directory may remain after a late failure so the operator can
+inspect it; it is not current until the active symlink points at it.
 
 ## Staging Cleanup
 
@@ -52,5 +58,8 @@ directory is removed on success and on ordinary error returns.
 - `install_bundle_layout_manifest_failure_leaves_previous_active_selected`
 - `install_bundle_layout_profile_failure_leaves_previous_active_and_profile`
 - `install_bundle_layout_injected_interruption_leaves_previous_active_selected`
+- `proof_cache_write_failure_leaves_previous_active_profile_and_config_selected`
+- `proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected`
+- `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`
 - `install_bundle_layout_cleans_abandoned_staging_dirs`
 - `install_finalization_transaction_doc_names_state_machine_and_tests`

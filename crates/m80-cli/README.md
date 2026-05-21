@@ -78,10 +78,11 @@ binaries, pull OCI images, or install packages implicitly.
   predicate to the moradology/m80 release workflow, tag ref, source commit, and
   trusted issuer before the selected bundle tarball is downloaded. Successful
   direct official URL installs name the resolved tag, bundle asset, installer
-  digest, public checksum digest, asset-index digest, and reserved proof-cache
-  destination. Failures include finite JSON `code` values for classifier,
-  fetch, digest, attestation, stale-material, and no-write rollback cases plus
-  one retry command when the operator should rerun the explicit URL.
+  digest, public checksum digest, asset-index digest, proof-cache destination,
+  and whether the verified proof cache was written before activation. Failures
+  include finite JSON `code` values for classifier, fetch, digest, attestation,
+  stale-material, and no-write rollback cases plus one retry command when the
+  operator should rerun the explicit URL.
   Non-dry-run stages, verifies, and copies the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
   `<install-root>/active` last.

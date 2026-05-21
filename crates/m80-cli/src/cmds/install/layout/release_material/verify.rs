@@ -62,6 +62,7 @@ pub(super) fn verify_official_bundle(
     Ok(VerifiedOfficialReleaseBundle {
         _temp_dir: temp_dir,
         bundle_path,
+        material_paths: downloaded.paths.clone(),
         summary,
     })
 }
@@ -238,6 +239,7 @@ fn verify_prebundle_material(
         asset_index_sha256,
         attestation_signer: attestation.signer_identity,
         attestation_issuer: attestation.issuer,
+        attestation_keyset_id: attestation.keyset_id,
     })
 }
 
@@ -287,6 +289,8 @@ fn verify_full_material(
 
     Ok(ReleaseVerificationSummary {
         release_tag: plan.release_tag.clone(),
+        repository: prebundle.integrity.repository,
+        target: prebundle.integrity.target,
         bundle_asset: bundle.name.clone(),
         bundle_url: bundle.url.clone(),
         bundle_sha256,
@@ -296,7 +300,9 @@ fn verify_full_material(
         asset_index_sha256: prebundle.asset_index_sha256,
         attestation_signer: prebundle.attestation_signer,
         attestation_issuer: prebundle.attestation_issuer,
+        attestation_keyset_id: prebundle.attestation_keyset_id,
         source_commit: prebundle.integrity.commit_sha,
+        release_integrity_schema_version: prebundle.integrity.schema_version,
     })
 }
 

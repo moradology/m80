@@ -12,7 +12,7 @@ mod structured;
 
 pub(crate) use structured::{AssetIndexDiagnostic, AssetIndexDiagnosticCode, AssetIndexFailure};
 
-const ASSET_INDEX_SCHEMA_VERSION: u32 = 1;
+pub(crate) const ASSET_INDEX_SCHEMA_VERSION: u32 = 1;
 const ASSET_INDEX_NAME: &str = "m80-release-assets.json";
 const DEFAULT_IMAGE_KIND: &str = "minimal";
 

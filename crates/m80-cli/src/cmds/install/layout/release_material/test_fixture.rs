@@ -84,9 +84,20 @@ pub(super) fn write_direct_release_materials_with(
     material_dir: &Path,
     options: ReleaseFixtureOptions,
 ) -> ReleaseFixture {
+    write_direct_release_materials_with_bundle_bytes(
+        material_dir,
+        options,
+        b"release bundle bytes\n",
+    )
+}
+
+pub(super) fn write_direct_release_materials_with_bundle_bytes(
+    material_dir: &Path,
+    options: ReleaseFixtureOptions,
+    bundle_bytes: &[u8],
+) -> ReleaseFixture {
     let bundle_name = "m80-linux-x86_64.tar.gz";
     let bundle_url = crate::release_urls::release_asset_url("v0.0.0", bundle_name);
-    let bundle_bytes = b"release bundle bytes\n";
     let tampered_bundle_bytes = b"tampered release bundle bytes\n";
     let bundle_sha256 = sha256_bytes(bundle_bytes);
     let bundle_size = bundle_bytes.len();
@@ -103,7 +114,7 @@ pub(super) fn write_direct_release_materials_with(
     let written_bundle = if options.tamper_bundle {
         tampered_bundle_bytes.as_slice()
     } else {
-        bundle_bytes.as_slice()
+        bundle_bytes
     };
     write_material(material_dir, bundle_name, written_bundle, options.omit);
 

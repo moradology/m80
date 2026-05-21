@@ -33,6 +33,7 @@ pub(super) struct PrebundleVerification {
     pub(super) asset_index_sha256: String,
     pub(super) attestation_signer: String,
     pub(super) attestation_issuer: String,
+    pub(super) attestation_keyset_id: String,
 }
 
 #[derive(Debug, Deserialize)]
