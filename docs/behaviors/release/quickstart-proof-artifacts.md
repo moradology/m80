@@ -40,22 +40,24 @@ tag, and substrate. See
 
 The tag release workflow writes
 `m80-quickstart-proof-hostless.json` into the `m80-release-dist` GitHub Actions
-artifact, validates it, appends it to `m80-release-proof-ledger.jsonl`, and
-validates the ledger chain before upload. The publish job validates both the
-proof and the ledger again after downloading the workflow artifact. Real-KVM
-release smoke and latest freshness jobs must upload their own proof JSON with
-`proof_kind: "real-kvm"`, append it through `scripts/release_proof_ledger.py`,
-and run the same proof and ledger validators before marking quickstart proof
-green. The expected-nonzero companion smoke should use `expected_nonzero: true`
-and matching nonzero expected/observed exit statuses to prove process-wrapper
-exit-code passthrough.
+artifact, validates it, writes
+`m80-quickstart-proof-hostless.verifier-result.json`, appends both artifacts to
+`m80-release-proof-ledger.jsonl`, and validates the ledger chain before upload.
+The publish job validates both the proof and the ledger again after downloading
+the workflow artifact. Real-KVM release smoke and latest freshness jobs must
+upload their own proof JSON with `proof_kind: "real-kvm"`, write a verifier
+result with `scripts/verify-quickstart-proof.py --result-out`, append it through
+`scripts/release_proof_ledger.py`, and run the same proof and ledger validators
+before marking quickstart proof green. The expected-nonzero companion smoke
+should use `expected_nonzero: true` and matching nonzero expected/observed exit
+statuses to prove process-wrapper exit-code passthrough.
 
 ## Proof Ledger
 
 `m80-release-proof-ledger.jsonl` is append-only JSONL. Each line is one
 tamper-evident record with:
 
-- `schema_version`, currently `1`.
+- `schema_version`, currently `2`.
 - `record_hash`, a `sha256:<64 hex>` hash of the canonical record excluding
   `record_hash`.
 - `previous_record_hash`, `null` for the first row and the prior row hash after
@@ -64,15 +66,30 @@ tamper-evident record with:
   and its current digest.
 - `release_tag`, `workflow_run_id`, `proof_type`, and `substrate`, derived from
   the proof artifact rather than hand-maintained summaries.
+- `command`: display command plus expected and observed exit status, copied from
+  the verifier result and checked against the proof artifact.
+- `m80_version`, copied from the verifier result and checked against the proof.
+- `bundle_metadata`: relative bundle metadata path and digest, checked against
+  the live metadata file during ledger verification.
+- `install`: redacted active-pointer and default-profile path summaries. The
+  ledger keeps the role and file name but not the install root.
+- `verifier_result`: relative path and digest for the validator output JSON.
+- `log_artifacts`: relative workflow-artifact paths and digests for stderr or
+  run logs needed to inspect the proof lane.
+- `runner_identity`: the GitHub Actions run/attempt identity that produced the
+  proof record.
+- `pass_fail_summary`: the verifier pass bit and short summary.
 - `redaction`, fixed to `host_paths`, `secrets`, and `environment` as
   `omitted`.
 
-The ledger intentionally does not copy install roots, host paths, environment
-dumps, or command output. Humans inspect the referenced proof artifact for
-proof detail; the ledger supplies ordering, digest binding, and proof-type
-presence. The verifier rejects malformed schema versions, duplicate record
-hashes, reordering, stale proof digests, missing required proof paths, missing
-required proof types, and redaction drift.
+The ledger intentionally does not copy install roots, raw host paths,
+environment dumps, or command output. Humans inspect the referenced proof,
+verifier result, and log artifacts for detail; the ledger supplies ordering,
+digest binding, proof-type presence, and enough summary fields to decide which
+artifact to inspect. The verifier rejects malformed schema versions, duplicate
+record hashes, reordering, stale proof digests, stale bundle metadata hashes,
+missing verifier results, missing log artifacts, missing runner identity,
+missing required proof paths, missing required proof types, and redaction drift.
 
 The current tag-release lane has exactly one ledger row, the hostless
 quickstart proof, so the workflow verifies `--expect-record-count 1`. Future

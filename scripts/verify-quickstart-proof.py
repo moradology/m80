@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -43,6 +44,23 @@ BUNDLE_FIELDS = {
 HOST_BINARY_FIELDS = {"manifest_path", "firecracker_version", "jailer_version"}
 SUBSTRATE_FIELDS = {"kind", "summary"}
 SUBSTRATE_KINDS = {"hostless", "real-kvm"}
+VERIFIER_RESULT_FIELDS = {
+    "schema_version",
+    "verifier",
+    "proof_artifact",
+    "proof_artifact_digest",
+    "release_tag",
+    "proof_type",
+    "substrate",
+    "passed",
+    "summary",
+    "command",
+    "m80_version",
+    "bundle_metadata",
+    "install",
+}
+VERIFIER_NAME = "verify-quickstart-proof.py"
+SHA256_PREFIX = "sha256:"
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,13 +72,25 @@ def parse_args() -> argparse.Namespace:
         help="directory that contains relative proof artifact paths",
     )
     parser.add_argument("--release-tag", help="expected resolved release tag")
+    parser.add_argument(
+        "--result-out",
+        type=Path,
+        help="write a JSON verifier-result artifact after successful validation",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     artifact_root = args.artifact_root or args.proof.parent
-    validate_quickstart_proof(args.proof, artifact_root=artifact_root, release_tag=args.release_tag)
+    proof = validate_quickstart_proof(args.proof, artifact_root=artifact_root, release_tag=args.release_tag)
+    if args.result_out is not None:
+        write_verifier_result(
+            args.result_out,
+            proof=proof,
+            proof_path=args.proof.resolve(),
+            artifact_root=artifact_root.resolve(),
+        )
     print(f"validated quickstart proof: {args.proof}")
     return 0
 
@@ -184,6 +214,53 @@ def validate_quickstart_proof(
     return proof
 
 
+def write_verifier_result(
+    path: Path,
+    *,
+    proof: dict,
+    proof_path: Path,
+    artifact_root: Path,
+) -> None:
+    bundle = require_object(proof, "bundle", "quickstart proof")
+    metadata_path = resolve_artifact_path(
+        artifact_root,
+        bundle["metadata_path"],
+        "quickstart proof bundle metadata_path",
+    )
+    command = require_object(proof, "command", "quickstart proof")
+    install = require_object(proof, "install", "quickstart proof")
+    m80 = require_object(proof, "m80", "quickstart proof")
+    release = require_object(proof, "release", "quickstart proof")
+    substrate = require_object(proof, "substrate", "quickstart proof")
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "verifier": VERIFIER_NAME,
+        "proof_artifact": relative_artifact_path(artifact_root, proof_path, "quickstart proof artifact"),
+        "proof_artifact_digest": sha256_ref(proof_path),
+        "release_tag": release["resolved_tag"],
+        "proof_type": proof["proof_kind"],
+        "substrate": substrate["kind"],
+        "passed": True,
+        "summary": "quickstart proof validated",
+        "command": {
+            "display": command["display"],
+            "expected_exit_status": command["expected_exit_status"],
+            "observed_exit_status": command["observed_exit_status"],
+        },
+        "m80_version": m80["version"],
+        "bundle_metadata": {
+            "path": bundle["metadata_path"],
+            "digest": sha256_ref(metadata_path),
+        },
+        "install": {
+            "active_pointer": redact_path(install["active_pointer"], "quickstart proof install active_pointer"),
+            "default_profile": redact_path(install["default_profile"], "quickstart proof install default_profile"),
+        },
+    }
+    require_exact_fields(result, VERIFIER_RESULT_FIELDS, "quickstart verifier result")
+    write_json(path, result)
+
+
 def validate_stderr(stderr: object, artifact_root: Path) -> str:
     require(isinstance(stderr, dict), "quickstart proof stderr must be an object")
     keys = set(stderr)
@@ -227,12 +304,40 @@ def resolve_artifact_path(root: Path, value: object, label: str) -> Path:
     return resolved
 
 
+def relative_artifact_path(root: Path, path: Path, label: str) -> str:
+    require(path.is_file(), f"{label} is missing: {path}")
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise SystemExit(f"{label} must live under the proof artifact root") from exc
+    require(relative.as_posix() == str(relative).replace("\\", "/"), f"{label} must use slash separators")
+    require(".." not in relative.parts, f"{label} must not escape the proof artifact root")
+    return relative.as_posix()
+
+
+def sha256_ref(path: Path) -> str:
+    return f"{SHA256_PREFIX}{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+def redact_path(value: object, label: str) -> str:
+    require(isinstance(value, str) and value, f"{label} must be a nonempty string")
+    name = Path(value).name
+    require(name not in {"", ".", ".."}, f"{label} must have a file name")
+    return f"<redacted>/{name}"
+
+
 def read_json(path: Path, label: str) -> dict:
     require(path.is_file(), f"{label} missing: {path}")
     with path.open() as f:
         value = json.load(f)
     require(isinstance(value, dict), f"{label} must be a JSON object")
     return value
+
+
+def write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    path.chmod(0o644)
 
 
 def require_object(obj: dict, key: str, label: str) -> dict:

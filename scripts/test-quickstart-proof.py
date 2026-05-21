@@ -23,6 +23,31 @@ class QuickstartProofTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("validated quickstart proof", result.stdout)
 
+    def test_result_out_records_validated_summary_without_host_paths(self) -> None:
+        with proof_fixture() as fixture:
+            result_path = fixture.root / "proof.verifier-result.json"
+            result = run_verify(fixture.proof, fixture.root, "v0.0.0", result_out=result_path)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = read_json(result_path)
+            self.assertEqual(payload["verifier"], "verify-quickstart-proof.py")
+            self.assertEqual(payload["proof_artifact"], "proof.json")
+            self.assertEqual(payload["release_tag"], "v0.0.0")
+            self.assertTrue(payload["passed"])
+            self.assertEqual(
+                payload["command"],
+                {
+                    "display": "m80 run -- echo hello",
+                    "expected_exit_status": 0,
+                    "observed_exit_status": 0,
+                },
+            )
+            self.assertEqual(payload["m80_version"], "v0.0.0")
+            self.assertEqual(payload["bundle_metadata"]["path"], "bundle.json")
+            self.assertEqual(payload["install"]["active_pointer"], "<redacted>/active")
+            self.assertEqual(payload["install"]["default_profile"], "<redacted>/default.toml")
+            self.assertNotIn("/tmp/m80-install-root", result_path.read_text())
+
     def test_valid_real_kvm_proof_uses_same_schema(self) -> None:
         with proof_fixture(proof_kind="real-kvm") as fixture:
             result = run_verify(fixture.proof, fixture.root, "v0.0.0")
@@ -238,17 +263,26 @@ class proof_fixture:
         self.tmp.cleanup()
 
 
-def run_verify(proof: Path, root: Path, release_tag: str) -> subprocess.CompletedProcess[str]:
+def run_verify(
+    proof: Path,
+    root: Path,
+    release_tag: str,
+    *,
+    result_out: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    args = [
+        "python3",
+        str(VERIFY),
+        str(proof),
+        "--artifact-root",
+        str(root),
+        "--release-tag",
+        release_tag,
+    ]
+    if result_out is not None:
+        args.extend(["--result-out", str(result_out)])
     return subprocess.run(
-        [
-            "python3",
-            str(VERIFY),
-            str(proof),
-            "--artifact-root",
-            str(root),
-            "--release-tag",
-            release_tag,
-        ],
+        args,
         cwd=REPO_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

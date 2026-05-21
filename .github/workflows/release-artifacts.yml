@@ -177,12 +177,16 @@ jobs:
           scripts/verify-quickstart-proof.py \
             "$DIST_DIR/m80-quickstart-proof-hostless.json" \
             --artifact-root "$DIST_DIR" \
-            --release-tag "$GITHUB_REF_NAME"
+            --release-tag "$GITHUB_REF_NAME" \
+            --result-out "$DIST_DIR/m80-quickstart-proof-hostless.verifier-result.json"
           scripts/release_proof_ledger.py append \
             --ledger "$DIST_DIR/m80-release-proof-ledger.jsonl" \
             --artifact-root "$DIST_DIR" \
             --proof "$DIST_DIR/m80-quickstart-proof-hostless.json" \
+            --verifier-result "$DIST_DIR/m80-quickstart-proof-hostless.verifier-result.json" \
+            --log-artifact "$DIST_DIR/m80-quickstart-stderr.txt" \
             --workflow-run-id "$GITHUB_RUN_ID" \
+            --runner-identity "github-actions:${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
             --release-tag "$GITHUB_REF_NAME"
           scripts/release_proof_ledger.py verify \
             --ledger "$DIST_DIR/m80-release-proof-ledger.jsonl" \
