@@ -1,11 +1,11 @@
-use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
-
-use super::super::super::{InstallPlan, SourceKind, SourcePlan};
+use super::test_env::{
+    fake_gh_fixture, official_release_plan, valid_material, write_fake_curl, EnvVarGuard,
+};
+use super::test_fixture::{
+    verifier_error, write_direct_release_materials_with, ReleaseFixtureOptions,
+};
 use super::*;
 
 #[test]
@@ -100,7 +100,13 @@ fn official_release_missing_material_fails_before_staging_or_bundle_download() {
     let bin_dir = temp.path().join("bin");
     fs::create_dir(&bin_dir).unwrap();
     write_fake_curl(&bin_dir);
-    write_direct_release_materials(&material_dir, Some("m80-release-integrity.json"));
+    write_direct_release_materials_with(
+        &material_dir,
+        ReleaseFixtureOptions {
+            omit: Some("m80-release-integrity.json"),
+            ..ReleaseFixtureOptions::default()
+        },
+    );
 
     let _gh_env = EnvVarGuard::set(
         "M80_RELEASE_ATTESTATION_GH",
@@ -133,6 +139,109 @@ fn official_release_missing_material_fails_before_staging_or_bundle_download() {
     );
 }
 
+#[test]
+fn official_release_verifier_accepts_complete_material_before_staging() {
+    let _guard = super::super::INSTALL_PREFLIGHT_ENV_LOCK.lock().unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let material_dir = temp.path().join("materials");
+    fs::create_dir(&material_dir).unwrap();
+    let log_path = temp.path().join("curl.log");
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    write_fake_curl(&bin_dir);
+    let fixture =
+        write_direct_release_materials_with(&material_dir, ReleaseFixtureOptions::default());
+
+    let _path_env = EnvVarGuard::prepend_path(&bin_dir);
+    let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
+    let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
+
+    let verified = super::verify_official_release_bundle(&fixture.bundle_url)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        sha256_file(verified.bundle_path()).unwrap(),
+        fixture.bundle_sha256
+    );
+    assert_eq!(verified.summary.install_sh_sha256, fixture.install_sha256);
+    assert_eq!(verified.summary.predicate_sha256, fixture.predicate_sha256);
+    assert_eq!(
+        verified.summary.attestation_signer,
+        "moradology/m80/.github/workflows/release-artifacts.yml"
+    );
+    assert!(verified.bundle_path().is_file());
+}
+
+#[test]
+fn official_release_verifier_rejects_tampered_bundle_bytes() {
+    let err = verifier_error(ReleaseFixtureOptions {
+        tamper_bundle: true,
+        ..ReleaseFixtureOptions::default()
+    });
+
+    let message = err.to_string();
+    assert!(
+        message.contains("bundle digest mismatch") || message.contains("sidecar digest mismatch"),
+        "{message}"
+    );
+    assert!(message.contains("bundle"), "{message}");
+}
+
+#[test]
+fn official_release_verifier_rejects_wrong_bundle_checksum_row() {
+    let err = verifier_error(ReleaseFixtureOptions {
+        wrong_bundle_checksum: true,
+        ..ReleaseFixtureOptions::default()
+    });
+
+    let message = err.to_string();
+    assert!(
+        message.contains("checksum mismatch") || message.contains("sidecar digest mismatch"),
+        "{message}"
+    );
+    assert!(message.contains("bundle-checksum"), "{message}");
+}
+
+#[test]
+fn official_release_verifier_rejects_stale_asset_index_row() {
+    let err = verifier_error(ReleaseFixtureOptions {
+        stale_asset_index: true,
+        ..ReleaseFixtureOptions::default()
+    });
+
+    let message = err.to_string();
+    assert!(
+        message.contains("bundle digest mismatch") || message.contains("checksum mismatch"),
+        "{message}"
+    );
+    assert!(message.contains("bundle-checksum"), "{message}");
+}
+
+#[test]
+fn official_release_verifier_rejects_mismatched_attestation_metadata() {
+    let err = verifier_error(ReleaseFixtureOptions {
+        mismatched_attestation: true,
+        ..ReleaseFixtureOptions::default()
+    });
+
+    let message = err.to_string();
+    assert!(message.contains("predicate_sha256"), "{message}");
+    assert!(message.contains("mismatch"), "{message}");
+}
+
+#[test]
+fn official_release_verifier_rejects_missing_install_sh_digest() {
+    let err = verifier_error(ReleaseFixtureOptions {
+        missing_install_digest: true,
+        ..ReleaseFixtureOptions::default()
+    });
+
+    let message = err.to_string();
+    assert!(message.contains("public SHA256SUMS"), "{message}");
+    assert!(message.contains("install.sh"), "{message}");
+}
+
 fn assert_material(plan: &ReleaseMaterialPlan, class: &str, name: &str, url: &str, probe: bool) {
     let material = plan
         .materials
@@ -142,226 +251,4 @@ fn assert_material(plan: &ReleaseMaterialPlan, class: &str, name: &str, url: &st
     assert_eq!(material.name, name);
     assert_eq!(material.url, url);
     assert_eq!(material.probe, probe);
-}
-
-fn valid_material() -> crate::release_asset_index::DirectBundleIndexMaterial {
-    crate::release_asset_index::DirectBundleIndexMaterial {
-        release_tag: "v0.0.0".to_owned(),
-        bundle_name: "m80-linux-x86_64.tar.gz".to_owned(),
-        bundle_url: crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
-        bundle_sha256: "a".repeat(64),
-        bundle_size_bytes: 42,
-        metadata_name: "m80-linux-x86_64.bundle.json".to_owned(),
-        metadata_sha256: "b".repeat(64),
-        checksum_name: "m80-linux-x86_64.tar.gz.sha256".to_owned(),
-        attestation_name: Some("m80-release-integrity.attestation.jsonl".to_owned()),
-        target: "linux-x86_64".to_owned(),
-        image_kind: "minimal".to_owned(),
-        m80_version: "v0.0.0".to_owned(),
-        index_url: crate::release_urls::release_asset_url("v0.0.0", "m80-release-assets.json"),
-        index_checksum_url: crate::release_urls::release_asset_url(
-            "v0.0.0",
-            "m80-release-assets.json.sha256",
-        ),
-        index_expected_sha256: "c".repeat(64),
-        index_observed_sha256: "c".repeat(64),
-    }
-}
-
-fn official_release_plan(install_root: &Path) -> InstallPlan {
-    let bundle_url = crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz");
-    InstallPlan {
-        dry_run: false,
-        install_root: install_root.display().to_string(),
-        active_pointer: install_root.join("active").display().to_string(),
-        source: SourcePlan {
-            kind: SourceKind::BundleUrl,
-            selector: bundle_url.clone(),
-            release_tag: Some("v0.0.0".to_owned()),
-            bundle_url: Some(bundle_url),
-        },
-        binary_version: "v0.0.0".to_owned(),
-        binary_release_tag: Some("v0.0.0".to_owned()),
-        version_status: "release".to_owned(),
-    }
-}
-
-fn write_fake_curl(bin_dir: &Path) -> PathBuf {
-    let path = bin_dir.join("curl");
-    fs::write(
-        &path,
-        r#"#!/bin/sh
-set -eu
-out=
-url=
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        -o)
-            out=$2
-            shift 2
-            ;;
-        -w|--connect-timeout|--max-time|--proto|--proto-redir)
-            shift 2
-            ;;
-        -fsSL)
-            shift
-            ;;
-        *)
-            url=$1
-            shift
-            ;;
-    esac
-done
-if [ -z "$out" ] || [ -z "$url" ]; then
-    echo "fake curl missing -o or url" >&2
-    exit 2
-fi
-printf '%s\n' "$url" >> "$M80_FAKE_CURL_LOG"
-name=${url##*/}
-if [ "$name" = "m80-linux-x86_64.tar.gz" ]; then
-    echo "bundle tarball fetch is not part of release material preflight" >&2
-    exit 99
-fi
-src="$M80_FAKE_CURL_MATERIAL_DIR/$name"
-if [ ! -f "$src" ]; then
-    echo "fake curl missing $name" >&2
-    exit 22
-fi
-cp "$src" "$out"
-printf '%s' "$url"
-"#,
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
-    path
-}
-
-fn write_direct_release_materials(material_dir: &Path, omit: Option<&str>) {
-    let bundle_name = "m80-linux-x86_64.tar.gz";
-    let bundle_sha256 = "a".repeat(64);
-    let metadata_name = "m80-linux-x86_64.bundle.json";
-    let metadata_bytes = b"{\"schema_version\":1}\n";
-    let metadata_sha256 = sha256_bytes(metadata_bytes);
-    write_material(material_dir, metadata_name, metadata_bytes, omit);
-    write_material(
-        material_dir,
-        &format!("{metadata_name}.sha256"),
-        format!("{metadata_sha256}  {metadata_name}\n").as_bytes(),
-        omit,
-    );
-    write_material(
-        material_dir,
-        &format!("{bundle_name}.sha256"),
-        format!("{bundle_sha256}  {bundle_name}\n").as_bytes(),
-        omit,
-    );
-    for name in [
-        "install.sh",
-        "install.sh.sha256",
-        "m80-bootstrap-selector.tsv",
-        "m80-bootstrap-selector.tsv.sha256",
-        "m80-release-build.json",
-        "m80-release-build.json.sha256",
-        "m80-release-integrity.json",
-        "m80-release-integrity.attestation.jsonl",
-        "m80-release-attestation.json",
-        "SHA256SUMS",
-    ] {
-        write_material(
-            material_dir,
-            name,
-            format!("material {name}\n").as_bytes(),
-            omit,
-        );
-    }
-
-    let index = serde_json::json!({
-        "schema_version": 1,
-        "release_tag": "v0.0.0",
-        "assets": [{
-            "name": bundle_name,
-            "url": crate::release_urls::release_asset_url("v0.0.0", bundle_name),
-            "sha256": bundle_sha256,
-            "size_bytes": 42,
-            "metadata_name": metadata_name,
-            "metadata_sha256": metadata_sha256,
-            "checksum_name": format!("{bundle_name}.sha256"),
-            "signature_name": null,
-            "attestation_name": "m80-release-integrity.attestation.jsonl",
-            "target": "linux-x86_64",
-            "os": "linux",
-            "arch": "x86_64",
-            "image_kind": "minimal",
-            "release_tag": "v0.0.0",
-            "m80_version": "v0.0.0",
-            "guest_protocol_version": 1,
-            "manifest_schema_version": 1,
-            "expected_firecracker_version": "v1.15.1"
-        }]
-    });
-    let mut index_bytes = serde_json::to_vec_pretty(&index).unwrap();
-    index_bytes.push(b'\n');
-    let index_sha256 = sha256_bytes(&index_bytes);
-    write_material(material_dir, "m80-release-assets.json", &index_bytes, omit);
-    write_material(
-        material_dir,
-        "m80-release-assets.json.sha256",
-        format!("{index_sha256}  m80-release-assets.json\n").as_bytes(),
-        omit,
-    );
-}
-
-fn write_material(material_dir: &Path, name: &str, bytes: &[u8], omit: Option<&str>) {
-    if omit == Some(name) {
-        return;
-    }
-    fs::write(material_dir.join(name), bytes).unwrap();
-}
-
-fn sha256_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
-fn fake_gh_fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<OsString>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &Path) -> Self {
-        let previous = std::env::var_os(key);
-        std::env::set_var(key, value);
-        Self { key, previous }
-    }
-
-    fn prepend_path(path: &Path) -> Self {
-        let previous = std::env::var_os("PATH");
-        let mut value = OsString::from(path.as_os_str());
-        if let Some(existing) = &previous {
-            value.push(":");
-            value.push(existing);
-        }
-        std::env::set_var("PATH", &value);
-        Self {
-            key: "PATH",
-            previous,
-        }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match &self.previous {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
 }

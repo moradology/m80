@@ -39,8 +39,8 @@ tracing.workspace = true
 nix.workspace = true
 terminal_size.workspace = true
 ulid.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
 m80-test-helpers.workspace = true
-tempfile.workspace = true

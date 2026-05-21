@@ -70,11 +70,11 @@ binaries, pull OCI images, or install packages implicitly.
   JSON fields for the requested tuple/version, available alternatives, a
   machine-readable code, and a repair command when known. `--bundle-url`
   remains the explicit local fixture/operator override path. Concrete official
-  GitHub release bundle URLs preflight the same-tag public material set before
-  staging: asset index, checksum sidecars, installer, bootstrap selector,
-  build manifest, release-integrity predicate, attestation bundle, attestation
-  metadata, and public `SHA256SUMS`. Non-dry-run stages, verifies, and copies
-  the selected or explicit bundle into
+  GitHub release bundle URLs verify the same-tag public material set and bundle
+  bytes before staging: asset index, checksum sidecars, installer, bootstrap
+  selector, build manifest, release-integrity predicate subjects, normalized
+  attestation metadata, public `SHA256SUMS`, and the selected bundle digest.
+  Non-dry-run stages, verifies, and copies the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
   `<install-root>/active` last.
 - `m80 config show` - prints the merged effective config and labels each field's

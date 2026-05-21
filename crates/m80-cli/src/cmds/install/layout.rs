@@ -64,9 +64,13 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     require_absolute_path("install_root", &install_root)?;
     validate_bundle_source_url(bundle_url)?;
     preflight_attestation_verifier_for_bundle_url(bundle_url)?;
-    release_material::preflight_official_release_materials(bundle_url)?;
+    let verified_official_bundle = release_material::verify_official_release_bundle(bundle_url)?;
     let staging_dir = prepare_staging_dir(&install_root)?;
-    let bundle_path = stage_bundle_source(bundle_url, staging_dir.path())?;
+    let bundle_path = if let Some(verified_bundle) = &verified_official_bundle {
+        stage_verified_bundle(verified_bundle.bundle_path(), staging_dir.path())?
+    } else {
+        stage_bundle_source(bundle_url, staging_dir.path())?
+    };
     let entries = list_bundle_entries(&bundle_path)?;
     verify_entry_set(&entries)?;
 
@@ -155,6 +159,15 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         preflight_gate,
         finalization_order: finalization_order(),
     })
+}
+
+fn stage_verified_bundle(bundle_path: &Path, staging_dir: &Path) -> Result<PathBuf, FcError> {
+    let staged = staging_dir.join("bundle.tar.gz");
+    fs::copy(bundle_path, &staged).map_err(|source| FcError::PathIo {
+        path: staged.clone(),
+        source,
+    })?;
+    Ok(staged)
 }
 
 fn require_bundle_url(plan: &InstallPlan) -> Result<&str, FcError> {

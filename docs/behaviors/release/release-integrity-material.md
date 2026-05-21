@@ -214,6 +214,20 @@ The versioned `install.sh` embedded verifier also validates
 tag, source commit, Rust toolchain, target, package version, target triples,
 builder material, and bundle metadata hash.
 
+The lower-level `m80 install --bundle-url
+https://github.com/moradology/m80/releases/download/<tag>/<bundle>.tar.gz`
+path is not a weaker direct-artifact trust mode. For concrete official
+`moradology/m80` bundle URLs, the CLI verifies the same-tag asset index row,
+bundle checksum sidecar, bundle bytes, bundle metadata sidecar, `install.sh`
+and sidecar, bootstrap selector and sidecar, build manifest and sidecar, public
+`SHA256SUMS`, release-integrity predicate subjects, and normalized attestation
+metadata before creating the install-root staging directory or listing the
+tarball. Any digest, subject, asset-index, attestation-metadata, or missing
+`install.sh` row disagreement fails while the verified bundle still lives only
+in a temporary release-material directory. Local `file://` and local test
+fixtures remain explicit operator overrides and do not claim official release
+trust.
+
 `scripts/verify-install-handoff.py` is the narrower pre-root gate for
 automation that already has a trusted m80 checkout. It downloads no assets by
 itself; given local `install.sh`, `install.sh.sha256`,

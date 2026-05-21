@@ -1,12 +1,12 @@
-use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use m80_firecracker::FcError;
+use tempfile::TempDir;
 
 use super::source;
 use support::{
-    download_material_to_temp, read_checksum_line, release_asset_url, release_material_error,
-    sha256_file, validate_release_asset_name,
+    read_checksum_line, release_asset_url, release_material_error, sha256_file,
+    validate_release_asset_name,
 };
 
 const CONNECT_TIMEOUT_SECONDS: &str = "10";
@@ -22,10 +22,14 @@ const RELEASE_BUILD_NAME: &str = "m80-release-build.json";
 const RELEASE_INTEGRITY_NAME: &str = "m80-release-integrity.json";
 
 mod support;
+mod verify;
+mod verify_support;
 
-pub(super) fn preflight_official_release_materials(bundle_url: &str) -> Result<(), FcError> {
+pub(super) fn verify_official_release_bundle(
+    bundle_url: &str,
+) -> Result<Option<VerifiedOfficialReleaseBundle>, FcError> {
     let Some(bundle) = source::official_release_bundle_from_url(bundle_url)? else {
-        return Ok(());
+        return Ok(None);
     };
     let material = crate::release_asset_index::fetch_direct_bundle_index_material(
         &bundle.release_tag,
@@ -39,19 +43,45 @@ pub(super) fn preflight_official_release_materials(bundle_url: &str) -> Result<(
         ))
     })?;
     let plan = ReleaseMaterialPlan::from_index_material(material)?;
-    plan.probe_required_materials()?;
+    let verified = plan.verify_official_bundle()?;
     eprintln!(
-        "m80 install: verified release material release_tag={} material_classes={} identity={}",
+        "m80 install: verified release material release_tag={} material_classes={} identity={} install_sh_sha256={} predicate_sha256={} public_sha256s_sha256={} attestation_signer={}",
         plan.release_tag,
         plan.material_classes().join(","),
-        plan.identity
+        plan.identity,
+        verified.summary.install_sh_sha256,
+        verified.summary.predicate_sha256,
+        verified.summary.public_sha256s_sha256,
+        verified.summary.attestation_signer
     );
-    Ok(())
+    Ok(Some(verified))
+}
+
+#[derive(Debug)]
+pub(super) struct VerifiedOfficialReleaseBundle {
+    pub(super) _temp_dir: TempDir,
+    pub(super) bundle_path: PathBuf,
+    pub(super) summary: ReleaseVerificationSummary,
+}
+
+impl VerifiedOfficialReleaseBundle {
+    pub(super) fn bundle_path(&self) -> &Path {
+        &self.bundle_path
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ReleaseVerificationSummary {
+    pub(super) install_sh_sha256: String,
+    pub(super) predicate_sha256: String,
+    pub(super) public_sha256s_sha256: String,
+    pub(super) attestation_signer: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ReleaseMaterialPlan {
     release_tag: String,
+    target: String,
     identity: String,
     materials: Vec<ReleaseMaterial>,
 }
@@ -117,6 +147,7 @@ impl ReleaseMaterialPlan {
             material.index_observed_sha256
         );
         let release_tag = material.release_tag.clone();
+        let target = material.target.clone();
         let materials = vec![
             ReleaseMaterial::listed(
                 "bundle",
@@ -233,19 +264,23 @@ impl ReleaseMaterialPlan {
 
         Ok(Self {
             release_tag,
+            target,
             identity,
             materials,
         })
     }
 
-    fn probe_required_materials(&self) -> Result<(), FcError> {
-        for material in self.materials.iter().filter(|material| material.probe) {
-            let path = download_material_to_temp(material)?;
-            let result = material.verify_download(&path);
-            let _ = fs::remove_file(&path);
-            result?;
-        }
-        Ok(())
+    fn verify_official_bundle(&self) -> Result<VerifiedOfficialReleaseBundle, FcError> {
+        verify::verify_official_bundle(self)
+    }
+
+    fn material(&self, class: &'static str) -> Result<&ReleaseMaterial, FcError> {
+        self.materials
+            .iter()
+            .find(|material| material.class == class)
+            .ok_or_else(|| {
+                release_material_error(format!("release material class missing: {class}"))
+            })
     }
 
     fn material_classes(&self) -> Vec<&'static str> {
@@ -389,5 +424,9 @@ fn release_tag_from_material_url(url: &str) -> Option<&str> {
     }
 }
 
+#[cfg(test)]
+mod test_env;
+#[cfg(test)]
+mod test_fixture;
 #[cfg(test)]
 mod tests;

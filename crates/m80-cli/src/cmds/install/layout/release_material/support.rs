@@ -1,23 +1,27 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use m80_firecracker::{ConfigError, FcError};
 use sha2::{Digest, Sha256};
 
 use super::ReleaseMaterial;
 
-static DOWNLOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
+pub(super) fn download_material_to_dir(
+    material: &ReleaseMaterial,
+    dir: &Path,
+) -> Result<PathBuf, FcError> {
+    let dest = dir.join(&material.name);
+    download_material_to_path(material, &dest)
+}
 
-pub(super) fn download_material_to_temp(material: &ReleaseMaterial) -> Result<PathBuf, FcError> {
-    let dest = temp_download_path();
+fn download_material_to_path(material: &ReleaseMaterial, dest: &Path) -> Result<PathBuf, FcError> {
     fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&dest)
+        .open(dest)
         .map_err(|source| FcError::PathIo {
-            path: dest.clone(),
+            path: dest.to_path_buf(),
             source,
         })?;
     let output = Command::new("curl")
@@ -31,13 +35,13 @@ pub(super) fn download_material_to_temp(material: &ReleaseMaterial) -> Result<Pa
         .arg("--proto-redir")
         .arg("=https,http")
         .arg("-o")
-        .arg(&dest)
+        .arg(dest)
         .arg("-w")
         .arg("%{url_effective}")
         .arg(&material.url)
         .output()
         .map_err(|source| {
-            let _ = fs::remove_file(&dest);
+            let _ = fs::remove_file(dest);
             release_material_error(format!(
                 "release material fetch spawn failed: {} source={source}",
                 material.context()
@@ -45,7 +49,7 @@ pub(super) fn download_material_to_temp(material: &ReleaseMaterial) -> Result<Pa
         })?;
     let final_url = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     if !output.status.success() {
-        let _ = fs::remove_file(&dest);
+        let _ = fs::remove_file(dest);
         return Err(release_material_error(format!(
             "release material fetch failed: {} status={}{}",
             material.context(),
@@ -54,10 +58,10 @@ pub(super) fn download_material_to_temp(material: &ReleaseMaterial) -> Result<Pa
         )));
     }
     if let Err(err) = validate_final_material_url(material, &final_url) {
-        let _ = fs::remove_file(&dest);
+        let _ = fs::remove_file(dest);
         return Err(err);
     }
-    Ok(dest)
+    Ok(dest.to_path_buf())
 }
 
 pub(super) fn read_checksum_line(path: &Path) -> Result<(String, Option<String>), FcError> {
@@ -129,14 +133,6 @@ fn validate_final_material_url(material: &ReleaseMaterial, final_url: &str) -> R
         "release material redirected to unsupported URL: {} final_url={final_url}",
         material.context()
     )))
-}
-
-fn temp_download_path() -> PathBuf {
-    let count = DOWNLOAD_COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "m80-release-material-{}-{count}.tmp",
-        std::process::id()
-    ))
 }
 
 fn is_sha256(value: &str) -> bool {
