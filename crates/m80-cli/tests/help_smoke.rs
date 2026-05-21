@@ -112,6 +112,20 @@ fn help_config_show() {
 }
 
 #[test]
+fn help_update() {
+    let output = m80().args(["update", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("Check or update the installed release")
+            && stdout.contains("--check")
+            && stdout.contains("--install-root")
+            && stdout.contains("--latest-status"),
+        "update help should expose the read-only check surface, got: {stdout}"
+    );
+}
+
+#[test]
 fn help_warm() {
     let output = m80().args(["warm", "--help"]).output().unwrap();
     assert!(output.status.success());

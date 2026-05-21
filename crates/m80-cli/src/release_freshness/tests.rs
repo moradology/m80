@@ -10,6 +10,8 @@ fn reader_accepts_freshness_status_artifact_used_by_ci() {
         metadata.published_at().as_i64(),
         timestamp("2026-05-21T12:00:00Z").as_i64()
     );
+    assert_eq!(metadata.safety_floor().minimum_safe_tag(), None);
+    assert!(metadata.safety_floor().yanked_tags().is_empty());
     assert_eq!(
         compare_freshness(
             ActiveInstallVersion::Release { tag: "v1.2.3" },
@@ -18,6 +20,40 @@ fn reader_accepts_freshness_status_artifact_used_by_ci() {
         )
         .as_str(),
         "current"
+    );
+}
+
+#[test]
+fn reader_accepts_optional_safety_floor_fields() {
+    let metadata = read_freshness_status_artifact_json(&status_artifact_with_safety(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        Some("v1.2.0"),
+        &["v1.1.9"],
+    ))
+    .expect("safety status artifact should parse");
+
+    assert_eq!(metadata.safety_floor().minimum_safe_tag(), Some("v1.2.0"));
+    assert!(metadata.safety_floor().is_yanked("v1.1.9"));
+    assert!(!metadata.safety_floor().is_yanked("v1.2.3"));
+}
+
+#[test]
+fn malformed_safety_floor_tags_fail_closed() {
+    let err = read_freshness_status_artifact_json(&status_artifact_with_safety(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        Some("v1.2.0-rc.1"),
+        &[],
+    ))
+    .expect_err("prerelease safety floor should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::MalformedSafetyTag {
+            field: "safety_floor.minimum_safe_tag",
+            tag: "v1.2.0-rc.1".to_owned(),
+        }
     );
 }
 
@@ -139,6 +175,15 @@ fn timestamp(input: &str) -> UnixSeconds {
 }
 
 fn status_artifact(tag: Option<&str>, published_at: Option<&str>) -> String {
+    status_artifact_with_safety(tag, published_at, None, &[])
+}
+
+fn status_artifact_with_safety(
+    tag: Option<&str>,
+    published_at: Option<&str>,
+    minimum_safe_tag: Option<&str>,
+    yanked_tags: &[&str],
+) -> String {
     let mut fields = vec![
         r#""schema_version":1"#.to_owned(),
         r#""freshness_network_bounded":true"#.to_owned(),
@@ -161,6 +206,25 @@ fn status_artifact(tag: Option<&str>, published_at: Option<&str>) -> String {
     }
     if let Some(published_at) = published_at {
         fields.push(format!(r#""published_at":"{published_at}""#));
+    }
+    if minimum_safe_tag.is_some() || !yanked_tags.is_empty() {
+        let minimum = minimum_safe_tag
+            .map(|tag| format!(r#""minimum_safe_tag":"{tag}""#))
+            .into_iter();
+        let yanked = if yanked_tags.is_empty() {
+            None
+        } else {
+            Some(format!(
+                r#""yanked_tags":[{}]"#,
+                yanked_tags
+                    .iter()
+                    .map(|tag| format!(r#""{tag}""#))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ))
+        };
+        let safety_fields = minimum.chain(yanked).collect::<Vec<_>>().join(",");
+        fields.push(format!(r#""safety_floor":{{{safety_fields}}}"#));
     }
     format!("{{{}}}", fields.join(","))
 }

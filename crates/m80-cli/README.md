@@ -99,6 +99,13 @@ binaries, pull OCI images, or install packages implicitly.
   `release-proof-cache/manifest.json` paths. Unhealthy states include one
   concise next action. `m80 --json install-status` emits the stable JSON
   contract for scripts and release freshness checks.
+- `m80 update --check [--install-root <path>] [--profile <name>]` - reads the
+  active install state, installed proof-cache summary, and bounded latest
+  freshness metadata without writing the install root. It reports finite
+  `current`, `outdated`, `unknown_offline`, `stale_latest_metadata`,
+  `prerelease_active`, `ineligible_active`, `local_dev_install`,
+  `install_unhealthy`, `yanked`, and `unsafe` states and emits a pinned install
+  command only when a newer safe release target is known.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -195,6 +202,8 @@ Installed layout behavior is captured in
 `docs/behaviors/release/installed-layout.md`.
 Default downgrade refusal is captured in
 `docs/behaviors/release/downgrade-refusal.md`.
+Read-only update status behavior is captured in
+`docs/behaviors/release/update-check.md`.
 
 ### `m80 run` options
 

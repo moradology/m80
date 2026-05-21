@@ -194,6 +194,21 @@ This status capture proves the local installed selector/profile/metadata shape.
 It does not replace the real-KVM smoke, public release proof, host-prerequisite
 preflight, or freshness lanes.
 
+For operator update status, use the read-only check:
+
+```sh
+m80 update --check
+```
+
+The check reads the same local active install and proof-cache state, then
+compares it with bounded latest freshness metadata. It reports `current`,
+`outdated`, `unknown_offline`, `stale_latest_metadata`, `prerelease_active`,
+`ineligible_active`, `local_dev_install`, `install_unhealthy`, `yanked`, and
+`unsafe`, and prints an exact pinned install command when a newer safe release
+is known. It does not write the install root, flip the active pointer, refresh
+proof cache material, or download a bundle. See
+`docs/behaviors/release/update-check.md`.
+
 ## Verification
 
 The release identity is pinned by:

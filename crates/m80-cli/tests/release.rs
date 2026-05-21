@@ -32,3 +32,6 @@ mod installer_layout;
 
 #[path = "release/release_integrity_material.rs"]
 mod release_integrity_material;
+
+#[path = "release/update_check.rs"]
+mod update_check;

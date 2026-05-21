@@ -6,6 +6,11 @@ use std::fmt;
 
 use serde::Deserialize;
 
+mod safety;
+
+pub(crate) use safety::SafetyFloor;
+use safety::SafetyFloorArtifact;
+
 const FRESHNESS_STATUS_SCHEMA_VERSION: u32 = 1;
 const LATEST_STATUS_STALE_AFTER_SECONDS: i64 = 48 * 60 * 60;
 
@@ -14,6 +19,7 @@ pub(crate) struct LatestFreshnessMetadata {
     repository: String,
     latest_tag: String,
     published_at: UnixSeconds,
+    safety_floor: SafetyFloor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -71,6 +77,7 @@ pub(crate) enum FreshnessMetadataError {
     EmptyField { field: &'static str },
     EmptyCollection { field: &'static str },
     MalformedSha256 { field: &'static str, value: String },
+    MalformedSafetyTag { field: &'static str, tag: String },
 }
 
 impl fmt::Display for FreshnessMetadataError {
@@ -106,6 +113,12 @@ impl fmt::Display for FreshnessMetadataError {
             }
             Self::MalformedSha256 { field, value } => {
                 write!(f, "freshness status {field} is not sha256: {value}")
+            }
+            Self::MalformedSafetyTag { field, tag } => {
+                write!(
+                    f,
+                    "freshness status {field} is not a stable release tag: {tag}"
+                )
             }
         }
     }
@@ -166,6 +179,10 @@ impl LatestFreshnessMetadata {
         self.published_at
     }
 
+    pub(crate) fn safety_floor(&self) -> &SafetyFloor {
+        &self.safety_floor
+    }
+
     fn is_stale_at(&self, now: UnixSeconds) -> bool {
         now.0.saturating_sub(self.published_at.0) > LATEST_STATUS_STALE_AFTER_SECONDS
     }
@@ -192,6 +209,7 @@ struct FreshnessStatusArtifact {
     fetch_policy: FreshnessFetchPolicy,
     checked_urls: Vec<CheckedFreshnessUrl>,
     public_assets: Vec<PublicFreshnessAsset>,
+    safety_floor: Option<SafetyFloorArtifact>,
 }
 
 impl FreshnessStatusArtifact {
@@ -237,6 +255,11 @@ impl FreshnessStatusArtifact {
             repository: expected_repository,
             latest_tag,
             published_at,
+            safety_floor: self
+                .safety_floor
+                .map(SafetyFloorArtifact::into_floor)
+                .transpose()?
+                .unwrap_or_default(),
         })
     }
 }

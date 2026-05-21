@@ -128,6 +128,13 @@ pub enum Cmd {
     #[command(name = "install-status")]
     InstallStatus(InstallStatusArgs),
 
+    /// Check or update the installed release.
+    ///
+    /// `--check` is read-only and reports whether the active install is
+    /// current against bounded freshness metadata. Mutating update apply is a
+    /// separate release transaction.
+    Update(UpdateArgs),
+
     /// Print a VM's run-dir layout and recorded state.
     Inspect {
         /// VM id.
@@ -523,6 +530,42 @@ pub struct InstallStatusArgs {
     /// Profile override to inspect instead of the effective default profile.
     #[arg(long, value_name = "NAME")]
     pub profile: Option<String>,
+}
+
+/// Arguments for `m80 update`.
+#[derive(Debug, Args)]
+pub struct UpdateArgs {
+    /// Report update status without changing install-root state.
+    #[arg(long)]
+    pub check: bool,
+
+    /// Install root to inspect. Defaults to /opt/m80.
+    #[arg(long, value_name = "PATH", default_value = "/opt/m80")]
+    pub install_root: PathBuf,
+
+    /// Profile override to inspect instead of the effective default profile.
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
+
+    /// Read a bounded freshness status artifact from this path.
+    #[arg(
+        long = "latest-status",
+        value_name = "PATH",
+        conflicts_with = "latest_status_url"
+    )]
+    pub latest_status: Option<PathBuf>,
+
+    /// Fetch a bounded freshness status artifact from this URL.
+    #[arg(long = "latest-status-url", value_name = "URL")]
+    pub latest_status_url: Option<String>,
+
+    /// Test fixture override for the system config path.
+    #[arg(long = "config-path", value_name = "PATH", hide = true)]
+    pub config_path: Option<PathBuf>,
+
+    /// Test fixture override for the system profile directory.
+    #[arg(long = "profile-dir", value_name = "PATH", hide = true)]
+    pub profile_dir: Option<PathBuf>,
 }
 
 /// `m80 config` sub-actions.

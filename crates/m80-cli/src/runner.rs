@@ -56,6 +56,8 @@ pub fn run(cli: Cli) -> anyhow::Result<i32> {
 
         Cmd::InstallStatus(args) => cmds::cmd_install_status(args, json),
 
+        Cmd::Update(args) => cmds::cmd_update(args, json),
+
         Cmd::Inspect { ref vm_id } => cmds_walk::cmd_inspect(vm_id, json),
 
         Cmd::Logs {

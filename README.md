@@ -79,6 +79,18 @@ profile/config, installed metadata paths, and one next action when the install
 is missing or stale. `m80 --json install-status` is the stable machine-readable
 form for scripts and freshness checks.
 
+To check whether the installed release is still current without touching the
+install root, run:
+
+```sh
+m80 update --check
+```
+
+It reports finite states including `current`, `outdated`, `unknown_offline`,
+`stale_latest_metadata`, `prerelease_active`, `ineligible_active`,
+`local_dev_install`, `install_unhealthy`, `yanked`, and `unsafe`, and prints the
+exact pinned install command when a newer safe release is known.
+
 After that, wrap any process the same way:
 
 ```sh
