@@ -95,7 +95,16 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "test_rendered_install_script_rejects_build_manifest_metadata_hash_mismatch_before_bundle",
         "test_rendered_install_script_rejects_build_manifest_without_builder_material_before_bundle",
         "test_rendered_install_script_rejects_build_manifest_malformed_container_digest_before_bundle",
-        "official_release_verifier_failure_matrix_leaves_install_root_unchanged",
+        "missing_integrity_predicate_aborts_before_install_root_mutation",
+        "missing_attestation_bundle_aborts_before_install_root_mutation",
+        "missing_asset_index_aborts_before_install_root_mutation",
+        "missing_public_sha256s_aborts_before_install_root_mutation",
+        "missing_checksum_sidecar_aborts_before_install_root_mutation",
+        "trust_policy_signer_mismatch_aborts_before_install_root_mutation",
+        "public_sha256s_digest_mismatch_aborts_before_install_root_mutation",
+        "integrity_predicate_digest_mismatch_aborts_before_install_root_mutation",
+        "asset_index_digest_mismatch_aborts_before_install_root_mutation",
+        "cryptographic_attestation_failure_aborts_before_install_root_mutation",
     ] {
         assert!(
             doc.contains(required),

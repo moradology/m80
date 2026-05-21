@@ -341,7 +341,16 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `official_release_missing_attestation_verifier_fails_before_staging`;
 - `official_release_missing_material_fails_before_staging_or_bundle_download`;
 - `official_release_too_old_attestation_verifier_fails_before_staging`;
-- `official_release_verifier_failure_matrix_leaves_install_root_unchanged`;
+- `missing_integrity_predicate_aborts_before_install_root_mutation`;
+- `missing_attestation_bundle_aborts_before_install_root_mutation`;
+- `missing_asset_index_aborts_before_install_root_mutation`;
+- `missing_public_sha256s_aborts_before_install_root_mutation`;
+- `missing_checksum_sidecar_aborts_before_install_root_mutation`;
+- `trust_policy_signer_mismatch_aborts_before_install_root_mutation`;
+- `public_sha256s_digest_mismatch_aborts_before_install_root_mutation`;
+- `integrity_predicate_digest_mismatch_aborts_before_install_root_mutation`;
+- `asset_index_digest_mismatch_aborts_before_install_root_mutation`;
+- `cryptographic_attestation_failure_aborts_before_install_root_mutation`;
 - `test_package_assembles_multi_tuple_release_from_tuple_manifest`;
 - `test_package_rejects_extra_tuple_name_collision_before_copy`;
 - `test_package_rejects_extra_tuple_metadata_sidecar_mismatch`;

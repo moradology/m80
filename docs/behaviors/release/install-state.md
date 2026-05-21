@@ -1,6 +1,7 @@
 # Install State
 
-Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`.
+Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
+`m80-o3uh9.16.8.3`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -71,7 +72,9 @@ generation, and profile publishing.
 
 If proof-cache file creation, manifest rehashing, or mode checking fails, the
 staged tree is not renamed into the version directory and is not active. Any
-previous active pointer, default profile, and config file remain selected.
+previous active pointer, default profile, and config file remain selected. A
+pre-existing non-directory proof-cache target is rejected without rewriting the
+colliding path.
 
 ## Tests
 
@@ -81,6 +84,7 @@ previous active pointer, default profile, and config file remain selected.
 - `malformed_material_digest_fails_closed`
 - `malformed_manifest_digest_fails_closed`
 - `write_verified_release_proof_cache_copies_manifest_and_mode_checks_material`
+- `write_verified_release_proof_cache_rejects_existing_cache_target_file`
 - `proof_cache_write_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`

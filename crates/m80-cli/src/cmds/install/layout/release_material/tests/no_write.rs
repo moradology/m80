@@ -20,149 +20,8 @@ use super::super::test_fixture::{
     write_direct_release_materials_with, write_direct_release_materials_with_bundle_bytes,
     ReleaseFixtureOptions,
 };
-use super::assert_no_bundle_download;
 
-#[test]
-fn official_release_verifier_failure_matrix_leaves_install_root_unchanged() {
-    for scenario in [
-        FailureScenario {
-            name: "missing metadata",
-            options: ReleaseFixtureOptions {
-                omit: Some("m80-release-attestation.json"),
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &[
-                "release material fetch failed",
-                "material_class=release-attestation-metadata",
-            ],
-            expect_bundle_download: false,
-        },
-        FailureScenario {
-            name: "wrong repo",
-            options: ReleaseFixtureOptions {
-                wrong_repository: true,
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &[
-                "release integrity repository mismatch",
-                "material_class=release-integrity-predicate",
-            ],
-            expect_bundle_download: false,
-        },
-        FailureScenario {
-            name: "wrong tag",
-            options: ReleaseFixtureOptions {
-                wrong_release_tag: true,
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &[
-                "release integrity release_tag mismatch",
-                "material_class=release-integrity-predicate",
-            ],
-            expect_bundle_download: false,
-        },
-        FailureScenario {
-            name: "tampered bundle",
-            options: ReleaseFixtureOptions {
-                tamper_bundle: true,
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &["sidecar digest mismatch", "material_class=bundle"],
-            expect_bundle_download: true,
-        },
-        FailureScenario {
-            name: "stale SHA256SUMS",
-            options: ReleaseFixtureOptions {
-                stale_public_sha256s: true,
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &[
-                "public SHA256SUMS mismatch",
-                "material_class=install-script",
-            ],
-            expect_bundle_download: false,
-        },
-        FailureScenario {
-            name: "stale asset index",
-            options: ReleaseFixtureOptions {
-                stale_asset_index: true,
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &["checksum mismatch", "material_class=bundle-checksum"],
-            expect_bundle_download: false,
-        },
-        FailureScenario {
-            name: "bad attestation",
-            options: ReleaseFixtureOptions {
-                gh_failure: true,
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &[
-                "cryptographic attestation verification failed",
-                "material_class=release-attestation-bundle",
-            ],
-            expect_bundle_download: false,
-        },
-        FailureScenario {
-            name: "bad predicate",
-            options: ReleaseFixtureOptions {
-                bad_predicate_subject: true,
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &[
-                "release integrity sha256 mismatch",
-                "material_class=install-script",
-            ],
-            expect_bundle_download: false,
-        },
-        FailureScenario {
-            name: "network failure",
-            options: ReleaseFixtureOptions {
-                omit: Some("install.sh"),
-                ..ReleaseFixtureOptions::default()
-            },
-            expected: &[
-                "release material fetch failed",
-                "material_class=install-script",
-            ],
-            expect_bundle_download: false,
-        },
-    ] {
-        let temp = tempfile::tempdir().unwrap();
-        let install_root = temp.path().join("install-root");
-        let before = seed_install_root_snapshot(&install_root);
-
-        let (err, log) = install_layout_error_with_curl_log(&install_root, scenario.options);
-
-        let message = err.to_string();
-        for expected in scenario.expected {
-            assert!(
-                message.contains(expected),
-                "{} missing {expected:?}: {message}",
-                scenario.name
-            );
-        }
-        assert!(
-            message.contains("retry_command=m80 install --bundle-url"),
-            "{} missing retry command: {message}",
-            scenario.name
-        );
-        assert!(
-            message.contains("--install-root"),
-            "{} missing install root in retry command: {message}",
-            scenario.name
-        );
-        assert_eq!(
-            snapshot_install_root(&install_root),
-            before,
-            "{} mutated install root before verification completed",
-            scenario.name
-        );
-        if !scenario.expect_bundle_download {
-            assert_no_bundle_download(&log);
-        }
-    }
-}
+mod release_verifier_matrix;
 
 #[test]
 fn proof_cache_write_failure_leaves_previous_active_profile_and_config_selected() {
@@ -192,14 +51,6 @@ fn proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected()
 }
 
 #[derive(Clone, Copy)]
-struct FailureScenario {
-    name: &'static str,
-    options: ReleaseFixtureOptions,
-    expected: &'static [&'static str],
-    expect_bundle_download: bool,
-}
-
-#[derive(Clone, Copy)]
 struct ProofCacheFailureScenario {
     name: &'static str,
     env_key: &'static str,
@@ -213,6 +64,7 @@ fn assert_proof_cache_failure_preserves_active_state(scenario: ProofCacheFailure
     let previous = fs::read_link(install_root.join("active")).unwrap();
     let previous_profile = fs::read(install_root.join("profiles/default.toml")).unwrap();
     let previous_config = fs::read(install_root.join("config.toml")).unwrap();
+    let attempted_version = install_root.join("versions/v0.0.0");
     let (err, _log) =
         install_layout_error_with_installable_bundle_and_env(&install_root, scenario.env_key);
 
@@ -241,6 +93,17 @@ fn assert_proof_cache_failure_preserves_active_state(scenario: ProofCacheFailure
         "{} changed config before proof cache was verified",
         scenario.name
     );
+    assert!(
+        !attempted_version.exists(),
+        "{} published the attempted version before proof cache was verified",
+        scenario.name
+    );
+    assert!(
+        !install_root.join("run").exists(),
+        "{} created runtime state before proof cache was verified",
+        scenario.name
+    );
+    assert_no_layout_staging_dirs(&install_root, scenario.name);
 }
 
 fn install_layout_error_with_curl_log(
@@ -565,6 +428,23 @@ fn snapshot_install_root(root: &Path) -> BTreeMap<PathBuf, InstallSnapshotEntry>
         capture_snapshot(root, Path::new(""), &mut entries);
     }
     entries
+}
+
+fn assert_no_layout_staging_dirs(install_root: &Path, scenario_name: &str) {
+    let staging_parent = install_root.join(".staging");
+    if !staging_parent.exists() {
+        return;
+    }
+    let leaked = fs::read_dir(&staging_parent)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("layout-"))
+        .collect::<Vec<_>>();
+    assert!(
+        leaked.is_empty(),
+        "{scenario_name} leaked staging directories before proof cache was verified: {leaked:?}"
+    );
 }
 
 fn capture_snapshot(

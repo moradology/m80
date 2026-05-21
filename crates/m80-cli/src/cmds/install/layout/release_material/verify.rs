@@ -168,19 +168,19 @@ fn verify_prebundle_material(
     )?;
     require_equal_material(
         "release-attestation-metadata",
-        "release attestation signer_identity",
+        "release attestation signer_identity trust-policy",
         attestation.signer_identity.as_str(),
         RELEASE_ATTESTATION_SIGNER_WORKFLOW,
     )?;
     require_equal_material(
         "release-attestation-metadata",
-        "release attestation issuer",
+        "release attestation issuer trust-policy",
         attestation.issuer.as_str(),
         RELEASE_ATTESTATION_ISSUER,
     )?;
     require_equal_material(
         "release-attestation-metadata",
-        "release attestation keyset_id",
+        "release attestation keyset_id trust-policy",
         attestation.keyset_id.as_str(),
         RELEASE_ATTESTATION_KEYSET_ID,
     )?;

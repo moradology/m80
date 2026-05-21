@@ -106,5 +106,8 @@ create `<install-root>`.
 - `install_bundle_layout_injected_interruption_leaves_previous_active_selected`
 - `install_bundle_layout_cleans_abandoned_staging_dirs`
 - `install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout`
-- `official_release_verifier_failure_matrix_leaves_install_root_unchanged`
+- `missing_integrity_predicate_aborts_before_install_root_mutation`
+- `missing_asset_index_aborts_before_install_root_mutation`
+- `public_sha256s_digest_mismatch_aborts_before_install_root_mutation`
+- `tampered_bundle_aborts_before_install_root_mutation`
 - `installed_layout_doc_names_directory_contract_and_tests`

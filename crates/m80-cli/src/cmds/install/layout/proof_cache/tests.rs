@@ -58,6 +58,34 @@ fn write_verified_release_proof_cache_copies_manifest_and_mode_checks_material()
 }
 
 #[test]
+fn write_verified_release_proof_cache_rejects_existing_cache_target_file() {
+    let fixture = verified_bundle_fixture();
+    let final_root = tempfile::tempdir().expect("create install root");
+    let final_dir = final_root.path().join("versions/v0.0.0");
+    let cache_target = final_dir.join("artifacts").join(PROOF_CACHE_DIR);
+    fs::create_dir_all(cache_target.parent().expect("cache target has parent"))
+        .expect("create artifacts dir");
+    fs::write(&cache_target, b"not a directory\n").expect("write cache target file");
+
+    let err = write_verified_release_proof_cache(&fixture.bundle, &final_dir, "v0.0.0")
+        .expect_err("pre-existing cache target file must fail");
+
+    assert!(
+        matches!(err, FcError::PathIo { ref path, .. } if path == &cache_target),
+        "unexpected error: {err:?}"
+    );
+    assert!(
+        !cache_target.join(PROOF_CACHE_MANIFEST).exists(),
+        "cache manifest must not be written under a non-directory target"
+    );
+    assert_eq!(
+        fs::read(&cache_target).expect("read rejected cache target file"),
+        b"not a directory\n",
+        "cache target collision must not rewrite the existing file"
+    );
+}
+
+#[test]
 fn complete_manifest_parses_and_validates_digest() {
     let manifest = valid_manifest();
     let fixture = write_manifest(&manifest);

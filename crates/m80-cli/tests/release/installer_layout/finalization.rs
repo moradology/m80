@@ -28,7 +28,10 @@ fn installed_layout_doc_names_directory_contract_and_tests() {
         "install_bundle_layout_profile_failure_leaves_previous_active_and_profile",
         "install_bundle_layout_injected_interruption_leaves_previous_active_selected",
         "install_bundle_layout_cleans_abandoned_staging_dirs",
-        "official_release_verifier_failure_matrix_leaves_install_root_unchanged",
+        "missing_integrity_predicate_aborts_before_install_root_mutation",
+        "missing_asset_index_aborts_before_install_root_mutation",
+        "public_sha256s_digest_mismatch_aborts_before_install_root_mutation",
+        "tampered_bundle_aborts_before_install_root_mutation",
         "install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout",
     ] {
         assert!(
@@ -63,6 +66,7 @@ fn install_state_doc_names_proof_cache_manifest_contract() {
         "malformed_material_digest_fails_closed",
         "malformed_manifest_digest_fails_closed",
         "write_verified_release_proof_cache_copies_manifest_and_mode_checks_material",
+        "write_verified_release_proof_cache_rejects_existing_cache_target_file",
         "proof_cache_write_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected",
@@ -216,6 +220,7 @@ fn install_finalization_transaction_doc_names_state_machine_and_tests() {
         "proof_cache_write_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected",
         "proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected",
+        "write_verified_release_proof_cache_rejects_existing_cache_target_file",
         "install_bundle_layout_cleans_abandoned_staging_dirs",
     ] {
         assert!(

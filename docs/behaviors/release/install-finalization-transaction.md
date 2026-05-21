@@ -1,6 +1,6 @@
 # Install Finalization Transaction
 
-Behavior bead: `m80-o3uh9.16.1`.
+Behavior beads: `m80-o3uh9.16.1`, `m80-o3uh9.16.8.3`.
 
 `m80 install --bundle-url <URL>` publishes a version only after the installer
 has enough local state to run it. The active install selection is the last write
@@ -44,6 +44,9 @@ generation, profile writing, or the interruption injection fails, any previous
 `<install-root>/active` symlink continues to select the previous version. An
 unselected version directory may remain after a late failure so the operator can
 inspect it; it is not current until the active symlink points at it.
+Proof-cache write, manifest-digest, and mode failures also leave the attempted
+version unpublished, do not create runtime state, and do not leak active
+`layout-*` staging directories.
 
 ## Staging Cleanup
 
@@ -61,5 +64,6 @@ directory is removed on success and on ordinary error returns.
 - `proof_cache_write_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_manifest_digest_failure_leaves_previous_active_profile_and_config_selected`
 - `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`
+- `write_verified_release_proof_cache_rejects_existing_cache_target_file`
 - `install_bundle_layout_cleans_abandoned_staging_dirs`
 - `install_finalization_transaction_doc_names_state_machine_and_tests`
