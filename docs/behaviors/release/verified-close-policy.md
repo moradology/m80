@@ -51,6 +51,40 @@ Unit tests, fake release servers, hostless fixtures, and validators may land and
 remain useful before the final substrate proof exists. The bead stays open
 until a committed artifact records the real proof named by the bead.
 
+Final release-epoch closure uses a machine-readable close matrix artifact. The
+matrix is a JSON object with `kind: "release_final_close_matrix"` and
+`schema_version: 1`:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "release_final_close_matrix",
+  "epoch_id": "m80-o3uh9",
+  "tracker_digest": "sha256:<64 lowercase hex>",
+  "generated_at": "2026-05-21T00:00:00Z",
+  "rows": [
+    {
+      "id": "m80-o3uh9.1",
+      "status": "closed",
+      "behavior_doc": "docs/behaviors/release/example.md",
+      "test_command": "python3 scripts/test-release-tracker-policy.py",
+      "requires_verified_close": true,
+      "requires_real_substrate": false
+    }
+  ]
+}
+```
+
+Each row describes one epoch descendant. `behavior_doc` and `proof_artifact`
+paths, when present, must be relative repository paths and must not escape the
+tree. A row must include either `test_command` or `proof_artifact`.
+`requires_verified_close` records whether the descendant was governed by this
+policy; `requires_real_substrate` records whether its close depended on a
+real-substrate proof rather than hostless or unit-test evidence. The schema
+validator fails closed on unknown top-level keys, unknown row keys, malformed
+timestamps, malformed tracker digests, empty rows, absolute paths, escaping
+paths, and unknown schema versions.
+
 Relevant tests:
 
 - `scripts/test-release-tracker-policy.py`

@@ -197,6 +197,52 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("release tracker policy ok", result.stdout)
 
+    def test_valid_close_matrix_artifact_passes_schema_check(self) -> None:
+        with tracker_repo() as repo:
+            result = repo.run_with_close_matrix(valid_close_matrix())
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_close_matrix_missing_top_level_field_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            del matrix["tracker_digest"]
+
+            result = repo.run_with_close_matrix(matrix)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("tracker_digest must be sha256:<64 lowercase hex>", result.stderr)
+
+    def test_close_matrix_malformed_row_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"][0]["id"] = ""
+
+            result = repo.run_with_close_matrix(matrix)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("rows[0]: id must be a nonempty string", result.stderr)
+
+    def test_close_matrix_escaping_proof_artifact_path_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"][0]["proof_artifact"] = "../proof.json"
+
+            result = repo.run_with_close_matrix(matrix)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof_artifact must be a relative path", result.stderr)
+
+    def test_close_matrix_unknown_schema_version_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["schema_version"] = 2
+
+            result = repo.run_with_close_matrix(matrix)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("schema_version must be 1", result.stderr)
+
     def test_no_arg_quickstart_public_selector_fails(self) -> None:
         with tracker_repo() as repo:
             write_issues(
@@ -723,6 +769,31 @@ class tracker_repo:
         )
         return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.root, text=True).strip()
 
+    def run_with_close_matrix(self, matrix: dict) -> subprocess.CompletedProcess[str]:
+        matrix_path = self.root / "artifacts" / "close-matrix.json"
+        matrix_path.parent.mkdir()
+        matrix_path.write_text(json.dumps(matrix, indent=2, sort_keys=True))
+        sha = self.commit_all("close matrix")
+        write_issues(
+            self.root,
+            [
+                issue(
+                    "m80-o3uh9",
+                    "Epoch",
+                    labels=["quickstart", "release", "requires-verified-close"],
+                ),
+                issue(
+                    "m80-o3uh9.1",
+                    "Close matrix leaf",
+                    status="closed",
+                    close_reason=f"verified: artifacts/close-matrix.json @ {sha}",
+                    labels=["release", "requires-verified-close"],
+                    parent="m80-o3uh9",
+                ),
+            ],
+        )
+        return self.run_verify()
+
 
 def issue(
     issue_id: str,
@@ -786,6 +857,26 @@ def valid_quickstart_proof() -> dict:
         "stdout": {"excerpt": "hello\n"},
         "stderr": {"excerpt": ""},
         "substrate": {"kind": "real-kvm", "summary": "test runner"},
+    }
+
+
+def valid_close_matrix() -> dict:
+    return {
+        "schema_version": 1,
+        "kind": "release_final_close_matrix",
+        "epoch_id": "m80-o3uh9",
+        "tracker_digest": f"sha256:{'a' * 64}",
+        "generated_at": "2026-05-21T00:00:00Z",
+        "rows": [
+            {
+                "id": "m80-o3uh9.1",
+                "status": "closed",
+                "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+                "test_command": "python3 scripts/test-release-tracker-policy.py",
+                "requires_verified_close": True,
+                "requires_real_substrate": False,
+            }
+        ],
     }
 
 

@@ -19,8 +19,29 @@ POLICY_CONFIG_SCHEMA_VERSION = 1
 POLICY_CONFIG_TOP_LEVEL_KEYS = {"schema_version", "epochs"}
 POLICY_CONFIG_EPOCH_KEYS = {"id", "status", "reason"}
 POLICY_CONFIG_STATUSES = {"active", "retired"}
+CLOSE_MATRIX_KIND = "release_final_close_matrix"
+CLOSE_MATRIX_SCHEMA_VERSION = 1
+CLOSE_MATRIX_TOP_LEVEL_KEYS = {
+    "schema_version",
+    "kind",
+    "epoch_id",
+    "tracker_digest",
+    "generated_at",
+    "rows",
+}
+CLOSE_MATRIX_ROW_KEYS = {
+    "id",
+    "status",
+    "behavior_doc",
+    "test_command",
+    "proof_artifact",
+    "requires_verified_close",
+    "requires_real_substrate",
+}
+CLOSE_MATRIX_STATUSES = {"open", "in_progress", "blocked", "closed", "deferred", "tombstone"}
 POLICY_EFFECTIVE_AT = datetime(2026, 5, 20, 18, 0, 0, tzinfo=timezone.utc)
 VERIFIED_REF_RE = re.compile(r"verified:\s+([^\s]+)\s+@\s+([0-9a-fA-F]{7,40})\b")
+SHA256_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 TRACKED_TEXT_FIELDS = ("title", "description", "acceptance_criteria", "close_reason")
 EXPECTED_INSTALL_REPLACEMENT = (
     "use latest/pinned release install.sh or m80 install; reserve "
@@ -558,10 +579,14 @@ def verify_closed_issue(
 
 
 def artifact_path(repo_root: Path, rel_path: str) -> Path | None:
-    path = Path(rel_path)
-    if path.is_absolute() or ".." in path.parts:
+    if not safe_relative_path(rel_path):
         return None
-    return repo_root / path
+    return repo_root / rel_path
+
+
+def safe_relative_path(value: str) -> bool:
+    path = Path(value)
+    return bool(value) and not path.is_absolute() and ".." not in path.parts
 
 
 def verify_git_ref(repo_root: Path, issue_id: str, rel_path: str, commit: str) -> list[str]:
@@ -590,6 +615,8 @@ def verify_proof_artifact(issue_id: str, path: Path) -> list[str]:
         return verify_text_proof_artifact(issue_id, path, text)
     if not isinstance(value, dict):
         return [f"{issue_id}: verified artifact must be a JSON object or proof text: {path}"]
+    if value.get("kind") == CLOSE_MATRIX_KIND:
+        return verify_close_matrix_artifact(issue_id, path, value)
     if quickstart_proof_artifact_is_complete(value):
         return []
     if generic_proof_artifact_is_complete(value):
@@ -598,6 +625,87 @@ def verify_proof_artifact(issue_id: str, path: Path) -> list[str]:
         f"{issue_id}: verified artifact must contain command, stdout/stderr or log path, "
         f"exit status, resolved tag, and substrate: {path}"
     ]
+
+
+def verify_close_matrix_artifact(
+    issue_id: str,
+    path: Path,
+    value: dict[str, Any],
+) -> list[str]:
+    prefix = f"{issue_id}: close matrix {path}"
+    errors: list[str] = []
+
+    unknown_keys = sorted(set(value) - CLOSE_MATRIX_TOP_LEVEL_KEYS)
+    if unknown_keys:
+        errors.append(f"{prefix}: unknown top-level keys: {', '.join(unknown_keys)}")
+
+    if value.get("schema_version") != CLOSE_MATRIX_SCHEMA_VERSION:
+        errors.append(f"{prefix}: schema_version must be {CLOSE_MATRIX_SCHEMA_VERSION}")
+    if value.get("kind") != CLOSE_MATRIX_KIND:
+        errors.append(f"{prefix}: kind must be {CLOSE_MATRIX_KIND}")
+    if not nonempty_str(value.get("epoch_id")):
+        errors.append(f"{prefix}: epoch_id must be a nonempty string")
+    digest = value.get("tracker_digest")
+    if not isinstance(digest, str) or SHA256_DIGEST_RE.fullmatch(digest) is None:
+        errors.append(f"{prefix}: tracker_digest must be sha256:<64 lowercase hex>")
+    generated_at = value.get("generated_at")
+    if parse_timestamp(generated_at) is None:
+        errors.append(f"{prefix}: generated_at must be an ISO-8601 timestamp")
+
+    rows = value.get("rows")
+    if not isinstance(rows, list):
+        errors.append(f"{prefix}: rows must be a list")
+        return errors
+    if not rows:
+        errors.append(f"{prefix}: rows must not be empty")
+        return errors
+
+    seen: set[str] = set()
+    for index, row in enumerate(rows):
+        row_prefix = f"{prefix}: rows[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{row_prefix}: row must be a JSON object")
+            continue
+        errors.extend(verify_close_matrix_row(row_prefix, row))
+        row_id = row.get("id")
+        if isinstance(row_id, str) and row_id:
+            if row_id in seen:
+                errors.append(f"{row_prefix}: duplicate row id {row_id}")
+            else:
+                seen.add(row_id)
+    return errors
+
+
+def verify_close_matrix_row(prefix: str, row: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    unknown_keys = sorted(set(row) - CLOSE_MATRIX_ROW_KEYS)
+    if unknown_keys:
+        errors.append(f"{prefix}: unknown keys: {', '.join(unknown_keys)}")
+    if not nonempty_str(row.get("id")):
+        errors.append(f"{prefix}: id must be a nonempty string")
+    if row.get("status") not in CLOSE_MATRIX_STATUSES:
+        errors.append(
+            f"{prefix}: status must be one of {', '.join(sorted(CLOSE_MATRIX_STATUSES))}"
+        )
+    behavior_doc = row.get("behavior_doc")
+    if not isinstance(behavior_doc, str) or not safe_relative_path(behavior_doc):
+        errors.append(f"{prefix}: behavior_doc must be a relative path")
+
+    test_command = row.get("test_command")
+    proof_artifact = row.get("proof_artifact")
+    has_test_command = nonempty_str(test_command)
+    has_proof_artifact = isinstance(proof_artifact, str) and safe_relative_path(proof_artifact)
+    if test_command is not None and not has_test_command:
+        errors.append(f"{prefix}: test_command must be a nonempty string when present")
+    if proof_artifact is not None and not has_proof_artifact:
+        errors.append(f"{prefix}: proof_artifact must be a relative path when present")
+    if not has_test_command and not has_proof_artifact:
+        errors.append(f"{prefix}: row must include test_command or proof_artifact")
+
+    for field in ["requires_verified_close", "requires_real_substrate"]:
+        if not isinstance(row.get(field), bool):
+            errors.append(f"{prefix}: {field} must be a boolean")
+    return errors
 
 
 def quickstart_proof_artifact_is_complete(value: dict[str, Any]) -> bool:
