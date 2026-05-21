@@ -44,6 +44,7 @@ PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
 RELEASE_TARGET_TRIPLE = "x86_64-unknown-linux-gnu"
@@ -1165,9 +1166,11 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/package-release-bundle.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_publish_authority.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_evidence_bundle.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_proof_ledger.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
         self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
         self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
+        self.assertIn("python3 scripts/test-release-proof-ledger.py", workflow)
         self.assertIn(
             "python3 scripts/verify-release-tracker-policy.py --policy-config "
             "docs/behaviors/release/release-tracker-policy.json",
@@ -1240,7 +1243,11 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn('gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}"', workflow)
         self.assertIn("scripts/write-quickstart-proof-fixture.py", workflow)
         self.assertGreaterEqual(workflow.count("scripts/verify-quickstart-proof.py"), 2)
+        self.assertIn("scripts/release_proof_ledger.py append", workflow)
+        self.assertGreaterEqual(workflow.count("scripts/release_proof_ledger.py verify"), 2)
+        self.assertGreaterEqual(workflow.count("--expect-record-count 1"), 2)
         self.assertIn("m80-quickstart-proof-hostless.json", workflow)
+        self.assertIn("m80-release-proof-ledger.jsonl", workflow)
         self.assertGreaterEqual(workflow.count("scripts/release_upload_manifest.py"), 5)
         self.assertIn("Write and validate release upload manifest", workflow)
         self.assertIn("--write", workflow)
@@ -1369,8 +1376,10 @@ class ReleaseBundleTest(unittest.TestCase):
             )
             self.assertIn(UPLOAD_MANIFEST_NAME, non_public_names)
             self.assertIn(HOSTLESS_QUICKSTART_PROOF_NAME, non_public_names)
+            self.assertIn(RELEASE_PROOF_LEDGER_NAME, non_public_names)
             self.assertNotIn(UPLOAD_MANIFEST_NAME, public_assets)
             self.assertNotIn(HOSTLESS_QUICKSTART_PROOF_NAME, public_assets)
+            self.assertNotIn(RELEASE_PROOF_LEDGER_NAME, public_assets)
             for name, asset in public_assets.items():
                 self.assertEqual(asset["sha256"], sha256(out_dir / name))
                 self.assertEqual(asset["size_bytes"], (out_dir / name).stat().st_size)
@@ -4533,6 +4542,7 @@ def release_upload_manifest_fixture(root: Path) -> Path:
     tarball = package_fixture(root)
     out_dir = tarball.parent
     write_integrity_material(out_dir)
+    write_release_proof_ledger_placeholder(out_dir)
     run_release_upload_manifest(out_dir, "--write")
     return out_dir
 
@@ -4566,6 +4576,34 @@ def write_publish_proof_ledger(out_dir: Path) -> Path:
         + "\n"
     )
     return proof
+
+
+def write_release_proof_ledger_placeholder(out_dir: Path) -> Path:
+    ledger = out_dir / RELEASE_PROOF_LEDGER_NAME
+    ledger.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "record_hash": "sha256:" + ("a" * 64),
+                "previous_record_hash": None,
+                "proof_artifact": HOSTLESS_QUICKSTART_PROOF_NAME,
+                "proof_artifact_digest": "sha256:" + ("b" * 64),
+                "release_tag": "v0.0.0",
+                "workflow_run_id": "12345",
+                "proof_type": "hostless",
+                "substrate": "hostless",
+                "redaction": {
+                    "environment": "omitted",
+                    "host_paths": "omitted",
+                    "secrets": "omitted",
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
+    return ledger
 
 
 def copy_manifest_public_assets(source: Path, target: Path) -> None:

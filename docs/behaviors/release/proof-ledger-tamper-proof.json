@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_proof_ledger_tamper_proof",
+  "generated_at": "2026-05-21T02:45:40Z",
+  "release_tag": "v0.0.0",
+  "resolved_tag": "v0.0.0",
+  "command": "python3 -m py_compile scripts/release_proof_ledger.py scripts/test-release-proof-ledger.py scripts/release_upload_manifest.py scripts/test-release-bundle.py && python3 scripts/test-release-proof-ledger.py && python3 scripts/test-release-bundle.py && python3 scripts/test-quickstart-proof.py && python3 scripts/lint-github-workflows.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && git diff --check",
+  "exit_status": 0,
+  "stdout": "test-release-proof-ledger.py: Ran 7 tests OK; test-release-bundle.py: Ran 200 tests OK; test-quickstart-proof.py: Ran 16 tests OK; workflow policy ok; actionlint ok; git diff --check ok",
+  "stderr": "",
+  "substrate": {
+    "kind": "local-linux-hostless",
+    "summary": "Fixture-based proof-ledger validation for clean chain, truncation, reordering, swapped proof path, stale proof digest, schema drift, and redaction drift."
+  }
+}

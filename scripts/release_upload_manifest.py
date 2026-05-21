@@ -17,6 +17,7 @@ INTEGRITY_NAME = "m80-release-integrity.json"
 INTEGRITY_ATTESTATION_BUNDLE_NAME = "m80-release-integrity.attestation.jsonl"
 INTEGRITY_ATTESTATION_METADATA_NAME = "m80-release-attestation.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 SHA256SUMS_NAME = "SHA256SUMS"
 
 DIST_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
@@ -47,6 +48,10 @@ NON_PUBLIC_WORKFLOW_ARTIFACTS = {
     HOSTLESS_QUICKSTART_PROOF_NAME: (
         "hostless quickstart proof is workflow evidence; public release proof is the "
         "release-integrity predicate plus attestation material"
+    ),
+    RELEASE_PROOF_LEDGER_NAME: (
+        "quickstart proof ledger is workflow-only audit evidence; public release proof "
+        "is the release-integrity predicate plus attestation material"
     ),
 }
 

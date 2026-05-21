@@ -178,6 +178,19 @@ jobs:
             "$DIST_DIR/m80-quickstart-proof-hostless.json" \
             --artifact-root "$DIST_DIR" \
             --release-tag "$GITHUB_REF_NAME"
+          scripts/release_proof_ledger.py append \
+            --ledger "$DIST_DIR/m80-release-proof-ledger.jsonl" \
+            --artifact-root "$DIST_DIR" \
+            --proof "$DIST_DIR/m80-quickstart-proof-hostless.json" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --release-tag "$GITHUB_REF_NAME"
+          scripts/release_proof_ledger.py verify \
+            --ledger "$DIST_DIR/m80-release-proof-ledger.jsonl" \
+            --artifact-root "$DIST_DIR" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --require-proof m80-quickstart-proof-hostless.json \
+            --require-proof-type hostless \
+            --expect-record-count 1
 
       - name: Write and validate release upload manifest
         if: startsWith(github.ref, 'refs/tags/')
@@ -227,6 +240,13 @@ jobs:
             /tmp/m80-release-upload/m80-quickstart-proof-hostless.json \
             --artifact-root /tmp/m80-release-upload \
             --release-tag "$GITHUB_REF_NAME"
+          scripts/release_proof_ledger.py verify \
+            --ledger /tmp/m80-release-upload/m80-release-proof-ledger.jsonl \
+            --artifact-root /tmp/m80-release-upload \
+            --release-tag "$GITHUB_REF_NAME" \
+            --require-proof m80-quickstart-proof-hostless.json \
+            --require-proof-type hostless \
+            --expect-record-count 1
 
       - name: Verify release integrity material before upload
         env:
