@@ -119,6 +119,14 @@ manual read-only hostless lane. Its `latest-freshness-public` concurrency group
 uses `cancel-in-progress: false` so an overlapping run does not discard the
 older run's evidence, and it uploads proof, stdout, and stderr artifacts with
 `if: always()`.
+
+The freshness status contract is defined in
+`docs/behaviors/release/freshness-status.md` and validated by
+`scripts/verify-freshness-status.py`. A green status is only `public_green` when it
+references unauthenticated public proof for both latest and pinned install URLs;
+fixture-only proof remains scaffolded and must not be rendered as a public
+success.
+
 The verifier also checks that the GitHub latest release metadata contains every
 installer-consumed public asset with the expected name, URL, size when reported,
 and `sha256:` digest. With an asset-index fixture, the bundle and metadata
