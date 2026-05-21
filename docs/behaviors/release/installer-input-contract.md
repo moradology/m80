@@ -48,10 +48,14 @@ checksum-sidecar downloader; indexed size and digest verification is tracked by
 wrong image kind, and wrong index asset tags fail with tuple-specific
 diagnostics before the install root is touched.
 
-The installer also supports explicit local `file://...` bundle URLs and GitHub
-release bundle URLs under
-`https://github.com/moradology/m80/releases/download/...`. A successful bundle
-install stages and verifies the selected or explicit bundle, copies the
+The installer also supports explicit local `file://...` bundle URLs and
+concrete stable-tag GitHub release bundle URLs under
+`https://github.com/moradology/m80/releases/download/<tag>/m80-<target>.tar.gz`.
+Mutable `releases/latest/download` artifact URLs, raw branch URLs, foreign
+repositories, path-traversal asset paths, non-bundle release assets such as
+`install.sh`, and non-HTTPS GitHub release URLs fail before network access or
+install-root mutation.
+A successful bundle install stages and verifies the selected or explicit bundle, copies the
 verified layout into `<install-root>/versions/<release_tag>`, writes
 install-root-local profile state, and switches `<install-root>/active` last.
 Local `http://127.0.0.1`, `http://localhost`, and `http://[::1]` bundle URLs
@@ -71,9 +75,12 @@ release tag, m80 version, available alternatives, and repair command when one
 is known.
 
 `--bundle-url` is the development and operator override path. A local bundle
-URL can be planned and layout-installed from a dev binary. If a GitHub release
-bundle URL includes a `/releases/download/<tag>/` segment, a dev binary refuses
-it and a tagged release binary must match that tag.
+URL can be planned and layout-installed from a dev binary. Only concrete
+moradology/m80 GitHub release bundle URLs claim an official release tag; local
+fixture URLs remain explicit overrides even if their path is release-shaped. If
+an official GitHub release bundle URL includes a `/releases/download/<tag>/`
+segment, a dev binary refuses it and a tagged release binary must match that
+tag.
 
 ## Tests
 
@@ -94,12 +101,20 @@ Integration and behavior-doc coverage:
 - `install_json_release_tag_refusal_reports_asset_index_fields_on_stderr`
 - `install_missing_source_prints_source_diagnostic`
 - `install_non_release_remote_bundle_url_is_rejected_without_touching_install_root`
+- `install_foreign_github_release_bundle_url_is_rejected_without_touching_install_root`
+- `install_latest_artifact_bundle_url_is_rejected_without_touching_install_root`
+- `install_prerelease_bundle_tag_is_rejected_without_touching_install_root`
+- `install_raw_branch_bundle_url_is_rejected_without_touching_install_root`
+- `install_bad_release_asset_name_is_rejected_without_touching_install_root`
+- `install_path_traversal_release_asset_url_is_rejected_without_touching_install_root`
+- `install_non_https_github_release_url_is_rejected_without_touching_install_root`
 - `installer_input_contract_doc_names_source_shapes_and_tests`
 
 Module coverage in `cmds/install.rs` pins release-build success, dev-build
 refusal, source/binary tag mismatch refusal, tagged release bundle URL refusal
 from a dev binary, explicit local bundle dry-run planning from a dev binary,
-explicit bundle URL index-bypass behavior, GitHub release-tag extraction from
-bundle URLs, bootstrap handoff source selection, and fail-closed index
-selection for missing defaults, duplicate defaults, wrong architecture, wrong
-image kind, and wrong asset tag entries.
+explicit bundle URL index-bypass behavior, official GitHub release-tag
+extraction from bundle URLs, local fixture URLs not claiming release tags,
+bootstrap handoff source selection, and fail-closed index selection for missing
+defaults, duplicate defaults, wrong architecture, wrong image kind, and wrong
+asset tag entries.

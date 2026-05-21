@@ -30,6 +30,12 @@ pub(super) fn preflight_attestation_verifier_for_bundle_url(
     source::preflight_attestation_verifier_for_bundle_url(bundle_url)
 }
 
+pub(super) fn official_release_tag_from_bundle_url(
+    bundle_url: &str,
+) -> Result<Option<String>, FcError> {
+    source::official_release_tag_from_bundle_url(bundle_url)
+}
+
 /// Summary emitted after the layout copy succeeds.
 #[derive(Debug, Serialize)]
 pub(super) struct LayoutInstallSummary {

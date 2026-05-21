@@ -278,13 +278,9 @@ fn tag_mismatch_error(source_tag: &str, binary_tag: &str) -> FcError {
 }
 
 fn release_tag_from_bundle_url(url: &str) -> Option<String> {
-    let (_, after_marker) = url.split_once("/releases/download/")?;
-    let tag = after_marker.split('/').next()?;
-    if tag.is_empty() {
-        None
-    } else {
-        Some(tag.to_owned())
-    }
+    layout::official_release_tag_from_bundle_url(url)
+        .ok()
+        .flatten()
 }
 
 fn active_pointer(install_root: &Path) -> PathBuf {

@@ -40,7 +40,9 @@ index work:
 - `scripts/package-release-bundle.py` refuses to package non-stable release
   tags;
 - `m80 install --release-tag` and the hidden bootstrap handoff reject
-  prerelease-shaped tags before fetching the asset index.
+  prerelease-shaped tags before fetching the asset index;
+- direct official `m80 install --bundle-url` GitHub release URLs only accept
+  concrete stable bundle assets from `moradology/m80`.
 
 Regression coverage:
 

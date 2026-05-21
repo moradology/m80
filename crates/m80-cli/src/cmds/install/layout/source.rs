@@ -56,6 +56,16 @@ pub(super) fn is_fixture_bundle_url(bundle_url: &str) -> Result<bool, FcError> {
     Ok(parsed.scheme == "http" && is_local_fixture_host(&parsed.host))
 }
 
+pub(super) fn official_release_tag_from_bundle_url(
+    bundle_url: &str,
+) -> Result<Option<String>, FcError> {
+    if local_file_url_path(bundle_url)?.is_some() {
+        return Ok(None);
+    }
+    let parsed = parse_supported_initial_remote_url(bundle_url)?;
+    Ok(official_release_bundle_parts(&parsed).map(|(tag, _)| tag.to_owned()))
+}
+
 fn preflight_attestation_verifier_for_bundle_url_with_gh(
     bundle_url: &str,
     gh_bin: &str,
@@ -64,7 +74,7 @@ fn preflight_attestation_verifier_for_bundle_url_with_gh(
         return Ok(());
     }
     let parsed = parse_supported_initial_remote_url(bundle_url)?;
-    if !is_github_release_url(&parsed) {
+    if !is_official_release_bundle_url(&parsed) {
         return Ok(());
     }
     preflight_gh_attestation_verifier(gh_bin)
@@ -267,24 +277,27 @@ fn parse_supported_remote_url(
 ) -> Result<RemoteUrl, FcError> {
     let parsed = parse_url(url)?;
     match parsed.scheme.as_str() {
-        "https" if is_github_release_url(&parsed) => Ok(parsed),
-        "http" if is_local_fixture_host(&parsed.host) => Ok(parsed),
+        "https" if is_official_release_bundle_url(&parsed) => Ok(parsed),
         "https"
             if allow_github_asset_redirect_host
-                && is_github_asset_redirect_host(&parsed.host) =>
+                && is_official_release_bundle_or_checksum_url(&parsed) =>
+        {
+            Ok(parsed)
+        }
+        "http" if is_local_fixture_host(&parsed.host) => Ok(parsed),
+        "https" if parsed.host == "github.com" => Err(official_bundle_url_error(url)),
+        "https"
+            if allow_github_asset_redirect_host && is_github_asset_redirect_host(&parsed.host) =>
         {
             Ok(parsed)
         }
         "https" | "http" => Err(FcError::Config(ConfigError::InvalidValue {
             field: "bundle-url",
-            reason: format!(
-                "remote bundle URL must be a {} GitHub release asset or local test fixture: {url}",
-                crate::release_urls::release_repository()
-            ),
+            reason: official_bundle_url_reason(url),
         })),
         _ => Err(FcError::UnsupportedOperation {
             operation: "m80 install",
-            reason: "bundle URL must use file://, https:// release assets, or local http:// test fixtures".into(),
+            reason: official_bundle_url_reason(url),
         }),
     }
 }
@@ -356,8 +369,9 @@ fn validate_final_url(initial: &RemoteUrl, final_url: &RemoteUrl) -> Result<(), 
         if initial.authority == final_url.authority {
             return Ok(());
         }
-    } else if is_github_release_url(initial)
-        && (is_github_release_url(final_url) || is_github_asset_redirect_host(&final_url.host))
+    } else if is_official_release_bundle_url(initial)
+        && (is_official_release_bundle_or_checksum_url(final_url)
+            || is_github_asset_redirect_host(&final_url.host))
     {
         return Ok(());
     }
@@ -370,12 +384,87 @@ fn validate_final_url(initial: &RemoteUrl, final_url: &RemoteUrl) -> Result<(), 
     }))
 }
 
-fn is_github_release_url(url: &RemoteUrl) -> bool {
-    url.scheme == "https"
-        && url.host == "github.com"
-        && url
-            .path
-            .starts_with(&crate::release_urls::release_download_path_prefix())
+fn is_official_release_bundle_url(url: &RemoteUrl) -> bool {
+    official_release_bundle_parts(url).is_some()
+}
+
+fn is_official_release_bundle_or_checksum_url(url: &RemoteUrl) -> bool {
+    if is_official_release_bundle_url(url) {
+        return true;
+    }
+    let Some((tag, asset)) = official_release_asset_parts(url) else {
+        return false;
+    };
+    let Some(bundle_asset) = asset.strip_suffix(".sha256") else {
+        return false;
+    };
+    is_stable_release_tag(tag) && is_release_bundle_asset_name(bundle_asset)
+}
+
+fn official_release_bundle_parts(url: &RemoteUrl) -> Option<(&str, &str)> {
+    let (tag, asset) = official_release_asset_parts(url)?;
+    if is_stable_release_tag(tag) && is_release_bundle_asset_name(asset) {
+        Some((tag, asset))
+    } else {
+        None
+    }
+}
+
+fn official_release_asset_parts(url: &RemoteUrl) -> Option<(&str, &str)> {
+    if url.scheme != "https" || url.authority != "github.com" {
+        return None;
+    }
+    let tail = url
+        .path
+        .strip_prefix(&crate::release_urls::release_download_path_prefix())?;
+    let (tag, asset) = tail.split_once('/')?;
+    if tag.is_empty() || asset.is_empty() || asset.contains('/') {
+        return None;
+    }
+    Some((tag, asset))
+}
+
+fn is_stable_release_tag(tag: &str) -> bool {
+    let Some(version) = tag.strip_prefix('v') else {
+        return false;
+    };
+    let mut count = 0;
+    for part in version.split('.') {
+        count += 1;
+        if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+    }
+    count == 3
+}
+
+fn is_release_bundle_asset_name(asset: &str) -> bool {
+    let Some(target) = asset
+        .strip_prefix("m80-")
+        .and_then(|name| name.strip_suffix(".tar.gz"))
+    else {
+        return false;
+    };
+    !target.is_empty()
+        && target
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn official_bundle_url_error(url: &str) -> FcError {
+    FcError::Config(ConfigError::InvalidValue {
+        field: "bundle-url",
+        reason: official_bundle_url_reason(url),
+    })
+}
+
+fn official_bundle_url_reason(url: &str) -> String {
+    format!(
+        "remote bundle URL must be a concrete {repo} GitHub release bundle asset like {example}; latest artifact URLs, raw branch URLs, foreign repositories, and non-bundle assets are not install sources: {url}; for normal public installs use `curl -fsSL {latest} | sudo sh` or `m80 install --release-tag <tag>`; local/operator fixtures must use file:// or local http://",
+        repo = crate::release_urls::release_repository(),
+        example = crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
+        latest = crate::release_urls::latest_install_url(),
+    )
 }
 
 fn is_github_asset_redirect_host(host: &str) -> bool {
@@ -423,15 +512,147 @@ mod tests {
     use super::*;
 
     #[test]
+    fn official_release_bundle_url_is_accepted() {
+        let parsed = parse_supported_initial_remote_url(
+            "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap();
+
+        assert!(is_official_release_bundle_url(&parsed));
+        assert_eq!(
+            official_release_tag_from_bundle_url(
+                "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz"
+            )
+            .unwrap()
+            .as_deref(),
+            Some("v1.2.3")
+        );
+    }
+
+    #[test]
+    fn download_url_accepts_official_checksum_sidecar() {
+        let parsed = parse_supported_download_url(
+            "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz.sha256",
+        )
+        .unwrap();
+
+        assert!(is_official_release_bundle_or_checksum_url(&parsed));
+    }
+
+    #[test]
+    fn initial_remote_url_rejects_checksum_sidecar_as_bundle_source() {
+        let err = parse_supported_initial_remote_url(
+            "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz.sha256",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("non-bundle assets"), "{err}");
+    }
+
+    #[test]
     fn remote_url_rejects_non_release_https_host() {
         let err =
             parse_supported_initial_remote_url("https://example.invalid/m80-linux-x86_64.tar.gz")
                 .unwrap_err();
         assert!(
             err.to_string()
-                .contains("moradology/m80 GitHub release asset"),
+                .contains("moradology/m80 GitHub release bundle asset"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn remote_url_rejects_foreign_github_release_repo() {
+        let err = parse_supported_initial_remote_url(
+            "https://github.com/example/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("concrete moradology/m80 GitHub release bundle asset"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn remote_url_rejects_latest_artifact_bundle_url() {
+        let err = parse_supported_initial_remote_url(
+            "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("latest artifact URLs"), "{err}");
+    }
+
+    #[test]
+    fn remote_url_rejects_prerelease_bundle_tag() {
+        let err = parse_supported_initial_remote_url(
+            "https://github.com/moradology/m80/releases/download/v1.2.3-rc.1/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("must be a concrete"), "{err}");
+    }
+
+    #[test]
+    fn remote_url_rejects_github_release_url_with_port() {
+        let err = parse_supported_initial_remote_url(
+            "https://github.com:444/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("must be a concrete"), "{err}");
+    }
+
+    #[test]
+    fn remote_url_rejects_raw_branch_url() {
+        let err = parse_supported_initial_remote_url(
+            "https://raw.githubusercontent.com/moradology/m80/main/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("raw branch URLs"), "{err}");
+    }
+
+    #[test]
+    fn remote_url_rejects_non_bundle_release_asset_name() {
+        let err = parse_supported_initial_remote_url(
+            "https://github.com/moradology/m80/releases/download/v1.2.3/install.sh",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("non-bundle assets"), "{err}");
+    }
+
+    #[test]
+    fn remote_url_rejects_release_asset_path_traversal() {
+        let err = parse_supported_initial_remote_url(
+            "https://github.com/moradology/m80/releases/download/v1.2.3/../m80-linux-x86_64.tar.gz",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("non-bundle assets"), "{err}");
+    }
+
+    #[test]
+    fn remote_url_rejects_non_https_github_release_url() {
+        let err = parse_supported_initial_remote_url(
+            "http://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("must be a concrete"), "{err}");
+    }
+
+    #[test]
+    fn local_fixture_release_shaped_url_does_not_claim_official_release_tag() {
+        let tag = official_release_tag_from_bundle_url(
+            "http://127.0.0.1:1234/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+        )
+        .unwrap();
+
+        assert_eq!(tag, None);
     }
 
     #[test]
@@ -443,7 +664,7 @@ mod tests {
 
         assert!(
             err.to_string()
-                .contains("moradology/m80 GitHub release asset"),
+                .contains("moradology/m80 GitHub release bundle asset"),
             "{err}"
         );
     }

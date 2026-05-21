@@ -199,31 +199,65 @@ fn install_missing_source_prints_source_diagnostic() {
 
 #[test]
 fn install_non_release_remote_bundle_url_is_rejected_without_touching_install_root() {
-    let temp = tempfile::tempdir().unwrap();
-    let install_root = temp.path().join("install-root");
-
-    let output = m80()
-        .args([
-            "install",
-            "--bundle-url",
-            "https://example.invalid/m80-linux-x86_64.tar.gz",
-            "--install-root",
-            install_root.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(6));
-    assert!(output.stdout.is_empty());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        stderr.contains("moradology/m80 GitHub release asset"),
-        "unexpected stderr: {stderr}"
+    assert_bundle_url_rejected_before_install_root_touch(
+        "https://example.invalid/m80-linux-x86_64.tar.gz",
+        "moradology/m80 GitHub release bundle asset",
     );
-    assert!(
-        !install_root.exists(),
-        "unsupported non-file bundle URL must not create install root {}",
-        install_root.display()
+}
+
+#[test]
+fn install_foreign_github_release_bundle_url_is_rejected_without_touching_install_root() {
+    assert_bundle_url_rejected_before_install_root_touch(
+        "https://github.com/example/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+        "foreign repositories",
+    );
+}
+
+#[test]
+fn install_latest_artifact_bundle_url_is_rejected_without_touching_install_root() {
+    assert_bundle_url_rejected_before_install_root_touch(
+        "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64.tar.gz",
+        "latest artifact URLs",
+    );
+}
+
+#[test]
+fn install_prerelease_bundle_tag_is_rejected_without_touching_install_root() {
+    assert_bundle_url_rejected_before_install_root_touch(
+        "https://github.com/moradology/m80/releases/download/v1.2.3-rc.1/m80-linux-x86_64.tar.gz",
+        "must be a concrete",
+    );
+}
+
+#[test]
+fn install_raw_branch_bundle_url_is_rejected_without_touching_install_root() {
+    assert_bundle_url_rejected_before_install_root_touch(
+        "https://raw.githubusercontent.com/moradology/m80/main/m80-linux-x86_64.tar.gz",
+        "raw branch URLs",
+    );
+}
+
+#[test]
+fn install_bad_release_asset_name_is_rejected_without_touching_install_root() {
+    assert_bundle_url_rejected_before_install_root_touch(
+        "https://github.com/moradology/m80/releases/download/v1.2.3/install.sh",
+        "non-bundle assets",
+    );
+}
+
+#[test]
+fn install_path_traversal_release_asset_url_is_rejected_without_touching_install_root() {
+    assert_bundle_url_rejected_before_install_root_touch(
+        "https://github.com/moradology/m80/releases/download/v1.2.3/../m80-linux-x86_64.tar.gz",
+        "non-bundle assets",
+    );
+}
+
+#[test]
+fn install_non_https_github_release_url_is_rejected_without_touching_install_root() {
+    assert_bundle_url_rejected_before_install_root_touch(
+        "http://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+        "must be a concrete",
     );
 }
 
@@ -245,6 +279,13 @@ fn installer_input_contract_doc_names_source_shapes_and_tests() {
         "install_json_release_tag_refusal_reports_asset_index_fields_on_stderr",
         "install_missing_source_prints_source_diagnostic",
         "install_non_release_remote_bundle_url_is_rejected_without_touching_install_root",
+        "install_foreign_github_release_bundle_url_is_rejected_without_touching_install_root",
+        "install_latest_artifact_bundle_url_is_rejected_without_touching_install_root",
+        "install_prerelease_bundle_tag_is_rejected_without_touching_install_root",
+        "install_raw_branch_bundle_url_is_rejected_without_touching_install_root",
+        "install_bad_release_asset_name_is_rejected_without_touching_install_root",
+        "install_path_traversal_release_asset_url_is_rejected_without_touching_install_root",
+        "install_non_https_github_release_url_is_rejected_without_touching_install_root",
     ] {
         assert!(
             doc.contains(required),
@@ -255,6 +296,39 @@ fn installer_input_contract_doc_names_source_shapes_and_tests() {
 
 fn read_repo_file(relative: &str) -> String {
     fs::read_to_string(repo_root().join(relative)).expect("read repository file")
+}
+
+fn assert_bundle_url_rejected_before_install_root_touch(bundle_url: &str, expected: &str) {
+    let temp = tempfile::tempdir().unwrap();
+    let install_root = temp.path().join("install-root");
+
+    let output = m80()
+        .args([
+            "install",
+            "--bundle-url",
+            bundle_url,
+            "--install-root",
+            install_root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(expected),
+        "expected {expected:?} in stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("m80 install --release-tag <tag>"),
+        "stderr should point to the normal public install path: {stderr}"
+    );
+    assert!(
+        !install_root.exists(),
+        "unsupported non-file bundle URL must not create install root {}",
+        install_root.display()
+    );
 }
 
 fn repo_root() -> PathBuf {

@@ -10,8 +10,12 @@ versioned directory, writes install metadata/profile state, and flips the active
 pointer last. `--bootstrap-tag <TAG>` uses the same indexed source selection
 after the bootstrapper resolves "latest" to a concrete tag. The installer also
 accepts explicit local `file://...` bundles for fixtures and
-`https://github.com/moradology/m80/releases/download/...` release bundle URLs.
-Local HTTP is accepted only for test fixtures.
+concrete stable-tag
+`https://github.com/moradology/m80/releases/download/<tag>/m80-<target>.tar.gz`
+release bundle URLs. Mutable latest artifact URLs, raw branch URLs, foreign
+repositories, path-traversal asset paths, non-bundle release assets, and
+non-HTTPS GitHub release URLs fail before network access or install-root
+mutation. Local HTTP is accepted only for test fixtures.
 
 ## Directory Contract
 

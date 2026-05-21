@@ -401,8 +401,12 @@ Stable surfaces:
   still fetch and verify the release asset index so the plan names the concrete
   bundle. Release-tag and bootstrap-tag sources select bundles through the
   checksum-verified release asset index. Non-dry-run layout copy accepts
-  selected index URLs, local `file://` bundle URLs, and moradology/m80 GitHub
-  release bundle URLs, staging downloads before publishing
+  selected index URLs, local `file://` bundle URLs, local HTTP test fixtures,
+  and concrete stable-tag moradology/m80 GitHub release bundle URLs matching
+  `m80-<target>.tar.gz`. Mutable latest artifact URLs, raw branch URLs, foreign
+  repositories, path-traversal asset paths, non-bundle release assets, and
+  non-HTTPS GitHub release URLs are rejected before network access or
+  install-root mutation. Accepted remote bundles are staged before publishing
   `<install-root>/versions/<release_tag>` and flipping the active pointer last.
 
 ## Non-goals

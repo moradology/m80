@@ -515,11 +515,10 @@ fn bundle_url_rejects_release_binary_tag_mismatch() {
         Some("v1.2.3"),
         Some("0123456789abcdef0123456789abcdef01234567"),
     );
-    let err = install_plan(
-        &args_with_bundle_url("http://127.0.0.1/releases/download/v9.9.9/m80-linux-x86_64.tar.gz"),
-        &identity,
-    )
-    .unwrap_err();
+    let bundle_tag = release_tag_from_bundle_url(
+        "https://github.com/moradology/m80/releases/download/v9.9.9/m80-linux-x86_64.tar.gz",
+    );
+    let err = validate_bundle_url_matches_binary(bundle_tag.as_deref(), &identity).unwrap_err();
 
     assert!(
         err.to_string().contains("bundle/binary tag mismatch"),
@@ -530,11 +529,10 @@ fn bundle_url_rejects_release_binary_tag_mismatch() {
 #[test]
 fn tagged_release_bundle_url_rejects_dev_binary() {
     let identity = VersionIdentity::from_parts("1.2.3", None, None);
-    let err = install_plan(
-        &args_with_bundle_url("http://127.0.0.1/releases/download/v1.2.3/m80-linux-x86_64.tar.gz"),
-        &identity,
-    )
-    .unwrap_err();
+    let bundle_tag = release_tag_from_bundle_url(
+        "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+    );
+    let err = validate_bundle_url_matches_binary(bundle_tag.as_deref(), &identity).unwrap_err();
 
     assert!(
         err.to_string().contains("GitHub release bundle URL"),
@@ -583,6 +581,15 @@ fn release_bundle_tag_is_extracted_from_github_url() {
     );
 
     assert_eq!(tag.as_deref(), Some("v1.2.3"));
+}
+
+#[test]
+fn local_fixture_release_shaped_url_does_not_select_release_tag() {
+    let tag = release_tag_from_bundle_url(
+        "http://127.0.0.1/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+    );
+
+    assert_eq!(tag, None);
 }
 
 fn asset_index_diagnostic(err: &InstallError) -> &release_asset_index::AssetIndexDiagnostic {
