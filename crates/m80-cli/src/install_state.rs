@@ -15,7 +15,11 @@ mod metadata;
 mod state;
 
 pub(crate) use active::{ActivePointerReport, ActivePointerStatus};
-pub(crate) use metadata::{InstallMetadataReport, MetadataFileReport, MetadataFileStatus};
+pub(crate) use metadata::{
+    read_proof_cache_metadata_from_artifact_dir, InstallMetadataReport, MetadataFileReport,
+    MetadataFileStatus, ProofCacheMaterialReport, ProofCacheMetadataReport, ProofCacheReport,
+    ProofCacheTrustPolicyReport, ProofCacheVerifierVersionsReport,
+};
 
 const DEFAULT_PROFILE_FIELD: &str = "default_profile";
 const ACTIVE_POINTER_NAME: &str = "active";

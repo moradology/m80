@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use m80_image_manifest::{HostBinariesManifest, InstallProvenance, InstallProvenanceArtifact};
 use serde::Serialize;
@@ -75,10 +76,51 @@ pub(crate) struct HostBinariesReport {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ProofCacheReport {
+    pub(crate) cache_dir: PathBuf,
+    pub(crate) manifest_path: PathBuf,
     pub(crate) release_tag: String,
     pub(crate) repository: String,
     pub(crate) target: String,
     pub(crate) manifest_digest: String,
+    pub(crate) manifest_modified_unix_seconds: Option<i64>,
+    pub(crate) cache_age_seconds: Option<u64>,
+    pub(crate) materials: Vec<ProofCacheMaterialReport>,
+    pub(crate) trust_policy: ProofCacheTrustPolicyReport,
+    pub(crate) verifier_versions: ProofCacheVerifierVersionsReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ProofCacheMaterialReport {
+    pub(crate) role: String,
+    pub(crate) path: String,
+    pub(crate) sha256: String,
+    pub(crate) size_bytes: Option<u64>,
+    pub(crate) subject: Option<String>,
+    pub(crate) modified_unix_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ProofCacheTrustPolicyReport {
+    pub(crate) path: String,
+    pub(crate) identity: String,
+    pub(crate) sha256: String,
+    pub(crate) modified_unix_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ProofCacheVerifierVersionsReport {
+    pub(crate) m80_version: String,
+    pub(crate) gh_version: String,
+    pub(crate) release_integrity_schema_version: u32,
+    pub(crate) asset_index_schema_version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ProofCacheMetadataReport {
+    pub(crate) version_dir: PathBuf,
+    pub(crate) proof_cache_manifest: MetadataFileReport,
+    pub(crate) proof_cache: Option<ProofCacheReport>,
+    pub(crate) diagnostics: Vec<InstallStateDiagnostic>,
 }
 
 pub(super) fn read_install_metadata(
@@ -158,6 +200,30 @@ pub(super) fn read_install_metadata(
         provenance,
         host_binaries,
         proof_cache,
+    }
+}
+
+pub(crate) fn read_proof_cache_metadata_from_artifact_dir(
+    artifact_dir: &Path,
+) -> ProofCacheMetadataReport {
+    let version_dir = artifact_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| artifact_dir.to_path_buf());
+    let proof_cache_manifest_path = artifact_dir
+        .join(PROOF_CACHE_DIR)
+        .join(PROOF_CACHE_MANIFEST_NAME);
+    let mut diagnostics = Vec::new();
+    let (proof_cache_manifest, proof_cache) = proof_cache::read_proof_cache_manifest(
+        &version_dir,
+        &proof_cache_manifest_path,
+        &mut diagnostics,
+    );
+    ProofCacheMetadataReport {
+        version_dir,
+        proof_cache_manifest,
+        proof_cache,
+        diagnostics,
     }
 }
 
@@ -416,6 +482,18 @@ fn file_report(
         status,
         sha256,
     }
+}
+
+fn modified_unix_seconds(path: &Path) -> Option<i64> {
+    let modified = std::fs::symlink_metadata(path).ok()?.modified().ok()?;
+    let seconds = modified.duration_since(UNIX_EPOCH).ok()?.as_secs();
+    i64::try_from(seconds).ok()
+}
+
+fn age_seconds_at_now(modified_unix_seconds: Option<i64>) -> Option<u64> {
+    let modified = u64::try_from(modified_unix_seconds?).ok()?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    Some(now.saturating_sub(modified))
 }
 
 fn missing_metadata(

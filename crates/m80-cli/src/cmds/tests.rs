@@ -1,3 +1,6 @@
+use std::fs;
+
+use super::install_status::ProofCacheStatusOutput;
 use super::preflight::{
     artifact_config_for_runtime_profile, binary_config_for_runtime_profile,
     host_feature_config_from_effective, host_prerequisite_failure,
@@ -18,6 +21,8 @@ use m80_preflight::{
     CgroupPreflightMode, CheckRow, Discovery, HostPrerequisiteCheckId, PreflightError,
 };
 use m80_proto::ExecStatus;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 fn fake_discovery() -> Discovery {
     let rootfs = tempfile::NamedTempFile::new().expect("fake rootfs");
@@ -484,6 +489,9 @@ fn preflight_json_report_includes_selected_profile_context() {
     let report = PreflightReport {
         schema_version: 1,
         runtime_profile: profile::runtime_profile_report(&profile),
+        proof_cache: ProofCacheStatusOutput::from_runtime_profile(
+            &profile::runtime_profile_report(&profile),
+        ),
         host_prerequisites: proof,
     };
     let json = json::to_pretty(&report);
@@ -504,9 +512,62 @@ fn preflight_json_report_includes_selected_profile_context() {
         "/opt/m80/versions/v1/artifacts/host-binaries.manifest.json"
     );
     assert_eq!(parsed["data"]["runtime_profile"]["release_tag"], "v1");
+    assert_eq!(parsed["data"]["proof_cache"]["status"], "missing_manifest");
+    assert_eq!(
+        parsed["data"]["proof_cache"]["manifest_path"],
+        "/opt/m80/versions/v1/artifacts/release-proof-cache/manifest.json"
+    );
     assert_eq!(
         parsed["data"]["host_prerequisites"]["schema_version"],
         m80_preflight::HOST_PREREQUISITE_RESULT_SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn preflight_json_report_reads_offline_proof_cache_material() {
+    let _lock = m80_test_helpers::env::env_lock().lock().unwrap();
+    let _restore = m80_test_helpers::env::EnvRestore::capture(&["HTTPS_PROXY", "GITHUB_API_URL"]);
+    std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:9");
+    std::env::set_var("GITHUB_API_URL", "http://127.0.0.1:9");
+
+    let temp = tempfile::tempdir().expect("create proof-cache fixture root");
+    let profile = installed_runtime_profile_with_proof_cache(temp.path());
+    let runtime_profile = profile::runtime_profile_report(&profile);
+    let proof = m80_preflight::HostPrerequisiteResult::from_discovery(&fake_discovery()).unwrap();
+    let report = PreflightReport {
+        schema_version: 1,
+        proof_cache: ProofCacheStatusOutput::from_runtime_profile(&runtime_profile),
+        runtime_profile,
+        host_prerequisites: proof,
+    };
+    let json = json::to_pretty(&report);
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(parsed["data"]["proof_cache"]["status"], "available");
+    assert_eq!(
+        parsed["data"]["proof_cache"]["cache_dir"],
+        temp.path()
+            .join("versions/v1/artifacts/release-proof-cache")
+            .display()
+            .to_string()
+    );
+    assert_eq!(
+        parsed["data"]["proof_cache"]["manifest_digest"]
+            .as_str()
+            .expect("manifest digest is a string")
+            .len(),
+        64
+    );
+    assert_eq!(
+        parsed["data"]["proof_cache"]["materials"][0]["role"],
+        "integrity_predicate"
+    );
+    assert_eq!(
+        parsed["data"]["proof_cache"]["trust_policy"]["sha256"]
+            .as_str()
+            .expect("trust policy digest is a string")
+            .len(),
+        64
     );
 }
 
@@ -519,6 +580,9 @@ fn preflight_json_error_report_includes_selected_profile_context() {
     let report = PreflightErrorReport {
         error: crate::errors::envelope(&err),
         runtime_profile: profile::runtime_profile_report(&profile),
+        proof_cache: ProofCacheStatusOutput::from_runtime_profile(
+            &profile::runtime_profile_report(&profile),
+        ),
         host_prerequisite_failure: host_prerequisite_failure(
             &err,
             &profile::runtime_profile_report(&profile),
@@ -677,6 +741,163 @@ fn installed_runtime_profile() -> RuntimeProfile {
         m80_version: Some("v1".to_owned()),
         description: Some("m80 installed default profile".to_owned()),
     }
+}
+
+fn installed_runtime_profile_with_proof_cache(root: &std::path::Path) -> RuntimeProfile {
+    let mut profile = installed_runtime_profile();
+    let artifacts = root.join("versions/v1/artifacts");
+    fs::create_dir_all(&artifacts).expect("create installed artifacts dir");
+    write_test_proof_cache(&artifacts.join("release-proof-cache"));
+    profile.artifact_dir = Some(artifacts.clone());
+    profile.kernel_image = Some(artifacts.join("vmlinux"));
+    profile.rootfs_image = Some(artifacts.join("output.ext4"));
+    profile.guestd = Some(artifacts.join("m80-guestd"));
+    profile.guest_manifest = Some(artifacts.join("output.ext4.manifest.json"));
+    profile.build_receipt = Some(artifacts.join("output.ext4.build-receipt.json"));
+    profile.install_provenance = Some(artifacts.join("install-provenance.json"));
+    profile.host_binaries_manifest = Some(artifacts.join("host-binaries.manifest.json"));
+    profile
+}
+
+fn write_test_proof_cache(cache_dir: &std::path::Path) {
+    fs::create_dir_all(cache_dir).expect("create proof-cache dir");
+    let integrity = write_test_proof_file(cache_dir, "m80-release-integrity.json", b"integrity\n");
+    let attestation = write_test_proof_file(
+        cache_dir,
+        "m80-release-integrity.attestation.jsonl",
+        b"attestation\n",
+    );
+    let metadata = write_test_proof_file(cache_dir, "m80-release-attestation.json", b"metadata\n");
+    let asset_index = write_test_proof_file(cache_dir, "m80-release-assets.json", b"assets\n");
+    let public_sha256s = write_test_proof_file(cache_dir, "SHA256SUMS", b"sha256s\n");
+    let sidecar = write_test_proof_file(cache_dir, "m80-linux-x86_64.tar.gz.sha256", b"bundle\n");
+    let trust = write_test_proof_file(
+        cache_dir,
+        "m80-release-trust-policy.json",
+        b"trust-policy\n",
+    );
+
+    let payload = TestProofPayload {
+        release_tag: "v1".to_owned(),
+        repository: "moradology/m80".to_owned(),
+        target: "linux-x86_64".to_owned(),
+        integrity_predicate: integrity,
+        attestation_bundle: attestation,
+        attestation_metadata: TestAttestationMetadataRef {
+            file: metadata,
+            signer_identity:
+                "https://github.com/moradology/m80/.github/workflows/release.yml@refs/tags/v1"
+                    .to_owned(),
+            issuer: "https://token.actions.githubusercontent.com".to_owned(),
+            keyset_id: "keyset".to_owned(),
+            predicate_sha256: "4".repeat(64),
+        },
+        asset_index,
+        public_sha256s,
+        checksum_sidecars: vec![TestChecksumSidecarRef {
+            path: sidecar.path,
+            sha256: sidecar.sha256,
+            subject: "bundle".to_owned(),
+        }],
+        trust_policy: TestTrustPolicyRef {
+            path: trust.path,
+            identity: "repository=moradology/m80".to_owned(),
+            sha256: trust.sha256,
+        },
+        verifier_versions: TestVerifierVersions {
+            m80_version: "v1".to_owned(),
+            gh_version: "gh version 2.0.0".to_owned(),
+            release_integrity_schema_version: 1,
+            asset_index_schema_version: 1,
+        },
+    };
+    let manifest = TestProofManifest {
+        schema_version: 1,
+        manifest_digest: sha256_json(&payload),
+        payload,
+    };
+    fs::write(
+        cache_dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest).expect("encode proof-cache manifest"),
+    )
+    .expect("write proof-cache manifest");
+}
+
+fn write_test_proof_file(cache_dir: &std::path::Path, name: &str, bytes: &[u8]) -> TestProofFile {
+    fs::write(cache_dir.join(name), bytes).expect("write proof-cache material");
+    TestProofFile {
+        path: name.to_owned(),
+        sha256: sha256_bytes(bytes),
+        size_bytes: bytes.len() as u64,
+    }
+}
+
+fn sha256_json(value: &impl Serialize) -> String {
+    sha256_bytes(&serde_json::to_vec(value).expect("encode proof-cache digest payload"))
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+#[derive(Serialize)]
+struct TestProofManifest {
+    schema_version: u32,
+    manifest_digest: String,
+    payload: TestProofPayload,
+}
+
+#[derive(Serialize)]
+struct TestProofPayload {
+    release_tag: String,
+    repository: String,
+    target: String,
+    integrity_predicate: TestProofFile,
+    attestation_bundle: TestProofFile,
+    attestation_metadata: TestAttestationMetadataRef,
+    asset_index: TestProofFile,
+    public_sha256s: TestProofFile,
+    checksum_sidecars: Vec<TestChecksumSidecarRef>,
+    trust_policy: TestTrustPolicyRef,
+    verifier_versions: TestVerifierVersions,
+}
+
+#[derive(Serialize)]
+struct TestProofFile {
+    path: String,
+    sha256: String,
+    size_bytes: u64,
+}
+
+#[derive(Serialize)]
+struct TestAttestationMetadataRef {
+    file: TestProofFile,
+    signer_identity: String,
+    issuer: String,
+    keyset_id: String,
+    predicate_sha256: String,
+}
+
+#[derive(Serialize)]
+struct TestChecksumSidecarRef {
+    path: String,
+    sha256: String,
+    subject: String,
+}
+
+#[derive(Serialize)]
+struct TestTrustPolicyRef {
+    path: String,
+    identity: String,
+    sha256: String,
+}
+
+#[derive(Serialize)]
+struct TestVerifierVersions {
+    m80_version: String,
+    gh_version: String,
+    release_integrity_schema_version: u32,
+    asset_index_schema_version: u32,
 }
 
 #[test]

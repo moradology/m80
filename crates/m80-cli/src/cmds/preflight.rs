@@ -16,6 +16,8 @@ use crate::json;
 use crate::profile::{self, ProfileFilePaths, RuntimeProfile};
 use crate::release_urls;
 
+use super::install_status::ProofCacheStatusOutput;
+
 /// Resolve config, run preflight, and build an `Arc<Backend>`.
 /// Returns `EffectiveConfig` alongside for callers that need source labels.
 pub(crate) fn build_backend(
@@ -211,6 +213,7 @@ fn effective_jail_id(
 pub(super) struct PreflightReport {
     pub(super) schema_version: u32,
     pub(super) runtime_profile: profile::RuntimeProfileReport,
+    pub(super) proof_cache: ProofCacheStatusOutput,
     pub(super) host_prerequisites: m80_preflight::HostPrerequisiteResult,
 }
 
@@ -219,6 +222,7 @@ pub(super) struct PreflightErrorReport {
     #[serde(flatten)]
     pub(super) error: errors::ErrorEnvelope,
     pub(super) runtime_profile: profile::RuntimeProfileReport,
+    pub(super) proof_cache: ProofCacheStatusOutput,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) host_prerequisite_failure: Option<HostPrerequisiteCheck>,
 }
@@ -245,6 +249,7 @@ pub(super) fn render_preflight_result(
                 };
                 let report = PreflightReport {
                     schema_version: 1,
+                    proof_cache: ProofCacheStatusOutput::from_runtime_profile(&runtime_profile),
                     runtime_profile,
                     host_prerequisites: proof,
                 };
@@ -267,6 +272,7 @@ fn render_preflight_error(
     if json_mode {
         let report = PreflightErrorReport {
             error: errors::envelope(err),
+            proof_cache: ProofCacheStatusOutput::from_runtime_profile(runtime_profile),
             runtime_profile: runtime_profile.clone(),
             host_prerequisite_failure: host_prerequisite_failure(err, runtime_profile),
         };

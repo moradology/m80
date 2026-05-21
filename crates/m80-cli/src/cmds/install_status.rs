@@ -8,9 +8,11 @@ use crate::install_state::{
     resolve_install_state, ActivePointerReport, ActivePointerStatus, InstallConfigReport,
     InstallMetadataReport, InstallProfileReport, InstallStateDiagnostic, InstallStateKind,
     InstallStatePaths, InstallStateReport, InstallStateRequest, MetadataFileReport,
-    MetadataFileStatus,
+    MetadataFileStatus, ProofCacheMaterialReport, ProofCacheMetadataReport, ProofCacheReport,
+    ProofCacheTrustPolicyReport, ProofCacheVerifierVersionsReport,
 };
 use crate::json;
+use crate::profile::RuntimeProfileReport;
 
 const DEFAULT_INSTALL_ROOT: &str = "/opt/m80";
 
@@ -182,6 +184,7 @@ fn render_human(output: &InstallStatusOutput) -> String {
         push_unavailable_metadata_file(&mut text, "install_provenance");
         push_unavailable_metadata_file(&mut text, "proof_cache_manifest");
     }
+    push_proof_cache(&mut text, &output.proof_cache);
     push_line(&mut text, "diagnostic_count", output.diagnostics.len());
     push_line(&mut text, "next_action", &output.next_action.message);
     if let Some(command) = &output.next_action.command {
@@ -226,6 +229,101 @@ fn push_unavailable_metadata_file(text: &mut String, prefix: &str) {
     push_line(text, &format!("{prefix}_status"), "unavailable");
 }
 
+fn push_proof_cache(text: &mut String, proof_cache: &ProofCacheStatusOutput) {
+    push_line(
+        text,
+        "proof_cache_status",
+        proof_cache_status_label(proof_cache.status),
+    );
+    push_line(text, "proof_cache_message", &proof_cache.message);
+    push_optional_path(text, "proof_cache_path", proof_cache.cache_dir.as_ref());
+    push_optional_path(
+        text,
+        "proof_cache_manifest_path",
+        proof_cache.manifest_path.as_ref(),
+    );
+    push_optional(
+        text,
+        "proof_cache_manifest_sha256",
+        proof_cache.manifest_sha256.as_deref(),
+    );
+    push_optional(
+        text,
+        "proof_cache_manifest_digest",
+        proof_cache.manifest_digest.as_deref(),
+    );
+    push_optional_string(
+        text,
+        "proof_cache_manifest_modified_unix_seconds",
+        proof_cache
+            .manifest_modified_unix_seconds
+            .map(|seconds| seconds.to_string()),
+    );
+    push_optional_string(
+        text,
+        "proof_cache_age_seconds",
+        proof_cache
+            .cache_age_seconds
+            .map(|seconds| seconds.to_string()),
+    );
+    push_optional(
+        text,
+        "proof_cache_release_tag",
+        proof_cache.release_tag.as_deref(),
+    );
+    push_optional(
+        text,
+        "proof_cache_repository",
+        proof_cache.repository.as_deref(),
+    );
+    push_optional(text, "proof_cache_target", proof_cache.target.as_deref());
+    if let Some(trust_policy) = &proof_cache.trust_policy {
+        push_line(text, "proof_cache_trust_policy_path", &trust_policy.path);
+        push_line(
+            text,
+            "proof_cache_trust_policy_identity",
+            &trust_policy.identity,
+        );
+        push_line(
+            text,
+            "proof_cache_trust_policy_sha256",
+            &trust_policy.sha256,
+        );
+    } else {
+        push_line(text, "proof_cache_trust_policy_path", "<unavailable>");
+        push_line(text, "proof_cache_trust_policy_identity", "<unavailable>");
+        push_line(text, "proof_cache_trust_policy_sha256", "<unavailable>");
+    }
+    push_line(
+        text,
+        "proof_cache_material_count",
+        proof_cache.materials.len(),
+    );
+    for (index, material) in proof_cache.materials.iter().enumerate() {
+        let prefix = format!("proof_cache_material_{index}");
+        push_line(text, &format!("{prefix}_role"), &material.role);
+        push_line(text, &format!("{prefix}_path"), &material.path);
+        push_line(text, &format!("{prefix}_sha256"), &material.sha256);
+        push_optional_string(
+            text,
+            &format!("{prefix}_size_bytes"),
+            material.size_bytes.map(|size| size.to_string()),
+        );
+        push_optional(
+            text,
+            &format!("{prefix}_subject"),
+            material.subject.as_deref(),
+        );
+        push_optional_string(
+            text,
+            &format!("{prefix}_modified_unix_seconds"),
+            material
+                .modified_unix_seconds
+                .map(|seconds| seconds.to_string()),
+        );
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct InstallStatusOutput {
     schema_version: u16,
@@ -235,6 +333,7 @@ struct InstallStatusOutput {
     selected_config: ConfigStatusOutput,
     selected_profile: Option<ProfileStatusOutput>,
     metadata: Option<MetadataStatusOutput>,
+    proof_cache: ProofCacheStatusOutput,
     diagnostics: Vec<InstallStateDiagnostic>,
     mismatches: Vec<InstallStatusMismatch>,
     next_action: NextAction,
@@ -256,6 +355,7 @@ impl InstallStatusOutput {
                 .metadata
                 .as_ref()
                 .map(MetadataStatusOutput::from_report),
+            proof_cache: ProofCacheStatusOutput::from_install_report(report),
             diagnostics: report.diagnostics.clone(),
             mismatches: install_status_mismatches(report),
             next_action: next_action(report),
@@ -360,6 +460,221 @@ struct MetadataFileOutput {
     path: PathBuf,
     status: MetadataFileStatus,
     sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct ProofCacheStatusOutput {
+    status: ProofCacheStatusKind,
+    cache_dir: Option<PathBuf>,
+    manifest_path: Option<PathBuf>,
+    manifest_sha256: Option<String>,
+    manifest_digest: Option<String>,
+    manifest_modified_unix_seconds: Option<i64>,
+    cache_age_seconds: Option<u64>,
+    release_tag: Option<String>,
+    repository: Option<String>,
+    target: Option<String>,
+    materials: Vec<ProofCacheMaterialOutput>,
+    trust_policy: Option<ProofCacheTrustPolicyOutput>,
+    verifier_versions: Option<ProofCacheVerifierVersionsOutput>,
+    diagnostics: Vec<InstallStateDiagnostic>,
+    message: String,
+}
+
+impl ProofCacheStatusOutput {
+    fn from_install_report(report: &InstallStateReport) -> Self {
+        if let Some(metadata) = &report.metadata {
+            return Self::from_metadata(
+                &metadata.proof_cache_manifest,
+                metadata.proof_cache.as_ref(),
+                Vec::new(),
+            );
+        }
+        match report.state {
+            InstallStateKind::LocalDevTree | InstallStateKind::ExplicitOverride => {
+                Self::non_cache(ProofCacheStatusKind::LocalDevInstall)
+            }
+            InstallStateKind::MissingActivePointer | InstallStateKind::DanglingActivePointer => {
+                Self::non_cache(ProofCacheStatusKind::MissingActiveInstall)
+            }
+            _ => Self::non_cache(ProofCacheStatusKind::Unavailable),
+        }
+    }
+
+    pub(super) fn from_runtime_profile(profile: &RuntimeProfileReport) -> Self {
+        if profile.body_source == "builtin_env" {
+            return Self::non_cache(ProofCacheStatusKind::LocalDevInstall);
+        }
+        let Some(artifact_dir) = profile.artifact_dir.as_deref() else {
+            return Self::non_cache(ProofCacheStatusKind::Unavailable);
+        };
+        let report =
+            crate::install_state::read_proof_cache_metadata_from_artifact_dir(artifact_dir);
+        Self::from_proof_cache_metadata(report)
+    }
+
+    fn from_proof_cache_metadata(report: ProofCacheMetadataReport) -> Self {
+        Self::from_metadata(
+            &report.proof_cache_manifest,
+            report.proof_cache.as_ref(),
+            report.diagnostics,
+        )
+    }
+
+    fn from_metadata(
+        manifest: &MetadataFileReport,
+        proof_cache: Option<&ProofCacheReport>,
+        diagnostics: Vec<InstallStateDiagnostic>,
+    ) -> Self {
+        let Some(proof_cache) = proof_cache else {
+            return Self {
+                status: match manifest.status {
+                    MetadataFileStatus::Missing => ProofCacheStatusKind::MissingManifest,
+                    MetadataFileStatus::Invalid => ProofCacheStatusKind::InvalidManifest,
+                    MetadataFileStatus::Stale => ProofCacheStatusKind::StaleManifest,
+                    MetadataFileStatus::Present => ProofCacheStatusKind::Unavailable,
+                },
+                cache_dir: manifest.path.parent().map(Path::to_path_buf),
+                manifest_path: Some(manifest.path.clone()),
+                manifest_sha256: manifest.sha256.clone(),
+                manifest_digest: None,
+                manifest_modified_unix_seconds: None,
+                cache_age_seconds: None,
+                release_tag: None,
+                repository: None,
+                target: None,
+                materials: Vec::new(),
+                trust_policy: None,
+                verifier_versions: None,
+                diagnostics,
+                message: proof_cache_status_message(match manifest.status {
+                    MetadataFileStatus::Missing => ProofCacheStatusKind::MissingManifest,
+                    MetadataFileStatus::Invalid => ProofCacheStatusKind::InvalidManifest,
+                    MetadataFileStatus::Stale => ProofCacheStatusKind::StaleManifest,
+                    MetadataFileStatus::Present => ProofCacheStatusKind::Unavailable,
+                })
+                .to_owned(),
+            };
+        };
+        Self {
+            status: ProofCacheStatusKind::Available,
+            cache_dir: Some(proof_cache.cache_dir.clone()),
+            manifest_path: Some(proof_cache.manifest_path.clone()),
+            manifest_sha256: manifest.sha256.clone(),
+            manifest_digest: Some(proof_cache.manifest_digest.clone()),
+            manifest_modified_unix_seconds: proof_cache.manifest_modified_unix_seconds,
+            cache_age_seconds: proof_cache.cache_age_seconds,
+            release_tag: Some(proof_cache.release_tag.clone()),
+            repository: Some(proof_cache.repository.clone()),
+            target: Some(proof_cache.target.clone()),
+            materials: proof_cache
+                .materials
+                .iter()
+                .map(ProofCacheMaterialOutput::from_report)
+                .collect(),
+            trust_policy: Some(ProofCacheTrustPolicyOutput::from_report(
+                &proof_cache.trust_policy,
+            )),
+            verifier_versions: Some(ProofCacheVerifierVersionsOutput::from_report(
+                &proof_cache.verifier_versions,
+            )),
+            diagnostics,
+            message: proof_cache_status_message(ProofCacheStatusKind::Available).to_owned(),
+        }
+    }
+
+    fn non_cache(status: ProofCacheStatusKind) -> Self {
+        Self {
+            status,
+            cache_dir: None,
+            manifest_path: None,
+            manifest_sha256: None,
+            manifest_digest: None,
+            manifest_modified_unix_seconds: None,
+            cache_age_seconds: None,
+            release_tag: None,
+            repository: None,
+            target: None,
+            materials: Vec::new(),
+            trust_policy: None,
+            verifier_versions: None,
+            diagnostics: Vec::new(),
+            message: proof_cache_status_message(status).to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProofCacheStatusKind {
+    Available,
+    MissingActiveInstall,
+    LocalDevInstall,
+    MissingManifest,
+    InvalidManifest,
+    StaleManifest,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProofCacheMaterialOutput {
+    role: String,
+    path: String,
+    sha256: String,
+    size_bytes: Option<u64>,
+    subject: Option<String>,
+    modified_unix_seconds: Option<i64>,
+}
+
+impl ProofCacheMaterialOutput {
+    fn from_report(report: &ProofCacheMaterialReport) -> Self {
+        Self {
+            role: report.role.clone(),
+            path: report.path.clone(),
+            sha256: report.sha256.clone(),
+            size_bytes: report.size_bytes,
+            subject: report.subject.clone(),
+            modified_unix_seconds: report.modified_unix_seconds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProofCacheTrustPolicyOutput {
+    path: String,
+    identity: String,
+    sha256: String,
+    modified_unix_seconds: Option<i64>,
+}
+
+impl ProofCacheTrustPolicyOutput {
+    fn from_report(report: &ProofCacheTrustPolicyReport) -> Self {
+        Self {
+            path: report.path.clone(),
+            identity: report.identity.clone(),
+            sha256: report.sha256.clone(),
+            modified_unix_seconds: report.modified_unix_seconds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProofCacheVerifierVersionsOutput {
+    m80_version: String,
+    gh_version: String,
+    release_integrity_schema_version: u32,
+    asset_index_schema_version: u32,
+}
+
+impl ProofCacheVerifierVersionsOutput {
+    fn from_report(report: &ProofCacheVerifierVersionsReport) -> Self {
+        Self {
+            m80_version: report.m80_version.clone(),
+            gh_version: report.gh_version.clone(),
+            release_integrity_schema_version: report.release_integrity_schema_version,
+            asset_index_schema_version: report.asset_index_schema_version,
+        }
+    }
 }
 
 impl MetadataFileOutput {
@@ -610,6 +925,42 @@ fn metadata_status_label(status: MetadataFileStatus) -> &'static str {
         MetadataFileStatus::Missing => "missing",
         MetadataFileStatus::Invalid => "invalid",
         MetadataFileStatus::Stale => "stale",
+    }
+}
+
+fn proof_cache_status_label(status: ProofCacheStatusKind) -> &'static str {
+    match status {
+        ProofCacheStatusKind::Available => "available",
+        ProofCacheStatusKind::MissingActiveInstall => "missing_active_install",
+        ProofCacheStatusKind::LocalDevInstall => "local_dev_install",
+        ProofCacheStatusKind::MissingManifest => "missing_manifest",
+        ProofCacheStatusKind::InvalidManifest => "invalid_manifest",
+        ProofCacheStatusKind::StaleManifest => "stale_manifest",
+        ProofCacheStatusKind::Unavailable => "unavailable",
+    }
+}
+
+fn proof_cache_status_message(status: ProofCacheStatusKind) -> &'static str {
+    match status {
+        ProofCacheStatusKind::Available => {
+            "cached proof material is available from the installed release tree"
+        }
+        ProofCacheStatusKind::MissingActiveInstall => {
+            "no active installed release is available to provide cached proof material"
+        }
+        ProofCacheStatusKind::LocalDevInstall => {
+            "local development profiles do not have installed release proof cache material"
+        }
+        ProofCacheStatusKind::MissingManifest => {
+            "installed release proof-cache manifest is missing"
+        }
+        ProofCacheStatusKind::InvalidManifest => {
+            "installed release proof-cache manifest is invalid"
+        }
+        ProofCacheStatusKind::StaleManifest => {
+            "installed release proof-cache material no longer matches its manifest"
+        }
+        ProofCacheStatusKind::Unavailable => "cached proof material is unavailable",
     }
 }
 

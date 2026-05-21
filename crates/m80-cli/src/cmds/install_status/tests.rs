@@ -39,6 +39,24 @@ fn json_output_reports_active_install_paths() {
         data["metadata"]["proof_cache_manifest"]["path"],
         "/opt/m80/versions/v1.2.3/artifacts/release-proof-cache/manifest.json"
     );
+    assert_eq!(data["proof_cache"]["status"], "available");
+    assert_eq!(
+        data["proof_cache"]["cache_dir"],
+        "/opt/m80/versions/v1.2.3/artifacts/release-proof-cache"
+    );
+    assert_eq!(data["proof_cache"]["manifest_digest"], "1".repeat(64));
+    assert_eq!(
+        data["proof_cache"]["materials"][0]["role"],
+        "integrity_predicate"
+    );
+    assert_eq!(
+        data["proof_cache"]["materials"][0]["sha256"],
+        "2".repeat(64)
+    );
+    assert_eq!(
+        data["proof_cache"]["trust_policy"]["sha256"],
+        "3".repeat(64)
+    );
     assert_eq!(data["mismatches"].as_array().unwrap().len(), 0);
     assert_eq!(data["next_action"]["kind"], "ready");
 }
@@ -63,6 +81,11 @@ fn human_output_reports_active_install_paths() {
     assert!(rendered.contains(
         "proof_cache_manifest_path=/opt/m80/versions/v1.2.3/artifacts/release-proof-cache/manifest.json"
     ));
+    assert!(rendered.contains("proof_cache_status=available"));
+    assert!(rendered.contains("proof_cache_manifest_digest=1111111111111111111111111111111111111111111111111111111111111111"));
+    assert!(rendered.contains("proof_cache_material_0_role=integrity_predicate"));
+    assert!(rendered.contains("proof_cache_material_0_sha256=2222222222222222222222222222222222222222222222222222222222222222"));
+    assert!(rendered.contains("proof_cache_trust_policy_sha256=3333333333333333333333333333333333333333333333333333333333333333"));
     assert!(rendered.contains("next_action=installed release is ready"));
     assert!(rendered.contains("next_action_command=m80 run -- echo hello"));
 }
@@ -213,7 +236,9 @@ fn status_matrix_healthy_active_release() {
     )
     .assert_json_field("active.release_tag", "v1.2.3")
     .assert_json_field("selected_profile.name", "default")
-    .assert_json_field("metadata.proof_cache_manifest.status", "present");
+    .assert_json_field("metadata.proof_cache_manifest.status", "present")
+    .assert_json_field("proof_cache.status", "available")
+    .assert_json_field("proof_cache.materials.0.role", "integrity_predicate");
 }
 
 #[test]
@@ -233,7 +258,8 @@ fn status_matrix_missing_active_pointer() {
         "next_action=install a release to create the active install pointer",
     )
     .assert_json_field("active.status", "missing")
-    .assert_json_null("metadata");
+    .assert_json_null("metadata")
+    .assert_json_field("proof_cache.status", "missing_active_install");
 }
 
 #[test]
@@ -359,19 +385,20 @@ fn status_matrix_local_dev_tree() {
         "next_action=install a release so m80 run uses the bundled guest by default",
     )
     .assert_json_field("selected_profile.body_source", "builtin_env")
-    .assert_json_field("selected_config.default_profile", "env");
+    .assert_json_field("selected_config.default_profile", "env")
+    .assert_json_field("proof_cache.status", "local_dev_install");
 }
 
 #[test]
 fn status_matrix_tampered_proof_cache() {
     let mut report = active_report();
     report.state = InstallStateKind::TamperedProofCache;
-    report
+    let metadata = report
         .metadata
         .as_mut()
-        .expect("active report has metadata")
-        .proof_cache_manifest
-        .status = MetadataFileStatus::Stale;
+        .expect("active report has metadata");
+    metadata.proof_cache_manifest.status = MetadataFileStatus::Stale;
+    metadata.proof_cache = None;
 
     assert_status_matrix_case(
         report,
@@ -380,6 +407,7 @@ fn status_matrix_tampered_proof_cache() {
         "next_action=reinstall the selected release to refresh the installed bundle",
     )
     .assert_json_field("metadata.proof_cache_manifest.status", "stale")
+    .assert_json_field("proof_cache.status", "stale_manifest")
     .assert_json_field("next_action.command", "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh");
 }
 
@@ -397,6 +425,7 @@ fn human_output_for_missing_install_has_next_action() {
     assert!(rendered.contains("status=missing_active_pointer"));
     assert!(rendered.contains("bundle_metadata_status=unavailable"));
     assert!(rendered.contains("proof_cache_manifest_status=unavailable"));
+    assert!(rendered.contains("proof_cache_status=missing_active_install"));
     assert!(rendered.contains("next_action=install a release"));
     assert!(rendered.contains(
         "next_action_command=curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh"
@@ -480,9 +509,43 @@ fn active_report() -> InstallStateReport {
             bundle: None,
             provenance: None,
             host_binaries: None,
-            proof_cache: None,
+            proof_cache: Some(proof_cache_report(&artifacts_dir)),
         }),
         diagnostics: Vec::new(),
+    }
+}
+
+fn proof_cache_report(artifacts_dir: &std::path::Path) -> ProofCacheReport {
+    let cache_dir = artifacts_dir.join("release-proof-cache");
+    ProofCacheReport {
+        cache_dir: cache_dir.clone(),
+        manifest_path: cache_dir.join("manifest.json"),
+        release_tag: "v1.2.3".to_owned(),
+        repository: "moradology/m80".to_owned(),
+        target: "linux-x86_64".to_owned(),
+        manifest_digest: "1".repeat(64),
+        manifest_modified_unix_seconds: Some(1_800_000_000),
+        cache_age_seconds: Some(30),
+        materials: vec![ProofCacheMaterialReport {
+            role: "integrity_predicate".to_owned(),
+            path: "m80-release-integrity.json".to_owned(),
+            sha256: "2".repeat(64),
+            size_bytes: Some(1200),
+            subject: None,
+            modified_unix_seconds: Some(1_800_000_000),
+        }],
+        trust_policy: ProofCacheTrustPolicyReport {
+            path: "m80-release-trust-policy.json".to_owned(),
+            identity: "repository=moradology/m80".to_owned(),
+            sha256: "3".repeat(64),
+            modified_unix_seconds: Some(1_800_000_000),
+        },
+        verifier_versions: ProofCacheVerifierVersionsReport {
+            m80_version: "v1.2.3".to_owned(),
+            gh_version: "gh version 2.0.0".to_owned(),
+            release_integrity_schema_version: 1,
+            asset_index_schema_version: 1,
+        },
     }
 }
 

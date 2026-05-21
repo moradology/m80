@@ -198,6 +198,51 @@ fn resolver_rejects_proof_cache_symlink_even_when_digest_matches() {
     }));
 }
 
+#[test]
+fn resolver_reports_proof_cache_materials_for_offline_status() {
+    let fixture = installed_fixture();
+
+    let report = fixture.resolve(None);
+    let metadata = report.metadata.expect("installed fixture has metadata");
+    let proof_cache = metadata
+        .proof_cache
+        .expect("installed fixture has proof-cache report");
+
+    assert_eq!(proof_cache.cache_dir, proof_cache_dir(&fixture));
+    assert_eq!(
+        proof_cache.manifest_path,
+        proof_cache_dir(&fixture).join("manifest.json")
+    );
+    assert_eq!(proof_cache.release_tag, TAG);
+    assert_eq!(proof_cache.repository, "moradology/m80");
+    assert_eq!(proof_cache.target, "linux-x86_64");
+    assert_eq!(proof_cache.manifest_digest.len(), 64);
+    assert!(proof_cache.manifest_modified_unix_seconds.is_some());
+    assert!(proof_cache.cache_age_seconds.is_some());
+    assert!(proof_cache.materials.iter().any(|material| {
+        material.role == "integrity_predicate"
+            && material.path == "m80-release-integrity.json"
+            && material.sha256.len() == 64
+            && material.modified_unix_seconds.is_some()
+    }));
+    assert!(proof_cache.materials.iter().any(|material| {
+        material.role == "checksum_sidecar"
+            && material.path == "m80-linux-x86_64.tar.gz.sha256"
+            && material.subject.as_deref() == Some("bundle")
+    }));
+    assert_eq!(
+        proof_cache.trust_policy.path,
+        "m80-release-trust-policy.json"
+    );
+    assert_eq!(proof_cache.trust_policy.sha256.len(), 64);
+    assert_eq!(
+        proof_cache
+            .verifier_versions
+            .release_integrity_schema_version,
+        1
+    );
+}
+
 pub(super) fn write_complete_install_metadata(fixture: &InstallStateFixture, tag: &str) {
     let version_dir = fixture.install_root().join("versions").join(tag);
     let artifacts = version_dir.join("artifacts");

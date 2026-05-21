@@ -4,7 +4,7 @@ Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
 `m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.1`,
 `m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`,
 `m80-o3uh9.16.7.4`, `m80-o3uh9.16.7.5`,
-`m80-o3uh9.16.7.6`.
+`m80-o3uh9.16.7.6`, `m80-o3uh9.16.8.4`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -83,16 +83,25 @@ Human output is line-oriented and includes:
   `install_provenance_path`, and `proof_cache_manifest_path`, each paired with
   a metadata status. When the active/profile state is too broken to read
   metadata, these fields render as `unavailable`.
+- `proof_cache_status`, `proof_cache_path`,
+  `proof_cache_manifest_sha256`, `proof_cache_manifest_digest`,
+  `proof_cache_manifest_modified_unix_seconds`, `proof_cache_age_seconds`,
+  `proof_cache_trust_policy_sha256`, and one indexed
+  `proof_cache_material_<n>_*` group per saved public proof artifact. Missing
+  active installs and local development profiles report explicit non-cache
+  statuses rather than omitting the field.
 - `next_action`, plus `next_action_command` when the state has an executable
   repair or smoke command.
 
 `m80 --json install-status` wraps the same contract in the CLI JSON envelope
 with `schema_version: 1`. The stable top-level payload fields are `status`,
 `install_root`, `active`, `selected_config`, `selected_profile`, `metadata`,
-`diagnostics`, and `next_action`. `status` uses the resolver state enum;
-`active.status` uses `live`, `missing`, `dangling`, or `invalid`; metadata file
-statuses use `present`, `missing`, `invalid`, or `stale` when metadata is
-available; and
+`proof_cache`, `diagnostics`, and `next_action`. `status` uses the resolver
+state enum; `active.status` uses `live`, `missing`, `dangling`, or `invalid`;
+metadata file statuses use `present`, `missing`, `invalid`, or `stale` when
+metadata is available; proof-cache status uses `available`,
+`missing_active_install`, `local_dev_install`, `missing_manifest`,
+`invalid_manifest`, `stale_manifest`, or `unavailable`; and
 `next_action.kind` uses `ready`, `install_release`, `reinstall_release`, or
 `remove_override`.
 
@@ -114,6 +123,13 @@ JSON field table:
 | `metadata.host_binaries_manifest.path/status/sha256` | Host-binaries manifest path, status, and digest. | Evidence for final host-side TCB paths after install. |
 | `metadata.install_provenance.path/status/sha256` | Install provenance path, status, and digest. | Evidence for relocation/installer provenance. |
 | `metadata.proof_cache_manifest.path/status/sha256` | Proof-cache manifest path, status, and digest. | Evidence that public verification material was preserved. |
+| `proof_cache.status` | Local cached-proof state. | Distinguishes available proof material from missing active installs, local dev profiles, missing manifests, invalid manifests, and stale material. |
+| `proof_cache.cache_dir` and `proof_cache.manifest_path` | Versioned proof-cache directory and manifest path. | Shows the exact installed tree used for offline evidence. |
+| `proof_cache.manifest_sha256` and `proof_cache.manifest_digest` | Full manifest file digest and canonical payload digest. | Confirms both the saved JSON file and payload contract. |
+| `proof_cache.manifest_modified_unix_seconds` and `proof_cache.cache_age_seconds` | Local source timestamp and age for the saved manifest. | Shows when the offline cache material was last written locally. |
+| `proof_cache.materials[]` | Saved public material role, path, sha256, size, subject, and source timestamp. | Evidence of every public artifact preserved after install-time verification. |
+| `proof_cache.trust_policy.path/identity/sha256` | Trust policy saved with the verification material. | Captures the identity policy that bounded install-time verification. |
+| `proof_cache.verifier_versions.*` | m80, GitHub CLI, release-integrity schema, and asset-index schema versions. | Explains which local verifier versions produced the saved evidence. |
 | `diagnostics[]` | Resolver diagnostics with code, field, path, and message. | Machine-readable failure details for repair beads and support captures. |
 | `mismatches[]` | Expected/observed mismatch records for stale defaults and overrides. | Shows exactly which tag/path/source differs from the installed default. |
 | `next_action.kind` | `ready`, `install_release`, `reinstall_release`, or `remove_override`. | Stable automation hint for local repair UX. |
@@ -240,6 +256,14 @@ unknown fields, empty path/identity strings, zero sizes, unsupported schema
 versions, malformed sha256 fields, and mismatched `manifest_digest` all fail
 closed before any status surface trusts the cached proof.
 
+The proof-cache reporter used by `m80 install-status` and `m80 --json preflight`
+is offline-only. It reads the installed cache manifest and saved public material
+from the selected version directory and exposes saved paths and hashes. It
+never fetches release metadata and never reruns the remote trust decision. The
+fields are evidence of what the installer verified at install time. Freshness
+against the current public latest release belongs to the freshness lane, not
+this cache reporter.
+
 ## Transaction Ordering
 
 For official release installs, the installer writes the proof cache inside the
@@ -279,3 +303,8 @@ colliding path.
 - `status_matrix_explicit_override_flag_source`
 - `status_matrix_local_dev_tree`
 - `status_matrix_tampered_proof_cache`
+- `resolver_reports_proof_cache_materials_for_offline_status`
+- `json_output_reports_active_install_paths`
+- `human_output_reports_active_install_paths`
+- `preflight_json_report_includes_selected_profile_context`
+- `preflight_json_report_reads_offline_proof_cache_material`

@@ -176,6 +176,12 @@ evidence:
   preserved public proof material.
 - Each metadata status and sha256 field: proof that the files were present and
   matched the status reader's local digest checks.
+- `proof_cache.status`: must be `available`.
+- `proof_cache.manifest_digest`, `proof_cache.cache_dir`,
+  `proof_cache.manifest_path`, `proof_cache.materials[]`,
+  `proof_cache.trust_policy.path`, `proof_cache.trust_policy.sha256`, and
+  `proof_cache.verifier_versions.*`: offline evidence of the public material
+  and trust policy verified at install time.
 - `diagnostics` and `mismatches`: must be empty for a default installed release
   evidence capture. Non-empty values are repair inputs, not green evidence.
 - `next_action.kind`: must be `ready`; `next_action.command` should be

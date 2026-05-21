@@ -3,10 +3,11 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    file_report, hash_file_nofollow, read_file_nofollow, reject_symlink_ancestors,
-    reject_symlink_components, require_nonempty, require_sha256, sha256_bytes, stale_proof_cache,
-    validate_file_name, version_relative_path, MetadataFileReport, MetadataFileStatus,
-    ProofCacheReport,
+    age_seconds_at_now, file_report, hash_file_nofollow, modified_unix_seconds, read_file_nofollow,
+    reject_symlink_ancestors, reject_symlink_components, require_nonempty, require_sha256,
+    sha256_bytes, stale_proof_cache, validate_file_name, version_relative_path, MetadataFileReport,
+    MetadataFileStatus, ProofCacheMaterialReport, ProofCacheReport, ProofCacheTrustPolicyReport,
+    ProofCacheVerifierVersionsReport,
 };
 use crate::install_state::{diagnostic, InstallStateDiagnostic, InstallStateDiagnosticCode};
 
@@ -46,13 +47,105 @@ pub(super) fn read_proof_cache_manifest(
     }
     (
         file_report(path, MetadataFileStatus::Present, Some(sha256)),
-        Some(ProofCacheReport {
-            release_tag: manifest.payload.release_tag,
-            repository: manifest.payload.repository,
-            target: manifest.payload.target,
-            manifest_digest: manifest.manifest_digest,
-        }),
+        Some(proof_cache_report(cache_dir, path, manifest)),
     )
+}
+
+fn proof_cache_report(
+    cache_dir: &Path,
+    manifest_path: &Path,
+    manifest: ProofCacheManifest,
+) -> ProofCacheReport {
+    let manifest_modified_unix_seconds = modified_unix_seconds(manifest_path);
+    let mut materials = vec![
+        material_report(
+            cache_dir,
+            "integrity_predicate",
+            &manifest.payload.integrity_predicate,
+            None,
+        ),
+        material_report(
+            cache_dir,
+            "attestation_bundle",
+            &manifest.payload.attestation_bundle,
+            None,
+        ),
+        material_report(
+            cache_dir,
+            "attestation_metadata",
+            &manifest.payload.attestation_metadata.file,
+            None,
+        ),
+        material_report(
+            cache_dir,
+            "asset_index",
+            &manifest.payload.asset_index,
+            None,
+        ),
+        material_report(
+            cache_dir,
+            "public_sha256s",
+            &manifest.payload.public_sha256s,
+            None,
+        ),
+    ];
+    materials.extend(manifest.payload.checksum_sidecars.iter().map(|sidecar| {
+        ProofCacheMaterialReport {
+            role: "checksum_sidecar".to_owned(),
+            path: sidecar.path.clone(),
+            sha256: sidecar.sha256.clone(),
+            size_bytes: None,
+            subject: Some(sidecar.subject.clone()),
+            modified_unix_seconds: modified_unix_seconds(&cache_dir.join(&sidecar.path)),
+        }
+    }));
+    ProofCacheReport {
+        cache_dir: cache_dir.to_path_buf(),
+        manifest_path: manifest_path.to_path_buf(),
+        release_tag: manifest.payload.release_tag,
+        repository: manifest.payload.repository,
+        target: manifest.payload.target,
+        manifest_digest: manifest.manifest_digest,
+        manifest_modified_unix_seconds,
+        cache_age_seconds: age_seconds_at_now(manifest_modified_unix_seconds),
+        materials,
+        trust_policy: ProofCacheTrustPolicyReport {
+            path: manifest.payload.trust_policy.path.clone(),
+            identity: manifest.payload.trust_policy.identity,
+            sha256: manifest.payload.trust_policy.sha256.clone(),
+            modified_unix_seconds: modified_unix_seconds(
+                &cache_dir.join(&manifest.payload.trust_policy.path),
+            ),
+        },
+        verifier_versions: ProofCacheVerifierVersionsReport {
+            m80_version: manifest.payload.verifier_versions.m80_version,
+            gh_version: manifest.payload.verifier_versions.gh_version,
+            release_integrity_schema_version: manifest
+                .payload
+                .verifier_versions
+                .release_integrity_schema_version,
+            asset_index_schema_version: manifest
+                .payload
+                .verifier_versions
+                .asset_index_schema_version,
+        },
+    }
+}
+
+fn material_report(
+    cache_dir: &Path,
+    role: &str,
+    file: &ProofCacheFile,
+    subject: Option<String>,
+) -> ProofCacheMaterialReport {
+    ProofCacheMaterialReport {
+        role: role.to_owned(),
+        path: file.path.clone(),
+        sha256: file.sha256.clone(),
+        size_bytes: Some(file.size_bytes),
+        subject,
+        modified_unix_seconds: modified_unix_seconds(&cache_dir.join(&file.path)),
+    }
 }
 
 fn read_required_proof_file(
