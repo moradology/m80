@@ -513,38 +513,30 @@ mod tests {
 
     #[test]
     fn official_release_bundle_url_is_accepted() {
-        let parsed = parse_supported_initial_remote_url(
-            "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
-        )
-        .unwrap();
+        let bundle_url = official_bundle_url("v1.2.3");
+        let parsed = parse_supported_initial_remote_url(&bundle_url).unwrap();
 
         assert!(is_official_release_bundle_url(&parsed));
         assert_eq!(
-            official_release_tag_from_bundle_url(
-                "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz"
-            )
-            .unwrap()
-            .as_deref(),
+            official_release_tag_from_bundle_url(&bundle_url)
+                .unwrap()
+                .as_deref(),
             Some("v1.2.3")
         );
     }
 
     #[test]
     fn download_url_accepts_official_checksum_sidecar() {
-        let parsed = parse_supported_download_url(
-            "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz.sha256",
-        )
-        .unwrap();
+        let checksum_url = format!("{}.sha256", official_bundle_url("v1.2.3"));
+        let parsed = parse_supported_download_url(&checksum_url).unwrap();
 
         assert!(is_official_release_bundle_or_checksum_url(&parsed));
     }
 
     #[test]
     fn initial_remote_url_rejects_checksum_sidecar_as_bundle_source() {
-        let err = parse_supported_initial_remote_url(
-            "https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz.sha256",
-        )
-        .unwrap_err();
+        let checksum_url = format!("{}.sha256", official_bundle_url("v1.2.3"));
+        let err = parse_supported_initial_remote_url(&checksum_url).unwrap_err();
 
         assert!(err.to_string().contains("non-bundle assets"), "{err}");
     }
@@ -563,10 +555,11 @@ mod tests {
 
     #[test]
     fn remote_url_rejects_foreign_github_release_repo() {
-        let err = parse_supported_initial_remote_url(
-            "https://github.com/example/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
-        )
-        .unwrap_err();
+        let url = format!(
+            "https://github.com/{}/{}/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+            "example", "m80"
+        );
+        let err = parse_supported_initial_remote_url(&url).unwrap_err();
 
         assert!(
             err.to_string()
@@ -577,30 +570,27 @@ mod tests {
 
     #[test]
     fn remote_url_rejects_latest_artifact_bundle_url() {
-        let err = parse_supported_initial_remote_url(
-            "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64.tar.gz",
-        )
-        .unwrap_err();
+        let latest_url = crate::release_urls::latest_asset_url("m80-linux-x86_64.tar.gz");
+        let err = parse_supported_initial_remote_url(&latest_url).unwrap_err();
 
         assert!(err.to_string().contains("latest artifact URLs"), "{err}");
     }
 
     #[test]
     fn remote_url_rejects_prerelease_bundle_tag() {
-        let err = parse_supported_initial_remote_url(
-            "https://github.com/moradology/m80/releases/download/v1.2.3-rc.1/m80-linux-x86_64.tar.gz",
-        )
-        .unwrap_err();
+        let prerelease_url = official_bundle_url("v1.2.3-rc.1");
+        let err = parse_supported_initial_remote_url(&prerelease_url).unwrap_err();
 
         assert!(err.to_string().contains("must be a concrete"), "{err}");
     }
 
     #[test]
     fn remote_url_rejects_github_release_url_with_port() {
-        let err = parse_supported_initial_remote_url(
-            "https://github.com:444/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
-        )
-        .unwrap_err();
+        let url = format!(
+            "https://github.com:444/{}/releases/download/v1.2.3/m80-linux-x86_64.tar.gz",
+            crate::release_urls::release_repository()
+        );
+        let err = parse_supported_initial_remote_url(&url).unwrap_err();
 
         assert!(err.to_string().contains("must be a concrete"), "{err}");
     }
@@ -617,20 +607,17 @@ mod tests {
 
     #[test]
     fn remote_url_rejects_non_bundle_release_asset_name() {
-        let err = parse_supported_initial_remote_url(
-            "https://github.com/moradology/m80/releases/download/v1.2.3/install.sh",
-        )
-        .unwrap_err();
+        let install_url = crate::release_urls::release_asset_url("v1.2.3", "install.sh");
+        let err = parse_supported_initial_remote_url(&install_url).unwrap_err();
 
         assert!(err.to_string().contains("non-bundle assets"), "{err}");
     }
 
     #[test]
     fn remote_url_rejects_release_asset_path_traversal() {
-        let err = parse_supported_initial_remote_url(
-            "https://github.com/moradology/m80/releases/download/v1.2.3/../m80-linux-x86_64.tar.gz",
-        )
-        .unwrap_err();
+        let traversal_url =
+            crate::release_urls::release_asset_url("v1.2.3", "../m80-linux-x86_64.tar.gz");
+        let err = parse_supported_initial_remote_url(&traversal_url).unwrap_err();
 
         assert!(err.to_string().contains("non-bundle assets"), "{err}");
     }
@@ -653,6 +640,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(tag, None);
+    }
+
+    fn official_bundle_url(tag: &str) -> String {
+        crate::release_urls::release_asset_url(tag, "m80-linux-x86_64.tar.gz")
     }
 
     #[test]
