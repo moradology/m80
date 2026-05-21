@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_schema_proof",
+  "generated_at": "2026-05-21T02:27:47Z",
+  "release_tag": "v0.0.0",
+  "resolved_tag": "v0.0.0",
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py",
+  "exit_status": 0,
+  "stdout": "Ran 200 tests in 48.650s\n\nOK",
+  "stderr": "",
+  "substrate": {
+    "kind": "local-linux-hostless",
+    "summary": "Fixture-based release evidence bundle schema and validator tests, including required-key checks, schema version rejection, duplicate lane rejection, malformed digest rejection, public/workflow artifact confusion rejection, and hostless-vs-real-KVM proof classification."
+  }
+}
