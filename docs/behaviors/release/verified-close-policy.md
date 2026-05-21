@@ -93,6 +93,14 @@ open descendants, proof-shaped rows without `requires_verified_close: true`,
 and substrate-gated rows without `requires_real_substrate: true` fail the
 policy before CI can pass.
 
+`tracker_digest` is computed over the epoch root plus descendants using the
+policy-relevant tracker fields: id, title, description, acceptance criteria,
+status, sorted labels, parent link, close reason, and `closed_at`. Row order
+and incidental tracker metadata are ignored. To avoid a self-referential commit
+hash, the epoch root's final matrix `verified: ... @ <commit>` close-reason
+commit token is normalized before hashing; descendant close reasons are hashed
+literally.
+
 When a configured release or quickstart epoch is closed, its close reason must
 cite a committed final close matrix with
 `verified: <artifact-path> @ <commit-sha>`. A generic quickstart proof artifact

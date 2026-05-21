@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -893,6 +894,12 @@ def verify_close_matrix_completeness(
                 f"{prefix}: {row_id} row must include behavior_doc and test_command "
                 "or proof_artifact"
             )
+    expected_digest = tracker_digest_for_epoch(issues_by_id, parent_by_child, epoch_id)
+    if matrix.get("tracker_digest") != expected_digest:
+        errors.append(
+            f"{prefix}: tracker_digest is stale: matrix has "
+            f"{matrix.get('tracker_digest')}, tracker has {expected_digest}"
+        )
     return errors
 
 
@@ -938,6 +945,59 @@ def row_has_audit_evidence(row: dict[str, Any]) -> bool:
             and safe_relative_path(proof_artifact)
         )
     )
+
+
+def tracker_digest_for_epoch(
+    issues_by_id: dict[str, dict[str, Any]],
+    parent_by_child: dict[str, str],
+    epoch_id: str,
+) -> str:
+    issue_ids = {epoch_id}
+    issue_ids.update(epoch_descendant_ids(issues_by_id, parent_by_child, epoch_id))
+    rows = [
+        tracker_digest_row(issue_id, issues_by_id[issue_id], parent_by_child, epoch_id)
+        for issue_id in sorted(issue_ids)
+        if issue_id in issues_by_id
+    ]
+    payload = json.dumps(rows, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+
+def tracker_digest_row(
+    issue_id: str,
+    issue: dict[str, Any],
+    parent_by_child: dict[str, str],
+    epoch_id: str,
+) -> dict[str, Any]:
+    return {
+        "id": issue_id,
+        "title": string_field(issue, "title"),
+        "description": string_field(issue, "description"),
+        "acceptance_criteria": string_field(issue, "acceptance_criteria"),
+        "status": string_field(issue, "status"),
+        "labels": sorted(label for label in issue.get("labels", []) if isinstance(label, str)),
+        "parent": parent_by_child.get(issue_id),
+        "close_reason": digest_close_reason(
+            issue_id,
+            epoch_id,
+            string_field(issue, "close_reason"),
+        ),
+        "closed_at": string_field(issue, "closed_at"),
+    }
+
+
+def digest_close_reason(issue_id: str, epoch_id: str, close_reason: str) -> str:
+    if issue_id != epoch_id:
+        return close_reason
+    return VERIFIED_REF_RE.sub(
+        lambda match: f"verified: {match.group(1)} @ <commit-sha>",
+        close_reason,
+    )
+
+
+def string_field(issue: dict[str, Any], field: str) -> str:
+    value = issue.get(field)
+    return value if isinstance(value, str) else ""
 
 
 def quickstart_proof_artifact_is_complete(value: dict[str, Any]) -> bool:

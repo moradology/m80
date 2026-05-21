@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -836,6 +837,73 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("m80-o3uh9.1 requires_verified_close must be true", result.stderr)
 
+    def test_close_matrix_stale_digest_after_status_change_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"][0]["status"] = "deferred"
+            matrix["rows"][0]["exception_reason"] = "superseded by a narrower verifier leaf"
+            actual_descendants = [matrix_child("m80-o3uh9.1", status="deferred")]
+            digest_descendants = [matrix_child("m80-o3uh9.1", status="closed")]
+
+            result = repo.run_with_closed_epoch(
+                artifact=matrix,
+                descendants=actual_descendants,
+                digest_descendants=digest_descendants,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("tracker_digest is stale", result.stderr)
+
+    def test_close_matrix_stale_digest_after_added_descendant_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"].append(matrix_row("m80-o3uh9.2"))
+            actual_descendants = [
+                matrix_child("m80-o3uh9.1"),
+                matrix_child("m80-o3uh9.2"),
+            ]
+            digest_descendants = [matrix_child("m80-o3uh9.1")]
+
+            result = repo.run_with_closed_epoch(
+                artifact=matrix,
+                descendants=actual_descendants,
+                digest_descendants=digest_descendants,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("tracker_digest is stale", result.stderr)
+
+    def test_close_matrix_digest_is_stable_across_row_order(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"] = [matrix_row("m80-o3uh9.2"), matrix_row("m80-o3uh9.1")]
+            descendants = [
+                matrix_child("m80-o3uh9.2"),
+                matrix_child("m80-o3uh9.1"),
+            ]
+
+            result = repo.run_with_closed_epoch(
+                artifact=matrix,
+                descendants=descendants,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_close_matrix_digest_ignores_metadata_churn(self) -> None:
+        with tracker_repo() as repo:
+            descendant = matrix_child("m80-o3uh9.1")
+            descendant["updated_at"] = "2026-05-21T01:00:00Z"
+            descendant["created_by"] = "someone"
+            digest_descendant = matrix_child("m80-o3uh9.1")
+
+            result = repo.run_with_closed_epoch(
+                artifact=valid_close_matrix(),
+                descendants=[descendant],
+                digest_descendants=[digest_descendant],
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class tracker_repo:
     def __enter__(self) -> "tracker_repo":
@@ -910,28 +978,35 @@ class tracker_repo:
         artifact: dict | None = None,
         close_reason: str | None = "",
         descendants: list[dict] | None = None,
+        digest_descendants: list[dict] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         config = write_policy_config(
             self.root,
             [{"id": "m80-o3uh9", "status": "active"}],
         )
+        actual_descendants = descendants or [matrix_child("m80-o3uh9.1")]
         if artifact is not None:
+            digest_issues = closed_epoch_issues(
+                close_reason="verified: artifacts/close-matrix.json @ 0000000",
+                descendants=digest_descendants or actual_descendants,
+            )
+            if artifact.get("kind") == "release_final_close_matrix":
+                artifact["tracker_digest"] = tracker_digest_for_issues(
+                    "m80-o3uh9",
+                    digest_issues,
+                )
             artifact_path = self.root / "artifacts" / "close-matrix.json"
             artifact_path.parent.mkdir()
             artifact_path.write_text(json.dumps(artifact, indent=2, sort_keys=True))
             sha = self.commit_all("closed epoch artifact")
             close_reason = f"verified: artifacts/close-matrix.json @ {sha}"
-        closed_epoch = issue(
-            "m80-o3uh9",
-            "Epoch",
-            status="closed",
-            labels=["epoch", "quickstart", "release", "requires-verified-close"],
-            close_reason=close_reason,
-            closed_at="2026-05-21T00:00:00+00:00",
+        write_issues(
+            self.root,
+            closed_epoch_issues(
+                close_reason=close_reason,
+                descendants=actual_descendants,
+            ),
         )
-        if close_reason is None:
-            closed_epoch.pop("close_reason", None)
-        write_issues(self.root, [closed_epoch, *(descendants or [matrix_child("m80-o3uh9.1")])])
         return self.run_verify("--policy-config", str(config))
 
 
@@ -988,6 +1063,20 @@ def matrix_child(
     )
 
 
+def closed_epoch_issues(close_reason: str | None, descendants: list[dict]) -> list[dict]:
+    closed_epoch = issue(
+        "m80-o3uh9",
+        "Epoch",
+        status="closed",
+        labels=["epoch", "quickstart", "release", "requires-verified-close"],
+        close_reason=close_reason,
+        closed_at="2026-05-21T00:00:00+00:00",
+    )
+    if close_reason is None:
+        closed_epoch.pop("close_reason", None)
+    return [closed_epoch, *descendants]
+
+
 def write_issues(root: Path, issues: list[dict]) -> None:
     with (root / ".beads" / "issues.jsonl").open("w") as f:
         for issue_row in issues:
@@ -1023,17 +1112,99 @@ def valid_close_matrix() -> dict:
         "epoch_id": "m80-o3uh9",
         "tracker_digest": f"sha256:{'a' * 64}",
         "generated_at": "2026-05-21T00:00:00Z",
-        "rows": [
-            {
-                "id": "m80-o3uh9.1",
-                "status": "closed",
-                "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
-                "test_command": "python3 scripts/test-release-tracker-policy.py",
-                "requires_verified_close": True,
-                "requires_real_substrate": False,
-            }
-        ],
+        "rows": [matrix_row("m80-o3uh9.1")],
     }
+
+
+def matrix_row(issue_id: str, *, status: str = "closed") -> dict:
+    return {
+        "id": issue_id,
+        "status": status,
+        "behavior_doc": "docs/behaviors/release/verified-close-policy.md",
+        "test_command": "python3 scripts/test-release-tracker-policy.py",
+        "requires_verified_close": True,
+        "requires_real_substrate": False,
+    }
+
+
+def tracker_digest_for_issues(epoch_id: str, issues: list[dict]) -> str:
+    issues_by_id = {
+        row["id"]: row
+        for row in issues
+        if isinstance(row.get("id"), str)
+    }
+    parent_by_child = test_parent_links(issues_by_id)
+    issue_ids = {epoch_id}
+    issue_ids.update(test_epoch_descendant_ids(issues_by_id, parent_by_child, epoch_id))
+    rows = [
+        test_tracker_digest_row(issue_id, issues_by_id[issue_id], parent_by_child, epoch_id)
+        for issue_id in sorted(issue_ids)
+        if issue_id in issues_by_id
+    ]
+    payload = json.dumps(rows, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+
+def test_tracker_digest_row(
+    issue_id: str,
+    issue_row: dict,
+    parent_by_child: dict[str, str],
+    epoch_id: str,
+) -> dict:
+    return {
+        "id": issue_id,
+        "title": str_field(issue_row, "title"),
+        "description": str_field(issue_row, "description"),
+        "acceptance_criteria": str_field(issue_row, "acceptance_criteria"),
+        "status": str_field(issue_row, "status"),
+        "labels": sorted(label for label in issue_row.get("labels", []) if isinstance(label, str)),
+        "parent": parent_by_child.get(issue_id),
+        "close_reason": test_digest_close_reason(
+            issue_id,
+            epoch_id,
+            str_field(issue_row, "close_reason"),
+        ),
+        "closed_at": str_field(issue_row, "closed_at"),
+    }
+
+
+def test_digest_close_reason(issue_id: str, epoch_id: str, close_reason: str) -> str:
+    if issue_id != epoch_id:
+        return close_reason
+    return close_reason.replace("@ 0000000", "@ <commit-sha>")
+
+
+def str_field(issue_row: dict, field: str) -> str:
+    value = issue_row.get(field)
+    return value if isinstance(value, str) else ""
+
+
+def test_parent_links(issues_by_id: dict[str, dict]) -> dict[str, str]:
+    parents: dict[str, str] = {}
+    for issue_id, issue_row in issues_by_id.items():
+        for dependency in issue_row.get("dependencies") or []:
+            if dependency.get("type") == "parent-child":
+                parents[issue_id] = dependency["depends_on_id"]
+    return parents
+
+
+def test_epoch_descendant_ids(
+    issues_by_id: dict[str, dict],
+    parent_by_child: dict[str, str],
+    epoch_id: str,
+) -> set[str]:
+    descendants: set[str] = set()
+    for issue_id in issues_by_id:
+        current = issue_id
+        seen: set[str] = set()
+        while current in parent_by_child and current not in seen:
+            seen.add(current)
+            parent_id = parent_by_child[current]
+            if parent_id == epoch_id:
+                descendants.add(issue_id)
+                break
+            current = parent_id
+    return descendants
 
 
 if __name__ == "__main__":
