@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_evidence_bundle_proof_refs_proof",
+  "bead_id": "m80-o3uh9.13.39.7",
+  "resolved_tag": "v0.0.0",
+  "substrate": "local-linux-hostless",
+  "command": "python3 -m py_compile scripts/release_evidence_bundle.py scripts/test-release-bundle.py scripts/release_upload_manifest.py && python3 scripts/test-release-bundle.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.7 && br dep cycles --json && python3 scripts/lint-github-workflows.py && git diff --check",
+  "exit_status": 0,
+  "stdout": "test-release-bundle.py: Ran 205 tests OK; release tracker policy ok; br lint ok; br dep cycles found 0 cycles; workflow policy ok; git diff --check ok",
+  "stderr": "",
+  "observables": [
+    "release evidence bundle schema_version is 2",
+    "top-level proof_ledger points at m80-release-proof-ledger.jsonl",
+    "hostless proof row points at m80-quickstart-proof-hostless.json",
+    "verifier rejects proof-row/ledger swaps",
+    "verifier rejects missing quickstart proof JSON",
+    "verifier rejects stale quickstart proof digests",
+    "verifier rejects duplicate proof file refs",
+    "verifier rejects stale proof ledger digests"
+  ]
+}

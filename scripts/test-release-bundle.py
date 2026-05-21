@@ -1691,7 +1691,7 @@ class ReleaseBundleTest(unittest.TestCase):
             bundle = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
-            self.assertEqual(bundle["schema_version"], 1)
+            self.assertEqual(bundle["schema_version"], 2)
             self.assertEqual(bundle["kind"], "m80_release_evidence_bundle")
             self.assertEqual(bundle["release_tag"], "v0.0.0")
             self.assertEqual(bundle["commit_sha"], INTEGRITY_COMMIT_SHA)
@@ -1701,7 +1701,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(bundle["upload_manifest"]["name"], UPLOAD_MANIFEST_NAME)
             self.assertEqual(bundle["build_handoff"]["name"], BUILD_MANIFEST_NAME)
             self.assertEqual(bundle["publish_decision_receipt"]["name"], PUBLISH_RECEIPT_NAME)
-            self.assertEqual(bundle["proof_ledger"]["name"], HOSTLESS_QUICKSTART_PROOF_NAME)
+            self.assertEqual(bundle["proof_ledger"]["name"], RELEASE_PROOF_LEDGER_NAME)
             self.assertIn("real-kvm-quickstart", bundle["required_lane_ids"])
             self.assertIn("real-kvm-quickstart", bundle["missing_required_lane_ids"])
             self.assertNotIn("hostless-quickstart", bundle["missing_required_lane_ids"])
@@ -1712,12 +1712,18 @@ class ReleaseBundleTest(unittest.TestCase):
             workflow_only_names = {artifact["name"] for artifact in bundle["workflow_only_artifacts"]}
             self.assertIn(UPLOAD_MANIFEST_NAME, workflow_only_names)
             self.assertIn(HOSTLESS_QUICKSTART_PROOF_NAME, workflow_only_names)
+            self.assertIn(RELEASE_PROOF_LEDGER_NAME, workflow_only_names)
+            hostless_proof_ref = {
+                "name": HOSTLESS_QUICKSTART_PROOF_NAME,
+                "sha256": f"sha256:{sha256(out_dir / HOSTLESS_QUICKSTART_PROOF_NAME)}",
+                "size_bytes": (out_dir / HOSTLESS_QUICKSTART_PROOF_NAME).stat().st_size,
+            }
             self.assertEqual(
                 bundle["proofs"],
                 [
                     {
                         "artifact_class": "workflow-only",
-                        "file": bundle["proof_ledger"],
+                        "file": hostless_proof_ref,
                         "lane_id": "hostless-quickstart",
                         "proof_kind": "quickstart-proof",
                         "substrate": "hostless",
@@ -1725,6 +1731,76 @@ class ReleaseBundleTest(unittest.TestCase):
                 ],
             )
             self.assertIn("absolute-host-paths", bundle["redaction"]["forbidden"])
+
+    def test_release_evidence_bundle_rejects_proof_row_ledger_swap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["proofs"][0]["file"] = payload["proof_ledger"]
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof hostless-quickstart file mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_missing_quickstart_proof_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            (out_dir / HOSTLESS_QUICKSTART_PROOF_NAME).unlink()
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("workflow-only artifact missing: m80-quickstart-proof-hostless.json", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_quickstart_proof_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            proof_path = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
+            proof_path.write_text("{\"tampered\": true}\n")
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            for artifact in payload["workflow_only_artifacts"]:
+                if artifact["name"] == HOSTLESS_QUICKSTART_PROOF_NAME:
+                    artifact["sha256"] = sha256(proof_path)
+                    artifact["size_bytes"] = proof_path.stat().st_size
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof hostless-quickstart file mismatch", result.stderr)
+
+    def test_release_evidence_bundle_rejects_duplicate_proof_file_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            payload = json.loads((out_dir / EVIDENCE_BUNDLE_NAME).read_text())
+            payload["proofs"].append(
+                {
+                    "artifact_class": "workflow-only",
+                    "file": payload["proofs"][0]["file"],
+                    "lane_id": "workflow-policy",
+                    "proof_kind": "workflow-policy-report",
+                    "substrate": "github-actions",
+                }
+            )
+            payload["missing_required_lane_ids"].remove("workflow-policy")
+            (out_dir / EVIDENCE_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("duplicate proof file: m80-quickstart-proof-hostless.json", result.stderr)
+
+    def test_release_evidence_bundle_rejects_stale_proof_ledger_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = evidence_bundle_fixture(Path(tmp))
+            (out_dir / RELEASE_PROOF_LEDGER_NAME).write_text("{\"tampered\": true}\n")
+
+            result = run_release_evidence_bundle(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof ledger mismatch", result.stderr)
 
     def test_release_evidence_bundle_rejects_missing_required_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

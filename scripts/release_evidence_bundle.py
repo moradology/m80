@@ -12,13 +12,14 @@ import re
 from typing import Any
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 KIND = "m80_release_evidence_bundle"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
 BUILD_HANDOFF_NAME = "m80-release-build.json"
 PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 HOSTLESS_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 READINESS_CONFIG = Path("docs/behaviors/release/release-readiness-lanes.json")
 
 TOP_LEVEL_FIELDS = {
@@ -87,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--build-handoff", type=Path)
     parser.add_argument("--publish-receipt", type=Path)
     parser.add_argument("--proof-ledger", type=Path)
+    parser.add_argument("--hostless-proof", type=Path)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--write", action="store_true")
     return parser.parse_args()
@@ -98,7 +100,8 @@ def main() -> int:
     upload_manifest = (args.upload_manifest or dist_dir / UPLOAD_MANIFEST_NAME).resolve()
     build_handoff = (args.build_handoff or dist_dir / BUILD_HANDOFF_NAME).resolve()
     publish_receipt = (args.publish_receipt or dist_dir / PUBLISH_RECEIPT_NAME).resolve()
-    proof_ledger = (args.proof_ledger or dist_dir / HOSTLESS_PROOF_NAME).resolve()
+    proof_ledger = (args.proof_ledger or dist_dir / RELEASE_PROOF_LEDGER_NAME).resolve()
+    hostless_proof = (args.hostless_proof or dist_dir / HOSTLESS_PROOF_NAME).resolve()
     bundle_path = (args.bundle or dist_dir / EVIDENCE_BUNDLE_NAME).resolve()
     resolved_install_tag = args.resolved_install_tag or args.release_tag
 
@@ -116,6 +119,7 @@ def main() -> int:
             build_handoff=build_handoff,
             publish_receipt=publish_receipt,
             proof_ledger=proof_ledger,
+            hostless_proof=hostless_proof,
         )
         write_json(bundle_path, bundle)
 
@@ -132,6 +136,7 @@ def main() -> int:
         build_handoff=build_handoff,
         publish_receipt=publish_receipt,
         proof_ledger=proof_ledger,
+        hostless_proof=hostless_proof,
     )
     print(f"release evidence bundle ok: {bundle_path}")
     return 0
@@ -151,6 +156,7 @@ def build_bundle(
     build_handoff: Path,
     publish_receipt: Path,
     proof_ledger: Path,
+    hostless_proof: Path,
 ) -> dict[str, Any]:
     manifest = read_json(upload_manifest, "release upload manifest")
     required_lane_ids = required_lanes(read_json(readiness_config, "release readiness config"))
@@ -179,7 +185,7 @@ def build_bundle(
                 "proof_kind": "quickstart-proof",
                 "substrate": "hostless",
                 "artifact_class": "workflow-only",
-                "file": file_ref(dist_dir, proof_ledger, "hostless proof"),
+                "file": file_ref(dist_dir, hostless_proof, "hostless proof"),
             }
         ],
         "redaction": {
@@ -202,6 +208,7 @@ def verify_bundle(
     build_handoff: Path,
     publish_receipt: Path,
     proof_ledger: Path,
+    hostless_proof: Path,
 ) -> None:
     require_exact_fields(bundle, TOP_LEVEL_FIELDS, "release evidence bundle")
     require(bundle["schema_version"] == SCHEMA_VERSION, "unsupported release evidence bundle schema_version")
@@ -247,7 +254,13 @@ def verify_bundle(
         bundle["missing_required_lane_ids"],
         "release evidence bundle missing_required_lane_ids",
     )
-    proof_lane_ids = require_proofs(bundle["proofs"], public_names=public_names, workflow_names=workflow_names)
+    proof_lane_ids = require_proofs(
+        bundle["proofs"],
+        public_names=public_names,
+        workflow_names=workflow_names,
+        dist_dir=dist_dir,
+        expected_files={"hostless-quickstart": hostless_proof},
+    )
     required = set(required_lane_ids)
     missing = set(missing_lane_ids)
     require(missing <= required, "release evidence bundle missing lane is not required")
@@ -334,9 +347,17 @@ def normalized_workflow_artifacts(value: object) -> list[dict[str, Any]]:
     return sorted(result, key=lambda row: row["name"])
 
 
-def require_proofs(value: object, *, public_names: set[str], workflow_names: set[str]) -> set[str]:
+def require_proofs(
+    value: object,
+    *,
+    public_names: set[str],
+    workflow_names: set[str],
+    dist_dir: Path,
+    expected_files: dict[str, Path],
+) -> set[str]:
     proofs = require_list(value, "release evidence bundle proofs")
     seen_lane_ids: set[str] = set()
+    seen_file_names: set[str] = set()
     for proof in proofs:
         require(isinstance(proof, dict), "release evidence bundle proof must be an object")
         require_exact_fields(proof, PROOF_FIELDS, "release evidence bundle proof")
@@ -355,6 +376,15 @@ def require_proofs(value: object, *, public_names: set[str], workflow_names: set
             require(file["name"] in public_names, f"release evidence bundle proof {lane_id} public artifact not listed as public")
         else:
             require(file["name"] in workflow_names, f"release evidence bundle proof {lane_id} workflow artifact not listed as workflow-only")
+        require(
+            file["name"] not in seen_file_names,
+            f"release evidence bundle duplicate proof file: {file['name']}",
+        )
+        seen_file_names.add(file["name"])
+        expected_file = expected_files.get(lane_id)
+        if expected_file is not None:
+            expected_ref = file_ref(dist_dir, expected_file, f"proof {lane_id}")
+            require(file == expected_ref, f"release evidence bundle proof {lane_id} file mismatch")
     return seen_lane_ids
 
 

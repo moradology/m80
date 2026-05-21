@@ -37,9 +37,10 @@ manifest's public asset set, and runs `scripts/verify-release-bundle.py
 is checked against the uploaded tarball, metadata, bootstrap selector,
 checksums, and installer before any later latest-promotion lane can trust it.
 
-The upload manifest itself and `m80-quickstart-proof-hostless.json` stay
-workflow-only artifacts. Public proof is the release-integrity predicate,
-attestation bundle, and normalized attestation metadata listed in the manifest.
+The upload manifest itself, `m80-release-proof-ledger.jsonl`, and
+`m80-quickstart-proof-hostless.json` stay workflow-only artifacts. Public proof
+is the release-integrity predicate, attestation bundle, and normalized
+attestation metadata listed in the manifest.
 
 ## Build Manifest
 

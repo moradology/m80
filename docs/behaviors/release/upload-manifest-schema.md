@@ -30,9 +30,10 @@ The integrity predicate itself is also public as
 
 Workflow-only artifacts are listed explicitly with reasons. Version 1 names
 `m80-release-upload-manifest.json` as the workflow-only source of upload and
-redownload truth, and `m80-quickstart-proof-hostless.json` as hostless workflow
-evidence whose public proof is the signed release-integrity predicate plus
-attestation material.
+redownload truth, `m80-release-proof-ledger.jsonl` as the workflow-only proof
+index, and `m80-quickstart-proof-hostless.json` as hostless workflow evidence
+whose public proof is the signed release-integrity predicate plus attestation
+material.
 
 `scripts/release_upload_manifest.py --write` writes the manifest and then
 verifies it. Verification fails closed on duplicate names, path traversal,
