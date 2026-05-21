@@ -39,6 +39,38 @@ fn installed_layout_doc_names_directory_contract_and_tests() {
 }
 
 #[test]
+fn install_state_doc_names_proof_cache_manifest_contract() {
+    let doc = read_repo_file("docs/behaviors/release/install-state.md");
+
+    for required in [
+        "`<install-root>/versions/<release_tag>`",
+        "`<install-root>/active`",
+        "`<install-root>/versions/<release_tag>/artifacts/release-proof-cache/`",
+        "`<install-root>/versions/<release_tag>/artifacts/release-proof-cache/manifest.json`",
+        "`manifest_digest`",
+        "`integrity_predicate`",
+        "`attestation_bundle`",
+        "`attestation_metadata`",
+        "`asset_index`",
+        "`public_sha256s`",
+        "`checksum_sidecars`",
+        "`trust_policy`",
+        "`verifier_versions`",
+        "`deny_unknown_fields`",
+        "complete_manifest_parses_and_validates_digest",
+        "missing_required_field_fails_closed",
+        "unknown_field_fails_closed",
+        "malformed_material_digest_fails_closed",
+        "malformed_manifest_digest_fails_closed",
+    ] {
+        assert!(
+            doc.contains(required),
+            "install state doc missing {required:?}"
+        );
+    }
+}
+
+#[test]
 fn install_bundle_layout_manifest_failure_leaves_previous_active_selected() {
     let bundle = write_release_bundle(None);
     let install_temp = tempfile::tempdir().unwrap();

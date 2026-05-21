@@ -26,3 +26,12 @@ pub use args::{
     InstallArgs, OverlayCloneModeArg, QuickstartArgs, TemplateAction, TemplateBuildArgs,
     WarmAction, WarmEnableArgs, WritebackMode,
 };
+
+/// Test-only synchronization for process-wide environment mutation.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::Mutex;
+
+    /// Serializes tests that mutate PATH or downloader/verifier environment.
+    pub(crate) static PROCESS_ENV_LOCK: Mutex<()> = Mutex::new(());
+}

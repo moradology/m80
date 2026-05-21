@@ -2,8 +2,6 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
-#[cfg(test)]
-use std::sync::Mutex;
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
@@ -24,11 +22,12 @@ use source::{stage_bundle_source, validate_bundle_source_url};
 
 mod bundle;
 mod metadata;
+mod proof_cache;
 mod release_material;
 mod source;
 
 #[cfg(test)]
-static INSTALL_PREFLIGHT_ENV_LOCK: Mutex<()> = Mutex::new(());
+pub(super) use crate::test_support::PROCESS_ENV_LOCK as INSTALL_PREFLIGHT_ENV_LOCK;
 
 pub(super) fn preflight_attestation_verifier_for_bundle_url(
     bundle_url: &str,

@@ -390,6 +390,9 @@ fn asset_index_fetch_failure_leaves_install_root_absent_for_dry_run_and_apply() 
 
 #[test]
 fn asset_index_timeout_leaves_install_root_absent_for_dry_run_and_apply() {
+    let _guard = super::layout::INSTALL_PREFLIGHT_ENV_LOCK
+        .lock()
+        .expect("process env lock poisoned");
     let identity = VersionIdentity::from_parts(
         "1.2.3",
         Some("v1.2.3"),

@@ -16,6 +16,7 @@ use super::super::fetch::{
 };
 use super::super::ASSET_INDEX_NAME;
 use super::{asset_json, index_json, index_json_with_schema, linux_x86_64};
+use crate::test_support::PROCESS_ENV_LOCK;
 
 #[test]
 fn verified_file_index_fetch_accepts_valid_checksum_before_parse() {
@@ -164,6 +165,7 @@ fn verified_file_index_fetch_rejects_index_release_tag_mismatch() {
 
 #[test]
 fn remote_index_fetch_times_out_with_bounded_context() {
+    let _guard = PROCESS_ENV_LOCK.lock().expect("process env lock poisoned");
     let server = HttpFixture::new([(
         "/m80-release-assets.json",
         TestResponse::slow_ok(index_json_with_schema(1).into_bytes()),
@@ -184,6 +186,7 @@ fn remote_index_fetch_times_out_with_bounded_context() {
 
 #[test]
 fn remote_checksum_fetch_times_out_with_bounded_context() {
+    let _guard = PROCESS_ENV_LOCK.lock().expect("process env lock poisoned");
     let index = index_json_with_schema(1).into_bytes();
     let checksum = checksum_sidecar_for(&index);
     let server = HttpFixture::new([
@@ -214,6 +217,7 @@ fn remote_checksum_fetch_times_out_with_bounded_context() {
 
 #[test]
 fn remote_index_fetch_names_http_failure_context() {
+    let _guard = PROCESS_ENV_LOCK.lock().expect("process env lock poisoned");
     let server = HttpFixture::new([(
         "/m80-release-assets.json",
         TestResponse::status(500, b"server failed".to_vec()),
@@ -230,6 +234,7 @@ fn remote_index_fetch_names_http_failure_context() {
 
 #[test]
 fn remote_index_fetch_names_connect_failure_context() {
+    let _guard = PROCESS_ENV_LOCK.lock().expect("process env lock poisoned");
     let index_url = unused_local_fixture_url();
 
     let err = fetch_verified_asset_index(timeout_fetch_request(&index_url)).unwrap_err();
@@ -242,6 +247,7 @@ fn remote_index_fetch_names_connect_failure_context() {
 
 #[test]
 fn remote_index_fetch_rejects_unsupported_redirect_with_context() {
+    let _guard = PROCESS_ENV_LOCK.lock().expect("process env lock poisoned");
     let server = HttpFixture::new([
         (
             "/m80-release-assets.json",
