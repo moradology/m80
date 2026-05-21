@@ -73,7 +73,10 @@ binaries, pull OCI images, or install packages implicitly.
   GitHub release bundle URLs verify the same-tag public material set and bundle
   bytes before staging: asset index, checksum sidecars, installer, bootstrap
   selector, build manifest, release-integrity predicate subjects, normalized
-  attestation metadata, public `SHA256SUMS`, and the selected bundle digest.
+  attestation metadata, the GitHub Artifact Attestation bundle, public
+  `SHA256SUMS`, and the selected bundle digest. The attestation check binds the
+  predicate to the moradology/m80 release workflow, tag ref, source commit, and
+  trusted issuer before the selected bundle tarball is downloaded.
   Non-dry-run stages, verifies, and copies the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
   `<install-root>/active` last.
@@ -413,7 +416,10 @@ Stable surfaces:
   install-root mutation. Concrete official GitHub release bundle URLs also
   preflight the same-tag public material set before staging so missing
   release-integrity, attestation, index, checksum, installer, selector, build,
-  or public checksum assets fail before the bundle tarball is downloaded.
+  or public checksum assets fail before the bundle tarball is downloaded; the
+  release-integrity predicate must also verify through `gh attestation verify`
+  using the downloaded attestation bundle before selected bundle bytes are
+  fetched.
   Accepted remote bundles are staged before publishing
   `<install-root>/versions/<release_tag>` and flipping the active pointer last.
 

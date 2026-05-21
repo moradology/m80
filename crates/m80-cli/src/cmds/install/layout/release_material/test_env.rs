@@ -84,6 +84,10 @@ if [ ! -f "$src" ]; then
     echo "fake curl missing $name" >&2
     exit 22
 fi
+if [ -n "${M80_FAKE_CURL_REQUIRE_GH_MARKER_BEFORE_BUNDLE:-}" ] && [ "$name" = "m80-linux-x86_64.tar.gz" ] && [ ! -f "$M80_FAKE_CURL_REQUIRE_GH_MARKER_BEFORE_BUNDLE" ]; then
+    echo "fake curl bundle fetch happened before gh attestation marker" >&2
+    exit 23
+fi
 cp "$src" "$out"
 printf '%s' "$url"
 "#,
@@ -108,6 +112,12 @@ pub(super) struct EnvVarGuard {
 
 impl EnvVarGuard {
     pub(super) fn set(key: &'static str, value: &Path) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+
+    pub(super) fn set_value(key: &'static str, value: &str) -> Self {
         let previous = std::env::var_os(key);
         std::env::set_var(key, value);
         Self { key, previous }

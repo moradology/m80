@@ -4,16 +4,23 @@ use std::path::Path;
 use m80_firecracker::FcError;
 use sha2::{Digest, Sha256};
 
-use super::test_env::{write_fake_curl, EnvVarGuard};
+use super::test_env::{fake_gh_fixture, write_fake_curl, EnvVarGuard};
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub(super) struct ReleaseFixtureOptions {
     pub(super) omit: Option<&'static str>,
     pub(super) tamper_bundle: bool,
     pub(super) wrong_bundle_checksum: bool,
     pub(super) stale_asset_index: bool,
     pub(super) mismatched_attestation: bool,
+    pub(super) wrong_attestation_signer: bool,
+    pub(super) wrong_attestation_issuer: bool,
+    pub(super) wrong_commit_sha: bool,
     pub(super) missing_install_digest: bool,
+    pub(super) gh_failure: bool,
+    pub(super) gh_omit_subject: bool,
+    pub(super) gh_wrong_subject_digest: bool,
+    pub(super) gh_wrong_source_ref: bool,
 }
 
 pub(super) struct ReleaseFixture {
@@ -24,6 +31,10 @@ pub(super) struct ReleaseFixture {
 }
 
 pub(super) fn verifier_error(options: ReleaseFixtureOptions) -> FcError {
+    verifier_error_with_curl_log(options).0
+}
+
+pub(super) fn verifier_error_with_curl_log(options: ReleaseFixtureOptions) -> (FcError, String) {
     let _guard = super::super::INSTALL_PREFLIGHT_ENV_LOCK.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let material_dir = temp.path().join("materials");
@@ -37,8 +48,30 @@ pub(super) fn verifier_error(options: ReleaseFixtureOptions) -> FcError {
     let _path_env = EnvVarGuard::prepend_path(&bin_dir);
     let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
     let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
+    let _gh_env = EnvVarGuard::set(
+        "M80_RELEASE_ATTESTATION_GH",
+        &fake_gh_fixture("fake-gh-attestation-supported.sh"),
+    );
+    let _expect_source_digest = EnvVarGuard::set_value(
+        "M80_FAKE_GH_EXPECT_SOURCE_DIGEST",
+        "0123456789abcdef0123456789abcdef01234567",
+    );
+    let _gh_failure = options
+        .gh_failure
+        .then(|| EnvVarGuard::set_value("M80_FAKE_GH_FAIL", "1"));
+    let _gh_omit_subject = options
+        .gh_omit_subject
+        .then(|| EnvVarGuard::set_value("M80_FAKE_GH_OMIT_SUBJECT", "1"));
+    let _gh_wrong_subject_digest = options
+        .gh_wrong_subject_digest
+        .then(|| EnvVarGuard::set_value("M80_FAKE_GH_WRONG_SUBJECT_DIGEST", "1"));
+    let _gh_wrong_source_ref = options
+        .gh_wrong_source_ref
+        .then(|| EnvVarGuard::set_value("M80_FAKE_GH_EXPECT_SOURCE_REF", "refs/tags/v9.9.9"));
 
-    super::verify_official_release_bundle(&fixture.bundle_url).unwrap_err()
+    let err = super::verify_official_release_bundle(&fixture.bundle_url).unwrap_err();
+    let log = fs::read_to_string(&log_path).unwrap_or_default();
+    (err, log)
 }
 
 pub(super) fn write_direct_release_materials_with(
@@ -117,10 +150,15 @@ pub(super) fn write_direct_release_materials_with(
     let selector_bytes = format!(
         "schema_version\t1\nrelease_tag\tv0.0.0\ncolumns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\tsize_bytes\tmetadata_name\tmetadata_sha256\tchecksum_name\tsignature_name\tattestation_name\tm80_version\nrow\tlinux\tx86_64\tminimal\t{bundle_name}\t{bundle_url}\t{bundle_sha256}\t{bundle_size}\t{metadata_name}\t{metadata_sha256}\t{bundle_name}.sha256\t-\tm80-release-integrity.attestation.jsonl\tv0.0.0\n"
     );
+    let commit_sha = if options.wrong_commit_sha {
+        "1111111111111111111111111111111111111111"
+    } else {
+        "0123456789abcdef0123456789abcdef01234567"
+    };
     let build_bytes = serde_json::to_vec_pretty(&serde_json::json!({
         "schema_version": 1,
         "release_tag": "v0.0.0",
-        "source_commit": "0123456789abcdef0123456789abcdef01234567"
+        "source_commit": commit_sha
     }))
     .unwrap();
 
@@ -332,7 +370,7 @@ pub(super) fn write_direct_release_materials_with(
         "mechanism": "github-artifact-attestation",
         "repository": "moradology/m80",
         "release_tag": "v0.0.0",
-        "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+        "commit_sha": commit_sha,
         "target": "linux-x86_64",
         "rust_toolchain": "rustc 1.82.0",
         "m80_package_version": "0.0.0",
@@ -360,14 +398,24 @@ pub(super) fn write_direct_release_materials_with(
     } else {
         predicate_sha256.clone()
     };
+    let signer_identity = if options.wrong_attestation_signer {
+        "moradology/m80/.github/workflows/other.yml"
+    } else {
+        "moradology/m80/.github/workflows/release-artifacts.yml"
+    };
+    let issuer = if options.wrong_attestation_issuer {
+        "https://example.invalid/token"
+    } else {
+        "https://token.actions.githubusercontent.com"
+    };
     let attestation = serde_json::json!({
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
         "repository": "moradology/m80",
         "release_tag": "v0.0.0",
         "predicate_sha256": attestation_predicate_sha,
-        "signer_identity": "moradology/m80/.github/workflows/release-artifacts.yml",
-        "issuer": "https://token.actions.githubusercontent.com",
+        "signer_identity": signer_identity,
+        "issuer": issuer,
         "keyset_id": "fixture-keyset",
         "certificate_not_before": "2026-01-01T00:00:00Z",
         "certificate_not_after": "2027-01-01T00:00:00Z"

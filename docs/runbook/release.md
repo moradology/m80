@@ -362,6 +362,22 @@ python3 scripts/verify-release-bundle.py \
 humans and automation have one command for the full public dist verification
 path.
 
+The official direct-URL installer path uses the same GitHub Artifact
+Attestation identity before downloading the selected bundle tarball. The
+equivalent human `gh` check is:
+
+```sh
+gh attestation verify /tmp/m80-release-dist/m80-release-integrity.json \
+  --repo moradology/m80 \
+  --bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl \
+  --signer-workflow moradology/m80/.github/workflows/release-artifacts.yml \
+  --cert-oidc-issuer https://token.actions.githubusercontent.com \
+  --source-ref "refs/tags/${M80_RELEASE_TAG}" \
+  --source-digest "$M80_RELEASE_COMMIT" \
+  --deny-self-hosted-runners \
+  --format json
+```
+
 This check is read-only and does not require root. It fails closed for wrong
 tag, wrong commit, missing subject digests, unknown signers, stale keysets,
 expired trust material, unsigned/downgraded material, tampered bundle or

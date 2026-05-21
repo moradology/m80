@@ -45,14 +45,16 @@ pub(super) fn verify_official_release_bundle(
     let plan = ReleaseMaterialPlan::from_index_material(material)?;
     let verified = plan.verify_official_bundle()?;
     eprintln!(
-        "m80 install: verified release material release_tag={} material_classes={} identity={} install_sh_sha256={} predicate_sha256={} public_sha256s_sha256={} attestation_signer={}",
+        "m80 install: verified release material release_tag={} material_classes={} identity={} install_sh_sha256={} predicate_sha256={} public_sha256s_sha256={} attestation_signer={} attestation_issuer={} source_commit={}",
         plan.release_tag,
         plan.material_classes().join(","),
         plan.identity,
         verified.summary.install_sh_sha256,
         verified.summary.predicate_sha256,
         verified.summary.public_sha256s_sha256,
-        verified.summary.attestation_signer
+        verified.summary.attestation_signer,
+        verified.summary.attestation_issuer,
+        verified.summary.source_commit
     );
     Ok(Some(verified))
 }
@@ -76,6 +78,8 @@ pub(super) struct ReleaseVerificationSummary {
     pub(super) predicate_sha256: String,
     pub(super) public_sha256s_sha256: String,
     pub(super) attestation_signer: String,
+    pub(super) attestation_issuer: String,
+    pub(super) source_commit: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

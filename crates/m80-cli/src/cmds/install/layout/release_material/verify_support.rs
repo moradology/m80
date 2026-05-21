@@ -31,6 +31,7 @@ pub(super) struct PrebundleVerification {
     pub(super) predicate_sha256: String,
     pub(super) public_sha256s_sha256: String,
     pub(super) attestation_signer: String,
+    pub(super) attestation_issuer: String,
 }
 
 #[derive(Debug, Deserialize)]

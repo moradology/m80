@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 use m80_firecracker::FcError;
+use serde_json::Value;
 
+use super::super::source;
 use super::support::{download_material_to_dir, release_material_error, sha256_file};
 use super::verify_support::{
     expected_file_sha256, expected_subjects, material_subject_kind, parse_sha256s, read_json,
@@ -201,6 +205,8 @@ fn verify_prebundle_material(
         }
     }
 
+    verify_cryptographic_attestation(plan, downloaded, &integrity, &predicate_sha256)?;
+
     let install_sh_sha256 = sha256_file(downloaded.path("install-script")?)?;
     Ok(PrebundleVerification {
         public_sha256s,
@@ -209,6 +215,7 @@ fn verify_prebundle_material(
         predicate_sha256,
         public_sha256s_sha256,
         attestation_signer: attestation.signer_identity,
+        attestation_issuer: attestation.issuer,
     })
 }
 
@@ -260,5 +267,137 @@ fn verify_full_material(
         predicate_sha256: prebundle.predicate_sha256,
         public_sha256s_sha256: prebundle.public_sha256s_sha256,
         attestation_signer: prebundle.attestation_signer,
+        attestation_issuer: prebundle.attestation_issuer,
+        source_commit: prebundle.integrity.commit_sha,
     })
+}
+
+fn verify_cryptographic_attestation(
+    plan: &ReleaseMaterialPlan,
+    downloaded: &DownloadedReleaseMaterials,
+    integrity: &ReleaseIntegrityPredicate,
+    predicate_sha256: &str,
+) -> Result<(), FcError> {
+    let gh_bin = source::release_attestation_gh_bin();
+    let predicate_path = downloaded.path("release-integrity-predicate")?;
+    let attestation_bundle_path = downloaded.path("release-attestation-bundle")?;
+    let source_ref = format!("refs/tags/{}", plan.release_tag);
+    let output = Command::new(&gh_bin)
+        .arg("attestation")
+        .arg("verify")
+        .arg(predicate_path)
+        .arg("--repo")
+        .arg(crate::release_urls::release_repository())
+        .arg("--bundle")
+        .arg(attestation_bundle_path)
+        .arg("--signer-workflow")
+        .arg(RELEASE_ATTESTATION_SIGNER_WORKFLOW)
+        .arg("--cert-oidc-issuer")
+        .arg(RELEASE_ATTESTATION_ISSUER)
+        .arg("--source-ref")
+        .arg(&source_ref)
+        .arg("--source-digest")
+        .arg(&integrity.commit_sha)
+        .arg("--deny-self-hosted-runners")
+        .arg("--format")
+        .arg("json")
+        .output()
+        .map_err(|source| {
+            release_material_error(format!(
+                "release attestation verifier missing: gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} source={source}",
+                plan.release_tag,
+                predicate_path.display(),
+                attestation_bundle_path.display()
+            ))
+        })?;
+    if !output.status.success() {
+        return Err(release_material_error(format!(
+            "release trust cryptographic attestation verification failed: gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} repo={} signer_workflow={} issuer={} source_ref={} source_digest={} status={}{}",
+            plan.release_tag,
+            predicate_path.display(),
+            attestation_bundle_path.display(),
+            crate::release_urls::release_repository(),
+            RELEASE_ATTESTATION_SIGNER_WORKFLOW,
+            RELEASE_ATTESTATION_ISSUER,
+            source_ref,
+            integrity.commit_sha,
+            output.status,
+            command_output_text(&output)
+        )));
+    }
+    require_attestation_output_names_predicate(&output.stdout, predicate_path, predicate_sha256)
+}
+
+fn require_attestation_output_names_predicate(
+    stdout: &[u8],
+    predicate_path: &Path,
+    predicate_sha256: &str,
+) -> Result<(), FcError> {
+    if stdout.iter().all(|byte| byte.is_ascii_whitespace()) {
+        return Err(release_material_error(
+            "release attestation verifier returned empty JSON".to_owned(),
+        ));
+    }
+    let verified = serde_json::from_slice::<Value>(stdout).map_err(|source| {
+        release_material_error(format!(
+            "release attestation verifier returned invalid JSON: source={source}"
+        ))
+    })?;
+    let Some(entries) = verified.as_array().filter(|entries| !entries.is_empty()) else {
+        return Err(release_material_error(
+            "release attestation verifier returned no attestations".to_owned(),
+        ));
+    };
+    let expected_names = [
+        predicate_path.display().to_string(),
+        predicate_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_owned(),
+    ];
+    for entry in entries {
+        let Some(subjects) = entry
+            .get("verificationResult")
+            .and_then(|result| result.get("statement"))
+            .and_then(|statement| statement.get("subject"))
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        for subject in subjects {
+            let Some(name) = subject.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(sha256) = subject
+                .get("digest")
+                .and_then(|digest| digest.get("sha256"))
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            if expected_names.iter().any(|expected| expected == name) && sha256 == predicate_sha256
+            {
+                return Ok(());
+            }
+        }
+    }
+    Err(release_material_error(
+        "release attestation verifier JSON omitted release-integrity predicate name/sha256 subject"
+            .to_owned(),
+    ))
+}
+
+fn command_output_text(output: &std::process::Output) -> String {
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let trimmed = combined.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!(" output={}", trimmed.replace('\n', "\\n"))
+    }
 }

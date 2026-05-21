@@ -222,11 +222,18 @@ bundle checksum sidecar, bundle bytes, bundle metadata sidecar, `install.sh`
 and sidecar, bootstrap selector and sidecar, build manifest and sidecar, public
 `SHA256SUMS`, release-integrity predicate subjects, and normalized attestation
 metadata before creating the install-root staging directory or listing the
-tarball. Any digest, subject, asset-index, attestation-metadata, or missing
-`install.sh` row disagreement fails while the verified bundle still lives only
-in a temporary release-material directory. Local `file://` and local test
-fixtures remain explicit operator overrides and do not claim official release
-trust.
+tarball. It also runs `gh attestation verify` over
+`m80-release-integrity.json` using the downloaded
+`m80-release-integrity.attestation.jsonl` bundle, scoped to the same
+repository, signer workflow, issuer, tag ref, commit digest, self-hosted-runner
+denial, and JSON output policy as the public installer. The attestation bundle
+is never accepted because it exists beside the predicate; it must verify the
+predicate subject name and digest before the selected bundle bytes are
+downloaded. Any digest, subject, asset-index, attestation-metadata,
+cryptographic attestation, or missing `install.sh` row disagreement fails while
+the verified bundle still lives only in a temporary release-material directory.
+Local `file://` and local test fixtures remain explicit operator overrides and
+do not claim official release trust.
 
 `scripts/verify-install-handoff.py` is the narrower pre-root gate for
 automation that already has a trusted m80 checkout. It downloads no assets by

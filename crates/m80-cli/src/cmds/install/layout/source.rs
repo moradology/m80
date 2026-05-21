@@ -50,9 +50,12 @@ pub(super) fn validate_bundle_source_url(bundle_url: &str) -> Result<(), FcError
 pub(super) fn preflight_attestation_verifier_for_bundle_url(
     bundle_url: &str,
 ) -> Result<(), FcError> {
-    let gh_bin =
-        std::env::var(ATTESTATION_GH_ENV).unwrap_or_else(|_| DEFAULT_ATTESTATION_GH_BIN.to_owned());
+    let gh_bin = release_attestation_gh_bin();
     preflight_attestation_verifier_for_bundle_url_with_gh(bundle_url, &gh_bin)
+}
+
+pub(super) fn release_attestation_gh_bin() -> String {
+    std::env::var(ATTESTATION_GH_ENV).unwrap_or_else(|_| DEFAULT_ATTESTATION_GH_BIN.to_owned())
 }
 
 pub(super) fn is_fixture_bundle_url(bundle_url: &str) -> Result<bool, FcError> {
