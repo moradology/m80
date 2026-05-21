@@ -8,6 +8,10 @@ The command does not yet perform privileged copies, write `/etc` profile state,
 or resolve "latest". Successful bundle installs write install-root-local
 profile state and switch the install-root active pointer.
 
+The user-facing trust model for official direct bundle URLs is captured in
+[`installer-input.md`](installer-input.md). That document distinguishes the
+normal public `install.sh` path from explicit direct bundle URL overrides.
+
 ## Source Selection
 
 The installer accepts exactly one source shape:

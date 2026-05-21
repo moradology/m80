@@ -294,6 +294,33 @@ fn installer_input_contract_doc_names_source_shapes_and_tests() {
     }
 }
 
+#[test]
+fn installer_input_trust_model_doc_names_direct_url_boundaries() {
+    let doc = read_repo_file("docs/behaviors/release/installer-input.md");
+
+    for required in [
+        "`curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh`",
+        "Public installer status: pending until the unauthenticated public-access proof",
+        "<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->",
+        "`curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh`",
+        "`m80 install --release-tag <tag>`",
+        "`m80 install --bundle-url https://github.com/moradology/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz`",
+        "same-tag public integrity material",
+        "not a checksum-only compatibility mode",
+        "Local `file://` bundles and local fixture HTTP URLs are operator/test overrides",
+        "`releases/latest/download/<bundle>.tar.gz` shape",
+        "`https://github.com/example/m80/releases/download/v1.2.3/m80-linux-x86_64.tar.gz`",
+        "raw branch installer URLs",
+        "fail before network access or install-root mutation",
+        "[`direct-url-diagnostics.md`](direct-url-diagnostics.md)",
+    ] {
+        assert!(
+            doc.contains(required),
+            "installer input trust model doc missing {required:?}"
+        );
+    }
+}
+
 fn read_repo_file(relative: &str) -> String {
     fs::read_to_string(repo_root().join(relative)).expect("read repository file")
 }
