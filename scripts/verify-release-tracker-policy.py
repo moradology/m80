@@ -183,6 +183,7 @@ def verify_policy_config(
         for issue in issues
         if isinstance(issue.get("id"), str)
     }
+    errors.extend(verify_config_covers_active_epochs(issues_by_id, config, config_path))
     active_epochs = [
         epoch["id"]
         for epoch in config["epochs"]
@@ -201,8 +202,45 @@ def verify_policy_config(
             epic=epic,
             check_git_history=check_git_history,
         ):
-            errors.append(f"{epic}: {error}")
+            errors.append(f"{config_path}: active epoch {epic}: {error}")
     return errors
+
+
+def verify_config_covers_active_epochs(
+    issues_by_id: dict[str, dict[str, Any]],
+    config: dict[str, Any],
+    config_path: Path,
+) -> list[str]:
+    configured = {
+        epoch["id"]: epoch["status"]
+        for epoch in config["epochs"]
+    }
+    errors: list[str] = []
+    for issue_id, issue in sorted(issues_by_id.items()):
+        if not is_active_release_epoch(issue):
+            continue
+        status = configured.get(issue_id)
+        if status is None:
+            errors.append(
+                f"{config_path}: active tracker epoch {issue_id} is missing from policy config"
+            )
+        elif status == "retired":
+            errors.append(
+                f"{config_path}: active tracker epoch {issue_id} is configured as retired"
+            )
+    return errors
+
+
+def is_active_release_epoch(issue: dict[str, Any]) -> bool:
+    labels = issue.get("labels")
+    if not isinstance(labels, list):
+        return False
+    label_set = set(labels)
+    return (
+        is_openish(issue)
+        and "epoch" in label_set
+        and ("release" in label_set or "quickstart" in label_set)
+    )
 
 
 def validate_policy_config(config: dict[str, Any], config_path: Path) -> list[str]:

@@ -20,8 +20,16 @@ CI checks out full history for this guard because close reasons may cite older
 artifact commits.
 
 The configured release epochs live in
-`docs/behaviors/release/release-tracker-policy.json`. Before opening the next
-release or quickstart epoch, add it there as an active epoch:
+`docs/behaviors/release/release-tracker-policy.json`. CI runs:
+
+```sh
+python3 scripts/verify-release-tracker-policy.py \
+  --policy-config docs/behaviors/release/release-tracker-policy.json
+```
+
+An active release epoch is an open tracker issue carrying the `epoch` label and
+either the `release` or `quickstart` label. Before opening the next release or
+quickstart epoch, add it to the policy config as an active epoch:
 
 ```json
 {
@@ -31,11 +39,12 @@ release or quickstart epoch, add it there as an active epoch:
 ```
 
 Retired epochs remain in the config only when they have `status: "retired"` and
-a nonempty `reason`. The verifier fails closed on missing active epochs,
-duplicate epoch ids, unknown statuses, or retired entries without reasons. For
-local one-off checks, `scripts/verify-release-tracker-policy.py --epic <id>`
-still lints a single epoch without using the config; CI uses the config-backed
-path.
+a nonempty `reason`. A tracker issue that still matches the active-epoch rule
+cannot be configured as retired. The verifier fails closed on omitted active
+epochs, missing configured active epochs, duplicate epoch ids, unknown statuses,
+or retired entries without reasons. For local one-off checks,
+`scripts/verify-release-tracker-policy.py --epic <id>` still lints a single
+epoch without using the config; CI uses the config-backed path.
 
 The policy intentionally keeps scaffolded work separate from verified close.
 Unit tests, fake release servers, hostless fixtures, and validators may land and

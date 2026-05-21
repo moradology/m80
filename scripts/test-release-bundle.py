@@ -1160,6 +1160,12 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
         self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
         self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
+        self.assertIn(
+            "python3 scripts/verify-release-tracker-policy.py --policy-config "
+            "docs/behaviors/release/release-tracker-policy.json",
+            workflow,
+        )
+        self.assertNotIn("\n          python3 scripts/verify-release-tracker-policy.py\n", workflow)
         self.assertIn("python3 scripts/test-release-bundle.py", workflow)
         self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
         self.assertIn("uses: actions/checkout@v6", workflow)

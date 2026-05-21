@@ -448,6 +448,45 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_policy_config_second_active_epoch_failure_names_config_and_epoch(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-next",
+                        "Next release epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-next.1",
+                        "Stale quickstart docs",
+                        "Public latest selector uses `m80 quickstart`.",
+                        labels=["quickstart", "release"],
+                        parent="release-next",
+                    ),
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [
+                    {"id": "m80-o3uh9", "status": "active"},
+                    {"id": "release-next", "status": "active"},
+                ],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(config), result.stderr)
+            self.assertIn("active epoch release-next", result.stderr)
+            self.assertIn("release-next.1: description contains unsupported", result.stderr)
+
     def test_policy_config_missing_active_epoch_fails(self) -> None:
         with tracker_repo() as repo:
             write_issues(
@@ -522,6 +561,124 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("retired epochs require a nonempty reason", result.stderr)
+
+    def test_policy_config_omitted_active_root_epoch_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["epoch", "quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-next",
+                        "Next release epoch",
+                        labels=["epoch", "quickstart", "release", "requires-verified-close"],
+                    ),
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [{"id": "release-next", "status": "active"}],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("active tracker epoch m80-o3uh9 is missing from policy config", result.stderr)
+
+    def test_policy_config_omitted_future_active_epoch_fails(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["epoch", "quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-future",
+                        "Future release epoch",
+                        labels=["epoch", "release", "requires-verified-close"],
+                    ),
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [{"id": "m80-o3uh9", "status": "active"}],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "active tracker epoch release-future is missing from policy config",
+                result.stderr,
+            )
+
+    def test_policy_config_release_child_is_not_epoch_candidate(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["epoch", "quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.13",
+                        "Release CI hardening",
+                        labels=["cicd", "release"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [{"id": "m80-o3uh9", "status": "active"}],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_policy_config_open_epoch_cannot_be_retired(self) -> None:
+        with tracker_repo() as repo:
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["epoch", "quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "release-old",
+                        "Old release epoch",
+                        labels=["epoch", "release", "requires-verified-close"],
+                    ),
+                ],
+            )
+            config = write_policy_config(
+                repo.root,
+                [
+                    {"id": "m80-o3uh9", "status": "active"},
+                    {
+                        "id": "release-old",
+                        "status": "retired",
+                        "reason": "superseded by m80-o3uh9",
+                    },
+                ],
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("active tracker epoch release-old is configured as retired", result.stderr)
 
 
 class tracker_repo:
