@@ -38,6 +38,30 @@ FETCH_RETRY_COUNT = METADATA_RETRY_COUNT
 FETCH_RETRY_DELAY_SECONDS = METADATA_RETRY_DELAY_SECONDS
 SHA256_DIGEST_RE = re.compile(r"^sha256:([0-9a-f]{64})$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+FRESHNESS_FAILURE_CLASSES = frozenset(
+    {
+        "network-transient",
+        "stale-latest",
+        "missing-public-asset",
+        "docs-drift",
+        "checksum-mismatch",
+        "provenance-mismatch",
+        "real-kvm-substrate-unavailable",
+        "verifier-schema-drift",
+    }
+)
+NETWORK_FAILURE_KINDS = frozenset(
+    {
+        "curl_spawn_failed",
+        "dns_or_connect_failure",
+        "http_failure",
+        "metadata_fetch_failure",
+        "partial_download",
+        "public_url_fetch_failure",
+        "redirect_loop",
+        "timeout",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -105,7 +129,10 @@ def main() -> int:
             fetch_public_url(check, curl_bin=args.curl)
         proof = freshness_proof_json(resolution, checks, public_assets)
     except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
+        message = str(exc)
+        raise SystemExit(
+            freshness_failure_policy_message(classify_freshness_exception(message), message)
+        ) from exc
 
     if args.proof_out is not None:
         args.proof_out.parent.mkdir(parents=True, exist_ok=True)
@@ -520,6 +547,7 @@ def freshness_failure_message(
 ) -> str:
     fields = [
         "freshness public URL fetch failed",
+        f"failure_class={classify_public_url_failure(check, failure)}",
         f"failure={failure}",
         f"url={check.url}",
         f"release_tag={check.release_tag}",
@@ -531,6 +559,43 @@ def freshness_failure_message(
         fields.append(f"curl_exit={curl_exit}")
     fields.append(detail)
     return "; ".join(fields)
+
+
+def classify_public_url_failure(check: FreshnessUrl, failure: str) -> str:
+    if failure in NETWORK_FAILURE_KINDS and failure != "http_failure":
+        return "network-transient"
+    if failure == "http_failure":
+        if any(source.startswith("docs:") for source in check.sources) and not any(
+            source.startswith(("release-url-contract:", "stable-latest-bootstrap:"))
+            for source in check.sources
+        ):
+            return "docs-drift"
+        return "missing-public-asset"
+    return "verifier-schema-drift"
+
+
+def classify_freshness_exception(message: str) -> str:
+    if "failure_class=" in message:
+        return ""
+    if any(f"failure={failure}" in message for failure in NETWORK_FAILURE_KINDS):
+        return "network-transient"
+    if "failure=latest_tag_switch" in message or "latest tag" in message:
+        return "stale-latest"
+    if "freshness public asset missing" in message:
+        return "missing-public-asset"
+    if "checked_command_inventory_digest" in message:
+        return "docs-drift"
+    if "digest mismatch" in message or "checksum" in message:
+        return "checksum-mismatch"
+    if "URL mismatch" in message or "size mismatch" in message:
+        return "provenance-mismatch"
+    return "verifier-schema-drift"
+
+
+def freshness_failure_policy_message(failure_class: str, message: str) -> str:
+    if "failure_class=" in message:
+        return message
+    return f"failure_class={failure_class}; {message}"
 
 
 def freshness_proof_json(

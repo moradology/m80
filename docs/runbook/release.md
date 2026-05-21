@@ -129,12 +129,17 @@ The verifier also checks that the GitHub latest release metadata contains every
 installer-consumed public asset with the expected name, URL, size when reported,
 and `sha256:` digest. With an asset-index fixture, the bundle and metadata
 digests must agree with the index row before URL liveness checks run.
-Until the fuller freshness failure-policy automation in `m80-o3uh9.21.2`
-lands, this lane does not page by itself: a failure blocks a green freshness
-status and the next release/latest promotion, and the operator files or updates
-one freshness bead for persistent stale URL, missing asset, docs drift, or
-verification-failure classes. Transient network failures should be retried once
-before filing.
+Freshness failure handling is configured in
+`docs/behaviors/release/freshness-failure-policy.json` and validated with
+`python3 scripts/verify-freshness-failure-policy.py`. The taxonomy maps
+`network-transient`, `stale-latest`, `missing-public-asset`, `docs-drift`,
+`checksum-mismatch`, `provenance-mismatch`,
+`real-kvm-substrate-unavailable`, and `verifier-schema-drift` to a primary
+operator action: retry-only, open/update one repair bead, block the next
+release/latest promotion, page a maintainer, or require manual operator
+confirmation. Add a new class by teaching the verifier to emit it and adding a
+single JSON policy row in the same diff; CI rejects verifier-emitted classes
+that are absent from the policy.
 
 The shell installer bounds every release-asset download before the bundled
 `m80 install` binary can take over. Each fetch uses a 10 second connect timeout,

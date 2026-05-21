@@ -1170,8 +1170,11 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_publish_authority.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_evidence_bundle.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_proof_ledger.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/freshness_failure_policy.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
         self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
+        self.assertIn("python3 scripts/test-freshness-failure-policy.py", workflow)
+        self.assertIn("python3 scripts/verify-freshness-failure-policy.py", workflow)
         self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
         self.assertIn("python3 scripts/test-release-proof-ledger.py", workflow)
         self.assertIn(

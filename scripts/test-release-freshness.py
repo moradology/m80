@@ -90,13 +90,13 @@ class ReleaseFreshnessTest(unittest.TestCase):
 
     def test_failure_classes_name_url_tag_asset_and_source(self) -> None:
         cases = [
-            (28, "timeout"),
-            (6, "dns_or_connect_failure"),
-            (22, "http_failure"),
-            (47, "redirect_loop"),
-            (18, "partial_download"),
+            (28, "timeout", "network-transient"),
+            (6, "dns_or_connect_failure", "network-transient"),
+            (22, "http_failure", "missing-public-asset"),
+            (47, "redirect_loop", "network-transient"),
+            (18, "partial_download", "network-transient"),
         ]
-        for exit_code, failure in cases:
+        for exit_code, failure, failure_class in cases:
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 docs_root = write_docs_root(root / "docs-root")
@@ -126,11 +126,45 @@ class ReleaseFreshnessTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(result.stdout, "")
+            self.assertIn(f"failure_class={failure_class}", result.stderr)
             self.assertIn(f"failure={failure}", result.stderr)
             self.assertIn(f"curl_exit={exit_code}", result.stderr)
             self.assertIn("release_tag=v1.2.3", result.stderr)
             self.assertIn("asset=m80-release-assets.json", result.stderr)
             self.assertIn("url=https://github.com/moradology/m80/releases/download/v1.2.3/m80-release-assets.json", result.stderr)
+
+    def test_metadata_fetch_failure_is_network_transient(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                fail_contains="api.github.com",
+                fail_code=52,
+                fail_stderr="empty metadata reply\n",
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=network-transient", result.stderr)
+        self.assertIn("failure=metadata_fetch_failure", result.stderr)
+        self.assertIn("fetch_role=initial", result.stderr)
 
     def test_docs_linked_latest_failure_names_docs_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -161,10 +195,53 @@ class ReleaseFreshnessTest(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=network-transient", result.stderr)
         self.assertIn("failure=timeout", result.stderr)
         self.assertIn("release_tag=latest", result.stderr)
         self.assertIn("asset=install.sh", result.stderr)
         self.assertIn("docs:README.md:", result.stderr)
+
+    def test_docs_only_pinned_http_failure_is_docs_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            extra_doc = docs_root / "docs" / "behaviors" / "release" / "docs-only.md"
+            extra_doc.parent.mkdir(parents=True)
+            extra_doc.write_text(
+                "Troubleshooting repair command for a stale install URL:\n\n"
+                "```sh\n"
+                "curl -fsSL https://github.com/moradology/m80/releases/download/v9.9.9/install.sh | sudo sh\n"
+                "```\n"
+            )
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                fail_contains="/releases/download/v9.9.9/install.sh",
+                fail_code=22,
+                fail_stderr="docs URL is stale\n",
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=docs-drift", result.stderr)
+        self.assertIn("failure=http_failure", result.stderr)
+        self.assertIn("release_tag=v9.9.9", result.stderr)
+        self.assertIn("docs:docs/behaviors/release/docs-only.md:", result.stderr)
 
     def test_missing_public_asset_names_role_url_and_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -193,6 +270,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=missing-public-asset", result.stderr)
         self.assertIn("freshness public asset missing", result.stderr)
         self.assertIn(f"role=checksum asset={CHECKSUM_NAME}", result.stderr)
         self.assertIn(f"url={release_asset_url('v1.2.3', CHECKSUM_NAME)}", result.stderr)
@@ -230,6 +308,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
                 )
 
             self.assertNotEqual(result.returncode, 0)
+            self.assertIn("failure_class=missing-public-asset", result.stderr)
             self.assertIn(f"role={role} asset={missing}", result.stderr)
             self.assertIn("release_tag=v1.2.3", result.stderr)
 
@@ -262,6 +341,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=checksum-mismatch", result.stderr)
         self.assertIn("freshness public asset digest mismatch", result.stderr)
         self.assertIn(f"role=bundle asset={BUNDLE_NAME}", result.stderr)
         self.assertIn("expected_sha256=" + ("0" * 64), result.stderr)
@@ -293,6 +373,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=verifier-schema-drift", result.stderr)
         self.assertIn("freshness asset-index malformed", result.stderr)
         self.assertIn("role=asset-index asset=m80-release-assets.json", result.stderr)
         self.assertIn(f"url={release_asset_url('v1.2.3', 'm80-release-assets.json')}", result.stderr)
@@ -326,6 +407,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=verifier-schema-drift", result.stderr)
         self.assertIn("freshness asset-index malformed", result.stderr)
         self.assertIn(f"role=attestation asset={INTEGRITY_ATTESTATION_BUNDLE_NAME}", result.stderr)
         self.assertIn(

@@ -18,6 +18,9 @@ mod installer_input_contract;
 #[path = "release/freshness_status_reader.rs"]
 mod freshness_status_reader;
 
+#[path = "release/freshness_failure_policy.rs"]
+mod freshness_failure_policy;
+
 #[path = "release/install_handoff_identity.rs"]
 mod install_handoff_identity;
 

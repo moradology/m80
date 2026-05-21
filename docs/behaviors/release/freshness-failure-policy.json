@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "failure_classes": [
+    {
+      "id": "network-transient",
+      "description": "A bounded public fetch failed in a way that may succeed on retry: timeout, DNS/connect failure, redirect loop, partial download, curl spawn failure, or unclassified URL fetch failure.",
+      "disposition": "retry-only",
+      "owner": "release-operator",
+      "blocks_next_release": false,
+      "opens_bead": false,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": false,
+      "retry_count": 1,
+      "repair_command": "python3 scripts/release_freshness.py --docs-root . --json",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "url",
+        "release_tag",
+        "run_id",
+        "repair_command"
+      ]
+    },
+    {
+      "id": "stale-latest",
+      "description": "The latest release changed while freshness was resolving it, resolved to a non-highest stable tag, or no longer matches the expected stable release.",
+      "disposition": "block-next-release-latest",
+      "owner": "release-operator",
+      "blocks_next_release": true,
+      "opens_bead": true,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": false,
+      "retry_count": 0,
+      "repair_command": "br show m80-o3uh9.21.8",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "latest_resolved_tag",
+        "release_tag",
+        "artifact_path",
+        "repair_command"
+      ]
+    },
+    {
+      "id": "missing-public-asset",
+      "description": "GitHub latest metadata or direct public URL fetch cannot see a required installer-consumed public release asset.",
+      "disposition": "block-next-release-latest",
+      "owner": "release-operator",
+      "blocks_next_release": true,
+      "opens_bead": true,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": false,
+      "retry_count": 0,
+      "repair_command": "br show m80-o3uh9.21.7",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "url",
+        "release_tag",
+        "artifact_path",
+        "repair_command"
+      ]
+    },
+    {
+      "id": "docs-drift",
+      "description": "The public docs command inventory changed, a docs-linked install URL points at the wrong surface, or generated freshness status is stale for the checked checkout.",
+      "disposition": "open-update-bead",
+      "owner": "docs-operator",
+      "blocks_next_release": false,
+      "opens_bead": true,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": false,
+      "retry_count": 0,
+      "repair_command": "python3 scripts/render-freshness-status.py --check",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "snippet_id",
+        "url",
+        "artifact_path",
+        "repair_command"
+      ]
+    },
+    {
+      "id": "checksum-mismatch",
+      "description": "Public release metadata, checksum sidecars, asset index rows, or freshness proof digests disagree for the same release asset.",
+      "disposition": "block-next-release-latest",
+      "owner": "release-operator",
+      "blocks_next_release": true,
+      "opens_bead": true,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": false,
+      "retry_count": 0,
+      "repair_command": "python3 scripts/verify-release-integrity.py --help",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "url",
+        "release_tag",
+        "proof_artifact",
+        "repair_command"
+      ]
+    },
+    {
+      "id": "provenance-mismatch",
+      "description": "Release provenance, asset index projection, public URL identity, size metadata, trust policy, or attestation identity does not match the resolved tag and repository.",
+      "disposition": "block-next-release-latest",
+      "owner": "release-operator",
+      "blocks_next_release": true,
+      "opens_bead": true,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": false,
+      "retry_count": 0,
+      "repair_command": "python3 scripts/verify-release-integrity.py --help",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "latest_resolved_tag",
+        "release_tag",
+        "proof_artifact",
+        "repair_command"
+      ]
+    },
+    {
+      "id": "real-kvm-substrate-unavailable",
+      "description": "The privileged freshness lane cannot prove the public latest quickstart on a documented real-KVM host because the substrate or runner is unavailable.",
+      "disposition": "manual-operator-confirmation",
+      "owner": "kvm-operator",
+      "blocks_next_release": true,
+      "opens_bead": true,
+      "pages_maintainer": false,
+      "requires_manual_confirmation": true,
+      "retry_count": 0,
+      "repair_command": "br show m80-o3uh9.18",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "artifact_path",
+        "owner_action",
+        "repair_command"
+      ]
+    },
+    {
+      "id": "verifier-schema-drift",
+      "description": "Freshness verifier inputs or artifacts use an unsupported, malformed, duplicate, or missing schema field that makes the result untrustworthy.",
+      "disposition": "page-maintainer",
+      "owner": "release-maintainer",
+      "blocks_next_release": true,
+      "opens_bead": true,
+      "pages_maintainer": true,
+      "requires_manual_confirmation": false,
+      "retry_count": 0,
+      "repair_command": "python3 scripts/verify-freshness-failure-policy.py",
+      "safe_summary_fields": [
+        "failure_class",
+        "repository",
+        "artifact_path",
+        "run_id",
+        "repair_command"
+      ]
+    }
+  ]
+}
