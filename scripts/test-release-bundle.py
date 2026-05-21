@@ -44,6 +44,7 @@ PUBLISH_RECEIPT_NAME = "m80-release-publish-decision.json"
 REMOTE_INVENTORY_NAME = "m80-release-remote-assets.json"
 EVIDENCE_BUNDLE_NAME = "m80-release-evidence.json"
 HOSTLESS_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+REAL_KVM_QUICKSTART_PROOF_NAME = "m80-quickstart-proof-real-kvm.json"
 RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 VALID_CONTAINER_DIGEST = "sha256:" + ("a" * 64)
 RELEASE_TARGET = "linux-x86_64"
@@ -1604,7 +1605,7 @@ class ReleaseBundleTest(unittest.TestCase):
             manifest = json.loads((out_dir / UPLOAD_MANIFEST_NAME).read_text())
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(receipt["schema_version"], 1)
+            self.assertEqual(receipt["schema_version"], 2)
             self.assertEqual(receipt["kind"], "m80_release_publish_decision")
             self.assertEqual(receipt["decision"], "approved")
             self.assertEqual(receipt["release_tag"], "v0.0.0")
@@ -1615,8 +1616,23 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(receipt["github_ref"], "refs/tags/v0.0.0")
             self.assertEqual(receipt["artifact_manifest"]["name"], UPLOAD_MANIFEST_NAME)
             self.assertEqual(receipt["artifact_manifest_digest"], receipt["artifact_manifest"]["sha256"])
-            self.assertEqual(receipt["proof_ledger"]["name"], HOSTLESS_QUICKSTART_PROOF_NAME)
+            self.assertEqual(receipt["proof_ledger"]["name"], RELEASE_PROOF_LEDGER_NAME)
             self.assertEqual(receipt["proof_ledger_digest"], receipt["proof_ledger"]["sha256"])
+            self.assertEqual(
+                receipt["quickstart_proofs"],
+                [
+                    {
+                        "lane_id": "hostless-quickstart",
+                        "proof_kind": "quickstart-proof",
+                        "substrate": "hostless",
+                        "file": {
+                            "name": HOSTLESS_QUICKSTART_PROOF_NAME,
+                            "sha256": f"sha256:{sha256(out_dir / HOSTLESS_QUICKSTART_PROOF_NAME)}",
+                            "size_bytes": (out_dir / HOSTLESS_QUICKSTART_PROOF_NAME).stat().st_size,
+                        },
+                    }
+                ],
+            )
             self.assertEqual(
                 {asset["name"] for asset in receipt["public_assets"]},
                 {asset["name"] for asset in manifest["public_assets"]},
@@ -1658,6 +1674,78 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("proof ledger sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_ledger_proof_json_swap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+
+            result = run_release_publish_receipt(
+                out_dir,
+                "--write",
+                "--proof-ledger",
+                str(out_dir / HOSTLESS_QUICKSTART_PROOF_NAME),
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("proof_ledger must not reference quickstart proof JSON", result.stderr)
+
+    def test_release_publish_receipt_rejects_missing_quickstart_proof_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            (out_dir / HOSTLESS_QUICKSTART_PROOF_NAME).unlink()
+
+            result = run_release_publish_receipt(out_dir, "--write", check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("release publish hostless quickstart proof missing", result.stderr)
+
+    def test_release_publish_receipt_rejects_stale_quickstart_proof_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            (out_dir / HOSTLESS_QUICKSTART_PROOF_NAME).write_text("{\"tampered\": true}\n")
+
+            result = run_release_publish_receipt(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("quickstart proof hostless-quickstart sha256 mismatch", result.stderr)
+
+    def test_release_publish_receipt_rejects_duplicate_quickstart_proof_file_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+
+            result = run_release_publish_receipt(
+                out_dir,
+                "--write",
+                "--real-kvm-proof",
+                str(out_dir / HOSTLESS_QUICKSTART_PROOF_NAME),
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("duplicate quickstart proof file", result.stderr)
+
+    def test_release_publish_receipt_rejects_legacy_ambiguous_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = release_upload_manifest_fixture(Path(tmp))
+            write_publish_proof_ledger(out_dir)
+            run_release_publish_receipt(out_dir, "--write")
+            receipt_path = out_dir / PUBLISH_RECEIPT_NAME
+            receipt = json.loads(receipt_path.read_text())
+            receipt["schema_version"] = 1
+            receipt["proof_ledger"] = receipt["quickstart_proofs"][0]["file"]
+            del receipt["quickstart_proofs"]
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+
+            result = run_release_publish_receipt(out_dir, check=False)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("field mismatch", result.stderr)
 
     def test_release_publish_receipt_rejects_wrong_actor_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4637,19 +4725,20 @@ def evidence_bundle_fixture(root: Path) -> Path:
 
 
 def write_publish_proof_ledger(out_dir: Path) -> Path:
+    write_hostless_quickstart_proof_placeholder(out_dir)
+    return write_release_proof_ledger_placeholder(out_dir)
+
+
+def write_hostless_quickstart_proof_placeholder(out_dir: Path) -> Path:
     proof = out_dir / HOSTLESS_QUICKSTART_PROOF_NAME
     proof.write_text(
         json.dumps(
             {
                 "schema_version": 1,
-                "kind": "hostless-release-proof-ledger-fixture",
+                "kind": "m80_quickstart_proof",
+                "proof_kind": "hostless",
                 "release_tag": "v0.0.0",
-                "proofs": [
-                    {
-                        "name": "hostless-quickstart",
-                        "artifact": HOSTLESS_QUICKSTART_PROOF_NAME,
-                    }
-                ],
+                "substrate": {"kind": "hostless"},
             },
             indent=2,
             sort_keys=True,

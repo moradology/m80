@@ -11,10 +11,12 @@ from pathlib import Path
 import re
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RECEIPT_NAME = "m80-release-publish-decision.json"
 UPLOAD_MANIFEST_NAME = "m80-release-upload-manifest.json"
+RELEASE_PROOF_LEDGER_NAME = "m80-release-proof-ledger.jsonl"
 HOSTLESS_PROOF_NAME = "m80-quickstart-proof-hostless.json"
+REAL_KVM_PROOF_NAME = "m80-quickstart-proof-real-kvm.json"
 KIND = "m80_release_publish_decision"
 DECISIONS = {"approved", "failed"}
 
@@ -35,11 +37,25 @@ TOP_LEVEL_FIELDS = {
     "artifact_manifest_digest",
     "proof_ledger",
     "proof_ledger_digest",
+    "quickstart_proofs",
     "public_assets",
     "failure_reason",
 }
 FILE_REF_FIELDS = {"name", "sha256", "size_bytes"}
 PUBLIC_ASSET_FIELDS = {"name", "kind", "sha256", "size_bytes", "integrity_subject"}
+QUICKSTART_PROOF_FIELDS = {"lane_id", "proof_kind", "substrate", "file"}
+EXPECTED_PROOF_FILES = {
+    "hostless-quickstart": HOSTLESS_PROOF_NAME,
+    "real-kvm-quickstart": REAL_KVM_PROOF_NAME,
+}
+EXPECTED_PROOF_KINDS = {
+    "hostless-quickstart": "quickstart-proof",
+    "real-kvm-quickstart": "quickstart-proof",
+}
+EXPECTED_PROOF_SUBSTRATES = {
+    "hostless-quickstart": "hostless",
+    "real-kvm-quickstart": "real-kvm",
+}
 
 RAW_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -68,7 +84,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--proof-ledger",
         type=Path,
+        help=f"default: <dist-dir>/{RELEASE_PROOF_LEDGER_NAME}",
+    )
+    parser.add_argument(
+        "--hostless-proof",
+        type=Path,
         help=f"default: <dist-dir>/{HOSTLESS_PROOF_NAME}",
+    )
+    parser.add_argument(
+        "--real-kvm-proof",
+        type=Path,
+        help=f"optional: <dist-dir>/{REAL_KVM_PROOF_NAME}",
     )
     parser.add_argument(
         "--receipt",
@@ -83,7 +109,9 @@ def main() -> int:
     args = parse_args()
     dist_dir = args.dist_dir.resolve()
     manifest_path = (args.artifact_manifest or dist_dir / UPLOAD_MANIFEST_NAME).resolve()
-    proof_path = (args.proof_ledger or dist_dir / HOSTLESS_PROOF_NAME).resolve()
+    proof_ledger_path = (args.proof_ledger or dist_dir / RELEASE_PROOF_LEDGER_NAME).resolve()
+    hostless_proof_path = (args.hostless_proof or dist_dir / HOSTLESS_PROOF_NAME).resolve()
+    real_kvm_proof_path = args.real_kvm_proof.resolve() if args.real_kvm_proof else None
     receipt_path = (args.receipt or dist_dir / RECEIPT_NAME).resolve()
 
     if args.write:
@@ -101,7 +129,9 @@ def main() -> int:
             decision=args.decision,
             failure_reason=args.failure_reason,
             manifest_path=manifest_path,
-            proof_path=proof_path,
+            proof_ledger_path=proof_ledger_path,
+            hostless_proof_path=hostless_proof_path,
+            real_kvm_proof_path=real_kvm_proof_path,
         )
         write_json(receipt_path, receipt)
 
@@ -117,7 +147,9 @@ def main() -> int:
         repository=args.repository,
         github_ref=args.github_ref,
         manifest_path=manifest_path,
-        proof_path=proof_path,
+        proof_ledger_path=proof_ledger_path,
+        hostless_proof_path=hostless_proof_path,
+        real_kvm_proof_path=real_kvm_proof_path,
     )
     print(f"release publish decision receipt ok: {receipt_path}")
     return 0
@@ -138,12 +170,33 @@ def build_receipt(
     decision: str,
     failure_reason: str | None,
     manifest_path: Path,
-    proof_path: Path,
+    proof_ledger_path: Path,
+    hostless_proof_path: Path,
+    real_kvm_proof_path: Path | None,
 ) -> dict:
     manifest = read_json(manifest_path, "release upload manifest")
     public_assets = normalized_public_assets(manifest)
     artifact_manifest = file_ref(dist_dir, manifest_path, "artifact manifest")
-    proof_ledger = file_ref(dist_dir, proof_path, "proof ledger")
+    proof_ledger = file_ref(dist_dir, proof_ledger_path, "proof ledger")
+    hostless_proof = file_ref(dist_dir, hostless_proof_path, "hostless quickstart proof")
+    quickstart_proofs = [
+        {
+            "lane_id": "hostless-quickstart",
+            "proof_kind": "quickstart-proof",
+            "substrate": "hostless",
+            "file": hostless_proof,
+        }
+    ]
+    if real_kvm_proof_path is not None:
+        real_kvm_proof = file_ref(dist_dir, real_kvm_proof_path, "real-kvm quickstart proof")
+        quickstart_proofs.append(
+            {
+                "lane_id": "real-kvm-quickstart",
+                "proof_kind": "quickstart-proof",
+                "substrate": "real-kvm",
+                "file": real_kvm_proof,
+            }
+        )
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": KIND,
@@ -161,6 +214,7 @@ def build_receipt(
         "artifact_manifest_digest": artifact_manifest["sha256"],
         "proof_ledger": proof_ledger,
         "proof_ledger_digest": proof_ledger["sha256"],
+        "quickstart_proofs": quickstart_proofs,
         "public_assets": public_assets,
         "failure_reason": failure_reason,
     }
@@ -178,7 +232,9 @@ def verify_receipt(
     repository: str,
     github_ref: str,
     manifest_path: Path,
-    proof_path: Path,
+    proof_ledger_path: Path,
+    hostless_proof_path: Path,
+    real_kvm_proof_path: Path | None,
 ) -> None:
     require_exact_fields(receipt, TOP_LEVEL_FIELDS, "release publish decision receipt")
     require(receipt["schema_version"] == SCHEMA_VERSION, "release publish decision receipt schema_version mismatch")
@@ -228,12 +284,24 @@ def verify_receipt(
     proof_ledger = verify_file_ref(
         receipt["proof_ledger"],
         dist_dir=dist_dir,
-        path=proof_path,
+        path=proof_ledger_path,
         label="proof ledger",
+    )
+    require(
+        not is_quickstart_proof_json_name(proof_ledger["name"]),
+        "release publish decision receipt proof_ledger must not reference quickstart proof JSON",
     )
     require(
         receipt["proof_ledger_digest"] == proof_ledger["sha256"],
         "release publish decision receipt proof_ledger_digest mismatch",
+    )
+    expected_paths = {"hostless-quickstart": hostless_proof_path}
+    if real_kvm_proof_path is not None:
+        expected_paths["real-kvm-quickstart"] = real_kvm_proof_path
+    require_quickstart_proofs(
+        receipt["quickstart_proofs"],
+        dist_dir=dist_dir,
+        expected_paths=expected_paths,
     )
 
     manifest = read_json(manifest_path, "release upload manifest")
@@ -266,6 +334,57 @@ def normalized_receipt_assets(value: object) -> list[dict]:
     names = [row["name"] for row in result]
     require(len(names) == len(set(names)), "release publish decision receipt public asset duplicate name")
     return sorted(result, key=lambda row: row["name"])
+
+
+def require_quickstart_proofs(value: object, *, dist_dir: Path, expected_paths: dict[str, Path]) -> None:
+    require(isinstance(value, list), "release publish decision receipt quickstart_proofs must be a list")
+    require(value, "release publish decision receipt quickstart_proofs must be nonempty")
+    seen_lanes: set[str] = set()
+    seen_files: set[str] = set()
+    for row in value:
+        require(isinstance(row, dict), "release publish decision receipt quickstart proof must be an object")
+        require_exact_fields(row, QUICKSTART_PROOF_FIELDS, "release publish decision receipt quickstart proof")
+        lane_id = require_known_lane(row["lane_id"], "release publish decision receipt quickstart proof lane_id")
+        require(
+            lane_id in expected_paths,
+            f"release publish decision receipt unexpected quickstart proof lane: {lane_id}",
+        )
+        require(lane_id not in seen_lanes, f"release publish decision receipt duplicate quickstart proof lane_id: {lane_id}")
+        seen_lanes.add(lane_id)
+        require(
+            row["proof_kind"] == EXPECTED_PROOF_KINDS[lane_id],
+            f"release publish decision receipt quickstart proof {lane_id} proof_kind mismatch",
+        )
+        require(
+            row["substrate"] == EXPECTED_PROOF_SUBSTRATES[lane_id],
+            f"release publish decision receipt quickstart proof {lane_id} substrate mismatch",
+        )
+        expected_path = expected_paths[lane_id]
+        ref = verify_file_ref(
+            row["file"],
+            dist_dir=dist_dir,
+            path=expected_path,
+            label=f"quickstart proof {lane_id}",
+        )
+        require(
+            is_quickstart_proof_json_name(ref["name"]),
+            f"release publish decision receipt quickstart proof {lane_id} file must be quickstart proof JSON",
+        )
+        require(
+            ref["name"] not in seen_files,
+            f"release publish decision receipt duplicate quickstart proof file: {ref['name']}",
+        )
+        seen_files.add(ref["name"])
+    missing = sorted(set(expected_paths) - seen_lanes)
+    require(
+        not missing,
+        f"release publish decision receipt missing quickstart proof lane: {comma_or_none(missing)}",
+    )
+
+
+def require_known_lane(value: object, label: str) -> str:
+    require(isinstance(value, str) and value in EXPECTED_PROOF_FILES, f"{label} unknown")
+    return value
 
 
 def normalized_public_asset(row: object, label: str) -> dict:
@@ -324,6 +443,10 @@ def require_dist_name(value: object, label: str) -> str:
         f"{label} must be a flat dist file name",
     )
     return value
+
+
+def is_quickstart_proof_json_name(name: str) -> bool:
+    return name == HOSTLESS_PROOF_NAME or (name.startswith("m80-quickstart-proof-") and name.endswith(".json"))
 
 
 def require_raw_sha256(value: object, label: str) -> None:

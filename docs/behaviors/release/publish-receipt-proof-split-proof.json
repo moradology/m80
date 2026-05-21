@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "m80_release_publish_receipt_proof_split_proof",
+  "bead_id": "m80-o3uh9.13.39.4.2",
+  "resolved_tag": "v0.0.0",
+  "substrate": "local-linux-hostless",
+  "command": "python3 -m py_compile scripts/release_publish_receipt.py scripts/test-release-bundle.py && python3 scripts/test-release-bundle.py && python3 scripts/lint-github-workflows.py && python3 scripts/test-workflow-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.13.39.4.2 && br dep cycles --json && git diff --check",
+  "exit_status": 0,
+  "stdout": "test-release-bundle.py: Ran 210 tests OK; workflow policy ok; test-workflow-policy.py: Ran 39 tests OK; release tracker policy ok; br lint ok; br dep cycles found 0 cycles; git diff --check ok",
+  "stderr": "",
+  "observables": [
+    "release publish receipt schema_version is 2",
+    "proof_ledger defaults to m80-release-proof-ledger.jsonl",
+    "quickstart_proofs carries the hostless m80-quickstart-proof-hostless.json file ref",
+    "verifier rejects proof_ledger pointing at quickstart proof JSON",
+    "verifier rejects missing quickstart proof JSON",
+    "verifier rejects stale quickstart proof digest",
+    "verifier rejects duplicate quickstart proof file refs",
+    "verifier rejects legacy ambiguous schema"
+  ]
+}
