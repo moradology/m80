@@ -1,7 +1,7 @@
 # Install State
 
 Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
-`m80-o3uh9.16.8.3`.
+`m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.2`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -14,6 +14,43 @@ The active install is selected by `<install-root>/active`, an absolute symlink
 that points at one versioned directory. Status readers treat the active pointer
 as the local install selector; they do not infer trust from transient download
 directories, workflow logs, or current GitHub release pages.
+
+## Active Install Resolver
+
+The resolver for `m80-o3uh9.16.7.2` is a read-only local status primitive. It
+reads `<install-root>/active`, the selected version directory, effective
+`default_profile` config, and the selected runtime profile. It does not execute
+installed binaries, does not run preflight, does not fetch release metadata, and
+does not download bundles.
+
+The resolver returns one typed state:
+
+- `healthy_active_release`: config selects the installed profile and
+  `<install-root>/active` points at the same version directory.
+- `missing_active_pointer`: the selected profile is install-shaped but
+  `<install-root>/active` is absent.
+- `dangling_active_pointer`: `<install-root>/active` points at a missing
+  version directory.
+- `local_dev_tree`: the selected profile is the built-in `env` profile, so
+  artifact paths come from environment/default discovery instead of an installed
+  release tree.
+- `stale_profile_target`: the selected profile references one version
+  directory while `<install-root>/active` points at another.
+- `explicit_override`: an operator override such as `M80_DEFAULT_PROFILE`, a
+  user config layer, a config drop-in, or a future `--profile` caller override
+  selects a profile instead of trusting the installed system config alone.
+- `invalid_install_metadata`: config/profile parsing failed, the active pointer
+  is malformed, or persisted installed-profile paths are not valid install-root
+  paths.
+
+Diagnostics are structured by code, field, path, and message. The resolver
+rejects active-pointer traversal (`..`), active targets outside
+`<install-root>/versions/`, active targets that are not exactly one version
+directory, install-owned profile path traversal, and install-owned profile
+paths outside the install root. Host prerequisite paths such as Firecracker and
+jailer binaries may still point at their documented system locations. Explicit
+operator profile overrides are reported as overrides rather than rejected as
+broken installed metadata.
 
 ## Proof Cache Contract
 

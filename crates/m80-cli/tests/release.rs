@@ -18,6 +18,9 @@ mod freshness_status_reader;
 #[path = "release/install_handoff_identity.rs"]
 mod install_handoff_identity;
 
+#[path = "release/install_state_resolver.rs"]
+mod install_state_resolver;
+
 #[path = "release/installer_layout.rs"]
 mod installer_layout;
 

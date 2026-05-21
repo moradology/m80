@@ -14,6 +14,7 @@ mod cmds;
 mod cmds_walk;
 mod config;
 mod errors;
+mod install_state;
 mod json;
 mod profile;
 mod release;
