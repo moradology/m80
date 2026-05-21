@@ -47,7 +47,10 @@ index work:
 Automatic update and rollback policy uses
 `docs/behaviors/release/release-tag-ordering.md` for deterministic ordering
 between two stable tags and explicit refusal states for prerelease, build
-metadata, malformed, and local/dev identities.
+metadata, malformed, and local/dev identities. Normal install paths already
+consume that policy through
+`docs/behaviors/release/downgrade-refusal.md`: an older stable target is
+refused by default before staging or active-pointer mutation.
 
 Regression coverage:
 

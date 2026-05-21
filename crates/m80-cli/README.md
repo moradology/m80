@@ -82,7 +82,12 @@ binaries, pull OCI images, or install packages implicitly.
   and whether the verified proof cache was written before activation. Failures
   include finite JSON `code` values for classifier, fetch, digest, attestation,
   stale-material, and no-write rollback cases plus one retry command when the
-  operator should rerun the explicit URL.
+  operator should rerun the explicit URL. When an active install already points
+  at a newer stable release, known older stable targets are refused before
+  asset-index fetch, attestation verifier preflight, staging, profile writes, or
+  active-pointer mutation. The JSON failure variant is `ReleaseTransition` with
+  `code: "downgrade_refused"`, active/requested tags, observed ordering, and a
+  pinned reinstall command for the current active release.
   Non-dry-run stages, verifies, and copies the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
   `<install-root>/active` last.
@@ -188,6 +193,8 @@ Direct official URL diagnostics are captured in
 `docs/behaviors/release/direct-url-diagnostics.md`.
 Installed layout behavior is captured in
 `docs/behaviors/release/installed-layout.md`.
+Default downgrade refusal is captured in
+`docs/behaviors/release/downgrade-refusal.md`.
 
 ### `m80 run` options
 

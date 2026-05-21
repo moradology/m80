@@ -37,3 +37,8 @@ Current installer input validation uses the same stable-tag parser before it
 fetches asset-index metadata. That keeps `m80 install --release-tag`,
 bootstrapper handoff, official bundle URL checks, and freshness parsing aligned
 on one stable-channel definition.
+
+[`downgrade-refusal.md`](downgrade-refusal.md) captures the first install-path
+consumer of this policy: older stable targets fail before network/index work or
+installer staging, while same-version and newer targets continue into their
+normal verification transactions.

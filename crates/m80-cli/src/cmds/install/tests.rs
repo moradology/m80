@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener};
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -436,6 +437,133 @@ fn asset_index_timeout_leaves_install_root_absent_for_dry_run_and_apply() {
 }
 
 #[test]
+fn release_tag_source_refuses_downgrade_before_index_fetch() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    seed_active_release(&install_root, "v1.2.3");
+    let identity = VersionIdentity::from_parts(
+        "1.2.2",
+        Some("v1.2.2"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
+    let mut args = args_with_release_tag("v1.2.2");
+    args.install_root = install_root.clone();
+
+    let err = install_plan_with_index_resolver(&args, &identity, |_, _| {
+        panic!("downgrade refusal must happen before asset-index fetch")
+    })
+    .expect_err("older release should be refused before asset-index fetch");
+
+    let report = release_transition_report(&err);
+    assert_eq!(report.state, ReleaseTransitionState::DowngradeRefused);
+    assert_eq!(report.active_tag.as_deref(), Some("v1.2.3"));
+    assert_eq!(report.target_tag.as_deref(), Some("v1.2.2"));
+    assert_eq!(report.observed_ordering, "target_older");
+    assert!(
+        !install_root.join(".staging").exists(),
+        "downgrade refusal must not create installer staging"
+    );
+}
+
+#[test]
+fn official_bundle_url_refuses_downgrade_before_attestation_preflight() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    seed_active_release(&install_root, "v1.2.3");
+    let identity = VersionIdentity::from_parts(
+        "1.2.2",
+        Some("v1.2.2"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    );
+    let mut args = args_with_bundle_url(
+        "https://github.com/moradology/m80/releases/download/v1.2.2/m80-linux-x86_64.tar.gz",
+    );
+    args.install_root = install_root.clone();
+
+    let err = install_plan(&args, &identity)
+        .expect_err("older official URL should be refused before attestation preflight");
+
+    let report = release_transition_report(&err);
+    assert_eq!(report.state, ReleaseTransitionState::DowngradeRefused);
+    assert_eq!(report.active_tag.as_deref(), Some("v1.2.3"));
+    assert_eq!(report.target_tag.as_deref(), Some("v1.2.2"));
+    assert!(
+        !install_root.join(".staging").exists(),
+        "official URL downgrade refusal must not create installer staging"
+    );
+}
+
+#[test]
+fn release_transition_json_payload_carries_downgrade_tags() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    seed_active_release(&install_root, "v1.2.3");
+
+    let err = enforce_release_transition_for_target(Some(&install_root), "v1.2.2")
+        .expect_err("older target should be refused");
+    let payload = release_transition_json_payload(&err);
+
+    assert_eq!(payload["variant"], "ReleaseTransition", "{payload}");
+    assert_eq!(
+        payload["exit_code"],
+        crate::errors::EXIT_CONFIG,
+        "{payload}"
+    );
+    assert_eq!(payload["code"], "downgrade_refused", "{payload}");
+    assert_eq!(payload["active_tag"], "v1.2.3", "{payload}");
+    assert_eq!(payload["requested_tag"], "v1.2.2", "{payload}");
+    assert_eq!(payload["observed_ordering"], "target_older", "{payload}");
+    assert!(
+        payload["expected_ordering"]
+            .as_str()
+            .is_some_and(|value| value.contains("newer than or equal")),
+        "{payload}"
+    );
+    assert_eq!(
+        payload["reinstall_active_command"],
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh",
+        "{payload}"
+    );
+    assert!(payload["rollback_command"].is_null(), "{payload}");
+}
+
+#[test]
+fn same_version_reinstall_is_not_downgrade_refused() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    seed_active_release(&install_root, "v1.2.3");
+
+    enforce_release_transition_for_target(Some(&install_root), "v1.2.3")
+        .expect("same-version target should not be downgrade refused");
+}
+
+#[test]
+fn missing_active_metadata_still_refuses_older_target_by_pointer_tag() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+    let active_version = install_root.join("versions/v1.2.3");
+    fs::create_dir_all(&active_version).expect("create active version dir");
+    symlink(&active_version, install_root.join("active")).expect("point active at version");
+
+    let err = enforce_release_transition_for_target(Some(&install_root), "v1.2.2")
+        .expect_err("missing metadata must not bypass downgrade refusal");
+
+    let report = release_transition_report(&err);
+    assert_eq!(report.state, ReleaseTransitionState::DowngradeRefused);
+    assert_eq!(report.active_tag.as_deref(), Some("v1.2.3"));
+    assert_eq!(report.target_tag.as_deref(), Some("v1.2.2"));
+}
+
+#[test]
+fn missing_active_pointer_does_not_block_first_install() {
+    let temp = tempfile::tempdir().expect("create tempdir");
+    let install_root = temp.path().join("install-root");
+
+    enforce_release_transition_for_target(Some(&install_root), "v1.2.2")
+        .expect("missing active pointer should be treated as first install");
+}
+
+#[test]
 fn release_tag_source_rejects_dev_binary() {
     let identity = VersionIdentity::from_parts("1.2.3", None, None);
     let err = install_plan(&args_with_release_tag("v1.2.3"), &identity).unwrap_err();
@@ -599,6 +727,9 @@ fn asset_index_diagnostic(err: &InstallError) -> &release_asset_index::AssetInde
     match err {
         InstallError::AssetIndex(err) => err.diagnostic(),
         InstallError::Fc(err) => panic!("expected asset-index error, got {err}"),
+        InstallError::ReleaseTransition(err) => {
+            panic!("expected asset-index error, got release transition {err:?}")
+        }
     }
 }
 
@@ -608,7 +739,39 @@ fn asset_index_json_payload(err: &InstallError) -> serde_json::Value {
             serde_json::to_value(asset_index_error_payload(err)).unwrap()
         }
         InstallError::Fc(err) => panic!("expected asset-index error, got {err}"),
+        InstallError::ReleaseTransition(err) => {
+            panic!("expected asset-index error, got release transition {err:?}")
+        }
     }
+}
+
+fn release_transition_report(err: &InstallError) -> &ReleaseTransitionReport {
+    match err {
+        InstallError::ReleaseTransition(report) => report,
+        InstallError::Fc(err) => panic!("expected release-transition error, got {err}"),
+        InstallError::AssetIndex(err) => {
+            panic!("expected release-transition error, got asset index {err}")
+        }
+    }
+}
+
+fn release_transition_json_payload(err: &InstallError) -> serde_json::Value {
+    match err {
+        InstallError::ReleaseTransition(report) => {
+            serde_json::to_value(release_transition_error_payload(report))
+                .expect("release transition payload should serialize")
+        }
+        InstallError::Fc(err) => panic!("expected release-transition error, got {err}"),
+        InstallError::AssetIndex(err) => {
+            panic!("expected release-transition error, got asset index {err}")
+        }
+    }
+}
+
+fn seed_active_release(install_root: &Path, tag: &str) {
+    let version_dir = install_root.join("versions").join(tag);
+    fs::create_dir_all(&version_dir).expect("create active version dir");
+    symlink(&version_dir, install_root.join("active")).expect("point active at version");
 }
 
 fn source_plan_error_from_index(identity: &VersionIdentity, json: String) -> InstallError {

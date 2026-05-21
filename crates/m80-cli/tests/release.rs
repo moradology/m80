@@ -9,6 +9,9 @@ mod direct_url_fixture_harness;
 #[path = "release/direct_url_diagnostics.rs"]
 mod direct_url_diagnostics;
 
+#[path = "release/downgrade_refusal.rs"]
+mod downgrade_refusal;
+
 #[path = "release/installer_input_contract.rs"]
 mod installer_input_contract;
 

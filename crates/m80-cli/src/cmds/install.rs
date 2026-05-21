@@ -1,3 +1,5 @@
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use m80_firecracker::{ConfigError, FcError};
@@ -6,6 +8,10 @@ use serde::Serialize;
 use crate::args::InstallArgs;
 use crate::release::{VersionIdentity, VersionStatus};
 use crate::release_asset_index;
+use crate::release_policy::{
+    classify_release_tag, release_transition, ReleaseIdentity, ReleaseTransitionReport,
+    ReleaseTransitionState,
+};
 use crate::{errors, json, request_id};
 
 mod layout;
@@ -67,7 +73,7 @@ fn install_plan(
     identity: &VersionIdentity,
 ) -> Result<InstallPlan, InstallError> {
     let source = selected_source(args)?;
-    let source = source_plan(source, identity)?;
+    let source = source_plan(&args.install_root, source, identity)?;
     Ok(install_plan_from_source(args, identity, source))
 }
 
@@ -87,7 +93,12 @@ where
     >,
 {
     let source = selected_source(args)?;
-    let source = source_plan_with_index_resolver(source, identity, resolve_indexed_bundle)?;
+    let source = source_plan_with_index_resolver_for_install(
+        &args.install_root,
+        source,
+        identity,
+        resolve_indexed_bundle,
+    )?;
     Ok(install_plan_from_source(args, identity, source))
 }
 
@@ -124,15 +135,58 @@ fn selected_source(args: &InstallArgs) -> Result<InstallSource<'_>, FcError> {
 }
 
 fn source_plan(
+    install_root: &Path,
     source: InstallSource<'_>,
     identity: &VersionIdentity,
 ) -> Result<SourcePlan, InstallError> {
-    source_plan_with_index_resolver(source, identity, |tag, identity| {
+    source_plan_with_index_resolver_for_install(install_root, source, identity, |tag, identity| {
         release_asset_index::select_release_bundle_for_install(tag, identity)
     })
 }
 
+#[cfg(test)]
 fn source_plan_with_index_resolver<F>(
+    source: InstallSource<'_>,
+    identity: &VersionIdentity,
+    resolve_indexed_bundle: F,
+) -> Result<SourcePlan, InstallError>
+where
+    F: Fn(
+        &str,
+        &VersionIdentity,
+    ) -> Result<
+        release_asset_index::InstallerBundleSelection,
+        release_asset_index::AssetIndexFailure,
+    >,
+{
+    source_plan_with_index_resolver_inner(None, source, identity, resolve_indexed_bundle)
+}
+
+fn source_plan_with_index_resolver_for_install<F>(
+    install_root: &Path,
+    source: InstallSource<'_>,
+    identity: &VersionIdentity,
+    resolve_indexed_bundle: F,
+) -> Result<SourcePlan, InstallError>
+where
+    F: Fn(
+        &str,
+        &VersionIdentity,
+    ) -> Result<
+        release_asset_index::InstallerBundleSelection,
+        release_asset_index::AssetIndexFailure,
+    >,
+{
+    source_plan_with_index_resolver_inner(
+        Some(install_root),
+        source,
+        identity,
+        resolve_indexed_bundle,
+    )
+}
+
+fn source_plan_with_index_resolver_inner<F>(
+    install_root: Option<&Path>,
     source: InstallSource<'_>,
     identity: &VersionIdentity,
     resolve_indexed_bundle: F,
@@ -150,6 +204,7 @@ where
         InstallSource::ReleaseTag(tag) => {
             validate_tag("release-tag", tag)?;
             validate_tag_source_matches_binary("--release-tag", tag, identity)?;
+            enforce_release_transition_for_target(install_root, tag)?;
             let bundle =
                 resolve_indexed_bundle(tag, identity).map_err(InstallError::asset_index)?;
             Ok(SourcePlan {
@@ -162,6 +217,7 @@ where
         InstallSource::BootstrapTag(tag) => {
             validate_tag("bootstrap-tag", tag)?;
             validate_tag_source_matches_binary("--bootstrap-tag", tag, identity)?;
+            enforce_release_transition_for_target(install_root, tag)?;
             let bundle =
                 resolve_indexed_bundle(tag, identity).map_err(InstallError::asset_index)?;
             Ok(SourcePlan {
@@ -173,8 +229,11 @@ where
         }
         InstallSource::BundleUrl(url) => {
             validate_bundle_url(url)?;
-            layout::preflight_attestation_verifier_for_bundle_url(url)?;
             let release_tag = release_tag_from_bundle_url(url);
+            if let Some(tag) = release_tag.as_deref() {
+                enforce_release_transition_for_target(install_root, tag)?;
+            }
+            layout::preflight_attestation_verifier_for_bundle_url(url)?;
             validate_bundle_url_matches_binary(release_tag.as_deref(), identity)?;
             Ok(SourcePlan {
                 kind: SourceKind::BundleUrl,
@@ -184,6 +243,44 @@ where
             })
         }
     }
+}
+
+fn enforce_release_transition_for_target(
+    install_root: Option<&Path>,
+    target_tag: &str,
+) -> Result<(), InstallError> {
+    let Some(install_root) = install_root else {
+        return Ok(());
+    };
+    let Some(active_identity) = active_release_identity(install_root)? else {
+        return Ok(());
+    };
+    let report = release_transition(active_identity, classify_release_tag(target_tag));
+    match report.state {
+        ReleaseTransitionState::UpgradeAllowed | ReleaseTransitionState::AlreadyCurrent => Ok(()),
+        _ => Err(InstallError::release_transition(report)),
+    }
+}
+
+fn active_release_identity(install_root: &Path) -> Result<Option<ReleaseIdentity>, InstallError> {
+    let active = active_pointer(install_root);
+    let target = match fs::read_link(&active) {
+        Ok(target) => target,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(FcError::PathIo {
+                path: active,
+                source,
+            }
+            .into());
+        }
+    };
+    let Some(tag) = target.file_name().and_then(|name| name.to_str()) else {
+        return Ok(Some(ReleaseIdentity::Malformed {
+            tag: target.display().to_string(),
+        }));
+    };
+    Ok(Some(classify_release_tag(tag)))
 }
 
 fn validate_tag(field: &'static str, tag: &str) -> Result<(), FcError> {
@@ -396,6 +493,9 @@ fn render_install_error(err: &InstallError, json_mode: bool) -> i32 {
     match err {
         InstallError::Fc(err) => errors::render_error(err, json_mode),
         InstallError::AssetIndex(err) => render_asset_index_error(err, json_mode),
+        InstallError::ReleaseTransition(report) => {
+            render_release_transition_error(report, json_mode)
+        }
     }
 }
 
@@ -470,15 +570,103 @@ struct AssetIndexErrorEnvelope {
     diagnostic: release_asset_index::AssetIndexDiagnostic,
 }
 
+fn render_release_transition_error(report: &ReleaseTransitionReport, json_mode: bool) -> i32 {
+    let exit_code = errors::EXIT_CONFIG;
+    let payload = release_transition_error_payload(report);
+    if json_mode {
+        eprintln!("{}", json::to_pretty(&payload));
+    } else {
+        if let Some(request_id) = request_id::current() {
+            eprintln!(
+                "error: [{request_id}] release transition: {}",
+                payload.detail
+            );
+        } else {
+            eprintln!("error: release transition: {}", payload.detail);
+        }
+        eprintln!("release_transition_code={}", payload.code);
+        eprintln!(
+            "active_tag={}",
+            payload.active_tag.as_deref().unwrap_or("<unavailable>")
+        );
+        eprintln!(
+            "requested_tag={}",
+            payload.requested_tag.as_deref().unwrap_or("<unavailable>")
+        );
+        eprintln!("expected_ordering={}", payload.expected_ordering);
+        eprintln!("observed_ordering={}", payload.observed_ordering);
+        if let Some(command) = &payload.reinstall_active_command {
+            eprintln!("reinstall_active_command={command}");
+        }
+        eprintln!("rollback_command=<unavailable>");
+    }
+    exit_code
+}
+
+fn release_transition_error_payload(
+    report: &ReleaseTransitionReport,
+) -> ReleaseTransitionErrorEnvelope {
+    ReleaseTransitionErrorEnvelope {
+        variant: "ReleaseTransition",
+        exit_code: errors::EXIT_CONFIG,
+        code: report.state.as_str(),
+        active_tag: report.active_tag.clone(),
+        requested_tag: report.target_tag.clone(),
+        expected_ordering: report.expected_ordering,
+        observed_ordering: report.observed_ordering,
+        detail: report.diagnostic.clone(),
+        reinstall_active_command: report
+            .active_tag
+            .as_deref()
+            .filter(|tag| release_tag_is_url_safe(tag))
+            .map(pinned_install_command),
+        rollback_command: None,
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReleaseTransitionErrorEnvelope {
+    variant: &'static str,
+    exit_code: i32,
+    code: &'static str,
+    active_tag: Option<String>,
+    requested_tag: Option<String>,
+    expected_ordering: &'static str,
+    observed_ordering: &'static str,
+    detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reinstall_active_command: Option<String>,
+    rollback_command: Option<String>,
+}
+
+fn pinned_install_command(tag: &str) -> String {
+    format!(
+        "curl -fsSL https://github.com/moradology/m80/releases/download/{tag}/install.sh | sudo sh"
+    )
+}
+
+fn release_tag_is_url_safe(tag: &str) -> bool {
+    !tag.is_empty()
+        && tag
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+}
+
 #[derive(Debug)]
 enum InstallError {
     Fc(FcError),
     AssetIndex(Box<release_asset_index::AssetIndexFailure>),
+    ReleaseTransition(Box<ReleaseTransitionReport>),
 }
 
 impl InstallError {
     fn asset_index(value: release_asset_index::AssetIndexFailure) -> Self {
         Self::AssetIndex(Box::new(value))
+    }
+
+    fn release_transition(value: ReleaseTransitionReport) -> Self {
+        Self::ReleaseTransition(Box::new(value))
     }
 }
 
@@ -493,6 +681,7 @@ impl std::fmt::Display for InstallError {
         match self {
             Self::Fc(err) => write!(f, "{err}"),
             Self::AssetIndex(err) => write!(f, "{err}"),
+            Self::ReleaseTransition(report) => write!(f, "{}", report.diagnostic),
         }
     }
 }

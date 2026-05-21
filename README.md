@@ -123,6 +123,9 @@ sudo sh "${tmp}/install.sh"
 `m80 install-status` explains local install-state problems before you debug a
 launch: missing active pointer, stale profile target, explicit profile override,
 local-dev profile, missing/stale install metadata, and tampered proof cache.
+Re-running install with a known older stable release is refused by default
+before staging or profile writes; the diagnostic names the active tag, requested
+tag, `downgrade_refused`, and a pinned reinstall command for the active release.
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,
 Firecracker seccomp filter, `host-binaries.manifest.json` for the installed
