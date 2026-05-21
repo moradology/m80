@@ -3,7 +3,8 @@
 Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
 `m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.1`,
 `m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`,
-`m80-o3uh9.16.7.4`, `m80-o3uh9.16.7.5`.
+`m80-o3uh9.16.7.4`, `m80-o3uh9.16.7.5`,
+`m80-o3uh9.16.7.6`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -95,6 +96,29 @@ available; and
 `next_action.kind` uses `ready`, `install_release`, `reinstall_release`, or
 `remove_override`.
 
+JSON field table:
+
+| Field | Meaning | Evidence use |
+| --- | --- | --- |
+| `schema_version` | Installed-status payload schema. | Must be `1` for current release evidence. |
+| `status` | One finite resolver state. | Primary local install health classification. |
+| `install_root` | Root inspected by this status invocation. | Distinguishes default `/opt/m80` from explicit install-root captures. |
+| `active.status` | `live`, `missing`, `dangling`, or `invalid`. | Shows whether `<install-root>/active` selected a usable version directory. |
+| `active.release_tag` | Release tag parsed from the active version directory. | Pairs status evidence with the release being promoted or repaired. |
+| `active.install_dir` | Active version directory path. | Confirms the selected installed tree under `<install-root>/versions/`. |
+| `selected_config.default_profile` | Effective profile name selected by config/env/flag layers. | Explains which profile `m80 run` will use by default. |
+| `selected_config.default_profile_source` | Config layer that selected the default profile. | Distinguishes installed system config from env/user/drop-in/flag overrides. |
+| `selected_config.explicit_override` | Whether the selected default came from an override source. | Prevents treating intentional override captures as installed-default proof. |
+| `selected_profile.*` | Selected profile name, source, body source, paths, release tag, and m80 version. | Confirms the profile points at the same installed release as the active pointer. |
+| `metadata.bundle_metadata.path/status/sha256` | Bundle metadata path, status, and digest. | Evidence that installed bundle metadata is present and untampered. |
+| `metadata.host_binaries_manifest.path/status/sha256` | Host-binaries manifest path, status, and digest. | Evidence for final host-side TCB paths after install. |
+| `metadata.install_provenance.path/status/sha256` | Install provenance path, status, and digest. | Evidence for relocation/installer provenance. |
+| `metadata.proof_cache_manifest.path/status/sha256` | Proof-cache manifest path, status, and digest. | Evidence that public verification material was preserved. |
+| `diagnostics[]` | Resolver diagnostics with code, field, path, and message. | Machine-readable failure details for repair beads and support captures. |
+| `mismatches[]` | Expected/observed mismatch records for stale defaults and overrides. | Shows exactly which tag/path/source differs from the installed default. |
+| `next_action.kind` | `ready`, `install_release`, `reinstall_release`, or `remove_override`. | Stable automation hint for local repair UX. |
+| `next_action.command` | Exact command when a safe command exists. | Copyable repair or smoke command; absent for override removal. |
+
 Status output also includes `mismatches`, a structured list for cases where the
 selected local state is intentionally or accidentally not the installed default.
 Each mismatch has a finite `code`, a message, and any applicable
@@ -119,6 +143,35 @@ The status command uses this list to make these cases distinct:
 Quickstart troubleshooting starts with `m80 install-status` to decide whether
 the local release bundle/profile pair is coherent. Host substrate problems stay
 in `m80 preflight`; update freshness stays in the release freshness monitor.
+
+Repair examples:
+
+```text
+status=healthy_active_release
+next_action=installed release is ready
+next_action_command=m80 run -- echo hello
+```
+
+```text
+status=missing_active_pointer
+next_action=install a release to create the active install pointer
+next_action_command=curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+```
+
+```text
+status=stale_profile_target
+mismatch_0_code=stale_profile_target
+mismatch_0_expected_tag=v1.2.4
+mismatch_0_observed_tag=v1.2.3
+next_action=reinstall the selected release to refresh the installed bundle
+next_action_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
+```
+
+```text
+status=explicit_override
+mismatch_0_code=explicit_profile_override
+next_action=remove the profile override to inspect the installed default release
+```
 
 ## Installed Metadata Reader
 

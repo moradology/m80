@@ -144,6 +144,47 @@ bytes with `sudo`. It prints the release tag, source commit,
 handoff. See
 `docs/behaviors/release/verified-install-handoff.md`.
 
+## Installed Status Evidence
+
+Release evidence captures include the installed status JSON from the candidate
+install root:
+
+```sh
+m80 --json install-status > install-status.json
+```
+
+Capture these fields from `install-status.json` when recording release
+evidence:
+
+- `schema_version`: must be `1`.
+- `status`: must be `healthy_active_release` for a default installed release
+  evidence capture.
+- `install_root`: the root inspected by the command, usually `/opt/m80`.
+- `active.release_tag` and `active.install_dir`: the selected release tag and
+  version directory.
+- `selected_config.default_profile`,
+  `selected_config.default_profile_source`, and
+  `selected_config.explicit_override`: evidence that the installed system
+  default profile, not an override, selected the runtime profile.
+- `selected_profile.name`, `selected_profile.body_source`,
+  `selected_profile.install_dir`, and `selected_profile.release_tag`: evidence
+  that `m80 run` will use the same installed version as the active pointer.
+- `metadata.bundle_metadata.path`,
+  `metadata.host_binaries_manifest.path`,
+  `metadata.install_provenance.path`, and
+  `metadata.proof_cache_manifest.path`: paths to the installed metadata and
+  preserved public proof material.
+- Each metadata status and sha256 field: proof that the files were present and
+  matched the status reader's local digest checks.
+- `diagnostics` and `mismatches`: must be empty for a default installed release
+  evidence capture. Non-empty values are repair inputs, not green evidence.
+- `next_action.kind`: must be `ready`; `next_action.command` should be
+  `m80 run -- echo hello`.
+
+This status capture proves the local installed selector/profile/metadata shape.
+It does not replace the real-KVM smoke, public release proof, host-prerequisite
+preflight, or freshness lanes.
+
 ## Verification
 
 The release identity is pinned by:

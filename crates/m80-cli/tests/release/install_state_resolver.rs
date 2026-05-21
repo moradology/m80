@@ -23,6 +23,7 @@ fn install_state_doc_names_resolver_states_and_guards() {
         "`m80-o3uh9.16.7.3`",
         "`m80-o3uh9.16.7.4`",
         "`m80-o3uh9.16.7.5`",
+        "`m80-o3uh9.16.7.6`",
         "bundle.json",
         "install-provenance.json",
         "host-binaries.manifest.json",
@@ -30,6 +31,14 @@ fn install_state_doc_names_resolver_states_and_guards() {
         "`schema_version: 1`",
         "`next_action`",
         "`mismatches`",
+        "JSON field table",
+        "| `schema_version` |",
+        "| `active.release_tag` |",
+        "`selected_config.explicit_override`",
+        "`metadata.proof_cache_manifest.path/status/sha256`",
+        "Repair examples:",
+        "status=missing_active_pointer",
+        "status=explicit_override",
         "`expected_tag`",
         "`observed_tag`",
         "`explicit_profile_override`",
@@ -49,6 +58,55 @@ fn install_state_doc_names_resolver_states_and_guards() {
         assert!(
             doc.contains(required),
             "install-state doc missing {required:?}"
+        );
+    }
+}
+
+#[test]
+fn install_state_docs_keep_quickstart_and_release_evidence_repairable() {
+    let readme = read_repo_file("README.md");
+    let runbook = read_repo_file("docs/runbook/release.md");
+    let install_state = read_repo_file("docs/behaviors/release/install-state.md");
+
+    for required in [
+        "If install, preflight, or the first `m80 run -- echo hello` fails",
+        "`m80 install-status` first and then `m80 preflight`",
+        "github.com/moradology/m80/releases/latest/download/install.sh",
+    ] {
+        assert!(readme.contains(required), "README missing {required:?}");
+    }
+
+    for required in [
+        "## Installed Status Evidence",
+        "m80 --json install-status > install-status.json",
+        "`active.release_tag` and `active.install_dir`",
+        "`selected_config.explicit_override`",
+        "`metadata.proof_cache_manifest.path`",
+        "`diagnostics` and `mismatches`: must be empty",
+        "`next_action.kind`: must be `ready`",
+        "does not replace the real-KVM smoke",
+    ] {
+        assert!(
+            runbook.contains(required),
+            "release runbook missing {required:?}"
+        );
+    }
+
+    for (name, doc) in [
+        ("README.md", readme.as_str()),
+        ("docs/runbook/release.md", runbook.as_str()),
+        (
+            "docs/behaviors/release/install-state.md",
+            install_state.as_str(),
+        ),
+    ] {
+        assert!(
+            !doc.contains("raw.githubusercontent.com/moradology/m80"),
+            "{name} should not use raw main installer URLs"
+        );
+        assert!(
+            !doc.contains("/releases/latest/download/m80-"),
+            "{name} should not use direct artifact-only latest bundle selectors"
         );
     }
 }

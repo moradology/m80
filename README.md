@@ -120,9 +120,11 @@ sudo sh "${tmp}/install.sh"
 ```
 <!-- m80:quickstart-snippet verified-install-handoff end -->
 
-`m80 install-status` explains local install-state problems before you debug a
-launch: missing active pointer, stale profile target, explicit profile override,
-local-dev profile, missing/stale install metadata, and tampered proof cache.
+If install, preflight, or the first `m80 run -- echo hello` fails, capture
+`m80 install-status` first and then `m80 preflight`; status explains local
+install-state problems before you debug a launch: missing active pointer, stale
+profile target, explicit profile override, local-dev profile, missing/stale
+install metadata, and tampered proof cache.
 Re-running install with a known older stable release is refused by default
 before staging or profile writes; the diagnostic names the active tag, requested
 tag, `downgrade_refused`, and a pinned reinstall command for the active release.
