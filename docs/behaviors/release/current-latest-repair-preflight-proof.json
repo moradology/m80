@@ -1,0 +1,24 @@
+{
+  "bead": "m80-o3uh9.21.7.1.1",
+  "commands": [
+    "python3 scripts/test-current-latest-repair-preflight.py",
+    "python3 scripts/test-release-bundle.py",
+    "python3 scripts/lint-github-workflows.py",
+    "python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+    "cargo test -p m80-cli --test release -- --test-threads=2",
+    "cargo fmt --all -- --check",
+    "git diff --check"
+  ],
+  "covered_acceptance": [
+    "preflight artifact records target tag, source commit, workspace version, expected tag, dirty status, latest tag, and v0.2.6 supersession state",
+    "preflight rejects tag/version mismatch",
+    "preflight rejects dirty tree",
+    "preflight rejects existing tag pointing at another commit",
+    "preflight rejects uploading current-main assets into an old latest tag",
+    "preflight rejects missing or non-stable current-latest metadata",
+    "release workflow runs preflight before packaging or upload mutation"
+  ],
+  "kind": "m80_current_latest_repair_preflight_proof",
+  "schema_version": 1,
+  "status": "verified-local"
+}

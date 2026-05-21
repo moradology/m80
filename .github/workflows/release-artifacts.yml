@@ -32,6 +32,8 @@ jobs:
       release_commit: ${{ steps.release-commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         run: rustup toolchain install 1.82 --profile minimal
@@ -97,6 +99,39 @@ jobs:
           set -euo pipefail
           release_commit_sha="$(git rev-parse HEAD)"
           echo "sha=$release_commit_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Capture current latest release metadata
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          if gh release view --json tagName,url > "$ARTIFACT_DIR/current-latest-release.json"; then
+            :
+          else
+            printf '{}\n' > "$ARTIFACT_DIR/current-latest-release.json"
+          fi
+
+      - name: Preflight current latest repair target
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          scripts/current_latest_repair_preflight.py \
+            --release-tag "$GITHUB_REF_NAME" \
+            --source-commit "$RELEASE_COMMIT" \
+            --latest-metadata "$ARTIFACT_DIR/current-latest-release.json" \
+            --out "$ARTIFACT_DIR/m80-current-latest-repair-preflight.json"
+
+      - name: Upload current latest repair preflight
+        if: startsWith(github.ref, 'refs/tags/') && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-current-latest-repair-preflight-${{ github.run_id }}
+          path: /tmp/m80-release-artifacts/m80-current-latest-repair-preflight.json
+          if-no-files-found: error
 
       - name: Package release bundle and asset index
         if: startsWith(github.ref, 'refs/tags/')

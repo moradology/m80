@@ -21,6 +21,9 @@ mod freshness_status_reader;
 #[path = "release/freshness_failure_policy.rs"]
 mod freshness_failure_policy;
 
+#[path = "release/current_latest_repair_preflight.rs"]
+mod current_latest_repair_preflight;
+
 #[path = "release/install_handoff_identity.rs"]
 mod install_handoff_identity;
 

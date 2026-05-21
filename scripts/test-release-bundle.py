@@ -1171,10 +1171,12 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_evidence_bundle.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/release_proof_ledger.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/freshness_failure_policy.py")
+        self.assertRegex(workflow, r"python3 -m py_compile .*scripts/current_latest_repair_preflight.py")
         self.assertRegex(workflow, r"python3 -m py_compile .*scripts/test-workflow-policy.py")
         self.assertIn("python3 scripts/test-release-url-contract.py", workflow)
         self.assertIn("python3 scripts/test-freshness-failure-policy.py", workflow)
         self.assertIn("python3 scripts/verify-freshness-failure-policy.py", workflow)
+        self.assertIn("python3 scripts/test-current-latest-repair-preflight.py", workflow)
         self.assertIn("python3 scripts/test-workflow-policy.py", workflow)
         self.assertIn("python3 scripts/test-release-proof-ledger.py", workflow)
         self.assertIn(
@@ -1217,6 +1219,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
         self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
         self.assertIn("uses: actions/checkout@v6", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
         self.assertNotIn("actions/checkout@v4", workflow)
         self.assertIn("actions/attest@v4", workflow)
         self.assertIn("cargo build --locked -p m80-image-build --release", workflow)
@@ -1237,6 +1240,16 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("release_commit_sha=\"$(git rev-parse HEAD)\"", workflow)
         self.assertIn('echo "sha=$release_commit_sha" >> "$GITHUB_OUTPUT"', workflow)
         self.assertNotIn('echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"', workflow)
+        self.assertIn("Capture current latest release metadata", workflow)
+        self.assertIn("Preflight current latest repair target", workflow)
+        self.assertIn("scripts/current_latest_repair_preflight.py", workflow)
+        self.assertIn("--latest-metadata \"$ARTIFACT_DIR/current-latest-release.json\"", workflow)
+        self.assertIn("--out \"$ARTIFACT_DIR/m80-current-latest-repair-preflight.json\"", workflow)
+        self.assertIn("m80-current-latest-repair-preflight-${{ github.run_id }}", workflow)
+        self.assertLess(
+            workflow.index("scripts/current_latest_repair_preflight.py"),
+            workflow.index("scripts/package-release-bundle.py"),
+        )
         self.assertIn("RELEASE_COMMIT: ${{ steps.release-commit.outputs.sha }}", workflow)
         self.assertIn("RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}", workflow)
         self.assertIn('--commit-sha "$RELEASE_COMMIT"', workflow)
