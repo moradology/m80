@@ -1,0 +1,30 @@
+{
+  "bead": "m80-o3uh9.21.1.1",
+  "command": "python3 scripts/test-release-freshness.py",
+  "exit_status": 0,
+  "kind": "m80_release_freshness_network_bounds_proof",
+  "resolved_tag": "v1.2.3",
+  "commands": [
+    "python3 -m py_compile scripts/release_freshness.py scripts/test-release-freshness.py",
+    "python3 scripts/test-release-freshness.py",
+    "python3 scripts/lint-github-workflows.py",
+    "python3 scripts/test-workflow-policy.py",
+    "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json",
+    "br lint m80-o3uh9.21.1.1",
+    "br dep cycles --json",
+    "git diff --check"
+  ],
+  "covers": [
+    "bounded GitHub latest metadata fetches",
+    "bounded latest and pinned install.sh fetches",
+    "bounded installer-consumed public asset fetches",
+    "docs-linked latest install source diagnostics",
+    "timeout, DNS/connect, HTTP, redirect-loop, and partial-download failure classes"
+  ],
+  "stderr": "",
+  "stdout": "Ran 3 tests in 2.203s OK",
+  "substrate": {
+    "kind": "hostless-fixture",
+    "summary": "fake curl fixtures exercise public freshness URL fetch bounds without real network or KVM"
+  }
+}

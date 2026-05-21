@@ -107,6 +107,20 @@ before emitting install handoff JSON. URL-mode failures name the fetch role,
 metadata URL, and curl failure class. Fixture mode stays network-free and does
 not require curl.
 
+Scheduled hostless freshness uses the same bounds through
+`scripts/release_freshness.py`. The verifier checks GitHub latest metadata, the
+documented latest install URL, the pinned install URL for the resolved stable
+tag, every installer-consumed public asset URL, and concrete docs-linked
+release install URLs. Failures name the URL, release tag, asset, freshness role,
+curl exit code, and source such as `docs:README.md:<line>`, so stale docs or
+missing public assets are repairable without rerunning a privileged smoke.
+Until the fuller freshness failure-policy automation in `m80-o3uh9.21.2`
+lands, this lane does not page by itself: a failure blocks a green freshness
+status and the next release/latest promotion, and the operator files or updates
+one freshness bead for persistent stale URL, missing asset, docs drift, or
+verification-failure classes. Transient network failures should be retried once
+before filing.
+
 The shell installer bounds every release-asset download before the bundled
 `m80 install` binary can take over. Each fetch uses a 10 second connect timeout,
 120 second total timeout, two retries, and a one second retry delay. Failure
