@@ -726,6 +726,45 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("active tracker epoch release-old is configured as retired", result.stderr)
 
+    def test_closed_configured_epoch_without_close_reason_fails(self) -> None:
+        with tracker_repo() as repo:
+            result = repo.run_with_closed_epoch(close_reason=None)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "closed release epoch requires final close-matrix close_reason",
+                result.stderr,
+            )
+
+    def test_closed_configured_epoch_missing_matrix_artifact_fails(self) -> None:
+        with tracker_repo() as repo:
+            placeholder = repo.root / "placeholder.txt"
+            placeholder.write_text("placeholder")
+            sha = repo.commit_all("placeholder")
+
+            result = repo.run_with_closed_epoch(
+                close_reason=f"verified: artifacts/missing-matrix.json @ {sha}",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("final close matrix path is missing", result.stderr)
+
+    def test_closed_configured_epoch_non_matrix_artifact_fails(self) -> None:
+        with tracker_repo() as repo:
+            result = repo.run_with_closed_epoch(artifact=valid_quickstart_proof())
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "final close matrix artifact must have kind release_final_close_matrix",
+                result.stderr,
+            )
+
+    def test_closed_configured_epoch_with_valid_matrix_passes(self) -> None:
+        with tracker_repo() as repo:
+            result = repo.run_with_closed_epoch(artifact=valid_close_matrix())
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class tracker_repo:
     def __enter__(self) -> "tracker_repo":
@@ -793,6 +832,35 @@ class tracker_repo:
             ],
         )
         return self.run_verify()
+
+    def run_with_closed_epoch(
+        self,
+        *,
+        artifact: dict | None = None,
+        close_reason: str | None = "",
+    ) -> subprocess.CompletedProcess[str]:
+        config = write_policy_config(
+            self.root,
+            [{"id": "m80-o3uh9", "status": "active"}],
+        )
+        if artifact is not None:
+            artifact_path = self.root / "artifacts" / "close-matrix.json"
+            artifact_path.parent.mkdir()
+            artifact_path.write_text(json.dumps(artifact, indent=2, sort_keys=True))
+            sha = self.commit_all("closed epoch artifact")
+            close_reason = f"verified: artifacts/close-matrix.json @ {sha}"
+        closed_epoch = issue(
+            "m80-o3uh9",
+            "Epoch",
+            status="closed",
+            labels=["epoch", "quickstart", "release", "requires-verified-close"],
+            close_reason=close_reason,
+            closed_at="2026-05-21T00:00:00+00:00",
+        )
+        if close_reason is None:
+            closed_epoch.pop("close_reason", None)
+        write_issues(self.root, [closed_epoch])
+        return self.run_verify("--policy-config", str(config))
 
 
 def issue(

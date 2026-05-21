@@ -85,6 +85,13 @@ validator fails closed on unknown top-level keys, unknown row keys, malformed
 timestamps, malformed tracker digests, empty rows, absolute paths, escaping
 paths, and unknown schema versions.
 
+When a configured release or quickstart epoch is closed, its close reason must
+cite a committed final close matrix with
+`verified: <artifact-path> @ <commit-sha>`. A generic quickstart proof artifact
+is not enough for epoch closure; the epoch-level artifact must be the final
+matrix shape above. Parent epochs keep `requires-verified-close` until that
+matrix is committed.
+
 Relevant tests:
 
 - `scripts/test-release-tracker-policy.py`

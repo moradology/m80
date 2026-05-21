@@ -224,6 +224,37 @@ def verify_policy_config(
             check_git_history=check_git_history,
         ):
             errors.append(f"{config_path}: active epoch {epic}: {error}")
+    for error in verify_closed_configured_epochs(
+        issues_by_id,
+        config=config,
+        config_path=config_path,
+        repo_root=repo_root,
+        check_git_history=check_git_history,
+    ):
+        errors.append(error)
+    return errors
+
+
+def verify_closed_configured_epochs(
+    issues_by_id: dict[str, dict[str, Any]],
+    *,
+    config: dict[str, Any],
+    config_path: Path,
+    repo_root: Path,
+    check_git_history: bool,
+) -> list[str]:
+    errors: list[str] = []
+    for epoch in config["epochs"]:
+        epoch_id = epoch["id"]
+        issue = issues_by_id.get(epoch_id)
+        if issue is None or not is_closed_release_epoch(issue):
+            continue
+        for error in verify_closed_epoch_close_matrix(
+            issue,
+            repo_root=repo_root,
+            check_git_history=check_git_history,
+        ):
+            errors.append(f"{config_path}: configured epoch {epoch_id}: {error}")
     return errors
 
 
@@ -259,6 +290,18 @@ def is_active_release_epoch(issue: dict[str, Any]) -> bool:
     label_set = set(labels)
     return (
         is_openish(issue)
+        and "epoch" in label_set
+        and ("release" in label_set or "quickstart" in label_set)
+    )
+
+
+def is_closed_release_epoch(issue: dict[str, Any]) -> bool:
+    labels = issue.get("labels")
+    if not isinstance(labels, list):
+        return False
+    label_set = set(labels)
+    return (
+        issue.get("status") == "closed"
         and "epoch" in label_set
         and ("release" in label_set or "quickstart" in label_set)
     )
@@ -576,6 +619,68 @@ def verify_closed_issue(
             errors.extend(verify_git_ref(repo_root, issue_id, rel_path, commit))
         errors.extend(verify_proof_artifact(issue_id, artifact))
     return errors
+
+
+def verify_closed_epoch_close_matrix(
+    issue: dict[str, Any],
+    *,
+    repo_root: Path,
+    check_git_history: bool,
+) -> list[str]:
+    issue_id = issue["id"]
+    reason = issue.get("close_reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return [f"{issue_id}: closed release epoch requires final close-matrix close_reason"]
+    refs = VERIFIED_REF_RE.findall(reason)
+    if not refs:
+        return [
+            f"{issue_id}: close_reason must contain "
+            "`verified: <artifact-path> @ <commit-sha>` for a final close matrix"
+        ]
+
+    errors: list[str] = []
+    for rel_path, commit in refs:
+        matrix_errors = verify_close_matrix_ref(
+            issue_id,
+            rel_path,
+            commit,
+            repo_root=repo_root,
+            check_git_history=check_git_history,
+        )
+        if not matrix_errors:
+            return []
+        errors.extend(matrix_errors)
+    return errors
+
+
+def verify_close_matrix_ref(
+    issue_id: str,
+    rel_path: str,
+    commit: str,
+    *,
+    repo_root: Path,
+    check_git_history: bool,
+) -> list[str]:
+    artifact = artifact_path(repo_root, rel_path)
+    if artifact is None:
+        return [f"{issue_id}: final close matrix path must be relative: {rel_path}"]
+    if not artifact.is_file():
+        return [f"{issue_id}: final close matrix path is missing: {rel_path}"]
+    errors: list[str] = []
+    if check_git_history:
+        errors.extend(verify_git_ref(repo_root, issue_id, rel_path, commit))
+        if errors:
+            return errors
+    try:
+        value = json.loads(artifact.read_text(errors="replace"))
+    except json.JSONDecodeError as exc:
+        return [f"{issue_id}: final close matrix must be JSON: {rel_path}: {exc}"]
+    if not isinstance(value, dict) or value.get("kind") != CLOSE_MATRIX_KIND:
+        return [
+            f"{issue_id}: final close matrix artifact must have kind "
+            f"{CLOSE_MATRIX_KIND}: {rel_path}"
+        ]
+    return verify_close_matrix_artifact(issue_id, artifact, value)
 
 
 def artifact_path(repo_root: Path, rel_path: str) -> Path | None:
