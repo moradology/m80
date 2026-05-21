@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use m80_firecracker::ConfigSource;
 use serde::Serialize;
@@ -11,6 +11,8 @@ use crate::install_state::{
     MetadataFileStatus,
 };
 use crate::json;
+
+const DEFAULT_INSTALL_ROOT: &str = "/opt/m80";
 
 pub(super) fn cmd_install_status(args: InstallStatusArgs, json_mode: bool) -> anyhow::Result<i32> {
     let report = resolve_install_state(InstallStateRequest {
@@ -107,6 +109,56 @@ fn render_human(output: &InstallStatusOutput) -> String {
     } else {
         push_line(&mut text, "selected_profile", "<unavailable>");
     }
+    push_line(&mut text, "mismatch_count", output.mismatches.len());
+    for (index, mismatch) in output.mismatches.iter().enumerate() {
+        let prefix = format!("mismatch_{index}");
+        push_line(
+            &mut text,
+            &format!("{prefix}_code"),
+            mismatch_code_label(mismatch.code),
+        );
+        push_optional_path(
+            &mut text,
+            &format!("{prefix}_expected_path"),
+            mismatch.expected_path.as_ref(),
+        );
+        push_optional_path(
+            &mut text,
+            &format!("{prefix}_observed_path"),
+            mismatch.observed_path.as_ref(),
+        );
+        push_optional(
+            &mut text,
+            &format!("{prefix}_expected_tag"),
+            mismatch.expected_tag.as_deref(),
+        );
+        push_optional(
+            &mut text,
+            &format!("{prefix}_observed_tag"),
+            mismatch.observed_tag.as_deref(),
+        );
+        push_optional_string(
+            &mut text,
+            &format!("{prefix}_expected_source"),
+            mismatch.expected_source.map(|source| format!("{source:?}")),
+        );
+        push_optional_string(
+            &mut text,
+            &format!("{prefix}_observed_source"),
+            mismatch.observed_source.map(|source| format!("{source:?}")),
+        );
+        push_optional(
+            &mut text,
+            &format!("{prefix}_expected_value"),
+            mismatch.expected_value.as_deref(),
+        );
+        push_optional(
+            &mut text,
+            &format!("{prefix}_observed_value"),
+            mismatch.observed_value.as_deref(),
+        );
+        push_line(&mut text, &format!("{prefix}_message"), &mismatch.message);
+    }
     if let Some(metadata) = &output.metadata {
         push_metadata_file(&mut text, "bundle_metadata", &metadata.bundle_metadata);
         push_metadata_file(
@@ -184,6 +236,7 @@ struct InstallStatusOutput {
     selected_profile: Option<ProfileStatusOutput>,
     metadata: Option<MetadataStatusOutput>,
     diagnostics: Vec<InstallStateDiagnostic>,
+    mismatches: Vec<InstallStatusMismatch>,
     next_action: NextAction,
 }
 
@@ -204,6 +257,7 @@ impl InstallStatusOutput {
                 .as_ref()
                 .map(MetadataStatusOutput::from_report),
             diagnostics: report.diagnostics.clone(),
+            mismatches: install_status_mismatches(report),
             next_action: next_action(report),
         }
     }
@@ -319,6 +373,29 @@ impl MetadataFileOutput {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct InstallStatusMismatch {
+    code: InstallStatusMismatchCode,
+    expected_path: Option<PathBuf>,
+    observed_path: Option<PathBuf>,
+    expected_tag: Option<String>,
+    observed_tag: Option<String>,
+    expected_source: Option<ConfigSource>,
+    observed_source: Option<ConfigSource>,
+    expected_value: Option<String>,
+    observed_value: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum InstallStatusMismatchCode {
+    InstallRootOverride,
+    ExplicitProfileOverride,
+    SelectedProfileUnavailable,
+    StaleProfileTarget,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct NextAction {
     kind: NextActionKind,
     message: String,
@@ -402,6 +479,98 @@ fn release_tag_is_url_safe(tag: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
 }
 
+fn install_status_mismatches(report: &InstallStateReport) -> Vec<InstallStatusMismatch> {
+    let mut mismatches = Vec::new();
+    if report.install_root != Path::new(DEFAULT_INSTALL_ROOT) {
+        mismatches.push(InstallStatusMismatch {
+            code: InstallStatusMismatchCode::InstallRootOverride,
+            expected_path: Some(PathBuf::from(DEFAULT_INSTALL_ROOT)),
+            observed_path: Some(report.install_root.clone()),
+            expected_tag: None,
+            observed_tag: report.active_pointer.release_tag.clone(),
+            expected_source: None,
+            observed_source: None,
+            expected_value: Some("default install root".to_owned()),
+            observed_value: Some("explicit install root".to_owned()),
+            message: format!(
+                "inspecting explicit install root {}; default status uses {}",
+                report.install_root.display(),
+                DEFAULT_INSTALL_ROOT
+            ),
+        });
+    }
+    if report.config.explicit_override {
+        mismatches.push(explicit_profile_override_mismatch(report));
+    }
+    if report.config.default_profile.is_some() && report.profile.is_none() {
+        mismatches.push(InstallStatusMismatch {
+            code: InstallStatusMismatchCode::SelectedProfileUnavailable,
+            expected_path: None,
+            observed_path: None,
+            expected_tag: report.active_pointer.release_tag.clone(),
+            observed_tag: None,
+            expected_source: report.config.default_profile_source,
+            observed_source: None,
+            expected_value: report.config.default_profile.clone(),
+            observed_value: Some("unavailable".to_owned()),
+            message: "effective default_profile did not resolve to a runtime profile".to_owned(),
+        });
+    }
+    if !report.config.explicit_override {
+        if let (ActivePointerStatus::Live, Some(active_dir), Some(profile)) = (
+            report.active_pointer.status,
+            report.active_pointer.version_dir.as_ref(),
+            report.profile.as_ref(),
+        ) {
+            if profile.version_dir.as_ref() != Some(active_dir) {
+                mismatches.push(InstallStatusMismatch {
+                    code: InstallStatusMismatchCode::StaleProfileTarget,
+                    expected_path: Some(active_dir.clone()),
+                    observed_path: profile.version_dir.clone(),
+                    expected_tag: report.active_pointer.release_tag.clone(),
+                    observed_tag: profile.release_tag.clone(),
+                    expected_source: Some(ConfigSource::SystemFile),
+                    observed_source: Some(profile.selection_source),
+                    expected_value: Some("active release".to_owned()),
+                    observed_value: Some("selected profile release".to_owned()),
+                    message:
+                        "selected profile points at a different version than the active pointer"
+                            .to_owned(),
+                });
+            }
+        }
+    }
+    mismatches
+}
+
+fn explicit_profile_override_mismatch(report: &InstallStateReport) -> InstallStatusMismatch {
+    InstallStatusMismatch {
+        code: InstallStatusMismatchCode::ExplicitProfileOverride,
+        expected_path: report.config.system_path.clone(),
+        observed_path: observed_config_source_path(&report.config),
+        expected_tag: report.active_pointer.release_tag.clone(),
+        observed_tag: report
+            .profile
+            .as_ref()
+            .and_then(|profile| profile.release_tag.clone()),
+        expected_source: Some(ConfigSource::SystemFile),
+        observed_source: report.config.default_profile_source,
+        expected_value: Some("installed default profile".to_owned()),
+        observed_value: report.config.default_profile.clone(),
+        message: "default_profile came from an explicit override source; installed active state is not authoritative for this invocation".to_owned(),
+    }
+}
+
+fn observed_config_source_path(config: &InstallConfigReport) -> Option<PathBuf> {
+    match config.default_profile_source {
+        Some(ConfigSource::SystemFile) => config.system_path.clone(),
+        Some(ConfigSource::SystemDropIn) => config.system_drop_in_dir.clone(),
+        Some(ConfigSource::UserFile) => config.user_path.clone(),
+        Some(ConfigSource::UserDropIn) => config.user_drop_in_dir.clone(),
+        Some(ConfigSource::Env | ConfigSource::Flag | ConfigSource::Default) | None => None,
+    }
+}
+
 fn status_label(status: InstallStateKind) -> &'static str {
     match status {
         InstallStateKind::HealthyActiveRelease => "healthy_active_release",
@@ -414,6 +583,15 @@ fn status_label(status: InstallStateKind) -> &'static str {
         InstallStateKind::StaleInstallMetadata => "stale_install_metadata",
         InstallStateKind::TamperedProofCache => "tampered_proof_cache",
         InstallStateKind::InvalidInstallMetadata => "invalid_install_metadata",
+    }
+}
+
+fn mismatch_code_label(code: InstallStatusMismatchCode) -> &'static str {
+    match code {
+        InstallStatusMismatchCode::InstallRootOverride => "install_root_override",
+        InstallStatusMismatchCode::ExplicitProfileOverride => "explicit_profile_override",
+        InstallStatusMismatchCode::SelectedProfileUnavailable => "selected_profile_unavailable",
+        InstallStatusMismatchCode::StaleProfileTarget => "stale_profile_target",
     }
 }
 

@@ -2,7 +2,8 @@
 
 Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
 `m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.1`,
-`m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`.
+`m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`,
+`m80-o3uh9.16.7.4`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -93,6 +94,27 @@ statuses use `present`, `missing`, `invalid`, or `stale` when metadata is
 available; and
 `next_action.kind` uses `ready`, `install_release`, `reinstall_release`, or
 `remove_override`.
+
+Status output also includes `mismatches`, a structured list for cases where the
+selected local state is intentionally or accidentally not the installed default.
+Each mismatch has a finite `code`, a message, and any applicable
+`expected_path`, `observed_path`, `expected_tag`, `observed_tag`,
+`expected_source`, `observed_source`, `expected_value`, and `observed_value`.
+The status command uses this list to make these cases distinct:
+
+- `stale_profile_target`: the default installed profile points at one release
+  directory while `<install-root>/active` points at another. The expected fields
+  name the active pointer release tag and directory; the observed fields name
+  the selected profile release tag and directory.
+- `explicit_profile_override`: an environment variable, flag, user config, or
+  drop-in selected a profile instead of the installed system config. This is
+  intentional override state, not a stale default profile.
+- `selected_profile_unavailable`: effective config names a default profile, but
+  that profile cannot be resolved.
+- `install_root_override`: status is inspecting a non-default install root. By
+  default, with no override, `m80 install-status` inspects `/opt/m80`, reads the
+  installed system config, and expects that config's default profile to point at
+  the same version directory as `/opt/m80/active`.
 
 Quickstart troubleshooting starts with `m80 install-status` to decide whether
 the local release bundle/profile pair is coherent. Host substrate problems stay

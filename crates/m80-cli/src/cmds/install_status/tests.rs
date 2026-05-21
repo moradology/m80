@@ -39,6 +39,7 @@ fn json_output_reports_active_install_paths() {
         data["metadata"]["proof_cache_manifest"]["path"],
         "/opt/m80/versions/v1.2.3/artifacts/release-proof-cache/manifest.json"
     );
+    assert_eq!(data["mismatches"].as_array().unwrap().len(), 0);
     assert_eq!(data["next_action"]["kind"], "ready");
 }
 
@@ -64,6 +65,140 @@ fn human_output_reports_active_install_paths() {
     ));
     assert!(rendered.contains("next_action=installed release is ready"));
     assert!(rendered.contains("next_action_command=m80 run -- echo hello"));
+}
+
+#[test]
+fn stale_profile_output_names_expected_and_observed_release_targets() {
+    let mut report = active_report();
+    let active_dir = PathBuf::from("/opt/m80/versions/v1.2.4");
+    report.state = InstallStateKind::StaleProfileTarget;
+    report.active_pointer.target = Some(active_dir.clone());
+    report.active_pointer.version_dir = Some(active_dir);
+    report.active_pointer.release_tag = Some("v1.2.4".to_owned());
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let mismatch = &parsed["data"]["mismatches"][0];
+
+    assert_eq!(mismatch["code"], "stale_profile_target");
+    assert_eq!(mismatch["expected_tag"], "v1.2.4");
+    assert_eq!(mismatch["observed_tag"], "v1.2.3");
+    assert_eq!(mismatch["expected_path"], "/opt/m80/versions/v1.2.4");
+    assert_eq!(mismatch["observed_path"], "/opt/m80/versions/v1.2.3");
+
+    let human = render_human(&output);
+    assert!(human.contains("mismatch_0_code=stale_profile_target"));
+    assert!(human.contains("mismatch_0_expected_tag=v1.2.4"));
+    assert!(human.contains("mismatch_0_observed_tag=v1.2.3"));
+}
+
+#[test]
+fn missing_selected_profile_output_names_unresolved_default_profile() {
+    let mut report = active_report();
+    report.state = InstallStateKind::InvalidInstallMetadata;
+    report.profile = None;
+    report.metadata = None;
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let mismatch = &parsed["data"]["mismatches"][0];
+
+    assert_eq!(mismatch["code"], "selected_profile_unavailable");
+    assert_eq!(mismatch["expected_value"], "default");
+    assert_eq!(mismatch["observed_value"], "unavailable");
+
+    let human = render_human(&output);
+    assert!(human.contains("selected_profile=<unavailable>"));
+    assert!(human.contains("mismatch_0_code=selected_profile_unavailable"));
+    assert!(human.contains("mismatch_0_expected_value=default"));
+}
+
+#[test]
+fn env_profile_override_output_is_distinct_from_stale_default() {
+    let mut report = active_report();
+    report.state = InstallStateKind::ExplicitOverride;
+    report.config.default_profile = Some("env".to_owned());
+    report.config.default_profile_source = Some(ConfigSource::Env);
+    report.config.explicit_override = true;
+    let profile = report.profile.as_mut().expect("active report has profile");
+    profile.name = "env".to_owned();
+    profile.selection_source = ConfigSource::Env;
+    profile.body_source = "builtin_env";
+    profile.file_path = None;
+    profile.artifact_dir = None;
+    profile.version_dir = None;
+    profile.release_tag = None;
+    profile.m80_version = None;
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let mismatch = &parsed["data"]["mismatches"][0];
+
+    assert_eq!(mismatch["code"], "explicit_profile_override");
+    assert_eq!(mismatch["expected_source"], "system_file");
+    assert_eq!(mismatch["observed_source"], "env");
+    assert_eq!(mismatch["expected_tag"], "v1.2.3");
+    assert!(mismatch["observed_tag"].is_null());
+
+    let human = render_human(&output);
+    assert!(human.contains("status=explicit_override"));
+    assert!(human.contains("mismatch_0_code=explicit_profile_override"));
+    assert!(!human.contains("stale_profile_target"));
+}
+
+#[test]
+fn user_config_override_output_names_expected_and_observed_config_paths() {
+    let mut report = active_report();
+    report.state = InstallStateKind::ExplicitOverride;
+    report.config.default_profile = Some("work".to_owned());
+    report.config.default_profile_source = Some(ConfigSource::UserFile);
+    report.config.explicit_override = true;
+    report.config.user_path = Some(PathBuf::from("/home/nathan/.config/m80/config.toml"));
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let mismatch = &parsed["data"]["mismatches"][0];
+
+    assert_eq!(mismatch["code"], "explicit_profile_override");
+    assert_eq!(mismatch["expected_path"], "/etc/m80/config.toml");
+    assert_eq!(
+        mismatch["observed_path"],
+        "/home/nathan/.config/m80/config.toml"
+    );
+    assert_eq!(mismatch["observed_value"], "work");
+
+    let human = render_human(&output);
+    assert!(human.contains("mismatch_0_expected_path=/etc/m80/config.toml"));
+    assert!(human.contains("mismatch_0_observed_path=/home/nathan/.config/m80/config.toml"));
+}
+
+#[test]
+fn install_root_override_output_names_default_and_observed_roots() {
+    let mut report = active_report();
+    report.install_root = PathBuf::from("/tmp/m80-install");
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let mismatch = &parsed["data"]["mismatches"][0];
+
+    assert_eq!(mismatch["code"], "install_root_override");
+    assert_eq!(mismatch["expected_path"], "/opt/m80");
+    assert_eq!(mismatch["observed_path"], "/tmp/m80-install");
+
+    let human = render_human(&output);
+    assert!(human.contains("mismatch_0_code=install_root_override"));
+    assert!(human.contains("mismatch_0_expected_path=/opt/m80"));
+    assert!(human.contains("mismatch_0_observed_path=/tmp/m80-install"));
 }
 
 #[test]
