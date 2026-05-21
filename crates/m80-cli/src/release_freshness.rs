@@ -215,7 +215,7 @@ impl FreshnessStatusArtifact {
         let latest_tag = self
             .resolved_tag
             .ok_or(FreshnessMetadataError::MissingLatestTag)?;
-        if !is_stable_release_tag(&latest_tag) {
+        if !crate::release_policy::is_stable_release_tag(&latest_tag) {
             return Err(FreshnessMetadataError::MalformedLatestTag { tag: latest_tag });
         }
         let published_at = self
@@ -356,26 +356,6 @@ fn require_sha256(field: &'static str, value: &str) -> Result<(), FreshnessMetad
             value: value.to_owned(),
         })
     }
-}
-
-fn is_stable_release_tag(tag: &str) -> bool {
-    let Some(rest) = tag.strip_prefix('v') else {
-        return false;
-    };
-    let mut pieces = rest.split('.');
-    let Some(major) = pieces.next() else {
-        return false;
-    };
-    let Some(minor) = pieces.next() else {
-        return false;
-    };
-    let Some(patch) = pieces.next() else {
-        return false;
-    };
-    pieces.next().is_none()
-        && [major, minor, patch]
-            .iter()
-            .all(|piece| !piece.is_empty() && piece.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn parse_rfc3339_utc(input: &str) -> Result<UnixSeconds, FreshnessMetadataError> {

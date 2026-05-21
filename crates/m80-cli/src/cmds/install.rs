@@ -187,26 +187,32 @@ where
 }
 
 fn validate_tag(field: &'static str, tag: &str) -> Result<(), FcError> {
-    let Some(version) = tag.strip_prefix('v') else {
-        return Err(FcError::Config(ConfigError::InvalidValue {
-            field,
-            reason: "stable release tag must be vMAJOR.MINOR.PATCH".into(),
-        }));
-    };
-    let parts = version.split('.').collect::<Vec<_>>();
-    if parts.len() != 3
-        || parts
-            .iter()
-            .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-    {
-        return Err(FcError::Config(ConfigError::InvalidValue {
-            field,
-            reason: format!(
+    crate::release_policy::parse_stable_release_tag(tag)
+        .map(|_| ())
+        .map_err(|err| stable_tag_error(field, tag, err))
+}
+
+fn stable_tag_error(
+    field: &'static str,
+    tag: &str,
+    err: crate::release_policy::ReleaseTagError,
+) -> FcError {
+    let reason = match err {
+        crate::release_policy::ReleaseTagError::MissingPrefix => {
+            "stable release tag must be vMAJOR.MINOR.PATCH".to_owned()
+        }
+        crate::release_policy::ReleaseTagError::Prerelease
+        | crate::release_policy::ReleaseTagError::BuildMetadata
+        | crate::release_policy::ReleaseTagError::WrongPartCount
+        | crate::release_policy::ReleaseTagError::EmptyPart { .. }
+        | crate::release_policy::ReleaseTagError::NonDigitPart { .. }
+        | crate::release_policy::ReleaseTagError::NumericOverflow { .. } => {
+            format!(
                 "stable release tag must be vMAJOR.MINOR.PATCH with no prerelease suffix: {tag}"
-            ),
-        }));
-    }
-    Ok(())
+            )
+        }
+    };
+    FcError::Config(ConfigError::InvalidValue { field, reason })
 }
 
 fn validate_bundle_url(url: &str) -> Result<(), FcError> {

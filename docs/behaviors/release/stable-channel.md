@@ -44,6 +44,11 @@ index work:
 - direct official `m80 install --bundle-url` GitHub release URLs only accept
   concrete stable bundle assets from `moradology/m80`.
 
+Automatic update and rollback policy uses
+`docs/behaviors/release/release-tag-ordering.md` for deterministic ordering
+between two stable tags and explicit refusal states for prerelease, build
+metadata, malformed, and local/dev identities.
+
 Regression coverage:
 
 - `scripts/test-stable-release-channel.py` covers eligible metadata, draft

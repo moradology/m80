@@ -458,17 +458,7 @@ fn official_release_asset_parts(url: &RemoteUrl) -> Option<(&str, &str)> {
 }
 
 fn is_stable_release_tag(tag: &str) -> bool {
-    let Some(version) = tag.strip_prefix('v') else {
-        return false;
-    };
-    let mut count = 0;
-    for part in version.split('.') {
-        count += 1;
-        if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
-            return false;
-        }
-    }
-    count == 3
+    crate::release_policy::is_stable_release_tag(tag)
 }
 
 fn is_release_bundle_asset_name(asset: &str) -> bool {

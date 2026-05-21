@@ -20,6 +20,7 @@ mod profile;
 mod release;
 mod release_asset_index;
 mod release_freshness;
+mod release_policy;
 mod release_urls;
 mod request_id;
 
