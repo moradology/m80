@@ -6,9 +6,10 @@ fn direct_url_diagnostics_doc_names_stable_contract() {
     let doc = read_repo_file("docs/behaviors/release/direct-url-diagnostics.md");
     for required in [
         "`m80 install --bundle-url <URL>` is an explicit development/operator override",
-        "Public installer status: pending until the unauthenticated public-access proof",
-        "<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->",
-        "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
+        "shown in the README",
+        "quickstart, whose generated freshness status",
+        "generated freshness status controls whether the latest",
+        "installer is currently public-proven",
         "resolved release tag",
         "bundle asset",
         "`install.sh` SHA-256",
