@@ -765,6 +765,77 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_close_matrix_omitted_descendant_fails(self) -> None:
+        with tracker_repo() as repo:
+            descendants = [
+                matrix_child("m80-o3uh9.1"),
+                matrix_child("m80-o3uh9.2"),
+            ]
+
+            result = repo.run_with_closed_epoch(
+                artifact=valid_close_matrix(),
+                descendants=descendants,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("matrix omits descendant m80-o3uh9.2", result.stderr)
+
+    def test_close_matrix_unknown_descendant_row_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"][0]["id"] = "m80-o3uh9.99"
+
+            result = repo.run_with_closed_epoch(artifact=matrix)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("matrix row references unknown descendant m80-o3uh9.99", result.stderr)
+
+    def test_close_matrix_stale_status_fails(self) -> None:
+        with tracker_repo() as repo:
+            descendants = [matrix_child("m80-o3uh9.1", status="open")]
+
+            result = repo.run_with_closed_epoch(
+                artifact=valid_close_matrix(),
+                descendants=descendants,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80-o3uh9.1 status is stale", result.stderr)
+
+    def test_close_matrix_open_descendant_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"][0]["status"] = "open"
+            descendants = [matrix_child("m80-o3uh9.1", status="open")]
+
+            result = repo.run_with_closed_epoch(
+                artifact=matrix,
+                descendants=descendants,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80-o3uh9.1 descendant remains open with status open", result.stderr)
+
+    def test_close_matrix_proof_shaped_flag_mismatch_fails(self) -> None:
+        with tracker_repo() as repo:
+            matrix = valid_close_matrix()
+            matrix["rows"][0]["requires_verified_close"] = False
+            descendants = [
+                matrix_child(
+                    "m80-o3uh9.1",
+                    title="Real-KVM runner baseline",
+                    labels=["real-kvm", "release"],
+                )
+            ]
+
+            result = repo.run_with_closed_epoch(
+                artifact=matrix,
+                descendants=descendants,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("m80-o3uh9.1 requires_verified_close must be true", result.stderr)
+
 
 class tracker_repo:
     def __enter__(self) -> "tracker_repo":
@@ -838,6 +909,7 @@ class tracker_repo:
         *,
         artifact: dict | None = None,
         close_reason: str | None = "",
+        descendants: list[dict] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         config = write_policy_config(
             self.root,
@@ -859,7 +931,7 @@ class tracker_repo:
         )
         if close_reason is None:
             closed_epoch.pop("close_reason", None)
-        write_issues(self.root, [closed_epoch])
+        write_issues(self.root, [closed_epoch, *(descendants or [matrix_child("m80-o3uh9.1")])])
         return self.run_verify("--policy-config", str(config))
 
 
@@ -898,6 +970,22 @@ def issue(
         value["closed_at"] = closed_at
         value["updated_at"] = closed_at
     return value
+
+
+def matrix_child(
+    issue_id: str,
+    *,
+    title: str = "Matrix child",
+    status: str = "closed",
+    labels: list[str] | None = None,
+) -> dict:
+    return issue(
+        issue_id,
+        title,
+        status=status,
+        labels=labels or ["release"],
+        parent="m80-o3uh9",
+    )
 
 
 def write_issues(root: Path, issues: list[dict]) -> None:

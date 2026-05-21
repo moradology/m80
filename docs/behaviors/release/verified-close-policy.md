@@ -77,13 +77,21 @@ matrix is a JSON object with `kind: "release_final_close_matrix"` and
 
 Each row describes one epoch descendant. `behavior_doc` and `proof_artifact`
 paths, when present, must be relative repository paths and must not escape the
-tree. A row must include either `test_command` or `proof_artifact`.
+tree. A row must include either `behavior_doc` plus `test_command`,
+`proof_artifact`, or `exception_reason` for an accepted deferred/tombstone
+entry.
 `requires_verified_close` records whether the descendant was governed by this
 policy; `requires_real_substrate` records whether its close depended on a
 real-substrate proof rather than hostless or unit-test evidence. The schema
 validator fails closed on unknown top-level keys, unknown row keys, malformed
 timestamps, malformed tracker digests, empty rows, absolute paths, escaping
 paths, and unknown schema versions.
+
+For closed epoch verification, the matrix rows must match the epoch descendants
+in `.beads/issues.jsonl`. Missing descendants, unknown rows, stale statuses,
+open descendants, proof-shaped rows without `requires_verified_close: true`,
+and substrate-gated rows without `requires_real_substrate: true` fail the
+policy before CI can pass.
 
 When a configured release or quickstart epoch is closed, its close reason must
 cite a committed final close matrix with

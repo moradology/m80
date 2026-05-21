@@ -35,6 +35,7 @@ CLOSE_MATRIX_ROW_KEYS = {
     "behavior_doc",
     "test_command",
     "proof_artifact",
+    "exception_reason",
     "requires_verified_close",
     "requires_real_substrate",
 }
@@ -244,6 +245,7 @@ def verify_closed_configured_epochs(
     check_git_history: bool,
 ) -> list[str]:
     errors: list[str] = []
+    parent_by_child = parent_links(issues_by_id)
     for epoch in config["epochs"]:
         epoch_id = epoch["id"]
         issue = issues_by_id.get(epoch_id)
@@ -251,6 +253,8 @@ def verify_closed_configured_epochs(
             continue
         for error in verify_closed_epoch_close_matrix(
             issue,
+            issues_by_id=issues_by_id,
+            parent_by_child=parent_by_child,
             repo_root=repo_root,
             check_git_history=check_git_history,
         ):
@@ -624,6 +628,8 @@ def verify_closed_issue(
 def verify_closed_epoch_close_matrix(
     issue: dict[str, Any],
     *,
+    issues_by_id: dict[str, dict[str, Any]],
+    parent_by_child: dict[str, str],
     repo_root: Path,
     check_git_history: bool,
 ) -> list[str]:
@@ -644,6 +650,9 @@ def verify_closed_epoch_close_matrix(
             issue_id,
             rel_path,
             commit,
+            epoch_id=issue_id,
+            issues_by_id=issues_by_id,
+            parent_by_child=parent_by_child,
             repo_root=repo_root,
             check_git_history=check_git_history,
         )
@@ -658,6 +667,9 @@ def verify_close_matrix_ref(
     rel_path: str,
     commit: str,
     *,
+    epoch_id: str,
+    issues_by_id: dict[str, dict[str, Any]],
+    parent_by_child: dict[str, str],
     repo_root: Path,
     check_git_history: bool,
 ) -> list[str]:
@@ -680,7 +692,17 @@ def verify_close_matrix_ref(
             f"{issue_id}: final close matrix artifact must have kind "
             f"{CLOSE_MATRIX_KIND}: {rel_path}"
         ]
-    return verify_close_matrix_artifact(issue_id, artifact, value)
+    errors = verify_close_matrix_artifact(issue_id, artifact, value)
+    if errors:
+        return errors
+    return verify_close_matrix_completeness(
+        issue_id,
+        artifact,
+        value,
+        epoch_id=epoch_id,
+        issues_by_id=issues_by_id,
+        parent_by_child=parent_by_child,
+    )
 
 
 def artifact_path(repo_root: Path, rel_path: str) -> Path | None:
@@ -793,24 +815,129 @@ def verify_close_matrix_row(prefix: str, row: dict[str, Any]) -> list[str]:
             f"{prefix}: status must be one of {', '.join(sorted(CLOSE_MATRIX_STATUSES))}"
         )
     behavior_doc = row.get("behavior_doc")
-    if not isinstance(behavior_doc, str) or not safe_relative_path(behavior_doc):
-        errors.append(f"{prefix}: behavior_doc must be a relative path")
+    if behavior_doc is not None and (
+        not isinstance(behavior_doc, str) or not safe_relative_path(behavior_doc)
+    ):
+        errors.append(f"{prefix}: behavior_doc must be a relative path when present")
 
     test_command = row.get("test_command")
     proof_artifact = row.get("proof_artifact")
+    exception_reason = row.get("exception_reason")
+    has_behavior_doc = isinstance(behavior_doc, str) and safe_relative_path(behavior_doc)
     has_test_command = nonempty_str(test_command)
     has_proof_artifact = isinstance(proof_artifact, str) and safe_relative_path(proof_artifact)
+    has_exception_reason = nonempty_str(exception_reason)
     if test_command is not None and not has_test_command:
         errors.append(f"{prefix}: test_command must be a nonempty string when present")
     if proof_artifact is not None and not has_proof_artifact:
         errors.append(f"{prefix}: proof_artifact must be a relative path when present")
-    if not has_test_command and not has_proof_artifact:
-        errors.append(f"{prefix}: row must include test_command or proof_artifact")
+    if exception_reason is not None and not has_exception_reason:
+        errors.append(f"{prefix}: exception_reason must be a nonempty string when present")
+    if not ((has_behavior_doc and has_test_command) or has_proof_artifact or has_exception_reason):
+        errors.append(
+            f"{prefix}: row must include behavior_doc and test_command, "
+            "proof_artifact, or exception_reason"
+        )
 
     for field in ["requires_verified_close", "requires_real_substrate"]:
         if not isinstance(row.get(field), bool):
             errors.append(f"{prefix}: {field} must be a boolean")
     return errors
+
+
+def verify_close_matrix_completeness(
+    issue_id: str,
+    path: Path,
+    matrix: dict[str, Any],
+    *,
+    epoch_id: str,
+    issues_by_id: dict[str, dict[str, Any]],
+    parent_by_child: dict[str, str],
+) -> list[str]:
+    prefix = f"{issue_id}: close matrix {path}"
+    rows = matrix.get("rows")
+    if not isinstance(rows, list):
+        return [f"{prefix}: rows must be a list"]
+    descendant_ids = epoch_descendant_ids(issues_by_id, parent_by_child, epoch_id)
+    row_by_id = {
+        row["id"]: row
+        for row in rows
+        if isinstance(row, dict) and isinstance(row.get("id"), str) and row.get("id")
+    }
+
+    errors: list[str] = []
+    for descendant_id in sorted(descendant_ids - set(row_by_id)):
+        errors.append(f"{prefix}: matrix omits descendant {descendant_id}")
+    for row_id in sorted(set(row_by_id) - descendant_ids):
+        errors.append(f"{prefix}: matrix row references unknown descendant {row_id}")
+
+    for row_id in sorted(descendant_ids & set(row_by_id)):
+        row = row_by_id[row_id]
+        issue = issues_by_id[row_id]
+        status = issue.get("status")
+        if row.get("status") != status:
+            errors.append(
+                f"{prefix}: {row_id} status is stale: matrix has "
+                f"{row.get('status')}, tracker has {status}"
+            )
+        if is_openish(issue):
+            errors.append(f"{prefix}: {row_id} descendant remains open with status {status}")
+        if status in {"deferred", "tombstone"} and not nonempty_str(row.get("exception_reason")):
+            errors.append(f"{prefix}: {row_id} {status} row requires exception_reason")
+        if issue_requires_verified_close(issue) and row.get("requires_verified_close") is not True:
+            errors.append(f"{prefix}: {row_id} requires_verified_close must be true")
+        if issue_requires_real_substrate(issue) and row.get("requires_real_substrate") is not True:
+            errors.append(f"{prefix}: {row_id} requires_real_substrate must be true")
+        if status != "tombstone" and not row_has_audit_evidence(row):
+            errors.append(
+                f"{prefix}: {row_id} row must include behavior_doc and test_command "
+                "or proof_artifact"
+            )
+    return errors
+
+
+def epoch_descendant_ids(
+    issues_by_id: dict[str, dict[str, Any]],
+    parent_by_child: dict[str, str],
+    epoch_id: str,
+) -> set[str]:
+    descendants: set[str] = set()
+    for issue_id in issues_by_id:
+        current = issue_id
+        seen: set[str] = set()
+        while current in parent_by_child and current not in seen:
+            seen.add(current)
+            parent_id = parent_by_child[current]
+            if parent_id == epoch_id:
+                descendants.add(issue_id)
+                break
+            current = parent_id
+    return descendants
+
+
+def issue_requires_real_substrate(issue: dict[str, Any]) -> bool:
+    labels = set(issue.get("labels") or [])
+    if "real-kvm" in labels:
+        return True
+    text = f"{issue.get('title') or ''}\n{issue.get('description') or ''}"
+    return REAL_KVM_RE.search(text) is not None and NEGATED_REAL_KVM_RE.search(text) is None
+
+
+def row_has_audit_evidence(row: dict[str, Any]) -> bool:
+    behavior_doc = row.get("behavior_doc")
+    test_command = row.get("test_command")
+    proof_artifact = row.get("proof_artifact")
+    return (
+        (
+            isinstance(behavior_doc, str)
+            and safe_relative_path(behavior_doc)
+            and nonempty_str(test_command)
+        )
+        or (
+            isinstance(proof_artifact, str)
+            and safe_relative_path(proof_artifact)
+        )
+    )
 
 
 def quickstart_proof_artifact_is_complete(value: dict[str, Any]) -> bool:
