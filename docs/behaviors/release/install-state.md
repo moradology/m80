@@ -1,7 +1,8 @@
 # Install State
 
 Behavior beads: `m80-o3uh9.16.8.1`, `m80-o3uh9.16.8.2`,
-`m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`.
+`m80-o3uh9.16.8.3`, `m80-o3uh9.16.7.1`,
+`m80-o3uh9.16.7.2`, `m80-o3uh9.16.7.3`.
 
 Installed state is rooted under one versioned directory,
 `<install-root>/versions/<release_tag>`:
@@ -58,6 +59,44 @@ paths outside the install root. Host prerequisite paths such as Firecracker and
 jailer binaries may still point at their documented system locations. Explicit
 operator profile overrides are reported as overrides rather than rejected as
 broken installed metadata.
+
+## Installed Status Command
+
+`m80 install-status` is the smallest operator-facing wrapper around the
+resolver. It is read-only: it does not execute installed binaries, run
+preflight, fetch release metadata, repair profiles, or download bundles.
+
+Human output is line-oriented and includes:
+
+- `status`: one resolver state from the finite list above.
+- `active_release_tag`, `active_install_dir`, `active_pointer_path`, and
+  `active_pointer_target`.
+- `selected_config_default_profile` and
+  `selected_config_default_profile_source`.
+- `selected_profile`, `selected_profile_source`,
+  `selected_profile_body_source`, `selected_profile_path`,
+  `selected_profile_artifact_dir`, `selected_profile_install_dir`, and
+  `selected_profile_release_tag`.
+- `bundle_metadata_path`, `host_binaries_manifest_path`,
+  `install_provenance_path`, and `proof_cache_manifest_path`, each paired with
+  a metadata status. When the active/profile state is too broken to read
+  metadata, these fields render as `unavailable`.
+- `next_action`, plus `next_action_command` when the state has an executable
+  repair or smoke command.
+
+`m80 --json install-status` wraps the same contract in the CLI JSON envelope
+with `schema_version: 1`. The stable top-level payload fields are `status`,
+`install_root`, `active`, `selected_config`, `selected_profile`, `metadata`,
+`diagnostics`, and `next_action`. `status` uses the resolver state enum;
+`active.status` uses `live`, `missing`, `dangling`, or `invalid`; metadata file
+statuses use `present`, `missing`, `invalid`, or `stale` when metadata is
+available; and
+`next_action.kind` uses `ready`, `install_release`, `reinstall_release`, or
+`remove_override`.
+
+Quickstart troubleshooting starts with `m80 install-status` to decide whether
+the local release bundle/profile pair is coherent. Host substrate problems stay
+in `m80 preflight`; update freshness stays in the release freshness monitor.
 
 ## Installed Metadata Reader
 

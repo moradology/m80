@@ -25,8 +25,8 @@ mod request_id;
 
 pub use args::{
     Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageBuildArgs, ImageGcArgs, ImageKindArg,
-    InstallArgs, OverlayCloneModeArg, QuickstartArgs, TemplateAction, TemplateBuildArgs,
-    WarmAction, WarmEnableArgs, WritebackMode,
+    InstallArgs, InstallStatusArgs, OverlayCloneModeArg, QuickstartArgs, TemplateAction,
+    TemplateBuildArgs, WarmAction, WarmEnableArgs, WritebackMode,
 };
 
 /// Test-only synchronization for process-wide environment mutation.

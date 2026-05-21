@@ -7,6 +7,9 @@ fn install_state_doc_names_resolver_states_and_guards() {
 
     for required in [
         "`m80-o3uh9.16.7.2`",
+        "`m80-o3uh9.16.7.1`",
+        "`m80 install-status`",
+        "`m80 --json install-status`",
         "`healthy_active_release`",
         "`missing_active_pointer`",
         "`dangling_active_pointer`",
@@ -22,6 +25,8 @@ fn install_state_doc_names_resolver_states_and_guards() {
         "install-provenance.json",
         "host-binaries.manifest.json",
         "release-proof-cache/manifest.json",
+        "`schema_version: 1`",
+        "`next_action`",
         "`deny_unknown_fields`",
         "`O_NOFOLLOW`",
         "symlinked installed references",

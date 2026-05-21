@@ -86,6 +86,14 @@ binaries, pull OCI images, or install packages implicitly.
   Non-dry-run stages, verifies, and copies the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
   `<install-root>/active` last.
+- `m80 install-status [--install-root <path>] [--profile <name>]` - prints the
+  local installed-state view used for quickstart troubleshooting. Human output
+  names the finite install status, active release tag, active install
+  directory, selected config/default profile, selected runtime profile,
+  `bundle.json`, `host-binaries.manifest.json`, `install-provenance.json`, and
+  `release-proof-cache/manifest.json` paths. Unhealthy states include one
+  concise next action. `m80 --json install-status` emits the stable JSON
+  contract for scripts and release freshness checks.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling
@@ -394,6 +402,7 @@ Rust library items:
 - `ConfigAction` - `m80 config` action enum.
 - `EgressMode` - `m80 run --egress` value enum.
 - `InstallArgs` - `m80 install` argument struct.
+- `InstallStatusArgs` - `m80 install-status` argument struct.
 - `OverlayCloneModeArg` - `m80 run --overlay-clone-mode` value enum.
 - `QuickstartArgs` - `m80 quickstart` argument struct.
 - `WarmAction` - `m80 warm` action enum.

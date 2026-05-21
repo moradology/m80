@@ -68,6 +68,17 @@ binaries are installed separately from final host paths; release tarballs must
 not bundle the host manifest. The bundle shape is pinned in
 [`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
 
+To see what the next `m80 run` will use, run:
+
+```sh
+m80 install-status
+```
+
+It reports the active release tag, active install directory, selected
+profile/config, installed metadata paths, and one next action when the install
+is missing or stale. `m80 --json install-status` is the stable machine-readable
+form for scripts and freshness checks.
+
 After that, wrap any process the same way:
 
 ```sh
@@ -109,6 +120,9 @@ sudo sh "${tmp}/install.sh"
 ```
 <!-- m80:quickstart-snippet verified-install-handoff end -->
 
+`m80 install-status` explains local install-state problems before you debug a
+launch: missing active pointer, stale profile target, explicit profile override,
+local-dev profile, missing/stale install metadata, and tampered proof cache.
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,
 Firecracker seccomp filter, `host-binaries.manifest.json` for the installed

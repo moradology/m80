@@ -124,6 +124,10 @@ pub enum Cmd {
     /// `file://` bundle layout copies without active-pointer finalization.
     Install(InstallArgs),
 
+    /// Show the installed release selected by the local host configuration.
+    #[command(name = "install-status")]
+    InstallStatus(InstallStatusArgs),
+
     /// Print a VM's run-dir layout and recorded state.
     Inspect {
         /// VM id.
@@ -507,6 +511,18 @@ pub struct InstallArgs {
     /// Print the install plan without touching host state.
     #[arg(long = "dry-run")]
     pub dry_run: bool,
+}
+
+/// Arguments for `m80 install-status`.
+#[derive(Debug, Args)]
+pub struct InstallStatusArgs {
+    /// Install root to inspect. Defaults to /opt/m80.
+    #[arg(long, value_name = "PATH", default_value = "/opt/m80")]
+    pub install_root: PathBuf,
+
+    /// Profile override to inspect instead of the effective default profile.
+    #[arg(long, value_name = "NAME")]
+    pub profile: Option<String>,
 }
 
 /// `m80 config` sub-actions.
