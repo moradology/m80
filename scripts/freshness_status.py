@@ -22,7 +22,7 @@ SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 RFC3339_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 SOURCE_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 STABLE_TAG_RE = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
-STATUS_VALUES = {"public_green", "scaffolded", "failed", "stale"}
+STATUS_VALUES = {"pending", "public_green", "scaffolded", "failed", "stale"}
 PROOF_SUBSTRATES = {"public-unauthenticated", "fixture-hostless", "real-kvm", "none"}
 PROOF_ARTIFACT_CLASSES = {"public", "fixture", "workflow"}
 INSTALL_PROOF_KINDS = {"latest-install", "pinned-install"}
@@ -172,6 +172,23 @@ def validate_freshness_status(status_path: Path, *, artifact_root: Path, docs_ro
         require(
             status_value == "scaffolded",
             "freshness status fixture-hostless proof can appear only as scaffolded status",
+        )
+    if status_value == "pending":
+        require(
+            proof_substrate == "none",
+            "freshness status pending requires proof_substrate=none",
+        )
+        require(
+            not status["proof_artifacts"],
+            "freshness status pending must not reference proof_artifacts",
+        )
+        require(
+            not status["install_url_proofs"],
+            "freshness status pending must not reference install_url_proofs",
+        )
+        require(
+            not status["public_assets"],
+            "freshness status pending must not reference public_assets",
         )
     return status
 

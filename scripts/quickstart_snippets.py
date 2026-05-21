@@ -44,11 +44,9 @@ LEGACY_INTERNAL_DOCS = {
     "docs/behaviors/cli/product-surface.md",
 }
 TROUBLESHOOTING_CONTEXT_WORDS = ("repair", "troubleshoot", "troubleshooting", "diagnostic", "rollback")
-PUBLIC_ACCESS_PROOF_GUARD = "m80-o3uh9.21.7"
-PUBLIC_ACCESS_PROOF_MARKER_RE = re.compile(
-    r"m80:public-access-proof\s+m80-o3uh9\.21\.7\s+pending"
-)
-PUBLIC_ACCESS_PROOF_GUARD_WORDS = ("public installer status", "pending", "proof")
+FRESHNESS_STATUS_MARKER_RE = re.compile(r"m80:freshness-status\s+start")
+FRESHNESS_STATUS_GUARD_WORDS = ("public installer status", "proof")
+FRESHNESS_STATUS_VALUES = ("pending", "scaffolded", "public proof green", "stale", "failed")
 
 
 @dataclass(frozen=True)
@@ -92,11 +90,15 @@ def install_snippets(release_tag: str = "<version>") -> list[QuickstartSnippet]:
 
 
 def extract_marked_quickstart_snippets(path: Path) -> dict[str, str]:
+    return extract_marked_quickstart_snippets_from_text(path.read_text(), source=str(path))
+
+
+def extract_marked_quickstart_snippets_from_text(text: str, *, source: str) -> dict[str, str]:
     active_name: str | None = None
     active_lines: list[str] = []
     snippets: dict[str, str] = {}
 
-    for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+    for line_number, line in enumerate(text.splitlines(), start=1):
         marker = SNIPPET_MARKER_RE.fullmatch(line.strip())
         if marker is None:
             if active_name is not None:
@@ -106,21 +108,21 @@ def extract_marked_quickstart_snippets(path: Path) -> dict[str, str]:
         name, kind = marker.groups()
         if kind == "start":
             if active_name is not None:
-                raise ValueError(f"{path}:{line_number}: nested quickstart snippet {name!r}")
+                raise ValueError(f"{source}:{line_number}: nested quickstart snippet {name!r}")
             if name in snippets:
-                raise ValueError(f"{path}:{line_number}: duplicate quickstart snippet {name!r}")
+                raise ValueError(f"{source}:{line_number}: duplicate quickstart snippet {name!r}")
             active_name = name
             active_lines = []
             continue
 
         if active_name != name:
-            raise ValueError(f"{path}:{line_number}: unmatched quickstart snippet end {name!r}")
+            raise ValueError(f"{source}:{line_number}: unmatched quickstart snippet end {name!r}")
         snippets[name] = normalize_snippet_body(active_lines)
         active_name = None
         active_lines = []
 
     if active_name is not None:
-        raise ValueError(f"{path}: missing end marker for quickstart snippet {active_name!r}")
+        raise ValueError(f"{source}: missing end marker for quickstart snippet {active_name!r}")
     return snippets
 
 
@@ -226,9 +228,9 @@ def classify_public_command_snippet(body: str, relative_path: Path, context: str
     if body == expected["post-install-smoke"]:
         return "common"
     if body == expected["latest-install"]:
-        if not has_public_access_proof_guard(context):
+        if not has_freshness_status_guard(context):
             raise ValueError(
-                f"{relative_path}: latest install snippet must be guarded by a public-access proof status note"
+                f"{relative_path}: latest install snippet must be guarded by a generated freshness status note"
             )
         return "common"
     if body == expected["pinned-install"]:
@@ -260,12 +262,12 @@ def validate_public_command_urls(body: str, relative_path: Path) -> None:
             )
 
 
-def has_public_access_proof_guard(context: str) -> bool:
+def has_freshness_status_guard(context: str) -> bool:
     lowered = context.lower()
     return (
-        PUBLIC_ACCESS_PROOF_MARKER_RE.search(context) is not None
-        and PUBLIC_ACCESS_PROOF_GUARD in context
-        and all(word in lowered for word in PUBLIC_ACCESS_PROOF_GUARD_WORDS)
+        FRESHNESS_STATUS_MARKER_RE.search(context) is not None
+        and all(word in lowered for word in FRESHNESS_STATUS_GUARD_WORDS)
+        and any(word in lowered for word in FRESHNESS_STATUS_VALUES)
     )
 
 

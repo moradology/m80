@@ -180,20 +180,22 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 )
             )
 
-            with self.assertRaisesRegex(ValueError, "public-access proof status note"):
+            with self.assertRaisesRegex(ValueError, "freshness status note"):
                 public_command_inventory(root)
 
             readme.write_text(
                 "\n".join(
                     [
-                        "<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->",
+                        "<!-- m80:freshness-status start -->",
+                        "Release channel template.",
+                        "<!-- m80:freshness-status end -->",
                         "```sh",
                         latest_install_command(),
                         "```",
                     ]
                 )
             )
-            with self.assertRaisesRegex(ValueError, "public-access proof status note"):
+            with self.assertRaisesRegex(ValueError, "freshness status note"):
                 public_command_inventory(root)
 
     def test_public_command_inventory_rejects_stale_and_unclassified_commands(self) -> None:
@@ -264,8 +266,9 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 "\n".join(
                     [
                         "- install:",
-                        "  public installer status is pending until the public-access proof is green",
-                        "  <!-- m80:public-access-proof m80-o3uh9.21.7 pending -->",
+                        "  <!-- m80:freshness-status start -->",
+                        "  Public installer status: pending public proof.",
+                        "  <!-- m80:freshness-status end -->",
                         "  ```sh",
                         f"  {latest_install_command()}",
                         "  ```",

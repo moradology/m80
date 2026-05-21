@@ -45,11 +45,9 @@ The public GitHub release owner/repo source is
 `docs/behaviors/release/public-release-root.env`. The README and this runbook
 must use snippets rendered by `scripts/render-release-install-snippets.py`:
 
-Public installer status is pending until the unauthenticated public-access
-proof is green for the promoted release. The latest snippet is the
-release-channel template, not a current-success claim, until that proof is
-green.
-<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->
+<!-- m80:freshness-status start -->
+Public installer status: pending public proof. The latest command below is the release-channel template; do not treat it as publicly proven until the freshness status becomes `public_green`.
+<!-- m80:freshness-status end -->
 
 <!-- m80:quickstart-snippet latest-install start -->
 ```sh

@@ -349,7 +349,9 @@ def write_docs_root(root: Path) -> Path:
             f"""
             # m80 fixture
 
-            Public installer status: m80:public-access-proof m80-o3uh9.21.7 pending.
+            <!-- m80:freshness-status start -->
+            Public installer status: pending public proof.
+            <!-- m80:freshness-status end -->
 
             ```sh
             {latest_install_command()}

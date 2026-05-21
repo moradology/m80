@@ -31,10 +31,9 @@ This buys you a Firecracker-backed process wrapper: `m80 run -- <command>`
 boots a microVM, runs the command, streams stdout/stderr back like a normal
 process, returns the guest exit code, and tears the VM down.
 
-Public installer status: pending until the unauthenticated public-access proof
-is green for the promoted release. The command below is the release-channel
-template; use it only after that proof is green.
-<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->
+<!-- m80:freshness-status start -->
+Public installer status: pending public proof. The latest command below is the release-channel template; do not treat it as publicly proven until the freshness status becomes `public_green`.
+<!-- m80:freshness-status end -->
 
 <!-- m80:quickstart-snippet latest-install start -->
 ```sh

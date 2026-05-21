@@ -1,0 +1,18 @@
+{
+  "checked_command_inventory_digest": "sha256:50e151cd62a24ab4f23fedd3e21ac8ab1a2d821787dcf9c43aa9cb607c332bdd",
+  "expected_highest_stable_tag": "v0.0.0",
+  "generated_at": "1970-01-01T00:00:00Z",
+  "install_url_proofs": [],
+  "latest_install_url": "https://github.com/moradology/m80/releases/latest/download/install.sh",
+  "owner": "moradology",
+  "pinned_install_url": "https://github.com/moradology/m80/releases/download/v0.0.0/install.sh",
+  "proof_artifacts": [],
+  "proof_substrate": "none",
+  "public_assets": [],
+  "repo": "m80",
+  "resolved_latest_tag": "v0.0.0",
+  "schema_version": 1,
+  "source_commit": "0000000000000000000000000000000000000000",
+  "status": "pending",
+  "workflow_run_id": "docs-pending"
+}

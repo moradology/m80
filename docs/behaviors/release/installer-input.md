@@ -9,8 +9,6 @@ those paths as the first-run surface:
 Public installer status: pending until the unauthenticated public-access proof
 is green.
 
-<!-- m80:public-access-proof m80-o3uh9.21.7 pending -->
-
 - latest stable release: `curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh`
 - pinned release: `curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh`
 - already-installed verifier: `m80 install --release-tag <tag>`

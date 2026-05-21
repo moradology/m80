@@ -50,11 +50,10 @@ legacy, or internal path such as `m80 quickstart --artifact-url <url>`.
 
 The shared latest install snippet is a release-channel template until public
 release access is proven. Any docs block that shows the `latest-install`
-snippet must have nearby visible text saying public installer status is pending,
-plus a nearby `m80:public-access-proof m80-o3uh9.21.7 pending` marker for the
-doc gate. Once that proof is green for the promoted release, the status text
-can be updated by the freshness status work; the command itself still comes
-from the shared snippet source.
+snippet must have nearby `m80:freshness-status` markers whose generated visible
+text says the public installer status and proof state. The renderer owns
+pending, scaffolded fixture proof, public proven, stale, and failed wording; the
+command itself still comes from the shared snippet source.
 
 Release automation uses the same contract through
 `scripts/write-quickstart-proof-fixture.py` and

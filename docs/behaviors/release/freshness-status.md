@@ -11,7 +11,7 @@ fields are exact:
 
 - `schema_version`: currently `1`.
 - `generated_at`: UTC timestamp with second precision.
-- `status`: `public_green`, `scaffolded`, `failed`, or `stale`.
+- `status`: `pending`, `public_green`, `scaffolded`, `failed`, or `stale`.
 - `owner` and `repo`: the GitHub release root from
   `docs/behaviors/release/public-release-root.env`.
 - `resolved_latest_tag`: concrete stable tag returned by the latest path.
@@ -29,18 +29,24 @@ fields are exact:
 - `install_url_proofs`: latest and pinned installer URL proof rows.
 - `public_assets`: sorted public asset rows from the release metadata view.
 
-`public_green` is intentionally strict. It requires public unauthenticated proof
-for both the latest install URL and the pinned install URL, `http_status: 200`
-for both rows, matching resolved and expected stable tags, public proof artifact
-classes, and the complete sorted required public asset set. Fixture-only proof
-may appear only as `scaffolded`; it cannot be relabeled as public proof.
+`pending` is the docs-safe state before public proof exists. It uses
+`proof_substrate: none` and empty proof artifact, install URL proof, and public
+asset lists. `public_green` is intentionally strict. It requires public
+unauthenticated proof for both the latest install URL and the pinned install
+URL, `http_status: 200` for both rows, matching resolved and expected stable
+tags, public proof artifact classes, and the complete sorted required public
+asset set. Fixture-only proof may appear only as `scaffolded`; it cannot be
+relabeled as public proof.
 
 The command inventory digest is recomputed from the checked-out docs. Any manual
 edit to a public quickstart block, pinned command, status command, or legacy
 quickstart reference changes the digest and makes old freshness status stale.
-This is the handoff point for generated README/runbook status rendering: docs
-may point at the current status, but the verifier decides whether that status
-still matches the checkout.
+This is the handoff point for generated README/runbook status rendering:
+`scripts/render-freshness-status.py` updates only the explicit
+`m80:freshness-status` marker blocks in README and the release runbook. The
+latest install command can be present while the rendered status remains
+`pending`; the command is the release-channel template, and the status is the
+proof state for treating that template as currently public-proven.
 
 Retention is append-friendly: keep the latest status JSON and its referenced
 proof artifacts together under one artifact root. Failed or stale runs should

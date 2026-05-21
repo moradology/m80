@@ -75,6 +75,26 @@ class FreshnessStatusTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_pending_status_has_no_proof_material(self) -> None:
+        with status_fixture(status="pending", substrate="none", proof_material=False) as fixture:
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pending_status_rejects_proof_material(self) -> None:
+        with status_fixture(status="pending", substrate="none") as fixture:
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("pending must not reference proof_artifacts", result.stderr)
+
+    def test_pending_status_requires_none_substrate(self) -> None:
+        with status_fixture(status="pending", substrate="public-unauthenticated", proof_material=False) as fixture:
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("pending requires proof_substrate=none", result.stderr)
+
     def test_stale_command_inventory_digest_fails(self) -> None:
         with status_fixture() as fixture:
             payload = read_json(fixture.status)
@@ -141,6 +161,7 @@ def status_fixture(
     status: str = "public_green",
     substrate: str = "public-unauthenticated",
     artifact_class: str = "public",
+    proof_material: bool = True,
 ) -> Fixture:
     tmp = tempfile.TemporaryDirectory()
     root = Path(tmp.name)
@@ -149,6 +170,46 @@ def status_fixture(
     proof.write_text('{"proof": "latest and pinned public URLs were fetched"}\n')
     status_path = root / "m80-latest-freshness-status.json"
     release_root = public_release_root()
+    proof_artifacts = [
+        {
+            "kind": "latest-and-pinned-url-proof",
+            "path": proof.name,
+            "sha256": freshness_status.sha256_ref(proof),
+            "artifact_class": artifact_class,
+        }
+    ]
+    install_url_proofs = [
+        {
+            "kind": "latest-install",
+            "url": release_root.latest_install_url,
+            "final_url": release_root.pinned_install_url("v1.2.3"),
+            "http_status": 200,
+            "unauthenticated": True,
+            "artifact_path": proof.name,
+        },
+        {
+            "kind": "pinned-install",
+            "url": release_root.pinned_install_url("v1.2.3"),
+            "final_url": release_root.pinned_install_url("v1.2.3"),
+            "http_status": 200,
+            "unauthenticated": True,
+            "artifact_path": proof.name,
+        },
+    ]
+    public_assets = [
+        {
+            "name": name,
+            "role": public_asset_role(name),
+            "url": release_root.asset_url("v1.2.3", name),
+            "sha256": ("%064x" % (index + 1)),
+            "size_bytes": index + 1,
+        }
+        for index, name in enumerate(sorted(REQUIRED_PUBLIC_ASSETS))
+    ]
+    if not proof_material:
+        proof_artifacts = []
+        install_url_proofs = []
+        public_assets = []
     payload = {
         "schema_version": freshness_status.SCHEMA_VERSION,
         "generated_at": "2026-05-21T21:00:00Z",
@@ -159,46 +220,13 @@ def status_fixture(
         "expected_highest_stable_tag": "v1.2.3",
         "latest_install_url": release_root.latest_install_url,
         "pinned_install_url": release_root.pinned_install_url("v1.2.3"),
-        "proof_artifacts": [
-            {
-                "kind": "latest-and-pinned-url-proof",
-                "path": proof.name,
-                "sha256": freshness_status.sha256_ref(proof),
-                "artifact_class": artifact_class,
-            }
-        ],
+        "proof_artifacts": proof_artifacts,
         "proof_substrate": substrate,
         "workflow_run_id": "123456789",
         "source_commit": "a" * 40,
         "checked_command_inventory_digest": freshness_status.command_inventory_digest(docs_root),
-        "install_url_proofs": [
-            {
-                "kind": "latest-install",
-                "url": release_root.latest_install_url,
-                "final_url": release_root.pinned_install_url("v1.2.3"),
-                "http_status": 200,
-                "unauthenticated": True,
-                "artifact_path": proof.name,
-            },
-            {
-                "kind": "pinned-install",
-                "url": release_root.pinned_install_url("v1.2.3"),
-                "final_url": release_root.pinned_install_url("v1.2.3"),
-                "http_status": 200,
-                "unauthenticated": True,
-                "artifact_path": proof.name,
-            },
-        ],
-        "public_assets": [
-            {
-                "name": name,
-                "role": public_asset_role(name),
-                "url": release_root.asset_url("v1.2.3", name),
-                "sha256": ("%064x" % (index + 1)),
-                "size_bytes": index + 1,
-            }
-            for index, name in enumerate(sorted(REQUIRED_PUBLIC_ASSETS))
-        ],
+        "install_url_proofs": install_url_proofs,
+        "public_assets": public_assets,
     }
     write_json(status_path, payload)
     return Fixture(tmp, root, docs_root, status_path)
@@ -211,7 +239,9 @@ def write_docs_root(root: Path) -> Path:
             f"""
             # m80 fixture docs
 
-            Public installer status: m80:public-access-proof m80-o3uh9.21.7 pending.
+            <!-- m80:freshness-status start -->
+            Public installer status: pending public proof.
+            <!-- m80:freshness-status end -->
 
             ```sh
             {latest_install_command()}
