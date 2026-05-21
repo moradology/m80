@@ -9,6 +9,7 @@ use super::test_fixture::{
 };
 use super::*;
 
+mod contract;
 mod diagnostics;
 mod fixture_harness;
 mod no_write;
@@ -434,6 +435,22 @@ fn official_release_verifier_rejects_wrong_attestation_issuer_before_bundle_down
 
     let message = err.to_string();
     assert!(message.contains("release attestation issuer"), "{message}");
+    assert!(message.contains("mismatch"), "{message}");
+    assert_no_bundle_download(&log);
+}
+
+#[test]
+fn official_release_verifier_rejects_wrong_attestation_keyset_before_bundle_download() {
+    let (err, log) = verifier_error_with_curl_log(ReleaseFixtureOptions {
+        wrong_attestation_keyset: true,
+        ..ReleaseFixtureOptions::default()
+    });
+
+    let message = err.to_string();
+    assert!(
+        message.contains("release attestation keyset_id"),
+        "{message}"
+    );
     assert!(message.contains("mismatch"), "{message}");
     assert_no_bundle_download(&log);
 }

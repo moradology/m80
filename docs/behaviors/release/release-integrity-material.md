@@ -163,6 +163,15 @@ remediation: Install or upgrade GitHub CLI with attestation support.
 
 ## Verification Contract
 
+[`release-integrity-contract.json`](release-integrity-contract.json) is the
+checked shared contract fixture for the default Linux tuple. It names the
+required release material files, role classes, predicate subject kinds,
+`SHA256SUMS` membership, and attestation signer/issuer/keyset constants that
+both the human/public installer verifier and the Rust direct-URL verifier must honor.
+Changing a required material role or subject kind must update that fixture and
+the paired verifier tests in the same diff; otherwise one verifier lane can
+silently become weaker than the other.
+
 `scripts/verify-release-bundle.py --verify-integrity` is the one-command human
 verifier for a downloaded public release dist directory. It first verifies the
 tarball contract plus adjacent public checksum sidecars, then invokes
@@ -368,4 +377,6 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_integrity_material_rejects_expired_trust_policy`;
 - `test_release_integrity_material_rejects_boolean_rotation_overlap`;
 - `test_release_integrity_material_rejects_replayed_tag_attestation`;
-- `test_release_integrity_material_rejects_replayed_repo_attestation`.
+- `test_release_integrity_material_rejects_replayed_repo_attestation`;
+- `test_release_integrity_contract_fixture_matches_python_verifier`;
+- `direct_release_material_plan_matches_shared_integrity_contract`.

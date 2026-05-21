@@ -15,6 +15,7 @@ pub(super) struct ReleaseFixtureOptions {
     pub(super) mismatched_attestation: bool,
     pub(super) wrong_attestation_signer: bool,
     pub(super) wrong_attestation_issuer: bool,
+    pub(super) wrong_attestation_keyset: bool,
     pub(super) wrong_commit_sha: bool,
     pub(super) wrong_repository: bool,
     pub(super) wrong_release_tag: bool,
@@ -433,6 +434,11 @@ pub(super) fn write_direct_release_materials_with(
     } else {
         "https://token.actions.githubusercontent.com"
     };
+    let keyset_id = if options.wrong_attestation_keyset {
+        "github-actions-oidc:old"
+    } else {
+        "github-actions-oidc:m80-release-v1"
+    };
     let attestation = serde_json::json!({
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
@@ -441,7 +447,7 @@ pub(super) fn write_direct_release_materials_with(
         "predicate_sha256": attestation_predicate_sha,
         "signer_identity": signer_identity,
         "issuer": issuer,
-        "keyset_id": "fixture-keyset",
+        "keyset_id": keyset_id,
         "certificate_not_before": "2026-01-01T00:00:00Z",
         "certificate_not_after": "2027-01-01T00:00:00Z"
     });

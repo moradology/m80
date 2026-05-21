@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import runpy
 import shutil
 import shlex
 import subprocess
@@ -19,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "package-release-bundle.py"
 VERIFY = REPO_ROOT / "scripts" / "verify-release-bundle.py"
 VERIFY_INTEGRITY = REPO_ROOT / "scripts" / "verify-release-integrity.py"
+RELEASE_INTEGRITY_CONTRACT = REPO_ROOT / "docs" / "behaviors" / "release" / "release-integrity-contract.json"
 UPLOAD_MANIFEST = REPO_ROOT / "scripts" / "release_upload_manifest.py"
 PUBLISH_RECEIPT = REPO_ROOT / "scripts" / "release_publish_receipt.py"
 REMOTE_INVENTORY = REPO_ROOT / "scripts" / "release_remote_asset_inventory.py"
@@ -2760,6 +2762,71 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertIn("verified release integrity material", result.stdout)
 
+    def test_release_integrity_contract_fixture_matches_python_verifier(self) -> None:
+        contract = load_release_integrity_contract()
+        verifier = runpy.run_path(str(VERIFY_INTEGRITY))
+
+        self.assertEqual(contract["schema_version"], verifier["SCHEMA_VERSION"])
+        self.assertEqual(contract["mechanism"], verifier["MECHANISM"])
+        self.assertEqual(contract["repository"], verifier["REPOSITORY"])
+        self.assertEqual(contract["target"], verifier["TARGET"])
+        self.assertEqual(contract["default_bundle"]["name"], verifier["BUNDLE_NAME"])
+        self.assertEqual(contract["default_bundle"]["checksum_name"], f"{BUNDLE_NAME}.sha256")
+        self.assertEqual(contract["default_bundle"]["metadata_name"], verifier["METADATA_NAME"])
+        self.assertEqual(
+            contract["default_bundle"]["metadata_checksum_name"],
+            f"{METADATA_NAME}.sha256",
+        )
+        self.assertEqual(contract["required_files"]["asset_index"], verifier["ASSET_INDEX_NAME"])
+        self.assertEqual(
+            contract["required_files"]["bootstrap_selector"],
+            verifier["BOOTSTRAP_SELECTOR_NAME"],
+        )
+        self.assertEqual(contract["required_files"]["build_manifest"], verifier["BUILD_MANIFEST_NAME"])
+        self.assertEqual(contract["required_files"]["install"], verifier["INSTALL_NAME"])
+        self.assertEqual(contract["required_files"]["integrity_predicate"], INTEGRITY_NAME)
+        self.assertEqual(contract["required_files"]["public_sha256s"], "SHA256SUMS")
+        self.assertEqual(
+            contract["attestation"]["bundle_name"],
+            verifier["INTEGRITY_ATTESTATION_BUNDLE_NAME"],
+        )
+        self.assertEqual(contract["attestation"]["metadata_name"], INTEGRITY_ATTESTATION_METADATA_NAME)
+        self.assertEqual(contract["attestation"]["signer_workflow"], INTEGRITY_SIGNER_IDENTITY)
+        self.assertEqual(contract["attestation"]["issuer"], INTEGRITY_SIGNER_ISSUER)
+        self.assertEqual(contract["attestation"]["keyset_id"], INTEGRITY_KEYSET_ID)
+
+        default_asset = {
+            "name": BUNDLE_NAME,
+            "checksum_name": f"{BUNDLE_NAME}.sha256",
+            "metadata_name": METADATA_NAME,
+            "signature_name": None,
+        }
+        expected_subjects = {
+            role["name"]: role["subject_kind"]
+            for role in contract["material_roles"]
+            if role["subject_kind"] is not None
+        }
+        self.assertEqual(
+            verifier["expected_subjects_from_index"]({"assets": [default_asset]}),
+            expected_subjects,
+        )
+        self.assertEqual(
+            verifier["expected_public_sha256s"](expected_subjects),
+            {
+                role["name"]: role["subject_kind"]
+                for role in contract["material_roles"]
+                if role["public_sha256s"]
+            },
+        )
+
+        trust_policy = json.loads((REPO_ROOT / "docs/behaviors/release/m80-release-trust-policy.json").read_text())
+        self.assertEqual(trust_policy["schema_version"], contract["schema_version"])
+        self.assertEqual(trust_policy["mechanism"], contract["mechanism"])
+        self.assertEqual(trust_policy["repository"], contract["repository"])
+        self.assertEqual(trust_policy["allowed_signers"][0]["identity"], contract["attestation"]["signer_workflow"])
+        self.assertEqual(trust_policy["allowed_signers"][0]["issuer"], contract["attestation"]["issuer"])
+        self.assertEqual(trust_policy["keyset_id"], contract["attestation"]["keyset_id"])
+
     def test_human_release_dist_verifier_accepts_clean_public_dist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -5129,6 +5196,11 @@ def rewrite_tar(
 
 def file_mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
+
+
+def load_release_integrity_contract() -> dict:
+    with RELEASE_INTEGRITY_CONTRACT.open() as f:
+        return json.load(f)
 
 
 def sha256(path: Path) -> str:

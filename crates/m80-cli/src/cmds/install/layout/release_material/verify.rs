@@ -20,11 +20,12 @@ use super::{
     VerifiedOfficialReleaseBundle, PUBLIC_SHA256SUMS_NAME,
 };
 
-const RELEASE_INTEGRITY_SCHEMA_VERSION: u32 = 1;
-const RELEASE_INTEGRITY_MECHANISM: &str = "github-artifact-attestation";
-const RELEASE_ATTESTATION_SIGNER_WORKFLOW: &str =
+pub(super) const RELEASE_INTEGRITY_SCHEMA_VERSION: u32 = 1;
+pub(super) const RELEASE_INTEGRITY_MECHANISM: &str = "github-artifact-attestation";
+pub(super) const RELEASE_ATTESTATION_SIGNER_WORKFLOW: &str =
     "moradology/m80/.github/workflows/release-artifacts.yml";
-const RELEASE_ATTESTATION_ISSUER: &str = "https://token.actions.githubusercontent.com";
+pub(super) const RELEASE_ATTESTATION_ISSUER: &str = "https://token.actions.githubusercontent.com";
+pub(super) const RELEASE_ATTESTATION_KEYSET_ID: &str = "github-actions-oidc:m80-release-v1";
 
 pub(super) fn verify_official_bundle(
     plan: &ReleaseMaterialPlan,
@@ -176,7 +177,12 @@ fn verify_prebundle_material(
         attestation.issuer.as_str(),
         RELEASE_ATTESTATION_ISSUER,
     )?;
-    require_nonempty("release attestation keyset_id", &attestation.keyset_id)?;
+    require_equal_material(
+        "release-attestation-metadata",
+        "release attestation keyset_id",
+        attestation.keyset_id.as_str(),
+        RELEASE_ATTESTATION_KEYSET_ID,
+    )?;
     require_nonempty(
         "release attestation certificate_not_before",
         &attestation.certificate_not_before,
