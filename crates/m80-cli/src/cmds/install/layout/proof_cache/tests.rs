@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -13,8 +13,6 @@ fn write_verified_release_proof_cache_copies_manifest_and_mode_checks_material()
     let final_root = tempfile::tempdir().expect("create install root");
     let final_dir = final_root.path().join("versions/v0.0.0");
     fs::create_dir_all(final_dir.join("artifacts")).expect("create artifacts dir");
-    let fake_gh = write_fake_gh(final_root.path());
-    let _gh_env = EnvGuard::set("M80_RELEASE_ATTESTATION_GH", &fake_gh);
 
     let manifest_path = write_verified_release_proof_cache(&fixture.bundle, &final_dir, "v0.0.0")
         .expect("write verified proof cache");
@@ -35,8 +33,8 @@ fn write_verified_release_proof_cache_copies_manifest_and_mode_checks_material()
         "github-actions-oidc:m80-release-v1"
     );
     assert_eq!(
-        manifest.payload.verifier_versions.gh_version,
-        "gh version 9.9.9"
+        manifest.payload.verifier_versions.attestation_verifier,
+        "m80 native release-attestation verifier v1"
     );
     assert_eq!(manifest.payload.checksum_sidecars.len(), 6);
     assert!(manifest
@@ -209,7 +207,7 @@ fn valid_manifest() -> ProofCacheManifest {
         },
         verifier_versions: VerifierVersions {
             m80_version: "v0.0.0".to_owned(),
-            gh_version: "gh version 2.75.0".to_owned(),
+            attestation_verifier: "m80 native release-attestation verifier v1".to_owned(),
             release_integrity_schema_version: 1,
             asset_index_schema_version: 1,
         },
@@ -257,28 +255,6 @@ fn write_value(value: &Value) -> ManifestFixture {
 struct VerifiedBundleFixture {
     _temp: tempfile::TempDir,
     bundle: VerifiedOfficialReleaseBundle,
-}
-
-struct EnvGuard {
-    key: &'static str,
-    previous: Option<std::ffi::OsString>,
-}
-
-impl EnvGuard {
-    fn set(key: &'static str, value: &Path) -> Self {
-        let previous = std::env::var_os(key);
-        std::env::set_var(key, value);
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        match &self.previous {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
 }
 
 fn verified_bundle_fixture() -> VerifiedBundleFixture {
@@ -381,17 +357,6 @@ fn verified_bundle_fixture() -> VerifiedBundleFixture {
         _temp: temp,
         bundle,
     }
-}
-
-fn write_fake_gh(root: &Path) -> PathBuf {
-    let path = root.join("fake-gh");
-    fs::write(
-        &path,
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'gh version 9.9.9\\n'; exit 0; fi\nexit 1\n",
-    )
-    .expect("write fake gh");
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod fake gh");
-    path
 }
 
 fn file_mode(path: &Path) -> u32 {

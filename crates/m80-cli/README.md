@@ -465,9 +465,8 @@ Stable surfaces:
   preflight the same-tag public material set before staging so missing
   release-integrity, attestation, index, checksum, installer, selector, build,
   or public checksum assets fail before the bundle tarball is downloaded; the
-  release-integrity predicate must also verify through `gh attestation verify`
-  using the downloaded attestation bundle before selected bundle bytes are
-  fetched.
+  release-integrity predicate must also verify through m80's native attestation
+  bundle checks before selected bundle bytes are fetched.
   Accepted remote bundles are staged before publishing
   `<install-root>/versions/<release_tag>` and flipping the active pointer last.
 

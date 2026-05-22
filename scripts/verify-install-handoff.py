@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attestation-bundle", type=Path, help=f"default: <dist-dir>/{ATTESTATION_BUNDLE_NAME}")
     parser.add_argument("--attestation-metadata", type=Path, help=f"default: <dist-dir>/{ATTESTATION_METADATA_NAME}")
     parser.add_argument("--verification-time", required=True, help="RFC3339 verification time")
-    parser.add_argument("--gh-bin", default="gh", help="GitHub CLI binary used for attestation verification")
+    parser.add_argument("--gh-bin", default="gh", help=argparse.SUPPRESS)
     parser.add_argument("--json", action="store_true", help="render machine-readable handoff evidence")
     return parser.parse_args()
 
@@ -63,7 +63,6 @@ def main() -> int:
     attestation_bundle_path = args.attestation_bundle or dist_dir / ATTESTATION_BUNDLE_NAME
     attestation_metadata_path = args.attestation_metadata or dist_dir / ATTESTATION_METADATA_NAME
 
-    verify.preflight_gh_attestation_verifier(args.gh_bin)
     material = read_material(material_path, args.release_tag)
     commit_sha = material["commit_sha"]
     verification_time = verify.parse_timestamp(args.verification_time, "verification time")
@@ -73,7 +72,6 @@ def main() -> int:
         trust_policy_path=args.trust_policy,
         attestation_bundle_path=attestation_bundle_path,
         attestation_path=attestation_metadata_path,
-        gh_bin=args.gh_bin,
         release_tag=args.release_tag,
         commit_sha=commit_sha,
         verification_time=verification_time,

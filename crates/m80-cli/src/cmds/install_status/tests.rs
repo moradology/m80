@@ -652,7 +652,7 @@ fn proof_cache_report(artifacts_dir: &std::path::Path) -> ProofCacheReport {
         },
         verifier_versions: ProofCacheVerifierVersionsReport {
             m80_version: "v1.2.3".to_owned(),
-            gh_version: "gh version 2.0.0".to_owned(),
+            attestation_verifier: "m80 native release-attestation verifier v1".to_owned(),
             release_integrity_schema_version: 1,
             asset_index_schema_version: 1,
         },

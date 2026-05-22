@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 import runpy
@@ -139,11 +140,10 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn("M80_BOOTSTRAP_SELECTOR_NAME='m80-bootstrap-selector.tsv'", public_install)
             self.assertNotIn("M80_BUNDLE_URL=", public_install)
             self.assertNotIn("M80_BUNDLE_NAME=", public_install)
-            self.assertIn("preflight_attestation_verifier", public_install)
-            self.assertIn("gh attestation verify --help", public_install)
-            self.assertIn("before downloading release assets", public_install)
+            self.assertIn("verify_attestation_bundle", public_install)
+            self.assertNotIn("gh attestation verify", public_install)
             self.assertLess(
-                public_install.index("\npreflight_attestation_verifier\n"),
+                public_install.index("verify_attestation_bundle(material_path, material)"),
                 public_install.index('download_asset "$M80_BOOTSTRAP_SELECTOR_NAME"'),
             )
             self.assertIn('"$extract_dir/bin/m80" install --bundle-url "$selected_bundle_url"', public_install)
@@ -455,9 +455,8 @@ class ReleaseBundleTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 127)
-            self.assertIn("release attestation verifier missing: gh", result.stderr)
-            self.assertIn("before downloading release assets", result.stderr)
-            self.assertFalse(curl_marker.exists(), "curl must not run before gh preflight")
+            self.assertIn("missing required tool: python3", result.stderr)
+            self.assertFalse(curl_marker.exists(), "curl must not run before local tool preflight")
 
     def test_rendered_install_script_selects_verified_selector_before_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1028,7 +1027,7 @@ class ReleaseBundleTest(unittest.TestCase):
             )
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn(f"release attestation verification failed for {INTEGRITY_NAME}", result.stderr)
+            self.assertIn("release attestation bundle mediaType mismatch", result.stderr)
             self.assertIn("retry pinned command:", result.stderr)
             assert_no_bundle_download(self, urls, install_args)
             self.assertFalse((root / "tar.log").exists())
@@ -3376,12 +3375,7 @@ class ReleaseBundleTest(unittest.TestCase):
             )
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release attestation verifier missing", result.stderr)
-            self.assertIn(
-                "Install or upgrade GitHub CLI with attestation support on Linux",
-                result.stderr,
-            )
-            self.assertNotIn("release integrity material missing", result.stderr)
+            self.assertIn("release integrity material missing", result.stderr)
 
     def test_release_attestation_metadata_writer_preflights_missing_verifier_before_material_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3413,14 +3407,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
             result = run_verify_integrity(material, check=False)
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release attestation verifier unsupported", result.stderr)
-            self.assertIn("gh version 2.0.0", result.stderr)
-            self.assertIn("unknown command \"attestation\"", result.stderr)
-            self.assertIn(
-                "Install or upgrade GitHub CLI with attestation support on Linux",
-                result.stderr,
-            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_release_integrity_material_rejects_attestation_verifier_missing_required_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3431,10 +3418,7 @@ class ReleaseBundleTest(unittest.TestCase):
 
             result = run_verify_integrity(material, check=False)
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release attestation verifier unsupported", result.stderr)
-            self.assertIn("--source-digest", result.stderr)
-            self.assertIn("gh version 9.9.9", result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_release_integrity_material_accepts_complete_public_subject_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3802,7 +3786,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("release trust mechanism mismatch", result.stderr)
 
-    def test_release_integrity_material_rejects_failed_cryptographic_attestation(self) -> None:
+    def test_release_integrity_material_rejects_failed_native_attestation_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             package_fixture(root)
@@ -3812,7 +3796,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify_integrity(material, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release trust cryptographic attestation verification failed", result.stderr)
+            self.assertIn("release attestation bundle mediaType mismatch", result.stderr)
 
     def test_release_integrity_material_rejects_attestation_without_material_subject(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3824,7 +3808,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify_integrity(material, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release attestation verifier JSON omitted material name/sha256 subject", result.stderr)
+            self.assertIn("release attestation statement omitted material name/sha256 subject", result.stderr)
 
     def test_release_integrity_material_rejects_attestation_subject_digest_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3836,7 +3820,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify_integrity(material, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release attestation verifier JSON omitted material name/sha256 subject", result.stderr)
+            self.assertIn("release attestation statement omitted material name/sha256 subject", result.stderr)
 
     def test_release_integrity_material_rejects_attestation_subject_name_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3848,7 +3832,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify_integrity(material, check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release attestation verifier JSON omitted material name/sha256 subject", result.stderr)
+            self.assertIn("release attestation statement omitted material name/sha256 subject", result.stderr)
 
     def test_release_integrity_material_rejects_unknown_signer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4514,14 +4498,59 @@ def write_trust_policy(out_dir: Path, *, updates: dict | None = None) -> Path:
 
 
 def write_attestation_bundle(out_dir: Path, material: Path, *, updates: dict | None = None) -> Path:
+    statement = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [
+            {
+                "name": material.name,
+                "digest": {"sha256": sha256(material)},
+            }
+        ],
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {
+            "buildDefinition": {
+                "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+                "externalParameters": {
+                    "workflow": {
+                        "ref": "refs/tags/v0.2.11",
+                        "repository": "https://github.com/moradology/m80",
+                        "path": ".github/workflows/release-artifacts.yml",
+                    }
+                },
+                "internalParameters": {
+                    "github": {
+                        "event_name": "push",
+                        "runner_environment": "github-hosted",
+                    }
+                },
+                "resolvedDependencies": [
+                    {
+                        "uri": "git+https://github.com/moradology/m80@refs/tags/v0.2.11",
+                        "digest": {"gitCommit": INTEGRITY_COMMIT_SHA},
+                    }
+                ],
+            },
+            "runDetails": {
+                "builder": {
+                    "id": "https://github.com/moradology/m80/.github/workflows/release-artifacts.yml@refs/tags/v0.2.11"
+                },
+                "metadata": {
+                    "invocationId": "https://github.com/moradology/m80/actions/runs/1/attempts/1"
+                },
+            },
+        },
+    }
     payload = {
-        "valid": True,
-        "artifact": str(material),
-        "repository": "moradology/m80",
-        "release_tag": "v0.2.11",
-        "commit_sha": INTEGRITY_COMMIT_SHA,
-        "signer_identity": INTEGRITY_SIGNER_IDENTITY,
-        "issuer": INTEGRITY_SIGNER_ISSUER,
+        "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "verificationMaterial": {
+            "certificate": {"rawBytes": "fixture-certificate"},
+            "tlogEntries": [{"logIndex": "1"}],
+        },
+        "dsseEnvelope": {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": base64.b64encode(json.dumps(statement, sort_keys=True).encode()).decode(),
+            "signatures": [{"sig": "fixture-signature"}],
+        },
     }
     if updates:
         payload.update(updates)
@@ -4555,7 +4584,22 @@ def rewrite_trust_policy(out_dir: Path, updates: dict) -> None:
 
 
 def rewrite_attestation_bundle(out_dir: Path, updates: dict) -> None:
-    rewrite_json(out_dir / INTEGRITY_ATTESTATION_BUNDLE_NAME, updates)
+    path = out_dir / INTEGRITY_ATTESTATION_BUNDLE_NAME
+    payload = json.loads(path.read_text())
+    statement = json.loads(base64.b64decode(payload["dsseEnvelope"]["payload"]))
+    if updates.pop("valid", None) is False:
+        payload["mediaType"] = "application/vnd.dev.sigstore.bundle.invalid"
+    if updates.pop("omit_subject", False):
+        statement["subject"] = []
+    if updates.pop("wrong_subject_digest", False):
+        statement["subject"][0]["digest"]["sha256"] = "0" * 64
+    if updates.pop("wrong_subject_name", False):
+        statement["subject"][0]["name"] = "other"
+    payload.update(updates)
+    payload["dsseEnvelope"]["payload"] = base64.b64encode(
+        json.dumps(statement, sort_keys=True).encode()
+    ).decode()
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def rewrite_attestation_metadata(out_dir: Path, updates: dict) -> None:
@@ -4640,10 +4684,8 @@ bundle_path = flags.get("--bundle")
 if not bundle_path:
     fail("--bundle missing")
 bundle = json.loads(Path(bundle_path).read_text())
-if not bundle.get("valid", False):
-    fail("cryptographic attestation invalid")
-if bundle.get("artifact") != artifact:
-    fail("artifact mismatch")
+if bundle.get("mediaType") != "application/vnd.dev.sigstore.bundle.v0.3+json":
+    fail("native attestation bundle invalid")
 digest = hashlib.sha256(Path(artifact).read_bytes()).hexdigest()
 if bundle.get("wrong_subject_digest", False):
     digest = "0" * 64
@@ -4821,7 +4863,7 @@ if not bundle_path:
     fail("--bundle missing")
 bundle = json.loads(Path(bundle_path).read_text())
 if not bundle.get("valid", False):
-    fail("cryptographic attestation invalid")
+    fail("native attestation bundle invalid")
 material = json.loads(artifact.read_text())
 if flags.get("--source-digest") != material["commit_sha"]:
     fail("--source-digest mismatch")

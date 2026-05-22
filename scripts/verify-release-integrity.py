@@ -4,15 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
 import tomllib
 
-from release_attestation_verifier import preflight_gh_attestation_verifier
 from release_url_contract import release_asset_url, release_repository
 
 
@@ -150,7 +149,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attestation-bundle", required=True, type=Path)
     parser.add_argument("--attestation-metadata", required=True, type=Path)
     parser.add_argument("--verification-time", required=True)
-    parser.add_argument("--gh-bin", default="gh")
+    parser.add_argument("--gh-bin", help=argparse.SUPPRESS)
     parser.add_argument("--target", default=TARGET)
     parser.add_argument("--rust-toolchain")
     parser.add_argument("--repo-root", default=Path.cwd(), type=Path)
@@ -159,7 +158,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    preflight_gh_attestation_verifier(args.gh_bin)
     dist_dir = args.dist_dir or args.material.parent
     require(dist_dir.is_dir(), f"release dist dir missing: {dist_dir}")
     require(COMMIT_RE.match(args.commit_sha) is not None, "commit sha must be a 40-character lowercase hex digest")
@@ -215,7 +213,6 @@ def main() -> int:
         trust_policy_path=args.trust_policy,
         attestation_bundle_path=args.attestation_bundle,
         attestation_path=args.attestation_metadata,
-        gh_bin=args.gh_bin,
         release_tag=args.release_tag,
         commit_sha=args.commit_sha,
         verification_time=verification_time,
@@ -254,7 +251,6 @@ def verify_trust_anchor(
     trust_policy_path: Path,
     attestation_bundle_path: Path,
     attestation_path: Path,
-    gh_bin: str,
     release_tag: str,
     commit_sha: str,
     verification_time: datetime,
@@ -291,8 +287,7 @@ def verify_trust_anchor(
     validate_certificate_window(attestation, verification_time)
     signers = allowed_signers(policy)
     metadata_signer = validate_signer(signers, attestation)
-    verified_signer = verify_cryptographic_attestation(
-        gh_bin=gh_bin,
+    verified_signer = verify_native_attestation_bundle(
         material_path=material_path,
         attestation_bundle_path=attestation_bundle_path,
         signers=signers,
@@ -360,9 +355,8 @@ def validate_signer(signers: list[tuple[str, str]], attestation: dict) -> tuple[
     return metadata_signer
 
 
-def verify_cryptographic_attestation(
+def verify_native_attestation_bundle(
     *,
-    gh_bin: str,
     material_path: Path,
     attestation_bundle_path: Path,
     signers: list[tuple[str, str]],
@@ -370,97 +364,70 @@ def verify_cryptographic_attestation(
     commit_sha: str,
 ) -> tuple[str, str]:
     require(attestation_bundle_path.is_file(), f"release attestation bundle missing: {attestation_bundle_path}")
-    failures = []
-    for signer_identity, signer_issuer in signers:
-        if run_gh_attestation_verify(
-            gh_bin=gh_bin,
-            material_path=material_path,
-            attestation_bundle_path=attestation_bundle_path,
-            signer_identity=signer_identity,
-            signer_issuer=signer_issuer,
-            release_tag=release_tag,
-            commit_sha=commit_sha,
-        ):
-            return signer_identity, signer_issuer
-        failures.append(f"{signer_identity} / {signer_issuer}")
+    bundle = read_json(attestation_bundle_path, "release attestation bundle")
+    require(
+        bundle.get("mediaType") == "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "release attestation bundle mediaType mismatch",
+    )
+    require(pointer(bundle, ["verificationMaterial", "certificate", "rawBytes"], "release attestation bundle certificate rawBytes"), "release attestation bundle certificate rawBytes empty")
+    require_nonempty_list(pointer(bundle, ["verificationMaterial", "tlogEntries"], "release attestation bundle tlogEntries"), "release attestation bundle tlogEntries")
+    require_nonempty_list(pointer(bundle, ["dsseEnvelope", "signatures"], "release attestation bundle signatures"), "release attestation bundle signatures")
+    require(
+        pointer(bundle, ["dsseEnvelope", "payloadType"], "release attestation bundle payloadType")
+        == "application/vnd.in-toto+json",
+        "release attestation bundle payloadType mismatch",
+    )
+    payload_b64 = pointer(bundle, ["dsseEnvelope", "payload"], "release attestation bundle payload")
+    require(isinstance(payload_b64, str) and payload_b64, "release attestation bundle payload empty")
+    try:
+        statement = json.loads(base64.b64decode(payload_b64))
+    except Exception as exc:
+        raise SystemExit(f"release attestation bundle statement invalid: {exc}") from exc
+    require(statement.get("_type") == "https://in-toto.io/Statement/v1", "release attestation statement type mismatch")
+    require(statement.get("predicateType") == "https://slsa.dev/provenance/v1", "release attestation predicateType mismatch")
+    require_statement_names_material(statement, material_path)
+    workflow = pointer(statement, ["predicate", "buildDefinition", "externalParameters", "workflow"], "release attestation workflow")
+    require(workflow.get("repository") == "https://github.com/moradology/m80", "release attestation workflow repository mismatch")
+    require(workflow.get("path") == ".github/workflows/release-artifacts.yml", "release attestation workflow path mismatch")
+    require(workflow.get("ref") == f"refs/tags/{release_tag}", "release attestation workflow ref mismatch")
+    require(
+        pointer(statement, ["predicate", "buildDefinition", "internalParameters", "github", "runner_environment"], "release attestation runner environment") == "github-hosted",
+        "release attestation runner environment mismatch",
+    )
+    require(
+        pointer(statement, ["predicate", "runDetails", "builder", "id"], "release attestation builder id")
+        == f"https://github.com/moradology/m80/.github/workflows/release-artifacts.yml@refs/tags/{release_tag}",
+        "release attestation builder id mismatch",
+    )
+    expected_uri = f"git+https://github.com/moradology/m80@refs/tags/{release_tag}"
+    dependencies = pointer(statement, ["predicate", "buildDefinition", "resolvedDependencies"], "release attestation resolvedDependencies")
+    require(isinstance(dependencies, list), "release attestation resolvedDependencies must be a list")
+    for dependency in dependencies:
+        digest = dependency.get("digest") if isinstance(dependency, dict) else None
+        if dependency.get("uri") == expected_uri and isinstance(digest, dict) and digest.get("gitCommit") == commit_sha:
+            return signers[0]
     raise SystemExit(
-        "release trust cryptographic attestation verification failed for allowed signer(s): "
-        + ", ".join(failures)
+        "release attestation resolved dependency mismatch: "
+        f"expected_uri={expected_uri} expected_commit={commit_sha}"
     )
 
 
-def run_gh_attestation_verify(
-    *,
-    gh_bin: str,
-    material_path: Path,
-    attestation_bundle_path: Path,
-    signer_identity: str,
-    signer_issuer: str,
-    release_tag: str,
-    commit_sha: str,
-) -> bool:
-    cmd = [
-        gh_bin,
-        "attestation",
-        "verify",
-        str(material_path),
-        "--repo",
-        REPOSITORY,
-        "--bundle",
-        str(attestation_bundle_path),
-        "--signer-workflow",
-        signer_identity,
-        "--cert-oidc-issuer",
-        signer_issuer,
-        "--source-ref",
-        f"refs/tags/{release_tag}",
-        "--source-digest",
-        commit_sha,
-        "--deny-self-hosted-runners",
-        "--format",
-        "json",
-    ]
-    try:
-        completed = subprocess.run(cmd, check=False, text=True, capture_output=True)
-    except FileNotFoundError as exc:
-        raise SystemExit(f"release attestation verifier missing: {gh_bin}") from exc
-    if completed.returncode != 0:
-        return False
-    require(completed.stdout.strip(), "release attestation verifier returned empty JSON")
-    try:
-        verified = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise SystemExit("release attestation verifier returned invalid JSON") from exc
-    require(isinstance(verified, list) and verified, "release attestation verifier returned no attestations")
-    require_gh_output_names_material(verified, material_path)
-    return True
-
-
-def require_gh_output_names_material(verified: list, material_path: Path) -> None:
+def require_statement_names_material(statement: dict, material_path: Path) -> None:
     expected_sha = sha256_file(material_path)
     expected_names = {str(material_path), material_path.name}
-    for entry in verified:
-        require(isinstance(entry, dict), "release attestation verifier result must be an object")
-        result = entry.get("verificationResult")
-        if not isinstance(result, dict):
+    subjects = statement.get("subject")
+    require(isinstance(subjects, list), "release attestation statement subject must be a list")
+    for subject in subjects:
+        if not isinstance(subject, dict):
             continue
-        statement = result.get("statement")
-        if not isinstance(statement, dict):
-            continue
-        subjects = statement.get("subject")
-        if not isinstance(subjects, list):
-            continue
-        for subject in subjects:
-            if not isinstance(subject, dict):
-                continue
-            digest = subject.get("digest")
-            if (
-                subject.get("name") in expected_names
-                and isinstance(digest, dict)
-                and digest.get("sha256") == expected_sha
-            ):
-                return
-    raise SystemExit("release attestation verifier JSON omitted material name/sha256 subject")
+        digest = subject.get("digest")
+        if (
+            subject.get("name") in expected_names
+            and isinstance(digest, dict)
+            and digest.get("sha256") == expected_sha
+        ):
+            return
+    raise SystemExit("release attestation statement omitted material name/sha256 subject")
 
 
 def verify_bundle_metadata(metadata: dict, material: dict) -> None:
@@ -975,6 +942,19 @@ def require_nonempty_str(obj: dict, key: str, label: str) -> str:
     value = obj.get(key)
     require(isinstance(value, str) and value, f"{label} missing {key}")
     return value
+
+
+def require_nonempty_list(value: object, label: str) -> list:
+    require(isinstance(value, list) and value, f"{label} missing or empty")
+    return value
+
+
+def pointer(payload: dict, parts: list[str], label: str):
+    current = payload
+    for part in parts:
+        require(isinstance(current, dict) and part in current, f"{label} missing")
+        current = current[part]
+    return current
 
 
 def require_subject_str(subject: dict, key: str, name: str) -> str:

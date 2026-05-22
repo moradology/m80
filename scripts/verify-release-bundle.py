@@ -203,7 +203,7 @@ def parse_args() -> argparse.Namespace:
         "--verification-time",
         help="RFC3339 UTC verification time; defaults to current UTC time",
     )
-    parser.add_argument("--gh-bin", default="gh", help="GitHub CLI binary used for attestation verification")
+    parser.add_argument("--gh-bin", default="gh", help=argparse.SUPPRESS)
     parser.add_argument("--rust-toolchain", help="expected Rust toolchain recorded in release integrity material")
     args = parser.parse_args()
     if args.verify_integrity and not args.commit_sha:

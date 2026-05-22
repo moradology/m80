@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -199,7 +200,54 @@ def write_trust_policy(dist: Path) -> None:
 
 
 def write_attestation_bundle(dist: Path, material: Path) -> None:
-    payload = {"valid": True, "artifact": str(material)}
+    statement = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "subject": [
+            {
+                "name": material.name,
+                "digest": {"sha256": sha256(material)},
+            }
+        ],
+        "predicate": {
+            "buildDefinition": {
+                "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+                "externalParameters": {
+                    "workflow": {
+                        "repository": "https://github.com/moradology/m80",
+                        "path": ".github/workflows/release-artifacts.yml",
+                        "ref": f"refs/tags/{RELEASE_TAG}",
+                    }
+                },
+                "internalParameters": {
+                    "github": {"runner_environment": "github-hosted"}
+                },
+                "resolvedDependencies": [
+                    {
+                        "uri": f"git+https://github.com/moradology/m80@refs/tags/{RELEASE_TAG}",
+                        "digest": {"gitCommit": COMMIT_SHA},
+                    }
+                ],
+            },
+            "runDetails": {
+                "builder": {
+                    "id": f"https://github.com/moradology/m80/.github/workflows/release-artifacts.yml@refs/tags/{RELEASE_TAG}"
+                }
+            },
+        },
+    }
+    payload = {
+        "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "verificationMaterial": {
+            "certificate": {"rawBytes": "fixture-cert"},
+            "tlogEntries": [{"logIndex": "1"}],
+        },
+        "dsseEnvelope": {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": base64.b64encode(json.dumps(statement, sort_keys=True).encode()).decode(),
+            "signatures": [{"sig": "fixture"}],
+        },
+    }
     (dist / ATTESTATION_BUNDLE_NAME).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 

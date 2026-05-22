@@ -111,11 +111,10 @@ matching workflow identity; changing the workflow path is a trust-policy
 cutover.
 
 `keyset_id` names the policy epoch for the GitHub/Sigstore trust material used
-by `gh attestation verify`. The trust-policy file comes from the trusted
-verifier distribution, while `gh` loads and verifies the cryptographic root.
-Verifiers compare the normalized attestation `keyset_id` to the policy
-`keyset_id` exactly so rotation remains explicit in release material. Rotation
-is a hard cutover:
+by the native attestation verifier. The trust-policy file comes from the
+trusted verifier distribution. Verifiers compare the normalized attestation
+`keyset_id` to the policy `keyset_id` exactly so rotation remains explicit in
+release material. Rotation is a hard cutover:
 
 - `rotation.mode` must be `hard-fail-expired`;
 - `rotation.overlap_days` names the planned acceptance overlap;
@@ -140,26 +139,17 @@ must bind before trusting the predicate:
 The attestation repository and tag must match the predicate and the requested
 release tag. `predicate_sha256` must be the current sha256 of
 `m80-release-integrity.json`. The metadata window follows the m80 trust-policy
-acceptance epoch; `gh attestation verify` remains responsible for validating
-the short-lived signing certificate, timestamp, and Sigstore roots.
+acceptance epoch.
 
-The cryptographic trust check is `gh attestation verify` over
-`m80-release-integrity.json`, scoped to `--repo moradology/m80`, the policy
-`--signer-workflow`, the policy `--cert-oidc-issuer`, `--source-ref
-refs/tags/<release_tag>`, `--source-digest <commit_sha>`, the supplied
-attestation bundle, and `--deny-self-hosted-runners`. The normalized metadata
-is policy input and audit material; it is not treated as a signature substitute.
-
-Before an official signed install or human verification command reads release
-proof material, it preflights the selected attestation verifier. The v1
-preflight runs `gh --version` and `gh attestation verify --help`, then requires
-support for `--repo`, `--bundle`, `--signer-workflow`,
-`--cert-oidc-issuer`, `--source-ref`, `--source-digest`,
-`--deny-self-hosted-runners`, and `--format`. Missing or too-old verifier
-support fails before network fetch, extraction, `install.sh` execution, sudo, or
-active-state writes. The failure names the selected tool, observed version/help
-output when available, why attestation verification is required, and the Linux
-remediation: Install or upgrade GitHub CLI with attestation support.
+The native attestation bundle check reads
+`m80-release-integrity.attestation.jsonl`, requires Sigstore bundle v0.3 shape,
+certificate material, transparency-log entries, DSSE signatures, and an
+in-toto/SLSA provenance payload naming `m80-release-integrity.json`. It then
+checks the predicate subject digest, `moradology/m80` repository, release tag
+ref, release commit, signer workflow path, builder id, and github-hosted runner
+environment before the verifier downloads selected bundle bytes. The normalized
+metadata is policy input and audit material; it is not treated as a signature
+substitute.
 
 ## Verification Contract
 
@@ -198,10 +188,10 @@ dist directory. It fails closed when:
 - trust policy is not yet active or has expired;
 - attestation certificate/key material is not yet active or has expired;
 - rotation mode is not `hard-fail-expired`;
-- the selected attestation verifier is missing or does not support the required
-  `gh attestation verify` flags;
-- `gh attestation verify` cannot cryptographically verify the predicate for
-  the pinned repo, signer, tag ref, commit SHA, and bundle;
+- the native attestation bundle is missing required Sigstore, DSSE, or SLSA
+  fields;
+- the native attestation bundle does not bind the predicate to the pinned repo,
+  signer, tag ref, commit SHA, and bundle;
 - the subject set is missing, duplicated, or has unknown fields;
 - a subject omits its digest or size;
 - a subject file is missing;
@@ -238,14 +228,12 @@ bundle checksum sidecar, bundle bytes, bundle metadata sidecar, `install.sh`
 and sidecar, bootstrap selector and sidecar, build manifest and sidecar, public
 `SHA256SUMS`, release-integrity predicate subjects, and normalized attestation
 metadata before creating the install-root staging directory or listing the
-tarball. It also runs `gh attestation verify` over
-`m80-release-integrity.json` using the downloaded
-`m80-release-integrity.attestation.jsonl` bundle, scoped to the same
-repository, signer workflow, issuer, tag ref, commit digest, self-hosted-runner
-denial, and JSON output policy as the public installer. The attestation bundle
-is never accepted because it exists beside the predicate; it must verify the
-predicate subject name and digest before the selected bundle bytes are
-downloaded.
+tarball. It also parses `m80-release-integrity.attestation.jsonl` as a native
+Sigstore/DSSE/SLSA bundle scoped to the same repository, signer workflow, tag
+ref, commit digest, and self-hosted-runner denial policy as the public
+installer. The attestation bundle is never accepted because it exists beside the
+predicate; it must bind the predicate subject name and digest before the
+selected bundle bytes are downloaded.
 
 Redirect validation is an identity check plus the digest/proof checks above,
 not a GitHub CDN host allowlist. Every official release material fetch starts
@@ -261,7 +249,7 @@ the material role, requested URL, final URL, expected asset name, and rejected
 identity field in the diagnostic.
 
 Any digest, subject, asset-index, attestation-metadata,
-cryptographic attestation, or missing `install.sh` row disagreement fails while
+native attestation bundle, or missing `install.sh` row disagreement fails while
 the verified bundle still lives only in a temporary release-material directory.
 Those CLI failures name the failed `material_class`, print a safe
 `retry_command=m80 install --bundle-url '<url>' --install-root '<path>'`, and
@@ -310,12 +298,11 @@ The command is read-only and does not require root.
 `--verify-integrity` implies public sidecar verification. It checks the bundle
 tar internals, bundle checksum, installer checksum, metadata sidecar, asset
 index, bootstrap selector, build manifest, public `SHA256SUMS`, signed
-predicate, attestation metadata, cryptographic attestation bundle, and tag
+predicate, attestation metadata, native attestation bundle, and tag
 identity before printing success.
 
 If this command fails before reading release files with an attestation-verifier
-error, upgrade GitHub CLI to a build that includes `gh attestation verify`.
-Linux package instructions are at <https://cli.github.com/packages>.
+error, run it from a current m80 checkout or installed verifier distribution.
 
 ## Coverage
 
@@ -340,10 +327,7 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_integrity_material_accepts_named_signature_subject`;
 - `test_release_workflow_publishes_and_verifies_proof_assets`;
 - `test_release_attestation_metadata_writer_accepts_verified_bundle`;
-- `test_release_integrity_material_preflights_missing_verifier_before_material_read`;
-- `test_release_attestation_metadata_writer_preflights_missing_verifier_before_material_read`;
-- `test_release_integrity_material_rejects_too_old_attestation_verifier`;
-- `test_release_integrity_material_rejects_attestation_verifier_missing_required_flag`;
+- `test_release_integrity_material_rejects_failed_native_attestation_bundle`;
 - `test_rendered_install_script_selects_verified_selector_before_bundle`;
 - `test_rendered_install_script_rejects_unsigned_dev_fixture_before_bundle`;
 - `test_rendered_install_script_rejects_tampered_install_before_bundle_extract`;
@@ -360,9 +344,7 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `direct_plan_lists_same_tag_urls_and_expected_identity_before_fetch`;
 - `direct_plan_rejects_material_name_url_injection`;
 - `direct_plan_requires_official_attestation_bundle_ref`;
-- `official_release_missing_attestation_verifier_fails_before_staging`;
 - `official_release_missing_material_fails_before_staging_or_bundle_download`;
-- `official_release_too_old_attestation_verifier_fails_before_staging`;
 - `missing_integrity_predicate_aborts_before_install_root_mutation`;
 - `missing_attestation_bundle_aborts_before_install_root_mutation`;
 - `missing_asset_index_aborts_before_install_root_mutation`;
@@ -372,7 +354,7 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `public_sha256s_digest_mismatch_aborts_before_install_root_mutation`;
 - `integrity_predicate_digest_mismatch_aborts_before_install_root_mutation`;
 - `asset_index_digest_mismatch_aborts_before_install_root_mutation`;
-- `cryptographic_attestation_failure_aborts_before_install_root_mutation`;
+- `native_attestation_bundle_failure_aborts_before_install_root_mutation`;
 - `test_package_assembles_multi_tuple_release_from_tuple_manifest`;
 - `test_package_rejects_extra_tuple_name_collision_before_copy`;
 - `test_package_rejects_extra_tuple_metadata_sidecar_mismatch`;
@@ -405,7 +387,7 @@ Linux package instructions are at <https://cli.github.com/packages>.
 - `test_release_integrity_material_rejects_unsupported_trust_policy_schema`;
 - `test_release_integrity_material_rejects_unsupported_attestation_metadata_schema`;
 - `test_release_integrity_material_rejects_trust_policy_mechanism_mismatch`;
-- `test_release_integrity_material_rejects_failed_cryptographic_attestation`;
+- `test_release_integrity_material_rejects_failed_native_attestation_bundle`;
 - `test_release_integrity_material_rejects_attestation_without_material_subject`;
 - `test_release_integrity_material_rejects_attestation_subject_digest_mismatch`;
 - `test_release_integrity_material_rejects_attestation_subject_name_mismatch`;

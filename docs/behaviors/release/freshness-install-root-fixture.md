@@ -4,7 +4,7 @@
 latest freshness verifier past URL and checksum checks. The fixture downloads
 the public `latest/download/install.sh`, runs it with an explicit
 `--install-root`, and records the installed version directory, active profile,
-host-binaries manifest, command, exit status, and GitHub CLI invocations in the
+host-binaries manifest, command, exit status, and release API invocations in the
 freshness proof.
 
 The fixture never uses the default `/opt/m80` install root. It snapshots `/opt`

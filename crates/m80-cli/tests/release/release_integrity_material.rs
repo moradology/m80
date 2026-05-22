@@ -17,13 +17,12 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "`allowed_signers`",
         "`rotation`",
         "`hard-fail-expired`",
-        "`gh attestation verify`",
-        "`--deny-self-hosted-runners`",
-        "`--signer-workflow`",
-        "`--source-digest`",
+        "native attestation verifier",
+        "Sigstore bundle v0.3",
+        "DSSE",
+        "github-hosted runner",
         "`material_class`",
         "`retry_command=m80 install --bundle-url '<url>' --install-root '<path>'`",
-        "Install or upgrade GitHub CLI with attestation support",
         "moradology/m80/.github/workflows/release-artifacts.yml",
         "https://token.actions.githubusercontent.com",
         "certificate_not_before",
@@ -66,17 +65,13 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "test_release_integrity_material_rejects_signed_bootstrap_selector_drift",
         "test_release_integrity_material_rejects_signed_bootstrap_selector_shell_metacharacters",
         "test_release_integrity_material_rejects_unsupported_verifier_version",
-        "test_release_integrity_material_preflights_missing_verifier_before_material_read",
-        "test_release_attestation_metadata_writer_preflights_missing_verifier_before_material_read",
-        "test_release_integrity_material_rejects_too_old_attestation_verifier",
-        "test_release_integrity_material_rejects_attestation_verifier_missing_required_flag",
         "test_release_integrity_material_rejects_missing_attestation_metadata",
         "test_release_integrity_material_rejects_missing_trust_policy",
         "test_release_integrity_material_rejects_missing_attestation_bundle",
         "test_release_integrity_material_rejects_unsupported_trust_policy_schema",
         "test_release_integrity_material_rejects_unsupported_attestation_metadata_schema",
         "test_release_integrity_material_rejects_trust_policy_mechanism_mismatch",
-        "test_release_integrity_material_rejects_failed_cryptographic_attestation",
+        "test_release_integrity_material_rejects_failed_native_attestation_bundle",
         "test_release_integrity_material_rejects_attestation_without_material_subject",
         "test_release_integrity_material_rejects_attestation_subject_digest_mismatch",
         "test_release_integrity_material_rejects_attestation_subject_name_mismatch",
@@ -104,7 +99,7 @@ fn release_integrity_material_doc_names_schema_and_failure_contract() {
         "public_sha256s_digest_mismatch_aborts_before_install_root_mutation",
         "integrity_predicate_digest_mismatch_aborts_before_install_root_mutation",
         "asset_index_digest_mismatch_aborts_before_install_root_mutation",
-        "cryptographic_attestation_failure_aborts_before_install_root_mutation",
+        "native_attestation_bundle_failure_aborts_before_install_root_mutation",
     ] {
         assert!(
             doc.contains(required),
@@ -132,9 +127,10 @@ fn release_runbook_includes_human_integrity_verification_command() {
     assert!(runbook
         .contains("--attestation-metadata /tmp/m80-release-dist/m80-release-attestation.json"));
     assert!(runbook.contains("--verification-time \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""));
-    assert!(runbook.contains("gh attestation"));
-    assert!(runbook.contains("--source-digest"));
-    assert!(runbook.contains("Install or upgrade GitHub CLI with attestation support"));
+    assert!(runbook.contains("native attestation bundle"));
+    assert!(runbook.contains("DSSE in-toto payload"));
+    assert!(!runbook.contains("gh attestation"));
+    assert!(!runbook.contains("Install or upgrade GitHub CLI with attestation support"));
     assert!(runbook.contains("share one trust-anchor path"));
     assert!(runbook.contains("does not require root"));
 }

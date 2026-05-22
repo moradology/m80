@@ -524,19 +524,15 @@ verifier also loads
 `m80-release-attestation.json` so human verification and installer verification
 share one trust-anchor path.
 
-Prerequisites for the signed v1 verifier: `python3`, plus a selected GitHub CLI
-that includes `gh attestation verify` with `--repo`, `--bundle`,
-`--signer-workflow`, `--cert-oidc-issuer`, `--source-ref`,
-`--source-digest`, `--deny-self-hosted-runners`, and `--format`. The verifier
-checks this before reading release proof material, and the installer checks it
-before downloading official release assets or touching active install state. If
-the `gh` check fails: Install or upgrade GitHub CLI with attestation support
-from <https://cli.github.com/packages>.
+Prerequisites for the signed v1 verifier: `python3`. The verifier is native to
+the installed m80 CLI and the checked-in Python scripts; it does not require
+GitHub CLI on the target host before reading release proof material, downloading
+official release assets, or touching active install state.
 
 Verify a downloaded dist directory before treating a release as signed. This
 one read-only command verifies the bundle tar contract, bundle checksum,
 installer checksum, metadata sidecar, public sidecars, signed predicate,
-attestation metadata, cryptographic attestation bundle, and tag identity. The
+attestation metadata, native attestation bundle, and tag identity. The
 tag workflow publishes the attestation bundle and normalized metadata; a
 release that lacks those files is not valid for signed installer verification.
 Direct official bundle URLs use the same trust path; the current public proof is
@@ -565,25 +561,15 @@ humans and automation have one command for the full public dist verification
 path.
 
 The official direct-URL installer path uses the same GitHub Artifact
-Attestation identity before downloading the selected bundle tarball. The
-equivalent human `gh` check is:
-
-```sh
-gh attestation verify /tmp/m80-release-dist/m80-release-integrity.json \
-  --repo moradology/m80 \
-  --bundle /tmp/m80-release-dist/m80-release-integrity.attestation.jsonl \
-  --signer-workflow moradology/m80/.github/workflows/release-artifacts.yml \
-  --cert-oidc-issuer https://token.actions.githubusercontent.com \
-  --source-ref "refs/tags/${M80_RELEASE_TAG}" \
-  --source-digest "$M80_RELEASE_COMMIT" \
-  --deny-self-hosted-runners \
-  --format json
-```
+Attestation identity before downloading the selected bundle tarball. The native
+verifier checks the Sigstore bundle shape, DSSE in-toto payload, predicate
+subject digest, repository, workflow path, tag ref, source commit, and
+github-hosted runner provenance from the downloaded attestation bundle.
 
 This check is read-only and does not require root. It fails closed for wrong
 tag, wrong commit, missing subject digests, unknown signers, stale keysets,
 expired trust material, unsigned/downgraded material, tampered bundle or
-installer bytes, failed GitHub attestation verification, unsupported schema,
+installer bytes, failed native attestation bundle verification, unsupported schema,
 and bundle metadata or asset-index tag drift.
 
 To add a new architecture or image kind, add a new asset-index row and publish

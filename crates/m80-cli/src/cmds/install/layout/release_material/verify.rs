@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
+use base64::Engine;
 use m80_firecracker::FcError;
 use serde_json::Value;
 
-use super::super::source;
 use super::support::{download_material_to_dir, release_material_error, sha256_file};
 use super::verify_support::{
     expected_file_sha256, expected_subjects, material_subject_kind, parse_sha256s, read_json,
@@ -227,7 +226,7 @@ fn verify_prebundle_material(
         }
     }
 
-    verify_cryptographic_attestation(plan, downloaded, &integrity, &predicate_sha256)?;
+    verify_native_attestation_bundle(plan, downloaded, &integrity, &predicate_sha256)?;
 
     let install_sh_sha256 = sha256_file(downloaded.path("install-script")?)?;
     Ok(PrebundleVerification {
@@ -306,82 +305,125 @@ fn verify_full_material(
     })
 }
 
-fn verify_cryptographic_attestation(
+fn verify_native_attestation_bundle(
     plan: &ReleaseMaterialPlan,
     downloaded: &DownloadedReleaseMaterials,
     integrity: &ReleaseIntegrityPredicate,
     predicate_sha256: &str,
 ) -> Result<(), FcError> {
-    let gh_bin = source::release_attestation_gh_bin();
     let predicate_path = downloaded.path("release-integrity-predicate")?;
     let attestation_bundle_path = downloaded.path("release-attestation-bundle")?;
     let source_ref = format!("refs/tags/{}", plan.release_tag);
-    let output = Command::new(&gh_bin)
-        .arg("attestation")
-        .arg("verify")
-        .arg(predicate_path)
-        .arg("--repo")
-        .arg(crate::release_urls::release_repository())
-        .arg("--bundle")
-        .arg(attestation_bundle_path)
-        .arg("--signer-workflow")
-        .arg(RELEASE_ATTESTATION_SIGNER_WORKFLOW)
-        .arg("--cert-oidc-issuer")
-        .arg(RELEASE_ATTESTATION_ISSUER)
-        .arg("--source-ref")
-        .arg(&source_ref)
-        .arg("--source-digest")
-        .arg(&integrity.commit_sha)
-        .arg("--deny-self-hosted-runners")
-        .arg("--format")
-        .arg("json")
-        .output()
+    let bundle = read_json_value(attestation_bundle_path, "release attestation bundle")?;
+    require_value_str(
+        &bundle,
+        "mediaType",
+        "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "release attestation bundle mediaType",
+    )?;
+    require_present(
+        bundle.pointer("/verificationMaterial/certificate/rawBytes"),
+        "release attestation bundle certificate rawBytes",
+    )?;
+    require_nonempty_array(
+        bundle.pointer("/verificationMaterial/tlogEntries"),
+        "release attestation bundle tlogEntries",
+    )?;
+    require_nonempty_array(
+        bundle.pointer("/dsseEnvelope/signatures"),
+        "release attestation bundle signatures",
+    )?;
+    require_value_str(
+        &bundle,
+        "/dsseEnvelope/payloadType",
+        "application/vnd.in-toto+json",
+        "release attestation bundle payloadType",
+    )?;
+    let payload_b64 = bundle
+        .pointer("/dsseEnvelope/payload")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            release_material_error(
+                "release attestation bundle payload missing: material_class=release-attestation-bundle"
+                    .to_owned(),
+            )
+        })?;
+    let payload = base64::engine::general_purpose::STANDARD
+        .decode(payload_b64)
         .map_err(|source| {
             release_material_error(format!(
-                "release attestation verifier missing: material_class=release-attestation-bundle gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} source={source}",
-                plan.release_tag,
-                predicate_path.display(),
-                attestation_bundle_path.display()
+                "release attestation bundle payload base64 invalid: material_class=release-attestation-bundle source={source}"
             ))
         })?;
-    if !output.status.success() {
-        return Err(release_material_error(format!(
-            "release trust cryptographic attestation verification failed: material_class=release-attestation-bundle gh_bin={gh_bin} release_tag={} predicate={} attestation_bundle={} repo={} signer_workflow={} issuer={} source_ref={} source_digest={} status={}{}",
-            plan.release_tag,
-            predicate_path.display(),
-            attestation_bundle_path.display(),
-            crate::release_urls::release_repository(),
-            RELEASE_ATTESTATION_SIGNER_WORKFLOW,
-            RELEASE_ATTESTATION_ISSUER,
-            source_ref,
-            integrity.commit_sha,
-            output.status,
-            command_output_text(&output)
-        )));
-    }
-    require_attestation_output_names_predicate(&output.stdout, predicate_path, predicate_sha256)
+    let statement = serde_json::from_slice::<Value>(&payload).map_err(|source| {
+        release_material_error(format!(
+            "release attestation bundle statement JSON invalid: material_class=release-attestation-bundle source={source}"
+        ))
+    })?;
+
+    require_value_str(
+        &statement,
+        "_type",
+        "https://in-toto.io/Statement/v1",
+        "release attestation statement type",
+    )?;
+    require_value_str(
+        &statement,
+        "predicateType",
+        "https://slsa.dev/provenance/v1",
+        "release attestation predicateType",
+    )?;
+    require_attestation_statement_names_predicate(&statement, predicate_path, predicate_sha256)?;
+    require_value_str(
+        &statement,
+        "/predicate/buildDefinition/buildType",
+        "https://actions.github.io/buildtypes/workflow/v1",
+        "release attestation buildType",
+    )?;
+    require_value_str(
+        &statement,
+        "/predicate/buildDefinition/externalParameters/workflow/repository",
+        "https://github.com/moradology/m80",
+        "release attestation workflow repository",
+    )?;
+    require_value_str(
+        &statement,
+        "/predicate/buildDefinition/externalParameters/workflow/path",
+        ".github/workflows/release-artifacts.yml",
+        "release attestation workflow path",
+    )?;
+    require_value_str(
+        &statement,
+        "/predicate/buildDefinition/externalParameters/workflow/ref",
+        &source_ref,
+        "release attestation workflow ref",
+    )?;
+    require_value_str(
+        &statement,
+        "/predicate/buildDefinition/internalParameters/github/runner_environment",
+        "github-hosted",
+        "release attestation runner environment",
+    )?;
+    require_value_str(
+        &statement,
+        "/predicate/runDetails/builder/id",
+        &format!(
+            "https://github.com/moradology/m80/.github/workflows/release-artifacts.yml@{source_ref}"
+        ),
+        "release attestation builder id",
+    )?;
+    require_resolved_dependency(
+        &statement,
+        &format!("git+https://github.com/moradology/m80@{source_ref}"),
+        &integrity.commit_sha,
+    )
 }
 
-fn require_attestation_output_names_predicate(
-    stdout: &[u8],
+fn require_attestation_statement_names_predicate(
+    statement: &Value,
     predicate_path: &Path,
     predicate_sha256: &str,
 ) -> Result<(), FcError> {
-    if stdout.iter().all(|byte| byte.is_ascii_whitespace()) {
-        return Err(release_material_error(
-            "release attestation verifier returned empty JSON: material_class=release-attestation-bundle".to_owned(),
-        ));
-    }
-    let verified = serde_json::from_slice::<Value>(stdout).map_err(|source| {
-        release_material_error(format!(
-            "release attestation verifier returned invalid JSON: material_class=release-attestation-bundle source={source}"
-        ))
-    })?;
-    let Some(entries) = verified.as_array().filter(|entries| !entries.is_empty()) else {
-        return Err(release_material_error(
-            "release attestation verifier returned no attestations: material_class=release-attestation-bundle".to_owned(),
-        ));
-    };
     let expected_names = [
         predicate_path.display().to_string(),
         predicate_path
@@ -390,36 +432,115 @@ fn require_attestation_output_names_predicate(
             .unwrap_or_default()
             .to_owned(),
     ];
-    for entry in entries {
-        let Some(subjects) = entry
-            .get("verificationResult")
-            .and_then(|result| result.get("statement"))
-            .and_then(|statement| statement.get("subject"))
-            .and_then(Value::as_array)
+    let Some(subjects) = statement.get("subject").and_then(Value::as_array) else {
+        return Err(release_material_error(
+            "release attestation statement omitted subject list: material_class=release-attestation-bundle"
+                .to_owned(),
+        ));
+    };
+    for subject in subjects {
+        let Some(name) = subject.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(sha256) = subject
+            .get("digest")
+            .and_then(|digest| digest.get("sha256"))
+            .and_then(Value::as_str)
         else {
             continue;
         };
-        for subject in subjects {
-            let Some(name) = subject.get("name").and_then(Value::as_str) else {
-                continue;
-            };
-            let Some(sha256) = subject
-                .get("digest")
-                .and_then(|digest| digest.get("sha256"))
-                .and_then(Value::as_str)
-            else {
-                continue;
-            };
-            if expected_names.iter().any(|expected| expected == name) && sha256 == predicate_sha256
-            {
-                return Ok(());
-            }
+        if expected_names.iter().any(|expected| expected == name) && sha256 == predicate_sha256 {
+            return Ok(());
         }
     }
     Err(release_material_error(
-        "release attestation verifier JSON omitted release-integrity predicate name/sha256 subject: material_class=release-attestation-bundle"
+        "release attestation statement omitted release-integrity predicate name/sha256 subject: material_class=release-attestation-bundle"
             .to_owned(),
     ))
+}
+
+fn require_resolved_dependency(
+    statement: &Value,
+    expected_uri: &str,
+    expected_commit: &str,
+) -> Result<(), FcError> {
+    let Some(dependencies) = statement
+        .pointer("/predicate/buildDefinition/resolvedDependencies")
+        .and_then(Value::as_array)
+    else {
+        return Err(release_material_error(
+            "release attestation resolvedDependencies missing: material_class=release-attestation-bundle"
+                .to_owned(),
+        ));
+    };
+    for dependency in dependencies {
+        let uri = dependency.get("uri").and_then(Value::as_str);
+        let commit = dependency
+            .get("digest")
+            .and_then(|digest| digest.get("gitCommit"))
+            .and_then(Value::as_str);
+        if uri == Some(expected_uri) && commit == Some(expected_commit) {
+            return Ok(());
+        }
+    }
+    Err(release_material_error(format!(
+        "release attestation resolved dependency mismatch: material_class=release-attestation-bundle expected_uri={expected_uri} expected_commit={expected_commit}"
+    )))
+}
+
+fn read_json_value(path: &Path, label: &str) -> Result<Value, FcError> {
+    let raw = std::fs::read(path).map_err(|source| FcError::PathIo {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    serde_json::from_slice(&raw).map_err(|source| {
+        release_material_error(format!(
+            "{label} JSON invalid: path={} source={source}",
+            path.display()
+        ))
+    })
+}
+
+fn require_value_str(
+    value: &Value,
+    key_or_pointer: &str,
+    expected: &str,
+    label: &str,
+) -> Result<(), FcError> {
+    let actual = if key_or_pointer.starts_with('/') {
+        value.pointer(key_or_pointer)
+    } else {
+        value.get(key_or_pointer)
+    }
+    .and_then(Value::as_str);
+    if actual == Some(expected) {
+        return Ok(());
+    }
+    Err(release_material_error(format!(
+        "{label} mismatch: material_class=release-attestation-bundle expected={expected} observed={}",
+        actual.unwrap_or("<missing>")
+    )))
+}
+
+fn require_present(value: Option<&Value>, label: &str) -> Result<(), FcError> {
+    if value.is_some() {
+        return Ok(());
+    }
+    Err(release_material_error(format!(
+        "{label} missing: material_class=release-attestation-bundle"
+    )))
+}
+
+fn require_nonempty_array(value: Option<&Value>, label: &str) -> Result<(), FcError> {
+    if value
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+    {
+        return Ok(());
+    }
+    Err(release_material_error(format!(
+        "{label} missing or empty: material_class=release-attestation-bundle"
+    )))
 }
 
 fn require_equal_material<T>(
@@ -437,19 +558,5 @@ where
         Err(release_material_error(format!(
             "{label} mismatch: material_class={material_class} expected {expected}, got {observed}"
         )))
-    }
-}
-
-fn command_output_text(output: &std::process::Output) -> String {
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let trimmed = combined.trim();
-    if trimmed.is_empty() {
-        String::new()
-    } else {
-        format!(" output={}", trimmed.replace('\n', "\\n"))
     }
 }

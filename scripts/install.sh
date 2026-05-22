@@ -99,38 +99,6 @@ validate_stable_release_tag() {
 
 validate_stable_release_tag "$M80_RELEASE_TAG"
 
-preflight_attestation_verifier() {
-    if ! gh_version="$(gh --version 2>&1)"; then
-        echo "m80 install.sh: release attestation verifier missing: gh" >&2
-        echo "m80 install.sh: signed m80 release installs require gh attestation verify before downloading release assets" >&2
-        echo "m80 install.sh: observed version output: $gh_version" >&2
-        echo "m80 install.sh: Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages" >&2
-        exit 127
-    fi
-    if ! gh_help="$(gh attestation verify --help 2>&1)"; then
-        echo "m80 install.sh: release attestation verifier unsupported: gh attestation verify --help failed" >&2
-        echo "m80 install.sh: signed m80 release installs require gh attestation verify before downloading release assets" >&2
-        echo "m80 install.sh: observed version output: $gh_version" >&2
-        echo "m80 install.sh: observed help output: $gh_help" >&2
-        echo "m80 install.sh: Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages" >&2
-        exit 1
-    fi
-    for flag in --repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --source-digest --deny-self-hosted-runners --format; do
-        case "$gh_help" in
-            *"$flag"*) ;;
-            *)
-                echo "m80 install.sh: release attestation verifier unsupported: gh attestation verify --help is missing $flag" >&2
-                echo "m80 install.sh: observed version output: $gh_version" >&2
-                echo "m80 install.sh: observed help output: $gh_help" >&2
-                echo "m80 install.sh: Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages" >&2
-                exit 1
-                ;;
-        esac
-    done
-}
-
-preflight_attestation_verifier
-
 need python3
 
 host_os() {
@@ -435,6 +403,7 @@ validate_release_integrity_material() {
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -658,6 +627,75 @@ def verify_attestation_metadata(material_path: Path, material: dict) -> None:
     require(now <= trust_until, "release trust policy expired")
     require(cert_from <= now, "release trust certificate is not active yet")
     require(now <= cert_until, "release trust certificate expired")
+
+
+def pointer(payload: dict, parts: list[str], label: str):
+    current = payload
+    for part in parts:
+        require(isinstance(current, dict) and part in current, f"{label} missing")
+        current = current[part]
+    return current
+
+
+def require_equal(actual: object, expected: object, label: str) -> None:
+    require(actual == expected, f"{label} mismatch: expected {expected}, got {actual}")
+
+
+def verify_attestation_bundle(material_path: Path, material: dict) -> None:
+    bundle = read_json(tmp / attestation_name, "release attestation bundle")
+    require_equal(
+        bundle.get("mediaType"),
+        "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "release attestation bundle mediaType",
+    )
+    require(pointer(bundle, ["verificationMaterial", "certificate", "rawBytes"], "release attestation bundle certificate rawBytes"), "release attestation bundle certificate rawBytes empty")
+    tlog_entries = pointer(bundle, ["verificationMaterial", "tlogEntries"], "release attestation bundle tlogEntries")
+    require(isinstance(tlog_entries, list) and tlog_entries, "release attestation bundle tlogEntries missing or empty")
+    signatures = pointer(bundle, ["dsseEnvelope", "signatures"], "release attestation bundle signatures")
+    require(isinstance(signatures, list) and signatures, "release attestation bundle signatures missing or empty")
+    require_equal(
+        pointer(bundle, ["dsseEnvelope", "payloadType"], "release attestation bundle payloadType"),
+        "application/vnd.in-toto+json",
+        "release attestation bundle payloadType",
+    )
+    payload_b64 = pointer(bundle, ["dsseEnvelope", "payload"], "release attestation bundle payload")
+    require(isinstance(payload_b64, str) and payload_b64, "release attestation bundle payload empty")
+    try:
+        statement = json.loads(base64.b64decode(payload_b64))
+    except Exception as exc:
+        raise SystemExit(f"release attestation bundle statement invalid: {exc}") from exc
+    require_equal(statement.get("_type"), "https://in-toto.io/Statement/v1", "release attestation statement type")
+    require_equal(statement.get("predicateType"), "https://slsa.dev/provenance/v1", "release attestation predicateType")
+    subject_ok = False
+    for subject in statement.get("subject", []):
+        digest = subject.get("digest") if isinstance(subject, dict) else None
+        if (
+            isinstance(digest, dict)
+            and subject.get("name") in {str(material_path), material_path.name}
+            and digest.get("sha256") == sha256_file(material_path)
+        ):
+            subject_ok = True
+            break
+    require(subject_ok, "release attestation statement omitted release-integrity predicate name/sha256 subject")
+    workflow = pointer(statement, ["predicate", "buildDefinition", "externalParameters", "workflow"], "release attestation workflow")
+    require_equal(workflow.get("repository"), "https://github.com/moradology/m80", "release attestation workflow repository")
+    require_equal(workflow.get("path"), ".github/workflows/release-artifacts.yml", "release attestation workflow path")
+    require_equal(workflow.get("ref"), f"refs/tags/{release_tag}", "release attestation workflow ref")
+    runner = pointer(statement, ["predicate", "buildDefinition", "internalParameters", "github", "runner_environment"], "release attestation runner environment")
+    require_equal(runner, "github-hosted", "release attestation runner environment")
+    builder = pointer(statement, ["predicate", "runDetails", "builder", "id"], "release attestation builder id")
+    require_equal(builder, f"https://github.com/moradology/m80/.github/workflows/release-artifacts.yml@refs/tags/{release_tag}", "release attestation builder id")
+    dependencies = pointer(statement, ["predicate", "buildDefinition", "resolvedDependencies"], "release attestation resolvedDependencies")
+    expected_uri = f"git+https://github.com/moradology/m80@refs/tags/{release_tag}"
+    require(isinstance(dependencies, list), "release attestation resolvedDependencies must be a list")
+    for dependency in dependencies:
+        digest = dependency.get("digest") if isinstance(dependency, dict) else None
+        if dependency.get("uri") == expected_uri and isinstance(digest, dict) and digest.get("gitCommit") == material["commit_sha"]:
+            return
+    raise SystemExit(
+        "release attestation resolved dependency mismatch: "
+        f"expected_uri={expected_uri} expected_commit={material['commit_sha']}"
+    )
 
 
 def verify_metadata(material: dict) -> dict:
@@ -894,6 +932,7 @@ material_path = tmp / INTEGRITY_NAME
 material = read_json(material_path, "release integrity material")
 commit_sha = verify_top_level(material)
 verify_attestation_metadata(material_path, material)
+verify_attestation_bundle(material_path, material)
 metadata = verify_metadata(material)
 verify_build_manifest(material, metadata)
 asset_index = verify_asset_index(metadata)
@@ -1073,16 +1112,6 @@ commit_sha=
 install_sha256=
 # shellcheck disable=SC1090
 . "$integrity_facts_path"
-gh attestation verify "$integrity_path" \
-    --repo "${M80_PUBLIC_RELEASE_OWNER}/${M80_PUBLIC_RELEASE_REPO}" \
-    --bundle "$attestation_bundle_path" \
-    --signer-workflow "$M80_TRUST_SIGNER_WORKFLOW" \
-    --cert-oidc-issuer "$M80_TRUST_SIGNER_ISSUER" \
-    --source-ref "refs/tags/${M80_RELEASE_TAG}" \
-    --source-digest "$commit_sha" \
-    --deny-self-hosted-runners \
-    --format json >/dev/null || fail_integrity "release attestation verification failed for $M80_RELEASE_INTEGRITY_NAME"
-
 download_release_asset "$selected_bundle_name" "$bundle_path" "$selected_bundle_url" "yes" "integrity"
 download_integrity_asset "$selected_checksum_name" "$checksum_path"
 verify_integrity_sha256_sidecar "$selected_bundle_name" "$selected_checksum_name" "$selected_bundle_sha256"

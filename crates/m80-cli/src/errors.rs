@@ -521,7 +521,7 @@ mod tests {
             (
                 FcError::Config(ConfigError::InvalidValue {
                     field: "release-material",
-                    reason: "release trust cryptographic attestation verification failed: material_class=release-attestation-bundle".into(),
+                    reason: "release trust native attestation bundle verification failed: material_class=release-attestation-bundle".into(),
                 }),
                 ErrorDiagnosticCode::ReleaseMaterialAttestation,
             ),

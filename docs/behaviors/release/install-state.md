@@ -137,7 +137,7 @@ JSON field table:
 | `proof_cache.manifest_modified_unix_seconds` and `proof_cache.cache_age_seconds` | Local source timestamp and age for the saved manifest. | Shows when the offline cache material was last written locally. |
 | `proof_cache.materials[]` | Saved public material role, path, sha256, size, subject, and source timestamp. | Evidence of every public artifact preserved after install-time verification. |
 | `proof_cache.trust_policy.path/identity/sha256` | Trust policy saved with the verification material. | Captures the identity policy that bounded install-time verification. |
-| `proof_cache.verifier_versions.*` | m80, GitHub CLI, release-integrity schema, and asset-index schema versions. | Explains which local verifier versions produced the saved evidence. |
+| `proof_cache.verifier_versions.*` | m80, native release-attestation verifier, release-integrity schema, and asset-index schema versions. | Explains which local verifier versions produced the saved evidence. |
 | `proof_cache.diagnostics[]` | Proof-cache stale/missing/invalid diagnostics copied from the local status reader. | Distinguishes local cache tampering from public latest freshness checks. |
 | `proof_cache.repair_command` | Pinned reinstall command for the affected release tag when the cache is missing, invalid, or stale. | Gives support captures a deterministic repair path without selecting mutable latest. |
 | `diagnostics[]` | Resolver diagnostics with code, field, path, message, `repair_command`, and `rollback_command`. | Machine-readable failure details plus copyable operator repair commands for support captures. |
@@ -282,7 +282,7 @@ The payload fields are:
 - `public_sha256s`: path, sha256, and size for public `SHA256SUMS`;
 - `checksum_sidecars`: every public checksum sidecar path, sha256, and subject;
 - `trust_policy`: policy path, trust identity, and policy sha256;
-- `verifier_versions`: m80 version, GitHub CLI version, release-integrity schema
+- `verifier_versions`: m80 version, attestation verifier, release-integrity schema
   version, and asset-index schema version.
 
 The parser is typed and uses `deny_unknown_fields`. Missing required fields,

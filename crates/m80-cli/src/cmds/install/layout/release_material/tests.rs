@@ -203,14 +203,12 @@ fn official_release_verifier_accepts_complete_material_before_staging() {
 }
 
 #[test]
-fn official_release_verifier_invokes_gh_attestation_verify_before_bundle_download() {
+fn official_release_verifier_uses_native_attestation_bundle_before_bundle_download() {
     let _guard = super::super::INSTALL_PREFLIGHT_ENV_LOCK.lock().unwrap();
     let temp = tempfile::tempdir().unwrap();
     let material_dir = temp.path().join("materials");
     fs::create_dir(&material_dir).unwrap();
     let log_path = temp.path().join("curl.log");
-    let gh_argv_path = temp.path().join("gh.argv");
-    let gh_marker_path = temp.path().join("gh.marker");
     let bin_dir = temp.path().join("bin");
     fs::create_dir(&bin_dir).unwrap();
     write_fake_curl(&bin_dir);
@@ -220,16 +218,6 @@ fn official_release_verifier_invokes_gh_attestation_verify_before_bundle_downloa
     let _path_env = EnvVarGuard::prepend_path(&bin_dir);
     let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
     let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
-    let _gh_env = EnvVarGuard::set(
-        "M80_RELEASE_ATTESTATION_GH",
-        &fake_gh_fixture("fake-gh-attestation-supported.sh"),
-    );
-    let _gh_argv_env = EnvVarGuard::set("M80_FAKE_GH_ARGV", &gh_argv_path);
-    let _gh_marker_env = EnvVarGuard::set("M80_FAKE_GH_MARKER", &gh_marker_path);
-    let _bundle_gate_env = EnvVarGuard::set(
-        "M80_FAKE_CURL_REQUIRE_GH_MARKER_BEFORE_BUNDLE",
-        &gh_marker_path,
-    );
 
     let verified = super::verify_official_release_bundle(&fixture.bundle_url)
         .unwrap()
@@ -257,39 +245,11 @@ fn official_release_verifier_invokes_gh_attestation_verify_before_bundle_downloa
         "0123456789abcdef0123456789abcdef01234567"
     );
 
-    let argv = fs::read_to_string(&gh_argv_path).unwrap();
-    let lines = argv.lines().collect::<Vec<_>>();
-    assert_eq!(lines.len(), 18, "{argv}");
-    assert_eq!(lines[0], "attestation");
-    assert_eq!(lines[1], "verify");
-    assert!(lines[2].ends_with("m80-release-integrity.json"), "{argv}");
-    assert_eq!(lines[3], "--repo");
-    assert_eq!(lines[4], "moradology/m80");
-    assert_eq!(lines[5], "--bundle");
-    assert!(
-        lines[6].ends_with("m80-release-integrity.attestation.jsonl"),
-        "{argv}"
-    );
-    assert_eq!(lines[7], "--signer-workflow");
-    assert_eq!(
-        lines[8],
-        "moradology/m80/.github/workflows/release-artifacts.yml"
-    );
-    assert_eq!(lines[9], "--cert-oidc-issuer");
-    assert_eq!(lines[10], "https://token.actions.githubusercontent.com");
-    assert_eq!(lines[11], "--source-ref");
-    assert_eq!(lines[12], "refs/tags/v0.0.0");
-    assert_eq!(lines[13], "--source-digest");
-    assert_eq!(lines[14], "0123456789abcdef0123456789abcdef01234567");
-    assert_eq!(lines[15], "--deny-self-hosted-runners");
-    assert_eq!(lines[16], "--format");
-    assert_eq!(lines[17], "json");
-
     let log = fs::read_to_string(&log_path).unwrap();
     let bundle_url = crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz");
     assert!(
         log.lines().any(|line| line == bundle_url),
-        "successful verification should download the bundle after gh verification: {log}"
+        "successful verification should download the bundle after native attestation verification: {log}"
     );
 }
 
@@ -351,7 +311,7 @@ fn official_release_verifier_rejects_mismatched_attestation_metadata() {
 }
 
 #[test]
-fn official_release_verifier_rejects_failed_cryptographic_attestation_before_bundle_download() {
+fn official_release_verifier_rejects_failed_native_attestation_bundle_before_bundle_download() {
     let (err, log) = verifier_error_with_curl_log(ReleaseFixtureOptions {
         gh_failure: true,
         ..ReleaseFixtureOptions::default()
@@ -359,11 +319,7 @@ fn official_release_verifier_rejects_failed_cryptographic_attestation_before_bun
 
     let message = err.to_string();
     assert!(
-        message.contains("cryptographic attestation verification failed"),
-        "{message}"
-    );
-    assert!(
-        message.contains("cryptographic attestation invalid"),
+        message.contains("release attestation bundle mediaType mismatch"),
         "{message}"
     );
     assert_no_bundle_download(&log);
@@ -378,7 +334,7 @@ fn official_release_verifier_rejects_wrong_attestation_subject_before_bundle_dow
 
     let message = err.to_string();
     assert!(
-        message.contains("JSON omitted release-integrity predicate name/sha256 subject"),
+        message.contains("statement omitted release-integrity predicate name/sha256 subject"),
         "{message}"
     );
     assert_no_bundle_download(&log);
@@ -387,16 +343,15 @@ fn official_release_verifier_rejects_wrong_attestation_subject_before_bundle_dow
 #[test]
 fn official_release_verifier_rejects_wrong_commit_digest_before_bundle_download() {
     let (err, log) = verifier_error_with_curl_log(ReleaseFixtureOptions {
-        wrong_commit_sha: true,
+        gh_wrong_commit: true,
         ..ReleaseFixtureOptions::default()
     });
 
     let message = err.to_string();
     assert!(
-        message.contains("cryptographic attestation verification failed"),
+        message.contains("resolved dependency mismatch"),
         "{message}"
     );
-    assert!(message.contains("source digest mismatch"), "{message}");
     assert_no_bundle_download(&log);
 }
 
@@ -408,11 +363,7 @@ fn official_release_verifier_rejects_wrong_source_ref_before_bundle_download() {
     });
 
     let message = err.to_string();
-    assert!(
-        message.contains("cryptographic attestation verification failed"),
-        "{message}"
-    );
-    assert!(message.contains("source ref mismatch"), "{message}");
+    assert!(message.contains("workflow ref mismatch"), "{message}");
     assert_no_bundle_download(&log);
 }
 

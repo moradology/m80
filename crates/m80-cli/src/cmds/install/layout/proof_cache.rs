@@ -2,7 +2,6 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::{Deserialize, Serialize};
@@ -97,7 +96,7 @@ pub(super) struct TrustPolicyRef {
 #[serde(deny_unknown_fields)]
 pub(super) struct VerifierVersions {
     pub(super) m80_version: String,
-    pub(super) gh_version: String,
+    pub(super) attestation_verifier: String,
     pub(super) release_integrity_schema_version: u32,
     pub(super) asset_index_schema_version: u32,
 }
@@ -246,7 +245,7 @@ fn verified_release_proof_cache_manifest(
         trust_policy: trust_policy_ref(verified),
         verifier_versions: VerifierVersions {
             m80_version: m80_version.to_owned(),
-            gh_version: gh_version()?,
+            attestation_verifier: attestation_verifier()?,
             release_integrity_schema_version: verified.summary.release_integrity_schema_version,
             asset_index_schema_version: crate::release_asset_index::ASSET_INDEX_SCHEMA_VERSION,
         },
@@ -343,8 +342,8 @@ fn validate_payload(payload: &ProofCachePayload) -> Result<(), FcError> {
         &payload.verifier_versions.m80_version,
     )?;
     require_nonempty(
-        "verifier_versions.gh_version",
-        &payload.verifier_versions.gh_version,
+        "verifier_versions.attestation_verifier",
+        &payload.verifier_versions.attestation_verifier,
     )?;
     if payload.verifier_versions.release_integrity_schema_version == 0 {
         return Err(invalid_manifest(
@@ -596,30 +595,8 @@ fn checksum_sidecar_subject(path: &Path) -> Result<String, FcError> {
     Ok(subject.to_owned())
 }
 
-fn gh_version() -> Result<String, FcError> {
-    let gh_bin = super::source::release_attestation_gh_bin();
-    let output = Command::new(&gh_bin)
-        .arg("--version")
-        .output()
-        .map_err(|source| {
-            invalid_verifier(format!(
-                "release attestation verifier version failed: gh_bin={gh_bin} source={source}"
-            ))
-        })?;
-    if !output.status.success() {
-        return Err(invalid_verifier(format!(
-            "release attestation verifier version failed: gh_bin={gh_bin} status={}",
-            output.status
-        )));
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let version = stdout.lines().find(|line| !line.trim().is_empty());
-    match version {
-        Some(version) => Ok(version.trim().to_owned()),
-        None => Err(invalid_verifier(format!(
-            "release attestation verifier version was empty: gh_bin={gh_bin}"
-        ))),
-    }
+fn attestation_verifier() -> Result<String, FcError> {
+    Ok("m80 native release-attestation verifier v1".to_owned())
 }
 
 fn verify_dir_mode(path: &Path) -> Result<(), FcError> {
@@ -819,13 +796,6 @@ fn require_sha256(label: &str, value: &str) -> Result<(), FcError> {
 fn invalid_manifest(reason: String) -> FcError {
     FcError::Config(ConfigError::InvalidValue {
         field: "proof-cache.manifest",
-        reason,
-    })
-}
-
-fn invalid_verifier(reason: String) -> FcError {
-    FcError::Config(ConfigError::InvalidValue {
-        field: "proof-cache.verifier",
         reason,
     })
 }

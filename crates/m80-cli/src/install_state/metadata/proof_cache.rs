@@ -136,7 +136,7 @@ fn proof_cache_report(
         },
         verifier_versions: ProofCacheVerifierVersionsReport {
             m80_version: manifest.payload.verifier_versions.m80_version,
-            gh_version: manifest.payload.verifier_versions.gh_version,
+            attestation_verifier: manifest.payload.verifier_versions.attestation_verifier,
             release_integrity_schema_version: manifest
                 .payload
                 .verifier_versions
@@ -298,8 +298,8 @@ fn validate_proof_cache_manifest(
         &manifest.payload.verifier_versions.m80_version,
     )?;
     require_nonempty(
-        "proof_cache.verifier_versions.gh_version",
-        &manifest.payload.verifier_versions.gh_version,
+        "proof_cache.verifier_versions.attestation_verifier",
+        &manifest.payload.verifier_versions.attestation_verifier,
     )?;
     if manifest
         .payload
@@ -483,7 +483,7 @@ struct TrustPolicyRef {
 #[serde(deny_unknown_fields)]
 struct VerifierVersions {
     m80_version: String,
-    gh_version: String,
+    attestation_verifier: String,
     release_integrity_schema_version: u32,
     asset_index_schema_version: u32,
 }

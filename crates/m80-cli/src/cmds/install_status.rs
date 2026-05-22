@@ -742,7 +742,7 @@ impl ProofCacheTrustPolicyOutput {
 #[derive(Debug, Clone, Serialize)]
 struct ProofCacheVerifierVersionsOutput {
     m80_version: String,
-    gh_version: String,
+    attestation_verifier: String,
     release_integrity_schema_version: u32,
     asset_index_schema_version: u32,
 }
@@ -751,7 +751,7 @@ impl ProofCacheVerifierVersionsOutput {
     fn from_report(report: &ProofCacheVerifierVersionsReport) -> Self {
         Self {
             m80_version: report.m80_version.clone(),
-            gh_version: report.gh_version.clone(),
+            attestation_verifier: report.attestation_verifier.clone(),
             release_integrity_schema_version: report.release_integrity_schema_version,
             asset_index_schema_version: report.asset_index_schema_version,
         }

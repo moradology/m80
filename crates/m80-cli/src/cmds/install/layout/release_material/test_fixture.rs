@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use base64::Engine;
 use m80_firecracker::FcError;
 use sha2::{Digest, Sha256};
 
@@ -26,6 +27,8 @@ pub(super) struct ReleaseFixtureOptions {
     pub(super) gh_omit_subject: bool,
     pub(super) gh_wrong_subject_digest: bool,
     pub(super) gh_wrong_source_ref: bool,
+    pub(super) gh_wrong_commit: bool,
+    pub(super) self_hosted_runner: bool,
     pub(super) alternate_install_script: bool,
 }
 
@@ -432,7 +435,13 @@ pub(super) fn write_direct_release_materials_with_bundle_bytes(
     write_material(
         material_dir,
         "m80-release-integrity.attestation.jsonl",
-        b"{\"bundle\":\"fixture\"}\n",
+        attestation_bundle_bytes(
+            &predicate_release_tag,
+            commit_sha,
+            &predicate_sha256,
+            options,
+        )
+        .as_bytes(),
         options.omit,
     );
     let attestation_predicate_sha = if options.mismatched_attestation {
@@ -503,4 +512,95 @@ fn write_material(material_dir: &Path, name: &str, bytes: &[u8], omit: Option<&s
 
 fn sha256_bytes(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn attestation_bundle_bytes(
+    release_tag: &str,
+    commit_sha: &str,
+    predicate_sha256: &str,
+    options: ReleaseFixtureOptions,
+) -> String {
+    let bundle_commit_sha = if options.gh_wrong_commit {
+        "1111111111111111111111111111111111111111"
+    } else {
+        commit_sha
+    };
+    let subject_sha = if options.gh_wrong_subject_digest {
+        "0".repeat(64)
+    } else {
+        predicate_sha256.to_owned()
+    };
+    let subject_name = if options.gh_omit_subject {
+        serde_json::json!([])
+    } else {
+        serde_json::json!([{
+            "name": "m80-release-integrity.json",
+            "digest": {"sha256": subject_sha}
+        }])
+    };
+    let workflow_ref = if options.gh_wrong_source_ref {
+        "refs/tags/v9.9.9"
+    } else {
+        "refs/tags/v0.0.0"
+    };
+    let runner_environment = if options.self_hosted_runner {
+        "self-hosted"
+    } else {
+        "github-hosted"
+    };
+    let statement = serde_json::json!({
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": subject_name,
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {
+            "buildDefinition": {
+                "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+                "externalParameters": {
+                    "workflow": {
+                        "ref": workflow_ref,
+                        "repository": "https://github.com/moradology/m80",
+                        "path": ".github/workflows/release-artifacts.yml"
+                    }
+                },
+                "internalParameters": {
+                    "github": {
+                        "event_name": "push",
+                        "runner_environment": runner_environment
+                    }
+                },
+                "resolvedDependencies": [{
+                    "uri": format!("git+https://github.com/moradology/m80@refs/tags/{release_tag}"),
+                    "digest": {"gitCommit": bundle_commit_sha}
+                }]
+            },
+            "runDetails": {
+                "builder": {
+                    "id": format!("https://github.com/moradology/m80/.github/workflows/release-artifacts.yml@refs/tags/{release_tag}")
+                },
+                "metadata": {
+                    "invocationId": "https://github.com/moradology/m80/actions/runs/1/attempts/1"
+                }
+            }
+        }
+    });
+    let payload =
+        base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&statement).unwrap());
+    serde_json::to_string_pretty(&serde_json::json!({
+        "mediaType": if options.gh_failure {
+            "application/vnd.dev.sigstore.bundle.invalid"
+        } else {
+            "application/vnd.dev.sigstore.bundle.v0.3+json"
+        },
+        "verificationMaterial": {
+            "certificate": {"rawBytes": "fixture-certificate"},
+            "tlogEntries": [{"logIndex": "1"}]
+        },
+        "dsseEnvelope": {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": payload,
+            "signatures": [{"sig": "fixture-signature"}]
+        }
+    }))
+    .unwrap()
+        + "\n"
 }

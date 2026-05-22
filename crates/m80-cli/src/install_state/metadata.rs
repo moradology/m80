@@ -110,7 +110,7 @@ pub(crate) struct ProofCacheTrustPolicyReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ProofCacheVerifierVersionsReport {
     pub(crate) m80_version: String,
-    pub(crate) gh_version: String,
+    pub(crate) attestation_verifier: String,
     pub(crate) release_integrity_schema_version: u32,
     pub(crate) asset_index_schema_version: u32,
 }

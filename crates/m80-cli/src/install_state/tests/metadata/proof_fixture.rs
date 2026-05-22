@@ -51,7 +51,7 @@ pub(super) fn write_proof_cache(cache_dir: &Path, tag: &str) {
         },
         verifier_versions: TestVerifierVersions {
             m80_version: tag.to_owned(),
-            gh_version: "gh version 2.0.0".to_owned(),
+            attestation_verifier: "m80 native release-attestation verifier v1".to_owned(),
             release_integrity_schema_version: 1,
             asset_index_schema_version: 1,
         },
@@ -144,7 +144,7 @@ struct TestTrustPolicyRef {
 #[derive(Serialize)]
 struct TestVerifierVersions {
     m80_version: String,
-    gh_version: String,
+    attestation_verifier: String,
     release_integrity_schema_version: u32,
     asset_index_schema_version: u32,
 }

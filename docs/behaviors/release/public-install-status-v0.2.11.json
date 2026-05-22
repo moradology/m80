@@ -188,7 +188,7 @@
         },
         "verifier_versions": {
           "m80_version": "v0.2.11",
-          "gh_version": "gh version 2.92.0 (2026-04-28)",
+          "attestation_verifier": "m80 native release-attestation verifier v1",
           "release_integrity_schema_version": 1,
           "asset_index_schema_version": 1
         },

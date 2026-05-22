@@ -22,8 +22,9 @@ command.
 
 The verifier fails before printing the sudo handoff when the installer is
 tampered, the checksum is wrong, signature/provenance material is missing, the
-requested tag differs from the predicate tag, or GitHub CLI cannot verify the
-attestation. Its human output includes the resolved release tag, source commit,
+requested tag differs from the predicate tag, or the native verifier cannot
+bind the attestation bundle to the predicate. Its human output includes the
+resolved release tag, source commit,
 `install_sh_sha256`, and the verified asset names so CI logs show exactly which
 local bytes are about to cross the privilege boundary.
 

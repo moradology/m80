@@ -179,7 +179,7 @@ fn asset_index_digest_mismatch_aborts_before_install_root_mutation() {
 }
 
 #[test]
-fn cryptographic_attestation_failure_aborts_before_install_root_mutation() {
+fn native_attestation_bundle_failure_aborts_before_install_root_mutation() {
     assert_failure_preserves_install_root(FailureScenario {
         name: "bad attestation",
         options: ReleaseFixtureOptions {
@@ -187,7 +187,7 @@ fn cryptographic_attestation_failure_aborts_before_install_root_mutation() {
             ..ReleaseFixtureOptions::default()
         },
         expected: &[
-            "cryptographic attestation verification failed",
+            "release attestation bundle mediaType mismatch",
             "release_tag=v0.0.0",
             "material_class=release-attestation-bundle",
         ],

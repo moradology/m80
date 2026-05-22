@@ -8,21 +8,6 @@ use super::bundle::sha256_file;
 
 const STAGED_BUNDLE_NAME: &str = "bundle.tar.gz";
 const STAGED_CHECKSUM_NAME: &str = "bundle.tar.gz.sha256";
-const ATTESTATION_GH_ENV: &str = "M80_RELEASE_ATTESTATION_GH";
-const DEFAULT_ATTESTATION_GH_BIN: &str = "gh";
-const REQUIRED_GH_ATTESTATION_FLAGS: &[&str] = &[
-    "--repo",
-    "--bundle",
-    "--signer-workflow",
-    "--cert-oidc-issuer",
-    "--source-ref",
-    "--source-digest",
-    "--deny-self-hosted-runners",
-    "--format",
-];
-const ATTESTATION_VERIFIER_REMEDIATION: &str =
-    "Install or upgrade GitHub CLI with attestation support on Linux: https://cli.github.com/packages";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OfficialReleaseBundle {
     pub(super) release_tag: String,
@@ -50,12 +35,7 @@ pub(super) fn validate_bundle_source_url(bundle_url: &str) -> Result<(), FcError
 pub(super) fn preflight_attestation_verifier_for_bundle_url(
     bundle_url: &str,
 ) -> Result<(), FcError> {
-    let gh_bin = release_attestation_gh_bin();
-    preflight_attestation_verifier_for_bundle_url_with_gh(bundle_url, &gh_bin)
-}
-
-pub(super) fn release_attestation_gh_bin() -> String {
-    std::env::var(ATTESTATION_GH_ENV).unwrap_or_else(|_| DEFAULT_ATTESTATION_GH_BIN.to_owned())
+    validate_bundle_source_url(bundle_url)
 }
 
 pub(super) fn is_fixture_bundle_url(bundle_url: &str) -> Result<bool, FcError> {
@@ -86,79 +66,6 @@ pub(super) fn official_release_bundle_from_url(
             bundle_url: bundle_url.to_owned(),
         }),
     )
-}
-
-fn preflight_attestation_verifier_for_bundle_url_with_gh(
-    bundle_url: &str,
-    gh_bin: &str,
-) -> Result<(), FcError> {
-    if local_file_url_path(bundle_url)?.is_some() {
-        return Ok(());
-    }
-    let parsed = parse_supported_initial_remote_url(bundle_url)?;
-    if !is_official_release_bundle_url(&parsed) {
-        return Ok(());
-    }
-    preflight_gh_attestation_verifier(gh_bin)
-}
-
-fn preflight_gh_attestation_verifier(gh_bin: &str) -> Result<(), FcError> {
-    let version = run_attestation_probe(gh_bin, &["--version"]).map_err(|source| {
-        attestation_verifier_error(format!(
-            "release attestation verifier missing: {gh_bin}; signed m80 release installs require `gh attestation verify` before downloading release assets; {ATTESTATION_VERIFIER_REMEDIATION}; spawn error: {source}"
-        ))
-    })?;
-    if !version.status.success() {
-        return Err(attestation_verifier_error(format!(
-            "release attestation verifier unsupported: {gh_bin}; signed m80 release installs require `gh attestation verify` before downloading release assets; observed version output {}; {ATTESTATION_VERIFIER_REMEDIATION}",
-            format_probe_output(&version)
-        )));
-    }
-
-    let help =
-        run_attestation_probe(gh_bin, &["attestation", "verify", "--help"]).map_err(|source| {
-            attestation_verifier_error(format!(
-                "release attestation verifier missing: {gh_bin}; signed m80 release installs require `gh attestation verify --help` before downloading release assets; observed version output {}; {ATTESTATION_VERIFIER_REMEDIATION}; spawn error: {source}",
-                format_probe_output(&version)
-            ))
-        })?;
-    let help_text = raw_command_output_text(&help);
-    if !help.status.success() {
-        return Err(attestation_verifier_error(format!(
-            "release attestation verifier unsupported: {gh_bin}; `gh attestation verify --help` failed; observed version output {}; observed help output {}; signed m80 release installs require GitHub Artifact Attestation verification before downloading release assets; {ATTESTATION_VERIFIER_REMEDIATION}",
-            format_probe_output(&version),
-            format_probe_output(&help)
-        )));
-    }
-
-    let missing = REQUIRED_GH_ATTESTATION_FLAGS
-        .iter()
-        .copied()
-        .filter(|flag| !help_text.contains(flag))
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(attestation_verifier_error(format!(
-            "release attestation verifier unsupported: {gh_bin}; `gh attestation verify --help` is missing required flag(s): {}; observed version output {}; observed help output {}; signed m80 release installs require these flags before downloading release assets; {ATTESTATION_VERIFIER_REMEDIATION}",
-            missing.join(", "),
-            format_probe_output(&version),
-            format_probe_output(&help)
-        )));
-    }
-    Ok(())
-}
-
-fn run_attestation_probe(
-    gh_bin: &str,
-    args: &[&str],
-) -> Result<std::process::Output, std::io::Error> {
-    Command::new(gh_bin).args(args).output()
-}
-
-fn attestation_verifier_error(reason: String) -> FcError {
-    FcError::Config(ConfigError::InvalidValue {
-        field: "attestation-verifier",
-        reason,
-    })
 }
 
 fn local_file_url_path(url: &str) -> Result<Option<PathBuf>, FcError> {
@@ -520,16 +427,6 @@ fn raw_command_output_text(output: &std::process::Output) -> String {
     )
 }
 
-fn format_probe_output(output: &std::process::Output) -> String {
-    let text = raw_command_output_text(output);
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        format!("exit={} <no output>", output.status)
-    } else {
-        format!("exit={} {}", output.status, trimmed.replace('\n', "\\n"))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -730,46 +627,33 @@ mod tests {
     }
 
     #[test]
-    fn attestation_verifier_preflight_ignores_local_fixture_url() {
-        preflight_attestation_verifier_for_bundle_url_with_gh(
+    fn attestation_verifier_preflight_accepts_local_fixture_url_without_gh() {
+        preflight_attestation_verifier_for_bundle_url(
             "http://127.0.0.1:1234/m80-linux-x86_64.tar.gz",
-            "/does/not/exist/gh",
         )
         .unwrap();
     }
 
     #[test]
-    fn attestation_verifier_preflight_accepts_supported_gh_help() {
-        let gh = fake_gh_fixture("fake-gh-attestation-supported.sh");
-
-        preflight_attestation_verifier_for_bundle_url_with_gh(
-            &crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
-            gh.to_str().unwrap(),
-        )
+    fn attestation_verifier_preflight_accepts_official_url_without_gh() {
+        preflight_attestation_verifier_for_bundle_url(&crate::release_urls::release_asset_url(
+            "v0.0.0",
+            "m80-linux-x86_64.tar.gz",
+        ))
         .unwrap();
     }
 
     #[test]
-    fn attestation_verifier_preflight_rejects_help_missing_required_flag() {
-        let gh = fake_gh_fixture("fake-gh-attestation-missing-source-digest.sh");
-
-        let err = preflight_attestation_verifier_for_bundle_url_with_gh(
-            &crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz"),
-            gh.to_str().unwrap(),
+    fn attestation_verifier_preflight_still_rejects_unsupported_urls() {
+        let err = preflight_attestation_verifier_for_bundle_url(
+            "https://example.invalid/m80-linux-x86_64.tar.gz",
         )
         .unwrap_err();
 
         let message = err.to_string();
         assert!(
-            message.contains("release attestation verifier unsupported"),
+            message.contains("remote bundle URL must be a concrete"),
             "{message}"
         );
-        assert!(message.contains("--source-digest"), "{message}");
-    }
-
-    fn fake_gh_fixture(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures")
-            .join(name)
     }
 }

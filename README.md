@@ -5,8 +5,7 @@ and the exit code like a normal process.
 
 ## Quickstart
 
-On a Linux/KVM machine with `sudo`, `curl`, `python3`, `sha256sum`, `tar`, and
-GitHub CLI `gh`:
+On a Linux/KVM machine with `sudo`, `curl`, `python3`, `sha256sum`, and `tar`:
 
 <!-- m80:freshness-status start -->
 Public installer status: public proof green for `v0.2.11`.
