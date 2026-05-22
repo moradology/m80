@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-22T03:46:01Z",
+  "release_tag": "v0.2.11",
+  "source_commit": "3c72f2500e0e3c878cf93ffcf0790d410747ea39",
+  "repository": "moradology/m80",
+  "workflow_run": {
+    "id": 26267080697,
+    "url": "https://github.com/moradology/m80/actions/runs/26267080697",
+    "build_job": "build-release-artifacts",
+    "publish_job": "publish-release-artifacts",
+    "conclusion": "success"
+  },
+  "public_install": {
+    "proof_root": "/tank/tmp/m80-public-install-proof-v0211.4jsmug",
+    "install_root": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+    "install_sh_url": "https://github.com/moradology/m80/releases/latest/download/install.sh",
+    "command": "sudo -n env PATH=/tank/tmp/m80-public-install-proof.g0DJpN/gh_2.92.0_linux_amd64/bin:$PATH TMPDIR=/tank/tmp/m80-public-install-proof-v0211.4jsmug/tmp M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) sh /tank/tmp/m80-public-install-proof-v0211.4jsmug/install.sh --install-root /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+    "exit_code": 0,
+    "release_tag": "v0.2.11",
+    "preflight_gate": "live_preflight",
+    "active_pointer_flipped": true,
+    "profile_written": true,
+    "proof_cache_written": true,
+    "finalization_order": [
+      "bundle_verification",
+      "host_prerequisite_verification",
+      "install_provenance",
+      "release_proof_cache",
+      "host_binaries_manifest",
+      "default_profile",
+      "preflight_smoke_gate",
+      "active_pointer_flip"
+    ],
+    "bundle_url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.tar.gz",
+    "bundle_sha256": "c76b9f996dab02db59deaa34bb37972d6f6bd763d49046f3937f8a0d889fc596",
+    "install_sh_sha256": "69c92d3c5cc88efd9cc08e315308cee133aa762abaea137ed71926d142025bf4",
+    "public_sha256s_sha256": "47f4a65404124b537180367baf31eb8490a94325cc95de80c0f90cf2e08f10bc",
+    "asset_index_sha256": "922312f123770b0ed5f1135179d129e268f65b1904b5ca77725bf22f0ebeb4e9",
+    "predicate_sha256": "e4ea738318488a2337b65466980dd961f60a7b3cf56007fbb0c947e0be6e1061",
+    "attestation_signer": "moradology/m80/.github/workflows/release-artifacts.yml",
+    "attestation_issuer": "https://token.actions.githubusercontent.com"
+  },
+  "install_status": {
+    "command": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bin/m80 --json install-status --install-root /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+    "exit_code": 0,
+    "status": "healthy_active_release",
+    "active_release_tag": "v0.2.11",
+    "selected_profile_path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/profiles/default.toml",
+    "diagnostic_count": 0,
+    "next_action": {
+      "kind": "ready",
+      "message": "installed release is ready",
+      "command": "m80 run -- echo hello"
+    }
+  },
+  "proof_cache_manifest": {
+    "path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/artifacts/release-proof-cache/manifest.json",
+    "schema_version": 1,
+    "manifest_sha256": "41902de945eedfe7f509f5d1645d382d92422072ce0beb171af3330d06b36fe5",
+    "manifest_digest": "32dc94ff7f2a4e469cbda86c31ce650dee2e6d6c99a819d4e3ebecf07d0cf5ba",
+    "release_tag": "v0.2.11",
+    "repository": "moradology/m80",
+    "target": "linux-x86_64",
+    "material_count": 11,
+    "checksum_sidecar_count": 6,
+    "trust_policy": {
+      "path": "m80-release-trust-policy.json",
+      "identity": "repository=moradology/m80 signer=moradology/m80/.github/workflows/release-artifacts.yml issuer=https://token.actions.githubusercontent.com keyset_id=github-actions-oidc:m80-release-v1",
+      "sha256": "7db08a17f4356ee7ffc502d48adf303ece128946e2124f74b1737913d2da6f99"
+    },
+    "verifier_versions": {
+      "m80_version": "v0.2.11",
+      "gh_version": "gh version 2.92.0 (2026-04-28)",
+      "release_integrity_schema_version": 1,
+      "asset_index_schema_version": 1
+    }
+  },
+  "process_smoke": {
+    "command": "sudo -n env HOME=/tank/tmp/m80-public-install-proof-v0211.4jsmug/home TMPDIR=/tank/tmp/m80-public-install-proof-v0211.4jsmug/tmp M80_RUN_ROOT=/tank/tmp/r0211 M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) timeout 180 /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bin/m80 run -- echo hello",
+    "exit_code": 0,
+    "run_root": "/tank/tmp/r0211",
+    "run_root_path_length": 15,
+    "stdout": "hello\n",
+    "stderr_bytes": 0,
+    "note": "The proof install-root is intentionally under /tank/tmp and longer than a default /opt/m80 install. The runtime smoke overrides M80_RUN_ROOT to a short /tank/tmp path so the host-visible Firecracker AF_UNIX socket stays below the kernel cap; v0.2.11 also rejects overlong generated-id paths at admission."
+  }
+}
