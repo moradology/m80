@@ -103,9 +103,6 @@ Production operators should also read
 like a normal command to the caller: stdin goes in, stdout/stderr/exit come
 back, and m80 handles the VM setup and teardown around it.
 
-See [`docs/diagrams.md`](docs/diagrams.md) for process, lifecycle, and
-workspace-stack diagrams.
-
 ## Diagnostics
 
 `m80 run` keeps stdout/stderr transparent for the wrapped process. VM mechanics
