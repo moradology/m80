@@ -13,7 +13,8 @@ fn publication_plan_doc_and_workflow_keep_release_publish_fail_closed() {
         "`validate_existing_public_release`",
         "`fail_manual_recovery_required`",
         "public assets without `--clobber`",
-        "pre-promotion",
+        "public non-latest release",
+        "marks it latest only after",
         "same-size byte drift fails during the remote asset inventory",
         "gh release delete <version> --yes",
         "scripts/test-release-publication-plan.py",
@@ -37,9 +38,16 @@ fn publication_plan_doc_and_workflow_keep_release_publish_fail_closed() {
             && workflow.contains("gh release upload \"$GITHUB_REF_NAME\" \"${upload_paths[@]}\"")
             && workflow.contains("Validate uploaded draft before latest promotion")
             && workflow.contains(
-                "gh release edit \"$GITHUB_REF_NAME\" --draft=false --latest --verify-tag"
+                "gh release edit \"$GITHUB_REF_NAME\" --draft=false --latest=false --verify-tag"
             ),
-        "release workflow must create a draft, upload immutable assets, validate them, then publish latest"
+        "release workflow must create a draft, upload immutable assets, validate them, then publish public non-latest"
+    );
+    assert!(
+        workflow.contains("Upload publish decision receipt")
+            && workflow.contains("Upload remote release asset inventory")
+            && workflow.contains("Mark validated release as latest")
+            && workflow.contains("gh release edit \"$GITHUB_REF_NAME\" --latest --verify-tag"),
+        "release workflow must upload public validation receipts before latest promotion"
     );
     assert!(
         !workflow.contains("--clobber"),
@@ -52,8 +60,9 @@ fn publication_plan_doc_and_workflow_keep_release_publish_fail_closed() {
     );
     assert!(
         runbook.contains("m80-release-publication-plan.json")
-            && runbook.contains("after that pre-promotion")
-            && runbook.contains("skips upload and validates the served bytes")
+            && runbook.contains("marks it latest only after those readiness gates pass")
+            && runbook.contains("skips upload")
+            && runbook.contains("validates the served bytes")
             && runbook.contains("delete only the"),
         "release runbook must document publication-plan rerun recovery"
     );
