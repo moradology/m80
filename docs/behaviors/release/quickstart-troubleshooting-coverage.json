@@ -1,0 +1,222 @@
+{
+  "coverage_lanes": {
+    "bootstrap_network_failure": [
+      "network"
+    ],
+    "bug_report_path": [
+      "unknown-report"
+    ],
+    "checksum_or_provenance_failure": [
+      "checksum-provenance-mismatch"
+    ],
+    "host_prerequisite_failure": [
+      "host-prerequisite",
+      "kvm-unavailable",
+      "privilege-denied"
+    ],
+    "installer_failure": [
+      "checksum-provenance-mismatch",
+      "github-auth-rate-limit",
+      "missing-asset",
+      "missing-local-tool",
+      "unsupported-tuple"
+    ],
+    "process_wrapper_smoke": [
+      "process-smoke-failed"
+    ],
+    "stale_profile_failure": [
+      "stale-profile"
+    ]
+  },
+  "manual_or_real_kvm_lanes": [
+    {
+      "coverage_lane": "process_wrapper_smoke",
+      "id": "process-smoke-failed",
+      "observable": "process_smoke.exit_code == 0 and process_smoke.stdout == hello\\n",
+      "proof_artifact": "docs/behaviors/release/public-install-proof-cache-v0.2.11.json",
+      "required_substrate": "linux-kvm-host"
+    }
+  ],
+  "matrix": "docs/behaviors/release/quickstart-troubleshooting-matrix.json",
+  "required_lanes": [
+    "bootstrap_network_failure",
+    "checksum_or_provenance_failure",
+    "host_prerequisite_failure",
+    "installer_failure",
+    "process_wrapper_smoke",
+    "stale_profile_failure"
+  ],
+  "rows": [
+    {
+      "coverage_lanes": [
+        "bootstrap_network_failure"
+      ],
+      "id": "network",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:scripts/test-stable-latest-bootstrap.py::test_rejects_http_failure_before_handoff_json",
+        "test:scripts/test-release-bundle.py::test_rendered_install_script_download_failures_are_diagnosable_before_extract"
+      ],
+      "verifier_code_families": [
+        "asset_index",
+        "error_envelope"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "installer_failure"
+      ],
+      "id": "github-auth-rate-limit",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl",
+        "doc:docs/behaviors/release/release-integrity-material.md"
+      ],
+      "verifier_code_families": [
+        "error_envelope"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "installer_failure"
+      ],
+      "id": "missing-asset",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:scripts/test-release-public-access-receipt.py::test_missing_public_asset_fails",
+        "test:scripts/test-release-bundle.py::test_release_upload_manifest_rejects_missing_public_file"
+      ],
+      "verifier_code_families": [
+        "asset_index"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "installer_failure",
+        "checksum_or_provenance_failure"
+      ],
+      "id": "checksum-provenance-mismatch",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:scripts/test-install-handoff.py::test_rejects_tampered_install_before_sudo_handoff",
+        "test:scripts/test-release-bundle.py::test_human_release_dist_verifier_rejects_tampered_install_sh"
+      ],
+      "verifier_code_families": [
+        "asset_index",
+        "error_envelope",
+        "install_state"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "installer_failure"
+      ],
+      "id": "unsupported-tuple",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:crates/m80-cli/src/release_asset_index/tests.rs::wrong_architecture_diagnostic_names_requested_and_available_tuple",
+        "doc:docs/behaviors/release/asset-index.md"
+      ],
+      "verifier_code_families": [
+        "asset_index"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "installer_failure"
+      ],
+      "id": "missing-local-tool",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl",
+        "source:scripts/install.sh"
+      ],
+      "verifier_code_families": []
+    },
+    {
+      "coverage_lanes": [
+        "host_prerequisite_failure"
+      ],
+      "id": "kvm-unavailable",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:crates/m80-preflight/src/substrate.rs::substrate_fixture_rejects_missing_kvm",
+        "test:crates/m80-preflight/src/substrate.rs::substrate_fixture_rejects_bad_kvm_permissions"
+      ],
+      "verifier_code_families": [
+        "host_prerequisite"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "host_prerequisite_failure"
+      ],
+      "id": "host-prerequisite",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:crates/m80-preflight/tests/host_prerequisite_result.rs::diagnostic_maps_missing_firecracker_to_policy_linked_repair",
+        "doc:docs/behaviors/release/host-prerequisite-policy.md"
+      ],
+      "verifier_code_families": [
+        "host_prerequisite"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "host_prerequisite_failure"
+      ],
+      "id": "privilege-denied",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:crates/m80-preflight/src/substrate.rs::substrate_failures_carry_operator_remediation_hints",
+        "doc:docs/behaviors/preflight/privilege.md"
+      ],
+      "verifier_code_families": [
+        "host_prerequisite"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "stale_profile_failure"
+      ],
+      "id": "stale-profile",
+      "proof_artifacts": [],
+      "source_refs": [
+        "test:crates/m80-cli/src/cmds/install_status/tests.rs::status_matrix_stale_profile_target",
+        "doc:docs/behaviors/release/install-state.md"
+      ],
+      "verifier_code_families": [
+        "install_state"
+      ]
+    },
+    {
+      "coverage_lanes": [
+        "process_wrapper_smoke"
+      ],
+      "id": "process-smoke-failed",
+      "proof_artifacts": [
+        "docs/behaviors/release/public-install-proof-cache-v0.2.11.json"
+      ],
+      "source_refs": [
+        "proof:docs/behaviors/release/public-install-proof-cache-v0.2.11.json",
+        "source:scripts/quickstart_snippets.py"
+      ],
+      "verifier_code_families": []
+    },
+    {
+      "coverage_lanes": [
+        "bug_report_path"
+      ],
+      "id": "unknown-report",
+      "proof_artifacts": [],
+      "source_refs": [
+        "doc:docs/behaviors/cli/env-dump.md",
+        "doc:README.md"
+      ],
+      "verifier_code_families": [
+        "error_envelope"
+      ]
+    }
+  ],
+  "schema_version": 1
+}

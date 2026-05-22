@@ -16,8 +16,10 @@ from quickstart_snippets import public_command_inventory
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERIFY = REPO_ROOT / "scripts" / "verify-quickstart-troubleshooting.py"
 RENDER = REPO_ROOT / "scripts" / "render-quickstart-troubleshooting.py"
+COVERAGE = REPO_ROOT / "scripts" / "write-quickstart-troubleshooting-coverage.py"
 MATRIX = REPO_ROOT / "docs" / "behaviors" / "release" / "quickstart-troubleshooting-matrix.json"
 DOC = REPO_ROOT / "docs" / "behaviors" / "release" / "quickstart-troubleshooting-matrix.md"
+COVERAGE_REPORT = REPO_ROOT / "docs" / "behaviors" / "release" / "quickstart-troubleshooting-coverage.json"
 
 
 class QuickstartTroubleshootingTests(unittest.TestCase):
@@ -145,6 +147,82 @@ class QuickstartTroubleshootingTests(unittest.TestCase):
         inventory = public_command_inventory(REPO_ROOT)
         self.assertTrue(inventory)
 
+    def test_coverage_report_matches_matrix(self) -> None:
+        result = run_coverage()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, COVERAGE_REPORT.read_text())
+        report = json.loads(result.stdout)
+        self.assertEqual(report["schema_version"], 1)
+        self.assertEqual(
+            set(report["required_lanes"]),
+            {
+                "installer_failure",
+                "bootstrap_network_failure",
+                "checksum_or_provenance_failure",
+                "host_prerequisite_failure",
+                "stale_profile_failure",
+                "process_wrapper_smoke",
+            },
+        )
+        self.assertEqual(
+            report["manual_or_real_kvm_lanes"][0]["proof_artifact"],
+            "docs/behaviors/release/public-install-proof-cache-v0.2.11.json",
+        )
+
+    def test_coverage_check_rejects_stale_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            stale_report = Path(tmp) / "coverage.json"
+            stale_report.write_text("{}\n")
+
+            result = subprocess.run(
+                ["python3", str(COVERAGE), "--check", "--report", str(stale_report)],
+                cwd=REPO_ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("quickstart troubleshooting coverage report is stale", result.stderr)
+
+    def test_process_smoke_coverage_requires_real_kvm_proof(self) -> None:
+        matrix = valid_matrix()
+        process_row = row_by_id(matrix, "process-smoke-failed")
+        process_row["source_mappings"] = [
+            mapping for mapping in process_row["source_mappings"] if mapping["kind"] != "proof"
+        ]
+
+        result = run_coverage(write_matrix(matrix))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("process-smoke coverage must cite a proof source mapping", result.stderr)
+
+    def test_process_smoke_coverage_requires_zero_exit_proof(self) -> None:
+        matrix = valid_matrix()
+        proof = json.loads(
+            (
+                REPO_ROOT
+                / "docs"
+                / "behaviors"
+                / "release"
+                / "public-install-proof-cache-v0.2.11.json"
+            ).read_text()
+        )
+        proof["process_smoke"]["exit_code"] = 1
+        with tempfile.TemporaryDirectory() as tmp:
+            proof_path = Path(tmp) / "nonzero-proof.json"
+            proof_path.write_text(json.dumps(proof))
+            process_row = row_by_id(matrix, "process-smoke-failed")
+            for mapping in process_row["source_mappings"]:
+                if mapping["kind"] == "proof":
+                    mapping["ref"] = str(proof_path)
+
+            result = run_coverage(write_matrix(matrix))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("process_smoke.exit_code == 0", result.stderr)
+
 
 def run_verify(matrix: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -159,6 +237,16 @@ def run_verify(matrix: Path) -> subprocess.CompletedProcess[str]:
 def run_render() -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(RENDER)],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def run_coverage(matrix: Path = MATRIX) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(COVERAGE), "--matrix", str(matrix)],
         cwd=REPO_ROOT,
         text=True,
         stdout=subprocess.PIPE,
