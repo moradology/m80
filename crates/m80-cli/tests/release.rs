@@ -24,6 +24,9 @@ mod freshness_failure_policy;
 #[path = "release/current_latest_repair_preflight.rs"]
 mod current_latest_repair_preflight;
 
+#[path = "release/current_latest_repair_release_note.rs"]
+mod current_latest_repair_release_note;
+
 #[path = "release/current_latest_version_cutover.rs"]
 mod current_latest_version_cutover;
 

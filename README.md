@@ -32,7 +32,7 @@ boots a microVM, runs the command, streams stdout/stderr back like a normal
 process, returns the guest exit code, and tears the VM down.
 
 <!-- m80:freshness-status start -->
-Public installer status: pending public proof. The latest command below is the release-channel template; do not treat it as publicly proven until the freshness status becomes `public_green`.
+Public installer status: public proof green for `v0.2.7`. Latest and pinned install URLs were verified from unauthenticated public release assets. Proof: [latest-and-pinned-url-proof](docs/behaviors/release/release-readiness-public-access.json).
 <!-- m80:freshness-status end -->
 
 <!-- m80:quickstart-snippet latest-install start -->
