@@ -34,6 +34,23 @@ RAW_RELEASE_RE = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-
 ARTIFACT_ONLY_LATEST_RE = re.compile(
     r"https://github\.com/[^/\s]+/[^/\s]+/releases/latest/download/[^`'\"\s]+\.tar\.gz"
 )
+QUICKSTART_VALUE_MARKER_RE = re.compile(
+    r"^<!--\s*m80:quickstart-value\s+(start|end)\s*-->$"
+)
+QUICKSTART_VALUE_STATEMENT = (
+    "`m80 run -- <command>` runs that process in a Firecracker microVM and returns stdout, stderr, and exit code."
+)
+QUICKSTART_VALUE_DOCS = [
+    "README.md",
+    "docs/behaviors/release/docs-quickstart-gate.md",
+]
+QUICKSTART_VALUE_FORBIDDEN_TERMS = [
+    "artifact",
+    "bundle",
+    "guest manifest",
+    "host binary",
+    "receipt",
+]
 
 PRODUCTION_URL_FILES = [
     "scripts/install.sh",
@@ -203,6 +220,25 @@ class ReleaseUrlContractTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "freshness status note"):
                 public_command_inventory(root)
+
+    def test_quickstart_value_blocks_stay_process_focused(self) -> None:
+        for relative in QUICKSTART_VALUE_DOCS:
+            block = extract_quickstart_value_block(read_repo_file(relative), relative)
+            self.assertEqual(block, QUICKSTART_VALUE_STATEMENT)
+            lowered = block.lower()
+            for term in QUICKSTART_VALUE_FORBIDDEN_TERMS:
+                self.assertNotIn(
+                    term,
+                    lowered,
+                    f"{relative} quickstart value block drifted into artifact management",
+                )
+
+        gate = read_repo_file("docs/behaviors/release/docs-quickstart-gate.md")
+        self.assertIn(
+            "The release proof observable for the public smoke is: `m80 run -- echo hello`",
+            gate,
+        )
+        self.assertIn("exits 0 and stdout is exactly `hello`", gate)
 
     def test_public_command_inventory_rejects_stale_and_unclassified_commands(self) -> None:
         cases = [
@@ -376,6 +412,40 @@ class ReleaseUrlContractTest(unittest.TestCase):
 
 def read_repo_file(relative: str) -> str:
     return (REPO_ROOT / relative).read_text()
+
+
+def extract_quickstart_value_block(text: str, relative: str) -> str:
+    active = False
+    block: list[str] = []
+    seen = False
+
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        marker = QUICKSTART_VALUE_MARKER_RE.fullmatch(line.strip())
+        if marker is None:
+            if active:
+                block.append(line)
+            continue
+
+        kind = marker.group(1)
+        if kind == "start":
+            if active:
+                raise AssertionError(f"{relative}:{line_number}: nested quickstart value block")
+            if seen:
+                raise AssertionError(f"{relative}:{line_number}: duplicate quickstart value block")
+            active = True
+            seen = True
+            block = []
+            continue
+
+        if not active:
+            raise AssertionError(f"{relative}:{line_number}: unmatched quickstart value end")
+        active = False
+
+    if active:
+        raise AssertionError(f"{relative}: missing quickstart value end")
+    if not seen:
+        raise AssertionError(f"{relative}: missing quickstart value block")
+    return "\n".join(line.strip() for line in block if line.strip())
 
 
 if __name__ == "__main__":

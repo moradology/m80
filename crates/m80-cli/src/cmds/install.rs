@@ -16,6 +16,8 @@ use crate::{errors, json, request_id};
 
 mod layout;
 
+const INSTALL_NEXT_COMMAND: &str = "m80 run -- echo hello";
+
 /// `m80 install` — validate installer inputs and render a plan.
 pub(super) fn cmd_install(args: InstallArgs, json_mode: bool) -> anyhow::Result<i32> {
     let identity = VersionIdentity::current();
@@ -107,11 +109,30 @@ fn install_plan_from_source(
     identity: &VersionIdentity,
     source: SourcePlan,
 ) -> InstallPlan {
+    let active_version_dir = source
+        .release_tag
+        .as_deref()
+        .map(|tag| display_path(&layout::planned_version_dir(&args.install_root, tag)));
+    let host_binaries_manifest = source.release_tag.as_deref().map(|tag| {
+        display_path(&layout::planned_host_binaries_manifest_path(
+            &args.install_root,
+            tag,
+        ))
+    });
+    let default_profile = display_path(&layout::planned_default_profile_path(&args.install_root));
+    let bundle_url = source.bundle_url.clone();
     InstallPlan {
         dry_run: args.dry_run,
         install_root: display_path(&args.install_root),
+        active_version_dir,
         active_pointer: display_path(&active_pointer(&args.install_root)),
+        active_pointer_changed: false,
         source,
+        bundle_url,
+        default_profile,
+        host_binaries_manifest,
+        profile_written: false,
+        next_command: INSTALL_NEXT_COMMAND.to_owned(),
         binary_version: identity.binary_version.clone(),
         binary_release_tag: identity.release_tag.clone(),
         version_status: identity.version_status.as_str().to_owned(),
@@ -432,11 +453,27 @@ fn render_install_plan(plan: &InstallPlan, json_mode: bool) {
             println!("bundle_url={url}");
         }
         println!("install_root={}", plan.install_root);
+        println!(
+            "active_version_dir={}",
+            plan.active_version_dir
+                .as_deref()
+                .unwrap_or("<resolved after bundle verification>")
+        );
         println!("active_pointer={}", plan.active_pointer);
+        println!("active_pointer_changed={}", plan.active_pointer_changed);
+        println!("default_profile={}", plan.default_profile);
+        println!(
+            "host_binaries_manifest={}",
+            plan.host_binaries_manifest
+                .as_deref()
+                .unwrap_or("<resolved after bundle verification>")
+        );
+        println!("profile_written={}", plan.profile_written);
         println!("binary_version={}", plan.binary_version);
         println!("version_status={}", plan.version_status);
         println!("dry_run=true");
         println!("writes=none");
+        println!("next_command={}", plan.next_command);
     }
 }
 
@@ -460,16 +497,24 @@ fn layout_summary_lines(summary: &layout::LayoutInstallSummary) -> Vec<String> {
         heading.to_owned(),
         format!("install_state={}", summary.state),
         format!("release_tag={}", summary.release_tag),
+        format!("install_root={}", summary.install_root),
+        format!("active_version_dir={}", summary.active_version_dir),
         format!("version_dir={}", summary.version_dir),
+        format!("bundle_url={}", summary.bundle_url),
         format!("files_copied={}", summary.files_copied),
         format!("install_provenance={}", summary.install_provenance),
         format!("host_binaries_manifest={}", summary.host_binaries_manifest),
+        format!("default_profile={}", summary.default_profile),
         format!("profile_path={}", summary.profile_path),
         format!("active_pointer={}", summary.active_pointer),
         format!("active_pointer_flipped={}", summary.active_pointer_flipped),
         format!("profile_written={}", summary.profile_written),
+        format!(
+            "host_prerequisite_status={}",
+            summary.host_prerequisite_status
+        ),
         format!("preflight_gate={}", summary.preflight_gate),
-        "next_command=m80 run -- echo hello".to_owned(),
+        format!("next_command={}", summary.next_command),
         format!(
             "finalization_order={}",
             summary.finalization_order.join(",")
@@ -741,8 +786,15 @@ enum InstallSource<'a> {
 struct InstallPlan {
     dry_run: bool,
     install_root: String,
+    active_version_dir: Option<String>,
     active_pointer: String,
+    active_pointer_changed: bool,
     source: SourcePlan,
+    bundle_url: Option<String>,
+    default_profile: String,
+    host_binaries_manifest: Option<String>,
+    profile_written: bool,
+    next_command: String,
     binary_version: String,
     binary_release_tag: Option<String>,
     version_status: String,

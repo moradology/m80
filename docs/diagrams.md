@@ -3,6 +3,30 @@
 These diagrams are visual orientation for the main README. The quickstart stays
 command-first; this page shows what those commands drive.
 
+## Install Product Shape
+
+`install.sh` selects one published release, verifies it, installs the matched
+m80 binary plus VM payloads, and writes the default profile that `m80 run` uses.
+KVM, Firecracker, jailer, and seccomp stay host prerequisites and are checked by
+preflight.
+
+```mermaid
+flowchart TB
+    installer["install.sh"]
+    release["published m80 release"]
+    payloads["matched payloads<br/>m80 binary, guest kernel, rootfs, guestd"]
+    proof["checksums, manifests, receipts"]
+    install["active m80 install"]
+    host["host prerequisites<br/>KVM, Firecracker, jailer, seccomp"]
+    run["m80 run"]
+
+    installer --> release
+    release --> payloads --> install
+    release --> proof --> install
+    host -->|"preflight checks"| run
+    install -->|"default profile"| run
+```
+
 ## Process Wrapper Path
 
 `m80 run` wraps one process in one Firecracker microVM and returns stdout,

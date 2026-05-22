@@ -51,15 +51,21 @@ pub(super) fn official_release_tag_from_bundle_url(
 pub(super) struct LayoutInstallSummary {
     pub(super) state: &'static str,
     pub(super) release_tag: String,
+    pub(super) install_root: String,
+    pub(super) active_version_dir: String,
     pub(super) version_dir: String,
+    pub(super) bundle_url: String,
     pub(super) files_copied: usize,
     pub(super) install_provenance: String,
     pub(super) host_binaries_manifest: String,
+    pub(super) default_profile: String,
     pub(super) profile_path: String,
     pub(super) active_pointer: String,
     pub(super) active_pointer_flipped: bool,
     pub(super) profile_written: bool,
+    pub(super) host_prerequisite_status: String,
     pub(super) preflight_gate: &'static str,
+    pub(super) next_command: String,
     pub(super) finalization_order: Vec<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) release_material: Option<ReleaseMaterialInstallSummary>,
@@ -218,6 +224,7 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         source,
     })?;
     let selector_paths = install_selector_paths(&install_root);
+    let default_profile = selector_paths.default_profile_path();
     let profile_path = write_installed_default_profile(InstalledDefaultProfile {
         artifact_dir: &final_dir.join("artifacts"),
         run_root: &run_root,
@@ -244,15 +251,21 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     Ok(LayoutInstallSummary {
         state: "installed",
         release_tag: metadata.release_tag,
+        install_root: install_root.display().to_string(),
+        active_version_dir: final_dir.display().to_string(),
         version_dir: final_dir.display().to_string(),
+        bundle_url: bundle_url.to_owned(),
         files_copied: REQUIRED_BUNDLE_FILES.len() + 1,
         install_provenance: install_provenance.display().to_string(),
         host_binaries_manifest: host_binaries_manifest.display().to_string(),
+        default_profile: default_profile.display().to_string(),
         profile_path: profile_path.display().to_string(),
         active_pointer: active_pointer.display().to_string(),
         active_pointer_flipped: true,
         profile_written: true,
+        host_prerequisite_status: host_prerequisite_status(preflight_gate),
         preflight_gate,
+        next_command: "m80 run -- echo hello".to_owned(),
         finalization_order: finalization_order(proof_cache_manifest.is_some()),
         release_material,
         reinstall: None,
@@ -275,6 +288,29 @@ fn release_proof_cache_destination(final_dir: &Path) -> PathBuf {
 struct InstallSelectorPaths {
     profile_dir: PathBuf,
     config_path: PathBuf,
+}
+
+impl InstallSelectorPaths {
+    fn default_profile_path(&self) -> PathBuf {
+        self.profile_dir.join("default.toml")
+    }
+}
+
+pub(super) fn planned_version_dir(install_root: &Path, release_tag: &str) -> PathBuf {
+    install_root.join("versions").join(release_tag)
+}
+
+pub(super) fn planned_host_binaries_manifest_path(
+    install_root: &Path,
+    release_tag: &str,
+) -> PathBuf {
+    planned_version_dir(install_root, release_tag)
+        .join("artifacts")
+        .join("host-binaries.manifest.json")
+}
+
+pub(super) fn planned_default_profile_path(install_root: &Path) -> PathBuf {
+    install_selector_paths(install_root).default_profile_path()
 }
 
 fn install_selector_paths(install_root: &Path) -> InstallSelectorPaths {
@@ -303,10 +339,14 @@ fn idempotent_reinstall_summary(
         .join("artifacts")
         .join("host-binaries.manifest.json");
     let selector_paths = install_selector_paths(install_root);
+    let default_profile = selector_paths.default_profile_path();
     LayoutInstallSummary {
         state: "already_installed",
         release_tag: release_tag.to_owned(),
+        install_root: install_root.display().to_string(),
+        active_version_dir: final_dir.display().to_string(),
         version_dir: final_dir.display().to_string(),
+        bundle_url: verification.bundle_url.clone(),
         files_copied: 0,
         install_provenance: final_dir
             .join("artifacts")
@@ -314,15 +354,14 @@ fn idempotent_reinstall_summary(
             .display()
             .to_string(),
         host_binaries_manifest: host_binaries_manifest.display().to_string(),
-        profile_path: selector_paths
-            .profile_dir
-            .join("default.toml")
-            .display()
-            .to_string(),
+        default_profile: default_profile.display().to_string(),
+        profile_path: default_profile.display().to_string(),
         active_pointer: plan.active_pointer.clone(),
         active_pointer_flipped: false,
         profile_written: false,
+        host_prerequisite_status: "not_run_idempotent_reinstall".to_owned(),
         preflight_gate: "not_run_idempotent_reinstall",
+        next_command: "m80 run -- echo hello".to_owned(),
         finalization_order: vec![
             "bundle_verification",
             "release_proof_cache_idempotency_check",
@@ -341,16 +380,24 @@ pub(super) fn reinstall_summary_for_render_test() -> LayoutInstallSummary {
     LayoutInstallSummary {
         state: "already_installed",
         release_tag: "v0.0.0".to_owned(),
+        install_root: "/opt/m80".to_owned(),
+        active_version_dir: "/opt/m80/versions/v0.0.0".to_owned(),
         version_dir: "/opt/m80/versions/v0.0.0".to_owned(),
+        bundle_url:
+            "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz"
+                .to_owned(),
         files_copied: 0,
         install_provenance: "/opt/m80/versions/v0.0.0/artifacts/install-provenance.json".to_owned(),
         host_binaries_manifest: "/opt/m80/versions/v0.0.0/artifacts/host-binaries.manifest.json"
             .to_owned(),
+        default_profile: "/etc/m80/profiles/default.toml".to_owned(),
         profile_path: "/etc/m80/profiles/default.toml".to_owned(),
         active_pointer: "/opt/m80/active".to_owned(),
         active_pointer_flipped: false,
         profile_written: false,
+        host_prerequisite_status: "not_run_idempotent_reinstall".to_owned(),
         preflight_gate: "not_run_idempotent_reinstall",
+        next_command: "m80 run -- echo hello".to_owned(),
         finalization_order: vec![
             "bundle_verification",
             "release_proof_cache_idempotency_check",
@@ -581,6 +628,15 @@ fn maybe_inject_interruption_after_profile() -> Result<(), FcError> {
     Ok(())
 }
 
+fn host_prerequisite_status(preflight_gate: &str) -> String {
+    match preflight_gate {
+        "live_preflight" => "passed:live_preflight",
+        "hostless_fixture" => "passed:hostless_fixture",
+        other => other,
+    }
+    .to_owned()
+}
+
 fn finalization_order(include_release_proof_cache: bool) -> Vec<&'static str> {
     let mut order = vec![
         "bundle_verification",
@@ -754,13 +810,31 @@ mod tests {
         InstallPlan {
             dry_run: false,
             install_root: install_root.display().to_string(),
+            active_version_dir: Some(install_root.join("versions/v0.0.0").display().to_string()),
             active_pointer: install_root.join("active").display().to_string(),
+            active_pointer_changed: false,
             source: super::super::SourcePlan {
                 kind: SourceKind::BundleUrl,
                 selector: bundle_url.clone(),
                 release_tag: Some("v0.0.0".to_owned()),
                 bundle_url: Some(bundle_url),
             },
+            bundle_url: Some(crate::release_urls::release_asset_url(
+                "v0.0.0",
+                "m80-linux-x86_64.tar.gz",
+            )),
+            default_profile: install_root
+                .join("profiles/default.toml")
+                .display()
+                .to_string(),
+            host_binaries_manifest: Some(
+                install_root
+                    .join("versions/v0.0.0/artifacts/host-binaries.manifest.json")
+                    .display()
+                    .to_string(),
+            ),
+            profile_written: false,
+            next_command: "m80 run -- echo hello".to_owned(),
             binary_version: "v0.0.0".to_owned(),
             binary_release_tag: Some("v0.0.0".to_owned()),
             version_status: "release".to_owned(),

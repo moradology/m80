@@ -74,6 +74,10 @@ fn install_json_dry_run_uses_stdout_envelope() {
     assert_eq!(value["data"]["dry_run"], true);
     assert_eq!(value["data"]["source"]["kind"], "bundle_url");
     assert_eq!(
+        value["data"]["bundle_url"],
+        "file:///tmp/m80-linux-x86_64.tar.gz"
+    );
+    assert_eq!(
         value["data"]["source"]["bundle_url"],
         "file:///tmp/m80-linux-x86_64.tar.gz"
     );
@@ -81,6 +85,18 @@ fn install_json_dry_run_uses_stdout_envelope() {
         value["data"]["install_root"],
         install_root.display().to_string()
     );
+    assert!(value["data"]["active_version_dir"].is_null());
+    assert_eq!(
+        value["data"]["default_profile"],
+        install_root
+            .join("profiles/default.toml")
+            .display()
+            .to_string()
+    );
+    assert!(value["data"]["host_binaries_manifest"].is_null());
+    assert_eq!(value["data"]["active_pointer_changed"], false);
+    assert_eq!(value["data"]["profile_written"], false);
+    assert_eq!(value["data"]["next_command"], "m80 run -- echo hello");
     assert!(
         !install_root.exists(),
         "JSON dry-run must not create install root {}",

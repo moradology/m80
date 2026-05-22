@@ -6,6 +6,7 @@ use m80_image_manifest::{
     BuildReceipt, BuildReceiptArtifactKind, InstallProvenance, InstallProvenanceArtifact,
     InstallProvenanceRewrite, Manifest,
 };
+use serde_json::Value;
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -115,6 +116,18 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
         stdout.contains(&format!("version_dir={}", version_dir.display())),
         "{stdout}"
     );
+    assert!(
+        stdout.contains(&format!("install_root={}", install_root.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("active_version_dir={}", version_dir.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("bundle_url=file://{}", bundle.tarball.display())),
+        "{stdout}"
+    );
     for relpath in REQUIRED_INSTALLED_FILES {
         assert!(
             version_dir.join(relpath).is_file(),
@@ -151,6 +164,18 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
     );
     assert!(
         stdout.contains(&format!("profile_path={}", profile_path.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("default_profile={}", profile_path.display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("host_prerequisite_status=passed:hostless_fixture"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("next_command=m80 run -- echo hello"),
         "{stdout}"
     );
     let profile = fs::read_to_string(&profile_path).unwrap();
@@ -222,6 +247,54 @@ fn install_bundle_layout_copies_verified_bundle_into_version_dir() {
 }
 
 #[test]
+fn install_json_success_uses_short_machine_summary_fields() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+
+    let output = run_install_json(&bundle, &install_root, Some(&host));
+
+    assert!(
+        output.status.success(),
+        "install --json failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let data = &value["data"];
+    let version_dir = install_root.join("versions").join(&bundle.release_tag);
+    let default_profile = install_root.join("profiles/default.toml");
+    let host_binaries_manifest = version_dir.join("artifacts/host-binaries.manifest.json");
+
+    assert_eq!(data["state"], "installed");
+    assert_eq!(data["release_tag"], bundle.release_tag);
+    assert_eq!(data["install_root"], install_root.display().to_string());
+    assert_eq!(
+        data["active_version_dir"],
+        version_dir.display().to_string()
+    );
+    assert_eq!(data["version_dir"], version_dir.display().to_string());
+    assert_eq!(
+        data["bundle_url"],
+        format!("file://{}", bundle.tarball.display())
+    );
+    assert_eq!(
+        data["default_profile"],
+        default_profile.display().to_string()
+    );
+    assert_eq!(
+        data["host_binaries_manifest"],
+        host_binaries_manifest.display().to_string()
+    );
+    assert_eq!(data["host_prerequisite_status"], "passed:hostless_fixture");
+    assert_eq!(data["next_command"], "m80 run -- echo hello");
+    assert_eq!(data["active_pointer_flipped"], true);
+    assert_eq!(data["profile_written"], true);
+}
+
+#[test]
 fn install_bundle_layout_missing_required_bundle_file_fails_before_activation() {
     let bundle = write_release_bundle(Some("bin/m80-net-helper"));
     let install_temp = tempfile::tempdir().unwrap();
@@ -245,6 +318,10 @@ fn install_bundle_layout_missing_required_bundle_file_fails_before_activation() 
     assert!(
         stderr.contains("required artifact missing") && stderr.contains("bin/m80-net-helper"),
         "unexpected stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("next_command="),
+        "failure text must not print a success next step: {stderr}"
     );
     assert!(
         fs::read_link(install_root.join("active")).unwrap() == previous,
@@ -349,6 +426,20 @@ fn install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("install dry-run"), "{stdout}");
     assert!(stdout.contains("writes=none"), "{stdout}");
+    assert!(stdout.contains("active_pointer_changed=false"), "{stdout}");
+    assert!(stdout.contains("profile_written=false"), "{stdout}");
+    assert!(
+        stdout.contains("active_version_dir=<resolved after bundle verification>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("host_binaries_manifest=<resolved after bundle verification>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("next_command=m80 run -- echo hello"),
+        "{stdout}"
+    );
     assert!(
         !install_root.exists(),
         "dry-run must not create install root {}",
@@ -370,6 +461,27 @@ fn run_install(
         envs,
         env_removals,
     )
+}
+
+fn run_install_json(
+    bundle: &fixture::ReleaseBundleFixture,
+    install_root: &Path,
+    host: Option<&HostPrereqFixture>,
+) -> std::process::Output {
+    let mut command = m80();
+    command.args([
+        "--json",
+        "install",
+        "--bundle-url",
+        &format!("file://{}", bundle.tarball.display()),
+        "--install-root",
+        install_root.to_str().unwrap(),
+    ]);
+    clear_install_env(&mut command);
+    if let Some(host) = host {
+        host.apply(&mut command);
+    }
+    command.output().unwrap()
 }
 
 fn run_install_url(

@@ -32,6 +32,25 @@ m80 run -- echo hello
 ```
 <!-- m80:quickstart-snippet post-install-smoke end -->
 
+<!-- m80:quickstart-value start -->
+`m80 run -- <command>` runs that process in a Firecracker microVM and returns stdout, stderr, and exit code.
+<!-- m80:quickstart-value end -->
+
+What that wraps:
+
+```mermaid
+flowchart LR
+    you["you"]
+    m80["m80 run"]
+    vm["Firecracker microVM"]
+    process["your process"]
+    result["stdout, stderr, exit code"]
+
+    you -->|"command + stdin"| m80
+    m80 --> vm --> process
+    process --> result --> m80 --> you
+```
+
 Try a few useful shapes:
 
 ```sh

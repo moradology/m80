@@ -34,13 +34,28 @@ pub(super) fn official_release_plan(install_root: &Path) -> InstallPlan {
     InstallPlan {
         dry_run: false,
         install_root: install_root.display().to_string(),
+        active_version_dir: Some(install_root.join("versions/v0.0.0").display().to_string()),
         active_pointer: install_root.join("active").display().to_string(),
+        active_pointer_changed: false,
         source: SourcePlan {
             kind: SourceKind::BundleUrl,
             selector: bundle_url.clone(),
             release_tag: Some("v0.0.0".to_owned()),
-            bundle_url: Some(bundle_url),
+            bundle_url: Some(bundle_url.clone()),
         },
+        bundle_url: Some(bundle_url),
+        default_profile: install_root
+            .join("profiles/default.toml")
+            .display()
+            .to_string(),
+        host_binaries_manifest: Some(
+            install_root
+                .join("versions/v0.0.0/artifacts/host-binaries.manifest.json")
+                .display()
+                .to_string(),
+        ),
+        profile_written: false,
+        next_command: "m80 run -- echo hello".to_owned(),
         binary_version: "v0.0.0".to_owned(),
         binary_release_tag: Some("v0.0.0".to_owned()),
         version_status: "release".to_owned(),

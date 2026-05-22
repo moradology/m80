@@ -17,6 +17,13 @@ the smoke command used after installation:
 m80 run -- echo hello
 ```
 
+<!-- m80:quickstart-value start -->
+`m80 run -- <command>` runs that process in a Firecracker microVM and returns stdout, stderr, and exit code.
+<!-- m80:quickstart-value end -->
+
+The release proof observable for the public smoke is: `m80 run -- echo hello`
+exits 0 and stdout is exactly `hello`.
+
 `scripts/test-release-url-contract.py` extracts the marked README and runbook
 blocks and fails if either doc diverges from the shared snippet contract. The
 same test rejects mutable `raw.githubusercontent.com` / `main` installer URLs,
