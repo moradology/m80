@@ -2,9 +2,11 @@
 
 ## Claim
 
-`Backend::admit(config)` rejects a caller-supplied `vm_id` whose constructed
+`Backend::admit(config)` rejects the selected `vm_id` when its constructed
 Firecracker REST API socket path would exceed the kernel's `sun_path` cap of
-107 usable bytes. The rejection surfaces as
+107 usable bytes. The selected id is either the caller-supplied `vm_id` or the
+generated `vm-{pid}-{unix_ms}` id used when `SandboxConfig::vm_id` is `None`.
+The rejection surfaces as
 `FcError::Config(ConfigError::VmIdPathBudgetExceeded { vm_id, run_root,
 fc_basename, path_len, budget })` and consumes no admission permit.
 
@@ -57,10 +59,10 @@ and tightens the V boundary correspondingly.
 
 ## When the check runs
 
-`admit()` validates a caller-supplied `vm_id` before acquiring the admission
-semaphore permit. Auto-generated vm_ids (`vm-{pid}-{ts}`, used when
-`SandboxConfig::vm_id` is `None`) are bounded by construction and skip the
-check.
+`admit()` resolves the selected `vm_id` and validates it before acquiring the
+admission semaphore permit. Auto-generated vm_ids are checked too: they are
+bounded in shape, but a long `run_root` can still push the final jailer socket
+path over the kernel cap.
 
 A rejected admit returns the typed error and leaves the permit count
 unchanged. The caller may retry with a shorter `vm_id` or a shorter
@@ -75,7 +77,8 @@ unchanged. The caller may retry with a shorter `vm_id` or a shorter
   `admit_within_budget_succeeds`,
   `admit_just_under_budget_succeeds`,
   `admit_over_budget_returns_typed_error`,
-  `admit_with_no_vm_id_skips_check`,
+  `admit_with_no_vm_id_uses_checked_generated_id`,
+  `admit_with_no_vm_id_rejects_generated_id_over_budget`,
   `admit_reserved_run_root_names_fail_before_permit`,
   `admit_over_budget_does_not_consume_permit`.
 - `crates/m80-firecracker/tests/security/backend_trust_boundary.rs` -

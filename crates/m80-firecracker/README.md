@@ -669,9 +669,10 @@ an invariant fails closed.
   `SharedPmemErofsLayoutProbeInvalid`, `VmIdPathBudgetExceeded`). It is not a
   fallback bucket: it is reserved for caller configuration, CLI flag, and config
   merge failures where no lower crate owns a more specific typed cause.
-- `ConfigError::VmIdPathBudgetExceeded` is raised at `Backend::admit()` when a
-  caller-supplied `vm_id` would produce an AF_UNIX socket path longer than the
-  kernel `sun_path` cap (107 usable bytes). The path layout is
+- `ConfigError::VmIdPathBudgetExceeded` is raised at `Backend::admit()` when
+  the selected `vm_id` would produce an AF_UNIX socket path longer than the
+  kernel `sun_path` cap (107 usable bytes). The selected id is either the
+  caller-supplied id or the generated `vm-{pid}-{unix_ms}` id. The path layout is
   `<run_root>/<vm_id>/<fc_basename>/<vm_id>/root/firecracker.sock`; vm_id
   appears twice because the jail layout inherits Firecracker's jailer
   convention. The check is pure arithmetic and runs before the admission

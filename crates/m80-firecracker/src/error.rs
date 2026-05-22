@@ -453,15 +453,15 @@ pub enum ConfigError {
         /// Maximum accepted artifact byte length.
         max: u64,
     },
-    /// The caller-supplied `vm_id` would produce an AF_UNIX socket path that
-    /// exceeds the kernel's `sun_path` cap. Surfaces at admission time so the
-    /// failure cannot reach `bind()` / `connect()` as an opaque IO error.
+    /// The selected `vm_id` would produce an AF_UNIX socket path that exceeds
+    /// the kernel's `sun_path` cap. Surfaces at admission time so the failure
+    /// cannot reach `bind()` / `connect()` as an opaque IO error.
     #[error(
         "vm_id {vm_id:?} would produce a {path_len}-byte AF_UNIX socket path under run_root {} (cap {budget})",
         run_root.display()
     )]
     VmIdPathBudgetExceeded {
-        /// Caller-supplied vm_id whose path would overflow.
+        /// Selected vm_id whose path would overflow.
         vm_id: String,
         /// Configured run-root.
         run_root: PathBuf,

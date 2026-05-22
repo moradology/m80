@@ -1,5 +1,5 @@
-//! Admission-time validation that a caller-supplied `vm_id` would not
-//! produce an AF_UNIX socket path longer than the kernel's `sun_path` cap.
+//! Admission-time validation that the selected `vm_id` would not produce an
+//! AF_UNIX socket path longer than the kernel's `sun_path` cap.
 //!
 //! These tests run without KVM or root: they only exercise the arithmetic
 //! check inside `Backend::admit()`. The structural fix complements the
@@ -64,13 +64,34 @@ fn admit_just_under_budget_succeeds() {
 }
 
 #[test]
-fn admit_with_no_vm_id_skips_check() {
-    // Auto-generated `vm-{pid}-{ts}` is bounded by construction; admit must
-    // succeed without checking the budget.
-    let backend = common::make_fake_backend(4, Path::new("/var/lib/m80-run"));
+fn admit_with_no_vm_id_uses_checked_generated_id() {
+    let backend = common::make_fake_backend(4, Path::new("/tmp/m80-test"));
     backend
         .admit(config_with_vm_id(None))
-        .expect("None vm_id must admit (auto-generated form is bounded)");
+        .expect("None vm_id must admit when generated id fits");
+}
+
+#[test]
+fn admit_with_no_vm_id_rejects_generated_id_over_budget() {
+    let backend = common::make_fake_backend(
+        4,
+        Path::new("/tmp/m80-run-root-that-is-intentionally-too-long-for-auto-vm-ids"),
+    );
+    let err = backend
+        .admit(config_with_vm_id(None))
+        .expect_err("generated vm_id must be checked against the path budget");
+
+    let FcError::Config(ConfigError::VmIdPathBudgetExceeded {
+        vm_id,
+        path_len,
+        budget,
+        ..
+    }) = err
+    else {
+        panic!("expected ConfigError::VmIdPathBudgetExceeded, got {err:?}");
+    };
+    assert!(vm_id.starts_with("vm-"), "unexpected generated id: {vm_id}");
+    assert!(path_len > budget);
 }
 
 #[test]

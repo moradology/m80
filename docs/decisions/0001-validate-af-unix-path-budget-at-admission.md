@@ -15,8 +15,8 @@ m80's Firecracker REST API socket and host-side vsock socket are bound at:
 `vm_id` appears **twice** because m80-jailer inherits Firecracker's jailer
 convention of nesting `<chroot-base>/<exec-basename>/<id>/root/`. The
 kernel's `struct sockaddr_un` reserves 108 bytes for `sun_path` including
-the null terminator → 107 usable. Caller-supplied vm_ids that produce a
-path ≥ 108 bytes fail at `bind()` with `EINVAL` "AF_UNIX path too long".
+the null terminator → 107 usable. Selected vm_ids that produce a path ≥ 108
+bytes fail at `bind()` / `connect()` with AF_UNIX path-length errors.
 
 Before this ADR, m80 had no admission-time validation of vm_id length. An
 overflowing vm_id would surface as an `FcError::Io(io::Error)` deep inside
@@ -32,9 +32,10 @@ against `m80_firecracker::layout::SUN_PATH_BUDGET = 107`. Overflow returns
 `FcError::Config(ConfigError::VmIdPathBudgetExceeded { vm_id, run_root,
 fc_basename, path_len, budget })`.
 
-The check runs only when the caller supplies `vm_id` explicitly. The
-auto-generated form (`vm-{pid}-{ts}` from `resolve_vm_id`) is bounded by
-construction (≤ 24 bytes) and skips the check.
+The selected id is resolved before the check. Caller-supplied ids are used as
+provided; missing ids are replaced with the generated `vm-{pid}-{unix_ms}`
+form. Both paths run through the same arithmetic budget check because a long
+`run_root` can overflow even when the generated id shape is bounded.
 
 ## Alternatives considered
 
@@ -50,16 +51,14 @@ variant. *Rejected* because:
 - Different kernel versions have surfaced this as different errno values in
   the past; pattern-matching on errno is fragile.
 
-**B. Validate at launch's phase 1 (after `resolve_vm_id`) instead of admit.**
-The vm_id is "final" at that point (auto-generated values are resolved),
-which is technically the latest moment all inputs are concrete. *Rejected*
-because:
+**B. Validate at launch's phase 1 instead of admit.** The vm_id is "final" at
+that point, which is technically the latest moment all inputs are concrete.
+*Rejected* because:
 - Admit is the contractual entry point for caller-supplied input. Failing at
   admit means no permit was acquired and no run-dir was created; the caller
   can retry with a different vm_id immediately, with no cleanup state.
-- Auto-generated vm_ids are bounded by construction; checking them at
-  launch is dead code. The "single check at the natural choke point"
-  principle places the check at the input boundary.
+- Auto-generated vm_ids can be resolved at admit, so there is no need to defer
+  the check into launch just to make missing ids concrete.
 - Launching to fail wastes work (jail materialization, possibly cgroup
   creation) before the cap is hit.
 

@@ -109,11 +109,10 @@ impl Sandbox {
 
     /// Resolve or auto-generate the VM identifier.
     fn resolve_vm_id(&self) -> String {
-        self.config.vm_id.clone().unwrap_or_else(|| {
-            let pid = std::process::id();
-            let ts = crate::runroot::unix_ms_now();
-            format!("vm-{pid}-{ts}")
-        })
+        self.config
+            .vm_id
+            .clone()
+            .expect("Backend::admit stores the selected vm_id")
     }
 
     /// Delete the partial run directory if launch fails.

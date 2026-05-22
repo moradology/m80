@@ -92,8 +92,8 @@ impl Backend {
     /// Acquire one admission permit and return a [`Sandbox`] in Created state.
     ///
     /// Fails fast with [`FcError::AdmissionRefused`] when no permits are
-    /// available, or with [`ConfigError::VmIdPathBudgetExceeded`] when a
-    /// caller-supplied `vm_id` would overflow the AF_UNIX `sun_path` cap.
+    /// available, or with [`ConfigError::VmIdPathBudgetExceeded`] when the
+    /// selected `vm_id` would overflow the AF_UNIX `sun_path` cap.
     /// Does not block.
     pub fn admit(self: &Arc<Self>, mut config: SandboxConfig) -> Result<Sandbox, FcError> {
         validate_caller_boot_args_if_present(config.boot_args.as_deref())?;
@@ -102,16 +102,13 @@ impl Backend {
         }
         validate_network_policy(&config.network)?;
 
-        // Caller-supplied vm_ids are validated up front so the failure
-        // surfaces as a typed config error rather than as an opaque
-        // `bind() AF_UNIX path too long` deep inside launch. The
-        // auto-generated `vm-{pid}-{ts}` form (resolve_vm_id) is bounded by
-        // construction and does not need a check here.
-        if let Some(vm_id) = config.vm_id.as_deref() {
-            check_vm_id_name(vm_id)?;
-            check_vm_id_reserved_name(vm_id)?;
-            check_vm_id_path_budget(&self.config, vm_id)?;
-        }
+        let vm_id = config.vm_id.get_or_insert_with(auto_vm_id);
+        // Validate the selected vm_id up front so the failure surfaces as a
+        // typed config error rather than as an opaque AF_UNIX failure after
+        // launch has partially materialized a jail.
+        check_vm_id_name(vm_id)?;
+        check_vm_id_reserved_name(vm_id)?;
+        check_vm_id_path_budget(&self.config, vm_id)?;
 
         let mut available = self.semaphore.lock().unwrap_or_else(|p| p.into_inner());
 
@@ -312,10 +309,15 @@ fn live_run_dir_names(run_root: &Path) -> Result<Vec<String>, FcError> {
     Ok(names)
 }
 
-/// Reject a caller-supplied `vm_id` whose constructed AF_UNIX socket path
-/// would exceed the kernel's `sun_path` cap. The check is purely arithmetic
-/// (no filesystem access) so it can run before the admission permit is
-/// acquired.
+fn auto_vm_id() -> String {
+    let pid = std::process::id();
+    let ts = crate::runroot::unix_ms_now();
+    format!("vm-{pid}-{ts}")
+}
+
+/// Reject a selected `vm_id` whose constructed AF_UNIX socket path would
+/// exceed the kernel's `sun_path` cap. The check is purely arithmetic (no
+/// filesystem access) so it can run before the admission permit is acquired.
 fn check_vm_id_path_budget(config: &BackendConfig, vm_id: &str) -> Result<(), FcError> {
     let fc_basename = config
         .discovery
