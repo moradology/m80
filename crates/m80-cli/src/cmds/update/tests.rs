@@ -12,6 +12,7 @@ use crate::install_state::{
 use crate::release_freshness::read_freshness_status_artifact_json;
 
 mod active_kind;
+mod freshness_fixture_harness;
 mod http_fixture;
 mod no_write;
 mod offline_cache;

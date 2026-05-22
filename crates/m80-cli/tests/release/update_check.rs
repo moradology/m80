@@ -11,6 +11,7 @@ fn update_check_doc_names_read_only_states_and_outputs() {
 
     for required in [
         "`m80-o3uh9.16.18.1`",
+        "`m80-o3uh9.16.9.5`",
         "`m80-o3uh9.16.9.2`",
         "`m80 update --check`",
         "`current`",
@@ -54,6 +55,17 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`--latest-status-url <url>`",
         "`latest_status_cache_state: \"stale\"`",
         "`stale_active_metadata`",
+        "## Freshness Fixture Harness",
+        "`crates/m80-cli/src/cmds/update/tests/freshness_fixture_harness.rs`",
+        "`/freshness/<scenario>.json`",
+        "`current-stable-v1.2.3`",
+        "`outdated-stable-v1.2.3-to-v1.2.4-with-floor`",
+        "`offline-status-v1.2.4`",
+        "Do not point tests at GitHub or\nother public URLs.",
+        "installs a temporary loopback-only `curl` wrapper",
+        "rewrites every status-advertised asset URL to\n`/public-asset-trap/`",
+        "safety replacement commands may still name public release install\nURLs",
+        "must never be fetched by `m80 update --check` tests.",
     ] {
         assert!(
             doc.contains(required),

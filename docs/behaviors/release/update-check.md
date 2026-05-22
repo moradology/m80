@@ -1,7 +1,7 @@
 # Update Check
 
-Behavior beads: `m80-o3uh9.16.18.1`, `m80-o3uh9.16.9.4`,
-`m80-o3uh9.16.9.2`, `m80-o3uh9.21.9.3`.
+Behavior beads: `m80-o3uh9.16.18.1`, `m80-o3uh9.16.9.5`,
+`m80-o3uh9.16.9.4`, `m80-o3uh9.16.9.2`, `m80-o3uh9.21.9.3`.
 
 `m80 update --check` is the read-only update surface. It reads local install
 state, the installed proof-cache summary, and bounded latest freshness metadata,
@@ -110,3 +110,23 @@ fallback cache can still classify `current` or `outdated` while carrying
 `retry_command=m80 update --check`. A missing fallback cache reports
 `latest_status_cache_state: "missing"` and leaves the installed version's
 freshness unknown.
+
+## Freshness Fixture Harness
+
+Update-check behavior tests use the fake HTTP server in
+`crates/m80-cli/src/cmds/update/tests/freshness_fixture_harness.rs` for
+network-shaped freshness cases. Fixture routes are named
+`/freshness/<scenario>.json`, where `<scenario>` names the modeled state and
+the relevant tag movement, for example `current-stable-v1.2.3`,
+`outdated-stable-v1.2.3-to-v1.2.4-with-floor`, `stale-status-v1.2.4`,
+`malformed-missing-resolved-tag`, and `offline-status-v1.2.4`.
+
+Add a new freshness state by adding a named fixture route, serving the status
+artifact through `latest_status_input`, and asserting the rendered
+`UpdateCheckState`, `active_kind`, `latest_status_origin`,
+`latest_status_cache_state`, and next command. Do not point tests at GitHub or
+other public URLs. The harness installs a temporary loopback-only `curl` wrapper,
+only exposes `127.0.0.1` URLs, rewrites every status-advertised asset URL to
+`/public-asset-trap/`, and asserts every served request path stays under
+`/freshness/`; safety replacement commands may still name public release install
+URLs, but they must never be fetched by `m80 update --check` tests.

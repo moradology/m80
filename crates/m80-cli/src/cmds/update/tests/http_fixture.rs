@@ -59,6 +59,13 @@ impl HttpFixture {
             .insert(path.to_owned(), TestResponse::Ok(body));
     }
 
+    pub(super) fn add_status(&self, path: &str, status: u16, body: Vec<u8>) {
+        self.routes
+            .lock()
+            .expect("lock HTTP fixture routes")
+            .insert(path.to_owned(), TestResponse::Status { status, body });
+    }
+
     pub(super) fn url(&self, path: &str) -> String {
         format!("http://{}{}", self.addr, path)
     }
@@ -83,6 +90,7 @@ impl Drop for HttpFixture {
 
 enum TestResponse {
     Ok(Vec<u8>),
+    Status { status: u16, body: Vec<u8> },
 }
 
 fn handle_http_request(
@@ -112,12 +120,19 @@ fn handle_http_request(
         .push(path.clone());
     match routes.get(&path) {
         Some(TestResponse::Ok(body)) => write_response(stream, 200, body),
+        Some(TestResponse::Status { status, body }) => write_response(stream, *status, body),
         None => write_response(stream, 500, b"unexpected update-check URL"),
     }
 }
 
 fn write_response(stream: &mut std::net::TcpStream, status: u16, body: &[u8]) {
-    let reason = if status == 200 { "OK" } else { "Unexpected" };
+    let reason = match status {
+        200 => "OK",
+        404 => "Not Found",
+        500 => "Unexpected",
+        503 => "Unavailable",
+        _ => "Fixture",
+    };
     let header = format!(
         "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
