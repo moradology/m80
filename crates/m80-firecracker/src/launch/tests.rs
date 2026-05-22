@@ -470,27 +470,46 @@ fn ready_signal_rejects_wrong_protocol_version() {
 }
 
 #[test]
-fn phase_10_open_uds_wakes_on_socket_create_event() {
+fn phase_10_open_uds_retries_after_socket_create_wait() {
     let dir = tempfile::tempdir().unwrap();
     let api_socket = dir.path().join("firecracker.sock");
-    let server_path = api_socket.clone();
-    let delay = Duration::from_millis(20);
-    let server = std::thread::spawn(move || {
-        std::thread::sleep(delay);
-        let listener = UnixListener::bind(server_path).unwrap();
-        let _conn = listener.accept().unwrap();
+    let mut wait_calls = 0;
+    let mut server = None;
+
+    let client = phase_10_open_uds_with_wait(&api_socket, |path, _deadline| {
+        wait_calls += 1;
+        let listener = UnixListener::bind(path).unwrap();
+        server = Some(std::thread::spawn(move || {
+            let _conn = listener.accept().unwrap();
+        }));
+        Ok(())
+    })
+    .unwrap();
+
+    drop(client);
+    server.take().unwrap().join().unwrap();
+
+    assert_eq!(
+        wait_calls, 1,
+        "phase 10 should wait for socket creation before retrying Client::new"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn wait_for_api_socket_create_returns_after_socket_appears() {
+    let dir = tempfile::tempdir().unwrap();
+    let api_socket = dir.path().join("firecracker.sock");
+    let waiter_path = api_socket.clone();
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let waiter = std::thread::spawn(move || {
+        ready_tx.send(()).unwrap();
+        wait_for_api_socket_create(&waiter_path, Instant::now() + Duration::from_secs(1))
     });
 
-    let started = Instant::now();
-    let client = phase_10_open_uds(&api_socket).unwrap();
-    let elapsed = started.elapsed();
-    drop(client);
-    server.join().unwrap();
-
-    assert!(
-        elapsed < delay + Duration::from_millis(25),
-        "phase 10 should wake from the socket create event, not the old 50ms poll; elapsed={elapsed:?}"
-    );
+    ready_rx.recv().unwrap();
+    let _listener = UnixListener::bind(api_socket).unwrap();
+    waiter.join().unwrap().unwrap();
 }
 
 #[test]

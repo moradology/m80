@@ -1444,6 +1444,13 @@ fn phase_7_outbound_guest_config(
 /// interval. A short capped backoff is used only when inotify is unavailable
 /// or a created socket is not accepting connections yet.
 fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
+    phase_10_open_uds_with_wait(api_socket, wait_for_api_socket_create)
+}
+
+fn phase_10_open_uds_with_wait(
+    api_socket: &Path,
+    mut wait_for_create: impl FnMut(&Path, Instant) -> Result<(), FcError>,
+) -> Result<Client, FcError> {
     let deadline = Instant::now() + API_SOCKET_TIMEOUT;
     let mut fallback_delay = Duration::from_millis(1);
     loop {
@@ -1464,7 +1471,7 @@ fn phase_10_open_uds(api_socket: &Path) -> Result<Client, FcError> {
             }
             Err(e) => {
                 tracing::debug!(err = %e, "phase_10_open_uds: API socket missing, waiting for create event");
-                if let Err(err) = wait_for_api_socket_create(api_socket, deadline) {
+                if let Err(err) = wait_for_create(api_socket, deadline) {
                     tracing::debug!(err = %err, "phase_10_open_uds: event wait failed, using short fallback backoff");
                     sleep_api_socket_backoff(&mut fallback_delay, deadline);
                 }
