@@ -440,7 +440,8 @@ jobs:
           scripts/verify-release-bundle.py \
             /tmp/m80-release-prepublish/m80-linux-x86_64.tar.gz \
             --release-tag "$GITHUB_REF_NAME" \
-            --verify-sidecars
+            --verify-sidecars \
+            --downloaded-public-assets
           scripts/verify-release-integrity.py \
             /tmp/m80-release-prepublish/m80-release-integrity.json \
             --dist-dir /tmp/m80-release-prepublish \
@@ -525,7 +526,8 @@ jobs:
           scripts/verify-release-bundle.py \
             /tmp/m80-release-redownload/m80-linux-x86_64.tar.gz \
             --release-tag "$GITHUB_REF_NAME" \
-            --verify-sidecars
+            --verify-sidecars \
+            --downloaded-public-assets
           scripts/verify-release-integrity.py \
             /tmp/m80-release-redownload/m80-release-integrity.json \
             --dist-dir /tmp/m80-release-redownload \

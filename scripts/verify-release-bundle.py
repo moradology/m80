@@ -165,6 +165,15 @@ def parse_args() -> argparse.Namespace:
         help="verify adjacent public release sidecars emitted by package-release-bundle.py",
     )
     parser.add_argument(
+        "--downloaded-public-assets",
+        action="store_true",
+        help=(
+            "verify public release assets after an HTTP/GitHub download; "
+            "downloaded asset file modes are transport-local and are not "
+            "part of the release contract"
+        ),
+    )
+    parser.add_argument(
         "--verify-integrity",
         action="store_true",
         help=(
@@ -217,6 +226,7 @@ def main() -> int:
             verification,
             repo_root=args.repo_root,
             release_tag=args.release_tag,
+            downloaded_public_assets=args.downloaded_public_assets,
         )
 
     if args.verify_integrity:
@@ -540,6 +550,7 @@ def verify_sidecars(
     *,
     repo_root: Path,
     release_tag: str,
+    downloaded_public_assets: bool,
 ) -> None:
     bundle = default_bundle.bundle
     metadata = default_bundle.metadata
@@ -557,13 +568,14 @@ def verify_sidecars(
     require(bootstrap_selector.is_file(), f"missing public sidecar: {BOOTSTRAP_SELECTOR_NAME}")
     require(build_manifest.is_file(), f"missing public sidecar: {BUILD_MANIFEST_NAME}")
     require(public_sums.is_file(), "missing public sidecar: SHA256SUMS")
-    verify_public_mode(bundle, 0o644)
-    verify_public_mode(install_asset, 0o755)
-    verify_public_mode(metadata_asset, 0o644)
-    verify_public_mode(asset_index, 0o644)
-    verify_public_mode(bootstrap_selector, 0o644)
-    verify_public_mode(build_manifest, 0o644)
-    verify_public_mode(public_sums, 0o644)
+    if not downloaded_public_assets:
+        verify_public_mode(bundle, 0o644)
+        verify_public_mode(install_asset, 0o755)
+        verify_public_mode(metadata_asset, 0o644)
+        verify_public_mode(asset_index, 0o644)
+        verify_public_mode(bootstrap_selector, 0o644)
+        verify_public_mode(build_manifest, 0o644)
+        verify_public_mode(public_sums, 0o644)
     require(metadata_asset.read_bytes() == default_bundle.bundle_metadata, f"{METADATA_NAME} does not match bundled bundle.json")
 
     expected_assets = {

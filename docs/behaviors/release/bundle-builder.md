@@ -127,11 +127,15 @@ bundle metadata that omits the install-provenance requirement.
 
 `scripts/verify-release-bundle.py --verify-sidecars` validates the default
 tarball, adjacent dist sidecars, and every bundle named by the release asset
-index. Each asset-index row supplies the tuple metadata used to re-run the
-tar-internal bundle contract, so a non-default image kind can have fresh public
-checksums, a fresh selector row, and fresh integrity subjects while still
-failing publish verification if its tar members disagree with `bundle.json`,
-the guest manifest, the build receipt, or internal `SHA256SUMS`.
+index. Publish-time redownload checks add `--downloaded-public-assets`: that
+keeps byte, digest, metadata, and tar-internal mode checks, while ignoring local
+filesystem modes on HTTP-downloaded release assets because GitHub release
+downloads do not preserve `install.sh`'s executable bit. Each asset-index row
+supplies the tuple metadata used to re-run the tar-internal bundle contract, so
+a non-default image kind can have fresh public checksums, a fresh selector row,
+and fresh integrity subjects while still failing publish verification if its tar
+members disagree with `bundle.json`, the guest manifest, the build receipt, or
+internal `SHA256SUMS`.
 
 Regression coverage in `scripts/test-release-bundle.py` checks successful
 packaging plus rejection of missing required paths, duplicate paths, unexpected

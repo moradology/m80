@@ -2568,6 +2568,18 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("public sidecar mode mismatch for install.sh", result.stderr)
 
+    def test_verifier_accepts_downloaded_public_assets_without_posix_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tarball = package_fixture(root)
+            (root / "out" / "install.sh").chmod(0o644)
+
+            run_verify(
+                tarball,
+                verify_sidecars=True,
+                downloaded_public_assets=True,
+            )
+
     def test_verifier_rejects_build_manifest_metadata_hash_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -4977,6 +4989,7 @@ def run_verify(
     *,
     check: bool = True,
     verify_sidecars: bool = False,
+    downloaded_public_assets: bool = False,
     verify_integrity: bool = False,
     release_tag: str = "v0.2.7",
     gh_bin: Path | None = None,
@@ -4992,6 +5005,8 @@ def run_verify(
     ]
     if verify_sidecars:
         cmd.append("--verify-sidecars")
+    if downloaded_public_assets:
+        cmd.append("--downloaded-public-assets")
     if verify_integrity:
         if gh_bin is None:
             gh_bin = fake_gh_path(tarball.parent.parent)

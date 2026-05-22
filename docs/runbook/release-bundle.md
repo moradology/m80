@@ -40,9 +40,12 @@ with manual recovery instructions. The job derives the `gh release upload` path
 list and `gh release download --pattern` list from the manifest, re-downloads
 those public assets, verifies the redownload directory contains exactly the
 manifest's public asset set, and runs `scripts/verify-release-bundle.py
---verify-sidecars` against the downloaded bundle so the published asset index is
-checked against the uploaded tarball, metadata, bootstrap selector, checksums,
-and installer before any later latest-promotion lane can trust it.
+--verify-sidecars --downloaded-public-assets` against the downloaded bundle so
+the published asset index is checked against the uploaded tarball, metadata,
+bootstrap selector, checksums, and installer before any later latest-promotion
+lane can trust it. The downloaded-assets mode still checks tar-internal POSIX
+modes, but it does not treat local filesystem modes on HTTP release downloads as
+part of the release contract.
 
 The upload manifest itself, `m80-release-proof-ledger.jsonl`, and
 `m80-quickstart-proof-hostless.json` stay workflow-only artifacts. Public proof
