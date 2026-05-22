@@ -105,7 +105,10 @@ def build_plan(
             generated_at=generated_at,
             action="create_draft_upload_publish",
             release_state="absent",
-            reason="GitHub release is absent; create a draft, upload immutable assets, then publish as latest",
+            reason=(
+                "GitHub release is absent; create a draft, upload immutable assets, "
+                "validate public bytes, then mark latest"
+            ),
             expected_public_asset_count=len(manifest_assets),
             observed_remote_asset_count=0,
             missing_assets=[],

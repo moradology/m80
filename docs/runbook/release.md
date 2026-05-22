@@ -549,11 +549,13 @@ After the receipt, the publish job writes
 `scripts/release_publication_plan.py`. If the tag has no GitHub release, the
 job creates a draft release with `--verify-tag`, uploads the manifest-selected
 public assets without `--clobber`, re-downloads and validates the uploaded
-draft assets, and publishes it as latest only after that pre-promotion
-validation passes. If the public release already exists with the complete asset
-name and size set, the job skips upload and validates the served bytes. Draft,
-prerelease, incomplete, or size-mismatched existing releases fail before upload
-with a manual recovery instruction; for a leftover draft, delete only the
+draft assets, publishes the validated draft as a public non-latest release,
+re-downloads and validates the public bytes, uploads the publish receipts, and
+marks it latest only after those readiness gates pass. If the public release
+already exists with the complete asset name and size set, the job skips upload
+and validates the served bytes. Draft, prerelease, incomplete, or
+size-mismatched existing releases fail before upload with a manual recovery
+instruction; for a leftover draft or failed public attempt, delete only the
 release:
 
 ```sh

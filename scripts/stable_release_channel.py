@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Validate the public stable release-channel metadata used by m80 installers."""
 
 from __future__ import annotations

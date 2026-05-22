@@ -453,7 +453,7 @@ jobs:
             --verification-time "$verification_time" \
             --rust-toolchain 1.82
 
-      - name: Publish validated draft release as latest
+      - name: Publish validated draft without latest promotion
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -466,10 +466,10 @@ jobs:
           PY
           )"
           if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
-            echo "no draft latest promotion needed for action: $publication_action"
+            echo "no draft publish needed for action: $publication_action"
             exit 0
           fi
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest --verify-tag
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false --verify-tag
 
       - name: Re-download and validate published release assets
         env:
@@ -519,7 +519,7 @@ jobs:
             --attestation-bundle /tmp/m80-release-redownload/m80-release-integrity.attestation.jsonl \
             --attestation-metadata /tmp/m80-release-redownload/m80-release-attestation.json \
             --verification-time "$verification_time"
-          scripts/stable_release_channel.py \
+          python3 scripts/stable_release_channel.py \
             --release-metadata /tmp/m80-release-redownload/github-release.json \
             --asset-index /tmp/m80-release-redownload/m80-release-assets.json \
             --expected-tag "$GITHUB_REF_NAME"
@@ -559,6 +559,24 @@ jobs:
           name: m80-release-remote-assets-${{ github.run_id }}
           path: /tmp/m80-release-redownload/m80-release-remote-assets.json
           if-no-files-found: error
+
+      - name: Mark validated release as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          publication_action="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          PY
+          )"
+          if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
+            echo "no latest promotion needed for action: $publication_action"
+            exit 0
+          fi
+          gh release edit "$GITHUB_REF_NAME" --latest --verify-tag
 
       - name: Upload failed publish diagnostics
         if: failure()

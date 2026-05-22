@@ -10,8 +10,9 @@ The allowed actions are:
 - `create_draft_upload_publish`: the GitHub release is absent. The workflow
   creates a draft release with `--verify-tag`, uploads the manifest-selected
   public assets without `--clobber`, re-downloads and validates the uploaded
-  draft assets, and publishes it as latest only after that pre-promotion
-  validation passes.
+  draft assets, publishes the validated draft as a public non-latest release,
+  re-downloads and validates the public bytes, uploads the publish receipts,
+  and marks it latest only after those readiness gates pass.
 - `validate_existing_public_release`: a non-draft, non-prerelease public
   release already exposes the complete asset name and size set. The workflow
   skips upload and validates the remote bytes by re-downloading them.
@@ -40,6 +41,7 @@ Coverage:
   draft, missing-asset, and size-mismatch plans.
 - `scripts/test-release-bundle.py` checks that the release workflow uses the
   publication plan, creates drafts before upload, validates uploaded draft
-  assets before latest promotion, and never uses `gh release upload --clobber`.
+  assets before public release, uploads publish receipts before latest
+  promotion, and never uses `gh release upload --clobber`.
 - `crates/m80-cli/tests/release/publication_plan.rs` pins this behavior doc and
   workflow wiring from the crate-level release test suite.

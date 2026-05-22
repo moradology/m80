@@ -1297,7 +1297,8 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn('gh release create "$GITHUB_REF_NAME"', workflow)
         self.assertIn("--verify-tag", workflow)
         self.assertIn("--draft", workflow)
-        self.assertIn('gh release edit "$GITHUB_REF_NAME" --draft=false --latest --verify-tag', workflow)
+        self.assertIn('gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false --verify-tag', workflow)
+        self.assertIn('gh release edit "$GITHUB_REF_NAME" --latest --verify-tag', workflow)
         self.assertIn("validate_existing_public_release)", workflow)
         self.assertIn("mapfile -t upload_paths < <(", workflow)
         self.assertIn("--print-upload-paths", workflow)
@@ -1306,18 +1307,28 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("Validate uploaded draft before latest promotion", workflow)
         self.assertIn("download_args=(--dir /tmp/m80-release-prepublish)", workflow)
         self.assertIn("/tmp/m80-release-prepublish/m80-linux-x86_64.tar.gz", workflow)
-        self.assertIn("Publish validated draft release as latest", workflow)
+        self.assertIn("Publish validated draft without latest promotion", workflow)
+        self.assertIn("Mark validated release as latest", workflow)
+        self.assertIn("python3 scripts/stable_release_channel.py", workflow)
         self.assertLess(
             workflow.index('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"'),
             workflow.index("Validate uploaded draft before latest promotion"),
         )
         self.assertLess(
             workflow.index("Validate uploaded draft before latest promotion"),
-            workflow.index("Publish validated draft release as latest"),
+            workflow.index("Publish validated draft without latest promotion"),
         )
         self.assertLess(
-            workflow.index("Publish validated draft release as latest"),
+            workflow.index("Publish validated draft without latest promotion"),
             workflow.index("Re-download and validate published release assets"),
+        )
+        self.assertLess(
+            workflow.index("Re-download and validate published release assets"),
+            workflow.index("Upload publish decision receipt"),
+        )
+        self.assertLess(
+            workflow.index("Upload remote release asset inventory"),
+            workflow.index("Mark validated release as latest"),
         )
         self.assertIn("download_args=(--dir /tmp/m80-release-redownload)", workflow)
         self.assertIn('download_args+=(--pattern "$pattern")', workflow)
