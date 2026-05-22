@@ -114,7 +114,8 @@ pub enum Cmd {
     /// command is for local fixtures or an explicitly pinned tarball that
     /// matches the running m80 binary; it verifies `SHA256SUMS`, installs the
     /// kernel/rootfs/manifest/guestd artifacts, then runs `m80 run -- echo
-    /// hello` unless `--no-run` is set.
+    /// hello` unless `--no-run` is set. Legacy artifact-only install repairs
+    /// are documented in docs/behaviors/release/legacy-quickstart-hard-cutover.md.
     Quickstart(QuickstartArgs),
 
     /// Install or plan a release bundle.

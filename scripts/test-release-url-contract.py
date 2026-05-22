@@ -20,6 +20,7 @@ from release_url_contract import (
     verified_install_handoff_block,
 )
 from quickstart_snippets import (
+    DEPRECATED_QUICKSTART_MARKER_RE,
     expected_quickstart_snippets,
     extract_marked_quickstart_snippets,
     public_command_inventory,
@@ -266,6 +267,12 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 "  ```sh\n  curl -fsSL https://raw.githubusercontent.com/moradology/m80/main/install.sh | sudo sh\n  ```\n",
                 "mutable raw main",
             ),
+            (
+                "<!-- m80:deprecated-quickstart start -->\n"
+                "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz\n"
+                "<!-- m80:deprecated-quickstart end -->\n",
+                "artifact-only latest URL",
+            ),
         ]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -277,6 +284,30 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 doc.write_text(body)
                 with self.assertRaisesRegex(ValueError, expected_error):
                     public_command_inventory(root)
+
+    def test_deprecated_quickstart_urls_are_allowed_only_in_migration_note_marker(self) -> None:
+        inventory = public_command_inventory(REPO_ROOT)
+        self.assertTrue(inventory)
+        legacy_note = read_repo_file("docs/behaviors/release/legacy-quickstart-hard-cutover.md")
+        self.assertIn("m80:deprecated-quickstart start", legacy_note)
+        self.assertIn("releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz", legacy_note)
+        self.assertIn("raw.githubusercontent.com/moradology/m80/main/scripts/install.sh", legacy_note)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc = root / "docs" / "behaviors" / "release" / "legacy-quickstart-hard-cutover.md"
+            doc.parent.mkdir(parents=True)
+            doc.write_text(
+                "\n".join(
+                    [
+                        "<!-- m80:deprecated-quickstart start -->",
+                        "https://github.com/other/m80/releases/latest/download/install.sh",
+                        "<!-- m80:deprecated-quickstart end -->",
+                    ]
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "deprecated quickstart marker contains unclassified URL"):
+                public_command_inventory(root)
 
     def test_public_command_inventory_allows_repair_scoped_pinned_troubleshooting(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -376,6 +407,8 @@ class ReleaseUrlContractTest(unittest.TestCase):
     def test_quickstart_surfaces_do_not_reintroduce_legacy_latest_artifacts(self) -> None:
         for relative in QUICKSTART_SURFACE_FILES:
             text = read_repo_file(relative)
+            if relative == "docs/behaviors/release/legacy-quickstart-hard-cutover.md":
+                text = DEPRECATED_QUICKSTART_MARKER_RE.sub("", text)
             match = ARTIFACT_ONLY_LATEST_RE.search(text)
             self.assertIsNone(
                 match,

@@ -71,6 +71,10 @@ If something fails, start with:
 m80 install-status
 ```
 
+If you are coming from the old artifact-only quickstart or a raw `main`
+installer command, use the
+[`legacy quickstart migration note`](docs/behaviors/release/legacy-quickstart-hard-cutover.md).
+
 Then check the host:
 
 ```sh

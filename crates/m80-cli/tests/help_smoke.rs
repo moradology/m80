@@ -42,6 +42,7 @@ fn help_quickstart() {
     assert!(
         stdout.contains("Install an explicit artifact tarball for operator/test overrides")
             && stdout.contains("matching this m80 binary")
+            && stdout.contains("legacy-quickstart-hard-cutover.md")
             && stdout.contains("--artifact-url")
             && stdout.contains("--no-run"),
         "quickstart help should expose the override-only artifact flow, got: {stdout}"

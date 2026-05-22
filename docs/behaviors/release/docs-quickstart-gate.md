@@ -28,7 +28,9 @@ exits 0 and stdout is exactly `hello`.
 blocks and fails if either doc diverges from the shared snippet contract. The
 same test rejects mutable `raw.githubusercontent.com` / `main` installer URLs,
 artifact-only `releases/latest/download/*.tar.gz` quickstarts, and public
-install URLs outside the configured `moradology/m80` repository.
+install URLs outside the configured `moradology/m80` repository. The only
+deprecated URL exception is an explicitly marked migration-note block in
+`docs/behaviors/release/legacy-quickstart-hard-cutover.md`.
 
 The same helper builds a public command inventory from `README.md`, crate
 READMEs, `docs/runbook/**`, and `docs/behaviors/**`. Fenced command blocks that

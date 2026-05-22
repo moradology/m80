@@ -83,6 +83,9 @@ sudo sh "${tmp}/install.sh"
 
 Do not hand-write alternate owners, raw `main` URLs, or private checkout URLs
 for public install instructions.
+Legacy artifact-only `releases/latest` tarball and raw `main` installer flows
+are documented only in the
+[`legacy quickstart migration note`](../behaviors/release/legacy-quickstart-hard-cutover.md).
 
 The common latest and pinned snippets are stable-channel only. The resolved
 release must be public, non-draft, non-prerelease, tagged exactly

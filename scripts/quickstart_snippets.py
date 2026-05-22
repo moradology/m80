@@ -30,6 +30,15 @@ ARTIFACT_ONLY_LATEST_RE = re.compile(
 RAW_MAIN_INSTALL_RE = re.compile(
     r"https://raw\.githubusercontent\.com/[^/\s]+/[^/\s]+/main/[^`'\"\s]*install\.sh"
 )
+DEPRECATED_QUICKSTART_MARKER_RE = re.compile(
+    r"<!--\s*m80:deprecated-quickstart\s+start\s*-->.*?<!--\s*m80:deprecated-quickstart\s+end\s*-->",
+    re.DOTALL,
+)
+URL_RE = re.compile(r"https?://[^`'\"\s<>]+")
+DEPRECATED_QUICKSTART_ALLOWED_URLS = {
+    "https://github.com/moradology/m80/releases/latest/download/m80-linux-x86_64-minimal-artifacts.tar.gz",
+    "https://raw.githubusercontent.com/moradology/m80/main/scripts/install.sh",
+}
 PUBLIC_COMMAND_DOCS = (
     "README.md",
     "crates/*/README.md",
@@ -249,17 +258,34 @@ def classify_public_command_snippet(body: str, relative_path: Path, context: str
 
 
 def validate_public_command_urls(body: str, relative_path: Path) -> None:
-    if RAW_MAIN_INSTALL_RE.search(body) is not None:
+    scanned_body = body
+    if str(relative_path) == "docs/behaviors/release/legacy-quickstart-hard-cutover.md":
+        scanned_body = strip_deprecated_quickstart_marker_blocks(scanned_body, relative_path)
+    if RAW_MAIN_INSTALL_RE.search(scanned_body) is not None:
         raise ValueError(f"{relative_path}: public install snippets must not use mutable raw main URLs")
-    match = ARTIFACT_ONLY_LATEST_RE.search(body)
+    match = ARTIFACT_ONLY_LATEST_RE.search(scanned_body)
     if match is not None:
         raise ValueError(f"{relative_path}: artifact-only latest URL is not a public quickstart: {match.group(0)}")
-    for match in INSTALL_URL_RE.finditer(body):
+    for match in INSTALL_URL_RE.finditer(scanned_body):
         repository = match.group(1)
         if repository != release_repository():
             raise ValueError(
                 f"{relative_path}: install URL uses {repository}, expected {release_repository()}"
             )
+
+
+def strip_deprecated_quickstart_marker_blocks(body: str, relative_path: Path) -> str:
+    def checked_replacement(match: re.Match[str]) -> str:
+        block = match.group(0)
+        for url_match in URL_RE.finditer(block):
+            url = url_match.group(0)
+            if url not in DEPRECATED_QUICKSTART_ALLOWED_URLS:
+                raise ValueError(
+                    f"{relative_path}: deprecated quickstart marker contains unclassified URL: {url}"
+                )
+        return ""
+
+    return DEPRECATED_QUICKSTART_MARKER_RE.sub(checked_replacement, body)
 
 
 def has_freshness_status_guard(context: str) -> bool:
