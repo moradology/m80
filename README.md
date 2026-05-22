@@ -93,6 +93,25 @@ and
 Production operators should also read
 [`docs/ops/host-setup.md`](docs/ops/host-setup.md).
 
+## How It Works
+
+`m80 run` wraps one process in one Firecracker microVM. The process still looks
+like a normal command to the caller: stdin goes in, stdout/stderr/exit come
+back, and m80 handles the VM setup and teardown around it.
+
+```mermaid
+flowchart LR
+    caller["caller"]
+    cli["m80 run"]
+    host["host setup<br/>preflight, jailer, cgroup, network, storage"]
+    vm["Firecracker microVM"]
+    guestd["m80-guestd"]
+    proc["wrapped process"]
+
+    caller --> cli --> host --> vm --> guestd --> proc
+    proc -->|"stdout, stderr, exit"| cli --> caller
+```
+
 ## Diagnostics
 
 `m80 run` keeps stdout/stderr transparent for the wrapped process. VM mechanics
@@ -145,6 +164,18 @@ See [examples](examples/) for copy-paste workloads.
 m80 supports three lifecycle modes; the adapter or caller chooses by request.
 The CLI facade is `m80 run`; direct snapshot restore and persistent-VM control
 are library/warm-owner surfaces, not `m80 run` compatibility flags:
+
+```mermaid
+flowchart LR
+    artifacts["kernel + rootfs + guestd"]
+    cold["cold run<br/>boot, exec, teardown"]
+    snapshot["snapshot"]
+    warm["warm restore<br/>restore, exec, teardown"]
+    persistent["persistent VM<br/>boot once, exec repeatedly, stop"]
+
+    artifacts --> cold --> snapshot --> warm
+    artifacts --> persistent
+```
 
 - **Cold run** — clean state, highest latency, simplest isolation. ~1.1 s P50
   on minimal stripped images (kernel boot dominates; perf attack tracked in
@@ -218,12 +249,26 @@ on tag pushes.
 
 ## Workspace
 
-m80 is a Rust workspace split into 22 black-box crates:
+m80 is a Rust workspace split into 23 black-box crates:
 
-**Foundation (10)** — privilege acquired at process startup and verified by
+```mermaid
+flowchart TB
+    bins["binaries<br/>m80-cli, m80-image-build, m80-guestd, m80-net-helper"]
+    orch["orchestration<br/>m80-firecracker"]
+    features["feature crates<br/>net-outbound, snapshot, snapshot-template, observability"]
+    foundation["foundation<br/>proto, vsock, preflight, cgroup, jailer, storage,<br/>image-store, image-manifest, firecracker-client, net-mode"]
+    tests["test infrastructure<br/>test-helpers, attack-runner, guestd-malicious"]
+
+    bins --> orch
+    orch --> features
+    orch --> foundation
+    tests -. exercise .-> orch
+```
+
+**Foundation (11)** — privilege acquired at process startup and verified by
 `m80-preflight`; no per-call privilege shim:
 - `m80-proto`, `m80-vsock` — host↔guest wire protocol + transport
-- `m80-image-manifest`, `m80-firecracker-client` — manifest schema, FC REST API
+- `m80-image-manifest`, `m80-image-store`, `m80-firecracker-client` — manifest schema, content-addressed artifact store, FC REST API
 - `m80-jailer`, `m80-jailer-harden` — jail materialization + inheritable Group B hardening (supplementary groups, ambient caps, `no_new_privs`, signal mask, umask) wrapping FC's official jailer
 - `m80-cgroup`, `m80-storage` — cgroup-v2 limits, overlay+pivot rootfs
 - `m80-preflight`, `m80-net-mode` — host capability checks, network mode types
