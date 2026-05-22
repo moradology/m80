@@ -127,7 +127,8 @@ def main() -> int:
         )
         for check in checks:
             fetch_public_url(check, curl_bin=args.curl)
-        proof = freshness_proof_json(resolution, checks, public_assets)
+        checksum_sources = verify_checksum_contents(public_assets, curl_bin=args.curl)
+        proof = freshness_proof_json(resolution, checks, public_assets, checksum_sources)
     except ValueError as exc:
         message = str(exc)
         raise SystemExit(
@@ -505,7 +506,51 @@ def fetch_public_url(check: FreshnessUrl, *, curl_bin: str) -> None:
     )
 
 
+def fetch_checksum_text(asset: FreshnessAsset, *, curl_bin: str) -> str:
+    check = FreshnessUrl(
+        role=asset.role,
+        url=asset.url,
+        asset_name=asset.name,
+        release_tag=asset.release_tag,
+        sources=("checksum-content",),
+        size_bytes=asset.size_bytes,
+        sha256=asset.sha256,
+    )
+    try:
+        result = subprocess.run(
+            public_url_text_curl_args(curl_bin, asset.url),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ValueError(
+            freshness_failure_message(check, "curl_spawn_failed", None, f"failed to spawn curl: {exc}")
+        ) from exc
+    if result.returncode == 0:
+        return result.stdout
+    detail = result.stderr.strip() or result.stdout.strip() or "no curl output"
+    raise ValueError(
+        freshness_failure_message(
+            check,
+            curl_failure_kind(result.returncode),
+            result.returncode,
+            f"curl exited {result.returncode}: {detail}",
+        )
+    )
+
+
 def public_url_curl_args(curl_bin: str, url: str) -> list[str]:
+    args = public_url_text_curl_args(curl_bin, url)
+    return [
+        *args[:-1],
+        "--output",
+        "/dev/null",
+        args[-1],
+    ]
+
+
+def public_url_text_curl_args(curl_bin: str, url: str) -> list[str]:
     return [
         curl_bin,
         "-fsSL",
@@ -517,8 +562,6 @@ def public_url_curl_args(curl_bin: str, url: str) -> list[str]:
         str(FETCH_RETRY_COUNT),
         "--retry-delay",
         str(FETCH_RETRY_DELAY_SECONDS),
-        "--output",
-        "/dev/null",
         url,
     ]
 
@@ -624,10 +667,192 @@ def freshness_repair_command(failure_class: str) -> str | None:
     return None
 
 
+def verify_checksum_contents(
+    public_assets: dict[str, FreshnessAsset],
+    *,
+    curl_bin: str,
+) -> dict[str, list[str]]:
+    sources = {name: ["github-release-metadata"] for name in public_assets}
+    sums_asset = public_assets["SHA256SUMS"]
+    sums = fetch_checksum_text(sums_asset, curl_bin=curl_bin)
+    for asset_name, digest in parse_checksum_file(sums, checksum_asset=sums_asset).items():
+        asset = public_assets.get(asset_name)
+        if asset is None:
+            raise ValueError(
+                checksum_failure_message(
+                    "unknown asset in SHA256SUMS",
+                    checksum_asset=sums_asset,
+                    asset_name=asset_name,
+                    asset=FreshnessAsset(
+                        name=asset_name,
+                        role=public_asset_role(asset_name),
+                        url=release_asset_url(sums_asset.release_tag, asset_name),
+                        release_tag=sums_asset.release_tag,
+                        size_bytes=None,
+                        sha256="unknown",
+                    ),
+                )
+            )
+        if digest != asset.sha256:
+            raise ValueError(
+                checksum_failure_message(
+                    "SHA256SUMS digest mismatch",
+                    checksum_asset=sums_asset,
+                    asset_name=asset_name,
+                    asset=asset,
+                    expected=asset.sha256,
+                    got=digest,
+                )
+            )
+        sources[asset_name].append("SHA256SUMS")
+
+    for checksum_asset in sorted(
+        (asset for asset in public_assets.values() if asset.name.endswith(".sha256")),
+        key=lambda asset: asset.name,
+    ):
+        target_name = checksum_asset.name.removesuffix(".sha256")
+        target = public_assets.get(target_name)
+        if target is None:
+            raise ValueError(
+                checksum_failure_message(
+                    "checksum sidecar target missing",
+                    checksum_asset=checksum_asset,
+                    asset_name=target_name,
+                    asset=FreshnessAsset(
+                        name=target_name,
+                        role=public_asset_role(target_name),
+                        url=release_asset_url(checksum_asset.release_tag, target_name),
+                        release_tag=checksum_asset.release_tag,
+                        size_bytes=None,
+                        sha256="unknown",
+                    ),
+                )
+            )
+        entries = parse_checksum_file(fetch_checksum_text(checksum_asset, curl_bin=curl_bin), checksum_asset=checksum_asset)
+        if len(entries) != 1:
+            raise ValueError(
+                checksum_failure_message(
+                    "checksum sidecar must contain exactly one entry",
+                    checksum_asset=checksum_asset,
+                    asset_name=target_name,
+                    asset=target,
+                    got=str(len(entries)),
+                )
+            )
+        actual_name, digest = next(iter(entries.items()))
+        if actual_name != target_name:
+            raise ValueError(
+                checksum_failure_message(
+                    "checksum sidecar asset-name mismatch",
+                    checksum_asset=checksum_asset,
+                    asset_name=target_name,
+                    asset=target,
+                    expected=target_name,
+                    got=actual_name,
+                )
+            )
+        if digest != target.sha256:
+            raise ValueError(
+                checksum_failure_message(
+                    "checksum sidecar digest mismatch",
+                    checksum_asset=checksum_asset,
+                    asset_name=target_name,
+                    asset=target,
+                    expected=target.sha256,
+                    got=digest,
+                )
+            )
+        sources[target_name].append(checksum_asset.name)
+    return {name: sorted(values) for name, values in sources.items()}
+
+
+def parse_checksum_file(text: str, *, checksum_asset: FreshnessAsset) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) != 2 or SHA256_RE.fullmatch(parts[0]) is None:
+            raise ValueError(
+                checksum_failure_message(
+                    "checksum line malformed",
+                    checksum_asset=checksum_asset,
+                    asset_name=checksum_asset.name,
+                    asset=checksum_asset,
+                    got=f"line {line_number}",
+                )
+            )
+        digest, asset_name = parts
+        asset_name = asset_name.removeprefix("*")
+        if not asset_name or "/" in asset_name or "\\" in asset_name:
+            raise ValueError(
+                checksum_failure_message(
+                    "checksum asset-name malformed",
+                    checksum_asset=checksum_asset,
+                    asset_name=asset_name or checksum_asset.name,
+                    asset=checksum_asset,
+                    got=f"line {line_number}: {asset_name!r}",
+                )
+            )
+        if asset_name in entries:
+            raise ValueError(
+                checksum_failure_message(
+                    "duplicate checksum entry",
+                    checksum_asset=checksum_asset,
+                    asset_name=asset_name,
+                    asset=FreshnessAsset(
+                        name=asset_name,
+                        role=public_asset_role(asset_name),
+                        url=release_asset_url(checksum_asset.release_tag, asset_name),
+                        release_tag=checksum_asset.release_tag,
+                        size_bytes=None,
+                        sha256="duplicate",
+                    ),
+                )
+            )
+        entries[asset_name] = digest
+    if not entries:
+        raise ValueError(
+            checksum_failure_message(
+                "checksum file empty",
+                checksum_asset=checksum_asset,
+                asset_name=checksum_asset.name,
+                asset=checksum_asset,
+            )
+        )
+    return entries
+
+
+def checksum_failure_message(
+    reason: str,
+    *,
+    checksum_asset: FreshnessAsset,
+    asset_name: str,
+    asset: FreshnessAsset,
+    expected: str | None = None,
+    got: str | None = None,
+) -> str:
+    fields = [
+        f"freshness checksum content mismatch: {reason}",
+        f"role={asset.role}",
+        f"asset={asset_name}",
+        f"checksum_asset={checksum_asset.name}",
+        f"checksum_url={checksum_asset.url}",
+        f"asset_url={asset.url}",
+        f"release_tag={checksum_asset.release_tag}",
+    ]
+    if expected is not None:
+        fields.append(f"expected={expected}")
+    if got is not None:
+        fields.append(f"got={got}")
+    return "; ".join(fields)
+
+
 def freshness_proof_json(
     resolution,
     checks: list[FreshnessUrl],
     public_assets: dict[str, FreshnessAsset],
+    checksum_sources: dict[str, list[str]],
 ) -> dict:
     return {
         "schema_version": 1,
@@ -653,7 +878,7 @@ def freshness_proof_json(
             }
             for check in checks
         ],
-        "public_assets": public_asset_proof_rows(public_assets),
+        "public_assets": public_asset_proof_rows(public_assets, checksum_sources),
     }
 
 
@@ -661,7 +886,10 @@ def utc_now_rfc3339() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def public_asset_proof_rows(public_assets: dict[str, FreshnessAsset]) -> list[dict]:
+def public_asset_proof_rows(
+    public_assets: dict[str, FreshnessAsset],
+    checksum_sources: dict[str, list[str]],
+) -> list[dict]:
     return [
         {
             "name": asset.name,
@@ -670,6 +898,7 @@ def public_asset_proof_rows(public_assets: dict[str, FreshnessAsset]) -> list[di
             "release_tag": asset.release_tag,
             "size_bytes": asset.size_bytes,
             "sha256": asset.sha256,
+            "checksum_sources": checksum_sources[asset.name],
         }
         for _name, asset in sorted(public_assets.items())
     ]

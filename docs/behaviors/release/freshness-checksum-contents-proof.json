@@ -3,8 +3,8 @@
     "GH_TOKEN": false,
     "GITHUB_TOKEN": false
   },
-  "bead_id": "m80-o3uh9.21.1.3",
-  "checked_at": "2026-05-22T11:59:03Z",
+  "bead_id": "m80-o3uh9.21.1.8",
+  "checked_at": "2026-05-22T12:05:46Z",
   "checked_urls": [
     {
       "asset_name": "install.sh",
@@ -198,7 +198,7 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-integrity.json"
     }
   ],
-  "command": "env -u GH_TOKEN -u GITHUB_TOKEN TMPDIR=/tank/tmp python3 scripts/release_freshness.py --docs-root . --json --proof-out /tank/tmp/m80-o3uh9.21.1.3-live-freshness-proof.json",
+  "command": "env -u GH_TOKEN -u GITHUB_TOKEN TMPDIR=/tank/tmp python3 scripts/release_freshness.py --docs-root . --json --proof-out /tank/tmp/m80-o3uh9.21.1.8-live-checksum-proof.json",
   "exit_status": 0,
   "fetch_policy": {
     "connect_timeout_seconds": 10,
@@ -207,9 +207,12 @@
     "retry_delay_seconds": 1
   },
   "freshness_network_bounded": true,
-  "kind": "m80_freshness_public_assets_live_proof",
+  "kind": "m80_freshness_checksum_contents_live_proof",
   "public_assets": [
     {
+      "checksum_sources": [
+        "github-release-metadata"
+      ],
       "name": "SHA256SUMS",
       "release_tag": "v0.2.11",
       "role": "checksum",
@@ -218,6 +221,11 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/SHA256SUMS"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata",
+        "install.sh.sha256"
+      ],
       "name": "install.sh",
       "release_tag": "v0.2.11",
       "role": "installer",
@@ -226,6 +234,10 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/install.sh"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata"
+      ],
       "name": "install.sh.sha256",
       "release_tag": "v0.2.11",
       "role": "checksum",
@@ -234,6 +246,11 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/install.sh.sha256"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata",
+        "m80-bootstrap-selector.tsv.sha256"
+      ],
       "name": "m80-bootstrap-selector.tsv",
       "release_tag": "v0.2.11",
       "role": "selector",
@@ -242,6 +259,10 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-bootstrap-selector.tsv"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata"
+      ],
       "name": "m80-bootstrap-selector.tsv.sha256",
       "release_tag": "v0.2.11",
       "role": "checksum",
@@ -250,6 +271,11 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-bootstrap-selector.tsv.sha256"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata",
+        "m80-linux-x86_64.bundle.json.sha256"
+      ],
       "name": "m80-linux-x86_64.bundle.json",
       "release_tag": "v0.2.11",
       "role": "metadata",
@@ -258,6 +284,10 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.bundle.json"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata"
+      ],
       "name": "m80-linux-x86_64.bundle.json.sha256",
       "release_tag": "v0.2.11",
       "role": "checksum",
@@ -266,6 +296,11 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.bundle.json.sha256"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata",
+        "m80-linux-x86_64.tar.gz.sha256"
+      ],
       "name": "m80-linux-x86_64.tar.gz",
       "release_tag": "v0.2.11",
       "role": "bundle",
@@ -274,6 +309,10 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.tar.gz"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata"
+      ],
       "name": "m80-linux-x86_64.tar.gz.sha256",
       "release_tag": "v0.2.11",
       "role": "checksum",
@@ -282,6 +321,11 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-linux-x86_64.tar.gz.sha256"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata",
+        "m80-release-assets.json.sha256"
+      ],
       "name": "m80-release-assets.json",
       "release_tag": "v0.2.11",
       "role": "asset-index",
@@ -290,6 +334,10 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-assets.json"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata"
+      ],
       "name": "m80-release-assets.json.sha256",
       "release_tag": "v0.2.11",
       "role": "checksum",
@@ -298,6 +346,9 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-assets.json.sha256"
     },
     {
+      "checksum_sources": [
+        "github-release-metadata"
+      ],
       "name": "m80-release-attestation.json",
       "release_tag": "v0.2.11",
       "role": "attestation",
@@ -306,6 +357,11 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-attestation.json"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata",
+        "m80-release-build.json.sha256"
+      ],
       "name": "m80-release-build.json",
       "release_tag": "v0.2.11",
       "role": "metadata",
@@ -314,6 +370,10 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-build.json"
     },
     {
+      "checksum_sources": [
+        "SHA256SUMS",
+        "github-release-metadata"
+      ],
       "name": "m80-release-build.json.sha256",
       "release_tag": "v0.2.11",
       "role": "checksum",
@@ -322,6 +382,9 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-build.json.sha256"
     },
     {
+      "checksum_sources": [
+        "github-release-metadata"
+      ],
       "name": "m80-release-integrity.attestation.jsonl",
       "release_tag": "v0.2.11",
       "role": "attestation",
@@ -330,6 +393,9 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-integrity.attestation.jsonl"
     },
     {
+      "checksum_sources": [
+        "github-release-metadata"
+      ],
       "name": "m80-release-integrity.json",
       "release_tag": "v0.2.11",
       "role": "provenance",
@@ -338,7 +404,7 @@
       "url": "https://github.com/moradology/m80/releases/download/v0.2.11/m80-release-integrity.json"
     }
   ],
-  "published_at": "2026-05-22T11:59:03Z",
+  "published_at": "2026-05-22T12:05:46Z",
   "repository": "moradology/m80",
   "resolved_tag": "v0.2.11",
   "schema_version": 1,
@@ -348,14 +414,14 @@
   "substrate": "public GitHub latest release via unauthenticated bounded curl; local Linux hostless freshness verifier",
   "verification": [
     {
-      "command": "env -u GH_TOKEN -u GITHUB_TOKEN TMPDIR=/tank/tmp python3 scripts/release_freshness.py --docs-root . --json --proof-out /tank/tmp/m80-o3uh9.21.1.3-live-freshness-proof.json",
+      "command": "env -u GH_TOKEN -u GITHUB_TOKEN TMPDIR=/tank/tmp python3 scripts/release_freshness.py --docs-root . --json --proof-out /tank/tmp/m80-o3uh9.21.1.8-live-checksum-proof.json",
       "exit_status": 0,
-      "summary": "resolved public latest to v0.2.11 and fetched latest install, pinned install, asset index, bundle, checksum, provenance, attestation, selector, and docs-linked install URLs"
+      "summary": "resolved public latest to v0.2.11, parsed SHA256SUMS and every published .sha256 sidecar, and recorded checksum_sources for each installer-consumed asset"
     },
     {
       "command": "python3 scripts/test-release-freshness.py",
       "exit_status": 0,
-      "summary": "fake-release tests cover clean inputs, missing assets, digest mismatch, malformed asset index, and diagnostics naming role/asset/url/tag"
+      "summary": "fake-release tests cover clean sums, malformed SHA256SUMS, duplicate entries, sidecar asset-name mismatch, sidecar digest mismatch, and missing checksum assets"
     }
   ]
 }

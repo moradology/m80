@@ -147,8 +147,11 @@ safe stderr excerpt for the repair bead.
 
 The verifier also checks that the GitHub latest release metadata contains every
 installer-consumed public asset with the expected name, URL, size when reported,
-and `sha256:` digest. With an asset-index fixture, the bundle and metadata
-digests must agree with the index row before URL liveness checks run.
+and `sha256:` digest. It then reads `SHA256SUMS` and every published
+per-asset `.sha256` sidecar as content, compares those sums to the same
+metadata digests, and records the proving checksum sources in the freshness
+proof. With an asset-index fixture, the bundle and metadata digests must agree
+with the index row before URL liveness checks run.
 Freshness failure handling is configured in
 `docs/behaviors/release/freshness-failure-policy.json` and validated with
 `python3 scripts/verify-freshness-failure-policy.py`. The taxonomy maps
