@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shlex
 import stat
@@ -59,7 +60,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["resolved_tag"], "v1.2.3")
         self.assertEqual(payload["resolved_latest_tag"], "v1.2.3")
-        self.assertIsNone(payload["workflow_run_id"])
+        self.assertEqual(payload["workflow_run_id"], os.environ.get("GITHUB_RUN_ID"))
         self.assertRegex(payload["published_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         self.assertEqual(payload["generated_at"], payload["published_at"])
         self.assertEqual(validate_freshness_proof(payload), [])
