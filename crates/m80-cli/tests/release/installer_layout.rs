@@ -16,6 +16,8 @@ mod finalization;
 mod fixture;
 #[path = "installer_layout/http_fixture.rs"]
 mod http_fixture;
+#[path = "installer_layout/path_canonicalization.rs"]
+mod path_canonicalization;
 #[path = "installer_layout/remote_fetch.rs"]
 mod remote_fetch;
 

@@ -1,7 +1,7 @@
 use std::fs;
 use std::io;
 use std::os::unix::fs::{symlink, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use m80_firecracker::{ConfigError, FcError};
 use serde::Serialize;
@@ -119,6 +119,8 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
     let bundle_url = require_bundle_url(plan)?;
     let install_root = PathBuf::from(&plan.install_root);
     require_absolute_path("install_root", &install_root)?;
+    reject_symlinked_install_root(&install_root)?;
+    validate_existing_active_pointer(&install_root, &PathBuf::from(&plan.active_pointer))?;
     validate_bundle_source_url(bundle_url)
         .map_err(|err| with_bundle_url_retry_context(err, bundle_url, &install_root))?;
     preflight_attestation_verifier_for_bundle_url(bundle_url)
@@ -313,6 +315,23 @@ pub(super) fn planned_default_profile_path(install_root: &Path) -> PathBuf {
     install_selector_paths(install_root).default_profile_path()
 }
 
+pub(super) fn normalize_install_root(path: &Path) -> Result<PathBuf, FcError> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|source| FcError::PathIo {
+                path: PathBuf::from("."),
+                source,
+            })?
+            .join(path)
+    };
+    reject_parent_components("install_root", &absolute)?;
+    let normalized = lexical_normalize(&absolute);
+    reject_symlinked_install_root(&normalized)?;
+    Ok(normalized)
+}
+
 fn install_selector_paths(install_root: &Path) -> InstallSelectorPaths {
     if install_root == Path::new(DEFAULT_INSTALL_ROOT) {
         return InstallSelectorPaths {
@@ -441,6 +460,131 @@ fn require_absolute_path(field: &'static str, path: &Path) -> Result<(), FcError
     }
 }
 
+fn reject_parent_components(field: &'static str, path: &Path) -> Result<(), FcError> {
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(FcError::Config(ConfigError::InvalidValue {
+            field,
+            reason: format!("{field} must not contain '..': {}", path.display()),
+        }));
+    }
+    Ok(())
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::RootDir | Component::Prefix(_) | Component::Normal(_) => {
+                normalized.push(component.as_os_str());
+            }
+            Component::ParentDir => unreachable!("parent components rejected before normalize"),
+        }
+    }
+    normalized
+}
+
+fn reject_symlinked_install_root(install_root: &Path) -> Result<(), FcError> {
+    let mut prefix = PathBuf::new();
+    for component in install_root.components() {
+        prefix.push(component.as_os_str());
+        match fs::symlink_metadata(&prefix) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "install_root",
+                    reason: format!(
+                        "install root must not pass through a symlink: {}",
+                        prefix.display()
+                    ),
+                }));
+            }
+            Ok(metadata) if prefix == install_root && !metadata.is_dir() => {
+                return Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "install_root",
+                    reason: format!(
+                        "install root must be a directory path, got {}",
+                        install_root.display()
+                    ),
+                }));
+            }
+            Ok(_) => {}
+            Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(source) => {
+                return Err(FcError::PathIo {
+                    path: prefix,
+                    source,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_existing_active_pointer(
+    install_root: &Path,
+    active_pointer: &Path,
+) -> Result<(), FcError> {
+    match fs::read_link(active_pointer) {
+        Ok(target) => {
+            if !target.is_absolute() {
+                return Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "install.active_pointer",
+                    reason: format!(
+                        "active pointer target must be absolute, got {}",
+                        target.display()
+                    ),
+                }));
+            }
+            reject_parent_components("install.active_pointer", &target)?;
+            let versions_dir = install_root.join("versions");
+            if !target.starts_with(&versions_dir) || target.parent() != Some(versions_dir.as_path())
+            {
+                return Err(FcError::Config(ConfigError::InvalidValue {
+                    field: "install.active_pointer",
+                    reason: format!(
+                        "active pointer target must be one version directory under {}, got {}",
+                        versions_dir.display(),
+                        target.display()
+                    ),
+                }));
+            }
+            match fs::symlink_metadata(&target) {
+                Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                    Err(FcError::Config(ConfigError::InvalidValue {
+                        field: "install.active_pointer",
+                        reason: format!(
+                            "active pointer target must be an existing real version directory: {}",
+                            target.display()
+                        ),
+                    }))
+                }
+                Ok(_) => Ok(()),
+                Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                    Err(FcError::Config(ConfigError::InvalidValue {
+                        field: "install.active_pointer",
+                        reason: format!(
+                            "active pointer target is stale or missing: {}",
+                            target.display()
+                        ),
+                    }))
+                }
+                Err(source) => Err(FcError::PathIo {
+                    path: target,
+                    source,
+                }),
+            }
+        }
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(FcError::PathIo {
+            path: active_pointer.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 struct StagingDir {
     path: PathBuf,
 }
@@ -564,6 +708,8 @@ fn use_hostless_fixture_preflight(bundle_url: &str) -> Result<bool, FcError> {
 }
 
 fn flip_active_pointer(active_pointer: &Path, final_dir: &Path) -> Result<(), FcError> {
+    require_absolute_path("active_pointer", active_pointer)?;
+    require_absolute_path("active_pointer_target", final_dir)?;
     let parent = active_pointer.parent().ok_or_else(|| {
         FcError::Config(ConfigError::InvalidValue {
             field: "active_pointer",

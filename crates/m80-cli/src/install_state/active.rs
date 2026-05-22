@@ -71,14 +71,40 @@ fn active_pointer_target_report(
     target: PathBuf,
     diagnostics: &mut Vec<InstallStateDiagnostic>,
 ) -> ActivePointerReport {
-    let resolved_target = if target.is_absolute() {
-        target.clone()
-    } else {
-        pointer
-            .parent()
-            .expect("active pointer should have parent")
-            .join(&target)
-    };
+    if path_has_parent_component(&target) {
+        diagnostics.push(diagnostic(
+            InstallStateDiagnosticCode::ActivePointerTraversal,
+            Some("active_pointer"),
+            Some(target.clone()),
+            format!("active pointer target contains '..': {}", target.display()),
+        ));
+        return ActivePointerReport {
+            path: pointer.to_path_buf(),
+            target: Some(target.clone()),
+            version_dir: Some(target),
+            release_tag: None,
+            status: ActivePointerStatus::Invalid,
+        };
+    }
+    if !target.is_absolute() {
+        diagnostics.push(diagnostic(
+            InstallStateDiagnosticCode::ActivePointerOutsideInstallRoot,
+            Some("active_pointer"),
+            Some(target.clone()),
+            format!(
+                "active pointer target must be absolute, got {}",
+                target.display()
+            ),
+        ));
+        return ActivePointerReport {
+            path: pointer.to_path_buf(),
+            target: Some(target.clone()),
+            version_dir: Some(target),
+            release_tag: None,
+            status: ActivePointerStatus::Invalid,
+        };
+    }
+    let resolved_target = target.clone();
     let invalid = active_target_diagnostic(install_root, &resolved_target);
     if let Some((code, message)) = invalid {
         diagnostics.push(diagnostic(

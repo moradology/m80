@@ -74,9 +74,15 @@ fn install_plan(
     args: &InstallArgs,
     identity: &VersionIdentity,
 ) -> Result<InstallPlan, InstallError> {
+    let install_root = layout::normalize_install_root(&args.install_root)?;
     let source = selected_source(args)?;
-    let source = source_plan(&args.install_root, source, identity)?;
-    Ok(install_plan_from_source(args, identity, source))
+    let source = source_plan(&install_root, source, identity)?;
+    Ok(install_plan_from_source(
+        args,
+        identity,
+        source,
+        install_root,
+    ))
 }
 
 #[cfg(test)]
@@ -94,38 +100,45 @@ where
         release_asset_index::AssetIndexFailure,
     >,
 {
+    let install_root = layout::normalize_install_root(&args.install_root)?;
     let source = selected_source(args)?;
     let source = source_plan_with_index_resolver_for_install(
-        &args.install_root,
+        &install_root,
         source,
         identity,
         resolve_indexed_bundle,
     )?;
-    Ok(install_plan_from_source(args, identity, source))
+    Ok(install_plan_from_source(
+        args,
+        identity,
+        source,
+        install_root,
+    ))
 }
 
 fn install_plan_from_source(
     args: &InstallArgs,
     identity: &VersionIdentity,
     source: SourcePlan,
+    install_root: PathBuf,
 ) -> InstallPlan {
     let active_version_dir = source
         .release_tag
         .as_deref()
-        .map(|tag| display_path(&layout::planned_version_dir(&args.install_root, tag)));
+        .map(|tag| display_path(&layout::planned_version_dir(&install_root, tag)));
     let host_binaries_manifest = source.release_tag.as_deref().map(|tag| {
         display_path(&layout::planned_host_binaries_manifest_path(
-            &args.install_root,
+            &install_root,
             tag,
         ))
     });
-    let default_profile = display_path(&layout::planned_default_profile_path(&args.install_root));
+    let default_profile = display_path(&layout::planned_default_profile_path(&install_root));
     let bundle_url = source.bundle_url.clone();
     InstallPlan {
         dry_run: args.dry_run,
-        install_root: display_path(&args.install_root),
+        install_root: display_path(&install_root),
         active_version_dir,
-        active_pointer: display_path(&active_pointer(&args.install_root)),
+        active_pointer: display_path(&active_pointer(&install_root)),
         active_pointer_changed: false,
         source,
         bundle_url,
