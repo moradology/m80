@@ -36,7 +36,9 @@ for the pinned asset-index/checksum/proof URLs and optional install root, and a
 `docs/behaviors/release/stable-latest-bootstrap-handoff.md`. Its URL mode bounds
 both metadata fetches with the same connect-timeout, total-timeout, retry, and
 retry-delay policy used by installer asset downloads; fixture mode stays
-network-free.
+network-free. URL mode also runs a local tool preflight before the first
+metadata fetch; see
+`docs/behaviors/release/stable-latest-bootstrap-preflight.md`.
 Current install entry points also enforce the stable tag shape before network or
 index work:
 
@@ -66,7 +68,8 @@ Regression coverage:
   versioned handoff args with no mutable latest string, tag-switch failure
   before handoff output, missing pinned `install.sh`, missing metadata, bounded
   URL-mode curl args, HTTP/DNS-or-connect/timeout/malformed-metadata fetch
-  failures, and no-network local fixture mode;
+  failures, missing local downloader/checksum/sudo preflight failures, root
+  preflight acceptance, and no-network local fixture mode;
 - `scripts/test-release-bundle.py::test_rejects_prerelease_release_tag`;
 - `crates/m80-cli/src/cmds/install/tests.rs` prerelease rejection tests for
   `--release-tag` and `--bootstrap-tag`.

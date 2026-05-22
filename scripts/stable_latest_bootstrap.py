@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 
 from release_url_contract import pinned_install_command, public_release_root, release_asset_url
@@ -23,6 +25,14 @@ METADATA_CONNECT_TIMEOUT_SECONDS = 10
 METADATA_MAX_TIME_SECONDS = 120
 METADATA_RETRY_COUNT = 2
 METADATA_RETRY_DELAY_SECONDS = 1
+
+
+@dataclass(frozen=True)
+class LocalToolRequirement:
+    tool: str
+    purpose: str
+    remediation: str
+    command: str | None = None
 
 
 @dataclass(frozen=True)
@@ -96,8 +106,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    asset_index = read_json(args.asset_index, "release asset index") if args.asset_index else None
     try:
+        preflight_local_tools(args)
+        asset_index = read_json(args.asset_index, "release asset index") if args.asset_index else None
         latest = load_latest_source(args.latest_metadata, args.latest_url, curl_bin=args.curl, label="latest release metadata")
         guard = load_guard_source(args, latest)
         resolution = resolve_latest_bootstrap(
@@ -118,6 +129,72 @@ def main() -> int:
         print(f"pinned_command={resolution.pinned_install_command}")
         print(f"versioned_install_args={shlex.join(resolution.versioned_install_args)}")
     return 0
+
+
+def preflight_local_tools(
+    args: argparse.Namespace,
+    *,
+    which=shutil.which,
+    effective_uid: int | None = None,
+) -> None:
+    if args.latest_url is None and args.guard_latest_url is None:
+        return
+    for requirement in local_tool_requirements(args.curl):
+        if not command_available(requirement.command or requirement.tool, which=which):
+            raise ValueError(local_tool_failure(requirement))
+    uid = os.geteuid() if effective_uid is None else effective_uid
+    if uid != 0 and not command_available("sudo", which=which):
+        raise ValueError(
+            local_tool_failure(
+                LocalToolRequirement(
+                    "sudo",
+                    "perform the privileged versioned install handoff",
+                    "run as root or install sudo with your package manager; Ubuntu/Debian: apt-get update && apt-get install -y sudo",
+                )
+            )
+        )
+
+
+def local_tool_requirements(curl_bin: str) -> tuple[LocalToolRequirement, ...]:
+    return (
+        LocalToolRequirement(
+            "curl",
+            "download latest release metadata and pinned release assets",
+            "install curl with: sudo apt-get update && sudo apt-get install -y curl",
+            command=curl_bin,
+        ),
+        LocalToolRequirement(
+            "sha256sum",
+            "verify downloaded checksum sidecars before install handoff",
+            "install GNU coreutils with: sudo apt-get update && sudo apt-get install -y coreutils",
+        ),
+        LocalToolRequirement(
+            "mktemp",
+            "create a private temporary bootstrap directory",
+            "install GNU coreutils with: sudo apt-get update && sudo apt-get install -y coreutils",
+        ),
+        LocalToolRequirement(
+            "chmod",
+            "apply installer file permissions before execution",
+            "install GNU coreutils with: sudo apt-get update && sudo apt-get install -y coreutils",
+        ),
+    )
+
+
+def command_available(command: str, *, which=shutil.which) -> bool:
+    if "/" in command:
+        path = Path(command)
+        return path.is_file() and os.access(path, os.X_OK)
+    return which(command) is not None
+
+
+def local_tool_failure(requirement: LocalToolRequirement) -> str:
+    return (
+        "bootstrap local tool preflight failed before network or sudo: "
+        f"missing tool={requirement.tool}; "
+        f"needed_for={requirement.purpose}; "
+        f"remediation={requirement.remediation}"
+    )
 
 
 def load_latest_source(path: Path | None, url: str | None, *, curl_bin: str, label: str) -> MetadataSource:

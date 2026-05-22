@@ -4,16 +4,19 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 import shlex
 import stat
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
 
 from release_url_contract import release_asset_url
-from stable_latest_bootstrap import MetadataSource, resolve_latest_bootstrap
+from stable_latest_bootstrap import MetadataSource, preflight_local_tools, resolve_latest_bootstrap
 from stable_release_channel import (
     BUNDLE_NAME,
     CHECKSUM_NAME,
@@ -37,7 +40,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
 
             result = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(SCRIPT),
                     "--latest-metadata",
                     str(latest),
@@ -76,7 +79,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
 
             result = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(SCRIPT),
                     "--latest-metadata",
                     str(latest),
@@ -145,7 +148,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
 
             result = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(SCRIPT),
                     "--latest-metadata",
                     str(latest),
@@ -211,7 +214,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
 
             result = subprocess.run(
                 [
-                    "python3",
+                    sys.executable,
                     str(SCRIPT),
                     "--latest-url",
                     "https://api.github.com/repos/moradology/m80/releases/latest",
@@ -235,6 +238,111 @@ class StableLatestBootstrapTest(unittest.TestCase):
         self.assertIn("https://api.github.com/repos/moradology/m80/releases/latest", result.stderr)
         self.assertNotIn("install_url=", result.stderr)
         self.assertNotIn("/releases/latest/download", result.stderr)
+
+    def test_rejects_missing_downloader_before_network_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = preflight_env(root, tools={"sha256sum", "mktemp", "chmod", "sudo"})
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--latest-url",
+                    "https://api.github.com/repos/moradology/m80/releases/latest",
+                    "--curl",
+                    str(root / "missing-curl"),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("bootstrap local tool preflight failed before network or sudo", result.stderr)
+        self.assertIn("missing tool=curl", result.stderr)
+        self.assertIn("needed_for=download latest release metadata and pinned release assets", result.stderr)
+        self.assertIn("remediation=install curl", result.stderr)
+
+    def test_rejects_missing_checksum_tool_before_network_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            curl = write_fake_curl_json(
+                root / "curl",
+                response=write_json(root / "latest.json", base_release_metadata()),
+                log=root / "curl.log",
+            )
+            env = preflight_env(root, tools={"mktemp", "chmod", "sudo"})
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--latest-url",
+                    "https://api.github.com/repos/moradology/m80/releases/latest",
+                    "--curl",
+                    str(curl),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertFalse((root / "curl.log").exists(), "preflight must fail before network fetch")
+        self.assertIn("missing tool=sha256sum", result.stderr)
+        self.assertIn("needed_for=verify downloaded checksum sidecars before install handoff", result.stderr)
+        self.assertIn("remediation=install GNU coreutils", result.stderr)
+
+    def test_rejects_missing_downloader_before_guard_url_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            latest = write_json(root / "latest.json", base_release_metadata())
+            env = preflight_env(root, tools={"sha256sum", "mktemp", "chmod", "sudo"})
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--latest-metadata",
+                    str(latest),
+                    "--guard-latest-url",
+                    "https://api.github.com/repos/moradology/m80/releases/latest",
+                    "--curl",
+                    str(root / "missing-curl"),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("bootstrap local tool preflight failed before network or sudo", result.stderr)
+        self.assertIn("missing tool=curl", result.stderr)
+        self.assertNotIn("failed to fetch guard latest release metadata", result.stderr)
+
+    def test_preflight_rejects_missing_sudo_for_non_root(self) -> None:
+        args = SimpleNamespace(latest_url="https://api.github.com/repos/moradology/m80/releases/latest", curl="curl")
+
+        with self.assertRaisesRegex(ValueError, "missing tool=sudo"):
+            preflight_local_tools(args, which=fake_which({"curl", "sha256sum", "mktemp", "chmod"}), effective_uid=1000)
+
+    def test_preflight_accepts_root_without_sudo(self) -> None:
+        args = SimpleNamespace(latest_url="https://api.github.com/repos/moradology/m80/releases/latest", curl="curl")
+
+        preflight_local_tools(args, which=fake_which({"curl", "sha256sum", "mktemp", "chmod"}), effective_uid=0)
 
     def test_rejects_timeout_failure_before_handoff_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -501,6 +609,20 @@ class StableLatestBootstrapTest(unittest.TestCase):
         ]:
             self.assertIn(required, doc)
 
+    def test_behavior_doc_records_preflight_contract_and_regressions(self) -> None:
+        doc = (REPO_ROOT / "docs" / "behaviors" / "release" / "stable-latest-bootstrap-preflight.md").read_text()
+
+        for required in [
+            "m80-o3uh9.11.4",
+            "missing tool=<tool>",
+            "test_rejects_missing_downloader_before_network_fetch",
+            "test_rejects_missing_checksum_tool_before_network_fetch",
+            "test_rejects_missing_downloader_before_guard_url_fetch",
+            "test_preflight_rejects_missing_sudo_for_non_root",
+            "test_preflight_accepts_root_without_sudo",
+        ]:
+            self.assertIn(required, doc)
+
     def assert_curl_flag(self, args: list[str], flag: str, expected_value: str) -> None:
         self.assertIn(flag, args)
         pos = args.index(flag)
@@ -586,6 +708,31 @@ def write_fake_curl(path: Path, *, exit_code: int, stderr: str) -> Path:
     )
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return path
+
+
+def preflight_env(root: Path, *, tools: set[str]) -> dict[str, str]:
+    bin_dir = root / "bin"
+    bin_dir.mkdir()
+    for tool in tools:
+        write_fake_tool(bin_dir / tool)
+    env = dict(os.environ)
+    env["PATH"] = str(bin_dir)
+    return env
+
+
+def write_fake_tool(path: Path) -> Path:
+    path.write_text("#!/bin/sh\nexit 0\n")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    return path
+
+
+def fake_which(available: set[str]):
+    def which(command: str) -> str | None:
+        if command in available:
+            return f"/fake-bin/{command}"
+        return None
+
+    return which
 
 
 def write_fake_curl_json(path: Path, *, response: Path, log: Path) -> Path:
