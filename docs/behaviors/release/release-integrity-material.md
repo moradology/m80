@@ -245,7 +245,22 @@ repository, signer workflow, issuer, tag ref, commit digest, self-hosted-runner
 denial, and JSON output policy as the public installer. The attestation bundle
 is never accepted because it exists beside the predicate; it must verify the
 predicate subject name and digest before the selected bundle bytes are
-downloaded. Any digest, subject, asset-index, attestation-metadata,
+downloaded.
+
+Redirect validation is an identity check plus the digest/proof checks above,
+not a GitHub CDN host allowlist. Every official release material fetch starts
+from the expected `moradology/m80` repository, concrete release tag, and
+expected asset name. If curl reports a final GitHub release-asset URL, that
+final URL must carry the same repository, tag, and asset name. Opaque GitHub
+asset CDN URLs are accepted only as final redirects for that exact requested
+release asset, and the downloaded bytes remain untrusted until the material's
+checksum sidecar, public `SHA256SUMS` row, predicate subject, or asset-index
+identity check succeeds. Foreign repositories, wrong tags, wrong asset names,
+host lookalikes, and digest-matching wrong-role release paths fail closed with
+the material role, requested URL, final URL, expected asset name, and rejected
+identity field in the diagnostic.
+
+Any digest, subject, asset-index, attestation-metadata,
 cryptographic attestation, or missing `install.sh` row disagreement fails while
 the verified bundle still lives only in a temporary release-material directory.
 Those CLI failures name the failed `material_class`, print a safe

@@ -120,23 +120,148 @@ pub(super) fn release_material_error(reason: String) -> FcError {
 }
 
 fn validate_final_material_url(material: &ReleaseMaterial, final_url: &str) -> Result<(), FcError> {
+    let expected = expected_material_identity(material)?;
+    let requested = release_asset_identity(&material.url).ok_or_else(|| {
+        release_redirect_identity_error(
+            material,
+            final_url,
+            "requested_url",
+            format!(
+                "requested URL is not an official release asset: requested_url={}",
+                material.url
+            ),
+        )
+    })?;
+    if requested != expected {
+        return Err(release_redirect_identity_error(
+            material,
+            final_url,
+            "requested_identity",
+            format!(
+                "requested URL does not match material identity: requested_repository={} requested_release_tag={} requested_asset_name={}",
+                requested.repository, requested.release_tag, requested.asset_name
+            ),
+        ));
+    }
+
     if final_url == material.url {
         return Ok(());
     }
-    if https_host(final_url)
-        .as_deref()
-        .is_some_and(is_github_asset_redirect_host)
-    {
+
+    if let Some(final_identity) = release_asset_identity(final_url) {
+        if final_identity == expected {
+            return Ok(());
+        }
+        let rejected = final_identity_mismatch_field(&expected, &final_identity);
+        return Err(release_redirect_identity_error(
+            material,
+            final_url,
+            rejected,
+            format!(
+                "final URL does not match material identity: final_repository={} final_release_tag={} final_asset_name={}",
+                final_identity.repository, final_identity.release_tag, final_identity.asset_name
+            ),
+        ));
+    }
+
+    let Some(final_host) = https_host(final_url) else {
+        return Err(release_redirect_identity_error(
+            material,
+            final_url,
+            "final_url",
+            "final URL is not an HTTPS URL with a supported authority".to_owned(),
+        ));
+    };
+    if is_github_asset_redirect_host(&final_host) {
         return Ok(());
     }
-    Err(release_material_error(format!(
-        "release material redirected to unsupported URL: {} final_url={final_url}",
-        material.context()
-    )))
+    Err(release_redirect_identity_error(
+        material,
+        final_url,
+        "host",
+        format!(
+            "final URL host is not an official GitHub asset redirect host: final_host={final_host}"
+        ),
+    ))
 }
 
 fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ReleaseAssetIdentity {
+    repository: String,
+    release_tag: String,
+    asset_name: String,
+}
+
+fn expected_material_identity(material: &ReleaseMaterial) -> Result<ReleaseAssetIdentity, FcError> {
+    let Some(release_tag) = super::release_tag_from_material_url(&material.url) else {
+        return Err(release_redirect_identity_error(
+            material,
+            &material.url,
+            "release_tag",
+            "material URL does not contain an official release tag".to_owned(),
+        ));
+    };
+    Ok(ReleaseAssetIdentity {
+        repository: crate::release_urls::release_repository(),
+        release_tag: release_tag.to_owned(),
+        asset_name: material.name.clone(),
+    })
+}
+
+fn release_asset_identity(url: &str) -> Option<ReleaseAssetIdentity> {
+    let rest = url.strip_prefix("https://github.com/")?;
+    let (owner, rest) = rest.split_once('/')?;
+    let (repo, rest) = rest.split_once('/')?;
+    let rest = rest.strip_prefix("releases/download/")?;
+    let (release_tag, asset_name) = rest.split_once('/')?;
+    if owner.is_empty()
+        || repo.is_empty()
+        || release_tag.is_empty()
+        || asset_name.is_empty()
+        || asset_name.contains('/')
+    {
+        return None;
+    }
+    Some(ReleaseAssetIdentity {
+        repository: format!("{owner}/{repo}"),
+        release_tag: release_tag.to_owned(),
+        asset_name: asset_name.to_owned(),
+    })
+}
+
+fn final_identity_mismatch_field(
+    expected: &ReleaseAssetIdentity,
+    observed: &ReleaseAssetIdentity,
+) -> &'static str {
+    if observed.repository != expected.repository {
+        "repository"
+    } else if observed.release_tag != expected.release_tag {
+        "release_tag"
+    } else {
+        "asset_name"
+    }
+}
+
+fn release_redirect_identity_error(
+    material: &ReleaseMaterial,
+    final_url: &str,
+    rejected_identity_field: &'static str,
+    reason: String,
+) -> FcError {
+    release_material_error(format!(
+        "release material redirect identity mismatch: material_role={} requested_url={} final_url={} expected_asset_name={} rejected_identity_field={} {}; {}",
+        material.class,
+        material.url,
+        final_url,
+        material.name,
+        rejected_identity_field,
+        reason,
+        material.context()
+    ))
 }
 
 fn https_host(url: &str) -> Option<String> {

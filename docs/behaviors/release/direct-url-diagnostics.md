@@ -27,6 +27,13 @@ specific release material class, and exactly one
 retry command is a no-write retry of the same explicit operator URL; it is not a
 replacement for the normal public installer path.
 
+Redirect identity failures for official release material are reported before
+downloaded bytes can influence install state. The message names
+`material_role`, `requested_url`, `final_url`, `expected_asset_name`, and
+`rejected_identity_field`. The rejected field is `repository`, `release_tag`,
+`asset_name`, `host`, `requested_url`, `requested_identity`, or `final_url`
+depending on where the redirect stopped matching the requested release object.
+
 JSON error output carries finite `code` values for the direct URL classes that
 share the broader `Config` or `UnsupportedOperation` variants:
 
@@ -43,4 +50,11 @@ share the broader `Config` or `UnsupportedOperation` variants:
 - `classifier_failure_context_names_classifier_class_and_one_retry`
 - `json_envelope_codes_direct_url_diagnostics`
 - `official_release_verifier_accepts_complete_material_before_staging`
+- `official_release_verifier_accepts_github_cdn_redirect_for_expected_material`
+- `official_release_verifier_rejects_github_cdn_redirect_with_wrong_role_bytes`
+- `official_release_verifier_rejects_redirect_to_foreign_repo_release_asset`
+- `official_release_verifier_rejects_redirect_to_wrong_release_tag`
+- `official_release_verifier_rejects_redirect_to_wrong_asset_name`
+- `official_release_verifier_rejects_redirect_to_github_cdn_host_lookalike`
+- `official_release_verifier_rejects_digest_matching_wrong_role_redirect`
 - `release_material_install_summary_initializes_proof_cache_fields`

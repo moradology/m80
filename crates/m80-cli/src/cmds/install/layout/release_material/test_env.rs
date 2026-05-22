@@ -96,6 +96,17 @@ fi
 printf '%s\n' "$url" >> "$M80_FAKE_CURL_LOG"
 name=${url##*/}
 src="$M80_FAKE_CURL_MATERIAL_DIR/$name"
+final_url=$url
+if [ -n "${M80_FAKE_CURL_REDIRECT_MAP:-}" ]; then
+    row=$(awk -F '	' -v name="$name" '$1 == name { print; exit }' "$M80_FAKE_CURL_REDIRECT_MAP")
+    if [ -n "$row" ]; then
+        final_url=$(printf '%s\n' "$row" | awk -F '	' '{ print $2 }')
+        source_name=$(printf '%s\n' "$row" | awk -F '	' '{ print $3 }')
+        if [ -n "$source_name" ]; then
+            src="$M80_FAKE_CURL_MATERIAL_DIR/$source_name"
+        fi
+    fi
+fi
 if [ ! -f "$src" ]; then
     echo "fake curl missing $name" >&2
     exit 22
@@ -105,7 +116,7 @@ if [ -n "${M80_FAKE_CURL_REQUIRE_GH_MARKER_BEFORE_BUNDLE:-}" ] && [ "$name" = "m
     exit 23
 fi
 cp "$src" "$out"
-printf '%s' "$url"
+printf '%s' "$final_url"
 "#,
     )
     .unwrap();

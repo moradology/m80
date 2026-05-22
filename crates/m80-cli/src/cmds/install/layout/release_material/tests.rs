@@ -1,4 +1,7 @@
 use std::fs;
+use std::path::Path;
+
+use m80_firecracker::FcError;
 
 use super::test_env::{
     fake_gh_fixture, official_release_plan, valid_material, write_fake_curl, EnvVarGuard,
@@ -467,6 +470,95 @@ fn official_release_verifier_rejects_missing_install_sh_digest() {
     assert!(message.contains("install.sh"), "{message}");
 }
 
+#[test]
+fn official_release_verifier_accepts_github_cdn_redirect_for_expected_material() {
+    let verified = verifier_result_with_redirect_rows(&[(
+        "install.sh",
+        "https://objects.githubusercontent.com/github-production-release-asset/expected-install",
+        "install.sh",
+    )])
+    .unwrap();
+
+    assert_eq!(verified.summary.release_tag, "v0.0.0");
+    assert_eq!(verified.summary.bundle_asset, "m80-linux-x86_64.tar.gz");
+}
+
+#[test]
+fn official_release_verifier_rejects_github_cdn_redirect_with_wrong_role_bytes() {
+    let err = verifier_error_with_redirect_rows(&[(
+        "install.sh",
+        "https://objects.githubusercontent.com/github-production-release-asset/expected-install",
+        "m80-bootstrap-selector.tsv",
+    )]);
+
+    let message = err.to_string();
+    assert!(
+        message.contains("release material public SHA256SUMS mismatch")
+            || message.contains("release integrity sha256 mismatch")
+            || message.contains("release material sidecar digest mismatch"),
+        "{message}"
+    );
+    assert!(
+        message.contains("material_class=install-script"),
+        "{message}"
+    );
+}
+
+#[test]
+fn official_release_verifier_rejects_redirect_to_foreign_repo_release_asset() {
+    let err = verifier_error_with_redirect_rows(&[(
+        "install.sh",
+        "https://github.com/attacker/m80/releases/download/v0.0.0/install.sh",
+        "install.sh",
+    )]);
+
+    assert_redirect_identity_error(err, "install-script", "install.sh", "repository");
+}
+
+#[test]
+fn official_release_verifier_rejects_redirect_to_wrong_release_tag() {
+    let err = verifier_error_with_redirect_rows(&[(
+        "install.sh",
+        "https://github.com/moradology/m80/releases/download/v9.9.9/install.sh",
+        "install.sh",
+    )]);
+
+    assert_redirect_identity_error(err, "install-script", "install.sh", "release_tag");
+}
+
+#[test]
+fn official_release_verifier_rejects_redirect_to_wrong_asset_name() {
+    let err = verifier_error_with_redirect_rows(&[(
+        "install.sh",
+        "https://github.com/moradology/m80/releases/download/v0.0.0/not-install.sh",
+        "install.sh",
+    )]);
+
+    assert_redirect_identity_error(err, "install-script", "install.sh", "asset_name");
+}
+
+#[test]
+fn official_release_verifier_rejects_redirect_to_github_cdn_host_lookalike() {
+    let err = verifier_error_with_redirect_rows(&[(
+        "install.sh",
+        "https://objects.githubusercontent.com.evil.invalid/github-production-release-asset/install",
+        "install.sh",
+    )]);
+
+    assert_redirect_identity_error(err, "install-script", "install.sh", "host");
+}
+
+#[test]
+fn official_release_verifier_rejects_digest_matching_wrong_role_redirect() {
+    let err = verifier_error_with_redirect_rows(&[(
+        "install.sh",
+        "https://github.com/moradology/m80/releases/download/v0.0.0/m80-bootstrap-selector.tsv",
+        "install.sh",
+    )]);
+
+    assert_redirect_identity_error(err, "install-script", "install.sh", "asset_name");
+}
+
 fn assert_no_bundle_download(log: &str) {
     let bundle_url = crate::release_urls::release_asset_url("v0.0.0", "m80-linux-x86_64.tar.gz");
     assert!(
@@ -484,4 +576,73 @@ fn assert_material(plan: &ReleaseMaterialPlan, class: &str, name: &str, url: &st
     assert_eq!(material.name, name);
     assert_eq!(material.url, url);
     assert_eq!(material.probe, probe);
+}
+
+fn verifier_error_with_redirect_rows(rows: &[(&str, &str, &str)]) -> FcError {
+    verifier_result_with_redirect_rows(rows).unwrap_err()
+}
+
+fn verifier_result_with_redirect_rows(
+    rows: &[(&str, &str, &str)],
+) -> Result<VerifiedOfficialReleaseBundle, FcError> {
+    let _guard = super::super::INSTALL_PREFLIGHT_ENV_LOCK.lock().unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let material_dir = temp.path().join("materials");
+    fs::create_dir(&material_dir).unwrap();
+    let log_path = temp.path().join("curl.log");
+    let redirect_map = temp.path().join("redirect.map");
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    write_fake_curl(&bin_dir);
+    let fixture =
+        write_direct_release_materials_with(&material_dir, ReleaseFixtureOptions::default());
+    write_redirect_map(&redirect_map, rows);
+
+    let _path_env = EnvVarGuard::prepend_path(&bin_dir);
+    let _material_env = EnvVarGuard::set("M80_FAKE_CURL_MATERIAL_DIR", &material_dir);
+    let _log_env = EnvVarGuard::set("M80_FAKE_CURL_LOG", &log_path);
+    let _redirect_env = EnvVarGuard::set("M80_FAKE_CURL_REDIRECT_MAP", &redirect_map);
+    let _gh_env = EnvVarGuard::set(
+        "M80_RELEASE_ATTESTATION_GH",
+        &fake_gh_fixture("fake-gh-attestation-supported.sh"),
+    );
+
+    super::verify_official_release_bundle(&fixture.bundle_url).map(|verified| {
+        verified.expect("fixture bundle URL should classify as an official release bundle")
+    })
+}
+
+fn write_redirect_map(path: &Path, rows: &[(&str, &str, &str)]) {
+    let mut text = String::new();
+    for (name, final_url, source_name) in rows {
+        text.push_str(name);
+        text.push('\t');
+        text.push_str(final_url);
+        text.push('\t');
+        text.push_str(source_name);
+        text.push('\n');
+    }
+    fs::write(path, text).unwrap();
+}
+
+fn assert_redirect_identity_error(err: FcError, role: &str, asset_name: &str, field: &str) {
+    let message = err.to_string();
+    assert!(
+        message.contains("release material redirect identity mismatch"),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("material_role={role}")),
+        "{message}"
+    );
+    assert!(message.contains("requested_url="), "{message}");
+    assert!(message.contains("final_url="), "{message}");
+    assert!(
+        message.contains(&format!("expected_asset_name={asset_name}")),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("rejected_identity_field={field}")),
+        "{message}"
+    );
 }
