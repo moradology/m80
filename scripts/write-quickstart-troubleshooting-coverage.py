@@ -111,9 +111,16 @@ def build_report(matrix: dict[str, Any], *, matrix_path: Path) -> dict[str, Any]
     missing = sorted(lane for lane in REQUIRED_LANES if not lane_index.get(lane))
     if missing:
         raise SystemExit(f"quickstart troubleshooting coverage missing lane(s): {', '.join(missing)}")
+    verified_close = proof_lanes[0]
 
     return {
         "schema_version": SCHEMA_VERSION,
+        "command": verified_close["command"],
+        "exit_status": verified_close["exit_status"],
+        "resolved_tag": verified_close["resolved_tag"],
+        "substrate": verified_close["substrate"],
+        "stdout": verified_close["stdout"],
+        "stderr": verified_close["stderr"],
         "matrix": display_path(matrix_path),
         "required_lanes": sorted(REQUIRED_LANES),
         "coverage_lanes": {lane: sorted(ids) for lane, ids in sorted(lane_index.items())},
@@ -179,12 +186,24 @@ def validate_process_smoke_proof(row: dict[str, Any], proof_artifacts: list[Path
         raise SystemExit(f"{row_id}: proof artifact must contain process_smoke.stdout == hello")
     if process_smoke.get("exit_code") != 0:
         raise SystemExit(f"{row_id}: proof artifact must contain process_smoke.exit_code == 0")
+    command = process_smoke.get("command")
+    resolved_tag = proof.get("resolved_tag")
+    if not isinstance(command, str) or not command:
+        raise SystemExit(f"{row_id}: proof artifact must contain process_smoke.command")
+    if not isinstance(resolved_tag, str) or not resolved_tag:
+        raise SystemExit(f"{row_id}: proof artifact must contain resolved_tag")
     return {
         "id": row_id,
         "coverage_lane": "process_wrapper_smoke",
         "proof_artifact": str(proof_path),
         "required_substrate": "linux-kvm-host",
         "observable": "process_smoke.exit_code == 0 and process_smoke.stdout == hello\\n",
+        "command": command,
+        "exit_status": process_smoke["exit_code"],
+        "resolved_tag": resolved_tag,
+        "substrate": substrate,
+        "stdout": process_smoke["stdout"],
+        "stderr": "",
     }
 
 

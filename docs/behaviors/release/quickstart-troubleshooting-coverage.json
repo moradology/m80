@@ -1,4 +1,5 @@
 {
+  "command": "sudo -n env HOME=/tank/tmp/m80-public-install-proof-v0211.4jsmug/home TMPDIR=/tank/tmp/m80-public-install-proof-v0211.4jsmug/tmp M80_RUN_ROOT=/tank/tmp/r0211 M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) timeout 180 /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bin/m80 run -- echo hello",
   "coverage_lanes": {
     "bootstrap_network_failure": [
       "network"
@@ -28,13 +29,23 @@
       "stale-profile"
     ]
   },
+  "exit_status": 0,
   "manual_or_real_kvm_lanes": [
     {
+      "command": "sudo -n env HOME=/tank/tmp/m80-public-install-proof-v0211.4jsmug/home TMPDIR=/tank/tmp/m80-public-install-proof-v0211.4jsmug/tmp M80_RUN_ROOT=/tank/tmp/r0211 M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) timeout 180 /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bin/m80 run -- echo hello",
       "coverage_lane": "process_wrapper_smoke",
+      "exit_status": 0,
       "id": "process-smoke-failed",
       "observable": "process_smoke.exit_code == 0 and process_smoke.stdout == hello\\n",
       "proof_artifact": "docs/behaviors/release/public-install-proof-cache-v0.2.11.json",
-      "required_substrate": "linux-kvm-host"
+      "required_substrate": "linux-kvm-host",
+      "resolved_tag": "v0.2.11",
+      "stderr": "",
+      "stdout": "hello\n",
+      "substrate": {
+        "kind": "linux-kvm-host",
+        "summary": "Official moradology/m80 latest install and process smoke captured on Linux under /tank/tmp with /dev/kvm available"
+      }
     }
   ],
   "matrix": "docs/behaviors/release/quickstart-troubleshooting-matrix.json",
@@ -46,6 +57,7 @@
     "process_wrapper_smoke",
     "stale_profile_failure"
   ],
+  "resolved_tag": "v0.2.11",
   "rows": [
     {
       "coverage_lanes": [
@@ -218,5 +230,11 @@
       ]
     }
   ],
-  "schema_version": 1
+  "schema_version": 1,
+  "stderr": "",
+  "stdout": "hello\n",
+  "substrate": {
+    "kind": "linux-kvm-host",
+    "summary": "Official moradology/m80 latest install and process smoke captured on Linux under /tank/tmp with /dev/kvm available"
+  }
 }
