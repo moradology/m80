@@ -43,6 +43,23 @@ target; no apply command is emitted when the latest target is yanked or below
 the safety floor. The mutating `m80 update --apply` transaction is a later leaf
 and must reuse the verified installer path.
 
+For an active `v1.2.3` install with safe latest `v1.2.4`, human output includes
+one copy-ready command:
+
+```text
+apply_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
+next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
+```
+
+If the active tag is prerelease-shaped, build-metadata-shaped, local-dev, or
+otherwise ineligible, no stable install command is guessed. If latest metadata
+is unavailable, the next command is the read-only retry:
+
+```text
+retry_command=m80 update --check
+next_command=m80 update --check
+```
+
 Safety-floor input is optional until the freshness status publisher grows the
 public policy artifact. When present, `minimum_safe_tag` and `yanked_tags` must
 be stable `vMAJOR.MINOR.PATCH` tags. A yanked active or latest tag reports

@@ -94,6 +94,12 @@ a fallback cache, says whether that cache is fresh, stale, missing, or
 malformed, and prints `m80 update --check` as the retry command when freshness
 is unknown or stale.
 
+When a safe update is known, copy the `next_command` value exactly:
+
+```text
+next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
+```
+
 After that, wrap any process the same way:
 
 ```sh

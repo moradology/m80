@@ -110,7 +110,9 @@ binaries, pull OCI images, or install packages implicitly.
   `--latest-status <path>` to read a local artifact without network. Use both
   together to try the URL first and use the path as a read-only fallback cache.
   Human and JSON output name the metadata source, cache state, freshness max
-  age, offline reason, and retry command when freshness is unknown or stale.
+  age, offline reason, and retry command when freshness is unknown or stale. If
+  a safe update is known, copy the `next_command` value exactly:
+  `next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh`.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling

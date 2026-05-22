@@ -252,6 +252,13 @@ is known. It does not write the install root, flip the active pointer, refresh
 proof cache material, or download a bundle. See
 `docs/behaviors/release/update-check.md`.
 
+When a safe update is known, the copy-ready repair line is the same command the
+renderer emits as `next_command`:
+
+```text
+next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
+```
+
 ## Verification
 
 The release identity is pinned by:
