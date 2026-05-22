@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 
 from quickstart_snippets import PublicCommandSnippet
 from release_url_contract import public_release_root
@@ -95,7 +96,7 @@ def success_proof(
             "latest_source_mode": latest_source_mode,
             "guard_source_mode": guard_source_mode,
         }
-    return base_proof(
+    proof = base_proof(
         status="success",
         generated_at=generated_at,
         repository=repository,
@@ -134,6 +135,8 @@ def success_proof(
         },
         "safety_floor": empty_safety_floor(generated_at),
     }
+    add_fixture_command_summary(proof, fixture_install_result)
+    return proof
 
 
 def failure_proof(
@@ -239,6 +242,24 @@ def base_proof(
         "checked_urls": checked_urls,
         "public_assets": public_assets,
     }
+
+
+def add_fixture_command_summary(proof: dict, fixture_install_result: dict | None) -> None:
+    if not isinstance(fixture_install_result, dict) or fixture_install_result.get("status") != "success":
+        return
+    command = fixture_install_result.get("command")
+    if isinstance(command, list) and all(isinstance(part, str) for part in command):
+        proof["command"] = {
+            "display": " ".join(shlex.quote(part) for part in command),
+            "argv": command,
+        }
+    exit_status = fixture_install_result.get("exit_status")
+    if isinstance(exit_status, int):
+        proof["exit_status"] = exit_status
+    if "stdout" in fixture_install_result:
+        proof["stdout"] = fixture_install_result["stdout"]
+    if "stderr" in fixture_install_result:
+        proof["stderr"] = fixture_install_result["stderr"]
 
 
 def substrate_summary(latest_source_mode: str, guard_source_mode: str) -> dict:
