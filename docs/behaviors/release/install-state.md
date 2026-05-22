@@ -274,12 +274,14 @@ fields are evidence of what the installer verified at install time. Freshness
 against the current public latest release belongs to the freshness lane, not
 this cache reporter.
 
-The current public install proof for this contract is
-[`public-install-proof-cache-v0.2.11.json`](public-install-proof-cache-v0.2.11.json).
-It records the unauthenticated latest install command, the resolved release tag,
-the proof-cache manifest digest/material count, the active install-status
-result, and the `m80 run -- echo hello` smoke run used to prove the installed
-bundle wraps a real process.
+The current public proof artifacts for this contract are
+[`public-install-proof-cache-v0.2.11.json`](public-install-proof-cache-v0.2.11.json)
+and
+[`public-install-status-v0.2.11.json`](public-install-status-v0.2.11.json).
+They record the unauthenticated latest install command, the resolved release
+tag, the proof-cache manifest digest/material count, the full installed-status
+JSON output, and the `m80 run -- echo hello` smoke run used to prove the
+installed bundle wraps a real process.
 
 When the local proof cache is missing, malformed, stale, mode-changed, or has a
 referenced material digest mismatch, status reports `proof_cache.status` as a

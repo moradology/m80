@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-22T03:51:10Z",
+  "release_tag": "v0.2.11",
+  "source_commit": "3c72f2500e0e3c878cf93ffcf0790d410747ea39",
+  "repository": "moradology/m80",
+  "workflow_run": {
+    "id": 26267080697,
+    "url": "https://github.com/moradology/m80/actions/runs/26267080697",
+    "conclusion": "success"
+  },
+  "public_install_proof": "docs/behaviors/release/public-install-proof-cache-v0.2.11.json",
+  "install_root": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+  "command": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bin/m80 --json install-status --install-root /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+  "exit_code": 0,
+  "json_output": {
+    "version": 1,
+    "data": {
+      "schema_version": 1,
+      "status": "healthy_active_release",
+      "install_root": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+      "active": {
+        "status": "live",
+        "release_tag": "v0.2.11",
+        "install_dir": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11",
+        "pointer_path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/active",
+        "pointer_target": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11"
+      },
+      "selected_config": {
+        "system_path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/config.toml",
+        "system_drop_in_dir": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/config.d",
+        "user_path": null,
+        "user_drop_in_dir": null,
+        "default_profile": "default",
+        "default_profile_source": "system_file",
+        "explicit_override": false
+      },
+      "selected_profile": {
+        "name": "default",
+        "selection_source": "system_file",
+        "body_source": "system_file",
+        "file_path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/profiles/default.toml",
+        "artifact_dir": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/artifacts",
+        "install_dir": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11",
+        "release_tag": "v0.2.11",
+        "m80_version": "v0.2.11"
+      },
+      "metadata": {
+        "bundle_metadata": {
+          "path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/bundle.json",
+          "status": "present",
+          "sha256": "1e68a73c84267ec40a7be7f078a06f1534243f41b96d1537cde817f05de33486"
+        },
+        "host_binaries_manifest": {
+          "path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/artifacts/host-binaries.manifest.json",
+          "status": "present",
+          "sha256": "90b4b24d705a2b7072089dec66d94bfe3f72dc05f34bba3f04e4bd4aa418a422"
+        },
+        "install_provenance": {
+          "path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/artifacts/install-provenance.json",
+          "status": "present",
+          "sha256": "450082d4ab19d211bb26a7c799ed8abe6c009bcf3bef728eadf27f869fb8ec0a"
+        },
+        "proof_cache_manifest": {
+          "path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/artifacts/release-proof-cache/manifest.json",
+          "status": "present",
+          "sha256": "41902de945eedfe7f509f5d1645d382d92422072ce0beb171af3330d06b36fe5"
+        }
+      },
+      "proof_cache": {
+        "status": "available",
+        "cache_dir": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/artifacts/release-proof-cache",
+        "manifest_path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root/versions/v0.2.11/artifacts/release-proof-cache/manifest.json",
+        "manifest_sha256": "41902de945eedfe7f509f5d1645d382d92422072ce0beb171af3330d06b36fe5",
+        "manifest_digest": "32dc94ff7f2a4e469cbda86c31ce650dee2e6d6c99a819d4e3ebecf07d0cf5ba",
+        "manifest_modified_unix_seconds": 1779421516,
+        "cache_age_seconds": 346,
+        "release_tag": "v0.2.11",
+        "repository": "moradology/m80",
+        "target": "linux-x86_64",
+        "materials": [
+          {
+            "role": "integrity_predicate",
+            "path": "m80-release-integrity.json",
+            "sha256": "e4ea738318488a2337b65466980dd961f60a7b3cf56007fbb0c947e0be6e1061",
+            "size_bytes": 3014,
+            "subject": null,
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "attestation_bundle",
+            "path": "m80-release-integrity.attestation.jsonl",
+            "sha256": "30c926ac496b7864688be0e3588c9e0cf43a6be2be0ea4edfa6e7cb7041e8d06",
+            "size_bytes": 10364,
+            "subject": null,
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "attestation_metadata",
+            "path": "m80-release-attestation.json",
+            "sha256": "bd2535a5f5089ba14ef41190af43d1f2af51dead51e4e352ff38e047573cab86",
+            "size_bytes": 518,
+            "subject": null,
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "asset_index",
+            "path": "m80-release-assets.json",
+            "sha256": "922312f123770b0ed5f1135179d129e268f65b1904b5ca77725bf22f0ebeb4e9",
+            "size_bytes": 935,
+            "subject": null,
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "public_sha256s",
+            "path": "SHA256SUMS",
+            "sha256": "47f4a65404124b537180367baf31eb8490a94325cc95de80c0f90cf2e08f10bc",
+            "size_bytes": 1110,
+            "subject": null,
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "checksum_sidecar",
+            "path": "m80-linux-x86_64.tar.gz.sha256",
+            "sha256": "7899a4681920d6dde6d0bb25ec3d0812bd341ae7e70b1534e0639cc6b731db72",
+            "size_bytes": null,
+            "subject": "m80-linux-x86_64.tar.gz",
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "checksum_sidecar",
+            "path": "m80-linux-x86_64.bundle.json.sha256",
+            "sha256": "98eeb29de49d813a42da1d37fccdae7b8e8d4c4a8d5b390b4861acead52f165e",
+            "size_bytes": null,
+            "subject": "m80-linux-x86_64.bundle.json",
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "checksum_sidecar",
+            "path": "m80-release-assets.json.sha256",
+            "sha256": "1d54b7ba6146c5420e61d689685bbf45c51aae7402a5d24486dee532986da47c",
+            "size_bytes": null,
+            "subject": "m80-release-assets.json",
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "checksum_sidecar",
+            "path": "install.sh.sha256",
+            "sha256": "3ca6c7c1cba8439d0225a5059ebf47ac508f640e218f89b07fc7b20ad4003ddd",
+            "size_bytes": null,
+            "subject": "install.sh",
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "checksum_sidecar",
+            "path": "m80-bootstrap-selector.tsv.sha256",
+            "sha256": "8f90ac2c4820c76085d329c80512dc7e1b31c7ad72843e7d5b99245663a5e9cc",
+            "size_bytes": null,
+            "subject": "m80-bootstrap-selector.tsv",
+            "modified_unix_seconds": 1779421516
+          },
+          {
+            "role": "checksum_sidecar",
+            "path": "m80-release-build.json.sha256",
+            "sha256": "d1711c5b157fe482f3ff221ef241e8966a1cd8f0c63d575681d50188b6020005",
+            "size_bytes": null,
+            "subject": "m80-release-build.json",
+            "modified_unix_seconds": 1779421516
+          }
+        ],
+        "trust_policy": {
+          "path": "m80-release-trust-policy.json",
+          "identity": "repository=moradology/m80 signer=moradology/m80/.github/workflows/release-artifacts.yml issuer=https://token.actions.githubusercontent.com keyset_id=github-actions-oidc:m80-release-v1",
+          "sha256": "7db08a17f4356ee7ffc502d48adf303ece128946e2124f74b1737913d2da6f99",
+          "modified_unix_seconds": 1779421516
+        },
+        "verifier_versions": {
+          "m80_version": "v0.2.11",
+          "gh_version": "gh version 2.92.0 (2026-04-28)",
+          "release_integrity_schema_version": 1,
+          "asset_index_schema_version": 1
+        },
+        "diagnostics": [],
+        "repair_command": null,
+        "message": "cached proof material is available from the installed release tree"
+      },
+      "diagnostics": [],
+      "mismatches": [
+        {
+          "code": "install_root_override",
+          "expected_path": "/opt/m80",
+          "observed_path": "/tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+          "expected_tag": null,
+          "observed_tag": "v0.2.11",
+          "expected_source": null,
+          "observed_source": null,
+          "expected_value": "default install root",
+          "observed_value": "explicit install root",
+          "message": "inspecting explicit install root /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root; default status uses /opt/m80"
+        }
+      ],
+      "next_action": {
+        "kind": "ready",
+        "message": "installed release is ready",
+        "command": "m80 run -- echo hello"
+      }
+    }
+  }
+}
