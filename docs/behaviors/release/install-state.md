@@ -170,6 +170,24 @@ Quickstart troubleshooting starts with `m80 install-status` to decide whether
 the local release bundle/profile pair is coherent. Host substrate problems stay
 in `m80 preflight`; update freshness stays in the release freshness monitor.
 
+`m80 update --check` reuses this installed-state reader before it compares the
+active install with latest release metadata. Its JSON output keeps the local
+install facts separate from freshness classification: `active_tag`,
+`latest_stable_tag`, `active_kind`, `freshness_state`, `latest_status_source`,
+`latest_status_origin`, `latest_status_cache_state`,
+`latest_status_fetched_at`, `latest_status_max_age_seconds`,
+`latest_status_offline_reason`, `safety_floor.status`,
+`proof_cache_status`, `proof_cache_age_seconds`, `apply_command`,
+`reinstall_command`, and `retry_command`. `active_kind` is one of
+`stable_release`, `prerelease`, `ineligible`, `local_dev`, `missing_active`, or
+`stale_active_metadata`; `freshness_state` is one of `current`, `outdated`,
+`unknown_offline`, `stale_latest_metadata`, `prerelease_active`,
+`ineligible_active`, `local_dev_install`, `install_unhealthy`, `yanked`, or
+`unsafe`. The fields are documented in
+[`update-check.md`](update-check.md); this page names them because stale local
+install state is the input that determines whether freshness comparison is
+eligible at all.
+
 Repair examples:
 
 ```text

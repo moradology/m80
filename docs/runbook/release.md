@@ -118,12 +118,24 @@ uses `cancel-in-progress: false` so an overlapping run does not discard the
 older run's evidence, and it uploads proof, drift, stdout, and stderr artifacts
 with `if: always()`.
 
+The remote stable status artifact consumed by `m80 update --check` is
+`m80-latest-freshness-proof.json` from the public latest GitHub release asset
+set. The publish lane produces the docs copy from
+`release-readiness-public-access.json` with
+`scripts/update-freshness-status-from-public-access.py`, then validates it with
+`scripts/verify-freshness-status.py`. The scheduled
+`.github/workflows/latest-freshness.yml` lane independently re-reads the public
+latest release, validates the same latest/pinned URLs and installer-consumed
+assets, and uploads its proof/drift artifacts for repair. `m80 update --check`
+fetches only that status asset by default, or the operator-provided
+`--latest-status-url`; it never downloads bundles or mutates the install root.
+
 The freshness status contract is defined in
 `docs/behaviors/release/freshness-status.md` and validated by
-`scripts/verify-freshness-status.py`. A green status is only `public_green` when it
-references unauthenticated public proof for both latest and pinned install URLs;
-fixture-only proof remains scaffolded and must not be rendered as a public
-success.
+`scripts/verify-freshness-status.py`. A green status is only `public_green` when
+it references unauthenticated public proof for both latest and pinned install
+URLs; fixture-only proof remains scaffolded and must not be rendered as a
+public success.
 
 Freshness drift repair starts with the uploaded
 `m80-latest-freshness-drift.json` artifact. Its schema is documented in

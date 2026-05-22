@@ -7,6 +7,7 @@ fn update_check_doc_names_read_only_states_and_outputs() {
     let readme = read_repo_file("README.md");
     let crate_readme = read_repo_file("crates/m80-cli/README.md");
     let runbook = read_repo_file("docs/runbook/release.md");
+    let install_state = read_repo_file("docs/behaviors/release/install-state.md");
 
     for required in [
         "`m80-o3uh9.16.18.1`",
@@ -94,8 +95,31 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`local_dev_install`",
         "`install_unhealthy`",
         "docs/behaviors/release/update-check.md",
+        "`m80-latest-freshness-proof.json` from the public latest GitHub release asset\nset",
+        "fetches only that status asset by default",
     ] {
         assert!(runbook.contains(required), "runbook missing {required:?}");
+    }
+
+    for required in [
+        "`m80 update --check` reuses this installed-state reader",
+        "`latest_status_source`",
+        "`latest_status_origin`",
+        "`latest_status_cache_state`",
+        "`latest_status_fetched_at`",
+        "`latest_status_max_age_seconds`",
+        "`latest_status_offline_reason`",
+        "`safety_floor.status`",
+        "`proof_cache_status`",
+        "`proof_cache_age_seconds`",
+        "`active_kind` is one of\n`stable_release`, `prerelease`, `ineligible`, `local_dev`, `missing_active`, or\n`stale_active_metadata`",
+        "`freshness_state` is one of `current`, `outdated`,\n`unknown_offline`, `stale_latest_metadata`, `prerelease_active`,\n`ineligible_active`, `local_dev_install`, `install_unhealthy`, `yanked`, or\n`unsafe`",
+        "[`update-check.md`](update-check.md)",
+    ] {
+        assert!(
+            install_state.contains(required),
+            "install-state doc missing {required:?}"
+        );
     }
 }
 
