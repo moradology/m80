@@ -45,6 +45,9 @@ mod public_access_receipt;
 #[path = "release/release_tag_ordering.rs"]
 mod release_tag_ordering;
 
+#[path = "release/safety_floor_schema.rs"]
+mod safety_floor_schema;
+
 #[path = "release/installer_layout.rs"]
 mod installer_layout;
 

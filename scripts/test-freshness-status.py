@@ -141,6 +141,139 @@ class FreshnessStatusTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("url mismatch for asset", result.stderr)
 
+    def test_valid_empty_safety_floor_passes(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                payload["safety_floor"],
+                {
+                    "schema_version": 1,
+                    "published_at": "2026-05-21T21:00:00Z",
+                    "minimum_safe_tag": None,
+                    "yanked_releases": [],
+                },
+            )
+
+    def test_valid_yanked_safety_floor_passes(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=None,
+                yanked_releases=[
+                    {
+                        "tag": "v1.2.2",
+                        "reason": "bad release",
+                        "advisory_url": "https://github.com/moradology/m80/issues/1",
+                        "issue_id": None,
+                        "published_at": "2026-05-21T21:00:00Z",
+                        "replacement_command": pinned_install_command("v1.2.3"),
+                        "no_replacement_reason": None,
+                    }
+                ],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_valid_minimum_safe_safety_floor_passes(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag={
+                    "tag": "v1.2.0",
+                    "reason": "security floor",
+                    "advisory_url": None,
+                    "issue_id": "m80-o3uh9.21.9",
+                    "replacement_command": pinned_install_command("v1.2.3"),
+                },
+                yanked_releases=[],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_safety_floor_missing_reason_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag={
+                    "tag": "v1.2.0",
+                    "advisory_url": None,
+                    "issue_id": "m80-o3uh9.21.9",
+                    "replacement_command": pinned_install_command("v1.2.3"),
+                },
+                yanked_releases=[],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing field(s): reason", result.stderr)
+
+    def test_safety_floor_malformed_published_at_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"]["published_at"] = "2026-05-21 21:00:00"
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("published_at must be RFC3339 UTC seconds", result.stderr)
+
+    def test_safety_floor_bad_replacement_command_fails(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag={
+                    "tag": "v1.2.0",
+                    "reason": "security floor",
+                    "advisory_url": None,
+                    "issue_id": "m80-o3uh9.21.9",
+                    "replacement_command": latest_install_command(),
+                },
+                yanked_releases=[],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("replacement_command must be a pinned install.sh command", result.stderr)
+
+    def test_yanked_release_requires_replacement_or_no_replacement_reason(self) -> None:
+        with status_fixture() as fixture:
+            payload = read_json(fixture.status)
+            payload["safety_floor"] = safety_floor(
+                minimum_safe_tag=None,
+                yanked_releases=[
+                    {
+                        "tag": "v1.2.2",
+                        "reason": "bad release",
+                        "advisory_url": None,
+                        "issue_id": "m80-o3uh9.21.9",
+                        "published_at": "2026-05-21T21:00:00Z",
+                        "replacement_command": None,
+                        "no_replacement_reason": None,
+                    }
+                ],
+            )
+            write_json(fixture.status, payload)
+
+            result = run_verify(fixture.status, fixture.root, fixture.docs_root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("requires replacement_command or no_replacement_reason", result.stderr)
+
 
 class Fixture:
     def __init__(self, tmp: tempfile.TemporaryDirectory[str], root: Path, docs_root: Path, status: Path) -> None:
@@ -227,6 +360,7 @@ def status_fixture(
         "checked_command_inventory_digest": freshness_status.command_inventory_digest(docs_root),
         "install_url_proofs": install_url_proofs,
         "public_assets": public_assets,
+        "safety_floor": safety_floor(minimum_safe_tag=None, yanked_releases=[]),
     }
     write_json(status_path, payload)
     return Fixture(tmp, root, docs_root, status_path)
@@ -250,6 +384,19 @@ def write_docs_root(root: Path) -> Path:
         ).lstrip()
     )
     return root
+
+
+def safety_floor(*, minimum_safe_tag: dict | None, yanked_releases: list[dict]) -> dict:
+    return {
+        "schema_version": 1,
+        "published_at": "2026-05-21T21:00:00Z",
+        "minimum_safe_tag": minimum_safe_tag,
+        "yanked_releases": yanked_releases,
+    }
+
+
+def pinned_install_command(tag: str) -> str:
+    return f"curl -fsSL {public_release_root().pinned_install_url(tag)} | sudo sh"
 
 
 def run_verify(

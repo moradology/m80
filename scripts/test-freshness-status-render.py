@@ -248,6 +248,12 @@ def write_status(
         "checked_command_inventory_digest": freshness_status.command_inventory_digest(docs_root),
         "install_url_proofs": url_proofs,
         "public_assets": assets,
+        "safety_floor": {
+            "schema_version": 1,
+            "published_at": "2026-05-21T21:00:00Z",
+            "minimum_safe_tag": None,
+            "yanked_releases": [],
+        },
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 

@@ -322,29 +322,12 @@ fn status_artifact_at_option(
     yanked_tags: &[&str],
     published_at: &str,
 ) -> String {
-    let safety_floor = if minimum_safe_tag.is_some() || !yanked_tags.is_empty() {
-        let mut fields = Vec::new();
-        if let Some(tag) = minimum_safe_tag {
-            fields.push(format!(r#""minimum_safe_tag":"{tag}""#));
-        }
-        if !yanked_tags.is_empty() {
-            fields.push(format!(
-                r#""yanked_tags":[{}]"#,
-                yanked_tags
-                    .iter()
-                    .map(|tag| format!(r#""{tag}""#))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ));
-        }
-        format!(r#","safety_floor":{{{}}}"#, fields.join(","))
-    } else {
-        String::new()
-    };
     let resolved_tag = tag
         .map(|tag| format!(r#""resolved_tag":"{tag}","#))
         .unwrap_or_default();
     let asset_tag = tag.unwrap_or("v1.2.3");
+    let replacement_tag = minimum_safe_tag.unwrap_or(asset_tag);
+    let safety_floor = safety_floor_json(minimum_safe_tag, yanked_tags, replacement_tag);
     format!(
         r#"{{
           "schema_version":1,
@@ -354,13 +337,41 @@ fn status_artifact_at_option(
           "published_at":"{published_at}",
           "fetch_policy":{{"connect_timeout_seconds":10,"max_time_seconds":120,"retry_count":2,"retry_delay_seconds":1}},
           "checked_urls":[{{"role":"latest-install","url":"{}","release_tag":"latest","asset_name":"install.sh","sources":["release-url-contract:latest-install"],"size_bytes":123,"sha256":"{}"}}],
-          "public_assets":[{{"name":"install.sh","role":"installer","url":"{}","release_tag":"{asset_tag}","size_bytes":123,"sha256":"{}"}}]
-          {safety_floor}
+          "public_assets":[{{"name":"install.sh","role":"installer","url":"{}","release_tag":"{asset_tag}","size_bytes":123,"sha256":"{}"}}],
+          "safety_floor":{safety_floor}
         }}"#,
         crate::release_urls::latest_install_url(),
         "1".repeat(64),
         crate::release_urls::release_install_url(asset_tag),
         "2".repeat(64),
+    )
+}
+
+fn safety_floor_json(
+    minimum_safe_tag: Option<&str>,
+    yanked_tags: &[&str],
+    replacement_tag: &str,
+) -> String {
+    let minimum = minimum_safe_tag
+        .map(|tag| {
+            format!(
+                r#"{{"tag":"{tag}","reason":"security floor","advisory_url":null,"issue_id":"m80-o3uh9.21.9","replacement_command":"{}"}}"#,
+                pinned_install_command(replacement_tag)
+            )
+        })
+        .unwrap_or_else(|| "null".to_owned());
+    let yanked = yanked_tags
+        .iter()
+        .map(|tag| {
+            format!(
+                r#"{{"tag":"{tag}","reason":"bad release","advisory_url":"https://github.com/moradology/m80/issues/1","issue_id":null,"published_at":"2026-05-21T12:00:00Z","replacement_command":"{}","no_replacement_reason":null}}"#,
+                pinned_install_command(replacement_tag)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        r#"{{"schema_version":1,"published_at":"2026-05-21T12:00:00Z","minimum_safe_tag":{minimum},"yanked_releases":[{yanked}]}}"#
     )
 }
 
@@ -482,12 +493,14 @@ fn timestamp(input: &str) -> i64 {
           "published_at":"{input}",
           "fetch_policy":{{"connect_timeout_seconds":10,"max_time_seconds":120,"retry_count":2,"retry_delay_seconds":1}},
           "checked_urls":[{{"role":"latest-install","url":"{}","release_tag":"latest","asset_name":"install.sh","sources":["release-url-contract:latest-install"],"size_bytes":123,"sha256":"{}"}}],
-          "public_assets":[{{"name":"install.sh","role":"installer","url":"{}","release_tag":"v1.2.3","size_bytes":123,"sha256":"{}"}}]
+          "public_assets":[{{"name":"install.sh","role":"installer","url":"{}","release_tag":"v1.2.3","size_bytes":123,"sha256":"{}"}}],
+          "safety_floor":{}
         }}"#,
         crate::release_urls::latest_install_url(),
         "1".repeat(64),
         crate::release_urls::release_install_url("v1.2.3"),
         "2".repeat(64),
+        safety_floor_json(None, &[], "v1.2.3"),
     ))
     .expect("timestamp fixture parses")
     .published_at()

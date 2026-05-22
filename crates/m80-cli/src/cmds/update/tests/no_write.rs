@@ -142,10 +142,12 @@ fn status_artifact_with_bundle_urls(tag: &str, latest_url: &str, release_url: &s
           "published_at":"2026-05-21T12:00:00Z",
           "fetch_policy":{{"connect_timeout_seconds":10,"max_time_seconds":120,"retry_count":2,"retry_delay_seconds":1}},
           "checked_urls":[{{"role":"latest-bundle","url":"{latest_url}","release_tag":"latest","asset_name":"m80-linux-x86_64.tar.gz","sources":["release-url-contract:latest-bundle"],"size_bytes":123,"sha256":"{}"}}],
-          "public_assets":[{{"name":"m80-linux-x86_64.tar.gz","role":"bundle","url":"{release_url}","release_tag":"{tag}","size_bytes":123,"sha256":"{}"}}]
+          "public_assets":[{{"name":"m80-linux-x86_64.tar.gz","role":"bundle","url":"{release_url}","release_tag":"{tag}","size_bytes":123,"sha256":"{}"}}],
+          "safety_floor":{}
         }}"#,
         "1".repeat(64),
         "2".repeat(64),
+        super::safety_floor_json(None, &[], tag),
     )
 }
 

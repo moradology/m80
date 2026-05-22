@@ -854,12 +854,13 @@ def freshness_proof_json(
     public_assets: dict[str, FreshnessAsset],
     checksum_sources: dict[str, list[str]],
 ) -> dict:
+    published_at = utc_now_rfc3339()
     return {
         "schema_version": 1,
         "freshness_network_bounded": True,
         "repository": resolution.repository,
         "resolved_tag": resolution.resolved_tag,
-        "published_at": utc_now_rfc3339(),
+        "published_at": published_at,
         "fetch_policy": {
             "connect_timeout_seconds": FETCH_CONNECT_TIMEOUT_SECONDS,
             "max_time_seconds": FETCH_MAX_TIME_SECONDS,
@@ -879,11 +880,21 @@ def freshness_proof_json(
             for check in checks
         ],
         "public_assets": public_asset_proof_rows(public_assets, checksum_sources),
+        "safety_floor": empty_safety_floor(published_at),
     }
 
 
 def utc_now_rfc3339() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def empty_safety_floor(published_at: str) -> dict:
+    return {
+        "schema_version": 1,
+        "published_at": published_at,
+        "minimum_safe_tag": None,
+        "yanked_releases": [],
+    }
 
 
 def public_asset_proof_rows(

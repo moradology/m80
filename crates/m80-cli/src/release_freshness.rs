@@ -66,18 +66,63 @@ impl FreshnessState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FreshnessMetadataError {
-    Json { detail: String },
-    UnsupportedSchema { expected: u32, actual: u32 },
+    Json {
+        detail: String,
+    },
+    UnsupportedSchema {
+        expected: u32,
+        actual: u32,
+    },
     NotBounded,
-    WrongRepository { expected: String, actual: String },
+    WrongRepository {
+        expected: String,
+        actual: String,
+    },
     MissingLatestTag,
-    MalformedLatestTag { tag: String },
+    MalformedLatestTag {
+        tag: String,
+    },
     MissingPublishedAt,
-    MalformedPublishedAt { value: String },
-    EmptyField { field: &'static str },
-    EmptyCollection { field: &'static str },
-    MalformedSha256 { field: &'static str, value: String },
-    MalformedSafetyTag { field: &'static str, tag: String },
+    MalformedPublishedAt {
+        value: String,
+    },
+    EmptyField {
+        field: &'static str,
+    },
+    EmptyCollection {
+        field: &'static str,
+    },
+    MalformedSha256 {
+        field: &'static str,
+        value: String,
+    },
+    MalformedSafetyTag {
+        field: &'static str,
+        tag: String,
+    },
+    UnsupportedSafetyFloorSchema {
+        expected: u32,
+        actual: u32,
+    },
+    MalformedSafetyPublishedAt {
+        field: &'static str,
+        value: String,
+    },
+    MissingSafetyEvidence {
+        field: &'static str,
+    },
+    MissingSafetyReplacement {
+        field: &'static str,
+        tag: String,
+    },
+    ConflictingSafetyReplacement {
+        field: &'static str,
+        tag: String,
+    },
+    MalformedSafetyReplacementCommand {
+        field: &'static str,
+        command: String,
+    },
 }
 
 impl fmt::Display for FreshnessMetadataError {
@@ -120,6 +165,28 @@ impl fmt::Display for FreshnessMetadataError {
                     "freshness status {field} is not a stable release tag: {tag}"
                 )
             }
+            Self::UnsupportedSafetyFloorSchema { expected, actual } => write!(
+                f,
+                "unsupported freshness safety_floor schema_version: expected {expected}, got {actual}"
+            ),
+            Self::MalformedSafetyPublishedAt { field, value } => {
+                write!(f, "freshness status {field} is not RFC3339 UTC: {value}")
+            }
+            Self::MissingSafetyEvidence { field } => {
+                write!(f, "freshness status {field} needs advisory_url or issue_id")
+            }
+            Self::MissingSafetyReplacement { field, tag } => write!(
+                f,
+                "freshness status {field} for {tag} needs replacement_command or no_replacement_reason"
+            ),
+            Self::ConflictingSafetyReplacement { field, tag } => write!(
+                f,
+                "freshness status {field} for {tag} cannot set both replacement_command and no_replacement_reason"
+            ),
+            Self::MalformedSafetyReplacementCommand { field, command } => write!(
+                f,
+                "freshness status {field} must be a pinned install.sh command, got {command}"
+            ),
         }
     }
 }
@@ -213,7 +280,7 @@ struct FreshnessStatusArtifact {
     fetch_policy: FreshnessFetchPolicy,
     checked_urls: Vec<CheckedFreshnessUrl>,
     public_assets: Vec<PublicFreshnessAsset>,
-    safety_floor: Option<SafetyFloorArtifact>,
+    safety_floor: SafetyFloorArtifact,
 }
 
 impl FreshnessStatusArtifact {
@@ -259,11 +326,7 @@ impl FreshnessStatusArtifact {
             repository: expected_repository,
             latest_tag,
             published_at,
-            safety_floor: self
-                .safety_floor
-                .map(SafetyFloorArtifact::into_floor)
-                .transpose()?
-                .unwrap_or_default(),
+            safety_floor: self.safety_floor.into_floor()?,
         })
     }
 }

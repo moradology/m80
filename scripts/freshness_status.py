@@ -43,6 +43,7 @@ TOP_LEVEL_FIELDS = {
     "checked_command_inventory_digest",
     "install_url_proofs",
     "public_assets",
+    "safety_floor",
 }
 PROOF_ARTIFACT_FIELDS = {"kind", "path", "sha256", "artifact_class"}
 INSTALL_URL_PROOF_FIELDS = {
@@ -54,6 +55,17 @@ INSTALL_URL_PROOF_FIELDS = {
     "artifact_path",
 }
 PUBLIC_ASSET_FIELDS = {"name", "role", "url", "sha256", "size_bytes"}
+SAFETY_FLOOR_FIELDS = {"schema_version", "published_at", "minimum_safe_tag", "yanked_releases"}
+MINIMUM_SAFE_FIELDS = {"tag", "reason", "advisory_url", "issue_id", "replacement_command"}
+YANKED_RELEASE_FIELDS = {
+    "tag",
+    "reason",
+    "advisory_url",
+    "issue_id",
+    "published_at",
+    "replacement_command",
+    "no_replacement_reason",
+}
 VERIFIER_RESULT_FIELDS = {
     "schema_version",
     "verifier",
@@ -158,6 +170,7 @@ def validate_freshness_status(status_path: Path, *, artifact_root: Path, docs_ro
         proof_paths=proof_paths,
     )
     validate_public_assets(status["public_assets"], status_value=status_value, resolved_tag=resolved_tag)
+    validate_safety_floor(status["safety_floor"])
 
     if status_value == "public_green":
         require(
@@ -308,6 +321,63 @@ def validate_public_assets(value: object, *, status_value: str, resolved_tag: st
         )
 
 
+def validate_safety_floor(value: object) -> None:
+    label = "freshness status safety_floor"
+    require(isinstance(value, dict), f"{label} must be an object")
+    require_exact_fields(value, SAFETY_FLOOR_FIELDS, label)
+    require(value["schema_version"] == 1, f"{label} schema_version mismatch")
+    require_rfc3339(value, "published_at", label)
+    minimum = value["minimum_safe_tag"]
+    if minimum is not None:
+        validate_minimum_safe_tag(minimum)
+    yanked = value["yanked_releases"]
+    require(isinstance(yanked, list), f"{label} yanked_releases must be a list")
+    for index, row in enumerate(yanked):
+        validate_yanked_release(row, index)
+
+
+def validate_minimum_safe_tag(value: object) -> None:
+    label = "freshness status safety_floor.minimum_safe_tag"
+    require(isinstance(value, dict), f"{label} must be an object or null")
+    require_exact_fields(value, MINIMUM_SAFE_FIELDS, label)
+    require_stable_tag(value, "tag", label)
+    require_nonempty_str(value, "reason", label)
+    require_policy_ref(value, label)
+    command = require_nonempty_str(value, "replacement_command", label)
+    require_pinned_install_command(command, f"{label} replacement_command")
+
+
+def validate_yanked_release(value: object, index: int) -> None:
+    label = f"freshness status safety_floor.yanked_releases[{index}]"
+    require(isinstance(value, dict), f"{label} must be an object")
+    require_exact_fields(value, YANKED_RELEASE_FIELDS, label)
+    require_stable_tag(value, "tag", label)
+    require_nonempty_str(value, "reason", label)
+    require_rfc3339(value, "published_at", label)
+    require_policy_ref(value, label)
+    replacement = require_optional_nonempty_str(value, "replacement_command", label)
+    no_replacement = require_optional_nonempty_str(value, "no_replacement_reason", label)
+    require(
+        replacement is not None or no_replacement is not None,
+        f"{label} requires replacement_command or no_replacement_reason",
+    )
+    require(
+        replacement is None or no_replacement is None,
+        f"{label} cannot set both replacement_command and no_replacement_reason",
+    )
+    if replacement is not None:
+        require_pinned_install_command(replacement, f"{label} replacement_command")
+
+
+def require_policy_ref(obj: dict[str, Any], label: str) -> None:
+    advisory_url = require_optional_nonempty_str(obj, "advisory_url", label)
+    issue_id = require_optional_nonempty_str(obj, "issue_id", label)
+    require(
+        advisory_url is not None or issue_id is not None,
+        f"{label} requires advisory_url or issue_id",
+    )
+
+
 def command_inventory_digest(root: Path) -> str:
     rows = [
         {
@@ -368,6 +438,14 @@ def require_nonempty_str(obj: dict[str, Any], key: str, label: str) -> str:
     return value
 
 
+def require_optional_nonempty_str(obj: dict[str, Any], key: str, label: str) -> str | None:
+    value = obj.get(key)
+    if value is None:
+        return None
+    require(isinstance(value, str) and value, f"{label} {key} must be null or a nonempty string")
+    return value
+
+
 def require_rfc3339(obj: dict[str, Any], key: str, label: str) -> str:
     value = require_nonempty_str(obj, key, label)
     require(RFC3339_UTC_RE.fullmatch(value) is not None, f"{label} {key} must be RFC3339 UTC seconds")
@@ -390,6 +468,22 @@ def require_sha256_hex(obj: dict[str, Any], key: str, label: str) -> str:
     value = require_nonempty_str(obj, key, label)
     require(re.fullmatch(r"[0-9a-f]{64}", value) is not None, f"{label} {key} must be a lowercase sha256 hex digest")
     return value
+
+
+def require_pinned_install_command(command: str, label: str) -> str:
+    root = public_release_root()
+    prefix = f"curl -fsSL https://github.com/{root.owner}/{root.repo}/releases/download/"
+    suffix = "/install.sh | sudo sh"
+    require(
+        command.startswith(prefix) and command.endswith(suffix),
+        f"{label} must be a pinned install.sh command",
+    )
+    tag = command[len(prefix) : -len(suffix)]
+    require(
+        STABLE_TAG_RE.fullmatch(tag) is not None,
+        f"{label} must use a stable vMAJOR.MINOR.PATCH tag",
+    )
+    return command
 
 
 def require_relative_path(obj: dict[str, Any], key: str, label: str) -> str:

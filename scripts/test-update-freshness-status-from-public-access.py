@@ -38,6 +38,15 @@ class UpdateFreshnessStatusFromPublicAccessTest(unittest.TestCase):
             self.assertEqual(status["proof_artifacts"][0]["path"], "release-readiness-public-access.json")
             self.assertEqual(status["checked_command_inventory_digest"], freshness_status.command_inventory_digest(REPO_ROOT))
             self.assertEqual(len(status["public_assets"]), 16)
+            self.assertEqual(
+                status["safety_floor"],
+                {
+                    "schema_version": 1,
+                    "published_at": status["generated_at"],
+                    "minimum_safe_tag": None,
+                    "yanked_releases": [],
+                },
+            )
 
     def test_workflow_run_id_flag_covers_receipts_without_builder_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

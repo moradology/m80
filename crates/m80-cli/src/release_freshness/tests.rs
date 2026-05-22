@@ -24,7 +24,7 @@ fn reader_accepts_freshness_status_artifact_used_by_ci() {
 }
 
 #[test]
-fn reader_accepts_optional_safety_floor_fields() {
+fn reader_accepts_typed_safety_floor_fields() {
     let metadata = read_freshness_status_artifact_json(&status_artifact_with_safety(
         Some("v1.2.3"),
         Some("2026-05-21T12:00:00Z"),
@@ -51,8 +51,98 @@ fn malformed_safety_floor_tags_fail_closed() {
     assert_eq!(
         err,
         FreshnessMetadataError::MalformedSafetyTag {
-            field: "safety_floor.minimum_safe_tag",
+            field: "safety_floor.minimum_safe_tag.tag",
             tag: "v1.2.0-rc.1".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn safety_floor_missing_reason_fails_closed() {
+    let mut raw = status_artifact_with_safety(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        Some("v1.2.0"),
+        &[],
+    );
+    raw = raw.replace(r#""reason":"security floor","#, "");
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("missing safety floor reason should fail");
+
+    assert!(err.to_string().contains("missing field `reason`"));
+}
+
+#[test]
+fn safety_floor_malformed_published_at_fails_closed() {
+    let raw = status_artifact_with_safety_at(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        safety_floor_json("2026-05-21 12:00:00", None, &[]),
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("malformed safety floor timestamp should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::MalformedSafetyPublishedAt {
+            field: "safety_floor.published_at",
+            value: "2026-05-21 12:00:00".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn safety_floor_bad_replacement_command_fails_closed() {
+    let mut raw = status_artifact_with_safety(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        Some("v1.2.0"),
+        &[],
+    );
+    raw = raw.replace(
+        &pinned_install_command("v1.2.3"),
+        "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("mutable latest replacement command should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::MalformedSafetyReplacementCommand {
+            field: "safety_floor.minimum_safe_tag.replacement_command",
+            command: "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh"
+                .to_owned(),
+        }
+    );
+}
+
+#[test]
+fn yanked_release_requires_replacement_or_no_replacement_reason() {
+    let mut raw = status_artifact_with_safety(
+        Some("v1.2.3"),
+        Some("2026-05-21T12:00:00Z"),
+        None,
+        &["v1.1.9"],
+    );
+    raw = raw.replace(
+        &format!(
+            r#","replacement_command":"{}","no_replacement_reason":null"#,
+            pinned_install_command("v1.2.3")
+        ),
+        "",
+    );
+
+    let err = read_freshness_status_artifact_json(&raw)
+        .expect_err("yanked release without replacement guidance should fail");
+
+    assert_eq!(
+        err,
+        FreshnessMetadataError::MissingSafetyReplacement {
+            field: "safety_floor.yanked_releases",
+            tag: "v1.1.9".to_owned(),
         }
     );
 }
@@ -184,6 +274,18 @@ fn status_artifact_with_safety(
     minimum_safe_tag: Option<&str>,
     yanked_tags: &[&str],
 ) -> String {
+    status_artifact_with_safety_at(
+        tag,
+        published_at,
+        safety_floor_json("2026-05-21T12:00:00Z", minimum_safe_tag, yanked_tags),
+    )
+}
+
+fn status_artifact_with_safety_at(
+    tag: Option<&str>,
+    published_at: Option<&str>,
+    safety_floor: String,
+) -> String {
     let mut fields = vec![
         r#""schema_version":1"#.to_owned(),
         r#""freshness_network_bounded":true"#.to_owned(),
@@ -207,24 +309,41 @@ fn status_artifact_with_safety(
     if let Some(published_at) = published_at {
         fields.push(format!(r#""published_at":"{published_at}""#));
     }
-    if minimum_safe_tag.is_some() || !yanked_tags.is_empty() {
-        let minimum = minimum_safe_tag
-            .map(|tag| format!(r#""minimum_safe_tag":"{tag}""#))
-            .into_iter();
-        let yanked = if yanked_tags.is_empty() {
-            None
-        } else {
-            Some(format!(
-                r#""yanked_tags":[{}]"#,
-                yanked_tags
-                    .iter()
-                    .map(|tag| format!(r#""{tag}""#))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ))
-        };
-        let safety_fields = minimum.chain(yanked).collect::<Vec<_>>().join(",");
-        fields.push(format!(r#""safety_floor":{{{safety_fields}}}"#));
-    }
+    fields.push(format!(r#""safety_floor":{safety_floor}"#));
     format!("{{{}}}", fields.join(","))
+}
+
+fn safety_floor_json(
+    published_at: &str,
+    minimum_safe_tag: Option<&str>,
+    yanked_tags: &[&str],
+) -> String {
+    let minimum = minimum_safe_tag
+        .map(|tag| {
+            format!(
+                r#"{{"tag":"{tag}","reason":"security floor","advisory_url":null,"issue_id":"m80-o3uh9.21.9","replacement_command":"{}"}}"#,
+                pinned_install_command("v1.2.3")
+            )
+        })
+        .unwrap_or_else(|| "null".to_owned());
+    let yanked = yanked_tags
+        .iter()
+        .map(|tag| {
+            format!(
+                r#"{{"tag":"{tag}","reason":"bad release","advisory_url":"https://github.com/moradology/m80/issues/1","issue_id":null,"published_at":"{published_at}","replacement_command":"{}","no_replacement_reason":null}}"#,
+                pinned_install_command("v1.2.3")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        r#"{{"schema_version":1,"published_at":"{published_at}","minimum_safe_tag":{minimum},"yanked_releases":[{yanked}]}}"#
+    )
+}
+
+fn pinned_install_command(tag: &str) -> String {
+    format!(
+        "curl -fsSL {} | sudo sh",
+        crate::release_urls::release_install_url(tag)
+    )
 }

@@ -132,6 +132,7 @@ def build_status(
             install_url_proof("pinned-install", receipt, pinned, receipt_ref),
         ],
         "public_assets": public_assets(receipt, release_tag),
+        "safety_floor": empty_safety_floor(require_str(receipt, "verification_time")),
     }
 
 
@@ -169,6 +170,15 @@ def public_assets(receipt: dict[str, Any], release_tag: str) -> list[dict[str, A
             }
         )
     return assets
+
+
+def empty_safety_floor(published_at: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "published_at": published_at,
+        "minimum_safe_tag": None,
+        "yanked_releases": [],
+    }
 
 
 def workflow_run_id_from_receipt(receipt: dict[str, Any]) -> str:

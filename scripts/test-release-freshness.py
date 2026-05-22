@@ -57,6 +57,15 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["resolved_tag"], "v1.2.3")
         self.assertRegex(payload["published_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertEqual(
+            payload["safety_floor"],
+            {
+                "schema_version": 1,
+                "published_at": payload["published_at"],
+                "minimum_safe_tag": None,
+                "yanked_releases": [],
+            },
+        )
         urls = {row["url"] for row in payload["checked_urls"]}
         self.assertIn("https://github.com/moradology/m80/releases/latest/download/install.sh", urls)
         self.assertIn("https://github.com/moradology/m80/releases/download/v1.2.3/install.sh", urls)

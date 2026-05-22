@@ -148,6 +148,12 @@
   ],
   "repo": "m80",
   "resolved_latest_tag": "v0.2.11",
+  "safety_floor": {
+    "minimum_safe_tag": null,
+    "published_at": "2026-05-22T03:46:24Z",
+    "schema_version": 1,
+    "yanked_releases": []
+  },
   "schema_version": 1,
   "source_commit": "3c72f2500e0e3c878cf93ffcf0790d410747ea39",
   "status": "public_green",

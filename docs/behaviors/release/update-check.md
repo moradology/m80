@@ -66,10 +66,14 @@ The `active_kind` field names why automatic update state may be limited:
 state so scripts can read freshness separately from the active-install
 classifier.
 
-Safety-floor input is optional until the freshness status publisher grows the
-public policy artifact. When present, `minimum_safe_tag` and `yanked_tags` must
-be stable `vMAJOR.MINOR.PATCH` tags. A yanked active or latest tag reports
-`yanked`; an active or latest tag below the minimum safe tag reports `unsafe`.
+Safety-floor input is part of the freshness status schema. Empty policy is
+explicit (`minimum_safe_tag: null`, `yanked_releases: []`) so consumers can
+distinguish "publisher said no floor" from "old/malformed metadata." When
+present, `minimum_safe_tag.tag` and every `yanked_releases[].tag` must be stable
+`vMAJOR.MINOR.PATCH` tags with a reason and advisory URL or issue id. A yanked
+active or latest tag reports `yanked`; an active or latest tag below the minimum
+safe tag reports `unsafe`. The safety policy's replacement commands must be
+pinned install commands, never mutable latest commands.
 
 The default latest-status source is the public release asset
 `m80-latest-freshness-proof.json` under the GitHub latest release. Tests may pass

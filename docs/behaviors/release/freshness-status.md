@@ -28,6 +28,7 @@ fields are exact:
   from README/crate/runbook/behavior docs.
 - `install_url_proofs`: latest and pinned installer URL proof rows.
 - `public_assets`: sorted public asset rows from the release metadata view.
+- `safety_floor`: explicit release safety policy object, even when empty.
 
 `pending` is the docs-safe state before public proof exists. It uses
 `proof_substrate: none` and empty proof artifact, install URL proof, and public
@@ -56,3 +57,31 @@ previous passing status.
 
 Schema and verifier coverage for this contract is captured in
 `docs/behaviors/release/freshness-status-schema-proof.json`.
+
+## Safety Floor Schema
+
+`safety_floor.schema_version` is currently `1`. The release freshness publisher
+owns this object; normal docs rendering consumes it but must not synthesize or
+edit it by hand. An empty policy is still explicit:
+
+```json
+{
+  "schema_version": 1,
+  "published_at": "2026-05-21T21:00:00Z",
+  "minimum_safe_tag": null,
+  "yanked_releases": []
+}
+```
+
+`minimum_safe_tag`, when present, is an object with `tag`, `reason`,
+`advisory_url`, `issue_id`, and `replacement_command`. The tag must be a stable
+`vMAJOR.MINOR.PATCH` release, at least one of `advisory_url` or `issue_id` must
+be present, and the replacement command must be a pinned
+`releases/download/<tag>/install.sh` command.
+
+Each `yanked_releases` row carries `tag`, `reason`, `advisory_url`, `issue_id`,
+`published_at`, `replacement_command`, and `no_replacement_reason`. A yanked row
+must provide either a pinned replacement command or a documented
+`no_replacement_reason`, but not both. Mutable latest commands are rejected in
+safety metadata because this object is the machine-readable path for keeping
+installed users away from known-bad releases.
