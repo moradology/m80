@@ -1,0 +1,400 @@
+{
+  "asset_checks": {
+    "assets": [
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/SHA256SUMS",
+        "id": 426656832,
+        "kind": "checksum-manifest",
+        "name": "SHA256SUMS",
+        "sha256": "fd96fa20923eeb2a65dc65cb9a6d821c7ec60019da1d4ef9b3eb6697791364e6",
+        "size_bytes": 1110,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:37Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/install.sh",
+        "id": 426656815,
+        "kind": "installer",
+        "name": "install.sh",
+        "sha256": "98b78af2fa296532f8c2022edc3e1afea56669a876e7efe7a8ead6337c8cf08f",
+        "size_bytes": 47078,
+        "updated_at": "2026-05-22T01:46:37Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/install.sh.sha256",
+        "id": 426656825,
+        "kind": "checksum-sidecar",
+        "name": "install.sh.sha256",
+        "sha256": "a5fa619a6f73c51ac705f7cd6e1988065cf8130ba5dbbedae7df51ae920adb9c",
+        "size_bytes": 77,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-bootstrap-selector.tsv",
+        "id": 426656826,
+        "kind": "bootstrap-selector",
+        "name": "m80-bootstrap-selector.tsv",
+        "sha256": "14aaa1a12196a9535240ce9f2ea2ac4c29f180bf2e996db2d139e9479d2799ac",
+        "size_bytes": 579,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-bootstrap-selector.tsv.sha256",
+        "id": 426656829,
+        "kind": "checksum-sidecar",
+        "name": "m80-bootstrap-selector.tsv.sha256",
+        "sha256": "859e68e55713244a1e742b6cbdcc0653029dd4a0f3dc4a4c9eadae54e7c086bf",
+        "size_bytes": 93,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:37Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.bundle.json",
+        "id": 426656818,
+        "kind": "bundle-metadata",
+        "name": "m80-linux-x86_64.bundle.json",
+        "sha256": "68f87d667fd89519299687aba0454ab6060a0e4f3c10086ab15e65229881bc2d",
+        "size_bytes": 2068,
+        "updated_at": "2026-05-22T01:46:37Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:37Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.bundle.json.sha256",
+        "id": 426656817,
+        "kind": "checksum-sidecar",
+        "name": "m80-linux-x86_64.bundle.json.sha256",
+        "sha256": "e7204e6571ba428cfcb87c2a5a0d1dca6be9d02b5be5b65db6d5a6b57ae93637",
+        "size_bytes": 95,
+        "updated_at": "2026-05-22T01:46:37Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:37Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.tar.gz",
+        "id": 426656819,
+        "kind": "release-bundle",
+        "name": "m80-linux-x86_64.tar.gz",
+        "sha256": "e7a28858428ee94f48dd6b1687d380c74a76cb022409b0c350599e257c7fa259",
+        "size_bytes": 16968014,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:37Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.tar.gz.sha256",
+        "id": 426656816,
+        "kind": "checksum-sidecar",
+        "name": "m80-linux-x86_64.tar.gz.sha256",
+        "sha256": "955ec8124a11a6b74ab071696979f12505cc633b858ba8a433b40ed508650977",
+        "size_bytes": 90,
+        "updated_at": "2026-05-22T01:46:37Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-assets.json",
+        "id": 426656824,
+        "kind": "asset-index",
+        "name": "m80-release-assets.json",
+        "sha256": "eea0cf70a4b8030a22d0e9de4731fd0e9279cd8ebf8b96b4900a70aecfa523ce",
+        "size_bytes": 931,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-assets.json.sha256",
+        "id": 426656823,
+        "kind": "checksum-sidecar",
+        "name": "m80-release-assets.json.sha256",
+        "sha256": "ddb9ddfa06c84dd55aa6cbd7732a0443e11ce126347f6b311f033878e53eca59",
+        "size_bytes": 90,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-attestation.json",
+        "id": 426656836,
+        "kind": "release-attestation-metadata",
+        "name": "m80-release-attestation.json",
+        "sha256": "69f45386cd24b56a2c14740213610ebb446f3df275ecb02f5f04751f59fe3ba6",
+        "size_bytes": 517,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-build.json",
+        "id": 426656830,
+        "kind": "build-manifest",
+        "name": "m80-release-build.json",
+        "sha256": "611690eba8d91d1c39fa6baf39699bd48a5634561873fdc40e26c4276117f3df",
+        "size_bytes": 1088,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-build.json.sha256",
+        "id": 426656831,
+        "kind": "checksum-sidecar",
+        "name": "m80-release-build.json.sha256",
+        "sha256": "2909a00c077055c669769485f6ef49006d068a20d98516d00a4f3a629b896a9c",
+        "size_bytes": 89,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-integrity.attestation.jsonl",
+        "id": 426656834,
+        "kind": "github-artifact-attestation-bundle",
+        "name": "m80-release-integrity.attestation.jsonl",
+        "sha256": "a36f5dc6ffee272c2d3f7530a84dd79f540666378c105091a981a734a698be5e",
+        "size_bytes": 10618,
+        "updated_at": "2026-05-22T01:46:38Z"
+      },
+      {
+        "created_at": "2026-05-22T01:46:38Z",
+        "download_url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-integrity.json",
+        "id": 426656835,
+        "kind": "release-integrity-predicate",
+        "name": "m80-release-integrity.json",
+        "sha256": "73f5ced9e76349bbf74b881bf69b50fea014ef361ea292dda18e2bcbc03e80bd",
+        "size_bytes": 3012,
+        "updated_at": "2026-05-22T01:46:38Z"
+      }
+    ],
+    "expected_asset_count": 16,
+    "expected_assets": [
+      "SHA256SUMS",
+      "install.sh",
+      "install.sh.sha256",
+      "m80-bootstrap-selector.tsv",
+      "m80-bootstrap-selector.tsv.sha256",
+      "m80-linux-x86_64.bundle.json",
+      "m80-linux-x86_64.bundle.json.sha256",
+      "m80-linux-x86_64.tar.gz",
+      "m80-linux-x86_64.tar.gz.sha256",
+      "m80-release-assets.json",
+      "m80-release-assets.json.sha256",
+      "m80-release-attestation.json",
+      "m80-release-build.json",
+      "m80-release-build.json.sha256",
+      "m80-release-integrity.attestation.jsonl",
+      "m80-release-integrity.json"
+    ],
+    "extra_public_api_assets": [],
+    "missing_public_api_assets": [],
+    "public_api_asset_count": 16,
+    "public_api_assets": [
+      "SHA256SUMS",
+      "install.sh",
+      "install.sh.sha256",
+      "m80-bootstrap-selector.tsv",
+      "m80-bootstrap-selector.tsv.sha256",
+      "m80-linux-x86_64.bundle.json",
+      "m80-linux-x86_64.bundle.json.sha256",
+      "m80-linux-x86_64.tar.gz",
+      "m80-linux-x86_64.tar.gz.sha256",
+      "m80-release-assets.json",
+      "m80-release-assets.json.sha256",
+      "m80-release-attestation.json",
+      "m80-release-build.json",
+      "m80-release-build.json.sha256",
+      "m80-release-integrity.attestation.jsonl",
+      "m80-release-integrity.json"
+    ],
+    "remote_digest_mismatches_against_publish_decision": [],
+    "remote_inventory_asset_count": 16,
+    "remote_inventory_assets": [
+      "SHA256SUMS",
+      "install.sh",
+      "install.sh.sha256",
+      "m80-bootstrap-selector.tsv",
+      "m80-bootstrap-selector.tsv.sha256",
+      "m80-linux-x86_64.bundle.json",
+      "m80-linux-x86_64.bundle.json.sha256",
+      "m80-linux-x86_64.tar.gz",
+      "m80-linux-x86_64.tar.gz.sha256",
+      "m80-release-assets.json",
+      "m80-release-assets.json.sha256",
+      "m80-release-attestation.json",
+      "m80-release-build.json",
+      "m80-release-build.json.sha256",
+      "m80-release-integrity.attestation.jsonl",
+      "m80-release-integrity.json"
+    ]
+  },
+  "bead": "m80-o3uh9.21.7.1.2",
+  "generated_at": "2026-05-22T01:47:30Z",
+  "kind": "m80_current_latest_repair_publish_proof",
+  "latest_promotion_order": {
+    "claim": "latest was marked only after public redownload validation and receipt/inventory uploads succeeded",
+    "ordered_steps": [
+      {
+        "conclusion": "success",
+        "name": "Write and validate publish decision receipt before upload",
+        "number": 8,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Resolve release publication plan",
+        "number": 9,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Attach artifacts to GitHub Release",
+        "number": 10,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Validate uploaded draft before latest promotion",
+        "number": 11,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Publish validated draft without latest promotion",
+        "number": 12,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Re-download and validate published release assets",
+        "number": 13,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Upload publish decision receipt",
+        "number": 14,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Upload release publication plan",
+        "number": 15,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Upload remote release asset inventory",
+        "number": 16,
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "Mark validated release as latest",
+        "number": 17,
+        "status": "completed"
+      }
+    ],
+    "publish_job_url": "https://github.com/moradology/m80/actions/runs/26263525140/job/77302238962"
+  },
+  "preflight": {
+    "dirty_tree": {
+      "dirty": false,
+      "entries": []
+    },
+    "existing_latest": {
+      "tag": "v0.2.6",
+      "url": "https://github.com/moradology/m80/releases/tag/v0.2.6"
+    },
+    "ok": true,
+    "safe_repair_action": "rerun release workflow for the accepted target tag",
+    "status": "accepted",
+    "tag": {
+      "commit": "388d2d5aa13418e22c1144963b0f66dd3588a92b",
+      "state": "matches_source"
+    },
+    "workspace_package_version": "0.2.7"
+  },
+  "public_release": {
+    "draft": false,
+    "latest_matches_tag": true,
+    "latest_tag_name": "v0.2.7",
+    "latest_url": "https://github.com/moradology/m80/releases/tag/v0.2.7",
+    "prerelease": false,
+    "published_at": "2026-05-22T01:46:50Z",
+    "tag_name": "v0.2.7",
+    "target_commitish": "main",
+    "url": "https://github.com/moradology/m80/releases/tag/v0.2.7"
+  },
+  "publication_plan": {
+    "action": "create_draft_upload_publish",
+    "expected_public_asset_count": 16,
+    "extra_assets": [],
+    "manual_recovery": null,
+    "missing_assets": [],
+    "observed_remote_asset_count": 0,
+    "reason": "GitHub release is absent; create a draft, upload immutable assets, validate public bytes, then mark latest",
+    "release_state": "absent",
+    "size_mismatches": []
+  },
+  "recovery": {
+    "manual_recovery_required": false,
+    "notes": "Publication plan observed release_state=absent, so no existing-release recovery path was executed in this run.",
+    "release_existed_before_publication": false
+  },
+  "release_evidence": {
+    "artifact_manifest_digest": "sha256:b90b6814aad988ee5eb49ff725d0abdd44ace33566b791cc6c027ae669fdf86f",
+    "preflight_file": {
+      "path": "m80-current-latest-repair-preflight-26263525140/m80-current-latest-repair-preflight.json",
+      "sha256": "sha256:b78fdcefda85ead8b76a303e1622bfb498299c0f52cefd1b0f5a62f586cef867"
+    },
+    "proof_ledger_digest": "sha256:7d8ac813396180e19dfbf7e5a78bd915374ba9dcda58b3a5b68ca6e32f17cbaf",
+    "public_latest_api_file": {
+      "fetched_without_github_credentials": true,
+      "path": "public-release-api-latest.json",
+      "sha256": "sha256:a177669885d23caa6064b0d8bd4d4dc9752fe0cac9cebaee2f26c97021f96653"
+    },
+    "public_release_api_file": {
+      "fetched_without_github_credentials": true,
+      "path": "public-release-api-v0.2.7.json",
+      "sha256": "sha256:a177669885d23caa6064b0d8bd4d4dc9752fe0cac9cebaee2f26c97021f96653"
+    },
+    "publication_plan_file": {
+      "path": "m80-release-publication-plan-26263525140/m80-release-publication-plan.json",
+      "sha256": "sha256:41fc1329635dceddc82cfe59181efd2e9a1b416fa10359e185aeda727d2bab5c"
+    },
+    "publish_decision_file": {
+      "path": "m80-release-publish-decision-26263525140/m80-release-publish-decision.json",
+      "sha256": "sha256:d26f8899f8ecf3220db81fd17af90a4b8f9ef7825f224b0a9af969cc29aa1411"
+    },
+    "remote_asset_inventory_file": {
+      "path": "m80-release-remote-assets-26263525140/m80-release-remote-assets.json",
+      "sha256": "sha256:55bddf55e6b5d0c7533c17fea7037e51c57b4898d4dd2922e0aa05364ab3736e"
+    }
+  },
+  "release_tag": "v0.2.7",
+  "repository": "moradology/m80",
+  "schema_version": 1,
+  "source_commit": "388d2d5aa13418e22c1144963b0f66dd3588a92b",
+  "workflow_run": {
+    "attempt": "1",
+    "conclusion": "success",
+    "head_sha": "388d2d5aa13418e22c1144963b0f66dd3588a92b",
+    "id": "26263525140",
+    "jobs": [
+      {
+        "completed_at": "2026-05-22T01:46:23Z",
+        "conclusion": "success",
+        "name": "build-release-artifacts",
+        "started_at": "2026-05-22T01:43:02Z",
+        "status": "completed",
+        "url": "https://github.com/moradology/m80/actions/runs/26263525140/job/77301914734"
+      },
+      {
+        "completed_at": "2026-05-22T01:47:07Z",
+        "conclusion": "success",
+        "name": "publish-release-artifacts",
+        "started_at": "2026-05-22T01:46:26Z",
+        "status": "completed",
+        "url": "https://github.com/moradology/m80/actions/runs/26263525140/job/77302238962"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/moradology/m80/actions/runs/26263525140"
+  }
+}
