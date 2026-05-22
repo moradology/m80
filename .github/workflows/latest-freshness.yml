@@ -64,16 +64,76 @@ jobs:
           import json
           import os
           import sys
+          from datetime import datetime, timezone
+
+          generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+          repository = os.environ.get("GITHUB_REPOSITORY", "")
+          owner, _, repo = repository.partition("/")
+          failure = {
+              "class": "verifier-schema-drift",
+              "message": "freshness verifier did not run",
+              "repair_command": "python3 scripts/verify-freshness-failure-policy.py",
+          }
 
           proof = {
               "schema_version": 1,
-              "freshness_workflow_wiring": True,
               "status": "not_started",
-              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
-              "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
-              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
-              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-              "job": os.environ.get("GITHUB_JOB", ""),
+              "generated_at": generated_at,
+              "published_at": generated_at,
+              "freshness_network_bounded": True,
+              "repository": repository,
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID") or None,
+              "workflow": {
+                  "name": os.environ.get("GITHUB_WORKFLOW") or None,
+                  "run_id": os.environ.get("GITHUB_RUN_ID") or None,
+                  "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT") or None,
+                  "job": os.environ.get("GITHUB_JOB") or None,
+              },
+              "resolved_latest_tag": None,
+              "resolved_tag": None,
+              "public_command_inventory": {
+                  "status": "unavailable",
+                  "digest": None,
+                  "count": 0,
+                  "entries": [],
+                  "error": "freshness verifier did not run",
+              },
+              "tag_agreement": {"status": "not_run"},
+              "integrity_result": {"status": "not_run", "public_asset_count": 0, "assets": []},
+              "fixture_install_result": {
+                  "status": "not_run",
+                  "reason": "freshness verifier did not run",
+              },
+              "failure_taxonomy": {
+                  "status": "failure",
+                  "known_classes": [],
+                  "failure": failure,
+              },
+              "failure": failure,
+              "substrate": {
+                  "network_target": "public-github-release",
+                  "auth_state": "unauthenticated-public-read",
+                  "public_owner": owner,
+                  "public_repo": repo,
+                  "latest_source_mode": "unknown",
+                  "guard_source_mode": "unknown",
+                  "fixture_source": False,
+                  "github_write_apis_available": False,
+              },
+              "fetch_policy": {
+                  "connect_timeout_seconds": 10,
+                  "max_time_seconds": 120,
+                  "retry_count": 2,
+                  "retry_delay_seconds": 1,
+              },
+              "checked_urls": [],
+              "public_assets": [],
+              "safety_floor": {
+                  "schema_version": 1,
+                  "published_at": generated_at,
+                  "minimum_safe_tag": None,
+                  "yanked_releases": [],
+              },
           }
           with open(sys.argv[1], "w", encoding="utf-8") as fh:
               json.dump(proof, fh, indent=2, sort_keys=True)
@@ -107,26 +167,85 @@ jobs:
           import json
           import os
           import sys
+          from datetime import datetime, timezone
           from pathlib import Path
 
+          generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+          repository = os.environ.get("GITHUB_REPOSITORY", "")
+          owner, _, repo = repository.partition("/")
           stderr = Path(sys.argv[3]).read_text(encoding="utf-8")
+          failure = {
+              "class": "verifier-schema-drift",
+              "message": stderr[-4000:],
+              "repair_command": "python3 scripts/verify-freshness-failure-policy.py",
+          }
           proof = {
               "schema_version": 1,
-              "freshness_workflow_wiring": True,
-              "status": "failed",
+              "status": "failure",
+              "generated_at": generated_at,
+              "published_at": generated_at,
+              "freshness_network_bounded": True,
               "exit_status": int(sys.argv[2]),
-              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
-              "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
-              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
-              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-              "job": os.environ.get("GITHUB_JOB", ""),
-              "stderr": stderr[-4000:],
+              "repository": repository,
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID") or None,
+              "workflow": {
+                  "name": os.environ.get("GITHUB_WORKFLOW") or None,
+                  "run_id": os.environ.get("GITHUB_RUN_ID") or None,
+                  "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT") or None,
+                  "job": os.environ.get("GITHUB_JOB") or None,
+              },
+              "resolved_latest_tag": None,
+              "resolved_tag": None,
+              "public_command_inventory": {
+                  "status": "unavailable",
+                  "digest": None,
+                  "count": 0,
+                  "entries": [],
+                  "error": "freshness verifier did not emit a proof before failing",
+              },
+              "tag_agreement": {"status": "not_run"},
+              "integrity_result": {"status": "not_run", "public_asset_count": 0, "assets": []},
+              "fixture_install_result": {
+                  "status": "not_run",
+                  "reason": "freshness verifier failed before hostless fixture install",
+              },
+              "failure_taxonomy": {
+                  "status": "failure",
+                  "known_classes": [],
+                  "failure": failure,
+              },
+              "failure": failure,
+              "substrate": {
+                  "network_target": "public-github-release",
+                  "auth_state": "unauthenticated-public-read",
+                  "public_owner": owner,
+                  "public_repo": repo,
+                  "latest_source_mode": "unknown",
+                  "guard_source_mode": "unknown",
+                  "fixture_source": False,
+                  "github_write_apis_available": False,
+              },
+              "fetch_policy": {
+                  "connect_timeout_seconds": 10,
+                  "max_time_seconds": 120,
+                  "retry_count": 2,
+                  "retry_delay_seconds": 1,
+              },
+              "checked_urls": [],
+              "public_assets": [],
+              "safety_floor": {
+                  "schema_version": 1,
+                  "published_at": generated_at,
+                  "minimum_safe_tag": None,
+                  "yanked_releases": [],
+              },
           }
           with open(sys.argv[1], "w", encoding="utf-8") as fh:
               json.dump(proof, fh, indent=2, sort_keys=True)
               fh.write("\n")
           PY
           fi
+          python3 scripts/release_freshness.py --validate-proof "$FRESHNESS_PROOF"
           python3 scripts/freshness_drift_evidence.py \
             --stderr-file "$FRESHNESS_STDERR" \
             --stdout-file "$FRESHNESS_STDOUT" \

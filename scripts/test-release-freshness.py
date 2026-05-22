@@ -12,6 +12,7 @@ import tempfile
 import textwrap
 import unittest
 
+from freshness_proof import validate_freshness_proof
 from release_url_contract import latest_install_command, release_asset_url
 from stable_release_channel import (
     BUNDLE_NAME,
@@ -55,8 +56,29 @@ class ReleaseFreshnessTest(unittest.TestCase):
 
         self.assertTrue(payload["freshness_network_bounded"])
         self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["resolved_tag"], "v1.2.3")
+        self.assertEqual(payload["resolved_latest_tag"], "v1.2.3")
+        self.assertIsNone(payload["workflow_run_id"])
         self.assertRegex(payload["published_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertEqual(payload["generated_at"], payload["published_at"])
+        self.assertEqual(validate_freshness_proof(payload), [])
+        inventory = payload["public_command_inventory"]
+        self.assertEqual(inventory["status"], "success")
+        self.assertRegex(inventory["digest"], r"^sha256:[0-9a-f]{64}$")
+        self.assertEqual(inventory["count"], 1)
+        self.assertEqual(inventory["entries"][0]["path"], "README.md")
+        self.assertEqual(payload["tag_agreement"]["status"], "success")
+        self.assertEqual(payload["tag_agreement"]["latest_tag"], "v1.2.3")
+        self.assertEqual(payload["tag_agreement"]["guard_tag"], "v1.2.3")
+        self.assertEqual(payload["integrity_result"]["status"], "success")
+        self.assertEqual(payload["integrity_result"]["public_asset_count"], len(REQUIRED_PUBLIC_ASSETS))
+        self.assertEqual(payload["fixture_install_result"]["status"], "not_run")
+        self.assertEqual(payload["failure_taxonomy"]["status"], "success")
+        self.assertIn("docs-drift", payload["failure_taxonomy"]["known_classes"])
+        self.assertEqual(payload["substrate"]["network_target"], "public-github-release")
+        self.assertEqual(payload["substrate"]["auth_state"], "unauthenticated-public-read")
+        self.assertFalse(payload["substrate"]["github_write_apis_available"])
         self.assertEqual(
             payload["safety_floor"],
             {
@@ -115,6 +137,52 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn(release_asset_url("v1.2.3", "SHA256SUMS"), checksum_fetch_urls)
         self.assertIn(release_asset_url("v1.2.3", CHECKSUM_NAME), checksum_fetch_urls)
 
+    def test_success_proof_validation_rejects_bad_schema_digest_status_and_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            curl = write_fake_curl(root / "curl", log=root / "curl.log")
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+        payload = json.loads(result.stdout)
+
+        missing = clone_json(payload)
+        del missing["tag_agreement"]
+        self.assertIn("missing required field: tag_agreement", validate_freshness_proof(missing))
+
+        stale_digest = clone_json(payload)
+        stale_digest["public_command_inventory"]["digest"] = "sha256:" + ("0" * 64)
+        self.assertIn(
+            "public_command_inventory.digest does not match entries",
+            validate_freshness_proof(stale_digest),
+        )
+
+        unknown_status = clone_json(payload)
+        unknown_status["fixture_install_result"]["status"] = "maybe"
+        self.assertIn(
+            "fixture_install_result has unknown status: 'maybe'",
+            validate_freshness_proof(unknown_status),
+        )
+
+        unsorted_urls = clone_json(payload)
+        unsorted_urls["checked_urls"] = list(reversed(unsorted_urls["checked_urls"]))
+        self.assertIn("checked_urls must be sorted deterministically", validate_freshness_proof(unsorted_urls))
+
     def test_failure_classes_name_url_tag_asset_and_source(self) -> None:
         cases = [
             (28, "timeout", "network-transient"),
@@ -160,6 +228,79 @@ class ReleaseFreshnessTest(unittest.TestCase):
             self.assertIn("asset=m80-release-assets.json", result.stderr)
             self.assertIn("url=https://github.com/moradology/m80/releases/download/v1.2.3/m80-release-assets.json", result.stderr)
             self.assertIn(f"repair_command={repair_command_for(failure_class)}", result.stderr)
+
+    def test_failure_writes_valid_proof_with_context_and_cli_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            proof_path = root / "freshness-proof.json"
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                fail_contains="m80-release-assets.json",
+                fail_code=22,
+                fail_stderr="asset missing\n",
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--proof-out",
+                    str(proof_path),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            payload = json.loads(proof_path.read_text())
+            self.assertEqual(payload["status"], "failure")
+            self.assertEqual(payload["failure"]["class"], "missing-public-asset")
+            self.assertEqual(payload["failure"]["repair_command"], repair_command_for("missing-public-asset"))
+            self.assertEqual(payload["public_command_inventory"]["status"], "success")
+            self.assertEqual(payload["integrity_result"]["status"], "failure")
+            self.assertEqual(validate_freshness_proof(payload), [])
+
+            valid = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--validate-proof",
+                    str(proof_path),
+                    "--expected-command-inventory-digest",
+                    payload["public_command_inventory"]["digest"],
+                ],
+                cwd=REPO_ROOT,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            stale = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--validate-proof",
+                    str(proof_path),
+                    "--expected-command-inventory-digest",
+                    "sha256:" + ("0" * 64),
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertIn("freshness proof valid", valid.stdout)
+        self.assertNotEqual(stale.returncode, 0)
+        self.assertIn("checked_command_inventory_digest does not match proof", stale.stderr)
 
     def test_metadata_fetch_failure_is_network_transient(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -810,6 +951,10 @@ def asset_digest(name: str) -> str:
 def write_json(path: Path, value: dict) -> Path:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
     return path
+
+
+def clone_json(value):
+    return json.loads(json.dumps(value))
 
 
 def repair_command_for(failure_class: str) -> str:

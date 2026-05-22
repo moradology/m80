@@ -118,6 +118,15 @@ uses `cancel-in-progress: false` so an overlapping run does not discard the
 older run's evidence, and it uploads proof, drift, stdout, and stderr artifacts
 with `if: always()`.
 
+The uploaded `m80-latest-freshness-proof.json` is the reusable input for
+freshness status repair and release-readiness gates. It records the proof schema
+version, generated time, workflow run id, resolved latest tag, public command
+inventory digest, tag agreement, integrity result, hostless fixture-install
+result, substrate/auth details, and failure taxonomy. The verifier validates
+that proof before upload, including failure proofs, so a stale README command,
+missing public asset, tag mismatch, integrity mismatch, or malformed proof can
+file a repair bead without rerunning the public latest check.
+
 The remote stable status artifact consumed by `m80 update --check` is
 `m80-latest-freshness-proof.json` from the public latest GitHub release asset
 set. The publish lane produces the docs copy from

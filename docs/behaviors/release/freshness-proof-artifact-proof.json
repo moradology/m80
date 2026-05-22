@@ -1,0 +1,52 @@
+{
+  "bead_id": "m80-o3uh9.21.1.6",
+  "checked_at": "2026-05-22T14:42:19Z",
+  "command": "python3 -m py_compile scripts/freshness_proof.py scripts/release_freshness.py scripts/test-release-freshness.py && python3 scripts/test-release-freshness.py && python3 scripts/test-workflow-policy.py && python3 scripts/lint-github-workflows.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows && python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json && br lint m80-o3uh9.21.1.6 && br dep cycles --json && git diff --check && python3 scripts/test-release-bundle.py",
+  "exit_status": 0,
+  "kind": "m80_freshness_proof_artifact_schema_proof",
+  "resolved_tag": "v1.2.3",
+  "schema_version": 1,
+  "stderr": "",
+  "stdout": "py_compile OK; test-release-freshness 18 OK; test-workflow-policy 47 OK; lint-github-workflows OK; actionlint OK; test-release-tracker-policy 41 OK; verify-release-tracker-policy OK; br lint m80-o3uh9.21.1.6 OK; br dep cycles found 0 cycles; git diff --check OK; test-release-bundle 212 OK",
+  "substrate": {
+    "kind": "hostless-fixture",
+    "summary": "fake curl fixtures and workflow policy tests exercise public freshness proof generation, validation, failure proof output, scheduled workflow proof validation, and CI wiring without real network, GitHub write APIs, /opt, /etc, or KVM"
+  },
+  "verification": [
+    {
+      "command": "python3 -m py_compile scripts/freshness_proof.py scripts/release_freshness.py scripts/test-release-freshness.py",
+      "exit_status": 0,
+      "summary": "freshness proof module, verifier, and tests compiled"
+    },
+    {
+      "command": "python3 scripts/test-release-freshness.py",
+      "exit_status": 0,
+      "summary": "18 tests passed, including success proof validation, failure proof output, CLI proof validation, stale digest rejection, unknown status rejection, and deterministic ordering rejection"
+    },
+    {
+      "command": "python3 scripts/test-workflow-policy.py",
+      "exit_status": 0,
+      "summary": "47 workflow policy tests passed"
+    },
+    {
+      "command": "python3 scripts/lint-github-workflows.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",
+      "exit_status": 0,
+      "summary": "workflow policy lint and actionlint passed"
+    },
+    {
+      "command": "python3 scripts/test-release-tracker-policy.py && python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json",
+      "exit_status": 0,
+      "summary": "tracker policy tests and live release tracker policy check passed before close"
+    },
+    {
+      "command": "br lint m80-o3uh9.21.1.6 && br dep cycles --json && git diff --check",
+      "exit_status": 0,
+      "summary": "bead lint, dependency cycle check, and whitespace check passed"
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "summary": "212 release bundle tests passed, including workflow wiring checks"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import subprocess
 
+from freshness_proof import checked_url_proof_rows, command_inventory_proof, fetch_policy, failure_proof, public_asset_proof_rows, success_proof, unavailable_command_inventory, validate_freshness_proof
 from quickstart_snippets import INSTALL_URL_RE, public_command_inventory
 from release_url_contract import public_release_root, release_asset_url
 from stable_latest_bootstrap import (
@@ -103,41 +104,97 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--curl", default="curl", help="curl binary used for URL fetches")
     parser.add_argument("--json", action="store_true", help="render the freshness proof summary as JSON")
     parser.add_argument("--proof-out", type=Path, help="write the freshness proof summary JSON to this path")
+    parser.add_argument("--validate-proof", type=Path, help="validate an existing freshness proof and exit")
+    parser.add_argument(
+        "--expected-command-inventory-digest",
+        help="expected public command inventory digest for --validate-proof",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.validate_proof is not None:
+        proof = read_json(args.validate_proof, "freshness proof")
+        errors = validate_freshness_proof(
+            proof,
+            expected_command_inventory_digest=args.expected_command_inventory_digest,
+        )
+        if errors:
+            raise SystemExit("freshness proof invalid: " + "; ".join(errors))
+        print(f"freshness proof valid: path={args.validate_proof} status={proof['status']}")
+        return 0
+
     asset_index = read_json(args.asset_index, "release asset index") if args.asset_index else None
+    generated_at = utc_now_rfc3339()
+    release_root = public_release_root()
+    repository = release_root.repository
+    resolved_tag: str | None = None
+    latest_source_mode = "unknown"
+    guard_source_mode = "unknown"
+    command_inventory = None
+    command_inventory_summary = None
+    checks: list[FreshnessUrl] = []
+    public_assets: dict[str, FreshnessAsset] = {}
+    checksum_sources: dict[str, list[str]] = {}
     try:
+        command_inventory = public_command_inventory(args.docs_root)
+        command_inventory_summary = command_inventory_proof(command_inventory)
         latest = load_latest_source(
             args.latest_metadata,
             args.latest_url,
             curl_bin=args.curl,
             label="latest release metadata",
         )
+        latest_source_mode = latest.mode
         public_assets = public_release_assets(latest.release, asset_index=asset_index)
         guard = load_freshness_guard_source(args, latest)
+        guard_source_mode = guard.mode
         resolution = resolve_latest_bootstrap(latest, guard=guard, asset_index=asset_index)
+        repository = resolution.repository
+        resolved_tag = resolution.resolved_tag
         checks = freshness_urls(
             resolution.resolved_tag,
             resolution.pinned_asset_urls,
-            docs_root=args.docs_root,
+            command_inventory=command_inventory,
             public_assets=public_assets,
         )
         for check in checks:
             fetch_public_url(check, curl_bin=args.curl)
         checksum_sources = verify_checksum_contents(public_assets, curl_bin=args.curl)
-        proof = freshness_proof_json(resolution, checks, public_assets, checksum_sources)
+        proof = freshness_proof_json(
+            resolution,
+            checks,
+            public_assets,
+            checksum_sources,
+            command_inventory_summary=command_inventory_summary,
+            generated_at=generated_at,
+        )
     except ValueError as exc:
         message = str(exc)
-        raise SystemExit(
-            freshness_failure_policy_message(classify_freshness_exception(message), message)
-        ) from exc
+        failure_class = classify_freshness_exception(message)
+        policy_message = freshness_failure_policy_message(failure_class, message)
+        if command_inventory_summary is None:
+            command_inventory_summary = unavailable_command_inventory(message)
+        if args.proof_out is not None:
+            proof = freshness_failure_proof_json(
+                repository=repository,
+                generated_at=generated_at,
+                failure_class=failure_class,
+                failure_message=policy_message,
+                resolved_tag=resolved_tag,
+                checks=checks,
+                public_assets=public_assets,
+                checksum_sources=checksum_sources,
+                command_inventory_summary=command_inventory_summary,
+                latest_source_mode=latest_source_mode,
+                guard_source_mode=guard_source_mode,
+            )
+            write_proof(args.proof_out, proof)
+        raise SystemExit(policy_message) from exc
 
     if args.proof_out is not None:
-        args.proof_out.parent.mkdir(parents=True, exist_ok=True)
-        args.proof_out.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+        write_proof(args.proof_out, proof)
     if args.json:
         print(json.dumps(proof, indent=2, sort_keys=True))
     else:
@@ -146,6 +203,11 @@ def main() -> int:
             f"repository={resolution.repository} tag={resolution.resolved_tag} checked_urls={len(checks)}"
         )
     return 0
+
+
+def write_proof(path: Path, proof: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
 
 
 def load_freshness_guard_source(args: argparse.Namespace, latest):
@@ -177,7 +239,7 @@ def freshness_urls(
     resolved_tag: str,
     pinned_asset_urls: dict[str, str],
     *,
-    docs_root: Path,
+    command_inventory,
     public_assets: dict[str, FreshnessAsset],
 ) -> list[FreshnessUrl]:
     release_root = public_release_root()
@@ -215,19 +277,24 @@ def freshness_urls(
             size_bytes=asset.size_bytes,
             sha256=asset.sha256,
         )
-    add_docs_linked_urls(by_url, resolved_tag, docs_root=docs_root, public_assets=public_assets)
-    return list(by_url.values())
+    add_docs_linked_urls(
+        by_url,
+        resolved_tag,
+        command_inventory=command_inventory,
+        public_assets=public_assets,
+    )
+    return sorted(by_url.values(), key=freshness_url_sort_key)
 
 
 def add_docs_linked_urls(
     by_url: dict[str, FreshnessUrl],
     resolved_tag: str,
     *,
-    docs_root: Path,
+    command_inventory,
     public_assets: dict[str, FreshnessAsset],
 ) -> None:
     install_asset = public_assets["install.sh"]
-    for snippet in public_command_inventory(docs_root):
+    for snippet in command_inventory:
         for match in INSTALL_URL_RE.finditer(snippet.body):
             url = match.group(0)
             if "<version>" in url:
@@ -243,6 +310,10 @@ def add_docs_linked_urls(
                 size_bytes=install_asset.size_bytes,
                 sha256=install_asset.sha256,
             )
+
+
+def freshness_url_sort_key(check: FreshnessUrl) -> tuple:
+    return (check.role, check.release_tag, check.asset_name, check.url, check.sources)
 
 
 def release_tag_from_install_url(url: str, *, fallback: str) -> str:
@@ -287,7 +358,7 @@ def add_freshness_url(
         url=current.url,
         asset_name=current.asset_name,
         release_tag=current.release_tag,
-        sources=(*current.sources, source),
+        sources=tuple(sorted((*current.sources, source))),
         size_bytes=current.size_bytes,
         sha256=current.sha256,
     )
@@ -623,7 +694,8 @@ def classify_public_url_failure(check: FreshnessUrl, failure: str) -> str:
 
 def classify_freshness_exception(message: str) -> str:
     if "failure_class=" in message:
-        return ""
+        match = re.search(r"\bfailure_class=([A-Za-z0-9-]+)", message)
+        return match.group(1) if match is not None else "verifier-schema-drift"
     if any(f"failure={failure}" in message for failure in NETWORK_FAILURE_KINDS):
         return "network-transient"
     if "failure=latest_tag_switch" in message or "latest tag" in message:
@@ -849,70 +921,72 @@ def checksum_failure_message(
 
 
 def freshness_proof_json(
-    resolution,
-    checks: list[FreshnessUrl],
-    public_assets: dict[str, FreshnessAsset],
-    checksum_sources: dict[str, list[str]],
+    resolution, checks, public_assets, checksum_sources, *, command_inventory_summary, generated_at
 ) -> dict:
-    published_at = utc_now_rfc3339()
-    return {
-        "schema_version": 1,
-        "freshness_network_bounded": True,
-        "repository": resolution.repository,
-        "resolved_tag": resolution.resolved_tag,
-        "published_at": published_at,
-        "fetch_policy": {
-            "connect_timeout_seconds": FETCH_CONNECT_TIMEOUT_SECONDS,
-            "max_time_seconds": FETCH_MAX_TIME_SECONDS,
-            "retry_count": FETCH_RETRY_COUNT,
-            "retry_delay_seconds": FETCH_RETRY_DELAY_SECONDS,
-        },
-        "checked_urls": [
-            {
-                "role": check.role,
-                "url": check.url,
-                "release_tag": check.release_tag,
-                "asset_name": check.asset_name,
-                "sources": list(check.sources),
-                "size_bytes": check.size_bytes,
-                "sha256": check.sha256,
-            }
-            for check in checks
-        ],
-        "public_assets": public_asset_proof_rows(public_assets, checksum_sources),
-        "safety_floor": empty_safety_floor(published_at),
-    }
+    proof = success_proof(
+        repository=resolution.repository,
+        resolved_tag=resolution.resolved_tag,
+        generated_at=generated_at,
+        fetch_policy=freshness_fetch_policy(),
+        checked_urls=checked_url_proof_rows(checks),
+        public_assets=public_asset_proof_rows(public_assets, checksum_sources),
+        public_command_inventory=command_inventory_summary,
+        failure_classes=sorted(FRESHNESS_FAILURE_CLASSES),
+        latest_source_mode=resolution.latest_source_mode,
+        guard_source_mode=resolution.guard_source_mode,
+    )
+    errors = validate_freshness_proof(proof)
+    if errors:
+        raise ValueError("freshness proof invalid: " + "; ".join(errors))
+    return proof
+
+
+def freshness_failure_proof_json(
+    *,
+    repository,
+    generated_at,
+    failure_class,
+    failure_message,
+    resolved_tag,
+    checks,
+    public_assets,
+    checksum_sources,
+    command_inventory_summary,
+    latest_source_mode,
+    guard_source_mode,
+) -> dict:
+    proof = failure_proof(
+        repository=repository,
+        generated_at=generated_at,
+        failure_class=failure_class,
+        failure_message=failure_message,
+        repair_command=freshness_repair_command(failure_class),
+        fetch_policy=freshness_fetch_policy(),
+        checked_urls=checked_url_proof_rows(checks),
+        public_assets=public_asset_proof_rows(public_assets, checksum_sources),
+        public_command_inventory=command_inventory_summary,
+        failure_classes=sorted(FRESHNESS_FAILURE_CLASSES),
+        latest_source_mode=latest_source_mode,
+        guard_source_mode=guard_source_mode,
+        resolved_latest_tag=resolved_tag,
+    )
+    errors = validate_freshness_proof(proof)
+    if errors:
+        raise ValueError("freshness failure proof invalid: " + "; ".join(errors))
+    return proof
+
+
+def freshness_fetch_policy() -> dict:
+    return fetch_policy(
+        connect_timeout_seconds=FETCH_CONNECT_TIMEOUT_SECONDS,
+        max_time_seconds=FETCH_MAX_TIME_SECONDS,
+        retry_count=FETCH_RETRY_COUNT,
+        retry_delay_seconds=FETCH_RETRY_DELAY_SECONDS,
+    )
 
 
 def utc_now_rfc3339() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def empty_safety_floor(published_at: str) -> dict:
-    return {
-        "schema_version": 1,
-        "published_at": published_at,
-        "minimum_safe_tag": None,
-        "yanked_releases": [],
-    }
-
-
-def public_asset_proof_rows(
-    public_assets: dict[str, FreshnessAsset],
-    checksum_sources: dict[str, list[str]],
-) -> list[dict]:
-    return [
-        {
-            "name": asset.name,
-            "role": asset.role,
-            "url": asset.url,
-            "release_tag": asset.release_tag,
-            "size_bytes": asset.size_bytes,
-            "sha256": asset.sha256,
-            "checksum_sources": checksum_sources[asset.name],
-        }
-        for _name, asset in sorted(public_assets.items())
-    ]
 
 
 if __name__ == "__main__":
