@@ -1,0 +1,45 @@
+{
+  "bead": "m80-o3uh9.21.1",
+  "command": "rm -rf /tank/tmp/m80-o3uh9.21.1-rollup && mkdir -p /tank/tmp/m80-o3uh9.21.1-rollup && env -u GH_TOKEN -u GITHUB_TOKEN TMPDIR=/tank/tmp PATH=/tank/tmp/m80-gh-2.92.0/bin:$PATH python3 scripts/release_freshness.py --docs-root . --json --hostless-install-fixture --hostless-install-sudo --hostless-fixture-root /tank/tmp/m80-o3uh9.21.1-rollup/fixture --proof-out /tank/tmp/m80-o3uh9.21.1-rollup/live-hostless-proof.json > /tank/tmp/m80-o3uh9.21.1-rollup/live-hostless-proof.stdout && python3 scripts/release_freshness.py --validate-proof /tank/tmp/m80-o3uh9.21.1-rollup/live-hostless-proof.json",
+  "exit_status": 0,
+  "generated_at": "2026-05-22T22:45:19Z",
+  "kind": "m80_verified_close_proof",
+  "logs": [
+    "/tank/tmp/m80-o3uh9.21.1-rollup/live-hostless-proof.json",
+    "/tank/tmp/m80-o3uh9.21.1-rollup/live-hostless-proof.stdout"
+  ],
+  "proof_artifact": {
+    "path": "/tank/tmp/m80-o3uh9.21.1-rollup/live-hostless-proof.json",
+    "sha256": "b0adca65b9de58d3c460a5886427e7b4887700a917b4f2afcb179dd0d2f9880c"
+  },
+  "resolved_tag": "v0.2.11",
+  "schema_version": 1,
+  "stderr": "",
+  "stdout": "freshness proof valid: path=/tank/tmp/m80-o3uh9.21.1-rollup/live-hostless-proof.json status=success",
+  "substrate": {
+    "auth_state": "unauthenticated-public-read",
+    "fixture_source": false,
+    "github_write_apis_available": false,
+    "guard_source_mode": "url",
+    "latest_source_mode": "url",
+    "network_target": "public-github-release",
+    "public_owner": "moradology",
+    "public_repo": "m80"
+  },
+  "summary": {
+    "checked_public_latest_install_url": "https://github.com/moradology/m80/releases/latest/download/install.sh",
+    "checked_pinned_install_url": "https://github.com/moradology/m80/releases/download/v0.2.11/install.sh",
+    "fixture_install_result": "success",
+    "fixture_mode": "hostless-install-root",
+    "fixture_privilege": "sudo -n",
+    "integrity_result": "success",
+    "no_host_mutation": "success",
+    "preflight_gate": "live_preflight",
+    "provenance_result": "success",
+    "tag_agreement": "success",
+    "temporary_gh": {
+      "path": "/tank/tmp/m80-gh-2.92.0/bin/gh",
+      "version": "2.92.0"
+    }
+  }
+}
