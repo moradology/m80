@@ -1,0 +1,8 @@
+{
+  "command": "TMPDIR=/tank/tmp python3 scripts/test-release-url-contract.py && TMPDIR=/tank/tmp python3 scripts/test-freshness-status-render.py",
+  "exit_status": 0,
+  "resolved_tag": "v0.2.11",
+  "stderr": "",
+  "stdout": "test-release-url-contract.py: Ran 15 tests OK; test-freshness-status-render.py: Ran 9 tests OK",
+  "substrate": "local Linux hostless docs contract verification"
+}
