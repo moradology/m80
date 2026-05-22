@@ -82,6 +82,7 @@ def success_proof(
     latest_source_mode: str,
     guard_source_mode: str,
     tag_agreement: dict | None = None,
+    fixture_install_result: dict | None = None,
 ) -> dict:
     root = public_release_root()
     if tag_agreement is None:
@@ -122,9 +123,10 @@ def success_proof(
                 for asset in public_assets
             ],
         },
-        "fixture_install_result": {
+        "fixture_install_result": fixture_install_result
+        or {
             "status": "not_run",
-            "reason": "hostless install-root fixture is produced by m80-o3uh9.21.1.5",
+            "reason": "hostless install-root fixture was not requested",
         },
         "failure_taxonomy": {
             "status": "success",

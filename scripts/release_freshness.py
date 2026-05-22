@@ -7,9 +7,13 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
+import shlex
+import shutil
 import subprocess
+import tempfile
 
 from freshness_proof import checked_url_proof_rows, command_inventory_proof, fetch_policy, failure_proof, public_asset_proof_rows, success_proof, unavailable_command_inventory, validate_freshness_proof
 from quickstart_snippets import INSTALL_URL_RE, public_command_inventory
@@ -106,6 +110,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--proof-out", type=Path, help="write the freshness proof summary JSON to this path")
     parser.add_argument("--validate-proof", type=Path, help="validate an existing freshness proof and exit")
     parser.add_argument(
+        "--hostless-install-fixture",
+        action="store_true",
+        help="run the public install.sh path into a fixture install root without host mutation",
+    )
+    parser.add_argument(
+        "--hostless-fixture-root",
+        type=Path,
+        help="fixture work root for --hostless-install-fixture; explicit roots are preserved for inspection",
+    )
+    parser.add_argument(
+        "--hostless-install-sudo",
+        action="store_true",
+        help="run the fixture installer through sudo -n env; records that live host privilege was used",
+    )
+    parser.add_argument(
         "--expected-command-inventory-digest",
         help="expected public command inventory digest for --validate-proof",
     )
@@ -171,12 +190,25 @@ def main() -> int:
             latest_source_mode=resolution.latest_source_mode,
             guard_source_mode=resolution.guard_source_mode,
         )
+        fixture_install_result = (
+            run_hostless_install_fixture(
+                install_url=release_root.latest_install_url,
+                bundle_url=resolution.pinned_asset_urls[BUNDLE_NAME],
+                release_tag=resolution.resolved_tag,
+                curl_bin=args.curl,
+                fixture_root=args.hostless_fixture_root,
+                use_sudo=args.hostless_install_sudo,
+            )
+            if args.hostless_install_fixture
+            else None
+        )
         proof = freshness_proof_json(
             resolution,
             checks,
             public_assets,
             checksum_sources,
             tag_agreement=tag_agreement,
+            fixture_install_result=fixture_install_result,
             command_inventory_summary=command_inventory_summary,
             generated_at=generated_at,
         )
@@ -1008,8 +1040,323 @@ def checksum_failure_message(
     return "; ".join(fields)
 
 
+def run_hostless_install_fixture(
+    *,
+    install_url: str,
+    bundle_url: str,
+    release_tag: str,
+    curl_bin: str,
+    fixture_root: Path | None = None,
+    use_sudo: bool = False,
+    watched_host_paths: tuple[Path, ...] = (Path("/opt"), Path("/etc")),
+) -> dict:
+    root = prepare_hostless_fixture_root(fixture_root)
+    cleanup_on_failure = fixture_root is None
+    try:
+        result = execute_hostless_install_fixture(
+            fixture_root=root,
+            install_url=install_url,
+            bundle_url=bundle_url,
+            release_tag=release_tag,
+            curl_bin=curl_bin,
+            use_sudo=use_sudo,
+            watched_host_paths=watched_host_paths,
+        )
+    except Exception:
+        if cleanup_on_failure:
+            shutil.rmtree(root, ignore_errors=True)
+        raise
+    return result | {
+        "fixture_root": str(root),
+        "cleanup_on_failure": cleanup_on_failure,
+        "privilege": "sudo -n" if use_sudo else "current-user",
+    }
+
+
+def prepare_hostless_fixture_root(fixture_root: Path | None) -> Path:
+    if fixture_root is not None:
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        return fixture_root
+    parent = Path(os.environ.get("TMPDIR", tempfile.gettempdir()))
+    if parent.exists() and os.access(parent, os.W_OK):
+        return Path(tempfile.mkdtemp(prefix="m80-freshness-install-", dir=parent))
+    return Path(tempfile.mkdtemp(prefix="m80-freshness-install-"))
+
+
+def execute_hostless_install_fixture(
+    *,
+    fixture_root: Path,
+    install_url: str,
+    bundle_url: str,
+    release_tag: str,
+    curl_bin: str,
+    use_sudo: bool,
+    watched_host_paths: tuple[Path, ...],
+) -> dict:
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    bin_dir = fixture_root / "bin"
+    host_bin_dir = fixture_root / "host-bin"
+    install_root = fixture_root / "install-root"
+    download_dir = fixture_root / "downloads"
+    home_dir = fixture_root / "home"
+    tmp_dir = fixture_root / "tmp"
+    gh_log = fixture_root / "gh-invocations.log"
+    for path in (bin_dir, host_bin_dir, download_dir, home_dir, tmp_dir):
+        path.mkdir(parents=True, exist_ok=True)
+
+    installer_path = download_dir / "install.sh"
+    download_public_file(install_url, installer_path, curl_bin=curl_bin)
+    installer_path.chmod(installer_path.stat().st_mode | 0o700)
+    write_hostless_binary_fixtures(host_bin_dir)
+    gh_wrapper = write_gh_audit_wrapper(bin_dir / "gh", gh_log)
+
+    before = {str(path): path_state(path) for path in watched_host_paths}
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(home_dir),
+            "TMPDIR": str(tmp_dir),
+            "PATH": f"{bin_dir}:{env.get('PATH', '')}",
+            "M80_INSTALL_HOSTLESS_FIXTURE": "1",
+            "M80_FIRECRACKER_BIN": str(host_bin_dir / "firecracker"),
+            "M80_FIRECRACKER_SECCOMP_FILTER": str(host_bin_dir / "firecracker-seccomp-filter.bin"),
+            "M80_JAILER_BIN": str(host_bin_dir / "jailer"),
+            "M80_RELEASE_ATTESTATION_GH": str(gh_wrapper),
+            "M80_JAIL_UID": str(os.getuid()),
+            "M80_JAIL_GID": str(os.getgid()),
+        }
+    )
+    install_command = ["sh", str(installer_path), "--install-root", str(install_root)]
+    command = sudo_env_command(env, install_command) if use_sudo else install_command
+    process = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=None if use_sudo else env,
+        timeout=FETCH_MAX_TIME_SECONDS * 3,
+    )
+    after = {str(path): path_state(path) for path in watched_host_paths}
+    gh_invocations = read_gh_invocations(gh_log)
+    mutation = host_mutation_result(before, after, gh_invocations)
+    if process.returncode != 0:
+        raise ValueError(
+            "freshness hostless fixture install failed: "
+            f"exit={process.returncode}; install_url={install_url}; install_root={install_root}; "
+            f"stderr={process.stderr.strip() or '<empty>'}"
+        )
+    if mutation["status"] != "success":
+        raise ValueError(
+            "freshness hostless fixture install mutated host state: "
+            f"install_root={install_root}; no_host_mutation={json.dumps(mutation, sort_keys=True)}"
+        )
+    fields = parse_key_value_lines(process.stdout)
+    active_version_dir = fields.get("active_version_dir") or require_fixture_field(fields, "version_dir", process.stdout)
+    profile_path = require_fixture_field(fields, "profile_path", process.stdout)
+    host_binaries_manifest = require_fixture_field(fields, "host_binaries_manifest", process.stdout)
+    return {
+        "status": "success",
+        "mode": "hostless-install-root",
+        "release_tag": release_tag,
+        "install_url": install_url,
+        "bundle_url": bundle_url,
+        "command": command,
+        "exit_status": process.returncode,
+        "install_root": str(install_root),
+        "staged_bundle_path": active_version_dir,
+        "active_version_dir": active_version_dir,
+        "active_profile_path": profile_path,
+        "host_binaries_manifest_path": host_binaries_manifest,
+        "preflight_gate": fields.get("preflight_gate"),
+        "stdout": process.stdout.splitlines(),
+        "stderr": process.stderr.splitlines(),
+        "no_host_mutation": mutation,
+    }
+
+
+def sudo_env_command(env: dict[str, str], command: list[str]) -> list[str]:
+    forwarded = [
+        "HOME",
+        "TMPDIR",
+        "PATH",
+        "M80_INSTALL_HOSTLESS_FIXTURE",
+        "M80_FIRECRACKER_BIN",
+        "M80_FIRECRACKER_SECCOMP_FILTER",
+        "M80_JAILER_BIN",
+        "M80_RELEASE_ATTESTATION_GH",
+        "M80_JAIL_UID",
+        "M80_JAIL_GID",
+    ]
+    return ["sudo", "-n", "env", "-i", *(f"{key}={env[key]}" for key in forwarded), *command]
+
+
+def download_public_file(url: str, path: Path, *, curl_bin: str) -> None:
+    result = subprocess.run(
+        [
+            curl_bin,
+            "-fsSL",
+            "--connect-timeout",
+            str(FETCH_CONNECT_TIMEOUT_SECONDS),
+            "--max-time",
+            str(FETCH_MAX_TIME_SECONDS),
+            "--retry",
+            str(FETCH_RETRY_COUNT),
+            "--retry-delay",
+            str(FETCH_RETRY_DELAY_SECONDS),
+            "--output",
+            str(path),
+            url,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "no curl output"
+        raise ValueError(f"freshness hostless fixture installer download failed: url={url}; curl exited {result.returncode}: {detail}")
+
+
+def write_hostless_binary_fixtures(host_bin_dir: Path) -> None:
+    write_executable(
+        host_bin_dir / "firecracker",
+        "#!/bin/sh\nprintf '%s\\n' 'Firecracker v1.15.1'\n",
+    )
+    write_executable(
+        host_bin_dir / "jailer",
+        "#!/bin/sh\nprintf '%s\\n' 'Jailer v1.15.1'\n",
+    )
+    (host_bin_dir / "firecracker-seccomp-filter.bin").write_text('{"fixture":"hostless"}\n')
+
+
+def write_gh_audit_wrapper(path: Path, log: Path) -> Path:
+    real_gh = shutil.which("gh")
+    if real_gh is None:
+        raise ValueError("freshness hostless fixture requires gh on PATH for public attestation verification")
+    script = f"""#!/usr/bin/env python3
+import os
+import shlex
+import sys
+from pathlib import Path
+
+log = Path({str(log)!r})
+log.parent.mkdir(parents=True, exist_ok=True)
+with log.open("a") as f:
+    f.write(" ".join(shlex.quote(arg) for arg in sys.argv[1:]) + "\\n")
+
+def forbidden_gh_write(args):
+    if "release" in args:
+        index = args.index("release")
+        if len(args) > index + 1 and args[index + 1] in {sorted({"upload", "edit", "delete", "create"})!r}:
+            return True
+    if "api" in args and any("release" in arg for arg in args):
+        for index, arg in enumerate(args):
+            if arg in ("-X", "--method") and len(args) > index + 1:
+                return args[index + 1].upper() in ("POST", "PATCH", "PUT", "DELETE")
+            if arg.startswith("--method="):
+                return arg.split("=", 1)[1].upper() in ("POST", "PATCH", "PUT", "DELETE")
+    return False
+
+if forbidden_gh_write(sys.argv[1:]):
+    sys.stderr.write("m80 freshness fixture blocked gh release write API\\n")
+    raise SystemExit(97)
+
+os.execv({real_gh!r}, [{real_gh!r}, *sys.argv[1:]])
+"""
+    write_executable(path, script)
+    return path
+
+
+def write_executable(path: Path, body: str) -> None:
+    path.write_text(body)
+    path.chmod(path.stat().st_mode | 0o700)
+
+
+def path_state(path: Path) -> dict:
+    try:
+        stat_result = path.lstat()
+    except FileNotFoundError:
+        return {"exists": False}
+    return {
+        "exists": True,
+        "mode": stat_result.st_mode,
+        "size": stat_result.st_size,
+        "mtime_ns": stat_result.st_mtime_ns,
+        "is_symlink": path.is_symlink(),
+    }
+
+
+def host_mutation_result(before: dict[str, dict], after: dict[str, dict], gh_invocations: list[list[str]]) -> dict:
+    changed = sorted(path for path, state in after.items() if state != before[path])
+    forbidden = forbidden_gh_write_invocations(gh_invocations)
+    return {
+        "status": "success" if not changed and not forbidden else "failure",
+        "watched_paths_unchanged": not changed,
+        "watched_paths": sorted(before),
+        "changed_paths": changed,
+        "forbidden_gh_write_api_invoked": bool(forbidden),
+        "forbidden_gh_invocations": forbidden,
+        "gh_invocations": gh_invocations,
+    }
+
+
+def read_gh_invocations(log: Path) -> list[list[str]]:
+    if not log.exists():
+        return []
+    return [shlex.split(line) for line in log.read_text().splitlines() if line.strip()]
+
+
+def forbidden_gh_write_invocations(invocations: list[list[str]]) -> list[list[str]]:
+    forbidden_actions = {"upload", "edit", "delete", "create"}
+    return [invocation for invocation in invocations if is_forbidden_gh_write_invocation(invocation, forbidden_actions)]
+
+
+def is_forbidden_gh_write_invocation(invocation: list[str], forbidden_actions: set[str]) -> bool:
+    if "release" in invocation:
+        index = invocation.index("release")
+        return len(invocation) > index + 1 and invocation[index + 1] in forbidden_actions
+    if "api" in invocation and any("release" in arg for arg in invocation):
+        return gh_api_method(invocation) in {"POST", "PATCH", "PUT", "DELETE"}
+    return False
+
+
+def gh_api_method(invocation: list[str]) -> str | None:
+    for index, arg in enumerate(invocation):
+        if arg in {"-X", "--method"} and len(invocation) > index + 1:
+            return invocation[index + 1].upper()
+        if arg.startswith("--method="):
+            return arg.split("=", 1)[1].upper()
+    return None
+
+
+def parse_key_value_lines(text: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key:
+            fields[key] = value
+    return fields
+
+
+def require_fixture_field(fields: dict[str, str], name: str, stdout: str) -> str:
+    value = fields.get(name)
+    if not value:
+        raise ValueError(
+            "freshness hostless fixture output missing required field: "
+            f"field={name}; stdout={stdout.strip() or '<empty>'}"
+        )
+    return value
+
+
 def freshness_proof_json(
-    resolution, checks, public_assets, checksum_sources, *, tag_agreement, command_inventory_summary, generated_at
+    resolution,
+    checks,
+    public_assets,
+    checksum_sources,
+    *,
+    tag_agreement,
+    fixture_install_result,
+    command_inventory_summary,
+    generated_at,
 ) -> dict:
     proof = success_proof(
         repository=resolution.repository,
@@ -1023,6 +1370,7 @@ def freshness_proof_json(
         latest_source_mode=resolution.latest_source_mode,
         guard_source_mode=resolution.guard_source_mode,
         tag_agreement=tag_agreement,
+        fixture_install_result=fixture_install_result,
     )
     errors = validate_freshness_proof(proof)
     if errors:

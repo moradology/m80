@@ -14,7 +14,7 @@ import textwrap
 import unittest
 
 from freshness_proof import validate_freshness_proof
-from release_freshness import verify_tag_agreement
+from release_freshness import execute_hostless_install_fixture, forbidden_gh_write_invocations, run_hostless_install_fixture, verify_tag_agreement
 from release_url_contract import latest_install_command, pinned_install_command, public_release_root, release_asset_url
 from stable_release_channel import (
     BUNDLE_NAME,
@@ -936,6 +936,144 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("asset=install.sh", result.stderr)
         self.assertIn("checksum_asset=SHA256SUMS", result.stderr)
 
+    def test_hostless_install_fixture_records_paths_and_no_host_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                install_script=hostless_install_script(),
+            )
+
+            result = run_hostless_install_fixture(
+                install_url=release_asset_url("v1.2.3", "install.sh"),
+                bundle_url=release_asset_url("v1.2.3", BUNDLE_NAME),
+                release_tag="v1.2.3",
+                curl_bin=str(curl),
+                fixture_root=root / "fixture",
+                watched_host_paths=(root / "host-opt", root / "host-etc"),
+            )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["install_root"], str(root / "fixture" / "install-root"))
+        self.assertEqual(result["staged_bundle_path"], str(root / "fixture" / "install-root" / "versions" / "v1.2.3"))
+        self.assertEqual(
+            result["active_profile_path"],
+            str(root / "fixture" / "install-root" / "profiles" / "default.toml"),
+        )
+        self.assertEqual(
+            result["host_binaries_manifest_path"],
+            str(root / "fixture" / "install-root" / "versions" / "v1.2.3" / "artifacts" / "host-binaries.manifest.json"),
+        )
+        self.assertEqual(result["no_host_mutation"]["status"], "success")
+        self.assertFalse(result["no_host_mutation"]["forbidden_gh_write_api_invoked"])
+
+    def test_hostless_install_fixture_cli_emits_success_proof_section(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                install_script=hostless_install_script(),
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--hostless-install-fixture",
+                    "--hostless-fixture-root",
+                    str(root / "fixture"),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+        payload = json.loads(result.stdout)
+        fixture = payload["fixture_install_result"]
+        self.assertEqual(fixture["status"], "success")
+        self.assertEqual(fixture["privilege"], "current-user")
+        self.assertEqual(fixture["install_root"], str(root / "fixture" / "install-root"))
+        self.assertEqual(fixture["no_host_mutation"]["status"], "success")
+        self.assertEqual(validate_freshness_proof(payload), [])
+
+    def test_hostless_install_fixture_rejects_writes_outside_fixture_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            watched = root / "host-opt"
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                install_script=hostless_install_script(extra_body=f"mkdir -p {shlex.quote(str(watched))}\n"),
+            )
+
+            with self.assertRaisesRegex(ValueError, "mutated host state"):
+                execute_hostless_install_fixture(
+                    fixture_root=root / "fixture",
+                    install_url=release_asset_url("v1.2.3", "install.sh"),
+                    bundle_url=release_asset_url("v1.2.3", BUNDLE_NAME),
+                    release_tag="v1.2.3",
+                    curl_bin=str(curl),
+                    use_sudo=False,
+                    watched_host_paths=(watched,),
+                )
+
+    def test_hostless_install_fixture_flags_gh_release_write_apis(self) -> None:
+        self.assertEqual(
+            forbidden_gh_write_invocations(
+                [
+                    ["attestation", "verify", "m80-release-integrity.json"],
+                    ["--repo", "moradology/m80", "release", "delete", "v1.2.3"],
+                    ["release", "upload", "v1.2.3", "asset.tgz"],
+                    ["release", "edit", "v1.2.3"],
+                    ["release", "view", "v1.2.3"],
+                    ["api", "--method", "DELETE", "repos/moradology/m80/releases/assets/123"],
+                    ["api", "--method=GET", "repos/moradology/m80/releases/latest"],
+                ]
+            ),
+            [
+                ["--repo", "moradology/m80", "release", "delete", "v1.2.3"],
+                ["release", "upload", "v1.2.3", "asset.tgz"],
+                ["release", "edit", "v1.2.3"],
+                ["api", "--method", "DELETE", "repos/moradology/m80/releases/assets/123"],
+            ],
+        )
+
+    def test_hostless_install_fixture_cleans_generated_root_on_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                install_script="#!/bin/sh\nmkdir -p \"$TMPDIR/leftover\"\nexit 42\n",
+            )
+            previous_tmpdir = os.environ.get("TMPDIR")
+            os.environ["TMPDIR"] = str(root)
+            try:
+                with self.assertRaisesRegex(ValueError, "hostless fixture install failed"):
+                    run_hostless_install_fixture(
+                        install_url=release_asset_url("v1.2.3", "install.sh"),
+                        bundle_url=release_asset_url("v1.2.3", BUNDLE_NAME),
+                        release_tag="v1.2.3",
+                        curl_bin=str(curl),
+                        watched_host_paths=(root / "host-opt",),
+                    )
+            finally:
+                if previous_tmpdir is None:
+                    os.environ.pop("TMPDIR", None)
+                else:
+                    os.environ["TMPDIR"] = previous_tmpdir
+
+            self.assertEqual(list(root.glob("m80-freshness-install-*")), [])
+
     def assert_curl_flag(self, args: list[str], flag: str, expected_value: str) -> None:
         self.assertIn(flag, args)
         pos = args.index(flag)
@@ -969,6 +1107,7 @@ def write_fake_curl(
     log: Path,
     metadata: dict | None = None,
     bundle_metadata: dict | None = None,
+    install_script: str | None = None,
     fail_contains: str | None = None,
     fail_code: int = 28,
     fail_stderr: str = "failed\n",
@@ -977,6 +1116,7 @@ def write_fake_curl(
     metadata_json = json.dumps(metadata if metadata is not None else base_release_metadata())
     bundle_metadata_json = json.dumps(bundle_metadata if bundle_metadata is not None else base_bundle_metadata())
     checksums_json = json.dumps(checksum_bodies(checksum_overrides or {}))
+    install_script = install_script or "#!/bin/sh\\necho fixture install.sh\\n"
     script = f"""#!/usr/bin/env python3
 import shlex
 import sys
@@ -988,17 +1128,26 @@ with log.open("a") as f:
     f.write(" ".join(shlex.quote(arg) for arg in sys.argv[1:]) + "\\n")
 
 url = sys.argv[-1]
+output_path = None
+if "--output" in sys.argv:
+    output_index = sys.argv.index("--output")
+    output_path = Path(sys.argv[output_index + 1])
 fail_contains = {fail_contains!r}
 if fail_contains and fail_contains in url:
     sys.stderr.write({fail_stderr!r})
     raise SystemExit({fail_code})
+
+asset_name = url.rsplit("/", 1)[-1]
+if output_path is not None and asset_name == "install.sh":
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text({install_script!r})
+    raise SystemExit(0)
 
 if "api.github.com" in url:
     sys.stdout.write({metadata_json!r})
     raise SystemExit(0)
 
 checksums = {checksums_json}
-asset_name = url.rsplit("/", 1)[-1]
 if asset_name == {METADATA_NAME!r}:
     sys.stdout.write({bundle_metadata_json!r})
     raise SystemExit(0)
@@ -1008,6 +1157,45 @@ if asset_name in checksums:
     path.write_text(script)
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return path
+
+
+def hostless_install_script(*, extra_body: str = "") -> str:
+    return textwrap.dedent(
+        f"""\
+        #!/bin/sh
+        set -eu
+        install_root=
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --install-root)
+                    shift
+                    install_root=$1
+                    ;;
+            esac
+            shift || true
+        done
+        if [ -z "$install_root" ]; then
+            echo "missing --install-root" >&2
+            exit 2
+        fi
+        version_dir="$install_root/versions/v1.2.3"
+        profile_path="$install_root/profiles/default.toml"
+        manifest_path="$version_dir/artifacts/host-binaries.manifest.json"
+        mkdir -p "$version_dir/artifacts" "$install_root/profiles"
+        printf '%s\\n' '{{"fixture":"hostless"}}' > "$manifest_path"
+        printf '%s\\n' 'profile fixture' > "$profile_path"
+        {extra_body}echo "installed bundle layout"
+        echo "release_tag=v1.2.3"
+        echo "install_root=$install_root"
+        echo "active_version_dir=$version_dir"
+        echo "version_dir=$version_dir"
+        echo "bundle_url=https://github.com/moradology/m80/releases/download/v1.2.3/{BUNDLE_NAME}"
+        echo "host_binaries_manifest=$manifest_path"
+        echo "profile_path=$profile_path"
+        echo "active_pointer_flipped=true"
+        echo "profile_written=true"
+        """
+    )
 
 
 def checksum_bodies(overrides: dict[str, str]) -> dict[str, str]:
