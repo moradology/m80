@@ -65,6 +65,61 @@ class UpdateFreshnessStatusFromPublicAccessTest(unittest.TestCase):
             status = json.loads(status_path.read_text())
             self.assertEqual(status["workflow_run_id"], "123")
 
+    def test_safety_floor_input_is_embedded_and_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "docs" / "behaviors" / "release"
+            artifact_root.mkdir(parents=True)
+            receipt_path = artifact_root / "release-readiness-public-access.json"
+            status_path = artifact_root / "freshness-status-docs.json"
+            floor_path = artifact_root / "safety-floor.json"
+            receipt = valid_receipt()
+            floor = safety_floor(
+                receipt,
+                minimum_safe_tag=minimum_safe_tag("v0.2.6", "v0.2.7"),
+                yanked_releases=[yanked_release(receipt, "v0.2.5", replacement_tag="v0.2.7")],
+            )
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+            floor_path.write_text(json.dumps(floor, indent=2, sort_keys=True) + "\n")
+
+            result = run_update(receipt_path, status_path, "--safety-floor", str(floor_path))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            status = json.loads(status_path.read_text())
+            self.assertEqual(status["safety_floor"], floor)
+
+    def test_yanked_latest_with_replacement_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "docs" / "behaviors" / "release"
+            artifact_root.mkdir(parents=True)
+            receipt_path = artifact_root / "release-readiness-public-access.json"
+            status_path = artifact_root / "freshness-status-docs.json"
+            floor_path = artifact_root / "safety-floor.json"
+            receipt = valid_receipt()
+            floor = safety_floor(
+                receipt,
+                minimum_safe_tag=None,
+                yanked_releases=[
+                    yanked_release(
+                        receipt,
+                        receipt["resolved_latest_tag"],
+                        replacement_tag="v0.2.6",
+                    )
+                ],
+            )
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+            floor_path.write_text(json.dumps(floor, indent=2, sort_keys=True) + "\n")
+
+            result = run_update(receipt_path, status_path, "--safety-floor", str(floor_path))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            status = json.loads(status_path.read_text())
+            self.assertEqual(
+                status["safety_floor"]["yanked_releases"][0]["replacement_command"],
+                pinned_install_command("v0.2.6"),
+            )
+
     def test_missing_workflow_run_id_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -102,6 +157,55 @@ class UpdateFreshnessStatusFromPublicAccessTest(unittest.TestCase):
             self.assertIn("public_green requires resolved_latest_tag == expected_highest_stable_tag", result.stderr)
             self.assertEqual(status_path.read_text(), '{"status":"previous"}\n')
 
+    def test_invalid_safety_floor_does_not_publish_green_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "docs" / "behaviors" / "release"
+            artifact_root.mkdir(parents=True)
+            receipt_path = artifact_root / "release-readiness-public-access.json"
+            status_path = artifact_root / "freshness-status-docs.json"
+            floor_path = artifact_root / "safety-floor.json"
+            status_path.write_text('{"status":"previous"}\n')
+            receipt = valid_receipt()
+            floor = safety_floor(
+                receipt,
+                minimum_safe_tag=minimum_safe_tag("v9.0.0", "v9.0.0"),
+                yanked_releases=[],
+            )
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+            floor_path.write_text(json.dumps(floor, indent=2, sort_keys=True) + "\n")
+
+            result = run_update(receipt_path, status_path, "--safety-floor", str(floor_path))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("minimum_safe_tag tag v9.0.0", result.stderr)
+            self.assertEqual(status_path.read_text(), '{"status":"previous"}\n')
+
+    def test_stale_safety_advisory_does_not_publish_green_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "docs" / "behaviors" / "release"
+            artifact_root.mkdir(parents=True)
+            receipt_path = artifact_root / "release-readiness-public-access.json"
+            status_path = artifact_root / "freshness-status-docs.json"
+            floor_path = artifact_root / "safety-floor.json"
+            status_path.write_text('{"status":"previous"}\n')
+            receipt = valid_receipt()
+            floor = safety_floor(
+                receipt,
+                minimum_safe_tag=None,
+                yanked_releases=[yanked_release(receipt, "v0.2.5", replacement_tag="v0.2.7")],
+            )
+            floor["yanked_releases"][0]["published_at"] = "2099-01-01T00:00:00Z"
+            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+            floor_path.write_text(json.dumps(floor, indent=2, sort_keys=True) + "\n")
+
+            result = run_update(receipt_path, status_path, "--safety-floor", str(floor_path))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("yanked_releases[0] published_at for v0.2.5", result.stderr)
+            self.assertEqual(status_path.read_text(), '{"status":"previous"}\n')
+
 
 def run_update(receipt_path: Path, status_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -131,6 +235,46 @@ def valid_receipt() -> dict:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.valid_receipt()
+
+
+def safety_floor(
+    receipt: dict,
+    *,
+    minimum_safe_tag: dict | None,
+    yanked_releases: list[dict],
+) -> dict:
+    return {
+        "schema_version": 1,
+        "published_at": receipt["verification_time"],
+        "minimum_safe_tag": minimum_safe_tag,
+        "yanked_releases": yanked_releases,
+    }
+
+
+def minimum_safe_tag(tag: str, replacement_tag: str) -> dict:
+    return {
+        "tag": tag,
+        "reason": "security floor",
+        "advisory_url": None,
+        "issue_id": "m80-o3uh9.21.9.4",
+        "replacement_command": pinned_install_command(replacement_tag),
+    }
+
+
+def yanked_release(receipt: dict, tag: str, *, replacement_tag: str) -> dict:
+    return {
+        "tag": tag,
+        "reason": "yanked release",
+        "advisory_url": "https://github.com/moradology/m80/issues/1",
+        "issue_id": None,
+        "published_at": receipt["verification_time"],
+        "replacement_command": pinned_install_command(replacement_tag),
+        "no_replacement_reason": None,
+    }
+
+
+def pinned_install_command(tag: str) -> str:
+    return f"curl -fsSL https://github.com/moradology/m80/releases/download/{tag}/install.sh | sudo sh"
 
 
 if __name__ == "__main__":

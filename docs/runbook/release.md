@@ -122,8 +122,9 @@ The remote stable status artifact consumed by `m80 update --check` is
 `m80-latest-freshness-proof.json` from the public latest GitHub release asset
 set. The publish lane produces the docs copy from
 `release-readiness-public-access.json` with
-`scripts/update-freshness-status-from-public-access.py`, then validates it with
-`scripts/verify-freshness-status.py`. The scheduled
+`scripts/update-freshness-status-from-public-access.py`, optionally passing
+`--safety-floor <path>` when a yanked/minimum-safe policy is active, then
+validates it with `scripts/verify-freshness-status.py`. The scheduled
 `.github/workflows/latest-freshness.yml` lane independently re-reads the public
 latest release, validates the same latest/pinned URLs and installer-consumed
 assets, and uploads its proof/drift artifacts for repair. `m80 update --check`
@@ -156,7 +157,8 @@ status. Repair the policy source first:
 Then regenerate and verify before rendering:
 
 ```sh
-scripts/update-freshness-status-from-public-access.py
+scripts/update-freshness-status-from-public-access.py \
+  ${SAFETY_FLOOR_PATH:+--safety-floor "$SAFETY_FLOOR_PATH"}
 python3 scripts/verify-freshness-status.py \
   docs/behaviors/release/freshness-status-docs.json \
   --artifact-root docs/behaviors/release \
@@ -675,7 +677,8 @@ When that public receipt is copied into `docs/behaviors/release/`, refresh the
 checked README/runbook status with:
 
 ```sh
-scripts/update-freshness-status-from-public-access.py
+scripts/update-freshness-status-from-public-access.py \
+  ${SAFETY_FLOOR_PATH:+--safety-floor "$SAFETY_FLOOR_PATH"}
 python3 scripts/render-freshness-status.py
 python3 scripts/render-freshness-status.py --check
 ```

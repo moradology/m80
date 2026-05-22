@@ -52,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         "--expected-stable-tag",
         help="highest expected stable tag; defaults to the receipt expected_stable_tag/release_tag",
     )
+    parser.add_argument(
+        "--safety-floor",
+        type=Path,
+        help="optional safety_floor JSON object to embed after validation",
+    )
     return parser.parse_args()
 
 
@@ -76,6 +81,7 @@ def main() -> int:
         docs_root=docs_root,
         workflow_run_id=args.workflow_run_id,
         expected_stable_tag=args.expected_stable_tag,
+        safety_floor_path=args.safety_floor.resolve() if args.safety_floor else None,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -111,6 +117,7 @@ def build_status(
     docs_root: Path,
     workflow_run_id: str | None,
     expected_stable_tag: str | None,
+    safety_floor_path: Path | None,
 ) -> dict[str, Any]:
     repository = require_str(receipt, "repository")
     owner, repo = split_repository(repository)
@@ -120,6 +127,11 @@ def build_status(
     receipt_sha = "sha256:" + hashlib.sha256(receipt_path.read_bytes()).hexdigest()
     latest = require_dict(require_dict(receipt, "installer_downloads"), "latest_install")
     pinned = require_dict(require_dict(receipt, "installer_downloads"), "pinned_install")
+    safety_floor = (
+        read_safety_floor(safety_floor_path)
+        if safety_floor_path is not None
+        else empty_safety_floor(require_str(receipt, "verification_time"))
+    )
     return {
         "schema_version": freshness_status.SCHEMA_VERSION,
         "generated_at": require_str(receipt, "verification_time"),
@@ -147,7 +159,7 @@ def build_status(
             install_url_proof("pinned-install", receipt, pinned, receipt_ref),
         ],
         "public_assets": public_assets(receipt, release_tag),
-        "safety_floor": empty_safety_floor(require_str(receipt, "verification_time")),
+        "safety_floor": safety_floor,
     }
 
 
@@ -194,6 +206,17 @@ def empty_safety_floor(published_at: str) -> dict[str, Any]:
         "minimum_safe_tag": None,
         "yanked_releases": [],
     }
+
+
+def read_safety_floor(path: Path) -> dict[str, Any]:
+    value = read_json(path)
+    required = {"schema_version", "published_at", "minimum_safe_tag", "yanked_releases"}
+    actual = set(value)
+    if actual != required:
+        missing = ", ".join(sorted(required - actual)) or "<none>"
+        extra = ", ".join(sorted(actual - required)) or "<none>"
+        raise ValueError(f"safety-floor input fields mismatch: missing {missing}; extra {extra}")
+    return value
 
 
 def workflow_run_id_from_receipt(receipt: dict[str, Any]) -> str:
