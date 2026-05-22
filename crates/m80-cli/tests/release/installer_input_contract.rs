@@ -8,6 +8,8 @@ mod common;
 
 use common::m80;
 
+const RELEASE_TAG: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+
 #[test]
 fn install_dry_run_bundle_url_does_not_touch_install_root() {
     let temp = tempfile::tempdir().unwrap();
@@ -95,7 +97,7 @@ fn install_release_tag_refuses_dev_build_before_install_root_touch() {
         .args([
             "install",
             "--release-tag",
-            "v0.0.0",
+            RELEASE_TAG,
             "--install-root",
             install_root.to_str().unwrap(),
             "--dry-run",
@@ -114,7 +116,10 @@ fn install_release_tag_refuses_dev_build_before_install_root_touch() {
         stderr.contains("asset_index_code=dev_build_refused"),
         "{stderr}"
     );
-    assert!(stderr.contains("requested_release_tag=v0.0.0"), "{stderr}");
+    assert!(
+        stderr.contains(&format!("requested_release_tag={RELEASE_TAG}")),
+        "{stderr}"
+    );
     assert!(stderr.contains("requested_image_kind=minimal"), "{stderr}");
     assert!(
         stderr.contains("repair_command=m80 install --bundle-url <compatible-bundle-url>"),
@@ -137,7 +142,7 @@ fn install_json_release_tag_refusal_reports_asset_index_fields_on_stderr() {
             "--json",
             "install",
             "--release-tag",
-            "v0.0.0",
+            RELEASE_TAG,
             "--install-root",
             install_root.to_str().unwrap(),
             "--dry-run",
@@ -161,7 +166,7 @@ fn install_json_release_tag_refusal_reports_asset_index_fields_on_stderr() {
     assert_eq!(data["requested_os"], std::env::consts::OS);
     assert_eq!(data["requested_arch"], std::env::consts::ARCH);
     assert_eq!(data["requested_image_kind"], "minimal");
-    assert_eq!(data["requested_release_tag"], "v0.0.0");
+    assert_eq!(data["requested_release_tag"], RELEASE_TAG);
     assert!(
         data["requested_m80_version"]
             .as_str()

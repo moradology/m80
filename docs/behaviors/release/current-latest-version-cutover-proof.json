@@ -1,0 +1,108 @@
+{
+  "bead": "m80-o3uh9.21.7.1.5",
+  "checked_at": "2026-05-22T00:22:27Z",
+  "command": "CI release script test cluster from .github/workflows/ci.yml, current-latest version cutover contract tests, cargo build/test/clippy gates, workflow lint, shellcheck, cargo audit, br lint, br dep cycles, cargo fmt --all -- --check, and git diff --check",
+  "commands": [
+    "python3 -m py_compile <release script cluster>",
+    "python3 scripts/test-release-url-contract.py",
+    "python3 scripts/test-stable-release-channel.py",
+    "python3 scripts/test-stable-latest-bootstrap.py",
+    "python3 scripts/test-release-freshness.py",
+    "python3 scripts/test-freshness-status.py",
+    "python3 scripts/test-freshness-status-render.py",
+    "python3 scripts/test-freshness-failure-policy.py",
+    "python3 scripts/verify-freshness-failure-policy.py --config docs/behaviors/release/freshness-failure-policy.json",
+    "python3 scripts/test-current-latest-repair-preflight.py",
+    "python3 scripts/test-workflow-policy.py",
+    "python3 scripts/test-actionlint-runner.py",
+    "python3 scripts/test-actionlint-fixtures.py",
+    "python3 scripts/test-release-proof-ledger.py",
+    "python3 scripts/test-quickstart-proof.py",
+    "python3 scripts/test-release-tracker-policy.py",
+    "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json",
+    "python3 scripts/test-release-readiness-config.py",
+    "python3 scripts/verify-release-readiness-config.py --config docs/behaviors/release/release-readiness-lanes.json",
+    "python3 scripts/test-install-handoff.py",
+    "python3 scripts/test-release-bundle.py",
+    "cargo test -p m80-cli --test release -- --test-threads=2",
+    "cargo test -p m80-cli --test version_smoke",
+    "cargo test --workspace -- --test-threads=2",
+    "cargo test -p m80-attack-runner --features malicious-artifact -- --test-threads=2",
+    "cargo build --workspace --all-targets",
+    "RUSTFLAGS=\"\" cargo clippy --workspace --all-targets",
+    "cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings",
+    "sh -n scripts/install.sh",
+    "shellcheck -s sh scripts/install.sh",
+    "find scripts -maxdepth 1 -name '*.sh' ! -name 'install.sh' -print0 | sort -z | xargs -0 shellcheck -s bash",
+    "cargo +1.85 audit",
+    "br lint m80-o3uh9.21.7.1.5",
+    "br dep cycles --json",
+    "cargo fmt --all -- --check",
+    "git diff --check"
+  ],
+  "covered_acceptance": [
+    "Cargo.toml workspace.package.version is 0.2.7, so the expected release tag is v0.2.7",
+    "Cargo.lock records workspace crates at 0.2.7",
+    "release runbook names workspace package version 0.2.7 and expected tag v0.2.7",
+    "version smoke tests derive dev marker and expected release tag from CARGO_PKG_VERSION",
+    "release bundle fixtures package v0.2.7",
+    "installer layout release fixtures derive the release tag from CARGO_PKG_VERSION",
+    "current_latest_repair_preflight accepts v0.2.7 without a workspace-version override and rejects stale v0.2.6",
+    "release tracker policy accepts verifier-shaped proof artifacts"
+  ],
+  "exit_status": 0,
+  "kind": "m80_current_latest_version_cutover_proof",
+  "resolved_tag": "v0.2.7",
+  "schema_version": 1,
+  "status": "verified-local",
+  "stderr": "",
+  "stdout": "release script tests OK: py_compile OK; test-release-url-contract 14; test-stable-release-channel 9; test-stable-latest-bootstrap 13; test-release-freshness 10; test-freshness-status 12; test-freshness-status-render 9; test-freshness-failure-policy 9; verify-freshness-failure-policy OK; test-current-latest-repair-preflight 9; test-workflow-policy 46; test-actionlint-runner 7; test-actionlint-fixtures 9; test-release-proof-ledger 11; test-quickstart-proof 17; test-release-tracker-policy 41; verify-release-tracker-policy OK; test-release-readiness-config 10; verify-release-readiness-config OK; test-install-handoff 7; test-release-bundle 211. Rust gates OK: cargo test -p m80-cli --test release 56; cargo test -p m80-cli --test version_smoke 4; cargo test --workspace OK; cargo test -p m80-attack-runner --features malicious-artifact OK; cargo build --workspace --all-targets OK; RUSTFLAGS=\"\" cargo clippy --workspace --all-targets OK with warnings not denied by CI; cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings OK. Shell/audit gates OK: sh -n scripts/install.sh; shellcheck install.sh and scripts/*.sh; cargo +1.85 audit OK with one allowed warning RUSTSEC-2024-0436 for paste 1.0.15.",
+  "substrate": "local Linux hostless CI-equivalent release-script, Rust, shell, and audit gates",
+  "verification": [
+    {
+      "command": "python3 scripts/test-current-latest-repair-preflight.py",
+      "exit_status": 0,
+      "summary": "Ran 9 tests; v0.2.7 is accepted from the real workspace package version without --workspace-version, and stale v0.2.6 is rejected"
+    },
+    {
+      "command": "python3 scripts/test-release-bundle.py",
+      "exit_status": 0,
+      "summary": "Ran 211 tests; release bundle fixtures package v0.2.7 and enforce release tag/package version agreement"
+    },
+    {
+      "command": "cargo test -p m80-cli --test release -- --test-threads=2",
+      "exit_status": 0,
+      "summary": "Ran 56 release behavior tests including the current latest version cutover contract and installer fixture derivation"
+    },
+    {
+      "command": "cargo test -p m80-cli --test version_smoke",
+      "exit_status": 0,
+      "summary": "Ran 4 tests proving dev version output and expected release tag derive from CARGO_PKG_VERSION"
+    },
+    {
+      "command": "cargo test --workspace -- --test-threads=2 && cargo test -p m80-attack-runner --features malicious-artifact -- --test-threads=2",
+      "exit_status": 0,
+      "summary": "Workspace and malicious-artifact test jobs passed with workspace crates rebuilt at 0.2.7"
+    },
+    {
+      "command": "cargo build --workspace --all-targets && RUSTFLAGS=\"\" cargo clippy --workspace --all-targets && cargo clippy -p m80-attack-runner --features malicious-artifact --all-targets -- -D warnings",
+      "exit_status": 0,
+      "summary": "CI cargo build and clippy gates passed; workspace clippy emitted pre-existing warnings under the same non-denying CI configuration"
+    },
+    {
+      "command": "python3 scripts/verify-release-tracker-policy.py --policy-config docs/behaviors/release/release-tracker-policy.json",
+      "exit_status": 0,
+      "summary": "release tracker policy accepted the current proof artifact set before bead closure"
+    },
+    {
+      "command": "cargo +1.85 audit",
+      "exit_status": 0,
+      "summary": "cargo audit passed with the existing allowed RUSTSEC-2024-0436 paste unmaintained warning"
+    },
+    {
+      "command": "cargo fmt --all -- --check && git diff --check && br lint m80-o3uh9.21.7.1.5 && br dep cycles --json",
+      "exit_status": 0,
+      "summary": "format, whitespace, bead lint, and dependency cycle checks passed"
+    }
+  ]
+}

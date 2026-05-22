@@ -24,9 +24,9 @@ fn clap_version_marks_dev_build() {
 fn version_prints_binary_version() {
     let output = m80().arg("version").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Must mention the dev-marked crate version (0.0.0-dev in this workspace).
+    let dev_version = format!("{}-dev", env!("CARGO_PKG_VERSION"));
     assert!(
-        stdout.contains("0.0.0-dev") || stdout.contains("m80"),
+        stdout.contains(&dev_version) || stdout.contains("m80"),
         "version output should mention binary version: {stdout}"
     );
     assert!(
@@ -74,8 +74,11 @@ fn version_json_has_fields() {
         v["data"].get("target_triple").is_some(),
         "missing target_triple field: {v}"
     );
-    assert_eq!(v["data"]["binary_version"], "0.0.0-dev");
-    assert_eq!(v["data"]["package_version"], "0.0.0");
+    assert_eq!(
+        v["data"]["binary_version"],
+        format!("{}-dev", env!("CARGO_PKG_VERSION"))
+    );
+    assert_eq!(v["data"]["package_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(v["data"]["release_build"], false);
     assert_eq!(v["data"]["release_tag"], serde_json::Value::Null);
     assert_eq!(v["data"]["source_commit"], serde_json::Value::Null);
@@ -85,7 +88,10 @@ fn version_json_has_fields() {
     );
     assert_eq!(v["data"]["target_triple"], serde_json::Value::Null);
     assert_eq!(v["data"]["version_status"], "dev");
-    assert_eq!(v["data"]["expected_release_tag"], "v0.0.0");
+    assert_eq!(
+        v["data"]["expected_release_tag"],
+        format!("v{}", env!("CARGO_PKG_VERSION"))
+    );
     assert_eq!(v["data"]["manifest_schema_version"], 5);
     assert_eq!(v["data"]["build_receipt_schema_version"], 1);
     assert_eq!(v["data"]["install_provenance_schema_version"], 1);

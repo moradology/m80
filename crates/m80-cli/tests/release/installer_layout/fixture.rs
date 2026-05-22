@@ -10,7 +10,7 @@ use m80_image_manifest::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-pub(crate) const RELEASE_TAG: &str = "v0.0.0";
+pub(crate) const RELEASE_TAG: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 const REQUIRED_BUNDLE_FILES: &[&str] = &[
     "bin/m80",
     "bin/m80-jailer-harden",
@@ -49,15 +49,21 @@ pub(crate) fn write_release_bundle(omit: Option<&str>) -> ReleaseBundleFixture {
     fs::create_dir_all(src.join("artifacts")).unwrap();
     write_executable(
         &src.join("bin/m80"),
-        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80 0.0.0\\n'; exit 0; fi\nprintf 'm80 fixture\\n'\n",
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80 {RELEASE_TAG}\\n'; exit 0; fi\nprintf 'm80 fixture\\n'\n"
+        ),
     );
     write_executable(
         &src.join("bin/m80-jailer-harden"),
-        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80-jailer-harden 0.0.0\\n'; exit 0; fi\n",
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80-jailer-harden {RELEASE_TAG}\\n'; exit 0; fi\n"
+        ),
     );
     write_executable(
         &src.join("bin/m80-net-helper"),
-        "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80-net-helper 0.0.0\\n'; exit 0; fi\n",
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'm80-net-helper {RELEASE_TAG}\\n'; exit 0; fi\n"
+        ),
     );
     fs::write(src.join("artifacts/vmlinux"), b"kernel").unwrap();
     fs::write(src.join("artifacts/output.ext4"), b"rootfs").unwrap();

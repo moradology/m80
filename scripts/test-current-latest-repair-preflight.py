@@ -84,6 +84,42 @@ class CurrentLatestRepairPreflightTest(unittest.TestCase):
         self.assertEqual(diagnostic["expected"], "stable tag vMAJOR.MINOR.PATCH")
         self.assertIn("manual release-state repair", diagnostic["safe_repair_action"])
 
+    def test_cli_accepts_current_workspace_version_without_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "preflight.json"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--release-tag",
+                    "v0.2.7",
+                    "--source-commit",
+                    SOURCE_COMMIT,
+                    "--tag-commit",
+                    SOURCE_COMMIT,
+                    "--existing-latest-tag",
+                    "v0.2.6",
+                    "--existing-latest-url",
+                    "https://github.com/moradology/m80/releases/tag/v0.2.6",
+                    "--dirty-status",
+                    "clean",
+                    "--generated-at",
+                    "2026-05-21T00:00:00Z",
+                    "--out",
+                    str(out),
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(out.read_text())
+        self.assertEqual(payload["workspace_package_version"], "0.2.7")
+        self.assertEqual(payload["expected_release_tag"], "v0.2.7")
+        self.assertEqual(payload["decision"]["status"], "accepted")
+
     def test_cli_writes_rejected_artifact_before_exiting_nonzero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "preflight.json"

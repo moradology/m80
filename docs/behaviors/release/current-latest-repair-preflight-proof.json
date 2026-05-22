@@ -1,6 +1,6 @@
 {
   "bead": "m80-o3uh9.21.7.1.1",
-  "checked_at": "2026-05-21T23:54:01Z",
+  "checked_at": "2026-05-22T00:22:27Z",
   "command": "CI release script test cluster from .github/workflows/ci.yml, current-latest repair preflight fixtures, m80-cli release doc-contract tests, workflow lint, actionlint, cargo fmt --all -- --check, br lint, br dep cycles, and git diff --check",
   "commands": [
     "python3 scripts/test-current-latest-repair-preflight.py",
@@ -26,13 +26,13 @@
   "schema_version": 1,
   "status": "verified-local",
   "stderr": "",
-  "stdout": "release script tests OK: test-release-url-contract 14, test-stable-release-channel 9, test-stable-latest-bootstrap 13, test-release-freshness 10, test-freshness-status 12, test-freshness-status-render 9, test-freshness-failure-policy 9, verify-freshness-failure-policy OK, test-current-latest-repair-preflight 8, test-workflow-policy 46, test-actionlint-runner 7, test-actionlint-fixtures 9, test-release-proof-ledger 11, test-quickstart-proof 17, test-release-tracker-policy 41, verify-release-tracker-policy OK, test-release-readiness-config 10, verify-release-readiness-config OK, test-install-handoff 7, test-release-bundle 211. cargo test -p m80-cli --test release passed 55 tests.",
+  "stdout": "release script tests OK: test-release-url-contract 14, test-stable-release-channel 9, test-stable-latest-bootstrap 13, test-release-freshness 10, test-freshness-status 12, test-freshness-status-render 9, test-freshness-failure-policy 9, verify-freshness-failure-policy OK, test-current-latest-repair-preflight 9, test-workflow-policy 46, test-actionlint-runner 7, test-actionlint-fixtures 9, test-release-proof-ledger 11, test-quickstart-proof 17, test-release-tracker-policy 41, verify-release-tracker-policy OK, test-release-readiness-config 10, verify-release-readiness-config OK, test-install-handoff 7, test-release-bundle 211. cargo test -p m80-cli --test release passed 56 tests.",
   "substrate": "local hostless CI-equivalent release-script tests with fixture current-latest metadata",
   "verification": [
     {
       "command": "python3 scripts/test-current-latest-repair-preflight.py",
       "exit_status": 0,
-      "summary": "Ran 8 tests covering clean supersession, dirty tree rejection, tag mismatch rejection, old-release backfill rejection, missing latest metadata rejection, and rejected-artifact emission"
+      "summary": "Ran 9 tests covering clean supersession, current workspace version acceptance, dirty tree rejection, tag mismatch rejection, old-release backfill rejection, missing latest metadata rejection, and rejected-artifact emission"
     },
     {
       "command": "python3 scripts/test-release-bundle.py",
@@ -47,7 +47,7 @@
     {
       "command": "cargo test -p m80-cli --test release -- --test-threads=2",
       "exit_status": 0,
-      "summary": "Ran 55 release behavior tests including current-latest repair preflight documentation contract"
+      "summary": "Ran 56 release behavior tests including current-latest repair preflight and version cutover documentation contracts"
     },
     {
       "command": "python3 scripts/lint-github-workflows.py && python3 scripts/run-actionlint.py --workflow-dir .github/workflows",

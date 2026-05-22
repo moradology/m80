@@ -56,7 +56,9 @@ fn install_official_release_missing_attestation_verifier_fails_before_download_o
     let missing_gh = install_temp.path().join("missing-gh");
 
     let output = run_install_url(
-        "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz",
+        &format!(
+            "https://github.com/moradology/m80/releases/download/{RELEASE_TAG}/m80-linux-x86_64.tar.gz"
+        ),
         &install_root,
         None,
         &[("M80_RELEASE_ATTESTATION_GH", missing_gh.to_str().unwrap())],
@@ -87,7 +89,9 @@ fn install_official_release_too_old_attestation_verifier_fails_before_download_o
     let fake_gh = fake_gh_fixture("fake-gh-attestation-too-old.sh");
 
     let output = run_install_url(
-        "https://github.com/moradology/m80/releases/download/v0.0.0/m80-linux-x86_64.tar.gz",
+        &format!(
+            "https://github.com/moradology/m80/releases/download/{RELEASE_TAG}/m80-linux-x86_64.tar.gz"
+        ),
         &install_root,
         None,
         &[("M80_RELEASE_ATTESTATION_GH", fake_gh.to_str().unwrap())],
