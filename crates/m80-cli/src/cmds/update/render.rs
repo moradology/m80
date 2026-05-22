@@ -21,10 +21,37 @@ pub(super) fn render_human(output: &UpdateCheckOutput) -> String {
         "latest_status_source",
         &output.latest_status_source,
     );
+    push_line(
+        &mut text,
+        "latest_status_origin",
+        output.latest_status_origin.as_str(),
+    );
+    push_line(
+        &mut text,
+        "latest_status_cache_state",
+        output.latest_status_cache_state.as_str(),
+    );
+    push_optional_string(
+        &mut text,
+        "latest_status_fetched_at",
+        output
+            .latest_status_fetched_at
+            .map(|timestamp| timestamp.to_string()),
+    );
+    push_line(
+        &mut text,
+        "latest_status_max_age_seconds",
+        output.latest_status_max_age_seconds,
+    );
     push_optional(
         &mut text,
         "latest_status_error",
         output.latest_status_error.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "latest_status_offline_reason",
+        output.latest_status_offline_reason.as_deref(),
     );
     push_line(
         &mut text,
@@ -57,6 +84,7 @@ pub(super) fn render_human(output: &UpdateCheckOutput) -> String {
         "reinstall_command",
         output.reinstall_command.as_deref(),
     );
+    push_optional(&mut text, "retry_command", output.retry_command.as_deref());
     push_optional(&mut text, "next_command", output.next_command.as_deref());
     push_line(&mut text, "message", &output.message);
     text

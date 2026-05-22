@@ -120,7 +120,8 @@ fn help_update() {
         stdout.contains("Check or update the installed release")
             && stdout.contains("--check")
             && stdout.contains("--install-root")
-            && stdout.contains("--latest-status"),
+            && stdout.contains("--latest-status")
+            && stdout.contains("--latest-status-url"),
         "update help should expose the read-only check surface, got: {stdout}"
     );
 }

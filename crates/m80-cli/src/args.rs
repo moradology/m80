@@ -547,12 +547,10 @@ pub struct UpdateArgs {
     #[arg(long, value_name = "NAME")]
     pub profile: Option<String>,
 
-    /// Read a bounded freshness status artifact from this path.
-    #[arg(
-        long = "latest-status",
-        value_name = "PATH",
-        conflicts_with = "latest_status_url"
-    )]
+    /// Read a bounded freshness status artifact from this path. When
+    /// --latest-status-url is also set, this path is used as the read-only
+    /// fallback cache if the URL is unavailable.
+    #[arg(long = "latest-status", value_name = "PATH")]
     pub latest_status: Option<PathBuf>,
 
     /// Fetch a bounded freshness status artifact from this URL.

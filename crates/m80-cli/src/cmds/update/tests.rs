@@ -13,6 +13,7 @@ use crate::release_freshness::read_freshness_status_artifact_json;
 
 mod http_fixture;
 mod no_write;
+mod offline_cache;
 mod proof_cache_fixture;
 
 #[test]
@@ -148,6 +149,8 @@ fn update_check_reports_unknown_offline_without_mutation_command() {
         LatestStatusInput::UnknownOffline {
             source: "https://example.invalid/status.json".to_owned(),
             detail: "network unavailable".to_owned(),
+            origin: LatestStatusOrigin::Unavailable,
+            cache_state: LatestStatusCacheState::NotConfigured,
         },
         UnixSeconds::new(timestamp("2026-05-21T12:30:00Z")),
     );
@@ -160,6 +163,11 @@ fn update_check_reports_unknown_offline_without_mutation_command() {
     );
     assert_eq!(output.apply_command, None);
     assert_eq!(output.reinstall_command, None);
+    assert_eq!(output.retry_command.as_deref(), Some("m80 update --check"));
+    assert_eq!(output.next_command, output.retry_command);
+    let human = render_human(&output);
+    assert!(human.contains("retry_command=m80 update --check\n"));
+    assert!(human.contains("message=latest status is unavailable; active freshness is unknown\n"));
 }
 
 #[test]
@@ -280,6 +288,8 @@ fn latest(tag: &str, minimum_safe_tag: Option<&str>, yanked_tags: &[&str]) -> La
             yanked_tags,
         ))
         .expect("freshness fixture should parse"),
+        origin: LatestStatusOrigin::Remote,
+        offline_reason: None,
     }
 }
 
@@ -291,6 +301,24 @@ fn status_artifact_with_resolved_tag(
     tag: Option<&str>,
     minimum_safe_tag: Option<&str>,
     yanked_tags: &[&str],
+) -> String {
+    status_artifact_at_option(tag, minimum_safe_tag, yanked_tags, "2026-05-21T12:00:00Z")
+}
+
+fn status_artifact_at(
+    tag: &str,
+    minimum_safe_tag: Option<&str>,
+    yanked_tags: &[&str],
+    published_at: &str,
+) -> String {
+    status_artifact_at_option(Some(tag), minimum_safe_tag, yanked_tags, published_at)
+}
+
+fn status_artifact_at_option(
+    tag: Option<&str>,
+    minimum_safe_tag: Option<&str>,
+    yanked_tags: &[&str],
+    published_at: &str,
 ) -> String {
     let safety_floor = if minimum_safe_tag.is_some() || !yanked_tags.is_empty() {
         let mut fields = Vec::new();
@@ -321,7 +349,7 @@ fn status_artifact_with_resolved_tag(
           "freshness_network_bounded":true,
           "repository":"moradology/m80",
           {resolved_tag}
-          "published_at":"2026-05-21T12:00:00Z",
+          "published_at":"{published_at}",
           "fetch_policy":{{"connect_timeout_seconds":10,"max_time_seconds":120,"retry_count":2,"retry_delay_seconds":1}},
           "checked_urls":[{{"role":"latest-install","url":"{}","release_tag":"latest","asset_name":"install.sh","sources":["release-url-contract:latest-install"],"size_bytes":123,"sha256":"{}"}}],
           "public_assets":[{{"name":"install.sh","role":"installer","url":"{}","release_tag":"{asset_tag}","size_bytes":123,"sha256":"{}"}}]

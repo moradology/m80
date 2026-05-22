@@ -10,6 +10,7 @@ fn update_check_doc_names_read_only_states_and_outputs() {
 
     for required in [
         "`m80-o3uh9.16.18.1`",
+        "`m80-o3uh9.16.9.2`",
         "`m80 update --check`",
         "`current`",
         "`outdated`",
@@ -23,15 +24,24 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`latest_stable_tag`",
         "`safety_floor.status`",
         "`proof_cache_age_seconds`",
+        "`latest_status_origin`",
+        "`latest_status_cache_state`",
+        "`latest_status_fetched_at`",
+        "`latest_status_max_age_seconds`",
+        "`latest_status_offline_reason`",
         "`apply_command`",
         "`reinstall_command`",
-        "no apply\ncommand is emitted when the latest target is yanked or below the safety floor",
+        "`retry_command`",
+        "no apply command is emitted when the latest target is yanked or below\nthe safety floor",
         "never flips `<install-root>/active`",
         "never rewrites profiles",
         "never downloads a bundle",
+        "never refreshes the proof cache or latest-status cache",
         "Malformed freshness metadata fails closed",
         "`m80-latest-freshness-proof.json`",
         "`--latest-status <path>`",
+        "`--latest-status-url <url>`",
+        "`latest_status_cache_state: \"stale\"`",
     ] {
         assert!(
             doc.contains(required),
@@ -48,6 +58,8 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`local_dev_install`",
         "`install_unhealthy`",
         "exact pinned install command",
+        "fallback cache",
+        "retry command",
     ] {
         assert!(readme.contains(required), "README missing {required:?}");
     }
@@ -61,6 +73,8 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`local_dev_install`",
         "`install_unhealthy`",
         "`docs/behaviors/release/update-check.md`",
+        "read-only fallback cache",
+        "offline reason",
     ] {
         assert!(
             crate_readme.contains(required),

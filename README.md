@@ -88,7 +88,11 @@ m80 update --check
 It reports finite states including `current`, `outdated`, `unknown_offline`,
 `stale_latest_metadata`, `prerelease_active`, `ineligible_active`,
 `local_dev_install`, `install_unhealthy`, `yanked`, and `unsafe`, and prints the
-exact pinned install command when a newer safe release is known.
+exact pinned install command when a newer safe release is known. Offline output
+is explicit: it names whether metadata came from the network, a local file, or
+a fallback cache, says whether that cache is fresh, stale, missing, or
+malformed, and prints `m80 update --check` as the retry command when freshness
+is unknown or stale.
 
 After that, wrap any process the same way:
 

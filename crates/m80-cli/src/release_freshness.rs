@@ -166,6 +166,10 @@ pub(crate) fn compare_freshness(
     }
 }
 
+pub(crate) fn latest_status_max_age_seconds() -> u64 {
+    LATEST_STATUS_STALE_AFTER_SECONDS as u64
+}
+
 impl LatestFreshnessMetadata {
     pub(crate) fn repository(&self) -> &str {
         &self.repository
@@ -183,7 +187,7 @@ impl LatestFreshnessMetadata {
         &self.safety_floor
     }
 
-    fn is_stale_at(&self, now: UnixSeconds) -> bool {
+    pub(crate) fn is_stale_at(&self, now: UnixSeconds) -> bool {
         now.0.saturating_sub(self.published_at.0) > LATEST_STATUS_STALE_AFTER_SECONDS
     }
 }

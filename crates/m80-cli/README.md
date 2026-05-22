@@ -105,7 +105,12 @@ binaries, pull OCI images, or install packages implicitly.
   `current`, `outdated`, `unknown_offline`, `stale_latest_metadata`,
   `prerelease_active`, `ineligible_active`, `local_dev_install`,
   `install_unhealthy`, `yanked`, and `unsafe` states and emits a pinned install
-  command only when a newer safe release target is known.
+  command only when a newer safe release target is known. Use
+  `--latest-status-url <url>` to choose the metadata URL. Use
+  `--latest-status <path>` to read a local artifact without network. Use both
+  together to try the URL first and use the path as a read-only fallback cache.
+  Human and JSON output name the metadata source, cache state, freshness max
+  age, offline reason, and retry command when freshness is unknown or stale.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.
 - `m80 list` - enumerates VM run-dirs under the configured run-root, labeling

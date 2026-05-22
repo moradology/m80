@@ -60,6 +60,33 @@ fn update_check_fetches_only_latest_status_and_never_bundle_urls() {
 }
 
 #[test]
+fn update_check_uses_fallback_cache_without_rewriting_it() {
+    let fixture = HealthyInstallFixture::new();
+    fixture.write_installed_release("v1.2.3");
+    fixture.write_no_write_sentinels("v1.2.3");
+    let latest_status = fixture.temp.path().join("latest-status.json");
+    fs::write(&latest_status, super::status_artifact("v1.2.3", None, &[]))
+        .expect("write latest status cache fixture");
+    let server = HttpFixture::new();
+    let before = snapshot_tree(fixture.temp.path());
+
+    let status = cmd_update(
+        fixture.update_args(Some(latest_status), Some(server.url("/latest-status.json"))),
+        false,
+    )
+    .expect("update check should run");
+
+    assert_eq!(status, 0);
+    assert_eq!(snapshot_tree(fixture.temp.path()), before);
+    let requests = server.requests();
+    assert!(!requests.is_empty(), "remote latest status should be tried");
+    assert!(
+        requests.iter().all(|path| path == "/latest-status.json"),
+        "only the latest-status URL should be tried: {requests:?}"
+    );
+}
+
+#[test]
 fn update_output_exposes_remote_latest_status_source() {
     let source = "http://127.0.0.1/latest-status.json".to_owned();
     let metadata = crate::release_freshness::read_freshness_status_artifact_json(
@@ -75,18 +102,33 @@ fn update_output_exposes_remote_latest_status_source() {
         super::super::LatestStatusInput::Available {
             source: source.clone(),
             metadata,
+            origin: super::super::LatestStatusOrigin::Remote,
+            offline_reason: None,
         },
         crate::release_freshness::UnixSeconds::new(super::timestamp("2026-05-21T12:30:00Z")),
     );
 
     assert_eq!(output.latest_status_source, source);
     assert_eq!(output.latest_status_error, None);
+    assert_eq!(
+        output.latest_status_origin,
+        super::super::LatestStatusOrigin::Remote
+    );
+    assert_eq!(
+        output.latest_status_cache_state,
+        super::super::LatestStatusCacheState::NotUsed
+    );
     let human = super::super::render_human(&output);
     assert!(human.contains(&format!("latest_status_source={source}\n")));
+    assert!(human.contains("latest_status_origin=remote\n"));
+    assert!(human.contains("latest_status_cache_state=not_used\n"));
     assert!(human.contains("latest_status_error=<unavailable>\n"));
     let json: serde_json::Value =
         serde_json::from_str(&crate::json::to_pretty(&output)).expect("update JSON parses");
     assert_eq!(json["data"]["latest_status_source"], source);
+    assert_eq!(json["data"]["latest_status_origin"], "remote");
+    assert_eq!(json["data"]["latest_status_cache_state"], "not_used");
+    assert_eq!(json["data"]["latest_status_max_age_seconds"], 172_800);
     assert!(json["data"]["latest_status_error"].is_null());
 }
 

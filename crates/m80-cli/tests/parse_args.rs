@@ -5,6 +5,7 @@
 //! Behavior capture: bead m80-lt15.1 (CLI command contract).
 
 use clap::Parser;
+use m80_cli::args::UpdateArgs;
 use m80_cli::{
     Cli, Cmd, ConfigAction, EgressMode, ImageAction, ImageKindArg, InstallArgs,
     OverlayCloneModeArg, QuickstartArgs, TemplateAction, WarmAction, WritebackMode,
@@ -406,6 +407,50 @@ fn parse_install_rejects_multiple_sources() {
         "file:///tmp/m80-linux-x86_64.tar.gz",
     ]);
     assert!(result.is_err(), "install accepts exactly one source");
+}
+
+// ---- update ----
+
+#[test]
+fn parse_update_allows_latest_url_with_read_only_fallback_cache() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "update",
+        "--check",
+        "--install-root",
+        "/tmp/m80-install",
+        "--latest-status-url",
+        "https://example.invalid/latest-status.json",
+        "--latest-status",
+        "/tmp/latest-status.json",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Update(UpdateArgs {
+            check,
+            install_root,
+            profile,
+            latest_status,
+            latest_status_url,
+            config_path,
+            profile_dir,
+        }) => {
+            assert!(check);
+            assert_eq!(install_root, std::path::PathBuf::from("/tmp/m80-install"));
+            assert!(profile.is_none());
+            assert_eq!(
+                latest_status,
+                Some(std::path::PathBuf::from("/tmp/latest-status.json"))
+            );
+            assert_eq!(
+                latest_status_url.as_deref(),
+                Some("https://example.invalid/latest-status.json")
+            );
+            assert!(config_path.is_none());
+            assert!(profile_dir.is_none());
+        }
+        _ => panic!("expected Update"),
+    }
 }
 
 // ---- inspect ----

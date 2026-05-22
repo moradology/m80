@@ -11,12 +11,14 @@ use crate::install_state::{
 };
 use crate::json;
 use crate::release_freshness::{
-    compare_freshness, ActiveInstallVersion, FreshnessState, LatestFreshnessMetadata,
-    LatestMetadata, UnixSeconds,
+    compare_freshness, latest_status_max_age_seconds, ActiveInstallVersion, FreshnessState,
+    LatestFreshnessMetadata, LatestMetadata, UnixSeconds,
 };
 use crate::release_policy::{classify_release_tag, parse_stable_release_tag, ReleaseIdentity};
 
-use latest_status::{latest_status_input, LatestStatusInput};
+use latest_status::{
+    latest_status_input, LatestStatusCacheState, LatestStatusInput, LatestStatusOrigin,
+};
 use render::{render_human, update_message};
 
 pub(super) fn cmd_update(args: UpdateArgs, json_mode: bool) -> anyhow::Result<i32> {
@@ -41,6 +43,8 @@ pub(super) fn cmd_update(args: UpdateArgs, json_mode: bool) -> anyhow::Result<i3
         LatestStatusInput::UnknownOffline {
             source: "not-read".to_owned(),
             detail: "local install state does not need latest metadata".to_owned(),
+            origin: LatestStatusOrigin::NotRead,
+            cache_state: LatestStatusCacheState::NotUsed,
         }
     };
     let output = check_output(&report, latest, current_unix_seconds());
@@ -80,7 +84,13 @@ struct UpdateCheckOutput {
     active_tag: Option<String>,
     latest_stable_tag: Option<String>,
     latest_status_source: String,
+    latest_status_origin: LatestStatusOrigin,
+    latest_status_cache_state: LatestStatusCacheState,
+    latest_status_fetched_at: Option<i64>,
+    latest_status_max_age_seconds: u64,
     latest_status_error: Option<String>,
+    latest_status_offline_reason: Option<String>,
+    retry_command: Option<String>,
     safety_floor: SafetyFloorOutput,
     proof_cache_status: UpdateProofCacheStatus,
     proof_cache_age_seconds: Option<u64>,
@@ -148,21 +158,73 @@ fn check_output(
         .as_ref()
         .and_then(|metadata| metadata.proof_cache.as_ref())
         .and_then(|proof_cache| proof_cache.cache_age_seconds);
-    let (latest_status_source, latest_status_error, latest_metadata) = match latest {
-        LatestStatusInput::Available { source, metadata } => (source, None, Some(metadata)),
-        LatestStatusInput::UnknownOffline { source, detail } => (source, Some(detail), None),
+    let (
+        latest_status_source,
+        latest_status_origin,
+        latest_status_error,
+        latest_status_offline_reason,
+        latest_status_cache_state,
+        latest_metadata,
+    ) = match latest {
+        LatestStatusInput::Available {
+            source,
+            metadata,
+            origin,
+            offline_reason,
+        } => {
+            let cache_state = if origin == LatestStatusOrigin::CacheFallback {
+                if metadata.is_stale_at(now) {
+                    LatestStatusCacheState::Stale
+                } else {
+                    LatestStatusCacheState::Fresh
+                }
+            } else {
+                LatestStatusCacheState::NotUsed
+            };
+            (
+                source,
+                origin,
+                None,
+                offline_reason,
+                cache_state,
+                Some(metadata),
+            )
+        }
+        LatestStatusInput::UnknownOffline {
+            source,
+            detail,
+            origin,
+            cache_state,
+        } => (
+            source,
+            origin,
+            Some(detail.clone()),
+            Some(detail),
+            cache_state,
+            None,
+        ),
     };
     let latest_stable_tag = latest_metadata
         .as_ref()
         .map(|metadata| metadata.latest_tag().to_owned());
+    let latest_status_fetched_at = latest_metadata
+        .as_ref()
+        .map(|metadata| metadata.published_at().as_i64());
+    let latest_status_max_age_seconds = latest_status_max_age_seconds();
 
     let safety_floor = safety_floor_output(active_tag.as_deref(), latest_metadata.as_ref());
     let state = update_state(report, latest_metadata.as_ref(), safety_floor.status, now);
     let apply_command = apply_command(state, &safety_floor, latest_metadata.as_ref());
     let reinstall_command = reinstall_command_for_state(state, report, active_tag.as_deref());
+    let retry_command = matches!(
+        state,
+        UpdateCheckState::UnknownOffline | UpdateCheckState::StaleLatestMetadata
+    )
+    .then(|| "m80 update --check".to_owned());
     let next_command = apply_command
         .clone()
         .or_else(|| reinstall_command.clone())
+        .or_else(|| retry_command.clone())
         .or_else(|| {
             (state == UpdateCheckState::Current).then(|| "m80 run -- echo hello".to_owned())
         });
@@ -175,7 +237,13 @@ fn check_output(
         active_tag,
         latest_stable_tag,
         latest_status_source,
+        latest_status_origin,
+        latest_status_cache_state,
+        latest_status_fetched_at,
+        latest_status_max_age_seconds,
         latest_status_error,
+        latest_status_offline_reason,
+        retry_command,
         safety_floor,
         proof_cache_status,
         proof_cache_age_seconds,
