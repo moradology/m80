@@ -76,6 +76,12 @@ QUICKSTART_SURFACE_FILES = [
     "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
 ]
 
+QUICKSTART_SCRIPT_REFERENCE_ALLOWLIST = {
+    "docs/runbook/release.md": "must not carry",
+    "docs/behaviors/cli/command-surface.md": "only a thin launcher for that override path",
+    "docs/behaviors/release/bundle-builder.md": "renderer rejects templates",
+}
+
 QUICKSTART_SNIPPET_DOCS = [
     "README.md",
     "docs/runbook/release.md",
@@ -423,6 +429,31 @@ class ReleaseUrlContractTest(unittest.TestCase):
                 "/main/install.sh",
                 text,
                 f"{relative} must not send users to mutable main install.sh",
+            )
+
+    def test_quickstart_script_reference_is_never_common_path(self) -> None:
+        public_docs = [
+            "README.md",
+            "docs/runbook/release.md",
+            "crates/m80-cli/README.md",
+            "docs/behaviors/cli/command-surface.md",
+            "docs/behaviors/cli/product-surface.md",
+            "docs/behaviors/release/bundle-builder.md",
+            "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
+        ]
+        for relative in public_docs:
+            text = read_repo_file(relative)
+            if "scripts/quickstart.sh" not in text:
+                continue
+            required_context = QUICKSTART_SCRIPT_REFERENCE_ALLOWLIST.get(relative)
+            self.assertIsNotNone(
+                required_context,
+                f"{relative} references scripts/quickstart.sh outside an override or forbidden-template context",
+            )
+            self.assertIn(
+                required_context,
+                text,
+                f"{relative} references scripts/quickstart.sh without the required non-common-path context",
             )
 
     def test_production_code_does_not_hardcode_public_release_root(self) -> None:
