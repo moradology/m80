@@ -1,38 +1,15 @@
 # m80
 
-m80 runs a process inside a Firecracker microVM while making the VM feel like a
-thin host-process wrapper: stdout is stdout, stderr is stderr, the guest exit
-code is the `m80` exit code, and the process sees only the filesystem, network,
-environment, and runtime profile you selected.
-
-<!-- m80:quickstart-snippet post-install-smoke start -->
-```sh
-m80 run -- echo hello
-```
-<!-- m80:quickstart-snippet post-install-smoke end -->
-
-Expected output:
-
-```text
-hello
-```
-
-The command above uses the default runtime profile. The release installer
-writes `/etc/m80/profiles/default.toml` plus `/etc/m80/config.toml` so the
-default profile points at the installed guest bundle. The built-in `env`
-profile remains available for explicit environment-driven development.
-The requested program must exist inside the selected guest image/profile or in
-the visible workspace. m80 does not run host binaries, pull OCI images, or
-install packages implicitly.
+m80 runs one command inside a Firecracker microVM and returns stdout, stderr,
+and the exit code like a normal process.
 
 ## Quickstart
 
-This buys you a Firecracker-backed process wrapper: `m80 run -- <command>`
-boots a microVM, runs the command, streams stdout/stderr back like a normal
-process, returns the guest exit code, and tears the VM down.
+On a Linux/KVM machine with `sudo`, `curl`, `python3`, `sha256sum`, `tar`, and
+GitHub CLI `gh`:
 
 <!-- m80:freshness-status start -->
-Public installer status: public proof green for `v0.2.11`. Latest and pinned install URLs were verified from unauthenticated public release assets. Proof: [latest-and-pinned-url-proof](docs/behaviors/release/release-readiness-public-access.json).
+Public installer status: public proof green for `v0.2.11`.
 <!-- m80:freshness-status end -->
 
 <!-- m80:quickstart-snippet latest-install start -->
@@ -41,72 +18,41 @@ curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh
 ```
 <!-- m80:quickstart-snippet latest-install end -->
 
+Check the host:
+
+```sh
+m80 preflight
+```
+
+Run something:
+
+<!-- m80:quickstart-snippet post-install-smoke start -->
 ```sh
 m80 run -- echo hello
 ```
+<!-- m80:quickstart-snippet post-install-smoke end -->
 
-The install snippets are checked against the public release URL contract in
-[`docs/behaviors/release/public-release-root.env`](docs/behaviors/release/public-release-root.env)
-by [`scripts/render-release-install-snippets.py`](scripts/render-release-install-snippets.py)
-and the marker gate in
-[`docs/behaviors/release/docs-quickstart-gate.md`](docs/behaviors/release/docs-quickstart-gate.md).
-The `latest` command follows the stable release channel only: public,
-non-draft, non-prerelease GitHub releases tagged `vMAJOR.MINOR.PATCH`, and it
-is not considered promoted until the unauthenticated public-access proof is
-green.
-
-The installer is a rendered asset from the selected release. It uses that
-pinned release tag to download the release asset index and shell-safe bootstrap
-selector, selects the matching Linux host bundle, verifies the signed release
-integrity predicate and checksums before extraction, then runs the bundled
-`m80 install`. The installer needs standard Linux tools plus `curl`,
-`python3`, `sha256sum`, `tar`, and GitHub CLI `gh` with
-`gh attestation verify`. The install writes the default runtime profile/config
-so plain `m80 run -- echo hello` uses the installed guest bundle. Host TCB
-binaries are installed separately from final host paths; release tarballs must
-not bundle the host manifest. The bundle shape is pinned in
-[`docs/behaviors/release/bundle-contract.md`](docs/behaviors/release/bundle-contract.md).
-
-To see what the next `m80 run` will use, run:
+Try a few useful shapes:
 
 ```sh
-m80 install-status
+m80 run -- uname -a
+m80 run --egress none -- sh -c 'id && pwd'
+m80 run --workspace . --cwd /workspace -- ls -la
+m80 run --workspace . --cwd /workspace --writeback on-success -- sh -c 'date > m80.out'
+m80 run --egress outbound -- curl -I https://example.com
+m80 run --env FOO=bar -- sh -c 'echo "$FOO"'
+m80 run -it --workspace . --cwd /workspace -- sh
 ```
 
-It reports the active release tag, active install directory, selected
-profile/config, installed metadata paths, and one next action when the install
-is missing or stale. `m80 --json install-status` is the stable machine-readable
-form for scripts and freshness checks.
-
-To check whether the installed release is still current without touching the
-install root, run:
+Keep it current:
 
 ```sh
 m80 update --check
 ```
 
-It reports finite states including `current`, `outdated`, `unknown_offline`,
-`stale_latest_metadata`, `prerelease_active`, `ineligible_active`,
-`local_dev_install`, `install_unhealthy`, `yanked`, and `unsafe`, and prints the
-exact pinned install command when a newer safe release is known. Offline output
-is explicit: it names whether metadata came from the network, a local file, or
-a fallback cache, says whether that cache is fresh, stale, missing, or
-malformed, names `active_kind` separately from freshness state, and prints
-`m80 update --check` as the retry command when freshness is unknown or stale.
+If it prints a `next_command=...`, run that command.
 
-When a safe update is known, copy the `next_command` value exactly:
-
-```text
-next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
-```
-
-After that, wrap any process the same way:
-
-```sh
-m80 run -- <command> [args...]
-```
-
-For reproducible automation, replace `latest` with a concrete tag:
+Pin a version for automation:
 
 <!-- m80:quickstart-snippet pinned-install start -->
 ```sh
@@ -114,71 +60,33 @@ curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install
 ```
 <!-- m80:quickstart-snippet pinned-install end -->
 
+Use a stable tag such as `v0.2.11`.
+
+If something fails, start with:
+
 ```sh
-m80 run -- echo hello
+m80 install-status
 ```
 
-Use a stable tag such as `v1.2.3`; prerelease or draft releases are not accepted
-by the normal install path.
+Then check the host:
 
-Automation from a trusted checkout can verify the installer before handing it to
-sudo:
-
-<!-- m80:quickstart-snippet verified-install-handoff start -->
 ```sh
-tag=<version>
-repo=moradology/m80
-tmp="$(mktemp -d)"
-base="https://github.com/${repo}/releases/download/${tag}"
-for asset in install.sh install.sh.sha256 m80-release-integrity.json m80-release-integrity.attestation.jsonl m80-release-attestation.json; do
-  curl -fsSLo "${tmp}/${asset}" "${base}/${asset}"
-done
-python3 scripts/verify-install-handoff.py "${tmp}" \
-  --release-tag "${tag}" \
-  --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
-  --verification-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-sudo sh "${tmp}/install.sh"
+m80 preflight
 ```
-<!-- m80:quickstart-snippet verified-install-handoff end -->
 
-If install, preflight, or the first `m80 run -- echo hello` fails, capture
-`m80 install-status` first and then `m80 preflight`; status explains local
-install-state problems before you debug a launch: missing active pointer, stale
-profile target, explicit profile override, local-dev profile, missing/stale
-install metadata, and tampered proof cache.
-Use the stable
-[`quickstart troubleshooting matrix`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#network)
-IDs in support reports; common anchors include
-[`missing-local-tool`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#missing-local-tool),
-[`stale-profile`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#stale-profile),
-and
-[`process-smoke-failed`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#process-smoke-failed).
-Re-running install with a known older stable release is refused by default
-before staging or profile writes; the diagnostic names the active tag, requested
-tag, `downgrade_refused`, and a pinned reinstall command for the active release.
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,
 Firecracker seccomp filter, `host-binaries.manifest.json` for the installed
 host-side TCB, m80 artifacts, and startup privilege through root, the documented
 m80 capability set, or a privileged container. For v0.x, Firecracker, jailer,
 and the Firecracker seccomp filter are operator-provided host prerequisites; if
-preflight reports one of those failures, use the short
+preflight reports one of those failures, see the
 [`host prerequisite policy`](docs/behaviors/release/host-prerequisite-policy.md)
-to decide what to install or repair. The structured repair fields are defined
-by the
-[`host prerequisite verifier`](docs/behaviors/preflight/host-prerequisite-verifier.md)
-contract.
+and
+[`host prerequisite verifier`](docs/behaviors/preflight/host-prerequisite-verifier.md).
 
-If `m80 install` fails with `asset_index_code=...`, the requested
-OS/architecture/image kind, m80 version, available release tuples, and exact
-repair command are defined in
-[`docs/behaviors/release/asset-index.md`](docs/behaviors/release/asset-index.md).
-
-Production operators should read [`docs/ops/host-setup.md`](docs/ops/host-setup.md)
-before trusting a host. It covers identity separation, Docker socket risk,
-artifact ownership, Cargo source controls, and runtime host assumptions.
-Developers running the privileged real-KVM test battery locally should use
-[`docs/operations/e2e-local-dev.md`](docs/operations/e2e-local-dev.md).
+Production operators should also read
+[`docs/ops/host-setup.md`](docs/ops/host-setup.md).
 
 ## Diagnostics
 

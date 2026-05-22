@@ -91,8 +91,10 @@ fn install_state_docs_keep_quickstart_and_release_evidence_repairable() {
     let install_state = read_repo_file("docs/behaviors/release/install-state.md");
 
     for required in [
-        "If install, preflight, or the first `m80 run -- echo hello` fails",
-        "`m80 install-status` first and then `m80 preflight`",
+        "If something fails, start with:",
+        "m80 install-status",
+        "Then check the host:",
+        "m80 preflight",
         "github.com/moradology/m80/releases/latest/download/install.sh",
     ] {
         assert!(readme.contains(required), "README missing {required:?}");

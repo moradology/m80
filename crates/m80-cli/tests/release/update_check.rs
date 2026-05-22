@@ -55,15 +55,7 @@ fn update_check_doc_names_read_only_states_and_outputs() {
 
     for required in [
         "m80 update --check",
-        "without touching the\ninstall root",
-        "`stale_latest_metadata`",
-        "`prerelease_active`",
-        "`ineligible_active`",
-        "`local_dev_install`",
-        "`install_unhealthy`",
-        "exact pinned install command",
-        "fallback cache",
-        "retry command",
+        "If it prints a `next_command=...`, run that command.",
     ] {
         assert!(readme.contains(required), "README missing {required:?}");
     }

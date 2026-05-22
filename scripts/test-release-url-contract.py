@@ -127,19 +127,25 @@ class ReleaseUrlContractTest(unittest.TestCase):
         for command in [latest_install_command(), pinned_install_command()]:
             self.assertIn(command, readme)
             self.assertIn(command, runbook)
-        self.assertIn(verified_install_handoff_block(), readme)
         self.assertIn(verified_install_handoff_block(), runbook)
-        self.assertIn("scripts/render-release-install-snippets.py", readme)
         self.assertIn(str(CONTRACT_PATH.relative_to(REPO_ROOT)), runbook)
 
     def test_marked_quickstart_snippets_match_shared_contract(self) -> None:
         expected = expected_quickstart_snippets()
+        expected_by_doc = {
+            "README.md": {
+                "latest-install": expected["latest-install"],
+                "post-install-smoke": expected["post-install-smoke"],
+                "pinned-install": expected["pinned-install"],
+            },
+            "docs/runbook/release.md": expected,
+        }
 
-        for relative in QUICKSTART_SNIPPET_DOCS:
+        for relative, expected_snippets in expected_by_doc.items():
             snippets = extract_marked_quickstart_snippets(REPO_ROOT / relative)
             self.assertEqual(
                 snippets,
-                expected,
+                expected_snippets,
                 f"{relative} quickstart snippets diverged from the shared contract",
             )
 
@@ -152,7 +158,6 @@ class ReleaseUrlContractTest(unittest.TestCase):
             ("README.md", expected_snippets["post-install-smoke"], "common"),
             ("README.md", expected_snippets["latest-install"], "common"),
             ("README.md", expected_snippets["pinned-install"], "pinned"),
-            ("README.md", expected_snippets["verified-install-handoff"], "verified/operator"),
             ("README.md", "m80 install-status", "troubleshooting"),
             ("docs/runbook/release.md", expected_snippets["latest-install"], "common"),
             ("docs/runbook/release.md", expected_snippets["pinned-install"], "pinned"),

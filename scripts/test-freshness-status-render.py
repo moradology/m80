@@ -37,14 +37,14 @@ class FreshnessStatusRenderTest(unittest.TestCase):
             self.assertIn(latest_install_command(), rendered)
             self.assertIn(latest_install_command(), original)
 
-    def test_public_green_status_renders_public_proof_link(self) -> None:
+    def test_public_green_status_renders_compact_readme_marker(self) -> None:
         with render_fixture(status="public_green") as fixture:
             result = run_render(fixture.root, fixture.status)
 
             self.assertEqual(result.returncode, 0, result.stderr)
             rendered = fixture.readme.read_text()
             self.assertIn("public proof green for `v1.2.3`", rendered)
-            self.assertIn("[latest-and-pinned-url-proof](public-proof.json)", rendered)
+            self.assertNotIn("[latest-and-pinned-url-proof](public-proof.json)", rendered)
 
     def test_scaffolded_status_renders_fixture_not_public(self) -> None:
         with render_fixture(status="scaffolded", substrate="fixture-hostless", artifact_class="fixture") as fixture:

@@ -132,6 +132,8 @@ def render_status_text(
             "status becomes `public_green`."
         )
     if status_value == "public_green":
+        if doc_path.name == "README.md":
+            return f"Public installer status: public proof green for `{resolved}`."
         return (
             f"Public installer status: public proof green for `{resolved}`. Latest and pinned "
             f"install URLs were verified from unauthenticated public release assets. Proof: {links}."
