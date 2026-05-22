@@ -74,6 +74,11 @@ Then check the host:
 m80 preflight
 ```
 
+Known failure IDs live in the quickstart troubleshooting matrix:
+[`network`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#network)
+and
+[`process-smoke-failed`](docs/behaviors/release/quickstart-troubleshooting-matrix.md#process-smoke-failed).
+
 `m80 preflight` reports missing host setup before launch. Firecracker needs a
 Linux/KVM host, `/dev/kvm` access, the Firecracker binary, jailer binary,
 Firecracker seccomp filter, `host-binaries.manifest.json` for the installed
