@@ -205,6 +205,15 @@ def valid_receipt() -> dict:
             "release_tag": TAG,
             "builder_identity": f"github-actions:https://github.com/{REPOSITORY}/actions/runs/26263525140/attempts/1",
         },
+        "command": (
+            "GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN "
+            "scripts/release_public_access_receipt.py --repository moradology/m80 "
+            "--release-tag v0.2.7 --commit-sha 388d2d5aa13418e22c1144963b0f66dd3588a92b "
+            "--out docs/behaviors/release/release-readiness-public-access.json --write"
+        ),
+        "exit_status": 0,
+        "stdout": "public-access release readiness receipt ok",
+        "stderr": "",
     }
 
 

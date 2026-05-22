@@ -22,6 +22,8 @@ The receipt is valid only when:
 - every downloaded asset records HTTP status, final URL, size, and SHA256.
 - integrity subjects, build metadata, release tag, repository, and source
   commit agree with the release being promoted.
+- the receipt carries the command, exit status, stdout, stderr, resolved tag,
+  and substrate fields required by verified-close policy.
 
 Fixture receipts are useful for verifier tests, but they do not satisfy the
 real lane. Latest promotion requires a non-fixture receipt generated from the

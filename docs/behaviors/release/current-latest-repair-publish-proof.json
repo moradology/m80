@@ -224,6 +224,8 @@
     ]
   },
   "bead": "m80-o3uh9.21.7.1.2",
+  "command": "gh run view 26263525140 --repo moradology/m80 --json status,conclusion,url,headSha,jobs; gh release view v0.2.7 --repo moradology/m80 --json tagName,url,isDraft,isPrerelease,assets,publishedAt,targetCommitish; env -u GH_TOKEN -u GITHUB_TOKEN curl -fsSL https://api.github.com/repos/moradology/m80/releases/tags/v0.2.7",
+  "exit_status": 0,
   "generated_at": "2026-05-22T01:47:30Z",
   "kind": "m80_current_latest_repair_publish_proof",
   "latest_promotion_order": {
@@ -369,8 +371,16 @@
   },
   "release_tag": "v0.2.7",
   "repository": "moradology/m80",
+  "resolved_tag": "v0.2.7",
   "schema_version": 1,
   "source_commit": "388d2d5aa13418e22c1144963b0f66dd3588a92b",
+  "stderr": "",
+  "stdout": "release workflow 26263525140 succeeded; public release v0.2.7 is non-draft/non-prerelease latest and contains the complete installer asset set",
+  "substrate": {
+    "kind": "github-actions-and-public-github",
+    "release_url": "https://github.com/moradology/m80/releases/tag/v0.2.7",
+    "workflow_run_id": "26263525140"
+  },
   "workflow_run": {
     "attempt": "1",
     "conclusion": "success",

@@ -198,6 +198,13 @@ def build_receipt(
             "release_tag": build["release_tag"],
             "builder_identity": build.get("builder_identity"),
         },
+        "command": "GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN "
+        "scripts/release_public_access_receipt.py --repository "
+        f"{repository} --release-tag {release_tag} --commit-sha {commit_sha} "
+        "--out docs/behaviors/release/release-readiness-public-access.json --write",
+        "exit_status": 0,
+        "stdout": "public-access release readiness receipt ok",
+        "stderr": "",
     }
     check(not receipt["auth"]["gh_auth_present"], "GitHub CLI auth must be absent for public-access proof")
     verify_receipt(
@@ -243,6 +250,10 @@ def verify_receipt(
             "downloaded_asset_digests",
             "integrity_subjects",
             "release_build",
+            "command",
+            "exit_status",
+            "stdout",
+            "stderr",
         },
         "public-access receipt",
     )
@@ -334,6 +345,10 @@ def verify_receipt(
     release_build = require_dict(receipt["release_build"], "release_build")
     check(release_build.get("source_commit") == expected_commit_sha, "release_build source_commit mismatch")
     check(release_build.get("release_tag") == expected_release_tag, "release_build release_tag mismatch")
+    check(isinstance(receipt["command"], str) and receipt["command"], "public-access receipt command missing")
+    check(receipt["exit_status"] == 0, "public-access receipt exit_status must be 0")
+    check(isinstance(receipt["stdout"], str), "public-access receipt stdout must be a string")
+    check(isinstance(receipt["stderr"], str), "public-access receipt stderr must be a string")
 
 
 def fetch_json(url: str) -> dict:

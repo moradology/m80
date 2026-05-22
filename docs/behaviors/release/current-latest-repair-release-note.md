@@ -16,6 +16,16 @@ https://github.com/moradology/m80/releases/latest
 Pinned release URL:
 https://github.com/moradology/m80/releases/tag/v0.2.7
 
+Verification metadata:
+
+- command: `gh release view v0.2.7 --repo moradology/m80 --json body,url,tagName`
+- exit: `0`
+- substrate: `public-github`
+- resolved_tag: `v0.2.7`
+- stdout: release body contains the v0.2.6 supersession note, public no-auth
+  proof link, and protected publish proof link.
+- stderr: empty
+
 Public proof links:
 
 - Public no-auth proof:

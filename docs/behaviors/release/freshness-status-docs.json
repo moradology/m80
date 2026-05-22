@@ -1,11 +1,11 @@
 {
-  "checked_command_inventory_digest": "sha256:634091d0e49f9f49a67e6d7edb9d99628353676b606b4cf27907e4ffde98afe3",
+  "checked_command_inventory_digest": "sha256:e8696e5cf3b5bbd341d6cd9041f21264b118f14e1b25cc4ede62de1b34cd62b3",
   "expected_highest_stable_tag": "v0.2.7",
-  "generated_at": "2026-05-22T01:59:35Z",
+  "generated_at": "2026-05-22T02:17:38Z",
   "install_url_proofs": [
     {
       "artifact_path": "release-readiness-public-access.json",
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A25Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A54%3A03Z&ske=2026-05-22T02%3A54%3A25Z&sks=b&skv=2018-11-09&sig=5fN0F22k63bGlQ4DwbuMIVt51tRSX4FZ%2F%2BNLqAb%2Bx1I%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNTQ2NSwibmJmIjoxNzc5NDE1MTY1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.pNv6bXVQGV44bQE0ypZsmK6vI2rc9t5QEnvK3ulcIAo&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "kind": "latest-install",
       "unauthenticated": true,
@@ -13,7 +13,7 @@
     },
     {
       "artifact_path": "release-readiness-public-access.json",
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A25Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A54%3A03Z&ske=2026-05-22T02%3A54%3A25Z&sks=b&skv=2018-11-09&sig=5fN0F22k63bGlQ4DwbuMIVt51tRSX4FZ%2F%2BNLqAb%2Bx1I%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNTQ2NSwibmJmIjoxNzc5NDE1MTY1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.pNv6bXVQGV44bQE0ypZsmK6vI2rc9t5QEnvK3ulcIAo&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "kind": "pinned-install",
       "unauthenticated": true,
@@ -28,7 +28,7 @@
       "artifact_class": "public",
       "kind": "latest-and-pinned-url-proof",
       "path": "release-readiness-public-access.json",
-      "sha256": "sha256:b78426948fa2e7de13b45fad3d7a02ce53893a21f12fc27ad06390eb14032408"
+      "sha256": "sha256:890dceb6b5b251f101bd165e31d0d91ac4e166170c6609e50ac59bb94792f5e5"
     }
   ],
   "proof_substrate": "public-unauthenticated",

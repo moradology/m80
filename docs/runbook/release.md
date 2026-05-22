@@ -586,6 +586,15 @@ integrity/build metadata. It is required before latest promotion; fixture receip
 public-access lane. The behavior contract lives in
 `docs/behaviors/release/public-access-receipt.md`.
 
+When that public receipt is copied into `docs/behaviors/release/`, refresh the
+checked README/runbook status with:
+
+```sh
+scripts/update-freshness-status-from-public-access.py
+python3 scripts/render-freshness-status.py
+python3 scripts/render-freshness-status.py --check
+```
+
 ## Quickstart Proof Artifact
 
 The release workflow writes `m80-quickstart-proof-hostless.json` into the
