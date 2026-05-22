@@ -1150,6 +1150,41 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn("checksum verification failed for m80-release-assets.json", result.stderr)
             assert_no_bundle_download(self, urls, install_args)
 
+    def test_rendered_install_script_rejects_signed_selector_drift_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            lines = bootstrap_selector_lines(root / "out")
+            row = lines[3].split("\t")
+            row[7] = "999"
+            lines[3] = "\t".join(row)
+            rewrite_bootstrap_selector(root / "out", lines)
+            write_integrity_material(root / "out")
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            assert_selector_index_drift_diagnostic(self, result.stderr, "size_bytes", "999")
+            assert_no_bundle_download(self, urls, install_args)
+
+    def test_rendered_install_script_rejects_signed_index_drift_before_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_signed_fixture(root)
+            rewrite_asset_index_asset(root / "out", {"size_bytes": 999})
+            write_integrity_material(root / "out")
+
+            result, urls, install_args = run_rendered_install(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            assert_selector_index_drift_diagnostic(
+                self,
+                result.stderr,
+                "size_bytes",
+                str((root / "out" / BUNDLE_NAME).stat().st_size),
+            )
+            assert_no_bundle_download(self, urls, install_args)
+
     def test_release_workflow_uses_versioned_install_template(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/release-artifacts.yml").read_text()
 
@@ -4845,6 +4880,21 @@ def assert_no_bundle_download(test: unittest.TestCase, urls: list[str], install_
     bundle_url = f"https://github.com/moradology/m80/releases/download/v0.2.11/{BUNDLE_NAME}"
     test.assertNotIn(bundle_url, urls)
     test.assertFalse(install_args.exists())
+
+
+def assert_selector_index_drift_diagnostic(
+    test: unittest.TestCase,
+    stderr: str,
+    field: str,
+    expected_from_selector: str,
+) -> None:
+    base = "https://github.com/moradology/m80/releases/download/v0.2.11"
+    test.assertIn(f"release integrity selector/index {field} mismatch", stderr)
+    test.assertIn("release_tag=v0.2.11", stderr)
+    test.assertIn("os=linux arch=x86_64 image_kind=minimal", stderr)
+    test.assertIn(f"selector_url={base}/{BOOTSTRAP_SELECTOR_NAME}", stderr)
+    test.assertIn(f"index_url={base}/{ASSET_INDEX_NAME}", stderr)
+    test.assertIn(f"expected_from_selector={expected_from_selector}", stderr)
 
 
 def write_executable(path: Path, text: str) -> None:

@@ -155,3 +155,13 @@ asset-index row omits `signature_name` or `attestation_name`, leaves
 file that is absent from the release dist, or drifts from the release tag,
 bundle metadata version, bundle tarball, metadata sidecar, checksum sidecar, or
 selector row.
+
+The POSIX bootstrapper still performs checksum-only selection first so it can
+find the tuple-specific bundle URL without an installed `m80` binary. That
+selection is only an input to signed parity verification. Before bundle
+download, `install.sh` verifies release integrity material that covers both
+`m80-release-assets.json` and `m80-bootstrap-selector.tsv`, then compares the
+selected selector tuple back to the canonical index row. If either file is
+hand-edited and its plain `.sha256` sidecar is refreshed, the install still
+fails before bundle download with release tag, OS, arch, image kind, selector
+URL, index URL, and the mismatched tuple field in the diagnostic.

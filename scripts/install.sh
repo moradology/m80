@@ -413,6 +413,8 @@ validate_release_integrity_material() {
         "$tmp" \
         "$M80_RELEASE_TAG" \
         "${M80_PUBLIC_RELEASE_OWNER}/${M80_PUBLIC_RELEASE_REPO}" \
+        "$(asset_url "$M80_BOOTSTRAP_SELECTOR_NAME")" \
+        "$(asset_url "$M80_ASSET_INDEX_NAME")" \
         "$host_os_value" \
         "$host_arch_value" \
         "$M80_IMAGE_KIND" \
@@ -444,6 +446,8 @@ import sys
     tmp_dir,
     release_tag,
     repository,
+    selector_url,
+    index_url,
     host_os,
     host_arch,
     image_kind,
@@ -788,7 +792,14 @@ def verify_asset_index(metadata: dict) -> dict:
         "expected_firecracker_version": metadata["expected_firecracker_version"],
     }
     for field, expected_value in expected.items():
-        require(selected[field] == expected_value, f"release integrity asset index {field} mismatch for {bundle_name}")
+        require(
+            selected[field] == expected_value,
+            "release integrity selector/index "
+            f"{field} mismatch for release_tag={release_tag} "
+            f"os={host_os} arch={host_arch} image_kind={image_kind} "
+            f"selector_url={selector_url} index_url={index_url} "
+            f"expected_from_selector={expected_value} observed_in_index={selected[field]}",
+        )
     return index
 
 
