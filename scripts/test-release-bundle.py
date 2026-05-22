@@ -1289,11 +1289,36 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("--actor \"$GITHUB_ACTOR\"", workflow)
         self.assertLess(
             workflow.index("scripts/release_publish_receipt.py"),
-            workflow.index('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}" --clobber'),
+            workflow.index("scripts/release_publication_plan.py"),
         )
+        self.assertIn("Resolve release publication plan", workflow)
+        self.assertIn("m80-release-publication-plan.json", workflow)
+        self.assertIn("create_draft_upload_publish)", workflow)
+        self.assertIn('gh release create "$GITHUB_REF_NAME"', workflow)
+        self.assertIn("--verify-tag", workflow)
+        self.assertIn("--draft", workflow)
+        self.assertIn('gh release edit "$GITHUB_REF_NAME" --draft=false --latest --verify-tag', workflow)
+        self.assertIn("validate_existing_public_release)", workflow)
         self.assertIn("mapfile -t upload_paths < <(", workflow)
         self.assertIn("--print-upload-paths", workflow)
-        self.assertIn('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}" --clobber', workflow)
+        self.assertIn('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"', workflow)
+        self.assertNotIn("--clobber", workflow)
+        self.assertIn("Validate uploaded draft before latest promotion", workflow)
+        self.assertIn("download_args=(--dir /tmp/m80-release-prepublish)", workflow)
+        self.assertIn("/tmp/m80-release-prepublish/m80-linux-x86_64.tar.gz", workflow)
+        self.assertIn("Publish validated draft release as latest", workflow)
+        self.assertLess(
+            workflow.index('gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"'),
+            workflow.index("Validate uploaded draft before latest promotion"),
+        )
+        self.assertLess(
+            workflow.index("Validate uploaded draft before latest promotion"),
+            workflow.index("Publish validated draft release as latest"),
+        )
+        self.assertLess(
+            workflow.index("Publish validated draft release as latest"),
+            workflow.index("Re-download and validate published release assets"),
+        )
         self.assertIn("download_args=(--dir /tmp/m80-release-redownload)", workflow)
         self.assertIn('download_args+=(--pattern "$pattern")', workflow)
         self.assertIn("--print-download-patterns", workflow)
@@ -1320,7 +1345,7 @@ class ReleaseBundleTest(unittest.TestCase):
         )
         self.assertLess(
             workflow.index("scripts/release_remote_asset_inventory.py"),
-            workflow.index("scripts/verify-install-handoff.py"),
+            workflow.rindex("scripts/verify-install-handoff.py"),
         )
         self.assertNotIn(
             'gh release upload "$GITHUB_REF_NAME" \\\n            /tmp/m80-release-upload/',
@@ -1330,8 +1355,11 @@ class ReleaseBundleTest(unittest.TestCase):
         self.assertIn("actions/download-artifact", workflow)
         self.assertIn("m80-release-publish-decision-${{ github.run_id }}", workflow)
         self.assertIn("/tmp/m80-release-upload/m80-release-publish-decision.json", workflow)
+        self.assertIn("m80-release-publication-plan-${{ github.run_id }}", workflow)
+        self.assertIn("/tmp/m80-release-upload/m80-release-publication-plan.json", workflow)
         self.assertIn("m80-release-remote-assets-${{ github.run_id }}", workflow)
         self.assertIn("/tmp/m80-release-redownload/m80-release-remote-assets.json", workflow)
+        self.assertIn("/tmp/m80-release-prepublish/**", workflow)
         for name in [
             BUNDLE_NAME,
             f"{BUNDLE_NAME}.sha256",

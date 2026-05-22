@@ -29,13 +29,20 @@ and hostless proof evidence exist, and uploads only a workflow artifact.
 finishes. It is the only job with `contents: write`. It downloads the workflow
 artifact, validates `m80-release-upload-manifest.json`, runs
 `scripts/release_publish_authority.py` against the live GitHub context before
-any release mutation, derives the `gh release upload` path list and
-`gh release download --pattern` list from that manifest, re-downloads those
-public assets, verifies the redownload directory contains exactly the
+any release mutation, writes `m80-release-publish-decision.json`, and then
+writes `m80-release-publication-plan.json`. The publication plan creates a
+draft release only when the tag has no GitHub release, uploads without
+`--clobber`, re-downloads and validates the draft assets before latest
+promotion, publishes the validated draft as latest, or skips upload for an
+already-public release whose asset metadata exactly matches the manifest. Draft,
+prerelease, incomplete, or size-mismatched existing releases fail before upload
+with manual recovery instructions. The job derives the `gh release upload` path
+list and `gh release download --pattern` list from the manifest, re-downloads
+those public assets, verifies the redownload directory contains exactly the
 manifest's public asset set, and runs `scripts/verify-release-bundle.py
---verify-sidecars` against the downloaded bundle so the published asset index
-is checked against the uploaded tarball, metadata, bootstrap selector,
-checksums, and installer before any later latest-promotion lane can trust it.
+--verify-sidecars` against the downloaded bundle so the published asset index is
+checked against the uploaded tarball, metadata, bootstrap selector, checksums,
+and installer before any later latest-promotion lane can trust it.
 
 The upload manifest itself, `m80-release-proof-ledger.jsonl`, and
 `m80-quickstart-proof-hostless.json` stay workflow-only artifacts. Public proof

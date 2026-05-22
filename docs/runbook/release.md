@@ -544,14 +544,34 @@ the signed release integrity predicate or attestation bundle. The behavior
 contract lives in
 `docs/behaviors/release/publish-decision-receipt.md`.
 
-After upload, the publish job re-downloads the public release assets and writes
-`m80-release-remote-assets.json`. That inventory records the GitHub release id,
-remote asset ids, names, sizes, SHA256 digests, browser download URLs, and
-timestamps for the bytes GitHub is serving. The digest is computed from the
-re-downloaded file, not from the local dist directory. Missing metadata,
-duplicate asset names, stale bytes, or incomplete redownloads fail before any
-later latest-promotion gate can trust the remote state. The behavior contract
-lives in `docs/behaviors/release/remote-asset-inventory.md`.
+After the receipt, the publish job writes
+`m80-release-publication-plan.json` with
+`scripts/release_publication_plan.py`. If the tag has no GitHub release, the
+job creates a draft release with `--verify-tag`, uploads the manifest-selected
+public assets without `--clobber`, re-downloads and validates the uploaded
+draft assets, and publishes it as latest only after that pre-promotion
+validation passes. If the public release already exists with the complete asset
+name and size set, the job skips upload and validates the served bytes. Draft,
+prerelease, incomplete, or size-mismatched existing releases fail before upload
+with a manual recovery instruction; for a leftover draft, delete only the
+release:
+
+```sh
+gh release delete <version> --yes
+```
+
+The behavior contract lives in
+`docs/behaviors/release/publication-plan.md`.
+
+After upload or validate-only rerun selection, the publish job re-downloads the
+public release assets and writes `m80-release-remote-assets.json`. That
+inventory records the GitHub release id, remote asset ids, names, sizes, SHA256
+digests, browser download URLs, and timestamps for the bytes GitHub is serving.
+The digest is computed from the re-downloaded file, not from the local dist
+directory. Missing metadata, duplicate asset names, stale bytes, or incomplete
+redownloads fail before any later latest-promotion gate can trust the remote
+state. The behavior contract lives in
+`docs/behaviors/release/remote-asset-inventory.md`.
 
 ## Quickstart Proof Artifact
 

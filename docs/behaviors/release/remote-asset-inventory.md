@@ -1,9 +1,9 @@
 # Remote Release Asset Inventory
 
-After `gh release upload`, the publish job re-downloads every public release
-asset and writes `m80-release-remote-assets.json`. The inventory is the
-machine-readable record of the bytes that GitHub is serving, not a restatement
-of local dist files.
+After upload or validate-only rerun selection, the publish job re-downloads
+every public release asset and writes `m80-release-remote-assets.json`. The
+inventory is the machine-readable record of the bytes that GitHub is serving,
+not a restatement of local dist files.
 
 Each row records the release asset id, asset name, kind, size, SHA256 digest,
 browser download URL, `created_at`, and `updated_at`. The digest is computed

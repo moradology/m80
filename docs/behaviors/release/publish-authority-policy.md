@@ -2,7 +2,8 @@
 
 `scripts/release_publish_authority.py` is the runtime gate for GitHub release
 mutation. It runs inside the release workflow's publish job before the publish
-decision receipt and before `gh release upload`.
+decision receipt, publication plan, `gh release create`, and `gh release
+upload`.
 
 The checked policy is intentionally narrow:
 

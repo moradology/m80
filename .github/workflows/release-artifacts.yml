@@ -338,18 +338,137 @@ jobs:
             --github-ref "$GITHUB_REF" \
             --write
 
+      - name: Resolve release publication plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          metadata="/tmp/m80-release-upload/github-release-before-upload.json"
+          stderr="/tmp/m80-release-upload/github-release-before-upload.stderr"
+          if gh release view "$GITHUB_REF_NAME" --json tagName,url,isDraft,isPrerelease,assets > "$metadata" 2> "$stderr"; then
+            :
+          elif grep -qi "release not found" "$stderr"; then
+            printf '{}\n' > "$metadata"
+          else
+            cat "$stderr" >&2
+            exit 1
+          fi
+          python3 scripts/release_publication_plan.py \
+            --dist-dir /tmp/m80-release-upload \
+            --release-tag "$GITHUB_REF_NAME" \
+            --release-metadata "$metadata" \
+            --out /tmp/m80-release-upload/m80-release-publication-plan.json \
+            --write
+
       - name: Attach artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          publication_action="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          PY
+          )"
           mapfile -t upload_paths < <(
             scripts/release_upload_manifest.py \
               --dist-dir /tmp/m80-release-upload \
               --release-tag "$GITHUB_REF_NAME" \
               --print-upload-paths
           )
-          gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}" --clobber
+          case "$publication_action" in
+            create_draft_upload_publish)
+              gh release create "$GITHUB_REF_NAME" \
+                --verify-tag \
+                --draft \
+                --title "$GITHUB_REF_NAME" \
+                --notes "m80 $GITHUB_REF_NAME release artifacts from ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+              gh release upload "$GITHUB_REF_NAME" "${upload_paths[@]}"
+              ;;
+            validate_existing_public_release)
+              echo "release $GITHUB_REF_NAME already public with complete asset metadata; validating remote bytes without upload"
+              ;;
+            *)
+              echo "unsupported release publication action: $publication_action" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Validate uploaded draft before latest promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.build-release-artifacts.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+          publication_action="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          PY
+          )"
+          if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
+            echo "no draft pre-promotion validation needed for action: $publication_action"
+            exit 0
+          fi
+          verification_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p /tmp/m80-release-prepublish
+          download_args=(--dir /tmp/m80-release-prepublish)
+          while IFS= read -r pattern; do
+            download_args+=(--pattern "$pattern")
+          done < <(
+            scripts/release_upload_manifest.py \
+              --dist-dir /tmp/m80-release-upload \
+              --release-tag "$GITHUB_REF_NAME" \
+              --print-download-patterns
+          )
+          gh release download "$GITHUB_REF_NAME" "${download_args[@]}"
+          scripts/release_upload_manifest.py \
+            --dist-dir /tmp/m80-release-prepublish \
+            --manifest /tmp/m80-release-upload/m80-release-upload-manifest.json \
+            --release-tag "$GITHUB_REF_NAME" \
+            --require-exact-dist-public-assets
+          scripts/verify-install-handoff.py \
+            /tmp/m80-release-prepublish \
+            --release-tag "$GITHUB_REF_NAME" \
+            --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+            --attestation-bundle /tmp/m80-release-prepublish/m80-release-integrity.attestation.jsonl \
+            --attestation-metadata /tmp/m80-release-prepublish/m80-release-attestation.json \
+            --verification-time "$verification_time"
+          scripts/verify-release-bundle.py \
+            /tmp/m80-release-prepublish/m80-linux-x86_64.tar.gz \
+            --release-tag "$GITHUB_REF_NAME" \
+            --verify-sidecars
+          scripts/verify-release-integrity.py \
+            /tmp/m80-release-prepublish/m80-release-integrity.json \
+            --dist-dir /tmp/m80-release-prepublish \
+            --release-tag "$GITHUB_REF_NAME" \
+            --commit-sha "$RELEASE_COMMIT" \
+            --trust-policy docs/behaviors/release/m80-release-trust-policy.json \
+            --attestation-bundle /tmp/m80-release-prepublish/m80-release-integrity.attestation.jsonl \
+            --attestation-metadata /tmp/m80-release-prepublish/m80-release-attestation.json \
+            --verification-time "$verification_time" \
+            --rust-toolchain 1.82
+
+      - name: Publish validated draft release as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          publication_action="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("/tmp/m80-release-upload/m80-release-publication-plan.json").read_text())["action"])
+          PY
+          )"
+          if [[ "$publication_action" != "create_draft_upload_publish" ]]; then
+            echo "no draft latest promotion needed for action: $publication_action"
+            exit 0
+          fi
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest --verify-tag
 
       - name: Re-download and validate published release assets
         env:
@@ -425,6 +544,13 @@ jobs:
           path: /tmp/m80-release-upload/m80-release-publish-decision.json
           if-no-files-found: error
 
+      - name: Upload release publication plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: m80-release-publication-plan-${{ github.run_id }}
+          path: /tmp/m80-release-upload/m80-release-publication-plan.json
+          if-no-files-found: error
+
       - name: Upload remote release asset inventory
         uses: actions/upload-artifact@v4
         with:
@@ -439,5 +565,6 @@ jobs:
           name: m80-release-publish-failure-${{ github.run_id }}
           path: |
             /tmp/m80-release-upload/**
+            /tmp/m80-release-prepublish/**
             /tmp/m80-release-redownload/**
           if-no-files-found: ignore

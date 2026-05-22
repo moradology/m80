@@ -1,9 +1,10 @@
 # Release Publish Decision Receipt
 
 The tag publish job must write and validate
-`m80-release-publish-decision.json` before any `gh release upload` or latest
-promotion command can run. The receipt is the publish-authority handoff: it
-records which already-verified inputs justified moving public release state.
+`m80-release-publish-decision.json` before the publication plan, any
+`gh release create` / `gh release upload`, or latest promotion command can run.
+The receipt is the publish-authority handoff: it records which already-verified
+inputs justified moving public release state.
 
 The receipt uses `schema_version: 2` and `kind:
 "m80_release_publish_decision"`. It records:
