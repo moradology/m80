@@ -198,6 +198,104 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("release tracker policy ok", result.stdout)
 
+    def test_public_latest_leaf_with_fixture_proof_fails(self) -> None:
+        with tracker_repo() as repo:
+            proof = repo.root / "artifacts" / "fixture-freshness-proof.json"
+            proof.parent.mkdir()
+            proof.write_text(json.dumps(valid_freshness_proof(fixture_source=True)))
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.21.1.99",
+                        "Public latest verifier",
+                        "Closed proof must prove the public latest release and public assets.",
+                        status="closed",
+                        labels=["cicd", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+            sha = repo.commit_all("fixture freshness proof")
+            issues = read_issues(repo.root)
+            issues[1]["close_reason"] = f"verified: artifacts/fixture-freshness-proof.json @ {sha}"
+            write_issues(repo.root, issues)
+
+            result = repo.run_verify()
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("uses fixture/local substrate", result.stderr)
+            self.assertIn("requires public latest/release proof", result.stderr)
+
+    def test_public_latest_leaf_with_public_proof_passes(self) -> None:
+        with tracker_repo() as repo:
+            proof = repo.root / "artifacts" / "public-freshness-proof.json"
+            proof.parent.mkdir()
+            proof.write_text(json.dumps(valid_freshness_proof(fixture_source=False)))
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.21.1.99",
+                        "Public latest verifier",
+                        "Closed proof must prove the public latest release and public assets.",
+                        status="closed",
+                        labels=["cicd", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+            sha = repo.commit_all("public freshness proof")
+            issues = read_issues(repo.root)
+            issues[1]["close_reason"] = f"verified: artifacts/public-freshness-proof.json @ {sha}"
+            write_issues(repo.root, issues)
+
+            result = repo.run_verify()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_fixture_scaffold_leaf_with_fixture_proof_passes(self) -> None:
+        with tracker_repo() as repo:
+            proof = repo.root / "artifacts" / "fixture-freshness-proof.json"
+            proof.parent.mkdir()
+            proof.write_text(json.dumps(valid_freshness_proof(fixture_source=True)))
+            write_issues(
+                repo.root,
+                [
+                    issue(
+                        "m80-o3uh9",
+                        "Epoch",
+                        labels=["quickstart", "release", "requires-verified-close"],
+                    ),
+                    issue(
+                        "m80-o3uh9.21.1.6",
+                        "Freshness fixture scaffold",
+                        "Hostless fake-release fixtures exercise proof generation.",
+                        status="closed",
+                        labels=["cicd", "release", "requires-verified-close"],
+                        parent="m80-o3uh9",
+                    ),
+                ],
+            )
+            sha = repo.commit_all("fixture scaffold proof")
+            issues = read_issues(repo.root)
+            issues[1]["close_reason"] = f"verified: artifacts/fixture-freshness-proof.json @ {sha}"
+            write_issues(repo.root, issues)
+
+            result = repo.run_verify()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_valid_close_matrix_artifact_passes_schema_check(self) -> None:
         with tracker_repo() as repo:
             result = repo.run_with_close_matrix(valid_close_matrix())
@@ -766,6 +864,46 @@ class ReleaseTrackerPolicyTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_closed_configured_epoch_checks_all_matrix_refs(self) -> None:
+        with tracker_repo() as repo:
+            config = write_policy_config(
+                repo.root,
+                [{"id": "m80-o3uh9", "status": "active"}],
+            )
+            descendants = [matrix_child("m80-o3uh9.1")]
+            close_reason_template = (
+                "verified: artifacts/close-matrix.json @ 0000000; "
+                "verified: artifacts/missing-matrix.json @ 0000000"
+            )
+            digest_issues = closed_epoch_issues(
+                close_reason=close_reason_template,
+                descendants=descendants,
+            )
+            matrix = valid_close_matrix()
+            matrix["tracker_digest"] = tracker_digest_for_issues(
+                "m80-o3uh9",
+                digest_issues,
+            )
+            matrix_path = repo.root / "artifacts" / "close-matrix.json"
+            matrix_path.parent.mkdir()
+            matrix_path.write_text(json.dumps(matrix, indent=2, sort_keys=True))
+            sha = repo.commit_all("closed epoch matrix")
+            write_issues(
+                repo.root,
+                closed_epoch_issues(
+                    close_reason=(
+                        f"verified: artifacts/close-matrix.json @ {sha}; "
+                        f"verified: artifacts/missing-matrix.json @ {sha}"
+                    ),
+                    descendants=descendants,
+                ),
+            )
+
+            result = repo.run_verify("--policy-config", str(config))
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing-matrix.json", result.stderr)
+
     def test_close_matrix_omitted_descendant_fails(self) -> None:
         with tracker_repo() as repo:
             descendants = [
@@ -1102,6 +1240,28 @@ def valid_quickstart_proof() -> dict:
         "stdout": {"excerpt": "hello\n"},
         "stderr": {"excerpt": ""},
         "substrate": {"kind": "real-kvm", "summary": "test runner"},
+    }
+
+
+def valid_freshness_proof(*, fixture_source: bool) -> dict:
+    source_mode = "fixture" if fixture_source else "url"
+    return {
+        "command": "python3 scripts/release_freshness.py --json",
+        "exit_status": 0,
+        "resolved_tag": "v1.2.3",
+        "stdout": "freshness ok\n",
+        "stderr": "",
+        "substrate": {
+            "network_target": "public-github-release",
+            "auth_state": "unauthenticated-public-read",
+            "public_owner": "moradology",
+            "public_repo": "m80",
+            "latest_source_mode": source_mode,
+            "guard_source_mode": source_mode,
+            "fixture_source": fixture_source,
+            "github_write_apis_available": False,
+            "kind": "hostless-fixture" if fixture_source else "public-unauthenticated",
+        },
     }
 
 

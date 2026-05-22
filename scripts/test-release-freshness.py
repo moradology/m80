@@ -79,6 +79,11 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("docs-drift", payload["failure_taxonomy"]["known_classes"])
         self.assertEqual(payload["substrate"]["network_target"], "public-github-release")
         self.assertEqual(payload["substrate"]["auth_state"], "unauthenticated-public-read")
+        self.assertEqual(payload["substrate"]["public_owner"], "moradology")
+        self.assertEqual(payload["substrate"]["public_repo"], "m80")
+        self.assertEqual(payload["substrate"]["latest_source_mode"], "url")
+        self.assertEqual(payload["substrate"]["guard_source_mode"], "url")
+        self.assertFalse(payload["substrate"]["fixture_source"])
         self.assertFalse(payload["substrate"]["github_write_apis_available"])
         self.assertEqual(
             payload["safety_floor"],

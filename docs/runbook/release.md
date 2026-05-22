@@ -127,6 +127,15 @@ that proof before upload, including failure proofs, so a stale README command,
 missing public asset, tag mismatch, integrity mismatch, or malformed proof can
 file a repair bead without rerunning the public latest check.
 
+Closing public-latest freshness leaves is a two-step process. Hostless
+fake-release tests may land as scaffold evidence, but a closed
+`requires-verified-close` leaf whose text asks for public latest, public release,
+or public asset proof must cite a committed proof from the public unauthenticated
+run (`network_target=public-github-release`, `auth_state=unauthenticated-public-read`,
+`public_owner=moradology`, `public_repo=m80`, `fixture_source=false`) or an
+explicit real-KVM proof where the leaf asks for real substrate. The tracker
+policy rejects local/fake/fixture substrates for those public-proof leaves.
+
 The remote stable status artifact consumed by `m80 update --check` is
 `m80-latest-freshness-proof.json` from the public latest GitHub release asset
 set. The publish lane produces the docs copy from

@@ -95,6 +95,37 @@ PROOF_REQUIRING_RE = re.compile(
     r"close matrix[^.\n]*proof",
     re.IGNORECASE,
 )
+PUBLIC_PROOF_REQUIRING_RE = re.compile(
+    r"public[- ]latest[^.\n]*(proof|receipt)|"
+    r"(proof|receipt)[^.\n]*public[- ]latest|"
+    r"public[- ]release[^.\n]*proof|"
+    r"proof[^.\n]*public[- ]release|"
+    r"public[- ]access[^.\n]*(proof|receipt|lane)|"
+    r"(proof|receipt|lane)[^.\n]*public[- ]access|"
+    r"fixture (receipts|substrate)[^.\n]*(cannot|must not) satisfy|"
+    r"real public[- ]access lane|"
+    r"verified close[^.\n]*real public release",
+    re.IGNORECASE,
+)
+FRESHNESS_PUBLIC_PROOF_RE = re.compile(
+    r"public asset|installer-consumed public asset|published sums",
+    re.IGNORECASE,
+)
+PUBLIC_PROOF_EXEMPT_TITLE_RE = re.compile(
+    r"\b(guard|policy|lint|schema|scaffold|fixture-only)\b",
+    re.IGNORECASE,
+)
+PUBLIC_SUBSTRATE_RE = re.compile(
+    r"public[- ]github|public github|public[- ]unauthenticated|"
+    r"unauthenticated public|public[- ]latest|public release|"
+    r"unauthenticated bounded curl",
+    re.IGNORECASE,
+)
+FIXTURE_SUBSTRATE_RE = re.compile(
+    r"\b(fixture|fake|scaffold|hostless-fixture)\b",
+    re.IGNORECASE,
+)
+LOCAL_SUBSTRATE_RE = re.compile(r"\blocal\b", re.IGNORECASE)
 
 
 def parse_args() -> argparse.Namespace:
@@ -622,7 +653,7 @@ def verify_closed_issue(
             continue
         if check_git_history:
             errors.extend(verify_git_ref(repo_root, issue_id, rel_path, commit))
-        errors.extend(verify_proof_artifact(issue_id, artifact))
+        errors.extend(verify_proof_artifact(issue, artifact))
     return errors
 
 
@@ -647,7 +678,7 @@ def verify_closed_epoch_close_matrix(
 
     errors: list[str] = []
     for rel_path, commit in refs:
-        matrix_errors = verify_close_matrix_ref(
+        errors.extend(verify_close_matrix_ref(
             issue_id,
             rel_path,
             commit,
@@ -656,10 +687,7 @@ def verify_closed_epoch_close_matrix(
             parent_by_child=parent_by_child,
             repo_root=repo_root,
             check_git_history=check_git_history,
-        )
-        if not matrix_errors:
-            return []
-        errors.extend(matrix_errors)
+        ))
     return errors
 
 
@@ -735,24 +763,181 @@ def git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def verify_proof_artifact(issue_id: str, path: Path) -> list[str]:
+def verify_proof_artifact(issue: dict[str, Any], path: Path) -> list[str]:
+    issue_id = string_field(issue, "id") or "<unknown>"
     text = path.read_text(errors="replace")
     try:
         value = json.loads(text)
     except json.JSONDecodeError:
-        return verify_text_proof_artifact(issue_id, path, text)
+        errors = verify_text_proof_artifact(issue_id, path, text)
+        if not errors:
+            errors.extend(verify_public_text_proof_substrate(issue, path, text))
+        return errors
     if not isinstance(value, dict):
         return [f"{issue_id}: verified artifact must be a JSON object or proof text: {path}"]
     if value.get("kind") == CLOSE_MATRIX_KIND:
         return verify_close_matrix_artifact(issue_id, path, value)
+
+    errors: list[str] = []
     if quickstart_proof_artifact_is_complete(value):
+        pass
+    elif generic_proof_artifact_is_complete(value):
+        pass
+    else:
+        errors.append(
+            f"{issue_id}: verified artifact must contain command, stdout/stderr or log path, "
+            f"exit status, resolved tag, and substrate: {path}"
+        )
+    if not errors:
+        errors.extend(verify_public_json_proof_substrate(issue, path, value))
+    return errors
+
+
+def verify_public_json_proof_substrate(
+    issue: dict[str, Any],
+    path: Path,
+    value: dict[str, Any],
+) -> list[str]:
+    if not issue_requires_public_substrate(issue):
         return []
-    if generic_proof_artifact_is_complete(value):
+    issue_id = string_field(issue, "id") or "<unknown>"
+    if artifact_has_fixture_or_local_substrate(value):
+        return [
+            f"{issue_id}: verified artifact uses fixture/local substrate but issue "
+            f"requires public latest/release proof: {path}"
+        ]
+    if not artifact_has_public_or_real_kvm_substrate(value):
+        return [
+            f"{issue_id}: verified artifact lacks public latest/release or real-KVM "
+            f"substrate required by issue text: {path}"
+        ]
+    return []
+
+
+def verify_public_text_proof_substrate(
+    issue: dict[str, Any],
+    path: Path,
+    text: str,
+) -> list[str]:
+    if not issue_requires_public_substrate(issue):
         return []
-    return [
-        f"{issue_id}: verified artifact must contain command, stdout/stderr or log path, "
-        f"exit status, resolved tag, and substrate: {path}"
-    ]
+    issue_id = string_field(issue, "id") or "<unknown>"
+    if text_has_fixture_or_local_substrate(text):
+        return [
+            f"{issue_id}: verified text artifact uses fixture/local substrate but issue "
+            f"requires public latest/release proof: {path}"
+        ]
+    if PUBLIC_SUBSTRATE_RE.search(text) is None and REAL_KVM_RE.search(text) is None:
+        return [
+            f"{issue_id}: verified text artifact lacks public latest/release or real-KVM "
+            f"substrate required by issue text: {path}"
+        ]
+    return []
+
+
+def issue_requires_public_substrate(issue: dict[str, Any]) -> bool:
+    title = string_field(issue, "title")
+    if PUBLIC_PROOF_EXEMPT_TITLE_RE.search(title):
+        return False
+    text = "\n".join(
+        string_field(issue, field)
+        for field in ["title", "description", "acceptance_criteria", "notes"]
+    )
+    if PUBLIC_PROOF_REQUIRING_RE.search(text) is not None:
+        return True
+    return (
+        "freshness" in title.lower()
+        and FRESHNESS_PUBLIC_PROOF_RE.search(text) is not None
+    )
+
+
+def artifact_has_public_or_real_kvm_substrate(value: dict[str, Any]) -> bool:
+    if artifact_has_real_kvm_substrate(value):
+        return True
+    proof_substrate = value.get("proof_substrate")
+    if isinstance(proof_substrate, str) and PUBLIC_SUBSTRATE_RE.search(proof_substrate):
+        return True
+    substrate = value.get("substrate")
+    if isinstance(substrate, str):
+        return PUBLIC_SUBSTRATE_RE.search(substrate) is not None
+    if not isinstance(substrate, dict):
+        return False
+    if (
+        substrate.get("network_target") == "public-github-release"
+        and substrate.get("auth_state") == "unauthenticated-public-read"
+        and substrate.get("public_owner") == "moradology"
+        and substrate.get("public_repo") == "m80"
+        and substrate.get("fixture_source") is False
+        and substrate.get("github_write_apis_available") is False
+    ):
+        return all(
+            substrate.get(field) in {None, "url"}
+            for field in ["latest_source_mode", "guard_source_mode"]
+        )
+    if substrate.get("kind") in {"public-github", "public-unauthenticated"}:
+        return substrate.get("fixture") is False or substrate.get("fixture_source") is False
+    return any(
+        isinstance(substrate.get(field), str)
+        and PUBLIC_SUBSTRATE_RE.search(substrate[field]) is not None
+        for field in ["kind", "summary", "network_target", "auth_state"]
+    )
+
+
+def artifact_has_real_kvm_substrate(value: dict[str, Any]) -> bool:
+    substrate = value.get("substrate")
+    if isinstance(substrate, str):
+        return (
+            REAL_KVM_RE.search(substrate) is not None
+            and NEGATED_REAL_KVM_RE.search(substrate) is None
+        )
+    if not isinstance(substrate, dict):
+        return False
+    text = " ".join(
+        str(substrate.get(field) or "")
+        for field in ["kind", "summary", "proof_kind", "network_target"]
+    )
+    return REAL_KVM_RE.search(text) is not None and NEGATED_REAL_KVM_RE.search(text) is None
+
+
+def artifact_has_fixture_or_local_substrate(value: dict[str, Any]) -> bool:
+    proof_substrate = value.get("proof_substrate")
+    if (
+        isinstance(proof_substrate, str)
+        and text_has_fixture_or_local_substrate(proof_substrate)
+    ):
+        return True
+    substrate = value.get("substrate")
+    if isinstance(substrate, str):
+        return text_has_fixture_or_local_substrate(substrate)
+    if not isinstance(substrate, dict):
+        return False
+    if substrate.get("fixture") is True:
+        return True
+    if substrate.get("fixture_source") is True:
+        return True
+    for field in ["latest_source_mode", "guard_source_mode"]:
+        mode = substrate.get(field)
+        if isinstance(mode, str) and mode and mode != "url":
+            return True
+    kind_text = " ".join(
+        str(substrate.get(field) or "")
+        for field in ["kind", "proof_kind", "summary"]
+    )
+    if FIXTURE_SUBSTRATE_RE.search(kind_text):
+        return True
+    return (
+        LOCAL_SUBSTRATE_RE.search(kind_text) is not None
+        and not artifact_has_public_or_real_kvm_substrate(value)
+    )
+
+
+def text_has_fixture_or_local_substrate(text: str) -> bool:
+    if FIXTURE_SUBSTRATE_RE.search(text):
+        return True
+    return (
+        LOCAL_SUBSTRATE_RE.search(text) is not None
+        and PUBLIC_SUBSTRATE_RE.search(text) is None
+    )
 
 
 def verify_close_matrix_artifact(
