@@ -5,70 +5,21 @@ fixtures talk about the same first-run problem. The IDs below are stable enough
 for bug reports. Rename one only with a replacement row and release-note
 migration.
 
-The machine source of truth is
-[`quickstart-troubleshooting-matrix.json`](quickstart-troubleshooting-matrix.json),
-validated by `scripts/verify-quickstart-troubleshooting.py`.
+Generated from
+[`quickstart-troubleshooting-matrix.json`](quickstart-troubleshooting-matrix.json) by
+`scripts/render-quickstart-troubleshooting.py`; do not edit this table by hand.
 
-## network
-
-Network, DNS, or HTTP failure. Retry after checking GitHub reachability:
-`curl -I https://github.com/moradology/m80/releases/latest`.
-
-## github-auth-rate-limit
-
-GitHub auth, verifier, or rate-limit failure. Check `gh auth status` and install
-or upgrade GitHub CLI with attestation support when needed.
-
-## missing-asset
-
-A required public release asset is missing. Treat this as a release bug unless
-the release notes say the asset moved; use a pinned install only after the
-release is repaired.
-
-## checksum-provenance-mismatch
-
-Checksum, provenance, or release-integrity material did not agree. Do not bypass
-verification. Capture `m80 install-status` and report the release.
-
-## unsupported-tuple
-
-The current Linux/architecture/image tuple is unsupported by the public release.
-Capture `uname -s && uname -m` and the asset-index diagnostic.
-
-## missing-local-tool
-
-The installer could not find a required local tool. Check:
-`command -v curl python3 sha256sum tar mktemp chmod gh`.
-
-## kvm-unavailable
-
-`/dev/kvm` is missing or not writable. Run `m80 preflight` and repair host KVM
-access before trying to launch a VM.
-
-## host-prerequisite
-
-Firecracker, jailer, seccomp, cgroup, kernel, or host TCB prerequisite failed.
-Run `m80 preflight`; the structured remediation fields point to the exact host
-setup policy or repair command.
-
-## privilege-denied
-
-The current user lacks the privilege or capability set required for the selected
-launch path. Run `m80 preflight` and compare the result with
-[`docs/behaviors/preflight/privilege.md`](../preflight/privilege.md).
-
-## stale-profile
-
-The active pointer, default profile, installed metadata, or proof cache is
-stale. Start with `m80 install-status`; reinstall the active or desired pinned
-release when status says the local install is unhealthy.
-
-## process-smoke-failed
-
-Install completed, but `m80 run -- echo hello` did not return `hello`. Run
-`m80 preflight` and inspect `m80 logs <vm-id>` when a VM id was created.
-
-## unknown-report
-
-The failure does not fit a known row. Capture `m80 --json env > m80-env.json`
-and include the first failing command, exit status, and bounded stderr excerpt.
+| ID | Symptom | Likely failing command | Diagnostic command | Next command | Action | Owner | Source coverage |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <a id="network"></a>`network` | Network, DNS, or HTTP failure | <code>curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh &#124; sudo sh</code> | <code>curl -I https://github.com/moradology/m80/releases/latest</code> | <code>curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh &#124; sudo sh</code> | `retry` | `operator` | <code>test:scripts/test-stable-latest-bootstrap.py::test_rejects_http_failure_before_handoff_json</code><br><code>test:scripts/test-release-bundle.py::test_rendered_install_script_download_failures_are_diagnosable_before_extract</code> |
+| <a id="github-auth-rate-limit"></a>`github-auth-rate-limit` | GitHub auth, verifier, or rate-limit failure | <code>curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh &#124; sudo sh</code> | <code>gh auth status</code> | <code>sudo apt-get install gh</code> | `install` | `operator` | <code>test:scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl</code><br><code>doc:docs/behaviors/release/release-integrity-material.md</code> |
+| <a id="missing-asset"></a>`missing-asset` | Required public release asset is missing | <code>curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh &#124; sudo sh</code> | <code>m80 update --check</code> | <code>gh issue create --repo moradology/m80</code> | `report-release-bug` | `maintainer` | <code>test:scripts/test-release-public-access-receipt.py::test_missing_public_asset_fails</code><br><code>test:scripts/test-release-bundle.py::test_release_upload_manifest_rejects_missing_public_file</code> |
+| <a id="checksum-provenance-mismatch"></a>`checksum-provenance-mismatch` | Checksum, provenance, or release-integrity mismatch | <code>curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh &#124; sudo sh</code> | <code>m80 install-status</code> | <code>gh issue create --repo moradology/m80</code> | `report-release-bug` | `maintainer` | <code>test:scripts/test-install-handoff.py::test_rejects_tampered_install_before_sudo_handoff</code><br><code>test:scripts/test-release-bundle.py::test_human_release_dist_verifier_rejects_tampered_install_sh</code> |
+| <a id="unsupported-tuple"></a>`unsupported-tuple` | Unsupported Linux or architecture tuple | <code>curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh &#124; sudo sh</code> | <code>uname -s &amp;&amp; uname -m</code> | <code>gh issue create --repo moradology/m80</code> | `report-release-bug` | `operator` | <code>test:crates/m80-cli/src/release_asset_index/tests.rs::wrong_architecture_diagnostic_names_requested_and_available_tuple</code><br><code>doc:docs/behaviors/release/asset-index.md</code> |
+| <a id="missing-local-tool"></a>`missing-local-tool` | Required local installer tool is missing | <code>curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh &#124; sudo sh</code> | <code>command -v curl python3 sha256sum tar mktemp chmod gh</code> | <code>sudo apt-get install curl python3 coreutils tar gh</code> | `install` | `operator` | <code>test:scripts/test-release-bundle.py::test_rendered_install_script_preflights_missing_gh_before_curl</code><br><code>source:scripts/install.sh</code> |
+| <a id="kvm-unavailable"></a>`kvm-unavailable` | KVM device is missing or not writable | <code>m80 run -- echo hello</code> | <code>m80 preflight</code> | <code>sudo usermod -aG kvm $USER</code> | `install` | `operator` | <code>test:crates/m80-preflight/src/substrate.rs::substrate_fixture_rejects_missing_kvm</code><br><code>test:crates/m80-preflight/src/substrate.rs::substrate_fixture_rejects_bad_kvm_permissions</code> |
+| <a id="host-prerequisite"></a>`host-prerequisite` | Firecracker, jailer, seccomp, cgroup, kernel, or host TCB prerequisite failed | <code>m80 run -- echo hello</code> | <code>m80 preflight</code> | <code>m80 preflight</code> | `install` | `operator` | <code>test:crates/m80-preflight/tests/host_prerequisite_result.rs::diagnostic_maps_missing_firecracker_to_policy_linked_repair</code><br><code>doc:docs/behaviors/release/host-prerequisite-policy.md</code> |
+| <a id="privilege-denied"></a>`privilege-denied` | Privilege or capability requirement is not met | <code>m80 run -- echo hello</code> | <code>m80 preflight</code> | <code>sudo m80 preflight</code> | `install` | `operator` | <code>test:crates/m80-preflight/src/substrate.rs::substrate_failures_carry_operator_remediation_hints</code><br><code>doc:docs/behaviors/preflight/privilege.md</code> |
+| <a id="stale-profile"></a>`stale-profile` | Installed profile, active pointer, or local install state is stale | <code>m80 run -- echo hello</code> | <code>m80 install-status</code> | <code>curl -fsSL https://github.com/moradology/m80/releases/download/&lt;version&gt;/install.sh &#124; sudo sh</code> | `reinstall` | `operator` | <code>test:crates/m80-cli/src/cmds/install_status/tests.rs::status_matrix_stale_profile_target</code><br><code>doc:docs/behaviors/release/install-state.md</code> |
+| <a id="process-smoke-failed"></a>`process-smoke-failed` | Installed process smoke failed after install | <code>m80 run -- echo hello</code> | <code>m80 logs &lt;vm-id&gt;</code> | <code>m80 preflight</code> | `rollback` | `operator` | <code>proof:docs/behaviors/release/public-install-proof-cache-v0.2.11.json</code><br><code>source:scripts/quickstart_snippets.py</code> |
+| <a id="unknown-report"></a>`unknown-report` | Unknown first-run failure needs a redacted report | <code>m80 run -- echo hello</code> | <code>m80 --json env &gt; m80-env.json</code> | <code>m80 --json env &gt; m80-env.json</code> | `report-release-bug` | `operator` | <code>doc:docs/behaviors/cli/env-dump.md</code><br><code>doc:README.md</code> |

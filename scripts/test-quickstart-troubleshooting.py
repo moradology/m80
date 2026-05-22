@@ -10,10 +10,14 @@ import subprocess
 import tempfile
 import unittest
 
+from quickstart_snippets import public_command_inventory
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERIFY = REPO_ROOT / "scripts" / "verify-quickstart-troubleshooting.py"
+RENDER = REPO_ROOT / "scripts" / "render-quickstart-troubleshooting.py"
 MATRIX = REPO_ROOT / "docs" / "behaviors" / "release" / "quickstart-troubleshooting-matrix.json"
+DOC = REPO_ROOT / "docs" / "behaviors" / "release" / "quickstart-troubleshooting-matrix.md"
 
 
 class QuickstartTroubleshootingTests(unittest.TestCase):
@@ -90,10 +94,71 @@ class QuickstartTroubleshootingTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("report-release-bug rows must not use an install command", result.stderr)
 
+    def test_matrix_commands_reject_public_url_contract_drift(self) -> None:
+        matrix = valid_matrix()
+        row_by_id(matrix, "network")["likely_failing_command"] = (
+            "curl -fsSL https://github.com/example/m80/releases/latest/download/install.sh | sudo sh"
+        )
+
+        result = run_verify(write_matrix(matrix))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected moradology/m80", result.stderr)
+
+    def test_rendered_doc_matches_matrix(self) -> None:
+        result = run_render()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, DOC.read_text())
+        self.assertIn("| ID | Symptom | Likely failing command |", result.stdout)
+
+    def test_rendered_doc_has_stable_anchor_for_each_id(self) -> None:
+        rendered = run_render().stdout
+
+        for row in valid_matrix()["rows"]:
+            self.assertIn(f'id="{row["id"]}"', rendered)
+
+    def test_render_check_rejects_stale_doc(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            stale_doc = Path(tmp) / "matrix.md"
+            stale_doc.write_text("stale\n")
+
+            result = subprocess.run(
+                ["python3", str(RENDER), "--check", "--doc", str(stale_doc)],
+                cwd=REPO_ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("quickstart troubleshooting doc is stale", result.stderr)
+
+    def test_readme_runbook_and_command_inventory_see_matrix(self) -> None:
+        readme = (REPO_ROOT / "README.md").read_text()
+        runbook = (REPO_ROOT / "docs" / "runbook" / "release.md").read_text()
+
+        for text in [readme, runbook]:
+            self.assertIn("quickstart-troubleshooting-matrix.md#network", text)
+            self.assertIn("quickstart-troubleshooting-matrix.md#process-smoke-failed", text)
+
+        inventory = public_command_inventory(REPO_ROOT)
+        self.assertTrue(inventory)
+
 
 def run_verify(matrix: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(VERIFY), "--matrix", str(matrix)],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def run_render() -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(RENDER)],
         cwd=REPO_ROOT,
         text=True,
         stdout=subprocess.PIPE,

@@ -7,6 +7,7 @@
       "title": "Network, DNS, or HTTP failure",
       "owner_action": "operator",
       "action_kind": "retry",
+      "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "diagnostic_command": "curl -I https://github.com/moradology/m80/releases/latest",
       "repair_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "source_mappings": [
@@ -37,6 +38,7 @@
       "title": "GitHub auth, verifier, or rate-limit failure",
       "owner_action": "operator",
       "action_kind": "install",
+      "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "diagnostic_command": "gh auth status",
       "repair_command": "sudo apt-get install gh",
       "source_mappings": [
@@ -60,6 +62,7 @@
       "title": "Required public release asset is missing",
       "owner_action": "maintainer",
       "action_kind": "report-release-bug",
+      "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "diagnostic_command": "m80 update --check",
       "repair_command": "gh issue create --repo moradology/m80",
       "source_mappings": [
@@ -84,6 +87,7 @@
       "title": "Checksum, provenance, or release-integrity mismatch",
       "owner_action": "maintainer",
       "action_kind": "report-release-bug",
+      "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "diagnostic_command": "m80 install-status",
       "repair_command": "gh issue create --repo moradology/m80",
       "source_mappings": [
@@ -131,6 +135,7 @@
       "title": "Unsupported Linux or architecture tuple",
       "owner_action": "operator",
       "action_kind": "report-release-bug",
+      "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "diagnostic_command": "uname -s && uname -m",
       "repair_command": "gh issue create --repo moradology/m80",
       "source_mappings": [
@@ -156,6 +161,7 @@
       "title": "Required local installer tool is missing",
       "owner_action": "operator",
       "action_kind": "install",
+      "likely_failing_command": "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
       "diagnostic_command": "command -v curl python3 sha256sum tar mktemp chmod gh",
       "repair_command": "sudo apt-get install curl python3 coreutils tar gh",
       "source_mappings": [
@@ -175,6 +181,7 @@
       "title": "KVM device is missing or not writable",
       "owner_action": "operator",
       "action_kind": "install",
+      "likely_failing_command": "m80 run -- echo hello",
       "diagnostic_command": "m80 preflight",
       "repair_command": "sudo usermod -aG kvm $USER",
       "source_mappings": [
@@ -199,6 +206,7 @@
       "title": "Firecracker, jailer, seccomp, cgroup, kernel, or host TCB prerequisite failed",
       "owner_action": "operator",
       "action_kind": "install",
+      "likely_failing_command": "m80 run -- echo hello",
       "diagnostic_command": "m80 preflight",
       "repair_command": "m80 preflight",
       "source_mappings": [
@@ -268,6 +276,7 @@
       "title": "Privilege or capability requirement is not met",
       "owner_action": "operator",
       "action_kind": "install",
+      "likely_failing_command": "m80 run -- echo hello",
       "diagnostic_command": "m80 preflight",
       "repair_command": "sudo m80 preflight",
       "source_mappings": [
@@ -292,6 +301,7 @@
       "title": "Installed profile, active pointer, or local install state is stale",
       "owner_action": "operator",
       "action_kind": "reinstall",
+      "likely_failing_command": "m80 run -- echo hello",
       "diagnostic_command": "m80 install-status",
       "repair_command": "curl -fsSL https://github.com/moradology/m80/releases/download/<version>/install.sh | sudo sh",
       "source_mappings": [
@@ -329,6 +339,7 @@
       "title": "Installed process smoke failed after install",
       "owner_action": "operator",
       "action_kind": "rollback",
+      "likely_failing_command": "m80 run -- echo hello",
       "diagnostic_command": "m80 logs <vm-id>",
       "repair_command": "m80 preflight",
       "source_mappings": [
@@ -348,6 +359,7 @@
       "title": "Unknown first-run failure needs a redacted report",
       "owner_action": "operator",
       "action_kind": "report-release-bug",
+      "likely_failing_command": "m80 run -- echo hello",
       "diagnostic_command": "m80 --json env > m80-env.json",
       "repair_command": "m80 --json env > m80-env.json",
       "source_mappings": [

@@ -54,6 +54,7 @@ QUICKSTART_SURFACE_FILES = [
     "crates/m80-cli/README.md",
     "docs/behaviors/cli/command-surface.md",
     "docs/behaviors/cli/product-surface.md",
+    "docs/behaviors/release/quickstart-troubleshooting-matrix.md",
     "docs/behaviors/release/legacy-quickstart-hard-cutover.md",
 ]
 

@@ -10,6 +10,8 @@ import re
 import sys
 from typing import Any
 
+from quickstart_snippets import validate_public_command_urls
+
 
 DEFAULT_MATRIX = Path("docs/behaviors/release/quickstart-troubleshooting-matrix.json")
 README = Path("README.md")
@@ -21,6 +23,7 @@ ROW_FIELDS = {
     "title",
     "owner_action",
     "action_kind",
+    "likely_failing_command",
     "diagnostic_command",
     "repair_command",
     "source_mappings",
@@ -152,10 +155,15 @@ def validate_row(row: dict[str, Any], label: str) -> list[str]:
     require_member(row, "owner_action", OWNER_ACTIONS, label, errors)
     action_kind = require_member(row, "action_kind", ACTION_KINDS, label, errors)
     repair_command = None
-    for field in ["diagnostic_command", "repair_command"]:
+    for field in ["likely_failing_command", "diagnostic_command", "repair_command"]:
         command = require_nonempty_string(row, field, label, errors)
         if command and COMMAND_RE.match(command) is None:
             errors.append(f"{label}: {field} must start with a supported command")
+        if command:
+            try:
+                validate_public_command_urls(command, Path(f"{label}.{field}"))
+            except ValueError as exc:
+                errors.append(f"{label}: {field}: {exc}")
         if field == "repair_command":
             repair_command = command
     if action_kind == "report-release-bug" and repair_command and "install.sh" in repair_command:
@@ -279,8 +287,8 @@ def validate_docs_links(row_ids: set[str]) -> list[str]:
     else:
         text = doc.read_text()
         for row_id in sorted(row_ids):
-            if f"## {row_id}" not in text:
-                errors.append(f"{doc}: missing section for troubleshooting id {row_id}")
+            if f'id="{row_id}"' not in text and f"## {row_id}" not in text:
+                errors.append(f"{doc}: missing anchor for troubleshooting id {row_id}")
     return errors
 
 
