@@ -14,7 +14,8 @@ import textwrap
 import unittest
 
 from freshness_proof import validate_freshness_proof
-from release_url_contract import latest_install_command, release_asset_url
+from release_freshness import verify_tag_agreement
+from release_url_contract import latest_install_command, pinned_install_command, public_release_root, release_asset_url
 from stable_release_channel import (
     BUNDLE_NAME,
     CHECKSUM_NAME,
@@ -71,7 +72,12 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertEqual(inventory["entries"][0]["path"], "README.md")
         self.assertEqual(payload["tag_agreement"]["status"], "success")
         self.assertEqual(payload["tag_agreement"]["latest_tag"], "v1.2.3")
+        self.assertEqual(payload["tag_agreement"]["stable_bootstrap_tag"], "v1.2.3")
         self.assertEqual(payload["tag_agreement"]["guard_tag"], "v1.2.3")
+        self.assertEqual(payload["tag_agreement"]["pinned_install_url_tag"], "v1.2.3")
+        self.assertEqual(payload["tag_agreement"]["bundle_metadata_release_tag"], "v1.2.3")
+        self.assertEqual(payload["tag_agreement"]["bundle_metadata_m80_version"], "v1.2.3")
+        self.assertEqual(payload["tag_agreement"]["bundle_metadata_package_version"], "1.2.3")
         self.assertEqual(payload["integrity_result"]["status"], "success")
         self.assertEqual(payload["integrity_result"]["public_asset_count"], len(REQUIRED_PUBLIC_ASSETS))
         self.assertEqual(payload["fixture_install_result"]["status"], "not_run")
@@ -142,6 +148,7 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertGreaterEqual(len(null_fetches), len(REQUIRED_PUBLIC_ASSETS))
         self.assertIn(release_asset_url("v1.2.3", "SHA256SUMS"), checksum_fetch_urls)
         self.assertIn(release_asset_url("v1.2.3", CHECKSUM_NAME), checksum_fetch_urls)
+        self.assertIn(release_asset_url("v1.2.3", METADATA_NAME), checksum_fetch_urls)
 
     def test_success_proof_validation_rejects_bad_schema_digest_status_and_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -562,6 +569,124 @@ class ReleaseFreshnessTest(unittest.TestCase):
         self.assertIn("started with v1.2.3, guard observed v1.2.4", result.stderr)
         self.assertIn("repair_command=br show m80-o3uh9.21.8", result.stderr)
 
+    def test_prerelease_and_draft_latest_are_excluded_from_stable_channel(self) -> None:
+        cases = [
+            ("prerelease", {"prerelease": True}, "stable release ineligible: prerelease v1.2.3"),
+            ("draft", {"draft": True}, "stable release ineligible: draft release v1.2.3"),
+        ]
+        for name, update, expected in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                docs_root = write_docs_root(root / "docs-root")
+                metadata = base_release_metadata()
+                metadata.update(update)
+                latest = write_json(root / "latest.json", metadata)
+                curl = write_fake_curl(root / "curl", log=root / "curl.log")
+
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(SCRIPT),
+                        "--curl",
+                        str(curl),
+                        "--docs-root",
+                        str(docs_root),
+                        "--latest-metadata",
+                        str(latest),
+                        "--json",
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("failure_class=verifier-schema-drift", result.stderr)
+            self.assertIn(expected, result.stderr)
+
+    def test_tag_agreement_rejects_pinned_install_url_tag_drift(self) -> None:
+        with self.assertRaisesRegex(ValueError, "pair=stable_bootstrap_vs_pinned_install_url") as raised:
+            verify_tag_agreement(
+                latest_tag="v1.2.3",
+                stable_bootstrap_tag="v1.2.3",
+                pinned_install_url=public_release_root().pinned_install_url("v9.9.9"),
+                bundle_metadata=base_bundle_metadata(),
+                latest_source_mode="fixture",
+                guard_source_mode="fixture",
+            )
+
+        self.assertIn("expected=v1.2.3", str(raised.exception))
+        self.assertIn("got=v9.9.9", str(raised.exception))
+        self.assertIn(f"pinned_install_command={pinned_install_command('v1.2.3')}", str(raised.exception))
+
+    def test_bundle_metadata_tag_drift_names_disagreed_pair_and_repair_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                bundle_metadata=base_bundle_metadata(release_tag="v9.9.9"),
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=stale-latest", result.stderr)
+        self.assertIn("freshness tag agreement mismatch", result.stderr)
+        self.assertIn("pair=stable_bootstrap_vs_bundle_metadata_release_tag", result.stderr)
+        self.assertIn("expected=v1.2.3", result.stderr)
+        self.assertIn("got=v9.9.9", result.stderr)
+        self.assertIn(f"pinned_install_command={pinned_install_command('v1.2.3')}", result.stderr)
+
+    def test_bundle_metadata_version_drift_names_disagreed_pair_and_repair_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_root = write_docs_root(root / "docs-root")
+            curl = write_fake_curl(
+                root / "curl",
+                log=root / "curl.log",
+                bundle_metadata=base_bundle_metadata(m80_version="v9.9.9"),
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--curl",
+                    str(curl),
+                    "--docs-root",
+                    str(docs_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failure_class=stale-latest", result.stderr)
+        self.assertIn("pair=stable_bootstrap_vs_bundle_metadata_m80_version", result.stderr)
+        self.assertIn("expected=v1.2.3", result.stderr)
+        self.assertIn("got=v9.9.9", result.stderr)
+        self.assertIn(f"pinned_install_command={pinned_install_command('v1.2.3')}", result.stderr)
+
     def test_provenance_mismatch_names_repair_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -843,12 +968,14 @@ def write_fake_curl(
     *,
     log: Path,
     metadata: dict | None = None,
+    bundle_metadata: dict | None = None,
     fail_contains: str | None = None,
     fail_code: int = 28,
     fail_stderr: str = "failed\n",
     checksum_overrides: dict[str, str] | None = None,
 ) -> Path:
     metadata_json = json.dumps(metadata if metadata is not None else base_release_metadata())
+    bundle_metadata_json = json.dumps(bundle_metadata if bundle_metadata is not None else base_bundle_metadata())
     checksums_json = json.dumps(checksum_bodies(checksum_overrides or {}))
     script = f"""#!/usr/bin/env python3
 import shlex
@@ -872,6 +999,9 @@ if "api.github.com" in url:
 
 checksums = {checksums_json}
 asset_name = url.rsplit("/", 1)[-1]
+if asset_name == {METADATA_NAME!r}:
+    sys.stdout.write({bundle_metadata_json!r})
+    raise SystemExit(0)
 if asset_name in checksums:
     sys.stdout.write(checksums[asset_name])
 """
@@ -913,6 +1043,23 @@ def base_release_metadata(*, tag: str = "v1.2.3") -> dict:
             }
             for name in REQUIRED_PUBLIC_ASSETS
         ],
+    }
+
+
+def base_bundle_metadata(
+    *,
+    release_tag: str = "v1.2.3",
+    m80_version: str = "v1.2.3",
+    package_version: str = "1.2.3",
+) -> dict:
+    return {
+        "schema_version": 1,
+        "release_tag": release_tag,
+        "m80_version": m80_version,
+        "package_version": package_version,
+        "guestd_package_version": package_version,
+        "target": "linux-x86_64",
+        "image_kind": "minimal",
     }
 
 

@@ -81,8 +81,19 @@ def success_proof(
     failure_classes: list[str],
     latest_source_mode: str,
     guard_source_mode: str,
+    tag_agreement: dict | None = None,
 ) -> dict:
     root = public_release_root()
+    if tag_agreement is None:
+        tag_agreement = {
+            "status": "success",
+            "latest_tag": resolved_tag,
+            "guard_tag": resolved_tag,
+            "latest_install_url": root.latest_install_url,
+            "pinned_install_url": root.pinned_install_url(resolved_tag),
+            "latest_source_mode": latest_source_mode,
+            "guard_source_mode": guard_source_mode,
+        }
     return base_proof(
         status="success",
         generated_at=generated_at,
@@ -98,15 +109,7 @@ def success_proof(
         "resolved_tag": resolved_tag,
         "published_at": generated_at,
         "freshness_network_bounded": True,
-        "tag_agreement": {
-            "status": "success",
-            "latest_tag": resolved_tag,
-            "guard_tag": resolved_tag,
-            "latest_install_url": root.latest_install_url,
-            "pinned_install_url": root.pinned_install_url(resolved_tag),
-            "latest_source_mode": latest_source_mode,
-            "guard_source_mode": guard_source_mode,
-        },
+        "tag_agreement": tag_agreement,
         "integrity_result": {
             "status": "success",
             "public_asset_count": len(public_assets),

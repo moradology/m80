@@ -13,7 +13,7 @@ import subprocess
 
 from freshness_proof import checked_url_proof_rows, command_inventory_proof, fetch_policy, failure_proof, public_asset_proof_rows, success_proof, unavailable_command_inventory, validate_freshness_proof
 from quickstart_snippets import INSTALL_URL_RE, public_command_inventory
-from release_url_contract import public_release_root, release_asset_url
+from release_url_contract import pinned_install_command, public_release_root, release_asset_url
 from stable_latest_bootstrap import (
     METADATA_CONNECT_TIMEOUT_SECONDS,
     METADATA_MAX_TIME_SECONDS,
@@ -162,11 +162,21 @@ def main() -> int:
         for check in checks:
             fetch_public_url(check, curl_bin=args.curl)
         checksum_sources = verify_checksum_contents(public_assets, curl_bin=args.curl)
+        bundle_metadata = fetch_bundle_metadata(public_assets[METADATA_NAME], curl_bin=args.curl)
+        tag_agreement = verify_tag_agreement(
+            latest_tag=release_tag_from_metadata_for_assets(latest.release),
+            stable_bootstrap_tag=resolution.resolved_tag,
+            pinned_install_url=release_root.pinned_install_url(resolution.resolved_tag),
+            bundle_metadata=bundle_metadata,
+            latest_source_mode=resolution.latest_source_mode,
+            guard_source_mode=resolution.guard_source_mode,
+        )
         proof = freshness_proof_json(
             resolution,
             checks,
             public_assets,
             checksum_sources,
+            tag_agreement=tag_agreement,
             command_inventory_summary=command_inventory_summary,
             generated_at=generated_at,
         )
@@ -578,12 +588,16 @@ def fetch_public_url(check: FreshnessUrl, *, curl_bin: str) -> None:
 
 
 def fetch_checksum_text(asset: FreshnessAsset, *, curl_bin: str) -> str:
+    return fetch_public_asset_text(asset, curl_bin=curl_bin, source="checksum-content")
+
+
+def fetch_public_asset_text(asset: FreshnessAsset, *, curl_bin: str, source: str) -> str:
     check = FreshnessUrl(
         role=asset.role,
         url=asset.url,
         asset_name=asset.name,
         release_tag=asset.release_tag,
-        sources=("checksum-content",),
+        sources=(source,),
         size_bytes=asset.size_bytes,
         sha256=asset.sha256,
     )
@@ -609,6 +623,23 @@ def fetch_checksum_text(asset: FreshnessAsset, *, curl_bin: str) -> str:
             f"curl exited {result.returncode}: {detail}",
         )
     )
+
+
+def fetch_bundle_metadata(asset: FreshnessAsset, *, curl_bin: str) -> dict:
+    text = fetch_public_asset_text(asset, curl_bin=curl_bin, source="bundle-metadata-content")
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "freshness bundle metadata malformed: "
+            f"role={asset.role} asset={asset.name} url={asset.url} release_tag={asset.release_tag} field=root; {exc}"
+        ) from exc
+    if not isinstance(value, dict):
+        raise ValueError(
+            "freshness bundle metadata malformed: "
+            f"role={asset.role} asset={asset.name} url={asset.url} release_tag={asset.release_tag} field=root"
+        )
+    return value
 
 
 def public_url_curl_args(curl_bin: str, url: str) -> list[str]:
@@ -698,7 +729,7 @@ def classify_freshness_exception(message: str) -> str:
         return match.group(1) if match is not None else "verifier-schema-drift"
     if any(f"failure={failure}" in message for failure in NETWORK_FAILURE_KINDS):
         return "network-transient"
-    if "failure=latest_tag_switch" in message or "latest tag" in message:
+    if "failure=latest_tag_switch" in message or "latest tag" in message or "freshness tag agreement mismatch" in message:
         return "stale-latest"
     if "freshness public asset missing" in message:
         return "missing-public-asset"
@@ -838,6 +869,63 @@ def verify_checksum_contents(
     return {name: sorted(values) for name, values in sources.items()}
 
 
+def verify_tag_agreement(
+    *,
+    latest_tag: str,
+    stable_bootstrap_tag: str,
+    pinned_install_url: str,
+    bundle_metadata: dict,
+    latest_source_mode: str,
+    guard_source_mode: str,
+) -> dict:
+    pinned_url_tag = release_tag_from_install_url(pinned_install_url, fallback="")
+    metadata_release_tag = require_bundle_metadata_string(bundle_metadata, "release_tag", stable_bootstrap_tag)
+    metadata_m80_version = require_bundle_metadata_string(bundle_metadata, "m80_version", stable_bootstrap_tag)
+    metadata_package_version = require_bundle_metadata_string(bundle_metadata, "package_version", stable_bootstrap_tag)
+    expected_package_version = stable_bootstrap_tag.removeprefix("v")
+    comparisons = (
+        ("latest_vs_stable_bootstrap", stable_bootstrap_tag, latest_tag),
+        ("stable_bootstrap_vs_pinned_install_url", stable_bootstrap_tag, pinned_url_tag),
+        ("stable_bootstrap_vs_bundle_metadata_release_tag", stable_bootstrap_tag, metadata_release_tag),
+        ("stable_bootstrap_vs_bundle_metadata_m80_version", stable_bootstrap_tag, metadata_m80_version),
+        ("stable_bootstrap_package_vs_bundle_metadata_package_version", expected_package_version, metadata_package_version),
+    )
+    for pair, expected, got in comparisons:
+        if expected != got:
+            raise ValueError(
+                "freshness tag agreement mismatch: "
+                f"pair={pair}; expected={expected}; got={got}; "
+                f"stable_bootstrap_tag={stable_bootstrap_tag}; "
+                f"pinned_install_command={pinned_install_command(stable_bootstrap_tag)}"
+            )
+    return {
+        "status": "success",
+        "latest_tag": latest_tag,
+        "stable_bootstrap_tag": stable_bootstrap_tag,
+        "guard_tag": stable_bootstrap_tag,
+        "latest_install_url": public_release_root().latest_install_url,
+        "pinned_install_url": pinned_install_url,
+        "pinned_install_url_tag": pinned_url_tag,
+        "bundle_metadata_release_tag": metadata_release_tag,
+        "bundle_metadata_m80_version": metadata_m80_version,
+        "bundle_metadata_package_version": metadata_package_version,
+        "latest_source_mode": latest_source_mode,
+        "guard_source_mode": guard_source_mode,
+    }
+
+
+def require_bundle_metadata_string(metadata: dict, field: str, stable_bootstrap_tag: str) -> str:
+    value = metadata.get(field)
+    if isinstance(value, str) and value:
+        return value
+    raise ValueError(
+        "freshness tag agreement mismatch: "
+        f"pair=stable_bootstrap_vs_bundle_metadata_{field}; expected={stable_bootstrap_tag}; got={value!r}; "
+        f"stable_bootstrap_tag={stable_bootstrap_tag}; "
+        f"pinned_install_command={pinned_install_command(stable_bootstrap_tag)}"
+    )
+
+
 def parse_checksum_file(text: str, *, checksum_asset: FreshnessAsset) -> dict[str, str]:
     entries: dict[str, str] = {}
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -921,7 +1009,7 @@ def checksum_failure_message(
 
 
 def freshness_proof_json(
-    resolution, checks, public_assets, checksum_sources, *, command_inventory_summary, generated_at
+    resolution, checks, public_assets, checksum_sources, *, tag_agreement, command_inventory_summary, generated_at
 ) -> dict:
     proof = success_proof(
         repository=resolution.repository,
@@ -934,6 +1022,7 @@ def freshness_proof_json(
         failure_classes=sorted(FRESHNESS_FAILURE_CLASSES),
         latest_source_mode=resolution.latest_source_mode,
         guard_source_mode=resolution.guard_source_mode,
+        tag_agreement=tag_agreement,
     )
     errors = validate_freshness_proof(proof)
     if errors:
