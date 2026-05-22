@@ -57,7 +57,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_packages_release_bundle_with_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             out_dir = root / "out"
 
             run_package(inputs, out_dir)
@@ -105,15 +105,15 @@ class ReleaseBundleTest(unittest.TestCase):
                     if member.isfile()
                 }
 
-            self.assertEqual(metadata["release_tag"], "v0.2.9")
-            self.assertEqual(metadata["m80_version"], "v0.2.9")
-            self.assertEqual(metadata["package_version"], "0.2.9")
+            self.assertEqual(metadata["release_tag"], "v0.2.10")
+            self.assertEqual(metadata["m80_version"], "v0.2.10")
+            self.assertEqual(metadata["package_version"], "0.2.10")
             self.assertEqual(metadata["target"], "linux-x86_64")
             self.assertEqual(metadata["os"], "linux")
             self.assertEqual(metadata["arch"], "x86_64")
             self.assertEqual(metadata["image_kind"], "minimal")
             self.assertEqual(metadata["m80_protocol_version"], 1)
-            self.assertEqual(metadata["guestd_package_version"], "0.2.9")
+            self.assertEqual(metadata["guestd_package_version"], "0.2.10")
             self.assertEqual(metadata["manifest_schema_version"], 5)
             self.assertEqual(metadata["build_receipt_schema_version"], 1)
             self.assertTrue(metadata["build_receipt_manifest_path"].endswith("output.ext4.manifest.json"))
@@ -134,7 +134,7 @@ class ReleaseBundleTest(unittest.TestCase):
             )
             public_install = (out_dir / INSTALL_NAME).read_text()
             self.assertEqual(public_install, bundled_install)
-            self.assertIn("M80_RELEASE_TAG='v0.2.9'", public_install)
+            self.assertIn("M80_RELEASE_TAG='v0.2.10'", public_install)
             self.assertIn("M80_ASSET_INDEX_NAME='m80-release-assets.json'", public_install)
             self.assertIn("M80_BOOTSTRAP_SELECTOR_NAME='m80-bootstrap-selector.tsv'", public_install)
             self.assertNotIn("M80_BUNDLE_URL=", public_install)
@@ -153,13 +153,13 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertNotIn("quickstart.sh", public_install)
             index = json.loads((out_dir / ASSET_INDEX_NAME).read_text())
             self.assertEqual(index["schema_version"], 1)
-            self.assertEqual(index["release_tag"], "v0.2.9")
+            self.assertEqual(index["release_tag"], "v0.2.10")
             self.assertEqual(len(index["assets"]), 1)
             asset = index["assets"][0]
             self.assertEqual(asset["name"], BUNDLE_NAME)
             self.assertEqual(
                 asset["url"],
-                f"https://github.com/moradology/m80/releases/download/v0.2.9/{BUNDLE_NAME}",
+                f"https://github.com/moradology/m80/releases/download/v0.2.10/{BUNDLE_NAME}",
             )
             self.assertEqual(asset["sha256"], sha256(tarball))
             self.assertEqual(asset["size_bytes"], tarball.stat().st_size)
@@ -172,13 +172,13 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(asset["os"], "linux")
             self.assertEqual(asset["arch"], "x86_64")
             self.assertEqual(asset["image_kind"], "minimal")
-            self.assertEqual(asset["m80_version"], "v0.2.9")
+            self.assertEqual(asset["m80_version"], "v0.2.10")
             self.assertEqual(asset["guest_protocol_version"], 1)
             self.assertEqual(asset["manifest_schema_version"], 5)
             self.assertEqual(asset["expected_firecracker_version"], "v1.15.1")
             selector = (out_dir / BOOTSTRAP_SELECTOR_NAME).read_text().splitlines()
             self.assertEqual(selector[0], "schema_version\t1")
-            self.assertEqual(selector[1], "release_tag\tv0.2.9")
+            self.assertEqual(selector[1], "release_tag\tv0.2.10")
             self.assertEqual(
                 selector[2],
                 "columns\tos\tarch\timage_kind\tbundle_name\tbundle_url\tbundle_sha256\t"
@@ -198,10 +198,10 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(selector_row[10], f"{BUNDLE_NAME}.sha256")
             self.assertEqual(selector_row[11], "-")
             self.assertEqual(selector_row[12], INTEGRITY_ATTESTATION_BUNDLE_NAME)
-            self.assertEqual(selector_row[13], "v0.2.9")
+            self.assertEqual(selector_row[13], "v0.2.10")
             build_manifest = json.loads((out_dir / BUILD_MANIFEST_NAME).read_text())
             self.assertEqual(build_manifest["schema_version"], 1)
-            self.assertEqual(build_manifest["release_tag"], "v0.2.9")
+            self.assertEqual(build_manifest["release_tag"], "v0.2.10")
             self.assertEqual(build_manifest["source_commit"], INTEGRITY_COMMIT_SHA)
             self.assertEqual(build_manifest["rust_toolchain"], INTEGRITY_RUST_TOOLCHAIN)
             self.assertEqual(build_manifest["target"], "linux-x86_64")
@@ -209,7 +209,7 @@ class ReleaseBundleTest(unittest.TestCase):
                 build_manifest["target_triples"],
                 ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"],
             )
-            self.assertEqual(build_manifest["m80_package_version"], "0.2.9")
+            self.assertEqual(build_manifest["m80_package_version"], "0.2.10")
             self.assertEqual(build_manifest["image_kind"], "minimal")
             self.assertEqual(build_manifest["cargo_lock_sha256"], sha256(REPO_ROOT / "Cargo.lock"))
             self.assertEqual(build_manifest["builder_identity"], "test-builder")
@@ -230,11 +230,11 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(integrity["schema_version"], 1)
             self.assertEqual(integrity["mechanism"], "github-artifact-attestation")
             self.assertEqual(integrity["repository"], "moradology/m80")
-            self.assertEqual(integrity["release_tag"], "v0.2.9")
+            self.assertEqual(integrity["release_tag"], "v0.2.10")
             self.assertEqual(integrity["commit_sha"], INTEGRITY_COMMIT_SHA)
             self.assertEqual(integrity["target"], "linux-x86_64")
             self.assertEqual(integrity["rust_toolchain"], INTEGRITY_RUST_TOOLCHAIN)
-            self.assertEqual(integrity["m80_package_version"], "0.2.9")
+            self.assertEqual(integrity["m80_package_version"], "0.2.10")
             self.assertEqual(integrity["bundle_metadata_name"], METADATA_NAME)
             self.assertEqual(integrity["bundle_metadata_sha256"], sha256(out_dir / METADATA_NAME))
             self.assertEqual(
@@ -259,7 +259,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_accepts_container_only_builder_material(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             out_dir = root / "out"
 
             run_package(
@@ -278,7 +278,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_accepts_apt_and_container_builder_material(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             out_dir = root / "out"
 
             run_package(inputs, out_dir, container_digest=VALID_CONTAINER_DIGEST)
@@ -290,7 +290,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_missing_builder_material(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
 
             result = run_package(inputs, root / "out", apt_package_versions=[], check=False)
 
@@ -311,7 +311,7 @@ class ReleaseBundleTest(unittest.TestCase):
             with self.subTest(invalid_digest=invalid_digest):
                 with tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
-                    inputs = fixture_inputs(root, release_tag="v0.2.9")
+                    inputs = fixture_inputs(root, release_tag="v0.2.10")
 
                     result = run_package(
                         inputs,
@@ -326,7 +326,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_legacy_quickstart_install_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             legacy = root / "legacy-quickstart.sh"
             write_executable(
                 legacy,
@@ -342,7 +342,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_literal_quickstart_script_template(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             legacy = root / "literal-quickstart.sh"
             write_executable(
                 legacy,
@@ -368,7 +368,7 @@ class ReleaseBundleTest(unittest.TestCase):
             with self.subTest(name=name):
                 with tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
-                    inputs = fixture_inputs(root, release_tag="v0.2.9")
+                    inputs = fixture_inputs(root, release_tag="v0.2.10")
                     interactive = root / "interactive-install.sh"
                     write_executable(
                         interactive,
@@ -391,7 +391,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_unsupported_install_template_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             placeholder = root / "placeholder-install.sh"
             write_executable(
                 placeholder,
@@ -416,13 +416,13 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_hardcoded_public_bundle_install_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             hardcoded = root / "hardcoded-install.sh"
             write_executable(
                 hardcoded,
                 "#!/bin/sh\n"
                 "M80_RELEASE_TAG='@M80_RELEASE_TAG@'\n"
-                "curl -fsSL https://github.com/moradology/m80/releases/download/v0.2.9/m80-linux-x86_64.tar.gz -o bundle.tgz\n"
+                "curl -fsSL https://github.com/moradology/m80/releases/download/v0.2.10/m80-linux-x86_64.tar.gz -o bundle.tgz\n"
                 "bin/m80 install --bundle-url file://bundle.tgz\n",
             )
             inputs["install"] = hardcoded
@@ -467,7 +467,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result, urls, install_args = run_rendered_install(root, args=["--dry-run"])
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            base = "https://github.com/moradology/m80/releases/download/v0.2.9"
+            base = "https://github.com/moradology/m80/releases/download/v0.2.10"
             self.assertEqual(
                 urls,
                 [
@@ -489,14 +489,14 @@ class ReleaseBundleTest(unittest.TestCase):
                     f"{base}/{BUNDLE_NAME}.sha256",
                 ],
             )
-            self.assertIn("verified release tag=v0.2.9", result.stderr)
+            self.assertIn("verified release tag=v0.2.10", result.stderr)
             self.assertIn(
                 f"verified assets={BUNDLE_NAME},{METADATA_NAME},{INSTALL_NAME},{BUILD_MANIFEST_NAME},{INTEGRITY_NAME},{INTEGRITY_ATTESTATION_BUNDLE_NAME}",
                 result.stderr,
             )
             self.assertIn(f"install_sh_sha256={sha256(root / 'out' / INSTALL_NAME)}", result.stderr)
             self.assertIn(
-                "verified handoff binary=v0.2.9 "
+                "verified handoff binary=v0.2.10 "
                 f"source_commit={INTEGRITY_COMMIT_SHA} "
                 f"target={RELEASE_TARGET} target_triple={RELEASE_TARGET_TRIPLE} "
                 "protocol=1 manifest_schema=5",
@@ -511,7 +511,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_assembles_multi_tuple_release_from_tuple_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             seed_out = root / "seed"
             out_dir = root / "out"
             run_package(inputs, seed_out)
@@ -564,7 +564,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_extra_tuple_name_collision_before_copy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             seed_out = root / "seed"
             out_dir = root / "out"
             run_package(inputs, seed_out)
@@ -582,7 +582,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_extra_tuple_metadata_sidecar_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             seed_out = root / "seed"
             run_package(inputs, seed_out)
             manifest = write_extra_tuple_manifest_from_seed(root, seed_out, image_kind="debug")
@@ -600,7 +600,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_rejects_extra_tuple_tar_internal_corruption(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             seed_out = root / "seed"
             out_dir = root / "out"
             run_package(inputs, seed_out)
@@ -690,7 +690,7 @@ class ReleaseBundleTest(unittest.TestCase):
                 fake_m80_script(
                     fake_m80_payload(
                         updates={
-                            "binary_version": "0.2.9-dev",
+                            "binary_version": "0.2.10-dev",
                             "release_tag": None,
                             "release_build": False,
                             "version_status": "dev",
@@ -776,12 +776,12 @@ class ReleaseBundleTest(unittest.TestCase):
                     result, _urls, install_args = run_rendered_install(root, curl_script=curl_script)
 
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("release_tag=v0.2.9", result.stderr)
+                    self.assertIn("release_tag=v0.2.10", result.stderr)
                     self.assertIn(f"asset={BOOTSTRAP_SELECTOR_NAME}", result.stderr)
                     self.assertIn(failure, result.stderr)
                     self.assertIn("verification_started=no", result.stderr)
                     self.assertIn(
-                        f"url=https://github.com/moradology/m80/releases/download/v0.2.9/{BOOTSTRAP_SELECTOR_NAME}",
+                        f"url=https://github.com/moradology/m80/releases/download/v0.2.10/{BOOTSTRAP_SELECTOR_NAME}",
                         result.stderr,
                     )
                     self.assertFalse((root / "tar.log").exists(), result.stderr)
@@ -805,7 +805,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertIn("verification_started=yes", result.stderr)
             self.assertIn("failure=http_failure", result.stderr)
             self.assertIn(
-                "retry pinned command: curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 1 https://github.com/moradology/m80/releases/download/v0.2.9/install.sh | sudo sh",
+                "retry pinned command: curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 1 https://github.com/moradology/m80/releases/download/v0.2.10/install.sh | sudo sh",
                 result.stderr,
             )
             assert_no_bundle_download(self, urls, install_args)
@@ -1423,7 +1423,7 @@ class ReleaseBundleTest(unittest.TestCase):
             }
 
             self.assertEqual(manifest["schema_version"], 1)
-            self.assertEqual(manifest["release_tag"], "v0.2.9")
+            self.assertEqual(manifest["release_tag"], "v0.2.10")
             self.assertEqual(
                 {name for name, asset in public_assets.items() if asset["integrity_subject"]},
                 integrity_subject_names,
@@ -1674,12 +1674,12 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(receipt["schema_version"], 2)
             self.assertEqual(receipt["kind"], "m80_release_publish_decision")
             self.assertEqual(receipt["decision"], "approved")
-            self.assertEqual(receipt["release_tag"], "v0.2.9")
+            self.assertEqual(receipt["release_tag"], "v0.2.10")
             self.assertEqual(receipt["commit_sha"], INTEGRITY_COMMIT_SHA)
             self.assertEqual(receipt["workflow_run_id"], "12345")
             self.assertEqual(receipt["actor"], "release-bot")
             self.assertEqual(receipt["repository"], "moradology/m80")
-            self.assertEqual(receipt["github_ref"], "refs/tags/v0.2.9")
+            self.assertEqual(receipt["github_ref"], "refs/tags/v0.2.10")
             self.assertEqual(receipt["artifact_manifest"]["name"], UPLOAD_MANIFEST_NAME)
             self.assertEqual(receipt["artifact_manifest_digest"], receipt["artifact_manifest"]["sha256"])
             self.assertEqual(receipt["proof_ledger"]["name"], RELEASE_PROOF_LEDGER_NAME)
@@ -1847,11 +1847,11 @@ class ReleaseBundleTest(unittest.TestCase):
 
             self.assertEqual(bundle["schema_version"], 2)
             self.assertEqual(bundle["kind"], "m80_release_evidence_bundle")
-            self.assertEqual(bundle["release_tag"], "v0.2.9")
+            self.assertEqual(bundle["release_tag"], "v0.2.10")
             self.assertEqual(bundle["commit_sha"], INTEGRITY_COMMIT_SHA)
             self.assertEqual(bundle["workflow_run_id"], "12345")
-            self.assertEqual(bundle["m80_version"], "v0.2.9")
-            self.assertEqual(bundle["resolved_install_tag"], "v0.2.9")
+            self.assertEqual(bundle["m80_version"], "v0.2.10")
+            self.assertEqual(bundle["resolved_install_tag"], "v0.2.10")
             self.assertEqual(bundle["upload_manifest"]["name"], UPLOAD_MANIFEST_NAME)
             self.assertEqual(bundle["build_handoff"]["name"], BUILD_MANIFEST_NAME)
             self.assertEqual(bundle["publish_decision_receipt"]["name"], PUBLISH_RECEIPT_NAME)
@@ -2067,7 +2067,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(inventory["schema_version"], 1)
             self.assertEqual(inventory["kind"], "m80_release_remote_asset_inventory")
-            self.assertEqual(inventory["release_tag"], "v0.2.9")
+            self.assertEqual(inventory["release_tag"], "v0.2.10")
             self.assertEqual(inventory["release_id"], 9001)
             self.assertEqual(
                 {asset["name"] for asset in inventory["assets"]},
@@ -2076,7 +2076,7 @@ class ReleaseBundleTest(unittest.TestCase):
             for asset in inventory["assets"]:
                 self.assertEqual(asset["sha256"], sha256(redownload / asset["name"]))
                 self.assertEqual(asset["size_bytes"], (redownload / asset["name"]).stat().st_size)
-                self.assertTrue(asset["download_url"].endswith(f"/releases/download/v0.2.9/{asset['name']}"))
+                self.assertTrue(asset["download_url"].endswith(f"/releases/download/v0.2.10/{asset['name']}"))
                 self.assertIn("created_at", asset)
                 self.assertIn("updated_at", asset)
 
@@ -2193,7 +2193,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_package_tarball_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             first = root / "first"
             second = root / "second"
 
@@ -2365,8 +2365,8 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_binary_source_commit_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
-            write_fake_m80(inputs["m80"], "v0.2.9", source_commit="1" * 40)
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
+            write_fake_m80(inputs["m80"], "v0.2.10", source_commit="1" * 40)
 
             result = run_package(inputs, root / "out", check=False)
 
@@ -2376,8 +2376,8 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_binary_target_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
-            write_fake_m80(inputs["m80"], "v0.2.9", target="linux-aarch64")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
+            write_fake_m80(inputs["m80"], "v0.2.10", target="linux-aarch64")
 
             result = run_package(inputs, root / "out", check=False)
 
@@ -2387,8 +2387,8 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_binary_target_triple_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
-            write_fake_m80(inputs["m80"], "v0.2.9", target_triple="aarch64-unknown-linux-gnu")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
+            write_fake_m80(inputs["m80"], "v0.2.10", target_triple="aarch64-unknown-linux-gnu")
 
             result = run_package(inputs, root / "out", check=False)
 
@@ -2398,7 +2398,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_workspace_release_tag_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             result = run_package(inputs, root / "out", release_tag="v9.9.9", check=False)
 
             self.assertNotEqual(result.returncode, 0)
@@ -2407,8 +2407,8 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_prerelease_release_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
-            result = run_package(inputs, root / "out", release_tag="v0.2.9-rc.1", check=False)
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
+            result = run_package(inputs, root / "out", release_tag="v0.2.10-rc.1", check=False)
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("stable release tag must be vMAJOR.MINOR.PATCH", result.stderr)
@@ -2416,7 +2416,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_guest_protocol_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9", guest_protocol=2)
+            inputs = fixture_inputs(root, release_tag="v0.2.10", guest_protocol=2)
             result = run_package(inputs, root / "out", check=False)
 
             self.assertNotEqual(result.returncode, 0)
@@ -2425,7 +2425,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_manifest_schema_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             rewrite_manifest(inputs["manifest"], {"schema_version": 99})
 
             result = run_package(inputs, root / "out", check=False)
@@ -2436,7 +2436,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_build_receipt_schema_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             rewrite_json(inputs["receipt"], {"schema_version": 99})
 
             result = run_package(inputs, root / "out", check=False)
@@ -2447,7 +2447,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_guest_manifest_image_kind_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             rewrite_manifest(inputs["manifest"], {"image_kind": "ubuntu"})
 
             result = run_package(inputs, root / "out", check=False)
@@ -2458,7 +2458,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_unsupported_package_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
 
             result = run_package(inputs, root / "out", target="linux-arm64", check=False)
 
@@ -2468,7 +2468,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_unsupported_package_image_kind(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
 
             result = run_package(inputs, root / "out", image_kind="ubuntu", check=False)
 
@@ -2478,7 +2478,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_build_receipt_manifest_hash_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             rewrite_json(inputs["receipt"], {"manifest_sha256": "0" * 64})
 
             result = run_package(inputs, root / "out", check=False)
@@ -2489,7 +2489,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_build_receipt_manifest_path_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             rewrite_json(inputs["receipt"], {"manifest_path": str(root / "other.manifest.json")})
 
             result = run_package(inputs, root / "out", check=False)
@@ -2500,7 +2500,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_rejects_build_receipt_artifact_hash_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             receipt = json.loads(inputs["receipt"].read_text())
             receipt["artifacts"][0]["sha256"] = "0" * 64
             inputs["receipt"].write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
@@ -2949,7 +2949,7 @@ class ReleaseBundleTest(unittest.TestCase):
             result = run_verify(tarball, verify_integrity=True, release_tag="v9.9.9", check=False)
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("release tag mismatch: expected v0.2.9, got v9.9.9", result.stderr)
+            self.assertIn("release tag mismatch: expected v0.2.10, got v9.9.9", result.stderr)
 
     def test_human_release_dist_verifier_rejects_missing_attestation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3126,7 +3126,7 @@ class ReleaseBundleTest(unittest.TestCase):
             self.assertEqual(payload["schema_version"], 1)
             self.assertEqual(payload["mechanism"], "github-artifact-attestation")
             self.assertEqual(payload["repository"], "moradology/m80")
-            self.assertEqual(payload["release_tag"], "v0.2.9")
+            self.assertEqual(payload["release_tag"], "v0.2.10")
             self.assertEqual(payload["predicate_sha256"], sha256(material))
             self.assertEqual(payload["signer_identity"], INTEGRITY_SIGNER_IDENTITY)
             self.assertEqual(payload["issuer"], INTEGRITY_SIGNER_ISSUER)
@@ -3247,7 +3247,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_verifier_rejects_non_default_tar_internal_corruption_after_dist_integrity_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             seed_out = root / "seed"
             out_dir = root / "out"
             run_package(inputs, seed_out)
@@ -3273,7 +3273,7 @@ class ReleaseBundleTest(unittest.TestCase):
     def test_verifier_checks_every_extra_tuple_bundle_after_dist_integrity_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            inputs = fixture_inputs(root, release_tag="v0.2.9")
+            inputs = fixture_inputs(root, release_tag="v0.2.10")
             seed_out = root / "seed"
             out_dir = root / "out"
             run_package(inputs, seed_out)
@@ -3308,7 +3308,7 @@ class ReleaseBundleTest(unittest.TestCase):
         for field, value, label in cases:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                inputs = fixture_inputs(root, release_tag="v0.2.9")
+                inputs = fixture_inputs(root, release_tag="v0.2.10")
                 seed_out = root / "seed"
                 out_dir = root / "out"
                 run_package(inputs, seed_out)
@@ -3749,7 +3749,7 @@ class ReleaseBundleTest(unittest.TestCase):
             rewrite_attestation_metadata(
                 root / "out",
                 {
-                    "signer_identity": "repo:moradology/other:ref:refs/tags/v0.2.9",
+                    "signer_identity": "repo:moradology/other:ref:refs/tags/v0.2.10",
                 },
             )
 
@@ -3877,7 +3877,7 @@ def fixture_inputs(root: Path, *, release_tag: str, guest_protocol: int = 1) -> 
 
 
 def fake_m80_payload(
-    release_tag: str = "v0.2.9",
+    release_tag: str = "v0.2.10",
     *,
     updates: dict | None = None,
     omit: set[str] | None = None,
@@ -3886,11 +3886,11 @@ def fake_m80_payload(
         "version": 1,
         "data": {
             "binary_version": release_tag,
-            "package_version": "0.2.9",
+            "package_version": "0.2.10",
             "release_tag": release_tag,
             "release_build": True,
             "version_status": "release",
-            "expected_release_tag": "v0.2.9",
+            "expected_release_tag": "v0.2.10",
             "source_commit": INTEGRITY_COMMIT_SHA,
             "target": RELEASE_TARGET,
             "target_triple": RELEASE_TARGET_TRIPLE,
@@ -3947,7 +3947,7 @@ def write_fake_m80(
 
 
 def write_fake_guestd(path: Path, protocol_version: int) -> None:
-    write_executable(path, f"#!/bin/sh\nprintf 'm80-guestd 0.2.9 (proto v{protocol_version})\\n'\n")
+    write_executable(path, f"#!/bin/sh\nprintf 'm80-guestd 0.2.10 (proto v{protocol_version})\\n'\n")
 
 
 def write_guest_manifest(inputs: Path) -> None:
@@ -4059,7 +4059,7 @@ def add_alternate_image_kind_fixture(out_dir: Path, *, image_kind: str = "debug"
     asset.update(
         {
             "name": bundle_name,
-            "url": f"https://github.com/moradology/m80/releases/download/v0.2.9/{bundle_name}",
+            "url": f"https://github.com/moradology/m80/releases/download/v0.2.10/{bundle_name}",
             "sha256": sha256(bundle_path),
             "size_bytes": bundle_path.stat().st_size,
             "metadata_name": metadata_name,
@@ -4344,11 +4344,11 @@ def write_integrity_material(
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
         "repository": "moradology/m80",
-        "release_tag": "v0.2.9",
+        "release_tag": "v0.2.10",
         "commit_sha": INTEGRITY_COMMIT_SHA,
         "target": "linux-x86_64",
         "rust_toolchain": INTEGRITY_RUST_TOOLCHAIN,
-        "m80_package_version": "0.2.9",
+        "m80_package_version": "0.2.10",
         "bundle_metadata_name": METADATA_NAME,
         "bundle_metadata_sha256": sha256(out_dir / METADATA_NAME),
         "subjects": subjects,
@@ -4396,7 +4396,7 @@ def write_attestation_bundle(out_dir: Path, material: Path, *, updates: dict | N
         "valid": True,
         "artifact": str(material),
         "repository": "moradology/m80",
-        "release_tag": "v0.2.9",
+        "release_tag": "v0.2.10",
         "commit_sha": INTEGRITY_COMMIT_SHA,
         "signer_identity": INTEGRITY_SIGNER_IDENTITY,
         "issuer": INTEGRITY_SIGNER_ISSUER,
@@ -4413,7 +4413,7 @@ def write_attestation_metadata(out_dir: Path, material: Path, *, updates: dict |
         "schema_version": 1,
         "mechanism": "github-artifact-attestation",
         "repository": "moradology/m80",
-        "release_tag": "v0.2.9",
+        "release_tag": "v0.2.10",
         "predicate_sha256": sha256(material),
         "signer_identity": INTEGRITY_SIGNER_IDENTITY,
         "issuer": INTEGRITY_SIGNER_ISSUER,
@@ -4453,7 +4453,7 @@ def write_fake_gh(root: Path) -> Path:
         "repo": "moradology/m80",
         "signer_workflow": INTEGRITY_SIGNER_IDENTITY,
         "cert_oidc_issuer": INTEGRITY_SIGNER_ISSUER,
-        "source_ref": "refs/tags/v0.2.9",
+        "source_ref": "refs/tags/v0.2.10",
         "source_digest": INTEGRITY_COMMIT_SHA,
     }
     script = f"""#!/usr/bin/env python3
@@ -4650,7 +4650,7 @@ EXPECTED = {{
     "repo": "moradology/m80",
     "signer": "{INTEGRITY_SIGNER_IDENTITY}",
     "issuer": "{INTEGRITY_SIGNER_ISSUER}",
-    "source_ref": "refs/tags/v0.2.9",
+    "source_ref": "refs/tags/v0.2.10",
 }}
 HELP = "--repo --bundle --signer-workflow --cert-oidc-issuer --source-ref --source-digest --deny-self-hosted-runners --format"
 
@@ -4705,7 +4705,7 @@ if flags.get("--source-digest") != material["commit_sha"]:
     fail("--source-digest mismatch")
 if bundle.get("repository") != EXPECTED["repo"]:
     fail("bundle repository mismatch")
-if bundle.get("release_tag") != "v0.2.9":
+if bundle.get("release_tag") != "v0.2.10":
     fail("bundle release_tag mismatch")
 if bundle.get("commit_sha") != material["commit_sha"]:
     fail("bundle commit_sha mismatch")
@@ -4755,7 +4755,7 @@ print(json.dumps([{{"verificationResult": {{"statement": {{"subject": [{{"name":
 
 
 def assert_no_bundle_download(test: unittest.TestCase, urls: list[str], install_args: Path) -> None:
-    bundle_url = f"https://github.com/moradology/m80/releases/download/v0.2.9/{BUNDLE_NAME}"
+    bundle_url = f"https://github.com/moradology/m80/releases/download/v0.2.10/{BUNDLE_NAME}"
     test.assertNotIn(bundle_url, urls)
     test.assertFalse(install_args.exists())
 
@@ -4769,7 +4769,7 @@ def run_package(
     inputs: dict[str, Path],
     out_dir: Path,
     *,
-    release_tag: str = "v0.2.9",
+    release_tag: str = "v0.2.10",
     target: str = "linux-x86_64",
     image_kind: str = "minimal",
     apt_package_versions: list[str] | None = None,
@@ -4838,7 +4838,7 @@ def run_package(
 
 
 def package_fixture(root: Path) -> Path:
-    inputs = fixture_inputs(root, release_tag="v0.2.9")
+    inputs = fixture_inputs(root, release_tag="v0.2.10")
     out_dir = root / "out"
     run_package(inputs, out_dir)
     return out_dir / "m80-linux-x86_64.tar.gz"
@@ -4880,7 +4880,7 @@ def write_hostless_quickstart_proof_placeholder(out_dir: Path) -> Path:
                 "schema_version": 1,
                 "kind": "m80_quickstart_proof",
                 "proof_kind": "hostless",
-                "release_tag": "v0.2.9",
+                "release_tag": "v0.2.10",
                 "substrate": {"kind": "hostless"},
             },
             indent=2,
@@ -4901,7 +4901,7 @@ def write_release_proof_ledger_placeholder(out_dir: Path) -> Path:
                 "previous_record_hash": None,
                 "proof_artifact": HOSTLESS_QUICKSTART_PROOF_NAME,
                 "proof_artifact_digest": "sha256:" + ("b" * 64),
-                "release_tag": "v0.2.9",
+                "release_tag": "v0.2.10",
                 "workflow_run_id": "12345",
                 "proof_type": "hostless",
                 "substrate": "hostless",
@@ -4945,7 +4945,7 @@ def write_remote_release_metadata(
                 "id": 1000 + index,
                 "name": name,
                 "size": path.stat().st_size,
-                "browser_download_url": f"https://github.com/moradology/m80/releases/download/v0.2.9/{name}",
+                "browser_download_url": f"https://github.com/moradology/m80/releases/download/v0.2.10/{name}",
                 "created_at": "2026-05-21T00:00:00Z",
                 "updated_at": "2026-05-21T00:00:01Z",
             }
@@ -4956,7 +4956,7 @@ def write_remote_release_metadata(
         assets.append(duplicate)
     metadata = {
         "id": 9001,
-        "tag_name": "v0.2.9",
+        "tag_name": "v0.2.10",
         "assets": assets,
     }
     path = redownload_dir / "github-release.json"
@@ -5011,7 +5011,7 @@ def run_verify(
     verify_sidecars: bool = False,
     downloaded_public_assets: bool = False,
     verify_integrity: bool = False,
-    release_tag: str = "v0.2.9",
+    release_tag: str = "v0.2.10",
     gh_bin: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     cmd = [
@@ -5063,7 +5063,7 @@ def run_release_upload_manifest(
         "--dist-dir",
         str(out_dir),
         "--release-tag",
-        "v0.2.9",
+        "v0.2.10",
         *args,
     ]
     return subprocess.run(cmd, check=check, text=True, capture_output=True)
@@ -5074,7 +5074,7 @@ def run_release_publish_receipt(
     *args: str,
     check: bool = True,
     actor: str = "release-bot",
-    github_ref: str = "refs/tags/v0.2.9",
+    github_ref: str = "refs/tags/v0.2.10",
 ) -> subprocess.CompletedProcess[str]:
     cmd = [
         "python3",
@@ -5082,7 +5082,7 @@ def run_release_publish_receipt(
         "--dist-dir",
         str(out_dir),
         "--release-tag",
-        "v0.2.9",
+        "v0.2.10",
         "--commit-sha",
         INTEGRITY_COMMIT_SHA,
         "--workflow-run-id",
@@ -5113,15 +5113,15 @@ def run_release_evidence_bundle(
         "--dist-dir",
         str(out_dir),
         "--release-tag",
-        "v0.2.9",
+        "v0.2.10",
         "--commit-sha",
         INTEGRITY_COMMIT_SHA,
         "--workflow-run-id",
         "12345",
         "--m80-version",
-        "v0.2.9",
+        "v0.2.10",
         "--resolved-install-tag",
-        "v0.2.9",
+        "v0.2.10",
         "--generated-at",
         "2026-05-21T00:00:00Z",
         *args,
@@ -5147,7 +5147,7 @@ def run_remote_asset_inventory(
         "--release-metadata",
         str(metadata),
         "--release-tag",
-        "v0.2.9",
+        "v0.2.10",
         "--generated-at",
         "2026-05-21T00:00:00Z",
     ]
@@ -5177,7 +5177,7 @@ def run_verify_integrity(
         "--dist-dir",
         str(material.parent),
         "--release-tag",
-        "v0.2.9",
+        "v0.2.10",
         "--commit-sha",
         INTEGRITY_COMMIT_SHA,
         "--trust-policy",
@@ -5215,7 +5215,7 @@ def run_write_attestation_metadata(
         "--trust-policy",
         str(trust_policy_path(material.parent)),
         "--release-tag",
-        "v0.2.9",
+        "v0.2.10",
         "--commit-sha",
         INTEGRITY_COMMIT_SHA,
         "--out",

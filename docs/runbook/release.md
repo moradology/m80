@@ -16,7 +16,7 @@ M80_RELEASE_TAG=vX.Y.Z \
 ```
 
 The injected tag must be the exact `v<workspace package version>` tag. For the
-workspace package version `0.2.9`, the expected release tag is `v0.2.9`.
+workspace package version `0.2.10`, the expected release tag is `v0.2.10`.
 The injected source commit must be the exact commit used by the release build
 manifest and signed release integrity material.
 The injected Rust target triple must be one of the target triples recorded in
@@ -46,7 +46,7 @@ The public GitHub release owner/repo source is
 must use snippets rendered by `scripts/render-release-install-snippets.py`:
 
 <!-- m80:freshness-status start -->
-Public installer status: public proof green for `v0.2.7`. Latest and pinned install URLs were verified from unauthenticated public release assets. Proof: [latest-and-pinned-url-proof](../behaviors/release/release-readiness-public-access.json).
+Public installer status: public proof green for `v0.2.9`. Latest and pinned install URLs were verified from unauthenticated public release assets. Proof: [latest-and-pinned-url-proof](../behaviors/release/release-readiness-public-access.json).
 <!-- m80:freshness-status end -->
 
 <!-- m80:quickstart-snippet latest-install start -->

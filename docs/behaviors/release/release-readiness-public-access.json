@@ -8,14 +8,14 @@
     },
     "pinned_release": {
       "error": null,
-      "final_url": "https://api.github.com/repos/moradology/m80/releases/tags/v0.2.7",
+      "final_url": "https://api.github.com/repos/moradology/m80/releases/tags/v0.2.9",
       "http_status": 200,
-      "url": "https://api.github.com/repos/moradology/m80/releases/tags/v0.2.7"
+      "url": "https://api.github.com/repos/moradology/m80/releases/tags/v0.2.9"
     }
   },
   "asset_manifest": {
     "name": "m80-release-assets.json",
-    "sha256": "eea0cf70a4b8030a22d0e9de4731fd0e9279cd8ebf8b96b4900a70aecfa523ce",
+    "sha256": "4f35e43e43e1379f8b6b4cbf2f4e967906b7424f630d6d73855d6fe96e5fcd33",
     "size_bytes": 931
   },
   "auth": {
@@ -24,353 +24,353 @@
     "authorization_header_used": false,
     "gh_auth_present": false
   },
-  "command": "GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN scripts/release_public_access_receipt.py --repository moradology/m80 --release-tag v0.2.7 --commit-sha 388d2d5aa13418e22c1144963b0f66dd3588a92b --out docs/behaviors/release/release-readiness-public-access.json --write",
-  "commit_sha": "388d2d5aa13418e22c1144963b0f66dd3588a92b",
+  "command": "GH_CONFIG_DIR=/tmp/m80-noauth-gh env -u GH_TOKEN -u GITHUB_TOKEN scripts/release_public_access_receipt.py --repository moradology/m80 --release-tag v0.2.9 --commit-sha 52a36b5afd7857a78adf3b21436c18ab3e335bd3 --out docs/behaviors/release/release-readiness-public-access.json --write",
+  "commit_sha": "52a36b5afd7857a78adf3b21436c18ab3e335bd3",
   "downloaded_asset_digests": {
-    "SHA256SUMS": "fd96fa20923eeb2a65dc65cb9a6d821c7ec60019da1d4ef9b3eb6697791364e6",
-    "install.sh": "98b78af2fa296532f8c2022edc3e1afea56669a876e7efe7a8ead6337c8cf08f",
-    "install.sh.sha256": "a5fa619a6f73c51ac705f7cd6e1988065cf8130ba5dbbedae7df51ae920adb9c",
-    "m80-bootstrap-selector.tsv": "14aaa1a12196a9535240ce9f2ea2ac4c29f180bf2e996db2d139e9479d2799ac",
-    "m80-bootstrap-selector.tsv.sha256": "859e68e55713244a1e742b6cbdcc0653029dd4a0f3dc4a4c9eadae54e7c086bf",
-    "m80-linux-x86_64.bundle.json": "68f87d667fd89519299687aba0454ab6060a0e4f3c10086ab15e65229881bc2d",
-    "m80-linux-x86_64.bundle.json.sha256": "e7204e6571ba428cfcb87c2a5a0d1dca6be9d02b5be5b65db6d5a6b57ae93637",
-    "m80-linux-x86_64.tar.gz": "e7a28858428ee94f48dd6b1687d380c74a76cb022409b0c350599e257c7fa259",
-    "m80-linux-x86_64.tar.gz.sha256": "955ec8124a11a6b74ab071696979f12505cc633b858ba8a433b40ed508650977",
-    "m80-release-assets.json": "eea0cf70a4b8030a22d0e9de4731fd0e9279cd8ebf8b96b4900a70aecfa523ce",
-    "m80-release-assets.json.sha256": "ddb9ddfa06c84dd55aa6cbd7732a0443e11ce126347f6b311f033878e53eca59",
-    "m80-release-attestation.json": "69f45386cd24b56a2c14740213610ebb446f3df275ecb02f5f04751f59fe3ba6",
-    "m80-release-build.json": "611690eba8d91d1c39fa6baf39699bd48a5634561873fdc40e26c4276117f3df",
-    "m80-release-build.json.sha256": "2909a00c077055c669769485f6ef49006d068a20d98516d00a4f3a629b896a9c",
-    "m80-release-integrity.attestation.jsonl": "a36f5dc6ffee272c2d3f7530a84dd79f540666378c105091a981a734a698be5e",
-    "m80-release-integrity.json": "73f5ced9e76349bbf74b881bf69b50fea014ef361ea292dda18e2bcbc03e80bd"
+    "SHA256SUMS": "b6e17dbd4af1af3a01ab81dd7cd66fdb3b9a0eb8fafc89feecab85c2efe38c5f",
+    "install.sh": "117c98c0a1b9f9def60cbf58eb01e96f8ac324102c00277e6735a3181c83e73d",
+    "install.sh.sha256": "18e4374176a433b19752e92bc88f7a004d7d5e32660a2201c581dfea27febb94",
+    "m80-bootstrap-selector.tsv": "63d96f0926fa94877bced86fb298356506099d5e1e837eb58cfa6a2ccdfe0b89",
+    "m80-bootstrap-selector.tsv.sha256": "7d77d58276ffc59e0d390beae44ce36fe7a07ce8b30d5aec09b7bd3e134d49bc",
+    "m80-linux-x86_64.bundle.json": "ac5d7efd521e75a8ae754a3c4bec697654eef2ae3c9890dedd5b1c2149d2f5df",
+    "m80-linux-x86_64.bundle.json.sha256": "754eeba180511399dd86be4543f74403d52dbe5985dc952a32de277533f26fe0",
+    "m80-linux-x86_64.tar.gz": "5619a4cb94834c1ab4e9e787b5964767d9cef526d87c39d0048145cb18cc0364",
+    "m80-linux-x86_64.tar.gz.sha256": "48fb2b72b0a9ba09812694e222668347694fa5de30fcecfc79fadd141831be0e",
+    "m80-release-assets.json": "4f35e43e43e1379f8b6b4cbf2f4e967906b7424f630d6d73855d6fe96e5fcd33",
+    "m80-release-assets.json.sha256": "e2ca5a94a5b766b7e210e03a585ce8beb7aa9589c17400de2f2da4f4650fe364",
+    "m80-release-attestation.json": "9b5dcd6642cdc30d5179ec0ce6743e9e8e27bf8f9626e0c52462f8e38a82ae4e",
+    "m80-release-build.json": "08a7d697061a0e4d357bf99757b552d7f2a63d72d56c4892c703d0b674270066",
+    "m80-release-build.json.sha256": "541771844b01d113b05fe034778d88decdf27c46bd170c416f77d7549d382160",
+    "m80-release-integrity.attestation.jsonl": "3c63e81b76b5667045e9d9848fa869984ceec3f2c039f93fc31b0f92ae8f2e8e",
+    "m80-release-integrity.json": "23f0540ec83af6b8295b3d8b08e69bc6479ca2d0c7ac22bd77cbe62d05491265"
   },
   "downloaded_assets": [
     {
       "error": null,
-      "expected_sha256": "fd96fa20923eeb2a65dc65cb9a6d821c7ec60019da1d4ef9b3eb6697791364e6",
+      "expected_sha256": "b6e17dbd4af1af3a01ab81dd7cd66fdb3b9a0eb8fafc89feecab85c2efe38c5f",
       "expected_size_bytes": 1110,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/3aa43c84-eba5-41bd-a25a-0ee1d382949e?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A00Z&rscd=attachment%3B+filename%3DSHA256SUMS&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A22Z&ske=2026-05-22T02%3A54%3A00Z&sks=b&skv=2018-11-09&sig=VzauVgEpXXtnZNDN%2FPIr3Jx7ches8Ctv9P4OD3UdSfU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MCwibmJmIjoxNzc5NDE2MjUwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.-QcVZ4VfPY4ECczSy6-GvLpcKCV6TzS-mTzmVeRKPTo&response-content-disposition=attachment%3B%20filename%3DSHA256SUMS&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/087e1e82-7d82-4a7a-9783-a6e1ce4f7650?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A55%3A09Z&rscd=attachment%3B+filename%3DSHA256SUMS&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A49Z&ske=2026-05-22T03%3A55%3A09Z&sks=b&skv=2018-11-09&sig=RImw6YIY73ZoJ%2FwGKGs1ntorSUOhZT%2F401XK0qUL73I%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNywibmJmIjoxNzc5NDE5NTA3LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.tz-XVtoY3fBCCybwgzTyLCfJzC69LIxF6xq0PZr5SFk&response-content-disposition=attachment%3B%20filename%3DSHA256SUMS&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "SHA256SUMS",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/3aa43c84-eba5-41bd-a25a-0ee1d382949e?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A00Z&rscd=attachment%3B+filename%3DSHA256SUMS&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A22Z&ske=2026-05-22T02%3A54%3A00Z&sks=b&skv=2018-11-09&sig=VzauVgEpXXtnZNDN%2FPIr3Jx7ches8Ctv9P4OD3UdSfU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MCwibmJmIjoxNzc5NDE2MjUwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.-QcVZ4VfPY4ECczSy6-GvLpcKCV6TzS-mTzmVeRKPTo&response-content-disposition=attachment%3B%20filename%3DSHA256SUMS&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/087e1e82-7d82-4a7a-9783-a6e1ce4f7650?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A55%3A09Z&rscd=attachment%3B+filename%3DSHA256SUMS&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A49Z&ske=2026-05-22T03%3A55%3A09Z&sks=b&skv=2018-11-09&sig=RImw6YIY73ZoJ%2FwGKGs1ntorSUOhZT%2F401XK0qUL73I%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNywibmJmIjoxNzc5NDE5NTA3LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.tz-XVtoY3fBCCybwgzTyLCfJzC69LIxF6xq0PZr5SFk&response-content-disposition=attachment%3B%20filename%3DSHA256SUMS&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "fd96fa20923eeb2a65dc65cb9a6d821c7ec60019da1d4ef9b3eb6697791364e6",
+      "sha256": "b6e17dbd4af1af3a01ab81dd7cd66fdb3b9a0eb8fafc89feecab85c2efe38c5f",
       "size_bytes": 1110,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/SHA256SUMS"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/SHA256SUMS"
     },
     {
       "error": null,
-      "expected_sha256": "98b78af2fa296532f8c2022edc3e1afea56669a876e7efe7a8ead6337c8cf08f",
-      "expected_size_bytes": 47078,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
+      "expected_sha256": "117c98c0a1b9f9def60cbf58eb01e96f8ac324102c00277e6735a3181c83e73d",
+      "expected_size_bytes": 47079,
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2b60a90-5702-488e-95b3-fea493f26db5?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A40Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A41Z&ske=2026-05-22T03%3A53%3A40Z&sks=b&skv=2018-11-09&sig=%2FBS3VJhdeL5P5n%2FD6721YxjJ6BVerOBP3hLrw7GDjsU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNiwibmJmIjoxNzc5NDE5NTA2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.zTX2D13_5XdACkjgbdgz0dybyK84LBqkZARLkfsyrck&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "install.sh",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2b60a90-5702-488e-95b3-fea493f26db5?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A40Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A41Z&ske=2026-05-22T03%3A53%3A40Z&sks=b&skv=2018-11-09&sig=%2FBS3VJhdeL5P5n%2FD6721YxjJ6BVerOBP3hLrw7GDjsU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNiwibmJmIjoxNzc5NDE5NTA2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.zTX2D13_5XdACkjgbdgz0dybyK84LBqkZARLkfsyrck&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "98b78af2fa296532f8c2022edc3e1afea56669a876e7efe7a8ead6337c8cf08f",
-      "size_bytes": 47078,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/install.sh"
+      "sha256": "117c98c0a1b9f9def60cbf58eb01e96f8ac324102c00277e6735a3181c83e73d",
+      "size_bytes": 47079,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/install.sh"
     },
     {
       "error": null,
-      "expected_sha256": "a5fa619a6f73c51ac705f7cd6e1988065cf8130ba5dbbedae7df51ae920adb9c",
+      "expected_sha256": "18e4374176a433b19752e92bc88f7a004d7d5e32660a2201c581dfea27febb94",
       "expected_size_bytes": 77,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/c4e21e5d-05c6-493b-9da3-ea9fcba72135?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A56%3A02Z&rscd=attachment%3B+filename%3Dinstall.sh.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A55%3A23Z&ske=2026-05-22T02%3A56%3A02Z&sks=b&skv=2018-11-09&sig=ZkKBvJh9gW1oN5HHOn7nHSxFKxzDflAettw%2Fp%2FrrypU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MCwibmJmIjoxNzc5NDE2MjUwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.-QcVZ4VfPY4ECczSy6-GvLpcKCV6TzS-mTzmVeRKPTo&response-content-disposition=attachment%3B%20filename%3Dinstall.sh.sha256&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/5f0857de-0cfc-42dc-a454-fd7c6a91e3e1?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A54%3A43Z&rscd=attachment%3B+filename%3Dinstall.sh.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A26Z&ske=2026-05-22T03%3A54%3A43Z&sks=b&skv=2018-11-09&sig=wL%2B47HKCRA9zLc3m8PjI37TAbcAVcuFV9mHOJ0NkMyg%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOCwibmJmIjoxNzc5NDE5NTA4LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.iQGhH0ZZQ1b4rRUAUj9Esiyr7KvSNdWL0v_ZUz0ilEY&response-content-disposition=attachment%3B%20filename%3Dinstall.sh.sha256&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "install.sh.sha256",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/c4e21e5d-05c6-493b-9da3-ea9fcba72135?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A56%3A02Z&rscd=attachment%3B+filename%3Dinstall.sh.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A55%3A23Z&ske=2026-05-22T02%3A56%3A02Z&sks=b&skv=2018-11-09&sig=ZkKBvJh9gW1oN5HHOn7nHSxFKxzDflAettw%2Fp%2FrrypU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MCwibmJmIjoxNzc5NDE2MjUwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.-QcVZ4VfPY4ECczSy6-GvLpcKCV6TzS-mTzmVeRKPTo&response-content-disposition=attachment%3B%20filename%3Dinstall.sh.sha256&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/5f0857de-0cfc-42dc-a454-fd7c6a91e3e1?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A54%3A43Z&rscd=attachment%3B+filename%3Dinstall.sh.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A26Z&ske=2026-05-22T03%3A54%3A43Z&sks=b&skv=2018-11-09&sig=wL%2B47HKCRA9zLc3m8PjI37TAbcAVcuFV9mHOJ0NkMyg%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOCwibmJmIjoxNzc5NDE5NTA4LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.iQGhH0ZZQ1b4rRUAUj9Esiyr7KvSNdWL0v_ZUz0ilEY&response-content-disposition=attachment%3B%20filename%3Dinstall.sh.sha256&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "a5fa619a6f73c51ac705f7cd6e1988065cf8130ba5dbbedae7df51ae920adb9c",
+      "sha256": "18e4374176a433b19752e92bc88f7a004d7d5e32660a2201c581dfea27febb94",
       "size_bytes": 77,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/install.sh.sha256"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/install.sh.sha256"
     },
     {
       "error": null,
-      "expected_sha256": "14aaa1a12196a9535240ce9f2ea2ac4c29f180bf2e996db2d139e9479d2799ac",
+      "expected_sha256": "63d96f0926fa94877bced86fb298356506099d5e1e837eb58cfa6a2ccdfe0b89",
       "expected_size_bytes": 579,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/fc3d1b98-d0e7-48e3-b0dd-41f6a7afbd6c?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A52%3A28Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A52%3A27Z&ske=2026-05-22T02%3A52%3A28Z&sks=b&skv=2018-11-09&sig=38oKGnSyap%2Fr0PXcyg0D6d%2BO6lpirz%2BS7C2U%2FFwwvGg%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MSwibmJmIjoxNzc5NDE2MjUxLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.6YGEcg92PjfqaZGKOoenNxLC5hnB_730LJOvsEkQ1_k&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/10f764f4-c9f8-4c57-a427-dd93e51c4d02?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A32Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A52Z&ske=2026-05-22T03%3A53%3A32Z&sks=b&skv=2018-11-09&sig=NelzGkPQUJCYIhVgZXShaSmJFK1YLarx0IU5hbdClVE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOCwibmJmIjoxNzc5NDE5NTA4LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.iQGhH0ZZQ1b4rRUAUj9Esiyr7KvSNdWL0v_ZUz0ilEY&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-bootstrap-selector.tsv",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/fc3d1b98-d0e7-48e3-b0dd-41f6a7afbd6c?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A52%3A28Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A52%3A27Z&ske=2026-05-22T02%3A52%3A28Z&sks=b&skv=2018-11-09&sig=38oKGnSyap%2Fr0PXcyg0D6d%2BO6lpirz%2BS7C2U%2FFwwvGg%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MSwibmJmIjoxNzc5NDE2MjUxLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.6YGEcg92PjfqaZGKOoenNxLC5hnB_730LJOvsEkQ1_k&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/10f764f4-c9f8-4c57-a427-dd93e51c4d02?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A32Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A52Z&ske=2026-05-22T03%3A53%3A32Z&sks=b&skv=2018-11-09&sig=NelzGkPQUJCYIhVgZXShaSmJFK1YLarx0IU5hbdClVE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOCwibmJmIjoxNzc5NDE5NTA4LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.iQGhH0ZZQ1b4rRUAUj9Esiyr7KvSNdWL0v_ZUz0ilEY&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "14aaa1a12196a9535240ce9f2ea2ac4c29f180bf2e996db2d139e9479d2799ac",
+      "sha256": "63d96f0926fa94877bced86fb298356506099d5e1e837eb58cfa6a2ccdfe0b89",
       "size_bytes": 579,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-bootstrap-selector.tsv"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-bootstrap-selector.tsv"
     },
     {
       "error": null,
-      "expected_sha256": "859e68e55713244a1e742b6cbdcc0653029dd4a0f3dc4a4c9eadae54e7c086bf",
+      "expected_sha256": "7d77d58276ffc59e0d390beae44ce36fe7a07ce8b30d5aec09b7bd3e134d49bc",
       "expected_size_bytes": 93,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/86fe51d0-274c-4ac6-bd9e-f8c23f2d9216?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A59%3A51Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A58%3A52Z&ske=2026-05-22T02%3A59%3A51Z&sks=b&skv=2018-11-09&sig=l5%2FQJFLenbXz6oDfip5dEk8zvuyyVxEezStMnNW15HM%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MSwibmJmIjoxNzc5NDE2MjUxLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.6YGEcg92PjfqaZGKOoenNxLC5hnB_730LJOvsEkQ1_k&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv.sha256&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/868ca778-5994-4e55-88f5-aa3c2a472428?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A54%3A11Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A09Z&ske=2026-05-22T03%3A54%3A11Z&sks=b&skv=2018-11-09&sig=7th7RkJD2XMhdYEbhMLzKj4Vkznq1dIi%2F1lJakGjhiw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOSwibmJmIjoxNzc5NDE5NTA5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.trESzPweeO6VweUue5kSGzeeJWKyWFag2_yaWZZH9_Q&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv.sha256&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-bootstrap-selector.tsv.sha256",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/86fe51d0-274c-4ac6-bd9e-f8c23f2d9216?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A59%3A51Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A58%3A52Z&ske=2026-05-22T02%3A59%3A51Z&sks=b&skv=2018-11-09&sig=l5%2FQJFLenbXz6oDfip5dEk8zvuyyVxEezStMnNW15HM%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MSwibmJmIjoxNzc5NDE2MjUxLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.6YGEcg92PjfqaZGKOoenNxLC5hnB_730LJOvsEkQ1_k&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv.sha256&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/868ca778-5994-4e55-88f5-aa3c2a472428?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A54%3A11Z&rscd=attachment%3B+filename%3Dm80-bootstrap-selector.tsv.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A09Z&ske=2026-05-22T03%3A54%3A11Z&sks=b&skv=2018-11-09&sig=7th7RkJD2XMhdYEbhMLzKj4Vkznq1dIi%2F1lJakGjhiw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOSwibmJmIjoxNzc5NDE5NTA5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.trESzPweeO6VweUue5kSGzeeJWKyWFag2_yaWZZH9_Q&response-content-disposition=attachment%3B%20filename%3Dm80-bootstrap-selector.tsv.sha256&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "859e68e55713244a1e742b6cbdcc0653029dd4a0f3dc4a4c9eadae54e7c086bf",
+      "sha256": "7d77d58276ffc59e0d390beae44ce36fe7a07ce8b30d5aec09b7bd3e134d49bc",
       "size_bytes": 93,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-bootstrap-selector.tsv.sha256"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-bootstrap-selector.tsv.sha256"
     },
     {
       "error": null,
-      "expected_sha256": "68f87d667fd89519299687aba0454ab6060a0e4f3c10086ab15e65229881bc2d",
+      "expected_sha256": "ac5d7efd521e75a8ae754a3c4bec697654eef2ae3c9890dedd5b1c2149d2f5df",
       "expected_size_bytes": 2068,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/75fdf957-4a37-419e-a019-42eea879f645?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A00Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A04Z&ske=2026-05-22T02%3A54%3A00Z&sks=b&skv=2018-11-09&sig=riJKDEUAIkYI68aZfG4TvnVHv%2B4dkKoiig15OBFqhTA%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MiwibmJmIjoxNzc5NDE2MjUyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.AV-m5QjeHHEsJW0wsOJdbJGJW1X9LAM5I5rZdSfYDvU&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/71476b59-aaee-4d4f-904b-d2367d5450b0?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A30Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A24Z&ske=2026-05-22T03%3A52%3A30Z&sks=b&skv=2018-11-09&sig=iaj3dpXq57tRxFOx6lyGN7994PzjcOaKA4K%2BpillQp0%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOSwibmJmIjoxNzc5NDE5NTA5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.trESzPweeO6VweUue5kSGzeeJWKyWFag2_yaWZZH9_Q&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-linux-x86_64.bundle.json",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/75fdf957-4a37-419e-a019-42eea879f645?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A00Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A04Z&ske=2026-05-22T02%3A54%3A00Z&sks=b&skv=2018-11-09&sig=riJKDEUAIkYI68aZfG4TvnVHv%2B4dkKoiig15OBFqhTA%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MiwibmJmIjoxNzc5NDE2MjUyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.AV-m5QjeHHEsJW0wsOJdbJGJW1X9LAM5I5rZdSfYDvU&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/71476b59-aaee-4d4f-904b-d2367d5450b0?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A30Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A24Z&ske=2026-05-22T03%3A52%3A30Z&sks=b&skv=2018-11-09&sig=iaj3dpXq57tRxFOx6lyGN7994PzjcOaKA4K%2BpillQp0%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOSwibmJmIjoxNzc5NDE5NTA5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.trESzPweeO6VweUue5kSGzeeJWKyWFag2_yaWZZH9_Q&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "68f87d667fd89519299687aba0454ab6060a0e4f3c10086ab15e65229881bc2d",
+      "sha256": "ac5d7efd521e75a8ae754a3c4bec697654eef2ae3c9890dedd5b1c2149d2f5df",
       "size_bytes": 2068,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.bundle.json"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-linux-x86_64.bundle.json"
     },
     {
       "error": null,
-      "expected_sha256": "e7204e6571ba428cfcb87c2a5a0d1dca6be9d02b5be5b65db6d5a6b57ae93637",
+      "expected_sha256": "754eeba180511399dd86be4543f74403d52dbe5985dc952a32de277533f26fe0",
       "expected_size_bytes": 95,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/82b25c36-4ac4-41a9-a4ec-37752a79d386?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A53%3A36Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A03Z&ske=2026-05-22T02%3A53%3A36Z&sks=b&skv=2018-11-09&sig=UyY1H57S%2FFU%2FY5LZP3jfBXL6m0yApCX6uyqJ93gYr3o%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MiwibmJmIjoxNzc5NDE2MjUyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.AV-m5QjeHHEsJW0wsOJdbJGJW1X9LAM5I5rZdSfYDvU&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json.sha256&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/17d34927-0f6f-4cb2-bc9c-d5289ad804b7?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A36Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A00Z&ske=2026-05-22T03%3A52%3A36Z&sks=b&skv=2018-11-09&sig=K79gQ4%2FI6TOfmOjm6hSTjukeQmkt8eOcdyMnx6un3iQ%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOSwibmJmIjoxNzc5NDE5NTA5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.trESzPweeO6VweUue5kSGzeeJWKyWFag2_yaWZZH9_Q&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json.sha256&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-linux-x86_64.bundle.json.sha256",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/82b25c36-4ac4-41a9-a4ec-37752a79d386?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A53%3A36Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A03Z&ske=2026-05-22T02%3A53%3A36Z&sks=b&skv=2018-11-09&sig=UyY1H57S%2FFU%2FY5LZP3jfBXL6m0yApCX6uyqJ93gYr3o%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1MiwibmJmIjoxNzc5NDE2MjUyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.AV-m5QjeHHEsJW0wsOJdbJGJW1X9LAM5I5rZdSfYDvU&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json.sha256&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/17d34927-0f6f-4cb2-bc9c-d5289ad804b7?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A36Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.bundle.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A00Z&ske=2026-05-22T03%3A52%3A36Z&sks=b&skv=2018-11-09&sig=K79gQ4%2FI6TOfmOjm6hSTjukeQmkt8eOcdyMnx6un3iQ%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwOSwibmJmIjoxNzc5NDE5NTA5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.trESzPweeO6VweUue5kSGzeeJWKyWFag2_yaWZZH9_Q&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.bundle.json.sha256&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "e7204e6571ba428cfcb87c2a5a0d1dca6be9d02b5be5b65db6d5a6b57ae93637",
+      "sha256": "754eeba180511399dd86be4543f74403d52dbe5985dc952a32de277533f26fe0",
       "size_bytes": 95,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.bundle.json.sha256"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-linux-x86_64.bundle.json.sha256"
     },
     {
       "error": null,
-      "expected_sha256": "e7a28858428ee94f48dd6b1687d380c74a76cb022409b0c350599e257c7fa259",
-      "expected_size_bytes": 16968014,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/9547ec05-fa67-4413-8f88-92a5fb2f3d8b?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A15Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A27Z&ske=2026-05-22T02%3A54%3A15Z&sks=b&skv=2018-11-09&sig=kM4rg%2FXabvrTSXUXnhPcdqBN5zoemQR1RWY3iAxf%2BfQ%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxODA1MiwibmJmIjoxNzc5NDE2MjUyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.y8S9-uT3l9eIFOg3dVw2xacJ2Ga9TSbJOaDfHFwB2zE&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz&response-content-type=application%2Foctet-stream",
+      "expected_sha256": "5619a4cb94834c1ab4e9e787b5964767d9cef526d87c39d0048145cb18cc0364",
+      "expected_size_bytes": 16963921,
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/cb590c41-a2ce-42ae-a2ae-52ba479b9e19?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A38Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A29Z&ske=2026-05-22T03%3A52%3A38Z&sks=b&skv=2018-11-09&sig=8%2B5Xbfc53BZzjnTMFUZq1pEEq699eWE%2B3BWRid0sOV8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQyMTMxMCwibmJmIjoxNzc5NDE5NTEwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.rzIA2tDxIIUppmOq3Bs4aeG7wpCeyqGcHKlDPlDl45w&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-linux-x86_64.tar.gz",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/9547ec05-fa67-4413-8f88-92a5fb2f3d8b?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A15Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A27Z&ske=2026-05-22T02%3A54%3A15Z&sks=b&skv=2018-11-09&sig=kM4rg%2FXabvrTSXUXnhPcdqBN5zoemQR1RWY3iAxf%2BfQ%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxODA1MiwibmJmIjoxNzc5NDE2MjUyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.y8S9-uT3l9eIFOg3dVw2xacJ2Ga9TSbJOaDfHFwB2zE&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/cb590c41-a2ce-42ae-a2ae-52ba479b9e19?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A38Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A29Z&ske=2026-05-22T03%3A52%3A38Z&sks=b&skv=2018-11-09&sig=8%2B5Xbfc53BZzjnTMFUZq1pEEq699eWE%2B3BWRid0sOV8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQyMTMxMCwibmJmIjoxNzc5NDE5NTEwLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.rzIA2tDxIIUppmOq3Bs4aeG7wpCeyqGcHKlDPlDl45w&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "e7a28858428ee94f48dd6b1687d380c74a76cb022409b0c350599e257c7fa259",
-      "size_bytes": 16968014,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.tar.gz"
+      "sha256": "5619a4cb94834c1ab4e9e787b5964767d9cef526d87c39d0048145cb18cc0364",
+      "size_bytes": 16963921,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-linux-x86_64.tar.gz"
     },
     {
       "error": null,
-      "expected_sha256": "955ec8124a11a6b74ab071696979f12505cc633b858ba8a433b40ed508650977",
+      "expected_sha256": "48fb2b72b0a9ba09812694e222668347694fa5de30fcecfc79fadd141831be0e",
       "expected_size_bytes": 90,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/9e39bf61-6d9e-4f52-bcf7-684be0e6bbcd?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A48Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A53Z&ske=2026-05-22T02%3A54%3A48Z&sks=b&skv=2018-11-09&sig=21yziCqIRbIagciQgfM7iHnQNcnNHsEyLg3hbXxtTLE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NSwibmJmIjoxNzc5NDE2MjU1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.bK_wJwnf8WPk-EoZfyPwohfRIqqf_-5x7Wg1trvY5Qc&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz.sha256&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/2c01c46c-c7e1-4a3f-b258-66e6d88e04c8?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A53Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A49Z&ske=2026-05-22T03%3A52%3A53Z&sks=b&skv=2018-11-09&sig=frWHDQFlCBiM1vyPEUs059oNiU2xKi8cMk0uCJE5BAw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMiwibmJmIjoxNzc5NDE5NTEyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.jOOHIBbZ6pP8h0k7_4lxY5jirHtVJohDEHEI6sl8TkE&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz.sha256&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-linux-x86_64.tar.gz.sha256",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/9e39bf61-6d9e-4f52-bcf7-684be0e6bbcd?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A48Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A53Z&ske=2026-05-22T02%3A54%3A48Z&sks=b&skv=2018-11-09&sig=21yziCqIRbIagciQgfM7iHnQNcnNHsEyLg3hbXxtTLE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NSwibmJmIjoxNzc5NDE2MjU1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.bK_wJwnf8WPk-EoZfyPwohfRIqqf_-5x7Wg1trvY5Qc&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz.sha256&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/2c01c46c-c7e1-4a3f-b258-66e6d88e04c8?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A53Z&rscd=attachment%3B+filename%3Dm80-linux-x86_64.tar.gz.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A49Z&ske=2026-05-22T03%3A52%3A53Z&sks=b&skv=2018-11-09&sig=frWHDQFlCBiM1vyPEUs059oNiU2xKi8cMk0uCJE5BAw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMiwibmJmIjoxNzc5NDE5NTEyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.jOOHIBbZ6pP8h0k7_4lxY5jirHtVJohDEHEI6sl8TkE&response-content-disposition=attachment%3B%20filename%3Dm80-linux-x86_64.tar.gz.sha256&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "955ec8124a11a6b74ab071696979f12505cc633b858ba8a433b40ed508650977",
+      "sha256": "48fb2b72b0a9ba09812694e222668347694fa5de30fcecfc79fadd141831be0e",
       "size_bytes": 90,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-linux-x86_64.tar.gz.sha256"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-linux-x86_64.tar.gz.sha256"
     },
     {
       "error": null,
-      "expected_sha256": "eea0cf70a4b8030a22d0e9de4731fd0e9279cd8ebf8b96b4900a70aecfa523ce",
+      "expected_sha256": "4f35e43e43e1379f8b6b4cbf2f4e967906b7424f630d6d73855d6fe96e5fcd33",
       "expected_size_bytes": 931,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/fe604513-5d5c-4e8b-9723-7619c8429710?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A53%3A39Z&rscd=attachment%3B+filename%3Dm80-release-assets.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A37Z&ske=2026-05-22T02%3A53%3A39Z&sks=b&skv=2018-11-09&sig=cTPW%2BEUB%2Fi5kx45z8vxwUDJIEPVWZguFibeZQm30MwE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NSwibmJmIjoxNzc5NDE2MjU1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.bK_wJwnf8WPk-EoZfyPwohfRIqqf_-5x7Wg1trvY5Qc&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/8a4baaa1-54c8-4c24-be26-6bef2af1fb52?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A42Z&rscd=attachment%3B+filename%3Dm80-release-assets.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A14Z&ske=2026-05-22T03%3A52%3A42Z&sks=b&skv=2018-11-09&sig=tmBBvfB36w126NuQ70HbmrS4uHBKGreJ6CZ4xmsN%2Fk0%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMywibmJmIjoxNzc5NDE5NTEzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.i_TCr7IPVes-uE0CO1m4XFkw48YSykeVweKYTiVqLnU&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-release-assets.json",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/fe604513-5d5c-4e8b-9723-7619c8429710?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A53%3A39Z&rscd=attachment%3B+filename%3Dm80-release-assets.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A37Z&ske=2026-05-22T02%3A53%3A39Z&sks=b&skv=2018-11-09&sig=cTPW%2BEUB%2Fi5kx45z8vxwUDJIEPVWZguFibeZQm30MwE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NSwibmJmIjoxNzc5NDE2MjU1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.bK_wJwnf8WPk-EoZfyPwohfRIqqf_-5x7Wg1trvY5Qc&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/8a4baaa1-54c8-4c24-be26-6bef2af1fb52?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A42Z&rscd=attachment%3B+filename%3Dm80-release-assets.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A14Z&ske=2026-05-22T03%3A52%3A42Z&sks=b&skv=2018-11-09&sig=tmBBvfB36w126NuQ70HbmrS4uHBKGreJ6CZ4xmsN%2Fk0%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMywibmJmIjoxNzc5NDE5NTEzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.i_TCr7IPVes-uE0CO1m4XFkw48YSykeVweKYTiVqLnU&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "eea0cf70a4b8030a22d0e9de4731fd0e9279cd8ebf8b96b4900a70aecfa523ce",
+      "sha256": "4f35e43e43e1379f8b6b4cbf2f4e967906b7424f630d6d73855d6fe96e5fcd33",
       "size_bytes": 931,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-assets.json"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-release-assets.json"
     },
     {
       "error": null,
-      "expected_sha256": "ddb9ddfa06c84dd55aa6cbd7732a0443e11ce126347f6b311f033878e53eca59",
+      "expected_sha256": "e2ca5a94a5b766b7e210e03a585ce8beb7aa9589c17400de2f2da4f4650fe364",
       "expected_size_bytes": 90,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/4890d3e1-c278-4aee-86b9-f564e7489ffa?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A36Z&rscd=attachment%3B+filename%3Dm80-release-assets.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A57Z&ske=2026-05-22T02%3A54%3A36Z&sks=b&skv=2018-11-09&sig=N01Btpl5x4DT468ZlHAadk%2FSNmgL7ZAsV3vdr%2FV5130%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NiwibmJmIjoxNzc5NDE2MjU2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.5jSQNoaPIpJVYVNOGnqruv_v6BgEWgqCiDJq26iDl1g&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json.sha256&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/0630e9e3-3a92-4cdb-9810-b5b886296de0?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A55%3A39Z&rscd=attachment%3B+filename%3Dm80-release-assets.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A47Z&ske=2026-05-22T03%3A55%3A39Z&sks=b&skv=2018-11-09&sig=M1Qo20%2FNJt5hlQMYXksW%2FA5n5nFVmKxV54mSXEfpwmw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMywibmJmIjoxNzc5NDE5NTEzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.i_TCr7IPVes-uE0CO1m4XFkw48YSykeVweKYTiVqLnU&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json.sha256&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-release-assets.json.sha256",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/4890d3e1-c278-4aee-86b9-f564e7489ffa?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A36Z&rscd=attachment%3B+filename%3Dm80-release-assets.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A57Z&ske=2026-05-22T02%3A54%3A36Z&sks=b&skv=2018-11-09&sig=N01Btpl5x4DT468ZlHAadk%2FSNmgL7ZAsV3vdr%2FV5130%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NiwibmJmIjoxNzc5NDE2MjU2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.5jSQNoaPIpJVYVNOGnqruv_v6BgEWgqCiDJq26iDl1g&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json.sha256&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/0630e9e3-3a92-4cdb-9810-b5b886296de0?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A55%3A39Z&rscd=attachment%3B+filename%3Dm80-release-assets.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A54%3A47Z&ske=2026-05-22T03%3A55%3A39Z&sks=b&skv=2018-11-09&sig=M1Qo20%2FNJt5hlQMYXksW%2FA5n5nFVmKxV54mSXEfpwmw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMywibmJmIjoxNzc5NDE5NTEzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.i_TCr7IPVes-uE0CO1m4XFkw48YSykeVweKYTiVqLnU&response-content-disposition=attachment%3B%20filename%3Dm80-release-assets.json.sha256&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "ddb9ddfa06c84dd55aa6cbd7732a0443e11ce126347f6b311f033878e53eca59",
+      "sha256": "e2ca5a94a5b766b7e210e03a585ce8beb7aa9589c17400de2f2da4f4650fe364",
       "size_bytes": 90,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-assets.json.sha256"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-release-assets.json.sha256"
     },
     {
       "error": null,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/0f138ed9-3322-4e3b-aba5-61ade0af13c2?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A57%3A18Z&rscd=attachment%3B+filename%3Dm80-release-attestation.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A57%3A12Z&ske=2026-05-22T02%3A57%3A18Z&sks=b&skv=2018-11-09&sig=VgdK%2Fg0TUenuyMw3qM10YYxQMnEvMPwRmfOBUetnzTA%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NiwibmJmIjoxNzc5NDE2MjU2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.5jSQNoaPIpJVYVNOGnqruv_v6BgEWgqCiDJq26iDl1g&response-content-disposition=attachment%3B%20filename%3Dm80-release-attestation.json&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/b0ed1fa6-d300-4b47-8589-292a89c61735?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A15Z&rscd=attachment%3B+filename%3Dm80-release-attestation.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A19Z&ske=2026-05-22T03%3A53%3A15Z&sks=b&skv=2018-11-09&sig=dEdRX68slRKU40I4SEHP9ye9W%2FxJRfDxDhS44UkD%2BTw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMywibmJmIjoxNzc5NDE5NTEzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.i_TCr7IPVes-uE0CO1m4XFkw48YSykeVweKYTiVqLnU&response-content-disposition=attachment%3B%20filename%3Dm80-release-attestation.json&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-release-attestation.json",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/0f138ed9-3322-4e3b-aba5-61ade0af13c2?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A57%3A18Z&rscd=attachment%3B+filename%3Dm80-release-attestation.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A57%3A12Z&ske=2026-05-22T02%3A57%3A18Z&sks=b&skv=2018-11-09&sig=VgdK%2Fg0TUenuyMw3qM10YYxQMnEvMPwRmfOBUetnzTA%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NiwibmJmIjoxNzc5NDE2MjU2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.5jSQNoaPIpJVYVNOGnqruv_v6BgEWgqCiDJq26iDl1g&response-content-disposition=attachment%3B%20filename%3Dm80-release-attestation.json&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/b0ed1fa6-d300-4b47-8589-292a89c61735?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A15Z&rscd=attachment%3B+filename%3Dm80-release-attestation.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A19Z&ske=2026-05-22T03%3A53%3A15Z&sks=b&skv=2018-11-09&sig=dEdRX68slRKU40I4SEHP9ye9W%2FxJRfDxDhS44UkD%2BTw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxMywibmJmIjoxNzc5NDE5NTEzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.i_TCr7IPVes-uE0CO1m4XFkw48YSykeVweKYTiVqLnU&response-content-disposition=attachment%3B%20filename%3Dm80-release-attestation.json&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "69f45386cd24b56a2c14740213610ebb446f3df275ecb02f5f04751f59fe3ba6",
+      "sha256": "9b5dcd6642cdc30d5179ec0ce6743e9e8e27bf8f9626e0c52462f8e38a82ae4e",
       "size_bytes": 517,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-attestation.json"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-release-attestation.json"
     },
     {
       "error": null,
-      "expected_sha256": "611690eba8d91d1c39fa6baf39699bd48a5634561873fdc40e26c4276117f3df",
+      "expected_sha256": "08a7d697061a0e4d357bf99757b552d7f2a63d72d56c4892c703d0b674270066",
       "expected_size_bytes": 1088,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/c5a542c6-83f2-4829-9ffa-704522b70e74?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A55%3A26Z&rscd=attachment%3B+filename%3Dm80-release-build.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A55%3A14Z&ske=2026-05-22T02%3A55%3A26Z&sks=b&skv=2018-11-09&sig=0brKSaj0ufTqe2%2B4d41U3yqni6n%2FuxH1CTgJgjk3K%2F8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NiwibmJmIjoxNzc5NDE2MjU2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.5jSQNoaPIpJVYVNOGnqruv_v6BgEWgqCiDJq26iDl1g&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/29b44d27-f1cc-426c-b67f-1f5083b8808e?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T04%3A00%3A08Z&rscd=attachment%3B+filename%3Dm80-release-build.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A59%3A31Z&ske=2026-05-22T04%3A00%3A08Z&sks=b&skv=2018-11-09&sig=K0PoB%2FkJo1XZxZt58q5qz2N8A4HpNadY9asE7TLaA6g%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNCwibmJmIjoxNzc5NDE5NTE0LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.brmH5haAdrnkNOPC0mV1mko8sS3pRBGlT2dn3il_oLE&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-release-build.json",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/c5a542c6-83f2-4829-9ffa-704522b70e74?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A55%3A26Z&rscd=attachment%3B+filename%3Dm80-release-build.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A55%3A14Z&ske=2026-05-22T02%3A55%3A26Z&sks=b&skv=2018-11-09&sig=0brKSaj0ufTqe2%2B4d41U3yqni6n%2FuxH1CTgJgjk3K%2F8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NiwibmJmIjoxNzc5NDE2MjU2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.5jSQNoaPIpJVYVNOGnqruv_v6BgEWgqCiDJq26iDl1g&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/29b44d27-f1cc-426c-b67f-1f5083b8808e?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T04%3A00%3A08Z&rscd=attachment%3B+filename%3Dm80-release-build.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A59%3A31Z&ske=2026-05-22T04%3A00%3A08Z&sks=b&skv=2018-11-09&sig=K0PoB%2FkJo1XZxZt58q5qz2N8A4HpNadY9asE7TLaA6g%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNCwibmJmIjoxNzc5NDE5NTE0LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.brmH5haAdrnkNOPC0mV1mko8sS3pRBGlT2dn3il_oLE&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "611690eba8d91d1c39fa6baf39699bd48a5634561873fdc40e26c4276117f3df",
+      "sha256": "08a7d697061a0e4d357bf99757b552d7f2a63d72d56c4892c703d0b674270066",
       "size_bytes": 1088,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-build.json"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-release-build.json"
     },
     {
       "error": null,
-      "expected_sha256": "2909a00c077055c669769485f6ef49006d068a20d98516d00a4f3a629b896a9c",
+      "expected_sha256": "541771844b01d113b05fe034778d88decdf27c46bd170c416f77d7549d382160",
       "expected_size_bytes": 89,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2d393f0-92f0-4ded-a67e-4f33e61f4108?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A55%3A09Z&rscd=attachment%3B+filename%3Dm80-release-build.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A54%3A43Z&ske=2026-05-22T02%3A55%3A09Z&sks=b&skv=2018-11-09&sig=7slud8TbSbhhwHZGPVi9vTMq0SJ5vewlrxE76COiA7c%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NywibmJmIjoxNzc5NDE2MjU3LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.2OZmHwuwOZbGYp3kXieeMbMUzZSZhUL4B3d2Lkz-yaI&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json.sha256&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/0f70bbe2-3a09-4146-8703-b987926dedb3?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A49Z&rscd=attachment%3B+filename%3Dm80-release-build.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A16Z&ske=2026-05-22T03%3A52%3A49Z&sks=b&skv=2018-11-09&sig=QWq4t9q5AsS32eVp%2FMNTDBKwb8jCE6ZbgLCRuElDHwc%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNCwibmJmIjoxNzc5NDE5NTE0LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.brmH5haAdrnkNOPC0mV1mko8sS3pRBGlT2dn3il_oLE&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json.sha256&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-release-build.json.sha256",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2d393f0-92f0-4ded-a67e-4f33e61f4108?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A55%3A09Z&rscd=attachment%3B+filename%3Dm80-release-build.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A54%3A43Z&ske=2026-05-22T02%3A55%3A09Z&sks=b&skv=2018-11-09&sig=7slud8TbSbhhwHZGPVi9vTMq0SJ5vewlrxE76COiA7c%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NywibmJmIjoxNzc5NDE2MjU3LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.2OZmHwuwOZbGYp3kXieeMbMUzZSZhUL4B3d2Lkz-yaI&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json.sha256&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/0f70bbe2-3a09-4146-8703-b987926dedb3?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A49Z&rscd=attachment%3B+filename%3Dm80-release-build.json.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A16Z&ske=2026-05-22T03%3A52%3A49Z&sks=b&skv=2018-11-09&sig=QWq4t9q5AsS32eVp%2FMNTDBKwb8jCE6ZbgLCRuElDHwc%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNCwibmJmIjoxNzc5NDE5NTE0LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.brmH5haAdrnkNOPC0mV1mko8sS3pRBGlT2dn3il_oLE&response-content-disposition=attachment%3B%20filename%3Dm80-release-build.json.sha256&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "2909a00c077055c669769485f6ef49006d068a20d98516d00a4f3a629b896a9c",
+      "sha256": "541771844b01d113b05fe034778d88decdf27c46bd170c416f77d7549d382160",
       "size_bytes": 89,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-build.json.sha256"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-release-build.json.sha256"
     },
     {
       "error": null,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/beabcb21-182c-40b6-b2ca-69f0f87b6d87?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A56%3A36Z&rscd=attachment%3B+filename%3Dm80-release-integrity.attestation.jsonl&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A55%3A56Z&ske=2026-05-22T02%3A56%3A36Z&sks=b&skv=2018-11-09&sig=m827Nb5wttr%2BaGZxug%2Bi9CfLXJAWTJMh11kzIcQB%2BgE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NywibmJmIjoxNzc5NDE2MjU3LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.2OZmHwuwOZbGYp3kXieeMbMUzZSZhUL4B3d2Lkz-yaI&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.attestation.jsonl&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/09150866-fac7-451c-bf79-0855f71f8931?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T04%3A04%3A32Z&rscd=attachment%3B+filename%3Dm80-release-integrity.attestation.jsonl&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T03%3A04%3A12Z&ske=2026-05-22T04%3A04%3A32Z&sks=b&skv=2018-11-09&sig=MDBrsltzGgSjUOvTrtQyi9SvFwxcTzaflNtw6FUKGec%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNCwibmJmIjoxNzc5NDE5NTE0LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.brmH5haAdrnkNOPC0mV1mko8sS3pRBGlT2dn3il_oLE&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.attestation.jsonl&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-release-integrity.attestation.jsonl",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/beabcb21-182c-40b6-b2ca-69f0f87b6d87?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A56%3A36Z&rscd=attachment%3B+filename%3Dm80-release-integrity.attestation.jsonl&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A55%3A56Z&ske=2026-05-22T02%3A56%3A36Z&sks=b&skv=2018-11-09&sig=m827Nb5wttr%2BaGZxug%2Bi9CfLXJAWTJMh11kzIcQB%2BgE%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1NywibmJmIjoxNzc5NDE2MjU3LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.2OZmHwuwOZbGYp3kXieeMbMUzZSZhUL4B3d2Lkz-yaI&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.attestation.jsonl&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/09150866-fac7-451c-bf79-0855f71f8931?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T04%3A04%3A32Z&rscd=attachment%3B+filename%3Dm80-release-integrity.attestation.jsonl&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T03%3A04%3A12Z&ske=2026-05-22T04%3A04%3A32Z&sks=b&skv=2018-11-09&sig=MDBrsltzGgSjUOvTrtQyi9SvFwxcTzaflNtw6FUKGec%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNCwibmJmIjoxNzc5NDE5NTE0LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.brmH5haAdrnkNOPC0mV1mko8sS3pRBGlT2dn3il_oLE&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.attestation.jsonl&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "a36f5dc6ffee272c2d3f7530a84dd79f540666378c105091a981a734a698be5e",
-      "size_bytes": 10618,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-integrity.attestation.jsonl"
+      "sha256": "3c63e81b76b5667045e9d9848fa869984ceec3f2c039f93fc31b0f92ae8f2e8e",
+      "size_bytes": 10571,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-release-integrity.attestation.jsonl"
     },
     {
       "error": null,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/e6c985b3-5375-45e0-acdb-130299d5f62a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A25Z&rscd=attachment%3B+filename%3Dm80-release-integrity.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A54Z&ske=2026-05-22T02%3A54%3A25Z&sks=b&skv=2018-11-09&sig=hwbcXNLAivL79IkUnlUGGQKlqwblJ8C781AnPaQNIIQ%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1OCwibmJmIjoxNzc5NDE2MjU4LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.pS0LSVNaCZs1kh0UUpCFuefpF1mExeoStFqTZVOh0gA&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.json&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/9cc2fea0-380e-439f-a352-6eeb3dfffae6?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A45Z&rscd=attachment%3B+filename%3Dm80-release-integrity.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A32Z&ske=2026-05-22T03%3A52%3A45Z&sks=b&skv=2018-11-09&sig=43fgeWB5Ik4YP9aMZ5P4%2F1TnVF%2BweywY8C1vjxTjf2E%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNSwibmJmIjoxNzc5NDE5NTE1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.x8a_pc3RfOWSMufs8jwqdhZ3WkPpfprzHRKoL5bvHS4&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.json&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "m80-release-integrity.json",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/e6c985b3-5375-45e0-acdb-130299d5f62a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A25Z&rscd=attachment%3B+filename%3Dm80-release-integrity.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A54Z&ske=2026-05-22T02%3A54%3A25Z&sks=b&skv=2018-11-09&sig=hwbcXNLAivL79IkUnlUGGQKlqwblJ8C781AnPaQNIIQ%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU1OCwibmJmIjoxNzc5NDE2MjU4LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.pS0LSVNaCZs1kh0UUpCFuefpF1mExeoStFqTZVOh0gA&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.json&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/9cc2fea0-380e-439f-a352-6eeb3dfffae6?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A52%3A45Z&rscd=attachment%3B+filename%3Dm80-release-integrity.json&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A32Z&ske=2026-05-22T03%3A52%3A45Z&sks=b&skv=2018-11-09&sig=43fgeWB5Ik4YP9aMZ5P4%2F1TnVF%2BweywY8C1vjxTjf2E%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgxNSwibmJmIjoxNzc5NDE5NTE1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.x8a_pc3RfOWSMufs8jwqdhZ3WkPpfprzHRKoL5bvHS4&response-content-disposition=attachment%3B%20filename%3Dm80-release-integrity.json&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "73f5ced9e76349bbf74b881bf69b50fea014ef361ea292dda18e2bcbc03e80bd",
+      "sha256": "23f0540ec83af6b8295b3d8b08e69bc6479ca2d0c7ac22bd77cbe62d05491265",
       "size_bytes": 3012,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/m80-release-integrity.json"
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/m80-release-integrity.json"
     }
   ],
   "exit_status": 0,
-  "expected_stable_tag": "v0.2.7",
-  "github_release_url": "https://github.com/moradology/m80/releases/tag/v0.2.7",
+  "expected_stable_tag": "v0.2.9",
+  "github_release_url": "https://github.com/moradology/m80/releases/tag/v0.2.9",
   "installer_downloads": {
     "latest_install": {
       "error": null,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2b60a90-5702-488e-95b3-fea493f26db5?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A40Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A41Z&ske=2026-05-22T03%3A53%3A40Z&sks=b&skv=2018-11-09&sig=%2FBS3VJhdeL5P5n%2FD6721YxjJ6BVerOBP3hLrw7GDjsU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNiwibmJmIjoxNzc5NDE5NTA2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.zTX2D13_5XdACkjgbdgz0dybyK84LBqkZARLkfsyrck&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "install.sh",
       "redirects": [
-        "https://github.com/moradology/m80/releases/download/v0.2.7/install.sh",
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream"
+        "https://github.com/moradology/m80/releases/download/v0.2.9/install.sh",
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2b60a90-5702-488e-95b3-fea493f26db5?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A40Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A41Z&ske=2026-05-22T03%3A53%3A40Z&sks=b&skv=2018-11-09&sig=%2FBS3VJhdeL5P5n%2FD6721YxjJ6BVerOBP3hLrw7GDjsU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNiwibmJmIjoxNzc5NDE5NTA2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.zTX2D13_5XdACkjgbdgz0dybyK84LBqkZARLkfsyrck&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "98b78af2fa296532f8c2022edc3e1afea56669a876e7efe7a8ead6337c8cf08f",
-      "size_bytes": 47078,
+      "sha256": "117c98c0a1b9f9def60cbf58eb01e96f8ac324102c00277e6735a3181c83e73d",
+      "size_bytes": 47079,
       "url": "https://github.com/moradology/m80/releases/latest/download/install.sh"
     },
     "pinned_install": {
       "error": null,
-      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
+      "final_url": "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2b60a90-5702-488e-95b3-fea493f26db5?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A40Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A41Z&ske=2026-05-22T03%3A53%3A40Z&sks=b&skv=2018-11-09&sig=%2FBS3VJhdeL5P5n%2FD6721YxjJ6BVerOBP3hLrw7GDjsU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNiwibmJmIjoxNzc5NDE5NTA2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.zTX2D13_5XdACkjgbdgz0dybyK84LBqkZARLkfsyrck&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream",
       "http_status": 200,
       "name": "install.sh",
       "redirects": [
-        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/6e7e66cc-7b5b-48bc-8b5b-c53a5527ac0a?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T02%3A54%3A07Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T01%3A53%3A42Z&ske=2026-05-22T02%3A54%3A07Z&sks=b&skv=2018-11-09&sig=0RWWbH49Bazwl7sWiWMCMsxuyvDydFw3Xt7hnG%2FmIg8%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxNjU0OSwibmJmIjoxNzc5NDE2MjQ5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.vdL8mujrp7IPyfz4LupASZbrTxz8LFdI5BOUJwzzY88&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream"
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1230495077/f2b60a90-5702-488e-95b3-fea493f26db5?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-05-22T03%3A53%3A40Z&rscd=attachment%3B+filename%3Dinstall.sh&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-05-22T02%3A52%3A41Z&ske=2026-05-22T03%3A53%3A40Z&sks=b&skv=2018-11-09&sig=%2FBS3VJhdeL5P5n%2FD6721YxjJ6BVerOBP3hLrw7GDjsU%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3OTQxOTgwNiwibmJmIjoxNzc5NDE5NTA2LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.zTX2D13_5XdACkjgbdgz0dybyK84LBqkZARLkfsyrck&response-content-disposition=attachment%3B%20filename%3Dinstall.sh&response-content-type=application%2Foctet-stream"
       ],
-      "sha256": "98b78af2fa296532f8c2022edc3e1afea56669a876e7efe7a8ead6337c8cf08f",
-      "size_bytes": 47078,
-      "url": "https://github.com/moradology/m80/releases/download/v0.2.7/install.sh"
+      "sha256": "117c98c0a1b9f9def60cbf58eb01e96f8ac324102c00277e6735a3181c83e73d",
+      "size_bytes": 47079,
+      "url": "https://github.com/moradology/m80/releases/download/v0.2.9/install.sh"
     }
   },
   "integrity_subjects": [
     {
       "kind": "checksum-manifest",
       "name": "SHA256SUMS",
-      "sha256": "fd96fa20923eeb2a65dc65cb9a6d821c7ec60019da1d4ef9b3eb6697791364e6",
+      "sha256": "b6e17dbd4af1af3a01ab81dd7cd66fdb3b9a0eb8fafc89feecab85c2efe38c5f",
       "size_bytes": 1110
     },
     {
       "kind": "installer",
       "name": "install.sh",
-      "sha256": "98b78af2fa296532f8c2022edc3e1afea56669a876e7efe7a8ead6337c8cf08f",
-      "size_bytes": 47078
+      "sha256": "117c98c0a1b9f9def60cbf58eb01e96f8ac324102c00277e6735a3181c83e73d",
+      "size_bytes": 47079
     },
     {
       "kind": "checksum-sidecar",
       "name": "install.sh.sha256",
-      "sha256": "a5fa619a6f73c51ac705f7cd6e1988065cf8130ba5dbbedae7df51ae920adb9c",
+      "sha256": "18e4374176a433b19752e92bc88f7a004d7d5e32660a2201c581dfea27febb94",
       "size_bytes": 77
     },
     {
       "kind": "bootstrap-selector",
       "name": "m80-bootstrap-selector.tsv",
-      "sha256": "14aaa1a12196a9535240ce9f2ea2ac4c29f180bf2e996db2d139e9479d2799ac",
+      "sha256": "63d96f0926fa94877bced86fb298356506099d5e1e837eb58cfa6a2ccdfe0b89",
       "size_bytes": 579
     },
     {
       "kind": "checksum-sidecar",
       "name": "m80-bootstrap-selector.tsv.sha256",
-      "sha256": "859e68e55713244a1e742b6cbdcc0653029dd4a0f3dc4a4c9eadae54e7c086bf",
+      "sha256": "7d77d58276ffc59e0d390beae44ce36fe7a07ce8b30d5aec09b7bd3e134d49bc",
       "size_bytes": 93
     },
     {
       "kind": "bundle-metadata",
       "name": "m80-linux-x86_64.bundle.json",
-      "sha256": "68f87d667fd89519299687aba0454ab6060a0e4f3c10086ab15e65229881bc2d",
+      "sha256": "ac5d7efd521e75a8ae754a3c4bec697654eef2ae3c9890dedd5b1c2149d2f5df",
       "size_bytes": 2068
     },
     {
       "kind": "checksum-sidecar",
       "name": "m80-linux-x86_64.bundle.json.sha256",
-      "sha256": "e7204e6571ba428cfcb87c2a5a0d1dca6be9d02b5be5b65db6d5a6b57ae93637",
+      "sha256": "754eeba180511399dd86be4543f74403d52dbe5985dc952a32de277533f26fe0",
       "size_bytes": 95
     },
     {
       "kind": "release-bundle",
       "name": "m80-linux-x86_64.tar.gz",
-      "sha256": "e7a28858428ee94f48dd6b1687d380c74a76cb022409b0c350599e257c7fa259",
-      "size_bytes": 16968014
+      "sha256": "5619a4cb94834c1ab4e9e787b5964767d9cef526d87c39d0048145cb18cc0364",
+      "size_bytes": 16963921
     },
     {
       "kind": "checksum-sidecar",
       "name": "m80-linux-x86_64.tar.gz.sha256",
-      "sha256": "955ec8124a11a6b74ab071696979f12505cc633b858ba8a433b40ed508650977",
+      "sha256": "48fb2b72b0a9ba09812694e222668347694fa5de30fcecfc79fadd141831be0e",
       "size_bytes": 90
     },
     {
       "kind": "asset-index",
       "name": "m80-release-assets.json",
-      "sha256": "eea0cf70a4b8030a22d0e9de4731fd0e9279cd8ebf8b96b4900a70aecfa523ce",
+      "sha256": "4f35e43e43e1379f8b6b4cbf2f4e967906b7424f630d6d73855d6fe96e5fcd33",
       "size_bytes": 931
     },
     {
       "kind": "checksum-sidecar",
       "name": "m80-release-assets.json.sha256",
-      "sha256": "ddb9ddfa06c84dd55aa6cbd7732a0443e11ce126347f6b311f033878e53eca59",
+      "sha256": "e2ca5a94a5b766b7e210e03a585ce8beb7aa9589c17400de2f2da4f4650fe364",
       "size_bytes": 90
     },
     {
       "kind": "build-manifest",
       "name": "m80-release-build.json",
-      "sha256": "611690eba8d91d1c39fa6baf39699bd48a5634561873fdc40e26c4276117f3df",
+      "sha256": "08a7d697061a0e4d357bf99757b552d7f2a63d72d56c4892c703d0b674270066",
       "size_bytes": 1088
     },
     {
       "kind": "checksum-sidecar",
       "name": "m80-release-build.json.sha256",
-      "sha256": "2909a00c077055c669769485f6ef49006d068a20d98516d00a4f3a629b896a9c",
+      "sha256": "541771844b01d113b05fe034778d88decdf27c46bd170c416f77d7549d382160",
       "size_bytes": 89
     }
   ],
@@ -378,16 +378,16 @@
   "lane_id": "public-access-latest",
   "latest_install_url": "https://github.com/moradology/m80/releases/latest/download/install.sh",
   "latest_pinned_agree": true,
-  "pinned_install_url": "https://github.com/moradology/m80/releases/download/v0.2.7/install.sh",
+  "pinned_install_url": "https://github.com/moradology/m80/releases/download/v0.2.9/install.sh",
   "proof_kind": "public-access-proof",
   "release_build": {
-    "builder_identity": "github-actions:https://github.com/moradology/m80/actions/runs/26263525140/attempts/1",
-    "release_tag": "v0.2.7",
-    "source_commit": "388d2d5aa13418e22c1144963b0f66dd3588a92b"
+    "builder_identity": "github-actions:https://github.com/moradology/m80/actions/runs/26265963003/attempts/1",
+    "release_tag": "v0.2.9",
+    "source_commit": "52a36b5afd7857a78adf3b21436c18ab3e335bd3"
   },
-  "release_tag": "v0.2.7",
+  "release_tag": "v0.2.9",
   "repository": "moradology/m80",
-  "resolved_latest_tag": "v0.2.7",
+  "resolved_latest_tag": "v0.2.9",
   "schema_version": 1,
   "status": "passed",
   "stderr": "",
@@ -396,5 +396,5 @@
     "fixture": false,
     "kind": "public-github"
   },
-  "verification_time": "2026-05-22T02:17:38Z"
+  "verification_time": "2026-05-22T03:11:55Z"
 }

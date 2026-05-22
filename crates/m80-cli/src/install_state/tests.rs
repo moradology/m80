@@ -24,6 +24,31 @@ fn host_paths_use_documented_linux_locations() {
 }
 
 #[test]
+fn host_paths_use_install_root_local_selectors_for_overrides() {
+    let paths = InstallStatePaths::host("/tank/tmp/m80-proof/install-root");
+
+    assert_eq!(
+        paths.install_root,
+        PathBuf::from("/tank/tmp/m80-proof/install-root")
+    );
+    assert_eq!(
+        paths.config_paths.system.as_deref(),
+        Some(Path::new("/tank/tmp/m80-proof/install-root/config.toml"))
+    );
+    assert_eq!(
+        paths.config_paths.system_drop_in_dir.as_deref(),
+        Some(Path::new("/tank/tmp/m80-proof/install-root/config.d"))
+    );
+    assert_eq!(paths.config_paths.user, None);
+    assert_eq!(paths.config_paths.user_drop_in_dir, None);
+    assert_eq!(
+        paths.profile_paths.system_dir.as_deref(),
+        Some(Path::new("/tank/tmp/m80-proof/install-root/profiles"))
+    );
+    assert_eq!(paths.profile_paths.user_dir, None);
+}
+
+#[test]
 fn resolver_reports_healthy_active_release() {
     let fixture = InstallStateFixture::new();
     fixture.write_installed_profile("v1.2.3");

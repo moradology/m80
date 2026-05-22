@@ -4,9 +4,10 @@ Behavior bead: `m80-o3uh9.3.1`.
 
 `m80 install` is the release-bundle installer front door. This behavior pins
 the user-facing input contract, dry-run plan, and release-bundle layout copy.
-The command does not yet perform privileged copies, write `/etc` profile state,
-or resolve "latest". Successful bundle installs write install-root-local
-profile state and switch the install-root active pointer.
+The command does not resolve "latest"; the rendered public installer does that
+before handoff. Successful default-root bundle installs write `/etc/m80`
+profile/config selector state, explicit `--install-root` fixture installs write
+root-local selector state, and both switch the install-root active pointer last.
 
 The user-facing trust model for official direct bundle URLs is captured in
 [`installer-input.md`](installer-input.md). That document distinguishes the
@@ -78,8 +79,8 @@ material class, material name, public URL, and expected public digest or
 identity without printing credentials or temporary paths.
 
 A successful bundle install stages and verifies the selected or explicit bundle, copies the
-verified layout into `<install-root>/versions/<release_tag>`, writes
-install-root-local profile state, and switches `<install-root>/active` last.
+verified layout into `<install-root>/versions/<release_tag>`, writes the
+default selector state, and switches `<install-root>/active` last.
 Local `http://127.0.0.1`, `http://localhost`, and `http://[::1]` bundle URLs
 are accepted only as test-fixture transports for remote staging coverage; they
 are not documented as an operator install path.

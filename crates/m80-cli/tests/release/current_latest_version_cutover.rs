@@ -28,22 +28,22 @@ fn current_latest_version_cutover_names_real_repair_tag() {
             .expect("read installer layout fixture");
 
     assert!(
-        cargo_toml.contains("version = \"0.2.9\""),
+        cargo_toml.contains("version = \"0.2.10\""),
         "workspace package version must match the current repair tag"
     );
     assert!(
-        runbook.contains("workspace package version `0.2.9`")
-            && runbook.contains("expected release tag is `v0.2.9`"),
+        runbook.contains("workspace package version `0.2.10`")
+            && runbook.contains("expected release tag is `v0.2.10`"),
         "release runbook must document the real current repair version"
     );
     assert!(
-        behavior.contains("matching stable tag is `v0.2.9`")
+        behavior.contains("matching stable tag is `v0.2.10`")
             && behavior.contains("`v0.2.7` installer handoff"),
         "behavior doc must name the repaired tag and the superseded latest state"
     );
     assert!(
         preflight_tests.contains("test_cli_accepts_current_workspace_version_without_override"),
-        "preflight tests must prove v0.2.7 works without a workspace-version override"
+        "preflight tests must prove the current repair tag works without a workspace-version override"
     );
     assert!(
         installer_fixture.contains("concat!(\"v\", env!(\"CARGO_PKG_VERSION\"))"),

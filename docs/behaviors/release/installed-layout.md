@@ -54,12 +54,15 @@ material.
 The executable entrypoint is `bin/m80`; guest metadata is rooted at
 `artifacts/output.ext4.manifest.json`.
 
-`<install-root>/profiles/default.toml` points at the installed artifact paths,
-generated host-binaries manifest, and installed m80 helper binaries under the
-version directory. `<install-root>/config.toml` selects that profile as
-`default`. `<install-root>/active` is an absolute symlink to the selected
-version directory and changes only after the finalization transaction succeeds.
-The host manifest path is `artifacts/host-binaries.manifest.json`.
+For the default install root `/opt/m80`, `/etc/m80/profiles/default.toml`
+points at the installed artifact paths, generated host-binaries manifest, and
+installed m80 helper binaries under the version directory.
+`/etc/m80/config.toml` selects that profile as `default`. For explicit
+`--install-root` fixture/proof installs, the same selector files are rooted at
+`<install-root>/profiles/default.toml` and `<install-root>/config.toml`.
+`<install-root>/active` is an absolute symlink to the selected version
+directory and changes only after the finalization transaction succeeds. The
+host manifest path is `artifacts/host-binaries.manifest.json`.
 
 ## Failure Contract
 

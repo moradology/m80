@@ -27,6 +27,13 @@ reads `<install-root>/active`, the selected version directory, effective
 installed binaries, does not run preflight, does not fetch release metadata, and
 does not download bundles.
 
+For the default install root `/opt/m80`, effective config/profile lookup uses
+the host selector paths (`/etc/m80/config.toml` and
+`/etc/m80/profiles/<name>.toml`) because those are what `m80 run` reads. For
+explicit `--install-root` captures, lookup is rooted at
+`<install-root>/config.toml` and `<install-root>/profiles/<name>.toml` so
+fixture and proof installs can be inspected without touching host state.
+
 The resolver returns one typed state:
 
 - `healthy_active_release`: config selects the installed profile and

@@ -22,6 +22,7 @@ pub(crate) use metadata::{
 };
 
 const DEFAULT_PROFILE_FIELD: &str = "default_profile";
+const DEFAULT_INSTALL_ROOT: &str = "/opt/m80";
 const ACTIVE_POINTER_NAME: &str = "active";
 const VERSIONS_DIR_NAME: &str = "versions";
 const ARTIFACTS_DIR_NAME: &str = "artifacts";
@@ -41,9 +42,26 @@ pub(crate) struct InstallStatePaths {
 
 impl InstallStatePaths {
     pub(crate) fn host(install_root: impl Into<PathBuf>) -> Self {
+        let install_root = install_root.into();
+        if install_root != PathBuf::from(DEFAULT_INSTALL_ROOT) {
+            return Self {
+                config_paths: ConfigFilePaths {
+                    system: Some(install_root.join("config.toml")),
+                    system_drop_in_dir: Some(install_root.join("config.d")),
+                    user: None,
+                    user_drop_in_dir: None,
+                },
+                profile_paths: ProfileFilePaths {
+                    system_dir: Some(install_root.join("profiles")),
+                    user_dir: None,
+                },
+                install_root,
+            };
+        }
+
         let home = std::env::var_os("HOME").map(PathBuf::from);
         Self {
-            install_root: install_root.into(),
+            install_root,
             config_paths: ConfigFilePaths {
                 system: Some(PathBuf::from("/etc/m80/config.toml")),
                 system_drop_in_dir: Some(PathBuf::from("/etc/m80/config.d")),

@@ -27,6 +27,10 @@ mod reinstall;
 mod release_material;
 mod source;
 
+const DEFAULT_INSTALL_ROOT: &str = "/opt/m80";
+const DEFAULT_CONFIG_PATH: &str = "/etc/m80/config.toml";
+const DEFAULT_PROFILE_DIR: &str = "/etc/m80/profiles";
+
 #[cfg(test)]
 pub(super) use crate::test_support::PROCESS_ENV_LOCK as INSTALL_PREFLIGHT_ENV_LOCK;
 
@@ -213,11 +217,12 @@ pub(super) fn install_bundle_layout(plan: &InstallPlan) -> Result<LayoutInstallS
         path: run_root.clone(),
         source,
     })?;
+    let selector_paths = install_selector_paths(&install_root);
     let profile_path = write_installed_default_profile(InstalledDefaultProfile {
         artifact_dir: &final_dir.join("artifacts"),
         run_root: &run_root,
-        profile_dir: &install_root.join("profiles"),
-        config_path: &install_root.join("config.toml"),
+        profile_dir: &selector_paths.profile_dir,
+        config_path: &selector_paths.config_path,
         binary_config,
         release_tag: Some(metadata.release_tag.clone()),
         m80_version: plan.binary_version.clone(),
@@ -266,6 +271,26 @@ fn release_proof_cache_destination(final_dir: &Path) -> PathBuf {
     final_dir.join("artifacts").join("release-proof-cache")
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InstallSelectorPaths {
+    profile_dir: PathBuf,
+    config_path: PathBuf,
+}
+
+fn install_selector_paths(install_root: &Path) -> InstallSelectorPaths {
+    if install_root == Path::new(DEFAULT_INSTALL_ROOT) {
+        return InstallSelectorPaths {
+            profile_dir: PathBuf::from(DEFAULT_PROFILE_DIR),
+            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+        };
+    }
+
+    InstallSelectorPaths {
+        profile_dir: install_root.join("profiles"),
+        config_path: install_root.join("config.toml"),
+    }
+}
+
 fn idempotent_reinstall_summary(
     plan: &InstallPlan,
     release_tag: &str,
@@ -277,6 +302,7 @@ fn idempotent_reinstall_summary(
     let host_binaries_manifest = final_dir
         .join("artifacts")
         .join("host-binaries.manifest.json");
+    let selector_paths = install_selector_paths(install_root);
     LayoutInstallSummary {
         state: "already_installed",
         release_tag: release_tag.to_owned(),
@@ -288,8 +314,9 @@ fn idempotent_reinstall_summary(
             .display()
             .to_string(),
         host_binaries_manifest: host_binaries_manifest.display().to_string(),
-        profile_path: install_root
-            .join("profiles/default.toml")
+        profile_path: selector_paths
+            .profile_dir
+            .join("default.toml")
             .display()
             .to_string(),
         active_pointer: plan.active_pointer.clone(),
@@ -319,7 +346,7 @@ pub(super) fn reinstall_summary_for_render_test() -> LayoutInstallSummary {
         install_provenance: "/opt/m80/versions/v0.0.0/artifacts/install-provenance.json".to_owned(),
         host_binaries_manifest: "/opt/m80/versions/v0.0.0/artifacts/host-binaries.manifest.json"
             .to_owned(),
-        profile_path: "/opt/m80/profiles/default.toml".to_owned(),
+        profile_path: "/etc/m80/profiles/default.toml".to_owned(),
         active_pointer: "/opt/m80/active".to_owned(),
         active_pointer_flipped: false,
         profile_written: false,
@@ -594,6 +621,23 @@ mod tests {
     use super::super::SourceKind;
     use super::source::stage_bundle_source;
     use super::*;
+
+    #[test]
+    fn default_install_uses_host_selector_paths() {
+        let paths = install_selector_paths(Path::new("/opt/m80"));
+
+        assert_eq!(paths.profile_dir, PathBuf::from("/etc/m80/profiles"));
+        assert_eq!(paths.config_path, PathBuf::from("/etc/m80/config.toml"));
+    }
+
+    #[test]
+    fn install_root_override_uses_root_local_selector_paths() {
+        let install_root = Path::new("/tank/tmp/m80-proof/install-root");
+        let paths = install_selector_paths(install_root);
+
+        assert_eq!(paths.profile_dir, install_root.join("profiles"));
+        assert_eq!(paths.config_path, install_root.join("config.toml"));
+    }
 
     #[test]
     fn local_file_url_requires_absolute_path() {
