@@ -37,6 +37,7 @@ pub(super) fn official_release_plan(install_root: &Path) -> InstallPlan {
         active_version_dir: Some(install_root.join("versions/v0.0.0").display().to_string()),
         active_pointer: install_root.join("active").display().to_string(),
         active_pointer_changed: false,
+        repair_stale_install_lock: false,
         source: SourcePlan {
             kind: SourceKind::BundleUrl,
             selector: bundle_url.clone(),

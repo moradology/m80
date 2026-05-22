@@ -518,6 +518,10 @@ pub struct InstallArgs {
     /// Print the install plan without touching host state.
     #[arg(long = "dry-run")]
     pub dry_run: bool,
+
+    /// Remove a stale install-state lock whose owner process is no longer running.
+    #[arg(long = "repair-stale-install-lock")]
+    pub repair_stale_install_lock: bool,
 }
 
 /// Arguments for `m80 install-status`.

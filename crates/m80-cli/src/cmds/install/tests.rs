@@ -21,6 +21,7 @@ fn args_with_release_tag(tag: &str) -> InstallArgs {
         bootstrap_tag: None,
         install_root: PathBuf::from("/tmp/m80-install"),
         dry_run: true,
+        repair_stale_install_lock: false,
     }
 }
 
@@ -31,6 +32,7 @@ fn args_with_bundle_url(url: &str) -> InstallArgs {
         bootstrap_tag: None,
         install_root: PathBuf::from("/tmp/m80-install"),
         dry_run: true,
+        repair_stale_install_lock: false,
     }
 }
 

@@ -1,7 +1,7 @@
 # Install Finalization Transaction
 
-Behavior beads: `m80-o3uh9.16.1`, `m80-o3uh9.16.8.3`,
-`m80-o3uh9.16.11`.
+Behavior beads: `m80-o3uh9.16.1`, `m80-o3uh9.16.4`,
+`m80-o3uh9.16.8.3`, `m80-o3uh9.16.11`.
 
 `m80 install --bundle-url <URL>` publishes a version only after the installer
 has enough local state to run it. The active install selection is the last write
@@ -74,6 +74,28 @@ Each install uses `<install-root>/.staging/layout-<pid>`. Before starting, the
 installer removes abandoned `layout-*` staging directories. The active staging
 directory is removed on success and on ordinary error returns.
 
+## Install-State Lock
+
+Every mutating install verifies the selected release material first, then takes
+`<install-root>/.install-state.lock` before bundle staging, staging cleanup,
+profile writes, or active-pointer movement. The lock file records `owner_pid`,
+`command`, `resolved_tag`, `started_at_unix_seconds`, and the owner process
+start tick when Linux exposes it.
+
+A second installer invocation fails before creating `<install-root>/.staging`,
+writing default profile/config state, or touching `<install-root>/active`.
+The diagnostic uses `install.lock`, names the lock path and owner metadata, and
+prints the explicit recovery switch `--repair-stale-install-lock`:
+
+```text
+--repair-stale-install-lock
+```
+
+That switch only removes a lock whose recorded `owner_pid` no longer has a
+`/proc/<pid>` entry. A live owner still fails. Stale-lock repair is just
+lock cleanup; the installer then starts the normal transaction and still does
+not publish a version or switch active state until all finalization gates pass.
+
 ## Tests
 
 - `install_bundle_layout_copies_verified_bundle_into_version_dir`
@@ -86,6 +108,11 @@ directory is removed on success and on ordinary error returns.
 - `proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected`
 - `write_verified_release_proof_cache_rejects_existing_cache_target_file`
 - `install_bundle_layout_cleans_abandoned_staging_dirs`
+- `install_state_lock_blocks_second_writer_before_staging_or_activation`
+- `stale_install_state_lock_requires_explicit_repair_flag`
+- `repair_stale_install_state_lock_rejects_unreadable_lock_record`
+- `repair_stale_install_state_lock_ignores_reused_pid`
+- `repair_stale_install_state_lock_then_installs_normally`
 - `same_version_reinstall_with_identical_proof_material_is_idempotent`
 - `same_version_reinstall_with_stale_installed_byte_refuses_explicit_repair`
 - `same_version_reinstall_with_missing_installed_byte_refuses_explicit_repair`

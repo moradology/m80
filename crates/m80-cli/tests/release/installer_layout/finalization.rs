@@ -226,6 +226,7 @@ fn install_finalization_transaction_doc_names_state_machine_and_tests() {
 
     for required in [
         "`m80-o3uh9.16.1`",
+        "`m80-o3uh9.16.4`",
         "`m80-o3uh9.16.11`",
         "`bundle_verification`",
         "`host_prerequisite_verification`",
@@ -247,6 +248,15 @@ fn install_finalization_transaction_doc_names_state_machine_and_tests() {
         "proof_cache_mode_failure_leaves_previous_active_profile_and_config_selected",
         "write_verified_release_proof_cache_rejects_existing_cache_target_file",
         "install_bundle_layout_cleans_abandoned_staging_dirs",
+        "install_state_lock_blocks_second_writer_before_staging_or_activation",
+        "stale_install_state_lock_requires_explicit_repair_flag",
+        "repair_stale_install_state_lock_rejects_unreadable_lock_record",
+        "repair_stale_install_state_lock_ignores_reused_pid",
+        "repair_stale_install_state_lock_then_installs_normally",
+        "`<install-root>/.install-state.lock`",
+        "`owner_pid`",
+        "`resolved_tag`",
+        "`--repair-stale-install-lock`",
         "same_version_reinstall_with_identical_proof_material_is_idempotent",
         "same_version_reinstall_with_stale_installed_byte_refuses_explicit_repair",
         "same_version_reinstall_with_missing_installed_byte_refuses_explicit_repair",

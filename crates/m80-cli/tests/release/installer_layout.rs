@@ -449,6 +449,185 @@ fn install_bundle_layout_dry_run_never_reads_or_writes_bundle_layout() {
     );
 }
 
+#[test]
+fn install_state_lock_blocks_second_writer_before_staging_or_activation() {
+    let bundle = write_release_bundle(None);
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+    write_install_lock(
+        &install_root,
+        std::process::id(),
+        Some("v-lock-owner"),
+        current_proc_start_ticks(),
+    );
+
+    let output = run_install(&bundle, &install_root, None, &[], &[]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("install.lock"), "{stderr}");
+    assert!(
+        stderr.contains(&format!("owner_pid={}", std::process::id())),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--repair-stale-install-lock"), "{stderr}");
+    assert!(
+        !install_root.join(".staging").exists(),
+        "lock contention must fail before staging"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+}
+
+#[test]
+fn stale_install_state_lock_requires_explicit_repair_flag() {
+    let bundle = write_release_bundle(None);
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+    let lock_path = write_install_lock(&install_root, 999_999_999, Some("v-stale"), 0);
+
+    let output = run_install(&bundle, &install_root, None, &[], &[]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("install.lock"), "{stderr}");
+    assert!(stderr.contains("owner_pid=999999999"), "{stderr}");
+    assert!(stderr.contains("--repair-stale-install-lock"), "{stderr}");
+    assert!(
+        lock_path.exists(),
+        "stale lock must remain without repair flag"
+    );
+    assert!(
+        !install_root.join(".staging").exists(),
+        "stale lock refusal must fail before staging"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+}
+
+#[test]
+fn repair_stale_install_state_lock_rejects_unreadable_lock_record() {
+    let bundle = write_release_bundle(None);
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let previous = seed_previous_active_install(&install_root);
+    let lock_path = write_raw_install_lock(&install_root, b"{");
+
+    let mut command = m80();
+    command.args([
+        "install",
+        "--bundle-url",
+        &format!("file://{}", bundle.tarball.display()),
+        "--install-root",
+        install_root.to_str().unwrap(),
+        "--repair-stale-install-lock",
+    ]);
+    clear_install_env(&mut command);
+    let output = command.output().unwrap();
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("install.lock"), "{stderr}");
+    assert!(stderr.contains("owner=<unreadable>"), "{stderr}");
+    assert!(stderr.contains("--repair-stale-install-lock"), "{stderr}");
+    assert!(
+        lock_path.exists(),
+        "unreadable lock records must fail closed"
+    );
+    assert!(
+        !install_root.join(".staging").exists(),
+        "unreadable lock refusal must fail before staging"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        previous
+    );
+}
+
+#[test]
+fn repair_stale_install_state_lock_ignores_reused_pid() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let lock_path = write_install_lock(&install_root, std::process::id(), Some("v-reused-pid"), 0);
+
+    let mut command = m80();
+    command.args([
+        "install",
+        "--bundle-url",
+        &format!("file://{}", bundle.tarball.display()),
+        "--install-root",
+        install_root.to_str().unwrap(),
+        "--repair-stale-install-lock",
+    ]);
+    clear_install_env(&mut command);
+    host.apply(&mut command);
+    let output = command.output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "reused-pid stale lock repair failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !lock_path.exists(),
+        "successful install must release repaired lock"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        install_root.join("versions").join(&bundle.release_tag)
+    );
+}
+
+#[test]
+fn repair_stale_install_state_lock_then_installs_normally() {
+    let bundle = write_release_bundle(None);
+    let host = HostPrereqFixture::new();
+    let install_temp = tempfile::tempdir().unwrap();
+    let install_root = install_temp.path().join("install-root");
+    let lock_path = write_install_lock(&install_root, 999_999_999, Some("v-stale"), 0);
+
+    let mut command = m80();
+    command.args([
+        "install",
+        "--bundle-url",
+        &format!("file://{}", bundle.tarball.display()),
+        "--install-root",
+        install_root.to_str().unwrap(),
+        "--repair-stale-install-lock",
+    ]);
+    clear_install_env(&mut command);
+    host.apply(&mut command);
+    let output = command.output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stale lock repair install failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    assert!(
+        !lock_path.exists(),
+        "successful install must release install-state lock"
+    );
+    assert_eq!(
+        fs::read_link(install_root.join("active")).unwrap(),
+        install_root.join("versions").join(&bundle.release_tag)
+    );
+}
+
 fn run_install(
     bundle: &fixture::ReleaseBundleFixture,
     install_root: &Path,
@@ -543,6 +722,45 @@ fn seed_previous_active_install(install_root: &Path) -> PathBuf {
     fs::write(previous.join("marker"), b"previous").unwrap();
     symlink(&previous, install_root.join("active")).unwrap();
     previous
+}
+
+fn write_install_lock(
+    install_root: &Path,
+    owner_pid: u32,
+    resolved_tag: Option<&str>,
+    owner_proc_start_ticks: u64,
+) -> PathBuf {
+    fs::create_dir_all(install_root).unwrap();
+    let lock_path = install_root.join(".install-state.lock");
+    let resolved_tag = resolved_tag
+        .map(|tag| format!("\"{tag}\""))
+        .unwrap_or_else(|| "null".to_owned());
+    fs::write(
+        &lock_path,
+        format!(
+            "{{\"owner_pid\":{owner_pid},\"command\":\"m80 install --bundle-url file://fixture\",\"resolved_tag\":{resolved_tag},\"started_at_unix_seconds\":1,\"owner_proc_start_ticks\":{owner_proc_start_ticks}}}\n"
+        ),
+    )
+    .unwrap();
+    lock_path
+}
+
+fn current_proc_start_ticks() -> u64 {
+    let stat = fs::read_to_string(format!("/proc/{}/stat", std::process::id())).unwrap();
+    let after_comm = stat.rsplit_once(") ").unwrap().1;
+    after_comm
+        .split_whitespace()
+        .nth(19)
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+fn write_raw_install_lock(install_root: &Path, contents: &[u8]) -> PathBuf {
+    fs::create_dir_all(install_root).unwrap();
+    let lock_path = install_root.join(".install-state.lock");
+    fs::write(&lock_path, contents).unwrap();
+    lock_path
 }
 
 fn write_executable(path: &Path, body: &str) {

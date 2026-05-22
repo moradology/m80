@@ -90,7 +90,9 @@ binaries, pull OCI images, or install packages implicitly.
   pinned reinstall command for the current active release.
   Non-dry-run stages, verifies, and copies the selected or explicit bundle into
   `<install-root>/versions/<release_tag>`, writes profile state, and switches
-  `<install-root>/active` last.
+  `<install-root>/active` last. Mutating installs take
+  `<install-root>/.install-state.lock` before staging; stale lock cleanup is
+  explicit with `--repair-stale-install-lock`.
 - `m80 install-status [--install-root <path>] [--profile <name>]` - prints the
   local installed-state view used for quickstart troubleshooting. Human output
   names the finite install status, active release tag, active install
