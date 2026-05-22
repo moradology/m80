@@ -8,8 +8,8 @@ use serde::Deserialize;
 
 mod safety;
 
-pub(crate) use safety::SafetyFloor;
 use safety::SafetyFloorArtifact;
+pub(crate) use safety::{MinimumSafeRelease, SafetyFloor, YankedRelease};
 
 const FRESHNESS_STATUS_SCHEMA_VERSION: u32 = 1;
 const LATEST_STATUS_STALE_AFTER_SECONDS: i64 = 48 * 60 * 60;

@@ -176,7 +176,7 @@ install facts separate from freshness classification: `active_tag`,
 `latest_stable_tag`, `active_kind`, `freshness_state`, `latest_status_source`,
 `latest_status_origin`, `latest_status_cache_state`,
 `latest_status_fetched_at`, `latest_status_max_age_seconds`,
-`latest_status_offline_reason`, `safety_floor.status`,
+`latest_status_offline_reason`, `safety_state`, `safety_floor.status`,
 `proof_cache_status`, `proof_cache_age_seconds`, `apply_command`,
 `reinstall_command`, and `retry_command`. `active_kind` is one of
 `stable_release`, `prerelease`, `ineligible`, `local_dev`, `missing_active`, or

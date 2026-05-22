@@ -12,7 +12,7 @@ use crate::install_state::{
 use crate::json;
 use crate::release_freshness::{
     compare_freshness, latest_status_max_age_seconds, ActiveInstallVersion, FreshnessState,
-    LatestFreshnessMetadata, LatestMetadata, UnixSeconds,
+    LatestFreshnessMetadata, LatestMetadata, MinimumSafeRelease, UnixSeconds, YankedRelease,
 };
 use crate::release_policy::{classify_release_tag, parse_stable_release_tag, ReleaseIdentity};
 
@@ -94,6 +94,7 @@ struct UpdateCheckOutput {
     latest_status_error: Option<String>,
     latest_status_offline_reason: Option<String>,
     retry_command: Option<String>,
+    safety_state: SafetyFloorStatus,
     safety_floor: SafetyFloorOutput,
     proof_cache_status: UpdateProofCacheStatus,
     proof_cache_age_seconds: Option<u64>,
@@ -124,6 +125,14 @@ struct SafetyFloorOutput {
     status: SafetyFloorStatus,
     minimum_safe_tag: Option<String>,
     yanked_tags: Vec<String>,
+    policy_tag: Option<String>,
+    reason: Option<String>,
+    advisory_url: Option<String>,
+    issue_id: Option<String>,
+    published_at: Option<String>,
+    replacement_command: Option<String>,
+    no_replacement_reason: Option<String>,
+    metadata_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -131,6 +140,7 @@ struct SafetyFloorOutput {
 enum SafetyFloorStatus {
     Unknown,
     Safe,
+    StaleMetadata,
     ActiveYanked,
     LatestYanked,
     ActiveBelowMinimum,
@@ -216,7 +226,12 @@ fn check_output(
         .map(|metadata| metadata.published_at().as_i64());
     let latest_status_max_age_seconds = latest_status_max_age_seconds();
 
-    let safety_floor = safety_floor_output(active_tag.as_deref(), latest_metadata.as_ref());
+    let safety_floor = safety_floor_output(
+        active_tag.as_deref(),
+        latest_metadata.as_ref(),
+        &latest_status_source,
+        now,
+    );
     let state = update_state(report, latest_metadata.as_ref(), safety_floor.status, now);
     let apply_command = apply_command(state, &safety_floor, latest_metadata.as_ref());
     let reinstall_command = reinstall_command_for_state(state, report, active_tag.as_deref());
@@ -250,6 +265,7 @@ fn check_output(
         latest_status_error,
         latest_status_offline_reason,
         retry_command,
+        safety_state: safety_floor.status,
         safety_floor,
         proof_cache_status,
         proof_cache_age_seconds,
@@ -272,6 +288,9 @@ fn update_state(
     }
     if report.state != InstallStateKind::HealthyActiveRelease {
         return UpdateCheckState::InstallUnhealthy;
+    }
+    if safety_status == SafetyFloorStatus::StaleMetadata {
+        return UpdateCheckState::StaleLatestMetadata;
     }
     if matches!(
         safety_status,
@@ -326,33 +345,123 @@ fn active_release_tag(report: &InstallStateReport) -> Option<&str> {
 fn safety_floor_output(
     active_tag: Option<&str>,
     latest: Option<&LatestFreshnessMetadata>,
+    latest_status_source: &str,
+    now: UnixSeconds,
 ) -> SafetyFloorOutput {
     let Some(latest) = latest else {
         return SafetyFloorOutput {
             status: SafetyFloorStatus::Unknown,
             minimum_safe_tag: None,
             yanked_tags: Vec::new(),
+            policy_tag: None,
+            reason: None,
+            advisory_url: None,
+            issue_id: None,
+            published_at: None,
+            replacement_command: None,
+            no_replacement_reason: None,
+            metadata_source: None,
         };
     };
     let floor = latest.safety_floor();
-    let status = match active_tag {
-        Some(tag) if floor.is_yanked(tag) => SafetyFloorStatus::ActiveYanked,
-        _ if floor.is_yanked(latest.latest_tag()) => SafetyFloorStatus::LatestYanked,
-        Some(tag) if is_below_minimum_safe(tag, floor.minimum_safe_tag()) => {
-            SafetyFloorStatus::ActiveBelowMinimum
-        }
-        _ if is_below_minimum_safe(latest.latest_tag(), floor.minimum_safe_tag()) => {
-            SafetyFloorStatus::LatestBelowMinimum
-        }
+    if latest.is_stale_at(now) {
+        return SafetyFloorOutput {
+            status: SafetyFloorStatus::StaleMetadata,
+            minimum_safe_tag: floor.minimum_safe_tag().map(str::to_owned),
+            yanked_tags: floor.yanked_tags().to_vec(),
+            policy_tag: None,
+            reason: None,
+            advisory_url: None,
+            issue_id: None,
+            published_at: Some(floor.published_at().to_owned()),
+            replacement_command: None,
+            no_replacement_reason: None,
+            metadata_source: Some(latest_status_source.to_owned()),
+        };
+    }
+    let (status, detail) = match active_tag {
+        Some(tag) if floor.is_yanked(tag) => (
+            SafetyFloorStatus::ActiveYanked,
+            SafetyPolicyDetail::from_yanked(floor.yanked_release(tag)),
+        ),
+        _ if floor.is_yanked(latest.latest_tag()) => (
+            SafetyFloorStatus::LatestYanked,
+            SafetyPolicyDetail::from_yanked(floor.yanked_release(latest.latest_tag())),
+        ),
+        Some(tag) if is_below_minimum_safe(tag, floor.minimum_safe_tag()) => (
+            SafetyFloorStatus::ActiveBelowMinimum,
+            SafetyPolicyDetail::from_minimum(floor.minimum_safe()),
+        ),
+        _ if is_below_minimum_safe(latest.latest_tag(), floor.minimum_safe_tag()) => (
+            SafetyFloorStatus::LatestBelowMinimum,
+            SafetyPolicyDetail::from_minimum(floor.minimum_safe()),
+        ),
         _ if floor.minimum_safe_tag().is_some() || !floor.yanked_tags().is_empty() => {
-            SafetyFloorStatus::Safe
+            (SafetyFloorStatus::Safe, SafetyPolicyDetail::empty())
         }
-        _ => SafetyFloorStatus::Unknown,
+        _ => (SafetyFloorStatus::Unknown, SafetyPolicyDetail::empty()),
     };
     SafetyFloorOutput {
         status,
         minimum_safe_tag: floor.minimum_safe_tag().map(str::to_owned),
         yanked_tags: floor.yanked_tags().to_vec(),
+        policy_tag: detail.policy_tag,
+        reason: detail.reason,
+        advisory_url: detail.advisory_url,
+        issue_id: detail.issue_id,
+        published_at: detail
+            .published_at
+            .or_else(|| Some(floor.published_at().to_owned())),
+        replacement_command: detail.replacement_command,
+        no_replacement_reason: detail.no_replacement_reason,
+        metadata_source: Some(latest_status_source.to_owned()),
+    }
+}
+
+#[derive(Debug, Default)]
+struct SafetyPolicyDetail {
+    policy_tag: Option<String>,
+    reason: Option<String>,
+    advisory_url: Option<String>,
+    issue_id: Option<String>,
+    published_at: Option<String>,
+    replacement_command: Option<String>,
+    no_replacement_reason: Option<String>,
+}
+
+impl SafetyPolicyDetail {
+    fn empty() -> Self {
+        Self::default()
+    }
+
+    fn from_minimum(rule: Option<&MinimumSafeRelease>) -> Self {
+        let Some(rule) = rule else {
+            return Self::empty();
+        };
+        Self {
+            policy_tag: Some(rule.tag.clone()),
+            reason: Some(rule.reason.clone()),
+            advisory_url: rule.advisory_url.clone(),
+            issue_id: rule.issue_id.clone(),
+            published_at: None,
+            replacement_command: Some(rule.replacement_command.clone()),
+            no_replacement_reason: None,
+        }
+    }
+
+    fn from_yanked(rule: Option<&YankedRelease>) -> Self {
+        let Some(rule) = rule else {
+            return Self::empty();
+        };
+        Self {
+            policy_tag: Some(rule.tag.clone()),
+            reason: Some(rule.reason.clone()),
+            advisory_url: rule.advisory_url.clone(),
+            issue_id: rule.issue_id.clone(),
+            published_at: Some(rule.published_at.clone()),
+            replacement_command: rule.replacement_command.clone(),
+            no_replacement_reason: rule.no_replacement_reason.clone(),
+        }
     }
 }
 
@@ -379,6 +488,9 @@ fn apply_command(
         UpdateCheckState::Outdated | UpdateCheckState::Yanked | UpdateCheckState::Unsafe
     ) {
         return None;
+    }
+    if matches!(state, UpdateCheckState::Yanked | UpdateCheckState::Unsafe) {
+        return safety_floor.replacement_command.clone();
     }
     let metadata = latest?;
     if latest_target_is_blocked(metadata.latest_tag(), safety_floor) {

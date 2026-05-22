@@ -30,6 +30,7 @@ fn update_check_reports_current_release_with_cached_proof_age() {
     assert_eq!(output.state, UpdateCheckState::Current);
     assert_eq!(output.active_tag.as_deref(), Some("v1.2.3"));
     assert_eq!(output.latest_stable_tag.as_deref(), Some("v1.2.3"));
+    assert_eq!(output.safety_state, SafetyFloorStatus::Unknown);
     assert_eq!(output.proof_cache_status, UpdateProofCacheStatus::Available);
     assert_eq!(output.proof_cache_age_seconds, Some(30));
     assert_eq!(
@@ -48,6 +49,7 @@ fn update_check_reports_outdated_release_with_exact_apply_command() {
     );
 
     assert_eq!(output.state, UpdateCheckState::Outdated);
+    assert_eq!(output.safety_state, SafetyFloorStatus::Safe);
     assert_eq!(output.safety_floor.status, SafetyFloorStatus::Safe);
     assert_eq!(
         output.apply_command.as_deref(),
@@ -91,15 +93,58 @@ fn update_check_reports_yanked_active_release() {
     );
 
     assert_eq!(output.state, UpdateCheckState::Yanked);
+    assert_eq!(output.safety_state, SafetyFloorStatus::ActiveYanked);
     assert_eq!(output.safety_floor.status, SafetyFloorStatus::ActiveYanked);
     assert_eq!(
         output.apply_command.as_deref(),
-        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh")
+        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh")
     );
+    assert_eq!(output.safety_floor.policy_tag.as_deref(), Some("v1.2.3"));
+    assert_eq!(output.safety_floor.reason.as_deref(), Some("bad release"));
+    assert_eq!(
+        output.safety_floor.advisory_url.as_deref(),
+        Some("https://github.com/moradology/m80/issues/1")
+    );
+    assert_eq!(
+        output.safety_floor.published_at.as_deref(),
+        Some("2026-05-21T12:00:00Z")
+    );
+    assert_eq!(
+        output.safety_floor.replacement_command.as_deref(),
+        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh")
+    );
+    assert_eq!(
+        output.safety_floor.metadata_source.as_deref(),
+        Some("fixture")
+    );
+    let human = render_human(&output);
+    assert!(human.contains("safety_state=active_yanked\n"));
+    assert!(human.contains("safety_floor_policy_tag=v1.2.3\n"));
+    assert!(human.contains("safety_floor_reason=bad release\n"));
+    assert!(
+        human.contains("safety_floor_advisory_url=https://github.com/moradology/m80/issues/1\n")
+    );
+    assert!(human.contains(
+        "safety_floor_replacement_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh\n"
+    ));
+    let json: serde_json::Value =
+        serde_json::from_str(&crate::json::to_pretty(&output)).expect("update JSON parses");
+    assert_eq!(json["data"]["safety_state"], "active_yanked");
+    assert_eq!(json["data"]["safety_floor"]["policy_tag"], "v1.2.3");
+    assert_eq!(json["data"]["safety_floor"]["reason"], "bad release");
+    assert_eq!(
+        json["data"]["safety_floor"]["advisory_url"],
+        "https://github.com/moradology/m80/issues/1"
+    );
+    assert_eq!(
+        json["data"]["safety_floor"]["replacement_command"],
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh"
+    );
+    assert_eq!(json["data"]["safety_floor"]["metadata_source"], "fixture");
 }
 
 #[test]
-fn update_check_refuses_apply_command_when_latest_target_is_blocked() {
+fn update_check_uses_metadata_repair_command_when_latest_target_is_yanked() {
     let report = active_report("v1.2.3");
     let output = check_output(
         &report,
@@ -108,9 +153,13 @@ fn update_check_refuses_apply_command_when_latest_target_is_blocked() {
     );
 
     assert_eq!(output.state, UpdateCheckState::Yanked);
+    assert_eq!(output.safety_state, SafetyFloorStatus::LatestYanked);
     assert_eq!(output.safety_floor.status, SafetyFloorStatus::LatestYanked);
-    assert_eq!(output.apply_command, None);
-    assert_eq!(output.next_command, None);
+    assert_eq!(
+        output.apply_command.as_deref(),
+        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh")
+    );
+    assert_eq!(output.next_command, output.apply_command);
 }
 
 #[test]
@@ -123,9 +172,27 @@ fn update_check_reports_unsafe_active_release_below_floor() {
     );
 
     assert_eq!(output.state, UpdateCheckState::Unsafe);
+    assert_eq!(output.safety_state, SafetyFloorStatus::ActiveBelowMinimum);
     assert_eq!(
         output.safety_floor.status,
         SafetyFloorStatus::ActiveBelowMinimum
+    );
+    assert_eq!(output.safety_floor.policy_tag.as_deref(), Some("v1.2.0"));
+    assert_eq!(
+        output.safety_floor.reason.as_deref(),
+        Some("security floor")
+    );
+    assert_eq!(
+        output.safety_floor.issue_id.as_deref(),
+        Some("m80-o3uh9.21.9")
+    );
+    assert_eq!(
+        output.safety_floor.replacement_command.as_deref(),
+        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh")
+    );
+    assert_eq!(
+        output.apply_command.as_deref(),
+        Some("curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.0/install.sh | sudo sh")
     );
 }
 
@@ -143,6 +210,56 @@ fn update_check_rejects_latest_target_below_floor_status() {
             assert!(reason.contains("safety_floor.minimum_safe_tag.tag"));
             assert!(reason.contains("v1.2.0"));
             assert!(reason.contains("v1.1.9"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[test]
+fn update_check_reports_stale_safety_artifact_before_policy_state() {
+    let metadata = read_freshness_status_artifact_json(&status_artifact_at(
+        "v1.2.4",
+        Some("v1.2.0"),
+        &["v1.1.9"],
+        "2026-05-19T11:59:59Z",
+    ))
+    .expect("stale status fixture should parse");
+    let output = check_output(
+        &active_report("v1.1.9"),
+        LatestStatusInput::Available {
+            source: "fixture-stale".to_owned(),
+            metadata,
+            origin: LatestStatusOrigin::CacheFallback,
+            offline_reason: Some("remote unavailable".to_owned()),
+        },
+        UnixSeconds::new(timestamp("2026-05-21T12:00:00Z")),
+    );
+
+    assert_eq!(output.state, UpdateCheckState::StaleLatestMetadata);
+    assert_eq!(output.safety_state, SafetyFloorStatus::StaleMetadata);
+    assert_eq!(output.safety_floor.status, SafetyFloorStatus::StaleMetadata);
+    assert_eq!(output.apply_command, None);
+    assert_eq!(output.retry_command.as_deref(), Some("m80 update --check"));
+    let human = render_human(&output);
+    assert!(human.contains("safety_state=stale_metadata\n"));
+    assert!(human.contains("safety_floor_status=stale_metadata\n"));
+}
+
+#[test]
+fn malformed_safety_artifact_fails_closed_before_update_state() {
+    let malformed = status_artifact("v1.2.4", None, &[]).replace(
+        r#""minimum_safe_tag":null"#,
+        r#""minimum_safe_tag":{"tag":"latest","reason":"bad floor","advisory_url":"https://github.com/moradology/m80/security/advisories/GHSA-test","issue_id":null,"replacement_command":"curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh"}"#,
+    );
+
+    let err = parse_latest_status("fixture".to_owned(), malformed)
+        .expect_err("malformed safety floor should fail before update output");
+
+    match err {
+        FcError::Config(ConfigError::InvalidValue { field, reason }) => {
+            assert_eq!(field, "update.latest_status");
+            assert!(reason.contains("safety_floor.minimum_safe_tag.tag"));
+            assert!(reason.contains("latest"));
         }
         other => panic!("unexpected error: {other:?}"),
     }

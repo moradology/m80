@@ -9,13 +9,23 @@ const SAFETY_FLOOR_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SafetyFloor {
-    minimum_safe_tag: Option<String>,
+    published_at: String,
+    minimum_safe: Option<MinimumSafeRelease>,
     yanked_tags: Vec<String>,
+    yanked_releases: Vec<YankedRelease>,
 }
 
 impl SafetyFloor {
+    pub(crate) fn published_at(&self) -> &str {
+        &self.published_at
+    }
+
+    pub(crate) fn minimum_safe(&self) -> Option<&MinimumSafeRelease> {
+        self.minimum_safe.as_ref()
+    }
+
     pub(crate) fn minimum_safe_tag(&self) -> Option<&str> {
-        self.minimum_safe_tag.as_deref()
+        self.minimum_safe.as_ref().map(|rule| rule.tag.as_str())
     }
 
     pub(crate) fn yanked_tags(&self) -> &[String] {
@@ -25,6 +35,34 @@ impl SafetyFloor {
     pub(crate) fn is_yanked(&self, tag: &str) -> bool {
         self.yanked_tags.iter().any(|candidate| candidate == tag)
     }
+
+    pub(crate) fn yanked_release(&self, tag: &str) -> Option<&YankedRelease> {
+        self.yanked_releases
+            .iter()
+            .find(|release| release.tag == tag)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MinimumSafeRelease {
+    pub(crate) tag: String,
+    pub(crate) reason: String,
+    pub(crate) advisory_url: Option<String>,
+    pub(crate) issue_id: Option<String>,
+    pub(crate) replacement_command: String,
+    replacement_tag: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct YankedRelease {
+    pub(crate) tag: String,
+    pub(crate) reason: String,
+    pub(crate) advisory_url: Option<String>,
+    pub(crate) issue_id: Option<String>,
+    pub(crate) published_at: String,
+    pub(crate) replacement_command: Option<String>,
+    pub(crate) no_replacement_reason: Option<String>,
+    replacement_tag: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,22 +153,12 @@ impl SafetyFloorArtifact {
             require_safe_replacement_tag(&rule.replacement_tag, Some(rule), &yanked_set)?;
         }
         Ok(SafetyFloor {
-            minimum_safe_tag: minimum_safe_tag.map(|rule| rule.tag),
+            published_at: self.published_at,
+            minimum_safe: minimum_safe_tag,
             yanked_tags,
+            yanked_releases,
         })
     }
-}
-
-#[derive(Debug)]
-struct MinimumSafeRule {
-    tag: String,
-    replacement_tag: String,
-}
-
-#[derive(Debug)]
-struct YankedReleaseRule {
-    tag: String,
-    replacement_tag: Option<String>,
 }
 
 fn parse_value<T>(field: &'static str, value: Value) -> Result<T, FreshnessMetadataError>
@@ -153,7 +181,7 @@ struct MinimumSafeTagArtifact {
 }
 
 impl MinimumSafeTagArtifact {
-    fn into_rule(self) -> Result<MinimumSafeRule, FreshnessMetadataError> {
+    fn into_rule(self) -> Result<MinimumSafeRelease, FreshnessMetadataError> {
         require_stable_tag("safety_floor.minimum_safe_tag.tag", &self.tag)?;
         require_nonempty("safety_floor.minimum_safe_tag.reason", &self.reason)?;
         require_evidence_ref(
@@ -165,8 +193,12 @@ impl MinimumSafeTagArtifact {
             "safety_floor.minimum_safe_tag.replacement_command",
             &self.replacement_command,
         )?;
-        Ok(MinimumSafeRule {
+        Ok(MinimumSafeRelease {
             tag: self.tag,
+            reason: self.reason,
+            advisory_url: self.advisory_url,
+            issue_id: self.issue_id,
+            replacement_command: self.replacement_command,
             replacement_tag,
         })
     }
@@ -188,7 +220,7 @@ impl YankedReleaseArtifact {
     fn into_rule(
         self,
         safety_floor_published_at: UnixSeconds,
-    ) -> Result<YankedReleaseRule, FreshnessMetadataError> {
+    ) -> Result<YankedRelease, FreshnessMetadataError> {
         require_stable_tag("safety_floor.yanked_releases.tag", &self.tag)?;
         require_nonempty("safety_floor.yanked_releases.reason", &self.reason)?;
         let published_at = require_published_at(
@@ -234,8 +266,14 @@ impl YankedReleaseArtifact {
                 });
             }
         };
-        Ok(YankedReleaseRule {
+        Ok(YankedRelease {
             tag: self.tag,
+            reason: self.reason,
+            advisory_url: self.advisory_url,
+            issue_id: self.issue_id,
+            published_at: self.published_at,
+            replacement_command: self.replacement_command,
+            no_replacement_reason: self.no_replacement_reason,
             replacement_tag,
         })
     }
@@ -355,7 +393,7 @@ fn require_pinned_install_command(
 
 fn require_safe_replacement_tag(
     replacement_tag: &str,
-    minimum_safe_tag: Option<&MinimumSafeRule>,
+    minimum_safe_tag: Option<&MinimumSafeRelease>,
     yanked_tags: &HashSet<String>,
 ) -> Result<(), FreshnessMetadataError> {
     if yanked_tags.contains(replacement_tag) {

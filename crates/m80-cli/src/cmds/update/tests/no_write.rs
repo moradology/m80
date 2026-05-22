@@ -129,6 +129,12 @@ fn update_output_exposes_remote_latest_status_source() {
     assert_eq!(json["data"]["latest_status_origin"], "remote");
     assert_eq!(json["data"]["latest_status_cache_state"], "not_used");
     assert_eq!(json["data"]["latest_status_max_age_seconds"], 172_800);
+    assert_eq!(json["data"]["safety_state"], "unknown");
+    assert_eq!(json["data"]["safety_floor"]["metadata_source"], source);
+    assert_eq!(
+        json["data"]["safety_floor"]["published_at"],
+        "2026-05-21T12:00:00Z"
+    );
     assert!(json["data"]["latest_status_error"].is_null());
 }
 

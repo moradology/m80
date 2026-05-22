@@ -105,13 +105,15 @@ binaries, pull OCI images, or install packages implicitly.
   `current`, `outdated`, `unknown_offline`, `stale_latest_metadata`,
   `prerelease_active`, `ineligible_active`, `local_dev_install`,
   `install_unhealthy`, `yanked`, and `unsafe` states and emits a pinned install
-  command only when a newer safe release target is known. Use
-  `--latest-status-url <url>` to choose the metadata URL. Use
-  `--latest-status <path>` to read a local artifact without network. Use both
-  together to try the URL first and use the path as a read-only fallback cache.
-  Human and JSON output name the metadata source, cache state, freshness max
-  age, offline reason, and retry command when freshness is unknown or stale. If
-  a safe update is known, copy the `next_command` value exactly:
+  command when a newer safe release target is known or when safety metadata
+  marks the active/target release `yanked` or `unsafe` and provides a pinned
+  `replacement_command`. Use `--latest-status-url <url>` to choose the metadata
+  URL. Use `--latest-status <path>` to read a local artifact without network.
+  Use both together to try the URL first and use the path as a read-only fallback cache.
+  Human and JSON output name the metadata source, cache state,
+  freshness max age, safety state, safety-policy reason, offline reason, and
+  retry command when freshness is unknown or stale. If a safe update or repair
+  is known, copy the `next_command` value exactly:
   `next_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh`.
 - `m80 config show` - prints the merged effective config and labels each field's
   source.

@@ -14,7 +14,7 @@ fn unsafe_active_release_prints_one_pinned_repair_command() {
         latest("v1.2.4", Some("v1.2.0"), &[]),
         UnixSeconds::new(timestamp("2026-05-21T12:30:00Z")),
     );
-    let expected = pinned_install_command("v1.2.4");
+    let expected = pinned_install_command("v1.2.0");
 
     assert_eq!(output.state, UpdateCheckState::Unsafe);
     assert_eq!(output.apply_command.as_deref(), Some(expected.as_str()));
@@ -23,6 +23,11 @@ fn unsafe_active_release_prints_one_pinned_repair_command() {
     assert_eq!(output.next_command.as_deref(), Some(expected.as_str()));
 
     let human = render_human(&output);
+    assert!(human.contains("safety_state=active_below_minimum\n"));
+    assert!(human.contains("safety_floor_status=active_below_minimum\n"));
+    assert!(human.contains("safety_floor_policy_tag=v1.2.0\n"));
+    assert!(human.contains("safety_floor_reason=security floor\n"));
+    assert!(human.contains(&format!("safety_floor_replacement_command={expected}\n")));
     assert!(human.contains(&format!("apply_command={expected}\n")));
     assert!(human.contains(&format!("next_command={expected}\n")));
 }

@@ -62,6 +62,7 @@ pub(super) fn render_human(output: &UpdateCheckOutput) -> String {
         "latest_status_offline_reason",
         output.latest_status_offline_reason.as_deref(),
     );
+    push_line(&mut text, "safety_state", output.safety_state.as_str());
     push_line(
         &mut text,
         "safety_floor_status",
@@ -76,6 +77,46 @@ pub(super) fn render_human(output: &UpdateCheckOutput) -> String {
         &mut text,
         "safety_floor_yanked_count",
         output.safety_floor.yanked_tags.len(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_policy_tag",
+        output.safety_floor.policy_tag.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_reason",
+        output.safety_floor.reason.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_advisory_url",
+        output.safety_floor.advisory_url.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_issue_id",
+        output.safety_floor.issue_id.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_published_at",
+        output.safety_floor.published_at.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_replacement_command",
+        output.safety_floor.replacement_command.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_no_replacement_reason",
+        output.safety_floor.no_replacement_reason.as_deref(),
+    );
+    push_optional(
+        &mut text,
+        "safety_floor_metadata_source",
+        output.safety_floor.metadata_source.as_deref(),
     );
     push_line(
         &mut text,
@@ -176,6 +217,7 @@ impl SafetyFloorStatus {
         match self {
             Self::Unknown => "unknown",
             Self::Safe => "safe",
+            Self::StaleMetadata => "stale_metadata",
             Self::ActiveYanked => "active_yanked",
             Self::LatestYanked => "latest_yanked",
             Self::ActiveBelowMinimum => "active_below_minimum",

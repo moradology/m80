@@ -1,7 +1,7 @@
 # Update Check
 
 Behavior beads: `m80-o3uh9.16.18.1`, `m80-o3uh9.16.9.4`,
-`m80-o3uh9.16.9.2`.
+`m80-o3uh9.16.9.2`, `m80-o3uh9.21.9.3`.
 
 `m80 update --check` is the read-only update surface. It reads local install
 state, the installed proof-cache summary, and bounded latest freshness metadata,
@@ -34,14 +34,16 @@ JSON output uses schema `1` and includes `active_tag`, `latest_stable_tag`,
 `active_kind`, `freshness_state`, `latest_status_source`, `latest_status_origin`,
 `latest_status_cache_state`, `latest_status_fetched_at`,
 `latest_status_max_age_seconds`, `latest_status_offline_reason`,
-`safety_floor.status`, `proof_cache_status`, `proof_cache_age_seconds`,
-`apply_command`, `reinstall_command`, and `retry_command`. The
+`safety_state`, `safety_floor.status`, `safety_floor.replacement_command`,
+`safety_floor.metadata_source`, `proof_cache_status`,
+`proof_cache_age_seconds`, `apply_command`, `reinstall_command`, and
+`retry_command`. The
 `latest_status_fetched_at` value is the status artifact's `published_at` value
 as Unix seconds, and the max-age policy is `172800` seconds. When emitted, the
-apply command is the exact pinned release installer for the latest stable safe
-target; no apply command is emitted when the latest target is yanked or below
-the safety floor. The mutating `m80 update --apply` transaction is a later leaf
-and must reuse the verified installer path.
+apply command is exact, pinned, and copy-ready: safe outdated installs target the
+latest stable release; unsafe or yanked state uses the safety policy's pinned `replacement_command`.
+The mutating `m80 update --apply` transaction is a later leaf and must reuse the
+verified installer path.
 
 For an active `v1.2.3` install with safe latest `v1.2.4`, human output includes
 one copy-ready command:
@@ -74,6 +76,14 @@ present, `minimum_safe_tag.tag` and every `yanked_releases[].tag` must be stable
 active or latest tag reports `yanked`; an active or latest tag below the minimum
 safe tag reports `unsafe`. The safety policy's replacement commands must be
 pinned install commands, never mutable latest commands.
+
+Human output prints `safety_state` and `safety_floor_status` separately from the
+overall update state so automation does not have to infer policy from prose.
+Unsafe and yanked output includes the policy tag, reason, advisory or issue
+reference, policy timestamp, metadata source, and pinned
+`safety_floor_replacement_command`. Stale latest-status metadata reports
+`safety_state=stale_metadata` and prints only `retry_command=m80 update --check`;
+malformed safety policy fails closed before normal update output.
 
 The default latest-status source is the public release asset
 `m80-latest-freshness-proof.json` under the GitHub latest release. Tests may pass
