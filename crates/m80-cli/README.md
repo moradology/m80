@@ -97,8 +97,9 @@ binaries, pull OCI images, or install packages implicitly.
   directory, selected config/default profile, selected runtime profile,
   `bundle.json`, `host-binaries.manifest.json`, `install-provenance.json`, and
   `release-proof-cache/manifest.json` paths. Unhealthy states include one
-  concise next action. `m80 --json install-status` emits the stable JSON
-  contract for scripts and release freshness checks.
+  concise next action plus per-diagnostic reinstall and manual rollback
+  commands when a safe command can be derived. `m80 --json install-status`
+  emits the stable JSON contract for scripts and release freshness checks.
 - `m80 update --check [--install-root <path>] [--profile <name>]` - reads the
   active install state, installed proof-cache summary, and bounded latest
   freshness metadata without writing the install root. It reports finite

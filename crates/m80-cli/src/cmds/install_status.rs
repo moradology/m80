@@ -187,6 +187,31 @@ fn render_human(output: &InstallStatusOutput) -> String {
     }
     push_proof_cache(&mut text, &output.proof_cache);
     push_line(&mut text, "diagnostic_count", output.diagnostics.len());
+    for (index, diagnostic) in output.diagnostics.iter().enumerate() {
+        let prefix = format!("diagnostic_{index}");
+        push_line(
+            &mut text,
+            &format!("{prefix}_code"),
+            diagnostic_code_label(diagnostic.code),
+        );
+        push_optional(&mut text, &format!("{prefix}_field"), diagnostic.field);
+        push_optional_path(
+            &mut text,
+            &format!("{prefix}_path"),
+            diagnostic.path.as_ref(),
+        );
+        push_line(&mut text, &format!("{prefix}_message"), &diagnostic.message);
+        push_optional(
+            &mut text,
+            &format!("{prefix}_repair_command"),
+            diagnostic.repair_command.as_deref(),
+        );
+        push_optional(
+            &mut text,
+            &format!("{prefix}_rollback_command"),
+            diagnostic.rollback_command.as_deref(),
+        );
+    }
     push_line(&mut text, "next_action", &output.next_action.message);
     if let Some(command) = &output.next_action.command {
         push_line(&mut text, "next_action_command", command);
@@ -356,7 +381,7 @@ struct InstallStatusOutput {
     selected_profile: Option<ProfileStatusOutput>,
     metadata: Option<MetadataStatusOutput>,
     proof_cache: ProofCacheStatusOutput,
-    diagnostics: Vec<InstallStateDiagnostic>,
+    diagnostics: Vec<DiagnosticOutput>,
     mismatches: Vec<InstallStatusMismatch>,
     next_action: NextAction,
 }
@@ -378,9 +403,36 @@ impl InstallStatusOutput {
                 .as_ref()
                 .map(MetadataStatusOutput::from_report),
             proof_cache: ProofCacheStatusOutput::from_install_report(report),
-            diagnostics: report.diagnostics.clone(),
+            diagnostics: report
+                .diagnostics
+                .iter()
+                .map(|diagnostic| DiagnosticOutput::from_report(diagnostic, report))
+                .collect(),
             mismatches: install_status_mismatches(report),
             next_action: next_action(report),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DiagnosticOutput {
+    code: InstallStateDiagnosticCode,
+    field: Option<&'static str>,
+    path: Option<PathBuf>,
+    message: String,
+    repair_command: Option<String>,
+    rollback_command: Option<String>,
+}
+
+impl DiagnosticOutput {
+    fn from_report(diagnostic: &InstallStateDiagnostic, report: &InstallStateReport) -> Self {
+        Self {
+            code: diagnostic.code,
+            field: diagnostic.field,
+            path: diagnostic.path.clone(),
+            message: diagnostic.message.clone(),
+            repair_command: diagnostic_repair_command(diagnostic.code, report),
+            rollback_command: diagnostic_rollback_command(diagnostic.code, report),
         }
     }
 }
@@ -814,6 +866,67 @@ fn reinstall_command(report: &InstallStateReport) -> String {
 fn latest_install_command() -> String {
     "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh"
         .to_owned()
+}
+
+fn diagnostic_repair_command(
+    code: InstallStateDiagnosticCode,
+    report: &InstallStateReport,
+) -> Option<String> {
+    if report.config.explicit_override {
+        return None;
+    }
+    match code {
+        InstallStateDiagnosticCode::MissingActivePointer
+        | InstallStateDiagnosticCode::LocalDevProfile => Some(latest_install_command()),
+        InstallStateDiagnosticCode::DanglingActivePointer
+        | InstallStateDiagnosticCode::ProfileTargetsInactiveVersion
+        | InstallStateDiagnosticCode::InstallMetadataMissing
+        | InstallStateDiagnosticCode::InstallMetadataInvalid
+        | InstallStateDiagnosticCode::InstallMetadataStale
+        | InstallStateDiagnosticCode::ProofCacheMissing
+        | InstallStateDiagnosticCode::ProofCacheInvalid
+        | InstallStateDiagnosticCode::ProofCacheStale => Some(reinstall_command(report)),
+        InstallStateDiagnosticCode::ConfigLoadFailed
+        | InstallStateDiagnosticCode::DefaultProfileMissing
+        | InstallStateDiagnosticCode::ProfileLoadFailed
+        | InstallStateDiagnosticCode::ActivePointerUnreadable
+        | InstallStateDiagnosticCode::ActivePointerTraversal
+        | InstallStateDiagnosticCode::ActivePointerOutsideInstallRoot
+        | InstallStateDiagnosticCode::ActivePointerNotVersionDir
+        | InstallStateDiagnosticCode::ProfilePathTraversal
+        | InstallStateDiagnosticCode::ProfilePathOutsideInstallRoot
+        | InstallStateDiagnosticCode::ProfileArtifactDirMalformed
+        | InstallStateDiagnosticCode::ExplicitProfileOverride => None,
+    }
+}
+
+fn diagnostic_rollback_command(
+    code: InstallStateDiagnosticCode,
+    report: &InstallStateReport,
+) -> Option<String> {
+    if report.config.explicit_override {
+        return None;
+    }
+    if !matches!(
+        code,
+        InstallStateDiagnosticCode::MissingActivePointer
+            | InstallStateDiagnosticCode::DanglingActivePointer
+            | InstallStateDiagnosticCode::ProfileTargetsInactiveVersion
+    ) {
+        return None;
+    }
+    let profile = report.profile.as_ref()?;
+    let version_dir = profile.version_dir.as_ref()?;
+    Some(format!(
+        "sudo ln -sfnT -- {} {}",
+        shell_quote_path(version_dir),
+        shell_quote_path(&report.active_pointer.path)
+    ))
+}
+
+fn shell_quote_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn release_tag_is_url_safe(tag: &str) -> bool {

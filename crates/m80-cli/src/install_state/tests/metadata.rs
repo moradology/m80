@@ -96,6 +96,24 @@ fn resolver_reports_stale_metadata_for_missing_bundle_reference() {
 }
 
 #[test]
+fn resolver_reports_stale_metadata_for_missing_kernel_reference() {
+    let fixture = installed_fixture();
+    fs::remove_file(version_dir(&fixture).join("artifacts/vmlinux"))
+        .expect("remove kernel reference");
+
+    let report = fixture.resolve(None);
+
+    assert_eq!(report.state, InstallStateKind::StaleInstallMetadata);
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == InstallStateDiagnosticCode::InstallMetadataStale
+            && diagnostic.field == Some("bundle_metadata")
+            && diagnostic
+                .message
+                .contains("referenced bundle file is unreadable")
+    }));
+}
+
+#[test]
 fn resolver_rejects_bundle_reference_symlink_even_when_digest_matches() {
     let fixture = installed_fixture();
     let installed = version_dir(&fixture).join("artifacts/output.ext4");

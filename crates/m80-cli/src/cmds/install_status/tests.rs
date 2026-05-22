@@ -176,6 +176,60 @@ fn env_profile_override_output_is_distinct_from_stale_default() {
 }
 
 #[test]
+fn explicit_override_diagnostics_do_not_offer_installed_state_repair_commands() {
+    let mut report = active_report();
+    report.state = InstallStateKind::ExplicitOverride;
+    report.config.default_profile = Some("env".to_owned());
+    report.config.default_profile_source = Some(ConfigSource::Env);
+    report.config.explicit_override = true;
+    report.diagnostics.push(InstallStateDiagnostic {
+        code: InstallStateDiagnosticCode::MissingActivePointer,
+        field: Some("active_pointer"),
+        path: Some(PathBuf::from("/opt/m80/active")),
+        message: "active install pointer is missing".to_owned(),
+    });
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+    let diagnostic = &parsed["data"]["diagnostics"][0];
+
+    assert_eq!(diagnostic["code"], "missing_active_pointer");
+    assert!(diagnostic["repair_command"].is_null());
+    assert!(diagnostic["rollback_command"].is_null());
+}
+
+#[test]
+fn rollback_command_is_path_based_and_does_not_require_url_safe_tag() {
+    let mut report = active_report();
+    let active_dir = PathBuf::from("/opt/m80/versions/v1.2.4");
+    report.state = InstallStateKind::StaleProfileTarget;
+    report.active_pointer.target = Some(active_dir.clone());
+    report.active_pointer.version_dir = Some(active_dir);
+    report.active_pointer.release_tag = Some("v1.2.4".to_owned());
+    let profile = report.profile.as_mut().expect("active report has profile");
+    profile.release_tag = Some("v1.2.3+local".to_owned());
+    profile.version_dir = Some(PathBuf::from("/opt/m80/versions/v1.2.3+local"));
+    report.diagnostics.push(InstallStateDiagnostic {
+        code: InstallStateDiagnosticCode::ProfileTargetsInactiveVersion,
+        field: Some("artifact_dir"),
+        path: Some(PathBuf::from("/opt/m80/versions/v1.2.3+local")),
+        message: "selected profile points at a different version than active pointer".to_owned(),
+    });
+
+    let output = InstallStatusOutput::from_report(&report);
+    let rendered = render_json(&output);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&rendered).expect("install-status JSON should parse");
+
+    assert_eq!(
+        parsed["data"]["diagnostics"][0]["rollback_command"],
+        "sudo ln -sfnT -- '/opt/m80/versions/v1.2.3+local' '/opt/m80/active'"
+    );
+}
+
+#[test]
 fn user_config_override_output_names_expected_and_observed_config_paths() {
     let mut report = active_report();
     report.state = InstallStateKind::ExplicitOverride;
@@ -250,6 +304,12 @@ fn status_matrix_missing_active_pointer() {
     report.active_pointer.version_dir = None;
     report.active_pointer.release_tag = None;
     report.metadata = None;
+    report.diagnostics.push(InstallStateDiagnostic {
+        code: InstallStateDiagnosticCode::MissingActivePointer,
+        field: Some("active_pointer"),
+        path: Some(PathBuf::from("/opt/m80/active")),
+        message: "active install pointer is missing".to_owned(),
+    });
 
     assert_status_matrix_case(
         report,
@@ -259,7 +319,16 @@ fn status_matrix_missing_active_pointer() {
     )
     .assert_json_field("active.status", "missing")
     .assert_json_null("metadata")
-    .assert_json_field("proof_cache.status", "missing_active_install");
+    .assert_json_field("proof_cache.status", "missing_active_install")
+    .assert_json_field("diagnostics.0.code", "missing_active_pointer")
+    .assert_json_field(
+        "diagnostics.0.repair_command",
+        "curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh",
+    )
+    .assert_json_field(
+        "diagnostics.0.rollback_command",
+        "sudo ln -sfnT -- '/opt/m80/versions/v1.2.3' '/opt/m80/active'",
+    );
 }
 
 #[test]
@@ -292,6 +361,12 @@ fn status_matrix_stale_profile_target() {
     report.active_pointer.version_dir = Some(active_dir);
     report.active_pointer.release_tag = Some("v1.2.4".to_owned());
     report.metadata = None;
+    report.diagnostics.push(InstallStateDiagnostic {
+        code: InstallStateDiagnosticCode::ProfileTargetsInactiveVersion,
+        field: Some("artifact_dir"),
+        path: Some(PathBuf::from("/opt/m80/versions/v1.2.3")),
+        message: "selected profile points at a different version than active pointer".to_owned(),
+    });
 
     assert_status_matrix_case(
         report,
@@ -301,7 +376,15 @@ fn status_matrix_stale_profile_target() {
     )
     .assert_json_field("mismatches.0.code", "stale_profile_target")
     .assert_json_field("mismatches.0.expected_tag", "v1.2.4")
-    .assert_json_field("mismatches.0.observed_tag", "v1.2.3");
+    .assert_json_field("mismatches.0.observed_tag", "v1.2.3")
+    .assert_json_field(
+        "diagnostics.0.repair_command",
+        "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh",
+    )
+    .assert_json_field(
+        "diagnostics.0.rollback_command",
+        "sudo ln -sfnT -- '/opt/m80/versions/v1.2.3' '/opt/m80/active'",
+    );
 }
 
 #[test]
@@ -436,10 +519,20 @@ fn human_output_for_missing_install_has_next_action() {
     report.active_pointer.release_tag = None;
     report.active_pointer.version_dir = None;
     report.metadata = None;
+    report.diagnostics.push(InstallStateDiagnostic {
+        code: InstallStateDiagnosticCode::MissingActivePointer,
+        field: Some("active_pointer"),
+        path: Some(PathBuf::from("/opt/m80/active")),
+        message: "active install pointer is missing".to_owned(),
+    });
 
     let rendered = render_human(&InstallStatusOutput::from_report(&report));
 
     assert!(rendered.contains("status=missing_active_pointer"));
+    assert!(rendered.contains("diagnostic_0_code=missing_active_pointer"));
+    assert!(rendered.contains("diagnostic_0_path=/opt/m80/active"));
+    assert!(rendered.contains("diagnostic_0_repair_command=curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh"));
+    assert!(rendered.contains("diagnostic_0_rollback_command=sudo ln -sfnT -- '/opt/m80/versions/v1.2.3' '/opt/m80/active'"));
     assert!(rendered.contains("bundle_metadata_status=unavailable"));
     assert!(rendered.contains("proof_cache_manifest_status=unavailable"));
     assert!(rendered.contains("proof_cache_status=missing_active_install"));

@@ -140,7 +140,7 @@ JSON field table:
 | `proof_cache.verifier_versions.*` | m80, GitHub CLI, release-integrity schema, and asset-index schema versions. | Explains which local verifier versions produced the saved evidence. |
 | `proof_cache.diagnostics[]` | Proof-cache stale/missing/invalid diagnostics copied from the local status reader. | Distinguishes local cache tampering from public latest freshness checks. |
 | `proof_cache.repair_command` | Pinned reinstall command for the affected release tag when the cache is missing, invalid, or stale. | Gives support captures a deterministic repair path without selecting mutable latest. |
-| `diagnostics[]` | Resolver diagnostics with code, field, path, and message. | Machine-readable failure details for repair beads and support captures. |
+| `diagnostics[]` | Resolver diagnostics with code, field, path, message, `repair_command`, and `rollback_command`. | Machine-readable failure details plus copyable operator repair commands for support captures. |
 | `mismatches[]` | Expected/observed mismatch records for stale defaults and overrides. | Shows exactly which tag/path/source differs from the installed default. |
 | `next_action.kind` | `ready`, `install_release`, `reinstall_release`, or `remove_override`. | Stable automation hint for local repair UX. |
 | `next_action.command` | Exact command when a safe command exists. | Copyable repair or smoke command; absent for override removal. |
@@ -198,6 +198,9 @@ next_action_command=m80 run -- echo hello
 
 ```text
 status=missing_active_pointer
+diagnostic_0_code=missing_active_pointer
+diagnostic_0_repair_command=curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
+diagnostic_0_rollback_command=sudo ln -sfnT -- '/opt/m80/versions/v1.2.3' '/opt/m80/active'
 next_action=install a release to create the active install pointer
 next_action_command=curl -fsSL https://github.com/moradology/m80/releases/latest/download/install.sh | sudo sh
 ```
@@ -207,6 +210,9 @@ status=stale_profile_target
 mismatch_0_code=stale_profile_target
 mismatch_0_expected_tag=v1.2.4
 mismatch_0_observed_tag=v1.2.3
+diagnostic_0_code=profile_targets_inactive_version
+diagnostic_0_repair_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
+diagnostic_0_rollback_command=sudo ln -sfnT -- '/opt/m80/versions/v1.2.3' '/opt/m80/active'
 next_action=reinstall the selected release to refresh the installed bundle
 next_action_command=curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.4/install.sh | sudo sh
 ```
@@ -308,6 +314,34 @@ release reinstall command when the affected release tag is URL-safe. This does
 not decide whether the release is current; it only blocks reuse of local saved
 trust material until repair or reinstall.
 
+## Repair And Rollback Diagnostics
+
+Status diagnostics are read-only. They never create directories, restore
+profiles, rewrite default config, or flip the active pointer by themselves.
+For install-root states that have a deterministic repair, each diagnostic
+prints `diagnostic_<n>_repair_command` in human output and
+`diagnostics[n].repair_command` in JSON.
+
+Missing active pointers and local development installs use the stable latest
+install command because there is no active tag to pin. Dangling active
+pointers, stale default profiles, missing installed metadata, stale installed
+metadata, invalid installed metadata, and proof-cache tampering use a pinned
+install command for the active release tag when that tag is URL-safe, falling
+back to the selected profile tag or latest only when there is no safe tag.
+
+When the selected installed profile already points at another versioned install
+directory, status also prints a manual rollback command:
+
+```text
+sudo ln -sfnT -- '<install-root>/versions/<previous-tag>' '<install-root>/active'
+```
+
+Only the active symlink is operator-changeable for this manual rollback path.
+The version directory, `bundle.json`, generated profile fields,
+`artifacts/install-provenance.json`, `artifacts/host-binaries.manifest.json`,
+and `artifacts/release-proof-cache/manifest.json` are installer-generated
+state. Do not hand-edit those files; reinstall the affected release instead.
+
 ## Transaction Ordering
 
 For official release installs, the installer writes the proof cache inside the
@@ -395,6 +429,7 @@ by default.
 - `resolver_reports_tampered_proof_cache_for_missing_reference`
 - `resolver_rejects_proof_cache_symlink_even_when_digest_matches`
 - `resolver_reports_tampered_proof_cache_for_manifest_digest_mismatch`
+- `resolver_reports_stale_metadata_for_missing_kernel_reference`
 - `resolver_reports_tampered_proof_cache_for_changed_file_mode`
 - `resolver_reports_tampered_proof_cache_for_changed_manifest_mode`
 - `resolver_reports_tampered_proof_cache_for_changed_cache_dir_mode`
