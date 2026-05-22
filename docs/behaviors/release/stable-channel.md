@@ -29,9 +29,14 @@ GitHub latest release metadata into one stable concrete tag, checks the latest
 metadata again before emitting a handoff, and outputs only pinned
 `releases/download/<tag>/...` URLs for the installer, bundle, checksum sidecars,
 asset index, bootstrap selector, release-integrity predicate, attestation
-metadata, and public checksum material. Its URL mode bounds both metadata
-fetches with the same connect-timeout, total-timeout, retry, and retry-delay
-policy used by installer asset downloads; fixture mode stays network-free.
+metadata, and public checksum material. Its JSON handoff includes
+`versioned_install_args` for downstream install logic, `versioned_install_inputs`
+for the pinned asset-index/checksum/proof URLs and optional install root, and a
+`bootstrap_proof` record of the resolved tag plus every pinned asset URL; see
+`docs/behaviors/release/stable-latest-bootstrap-handoff.md`. Its URL mode bounds
+both metadata fetches with the same connect-timeout, total-timeout, retry, and
+retry-delay policy used by installer asset downloads; fixture mode stays
+network-free.
 Current install entry points also enforce the stable tag shape before network or
 index work:
 
@@ -58,9 +63,10 @@ Regression coverage:
   release, prerelease release, missing `install.sh`, wrong public asset URL,
   asset-index tag drift, and `m80_version` drift;
 - `scripts/test-stable-latest-bootstrap.py` covers latest resolution success,
-  tag-switch failure before handoff output, missing metadata, bounded URL-mode
-  curl args, HTTP/DNS-or-connect/timeout/malformed-metadata fetch failures, and
-  no-network local fixture mode;
+  versioned handoff args with no mutable latest string, tag-switch failure
+  before handoff output, missing pinned `install.sh`, missing metadata, bounded
+  URL-mode curl args, HTTP/DNS-or-connect/timeout/malformed-metadata fetch
+  failures, and no-network local fixture mode;
 - `scripts/test-release-bundle.py::test_rejects_prerelease_release_tag`;
 - `crates/m80-cli/src/cmds/install/tests.rs` prerelease rejection tests for
   `--release-tag` and `--bootstrap-tag`.

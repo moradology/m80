@@ -62,9 +62,52 @@ class StableLatestBootstrapTest(unittest.TestCase):
             "curl -fsSL https://github.com/moradology/m80/releases/download/v1.2.3/install.sh | sudo sh",
         )
         self.assertEqual(set(payload["pinned_asset_urls"]), set(REQUIRED_PUBLIC_ASSETS))
+        self.assertEqual(payload["bootstrap_proof"]["resolved_tag"], "v1.2.3")
+        self.assertEqual(payload["bootstrap_proof"]["pinned_asset_urls"], payload["pinned_asset_urls"])
         for name, url in payload["pinned_asset_urls"].items():
             self.assertEqual(url, release_asset_url("v1.2.3", name))
             self.assertNotIn("/releases/latest/", url)
+
+    def test_successful_handoff_args_are_pinned_and_latest_free(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            latest = write_json(root / "latest.json", base_release_metadata())
+            install_root = root / "install-root"
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SCRIPT),
+                    "--latest-metadata",
+                    str(latest),
+                    "--install-root",
+                    str(install_root),
+                    "--json",
+                ],
+                cwd=REPO_ROOT,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+        payload = json.loads(result.stdout)
+        self.assertEqual(
+            payload["versioned_install_args"],
+            ["install", "--bootstrap-tag", "v1.2.3", "--install-root", str(install_root)],
+        )
+        self.assertEqual(payload["versioned_install_inputs"]["release_tag"], "v1.2.3")
+        self.assertEqual(payload["versioned_install_inputs"]["install_root"], str(install_root))
+        self.assertEqual(
+            payload["versioned_install_inputs"]["asset_index"]["url"],
+            release_asset_url("v1.2.3", "m80-release-assets.json"),
+        )
+        self.assertIn("m80-release-assets.json.sha256", payload["versioned_install_inputs"]["checksum_urls"])
+        self.assertIn("m80-release-integrity.json", payload["versioned_install_inputs"]["proof_urls"])
+        self.assertIn("m80-release-attestation.json", payload["versioned_install_inputs"]["proof_urls"])
+        self.assert_no_mutable_latest_in_downstream_args(payload["versioned_install_args"])
+        self.assert_no_mutable_latest_in_pinned_inputs(payload["versioned_install_inputs"])
+        self.assertEqual(payload["bootstrap_proof"]["resolved_tag"], "v1.2.3")
+        self.assertEqual(set(payload["bootstrap_proof"]["pinned_asset_urls"]), set(REQUIRED_PUBLIC_ASSETS))
 
     def test_text_mode_prints_the_concrete_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -81,6 +124,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
 
         self.assertIn("stable latest resolved: repository=moradology/m80 tag=v1.2.3", result.stdout)
         self.assertIn("install_url=https://github.com/moradology/m80/releases/download/v1.2.3/install.sh", result.stdout)
+        self.assertIn("versioned_install_args=install --bootstrap-tag v1.2.3", result.stdout)
 
     def test_library_resolution_returns_the_concrete_tag(self) -> None:
         source = MetadataSource(base_release_metadata(), "fixture:latest.json", "fixture")
@@ -123,6 +167,26 @@ class StableLatestBootstrapTest(unittest.TestCase):
         self.assertIn("initial_source=latest release metadata from", result.stderr)
         self.assertIn("guard_source=guard latest release metadata from", result.stderr)
         self.assertIn("releases/download/v1.2.3/install.sh", result.stderr)
+        self.assertNotIn("versioned_install_args", result.stderr)
+
+    def test_rejects_missing_pinned_install_sh_before_handoff_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            latest = write_json(root / "latest.json", base_release_metadata(omit_assets={"install.sh"}))
+
+            result = subprocess.run(
+                ["python3", str(SCRIPT), "--latest-metadata", str(latest), "--json"],
+                cwd=REPO_ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("stable release missing required public asset(s): install.sh", result.stderr)
+        self.assertNotIn("versioned_install_args", result.stderr)
+        self.assertNotIn("install_url=", result.stderr)
 
     def test_rejects_missing_latest_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -355,6 +419,7 @@ class StableLatestBootstrapTest(unittest.TestCase):
             response = write_json(root / "latest-response.json", base_release_metadata())
             log = root / "curl.log"
             curl = write_fake_curl_json(root / "curl", response=response, log=log)
+            install_root = root / "install-root"
 
             result = subprocess.run(
                 [
@@ -362,6 +427,8 @@ class StableLatestBootstrapTest(unittest.TestCase):
                     str(SCRIPT),
                     "--latest-url",
                     "https://api.github.com/repos/moradology/m80/releases/latest",
+                    "--install-root",
+                    str(install_root),
                     "--curl",
                     str(curl),
                     "--json",
@@ -377,6 +444,12 @@ class StableLatestBootstrapTest(unittest.TestCase):
         self.assertEqual(payload["resolved_tag"], "v1.2.3")
         self.assertEqual(payload["latest_source_mode"], "url")
         self.assertEqual(payload["tag_switch_guard_source_mode"], "url")
+        self.assertEqual(
+            payload["versioned_install_args"],
+            ["install", "--bootstrap-tag", "v1.2.3", "--install-root", str(install_root)],
+        )
+        self.assert_no_mutable_latest_in_downstream_args(payload["versioned_install_args"])
+        self.assert_no_mutable_latest_in_pinned_inputs(payload["versioned_install_inputs"])
         self.assertEqual(len(curl_requests), 2)
         for line in curl_requests:
             args = shlex.split(line)
@@ -414,11 +487,34 @@ class StableLatestBootstrapTest(unittest.TestCase):
         self.assertEqual(payload["latest_source_mode"], "fixture")
         self.assertEqual(payload["tag_switch_guard_source_mode"], "fixture-reused")
 
+    def test_behavior_doc_records_handoff_contract_and_regressions(self) -> None:
+        doc = (REPO_ROOT / "docs" / "behaviors" / "release" / "stable-latest-bootstrap-handoff.md").read_text()
+
+        for required in [
+            "m80-o3uh9.11.3",
+            "versioned_install_args",
+            "versioned_install_inputs",
+            "bootstrap_proof",
+            "test_successful_handoff_args_are_pinned_and_latest_free",
+            "test_rejects_missing_pinned_install_sh_before_handoff_json",
+            "test_rejects_latest_tag_switch_before_emitting_handoff_json",
+        ]:
+            self.assertIn(required, doc)
+
     def assert_curl_flag(self, args: list[str], flag: str, expected_value: str) -> None:
         self.assertIn(flag, args)
         pos = args.index(flag)
         self.assertLess(pos + 1, len(args), args)
         self.assertEqual(args[pos + 1], expected_value, args)
+
+    def assert_no_mutable_latest_in_downstream_args(self, args: list[str]) -> None:
+        rendered = "\n".join(args)
+        self.assertNotIn("latest", rendered)
+        self.assertNotIn("/releases/latest/", rendered)
+
+    def assert_no_mutable_latest_in_pinned_inputs(self, value: object) -> None:
+        rendered = json.dumps(value, sort_keys=True)
+        self.assertNotIn("/releases/latest/", rendered)
 
 
 def base_release_metadata(

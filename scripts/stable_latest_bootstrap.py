@@ -7,11 +7,13 @@ import argparse
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import shlex
 import subprocess
 
 from release_url_contract import pinned_install_command, public_release_root, release_asset_url
 from stable_release_channel import (
     REQUIRED_PUBLIC_ASSETS,
+    public_asset_role,
     read_json,
     validate_stable_release_metadata,
 )
@@ -39,6 +41,8 @@ class LatestBootstrapResolution:
     latest_source_mode: str
     guard_source_mode: str
     pinned_asset_urls: dict[str, str]
+    install_root: str | None = None
+    asset_index_path: str | None = None
 
     @property
     def install_url(self) -> str:
@@ -47,6 +51,27 @@ class LatestBootstrapResolution:
     @property
     def pinned_install_command(self) -> str:
         return pinned_install_command(self.resolved_tag)
+
+    @property
+    def versioned_install_args(self) -> list[str]:
+        args = ["install", "--bootstrap-tag", self.resolved_tag]
+        if self.install_root is not None:
+            args.extend(["--install-root", self.install_root])
+        return args
+
+    @property
+    def versioned_install_inputs(self) -> dict:
+        asset_index = {"url": self.pinned_asset_urls["m80-release-assets.json"]}
+        if self.asset_index_path is not None:
+            asset_index["path"] = self.asset_index_path
+        return {
+            "release_tag": self.resolved_tag,
+            "install_root": self.install_root,
+            "asset_index": asset_index,
+            "asset_urls": self.pinned_asset_urls,
+            "checksum_urls": urls_for_roles(self.pinned_asset_urls, {"checksum"}),
+            "proof_urls": urls_for_roles(self.pinned_asset_urls, {"provenance", "attestation"}),
+        }
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     guard.add_argument("--guard-latest-url", help="second latest release metadata URL used for the tag-switch guard")
     guard.add_argument("--guard-metadata", type=Path, help="second local latest metadata fixture used for the tag-switch guard")
     parser.add_argument("--asset-index", type=Path, help="optional local release asset index fixture to validate")
+    parser.add_argument("--install-root", help="optional install root argument to pass to versioned install logic")
     parser.add_argument("--curl", default="curl", help="curl binary used for URL metadata fetches")
     parser.add_argument("--json", action="store_true", help="render the pinned bootstrap resolution as JSON")
     return parser.parse_args()
@@ -74,7 +100,13 @@ def main() -> int:
     try:
         latest = load_latest_source(args.latest_metadata, args.latest_url, curl_bin=args.curl, label="latest release metadata")
         guard = load_guard_source(args, latest)
-        resolution = resolve_latest_bootstrap(latest, guard=guard, asset_index=asset_index)
+        resolution = resolve_latest_bootstrap(
+            latest,
+            guard=guard,
+            asset_index=asset_index,
+            install_root=args.install_root,
+            asset_index_path=str(args.asset_index) if args.asset_index else None,
+        )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -84,6 +116,7 @@ def main() -> int:
         print(f"stable latest resolved: repository={resolution.repository} tag={resolution.resolved_tag}")
         print(f"install_url={resolution.install_url}")
         print(f"pinned_command={resolution.pinned_install_command}")
+        print(f"versioned_install_args={shlex.join(resolution.versioned_install_args)}")
     return 0
 
 
@@ -111,6 +144,8 @@ def resolve_latest_bootstrap(
     *,
     guard: MetadataSource,
     asset_index: dict | None = None,
+    install_root: str | None = None,
+    asset_index_path: str | None = None,
 ) -> LatestBootstrapResolution:
     eligibility = validate_stable_release_metadata(latest.release, asset_index=asset_index)
     guard_tag = release_tag_from_metadata(guard.release, describe_metadata_source(guard))
@@ -123,6 +158,8 @@ def resolve_latest_bootstrap(
         latest_source_mode=latest.mode,
         guard_source_mode=guard.mode,
         pinned_asset_urls=pinned_asset_urls,
+        install_root=install_root,
+        asset_index_path=asset_index_path,
     )
 
 
@@ -230,7 +267,17 @@ def resolution_json(resolution: LatestBootstrapResolution) -> dict:
         "install_url": resolution.install_url,
         "pinned_install_command": resolution.pinned_install_command,
         "pinned_asset_urls": resolution.pinned_asset_urls,
+        "versioned_install_args": resolution.versioned_install_args,
+        "versioned_install_inputs": resolution.versioned_install_inputs,
+        "bootstrap_proof": {
+            "resolved_tag": resolution.resolved_tag,
+            "pinned_asset_urls": resolution.pinned_asset_urls,
+        },
     }
+
+
+def urls_for_roles(asset_urls: dict[str, str], roles: set[str]) -> dict[str, str]:
+    return {name: url for name, url in asset_urls.items() if public_asset_role(name) in roles}
 
 
 if __name__ == "__main__":
