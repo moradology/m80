@@ -2,8 +2,25 @@
   "schema_version": 1,
   "generated_at": "2026-05-22T03:46:01Z",
   "release_tag": "v0.2.11",
+  "resolved_tag": "v0.2.11",
   "source_commit": "3c72f2500e0e3c878cf93ffcf0790d410747ea39",
   "repository": "moradology/m80",
+  "command": "sudo -n env PATH=/tank/tmp/m80-public-install-proof.g0DJpN/gh_2.92.0_linux_amd64/bin:$PATH TMPDIR=/tank/tmp/m80-public-install-proof-v0211.4jsmug/tmp M80_JAIL_UID=$(id -u) M80_JAIL_GID=$(id -g) sh /tank/tmp/m80-public-install-proof-v0211.4jsmug/install.sh --install-root /tank/tmp/m80-public-install-proof-v0211.4jsmug/install-root",
+  "exit_status": 0,
+  "substrate": {
+    "kind": "linux-kvm-host",
+    "summary": "Official moradology/m80 latest install and process smoke captured on Linux under /tank/tmp with /dev/kvm available"
+  },
+  "stdout": {
+    "install_excerpt": [
+      "release_tag=v0.2.11",
+      "active_pointer_flipped=true",
+      "proof_cache_written=true",
+      "preflight_gate=live_preflight"
+    ],
+    "install_status": "status=healthy_active_release",
+    "process_smoke": "hello\n"
+  },
   "workflow_run": {
     "id": 26267080697,
     "url": "https://github.com/moradology/m80/actions/runs/26267080697",

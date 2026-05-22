@@ -2,8 +2,20 @@
   "schema_version": 1,
   "generated_at": "2026-05-22T03:51:10Z",
   "release_tag": "v0.2.11",
+  "resolved_tag": "v0.2.11",
   "source_commit": "3c72f2500e0e3c878cf93ffcf0790d410747ea39",
   "repository": "moradology/m80",
+  "exit_status": 0,
+  "substrate": {
+    "kind": "linux-kvm-host",
+    "summary": "Official moradology/m80 latest install captured on Linux under /tank/tmp with local installed-status JSON read from the active version"
+  },
+  "stdout": {
+    "status": "healthy_active_release",
+    "active_release_tag": "v0.2.11",
+    "proof_cache_status": "available",
+    "next_action": "m80 run -- echo hello"
+  },
   "workflow_run": {
     "id": 26267080697,
     "url": "https://github.com/moradology/m80/actions/runs/26267080697",
