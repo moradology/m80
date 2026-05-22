@@ -16,6 +16,7 @@ use crate::release_freshness::{
 };
 use crate::release_policy::{classify_release_tag, parse_stable_release_tag, ReleaseIdentity};
 
+use active_kind::{active_install_kind, ActiveInstallKind};
 use latest_status::{
     latest_status_input, LatestStatusCacheState, LatestStatusInput, LatestStatusOrigin,
 };
@@ -80,6 +81,8 @@ fn install_state_paths(args: &UpdateArgs) -> InstallStatePaths {
 struct UpdateCheckOutput {
     schema_version: u16,
     state: UpdateCheckState,
+    freshness_state: UpdateCheckState,
+    active_kind: ActiveInstallKind,
     install_status: InstallStateKind,
     active_tag: Option<String>,
     latest_stable_tag: Option<String>,
@@ -152,6 +155,7 @@ fn check_output(
     now: UnixSeconds,
 ) -> UpdateCheckOutput {
     let active_tag = active_release_tag(report).map(str::to_owned);
+    let active_kind = active_install_kind(report, active_tag.as_deref());
     let proof_cache_status = proof_cache_status(report);
     let proof_cache_age_seconds = report
         .metadata
@@ -233,6 +237,8 @@ fn check_output(
     UpdateCheckOutput {
         schema_version: 1,
         state,
+        freshness_state: state,
+        active_kind,
         install_status: report.state,
         active_tag,
         latest_stable_tag,
@@ -480,6 +486,7 @@ fn current_unix_seconds() -> UnixSeconds {
     UnixSeconds::new(seconds)
 }
 
+mod active_kind;
 mod latest_status;
 mod render;
 

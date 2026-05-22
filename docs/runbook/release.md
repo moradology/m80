@@ -248,7 +248,9 @@ compares it with bounded latest freshness metadata. It reports `current`,
 `outdated`, `unknown_offline`, `stale_latest_metadata`, `prerelease_active`,
 `ineligible_active`, `local_dev_install`, `install_unhealthy`, `yanked`, and
 `unsafe`, and prints an exact pinned install command when a newer safe release
-is known. It does not write the install root, flip the active pointer, refresh
+is known. It reports `active_kind` separately from freshness state so prerelease,
+local-dev, missing active, and stale active metadata cases are visible without
+guessing. It does not write the install root, flip the active pointer, refresh
 proof cache material, or download a bundle. See
 `docs/behaviors/release/update-check.md`.
 

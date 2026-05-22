@@ -91,8 +91,8 @@ It reports finite states including `current`, `outdated`, `unknown_offline`,
 exact pinned install command when a newer safe release is known. Offline output
 is explicit: it names whether metadata came from the network, a local file, or
 a fallback cache, says whether that cache is fresh, stale, missing, or
-malformed, and prints `m80 update --check` as the retry command when freshness
-is unknown or stale.
+malformed, names `active_kind` separately from freshness state, and prints
+`m80 update --check` as the retry command when freshness is unknown or stale.
 
 When a safe update is known, copy the `next_command` value exactly:
 

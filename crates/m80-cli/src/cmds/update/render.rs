@@ -1,10 +1,19 @@
 use crate::install_state::InstallStateKind;
 
-use super::{SafetyFloorStatus, UpdateCheckOutput, UpdateCheckState, UpdateProofCacheStatus};
+use super::{
+    ActiveInstallKind, SafetyFloorStatus, UpdateCheckOutput, UpdateCheckState,
+    UpdateProofCacheStatus,
+};
 
 pub(super) fn render_human(output: &UpdateCheckOutput) -> String {
     let mut text = String::new();
     push_line(&mut text, "update_check_state", output.state.as_str());
+    push_line(
+        &mut text,
+        "freshness_state",
+        output.freshness_state.as_str(),
+    );
+    push_line(&mut text, "active_kind", output.active_kind.as_str());
     push_line(
         &mut text,
         "install_status",
@@ -145,6 +154,19 @@ impl UpdateCheckState {
             Self::IneligibleActive => "ineligible_active",
             Self::LocalDevInstall => "local_dev_install",
             Self::InstallUnhealthy => "install_unhealthy",
+        }
+    }
+}
+
+impl ActiveInstallKind {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::StableRelease => "stable_release",
+            Self::Prerelease => "prerelease",
+            Self::Ineligible => "ineligible",
+            Self::LocalDev => "local_dev",
+            Self::MissingActive => "missing_active",
+            Self::StaleActiveMetadata => "stale_active_metadata",
         }
     }
 }

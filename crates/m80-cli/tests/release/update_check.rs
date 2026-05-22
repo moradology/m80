@@ -21,6 +21,8 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`local_dev_install`",
         "`install_unhealthy`",
         "`active_tag`",
+        "`active_kind`",
+        "`freshness_state`",
         "`latest_stable_tag`",
         "`safety_floor.status`",
         "`proof_cache_age_seconds`",
@@ -42,6 +44,7 @@ fn update_check_doc_names_read_only_states_and_outputs() {
         "`--latest-status <path>`",
         "`--latest-status-url <url>`",
         "`latest_status_cache_state: \"stale\"`",
+        "`stale_active_metadata`",
     ] {
         assert!(
             doc.contains(required),

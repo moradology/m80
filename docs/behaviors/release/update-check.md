@@ -31,7 +31,7 @@ bundle, selector, checksum, proof, and install assets are apply/install inputs,
 not check inputs.
 
 JSON output uses schema `1` and includes `active_tag`, `latest_stable_tag`,
-`latest_status_source`, `latest_status_origin`,
+`active_kind`, `freshness_state`, `latest_status_source`, `latest_status_origin`,
 `latest_status_cache_state`, `latest_status_fetched_at`,
 `latest_status_max_age_seconds`, `latest_status_offline_reason`,
 `safety_floor.status`, `proof_cache_status`, `proof_cache_age_seconds`,
@@ -59,6 +59,12 @@ is unavailable, the next command is the read-only retry:
 retry_command=m80 update --check
 next_command=m80 update --check
 ```
+
+The `active_kind` field names why automatic update state may be limited:
+`stable_release`, `prerelease`, `ineligible`, `local_dev`, `missing_active`, or
+`stale_active_metadata`. The `freshness_state` field mirrors the finite update
+state so scripts can read freshness separately from the active-install
+classifier.
 
 Safety-floor input is optional until the freshness status publisher grows the
 public policy artifact. When present, `minimum_safe_tag` and `yanked_tags` must
