@@ -328,12 +328,14 @@ fn parse_install_release_tag_source() {
             bootstrap_tag,
             install_root,
             dry_run,
+            repair_stale_install_lock,
         }) => {
             assert_eq!(release_tag.as_deref(), Some("v0.1.0"));
             assert!(bundle_url.is_none());
             assert!(bootstrap_tag.is_none());
             assert_eq!(install_root, std::path::PathBuf::from("/opt/m80"));
             assert!(!dry_run);
+            assert!(!repair_stale_install_lock);
         }
         _ => panic!("expected Install"),
     }
@@ -391,6 +393,28 @@ fn parse_install_missing_source_reaches_command_diagnostic() {
             assert!(args.bundle_url.is_none());
             assert!(args.bootstrap_tag.is_none());
             assert!(args.dry_run);
+        }
+        _ => panic!("expected Install"),
+    }
+}
+
+#[test]
+fn parse_install_repair_stale_install_lock_flag() {
+    let cli = Cli::try_parse_from([
+        "m80",
+        "install",
+        "--bundle-url",
+        "file:///tmp/m80-linux-x86_64.tar.gz",
+        "--repair-stale-install-lock",
+    ])
+    .unwrap();
+    match cli.subcommand {
+        Cmd::Install(args) => {
+            assert_eq!(
+                args.bundle_url.as_deref(),
+                Some("file:///tmp/m80-linux-x86_64.tar.gz")
+            );
+            assert!(args.repair_stale_install_lock);
         }
         _ => panic!("expected Install"),
     }
